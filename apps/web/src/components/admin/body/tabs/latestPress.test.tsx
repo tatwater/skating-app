@@ -55,11 +55,10 @@ vi.mock('@/components/kit/toast', async (original) => ({
 }));
 
 import { api } from '@skating/convex/api';
-import { useMutation } from 'convex/react';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
-import { toast } from '@/components/kit/toast';
 import { KeysProvider } from '@/lib/keys';
+import { useBoostCommit } from '../frame/BodyConsoleRoute';
 import { BodyConsoleView } from '../frame/BodyConsoleView';
 import {
   BODY_NOW,
@@ -132,7 +131,8 @@ const anotherClass = async (user: User, label: RegExp) => {
 type Case = {
   name: string;
   setup: () => void;
-  render: () => ReactNode;
+  /** The control on `body`'s page (default wb1). */
+  render: (body?: string) => ReactNode;
   pressA: (user: User) => Promise<void>;
   pressB: (user: User) => Promise<void>;
   /** What the control shows with A, or B, the latest press. */
@@ -157,7 +157,7 @@ const CASES: Case[] = [
         setRecord({ name: chosen, nameClaims: [{ source: 'user', value: chosen }, ...catalog] });
       };
     },
-    render: () => <NamesTab bodyId="wb1" />,
+    render: (body = 'wb1') => <NamesTab bodyId={body} />,
     pressA: (user) => user.click(screen.getByRole('button', { name: 'Display this' })),
     pressB: (user) => user.click(screen.getByRole('button', { name: 'Display this' })),
     showsA: () => rungNow(0),
@@ -181,7 +181,7 @@ const CASES: Case[] = [
         );
       };
     },
-    render: () => <NamesTab bodyId="wb1" />,
+    render: (body = 'wb1') => <NamesTab bodyId={body} />,
     pressA: (user) => anotherClass(user, /Reservoir/),
     pressB: (user) => anotherClass(user, /Wetland/),
     showsA: () => checked('Class', /Reservoir/),
@@ -212,7 +212,7 @@ const CASES: Case[] = [
             args.verdict === null ? undefined : { verdict: args.verdict, decidedAt: Date.now() },
         });
     },
-    render: () => <AccessTab bodyId="wb1" />,
+    render: (body = 'wb1') => <AccessTab bodyId={body} />,
     pressA: (user) => user.click(screen.getByRole('button', { name: 'Clear the ruling' })),
     pressB: (user) => user.click(screen.getByRole('button', { name: 'Rule accessible' })),
     showsA: () => {
@@ -253,7 +253,7 @@ const CASES: Case[] = [
         mocks.results.set(fn(api.bodyConsole.depthChoices), depthChoices(args.source as string));
       };
     },
-    render: () => <WaterTab bodyId="wb1" />,
+    render: (body = 'wb1') => <WaterTab bodyId={body} />,
     pressA: async (user) => {
       await user.click(screen.getByRole('radio', { name: 'HydroLAKES, 8.1 m' }));
       await user.click(screen.getByRole('button', { name: /Use HydroLAKES for the mean/ }));
@@ -275,7 +275,7 @@ const CASES: Case[] = [
       mocks.results.set(GET, { available: true, body: { _id: 'wb1', curatedBoost: 0.3 } });
       mocks.server = (_name, args) => setRecord({ curatedBoost: args.curatedBoost });
     },
-    render: () => <BoostHost />,
+    render: (body = 'wb1') => <BoostHost body={body} />,
     pressA: async (user) => {
       act(() => slider().focus());
       await user.keyboard('{ArrowRight}');
@@ -295,18 +295,15 @@ const CASES: Case[] = [
 
 const slider = () => screen.getByRole('slider', { name: 'Map boost' });
 
-/**
- * The console's left column as the route mounts it, its boost written as `useBoostCommit` writes
- * it: the mutation, and a refusal said in a toast and answered `false`.
- */
-function BoostHost() {
-  const set = useMutation(api.waterBodies.setCuratedBoost);
+/** The console's left column as the route mounts it, its boost written by the route's own commit. */
+function BoostHost({ body }: { body: string }) {
+  const commit = useBoostCommit(body);
   return (
     <KeysProvider>
       <BodyConsoleView
         identity={{
           ...MASCOMA_IDENTITY,
-          id: 'wb1',
+          id: body,
           boost: { value: record().curatedBoost as number, note: null },
         }}
         completeness={MASCOMA_COMPLETENESS}
@@ -322,15 +319,7 @@ function BoostHost() {
         attention={attentionTabs(MASCOMA_COMPLETENESS.missing)}
         tabPanel={<p>Shape</p>}
         map={<div>map</div>}
-        onBoostCommit={async (value) => {
-          try {
-            await set({ waterBodyId: 'wb1' as never, curatedBoost: value });
-            return true;
-          } catch (err) {
-            toast({ title: 'Not saved', description: (err as Error).message, tone: 'bad' });
-            return false;
-          }
-        }}
+        onBoostCommit={commit}
       />
     </KeysProvider>
   );
@@ -451,14 +440,142 @@ describe('left and returned while a write waits', () => {
     rerender(<Elsewhere>{null}</Elsewhere>);
     await act(async () => refuse());
     await settle();
-    expect(toasts).toEqual([expect.objectContaining({ description: 'Not allowed' })]);
+    // Said once, naming what wasn't saved.
+    expect(toasts).toEqual([
+      expect.objectContaining({ description: expect.stringMatching(/^The .*: Not allowed$/) }),
+    ]);
     rerender(<Elsewhere>{c.render()}</Elsewhere>);
     c.showsServer();
     expect(c.sent()).toEqual([c.a]);
   });
 });
 
+/**
+ * **Who hears an answer** (Greptile on #136, again): a write answered while the control that asked
+ * is still there, gone with its tab, back on a new mount, or gone with another body shown. A
+ * refusal is said exactly once — in a toast naming what wasn't saved — never inside something gone;
+ * a landed write says nothing; a control on screen shows the record once its queue has drained.
+ */
+const WHERE = ['still there', 'tab away', 'tab returned', 'another body shown'] as const;
+const ASKED = CASES.flatMap((c) =>
+  WHERE.flatMap((where) =>
+    (['landed', 'refused'] as const).map((outcome) => ({ ...c, where, outcome })),
+  ),
+);
+
+describe('who hears a pick’s answer', () => {
+  it.each(ASKED)('$name: $where, $outcome', async (c) => {
+    const user = userEvent.setup();
+    c.setup();
+    const page = (node: ReactNode) => <Elsewhere>{node}</Elsewhere>;
+    const { rerender } = render(page(c.render()));
+    await c.pressA(user);
+    const shownAfter = {
+      'still there': () => c.render(),
+      'tab away': () => null,
+      'tab returned': () => c.render(),
+      'another body shown': () => c.render('wb2'),
+    }[c.where];
+    if (c.where !== 'still there') rerender(page(null));
+    rerender(page(shownAfter()));
+    await act(async () => (c.outcome === 'landed' ? land() : refuse()));
+    await settle();
+    rerender(page(shownAfter()));
+    expect(c.sent()).toEqual([c.a]);
+    if (c.outcome === 'landed') {
+      expect(toasts).toEqual([]);
+      if (c.where === 'still there' || c.where === 'tab returned') c.showsA();
+    } else {
+      expect(toasts).toEqual([
+        expect.objectContaining({ description: expect.stringMatching(/^The .*: Not allowed$/) }),
+      ]);
+      if (c.where !== 'tab away') c.showsServer();
+    }
+  });
+});
+
 describe('Access: a reason’s dialog', () => {
+  /**
+   * The dialog's answer is its own while it is open: a refusal shows over the kept reason. Once the
+   * dialog has gone — its tab away, back on a new mount, another body shown — the refusal is said
+   * once in a toast, never into a dialog that has gone. Its write in flight, or waiting behind a
+   * clear.
+   */
+  const DIALOG = (['in flight', 'waiting behind a clear'] as const).flatMap((entry) =>
+    (['still open', 'tab away', 'tab returned', 'another body shown'] as const).map((where) => ({
+      entry,
+      where,
+    })),
+  );
+  it.each(DIALOG)('refused, $entry, its dialog $where', async ({ entry, where }) => {
+    const user = userEvent.setup();
+    CASES[2]?.setup();
+    const { rerender } = render(
+      <div>
+        <AccessTab bodyId="wb1" />
+      </div>,
+    );
+    if (entry === 'waiting behind a clear') {
+      await user.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Rule no public access' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Posted all round');
+    await user.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+    const shownAfter = {
+      'still open': () => <AccessTab bodyId="wb1" />,
+      'tab away': () => null,
+      'tab returned': () => <AccessTab bodyId="wb1" />,
+      'another body shown': () => <AccessTab bodyId="wb2" />,
+    }[where];
+    if (where !== 'still open') rerender(<div />);
+    rerender(<div>{shownAfter()}</div>);
+    if (entry === 'waiting behind a clear') {
+      await act(async () => land());
+      await settle();
+    }
+    await act(async () => refuse());
+    await settle();
+    rerender(<div>{shownAfter()}</div>);
+    if (where === 'still open') {
+      // Said over the kept reason, in the dialog that asked — and nowhere else.
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent('Not allowed');
+      expect(toasts).toEqual([]);
+    } else {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(toasts).toEqual([expect.objectContaining({ description: 'The ruling: Not allowed' })]);
+    }
+  });
+
+  it('confirmed behind a clear, its dialog gone (Back, then Forward), refused: said once, the record shows', async () => {
+    const user = userEvent.setup();
+    CASES[2]?.setup();
+    const { rerender } = render(<AccessTab bodyId="wb1" />);
+    await user.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+    await user.click(screen.getByRole('button', { name: 'Rule no public access' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Posted all round');
+    await user.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+    // Back and Forward before the clear answers: the tab, and its dialog, are mounted afresh.
+    rerender(<div />);
+    rerender(<AccessTab bodyId="wb1" />);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await act(async () => land());
+    await settle();
+    await act(async () => refuse());
+    await settle();
+    rerender(<AccessTab bodyId="wb1" />);
+    expect(mocks.calls.map(([, a]) => a.verdict)).toEqual([null, 'none']);
+    // Said once, naming what wasn't saved, never inside a dialog that has gone.
+    expect(toasts).toEqual([
+      expect.objectContaining({ description: expect.stringMatching(/ruling.*Not allowed/) }),
+    ]);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // The record shows: the clear landed, the ruling refused.
+    expect(screen.queryByRole('button', { name: 'Clear the ruling' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rule accessible' })).toBeTruthy();
+  });
+
   it('canceled, is no press: nothing is sent and the ruling stands', async () => {
     const user = userEvent.setup();
     CASES[2]?.setup();

@@ -3,7 +3,9 @@ import { useCallback, useMemo } from 'react';
 import { toast } from '@/components/kit/toast';
 
 import { type Receipt, useUndo } from '../../shell/undo';
-import { listChanged, sendFor, useBodyHold } from '../frame/currentBody';
+import { notSavedWhat } from '../consoleWords';
+import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../frame/currentBody';
+import type { PickOutcome } from './latestPick';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -17,6 +19,8 @@ import { listChanged, sendFor, useBodyHold } from '../frame/currentBody';
 export function useTabAction(bodyId: string): {
   act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
   actInDialog: (write: () => Promise<unknown>, receipt: Receipt) => Promise<string | null>;
+  attempt: (write: () => Promise<unknown>, receipt: Receipt, what: string) => Promise<PickOutcome>;
+  sayRefused: (what: string) => (why: string) => void;
 } {
   const { announce } = useUndo();
   // The console this tab mounted under (`currentBody`): a pressed write runs to its end against
@@ -29,13 +33,15 @@ export function useTabAction(bodyId: string): {
     async (
       write: () => Promise<unknown>,
       receipt: Receipt,
+      /** What it was, for a refusal said off its page; else the receipt's title. */
+      what?: string,
     ): Promise<{ landed: boolean; refused: string | null }> => {
       try {
         const landed = await sendFor(hold, {
           body: bodyId,
           write,
           receipt: (subject) => announce({ ...receipt, subject }),
-          what: typeof receipt.title === 'string' ? receipt.title : 'The change',
+          what: what ?? (typeof receipt.title === 'string' ? receipt.title : 'The change'),
         });
         return { landed, refused: null };
       } catch (err) {
@@ -61,5 +67,26 @@ export function useTabAction(bodyId: string): {
     },
     [run],
   );
-  return useMemo(() => ({ act, actInDialog }), [act, actInDialog]);
+  // A press-to-save control's write (`useLatestPick`): its outcome in the store's one shape, saying
+  // nothing itself — the store says a refusal to whoever is still there. Refused off its page,
+  // `sendFor` has already said it, naming the body.
+  const attempt = useCallback(
+    async (write: () => Promise<unknown>, receipt: Receipt, what: string): Promise<PickOutcome> => {
+      const { landed, refused } = await run(write, receipt, what);
+      if (landed) return { landed: true };
+      return refused !== null
+        ? { landed: false, why: refused }
+        : { landed: false, why: '', said: true };
+    },
+    [run],
+  );
+  // The page's words for a refusal no one who asked is still there to hear: a toast naming the body.
+  const sayRefused = useCallback(
+    (what: string) => (why: string) => sayNotSaved(hold, notSavedWhat(what, why)),
+    [hold],
+  );
+  return useMemo(
+    () => ({ act, actInDialog, attempt, sayRefused }),
+    [act, actInDialog, attempt, sayRefused],
+  );
 }

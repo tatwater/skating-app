@@ -11,8 +11,9 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { PICK_WHAT } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { useLatestPick } from '../latestPick';
+import { type PickOutcome, useLatestPick } from '../latestPick';
 import { useTickingNow } from '../tabParts';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
@@ -90,7 +91,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
   const promote = useMutation(api.putIns.promote);
-  const { act, actInDialog } = useTabAction(bodyId);
+  const { act, actInDialog, attempt, sayRefused } = useTabAction(bodyId);
   const now = useTickingNow(3_600_000);
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
@@ -105,18 +106,22 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   // one at a time in press order (one waiting behind the write out is replaced by a newer one), and
   // the record is drawn again once every press has been answered. Ruling
   // no public access is a press once its reason is confirmed; its dialog waits on its own answer.
-  const send = (verdict: PublicAccessVerdict | null, reason: string | undefined) => {
-    const write = () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });
-    const receipt = { title: ruled(verdict), target };
-    return reason !== undefined
-      ? actInDialog(write, receipt)
-      : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
-  };
-  const rule = useLatestPick<PublicAccessVerdict | null, string | null, string>(
+  // One write for the buttons and the reason dialog, answering in the store's one shape: a refusal
+  // goes to the dialog that asked while it is open, else is said once by someone still there.
+  const send = (verdict: PublicAccessVerdict | null, reason: string | undefined) =>
+    attempt(
+      () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) }),
+      { title: ruled(verdict), target },
+      PICK_WHAT.ruling,
+    );
+  const rule = useLatestPick<PublicAccessVerdict | null, string>(
     `access-ruling:${bodyId}`,
     loaded?.ruling.verdict ?? null,
-    send,
+    { send, say: sayRefused(PICK_WHAT.ruling) },
   );
+  /** The dialog's words for an outcome: `null` when landed or said elsewhere, else the refusal. */
+  const forDialog = (o: PickOutcome | undefined) =>
+    o === undefined || o.landed || o.said === true ? null : o.why;
   const shown = useMemo(() => {
     if (data === undefined || isFailed(data)) return data;
     const ruling = rulingWithPick(data.ruling, rule.shown, now);
@@ -133,12 +138,12 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       canPlace={can('body.access')}
       onRule={
         can('access.rule')
-          ? async (verdict, reason) => {
-              const sent = rule.press(verdict, reason);
-              if (sent !== null) return (await sent) ?? null;
+          ? async (verdict, reason, asker) => {
+              const sent = rule.press(verdict, reason, asker);
+              if (sent !== null) return forDialog(await sent);
               // The verdict already shows (another moderator's ruling landed while the dialog was
               // open): a confirmed reason is still sent, never dropped as though it were saved.
-              return reason === undefined ? null : send(verdict, reason);
+              return reason === undefined ? null : forDialog(await send(verdict, reason));
             }
           : undefined
       }

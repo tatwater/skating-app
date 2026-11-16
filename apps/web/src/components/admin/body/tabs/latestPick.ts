@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useState, useSyncExternalStore } from 'react';
 
-import { toast } from '@/components/kit/toast';
-
 /**
  * **A pick whose write is in flight: the latest press wins** — the rule for every control that
  * writes on press (a segmented control, a radio, a ruling button, a slider let go). It shows the
@@ -21,25 +19,38 @@ import { toast } from '@/components/kit/toast';
  * has drained, so nothing grows across a sitting. Two browser windows on one body each have their
  * own store: between them the server's last write wins, as between two moderators (out of scope).
  *
- * **A refusal never vanishes.** A write's `send` is the latest mounted page's (its closures name the
- * body and say a result in its words: `sendFor` says one in a toast naming the body once its
- * console has gone). A refusal thrown back to the queue is handed to the controls mounted for that
- * key, to say in place; with none mounted, it is said in a toast.
+ * **A refusal is said once, by someone still there** (Greptile on #136, again). Every write answers
+ * the store in one shape, {@link PickOutcome} — landed, or refused in the server's words (or already
+ * said by the write path, as `sendFor` says one off its console) — never a value the store can't
+ * read as a refusal. A refusal goes to exactly one audience: the opening that asked (a reason
+ * dialog, its {@link Asker}) while it is still there; else a control mounted for the key that says
+ * refusals in place; else the page's own words (`say`: a toast naming the body and what wasn't
+ * saved). The sender and `say` are the latest mounted page's; the asker stays the press's own.
  */
 
-type Send<T, R, N> = (value: T, note: N | undefined) => Promise<R>;
+/** Every answer a write gives the store. `said`: refused, and already said by the write path. */
+export type PickOutcome = { landed: true } | { landed: false; why: string; said?: boolean };
 
-type Watcher = { change: () => void; error: (why: string, value: unknown) => void };
+/** The opening that asked for a press (a reason dialog): its answer is its own while it is there. */
+export type Asker = { here: () => boolean };
+
+/** A control's write: one answer shape, so a refusal is never one the store can't see. */
+export type PickSend<T, N> = (value: T, note: N | undefined) => Promise<PickOutcome>;
+
+type Watcher = { change: () => void; error?: (why: string, value: unknown) => void };
+
+type Press = { value: unknown; note: unknown; asker: Asker | undefined };
 
 type Entry = {
   /** What the control shows: the newest press not yet settled. */
   requested: { value: unknown };
-  /** The write on its way, with what travels with it (a confirmed reason) and its answer. */
-  inFlight: { value: unknown; note: unknown; answer: Promise<unknown> } | null;
-  /** The one press waiting behind the write in flight, with its note and its own answer's hook. */
-  waiting: { value: unknown; note: unknown; settle: (answer: Promise<unknown>) => void } | null;
-  /** The latest mounted page's sender; once its page has gone, the last one stands. */
-  send: Send<unknown, unknown, unknown>;
+  /** The write on its way, and its answer. */
+  inFlight: (Press & { answer: Promise<PickOutcome | undefined> }) | null;
+  /** The one press waiting behind the write in flight, and its own answer's hook. */
+  waiting: (Press & { settle: (answer: Promise<PickOutcome | undefined>) => void }) | null;
+  /** The latest mounted page's sender and words; once its page has gone, the last ones stand. */
+  send: PickSend<unknown, unknown>;
+  say: (why: string) => void;
 };
 
 export type PickStore = {
@@ -52,19 +63,20 @@ export type PickStore = {
   requested: (key: string) => { value: unknown } | undefined;
   /**
    * A press: sends (or waits behind the write in flight) when it changes what's shown, resolving
-   * with its own write's answer (`undefined` when refused, or replaced before it was sent); `null`
-   * when nothing was sent.
+   * with its own write's outcome (`undefined` when replaced before it was sent) — a refusal said
+   * elsewhere resolves `said`; `null` when nothing was sent.
    */
-  press: <T, R, N>(
+  press: <T, N>(
     key: string,
-    value: T,
-    server: T,
-    note: N | undefined,
-    send: Send<T, R, N>,
-  ) => Promise<R | undefined> | null;
-  /** Hands an existing queue the latest page's sender (a page mounted, or rendered again). */
-  adopt: (key: string, send: Send<unknown, unknown, unknown>) => void;
-  /** A mounted control's interest in `key`: its redraw, and where a refusal is said in place. */
+    press: { value: T; server: T; note?: N; asker?: Asker },
+    page: { send: PickSend<T, N>; say: (why: string) => void },
+  ) => Promise<PickOutcome | undefined> | null;
+  /** Hands an existing queue the latest page's sender and words (a page mounted, or rendered again). */
+  adopt: (
+    key: string,
+    page: { send: PickSend<unknown, unknown>; say: (why: string) => void },
+  ) => void;
+  /** A mounted control's interest in `key`: its redraw, and `error` if it says refusals in place. */
   watch: (key: string, watcher: Watcher) => () => void;
   /** Keys with a queue not yet drained. */
   size: () => number;
@@ -72,41 +84,45 @@ export type PickStore = {
   inFlight: (key: string) => number;
 };
 
-export function createPickStore({
-  unwatchedError = (why: string) => toast({ title: 'Not saved', description: why, tone: 'bad' }),
-}: {
-  /** A refusal with no control mounted to say it in place. */
-  unwatchedError?: (why: string, value: unknown, key: string) => void;
-} = {}): PickStore {
+export function createPickStore(): PickStore {
   const entries = new Map<string, Entry>();
   const watchers = new Map<string, Set<Watcher>>();
   const notify = (key: string) => {
     for (const w of watchers.get(key) ?? []) w.change();
   };
-  const refused = (key: string, why: string, value: unknown) => {
-    const here = watchers.get(key);
-    if (here === undefined || here.size === 0) unwatchedError(why, value, key);
-    else for (const w of here) w.error(why, value);
+  /** A refusal no asker is there to hear: one control that says it in place, else the page's words. */
+  const sayElsewhere = (key: string, entry: Entry, why: string, value: unknown) => {
+    const inPlace = [...(watchers.get(key) ?? [])].find((w) => w.error !== undefined);
+    if (inPlace?.error !== undefined) inPlace.error(why, value);
+    else entry.say(why);
   };
 
-  const dispatch = (key: string, entry: Entry, value: unknown, note: unknown): Promise<unknown> => {
-    const answer = (async () => {
+  const dispatch = (key: string, entry: Entry, press: Press): Promise<PickOutcome | undefined> => {
+    const answer = (async (): Promise<PickOutcome> => {
+      let outcome: PickOutcome;
       try {
-        return await entry.send(value, note);
+        outcome = await entry.send(press.value, press.note);
       } catch (err) {
-        refused(key, err instanceof Error ? err.message : String(err), value);
-        return undefined;
+        // A sender that threw rather than answering is a refusal all the same.
+        outcome = { landed: false, why: err instanceof Error ? err.message : String(err) };
+      }
+      try {
+        if (outcome.landed || outcome.said === true) return outcome;
+        // The asker that is still there says it; else someone still there does, once.
+        if (press.asker?.here() === true) return outcome;
+        sayElsewhere(key, entry, outcome.why, press.value);
+        return { ...outcome, said: true };
       } finally {
         entry.inFlight = null;
         const next = entry.waiting;
         entry.waiting = null;
-        if (next !== null) next.settle(dispatch(key, entry, next.value, next.note));
+        if (next !== null) next.settle(dispatch(key, entry, next));
         // Every press answered: the server's value is the truth again, and the queue leaves.
         else if (entries.get(key) === entry) entries.delete(key);
         notify(key);
       }
     })();
-    entry.inFlight = { value, note, answer };
+    entry.inFlight = { ...press, answer };
     return answer;
   };
 
@@ -116,53 +132,57 @@ export function createPickStore({
       return entry === undefined ? server : (entry.requested.value as T);
     },
     requested: (key) => entries.get(key)?.requested,
-    press: <T, R, N>(
-      key: string,
-      value: T,
-      server: T,
-      note: N | undefined,
-      send: Send<T, R, N>,
-    ): Promise<R | undefined> | null => {
+    press: (key, { value, server, note, asker }, page) => {
       const found = entries.get(key);
       const shown = found === undefined ? server : found.requested.value;
       if (Object.is(value, shown)) return null;
-      const sender = send as Send<unknown, unknown, unknown>;
+      const send = page.send as PickSend<unknown, unknown>;
       const entry: Entry = found ?? {
         requested: { value },
         inFlight: null,
         waiting: null,
-        send: sender,
+        send,
+        say: page.say,
       };
       if (found === undefined) entries.set(key, entry);
       else {
-        entry.send = sender;
+        entry.send = send;
+        entry.say = page.say;
         entry.requested = { value };
       }
-      let answer: Promise<unknown>;
+      const press: Press = { value, note, asker };
+      let answer: Promise<PickOutcome | undefined>;
       if (entry.inFlight === null) {
-        answer = dispatch(key, entry, value, note);
+        answer = dispatch(key, entry, press);
       } else {
         // A press replaced before it was sent was never a write: its own answer is "not sent".
         entry.waiting?.settle(Promise.resolve(undefined));
         entry.waiting = null;
-        if (Object.is(value, entry.inFlight.value) && Object.is(note, entry.inFlight.note)) {
-          // Back to what is already on its way, with what travels with it: nothing more to send.
-          // (A new reason for the same verdict is a new write: it waits, and is sent after.)
+        const back =
+          asker === undefined &&
+          entry.inFlight.asker === undefined &&
+          Object.is(value, entry.inFlight.value) &&
+          Object.is(note, entry.inFlight.note);
+        if (back) {
+          // Back to what is already on its way, nobody waiting on its answer: nothing more to send.
+          // (A new reason, or an opening that waits for its own answer, is a new write.)
           answer = entry.inFlight.answer;
         } else {
-          let settle: (a: Promise<unknown>) => void = () => {};
-          answer = new Promise<unknown>((resolve) => {
+          let settle: (a: Promise<PickOutcome | undefined>) => void = () => {};
+          answer = new Promise((resolve) => {
             settle = (a) => resolve(a);
           });
-          entry.waiting = { value, note, settle };
+          entry.waiting = { ...press, settle };
         }
       }
       notify(key);
-      return answer as Promise<R | undefined>;
+      return answer;
     },
-    adopt: (key, send) => {
+    adopt: (key, page) => {
       const entry = entries.get(key);
-      if (entry !== undefined) entry.send = send;
+      if (entry === undefined) return;
+      entry.send = page.send;
+      entry.say = page.say;
     },
     watch: (key, watcher) => {
       let set = watchers.get(key);
@@ -197,30 +217,37 @@ export function resetLatestPicks(): void {
 
 /**
  * The queue `key` (the control and its body, `names-class:<body>`) for a component: `shown` to draw,
- * `press` from the control (its own answer, for a dialog that waits on it), `error` the latest
- * refusal said here, with the value it refused (cleared by the next press). `send` throws the
- * server's words on a refusal to be said in place.
+ * `press` from the control (its own outcome, for an opening that waits on it — pass the opening as
+ * its `asker`), `error` the latest refusal said here, with the value it refused (only for a control
+ * that says refusals in place, `inPlace`; cleared by the next press). `send` answers in the one
+ * shape; `say` is the page's words for a refusal no one else is there to say.
  */
-export function useLatestPick<T, R = unknown, N = undefined>(
+export function useLatestPick<T, N = undefined>(
   key: string,
   server: T,
-  send: Send<T, R, N>,
+  {
+    send,
+    say,
+    inPlace = false,
+  }: { send: PickSend<T, N>; say: (why: string) => void; inPlace?: boolean },
 ): {
   shown: T;
-  press: (value: T, note?: N) => Promise<R | undefined> | null;
+  press: (value: T, note?: N, asker?: Asker) => Promise<PickOutcome | undefined> | null;
   error: { why: string; value: T } | null;
 } {
   const store = useContext(PickStoreContext) ?? loose;
   const [error, setError] = useState<{ why: string; value: T } | null>(null);
-  // The latest page's sender, for a queue this page joined (its own presses hand it over too).
-  store.adopt(key, send as Send<unknown, unknown, unknown>);
+  // The latest page's sender and words, for a queue this page joined (its presses hand them over too).
+  store.adopt(key, { send: send as PickSend<unknown, unknown>, say });
   const subscribe = useCallback(
     (change: () => void) =>
       store.watch(key, {
         change,
-        error: (why, value) => setError({ why, value: value as T }),
+        ...(inPlace && {
+          error: (why: string, value: unknown) => setError({ why, value: value as T }),
+        }),
       }),
-    [store, key],
+    [store, key, inPlace],
   );
   // Read through `useSyncExternalStore`, never a redraw subscribed in an effect: a queue that moves
   // between this control's first render and its subscription (a write answering as a tab comes
@@ -229,9 +256,9 @@ export function useLatestPick<T, R = unknown, N = undefined>(
   const requested = useSyncExternalStore(subscribe, snapshot, snapshot);
   return {
     shown: requested === undefined ? server : (requested.value as T),
-    press: (value, note) => {
+    press: (value, note, asker) => {
       setError(null);
-      return store.press(key, value, server, note, send);
+      return store.press(key, { value, server, note, asker }, { send, say });
     },
     error,
   };

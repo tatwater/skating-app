@@ -13,12 +13,12 @@ import {
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Skeleton } from '@/components/kit/skeleton';
-import { toast } from '@/components/kit/toast';
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import { listWords } from '@/lib/words';
 import { rememberOpened } from '../../bodies/openedRecently';
 import { useUndo } from '../../shell/undo';
+import { notSavedWhat, PICK_WHAT } from '../consoleWords';
 import { BodyMap } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
@@ -42,7 +42,7 @@ import {
   searchFor,
   validateBodySearch,
 } from './bodySearch';
-import { BodyBindingProvider, type BodyHold, sendFor } from './currentBody';
+import { BodyBindingProvider, type BodyHold, sayNotSaved, sendFor } from './currentBody';
 import { NotBuiltTab } from './NotBuiltTab';
 import {
   type BodyTabProps,
@@ -333,7 +333,9 @@ function TabSceneProbe({
  * Sets the map boost and puts its receipt (with Undo) in the toast. Resolves whether the change
  * landed, so the slider can go back to the record when it didn't.
  */
-function useBoostCommit(bodyId: string): (value: number, hold: BodyHold) => Promise<boolean> {
+export function useBoostCommit(
+  bodyId: string,
+): (value: number, hold: BodyHold) => Promise<boolean> {
   const set = useMutation(api.waterBodies.setCuratedBoost);
   const { announce } = useUndo();
   return useCallback(
@@ -350,12 +352,16 @@ function useBoostCommit(bodyId: string): (value: number, hold: BodyHold) => Prom
             target: { targetType: 'waterbody', targetId: bodyId },
             subject,
           }),
-        what: 'The map boost',
+        what: PICK_WHAT.boost,
       }).then(
         // `false`: refused off its console, and said there.
         (landed) => landed,
+        // Refused here: said once, as every press-to-save control says one — what wasn't saved.
         (e: unknown) => {
-          toast({ title: e instanceof Error ? e.message : String(e), tone: 'bad' });
+          sayNotSaved(
+            hold,
+            notSavedWhat(PICK_WHAT.boost, e instanceof Error ? e.message : String(e)),
+          );
           return false;
         },
       );

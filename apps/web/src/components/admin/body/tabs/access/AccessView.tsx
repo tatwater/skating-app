@@ -45,7 +45,12 @@ export type AccessViewProps = {
   /** The clock the ruling's days are counted to. */
   now: number;
   /** Rule the body (or clear the ruling). Ruling no public access passes its reason. */
-  onRule?: (verdict: PublicAccessVerdict | null, reason?: string) => Promise<string | null>;
+  onRule?: (
+    verdict: PublicAccessVerdict | null,
+    reason?: string,
+    /** The reason dialog's opening that asked, for an answer that comes after it has gone. */
+    asker?: { here: () => boolean },
+  ) => Promise<string | null>;
   /** The viewer may place put-ins and lots (`body.access`): the map tools' entry points are drawn. */
   canPlace?: boolean;
   /**
@@ -263,7 +268,7 @@ function RulingSection({
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"
       label="Reason · kept in History"
-      onConfirm={(reason) => onRule('none', reason)}
+      onConfirm={(reason, asker) => onRule('none', reason, asker)}
     />
   );
   return (

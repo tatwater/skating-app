@@ -116,9 +116,16 @@ describe('NamesTab', () => {
     render(<NamesTab bodyId="wb1" />);
     await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
     expect(mocks.announce).not.toHaveBeenCalled();
-    expect(toasts).toEqual([
-      { title: 'Not saved', description: 'Water body not found', tone: 'bad' },
-    ]);
+    // Said once, naming what wasn't saved (no body name outside a console's frame).
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        {
+          title: 'Not saved',
+          description: 'The displayed name: Water body not found',
+          tone: 'bad',
+        },
+      ]),
+    );
   });
 
   it('draws no control for a viewer without body.identity', () => {

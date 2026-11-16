@@ -11,7 +11,7 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import { useUndo } from '../../../shell/undo';
-import { ALIASES_KEPT_MOVING, RECEIPTS } from '../../consoleWords';
+import { ALIASES_KEPT_MOVING, PICK_WHAT, RECEIPTS } from '../../consoleWords';
 import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useLatestPick } from '../latestPick';
@@ -80,7 +80,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { data, retry, pending } = useNamesRead(bodyId);
   const setName = useMutation(api.waterBodies.setWaterBodyName);
-  const { act } = useTabAction(bodyId);
+  const { act, attempt, sayRefused } = useTabAction(bodyId);
   const { can } = useRole();
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const canEdit = can('body.identity');
@@ -95,7 +95,18 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const namePick = useLatestPick<string | null>(
     `names-name:${bodyId}`,
     loaded === null ? null : nameChoice(loaded),
-    (n) => write(n, n === null ? 'Back to the catalogs’ ranking' : `Displaying “${n}”`),
+    {
+      send: (n) =>
+        attempt(
+          () => setName({ waterBodyId, name: n }),
+          {
+            title: n === null ? 'Back to the catalogs’ ranking' : `Displaying “${n}”`,
+            target,
+          },
+          PICK_WHAT.name,
+        ),
+      say: sayRefused(PICK_WHAT.name),
+    },
   );
   const choose = canEdit ? (name: string | null) => namePick.press(name) : undefined;
   // A body no catalog names has no ranking to go back to: clearing leaves it nameless.
@@ -145,12 +156,19 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const classPick = useLatestPick<WaterBodyClass | null>(
     `names-class:${bodyId}`,
     loaded === null ? null : classChoice(loaded),
-    (bodyClass) =>
-      act(() => setClass({ waterBodyId, bodyClass }), {
-        title:
-          bodyClass === null ? RECEIPTS.classCleared : RECEIPTS.classSet(classLabel(bodyClass)),
-        target,
-      }),
+    {
+      send: (bodyClass) =>
+        attempt(
+          () => setClass({ waterBodyId, bodyClass }),
+          {
+            title:
+              bodyClass === null ? RECEIPTS.classCleared : RECEIPTS.classSet(classLabel(bodyClass)),
+            target,
+          },
+          PICK_WHAT.cls,
+        ),
+      say: sayRefused(PICK_WHAT.cls),
+    },
   );
   return (
     <NamesView
