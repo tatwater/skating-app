@@ -11,6 +11,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { AUTHOR_DELETED_OVERTURN, AUTHOR_DELETED_RESTORE } from './lib/authorDeletion';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
+import { isReversed } from './lib/contentVerdicts';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import {
   ERASED_ALREADY,
@@ -573,6 +574,58 @@ describe('Reversed', () => {
     expect((await deletedOf(matt.as, rob.id)).rows).toEqual([]);
     const pane = await matt.as.query(api.contentRecord.item, { targetType: 'report', targetId: r });
     expect(pane).toMatchObject({ published: null, erasedAt: expect.any(Number), can: {} });
+  });
+});
+
+describe('Reversed is its one predicate', () => {
+  test('the range the reads take holds exactly the verdicts `isReversed` accepts, and each kind its own', async () => {
+    const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+    const a = await report(rob.id); // hidden, removed, restored: the removal
+    const b = await report(rob.id); // hidden, restored, hidden again: standing, not here
+    const c = await comment(await report(kate.id)); // hidden, restored
+    const d = await report(rob.id); // removed, deleted, overturned
+    const steps: [Parameters<typeof set>[0], string, 'visible' | 'hidden' | 'removed'][] = [
+      ['report', a, 'hidden'],
+      ['report', a, 'removed'],
+      ['report', a, 'visible'],
+      ['report', b, 'hidden'],
+      ['report', b, 'visible'],
+      ['report', b, 'hidden'],
+      ['comment', c, 'hidden'],
+      ['comment', c, 'visible'],
+      ['report', d, 'removed'],
+    ];
+    for (const [kind, id, status] of steps) {
+      await set(kind, id, status);
+      tick();
+    }
+    await rob.as.mutation(api.reports.remove, { reportId: d as Id<'reports'> });
+    tick();
+    await matt.as.mutation(api.moderation.overturnVerdict, { targetType: 'report', targetId: d });
+    const verdicts = await t.run((ctx) =>
+      ctx.db
+        .query('contentVerdicts')
+        .withIndex('by_subject_ended', (q) => q.eq('subjectUserId', rob.id))
+        .collect(),
+    );
+    const want = (kind?: string) =>
+      verdicts
+        .filter((v) => isReversed(v) && (kind === undefined || v.targetType === kind))
+        .map((v) => `${v.targetId} ${v.kind}`)
+        .sort();
+    const got = (rows: Reversed[]) => rows.map((r) => `${r.targetId} ${r.kind}`).sort();
+    expect(got((await reversedOf(matt.as, rob.id)).rows)).toEqual(want());
+    expect(want()).toEqual([`${a} removed`, `${c} hidden`, `${d} removed`].sort());
+    for (const kind of ['report', 'comment', 'post'] as const) {
+      const rows = await all<Reversed>((cursor) =>
+        matt.as.query(api.contentRecord.personReversed, {
+          userId: rob.id,
+          targetType: kind,
+          cursor,
+        }),
+      );
+      expect(got(rows.rows), kind).toEqual(want(kind));
+    }
   });
 });
 

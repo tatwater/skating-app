@@ -131,30 +131,21 @@ async function endStanding(
 }
 
 /**
- * Whether an ended verdict shows on the record sheet's Reversed list — **the one predicate**
- * (B01-4d, the governor's ruling of 2026-11-15): a decision a moderator ended, shown once, as the
- * item's newest decision. A hide that later became a removal is the removal, and never also a
- * Reversed hide; an item restored, hidden again and restored again shows its last restore.
- * `contentRecord`'s Reversed reads take exactly these rows by index ({@link REVERSED_INDEX}), and a
- * test holds the range to this predicate. To show superseded decisions too, flip
- * {@link REVERSED_SHOWS_SUPERSEDED}: the predicate and the index follow it.
+ * Whether an ended verdict shows on the record sheet's Reversed list — **the one predicate** (D267): a
+ * decision a moderator ended, shown once, as the item's newest decision. A hide that later became a
+ * removal is the removal, and never also a Reversed hide; an item restored, hidden again and restored
+ * again shows its last restore. `contentRecord`'s Reversed reads take exactly these rows by index
+ * (`by_subject_reversed`, `by_subject_reversed_type`), and `recordSheet.test.ts` holds every row the
+ * range yields to this predicate and every row it holds to the range. Showing superseded decisions
+ * too (the founder's open question) changes this predicate and that range together — over every
+ * ended verdict, which wants a kind index of its own.
  */
-export const REVERSED_SHOWS_SUPERSEDED = false;
-
 export function isReversed(
   verdict: Pick<Doc<'contentVerdicts'>, 'standing' | 'endedAt' | 'superseded'>,
 ): boolean {
   if (verdict.standing || verdict.endedAt === undefined) return false;
-  return REVERSED_SHOWS_SUPERSEDED || verdict.superseded === false;
+  return verdict.superseded === false;
 }
-
-/**
- * The index the Reversed reads range over, following {@link REVERSED_SHOWS_SUPERSEDED}: every ended
- * verdict (`by_subject_ended`), or only each item's newest (`by_subject_reversed`).
- */
-export const REVERSED_INDEX = REVERSED_SHOWS_SUPERSEDED
-  ? ('by_subject_ended' as const)
-  : ('by_subject_reversed' as const);
 
 /**
  * Mark an item's newest verdict — standing or ended — superseded, as a later one is about to be

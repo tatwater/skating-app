@@ -13,7 +13,6 @@ import { requireCapability } from './lib/auth';
 import { authorDeletedAtOf } from './lib/authorDeletion';
 import {
   REPLAY_START,
-  REVERSED_INDEX,
   type ReplayedVerdict,
   type ReplayState,
   replayStep,
@@ -141,10 +140,8 @@ function standingQuery(
 }
 
 /**
- * Reversed, by its index: each item's newest decision once ended (`lib/contentVerdicts.isReversed`,
- * and its one-line flip, `REVERSED_INDEX`). Every range keeps its lower bound — a standing verdict
- * lacks `endedAt`, which sorts first. Over `by_subject_ended` a kind is filtered after the read
- * ({@link reversedKind}); the flag's own index has the kind in it.
+ * Reversed, by its index: each item's newest decision once ended (`lib/contentVerdicts.isReversed`).
+ * Every range keeps its lower bound — a standing verdict lacks `endedAt`, which sorts first.
  */
 function reversedQuery(
   ctx: QueryCtx,
@@ -154,17 +151,6 @@ function reversedQuery(
   tieCt: number | null,
 ) {
   const verdicts = ctx.db.query('contentVerdicts');
-  if (REVERSED_INDEX === 'by_subject_ended') {
-    return verdicts
-      .withIndex('by_subject_ended', (q) => {
-        const b = q.eq('subjectUserId', userId);
-        if (key === undefined) return b.gt('endedAt', 0);
-        return tieCt !== null
-          ? b.eq('endedAt', key).lt('_creationTime', tieCt)
-          : b.gt('endedAt', 0).lt('endedAt', key);
-      })
-      .order('desc');
-  }
   if (targetType === undefined) {
     return verdicts
       .withIndex('by_subject_reversed', (q) => {
@@ -186,13 +172,6 @@ function reversedQuery(
     })
     .order('desc');
 }
-
-/** The rows of one kind among a Reversed read (only over `by_subject_ended`, which has no kind). */
-const reversedKind =
-  (targetType: VerdictTargetType | undefined) => (rows: Doc<'contentVerdicts'>[]) =>
-    targetType === undefined || REVERSED_INDEX !== 'by_subject_ended'
-      ? rows
-      : rows.filter((r) => r.targetType === targetType);
 
 /** A Standing or Reversed page's rows: the cursor's two-part read over one index range. */
 async function verdictRange(
@@ -423,10 +402,7 @@ export async function reversedPage(
     after,
     RECORD_PAGE + 1,
   );
-  // Over `by_subject_ended` (the flip) a kind is filtered after the read: the page's place is then
-  // the last row read, kept or not, so a page of other kinds still moves the list on.
-  const considered = found.slice(0, RECORD_PAGE);
-  const verdicts = reversedKind(targetType)(considered);
+  const verdicts = found.slice(0, RECORD_PAGE);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
   const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
   const states = await undoStates(ctx, viewer, endings);
@@ -462,10 +438,9 @@ export async function reversedPage(
       can: rowLevers(viewer, l, false),
     };
   });
-  const read = cut ? rows.map((l) => l.verdict) : considered;
   return pageOf(
     page,
-    read.map((v) => ({ key: v.endedAt as number, ct: v._creationTime })),
+    rows.map((l) => ({ key: l.verdict.endedAt as number, ct: l.verdict._creationTime })),
     { more: cut || found.length > RECORD_PAGE, after, pending },
   );
 }

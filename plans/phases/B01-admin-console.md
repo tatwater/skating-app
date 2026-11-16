@@ -2666,8 +2666,10 @@ only; the sheet itself is the web's next pass. Every shape change is additive ex
   also a Reversed hide; restored, hidden again and restored again, the item shows its last restore.
   Every writer keeps it (`lib/contentVerdicts`, and the replay, which `contentVerdicts.test.ts` now
   compares flag for flag against the live writers); `packages/guards`' `verdictWriters.test.ts` holds
-  every verdict insert and ending to it. `isReversed` is the one predicate and
-  `REVERSED_SHOWS_SUPERSEDED` its one-line flip (the index the reads range over follows it).
+  every verdict insert and ending to it. `isReversed` is the one predicate, and a test holds the
+  index range the reads take to it both ways. (A flip constant was built and removed untested: showing
+  superseded decisions too — the founder's open question — changes the predicate and the range
+  together, and the range over every ended verdict would want a kind index of its own.)
 - **The reads** — `contentRecord.personVerdicts` (Standing, widened: `decidedBy`, `can`,
   `reportAuthor`, `postReportCount`, `pending`), `personReversed`, `personDeleted` (all five kinds,
   merged), `recordCounts` and `item`. Cursors are positions in the list's order (JSON), not Convex
