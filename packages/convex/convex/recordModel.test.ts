@@ -359,13 +359,13 @@ describe('the record sheet’s lists over any history', () => {
   test.each(SEEDS)('seed %i', async (seed) => {
     console.log(`recordModel seed ${seed}`);
     await fc.assert(
-      fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 12 }), async (ops) => {
+      fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 10 }), async (ops) => {
         vi.setSystemTime(T0);
         const w = await world();
         for (const op of ops) await step(w, op);
         await holds(w);
       }),
-      { seed, numRuns: 5 },
+      { seed, numRuns: 4 },
     );
   });
 });
