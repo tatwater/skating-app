@@ -236,7 +236,8 @@ export async function clockOf(
  * Bring one item's clock (as `doc` holds it, read in this transaction) to what its withdrawal and its
  * holds say now, and return it. Idempotent: a running clock is never pushed later, and a write happens
  * only when the value changes. `alongside` rides in the same patch — a caller re-deriving the row's
- * other fields writes once.
+ * other fields writes once. Never `releasing`: that is a question asked before an overturn, and a
+ * clock written from it would run while a decision still holds the item.
  */
 export async function refreshClockOf(
   ctx: MutationCtx,
@@ -244,10 +245,11 @@ export async function refreshClockOf(
   type: Erasable,
   doc: ErasableDoc,
   now: number,
-  known: Known = {},
+  known: Omit<Known, 'releasing'> = {},
   alongside?: Record<string, unknown>,
 ): Promise<number | undefined> {
-  const next = await clockOf(ctx, budget, type, doc, now, known);
+  // Only what it may pass on: a `Known` value carrying `releasing` would still be assignable here.
+  const next = await clockOf(ctx, budget, type, doc, now, { postHeld: known.postHeld });
   if (next !== doc.eraseAt || alongside !== undefined) {
     budget.touch(type);
     await ctx.db.patch(doc._id as Id<(typeof ERASABLE)[Erasable]>, {

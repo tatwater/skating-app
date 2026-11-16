@@ -640,6 +640,32 @@ export async function deletedPage(
 type Count = { count: number; capped: boolean };
 
 /**
+ * Each withdrawn row's standing decision, in waves: a decision holds it (then it is Standing's, not
+ * Deleted's), `null` when none does, `undefined` past what the budget left — the count and the
+ * presence check read the holds alike.
+ */
+function standingHolds(
+  ctx: QueryCtx,
+  reads: ReadBudget,
+  rows: readonly { kind: VerdictTargetType; doc: RecordContentDoc }[],
+) {
+  return reads.waves(
+    rows,
+    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+    ({ kind, doc }, share) =>
+      share.read('verdict', () =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_target_standing', (q) =>
+            q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
+          )
+          .first(),
+      ),
+    (): Doc<'contentVerdicts'> | null | undefined => undefined,
+  );
+}
+
+/**
  * Withdrawn Reports counted by real weight, at most this many bytes (the count's one `paginate`,
  * charged its cap and a document past it): a Report is a whole document at worst, a couple of KB in
  * fact, so the real weight reaches every Report a person deletes in a month.
@@ -839,20 +865,7 @@ export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles
   const withdrawn = all.flatMap(({ kind, rows }) =>
     rows.filter((doc) => listedWithdrawal(kind, doc)).map((doc) => ({ kind, doc })),
   );
-  const held = await reads.waves(
-    withdrawn,
-    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
-    ({ kind, doc }, share) =>
-      share.read('verdict', () =>
-        ctx.db
-          .query('contentVerdicts')
-          .withIndex('by_target_standing', (q) =>
-            q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
-          )
-          .first(),
-      ),
-    (): Doc<'contentVerdicts'> | null | undefined => undefined,
-  );
+  const held = await standingHolds(ctx, reads, withdrawn);
   const deleted = byKindCount(
     withdrawn.filter((_, i) => held[i] === null).map((w) => w.kind),
     held.some((h) => h === undefined) || all.some((a) => a.full),
@@ -894,8 +907,10 @@ export const recordPresence = query({
 /** `recordPresence`' answer, for a viewer already let in (the rounds test drives it). */
 export async function presenceOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles'> }) {
   const reads = sheetBudget(ctx);
-  const pending = await recordPending(ctx, reads);
-  const [reversedRows, ...ranges] = await Promise.all([
+  // The backfill check beside the ranges, not before them: every one charges as it starts, in this
+  // order, so the page is one round of reads and then the holds.
+  const [pending, reversedRows, ...ranges] = await Promise.all([
+    recordPending(ctx, reads),
     reads.take('verdict', 1, (n) => reversedQuery(ctx, userId, undefined, undefined, null).take(n)),
     ...DELETED_KINDS.map((kind) =>
       deletedRange(ctx, reads, kind, userId, null, PRESENCE_LOOK[kind]).then((rows) => ({
@@ -908,24 +923,10 @@ export async function presenceOf(ctx: QueryCtx, { userId }: { userId: Id<'profil
   const candidates = ranges.flatMap(({ kind, rows }) =>
     rows.filter((doc) => listedWithdrawal(kind, doc)).map((doc) => ({ kind, doc })),
   );
-  const held = await reads.waves(
-    candidates,
-    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
-    ({ kind, doc }, share) =>
-      share.read('verdict', () =>
-        ctx.db
-          .query('contentVerdicts')
-          .withIndex('by_target_standing', (q) =>
-            q.eq('targetType', kind).eq('targetId', doc._id).eq('standing', true),
-          )
-          .first(),
-      ),
-    (): Doc<'contentVerdicts'> | null | undefined => undefined,
-  );
-  // Shown: read, and no decision holds it. Unknown (a hold the budget couldn't check, or a range
-  // with more rows than it looked at): true, never a missing row.
-  const deleted =
-    held.some((h) => h === null) || held.some((h) => h === undefined) || ranges.some((r) => r.full);
+  const held = await standingHolds(ctx, reads, candidates);
+  // Shown: read, and no decision holds it (`null`). Unknown — a hold the budget couldn't check
+  // (`undefined`), or a range with more rows than it looked at: true, never a missing row.
+  const deleted = held.some((h) => !h) || ranges.some((r) => r.full);
   return {
     deleted,
     reversed: reversedRows.some((r) => isReversed(r)),
@@ -962,9 +963,16 @@ async function comesBackWith(ctx: QueryCtx, reads: ReadBudget, reportId: Id<'rep
         .take(n),
     ),
   ]);
+  // Up: shown, and still its author's words — not withdrawn, and not a departed author's emptied
+  // shell (`redactedAt`), which comes back only as a placeholder.
   const up = comments
     .slice(0, COMES_BACK_COMMENTS)
-    .filter((c) => c.moderationStatus === 'visible' && c.authorDeletedAt === undefined);
+    .filter(
+      (c) =>
+        c.moderationStatus === 'visible' &&
+        c.authorDeletedAt === undefined &&
+        c.redactedAt === undefined,
+    );
   return {
     comments: { count: up.length, capped: comments.length > COMES_BACK_COMMENTS },
     ratings: {
@@ -1144,7 +1152,9 @@ export const item = query({
       /**
        * When it would be erased if its standing decision were overturned now — what the overturn
        * itself would return; `null` when nothing stands, it isn't withdrawn, or something else
-       * (its Post's decision, an open flag) would still hold it.
+       * (its Post's decision, an open flag) would still hold it. Withdrawn more than 30 days ago,
+       * it is the moment this was read (a query's clock doesn't move on its own): read any date not
+       * in the future as "at once".
        */
       eraseAtIfReleased,
       /** A Report's: what a restore brings back with it — counts and floors; `null` for other kinds. */

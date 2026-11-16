@@ -810,6 +810,9 @@ Machinery with live runs and triggers, a Season view with statistics and a cost 
 and Instruments — every existing lever re-homed, none lost. *An operator opens one surface and
 knows what needs them, does it where they found it, and watches the machinery work.*
 
+#### Data runs
+- **2026-11-15 — the People reads in rounds (B01-4c), on dev before and after its deploy** (the median of three, server time, a fresh identity each run): Decisions at 50 rows 361 → 81 ms, the same rows in the same order; a staffer's week 63 → 57 ms, their season 70 → 52 ms; a queue lane 42 → 49 ms and History 103 → 116 ms, both within run-to-run noise (the lane is empty on dev; History is not that build's); the person page 71 ms (no figure from before)
+
 #### Deferred
 - 🟢 **Which season statistics the nightly rollup carries** (D220) — all of the plan's §10 tiers 1 and 2, picked 2026-10-12; tier 3 is PostHog's when it lands
 - ⚪ **A hosted ETL runner** (GitHub Actions or a Fly machine over the R2 archives) — D218 builds the run vocabulary for it; its own decision when the laptop stops being the runner
@@ -844,7 +847,6 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - B01-3g's after-merge steps on dev (D266): `convex dev --once`; `bodyGeo:seedAll` then `bodyGeo:computeAll` (one chain; until a body is recomputed its places read *not computed*), its cost measured; verify the straddlers carry their towns; then the founder's removals with their notes and the two pins (South Pond, Hatchet Pond); the pin's console control, ownership data, and the boundary-following shore caveat → the plan's *The region rule (B01-3g)*
 - The Body console's three PRs (the frame and Shape; Names, Places, Access and Water; Imagery, Hazards, Standing and Links), after the list — the founder's call on sizes, 2026-11-14
 - The People pages (B01-4, the page) read the People server's follow-up (B01-4b) only where it was already in their types: the server now supplies `endCursor` on the list, staff rows' last-seen, role-since and decisions this week, the oldest open flag or ticket per row, `{ actionId, undoNeedsReason }` from each write, `ledger.since`, `rightsSince`, the bounty season line, explicit `can` entries, a profile-opens flag, flag target labels and appeal text, who undid a row, and the capped flags beside them (`decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`, `rightsSinceCapped`, `staff.lastSeenCapped`, `staff.roleSinceCapped`) — the page drawing them is a web pass owed (its `lanesFor` already reads core's `peopleLanesFor`, and the status note's who-and-when line already tells a capped start from an unrecorded one); the record sheet awaits a design round; the People kit candidates (`SearchLane`, `LeverRow`) await a kit pass → the plan's *The People pages*
-- The People reads in rounds (B01-4c): the wall-clock check on dev, before and after its deploy — Decisions at 50 rows measured about 480 ms before; its round counts (3 on one target, 9 at the worst page, against History's 6 and 20) put it at or under History's 110–200 ms → the plan's *B01-4c*
 
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244

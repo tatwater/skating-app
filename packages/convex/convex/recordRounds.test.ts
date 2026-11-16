@@ -261,11 +261,11 @@ const COUNT_ROUNDS = 2 + HEAVY_STEPS + 2;
 /** The same with no Post or hazard deleted: the heavy kinds end on their first step. */
 const COUNT_ROUNDS_LIGHT = 2 + 1 + 2;
 
-/** Presence: the check, then Reversed's first row and the five Deleted ranges together, then holds. */
-const PRESENCE_ROUNDS = 3;
+/** Presence: the backfill check, Reversed's first row and the five Deleted ranges together, then holds. */
+const PRESENCE_ROUNDS = 2;
 
 describe('presence is a handful of small reads (B01-4d)', () => {
-  test('the person page’s presence check costs three rounds, whatever the record holds', async () => {
+  test('the person page’s presence check costs two rounds, whatever the record holds', async () => {
     const t = convexTest(schema, modules);
     const { rob } = await record(t, 50);
     const { out, stats } = await t.run(async (ctx) => {

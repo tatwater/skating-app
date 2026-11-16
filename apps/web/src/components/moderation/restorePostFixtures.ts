@@ -71,7 +71,7 @@ export const MIXED: PostRestoreChoices = {
       skateEndTime: JAN(12),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
-      authorDeletedAt: JAN(9),
+      authorDeletedAt: JAN(13),
     },
   ],
 };
@@ -90,7 +90,7 @@ export const NOTHING: PostRestoreChoices = {
       skateEndTime: JAN(12),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
-      authorDeletedAt: JAN(9),
+      authorDeletedAt: JAN(13),
     },
     {
       reportId: id('r_gone2'),
@@ -99,7 +99,7 @@ export const NOTHING: PostRestoreChoices = {
       skateEndTime: JAN(12, 15),
       down: { action: 'author_delete', by: null, at: JAN(13), reason: 'Deleted by the author' },
       standing: 'author_deleted',
-      authorDeletedAt: JAN(9),
+      authorDeletedAt: JAN(13),
     },
   ],
 };

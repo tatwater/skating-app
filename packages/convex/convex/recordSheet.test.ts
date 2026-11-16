@@ -860,26 +860,23 @@ describe('the pane’s words, its "If overturned" date, what comes back, and pre
     const { t, rob, kate, matt, report, comment, set } = await setup();
     const r = await report(rob.id, { notes: 'Thin at the inlet' });
     await set('report', r, 'hidden', 'unsafe');
-    const up = await t.run((ctx) =>
-      ctx.db.insert('comments', {
-        reportId: r,
-        authorId: kate.id,
-        body: 'agreed',
-        moderationStatus: 'visible' as const,
-        source: 'native' as const,
-        createdAt: Date.now(),
-      } as never),
-    );
-    await t.run((ctx) =>
-      ctx.db.insert('comments', {
-        reportId: r,
-        authorId: kate.id,
-        body: 'hidden on its own',
-        moderationStatus: 'hidden' as const,
-        source: 'native' as const,
-        createdAt: Date.now(),
-      } as never),
-    );
+    // One still up; one hidden on its own; one a departed author's emptied shell — only the first
+    // comes back as words.
+    for (const over of [
+      { body: 'agreed', moderationStatus: 'visible' },
+      { body: 'hidden on its own', moderationStatus: 'hidden' },
+      { body: '', moderationStatus: 'visible', redactedAt: Date.now() },
+    ]) {
+      await t.run((ctx) =>
+        ctx.db.insert('comments', {
+          reportId: r,
+          authorId: kate.id,
+          source: 'native' as const,
+          createdAt: Date.now(),
+          ...over,
+        } as never),
+      );
+    }
     for (const raterId of [kate.id, matt.id]) {
       await t.run((ctx) =>
         ctx.db.insert('reportRatings', {
@@ -899,7 +896,6 @@ describe('the pane’s words, its "If overturned" date, what comes back, and pre
       comments: { count: 1, capped: false },
       ratings: { count: 2, capped: false },
     });
-    expect(up).toBeDefined();
     // Nothing comes back with a comment.
     const c = await comment(await report(kate.id));
     const cpane = await matt.as.query(api.contentRecord.item, {
@@ -954,8 +950,28 @@ describe('the pane’s words, its "If overturned" date, what comes back, and pre
     }
   });
 
+  test('"If overturned" is null while its Post’s decision still holds a Report, as the overturn then returns', async () => {
+    const { rob, matt, post, set, tick } = await setup();
+    const { postId, reportIds } = await post(2);
+    const r = reportIds[0] as Id<'reports'>;
+    await set('report', r, 'hidden', 'own');
+    tick();
+    await set('post', postId, 'hidden', 'the whole post');
+    tick();
+    await rob.as.mutation(api.reports.remove, { reportId: r });
+    tick();
+    const pane = await matt.as.query(api.contentRecord.item, { targetType: 'report', targetId: r });
+    expect(pane?.decisions.some((d) => d.standing)).toBe(true);
+    expect(pane?.eraseAtIfReleased).toBeNull();
+    const out = await matt.as.mutation(api.moderation.overturnVerdict, {
+      targetType: 'report',
+      targetId: r,
+    });
+    expect(out.eraseAt).toBeNull();
+  });
+
   test('presence: cheap, and never false while the list shows a row', async () => {
-    const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+    const { rob, kate, matt, report, comment, set, tick } = await setup();
     const presence = () => matt.as.query(api.contentRecord.recordPresence, { userId: rob.id });
     expect(await presence()).toEqual({ deleted: false, reversed: false, pending: [] });
     // A deletion a decision holds is Standing's, not Deleted's.
@@ -971,7 +987,6 @@ describe('the pane’s words, its "If overturned" date, what comes back, and pre
     expect(await presence()).toMatchObject({ deleted: true, reversed: true });
     expect((await deletedOf(matt.as, rob.id)).rows).toHaveLength(1);
     expect((await reversedOf(matt.as, rob.id)).rows).toHaveLength(1);
-    void t;
   });
 
   test('the Post chooser says when a Report’s author deleted it', async () => {

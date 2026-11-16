@@ -2302,7 +2302,7 @@ read.
 | `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
 | `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
 | `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
-| `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `item` (B01-4d) |
+| `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `recordPresence`, `item` (B01-4d) |
 
 The ledger's "never no editor" check also reads whether the rows are ready (through the same
 reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
@@ -2685,9 +2685,12 @@ reads the old loops made for the same data:
   some rows. The past-budget answers — the roots, a season's endings, the labels, a queue's people —
   are tested to stop in page order the same way, and a first row since gone (an undo's, or a
   reversal's) to be judged on its own.
-- **Owed:** the wall-clock check on dev (Decisions at 50 rows was about 480 ms; History, on the same
-  shape, 110–200 ms) waits for dev access. Still serial, and small: the status note's walk (at most
-  ten rows) and the tenure walk (`readTenure`, its role rows).
+- **Measured on dev** (the median of three, server time, a fresh identity each run, before and after
+  the deploy at `4b7ab7aa`): Decisions at 50 rows 361 ms → 81 ms, with the same rows in the same order;
+  a staffer's week 63 → 57 ms; their season 70 → 52 ms; a queue lane 42 → 49 ms and History 103 →
+  116 ms, both within run-to-run noise (the lane is empty on dev, and History is not this build's);
+  the person page 71 ms (no figure from before). Still serial, and small: the status note's walk (at
+  most ten rows) and the tenure walk (`readTenure`, its role rows).
 
 **B01-4d (2026-11-15): the People record sheet's server** (boards 8.7–8.9; stacked on #125). Server
 only; the sheet itself is the web's next pass. Every shape change is additive except where noted.
@@ -2759,23 +2762,25 @@ decisions come newest first by when they were made (`contentVerdicts.by_target_a
 range over the times they show (`at`, `endedAt`, the withdrawal time).
 
 **B01-4d: what the web sheet asked for** (all additive). `contentRecord.recordPresence({userId})`
-→ `{deleted, reversed, pending}`, cheap enough to stay live on every person page (three rounds: the
-first row of Reversed's own range, a few rows of each Deleted range through the list's own filter,
-their holds; `true` when a range has more rows than it looked at and none would show — the row over an
-empty tab is honest, a missing row is not; a property holds it never false while a list shows a row);
-the counts are read once the sheet opens. The pane adds `content` (the rows' `contentOf`),
-`eraseAtIfReleased` (the clock an overturn would leave — the write's own `clockOf`, asked as if the
-item's standing verdicts were ended, so a Post's decision or an open flag still holding it gives
-`null`, as the overturn then returns; a test holds the two equal) and `comesBack` for a Report (its
-comments still up, to 50, and its ratings, to 200: counts and floors, no documents). The Post chooser's
-members add `authorDeletedAt`.
+→ `{deleted, reversed, pending}`, cheap enough to stay live on every person page (two rounds: the
+backfill check, the first row of Reversed's own range and a few rows of each Deleted range through the
+list's own filter, together; then their holds — `true` when a range has more rows than it looked at
+and none would show — the row over an empty tab is honest, a missing row is not; a property holds it
+never false while a list shows a row); the counts are read once the sheet opens. The pane adds
+`content` (the rows' `contentOf`), `eraseAtIfReleased` (the clock an overturn would leave — the
+write's own `clockOf`, asked as if the item's standing verdicts were ended, so a Post's decision or an
+open flag still holding it gives `null`, as the overturn then returns; tests hold the two equal; for
+an item withdrawn more than 30 days ago it is the moment the pane was read, so the sheet should read
+any date not in the future as "at once") and `comesBack` for a Report (its comments still up — shown,
+not withdrawn, not a departed author's emptied shell — to 50, and its ratings, to 200: counts and
+floors, no documents). The Post chooser's members add `authorDeletedAt`.
 
 **Two changes the web saw, both intended.** An access alert never offers Restore — no write restores
 one (`setModerationStatus` takes no alert); an alert's one verdict is on an alert its author retracted,
 which offers Overturn (`lib/recordRules.test.ts`, *a standing alert its author didn't retract offers
 nothing*). An erased comment's shell offers Overturn for a decision standing on it — its words are
 gone, but the decision must still be able to come off the record (D267; `recordSheet.test.ts`, *an
-overturn … on an erased shell*).
+overturn takes a reason only if given …*, its erased placeholder).
 
 **B01-4d: every read, weighed.** Each page reserves its rows' worst cases in waves (`ReadBudget.waves`)
 over the request's budget (11 MiB after the caller's profile) and hands back what didn't come; a row
@@ -2789,7 +2794,7 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check; each distinct Report once a page (none for a row the list leaves out) | 10 (a Report) | 13 |
 | `recordCounts` | Reversed 501, Reports by real weight (512 KiB, one `paginate`), comments 30 and alerts 30, together; then Posts and hazards by real weight in steps (each its share of what is left, at most 7); each row's hold check | — | 11 |
 | `item` | the item, its 51 newest decisions and the standing one (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row); while a decision stands, its clock (≤ 6 hold checks, `HOLD_COST`); a Report's comments (51) and ratings (201) together | — | a fixed few |
-| `recordPresence` | Reversed's first row; each Deleted range's first 1–8 rows; each looked-at row's hold | — | 3 |
+| `recordPresence` | Reversed's first row and each Deleted range's first 1–8 rows, beside the backfill check; each looked-at row's hold | — | 2 |
 
 **The undo engine's reads on Reversed rows are counted, not weighed.** Each Reversed row's undo state
 is main's engine (`lib/undo.undoStates`): its first step reads the row's undoing row (up to 16 tagged),
@@ -4143,7 +4148,8 @@ draws 34; the role menu's item takes two lines.
   line tells a start past the read (`statusNote.atCapped`) from one not recorded.
 - The record sheet (boards 8.7–8.9) is not built on the web. Its server is (*B01-4d*, above): the
   *On the record* row should appear whenever any of the three lists has items, is capped, or is still
-  being prepared — `people.person.hidden` for Standing, `contentRecord.recordCounts` for the other two.
+  being prepared — `people.person.hidden` for Standing, `contentRecord.recordPresence` for the other
+  two (`contentRecord.recordCounts` once the sheet is open).
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.
