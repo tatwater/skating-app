@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { readState } from '@/components/admin/reads/consoleReads';
+import { isFailed, loaded, readState } from '@/components/admin/reads/consoleReads';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
+import { accessFrom, rulingFrom } from './access/accessModel';
+import { wintersOf } from './hazards/HazardsTab';
+import { BODY_NOW as HAZARDS_NOW, THIS_WINTER_DAILY } from './hazards/hazardsFixtures';
 import { namesFromBody } from './names/namesModel';
 import { placesFrom } from './places/placesModel';
+import { BAY_NOT_RECORDED, shapeBays } from './shape/shapeModel';
+import { retentionOf } from './standing/StandingTab';
 import { waterFrom } from './water/waterModel';
 
 /**
@@ -31,6 +36,14 @@ const PLACES_READS = {
   provenance: [],
   proposers: 'hidden' as const,
 };
+
+const RULED = { verdict: 'open' as const, decidedAt: 1, decidedByUserId: 'p1' };
+const ACCESS_INPUT = {
+  putIns: [{ id: 'pi1', coord: { lat: 43.6489, lng: -72.1793 }, name: 'NW launch', source: 'osm' }],
+  parking: [],
+  alerts: [],
+};
+const BAY = { _id: 'sa1', name: 'Shaker Bay', surfaceAreaSqM: 40_000, removed: false };
 
 type Answer = { failed: boolean; notRecorded: boolean; loading: boolean };
 type Row = {
@@ -115,6 +128,89 @@ const ROWS: Row[] = [
         failed: d.failures.includes('when each landmark was added'),
         notRecorded: state === 'none' && !d.failures.includes('when each landmark was added'),
         loading: state === 'loading' && d.failures.length === 0,
+      };
+    },
+  },
+  {
+    read: 'Access: who ruled and what stood before (`history`, `set_public_access`)',
+    answer: (state) => {
+      const read =
+        state === 'failed'
+          ? FAILED_READ
+          : state === 'loading'
+            ? undefined
+            : { entries: [], capped: false };
+      const ruling = rulingFrom(RULED, 'wb1', read as never);
+      const d = accessFrom(ACCESS_INPUT, ruling, undefined, []);
+      return {
+        failed: d.failures.includes('who ruled') && isFailed(ruling.history),
+        // Landed without the row that made the ruling: *Who ruled …: Not recorded yet*.
+        notRecorded:
+          typeof ruling.history === 'object' &&
+          !isFailed(ruling.history) &&
+          ruling.before === undefined,
+        loading: ruling.history === undefined,
+      };
+    },
+  },
+  {
+    read: 'Access: where each launch is (`landmarks.listForBody`)',
+    answer: (state) => {
+      const read = state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : [];
+      const d = accessFrom(ACCESS_INPUT, rulingFrom(RULED, 'wb1', 'hidden'), undefined, read);
+      const where = d.putIns[0]?.where;
+      return {
+        failed: d.failures.includes('where each launch is') && isFailed(where),
+        // Settled with no landmark: *No landmark near it*, never on its way.
+        notRecorded: where === null,
+        loading: where === undefined,
+      };
+    },
+  },
+  {
+    read: 'Shape: how each bay was made (`bayProvenance`)',
+    answer: (state) => {
+      const read = state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : [];
+      const [bay] = shapeBays([BAY], loaded(read as never));
+      return {
+        // The route hands the failure to the view's note (`baysMadeFailed`); the row says nothing.
+        failed: isFailed(read) && bay?.sub === null,
+        notRecorded: bay?.sub === BAY_NOT_RECORDED,
+        loading: read === undefined && bay?.sub === null,
+      };
+    },
+  },
+  {
+    read: 'Hazards: the day strips (`dailyForBody`)',
+    answer: (state) => {
+      const read =
+        state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : THIS_WINTER_DAILY;
+      const w = wintersOf(read as never, null, HAZARDS_NOW);
+      return {
+        failed: w === 'error',
+        // Settled with nothing marked: a strip of empty days, drawn — never a skeleton.
+        notRecorded:
+          typeof w === 'object' &&
+          w.lines.length === 1 &&
+          w.lines[0]?.days.every((d) => d === null || d.reported === 0) === true,
+        loading: w === undefined,
+      };
+    },
+  },
+  {
+    read: 'Standing: what keeps the body (`retentionForBody`)',
+    answer: (state) => {
+      const read = state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : null;
+      const r = retentionOf(read as never);
+      return {
+        failed: r === 'error',
+        // No such body on the server: every fact is not recorded, never zero.
+        notRecorded:
+          typeof r === 'object' &&
+          r.lastActivity === null &&
+          r.favorites === null &&
+          r.savedPutIns === null,
+        loading: r === undefined,
       };
     },
   },
