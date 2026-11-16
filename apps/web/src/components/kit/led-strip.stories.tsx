@@ -72,7 +72,8 @@ export const Unknown: Story = {
   play: async ({ canvasElement }) => {
     const strip = must(canvasElement.querySelector<HTMLElement>('[role="meter"]'));
     await expect(strip).toHaveAttribute('aria-valuenow', '8');
-    await expect(strip).toHaveAttribute('aria-valuetext', '8 of 10');
+    // The dashed part is said apart from the dark one, never folded into it.
+    await expect(strip).toHaveAttribute('aria-valuetext', '8 of 10, 1 not recorded yet');
     const unknown = must(strip.querySelector<HTMLElement>('[data-state="unknown"]'));
     await expect(getComputedStyle(unknown).borderStyle).toBe('dashed');
   },
