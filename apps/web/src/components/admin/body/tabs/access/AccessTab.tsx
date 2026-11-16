@@ -101,8 +101,9 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
         ? 'Ruled no public access'
         : 'Cleared the ruling';
   const loaded = data !== undefined && !isFailed(data) ? data : null;
-  // **The latest press wins** (`useLatestPick`): the ruling pressed shows at once, each press is
-  // sent in press order, and the record is drawn again once every press has been answered. Ruling
+  // **The latest press wins** (`useLatestPick`): the ruling pressed shows at once, presses are sent
+  // one at a time in press order (one waiting behind the write out is replaced by a newer one), and
+  // the record is drawn again once every press has been answered. Ruling
   // no public access is a press once its reason is confirmed; its dialog waits on its own answer.
   const send = (verdict: PublicAccessVerdict | null, reason: string | undefined) => {
     const write = () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });

@@ -1,9 +1,15 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { createPickStore, useLatestPick } from './latestPick';
+const toasts = vi.hoisted(() => [] as unknown[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: unknown) => toasts.push(t),
+}));
+
+import { createPickStore, type PickStore, PickStoreContext, useLatestPick } from './latestPick';
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
@@ -74,6 +80,56 @@ describe('the pick store — the latest press wins', () => {
     expect(h.unwatched).toHaveLength(1);
     stop();
     expect(h.store.size()).toBe(0);
+  });
+
+  it('a refusal with no control mounted is said in the console’s toast by default', async () => {
+    toasts.length = 0;
+    const store = createPickStore();
+    await store.press('k', 'b', 'a', undefined, async () => {
+      throw new Error('Not allowed');
+    });
+    expect(toasts).toEqual([{ title: 'Not saved', description: 'Not allowed', tone: 'bad' }]);
+  });
+
+  it('back to the verdict on its way, with its own reason: folded into it, nothing more sent', async () => {
+    const sent: Array<[string, string | undefined]> = [];
+    const answers: (() => void)[] = [];
+    const store = createPickStore();
+    const send = (v: string, note: string | undefined) =>
+      new Promise<void>((r) => {
+        sent.push([v, note]);
+        answers.push(r);
+      });
+    const first = store.press('k', 'none', 'open', 'Posted', send);
+    store.press('k', 'open', 'open', undefined, send);
+    expect(store.press('k', 'none', 'open', 'Posted', send)).toBe(first);
+    answers.shift()?.();
+    await settle();
+    expect(sent).toEqual([['none', 'Posted']]);
+    expect(store.size()).toBe(0);
+  });
+
+  it('back to the verdict on its way with a new reason: a write of its own, sent after it', async () => {
+    const sent: Array<[string, string | undefined]> = [];
+    const answers: (() => void)[] = [];
+    const store = createPickStore();
+    const send = (v: string, note: string | undefined) =>
+      new Promise<void>((r) => {
+        sent.push([v, note]);
+        answers.push(r);
+      });
+    store.press('k', 'none', 'open', 'Posted', send);
+    store.press('k', 'open', 'open', undefined, send);
+    store.press('k', 'none', 'open', 'Gated', send);
+    answers.shift()?.();
+    await settle();
+    answers.shift()?.();
+    await settle();
+    expect(sent).toEqual([
+      ['none', 'Posted'],
+      ['none', 'Gated'],
+    ]);
+    expect(store.size()).toBe(0);
   });
 
   // Each step: press a value on a body's control, leave or come back to its page, or answer the
@@ -152,6 +208,10 @@ describe('the pick store — the latest press wins', () => {
       for (const b of ['a', 'b'] as const) {
         expect(h.held.filter((w) => w.key === `k:${b}`).length).toBeLessThanOrEqual(1);
         expect(h.store.inFlight(`k:${b}`)).toBe(h.held.some((w) => w.key === `k:${b}`) ? 1 : 0);
+        // While anything is out — an answer in between included — the latest press shows.
+        if (h.store.inFlight(`k:${b}`) === 1) {
+          expect(h.store.shown(`k:${b}`, server[b])).toBe(presses[b].at(-1));
+        }
       }
     }
     // Everything still out lands.
@@ -247,5 +307,33 @@ describe('useLatestPick', () => {
       await settle();
     });
     expect(sent).toEqual(['never', 'on']);
+  });
+
+  /**
+   * A queue that moves between a control's first render and its subscription (a write answering, or
+   * another control's press, as a tab comes back) is drawn: the control reads the store again once
+   * subscribed, never only on the next change it hears.
+   */
+  it('a queue that moves before the control subscribes is still drawn', () => {
+    const send = (_: string) => new Promise<void>(() => {});
+    const store = createPickStore();
+    store.press('probe:a', 'never', 'auto', undefined, send);
+    let moved = false;
+    const racing: PickStore = {
+      ...store,
+      watch: (key, watcher) => {
+        if (!moved) {
+          moved = true;
+          store.press(key, 'on', 'auto', undefined, send);
+        }
+        return store.watch(key, watcher);
+      },
+    };
+    render(
+      <PickStoreContext.Provider value={racing}>
+        <Probe server="auto" send={send} />
+      </PickStoreContext.Provider>,
+    );
+    expect(screen.getByRole('button', { name: 'on' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

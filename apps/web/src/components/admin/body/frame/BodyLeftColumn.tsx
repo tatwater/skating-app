@@ -288,7 +288,8 @@ export function boostToSend(v: number, record: number): number | null {
  * The map boost, held to the record: it moves under the operator's hand, and follows the record
  * whenever the record moves (an Undo from the toast, another moderator) or a change didn't land.
  * Letting go where it already stands sends nothing — no write, no receipt. **The latest let-go
- * wins** (`useLatestPick`): it shows at once, each let-go is sent in order, and an earlier one
+ * wins** (`useLatestPick`): it shows at once, let-gos are sent one at a time in order (one waiting
+ * behind the write out is replaced by a newer one), and an earlier one
  * landing never moves the slider from a later one still on its way; once all are answered it shows
  * the record — the last let-go if it landed.
  */

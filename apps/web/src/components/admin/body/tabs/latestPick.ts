@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useState, useSyncExternalStore } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
@@ -34,7 +34,8 @@ type Watcher = { change: () => void; error: (why: string, value: unknown) => voi
 type Entry = {
   /** What the control shows: the newest press not yet settled. */
   requested: { value: unknown };
-  inFlight: { value: unknown; answer: Promise<unknown> } | null;
+  /** The write on its way, with what travels with it (a confirmed reason) and its answer. */
+  inFlight: { value: unknown; note: unknown; answer: Promise<unknown> } | null;
   /** The one press waiting behind the write in flight, with its note and its own answer's hook. */
   waiting: { value: unknown; note: unknown; settle: (answer: Promise<unknown>) => void } | null;
   /** The latest mounted page's sender; once its page has gone, the last one stands. */
@@ -44,6 +45,11 @@ type Entry = {
 export type PickStore = {
   /** What a control keyed `key` shows, given the server's value. */
   shown: <T>(key: string, server: T) => T;
+  /**
+   * The newest press not yet settled for `key`, or `undefined` with nothing out: the same object
+   * until the next press or the queue drains (a snapshot for `useSyncExternalStore`).
+   */
+  requested: (key: string) => { value: unknown } | undefined;
   /**
    * A press: sends (or waits behind the write in flight) when it changes what's shown, resolving
    * with its own write's answer (`undefined` when refused, or replaced before it was sent); `null`
@@ -100,7 +106,7 @@ export function createPickStore({
         notify(key);
       }
     })();
-    entry.inFlight = { value, answer };
+    entry.inFlight = { value, note, answer };
     return answer;
   };
 
@@ -109,6 +115,7 @@ export function createPickStore({
       const entry = entries.get(key);
       return entry === undefined ? server : (entry.requested.value as T);
     },
+    requested: (key) => entries.get(key)?.requested,
     press: <T, R, N>(
       key: string,
       value: T,
@@ -116,20 +123,21 @@ export function createPickStore({
       note: N | undefined,
       send: Send<T, R, N>,
     ): Promise<R | undefined> | null => {
-      let entry = entries.get(key);
-      const shown = entry === undefined ? server : entry.requested.value;
+      const found = entries.get(key);
+      const shown = found === undefined ? server : found.requested.value;
       if (Object.is(value, shown)) return null;
-      if (entry === undefined) {
-        entry = {
-          requested: { value },
-          inFlight: null,
-          waiting: null,
-          send: send as Send<unknown, unknown, unknown>,
-        };
-        entries.set(key, entry);
+      const sender = send as Send<unknown, unknown, unknown>;
+      const entry: Entry = found ?? {
+        requested: { value },
+        inFlight: null,
+        waiting: null,
+        send: sender,
+      };
+      if (found === undefined) entries.set(key, entry);
+      else {
+        entry.send = sender;
+        entry.requested = { value };
       }
-      entry.send = send as Send<unknown, unknown, unknown>;
-      entry.requested = { value };
       let answer: Promise<unknown>;
       if (entry.inFlight === null) {
         answer = dispatch(key, entry, value, note);
@@ -137,8 +145,9 @@ export function createPickStore({
         // A press replaced before it was sent was never a write: its own answer is "not sent".
         entry.waiting?.settle(Promise.resolve(undefined));
         entry.waiting = null;
-        if (Object.is(value, entry.inFlight.value)) {
-          // Back to what is already on its way: nothing more to send.
+        if (Object.is(value, entry.inFlight.value) && Object.is(note, entry.inFlight.note)) {
+          // Back to what is already on its way, with what travels with it: nothing more to send.
+          // (A new reason for the same verdict is a new write: it waits, and is sent after.)
           answer = entry.inFlight.answer;
         } else {
           let settle: (a: Promise<unknown>) => void = () => {};
@@ -202,20 +211,24 @@ export function useLatestPick<T, R = unknown, N = undefined>(
   error: { why: string; value: T } | null;
 } {
   const store = useContext(PickStoreContext) ?? loose;
-  const [, redraw] = useState(0);
   const [error, setError] = useState<{ why: string; value: T } | null>(null);
   // The latest page's sender, for a queue this page joined (its own presses hand it over too).
   store.adopt(key, send as Send<unknown, unknown, unknown>);
-  useEffect(
-    () =>
+  const subscribe = useCallback(
+    (change: () => void) =>
       store.watch(key, {
-        change: () => redraw((n) => n + 1),
+        change,
         error: (why, value) => setError({ why, value: value as T }),
       }),
     [store, key],
   );
+  // Read through `useSyncExternalStore`, never a redraw subscribed in an effect: a queue that moves
+  // between this control's first render and its subscription (a write answering as a tab comes
+  // back) is read again once subscribed, so a drained queue never leaves its press drawn.
+  const snapshot = () => store.requested(key);
+  const requested = useSyncExternalStore(subscribe, snapshot, snapshot);
   return {
-    shown: store.shown(key, server),
+    shown: requested === undefined ? server : (requested.value as T),
     press: (value, note) => {
       setError(null);
       return store.press(key, value, server, note, send);

@@ -90,8 +90,11 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
     | ((id: string, verdict: 'show' | 'hide', reason?: string) => Promise<void>)
     | typeof UNAVAILABLE;
   satellite: {
-    /** Whose link: its presses queue by body, outside the tab (`useLatestPick`). */
-    bodyId?: string;
+    /**
+     * Whose link: its presses queue by body, outside the tab (`useLatestPick`). Required: a queue
+     * shared by every body would send one body's waiting press through another body's writer.
+     */
+    bodyId: string;
     mode: SatelliteImageryMode;
     name: string | undefined;
     areaSqM: number | undefined;
@@ -178,10 +181,11 @@ export function ImageryTabView({
     setError(null);
     setAsking(true);
   };
-  // The satellite link: the latest press always wins — shown at once, each press sent in order,
-  // the server's answer drawn again once every write has answered (`useLatestPick`).
+  // The satellite link: the latest press always wins — shown at once, sent one write at a time in
+  // press order (a press waiting behind the write out is replaced by a newer one), the server's
+  // answer drawn again once every write has answered (`useLatestPick`).
   const sat = useLatestPick<SatelliteImageryMode>(
-    `imagery-satellite:${satellite.bodyId ?? ''}`,
+    `imagery-satellite:${satellite.bodyId}`,
     satellite.mode,
     async (mode) => onSatelliteChange?.(mode),
   );

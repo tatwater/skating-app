@@ -88,9 +88,10 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
     act(() => setName({ waterBodyId, name }), { title, target });
   const loaded = data !== undefined && !isFailed(data) ? data : null;
   // **The latest press wins** (`useLatestPick`): the name and the class each show the latest one
-  // chosen at once, each choice is sent in press order through the tab's one write path, and the
-  // server's answer is drawn again once every choice has been answered — a second choice is never
-  // weighed against a record that hasn't moved yet and dropped.
+  // chosen at once, choices are sent one at a time in press order through the tab's one write path
+  // (a choice waiting behind the write out is replaced by a newer one), and the server's answer is
+  // drawn again once every choice has been answered — a second choice is never weighed against a
+  // record that hasn't moved yet and dropped.
   const namePick = useLatestPick<string | null>(
     `names-name:${bodyId}`,
     loaded === null ? null : nameChoice(loaded),

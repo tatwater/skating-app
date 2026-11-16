@@ -64,6 +64,7 @@ export const INFERRED_STOP: TimelineStop = {
 export const SEASON = 'Winter 2026–27';
 
 export const MASCOMA_SATELLITE = {
+  bodyId: 'mascoma',
   mode: 'auto' as const,
   name: 'Mascoma Lake',
   areaSqM: 4_620_000,

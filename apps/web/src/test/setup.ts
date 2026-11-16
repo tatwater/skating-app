@@ -1,7 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
-import { resetLatestPicks } from '@/components/admin/body/tabs/latestPick';
 
 // jsdom has no `matchMedia`; the theme provider (and anything that reads a media query) calls it on mount.
 // Stub a stable "no dark preference" matcher so themed components — the admin charts especially —
@@ -36,8 +35,13 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 afterEach(cleanup);
 
 // The pick queues outside any provider live for the page (never in a tab): start each test afresh,
-// so a write a test left waiting never joins the next test's control.
-afterEach(() => resetLatestPicks());
+// so a write a test left waiting never joins the next test's control. Imported here, after the test
+// file has loaded, never at the top: a module a setup file imports is cached before the test file's
+// `vi.mock`s apply, so the store would keep the real toast under a test that mocks it.
+afterEach(async () => {
+  const { resetLatestPicks } = await import('@/components/admin/body/tabs/latestPick');
+  resetLatestPicks();
+});
 
 // `findBy*` and `waitFor` give up after 1 s by default. On CI the runner is load-starved (turbo runs
 // every package at once), and a debounce plus a render has outrun that budget while being fast in

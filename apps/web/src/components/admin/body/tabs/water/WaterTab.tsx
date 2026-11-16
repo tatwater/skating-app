@@ -81,8 +81,9 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const state = data !== undefined && !isFailed(data) ? data.state : null;
   const depth = data !== undefined && !isFailed(data) ? data.depth : null;
   // **The latest press wins** (`useLatestPick`): each measure's source shows the latest one chosen
-  // at once, each choice is sent in press order, and the server's answer is drawn again once every
-  // choice has been answered — a second choice is never compared with a stale record and dropped.
+  // at once, choices are sent one at a time in press order (one waiting behind the write out is
+  // replaced by a newer one), and the server's answer is drawn again once every choice has been
+  // answered — a second choice is never compared with a stale record and dropped.
   const choose1 = (measure: 'mean' | 'max') => async (source: DepthSource | null) => {
     if (source === null) return;
     await act(() => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }), {
