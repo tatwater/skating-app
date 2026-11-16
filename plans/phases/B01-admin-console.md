@@ -4346,8 +4346,9 @@ town entry per boundary, above) as its own commits.
 
 - **The latest press wins, on every control that writes on press** (`useLatestPick`, as Imagery's
   satellite link): Names' *Display this* and class, Water's depth source, Access's ruling and the
-  map boost. Each shows the latest press at once, sends every press once in press order (one at a
-  time), and draws the server again once all are answered — a second press is never weighed
+  map boost. Each shows the latest press at once, sends one write at a time in press order (a
+  newer press replaces one still waiting, so the server's last write is the last press), and draws
+  the server again once all are answered — a second press is never weighed
   against a record that hasn't moved yet and dropped (*The Basin*, then *Lake Auburn* before the
   first answer: the second button wasn't offered). The views draw the picks through
   `namesWithPicks` and `rulingWithPick` (who ruled and what stood before wait for the answer).
@@ -4358,10 +4359,32 @@ town entry per boundary, above) as its own commits.
   shown ruling (its trigger hidden, never unmounted) until that answer and says a refusal over the
   kept reason. The boost's let-gos now go one at a time (they went in parallel); an earlier one
   landing no longer moves the slider from a later one on its way.
-- **A late answer never acts on moved UI** — a table over the four wired tabs
+- **A pick's queue outlives its tab** (Greptile's P1 on #136). Reservoir, then Wetland while it
+  waited; another tab and back; then another class: the returning tab started a fresh queue and
+  sent at once, and the old one sent Wetland after it, so the server stored the older choice last.
+  The class: every press-to-save control kept its queue and waiting press in the tab while the
+  writes outlived it — the shape #132 fixed for whole lists. The queues now live in one store
+  (`createPickStore`), keyed by control and body (`names-class:<body>`), which
+  `ListWritersProvider` mounts in the admin shell beside the list queues: one owner for every queue
+  a page's writes outlive. A control that mounts joins the queue there (it shows the press on its
+  way; its press waits behind the write in flight), the latest mounted page's sender stands, and an
+  entry leaves once drained. **A refusal while away** is said in a toast — the console's own: the
+  tabs' write path says one in the server's words (naming the body once its console has gone), and
+  the store says one for a control that throws its refusal to be said in place when none is
+  mounted — and the control that comes back shows the record. Two browser windows on one body each
+  have their own store (the server's last write wins between them, as between two moderators).
+  People's person levers are one-shot dialogs with no waiting press: not this shape. **Left:** the
+  shell's splash while the viewer's role reloads unmounts the provider, so a write out then has no
+  queue on return (the list queues share it); the store's own refusal toast names neither the body
+  nor what (a sender carrying its own words is a design change).
+- **A late answer never acts on moved UI** — a table over the wired tabs and the boost
   (`tabs/latestPress.test.tsx`): A pressed and held, then B before A's answer (A landing shows B
-  still, B stored), or a move outside the tab (A lands taking no focus); Access's dialog canceled
-  is no press. Mutation-checked.
+  still, B stored), a move outside the tab (A lands taking no focus), or the control left and
+  returned while A waits (landed: it joins, and B pressed then is stored after; refused: said, and
+  the record shows); Access's dialog canceled is no press. The store has a model test over two
+  bodies — presses, leaving, returning, answers landed and refused (three pinned seeds, one
+  random) — and a remount that must join its queue, the guard that no queue lives in a component
+  again. Mutation-checked.
 - **The Bodies library reads the narrow rule and `lib/loadAhead`** (above). Back to the list is a
   button and ⇧⏎ (it replaces the place, as opening a row does).
 - **The day strip's neighbors.** `LedStrip`'s meter said "1 of 4" for on, unknown, off, unknown —
