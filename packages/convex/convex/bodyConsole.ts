@@ -704,6 +704,10 @@ export const removedFacts = query({
                   ? body.removalReason
                   : null,
               note: noteOf(left),
+              // `reason` is a person's own words, whole — a restore's undo, which carries its
+              // person's reason and no note — never the composed removal sentence.
+              reasonIsOwn:
+                (left.metadata as { reasonIsOwn?: unknown } | undefined)?.reasonIsOwn === true,
               by: await personOf(ctx, left.actorId),
             },
       towns: townsWithStateOf(placesOf(geo)),

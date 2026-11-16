@@ -421,6 +421,23 @@ describe('a body that left', () => {
     ).toEqual({ verb: 'Rejected', when: '2 Oct 2026', who: null, reason: 'Drawn over the beach' });
   });
 
+  it('a removal quotes its row’s reason only when the server says it is a person’s own words', () => {
+    const left = {
+      action: 'remove' as const,
+      at: on(10, 2),
+      reason: 'The owner asked again',
+      removalReason: 'landowner_request' as const,
+      note: null,
+      by: null,
+    };
+    // A restore's undo: its person's reason, whole, and no note.
+    expect(removalFromLeft({ ...left, reasonIsOwn: true }).reason).toBe('The owner asked again');
+    // The composed sentence ("Removed from map (…)"), maybe shortened: never quoted.
+    expect(removalFromLeft({ ...left, reasonIsOwn: false }).reason).toBeNull();
+    // A note, when typed, is the words either way.
+    expect(removalFromLeft({ ...left, note: 'Posted', reasonIsOwn: true }).reason).toBe('Posted');
+  });
+
   it('a removal says the moderator’s own words whole — never the composed audit sentence that may be shortened', () => {
     // What the server can hold: the note within the cap, the sentence quoting it cut to fit it.
     expect(REMOVAL_NOTE_NEAR_CAP.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);

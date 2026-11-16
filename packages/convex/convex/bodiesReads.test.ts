@@ -11,6 +11,7 @@ import { ASKERS_CAP, OTHER_STANDING_ROWS, ROWS_BY_IDS_MAX } from './bodies';
 import { REMOVED_REPORT_CAP } from './bodyConsole';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import schema from './schema';
+import { removeBodyImpl } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -235,6 +236,39 @@ describe('removedFacts', () => {
     expect(
       (await mod.as.query(api.bodyConsole.removedFacts, { waterBodyId: served }))?.left,
     ).toBeNull();
+  });
+
+  test('says when a removal’s reason is a person’s own words (a restore’s undo), never the composed sentence', async () => {
+    const t = harness();
+    const mod = await person(t, 'moderator');
+    const id = await body(t, 'Taken Down');
+    const removeOf = (auditReason?: string) =>
+      t.run(async (ctx) => {
+        const actor = (await ctx.db.get(mod.id)) as Doc<'profiles'>;
+        await removeBodyImpl(ctx, actor, {
+          waterBodyId: id,
+          reason: 'landowner_request',
+          ...(auditReason !== undefined ? { auditReason } : {}),
+        });
+      });
+    const left = async () =>
+      (await mod.as.query(api.bodyConsole.removedFacts, { waterBodyId: id }))?.left;
+    await removeOf();
+    expect(await left()).toMatchObject({ reasonIsOwn: false, note: null });
+    // Restored (as its row would be), then removed again by the restore's undo, with its reason.
+    await t.run((ctx) =>
+      ctx.db.patch(id, {
+        removedAt: undefined,
+        removedByUserId: undefined,
+        removalReason: undefined,
+      }),
+    );
+    await removeOf('The owner asked again');
+    expect(await left()).toMatchObject({
+      reason: 'The owner asked again',
+      reasonIsOwn: true,
+      note: null,
+    });
   });
 
   test('a rejected body removed later reads as rejected, with its rejection’s row', async () => {
