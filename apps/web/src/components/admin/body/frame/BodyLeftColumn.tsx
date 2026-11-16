@@ -23,6 +23,7 @@ import {
   NOT_COMPUTED_WORDS,
 } from './bodyModel';
 import { type BodyHold, useBodyHold } from './currentBody';
+import { keyedTowns } from './townKeys';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -483,8 +484,8 @@ function Identity({
                 <Faint>{IN_NO_TOWN_WORDS}</Faint>
               ) : (
                 <Stack>
-                  {towns.map((t) => (
-                    <span key={t}>{t}</span>
+                  {keyedTowns(towns).map(({ name, key }) => (
+                    <span key={key}>{name}</span>
                   ))}
                 </Stack>
               )}

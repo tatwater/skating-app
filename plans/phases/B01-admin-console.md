@@ -4000,6 +4000,27 @@ skater screen lists towns, and body search is by name only, so no skater wording
 body's states change at its next campaign. The phone picker's empty state says "Try another spelling,
 or the lake's town" though search does not match towns (owed, below).
 
+**One entry per boundary, never per name (B01-3l).** After #130's recompute the rule reached 40
+subdivisions for Lake Champlain and the facts listed 39: the town and the city of Plattsburgh share
+TIGER's name "Plattsburgh, NY", and the entries B01-3d keyed on name and state folded them (Lake
+Memphremagog's Newport town and city likewise, 3 listed from 4). The rule was right; the key was wrong.
+Now a town entry is keyed by its boundary (`placesFrom`, the pins' merge), and two subdivisions of one
+state with one name are told apart by their kind — TIGER's legal class, the suffix of its full name
+(`NAMELSAD`, "Plattsburgh city") past its name, read by `townKindOf`, never guessed. `adminAreas` keeps
+the full name (`fullName`, optional, written by the loader on upsert; a re-load that only gains it marks
+nothing), an index (`by_level_state_name`) says whether a state has two towns of a name, and an entry
+carries its `kind` only then. One function names a town for every reader (`townName` / `townLabel`):
+"Plattsburgh (city), NY" and "Plattsburgh (town), NY"; every other town reads as before. The lists the
+console reads (the frame, Places, the preview, town lines, a removed body's towns, the pins) take their
+names from the entries, one per boundary; the facts' name-keyed `towns` stays for the pages written
+before. Before the re-load brings the full names, the two Plattsburghs are two entries reading the
+same — the count right, the label not yet. There is no town filter: the Bodies list filters by state;
+were one added, picking one Plattsburgh would match only its own bodies. The web keys its town lists by
+place, not name. **Left keyed by name:** two same-kind subdivisions of one state with one name (TIGER
+has same-named towns in different counties) would still read the same — the county, which a pinned
+town carries and a computed entry does not, would tell them apart; whether any pair touches one body
+is not counted yet (owed).
+
 **A removal can say why.** `waterBodies.remove` takes an optional note: trimmed, refused past
 the audit-reason cap (D261: 2,000, `AUDIT_REASON_MAX`, its own sentence), written into the audit
 reason beside the fixed one (composed, so a note at the cap shortens the line rather than failing it)

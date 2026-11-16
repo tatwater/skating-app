@@ -20,6 +20,7 @@ import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
 import { CLASS_CLAIMS_NOT_RECORDED, townLinesShortWords } from '../../consoleWords';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
+import { keyedTowns } from '../../frame/townKeys';
 import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import {
@@ -460,8 +461,8 @@ function LocationSection({ data }: { data: NamesData }) {
           {fromBoundaries((a) =>
             a.towns.length > 0 ? (
               <span className="flex flex-col gap-(--space-1_5)">
-                {a.towns.map((t) => (
-                  <span key={t}>{t}</span>
+                {keyedTowns(a.towns).map(({ name, key }) => (
+                  <span key={key}>{name}</span>
                 ))}
               </span>
             ) : (
