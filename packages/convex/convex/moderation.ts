@@ -1832,7 +1832,9 @@ async function auditUser(
   reason: AuditReason,
   metadata?: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
-  await refreshPersonRow(ctx, userId);
+  // A status write is written only when it sets new terms (D270), so it dates the row's status
+  // anew (`lib/statusTerms`); a posting right leaves it alone.
+  await refreshPersonRow(ctx, userId, { termsSet: action !== 'set_posting_permission' });
   return writePersonAudit(ctx, {
     actorId,
     action,

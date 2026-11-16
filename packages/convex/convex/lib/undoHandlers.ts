@@ -29,7 +29,8 @@ import {
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
-import { type PersonWrite, type StatusTerms, sameStatusTerms } from './peopleCan';
+import { type PersonWrite, sameStatusTerms } from './peopleCan';
+import { termsSetBy } from './statusTerms';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
@@ -173,16 +174,6 @@ const disciplinePrev = (row: Doc<'moderationActions'>): StatusPrev =>
     statusReason: null,
     suspendedUntil: null,
   };
-
-/** The terms a ban or suspension row set: its status, its reason, a suspension's end. */
-function termsSetBy(row: Doc<'moderationActions'>): StatusTerms {
-  return {
-    status: row.action === 'ban' ? 'banned' : 'suspended',
-    statusReason: row.reason,
-    suspendedUntil:
-      row.action === 'suspend' ? ((meta(row).suspendedUntil as number) ?? null) : null,
-  };
-}
 
 /** A suspension that has since run out can't be put back; everything else can. */
 function statusPrevBlocked(prev: StatusPrev | undefined, now: number): string | null {

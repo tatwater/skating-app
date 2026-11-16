@@ -58,9 +58,11 @@ export {
 /**
  * The row a profile reads as, given the row it had (`prev`, for the times a change is first seen):
  *
- * - `statusSince` and `restrictedSince` are when *this writer* saw the status change (a suspension
- *   over one that had run out counts as one) or the first restriction land — 0 (not recorded) for a
- *   row first written by the backfill, except a tombstone, which knows when it was made.
+ * - `statusSince` is when the person's status terms as they stand were set (`lib/statusTerms`): when
+ *   this writer saw the status change, or a status write said it set new terms (`termsSet` — a
+ *   reason or an end that differs); `restrictedSince` is when the first restriction landed. Both are
+ *   0 (not recorded) for a row first written by the backfill, except a tombstone, which knows when
+ *   it was made.
  * - A tombstone is in no lane but Deleted: not staff (a deleted admin keeps its `role`), not
  *   restricted, not leaving.
  */
@@ -68,19 +70,14 @@ export function derivePersonRow(
   profile: Doc<'profiles'>,
   prev: PersonRowFields | null,
   now: number,
+  termsSet = false,
 ): PersonRowFields {
   const deleted = profile.status === 'deleted';
   const suspendedUntil =
     profile.status === 'suspended' ? (profile.suspendedUntil ?? OPEN_ENDED) : 0;
-  // A suspension written over one whose window had run out (the sweep hadn't reset it yet) is a new
-  // run, not the old one going on — the person page's status note reads its rows the same way.
-  const newRun =
-    prev !== null &&
-    prev.status === 'suspended' &&
-    profile.status === 'suspended' &&
-    prev.suspendedUntil <= now &&
-    suspendedUntil !== prev.suspendedUntil;
-  const statusChanged = prev !== null && (prev.status !== profile.status || newRun);
+  // New terms — a status write that set a reason or an end that differs (it says so: the row keeps
+  // only a line of the reason) — date the status anew, as the person page's status note does.
+  const statusChanged = prev !== null && (prev.status !== profile.status || termsSet);
   const statusSince = deleted
     ? (profile.deletedAt ?? (statusChanged ? now : (prev?.statusSince ?? 0)))
     : prev === null
@@ -283,7 +280,11 @@ async function bumpCount(ctx: MutationCtx, key: string, delta: number): Promise<
 export async function refreshPersonRow(
   ctx: MutationCtx,
   profileOrId: Doc<'profiles'> | Id<'profiles'>,
-  { touch = false, now = Date.now() }: { touch?: boolean; now?: number } = {},
+  {
+    touch = false,
+    now = Date.now(),
+    termsSet = false,
+  }: { touch?: boolean; now?: number; termsSet?: boolean } = {},
 ): Promise<boolean> {
   // Re-read rather than trust the caller's copy: it may predate the caller's own patch.
   const userId = typeof profileOrId === 'string' ? profileOrId : profileOrId._id;
@@ -296,7 +297,7 @@ export async function refreshPersonRow(
     LEDGER_EDITORS.delete(ctx);
     return true;
   }
-  const next = derivePersonRow(profile, existing, now);
+  const next = derivePersonRow(profile, existing, now, termsSet);
   if (existing && sameFacts(existing, next)) {
     if (touch) await ctx.db.patch(existing._id, { refreshedAt: now });
     return false;

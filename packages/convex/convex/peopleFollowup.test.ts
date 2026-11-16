@@ -1153,7 +1153,7 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     expect(since([], true)).toEqual({ since: null, row: null, capped: false });
   });
 
-  test('a second moderator restricting a right already off, or banning a banned account, moves no date', async () => {
+  test('a repeat that changed nothing moves no date; a repeat ban with a new reason sets the terms — date, who and reason, on the page and the list row alike', async () => {
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
     await seed(t, 'mod2', { role: 'moderator' });
@@ -1168,21 +1168,38 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     vi.setSystemTime(T0 - 3 * DAY);
     await restrict('mod');
     await as(t, 'mod').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
-    vi.setSystemTime(T0 - DAY);
+    vi.setSystemTime(T0 - 2 * DAY);
+    // The same restriction and the same ban again change nothing, so write nothing (D270).
     await restrict('mod2');
+    await as(t, 'mod2').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
+    const listRow = async () => {
+      const page = await as(t, 'mod').query(api.people.listPage, { lane: 'banned' });
+      return page.rows.find((r) => r.userId === skater);
+    };
+    let p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
+    expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, reason: 'first' });
+    expect(p?.statusNote?.by?.username).toBe('mod');
+    expect(await listRow()).toMatchObject({ statusSince: T0 - 3 * DAY, statusReason: 'first' });
+    // A repeat ban with a new reason is a real change: its date, who and reason — on both.
+    vi.setSystemTime(T0 - DAY);
     await as(t, 'mod2').mutation(api.moderation.banUser, { userId: skater, reason: 'again' });
     vi.setSystemTime(T0);
-    const p = await as(t, 'mod').query(api.people.person, { userId: skater });
+    p = await as(t, 'mod').query(api.people.person, { userId: skater });
     expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
-    expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, atCapped: false });
-    // When, who and why are all the start's: no one is credited with another's date or words.
-    expect(p?.statusNote).toMatchObject({ reason: 'first' });
-    expect(p?.statusNote?.by?.username).toBe('mod');
+    expect(p?.statusNote).toMatchObject({
+      action: 'ban',
+      at: T0 - DAY,
+      atCapped: false,
+      reason: 'again',
+    });
+    expect(p?.statusNote?.by?.username).toBe('mod2');
+    expect(await listRow()).toMatchObject({ statusSince: T0 - DAY, statusReason: 'again' });
   });
 
-  test('a suspension’s new window keeps its start; a walk that runs out of rows says can’t say', async () => {
+  test('a suspension’s new window sets new terms; a walk through rows that changed nothing, past its reach, says can’t say', async () => {
     const t = await setup();
-    await seed(t, 'mod', { role: 'moderator' });
+    const mod = await seed(t, 'mod', { role: 'moderator' });
     const skater = await seed(t, 'skater');
     vi.setSystemTime(T0 - 20 * DAY);
     await as(t, 'mod').mutation(api.moderation.suspendUser, {
@@ -1190,23 +1207,36 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
       reason: 'r',
       suspendedUntil: T0 + 30 * DAY,
     });
-    for (let i = 0; i < 12; i++) {
-      vi.setSystemTime(T0 - 19 * DAY + i * DAY);
-      await as(t, 'mod').mutation(api.moderation.suspendUser, {
-        userId: skater,
-        reason: 'r',
-        suspendedUntil: T0 + 31 * DAY + i,
-      });
-      if (i === 1) {
-        // Two new windows in: the walk reaches the start, which they didn't move.
-        const early = await as(t, 'mod').query(api.people.person, { userId: skater });
-        expect(early?.statusNote).toMatchObject({ at: T0 - 20 * DAY, atCapped: false });
+    // A new end is new terms: the note dates it.
+    vi.setSystemTime(T0 - 19 * DAY);
+    await as(t, 'mod').mutation(api.moderation.suspendUser, {
+      userId: skater,
+      reason: 'r',
+      suspendedUntil: T0 + 31 * DAY,
+    });
+    const early = await as(t, 'mod').query(api.people.person, { userId: skater });
+    expect(early?.statusNote).toMatchObject({ at: T0 - 19 * DAY, atCapped: false });
+    // Twelve repeats from before D270 that changed nothing, as they were recorded then.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 12; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: mod,
+          action: 'suspend',
+          targetType: 'user',
+          targetId: skater,
+          reason: 'r',
+          metadata: {
+            suspendedUntil: T0 + 31 * DAY,
+            prev: { status: 'suspended', statusReason: 'r', suspendedUntil: T0 + 31 * DAY },
+          },
+          createdAt: T0 - 18 * DAY + i,
+        });
       }
-    }
+    });
     vi.setSystemTime(T0);
     const p = await as(t, 'mod').query(api.people.person, { userId: skater });
-    // Twelve new windows after the start: past the ten rows the note walks back, so it can't say —
-    // and with no start found, the reason on file stands alone, credited to no one.
+    // Twelve repeats after the terms were set: past the ten rows the note walks back, so it can't
+    // say — and with no write found, the reason on file stands alone, credited to no one.
     expect(p?.statusNote).toMatchObject({
       at: null,
       atCapped: true,
@@ -1247,14 +1277,14 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     vi.setSystemTime(T0 - 10 * DAY);
     await as(t, 'mod').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
     await t.run(async (ctx) => {
-      // Three repeats of the ban, each weighing over a third of a document.
+      // Three repeats of the ban from before D270 that changed nothing, each over a third of a document.
       for (let i = 0; i < 3; i++) {
         await ctx.db.insert('moderationActions', {
           actorId: mod,
           action: 'ban',
           targetType: 'user',
           targetId: skater,
-          reason: 'again',
+          reason: 'first',
           metadata: {
             prev: { status: 'banned', statusReason: 'first', suspendedUntil: null },
             note: 'n'.repeat(400_000),

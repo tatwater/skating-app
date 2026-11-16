@@ -117,7 +117,7 @@ export const AFTER_MERGE_PROCEDURE = [
   "(3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`.",
   '(4) For each job in its `rerun`: `convex run <job> \'{"alone":true}\'` (a new run, which supersedes any older one), then step 3 again.',
   '(5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus \'{"userId":"<id>"}\'`.',
-  "(6) Only if steps 2–5 ran before the People follow-up (B01-4b) was deployed: `convex run peopleJobs:backfillRows '{\"alone\":true}'` once, which stamps each staffer's tenure on their row, then step 3 again.",
+  "(6) Only if steps 2–5 ran before the People follow-up (B01-4b) or the status-terms rule (B01-4f) was deployed: `convex run peopleJobs:backfillRows '{\"alone\":true}'` once, which stamps each staffer's tenure, and when each suspended or banned person's terms were set, on their row, then step 3 again.",
 ].join(' ');
 
 /** A run that hasn't recorded a pass in this long has stopped (a pass takes seconds). */
