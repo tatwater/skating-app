@@ -12,13 +12,15 @@ import { ConvexError, v } from 'convex/values';
 import { internalMutation, mutation } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './lib/ledgerEditors';
+import { personWriteResult } from './moderation';
 
 /** Give an admin ledger editing. The caller must hold it; giving asks no reason (D226). */
 export const grantEditor = mutation({
   args: { userId: v.id('profiles'), reason: v.optional(v.string()) },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'machinery.ledger');
-    await grantLedgerEditorImpl(ctx, actor, { userId, ...(reason ? { reason } : {}) });
+    const out = await grantLedgerEditorImpl(ctx, actor, { userId, ...(reason ? { reason } : {}) });
+    return personWriteResult(ctx, actor._id, out.userId, out.actionId);
   },
 });
 
@@ -30,7 +32,8 @@ export const revokeEditor = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'machinery.ledger');
-    await revokeLedgerEditorImpl(ctx, actor, { userId, reason });
+    const out = await revokeLedgerEditorImpl(ctx, actor, { userId, reason });
+    return personWriteResult(ctx, actor._id, out.userId, out.actionId);
   },
 });
 

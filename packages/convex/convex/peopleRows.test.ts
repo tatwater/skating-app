@@ -89,6 +89,37 @@ describe('derivePersonRow', () => {
     expect(later.statusReason).toBeUndefined();
   });
 
+  test('a suspension over one that had run out (unswept) is a new run, as the person page says', () => {
+    const first = derivePersonRow(profileDoc(), null, 0);
+    const susp = derivePersonRow(
+      profileDoc({ status: 'suspended', suspendedUntil: 10 * DAY }),
+      first,
+      DAY,
+    );
+    expect(susp.statusSince).toBe(DAY);
+    // A new window on a running suspension keeps its start.
+    const extended = derivePersonRow(
+      profileDoc({ status: 'suspended', suspendedUntil: 12 * DAY }),
+      susp,
+      5 * DAY,
+    );
+    expect(extended.statusSince).toBe(DAY);
+    // A refresh of the run-out one, nothing written, keeps it too.
+    const stale = derivePersonRow(
+      profileDoc({ status: 'suspended', suspendedUntil: 12 * DAY }),
+      extended,
+      14 * DAY,
+    );
+    expect(stale.statusSince).toBe(DAY);
+    // Re-suspended after the window ran out, before the sweep reset it: a new run from here.
+    const again = derivePersonRow(
+      profileDoc({ status: 'suspended', suspendedUntil: 30 * DAY }),
+      stale,
+      15 * DAY,
+    );
+    expect(again.statusSince).toBe(15 * DAY);
+  });
+
   test('a long reason is cut to a line, never through a surrogate pair', () => {
     const short = 'Spam';
     expect(reasonLine(short)).toBe(short);

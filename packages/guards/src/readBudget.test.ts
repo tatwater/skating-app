@@ -3,9 +3,11 @@
  * (`convex/lib/readBudget.ts`), so no pass reads past Convex's limit however heavy its rows. A raw
  * read added outside a charge is the regression this catches: in the modules below, every database
  * read — `ctx.db.get`, `.first()`, `.unique()`, `.take(`, `.paginate(`, `.collect()` — must sit inside
- * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget`,
- * `drain(` — which charges what its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused outright: neither
- * has a bound a budget can size.
+ * the parentheses of a charging call (`reads.one/take/page/measured/capped`, the same on `budget` and
+ * on the request's budget opened in place, `requestBudget(…)`, a wave item's `share.read(` and
+ * `share.take(` — charged to what `ReadBudget.waves` reserved for it — `drain(` — which charges what
+ * its `take` returns — or the People pages' `takeCapped(`). `.collect()` and `.unique()` are refused
+ * outright: neither has a bound a budget can size.
  *
  * A lint over the source text, not a proof: a read reached through a helper in another module is
  * the helper's to charge (`lib/eraseClock` is in the list for that reason).
@@ -24,6 +26,10 @@ const MODULES = [
   // The People pages (B01-4): every public read and job, each read charged on every axis.
   'people.ts',
   'peopleJobs.ts',
+  // A staffer's tenure, read live by the strip and stamped on the Staff lane's rows (B01-4b).
+  'lib/staffTenure.ts',
+  // The rows an undo's refusal reads, which History and Decisions reach on every line (B01-3f).
+  'lib/undoReads.ts',
 ];
 
 /**
@@ -43,7 +49,7 @@ function code(source: string): string {
 function chargedSpans(text: string): [number, number][] {
   const spans: [number, number][] = [];
   const opener =
-    /\b(?:reads|budget)\.(?:one|take|page|measured|capped)\(|\bdrain\(|\btakeCapped\(/g;
+    /\b(?:reads|budget|requestBudget\([^()]*\))\.(?:one|take|page|measured|capped)\(|\bshare\.(?:read|take)\(|\bdrain\(|\btakeCapped\(/g;
   for (let m = opener.exec(text); m; m = opener.exec(text)) {
     let depth = 0;
     for (let i = m.index + m[0].length - 1; i < text.length; i++) {
@@ -65,7 +71,8 @@ function unchargedReads(source: string): string[] {
   const out: string[] = [];
   for (let m = read.exec(text); m; m = read.exec(text)) {
     const at = m.index;
-    const isBudgetCall = /\b(?:reads|budget)$/.test(text.slice(Math.max(0, at - 7), at));
+    // The charging call itself (`budget.take(`, a wave item's `share.take(`), not a read it wraps.
+    const isBudgetCall = /\b(?:reads|budget|share)$/.test(text.slice(Math.max(0, at - 7), at));
     if (isBudgetCall) continue;
     const unbounded = m[0] === '.collect()' || m[0] === '.unique()';
     const inside = spans.some(([open, close]) => at > open && at < close);
@@ -92,4 +99,29 @@ test('the lint sees a raw read, and passes a charged one', () => {
   expect(unchargedReads("// ctx.db.get(id) in a comment\nconst s = 'ctx.db.get(id)';")).toEqual([]);
   // A comment marker inside a string hides nothing after it.
   expect(unchargedReads("const u = 'https://x'; const y = await ctx.db.get(id);")).toHaveLength(1);
+  // A wave item's share (`lib/undoReads`) charges its read to what `ReadBudget.waves` reserved.
+  expect(
+    unchargedReads('const r = share.read(kind, () => ctx.db.get(id) as Promise<Doc<T> | null>);'),
+  ).toEqual([]);
+  expect(unchargedReads('share.read(kind, get); const x = await ctx.db.get(id);')).toHaveLength(1);
+  // Its `take` charges the rows its read returns, as `budget.take` does.
+  expect(unchargedReads('take: (kind, n, read) => share.take(kind, n, read),')).toEqual([]);
+  expect(unchargedReads("await share.take('launch', n, () => ctx.db.query('x').take(n));")).toEqual(
+    [],
+  );
+  expect(
+    unchargedReads("share.take(kind, n, read); await ctx.db.query('x').take(5);"),
+  ).toHaveLength(1);
+  // The request's own budget, opened in place, charges as `budget` does.
+  expect(
+    unchargedReads("await requestBudget(ctx).measured('putIn', () => ctx.db.get(id));"),
+  ).toEqual([]);
+  expect(
+    unchargedReads("await requestBudget(ctx, OPEN).one('profile', () => ctx.db.get(id));"),
+  ).toEqual([]);
+  // Opening it is no charge: a read beside it, outside a charging call, is still caught.
+  expect(unchargedReads('const b = requestBudget(ctx); await ctx.db.get(id);')).toHaveLength(1);
+  expect(
+    unchargedReads("requestBudget(ctx).spend(1); await ctx.db.query('x').take(5);"),
+  ).toHaveLength(1);
 });

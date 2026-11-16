@@ -67,7 +67,13 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { isUndoing, writeAudit, writeSnapshot } from './lib/audit';
+import {
+  type AuditReasonOrText,
+  composed,
+  isUndoing,
+  writeAudit,
+  writeSnapshot,
+} from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -815,10 +821,17 @@ async function systemDelist(
     listed: false,
   });
   if (actorId) {
-    await audit(ctx, actorId, 'remove', subArea._id, `Auto-delisted "${subArea.name}": ${reason}`, {
-      waterBodyId: subArea.waterBodyId,
-      automatic: true,
-    });
+    await audit(
+      ctx,
+      actorId,
+      'remove',
+      subArea._id,
+      composed`Auto-delisted "${subArea.name}": ${reason}`,
+      {
+        waterBodyId: subArea.waterBodyId,
+        automatic: true,
+      },
+    );
   }
 }
 
@@ -949,7 +962,7 @@ async function audit(
   actorId: Id<'profiles'>,
   action: 'create_sub_area' | 'redraw_sub_area' | 'rename_sub_area' | 'remove' | 'restore',
   subAreaId: Id<'waterBodySubAreas'>,
-  reason: string,
+  reason: AuditReasonOrText,
   metadata?: Record<string, unknown>,
 ): Promise<Id<'moderationActions'>> {
   return writeAudit(ctx, {
@@ -1015,12 +1028,19 @@ export const create = mutation({
       createdByUserId: actor._id,
       now: Date.now(),
     });
-    await audit(ctx, actor._id, 'create_sub_area', subAreaId, `Drew "${name}" on ${parent.name}`, {
-      waterBodyId: args.waterBodyId,
-      via: 'drawn',
-      clipped: geometry.clipped,
-      retainedFraction: geometry.retainedFraction,
-    });
+    await audit(
+      ctx,
+      actor._id,
+      'create_sub_area',
+      subAreaId,
+      composed`Drew "${name}" on ${parent.name}`,
+      {
+        waterBodyId: args.waterBodyId,
+        via: 'drawn',
+        clipped: geometry.clipped,
+        retainedFraction: geometry.retainedFraction,
+      },
+    );
     if (args.promoteLandmarkId !== undefined) {
       await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
     }
@@ -1105,7 +1125,7 @@ export async function redrawSubAreaImpl(
     actor._id,
     'redraw_sub_area',
     subAreaId,
-    reason ?? `Redrew "${subArea.name}"`,
+    reason ?? composed`Redrew "${subArea.name}"`,
     {
       waterBodyId: subArea.waterBodyId,
       clipped: geometry.clipped,
@@ -1184,13 +1204,20 @@ export const createFromChord = mutation({
       createdByUserId: actor._id,
       now: Date.now(),
     });
-    await audit(ctx, actor._id, 'create_sub_area', subAreaId, `Drew "${name}" on ${parent.name}`, {
-      waterBodyId: args.waterBodyId,
-      via: 'chord',
-      sagittaM: geometry.mouth.sagittaM,
-      clipped: geometry.clipped,
-      ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
-    });
+    await audit(
+      ctx,
+      actor._id,
+      'create_sub_area',
+      subAreaId,
+      composed`Drew "${name}" on ${parent.name}`,
+      {
+        waterBodyId: args.waterBodyId,
+        via: 'chord',
+        sagittaM: geometry.mouth.sagittaM,
+        clipped: geometry.clipped,
+        ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
+      },
+    );
     const request =
       args.requestId === undefined
         ? undefined
@@ -1231,7 +1258,7 @@ export const updateChord = mutation({
       actor._id,
       'redraw_sub_area',
       subAreaId,
-      `Redrew "${subArea.name}" by chord`,
+      composed`Redrew "${subArea.name}" by chord`,
       {
         waterBodyId: subArea.waterBodyId,
         via: 'chord',
@@ -1325,8 +1352,8 @@ export async function renameSubAreaImpl(
       subAreaId,
       reason ??
         (name !== undefined && nextName !== subArea.name
-          ? `Renamed "${subArea.name}" to "${nextName}"`
-          : `Updated aliases for "${nextName}"`),
+          ? composed`Renamed "${subArea.name}" to "${nextName}"`
+          : composed`Updated aliases for "${nextName}"`),
       {
         waterBodyId: subArea.waterBodyId,
         aliases: nextAliases,
@@ -1389,7 +1416,7 @@ export async function removeSubAreaImpl(
       actor._id,
       'remove',
       subAreaId,
-      reason?.trim() || `Delisted "${subArea.name}"`,
+      reason?.trim() || composed`Delisted "${subArea.name}"`,
       { waterBodyId: subArea.waterBodyId },
     );
     await scheduleRestamp(ctx, subArea.waterBodyId);
@@ -1502,11 +1529,18 @@ export async function restoreSubAreaImpl(
         'The shoreline moved while this bay was delisted',
       );
     }
-    await audit(ctx, actor._id, 'restore', subAreaId, reason ?? `Restored "${subArea.name}"`, {
-      waterBodyId: subArea.waterBodyId,
-      geometryChanged,
-      ...(plan ? { via: plan.use === 'chord' ? 'chord' : 'reclip' } : {}),
-    });
+    await audit(
+      ctx,
+      actor._id,
+      'restore',
+      subAreaId,
+      reason ?? composed`Restored "${subArea.name}"`,
+      {
+        waterBodyId: subArea.waterBodyId,
+        geometryChanged,
+        ...(plan ? { via: plan.use === 'chord' ? 'chord' : 'reclip' } : {}),
+      },
+    );
     // A bay back on the map takes its names back from any landmark that carried them meanwhile.
     await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
       _id: subAreaId,
@@ -1563,8 +1597,8 @@ export async function setSubAreaCuratedBoostImpl(
       reason:
         reason ??
         (curatedBoost === undefined
-          ? `Cleared curatedBoost on "${subArea.name}"`
-          : `Set curatedBoost to ${curatedBoost} on "${subArea.name}"`),
+          ? composed`Cleared curatedBoost on "${subArea.name}"`
+          : composed`Set curatedBoost to ${curatedBoost} on "${subArea.name}"`),
       metadata: {
         curatedBoost: curatedBoost ?? null,
         minVisibleZoom: scores.minVisibleZoom,
@@ -2128,7 +2162,7 @@ export const importSeed = internalMutation({
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
-        reason: `Seeded "${row.name.trim()}" on ${parent.name} (A02 curation session)`,
+        reason: composed`Seeded "${row.name.trim()}" on ${parent.name} (A02 curation session)`,
         metadata: {
           waterBodyId: row.waterBodyId,
           via: 'seed',
@@ -2363,7 +2397,7 @@ export const importBaySubAreas = internalMutation({
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
-        reason: `A07a campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
+        reason: composed`A07a campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
         metadata: {
           waterBodyId: parent._id,
           via: 'catalog',

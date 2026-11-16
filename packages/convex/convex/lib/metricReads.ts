@@ -22,7 +22,8 @@ export async function latestMetric(ctx: QueryCtx, metric: MetricKey): Promise<Sn
 /**
  * Everyone with an account, from the 6-hourly `accounts_total` rollup — one point read, where a
  * live count would read every profile. `null` until the rollup has run once; `capped` when its scan
- * stopped short, so the number is a floor. The Overview's *N users* and Metrics' *total* both read it.
+ * stopped short, so the number is a floor. Metrics' *total* and its history read it; the Overview's
+ * *N users* is the live Everyone lane instead (`lib/peopleFigures.laneCounter`, one rule with People).
  */
 export async function accountsTotal(ctx: QueryCtx): Promise<Count | null> {
   const row = await latestMetric(ctx, 'accounts_total');

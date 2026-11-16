@@ -147,9 +147,9 @@ describe('the lapsed-suspension sweep', () => {
     const t = convexTest(schema, modules);
     const poison = await seed(t, 'poison', { status: 'suspended', suspendedUntil: T0 - 2 * MIN });
     const healthy = await seed(t, 'healthy', { status: 'suspended', suspendedUntil: T0 - MIN });
-    const real = audit.writeAudit;
+    const real = audit.writePersonAudit;
     let failing = true;
-    vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+    vi.spyOn(audit, 'writePersonAudit').mockImplementation(async (ctx, entry) => {
       if (failing && entry.targetId === poison) throw new Error('poison');
       return real(ctx, entry);
     });
@@ -212,8 +212,8 @@ describe('the lapsed-suspension sweep', () => {
       await seed(t, 'r1', { status: 'suspended', suspendedUntil: T0 - 2 * MIN }),
       await seed(t, 'r2', { status: 'suspended', suspendedUntil: T0 - MIN }),
     ];
-    const real = audit.writeAudit;
-    vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+    const real = audit.writePersonAudit;
+    vi.spyOn(audit, 'writePersonAudit').mockImplementation(async (ctx, entry) => {
       if (entry.targetId === poison) throw new Error('poison');
       return real(ctx, entry);
     });
@@ -276,8 +276,8 @@ describe('the lapsed-suspension sweep', () => {
             );
           }
           const failing = new Set<string>();
-          const real = audit.writeAudit;
-          vi.spyOn(audit, 'writeAudit').mockImplementation(async (ctx, entry) => {
+          const real = audit.writePersonAudit;
+          vi.spyOn(audit, 'writePersonAudit').mockImplementation(async (ctx, entry) => {
             if (failing.has(entry.targetId)) throw new Error('poison');
             return real(ctx, entry);
           });

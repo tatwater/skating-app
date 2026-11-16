@@ -155,14 +155,17 @@ describe('console.overview (B01 §5.1)', () => {
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');
     const admin = await seedUser(t, 'adm', 'admin');
+    const appellant = await seedUser(t, 'appellant');
     await t.run((ctx) =>
       ctx.db.insert('supportTickets', {
+        userId: appellant.id,
         category: 'account',
         status: 'open',
         body: 'Appeal: my suspension',
         createdAt: Date.now(),
       }),
     );
+    await syncPeople(t);
     expect((await mod.as.query(api.console.overview, {})).inbox.support).toBeNull();
     expect((await mod.as.query(api.console.overview, {})).people.appealsOpen).toBeNull();
     const a = await admin.as.query(api.console.overview, {});
@@ -212,9 +215,12 @@ describe('console.overview (B01 §5.1)', () => {
   test('a support ticket in progress is still waiting; a resolved one is not', async () => {
     const t = convexTest(schema, modules);
     const admin = await seedUser(t, 'adm', 'admin');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
     await t.run(async (ctx) => {
       for (const status of ['open', 'in_progress', 'resolved'] as const) {
         await ctx.db.insert('supportTickets', {
+          userId: status === 'in_progress' ? two.id : one.id,
           category: 'account',
           status,
           body: `Appeal (${status})`,
@@ -222,10 +228,22 @@ describe('console.overview (B01 §5.1)', () => {
           ...(status === 'resolved' ? { resolvedAt: Date.now() } : {}),
         });
       }
+      // A second waiting appeal from the same person: appeals are counted as people (one rule
+      // with the Appeals open lane), so it adds nothing.
+      await ctx.db.insert('supportTickets', {
+        userId: one.id,
+        category: 'account',
+        status: 'open',
+        body: 'Appeal again',
+        createdAt: Date.now(),
+      });
     });
+    await syncPeople(t);
     const o = await admin.as.query(api.console.overview, {});
-    expect(o.inbox.support).toEqual({ count: 2, capped: false });
+    expect(o.inbox.support).toEqual({ count: 3, capped: false });
     expect(o.people.appealsOpen).toEqual({ count: 2, capped: false });
+    const lanes = await admin.as.query(api.people.lanes, {});
+    expect(lanes.lanes.find((l) => l.lane === 'appeals')?.count).toEqual(o.people.appealsOpen);
   });
 
   test('a suspension read past the cap says so, though the live count is filtered', async () => {
@@ -278,7 +296,7 @@ describe('console.overview (B01 §5.1)', () => {
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
   });
 
-  test('an appeal past a full page of other tickets still counts, and the count says capped', async () => {
+  test('an appeal past a full page of other tickets still counts, and is whole', async () => {
     const t = convexTest(schema, modules);
     const admin = await seedUser(t, 'adm', 'admin');
     await t.run(async (ctx) => {
@@ -291,15 +309,18 @@ describe('console.overview (B01 §5.1)', () => {
         });
       }
       await ctx.db.insert('supportTickets', {
+        userId: admin.id,
         category: 'account',
         status: 'in_progress',
         body: 'Appeal: my suspension',
         createdAt: Date.now(),
       });
     });
+    await syncPeople(t);
     const o = await admin.as.query(api.console.overview, {});
     expect(o.inbox.support).toEqual({ count: 200, capped: true });
-    expect(o.people.appealsOpen).toEqual({ count: 1, capped: true });
+    // Appeals read their own index range (account tickets), so a full page of bugs can't hide one.
+    expect(o.people.appealsOpen).toEqual({ count: 1, capped: false });
   });
 
   test('a member is refused', async () => {

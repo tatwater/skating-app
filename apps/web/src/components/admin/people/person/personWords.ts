@@ -33,6 +33,8 @@ export const WORDS = {
   ranItsCourse,
   nameNotReady: 'Name still being prepared',
   whoAndWhenUnrecorded: 'Who and when: not recorded yet',
+  /** The status began before the rows one read walks back (`statusNote.atCapped`). */
+  whoAndWhenTooOld: 'Who and when: older than what one read covers',
   whenUnrecorded: 'When: not recorded yet',
   leaving: 'Leaving',
   deletedOn: (moment: string) => `The account is deleted ${moment}`,

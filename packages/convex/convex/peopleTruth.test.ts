@@ -67,6 +67,8 @@ async function setup({ ready = true }: { ready?: boolean } = {}) {
     if (ready) {
       await markReady(ctx, 'rows');
       await markReady(ctx, 'flagSubjects');
+      // The Staff list's role since rests on the undo chains, and says so until they are placed.
+      await markReady(ctx, 'undoChains');
     }
   });
   return { t, adm: t.withIdentity({ subject: 'adm' }) };

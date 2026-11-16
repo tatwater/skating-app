@@ -6,7 +6,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUDIT_REASON_MAX_CHARS, bodySearchTextFor, MAX_REFERENCE_LINKS } from '@skating/core';
+import {
+  AUDIT_REASON_MAX,
+  AUDIT_REASON_TOO_LONG,
+  bodySearchTextFor,
+  MAX_REFERENCE_LINKS,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -284,8 +289,8 @@ describe('setModeratorTowns', () => {
     // Removing one pin without a reason (or with only spaces) is refused, as every takeaway is.
     await expect(set([NORTH_EAST])).rejects.toThrow('A reason is required');
     await expect(set([NORTH_EAST], '   ')).rejects.toThrow('A reason is required');
-    await expect(set([NORTH_EAST], 'x'.repeat(AUDIT_REASON_MAX_CHARS + 1))).rejects.toThrow(
-      /Shorten it to 1,000 or fewer/,
+    await expect(set([NORTH_EAST], 'x'.repeat(AUDIT_REASON_MAX + 1))).rejects.toThrow(
+      AUDIT_REASON_TOO_LONG,
     );
     expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
     await set([NORTH_EAST], 'Southbridge holds none of the shore');
@@ -315,25 +320,59 @@ describe('setModeratorTowns', () => {
     });
   });
 
-  test('an undo offered without a reason runs even when the row’s reason sits at the cap — the cap is on the person’s words, not the undo’s', async () => {
-    const t = harness();
-    await seedTowns(t);
-    const admin = await person(t);
-    const id = await imported(t, 'way/1');
-    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
-      waterBodyId: id,
-      townKeys: [NORTH_EAST, SOUTHBRIDGE],
-    });
-    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
-      waterBodyId: id,
-      townKeys: [NORTH_EAST],
-      reason: 'x'.repeat(AUDIT_REASON_MAX_CHARS),
-    });
-    // The undo only adds, so it asks none; its own reason quotes the row's, past the cap.
-    await admin.as.mutation(api.undo.run, {
-      actionId: (await lastAction(t, 'set_moderator_towns'))._id,
-    });
-    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+  test('a Bodies write accepted with the person’s words at or near the cap has an undo that runs — never refused for length', async () => {
+    // A pin's removal (its reason) and a body's removal (its note): each undo gives back, so it asks
+    // no reason, and its own line quotes the row's — composed, so shortened rather than refused.
+    const check = async (write: 'unpin' | 'remove', length: number) => {
+      const t = harness();
+      await seedTowns(t);
+      const admin = await person(t);
+      const id = await imported(t, 'way/1');
+      const words = 'w'.repeat(length);
+      let action: Doc<'moderationActions'>['action'];
+      if (write === 'unpin') {
+        await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+          waterBodyId: id,
+          townKeys: [NORTH_EAST, SOUTHBRIDGE],
+        });
+        await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+          waterBodyId: id,
+          townKeys: [NORTH_EAST],
+          reason: words,
+        });
+        action = 'set_moderator_towns';
+      } else {
+        await admin.as.mutation(api.waterBodies.remove, {
+          waterBodyId: id,
+          reason: 'other',
+          note: words,
+        });
+        action = 'remove';
+      }
+      const row = await lastAction(t, action);
+      if (write === 'remove') {
+        // The composed line fits the cap — shortened, never refused, its fixed words leading it —
+        // and the metadata keeps the note whole.
+        expect(row.reason.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+        expect(row.reason.startsWith('Removed from map (other): www')).toBe(true);
+        expect(row.metadata?.note).toBe(words);
+      }
+      await admin.as.mutation(api.undo.run, { actionId: row._id });
+      const after = await get(t, id);
+      if (write === 'unpin') expect(after?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+      else expect(after?.removedAt).toBeUndefined();
+    };
+    const near = fc.asyncProperty(
+      fc.constantFrom('unpin' as const, 'remove' as const),
+      fc.integer({ min: AUDIT_REASON_MAX - 40, max: AUDIT_REASON_MAX }),
+      check,
+    );
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261116, 9]) await fc.assert(near, { seed, numRuns: 3 });
+    await fc.assert(near, { numRuns: 2 });
+    // The cap itself, for each write.
+    await check('unpin', AUDIT_REASON_MAX);
+    await check('remove', AUDIT_REASON_MAX);
   });
 
   test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {

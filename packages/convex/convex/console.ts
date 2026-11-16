@@ -74,7 +74,12 @@ export const overview = query({
     const support: Count | null = waiting === null ? null : cappedCount(waiting.tickets.length);
 
     // ── People: the People lanes' own reads (`lib/peopleFigures`), so the card and the lanes agree ──
-    const people = await peopleCardFigures(ctx, now, { flags, capped: flagsCapped }, waiting);
+    const people = await peopleCardFigures(
+      ctx,
+      now,
+      { flags, capped: flagsCapped },
+      hasCapability(viewer, 'inbox.support.read'),
+    );
 
     // What the Inbox card's foot ages: the open flags and the open requests. The oldest of each read
     // is its oldest overall (both read oldest first); the median needs every one, so it is `null`

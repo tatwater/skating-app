@@ -12,7 +12,7 @@
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { checkedReason, composed, composedOf, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { literals } from './lib/validators';
@@ -131,10 +131,14 @@ export async function setOverrideImpl(
     reason:
       args.undoReason ??
       (args.action === null
-        ? `Cleared the call on the ${granuleId} pass`
+        ? composed`Cleared the call on the ${granuleId} pass`
         : args.action === 'show'
-          ? `Showed the ${granuleId} pass to skaters anyway`
-          : `Hid the ${granuleId} pass from skaters: ${reason}`),
+          ? composed`Showed the ${granuleId} pass to skaters anyway`
+          : // The person's reason is held to the cap as typed and kept whole; the pass id is shortened.
+            composedOf(
+              ['Hid the ', ' pass from skaters: '.concat(checkedReason(reason))],
+              [granuleId],
+            )),
     metadata: {
       season,
       granuleId,

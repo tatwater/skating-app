@@ -8,6 +8,7 @@ import {
   seasonRecordSpan,
   seasonRecordWindow,
   signInRetentionFrom,
+  signInRetentionFromMs,
 } from './seasonRecord';
 
 const DAY = 86_400_000;
@@ -153,5 +154,11 @@ describe('signInRetentionFrom — the current season and one past (D254)', () =>
         expect(seasonOf(metricDayStart(from))).toBe(seasonOf(now) - 1);
       }),
     );
+  });
+});
+
+describe('signInRetentionFromMs — the same day, as an instant', () => {
+  it('the start of the previous season', () => {
+    expect(signInRetentionFromMs(Date.UTC(2026, 10, 13))).toBe(Date.UTC(2025, 6, 1));
   });
 });

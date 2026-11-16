@@ -25,3 +25,13 @@ export function isAuditVia(value: unknown): value is string {
     AUDIT_VIA_PATTERN.test(value)
   );
 }
+
+/**
+ * The longest reason an audit row takes (D261): 2,000 characters, counted as JavaScript counts a
+ * string's length. Refused past it at the one place a reason enters the log (`lib/audit.writeAudit`),
+ * so no writer is missed; rows written before the cap are left as they are.
+ */
+export const AUDIT_REASON_MAX = 2_000;
+
+/** The refusal a reason past {@link AUDIT_REASON_MAX} gets, in words the page can show. */
+export const AUDIT_REASON_TOO_LONG = `A reason can be at most ${AUDIT_REASON_MAX.toLocaleString('en-US')} characters.`;

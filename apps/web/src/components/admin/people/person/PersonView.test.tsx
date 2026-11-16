@@ -50,7 +50,7 @@ function draw(over: Partial<PersonViewProps> = {}) {
     history: ROB_HISTORY,
     staffStats: null,
     staffSeason: null,
-    decisions: { rows: [], isDone: true, continueCursor: '' },
+    decisions: { rows: [], isDone: true, capped: false, continueCursor: '' },
     now: NOW,
     viewerId: IDS.teagan,
     onAct,
@@ -151,6 +151,14 @@ describe('every nullable fact absent, block by block', () => {
     expect(slot('status-note')).toHaveTextContent('Reason: Not recorded yet');
     expect(slot('status-by')).toHaveTextContent('Who and when: not recorded yet');
     expect(fact('contradictions')).toHaveTextContent('—Not recorded yet');
+  });
+
+  it('a status that began before the rows one read walks says so, never "not recorded"', () => {
+    const note = ROB_UNRECORDED.statusNote;
+    if (note === null) throw new Error('fixture');
+    draw({ person: { ...ROB_UNRECORDED, statusNote: { ...note, atCapped: true } } });
+    expect(slot('status-by')).toHaveTextContent('Who and when: older than what one read covers');
+    expect(slot('status-by')).not.toHaveTextContent('not recorded');
   });
 
   it('the staff strip says not recorded, and an empty season when its record begins', () => {
@@ -271,7 +279,7 @@ describe('each read states itself', () => {
         history={ROB_HISTORY}
         staffStats={null}
         staffSeason={null}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={async () => null}
@@ -446,7 +454,7 @@ describe('staff pages', () => {
           ...ROB_HISTORY,
           rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
         }}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={onAct}
@@ -478,7 +486,7 @@ describe('staff pages', () => {
           ...ROB_HISTORY,
           rows: [{ ...first, undo: { state: 'undone', byActionId: first.id } }, ...rest],
         }}
-        decisions={{ rows: [], isDone: true, continueCursor: '' }}
+        decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
         onAct={onAct}

@@ -22,6 +22,7 @@
  * | compute body geometry facts | a body | on `bodyGeoFacts`, mirrored | out of the due range; retried daily (`bodyGeo.computeDue` parked) |
  * | repair body geometry drift | a facts row | `jobFailures` | never parked: the row goes to the back and the body is marked for recompute |
  * | find bodies missing geometry | a library row | `jobFailures` | never parked: the weekly walk is the retry |
+ * | reset lapsed suspensions | a person | on the profile, mirrored | out of the due range; retried daily (`peopleJobs.retryLapsedDaily`) |
  */
 
 import { v } from 'convex/values';
@@ -404,4 +405,5 @@ const CRON_OF: Record<FailingJob, string> = {
   bodyGeo: 'compute body geometry facts',
   geoDrift: 'repair body geometry drift',
   geoMissing: 'find bodies missing geometry',
+  lapses: 'reset lapsed suspensions',
 };

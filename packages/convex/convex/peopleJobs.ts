@@ -25,10 +25,10 @@
 
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type MutationCtx, query } from './_generated/server';
 import { nextAttemptState } from './lib/attempts';
-import { writeAudit } from './lib/audit';
+import { typed, writePersonAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { flagSubjectOf } from './lib/flagSubject';
 import { refreshPersonRow } from './lib/peopleRows';
@@ -43,6 +43,16 @@ import {
   takeLease,
 } from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
+import {
+  clearFailure,
+  failureOf,
+  type Position as LapPosition,
+  lapOf,
+  mirrorFailure,
+  positionOf,
+  saveLap,
+} from './lib/recurringWork';
+import { STAMP_WORK, stampTenure } from './lib/staffTenure';
 
 const DAY = 86_400_000;
 
@@ -101,11 +111,12 @@ export const lapseOne = internalMutation({
       lapseParkedAt: undefined,
       lapseRetriedAt: undefined,
     });
-    await writeAudit(ctx, {
+    await clearFailure(ctx, 'lapses', userId);
+    await writePersonAudit(ctx, {
       action: 'unban',
       targetType: 'user',
       targetId: userId,
-      reason: LAPSED_REASON,
+      reason: typed(LAPSED_REASON),
       metadata: {
         lapsed: true,
         prev: {
@@ -167,6 +178,98 @@ async function nextDue(
   );
 }
 
+/** A parked lapse's mirror, written from the profile's own state when it has none (D258). */
+async function ensureLapseMirror(
+  ctx: MutationCtx,
+  reads: ReadBudget,
+  profile: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  reads.reserve('small', 1);
+  if (await failureOf(ctx, 'lapses', profile._id)) return;
+  reads.touch('small');
+  await mirrorFailure(
+    ctx,
+    'lapses',
+    profile._id,
+    {
+      attempts: profile.lapseAttempts,
+      errorClass: profile.lapseErrorClass,
+      parkedAt: profile.lapseParkedAt,
+      retriedAt: profile.lapseRetriedAt,
+    },
+    profile.lapseRetriedAt ?? profile.lapseParkedAt ?? now,
+  );
+}
+
+/** Mirrored lapse failures the daily retry re-checks at its end, at most a run. */
+export const MIRRORS_CHECKED = 20;
+
+/**
+ * One page of the parked-lapse mirrors, from where the last run stopped (`jobPositions`, the
+ * orphan-photo walk's lap): each is kept while its profile still holds the sweep's attempt state, and
+ * forgotten otherwise; a short page finishes the lap, and the next run starts at the head. In mirror
+ * order (`by_job_last_failed`), ties on the time broken by creation, so no row is passed twice or not
+ * at all. Every profile read is charged as it really weighs; past the budget the page stops where it
+ * is, and a row left unread is kept, never judged gone.
+ */
+async function lapLapseMirrors(ctx: MutationCtx, reads: ReadBudget, now: number): Promise<void> {
+  reads.reserve('small', 1);
+  const lap = await lapOf(ctx, 'lapseMirrors');
+  const at = positionOf(lap);
+  const mirrors: Doc<'jobFailures'>[] = [];
+  if (at !== undefined) {
+    const ties = await reads.take('small', MIRRORS_CHECKED, (n) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_last_failed', (q) =>
+          q.eq('job', 'lapses').eq('lastFailedAt', at.value).gt('_creationTime', at.creationTime),
+        )
+        .take(n),
+    );
+    mirrors.push(...ties);
+  }
+  const rest = MIRRORS_CHECKED - mirrors.length;
+  if (rest > 0) {
+    const later = await reads.take('small', rest, (n) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_last_failed', (q) =>
+          q.eq('job', 'lapses').gt('lastFailedAt', at?.value ?? Number.NEGATIVE_INFINITY),
+        )
+        .take(n),
+    );
+    mirrors.push(...later);
+  }
+  let last: LapPosition | undefined;
+  let stopped = false;
+  for (const mirror of mirrors) {
+    // A profile at its worst and the two touches after it (this mirror's delete, the lap's save) —
+    // or stop here, this mirror unjudged; the next run picks up at it. A touch charged past the budget
+    // would throw, and fail the run's last pass with it.
+    if (!reads.affords(ROW_MAX.profile + 2 * ROW_MAX.small)) {
+      stopped = true;
+      break;
+    }
+    const id = ctx.db.normalizeId('profiles', mirror.key);
+    const profile = id === null ? null : await reads.measured('profile', () => ctx.db.get(id));
+    if (profile === undefined) {
+      stopped = true;
+      break;
+    }
+    const parked =
+      profile !== null && profile.status === 'suspended' && profile.lapseAttempts !== undefined;
+    if (!parked) {
+      reads.touch('small');
+      await ctx.db.delete(mirror._id);
+    }
+    last = { value: mirror.lastFailedAt, creationTime: mirror._creationTime };
+  }
+  const finished = !stopped && mirrors.length < MIRRORS_CHECKED;
+  reads.touch('small');
+  await saveLap(ctx, 'lapseMirrors', lap, finished ? undefined : (last ?? at), now);
+}
+
 /** A walk's position as the run's recorded cursor (for the record only; passes carry `after`). */
 function positionKey(after: Position | undefined): string | null {
   return after === undefined ? null : `${after.at}:${after.creation}`;
@@ -203,6 +306,8 @@ async function recordLapseFailure(
     lapseParkedAt: next.parkedAt,
     lapseRetriedAt: next.retriedAt,
   });
+  // Machinery's count reads this small mirror, never the profile (D258).
+  await mirrorFailure(ctx, 'lapses', profile._id, next, now);
   return next.parkedAt !== undefined;
 }
 
@@ -362,21 +467,27 @@ export const retryLapsedDaily = internalMutation({
         if (!head) break;
         after = { at: head.lapseParkedAt as number, creation: head._creationTime };
         const allowance = nestedAllowance(reads);
+        let outcome: LapseOutcome;
         try {
-          const outcome = await ctx.runMutation(
+          outcome = await ctx.runMutation(
             internal.peopleJobs.lapseOne,
             { userId: head._id, now },
             { transactionLimits: { bytesRead: allowance } },
           );
-          reads.spend(PERSON_WORK);
-          if (outcome === 'reset') reset++;
-          else skipped++;
         } catch (err) {
           reads.spend(allowance);
           reads.touch('profile');
           failed++;
           await recordLapseFailure(ctx, head, errorClassOf(err), now, true);
+          continue;
         }
+        reads.spend(PERSON_WORK);
+        if (outcome === 'reset') reset++;
+        else skipped++;
+        // Still parked but passed by (in their deletion window): mirrored if it isn't yet — a lapse
+        // parked before the mirror existed gets one here, so Machinery's count heals in a day. Outside
+        // the attempt: the reset went through, so nothing here is ever recorded as the lapse failing.
+        if (outcome === 'leaving') await ensureLapseMirror(ctx, reads, head, now);
       }
       if (more && reset + failed + skipped === 0) {
         throw new Error('peopleJobs.retryLapsedDaily: a pass made no progress');
@@ -391,7 +502,13 @@ export const retryLapsedDaily = internalMutation({
           ...next,
           ...(after !== undefined ? { after } : {}),
         });
-      } else await endRun(ctx, lease, lease.failed + failed);
+      } else {
+        await endRun(ctx, lease, lease.failed + failed);
+        // Mirrors whose lapse went another way — the account erased, or its status changed by a
+        // writer outside this module — are forgotten a page a day, lapping the mirrors from a saved
+        // place, so the ones it keeps never hold a stale one behind them.
+        await lapLapseMirrors(ctx, reads, now);
+      }
       return { reset, failed, skipped, more };
     }),
 });
@@ -448,6 +565,12 @@ export const refreshOne = internalMutation({
   args: { userId: v.id('profiles'), touch: v.optional(v.boolean()) },
   handler: async (ctx, { userId, touch }): Promise<boolean> =>
     refreshPersonRow(ctx, userId, { touch: touch === true }),
+});
+
+/** A staffer's tenure stamped on their row, in its own transaction (`lib/staffTenure`). */
+export const stampOne = internalMutation({
+  args: { userId: v.id('profiles') },
+  handler: (ctx, { userId }) => stampTenure(ctx, userId),
 });
 
 /** What a pass of a superseded run returns: it read its lease and did nothing else. */
@@ -590,7 +713,10 @@ export const backfillRows = internalMutation({
       let stopped = false;
       let gap = false;
       for (const profile of profiles) {
-        if (!reads.affords(NESTED_NEED)) {
+        // A staffer's row also carries their tenure (the Staff lane's dates), stamped by the rule
+        // the strip reads (`lib/staffTenure`): the item starts only when both fit.
+        const staff = profile.role !== 'member' && profile.status !== 'deleted';
+        if (!reads.affords(NESTED_NEED + (staff ? STAMP_WORK + ROW_MAX.profile : 0))) {
           stopped = true;
           break;
         }
@@ -612,6 +738,23 @@ export const backfillRows = internalMutation({
           reads.spend(allowance);
           failed++;
           console.error(`peopleJobs.backfillRows: ${profile._id} failed (${errorClassOf(err)})`);
+          last = profile;
+          continue;
+        }
+        if (staff) {
+          const stampAllowance = nestedAllowance(reads);
+          try {
+            await ctx.runMutation(
+              internal.peopleJobs.stampOne,
+              { userId: profile._id },
+              { transactionLimits: { bytesRead: stampAllowance } },
+            );
+            reads.spend(STAMP_WORK);
+          } catch (err) {
+            reads.spend(stampAllowance);
+            failed++;
+            console.error(`peopleJobs.backfillRows: ${profile._id} tenure (${errorClassOf(err)})`);
+          }
         }
         last = profile;
       }
@@ -644,6 +787,8 @@ export const restoreTombstoneStatus = internalMutation({
       lapseParkedAt: undefined,
       lapseRetriedAt: undefined,
     });
+    // The sweep's attempt state goes, so its Machinery mirror goes with it (D258).
+    await clearFailure(ctx, 'lapses', userId);
     await refreshPersonRow(ctx, userId);
     return { restored: true };
   },
@@ -732,6 +877,15 @@ export const backfillUndoChains = internalMutation({
       let placed = 0;
       for (const [i, row] of page.page.entries()) {
         if (row.undoesActionId === undefined || row.undoRoot !== undefined) continue;
+        // A role undo changes the person's tenure: their row is stamped again once it is placed —
+        // so the row starts only when that walk fits too (a placed row is passed over next time).
+        const roleRow =
+          row.targetType === 'user' &&
+          (row.action === 'grant_role' || row.action === 'revoke_role');
+        if (roleRow && !reads.affords(STAMP_WORK + 2 * ROW_MAX.moderationAction)) {
+          stoppedAt = i;
+          break;
+        }
         const parentId = row.undoesActionId;
         const parent = await reads.measured('moderationAction', () => ctx.db.get(parentId));
         if (parent === undefined) {
@@ -756,6 +910,19 @@ export const backfillUndoChains = internalMutation({
             await ctx.db.patch(rootId, { undoTop: depth, undoTopActorId: row.actorId });
           }
           await ctx.db.patch(row._id, { undoRoot: rootId, undoDepth: depth });
+          if (roleRow) {
+            try {
+              await stampTenure(ctx, row.targetId as Id<'profiles'>);
+            } catch (err) {
+              // The same rule as the first row's stamp above: a placed row is passed over, so a stamp
+              // that failed must leave the row unplaced, or the re-run never stamps the person again.
+              await ctx.db.patch(row._id, { undoRoot: undefined, undoDepth: undefined });
+              throw err;
+            } finally {
+              // Its reads count either way; the row started only once they fit.
+              reads.spend(STAMP_WORK);
+            }
+          }
           placed++;
         } catch (err) {
           failed++;

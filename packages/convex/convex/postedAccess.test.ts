@@ -6,12 +6,13 @@
  * applied to a third target.
  */
 
-import type { PostedAccess } from '@skating/core';
+import { AUDIT_REASON_MAX, type PostedAccess } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
+import { setPostedAccessImpl } from './postedAccess';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -360,5 +361,35 @@ describe('postedAccess — rules compose, they never merge', () => {
     const log = await audits(t);
     expect(log.map((a) => a.targetType)).toEqual(['waterbody', 'putIn', 'parkingArea']);
     expect(log.map((a) => a.targetId)).toEqual([body, putIn, lot]);
+  });
+});
+
+describe('postedAccess — a reason a person typed is kept whole (D261)', () => {
+  test('the change described before it is shortened around a reason at the cap, never the reason', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const typed = 'y'.repeat(AUDIT_REASON_MAX);
+    await t.run(async (ctx) => {
+      const actor = (await ctx.db.get(mod.id)) as Doc<'profiles'>;
+      await setPostedAccessImpl(ctx, actor, {
+        target: { type: 'waterbody', id: body },
+        postedAccess: TOMHANNOCK,
+        reason: typed,
+      });
+    });
+    const reason = (await audits(t))[0]?.reason;
+    expect(reason?.length).toBe(AUDIT_REASON_MAX);
+    expect(reason?.endsWith(typed)).toBe(true);
+    // Room to spare: the description stays whole too.
+    await t.run(async (ctx) => {
+      const actor = (await ctx.db.get(mod.id)) as Doc<'profiles'>;
+      await setPostedAccessImpl(ctx, actor, {
+        target: { type: 'waterbody', id: body },
+        postedAccess: null,
+        reason: 'wrong lake',
+      });
+    });
+    expect((await audits(t))[1]?.reason).toBe('Cleared the posted rules — wrong lake');
   });
 });

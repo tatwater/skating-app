@@ -15,7 +15,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { type AuditReasonOrText, composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
@@ -53,7 +53,7 @@ async function audit(
   actorId: Id<'profiles'>,
   action: 'remove' | 'restore',
   row: Doc<'corpusPlaceNames'>,
-  reason: string,
+  reason: AuditReasonOrText,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
   await writeAudit(ctx, {
@@ -310,22 +310,24 @@ export const dismiss = mutation({
   handler: async (ctx, { id, reason, note }) => {
     const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
-    const trimmed = note?.trim();
+    // The note as the row keeps it — the audit line quotes the same words, never more than were stored.
+    const kept = note?.trim().slice(0, 280);
     const now = Date.now();
     await ctx.db.patch(row._id, {
       status: 'dismissed',
       dismissReason: reason,
-      ...(trimmed ? { dismissNote: trimmed.slice(0, 280) } : {}),
+      ...(kept ? { dismissNote: kept } : {}),
       decidedByUserId: actor._id,
       decidedAt: now,
       updatedAt: now,
     });
+    const noted = kept ? ` — ${kept}` : '';
     await audit(
       ctx,
       actor._id,
       'remove',
       row,
-      `Dismissed "${row.name}": ${reason}${trimmed ? ` — ${trimmed}` : ''}`.slice(0, 400),
+      composed`Dismissed "${row.name}": ${reason}${noted}`,
       { reason },
     );
   },
@@ -347,7 +349,7 @@ export const reopen = mutation({
       decidedAt: undefined,
       updatedAt: Date.now(),
     });
-    await audit(ctx, actor._id, 'restore', row, `Reopened "${row.name}"`);
+    await audit(ctx, actor._id, 'restore', row, composed`Reopened "${row.name}"`);
   },
 });
 
@@ -403,9 +405,16 @@ export const fileAsSpelling = mutation({
       moderatorEditedAt: now,
       updatedAt: now,
     });
-    await auditLandmark(ctx, actor._id, 'edit_landmark', landmark._id, `Spelled "${row.name}"`, {
-      corpusName: row.name,
-    });
+    await auditLandmark(
+      ctx,
+      actor._id,
+      'edit_landmark',
+      landmark._id,
+      composed`Spelled "${row.name}"`,
+      {
+        corpusName: row.name,
+      },
+    );
     await ctx.db.patch(row._id, {
       status: 'placed',
       waterBodyId: landmark.waterBodyId,

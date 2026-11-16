@@ -2374,7 +2374,7 @@ objects, on an empty database and on seeded ones, a failure and a stalled run in
 `packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
 the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`.
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure on their row, then step 3 again.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
@@ -2416,6 +2416,229 @@ read solely for them; overturn on the sheet. **Owed to the web builders:** `Rest
 the person by `@username` in its "why down" line (the rule is real names) and is a Dialog where the
 boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
 the Bounties lever.
+
+**B01-4b (2026-11-15): the People server's follow-up** (stacked on #115; the list and person pages'
+requests, and the founder's rulings of the same day — D261, and the Overview's figures as the lanes').
+Every shape change is additive except where noted.
+
+- **One rule for the Overview and the lanes.** `lib/peopleFigures.laneCounter` counts every lane as its
+  list is read, and both `people.lanes` and the Overview's People card count through it: *N users*
+  (`totalUsers`) is now the live Everyone lane, *open appeals* (`appealsOpen`) counts people with a row,
+  not tickets, read from the account-ticket range (so a page of other tickets can't hide one). The
+  6-hourly `accounts_total` rollup is no longer read here; Metrics' *total* and its history still read
+  it (`lib/metricReads.accountsTotal`). Shapes unchanged; the values follow the lanes.
+- **The list page.** `people.listPage` takes `endCursor` and reads exactly `(cursor, endCursor]`, as
+  Convex's own reactive pagination does, returning `splitCursor` / `pageStatus` past 200 rows. The
+  queue lanes and the Staff lane are read whole (≤ 200 and ≤ 500 light rows) and keyed by their own
+  order (a JSON key: oldest open item and id; rank, name and id), so a person who leaves or joins an
+  earlier page moves nothing on a later one; a bare-offset cursor from before is still read. Rows add
+  `oldestOpenAt` (Flagged and Appeals: the oldest open flag or waiting ticket — the very key they sort
+  by) and `staff` (Staff lane only: `lastSeenInConsoleAt`, `lastSeenCapped`, `roleSince`,
+  `roleSinceCapped`, `decisionsThisWeek: Count`). The Staff columns are two reads for the whole page —
+  the presence rows within the record's retention, and the week's audit rows under a one-document
+  real-weight cap (a function gets one `paginate`, which is why the Staff lane is read whole; a support
+  viewer's queues, charged ahead, leave room for no more) — never one a row. A lane read whole is cut
+  by its key, sorted by it, so a tie the index breaks by creation time can't be skipped or repeated;
+  a page given an `endCursor` returns it as its `continueCursor`. The Staff page's `pending` names
+  `undoChains` while a role since can't be told yet.
+- **Last seen in the console.** `consolePresence` keeps one row per staffer — the last instant a
+  console page heartbeat, replaced in place, erased with the account — and nothing about skaters. The
+  lane shows it only within the current season and the one before (`signInRetentionFromMs`, the sign-in
+  record's own rule, D254); older is `null`, not recorded, and a read stopped at its cap says
+  `lastSeenCapped` rather than `null`. The row itself follows the same rule (the coordinator's ruling,
+  2026-11-15): the daily sign-in prune (`analyticsRollup.pruneSignInDays`) removes presence rows last
+  seen before the previous season's 1 July, a page per transaction beside the days, each its own delete.
+- **A staffer's tenure, defined once** (`lib/staffTenure`): the strip's undo-aware staff since and role
+  since, now one function. `people.staffStats` reads it live; every role write stamps it on the
+  person's row (`roleSince`, `staffSince`, `tenureCapped`, `tenureAt`), as do the rows backfill (in
+  its own nested call, for each staffer) and the undo-chain backfill when it places a role undo; a
+  refresh keeps the stamp while the role holds. The Staff lane's `roleSince` is that stamp, so the lane
+  and the strip give one date — and one reason for none: `tenureCapped` only for a read that stopped
+  short; an undo not yet placed is the readers' `pending`. The undo-chain backfill un-places a role
+  undo whose stamp failed, so its re-run stamps the person again.
+- **The person page.** `person` adds: `rightsSince` (when each right now off was last turned off, from
+  one capped read of the person's `set_posting_permission` rows; `rightsSinceCapped`), `ledger.since`
+  (holders only), `publicProfile: { opens, private, path }` (the profile read's own `profileAccess`,
+  whose block check is now two point reads on a new `blocks.by_blocker_blocked` index, never either
+  person's whole block list),
+  `bountySeason` (this season's asks, over-limit and recent-report counts from `bountyGateEvents` via a
+  new `by_requester_created` index; `null` when the season began before the gate's 180-day record),
+  `open.flags[].targetLabel` (the person's own name, or the body the flagged thing is about by the
+  Inbox's rule, `lib/openFlags.flagBodyId` — a Post, comment or photo through its Report — each body's
+  name read once; at most 20 distinct, then `open.flagLabelsCapped`), appeals' `body` (admins only,
+  as appeals already are), and explicit `can` entries for every give-back: `restore.{reports, hazards,
+  comments}`, `flaggingOn`, `bountyRaise` (no reason), `bountyLower` (a reason), `extend` (a new window
+  for a running suspension; refused when not suspended). Each is the write's own answer
+  (`lib/peopleCan.writeRefusal`).
+- **The last-editor sentence is a holder's to read.** A read's `can` (and History's undo state) gives a
+  viewer who doesn't hold ledger editing `This isn’t available for this account right now.` where it
+  gave `They are the last person who can edit the ledger; give another admin ledger editing first`;
+  holders still read the sentence, and the write's own refusal is unchanged.
+- **Every person write returns its audit row** (H3): `{ userId, undoable: true, actionId,
+  undoNeedsReason }` — or `{ userId, undoable: false }` when the caller can't undo it now — from the
+  five discipline writes, the two role writes and the two ledger writes (they returned the id, or
+  nothing; no client read it). `undoNeedsReason` is `lib/undo.undoNeedsReason` — the rule `undoState`,
+  and so `undo.latestOwn` and `undo.run`, answers by: the undo of a give-back takes something away and
+  asks; the undo of a take-away gives back and doesn't. One test holds the three to one answer for every
+  person verb, so the toast needs no lookup. The offer is read for the caller **as the write left
+  them** (`personWriteResult` re-reads them, in one place): a holder stepping down while another holds
+  the ledger loses the grant its undo needs, so it is offered none. Every other person write is
+  refused on the caller themselves — the discipline writes and the role writes by their own rules, a
+  ledger grant because the caller already holds it — so stepping down is the one write that changes
+  its own caller's standing. A property holds "what a write returns is what `undo.latestOwn` and
+  `undo.run` give that caller right after" over sampled states, writes, targets (the caller included)
+  and one or two holders (pinned seeds plus a fresh one); every write on the caller, with one holder
+  and with two, is checked by name.
+- **Ids at the edge.** The People queries take the person's id as a string and normalize it once:
+  anything that isn't a profile id is `null` — no such person — rather than a validator error.
+  `people.decisions` can now return `null` for that case.
+- **`staffStats.decisions.undoneByOthers`** adds `by` (up to three undoers, most first, named from their
+  rows, with counts) and `byMore`.
+- **The audit-reason cap (D261).** 2,000 characters, refused at `lib/audit.writeAudit` — the one insert
+  site of the log (the `auditWriters` guard holds that) — so no lever, undo, script or job is missed;
+  rows from before are left alone. `readBudget`'s worst case for an audit row is **left at the document
+  limit**: whether any row on dev exceeds 2,000 characters can't be known without a dev query, and an
+  undo's metadata copies a status reason already on a profile, which no cap reaches back to.
+- **The parked-lapse count in `recurringJobs:health`.** The sweep's attempt state stays on the profile
+  (its due range must leave a parked lapse out); each change is mirrored into `jobFailures` (job
+  `lapses`, keyed by profile id, the queue-shaped jobs' pattern) and cleared wherever the state is
+  cleared (a reset, a suspend, ban or lift); the daily retry forgets mirrors whose lapse went another
+  way, a few a day. Machinery counts small rows only.
+- **Bounds.** The ledger check before the rows backfill reads admins' profiles under the smaller of
+  six documents and what the transaction really has left, and a write confirms an editor from their
+  profile only while a whole one still fits — either way a shortfall undercounts and refuses (safe).
+  `staffStats` makes at most 400 database calls across its per-row loops (Convex gives a query one
+  second); past it the figures say capped. An avatar URL past 2,048 UTF-8 bytes is not stored (the
+  person shows initials) rather than refusing the Clerk sync, keeping a People row light.
+- **The undo engine's per-row worst case** (main's, unchanged): shaping one History or Decisions row
+  reads up to 16 undo-tagged audit rows, the newest row on the target, the content's author stamp, the
+  person's row and a rowless profile — about 19 documents at the document limit each in theory, since
+  an audit row's reason was uncapped and its metadata still is — and, since #127, its verb's refusal
+  hook (a launch's: up to 201 documents, see below). Its calls and documents are counted ahead; its
+  bytes are not.
+- **The page's two assumptions, checked.** Suspending a banned account replaces the ban (the status
+  becomes `suspended` and the Clerk lock is lifted) — right. An open-ended suspension, or one that ran
+  its course but isn't reset yet, can only be lifted — **wrong**: the suspend write accepts a new
+  window on any suspended account (`can.extend` says so). Ruled 2026-11-15: the server stays as it is,
+  and the page draws what `can.extend` allows.
+- **After merge, on dev:** the People procedure above, step 6 included — if #115's backfills ran
+  before this deployed, `peopleJobs:backfillRows '{"alone":true}'` once stamps each staffer's tenure
+  (tested literally in `peopleBackfills.test.ts`). The two new indexes (`blocks.by_blocker_blocked`,
+  `bountyGateEvents.by_requester_created`) build with the deploy.
+
+**B01-4b, after Greptile's review of #125** (each fixed as its class):
+- **Fixed needs before variable reads.** The person page takes its fixed reads (the public profile's
+  block checks, the ledger grant time, the status setter's row) before the first read that sizes
+  itself by what is left; a test holds every People read to an answer for one person at the cap on
+  every axis at once.
+- **A bounded page holds the cap.** `listPage` with `endCursor`, on every lane, returns and charges at
+  most 200 rows and says `SplitRequired`, with a `splitCursor` where one can be made (the keyed lanes,
+  and Convex's own on paginated lanes; a search index gives none, so the client re-reads that range
+  unbounded).
+- **Walks lap.** The parked-lapse mirror check laps from a saved place (`jobPositions`, job
+  `lapseMirrors`), so kept mirrors never hold a stale one behind them; the daily retry mirrors a lapse
+  parked before the mirror existed, so Machinery's count is whole within a day of deploy. The other
+  walks this PR adds were checked: the presence prune deletes what it reads (no kept rows), the sweep
+  and the retry walk their whole range a run.
+- **The time axis is owed, in its own PR.** A query has one second, and `people.decisions` still awaits
+  its rows one after another: about 480 ms for a page of 50, measured on dev, from roughly three point
+  reads a row. So do History, the person page's flag labels, staffStats' and staffSeason's per-row
+  checks and a queue lane's rows. The fix builds on the shared reservation B01-3i landed (#128:
+  `ReadBudget.measured` reserving a read's worst case and handing back the difference, and
+  `undoStates` reading a page's undo states in waves), so one budget has one rule. It comes next as
+  `b01-4c-people-rounds`, with a round bound per page and a guard test.
+  The concurrency first built here is parked on a local branch to be redone on that rule.
+  `staffStats` keeps its time bound in the meantime: at most 400 reads across its per-row loops, counted
+  as they are made.
+  The per-row plan is charged, not just declared: Decisions and History count each row's calls and
+  documents ahead, and a page the budget can't shape whole shapes fewer and says capped. #127's
+  refusal hook (a launch reads up to 200 hidden launches) is not in that plan since #131: it reads
+  through the share `undoStates` reserves for its row, and a row with no room for one says "check
+  elsewhere" (a test runs a page of launch lines at that peak).
+- **A "since" is the start of the current unbroken state** (Greptile's 5/5 note on 88c0cdd6:
+  "repeated restrictions reset their date"). One rule, `lib/stateSince.startOfCurrentState`: walking
+  a run of audit rows newest first, a write that changed nothing (its `prev` equals what it set) is
+  passed over, and the answer is the first real change if it led to the current state; if the rows read
+  end first, "can't say" (`capped`) when more were unread, "not recorded" when the record ends. It
+  serves each right's restriction (`rightsSince`) and the status note's start (`statusNote.at`, with
+  `atCapped`, walking up to ten rows of the verb and one document's weight; a suspension whose window
+  had run out before the next one, which the sweep hadn't reset yet, counts as over, so the next one
+  starts a new run, and the list row's `statusSince` counts it the same way; the note's who, via and
+  reason come from the same write as its date — the one that began the status — so no moderator is
+  credited with another's date or words; with no start found, the reason on file stands alone). The ledger grant and the tenure dates were already starts: a grant to a holder is refused
+  (since the grant was built, #108), and so is a move to the role held — but only since #115; before
+  that `grantRole` recorded a regrant, so dev's older role rows can hold a no-op that `staffTenure`'s
+  role since would take as the move (prod has none). A fast-check property holds the rule over
+  random sequences of real changes and repeats by different staff. Person writes that accept a no-op and still write a row (for the founder's call on whether
+  they should): a right set to the value it has (`setPostingPermission`), a bounty limit set to the one
+  in force (`setBountyPostLimit`, recorded with the give-back's default reason), a ban of a banned
+  account (`banUser`), a lift of an active account (`unbanUser`), and a suspension of a suspended
+  account to the same end (`suspendUser`). Role and ledger writes refuse their no-ops.
+- **Tagged reasons at the type.** The People writers take only a tagged reason (`writePersonAudit`):
+  `typed()` (refused past the cap) or `composed` (shortened to fit), each a branded shape no literal
+  can spell. The other writers keep a compatible type (a string is held to the cap as typed). The
+  composed-reason guard is the backstop, and now covers the Bodies writes #126 brought.
+- **A sweep's run record carries no `ready`.** Only a backfill's does.
+- **The newest audit row on a busy target, read for undo state:** it is read whole and its bytes are
+  not charged (the undo engine counts its calls and documents only — the same holds for the rows an
+  undo tagged and the content's author stamp; #127's refusal reads are the exception, charged their
+  real weight through `undoRead`, all but a snapshot and a launch's hidden neighbors, which B01-3f
+  owes). For rows written since D261 the
+  reason is at most 2,000 characters, but metadata is uncapped and older rows' reasons are too, so the
+  worst case is still the document limit per line in a page (read once a line, as on main — reading it
+  once per target waits on the rounds PR). A fix belongs with the metadata ruling below (or a
+  per-target "latest action" row the undo engine could read instead).
+
+**Owed: audit metadata, writer by writer** (the coordinator's ask, 2026-11-15 — facts for the ruling,
+from the code, not from dev; nothing capped in this PR). Every audit row passes through
+`lib/audit.writeAudit`; its `metadata` is free-form. By the largest each writer can produce today:
+
+| Writers (verbs) | Metadata | Largest today | Near the document limit? |
+| --- | --- | --- | --- |
+| Content status (hide, restore, remove, author_delete, overturn; the hazard and alert retractions) | statuses, ids, a subject id; a Post's `cascaded` list | ≤ `POST_MAX_REPORTS` (10) cascade entries — under 2 KB | no |
+| Flag and request decisions, drawn-body approve/reject, sub-area create/redraw/restore, curated boost, imagery mode, included-by-request, standing, recurrences' promote, body features | ids, enums, numbers, `filedAt`, a fraction | a few hundred bytes | no |
+| `merge_waterbody` | survivor id, per-table **counts**, `changeSet: true` | under 1 KB — **the moved-rows list, the deleted favorites and the sub-area and landmark snapshots already go to the snapshot table** (`writeSnapshot`), not metadata | no |
+| `set_weather_sample_points` | counts, `snapshot: true` (the points are in the snapshot table) | under 100 bytes | no |
+| `dismiss_duplicate` | `waterBodyIds` | ≤ `DEDUP_GROUP_CAP` (6) ids — under 1 KB | no |
+| `set_reference_links` | the links, before and after | ≤ 2 × `MAX_REFERENCE_LINKS` (8) links, labels ≤ 80 characters; URLs uncapped | only through a URL no writer caps |
+| `set_parking_area` | coord, the bodies a lot serves, its name, `prev` | the lot's body list (uncapped at the write) and an uncapped name | in theory |
+| Status writes (suspend, ban, lift, the lapse sweep's reset) | `prev` with the profile's `statusReason` | a reason from before D261 is uncapped; from now on ≤ 2,000 characters | old rows only, in theory |
+| Names (`set_water_body_name`, landmarks' create/edit, `corpusPlaceNames`) | the name, before and after; a landmark edit also its spellings, before (`prev`) and after (`aliases`, #127) | body and place names are uncapped at their writers, and a landmark's spellings in number too | in theory |
+| `suppress_recurrence` / `unsuppress_recurrence` | `prev` with the suppression reason | uncapped (as `ROW_MAX.hazardRecurrence` notes) | in theory |
+| `set_lake_depth` | the depth source's before and after | ids and numbers | no |
+
+**Proposal:** cap the three free texts that leak into metadata at their own writers (a body or place
+name at 200 characters, a lot's body list at the link cap the lot's History already uses, 64; reference
+URLs at 2,048), and copy a status or suppression reason into `prev` cut to the D261 cap. The snapshot
+table — the merge's own pattern — stays the place for any payload that is a list of rows. With those,
+the largest metadata is a few KB, and an audit row's worst case could come down from the document
+limit to the reason cap plus about 16 KB.
+
+**Composed reasons are shortened, never refused** (the coordinator's ruling, 2026-11-15, closing the
+risk D261 opened). D261's cap is for what a person types. A reason the system builds from fixed words
+and stored names or text is written with the `composed` tag (`lib/audit.composed`); `writeAudit` keeps
+its fixed words and trims the quoted values — the longest first, each cut marked with an ellipsis —
+until it fits 2,000 characters, and the write goes through. A plain string is still refused past the
+cap with its plain message; a writer that quotes a person's typed reason inside a composed one checks
+it first (`checkedReason`). `packages/guards`' `auditWriters.test.ts` fails on a raw template with a
+value passed to an audit writer. The composing writers:
+
+| File | Writers | Fixed words around |
+| --- | --- | --- |
+| `subAreas.ts` | auto-delist (with an actor), create (drawn and by chord), redraw, redraw by chord, rename / aliases, delist, restore, curated boost, the A02 seed, the A07a campaign | a bay's and its lake's names, the delist reason |
+| `landmarks.ts`, `lib/landmarkRows.ts` | add, edit, remove, restore; drawn as a bay; folded into / removed by a merge | a landmark's and its twin's names |
+| `corpusPlaceNames.ts` | dismiss (with the moderator's note), reopen, spelled as a landmark's alias | a place name, the dismissal reason and note |
+| `waterBodies.ts` | remove from map, merge (operator default and the catalog campaign's absorption), satellite mode, sample points, name override cleared, community name, display name, curated boost, reference links, depth override released, aliases, class, the depth source chosen or handed back | a body's names, a campaign id, counts, modes, a class and a source |
+| `putIns.ts` | set official put-in, made official in place | the put-in's name |
+| `imageryOverrides.ts` | a pass cleared, shown, hidden (the person's reason kept whole, checked first) | the pass id |
+| `corpusRequests.ts` | admit from the catalog | a catalog id |
+| `lib/requestDecisions.ts` | a request's default decision line | the decision and the request kind |
+| `postedAccess.ts` | the posted-access change, with the person's reason quoted | the change, and the typed reason (checked first) |
+
+No recurring job composes a reason from stored text today: the lapse sweep, the standing rollover,
+the hazard auto-merge and the erasure write fixed reasons; the auto-delist and the catalog absorption
+that do compose run from the ETL and operator writes. A composed reason can't fail its write, so none
+could be parked by it.
 
 ### The B01-2 server register (owed to the server agent)
 
@@ -3405,10 +3628,12 @@ operator leaving), running the same function the write refuses by — `depthChoi
 `shapeRefusal`, `launchRefusal` and `directionRefusal`, `samplePointsRefusal`, `listChangedRefusal`.
 Its row reads (`lib/undoReads`) are charged at their real weight to the request's budget, one after
 another, read once per query; past it the line reads *unavailable* — "This page has too much to check
-this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
-refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
-not charged, and People's per-row call plan (`ROW_SHAPE_DOCS`) doesn't count them; the landmark
-undo's refusal checks the spellings only, not the duplicate and bay-name rules its write also takes.
+this undo here — open what it changed to undo it." — never a read past the limit. A refusal's
+snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) went
+uncharged at first; since B01-3h (#131) they go through the share `undoStates` reserves for the row,
+so People's per-row plan (`ROW_SHAPE_DOCS`) counts none of a refusal's reads — a row with no room
+for its share says "check elsewhere". **Owed:** the landmark undo's refusal checks the spellings
+only on a page, not the duplicate and bay-name rules its write also takes.
 
 **A page of History in a handful of rounds (B01-3i).** After #127 deployed, one busy body's first
 page of History took 803 and 710 ms uncached on dev. Counted structurally (a round: a database call
@@ -3584,8 +3809,9 @@ body's states change at its next campaign. The phone picker's empty state says "
 or the lake's town" though search does not match towns (owed, below).
 
 **A removal can say why.** `waterBodies.remove` takes an optional note: trimmed, refused past
-`REMOVAL_NOTE_MAX_CHARS` (1,000) with the shared message, written into the audit reason beside the
-fixed one and kept in its metadata, returned by `bodyConsole.removedFacts` (`left.note`). No note is
+the audit-reason cap (D261: 2,000, `AUDIT_REASON_MAX`, its own sentence), written into the audit
+reason beside the fixed one (composed, so a note at the cap shortens the line rather than failing it)
+and kept whole in its metadata, returned by `bodyConsole.removedFacts` (`left.note`). No note is
 exactly the old removal; the undo is unchanged.
 
 **A moderator's pin outranks the rule.** `waterBodies.moderatorTownKeys` — stable `tiger/<GEOID>`
@@ -3595,11 +3821,13 @@ holds a body in region in the towns named. `setModeratorTowns` is a whole-list w
 removes any pin is a takeaway** and refuses without a nonblank reason ("A reason is required", as
 every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
 in N towns") and marked `reasonDefaulted` in the audit row. The person's reason is trimmed and
-refused past `AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings
-one), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
-run past it. Its undo follows the same rule on the list it puts back (one rule, the undo policy's
-`{ from, to }`): undoing an add removes pins and asks a reason; undoing a removal only adds and asks
-none. The undo is refused, so never offered, when a merge moved the list since its row. A body's states are built from two ingredients kept apart —
+refused past the audit-reason cap (D261, `AUDIT_REASON_MAX`; #130's interim 1,000-character cap is
+gone, one cap for every audit reason) — early in the mutation, and again by `writeAudit`, which
+holds the same plain string to the same cap; an undo's own reason quotes the row's but never trips
+it, since `runUndo` fits the line it composes to the cap. Its undo follows the same rule on the list
+it puts back (one rule, the undo policy's `{ from, to }`): undoing an add removes pins and asks a
+reason; undoing a removal only adds and asks none. The undo is refused, so never offered, when a
+merge moved the list since its row. A body's states are built from two ingredients kept apart —
 the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
 the pin's write, its undo, a merge and the import all patch through, so skater search, the library
 and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly
@@ -3726,13 +3954,18 @@ token; the head's name is the 15 px logo step (no name step); lever rows are 32 
 draws 34; the role menu's item takes two lines.
 
 **Owed:**
-- To the server follow-up: `people.listPage` taking an `endCursor` (until then a change in an
-  earlier page drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`,
-  `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
-  time; `lanesFor` from core (the page holds a copy of the server's rule); `{ actionId,
-  undoNeedsReason }` from every People write; `ledger.since`; `rights.since`; the bounty season
-  line; explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal
-  text; who undid a row.
+- A web pass on the server follow-up (B01-4b), which supplies what was owed to it here:
+  `people.listPage` taking an `endCursor` (until the page passes it, a change in an earlier page
+  drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`, `roleSince` and
+  `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket time; `{ actionId,
+  undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the bounty season line;
+  explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal text;
+  who undid a row — and the capped answers beside them the page doesn't draw yet
+  (`decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`, `rightsSinceCapped`, and a
+  staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a capped date there still reads
+  as not recorded. The merge filled the fixtures with the new fields and made the list row's staff
+  overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`; the status note's who-and-when
+  line tells a start past the read (`statusNote.atCapped`) from one not recorded.
 - The record sheet (verdicts and withdrawals, above; boards 8.7–8.9) is not built. The *On the
   record* row appears today on the one count main's server supplies (the standing list); it should
   appear whenever any of the sheet's three lists (Standing, Deleted, Reversed) has items, and its

@@ -1,6 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AUDIT_VIA_MAX_LENGTH, isAuditVia } from './auditVia';
+import {
+  AUDIT_REASON_MAX,
+  AUDIT_REASON_TOO_LONG,
+  AUDIT_VIA_MAX_LENGTH,
+  isAuditVia,
+} from './auditVia';
 
 describe('isAuditVia — what an audit row records it was done through', () => {
   it('takes a script name in hyphen-joined lowercase words', () => {
@@ -45,5 +50,12 @@ describe('isAuditVia — what an audit row records it was done through', () => {
         }
       }),
     );
+  });
+});
+
+describe('the audit reason cap (D261)', () => {
+  it('is 2,000 characters, and its refusal says so plainly', () => {
+    expect(AUDIT_REASON_MAX).toBe(2_000);
+    expect(AUDIT_REASON_TOO_LONG).toBe('A reason can be at most 2,000 characters.');
   });
 });
