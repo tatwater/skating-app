@@ -2843,17 +2843,21 @@ time — the reads narrow by one), the open item beside, master–detail under t
   while its write is out. A table test runs the four writes, landed and refused.
 - **The Account row widened** to all three lists (`recordRowShows`): it stands for anything on any
   list, a floor, or a record still being prepared, and says what stands ("0 items" when only the
-  other two hold anything). `recordCounts` is read with the page; the sheet reads nothing until opened.
+  other two hold anything). The page reads `recordPresence` (cheap, live); `recordCounts` — the
+  filter's counts by kind — is the sheet's own, read only while it is open, as is everything else
+  the sheet asks.
 - **Its life** is drawn from the item's own read (posted, each decision and how it ended, the
   author's deletion; today; what the lever would do, dashed) — no second read. Only for an item with
-  a decision whose words are still kept, as the boards draw it. *If overturned*'s erase date is core's
-  `nextEraseAt` over the deletion, which can't see an open flag; the toast says a date only from the
-  write's `eraseAt`.
-- **Not in the contract, so not drawn:** *Comes back with it* / *Came back with it* (a Report's
-  comments and thumbs, 8.7–8.8) — no read returns them for the pane; and an author-deleted member's
-  date in the chooser (*Deleted by its author 28 Sep*) — `PostRestoreMember` carries no
-  `authorDeletedAt`, so it reads *Deleted by its author, so it can't come back with the post*.
-- **Ages** are the console's one short form (`shortAge`, "209 d"), not the board's "7 mo".
+  a decision whose words are still kept, as the boards draw it.
+- **The contract's additions, drawn as they come** (the coordinator's, 2026-11-15): the item's
+  `content` (the rows' own words; the web reads no document fields of its own), *If overturned*'s
+  date from `eraseAtIfReleased` — a date not ahead of the read is *at once*, and `null` with an
+  overturn offered is *Not erased while anything else holds it* (its Post's decision, an open
+  flag) — *Comes back with it* / *Came back with it* from `comesBack` (comments still up and thumbs,
+  a floor past the cap, *None* for none; the restore's toast says what came back), and the chooser's
+  *Deleted by its author 28 Sep* from `PostRestoreMember.authorDeletedAt`.
+- **Ages** are the console's one short form (`shortAge`, "209 d"), not the board's "7 mo" — one call,
+  `RECORD_WORDS.rowAge`, while the founder decides.
 
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it

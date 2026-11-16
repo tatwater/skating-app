@@ -139,6 +139,11 @@ function ItemBody({
             )}
           </Section>
         )}
+        {view.comesBack !== null && (
+          <Section title={view.comesBack.title} level={3} data-slot="record-comes-back">
+            <LabelRows rows={view.comesBack.rows.map((r) => ({ label: r.label, value: r.text }))} />
+          </Section>
+        )}
         {view.would !== null && (
           <Section title={view.would.title} level={3} data-slot="record-would">
             <LabelRows rows={view.would.rows.map((r) => ({ label: r.label, value: r.text }))} />

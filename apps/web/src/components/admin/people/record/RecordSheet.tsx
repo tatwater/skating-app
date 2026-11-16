@@ -38,7 +38,8 @@ import { type RecordServer, type RecordWriteResult, useRecordWrites } from './us
  * - **What it remembers is the sitting's**: the tab, the filter, the open item and every row
  *   restored here start over when the sheet opens again.
  * - **Standing's count and whether the record is being prepared** come from the person page, which
- *   already reads them (`people.person.hidden`, `contentRecord.recordCounts`).
+ *   already reads them (`people.person.hidden`, `contentRecord.recordPresence`); the counts by kind
+ *   (`contentRecord.recordCounts`) are the sheet's own, read only while it is open.
  */
 export type RecordSheetProps = {
   open: boolean;
@@ -46,7 +47,6 @@ export type RecordSheetProps = {
   subject: RecordSubject;
   standing: StandingCount | null;
   pending: boolean;
-  counts: RecordCounts | null;
   container?: HTMLElement | null;
 };
 
@@ -117,7 +117,6 @@ function SheetSitting({
   subject,
   standing,
   pending,
-  counts,
   container,
   live,
   onClosed,
@@ -131,6 +130,10 @@ function SheetSitting({
   const { reads } = useConsoleReadSet({
     // Who is restoring, for a restored row's chip.
     viewer: live ? read(api.profiles.current, {}) : null,
+    // The tabs' counts by kind, for the filter: only while the sheet is open.
+    counts: live
+      ? read(api.contentRecord.recordCounts, { userId: userId as Id<'profiles'> })
+      : null,
     item:
       live && selected !== null
         ? read(api.contentRecord.item, {
@@ -144,6 +147,8 @@ function SheetSitting({
         : null,
   });
 
+  const counts =
+    reads.counts === undefined || isFailed(reads.counts) ? null : (reads.counts as RecordCounts);
   const viewer = reads.viewer;
   const viewerName =
     viewer === undefined || viewer === null || isFailed(viewer) ? null : personName(viewer);
@@ -184,7 +189,22 @@ function SheetSitting({
     },
     [tab, rows, keepRestored],
   );
-  const onAct = useRecordWrites({ server, announce, subject, placeOf, onRestored, now });
+  const comesBackOf = useCallback(
+    (target: Target) =>
+      item != null && !('failed' in item) && targetKey(item) === targetKey(target)
+        ? item.comesBack
+        : undefined,
+    [item],
+  );
+  const onAct = useRecordWrites({
+    server,
+    announce,
+    subject,
+    placeOf,
+    comesBackOf,
+    onRestored,
+    now,
+  });
 
   return (
     <RecordSheetView
@@ -194,7 +214,7 @@ function SheetSitting({
       {...(container !== undefined && { container })}
       subject={subject}
       standing={standing}
-      pending={pending}
+      pending={pending || (counts?.pending.length ?? 0) > 0}
       counts={counts}
       tab={tab}
       onTab={state.onTab}

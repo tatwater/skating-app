@@ -4,13 +4,12 @@ import {
   type AccessReason,
   type HazardType,
   hazardTypeLabel,
-  nextEraseAt,
   seasonOf,
 } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 import { historyWhen, seasonYears } from '../../shell/consoleTime';
-import { settledEmpty } from '../answers';
+import { floorText, settledEmpty } from '../answers';
 import { dateWords, firstName, momentWords, personName } from '../person/personModel';
 import { WORDS as PERSON_WORDS } from '../person/personWords';
 import {
@@ -43,6 +42,8 @@ export type StandingRow = StandingPage['page'][number];
 export type DeletedRow = DeletedPage['page'][number];
 export type ReversedRow = ReversedPage['page'][number];
 export type RecordCounts = FunctionReturnType<typeof api.contentRecord.recordCounts>;
+/** Whether Deleted and Reversed would show anything — the person page's cheap read. */
+export type RecordPresence = FunctionReturnType<typeof api.contentRecord.recordPresence>;
 export type ItemRead = NonNullable<FunctionReturnType<typeof api.contentRecord.item>>;
 export type ChoicesRead = NonNullable<FunctionReturnType<typeof api.moderation.postRestoreChoices>>;
 export type RecordLevers = ItemRead['can'];
@@ -469,17 +470,14 @@ export function kindOptions(
  */
 export function recordRowShows(
   standing: StandingCount,
-  counts: RecordCounts | null,
+  presence: RecordPresence | null,
   pending: boolean,
 ): boolean {
   if (pending) return true;
   if (!settledEmpty({ count: standing.total, capped: standing.capped, pending: false }))
     return true;
-  if (counts === null) return false;
-  if (counts.pending.length > 0) return true;
-  return [counts.deleted, counts.reversed].some(
-    (c) => !settledEmpty({ count: c.count, capped: c.capped, pending: false }),
-  );
+  if (presence === null) return false;
+  return presence.pending.length > 0 || presence.deleted || presence.reversed;
 }
 
 /** "2 reports · 1 comment": each kind with any, in order; a floor's figures are floors. */
@@ -535,35 +533,48 @@ export type ItemView = {
   would: { title: string; rows: Array<{ label: string; text: string }> } | null;
   lever: Lever | null;
   /**
-   * When its words would be erased were nothing to hold it — core's rule (`nextEraseAt`) over its
-   * deletion; an open flag the pane can't see may still hold it, so a receipt says only the
-   * server's date.
+   * When an overturn would leave its words erased, as the server read it (`eraseAtIfReleased`):
+   * a day, at once (the 30 days are already past), or not while something else holds it (its
+   * Post's decision, an open flag). `null` when no overturn is offered.
    */
-  erasesOn: string | null;
+  erasure: Erasure | null;
+  /** What a restore brings back with it, or brought back (a Report's comments and thumbs). */
+  comesBack: { title: string; rows: Array<{ label: string; text: string }> } | null;
   /** The place a receipt names: the body, or a comment's Report. */
   place: string | null;
 };
 
-/** The words an item holds, from the whole document the pane reads (`published`). */
-export function publishedContent(
-  kind: RecordKind,
-  published: ItemRead['published'],
-): RecordContent | null {
-  if (published === null) return null;
-  const d = published as unknown as Record<string, unknown>;
-  const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : 0);
-  const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null);
-  switch (kind) {
-    case 'report':
-      return { at: num('skateEndTime'), text: str('notes') };
-    case 'post':
-      return { at: num('latestSkateEndTime'), title: str('title'), text: str('body') };
-    case 'comment':
-      return { at: num('createdAt'), text: str('body') };
-    case 'hazard':
-      return { at: num('firstReportedAt'), title: str('type'), text: str('description') };
-    case 'accessAlert':
-      return { at: num('createdAt'), title: str('reason'), text: str('note') };
+/** When an overturn would leave the words erased: a day, at once, or held by something else. */
+export type Erasure =
+  | { kind: 'on'; day: string; days: number | null }
+  | { kind: 'atOnce'; days: number | null }
+  | { kind: 'held' };
+
+/**
+ * The server's `eraseAtIfReleased` in words. It is read when the query runs, so a date not ahead of
+ * `now` means the 30 days are already past: at once. `null` with an overturn on offer means
+ * something else — its Post's decision, an open flag — would still hold it.
+ */
+export function erasureOf(
+  at: number | null,
+  deletedAt: number | null,
+  now: number,
+  tz?: string,
+): Erasure {
+  if (at === null) return { kind: 'held' };
+  const days = deletedAt === null ? null : daysBetween(deletedAt, Math.max(at, now));
+  return at <= now ? { kind: 'atOnce', days } : { kind: 'on', day: dayWords(at, now, tz), days };
+}
+
+/** "Sun 25 Oct · 30 days after Rob deleted it", "At once", or held: the *If overturned* row. */
+export function erasureWords(e: Erasure, author: string): string {
+  switch (e.kind) {
+    case 'on':
+      return e.days === null ? e.day : W.erasedWhen(e.day, e.days, author);
+    case 'atOnce':
+      return e.days === null ? W.atOnce : W.erasedWhen(W.atOnce, e.days, author);
+    case 'held':
+      return W.erasedHeld;
   }
 }
 
@@ -599,7 +610,7 @@ export function itemView(
 ): ItemView {
   const kind = item.targetType;
   const words = KIND_WORDS[kind];
-  const content = publishedContent(kind, item.published);
+  const content = item.content;
   const decisions = [...item.decisions].sort((a, b) => b.at - a.at);
   const standing = decisions.find((d) => d.standing) ?? null;
   const newest = decisions[0] ?? null;
@@ -709,10 +720,10 @@ export function itemView(
 
   // ── The lever, and what it would do ──
   const lever = leverOf(item.can);
-  const releasedAt =
-    deletedAt === null
-      ? null
-      : (nextEraseAt({ withdrawnAt: deletedAt, held: false, current: undefined, now }) ?? null);
+  const erasure =
+    lever?.ok === true && lever.action === 'overturn'
+      ? erasureOf(item.eraseAtIfReleased, deletedAt, now, tz)
+      : null;
   let would: ItemView['would'] = null;
   if (lever?.ok === true && lever.action === 'overturn') {
     would = {
@@ -720,18 +731,7 @@ export function itemView(
       rows: [
         { label: W.record, text: W.comesOff(author) },
         { label: words.head, text: W.staysDeleted },
-        ...(releasedAt !== null && deletedAt !== null
-          ? [
-              {
-                label: W.erased,
-                text: W.erasedWhen(
-                  momentWords(releasedAt, now, tz).replace(/ \d\d:\d\d$/, ''),
-                  daysBetween(deletedAt, releasedAt),
-                  author,
-                ),
-              },
-            ]
-          : []),
+        ...(erasure !== null ? [{ label: W.erased, text: erasureWords(erasure, author) }] : []),
       ],
     };
   }
@@ -765,16 +765,47 @@ export function itemView(
       standing,
       place,
       lever,
-      releasedAt,
+      erasure,
       subject,
       now,
       tz,
     }),
     would,
     lever,
-    erasesOn:
-      releasedAt === null ? null : momentWords(releasedAt, now, tz).replace(/ \d\d:\d\d$/, ''),
+    erasure,
+    comesBack: comesBackOf(item, lever, standing, ended, deletedAt),
     place,
+  };
+}
+
+/**
+ * *Comes back with it* (8.7) on a Report a restore would bring back, *Came back with it* (8.8) on
+ * one restored and up: its comments still up and its thumbs, counted (a floor past the cap, never
+ * a zero for not knowing).
+ */
+function comesBackOf(
+  item: ItemRead,
+  lever: Lever | null,
+  standing: Decision | null,
+  ended: Decision['endedHow'],
+  deletedAt: number | null,
+): ItemView['comesBack'] {
+  const back = item.comesBack;
+  if (back === null) return null;
+  const restoring = standing !== null && lever?.ok === true && lever.action === 'restore';
+  const restored =
+    standing === null && deletedAt === null && (ended === 'restore' || ended === 'undo');
+  if (!restoring && !restored) return null;
+  const counted = (c: { count: number; capped: boolean }, one: string, many: string) =>
+    c.count === 0 && !c.capped
+      ? W.noneOf
+      : `${floorText(c)} ${c.count === 1 && !c.capped ? one : many}`;
+  return {
+    title: restoring ? W.comesBack : W.cameBack,
+    rows: [
+      { label: W.backComments, text: counted(back.comments, 'comment', 'comments') },
+      { label: W.backThumbs, text: counted(back.ratings, 'thumb', 'thumbs') },
+    ],
   };
 }
 
@@ -808,12 +839,12 @@ function lifeOf(args: {
   standing: Decision | null;
   place: string | null;
   lever: Lever | null;
-  releasedAt: number | null;
+  erasure: Erasure | null;
   subject: RecordSubject;
   now: number;
   tz?: string;
 }): ItemView['life'] {
-  const { item, kind, content, standing, place, lever, releasedAt, subject, now, tz } = args;
+  const { item, kind, content, standing, place, lever, erasure, subject, now, tz } = args;
   const author = firstOf(subject);
   const deletedAt = item.authorDeletedAt;
   // A record of decisions: an item nobody decided on, or whose words are gone, has no life drawn.
@@ -918,9 +949,7 @@ function lifeOf(args: {
   let ifLabel: string | null = null;
   const ahead = lever?.ok === true ? lever.action : null;
   const station =
-    ahead === null
-      ? null
-      : ifStation(ahead, { place, content, releasedAt, deletedAt, author, now, tz });
+    ahead === null ? null : ifStation(ahead, { place, content, erasure, author, now, tz });
   if (station !== null) {
     now_.next = 'dashed';
     delete now_.lasted;
@@ -936,8 +965,7 @@ function ifStation(
   o: {
     place: string | null;
     content: RecordContent | null;
-    releasedAt: number | null;
-    deletedAt: number | null;
+    erasure: Erasure | null;
     author: string;
     now: number;
     tz?: string;
@@ -952,14 +980,26 @@ function ifStation(
         mark: 'end',
       };
     case 'overturn':
-      return o.releasedAt === null || o.deletedAt === null
-        ? { when: W.ifOverturned, title: W.comesOff(o.author), mark: 'end' }
-        : {
+      switch (o.erasure?.kind) {
+        case 'on':
+          return {
             when: W.ifOverturned,
-            title: W.erasedThen(momentWords(o.releasedAt, o.now, o.tz).replace(/ \d\d:\d\d$/, '')),
-            sub: W.daysAfterDeleted(daysBetween(o.deletedAt, o.releasedAt), o.author),
+            title: W.erasedThen(o.erasure.day),
+            ...(o.erasure.days !== null && {
+              sub: W.daysAfterDeleted(o.erasure.days, o.author),
+            }),
             mark: 'end',
           };
+        case 'atOnce':
+          return { when: W.ifOverturned, title: W.erasedAtOnce, mark: 'end' };
+        default:
+          return {
+            when: W.ifOverturned,
+            title: W.comesOff(o.author),
+            sub: W.erasedHeld,
+            mark: 'end',
+          };
+      }
     case 'keep':
       return { when: W.ifKept, title: W.onRecordUntilOverturned, mark: 'end' };
     case 'hideAgain':
@@ -979,7 +1019,13 @@ export type RecordWrite =
 /** What the undo toast says of a write, from the operator's side. */
 export function receiptWords(
   write: RecordWrite,
-  about: { kind: RecordKind; place: string | null; subject: RecordSubject },
+  about: {
+    kind: RecordKind;
+    place: string | null;
+    subject: RecordSubject;
+    /** A Report's comments and thumbs, as the pane read them before the restore. */
+    comesBack?: ItemRead['comesBack'];
+  },
   result: { eraseAt?: number | null },
   now: number,
   tz?: string,
@@ -989,9 +1035,10 @@ export function receiptWords(
   switch (write.kind) {
     case 'restore': {
       const n = write.withReportIds?.length ?? 0;
+      const back = about.comesBack ? cameBackWords(about.comesBack) : null;
       return {
         title: about.place === null ? W.backUpReceipt(word) : W.backOnPlace(word, about.place),
-        ...(n > 0 ? { description: W.withReports(n) } : {}),
+        ...(n > 0 ? { description: W.withReports(n) } : back !== null ? { description: back } : {}),
       };
     }
     case 'hideAgain':
@@ -1010,6 +1057,19 @@ export function receiptWords(
   }
 }
 
+/** "Its 1 comment and 2 thumbs came back with it" — only what there was; nothing for none. */
+function cameBackWords(back: NonNullable<ItemRead['comesBack']>): string | null {
+  const parts = [
+    back.comments.count > 0 || back.comments.capped
+      ? `${floorText(back.comments)} ${back.comments.count === 1 && !back.comments.capped ? 'comment' : 'comments'}`
+      : null,
+    back.ratings.count > 0 || back.ratings.capped
+      ? `${floorText(back.ratings)} ${back.ratings.count === 1 && !back.ratings.capped ? 'thumb' : 'thumbs'}`
+      : null,
+  ].filter((p): p is string => p !== null);
+  return parts.length === 0 ? null : W.cameBackReceipt(parts.join(' and '));
+}
+
 // ── The Post's chooser ───────────────────────────────────────────────────────────────────────
 
 export type ChooserMember = {
@@ -1026,7 +1086,16 @@ export function chooserMembers(choices: ChoicesRead, now: number, tz?: string): 
       .filter((p): p is string => p !== null)
       .join(' · ');
     if (m.standing === 'author_deleted') {
-      return { reportId: m.reportId, title, sub: { text: W.memberDeleted }, choosable: false };
+      return {
+        reportId: m.reportId,
+        title,
+        sub: {
+          text: W.memberDeleted(
+            m.authorDeletedAt === null ? null : dateWords(m.authorDeletedAt, now, tz),
+          ),
+        },
+        choosable: false,
+      };
     }
     if (m.standing === 'visible' || m.standing === 'returns') {
       return {

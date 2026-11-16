@@ -3,7 +3,13 @@ import { useCallback } from 'react';
 
 import { errorText } from '../../adminUi';
 import type { Receipt } from '../../shell/undo';
-import { type RecordSubject, type RecordWrite, receiptWords, type Target } from './recordModel';
+import {
+  type ItemRead,
+  type RecordSubject,
+  type RecordWrite,
+  receiptWords,
+  type Target,
+} from './recordModel';
 import type { RecordKind } from './recordWords';
 import { RECORD_WORDS as W } from './recordWords';
 
@@ -54,6 +60,7 @@ export function useRecordWrites({
   announce,
   subject,
   placeOf,
+  comesBackOf,
   onRestored,
   now,
 }: {
@@ -62,6 +69,8 @@ export function useRecordWrites({
   subject: RecordSubject;
   /** Where the item is, for its receipt: the body, or a comment's Report. */
   placeOf: (target: Target) => string | null;
+  /** What a Report's restore brings back, as the pane read it, for its receipt. */
+  comesBackOf?: (target: Target) => ItemRead['comesBack'] | undefined;
   /** A restore landed: keep its row in Standing for the sitting. */
   onRestored: (target: Target, result: RecordWriteResult) => void;
   now: number;
@@ -106,7 +115,12 @@ export function useRecordWrites({
       }
       const words = receiptWords(
         write,
-        { kind: targetType, place: placeOf(target), subject },
+        {
+          kind: targetType,
+          place: placeOf(target),
+          subject,
+          ...(comesBackOf !== undefined && { comesBack: comesBackOf(target) ?? null }),
+        },
         'eraseAt' in answered ? { eraseAt: answered.eraseAt } : {},
         now,
       );
@@ -119,6 +133,6 @@ export function useRecordWrites({
       if (write.kind === 'restore' && 'undoable' in answered) onRestored(target, answered);
       return null;
     },
-    [server, announce, subject, placeOf, onRestored, now],
+    [server, announce, subject, placeOf, comesBackOf, onRestored, now],
   );
 }

@@ -406,7 +406,11 @@ function SheetBodyView({
                 : W.overturnBody(
                     subjectName(subject),
                     KIND_WORDS[ask.target.targetType].one,
-                    ask.view.erasesOn,
+                    ask.view.erasure === null || ask.view.erasure.kind === 'held'
+                      ? null
+                      : ask.view.erasure.kind === 'atOnce'
+                        ? 'atOnce'
+                        : ask.view.erasure.day,
                   )
           }
           confirm={W.lever[ask.action]}

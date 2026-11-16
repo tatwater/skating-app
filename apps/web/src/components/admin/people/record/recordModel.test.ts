@@ -7,7 +7,6 @@ import {
   at,
   CHOICES,
   COUNTS,
-  COUNTS_PENDING,
   DELETED,
   HIDDEN,
   HIDDEN_CAPPED,
@@ -22,6 +21,8 @@ import {
   ITEM_WITHDRAWN,
   LEAVING,
   NOW,
+  PRESENCE,
+  PRESENCE_NONE,
   REVERSED,
   STANDING,
   SUBJECT,
@@ -30,13 +31,14 @@ import {
   ACTION_ORDER,
   chooserMembers,
   deletedRowView,
+  erasureOf,
+  erasureWords,
   headCount,
   itemView,
   kindOptions,
   kindsLine,
   leverOf,
   listEnd,
-  publishedContent,
   type RecordAction,
   type RecordLevers,
   type Restored,
@@ -404,17 +406,13 @@ describe('counts', () => {
     expect(recordRowShows(HIDDEN, null, false)).toBe(true);
     expect(recordRowShows(HIDDEN_NONE, null, true)).toBe(true);
     expect(recordRowShows(HIDDEN_NONE, null, false)).toBe(false);
-    expect(recordRowShows(HIDDEN_NONE, COUNTS, false)).toBe(true);
-    expect(recordRowShows(HIDDEN_NONE, COUNTS_PENDING, false)).toBe(true);
-    const empty = {
-      ...COUNTS,
-      deleted: { ...COUNTS.deleted, count: 0 },
-      reversed: { ...COUNTS.reversed, count: 0 },
-    };
-    expect(recordRowShows(HIDDEN_NONE, empty, false)).toBe(false);
-    expect(
-      recordRowShows(HIDDEN_NONE, { ...empty, deleted: { ...empty.deleted, capped: true } }, false),
-    ).toBe(true);
+    expect(recordRowShows(HIDDEN_NONE, PRESENCE, false)).toBe(true);
+    expect(recordRowShows(HIDDEN_NONE, { ...PRESENCE_NONE, deleted: true }, false)).toBe(true);
+    expect(recordRowShows(HIDDEN_NONE, { ...PRESENCE_NONE, reversed: true }, false)).toBe(true);
+    expect(recordRowShows(HIDDEN_NONE, { ...PRESENCE_NONE, pending: ['verdicts'] }, false)).toBe(
+      true,
+    );
+    expect(recordRowShows(HIDDEN_NONE, PRESENCE_NONE, false)).toBe(false);
     expect(recordRowShows({ ...HIDDEN_NONE, capped: true }, null, false)).toBe(true);
   });
 });
@@ -535,6 +533,7 @@ describe('the item', () => {
     const v = view({
       ...ITEM_DELETED,
       published: null,
+      content: null,
       erasedAt: at(10, 25, 8, 2),
       decisions: [],
       can: {},
@@ -587,6 +586,11 @@ describe('the item', () => {
           reason: 'gate_locked',
           note: 'Gate locked at the north launch.',
         } as unknown as typeof ITEM_WITHDRAWN.published,
+        content: {
+          at: at(9, 30, 7, 12),
+          title: 'gate_locked',
+          text: 'Gate locked at the north launch.',
+        },
         authorDeletedAt: at(10, 1, 18, 40),
         eraseAt: null,
         decisions: [
@@ -622,27 +626,13 @@ describe('the item', () => {
 });
 
 describe('the words an item holds', () => {
-  it('reads each kind’s own fields from the whole document', () => {
-    const hazard = { firstReportedAt: 5, type: 'open_water', description: 'By the dam' };
-    expect(publishedContent('hazard', hazard as never)).toEqual({
-      at: 5,
-      title: 'open_water',
-      text: 'By the dam',
-    });
-    expect(publishedContent('post', { title: 'T' } as never)).toEqual({
-      at: 0,
-      title: 'T',
-      text: null,
-    });
-    expect(publishedContent('report', null)).toBeNull();
-  });
-
   it('a hazard’s plate names its type, and two rows restored in one sitting keep their order', () => {
     const v = itemView(
       {
         ...ITEM_HIDDEN,
         targetType: 'hazard',
         published: { firstReportedAt: at(10, 4), type: 'open_water' } as never,
+        content: { at: at(10, 4), title: 'open_water', text: null },
       },
       SUBJECT,
       NOW,
@@ -657,6 +647,86 @@ describe('the words an item holds', () => {
     });
     const merged = withRestored(STANDING.slice(2), [r(1), r(0)]);
     expect(merged.rows.map((m) => m.row.targetId).slice(0, 3)).toEqual(['r4oct', 'alert', 'ckate']);
+  });
+});
+
+describe('what an overturn would leave', () => {
+  it('a day, at once, or held by something else — as the server read it', () => {
+    const deleted = at(9, 25, 8, 2);
+    expect(erasureOf(at(10, 25, 8, 2), deleted, NOW)).toEqual({
+      kind: 'on',
+      day: 'Sun 25 Oct',
+      days: 30,
+    });
+    // Not ahead of the moment it was read: the 30 days are past.
+    expect(erasureOf(NOW - 60_000, at(8, 1), NOW)).toEqual({ kind: 'atOnce', days: 74 });
+    expect(erasureOf(null, deleted, NOW)).toEqual({ kind: 'held' });
+    expect(erasureOf(at(10, 25), null, NOW)).toMatchObject({ kind: 'on', days: null });
+    expect(erasureWords({ kind: 'atOnce', days: 74 }, 'Rob')).toBe(
+      'At once · 74 days after Rob deleted it',
+    );
+    expect(erasureWords({ kind: 'atOnce', days: null }, 'Rob')).toBe('At once');
+    expect(erasureWords({ kind: 'on', day: 'Sun 25 Oct', days: null }, 'Rob')).toBe('Sun 25 Oct');
+    expect(erasureWords({ kind: 'held' }, 'Rob')).toBe('Not erased while anything else holds it');
+  });
+
+  it('the pane says so in its life and its rows', () => {
+    const held = itemView({ ...ITEM_DELETED, eraseAtIfReleased: null }, SUBJECT, NOW);
+    expect(held.erasure).toEqual({ kind: 'held' });
+    expect(held.would?.rows.at(-1)).toEqual({
+      label: 'Erased',
+      text: 'Not erased while anything else holds it',
+    });
+    expect(held.life?.stations.at(-1)).toMatchObject({
+      title: 'The decision comes off Rob’s record',
+      sub: 'Not erased while anything else holds it',
+    });
+    const now = itemView({ ...ITEM_DELETED, eraseAtIfReleased: NOW }, SUBJECT, NOW);
+    expect(now.life?.stations.at(-1)?.title).toBe('Erased at once');
+    // No overturn offered: no erasure to say.
+    expect(itemView(ITEM_HIDDEN, SUBJECT, NOW).erasure).toBeNull();
+  });
+});
+
+describe('what comes back with a report', () => {
+  it('a restore would bring back its comments and thumbs; one restored brought them', () => {
+    expect(itemView(ITEM_HIDDEN, SUBJECT, NOW).comesBack).toEqual({
+      title: 'Comes back with it',
+      rows: [
+        { label: 'Comments', text: '1 comment' },
+        { label: 'Thumbs', text: '2 thumbs' },
+      ],
+    });
+    expect(itemView(ITEM_RESTORED, SUBJECT, NOW).comesBack?.title).toBe('Came back with it');
+    const floors = {
+      ...ITEM_HIDDEN,
+      comesBack: { comments: { count: 50, capped: true }, ratings: { count: 0, capped: false } },
+    };
+    expect(itemView(floors, SUBJECT, NOW).comesBack?.rows.map((r) => r.text)).toEqual([
+      '50+ comments',
+      'None',
+    ]);
+    // Not a Report, or nothing to bring back (a refused restore, a deleted one): none.
+    expect(itemView(ITEM_DELETED, SUBJECT, NOW).comesBack).toBeNull();
+    expect(itemView(ITEM_LEAVING, SUBJECT, NOW).comesBack).toBeNull();
+  });
+
+  it('the restore’s receipt says what came back, only what there was', () => {
+    const about = { kind: 'report' as const, place: 'Mascoma Lake', subject: SUBJECT };
+    expect(
+      receiptWords({ kind: 'restore' }, { ...about, comesBack: ITEM_HIDDEN.comesBack }, {}, NOW),
+    ).toEqual({
+      title: 'The report is back on Mascoma Lake',
+      description: 'Its 1 comment and 2 thumbs came back with it',
+    });
+    const none = { comments: { count: 0, capped: false }, ratings: { count: 0, capped: false } };
+    expect(receiptWords({ kind: 'restore' }, { ...about, comesBack: none }, {}, NOW)).toEqual({
+      title: 'The report is back on Mascoma Lake',
+    });
+    const floor = { comments: { count: 0, capped: false }, ratings: { count: 200, capped: true } };
+    expect(
+      receiptWords({ kind: 'restore' }, { ...about, comesBack: floor }, {}, NOW).description,
+    ).toBe('Its 200+ thumbs came back with it');
   });
 });
 
@@ -714,7 +784,18 @@ describe('the Post’s chooser', () => {
       quote: 'Same 4 inches as the others',
     });
     expect(m[1]?.sub.text).toBe('Removed by Ben · Reason: ');
-    expect(m[2]?.sub.text).toBe('Deleted by its author, so it can’t come back with the post');
+    expect(m[2]?.sub.text).toBe(
+      'Deleted by its author 28 Sep, so it can’t come back with the post',
+    );
+    // Its date not on record: said without one.
+    const undated = chooserMembers(
+      {
+        ...CHOICES,
+        members: [{ ...CHOICES.members[2], authorDeletedAt: null }] as typeof CHOICES.members,
+      },
+      NOW,
+    );
+    expect(undated[0]?.sub.text).toBe('Deleted by its author, so it can’t come back with the post');
   });
 
   it('a member up, coming back, or down without a row says so', () => {

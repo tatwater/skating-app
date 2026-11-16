@@ -12,6 +12,7 @@ import type {
   RecordCounts,
   RecordLevers,
   RecordPerson,
+  RecordPresence,
   RecordSubject,
   ReversedRow,
   StandingRow,
@@ -280,6 +281,10 @@ export const COUNTS: RecordCounts = {
 } as RecordCounts;
 export const COUNTS_PENDING: RecordCounts = { ...COUNTS, pending: ['verdicts'] } as RecordCounts;
 
+/** `recordPresence`: whether Deleted and Reversed would show anything. */
+export const PRESENCE: RecordPresence = { deleted: true, reversed: true, pending: [] };
+export const PRESENCE_NONE: RecordPresence = { deleted: false, reversed: false, pending: [] };
+
 // ── Items ────────────────────────────────────────────────────────────────────────────────────
 
 type Doc = Record<string, unknown>;
@@ -307,7 +312,12 @@ function item(
     published?: Doc | null;
   },
 ): ItemRead {
+  const published = o.published ?? null;
   return {
+    // The words, as the server's `contentOf` reads them from the document.
+    content: published === null ? null : contentOf(o.targetType, published),
+    eraseAtIfReleased: null,
+    comesBack: null,
     erasedAt: null,
     authorDeletedAt: null,
     eraseAt: null,
@@ -322,6 +332,26 @@ function item(
     published: (o.published ?? null) as unknown as ItemRead['published'],
   } as ItemRead;
 }
+
+function contentOf(kind: ItemRead['targetType'], d: Doc): ItemRead['content'] {
+  const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : 0);
+  const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null);
+  switch (kind) {
+    case 'report':
+      return { at: num('skateEndTime'), text: str('notes') };
+    case 'post':
+      return { at: num('latestSkateEndTime'), title: str('title'), text: str('body') };
+    case 'comment':
+      return { at: num('createdAt'), text: str('body') };
+    case 'hazard':
+      return { at: num('firstReportedAt'), title: str('type'), text: str('description') };
+    case 'accessAlert':
+      return { at: num('createdAt'), title: str('reason'), text: str('note') };
+  }
+}
+
+/** A report's one comment still up and its two thumbs (8.7–8.8). */
+const BACK = { comments: { count: 1, capped: false }, ratings: { count: 2, capped: false } };
 
 const decision = (o: Partial<ItemRead['decisions'][number]>): ItemRead['decisions'][number] => ({
   kind: 'hidden',
@@ -341,6 +371,7 @@ export const ITEM_HIDDEN = item({
   targetType: 'report',
   targetId: 'r4oct',
   published: report(),
+  comesBack: BACK,
   decisions: [decision({})],
   can: { restore: yes() },
 });
@@ -350,6 +381,7 @@ export const ITEM_RESTORED = item({
   targetType: 'report',
   targetId: 'r4oct',
   published: report({ moderationStatus: 'visible' }),
+  comesBack: BACK,
   decisions: [
     decision({
       standing: false,
@@ -370,6 +402,8 @@ export const ITEM_DELETED = item({
   waterBodyName: 'Lake Morey',
   reportAuthor: LUC,
   authorDeletedAt: at(9, 25, 8, 2),
+  // Thirty days after the deletion, nothing else holding it.
+  eraseAtIfReleased: at(10, 25, 8, 2),
   decisions: [decision({ at: at(9, 23, 21, 10), reason: 'Hostile tone, third time this month' })],
   can: { overturn: yes() },
 });
@@ -482,6 +516,7 @@ export const CHOICES: ChoicesRead = {
         reason: 'Same 4 inches as the others',
       },
       standing: 'choose',
+      authorDeletedAt: null,
     },
     {
       reportId: 'm2' as Id<'reports'>,
@@ -495,6 +530,7 @@ export const CHOICES: ChoicesRead = {
         reason: 'Photo from a different lake',
       },
       standing: 'choose',
+      authorDeletedAt: null,
     },
     {
       reportId: 'm3' as Id<'reports'>,
@@ -502,6 +538,7 @@ export const CHOICES: ChoicesRead = {
       waterBodyName: 'Mascoma Lake',
       skateEndTime: at(9, 27, 16, 0),
       standing: 'author_deleted',
+      authorDeletedAt: at(9, 28, 9, 0),
     },
   ],
 } as ChoicesRead;

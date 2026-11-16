@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { assertSeeded } from '@/test/seeded';
-import type { RecordCounts } from '../record/recordModel';
+import type { RecordPresence } from '../record/recordModel';
 import {
   accountRows,
   allButtons,
@@ -130,13 +130,9 @@ describe('Account', () => {
     };
     const clean = personOf({ hidden: none });
     expect(row(accountRows(clean, { now: NOW, self: false }), 'record')).toBeUndefined();
-    const counts = {
-      reversed: { count: 0, capped: false, byKind: none.byKind },
-      deleted: { count: 2, capped: false, byKind: { ...none.byKind, comment: 2 } },
-      pending: [],
-    } as unknown as RecordCounts;
+    const presence = { deleted: true, reversed: false, pending: [] } as RecordPresence;
     // Only what they deleted: the row stands, and says what stands — none, as a count.
-    const deleted = row(accountRows(clean, { now: NOW, self: false, counts }), 'record');
+    const deleted = row(accountRows(clean, { now: NOW, self: false, presence }), 'record');
     expect(deleted).toMatchObject({ status: '0 items', review: true });
     expect(deleted?.second).toBeUndefined();
     // Still being prepared: never a number.

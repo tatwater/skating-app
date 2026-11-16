@@ -79,16 +79,12 @@ const lever = (key: string) => {
 };
 
 describe('On the record', () => {
-  it('Review opens the record sheet; the row widens to what the counts say', async () => {
+  it('Review opens the record sheet; the row shows when only the other lists hold anything', async () => {
     const onReviewRecord = vi.fn();
     const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
     draw({
       person: { ...ROB, hidden: { total: 0, capped: false, byKind: none } },
-      recordCounts: {
-        reversed: { count: 1, capped: false, byKind: { ...none, report: 1 } },
-        deleted: { count: 0, capped: false, byKind: none },
-        pending: [],
-      },
+      recordPresence: { deleted: false, reversed: true, pending: [] },
       onReviewRecord,
     });
     expect(lever('record')).toHaveTextContent('0 items');
@@ -96,13 +92,13 @@ describe('On the record', () => {
     expect(onReviewRecord).toHaveBeenCalledOnce();
   });
 
-  it('a count still on its way, or failed, adds nothing to the row', () => {
+  it('a presence still on its way, or failed, adds nothing to the row', () => {
     const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
     const person = { ...ROB, hidden: { total: 0, capped: false, byKind: none } };
-    draw({ person, recordCounts: undefined });
+    draw({ person, recordPresence: undefined });
     expect(document.querySelector('[data-lever="record"]')).toBeNull();
     cleanup();
-    draw({ person, recordCounts: { failed: true, pending: false, retry: () => {} } });
+    draw({ person, recordPresence: { failed: true, pending: false, retry: () => {} } });
     expect(document.querySelector('[data-lever="record"]')).toBeNull();
   });
 });

@@ -200,27 +200,16 @@ describe('the reads', () => {
 });
 
 describe('the record', () => {
-  it('asks the record’s counts with the page, and Review opens its sheet on Standing', async () => {
+  it('asks only whether the record’s lists hold anything with the page; its counts wait for the sheet', async () => {
     answer({
-      'contentRecord:recordCounts': {
-        reversed: {
-          count: 0,
-          capped: false,
-          byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
-        },
-        deleted: {
-          count: 0,
-          capped: false,
-          byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
-        },
-        pending: [],
-      },
+      'contentRecord:recordPresence': { deleted: false, reversed: false, pending: [] },
       'contentRecord:personVerdicts': { page: [], isDone: true, continueCursor: '', pending: [] },
     });
     render(<PersonPane userId={ROB_ID} />);
-    expect(mocks.calls.get('contentRecord:recordCounts')).toEqual({ userId: ROB_ID });
-    // Nothing of the sheet is asked until it opens.
+    expect(mocks.calls.get('contentRecord:recordPresence')).toEqual({ userId: ROB_ID });
+    // Nothing of the sheet is asked until it opens — its counts neither.
     expect(mocks.calls.has('contentRecord:personVerdicts')).toBe(false);
+    expect(mocks.calls.has('contentRecord:recordCounts')).toBe(false);
     const row = document.querySelector('[data-lever="record"]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Review' }));
     const sheet = await screen.findByRole('dialog');
@@ -230,6 +219,7 @@ describe('the record', () => {
       cursor: null,
     });
     expect(within(sheet).getByText('Nothing on the record')).toBeInTheDocument();
+    expect(mocks.calls.get('contentRecord:recordCounts')).toEqual({ userId: ROB_ID });
   });
 });
 

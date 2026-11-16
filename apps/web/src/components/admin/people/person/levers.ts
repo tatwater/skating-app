@@ -1,5 +1,10 @@
 import { timeLeftInWords } from '@/lib/ages';
-import { kindsLine, type RecordCounts, recordRowShows, standingWords } from '../record/recordModel';
+import {
+  kindsLine,
+  type RecordPresence,
+  recordRowShows,
+  standingWords,
+} from '../record/recordModel';
 import {
   countText,
   type PersonCan,
@@ -225,8 +230,8 @@ export function accountRows(
   opts: {
     now: number;
     self: boolean;
-    /** The record's other two lists (`contentRecord.recordCounts`); `null` until it lands. */
-    counts?: RecordCounts | null;
+    /** Whether the record's other two lists hold anything (`contentRecord.recordPresence`). */
+    presence?: RecordPresence | null;
   },
 ): LeverRow[] {
   const { can } = p;
@@ -366,10 +371,10 @@ export function accountRows(
 
   // *On the record*: the sheet's three lists. Drawn whenever any list has items, a count stopped at
   // its cap, or the record is still being prepared (`recordRowShows`) — Standing from this read
-  // (`hidden`), Deleted and Reversed from `contentRecord.recordCounts` once it lands. Its count is
+  // (`hidden`), Deleted and Reversed from `contentRecord.recordPresence` once it lands. Its count is
   // what stands, as the sheet's head says it ("0 items" when only the others hold anything).
   const preparing = p.pending.includes('verdicts');
-  if (recordRowShows(p.hidden, opts.counts ?? null, preparing)) {
+  if (recordRowShows(p.hidden, opts.presence ?? null, preparing)) {
     rows.push({
       key: 'record',
       label: WORDS.onTheRecord,

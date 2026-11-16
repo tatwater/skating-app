@@ -186,6 +186,15 @@ export const RECORD_WORDS = {
   staysDeleted: 'Stays deleted · it never comes back',
   goesOn: (first: string) => `Goes on ${first}’s record, with the reason given`,
   keptUntilOverturned: 'Stays deleted · kept until the decision is overturned',
+  atOnce: 'At once',
+  erasedAtOnce: 'Erased at once',
+  /** An overturn whose words something else still holds: its Post's decision, an open flag. */
+  erasedHeld: 'Not erased while anything else holds it',
+  comesBack: 'Comes back with it',
+  cameBack: 'Came back with it',
+  backComments: 'Comments',
+  backThumbs: 'Thumbs',
+  noneOf: 'None',
   erasedWhen: (date: string, days: number, first: string) =>
     `${date} · ${days} ${days === 1 ? 'day' : 'days'} after ${first} deleted it`,
 
@@ -215,10 +224,13 @@ export const RECORD_WORDS = {
   keepBody: (name: string, kind: string) =>
     `It goes on ${name}’s record with the reason given. The ${kind} stays deleted and is kept until the decision is overturned.`,
   overturnTitle: 'Overturn this decision?',
-  overturnBody: (name: string, kind: string, erased: string | null) =>
+  /** `erased`: a day ("Sun 25 Oct"), `'atOnce'`, or `null` while something else holds it. */
+  overturnBody: (name: string, kind: string, erased: string | 'atOnce' | null) =>
     erased === null
-      ? `It comes off ${name}’s record. The ${kind} stays deleted.`
-      : `It comes off ${name}’s record. The ${kind} stays deleted and is erased ${erased}.`,
+      ? `It comes off ${name}’s record. The ${kind} stays deleted, and isn’t erased while anything else holds it.`
+      : erased === 'atOnce'
+        ? `It comes off ${name}’s record. The ${kind} stays deleted and is erased at once.`
+        : `It comes off ${name}’s record. The ${kind} stays deleted and is erased ${erased}.`,
   reasonLabel: 'Reason · kept in the audit log',
   reasonOptionalLabel: 'Reason · optional · kept in the audit log',
   reasonOptionalPlaceholder: 'Why, if there’s something to say',
@@ -231,7 +243,10 @@ export const RECORD_WORDS = {
   downVerb: { hide: 'Hidden', remove: 'Removed' } as Record<string, string>,
   downOther: 'Taken down',
   someone: 'someone not recorded yet',
-  memberDeleted: 'Deleted by its author, so it can’t come back with the post',
+  memberDeleted: (date: string | null) =>
+    date === null
+      ? 'Deleted by its author, so it can’t come back with the post'
+      : `Deleted by its author ${date}, so it can’t come back with the post`,
   memberUp: 'Already up',
   memberReturns: 'Comes back with the post',
   restoreWith: (n: number) => `Restore with ${n} ${n === 1 ? 'report' : 'reports'}`,
@@ -250,4 +265,5 @@ export const RECORD_WORDS = {
   withReports: (n: number) =>
     `${n.toLocaleString('en-US')} ${n === 1 ? 'report' : 'reports'} came back with it`,
   lateRefusal: 'Not changed',
+  cameBackReceipt: (what: string) => `Its ${what} came back with it`,
 } as const;

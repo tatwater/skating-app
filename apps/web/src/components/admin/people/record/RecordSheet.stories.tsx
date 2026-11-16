@@ -134,6 +134,7 @@ export const JustRestored: Story = {
     await expect(rowTitles(canvasElement)[0]).toContain('3½');
     await expect(slot(canvasElement, 'record-end')).toHaveTextContent('All 5 · 1 restored');
     await expect(slot(canvasElement, 'record-item')).toHaveTextContent('On Mascoma Lake again');
+    await expect(slot(canvasElement, 'record-comes-back')).toHaveTextContent('Came back with it');
     await expect(slot(canvasElement, 'record-lever')).toHaveTextContent('Hide again');
     // The row's own Undo asks why (undoing a restore takes something away), then runs.
     await userEvent.click(within(restored as HTMLElement).getByRole('button', { name: 'Undo' }));
@@ -151,6 +152,11 @@ export const RestoreAndKeep: Story = {
     await settled(canvasElement);
     const lever = slot(canvasElement, 'record-lever');
     await expect(lever).toHaveTextContent('Restore');
+    // What a restore brings back with it: its comment and its thumbs.
+    const back = slot(canvasElement, 'record-comes-back');
+    await expect(back).toHaveTextContent('Comes back with it');
+    await expect(back).toHaveTextContent('1 comment');
+    await expect(back).toHaveTextContent('2 thumbs');
     await userEvent.click(lever);
     await expect(args.onWrite).toHaveBeenCalledWith(
       { targetType: 'report', targetId: 'r4oct' },
@@ -158,6 +164,9 @@ export const RestoreAndKeep: Story = {
     );
     await waitFor(() =>
       expect(slot(canvasElement, 'toast')).toHaveTextContent('The report is back on Mascoma Lake'),
+    );
+    await expect(slot(canvasElement, 'toast')).toHaveTextContent(
+      'Its 1 comment and 2 thumbs came back with it',
     );
     await expect(
       within(slot(canvasElement, 'toast')).getByRole('button', { name: /Undo/ }),
@@ -223,6 +232,9 @@ export const PostChooser: Story = {
     // Nothing chosen; the one its author deleted can never be.
     for (const box of boxes) await expect(box).not.toBeChecked();
     await expect(boxes[2]).toHaveAttribute('aria-disabled', 'true');
+    await expect(must(members[2]?.closest('[data-slot="checkbox-row"]'))).toHaveTextContent(
+      'Deleted by its author 28 Sep',
+    );
     const restore = slot(chooser, 'chooser-restore');
     await expect(restore).toHaveTextContent('Restore with 0 reports');
     await expect(restore).toBeDisabled();

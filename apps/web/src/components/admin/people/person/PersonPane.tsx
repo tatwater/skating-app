@@ -75,8 +75,9 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     staffSeason: valid && audit ? read(api.people.staffSeason, { userId: id, now: held }) : null,
     decisions:
       valid && audit ? read(api.people.decisions, { userId: id, limit: decisionRows }) : null,
-    // The record's other two lists, for the *On the record* row and the sheet's filter.
-    recordCounts: valid && people ? read(api.contentRecord.recordCounts, { userId: id }) : null,
+    // Whether the record's other two lists hold anything, for the *On the record* row — cheap, so
+    // it stays live; the counts are the sheet's, read once it opens.
+    recordPresence: valid && people ? read(api.contentRecord.recordPresence, { userId: id }) : null,
   });
   const [recordOpen, setRecordOpen] = useState(false);
   const shell = useOptionalShell();
@@ -112,8 +113,10 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     <Link {...routerTarget(to.kind === 'people' ? back : personHref(to))} />
   );
 
-  const counts =
-    reads.recordCounts === undefined || isFailed(reads.recordCounts) ? null : reads.recordCounts;
+  const presence =
+    reads.recordPresence === undefined || isFailed(reads.recordPresence)
+      ? null
+      : reads.recordPresence;
   // The record sheet's subject, rebuilt only when what it names changes: the sheet's item view and
   // its write path key on it.
   const subjectName = loaded?.displayName ?? null;
@@ -157,7 +160,7 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
         {...(decisionRows < DECISIONS_MOST && {
           onMoreDecisions: () => setDecisionRows((n) => Math.min(DECISIONS_MOST, n * 2)),
         })}
-        recordCounts={reads.recordCounts}
+        recordPresence={reads.recordPresence}
         onReviewRecord={() => setRecordOpen(true)}
         {...(className !== undefined && { className })}
       />
@@ -167,8 +170,7 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
           onOpenChange={setRecordOpen}
           subject={subject}
           standing={loaded.hidden}
-          pending={loaded.pending.includes('verdicts') || (counts?.pending.length ?? 0) > 0}
-          counts={counts}
+          pending={loaded.pending.includes('verdicts') || (presence?.pending.length ?? 0) > 0}
           container={shell?.main ?? null}
         />
       )}

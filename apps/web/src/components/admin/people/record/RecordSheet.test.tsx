@@ -108,6 +108,7 @@ beforeEach(() => {
   mocks.results.set('contentRecord:personDeleted', page(DELETED));
   mocks.results.set('contentRecord:personReversed', page(REVERSED));
   mocks.results.set('profiles:current', DANA);
+  mocks.results.set('contentRecord:recordCounts', COUNTS);
   mocks.results.set(
     'contentRecord:item',
     (a: { targetType: string; targetId: string }) => ITEMS[`${a.targetType}:${a.targetId}`],
@@ -128,7 +129,6 @@ function draw(open = true) {
       subject={SUBJECT}
       standing={HIDDEN}
       pending={false}
-      counts={COUNTS}
     />,
   );
   return { ...view, onOpenChange };
@@ -219,6 +219,8 @@ describe('the writes', () => {
     });
     expect(mocks.announce).toHaveBeenCalledWith({
       title: 'The report is back on Mascoma Lake',
+      // What came back, as the pane read it before the restore.
+      description: 'Its 1 comment and 2 thumbs came back with it',
       target: { targetType: 'report', targetId: 'r4oct' },
       actionId: 'a1',
       undoNeedsReason: true,
@@ -354,7 +356,6 @@ describe('closing', () => {
         subject={SUBJECT}
         standing={HIDDEN}
         pending={false}
-        counts={COUNTS}
       />,
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -366,7 +367,6 @@ describe('closing', () => {
         subject={SUBJECT}
         standing={HIDDEN}
         pending={false}
-        counts={COUNTS}
       />,
     );
     // A new sitting: back on Standing.

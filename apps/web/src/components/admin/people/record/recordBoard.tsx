@@ -222,7 +222,22 @@ function Board({
     },
     [lists, keepRestored, restoredItems, now],
   );
-  const onAct = useRecordWrites({ server, announce, subject, placeOf, onRestored, now });
+  const comesBackOf = useCallback(
+    (target: Target) => {
+      const read = items[targetKey(target)];
+      return typeof read === 'object' && read !== null ? read.comesBack : undefined;
+    },
+    [items],
+  );
+  const onAct = useRecordWrites({
+    server,
+    announce,
+    subject,
+    placeOf,
+    comesBackOf,
+    onRestored,
+    now,
+  });
 
   return (
     <RecordSheetView
