@@ -9,6 +9,8 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { SETTLE_ROUNDS } from './clerkAdmin';
+import { NOTIFICATION_PREF_DEFAULTS } from './lib/enums';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -16,6 +18,29 @@ const modules = import.meta.glob('./**/*.*s');
 /** The scheduler rows this action queued, newest last. */
 async function scheduled(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+}
+
+/** A person whose status `lockWanted` reads. */
+async function person(
+  t: ReturnType<typeof convexTest>,
+  status: 'active' | 'banned',
+  clerkUserId = 'u_mirror',
+) {
+  return t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId,
+      displayName: 'x',
+      username: 'x',
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public',
+      notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'member',
+      status,
+      createdAt: Date.UTC(2026, 0, 1),
+    }),
+  );
 }
 
 afterEach(() => {
@@ -123,32 +148,7 @@ describe('clerkAdmin.setBanned', () => {
     vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
     const fetchMock = vi.fn(async (_url: string) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: 'u_lifted',
-        displayName: 'x',
-        username: 'x',
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public',
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyAnswered: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: false,
-          greatReportNearby: false,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'member',
-        status: 'active',
-        createdAt: Date.UTC(2026, 0, 1),
-      }),
-    );
+    await person(t, 'active', 'u_lifted');
     // A ban's retry, still in flight after the person was lifted.
     await t.action(internal.clerkAdmin.setBanned, {
       clerkUserId: 'u_lifted',
@@ -161,26 +161,14 @@ describe('clerkAdmin.setBanned', () => {
 
 // ── Overlapping syncs: Clerk ends where Convex is ───────────────────────────────────────────────
 
-const PREFS = {
-  activityDetected: true,
-  bountyRequest: true,
-  hazardConfirmation: true,
-  bountyAnswered: true,
-  reportRated: true,
-  reportCommented: true,
-  contentFlagResolved: true,
-  favoriteReport: true,
-  nearbyReportDigest: false,
-  greatReportNearby: false,
-};
-
 /**
  * A fake Clerk whose requests answer only when released, in any order: a request is applied when it
- * is released (Clerk's lock becomes its verb), then its answer — success, or a failure — reaches the
- * action. No real call leaves the test.
+ * is released (Clerk's lock becomes its verb), then its answer — success, or the failure status it is
+ * released with, which leaves the lock alone — reaches the action. No real call leaves the test.
  */
 function fakeClerk() {
-  const pending: Array<{ banned: boolean; done: boolean; release: (fail?: boolean) => void }> = [];
+  const pending: Array<{ banned: boolean; done: boolean; release: (failWith?: number) => void }> =
+    [];
   const state = { locked: null as boolean | null, sends: 0 };
   vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
   vi.stubGlobal(
@@ -193,11 +181,11 @@ function fakeClerk() {
           const request = {
             banned,
             done: false,
-            release: (fail = false) => {
+            release: (failWith?: number) => {
               if (request.done) return;
               request.done = true;
-              if (fail) {
-                resolve(new Response('boom', { status: 503 }));
+              if (failWith !== undefined) {
+                resolve(new Response('boom', { status: failWith }));
                 return;
               }
               state.locked = banned;
@@ -218,24 +206,6 @@ function fakeClerk() {
     expect(pending.length).toBeGreaterThanOrEqual(n);
   };
   return { pending, state, settle, sent };
-}
-
-async function person(t: ReturnType<typeof convexTest>, status: 'active' | 'banned') {
-  return t.run((ctx) =>
-    ctx.db.insert('profiles', {
-      clerkUserId: 'u_mirror',
-      displayName: 'x',
-      username: 'x',
-      driveTimePrefMinutes: 60,
-      profileVisibility: 'public',
-      notificationPrefs: PREFS,
-      dateOfBirth: Date.UTC(1990, 0, 1),
-      reputationPoints: 0,
-      role: 'member',
-      status,
-      createdAt: Date.UTC(2026, 0, 1),
-    }),
-  );
 }
 
 const setStatus = (
@@ -279,6 +249,55 @@ describe('clerkAdmin.setBanned — overlapping syncs converge on Convex', () => 
     await Promise.all([a, b]);
     expect(clerk.state.locked).toBe(locked);
   });
+
+  test('a permanent failure whose wish moved sends the new wish instead of paging', async () => {
+    const t = convexTest(schema, modules);
+    const clerk = fakeClerk();
+    const id = await person(t, 'banned');
+    const a = t.action(internal.clerkAdmin.setBanned, { clerkUserId: 'u_mirror', banned: true });
+    await clerk.sent(1);
+    // Lifted while the ban was out; the ban then fails for good.
+    await setStatus(t, id, 'active');
+    clerk.pending[0]?.release(422);
+    await clerk.sent(2);
+    expect(clerk.pending[1]?.banned).toBe(false);
+    clerk.pending[1]?.release();
+    await a;
+    expect(clerk.state.locked).toBe(false);
+    expect(await scheduled(t)).toHaveLength(0);
+  });
+
+  test.each([
+    ['retries with the last wish', 0, 'clerkAdmin'],
+    // attempt 3 == the last slot in RETRY_DELAYS_MS, so this run has no retries left.
+    ['past its budget, pages the operator', 3, 'operatorAlerts'],
+  ])('a wish still moving after every round %s', async (_, attempt, to) => {
+    const t = convexTest(schema, modules);
+    const clerk = fakeClerk();
+    const id = await person(t, 'active');
+    const a = t.action(internal.clerkAdmin.setBanned, {
+      clerkUserId: 'u_mirror',
+      banned: false,
+      attempt,
+    });
+    // Every answer finds Convex moved again.
+    for (let n = 1; n <= SETTLE_ROUNDS; n++) {
+      await clerk.sent(n);
+      await setStatus(t, id, n % 2 === 1 ? 'banned' : 'active');
+      clerk.pending[n - 1]?.release();
+    }
+    await a;
+    expect(clerk.state.sends).toBe(SETTLE_ROUNDS);
+    const rows = await scheduled(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toContain(to);
+    const last = SETTLE_ROUNDS % 2 === 1; // the wish the last read found, never sent
+    if (to === 'clerkAdmin') {
+      expect(rows[0]?.args[0]).toMatchObject({ banned: last, attempt: attempt + 1 });
+    } else {
+      expect(JSON.stringify(rows[0]?.args[0])).toMatch(/kept changing/);
+    }
+  });
 });
 
 describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
@@ -309,7 +328,8 @@ describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
           start(o.banned);
         } else {
           const waiting = open();
-          if (waiting.length > 0) waiting[o.pick % waiting.length]?.release(o.fail);
+          if (waiting.length > 0)
+            waiting[o.pick % waiting.length]?.release(o.fail ? 503 : undefined);
         }
         await clerk.settle();
       }
@@ -335,7 +355,7 @@ describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
       // Nothing sent at all only if nothing was ever asked of Clerk.
       if (clerk.state.locked !== null) expect(clerk.state.locked).toBe(status === 'banned');
       else expect(actions.length).toBe(0);
-      expect(clerk.state.sends).toBeLessThanOrEqual(3 * actions.length);
+      expect(clerk.state.sends).toBeLessThanOrEqual(SETTLE_ROUNDS * actions.length);
     });
     // Pinned seeds, so a failure replays; then one run on a fresh seed.
     for (const seed of [20261116, 8]) await fc.assert(run, { seed, numRuns: 6 });

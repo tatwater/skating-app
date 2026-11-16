@@ -2938,15 +2938,20 @@ rollout stands and needs no re-run.
   suspension and a lift whose terms stand (no audit row, no undo). **The syncs converge** (Greptile
   on #139): every run of `setBanned` reads what Convex wants (`lockWanted`) before its request and
   again after every answer — success, or a failure it would give up on — and sends again when it
-  moved: at most three sends a run, then the retry schedule (which reads afresh), and past its budget
-  the operator, never a silent stop. Clerk answers a request only after applying it, so the sender of
-  the last request applied reads Convex after it, and either Convex still wants that or a further
-  request lands later; any later change schedules its own run. So once everything has answered and
-  no retry is pending, Clerk's lock is Convex's status — a suspension replacing a ban, an undo and a
-  redo in quick succession and the retry schedule's delayed runs included (a model test drives random
-  status changes, answer orders and failures). **Left:** a run that dies between an answer and its
-  read, and a request whose answer is lost but which Clerk applies later than the retry that follows
-  it, leave the last applied value until the next status write; a reconcile over every account (the
+  moved: at most three sends a run, each held to a 20-second timeout (a hung request would otherwise
+  hold the run until Convex's action limit killed it, unretried and unreported), then the retry
+  schedule (which reads afresh), and past its budget the operator, never a silent stop. Clerk answers
+  a request only after applying it, so the sender of the last request applied reads Convex after it,
+  and either Convex still wants that or a further request lands later (its own, or its retry's); any
+  later change schedules its own run. So once everything has answered, no retry is pending and no run
+  has paged the operator, Clerk's lock is Convex's status — a suspension replacing a ban, an undo and
+  a redo in quick succession and the retry schedule's delayed runs included (a model test drives
+  random status changes, answer orders and transient failures; named tests cover a permanent failure
+  whose wish moved and a wish that keeps moving past every round). A person whose deletion starts
+  mid-run keeps the wish last read rather than falling back to the scheduled one. **Left:** a run that
+  dies between an answer and its read, and a request whose answer is lost (a timeout included) but
+  which Clerk applies later than the retry that follows it, leave the last applied value until the
+  next status write; a reconcile over every account (the
   mirror's state tracked) would close both.
 - **The sweep for the same shape** — outbound writes that mirror a Convex value and can be sent by
   more than one action for the same subject: `clerkAdmin.setBanned` (fixed above);
