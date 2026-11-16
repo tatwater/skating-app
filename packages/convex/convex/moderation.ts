@@ -2141,17 +2141,17 @@ export async function setPostingPermissionImpl(
     reason: given,
   }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason?: string },
 ): Promise<PersonWriteResult> {
-  const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
   // Flagging off on a staffer is refused here too: the one rule (`lib/peopleCan`).
   const target = await loadModeratableUser(ctx, actor, userId, {
     kind: 'right',
     permission,
     allowed,
   });
-
   const field = POSTING_PERMISSION_FIELD[permission];
-  // Missing means allowed (D57).
+  // Missing means allowed (D57). Nothing to change, nothing asked: as the bounty limit answers.
   if ((target[field] !== false) === allowed) return unchanged(userId);
+  const { reason, defaulted } = reasonFor(given, !allowed, RESTORED_REASON[permission]);
+
   await ctx.db.patch(userId, { [field]: allowed });
   const actionId = await auditUser(
     ctx,

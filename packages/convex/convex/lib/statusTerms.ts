@@ -131,8 +131,8 @@ export const TERMS_STAMP_WORK = STAMP_BUDGET + 16 * 1024;
 /**
  * Stamp a suspended or banned person's row with when their terms were set ({@link readTermsSet}) —
  * the rows backfill's step for rows written before this rule. A reading that can't say leaves the
- * row as it is; one that finds nothing on record leaves it too (the writers stamp the next change).
- * Returns whether it moved the date.
+ * row as it is; one that finds nothing on record stamps 0, "not recorded", as the note says. Returns
+ * whether it moved the date.
  */
 export async function stampStatusTerms(ctx: MutationCtx, userId: Id<'profiles'>): Promise<boolean> {
   const person = await ctx.db.get(userId);
@@ -140,7 +140,11 @@ export async function stampStatusTerms(ctx: MutationCtx, userId: Id<'profiles'>)
   const row = await personRowOf(ctx, userId);
   if (!row) return false;
   const set = await readTermsSet(ctx, new ReadBudget(STAMP_BUDGET), person);
-  if (set.at === null || set.at === row.statusSince) return false;
-  await ctx.db.patch(row._id, { statusSince: set.at });
+  // "Can't say" leaves the row as it was; "not recorded" is 0 — the row's own word for it, as the
+  // page's note says `null` — so the two never disagree.
+  if (set.capped) return false;
+  const at = set.at ?? 0;
+  if (at === row.statusSince) return false;
+  await ctx.db.patch(row._id, { statusSince: at });
   return true;
 }

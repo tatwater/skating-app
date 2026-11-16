@@ -154,12 +154,18 @@ describe('the rows backfill stamps a row written before the rule', () => {
     expect(both.note?.at).toBe(both.row?.statusSince);
   });
 
-  test("a person whose record can't say keeps their row as it is", async () => {
+  test('a person with nothing on record reads "not recorded" on the row, as the note does', async () => {
     const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
     const id = await seed(t, 'them', { status: 'banned', statusReason: 'old' });
-    const before = await t.run((ctx) => personRowOf(ctx, id));
+    await t.run(async (ctx) => {
+      const row = await personRowOf(ctx, id);
+      if (row) await ctx.db.patch(row._id, { statusSince: T0 - 9 * DAY });
+    });
     await t.mutation(internal.peopleJobs.backfillRows, { alone: true });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect((await t.run((ctx) => personRowOf(ctx, id)))?.statusSince).toBe(before?.statusSince);
+    const both = await bothAnswers(t, id);
+    expect(both.note).toMatchObject({ at: null, atCapped: false });
+    expect(both.row?.statusSince).toBe(0);
   });
 });

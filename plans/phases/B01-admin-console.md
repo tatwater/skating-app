@@ -2902,7 +2902,8 @@ on the person page).
   suspension's new end is new terms, so it dates the note and the row anew (before, the note kept the
   status's start). **Rollout, for the dev agent:** after the deploy, `convex run
   peopleJobs:backfillRows '{"alone":true}'` once — it stamps each suspended or banned person's row by
-  the same reading (`stampStatusTerms`; a reading that can't say leaves the row as it was) — then
+  the same reading (`stampStatusTerms`; a reading that can't say leaves the row as it was, one that
+  finds nothing on record stamps 0, "not recorded", as the note says) — then
   `convex run peopleJobs:preparation '{}'` until `ready: true` (step 6 of the procedure above). Not run
   by the build.
 - **A moderator may not act on their own content (D269).** The inventory of decisions on authored
