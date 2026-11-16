@@ -4595,7 +4595,7 @@ toast naming its subject and what was not changed (D268).
 | Access: ruling buttons (pick store) | a toast naming body and what | the same toast | nothing to draw: a toast either way |
 | Access: *Rule no public access* (pick store, asker) | the dialog, over the reason | a toast naming body and what | its permission flipping, its row going: the dialog's body, by ref |
 | Access: *Make official* (`act`) / *Hide* (`actInDialog`, asker) | a toast / the dialog | a toast naming the body | the launch's row going (tested): the dialog's body, by ref |
-| Places: landmark card and spellings (list queue) | in the card | a toast naming the body | the card closing: its refusals are the tab's `act` toasts, nothing said in place |
+| Places: landmark card and spellings (list queue) | a toast (the tab's `act`) | a toast naming the body | nothing to draw: its refusals are the tab's `act` toasts, nothing said in place |
 | Places: *Dismiss*, *Decline* (`actInDialog`, asker) / *Same place* (`act`) | the dialog / a toast | a toast naming the body | the ask's row going: the dialog's body, by ref |
 | Links (list queue) | the section's note | a toast naming the body | the view drawing something else: the refusal line, by ref |
 | Imagery: satellite link (pick store, in place) / pass override | under the control / the dialog | a toast naming the body | the section not drawn: the control's assist line, by ref (store tested) |
@@ -4613,7 +4613,8 @@ toast naming its subject and what was not changed (D268).
 | Legacy, no `catch` (Support's buttons, the water list's *Approve*) | a toast in the server's words | the same | nothing to draw |
 | Legacy, behind a reason dialog (flags, recurrence, features, the water list, place-name dismiss, the hazard controls) | the dialog | a toast in the server's words | the permission flipping (tested on the hazard controls), the row going: the dialog's refusal line, by ref (`askFrom`) |
 | Legacy: moderator actions | its dialog | a toast in the server's words | the permission flipping (tested): its refusal line, by ref |
-| Legacy, said on the page (old editor's banner, seasons, requests, place names, restore) | on the page | a toast in the server's words | the page's read failing or loading: the banner or the page's root, by ref |
+| Legacy, said on the page (old editor's banner, seasons, requests, place names; the old editor's and requests' reason dialogs whose confirm says it on the banner, `refusalOnPage`) | on the page | a toast in the server's words | the page's read failing or loading: the banner or the page's root, by ref; a dialog gone with its row leaves the page's place standing |
+| Legacy: the old editor's restore gate (drawn instead of the editor) | under its button | a toast in the server's words | the body coming back: the gate, by ref |
 
 **Left:** a Legacy toast names the server's words, not its subject — owed with each page's
 retirement; across a full remount of the console (leaving it), a write from each store can be out
@@ -4627,9 +4628,12 @@ takedown was out saw nothing (the control returned null, its hook stayed mounted
 a dialog no longer drawn). A place now registers itself by being rendered — a ref on the element that
 says the refusal (`usePlace`; drawn = in the document and not inside anything hidden or inert), asked
 when the answer comes. The reason dialogs hand theirs to every write their confirm starts (`askFrom`),
-so no caller remembers to; a Legacy page that says refusals on the page hands its banner or root
-(`PagePlace`). The pick store's in-place control takes its place (`inPlace: Place`). A guard holds
-that no console place says it is drawn without asking.
+so no caller remembers to — synchronously only: a confirm that sends a later write after an `await`
+(the water list's merges) keeps the dialog's place for it (`keepAsking`); a confirm that says its
+refusal on the page's banner instead keeps the page's place (`refusalOnPage`), or a refusal answered
+after its dialog went would be said twice. A Legacy page that says refusals on the page hands its
+banner or root (`PagePlace`). The pick store's in-place control takes its place (`inPlace: Place`).
+A guard holds that no console place, Legacy routes included, says it is drawn without asking.
 
 ## Ruled out
 

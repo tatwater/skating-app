@@ -23,9 +23,10 @@ import { createContext, useCallback, useContext, useState, useSyncExternalStore 
  * the store in one shape, {@link PickOutcome} — landed, or refused in the server's words (or already
  * said by the write path, as `sendFor` says one off its console) — never a value the store can't
  * read as a refusal. A refusal goes to exactly one audience: the opening that asked (a reason
- * dialog, its {@link Asker}) while it is still there; else a control mounted for the key that says
- * refusals in place; else the page's own words (`say`: a toast naming the body and what wasn't
- * saved). The sender and `say` are the latest mounted page's; the asker stays the press's own.
+ * dialog, its {@link Asker}) while it is still there; else a control for the key that says refusals
+ * in place, mounted and with its place drawn when the answer comes; else the page's own words
+ * (`say`: a toast naming the body and what wasn't saved). The sender and `say` are the latest
+ * mounted page's; the asker stays the press's own.
  */
 
 /** Every answer a write gives the store. `said`: refused, and already said by the write path. */

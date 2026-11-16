@@ -50,7 +50,7 @@ export function ModeratorActions({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   // While a takedown is out the dialog holds open, so its refusal is said here and never into a
-  // dialog that has closed (D268); the net speaks once this control itself has gone.
+  // dialog that has closed (D268); the net speaks once its refusal line isn't drawn.
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 

@@ -23,8 +23,9 @@ export function useActing(onAct: (action: PersonAction, asker?: Asker) => Promis
   const running = useRef<string | null>(null);
   /** Controls told "another change is on its way": their note goes when that change settles. */
   const held = useRef(new Set<string>());
-  // The page that asked: while it is mounted a refusal is said in its place (the control, or the
-  // dialog over it); once it has gone, the write path says it in a toast naming the person.
+  // The page that asked: while it is mounted and the lever's block is drawn, a refusal is said in its
+  // place (the control, or the dialog over it); else the write path says it in a toast naming the
+  // person.
   const mounted = useRef(false);
   useLayoutEffect(() => {
     mounted.current = true;

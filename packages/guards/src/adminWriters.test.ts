@@ -57,16 +57,21 @@ function files(path: string): string[] {
 const SOURCE = /\.tsx?$/;
 const NOT_CODE = /\.(test|stories)\.tsx?$|Fixtures\.ts$|[/\\]kit-candidates[/\\]/;
 
-test('a console file reaches a mutation directly only through a write path that says its refusals', () => {
+/** The console's source files and its Legacy routes, with floors that the walk looked at both. */
+function consoleSources(): string[] {
   const routes = readdirSync(join(WEB, 'routes'))
     .map((f) => `routes/${f}`)
     .filter((f) => ROUTES.test(f));
   const all = [...ROOTS.flatMap(files), ...routes].filter(
     (f) => SOURCE.test(f) && !NOT_CODE.test(f),
   );
-  // Floors: the walk looked at the console, and at its Legacy pages.
   expect(all.length).toBeGreaterThan(150);
   expect(routes.length).toBeGreaterThan(10);
+  return all;
+}
+
+test('a console file reaches a mutation directly only through a write path that says its refusals', () => {
+  const all = consoleSources();
   const direct = all.filter((f) => {
     const text = readFileSync(join(WEB, f), 'utf8');
     const hook = /\buseMutation\b/.test(text) && /from 'convex\/react'/.test(text);
@@ -83,8 +88,8 @@ test('a console file reaches a mutation directly only through a write path that 
  * mounted flag alone would bring back the refusal said into nothing drawn.
  */
 test('no console place says it is drawn without asking', () => {
-  const all = ROOTS.flatMap(files).filter((f) => SOURCE.test(f) && !NOT_CODE.test(f));
-  const claims = all.filter((f) => {
+  // The Legacy routes too: they are where a page hands its own place (`usePlace`, `PagePlace`).
+  const claims = consoleSources().filter((f) => {
     const text = readFileSync(join(WEB, f), 'utf8');
     return /here:\s*\(\)\s*=>\s*(true|mounted\.current\s*[,}\n])/.test(text);
   });

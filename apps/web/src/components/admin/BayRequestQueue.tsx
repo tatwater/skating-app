@@ -83,6 +83,8 @@ export function BayRequestQueue({
                 confirmVariant="secondary"
                 requireReason={true}
                 reasonPlaceholder="Skaters name it for directions, not as a destination — it will be a map label."
+                // The lake editor says a decline's refusal in its banner: the write keeps its place.
+                refusalOnPage
                 onConfirm={(note) => onDecline(row, note)}
               />
             </span>

@@ -376,6 +376,8 @@ export function LandmarkTool({
                       description="Takes the label off the map and out of the report sheet. A re-run of the import will not bring it back; Restore will."
                       confirmLabel="Remove"
                       confirmVariant="secondary"
+                      // `run` says its refusal in the editor's banner, not the dialog.
+                      refusalOnPage
                       onConfirm={async (reason) => {
                         await run(() => remove({ landmarkId: l._id, reason }), 'Removed.');
                       }}
@@ -593,6 +595,7 @@ export function LandmarkTool({
                     description="The skaters who named it read your note."
                     confirmLabel="Decline"
                     confirmVariant="secondary"
+                    refusalOnPage
                     onConfirm={async (note) => {
                       await run(
                         () => declineRequest({ requestId: p.requestId, note }),

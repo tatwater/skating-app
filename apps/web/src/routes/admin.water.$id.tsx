@@ -1521,11 +1521,14 @@ function SamplePointTool({
  * screen would be editing a lake that draws nowhere.
  */
 function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const restore = useSaidMutation(api.waterBodies.restore);
+  // Its place: the gate, which says its own refusal — it is drawn instead of the editor, outside
+  // the editor's page place, so without one the net would say every refusal a second time.
+  const place = usePlace();
+  const restore = useSaidMutation(api.waterBodies.restore, place);
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="flex flex-col items-start gap-3">
+    <div ref={place.ref} className="flex flex-col items-start gap-3">
       <AdminEmpty>
         This body isn’t on the map (removed, rejected or merged). Restore it before editing — a
         sub-area drawn on an unlisted lake would have nowhere to render.
@@ -1674,6 +1677,8 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             confirmVariant="secondary"
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
+            // Its refusal is the page's banner, not the dialog's.
+            refusalOnPage
             onConfirm={async (auditReason) => {
               try {
                 await setStanding({
@@ -1718,6 +1723,7 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             confirmVariant="secondary"
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
+            refusalOnPage
             onConfirm={async () => {
               try {
                 await remove({
@@ -1828,6 +1834,7 @@ function PutInTool({
                 description="Writes a suppression row at this coordinate, so it stays hidden even after the derived clusters are recomputed. Reversible only by an admin."
                 confirmLabel="Hide"
                 confirmVariant="secondary"
+                refusalOnPage
                 onConfirm={async (reason) => {
                   try {
                     await hide({ waterBodyId, coord: p.coord, reason });

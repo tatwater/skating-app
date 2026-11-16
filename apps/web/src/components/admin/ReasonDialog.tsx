@@ -31,6 +31,7 @@ export function ReasonDialog({
   extraFields,
   onOpenChange,
   confirmDisabled = false,
+  refusalOnPage = false,
   onConfirm,
 }: {
   trigger: ReactNode;
@@ -45,6 +46,12 @@ export function ReasonDialog({
   onOpenChange?: (open: boolean) => void;
   /** Hold the confirm while what it would act on is no longer the caller's to act on. */
   confirmDisabled?: boolean;
+  /**
+   * Its confirm says a refusal on the page (a banner), not only here: the writes it starts keep the
+   * page's own place rather than this dialog's, so one answered after the dialog has gone (its row
+   * decided by a colleague) is said on the page once — never in a toast as well.
+   */
+  refusalOnPage?: boolean;
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
   const [open, setOpenState] = useState(false);
@@ -56,7 +63,8 @@ export function ReasonDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Its place: the element that shows its refusal, drawn or not when the answer comes. A write its
-  // confirm starts belongs to it (`askFrom`) — gone, the Legacy net says the refusal in a toast.
+  // confirm starts belongs to it (`askFrom`) — gone, the Legacy net says the refusal in a toast —
+  // unless the confirm says it on the page (`refusalOnPage`), whose place the write keeps.
   const place = usePlace();
 
   const blocked = requireReason && !reason.trim();
@@ -69,7 +77,8 @@ export function ReasonDialog({
     setBusy(true);
     setError(null);
     try {
-      await askFrom(place, () => onConfirm(reason.trim()));
+      const trimmed = reason.trim();
+      await (refusalOnPage ? onConfirm(trimmed) : askFrom(place, () => onConfirm(trimmed)));
       setOpen(false);
       setReason('');
     } catch (e) {

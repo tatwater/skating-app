@@ -12,7 +12,7 @@ export type Place = { here: () => boolean };
 
 /** Whether an element is drawn now: in the document, and not inside anything hidden or inert. */
 export function drawn(el: Element | null | undefined): boolean {
-  return el != null && el.isConnected && el.closest('[hidden], [inert], .hidden') === null;
+  return el?.isConnected === true && el.closest('[hidden], [inert], .hidden') === null;
 }
 
 /** A place an element registers by its ref: here while that element is drawn. */
@@ -50,6 +50,16 @@ export function askFrom<T>(place: Place, start: () => T): T {
 /** The place asking right now, if a dialog started this write. */
 export function askingPlace(): Place | null {
   return asking;
+}
+
+/**
+ * The place asking now, kept for the writes a confirm starts after an `await`: `askFrom` hands its
+ * place only to the writes started synchronously, so a confirm that sends one write after another
+ * (the water list's merges) runs each later one through what this returns.
+ */
+export function keepAsking(): <T>(start: () => T) => T {
+  const place = asking;
+  return (start) => (place === null ? start() : askFrom(place, start));
 }
 
 /**

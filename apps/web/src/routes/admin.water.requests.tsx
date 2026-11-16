@@ -54,7 +54,8 @@ function messageOf(err: unknown): string {
 }
 
 function RequestQueue() {
-  // Its place: the page, drawn or not when an answer comes (the reason dialogs ask for their own).
+  // Its place: the page, drawn or not when an answer comes. Its banner says every refusal, its
+  // reason dialogs' too (`refusalOnPage`), so those writes keep this place.
   const place = usePlace();
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
   const rows = useQuery(api.corpusRequests.listQueue, { status });
@@ -327,6 +328,9 @@ function RequestQueue() {
                         confirmLabel="Approve"
                         requireReason={false}
                         reasonPlaceholder="Optional note the skater will read"
+                        // Said in the page's banner too: a refusal answered after a colleague's
+                        // decision took this row's dialog away is said there, never in a toast too.
+                        refusalOnPage
                         onConfirm={async (note) => {
                           try {
                             await approve({
@@ -352,6 +356,7 @@ function RequestQueue() {
                         confirmVariant="secondary"
                         requireReason={true}
                         reasonPlaceholder="Why not — what they can do instead"
+                        refusalOnPage
                         onConfirm={async (note) => {
                           try {
                             await decline({

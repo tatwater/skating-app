@@ -32,4 +32,33 @@ describe('a write tied to its attempt', () => {
     });
     expect(result.current.busyOn(T)).toBeNull();
   });
+
+  it.each([
+    [true, 'Not allowed', []],
+    [false, null, ['Not allowed']],
+  ])(
+    'its item region drawn when the answer comes %s: said in place, else once, out of the way',
+    async (regionDrawn, inPlace, late) => {
+      const region = document.body.appendChild(document.createElement('div'));
+      const said: string[] = [];
+      const { result } = renderHook(() =>
+        useRecordActing({
+          current: T,
+          present: true,
+          onAct: async () => 'Not allowed',
+          onLateRefusal: (text) => said.push(text),
+        }),
+      );
+      // The item still open and the sheet present, but its region no longer drawn (hidden).
+      region.hidden = !regionDrawn;
+      let answer: string | null = 'unset';
+      await act(async () => {
+        answer = await result.current.run(T, { kind: 'restore' }, { region, inline: true });
+      });
+      region.remove();
+      expect(answer).toBe(inPlace);
+      expect(result.current.refusalOn(T)).toBe(inPlace);
+      expect(said).toEqual(late);
+    },
+  );
 });

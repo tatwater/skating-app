@@ -5,6 +5,7 @@ import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
 import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
+import { keepAsking } from '../components/admin/place';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { useSaidMutation } from '../components/admin/saidMutation';
 import { Button } from '../components/ui/button';
@@ -196,14 +197,20 @@ function AdminWater() {
               // schedules a re-stamp, and two of them racing onto the same survivor is not a thing
               // worth finding out about from a queue page.
               onMerge={async (survivorId, reason) => {
+                // Every merge is the Keep dialog's, not only the first: one sent after an `await`
+                // asks the dialog's place too, so its refusal is said there (or, gone, in a toast),
+                // never in both.
+                const asked = keepAsking();
                 for (const loser of group.members) {
                   // A tombstone is already merged; the card never offers it either way.
                   if (loser._id === survivorId || loser.dedupStatus === 'merged') continue;
-                  await merge({
-                    survivorId,
-                    loserId: loser._id,
-                    ...(reason ? { reason } : {}),
-                  });
+                  await asked(() =>
+                    merge({
+                      survivorId,
+                      loserId: loser._id,
+                      ...(reason ? { reason } : {}),
+                    }),
+                  );
                 }
               }}
               onDismiss={(reason) =>
