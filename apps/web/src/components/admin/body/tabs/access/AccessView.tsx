@@ -250,9 +250,15 @@ function RulingSection({
 }) {
   const { ruling } = data;
   const rule = (v: PublicAccessVerdict | null) => () => void onRule?.(v);
-  const noAccess = onRule && ruling.verdict !== 'none' && (
+  // Mounted whatever the verdict: confirmed, the ruling shows at once (the latest press wins), and
+  // the dialog stays over it until its own answer — a refusal is said over the kept reason.
+  const noAccess = onRule && (
     <ReasonAsk
-      trigger={<Button size="sm">Rule no public access</Button>}
+      trigger={
+        <Button size="sm" hidden={ruling.verdict === 'none'}>
+          Rule no public access
+        </Button>
+      }
       title="Rule no public access"
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"

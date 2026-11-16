@@ -12,6 +12,7 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useLatestPick } from '../latestPick';
 import { useTickingNow } from '../tabParts';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
@@ -21,6 +22,7 @@ import {
   accessMapScene,
   RULING_HISTORY_LIMIT,
   rulingFrom,
+  rulingWithPick,
 } from './accessModel';
 
 /**
@@ -98,10 +100,29 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       : v === 'none'
         ? 'Ruled no public access'
         : 'Cleared the ruling';
+  const loaded = data !== undefined && !isFailed(data) ? data : null;
+  // **The latest press wins** (`useLatestPick`): the ruling pressed shows at once, each press is
+  // sent in press order, and the record is drawn again once every press has been answered. Ruling
+  // no public access is a press once its reason is confirmed; its dialog waits on its own answer.
+  const rule = useLatestPick<PublicAccessVerdict | null, string | null, string>(
+    loaded?.ruling.verdict ?? null,
+    (verdict, reason) => {
+      const write = () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });
+      const receipt = { title: ruled(verdict), target };
+      return reason !== undefined
+        ? actInDialog(write, receipt)
+        : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
+    },
+  );
+  const shown = useMemo(() => {
+    if (data === undefined || isFailed(data)) return data;
+    const ruling = rulingWithPick(data.ruling, rule.shown, now);
+    return ruling === data.ruling ? data : { ...data, ruling };
+  }, [data, rule.shown, now]);
 
   return (
     <AccessView
-      data={data}
+      data={shown}
       onRetry={retry}
       retryPending={pending}
       lit={lit}
@@ -109,14 +130,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       canPlace={can('body.access')}
       onRule={
         can('access.rule')
-          ? (verdict, reason) => {
-              const write = () =>
-                setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) });
-              const receipt = { title: ruled(verdict), target };
-              return reason !== undefined
-                ? actInDialog(write, receipt)
-                : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
-            }
+          ? async (verdict, reason) => (await rule.press(verdict, reason)) ?? null
           : undefined
       }
       // `putIns.promote`: the launch made official on its own row — its point, bay, lot and walk

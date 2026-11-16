@@ -143,6 +143,30 @@ export function rulingOf(
   };
 }
 
+/**
+ * **The ruling with the latest press shown** (`useLatestPick`), before the server answers: the
+ * verdict pressed, its statement as the server will date it (`at`), and nothing of who ruled or
+ * what stood before — those are the answer's, drawn once it lands. A verdict the record already
+ * holds changes nothing, and the ruling keeps its identity.
+ */
+export function rulingWithPick(
+  ruling: Ruling,
+  verdict: PublicAccessVerdict | null,
+  at: number,
+): Ruling {
+  if (verdict === ruling.verdict) return ruling;
+  return {
+    verdict,
+    statement: rulingStatement(
+      verdict === null ? undefined : { verdict, decidedAt: at, decidedByUserId: '' },
+    ),
+    decidedAt: null,
+    decidedBy: null,
+    before: undefined,
+    history: ruling.history,
+  };
+}
+
 /** A row of `bodyConsole.history`, trimmed to what the ruling reads. */
 export type HistoryRow = {
   targetType: string;

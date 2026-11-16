@@ -9,17 +9,21 @@ import { useRef, useState } from 'react';
  * the control shows the server again: the last press if it landed, else the last one that did. A
  * refused write is said (`onError`, the server's words) and changes nothing else.
  */
-export type LatestPick<T> = {
+export type LatestPick<T, R = unknown, N = undefined> = {
   /** What the control shows, given the server's value. */
   shown: (server: T) => T;
-  /** A press. Sends when it changes what's shown. */
-  press: (value: T, server: T) => void;
+  /**
+   * A press, with what travels with it alone (a reason confirmed in a dialog). Sends when it changes
+   * what's shown, and resolves with that send's own answer (`undefined` when it was refused); `null`
+   * when nothing was sent.
+   */
+  press: (value: T, server: T, note?: N) => Promise<R | undefined> | null;
   /** Writes not yet answered. */
   pending: () => number;
 };
 
-export function createLatestPick<T>(
-  send: (value: T) => Promise<unknown>,
+export function createLatestPick<T, R = unknown, N = undefined>(
+  send: (value: T, note: N | undefined) => Promise<R>,
   {
     onError,
     onChange,
@@ -28,7 +32,7 @@ export function createLatestPick<T>(
     onError: (why: string, value: T) => void;
     onChange: () => void;
   },
-): LatestPick<T> {
+): LatestPick<T, R, N> {
   let requested: { value: T } | null = null;
   let pending = 0;
   let chain: Promise<unknown> = Promise.resolve();
@@ -36,16 +40,17 @@ export function createLatestPick<T>(
   return {
     shown,
     pending: () => pending,
-    press: (value, server) => {
-      if (Object.is(value, shown(server))) return;
+    press: (value, server, note) => {
+      if (Object.is(value, shown(server))) return null;
       requested = { value };
       pending += 1;
       onChange();
-      chain = chain.then(async () => {
+      const sent = chain.then(async (): Promise<R | undefined> => {
         try {
-          await send(value);
+          return await send(value, note);
         } catch (err) {
           onError(err instanceof Error ? err.message : String(err), value);
+          return undefined;
         } finally {
           pending -= 1;
           // Every press answered: the server's value is the truth again.
@@ -53,26 +58,32 @@ export function createLatestPick<T>(
           onChange();
         }
       });
+      chain = sent;
+      return sent;
     },
   };
 }
 
 /**
- * {@link createLatestPick} for a component: `shown` to draw, `press` from the control, `error` the
- * latest refusal with the value it refused (cleared by the next press). `send` throws the server's
- * words on a refusal.
+ * {@link createLatestPick} for a component: `shown` to draw, `press` from the control (its own
+ * answer, for a dialog that waits on it), `error` the latest refusal with the value it refused
+ * (cleared by the next press). `send` throws the server's words on a refusal.
  */
-export function useLatestPick<T>(
+export function useLatestPick<T, R = unknown, N = undefined>(
   server: T,
-  send: (value: T) => Promise<unknown>,
-): { shown: T; press: (value: T) => void; error: { why: string; value: T } | null } {
+  send: (value: T, note: N | undefined) => Promise<R>,
+): {
+  shown: T;
+  press: (value: T, note?: N) => Promise<R | undefined> | null;
+  error: { why: string; value: T } | null;
+} {
   const [, redraw] = useState(0);
   const [error, setError] = useState<{ why: string; value: T } | null>(null);
   const latest = useRef(send);
   latest.current = send;
-  const pick = useRef<LatestPick<T> | null>(null);
+  const pick = useRef<LatestPick<T, R, N> | null>(null);
   if (pick.current === null) {
-    pick.current = createLatestPick<T>((value) => latest.current(value), {
+    pick.current = createLatestPick<T, R, N>((value, note) => latest.current(value, note), {
       onError: (why, value) => setError({ why, value }),
       onChange: () => redraw((n) => n + 1),
     });
@@ -80,9 +91,9 @@ export function useLatestPick<T>(
   const core = pick.current;
   return {
     shown: core.shown(server),
-    press: (value) => {
+    press: (value, note) => {
       setError(null);
-      core.press(value, server);
+      return core.press(value, server, note);
     },
     error,
   };

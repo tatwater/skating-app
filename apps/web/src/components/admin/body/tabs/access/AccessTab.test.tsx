@@ -428,6 +428,65 @@ describe('AccessTab', () => {
     });
   });
 
+  /**
+   * **The latest press wins** (`useLatestPick`): a ruling shows at once, each press is sent in press
+   * order, and the record is drawn again once every press has been answered. Ruling no public access
+   * counts as a press once its reason is confirmed.
+   */
+  describe('the latest press wins', () => {
+    const body = getFunctionName(api.waterBodies.get);
+    let land: () => void = () => {};
+    beforeEach(() => {
+      mocks.hold = new Promise<void>((r) => {
+        land = r;
+      });
+      mocks.server = (name, args) => {
+        if (name !== 'waterBodies:setPublicAccess') return;
+        const prior = mocks.results.get(body) as { body: Record<string, unknown> };
+        const next = { ...prior.body };
+        if (args.verdict === null) delete next.publicAccess;
+        else next.publicAccess = { verdict: args.verdict, decidedAt: Date.now() };
+        mocks.results.set(body, { available: true, body: next });
+      };
+    });
+    const verdicts = () => mocks.calls.map((c) => (c[1] as { verdict: unknown }).verdict);
+    const recorded = () =>
+      (mocks.results.get(body) as { body: { publicAccess?: { verdict: string } } }).body
+        .publicAccess?.verdict ?? null;
+
+    it('Clear the ruling, then Rule accessible before the first answer: ends accessible', async () => {
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+      // Shown at once: no ruling, so accessible can be ruled again.
+      expect(screen.queryByRole('button', { name: 'Clear the ruling' })).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Rule accessible' }));
+      land();
+      await waitFor(() => expect(verdicts()).toEqual([null, 'open']));
+      await waitFor(() => expect(recorded()).toBe('open'));
+      rerender(<AccessTab bodyId="wb1" />);
+      expect(screen.queryByRole('button', { name: 'Rule accessible' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Clear the ruling' })).toBeTruthy();
+    });
+
+    it('Clear the ruling, then Rule no public access before the first answer: the dialog waits for its own answer', async () => {
+      const { rerender } = render(<AccessTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Clear the ruling' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Rule no public access' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'Posted all round');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+      // Confirmed, the press counts — the dialog stays, holding the reason, until it is answered.
+      expect(screen.getByRole('alertdialog')).toBeTruthy();
+      land();
+      await waitFor(() => expect(verdicts()).toEqual([null, 'none']));
+      expect(mocks.calls[1]?.[1]).toMatchObject({ reason: 'Posted all round' });
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      rerender(<AccessTab bodyId="wb1" />);
+      expect(recorded()).toBe('none');
+      expect(screen.queryByRole('button', { name: 'Rule no public access' })).toBeNull();
+    });
+  });
+
   describe('a switch to another body that is already read', () => {
     const toOther = () => {
       const prior = mocks.results.get(getFunctionName(api.waterBodies.get)) as {
