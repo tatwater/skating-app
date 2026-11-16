@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-
 import type { Asker } from '../../body/tabs/latestPick';
+import { drawn } from '../../place';
 
 import type { PersonAction } from './levers';
 import { WORDS } from './personWords';
@@ -53,7 +53,11 @@ export function useActing(onAct: (action: PersonAction, asker?: Asker) => Promis
       setRefusals(({ [id]: _gone, ...rest }) => rest);
       let refused: string | null;
       try {
-        refused = await onAct(action, { here: () => mounted.current });
+        // Its place: the lever's block, drawn when the answer comes — a page that stays mounted
+        // but stops drawing it (another person's read, a permission gone) has none.
+        refused = await onAct(action, {
+          here: () => mounted.current && (opts.region === null || drawn(opts.region)),
+        });
       } catch {
         refused = WORDS.somethingWrong;
       }

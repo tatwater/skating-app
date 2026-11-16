@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from 'react';
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +46,7 @@ import {
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
+import { usePlace } from '../../../place';
 import { useTabKeys } from '../../frame/tabKeys';
 import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
@@ -895,6 +895,8 @@ function DemoteDialog({
   const [error, setError] = useState<string | null>(null);
   // This opening (one feature asked about): a demote's answer acts only on the opening that sent it.
   const opening = useRef(0);
+  // The dialog's body drawn when the answer comes.
+  const place = usePlace();
   const mounted = useRef(false);
   useLayoutEffect(() => {
     mounted.current = true;
@@ -927,7 +929,7 @@ function DemoteDialog({
             winter; the sightings behind it stay. It can be added again.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogBody>
+        <AlertDialogBody ref={place.ref}>
           {error !== null && <AlertDialogError>{error}</AlertDialogError>}
           {/* A sent reason is held while its one-shot write is out: the demotion can't be sent
               again, so words typed then could never be recorded — the field takes none. */}
@@ -947,7 +949,7 @@ function DemoteDialog({
               setError(null);
               const mine = opening.current;
               void onDemote(reason.trim(), {
-                here: () => mounted.current && opening.current === mine,
+                here: () => mounted.current && opening.current === mine && place.here(),
               })
                 .then(() => {
                   if (opening.current !== mine) return;

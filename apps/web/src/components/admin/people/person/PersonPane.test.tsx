@@ -371,6 +371,37 @@ describe('the writes', () => {
     expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
+  it('a refusal that comes once the levers aren’t drawn — the page still mounted, its read failing — is a toast', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('This account is being deleted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+    // The person read goes (no such account now): the page draws no levers, and stays mounted.
+    mocks.results.set('people:person', null);
+    view.rerender(<PersonPane userId={ROB_ID} />);
+    expect(document.querySelector('[data-lever="suspension"]')).toBeNull();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'This account is being deleted.' }),
+      ),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+  });
+
   it('each lever reaches its own write with its own arguments', async () => {
     answer();
     render(<PersonPane userId={ROB_ID} />);

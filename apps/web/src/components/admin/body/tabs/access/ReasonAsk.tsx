@@ -1,5 +1,4 @@
 import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,8 +13,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/kit/alert-dialog';
-
 import { errorText } from '../../../adminUi';
+import { usePlace } from '../../../place';
 
 /**
  * The reason dialog, for a Body console action that takes something away (D226: a reason only
@@ -65,6 +64,8 @@ export function ReasonAsk({
   // going (its page left) ends every opening — at the commit that removes it (a layout effect, as
   // `useBodyHold`), never a passive cleanup that runs later with the dialog already off screen.
   const opening = useRef(0);
+  // The dialog's body drawn when the answer comes: its answer is its own only while drawn.
+  const place = usePlace();
   useLayoutEffect(
     () => () => {
       opening.current++;
@@ -91,7 +92,7 @@ export function ReasonAsk({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description != null && <AlertDialogDescription>{description}</AlertDialogDescription>}
         </AlertDialogHeader>
-        <AlertDialogBody>
+        <AlertDialogBody ref={place.ref}>
           {refusal !== null && <AlertDialogError title="Not done.">{refusal}</AlertDialogError>}
           {extra}
           {/* A sent reason is held while its write is out: the dialog closes when it lands, so
@@ -112,7 +113,7 @@ export function ReasonAsk({
               setBusy(true);
               const mine = opening.current;
               const current = () => opening.current === mine;
-              void onConfirm(trimmed, { here: current }).then(
+              void onConfirm(trimmed, { here: () => current() && place.here() }).then(
                 (refused) => {
                   setBusy(false);
                   if (!current()) return;

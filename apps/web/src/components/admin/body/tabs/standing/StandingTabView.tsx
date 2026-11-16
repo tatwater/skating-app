@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
+import { usePlace } from '../../../place';
 import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
 import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
@@ -306,8 +307,10 @@ function PickForm({
       mounted.current = false;
     };
   }, []);
+  // The form drawn when the answer comes: one that returns nothing (a permission gone) has no place.
+  const place = usePlace();
   const askerFor = (raised: Pick): Asker => ({
-    here: () => mounted.current && shownPick.current === raised,
+    here: () => mounted.current && shownPick.current === raised && place.here(),
   });
   async function run(write: (asker: Asker) => Promise<void>) {
     if (sending.current) return;
@@ -331,7 +334,12 @@ function PickForm({
       void run((asker) => onSetDormant(note.trim(), asker));
     };
     return (
-      <form data-slot="standing-form" onSubmit={submit} className="flex flex-col gap-(--space-2)">
+      <form
+        ref={place.ref}
+        data-slot="standing-form"
+        onSubmit={submit}
+        className="flex flex-col gap-(--space-2)"
+      >
         <span className="flex items-baseline justify-between">
           <label
             htmlFor={noteId}
@@ -371,7 +379,7 @@ function PickForm({
 
   if (pick === 'removed' && onRemove) {
     return (
-      <div data-slot="standing-form" className="flex flex-col gap-(--space-2)">
+      <div ref={place.ref} data-slot="standing-form" className="flex flex-col gap-(--space-2)">
         <span className="text-kick leading-none font-semibold tracking-kick text-fg3 uppercase">
           Reason
         </span>
@@ -419,7 +427,7 @@ function PickForm({
   const back = current === 'removed' ? onRestore : onSetActive;
   if (pick === 'active' && back) {
     return (
-      <div data-slot="standing-form" className="flex flex-col gap-(--space-2)">
+      <div ref={place.ref} data-slot="standing-form" className="flex flex-col gap-(--space-2)">
         <FormError error={error} />
         <Button
           loading={busy}

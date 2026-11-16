@@ -144,6 +144,23 @@ describe('the pick store — the latest press wins', () => {
     ).toEqual({ landed: false, why: 'plain' });
   });
 
+  it('a control mounted but not drawn (hidden, or drawing something else) hears nothing: the page says it', async () => {
+    const h = harness();
+    const heard: string[] = [];
+    let drawnNow = true;
+    h.store.watch('k', {
+      change: () => {},
+      error: (why) => heard.push(why),
+      here: () => drawnNow,
+    });
+    h.store.press('k', { value: 'b', server: 'a' }, h.page('k', 'a'));
+    drawnNow = false;
+    h.held.shift()?.answer('returned');
+    await settle();
+    expect(heard).toEqual([]);
+    expect(h.said.page).toBe(1);
+  });
+
   it('a refusal its write path already said is said by no one else', async () => {
     const h = harness();
     const heard = h.store.press(
@@ -190,7 +207,7 @@ describe('the pick store — the latest press wins', () => {
   type B = 'a' | 'b';
   type Op =
     | { kind: 'press'; body: B; value: string; asked: boolean }
-    | { kind: 'close' | 'leave' | 'return'; body: B }
+    | { kind: 'close' | 'leave' | 'return' | 'hide'; body: B }
     | { kind: 'answer'; body: B; how: Answer };
   const body = fc.constantFrom<B>('a', 'b');
   const op: fc.Arbitrary<Op> = fc.oneof(
@@ -201,7 +218,7 @@ describe('the pick store — the latest press wins', () => {
       asked: fc.boolean(),
     }),
     fc.record({
-      kind: fc.constantFrom('close' as const, 'leave' as const, 'return' as const),
+      kind: fc.constantFrom('close' as const, 'leave' as const, 'return' as const, 'hide' as const),
       body,
     }),
     fc.record({
@@ -232,6 +249,8 @@ describe('the pick store — the latest press wins', () => {
     let misheard = 0;
     // Body a's control says refusals in place while mounted; body b's has no place to say one.
     const pages: Record<B, (() => void) | null> = { a: null, b: null };
+    // Body a's control can be hidden while mounted: its place is asked when the answer comes.
+    let drawnA = true;
     const askers: Record<B, { alive: boolean }[]> = { a: [], b: [] };
     const sends: Record<B, ReturnType<typeof h.page>> = {
       a: h.page('k:a', 'a'),
@@ -279,20 +298,25 @@ describe('the pick store — the latest press wins', () => {
       } else if (o.kind === 'close') {
         const last = askers[o.body].pop();
         if (last !== undefined) last.alive = false;
+      } else if (o.kind === 'hide') {
+        if (o.body === 'a') drawnA = false;
       } else if (o.kind === 'leave') {
         pages[o.body]?.();
         pages[o.body] = null;
         for (const a of askers[o.body]) a.alive = false;
         askers[o.body] = [];
       } else if (o.kind === 'return') {
+        if (o.body === 'a') drawnA = true;
         if (pages[o.body] === null) {
           pages[o.body] = h.store.watch(key, {
             change: () => {},
             ...(o.body === 'a' && {
               error: () => {
-                if (pages.a !== null) heardInPlace++;
+                // Heard in place only by a control mounted *and* drawn.
+                if (pages.a !== null && drawnA) heardInPlace++;
                 else misheard++;
               },
+              here: () => drawnA,
             }),
           });
           // The page that comes back hands the queue its own sender, for the same body.
@@ -413,7 +437,11 @@ function Probe({
   send: (v: string) => Promise<PickOutcome>;
   say?: (why: string) => void;
 }) {
-  const { shown, press, error } = useLatestPick('probe:a', server, { send, say, inPlace: true });
+  const { shown, press, error } = useLatestPick('probe:a', server, {
+    send,
+    say,
+    inPlace: { here: () => true },
+  });
   return (
     <div>
       {['auto', 'never', 'on'].map((v) => (

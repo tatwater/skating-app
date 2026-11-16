@@ -2,7 +2,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowUpRightFromSquare } from '@fortawesome/sharp-regular-svg-icons';
 import type { SatelliteImageryMode } from '@skating/core';
 import { type ComponentProps, useRef, useState } from 'react';
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +39,7 @@ import {
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
+import { usePlace } from '../../../place';
 import { notSavedWhat, PICK_WHAT } from '../../consoleWords';
 import { dayMonth } from '../../frame/bodyModel';
 import { sayNotSaved, useBodyHold } from '../../frame/currentBody';
@@ -190,6 +190,8 @@ export function ImageryTabView({
   // press order (a press waiting behind the write out is replaced by a newer one), the server's
   // answer drawn again once every write has answered (`useLatestPick`).
   const hold = useBodyHold();
+  // Where a refusal of the link is said: under the control, while that is drawn.
+  const satPlace = usePlace();
   const sat = useLatestPick<SatelliteImageryMode>(
     `imagery-satellite:${satellite.bodyId}`,
     satellite.mode,
@@ -198,7 +200,7 @@ export function ImageryTabView({
       // refused off its page, it has said it already and answers `false`.
       send: (mode) => outcomeOf(() => onSatelliteChange?.(mode)),
       say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.satellite, why)),
-      inPlace: true,
+      inPlace: satPlace,
     },
   );
   const go = (to: number) => {
@@ -420,7 +422,7 @@ export function ImageryTabView({
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <p className="m-0 text-assist leading-(--lead-list) text-fg3">
+        <p ref={satPlace.ref} className="m-0 text-assist leading-(--lead-list) text-fg3">
           {satelliteAssist(satellite.name, satellite.areaSqM, sat.shown)}
         </p>
         {sat.error !== null && (

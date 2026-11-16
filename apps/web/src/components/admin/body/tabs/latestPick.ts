@@ -52,7 +52,12 @@ export type Asker = { here: () => boolean };
 /** A control's write: one answer shape, so a refusal is never one the store can't see. */
 export type PickSend<T, N> = (value: T, note: N | undefined) => Promise<PickOutcome>;
 
-type Watcher = { change: () => void; error?: (why: string, value: unknown) => void };
+type Watcher = {
+  change: () => void;
+  error?: (why: string, value: unknown) => void;
+  /** Where that error is drawn: asked when the answer comes, never "mounted". */
+  here?: () => boolean;
+};
 
 type Press = { value: unknown; note: unknown; asker: Asker | undefined };
 
@@ -107,7 +112,9 @@ export function createPickStore(): PickStore {
   };
   /** A refusal no asker is there to hear: one control that says it in place, else the page's words. */
   const sayElsewhere = (key: string, entry: Entry, why: string, value: unknown) => {
-    const inPlace = [...(watchers.get(key) ?? [])].find((w) => w.error !== undefined);
+    const inPlace = [...(watchers.get(key) ?? [])].find(
+      (w) => w.error !== undefined && (w.here === undefined || w.here()),
+    );
     if (inPlace?.error !== undefined) inPlace.error(why, value);
     else entry.say(why);
   };
@@ -243,8 +250,13 @@ export function useLatestPick<T, N = undefined>(
   {
     send,
     say,
-    inPlace = false,
-  }: { send: PickSend<T, N>; say: (why: string) => void; inPlace?: boolean },
+    inPlace,
+  }: {
+    send: PickSend<T, N>;
+    say: (why: string) => void;
+    /** The control that says refusals in place: its drawn place (`usePlace`). */
+    inPlace?: { here: () => boolean };
+  },
 ): {
   shown: T;
   press: (value: T, note?: N, asker?: Asker) => Promise<PickOutcome | undefined> | null;
@@ -258,8 +270,9 @@ export function useLatestPick<T, N = undefined>(
     (change: () => void) =>
       store.watch(key, {
         change,
-        ...(inPlace && {
+        ...(inPlace !== undefined && {
           error: (why: string, value: unknown) => setError({ why, value: value as T }),
+          here: inPlace.here,
         }),
       }),
     [store, key, inPlace],

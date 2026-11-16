@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { drawn } from '../../place';
 import { keepFocus } from '../person/useActing';
 import { type RecordAction, type RecordWrite, type Target, targetKey } from './recordModel';
 import { RECORD_WORDS as W } from './recordWords';
@@ -120,7 +121,7 @@ export function useRecordActing({
       }
       // Left (or leaving): a refusal is said once, out of the way, and nothing is written into
       // what is on its way out — to the caller (a dialog, the chooser) the answer is settled.
-      if (!stillHere(key)) {
+      if (!stillHere(key) || (region !== null && !drawn(region))) {
         if (refused !== null) onLateRefusal(refused);
         return null;
       }
