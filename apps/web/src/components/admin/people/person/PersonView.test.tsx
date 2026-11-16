@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +77,35 @@ const lever = (key: string) => {
   return el;
 };
 
+describe('On the record', () => {
+  it('Review opens the record sheet; the row widens to what the counts say', async () => {
+    const onReviewRecord = vi.fn();
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    draw({
+      person: { ...ROB, hidden: { total: 0, capped: false, byKind: none } },
+      recordCounts: {
+        reversed: { count: 1, capped: false, byKind: { ...none, report: 1 } },
+        deleted: { count: 0, capped: false, byKind: none },
+        pending: [],
+      },
+      onReviewRecord,
+    });
+    expect(lever('record')).toHaveTextContent('0 items');
+    await userEvent.click(within(lever('record')).getByRole('button', { name: 'Review' }));
+    expect(onReviewRecord).toHaveBeenCalledOnce();
+  });
+
+  it('a count still on its way, or failed, adds nothing to the row', () => {
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    const person = { ...ROB, hidden: { total: 0, capped: false, byKind: none } };
+    draw({ person, recordCounts: undefined });
+    expect(document.querySelector('[data-lever="record"]')).toBeNull();
+    cleanup();
+    draw({ person, recordCounts: { failed: true, pending: false, retry: () => {} } });
+    expect(document.querySelector('[data-lever="record"]')).toBeNull();
+  });
+});
+
 describe('board 8.1 — a suspended skater', () => {
   it('draws the head, the status note, the strip, the levers, what is open and the history', () => {
     draw();
@@ -101,10 +130,9 @@ describe('board 8.1 — a suspended skater', () => {
     expect(within(lever('suspension')).getByRole('button', { name: 'Lift' })).toBeInTheDocument();
     expect(lever('record')).toHaveTextContent('4 items');
     expect(lever('record')).toHaveTextContent('2 reports · 2 comments');
-    // The board's Review, drawn as the working button; it says it isn't here yet, never a dead click.
+    // The board's Review opens the record sheet.
     const review = within(lever('record')).getByRole('button', { name: 'Review' });
-    expect(review).toHaveAttribute('aria-disabled', 'true');
-    expect(review).toHaveAttribute('data-unavailable');
+    expect(review).toBeEnabled();
     expect(screen.queryByText(/photo/i)).toBeNull();
     expect(screen.queryByText(/Restore all/)).toBeNull();
     const open = slot('open-about');

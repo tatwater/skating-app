@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { assertSeeded } from '@/test/seeded';
+import type { RecordCounts } from '../record/recordModel';
 import {
   accountRows,
   allButtons,
@@ -116,9 +117,33 @@ describe('Account', () => {
     expect(row(rows, 'ban')?.buttons[0]).toMatchObject({ label: 'Ban', danger: true });
     expect(row(rows, 'record')).toMatchObject({
       second: '2 reports · 2 comments',
-      unavailable: true,
+      review: true,
       buttons: [],
     });
+  });
+
+  it('On the record shows for any of its three lists, a floor, or a record being prepared', () => {
+    const none = {
+      total: 0,
+      capped: false,
+      byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+    };
+    const clean = personOf({ hidden: none });
+    expect(row(accountRows(clean, { now: NOW, self: false }), 'record')).toBeUndefined();
+    const counts = {
+      reversed: { count: 0, capped: false, byKind: none.byKind },
+      deleted: { count: 2, capped: false, byKind: { ...none.byKind, comment: 2 } },
+      pending: [],
+    } as unknown as RecordCounts;
+    // Only what they deleted: the row stands, and says what stands — none, as a count.
+    const deleted = row(accountRows(clean, { now: NOW, self: false, counts }), 'record');
+    expect(deleted).toMatchObject({ status: '0 items', review: true });
+    expect(deleted?.second).toBeUndefined();
+    // Still being prepared: never a number.
+    const preparing = personOf({ hidden: none, pending: ['verdicts'] });
+    expect(row(accountRows(preparing, { now: NOW, self: false }), 'record')?.status).toBe(
+      'Still being prepared',
+    );
   });
 
   it('draws board 8.2: ledger Off with Grant, Change role, Suspend, Ban', () => {

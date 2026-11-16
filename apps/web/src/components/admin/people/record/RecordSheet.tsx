@@ -1,11 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { read, useConsoleReadSet } from '../../reads/consoleReads';
+import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
@@ -53,6 +53,10 @@ export type RecordSheetProps = {
 export function RecordSheet(props: RecordSheetProps) {
   // A fresh sitting each time it opens: nothing restored, nothing open.
   const [sitting, setSitting] = useState(0);
+  // Nothing is mounted, or asked of the server, until the sheet first opens.
+  const [opened, setOpened] = useState(props.open);
+  if (props.open && !opened) setOpened(true);
+  if (!opened) return null;
   return (
     <SheetSitting
       key={sitting}
@@ -121,11 +125,11 @@ function SheetSitting({
   const state = useSittingState();
   const { tab, kind, selected, chooser } = state;
   const userId = subject.userId;
-  const viewer = useQuery(api.profiles.current, {});
-  const viewerName = viewer == null ? null : personName(viewer);
 
   const list = useRecordList(open ? { tab, userId, kind } : null);
   const { reads } = useConsoleReadSet({
+    // Who is restoring, for a restored row's chip.
+    viewer: open ? read(api.profiles.current, {}) : null,
     item:
       open && selected !== null
         ? read(api.contentRecord.item, {
@@ -139,6 +143,9 @@ function SheetSitting({
         : null,
   });
 
+  const viewer = reads.viewer;
+  const viewerName =
+    viewer === undefined || viewer === null || isFailed(viewer) ? null : personName(viewer);
   const setModerationStatus = useMutation(api.moderation.setModerationStatus);
   const overturnVerdict = useMutation(api.moderation.overturnVerdict);
   const keepOnRecord = useMutation(api.moderation.keepOnRecord);

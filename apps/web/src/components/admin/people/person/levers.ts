@@ -1,5 +1,5 @@
 import { timeLeftInWords } from '@/lib/ages';
-import { settledEmpty } from '../answers';
+import { type RecordCounts, recordRowShows } from '../record/recordModel';
 import {
   countText,
   type PersonCan,
@@ -100,8 +100,8 @@ export type LeverRow = {
   buttons: LeverButton[];
   /** Two buttons drawn as one joined group (Extend | Lift). */
   joined?: boolean;
-  /** The row's action is a tool not built yet: the kit's unavailable button (it says so). */
-  unavailable?: boolean;
+  /** The row's action opens the record sheet (*On the record*'s *Review*). */
+  review?: boolean;
 };
 
 const RIGHT_WORDS: Record<Exclude<Permission, 'flagging'>, { label: string; verb: string }> = {
@@ -221,7 +221,15 @@ export function roleItems(p: PersonRead): RoleItem[] {
 }
 
 /** "Account": the role, ledger editing, the suspension, the ban, and what is on the record. */
-export function accountRows(p: PersonRead, opts: { now: number; self: boolean }): LeverRow[] {
+export function accountRows(
+  p: PersonRead,
+  opts: {
+    now: number;
+    self: boolean;
+    /** The record's other two lists (`contentRecord.recordCounts`); `null` until it lands. */
+    counts?: RecordCounts | null;
+  },
+): LeverRow[] {
   const { can } = p;
   const rows: LeverRow[] = [];
 
@@ -357,22 +365,25 @@ export function accountRows(p: PersonRead, opts: { now: number; self: boolean })
     });
   }
 
-  // *On the record* (the sheet's standing list: what is hidden or removed under a verdict). Left out
-  // only when nothing stands for certain — a count that stopped at its cap stays. The row widens to
-  // the sheet's Deleted and Reversed lists once the server counts them.
-  if (!settledEmpty({ count: p.hidden.total, capped: p.hidden.capped, pending: false })) {
+  // *On the record*: the sheet's three lists. Drawn whenever any list has items, a count stopped at
+  // its cap, or the record is still being prepared (`recordRowShows`) — Standing from this read
+  // (`hidden`), Deleted and Reversed from `contentRecord.recordCounts` once it lands. Its count is
+  // what stands, as the sheet's head says it ("0 items" when only the others hold anything).
+  const preparing = p.pending.includes('verdicts');
+  if (recordRowShows(p.hidden, opts.counts ?? null, preparing)) {
     rows.push({
       key: 'record',
       label: WORDS.onTheRecord,
-      // A floor that read none says so in words, never as a zero.
-      status:
-        p.hidden.total === 0
-          ? WORDS.recordUncounted
+      status: preparing
+        ? WORDS.pending
+        : p.hidden.total === 0 && p.hidden.capped
+          ? // A floor that read none says so in words, never as a zero.
+            WORDS.recordUncounted
           : `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
       tone: 'quiet',
-      second: hiddenKinds(p.hidden),
+      ...(!preparing && p.hidden.total > 0 && { second: hiddenKinds(p.hidden) }),
       buttons: [],
-      unavailable: true,
+      review: true,
     });
   }
   return rows;

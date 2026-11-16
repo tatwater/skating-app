@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
+import type { RecordCounts } from '../record/recordModel';
 import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
@@ -84,6 +85,10 @@ export type PersonViewProps = {
   onUndo: (row: ActionRow) => void;
   /** Asks for more decisions, while the read says there are more. */
   onMoreDecisions?: () => void;
+  /** The record's Deleted and Reversed counts (`contentRecord.recordCounts`), for its row. */
+  recordCounts?: Loadable<RecordCounts | null>;
+  /** *On the record*'s *Review*: opens the record sheet. */
+  onReviewRecord?: () => void;
   className?: string;
 };
 
@@ -101,6 +106,8 @@ export function PersonView({
   onAct,
   onUndo,
   onMoreDecisions,
+  recordCounts,
+  onReviewRecord,
   className,
 }: PersonViewProps) {
   const acting = useActing(onAct);
@@ -157,11 +164,18 @@ export function PersonView({
           <div data-slot="person-right" className="flex min-w-0 flex-col">
             <LeverBlock
               title="Account"
-              rows={accountRows(p, { now, self })}
+              rows={accountRows(p, {
+                now,
+                self,
+                // A count still on its way, or one that failed, adds nothing: the row stands on
+                // what stands until it lands.
+                counts: recordCounts === undefined || isFailed(recordCounts) ? null : recordCounts,
+              })}
               person={p}
               acting={acting}
               now={now}
               {...tz}
+              {...(onReviewRecord !== undefined && { onReview: onReviewRecord })}
             />
             {staff
               ? decisions !== 'not-shown' &&

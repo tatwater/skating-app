@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { useOptionalShell } from '@/components/kit/app-shell';
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
 import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
@@ -9,6 +10,7 @@ import { actionLabel } from '../../shell/actionLabels';
 import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { useClockFor } from '../clock';
+import { RecordSheet } from '../record/RecordSheet';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
 import { type PersonRead, shownName } from './personModel';
@@ -73,7 +75,11 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     staffSeason: valid && audit ? read(api.people.staffSeason, { userId: id, now: held }) : null,
     decisions:
       valid && audit ? read(api.people.decisions, { userId: id, limit: decisionRows }) : null,
+    // The record's other two lists, for the *On the record* row and the sheet's filter.
+    recordCounts: valid && people ? read(api.contentRecord.recordCounts, { userId: id }) : null,
   });
+  const [recordOpen, setRecordOpen] = useState(false);
+  const shell = useOptionalShell();
 
   // *Show more* asks a larger page, a new subscription: the rows already drawn hold while it loads,
   // so the list (and the button holding focus) never blanks into a skeleton.
@@ -106,32 +112,54 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     <Link {...routerTarget(to.kind === 'people' ? back : personHref(to))} />
   );
 
+  const counts =
+    reads.recordCounts === undefined || isFailed(reads.recordCounts) ? null : reads.recordCounts;
   return (
-    <PersonView
-      // A malformed id, or a viewer without the read, is no such person to this page.
-      person={!valid || !people ? null : person}
-      trend={reads.trend}
-      history={audit ? reads.history : 'not-shown'}
-      // Without the audit read the staff reads aren't asked: no strip, no Decisions — never a
-      // skeleton waiting on a read that will not come.
-      staffStats={audit ? reads.staffStats : null}
-      staffSeason={audit ? reads.staffSeason : null}
-      decisions={audit ? decisions : 'not-shown'}
-      now={live}
-      viewerId={viewerId ?? null}
-      linkTo={linkTo}
-      onAct={onAct}
-      onUndo={(row) =>
-        undo({
-          actionId: row.id,
-          needsReason: row.undo.state === 'available' && row.undo.needsReason,
-          what: actionLabel(row.action, row.targetType),
-        })
-      }
-      {...(decisionRows < DECISIONS_MOST && {
-        onMoreDecisions: () => setDecisionRows((n) => Math.min(DECISIONS_MOST, n * 2)),
-      })}
-      {...(className !== undefined && { className })}
-    />
+    <>
+      <PersonView
+        // A malformed id, or a viewer without the read, is no such person to this page.
+        person={!valid || !people ? null : person}
+        trend={reads.trend}
+        history={audit ? reads.history : 'not-shown'}
+        // Without the audit read the staff reads aren't asked: no strip, no Decisions — never a
+        // skeleton waiting on a read that will not come.
+        staffStats={audit ? reads.staffStats : null}
+        staffSeason={audit ? reads.staffSeason : null}
+        decisions={audit ? decisions : 'not-shown'}
+        now={live}
+        viewerId={viewerId ?? null}
+        linkTo={linkTo}
+        onAct={onAct}
+        onUndo={(row) =>
+          undo({
+            actionId: row.id,
+            needsReason: row.undo.state === 'available' && row.undo.needsReason,
+            what: actionLabel(row.action, row.targetType),
+          })
+        }
+        {...(decisionRows < DECISIONS_MOST && {
+          onMoreDecisions: () => setDecisionRows((n) => Math.min(DECISIONS_MOST, n * 2)),
+        })}
+        recordCounts={reads.recordCounts}
+        onReviewRecord={() => setRecordOpen(true)}
+        {...(className !== undefined && { className })}
+      />
+      {loaded !== null && (
+        <RecordSheet
+          open={recordOpen}
+          onOpenChange={setRecordOpen}
+          subject={{
+            userId: loaded.userId,
+            displayName: loaded.displayName,
+            username: loaded.username,
+            profileImageUrl: loaded.profileImageUrl,
+          }}
+          standing={loaded.hidden}
+          pending={loaded.pending.includes('verdicts') || (counts?.pending.length ?? 0) > 0}
+          counts={counts}
+          container={shell?.main ?? null}
+        />
+      )}
+    </>
   );
 }

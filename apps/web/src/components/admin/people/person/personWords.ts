@@ -70,7 +70,6 @@ export const WORDS = {
   bannedStatus: 'Banned · account kept for appeal',
   review: 'Review',
   onTheRecord: 'On the record',
-  reviewRecordWhat: 'Reviewing what is on their record comes with its own sheet',
   switchOn: 'Switch on',
 
   // ── The dialogs ──
