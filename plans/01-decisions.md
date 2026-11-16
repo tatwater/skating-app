@@ -8213,9 +8213,10 @@ Inbox's flag ruling, by the alert pin, and by the undo engine, so no lever or Un
 write refuses; the lever shows the write's own plain sentence. Person writes aimed at oneself were
 already refused (discipline, roles; a ledger grant to a holder), except stepping down from the ledger.
 
-**Open:** whether admins are bound too. With one admin and no moderator, content of that admin's
-would have no one to rule on it. Until the founder says, every role is bound
-(`OWN_CONTENT_EXEMPT_ROLES` is empty; naming `admin` there is the whole change).
+**Admins are bound too** (the founder, 2026-11-16: there are two more admins, and there will always
+be more than one). No role is exempt (`OWN_CONTENT_EXEMPT_ROLES` is empty). It rests on one condition:
+if the console were ever down to a single admin with no moderators, that admin's own flagged content
+and their alerts would wait for a second staff member.
 
 **Why:** a decision on one's own content is no decision — the record it writes is evidence only when
 someone else made it.
@@ -8230,14 +8231,29 @@ limit set to the one in force, a ban or suspension with the same terms, a lift o
 the same pinned towns — writes no audit row, offers no undo and answers `changed: false`, and the
 console says nothing changed; role and ledger no-ops were already refused. A write that is refused or
 throws leaves no audit row and no partial write (Convex rolls the mutation back; a guard holds every
-People and record writer to deciding before it writes the log). Rows written before that changed
-nothing offer no undo.
+People, record and alert writer to deciding before it writes the log). Rows written before that
+changed nothing offer no undo, and an undo whose write would change nothing is refused.
+
+**The whole effect, the mirror included.** A ban, suspension or lift with unchanged terms still
+resends Clerk's lock or unlock (the mirror isn't tracked), with no audit row and no undo; and every
+Clerk sync reads what Convex says before each request and after each answer, sending again when it
+moved, so overlapping syncs end where Convex is.
+
+**Content writes too** (as D267's restore of what is up): a hide or removal of what a decision of
+that kind already holds, a pin of a pinned alert and a release of one that isn't pinned are refused
+with a plain sentence and write nothing; a moderator's word on an alert retraction already held as
+evidence writes no second verdict.
+
+**A typed reason is normalized at the write** (`lib/audit.checkedReason`: trimmed, then held to D261's
+cap; `typed()` and the person writes go through it), so a trailing space is never a change.
 
 **A person's terms** are their status, its reason and a suspension's end. A ban or suspension whose
 reason or end differs is a real change: audited, and what both the person page's status note and
 their list row then show — the note dates, names and quotes the write that set the terms as they
 stand, and the row's `statusSince` is that write's time (the founder's "Sure" to one reason after a
-repeat ban). Rows written before this rule are stamped by the rows backfill.
+repeat ban). Rows written before this rule are stamped by the rows backfill. An undo of a terms
+change puts the prior terms back whole — the reason on file included; the undo's own reason is its
+audit row's, never the person's — and, like its redo, dates the terms anew.
 
 **Why:** the log is a record of what happened; a row for something that didn't happen, or two places
 giving two reasons for one ban, is the record lying.

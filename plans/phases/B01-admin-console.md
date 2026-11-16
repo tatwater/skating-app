@@ -2890,10 +2890,9 @@ on the person page).
   A no-op writes no audit row, offers no undo and skips the undo lookup; the person page says
   *Nothing changed — ‹name› was already set that way* (`WORDS.alreadySo`). Rows written before that
   changed nothing offer no undo (`NOTHING_TO_UNDO`). A refused write, person or record, leaves every
-  table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People
-  and record writer to deciding before it writes the log. **Left:** a record write that changes
-  nothing — a hide of what is already hidden, a removal of what is already removed — still writes a
-  row (offered no undo, as before); it is a content write, outside this call's person writes.
+  table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People,
+  record and alert writer to deciding before it writes the log. An undo whose write would change
+  nothing is refused (`NOTHING_TO_UNDO`), never an empty success.
 - **One reason after a repeat ban.** A person's terms are their status, its reason and a suspension's
   end (`lib/peopleCan.StatusTerms`). The person page's status note and the list row answer from one
   reading (`lib/statusTerms`): the write that set the terms as they stand — its date, who and through
@@ -2917,11 +2916,77 @@ on the person page).
   write's own sentence where the lever is (*This is yours, so another moderator decides on it.*); the
   web needed no change. Rows written before the rule, where a moderator acted on their own content:
   their undo is refused to that moderator and open to any other — an undo is a decision on the
-  content too. **Default and what it strands:** every role is bound (`OWN_CONTENT_EXEMPT_ROLES = []`).
-  A staffer's own content, and flags about them, are cleared by any other holder of the capability
-  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins); nothing is stuck while a
-  second staffer exists. With one admin and no moderator, that admin's flagged content (Inbox *Flags*,
-  the record sheet's levers on their own record) and their alerts' pins have no one to decide them.
+  content too. **Every role is bound — admins included** (the founder, 2026-11-16: there are two
+  more admins, and there will always be more than one; `OWN_CONTENT_EXEMPT_ROLES` stays empty). A
+  staffer's own content, and flags about them, are cleared by any other holder of the capability
+  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins), so nothing is stuck. The
+  one condition it rests on: if the console were ever down to a single admin with no moderators, that
+  admin's own flagged content (Inbox *Flags*, the record sheet's levers on their own record) and their
+  alerts' pins would wait for a second staff member.
+
+**B01-4g (2026-11-16): the follow-ons to B01-4f** (D270 refined; server only). Rollout: nothing new
+for dev — the rows backfill writes what it wrote under B01-4f (`termsSetBy` reads a row's
+`metadata.statusReason` where it has one, which only writes from this change carry), so #137's
+rollout stands and needs no re-run.
+
+- **The Clerk mirror.** Clerk's side of a ban is a lock on new sign-ins: a banned person whose Clerk
+  was never told can still sign in, but every Convex function refuses them (the status gate is the
+  boundary). After a lift, a Clerk still locked keeps an active person out of sign-in. A suspension
+  never locks Clerk; one that replaces a ban unlocks it. A failed sync retries three times
+  (`clerkAdmin.setBanned`: 30 s, 5 min, 30 min), then pages the operator to fix it in the Clerk
+  dashboard; there is no `jobFailures` row and no reconcile job. No screen offers Ban on a banned
+  person or Lift on an active one, so pressing again was never an operator's repair — only a raw call
+  or a double submit reached it. What #137 dropped was that resend; it is back for a ban, a
+  suspension and a lift whose terms stand (no audit row, no undo). **The syncs converge** (Greptile
+  on #139): every run of `setBanned` reads what Convex wants (`lockWanted`) before its request and
+  again after every answer — success, or a failure it would give up on — and sends again when it
+  moved: at most three sends a run, each held to a 20-second timeout (a hung request would otherwise
+  hold the run until Convex's action limit killed it, unretried and unreported), then the retry
+  schedule (which reads afresh), and past its budget the operator, never a silent stop. Clerk answers
+  a request only after applying it, so the sender of the last request applied reads Convex after it,
+  and either Convex still wants that or a further request lands later (its own, or its retry's); any
+  later change schedules its own run. So once everything has answered, no retry is pending and no run
+  has paged the operator, Clerk's lock is Convex's status — a suspension replacing a ban, an undo and
+  a redo in quick succession and the retry schedule's delayed runs included (a model test drives
+  random status changes, answer orders and transient failures; named tests cover a permanent failure
+  whose wish moved and a wish that keeps moving past every round). A person being deleted, or
+  deleted, stops the run — account deletion deletes their Clerk user itself — so no ban is sent to a
+  deleted Clerk user and no page is mailed about one. **Left:** a run that dies between an answer and
+  its read, and a request whose answer is lost (a timeout included) but which Clerk applies later
+  than the retry that follows it, leave the last applied value until the next status write; a
+  reconcile over every account (the mirror's state tracked) would close both.
+- **The sweep for the same shape** — outbound writes that mirror a Convex value and can be sent by
+  more than one action for the same subject: `clerkAdmin.setBanned` (fixed above);
+  `clerkAdmin.deleteUser` (account deletion's last step — one-way, a 404 is success, so any order
+  ends deleted); `lib/clerkEmail` (a read); no Clerk role or metadata write exists. Outside Clerk:
+  `imageryLive.buildIndex`'s R2 season index and `latest.json` (under its own lease — one builder at a
+  time); the Fly pump (under its lease); Resend and Expo pushes (sends, not mirrors); Strava uploads
+  and Google Photos picker sessions (per-request, not a mirrored value). Only the ban lock had the
+  shape.
+- **Content writes under the same rule.** The inventory:
+
+  | Write | Changes nothing when | Now |
+  | --- | --- | --- |
+  | `setModerationStatus` restore | it is up, no decision standing | refused, *This is already up.* (D267) |
+  | `setModerationStatus` hide / remove | a decision of that kind holds it, and on a Post no Report is up | refused, *This is already hidden.* / *…removed.* |
+  | the same on content its author deleted | a decision of that kind holds it | refused, the same words |
+  | `keepOnRecord` | a decision already holds it | refused (D267) |
+  | `overturnVerdict` | nothing stands | refused (D267) |
+  | `resolveFlag` | the flag is resolved or withdrawn | refused, as before |
+  | `accessAlerts.setOfficial` | a pin of a pinned alert, a release of one that isn't | refused, *This alert is already pinned.* / *…isn't pinned.* |
+  | `accessAlerts.retract`, a moderator's word on the author's retraction | a verdict already holds it | nothing more written, as a retraction already made answers |
+
+  Refused, as D267's restore of what is up, whatever the reason given (as a keep already held). The
+  record sheet never draws these levers (*Hide again* is on what is up only); rows recorded before
+  offer no undo.
+- **Undo puts the prior terms back.** An undo of a ban or suspension restores the terms it replaced
+  whole — status, end and the reason on file; the undo's own reason is its audit row's. A row from
+  before `prev` has no reason to restore: none on file, *not recorded* on the page. A redo is the same
+  path; each dates the terms anew (undo then redo starts a fresh *since*, as the founder ruled).
+- **One normalizer at the write.** `lib/audit.checkedReason` trims, then holds to the cap; `typed`
+  and the ban and suspension writers compare and keep through it. A reason kept with spaces before this (only a
+  raw call could send one) compares unequal to its trimmed repeat once, which writes one row and keeps
+  the trimmed reason from then on.
 
 ### The B01-2 server register (owed to the server agent)
 

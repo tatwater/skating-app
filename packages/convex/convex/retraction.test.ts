@@ -827,6 +827,19 @@ describe('an access alert', () => {
     });
   });
 
+  test('a moderator’s word on a retraction already held as evidence writes nothing more (D270)', async () => {
+    const { t, mod, skater, alertId } = await alertSetup();
+    await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    const rows = async () =>
+      (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+        (r) => r.action === 'retract_access_alert',
+      ).length;
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: 'bogus' });
+    const before = await rows();
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: 'again' });
+    expect(await rows()).toBe(before);
+  });
+
   test('a moderator retracting their own alert does so by the author rule', async () => {
     const { t, mod, waterBodyId } = await alertSetup();
     const putInId = await t.run((ctx) =>

@@ -39,6 +39,14 @@ export const RESTORE_ALREADY_UP = 'This is already up.';
 /** A keep on content its author hasn't taken back: that is an ordinary hide or removal. */
 export const KEEP_NOT_DELETED =
   'Its author hasn’t deleted this. Hide or remove it to put it on their record.';
+/**
+ * A hide or removal of what a decision of that kind already holds: nothing would change, so nothing is
+ * written (D270, as D267's restore of what is up) — whatever the reason given, as a keep already held.
+ */
+export const TAKEDOWN_ALREADY = {
+  hidden: 'This is already hidden.',
+  removed: 'This is already removed.',
+} as const;
 /** A keep on content a decision already holds: nothing would change. */
 export const KEEP_ALREADY_HELD = 'A decision already keeps this on their record.';
 /** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */

@@ -827,7 +827,6 @@ knows what needs them, does it where they found it, and watches the machinery wo
 
 #### Owed
 - The People rules (B01-4f) on dev: the rows backfill once, alone, to date each suspended or banned person's row by the write that set their terms (the after-merge procedure's step 6, quoted below); not run by the build → the plan's *B01-4f*
-- ❓ Whether a moderator's own-content rule binds admins too (D269) — every role is bound until the founder says; with one admin and no moderator, that admin's flagged content has no one to rule on it → the plan's *B01-4f*
 - Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)

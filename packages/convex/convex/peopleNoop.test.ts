@@ -312,7 +312,25 @@ describe('a row written before D270 that changed nothing offers no undo', () => 
 });
 
 describe('an undo whose write would change nothing is refused, not silently empty', () => {
-  test('undoing a reason change with the reason that stands: refused, no row, still offered', async () => {
+  test('an undo whose write would change nothing — the person already back as it was, with no row saying so — is refused', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const a = as(t, 'adm');
+    const banned = await a.mutation(api.moderation.banUser, { userId: id, reason: 'first' });
+    if (!banned.changed || !banned.undoable) throw new Error('the ban is undoable');
+    // Put back to active by a path that wrote no row of its own (as a repair by hand would).
+    await t.run(async (ctx) => {
+      await ctx.db.patch(id, { status: 'active', statusReason: undefined });
+    });
+    const rows = await auditRows(t);
+    await expect(a.mutation(api.undo.run, { actionId: banned.actionId })).rejects.toThrow(
+      NOTHING_TO_UNDO,
+    );
+    expect(await auditRows(t)).toBe(rows);
+  });
+
+  test('undoing a reason change puts the prior reason back, whatever reason the undo gives', async () => {
     const t = await setup();
     await seed(t, 'adm', { role: 'admin' });
     const id = await seed(t, 'them');
@@ -321,15 +339,8 @@ describe('an undo whose write would change nothing is refused, not silently empt
     vi.setSystemTime(T0 + 60_000);
     const changed = await a.mutation(api.moderation.banUser, { userId: id, reason: 'again' });
     if (!changed.changed || !changed.undoable) throw new Error('the reason change is undoable');
-    const rows = await auditRows(t);
-    // The undo's reason is the ban's reason (`restoreStatus`): the one that stands changes nothing.
-    await expect(
-      a.mutation(api.undo.run, { actionId: changed.actionId, reason: 'again' }),
-    ).rejects.toThrow(NOTHING_TO_UNDO);
-    expect(await auditRows(t)).toBe(rows);
-    const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
-    expect(toast?.actionId).toBe(changed.actionId);
-    expect(toast?.undo.state).toBe('available');
+    await a.mutation(api.undo.run, { actionId: changed.actionId, reason: 'again' });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.statusReason).toBe('first');
   });
 });
 
@@ -363,5 +374,82 @@ describe('a person first given a row by a status write', () => {
     );
     expect(page?.statusNote?.at).toBe(T0);
     expect(row?.statusSince).toBe(T0);
+  });
+});
+
+describe('the Clerk mirror: nothing changed must be true of the whole effect', () => {
+  /** The Clerk syncs scheduled so far, as `{ banned }` each. */
+  const syncs = (t: T) =>
+    t.run(async (ctx) =>
+      (await ctx.db.system.query('_scheduled_functions').collect())
+        .filter((j) => j.name.includes('clerkAdmin') && j.name.includes('setBanned'))
+        .map((j) => (j.args[0] as { banned: boolean }).banned),
+    );
+
+  test('a ban that lands, then the same ban again: the sync is sent again — no second audit row, no undo', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const a = as(t, 'adm');
+    await a.mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
+    expect(await syncs(t)).toEqual([true]);
+    // Say the sync gave up: the mirror isn't known to be in step, and pressing again is how an
+    // operator repairs it — so the same ban sends it again, and writes nothing else.
+    const rows = await auditRows(t);
+    const out = await a.mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([true, true]);
+  });
+
+  test('the same suspension again resends the unlock a suspension holds, and writes nothing else', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them', {
+      status: 'suspended',
+      statusReason: 'cool off',
+      suspendedUntil: T0 + DAY,
+    });
+    const rows = await auditRows(t);
+    const out = await as(t, 'adm').mutation(api.moderation.suspendUser, {
+      userId: id,
+      reason: 'cool off',
+      suspendedUntil: T0 + DAY,
+    });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([false]);
+  });
+
+  test('a lift of an active account sends the unlock again, and writes nothing else', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const rows = await auditRows(t);
+    const out = await as(t, 'adm').mutation(api.moderation.unbanUser, { userId: id });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([false]);
+  });
+});
+
+describe('one normalizer at the write: a reason is compared and kept trimmed', () => {
+  test('a raw call with spaces around the same reason changes nothing; a new one is kept trimmed', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const a = as(t, 'adm');
+    await a.mutation(api.moderation.banUser, { userId: id, reason: '  spam  ' });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.statusReason).toBe('spam');
+    const rows = await auditRows(t);
+    const out = await a.mutation(api.moderation.banUser, { userId: id, reason: 'spam ' });
+    expect(out).toMatchObject({ changed: false });
+    expect(await auditRows(t)).toBe(rows);
+    await a.mutation(api.moderation.suspendUser, {
+      userId: id,
+      reason: ' cool off\n',
+      suspendedUntil: T0 + DAY,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.statusReason).toBe('cool off');
   });
 });

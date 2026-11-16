@@ -95,10 +95,15 @@ export function composedOf(fixed: readonly string[], values: readonly string[]):
   return { composed: true, fixed, values } as unknown as ComposedReason;
 }
 
-/** A person's typed reason, refused past the cap (D261) — for a writer that quotes it in a composed one. */
+/**
+ * **A person's typed reason, as the write keeps it** — the one normalizer: trimmed (a trailing space
+ * is never a change, D270), then refused past the cap (D261). Every typed reason goes through it
+ * (`typed`, and a writer that quotes one in a composed reason or compares it with the one on file).
+ */
 export function checkedReason(typed: string): string {
-  if (typed.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
-  return typed;
+  const text = typed.trim();
+  if (text.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
+  return text;
 }
 
 /** A composed reason as text, its values trimmed — the longest first — until it fits the cap. */

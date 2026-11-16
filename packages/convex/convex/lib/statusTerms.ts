@@ -6,9 +6,9 @@
  * the person's page and their list row then show. So both answer one question the same way: the
  * newest write that set the terms as they stand.
  *
- * - **The person's page** (`people.person`'s status note): its date, who, through what and its
- *   reason are that write's — one write's sentence, never one moderator's words beside another's
- *   date — read here ({@link readTermsSet}).
+ * - **The person's page** (`people.person`'s status note): its date, who and through what are that
+ *   write's, read here ({@link readTermsSet}); its reason is the one on file — that write's own,
+ *   except an undo's, which puts back the reason of the terms it restores and audits its own.
  * - **The list row** (`peopleRows.statusSince`): stamped when a status write lands (the writers pass
  *   `termsSet`), and, for rows written before this rule, by the rows backfill
  *   ({@link stampStatusTerms}) from the same reading.
@@ -33,9 +33,12 @@ export const STATUS_ROWS_BYTES = DOC_MAX;
 /** The terms a ban, suspension or lift row set. */
 export function termsSetBy(row: Audit): StatusTerms {
   if (row.action === 'unban') return { status: 'active', statusReason: null, suspendedUntil: null };
+  // The reason it put on file, where it says (an undo puts back the prior one and audits its own);
+  // else the row's own, as every ban and suspension kept before.
+  const onFile = (row.metadata as { statusReason?: string | null } | undefined)?.statusReason;
   return {
     status: row.action === 'ban' ? 'banned' : 'suspended',
-    statusReason: row.reason,
+    statusReason: onFile !== undefined ? onFile : row.reason,
     suspendedUntil:
       row.action === 'suspend'
         ? (((row.metadata as { suspendedUntil?: number } | undefined)?.suspendedUntil ?? null) as

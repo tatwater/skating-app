@@ -9,6 +9,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { ALERT_NOT_PINNED } from './accessAlerts';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -437,13 +438,22 @@ describe('undo: access alert pins (D226)', () => {
         /before undo existed/i,
       );
     }
-    await mod.as.mutation(api.accessAlerts.setOfficial, {
-      accessAlertId: alertId,
-      official: false,
-      reason: 'restart the clock',
+    // An unpin of an unpinned alert changes nothing, so it is refused and writes nothing (D270);
+    // one recorded before that rule still has nothing to undo.
+    await expect(
+      mod.as.mutation(api.accessAlerts.setOfficial, {
+        accessAlertId: alertId,
+        official: false,
+        reason: 'restart the clock',
+      }),
+    ).rejects.toThrow(ALERT_NOT_PINNED);
+    const unpin = await seedOldRow(t, mod.id, {
+      action: 'unpin_access_alert',
+      targetType: 'accessAlert',
+      targetId: alertId,
+      metadata: { prev: { status: 'active', expiresAt: null } },
     });
-    const unpin = await newestOn(t, 'accessAlert', alertId);
-    await expect(mod.as.mutation(api.undo.run, { actionId: unpin._id })).rejects.toThrow(
+    await expect(mod.as.mutation(api.undo.run, { actionId: unpin })).rejects.toThrow(
       /was not pinned/,
     );
   });
