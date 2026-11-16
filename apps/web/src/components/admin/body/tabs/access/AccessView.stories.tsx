@@ -81,12 +81,7 @@ export const RuleNoPublicAccess: Story = {
     const dialog = await within(document.body).findByRole('alertdialog');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Every approach is posted');
     await userEvent.click(within(dialog).getByRole('button', { name: /^Rule no public access/ }));
-    await expect(args.onRule).toHaveBeenCalledWith(
-      'none',
-      'Every approach is posted',
-      // The dialog's opening, for an answer that comes after it has gone.
-      expect.anything(),
-    );
+    await expect(args.onRule).toHaveBeenCalledWith('none', 'Every approach is posted');
     await waitFor(() => expect(document.querySelector('[data-slot="reason-ask"]')).toBeNull());
   },
 };
@@ -247,8 +242,6 @@ export const HideALaunch: Story = {
     await expect(args.onHide).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'pi-dam' }),
       'A private dock',
-      // The dialog's opening, for an answer that comes after it has gone.
-      expect.anything(),
     );
   },
 };
