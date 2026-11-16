@@ -3812,10 +3812,12 @@ removes any pin is a takeaway** and refuses without a nonblank reason ("A reason
 every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
 in N towns") and marked `reasonDefaulted` in the audit row. The person's reason is trimmed and
 refused past the audit-reason cap (D261, `AUDIT_REASON_MAX`; #130's interim 1,000-character cap is
-gone, one cap for every audit reason), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
-run past it. Its undo follows the same rule on the list it puts back (one rule, the undo policy's
-`{ from, to }`): undoing an add removes pins and asks a reason; undoing a removal only adds and asks
-none. The undo is refused, so never offered, when a merge moved the list since its row. A body's states are built from two ingredients kept apart —
+gone, one cap for every audit reason) — early in the mutation, and again by `writeAudit`, which
+holds the same plain string to the same cap; an undo's own reason quotes the row's but never trips
+it, since `runUndo` fits the line it composes to the cap. Its undo follows the same rule on the list
+it puts back (one rule, the undo policy's `{ from, to }`): undoing an add removes pins and asks a
+reason; undoing a removal only adds and asks none. The undo is refused, so never offered, when a
+merge moved the list since its row. A body's states are built from two ingredients kept apart —
 the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
 the pin's write, its undo, a merge and the import all patch through, so skater search, the library
 and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly

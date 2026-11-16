@@ -2995,7 +2995,8 @@ export const remove = mutation({
   handler: async (ctx, { waterBodyId, reason, note }) => {
     const actor = await requireCapability(ctx, 'body.remove');
     const text = note?.trim();
-    // The person's words are capped here, not in the shared body, which an undo also runs.
+    // The person's words are capped here: the line they go into is composed, which `writeAudit`
+    // shortens to fit rather than refuses, so this is the one place a note too long is turned down.
     if (text !== undefined) checkedReason(text);
     return removeBodyImpl(ctx, actor, {
       waterBodyId,
@@ -4406,9 +4407,9 @@ export const setModeratorTowns = mutation({
   },
   handler: async (ctx, { waterBodyId, townKeys, expected, reason }) => {
     const actor = await requireCapability(ctx, 'body.identity');
-    // The person's words are capped here, not in the shared body: an undo passes its own reason —
-    // `Undid …: <this row's reason>`, which can run past the cap when the row's reason is near it —
-    // and an undo offered must not then refuse on words nobody typed (`remove` caps the same way).
+    // The person's words, refused past the cap before anything is read. `writeAudit` holds the same
+    // plain string to the same cap, so this is the early refusal, not the only one; an undo's own
+    // reason never trips either — `runUndo` fits the line it composes to the cap before passing it.
     const trimmed = reason?.trim();
     if (trimmed !== undefined) checkedReason(trimmed);
     return setModeratorTownsImpl(ctx, actor, {

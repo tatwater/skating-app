@@ -80,12 +80,13 @@ test('the People writers go through writePersonAudit, never writeAudit', () => {
 /**
  * One cap for every audit reason (D261: `AUDIT_REASON_MAX`, 2,000, and its own refusal sentence). A
  * second constant for the same limit — #130 brought an interim 1,000-character one before D261 landed
- * — would let two writers refuse the same words at different lengths. Any exported constant whose
- * name pairs a reason or a note with a cap, in core or the server, is that regression.
+ * — would let two writers refuse the same words at different lengths. Any constant whose name pairs
+ * a reason or a note with a cap, in core or the server — exported or module-local (the server keeps
+ * most of its caps local), typed or not — is that regression.
  */
 test('one audit-reason cap: AUDIT_REASON_MAX, nowhere a second', () => {
   const CORE = resolve(__dirname, '../../core/src');
-  const exported = /export const ([A-Z][A-Z0-9_]*)\s*=/g;
+  const exported = /\bconst ([A-Z][A-Z0-9_]*)\s*(?::[^=;\n]+)?=/g;
   // A name's words: one of them a reason or a note, one of them a cap.
   const isReasonCap = (name: string) => {
     const words = name.split('_');
@@ -103,15 +104,22 @@ test('one audit-reason cap: AUDIT_REASON_MAX, nowhere a second', () => {
       }
     }
   }
-  // Text stored on rows of its own, with its own reader and limit — not an audit reason's cap: a
-  // flag's note, an access alert's note, a skater's request note, a posted-access citation, and the
-  // reason an imagery pass override keeps on its row (shown with the pass).
+  // Text stored on rows of its own, read there under its own, tighter limit: a flag's note, an
+  // access alert's note, a posted-access citation, and the notes a body's standing, access ruling
+  // and depth show skaters. Two also land verbatim in an audit line — a request's note (a decline's
+  // note is its row's audit reason) and an imagery pass override's reason (quoted after "Hid the …
+  // pass") — and their row's limit holds them under the audit cap, so that cap never bites them.
   const notReasons = new Set([
     'FLAG_NOTE_MAX_CHARS',
     'ACCESS_ALERT_NOTE_MAX_CHARS',
     'MAX_REQUEST_NOTE_LENGTH',
     'MAX_POSTED_NOTE_LENGTH',
     'MAX_OVERRIDE_REASON_CHARS',
+    'MAX_STANDING_NOTE_LENGTH',
+    'MAX_PUBLIC_ACCESS_NOTE_LENGTH',
+    'MAX_DEPTH_NOTE_LENGTH',
   ]);
   expect(found.filter((name) => !notReasons.has(name)).sort()).toEqual(['AUDIT_REASON_MAX']);
+  // An exemption whose cap is gone would let a new cap under that name past unseen.
+  expect([...notReasons].filter((name) => !found.includes(name))).toEqual([]);
 });

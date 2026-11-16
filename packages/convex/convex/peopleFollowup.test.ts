@@ -172,19 +172,30 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
       bountyLower: (a, id, reason) =>
         a.mutation(api.moderation.setBountyPostLimit, { userId: id, limit: 0, reason }),
       demote: (a, id, reason) => a.mutation(api.admin.revokeRole, { userId: id, reason }),
+      // An admin moved down to moderator: a grant that takes away, so it asks why.
+      demoteToModerator: (a, id, reason) =>
+        a.mutation(api.admin.grantRole, { userId: id, role: 'moderator', reason }),
       ledgerOff: (a, id, reason) => a.mutation(api.ledger.revokeEditor, { userId: id, reason }),
     };
     const check = async (write: string, length: number) => {
       vi.setSystemTime(T0);
       const t = await setup();
       await seed(t, 'adm', { role: 'admin', canEditLedger: true });
-      const staff = write === 'demote' || write === 'ledgerOff';
+      const staff = write === 'demote' || write === 'demoteToModerator' || write === 'ledgerOff';
       const them = await seed(t, 'them', staff ? { role: 'admin', canEditLedger: true } : {});
       const a = as(t, 'adm');
       const write_ = TAKEAWAYS[write] as NonNullable<(typeof TAKEAWAYS)[string]>;
       const out = undoable(await write_(a, them, 'r'.repeat(length)));
       expect(out.undoNeedsReason, write).toBe(false);
       await a.mutation(api.undo.run, { actionId: out.actionId });
+      // The undo wrote its row, its line fitted to the cap.
+      const undo = await t.run((ctx) =>
+        ctx.db
+          .query('moderationActions')
+          .withIndex('by_undoes', (q) => q.eq('undoesActionId', out.actionId))
+          .first(),
+      );
+      expect(undo?.reason.length, write).toBeLessThanOrEqual(AUDIT_REASON_MAX);
     };
     const near = fc.asyncProperty(
       fc.constantFrom(...Object.keys(TAKEAWAYS)),
@@ -192,7 +203,7 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
       check,
     );
     // Pinned seeds, so a failure replays; then one run on a fresh seed.
-    for (const seed of [20261116, 9]) await fc.assert(near, { seed, numRuns: 6 });
+    for (const pinned of [20261116, 9]) await fc.assert(near, { seed: pinned, numRuns: 6 });
     await fc.assert(near, { numRuns: 3 });
     // The cap itself, for every write.
     for (const write of Object.keys(TAKEAWAYS)) await check(write, AUDIT_REASON_MAX);

@@ -320,27 +320,6 @@ describe('setModeratorTowns', () => {
     });
   });
 
-  test('an undo offered without a reason runs even when the row’s reason sits at the cap — the cap is on the person’s words, not the undo’s', async () => {
-    const t = harness();
-    await seedTowns(t);
-    const admin = await person(t);
-    const id = await imported(t, 'way/1');
-    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
-      waterBodyId: id,
-      townKeys: [NORTH_EAST, SOUTHBRIDGE],
-    });
-    await admin.as.mutation(api.waterBodies.setModeratorTowns, {
-      waterBodyId: id,
-      townKeys: [NORTH_EAST],
-      reason: 'x'.repeat(AUDIT_REASON_MAX),
-    });
-    // The undo only adds, so it asks none; its own reason quotes the row's, past the cap.
-    await admin.as.mutation(api.undo.run, {
-      actionId: (await lastAction(t, 'set_moderator_towns'))._id,
-    });
-    expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
-  });
-
   test('a Bodies write accepted with the person’s words at or near the cap has an undo that runs — never refused for length', async () => {
     // A pin's removal (its reason) and a body's removal (its note): each undo gives back, so it asks
     // no reason, and its own line quotes the row's — composed, so shortened rather than refused.
@@ -371,6 +350,13 @@ describe('setModeratorTowns', () => {
         action = 'remove';
       }
       const row = await lastAction(t, action);
+      if (write === 'remove') {
+        // The composed line fits the cap — shortened, never refused, its fixed words leading it —
+        // and the metadata keeps the note whole.
+        expect(row.reason.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+        expect(row.reason.startsWith('Removed from map (other): www')).toBe(true);
+        expect(row.metadata?.note).toBe(words);
+      }
       await admin.as.mutation(api.undo.run, { actionId: row._id });
       const after = await get(t, id);
       if (write === 'unpin') expect(after?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
