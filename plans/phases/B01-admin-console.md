@@ -2890,10 +2890,39 @@ on the person page).
   A no-op writes no audit row, offers no undo and skips the undo lookup; the person page says
   *Nothing changed — ‹name› was already set that way* (`WORDS.alreadySo`). Rows written before that
   changed nothing offer no undo (`NOTHING_TO_UNDO`). A refused write, person or record, leaves every
-  table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People
-  and record writer to deciding before it writes the log. **Left:** a record write that changes
-  nothing — a hide of what is already hidden, a removal of what is already removed — still writes a
-  row (offered no undo, as before); it is a content write, outside this call's person writes.
+  table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People,
+  record and alert writer to deciding before it writes the log. An undo whose write would change
+  nothing is refused (`NOTHING_TO_UNDO`), never an empty success.
+- **The Clerk mirror.** Clerk's side of a ban is a lock on new sign-ins: a banned person whose Clerk
+  was never told can still sign in, but every Convex function refuses them (the status gate is the
+  boundary). After a lift, a Clerk still locked keeps an active person out. A suspension never locks
+  Clerk; one that replaces a ban unlocks it. A failed sync retries three times
+  (`clerkAdmin.setBanned`: 30 s, 5 min, 30 min), then pages the operator to fix it in Clerk; there is
+  no `jobFailures` row and no reconcile job. Pressing the lever again was the other repair, so a ban
+  or lift whose terms stand still resends the sync — no audit row, no undo (the smaller of the two
+  correct fixes; a reconcile job would need the mirror's state tracked).
+- **Content writes under the same rule.** The inventory:
+
+  | Write | Changes nothing when | Now |
+  | --- | --- | --- |
+  | `setModerationStatus` restore | it is up, no decision standing | refused, *This is already up.* (D267) |
+  | `setModerationStatus` hide / remove | a decision of that kind holds it, and on a Post no Report is up | refused, *This is already hidden.* / *…removed.* |
+  | the same on content its author deleted | a decision of that kind holds it | refused, the same words |
+  | `keepOnRecord` | a decision already holds it | refused (D267) |
+  | `overturnVerdict` | nothing stands | refused (D267) |
+  | `resolveFlag` | the flag is resolved or withdrawn | refused, as before |
+  | `accessAlerts.setOfficial` | a pin of a pinned alert, a release of one that isn't | refused, *This alert is already pinned.* / *…isn't pinned.* |
+  | `accessAlerts.retract`, a moderator's word on the author's retraction | a verdict already holds it | nothing more written, as a retraction already made answers |
+
+  Refused, as D267's restore of what is up, whatever the reason given (as a keep already held). The
+  record sheet never draws these levers (*Hide again* is on what is up only); rows recorded before
+  offer no undo.
+- **Undo puts the prior terms back.** An undo of a ban or suspension restores the terms it replaced
+  whole — status, end and the reason on file; the undo's own reason is its audit row's. A row from
+  before `prev` has no reason to restore: none on file, *not recorded* on the page. A redo is the same
+  path; each dates the terms anew (undo then redo starts a fresh *since*, as the founder ruled).
+- **One normalizer at the write.** `lib/audit.checkedReason` trims, then holds to the cap; `typed`
+  and the ban and suspension writers compare and keep through it.
 - **One reason after a repeat ban.** A person's terms are their status, its reason and a suspension's
   end (`lib/peopleCan.StatusTerms`). The person page's status note and the list row answer from one
   reading (`lib/statusTerms`): the write that set the terms as they stand — its date, who and through

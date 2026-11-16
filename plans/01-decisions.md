@@ -8230,14 +8230,28 @@ limit set to the one in force, a ban or suspension with the same terms, a lift o
 the same pinned towns — writes no audit row, offers no undo and answers `changed: false`, and the
 console says nothing changed; role and ledger no-ops were already refused. A write that is refused or
 throws leaves no audit row and no partial write (Convex rolls the mutation back; a guard holds every
-People and record writer to deciding before it writes the log). Rows written before that changed
-nothing offer no undo.
+People, record and alert writer to deciding before it writes the log). Rows written before that
+changed nothing offer no undo, and an undo whose write would change nothing is refused.
+
+**The whole effect, the mirror included.** A ban or lift with unchanged terms still resends Clerk's
+lock or unlock — the mirror isn't tracked, its sync retries and then pages a human, and pressing again
+is how an operator repairs one that gave up — with no audit row and no undo.
+
+**Content writes too** (as D267's restore of what is up): a hide or removal of what a decision of
+that kind already holds, a pin of a pinned alert and a release of one that isn't pinned are refused
+with a plain sentence and write nothing; a moderator's word on an alert retraction already held as
+evidence writes no second verdict.
+
+**Reasons are normalized at the write** (`lib/audit.checkedReason`: trimmed, then held to D261's cap),
+so a trailing space is never a change.
 
 **A person's terms** are their status, its reason and a suspension's end. A ban or suspension whose
 reason or end differs is a real change: audited, and what both the person page's status note and
 their list row then show — the note dates, names and quotes the write that set the terms as they
 stand, and the row's `statusSince` is that write's time (the founder's "Sure" to one reason after a
-repeat ban). Rows written before this rule are stamped by the rows backfill.
+repeat ban). Rows written before this rule are stamped by the rows backfill. An undo of a terms
+change puts the prior terms back whole — the reason on file included; the undo's own reason is its
+audit row's, never the person's — and, like its redo, dates the terms anew.
 
 **Why:** the log is a record of what happened; a row for something that didn't happen, or two places
 giving two reasons for one ban, is the record lying.
