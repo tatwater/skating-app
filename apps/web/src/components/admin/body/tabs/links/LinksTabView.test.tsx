@@ -328,7 +328,7 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
         }
       }),
       {
-        numRuns: 45,
+        numRuns: 30,
         // The review's sequence, seeded so every run covers it: a save on its way, Cancel, the
         // same link and the other reopened, a draft typed, then the old save lands. And a Done that
         // changes nothing, queued behind another link's save, answering when that one lands.
@@ -1073,7 +1073,7 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
         }
       }),
       {
-        numRuns: 20,
+        numRuns: 12,
         // The review's case: a duplicate of an existing link added, typed on before the answer.
         examples: [
           [

@@ -44,6 +44,7 @@ import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { BodyTabHost } from '../../frame/BodyConsoleRoute';
+import { statusDate } from '../../frame/bodyModel';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { WaterTab } from './WaterTab';
 
@@ -240,6 +241,7 @@ describe('WaterTab', () => {
     render(<WaterTab bodyId="wb1" />);
     expect(bathymetry()).toHaveTextContent('NH GRANIT lake contours');
     // With its year: a search may be seasons old.
-    expect(bathymetry()).toHaveTextContent('12 Sep 2026');
+    expect(bathymetry()).toHaveTextContent(statusDate(Date.UTC(2026, 8, 12, 12)));
+    expect(statusDate(Date.UTC(2026, 8, 12, 12))).toMatch(/ 2026$/);
   });
 });

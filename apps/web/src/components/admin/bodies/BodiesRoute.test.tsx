@@ -100,6 +100,7 @@ import { LIBRARY_MAX_START, LIBRARY_PAGE_SIZE } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { KeysProvider } from '@/lib/keys';
+import { statusDate } from '../body/frame/bodyModel';
 import { resetConsoleReads } from '../reads/consoleReads';
 import { BODY_PATH, BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
@@ -1017,7 +1018,8 @@ describe('the preview', () => {
     await userEvent.click(within(pane()).getByRole('button', { name: 'Try again' }));
     const record = pane().querySelector('[data-slot=preview-removed]') as HTMLElement;
     expect(record).toHaveTextContent('Not recorded');
-    expect(record).toHaveTextContent('12 Oct 2026 · Sarah');
+    // The date as the page's own zone reads the instant (it is said where the moderator is).
+    expect(record).toHaveTextContent(`${statusDate(Date.UTC(2026, 9, 12, 15))} · Sarah`);
     expect(record).toHaveTextContent('Landowner request');
     expect(record).toHaveTextContent('“Posted by the owner”');
     expect(record).toHaveTextContent('Canaan, NH · Norwich');
