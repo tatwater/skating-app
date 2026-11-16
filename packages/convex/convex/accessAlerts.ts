@@ -354,6 +354,49 @@ async function everPinned(
 }
 
 /**
+ * A moderator's retraction recorded on an alert its author already retracted (D248): an audit row
+ * naming the person and a standing `retracted` verdict, kept as evidence of a pattern of bad claims
+ * and holding the alert from erasure until a moderator overturns it. The alert itself stays exactly
+ * as its author left it. Written by `retract` (a moderator's second retraction, with a reason) and by
+ * the record sheet's Keep on the record (`moderation.keepOnRecord`).
+ */
+export async function recordAlertVerdict(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  alert: Doc<'accessAlerts'>,
+  reason: string,
+  now: number,
+  { keep = false }: { keep?: boolean } = {},
+): Promise<Id<'moderationActions'>> {
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'retract_access_alert',
+    targetType: 'accessAlert',
+    targetId: alert._id,
+    reason,
+    metadata: {
+      waterBodyId: alert.waterBodyId,
+      alertReason: alert.reason,
+      onAuthorWithdrawn: true,
+      ...(keep ? { keptOnRecord: true } : {}),
+      // Whose record the verdict is on, kept with the action: an alert its author retracted leaves no
+      // row of their own, so a rebuild after its erasure can still name them (D248).
+      subjectUserId: alert.createdByUserId,
+    },
+    createdAt: now,
+  });
+  await recordVerdict(ctx, {
+    subjectUserId: alert.createdByUserId,
+    targetType: 'accessAlert',
+    targetId: alert._id,
+    actionId,
+    kind: 'retracted',
+    at: now,
+  });
+  return actionId;
+}
+
+/**
  * "This never existed" — D65's verdict, applied to access.
  *
  * Distinct from letting it expire, and the distinction is the point: **expiry says the claim stopped
@@ -401,31 +444,7 @@ export const retract = mutation({
       // existed is the author's all the same (the clocks backfill gives it its time).
       const authorWithdrew = authorRetracted(alert);
       if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
-        const now = Date.now();
-        const actionId = await writeAudit(ctx, {
-          actorId: profile._id,
-          action: 'retract_access_alert',
-          targetType: 'accessAlert',
-          targetId: accessAlertId,
-          reason: verdictReason,
-          metadata: {
-            waterBodyId: alert.waterBodyId,
-            alertReason: alert.reason,
-            onAuthorWithdrawn: true,
-            // Whose record the verdict is on, kept with the action: an alert its author retracted
-            // leaves no row of their own, so a rebuild after its erasure can still name them (D248).
-            subjectUserId: alert.createdByUserId,
-          },
-          createdAt: now,
-        });
-        await recordVerdict(ctx, {
-          subjectUserId: alert.createdByUserId,
-          targetType: 'accessAlert',
-          targetId: accessAlertId,
-          actionId,
-          kind: 'retracted',
-          at: now,
-        });
+        await recordAlertVerdict(ctx, profile, alert, verdictReason, Date.now());
       }
       // The author again, on a retraction from before `retractedAt` existed: it has no clock to
       // run, so it gets one now — never in the past.
