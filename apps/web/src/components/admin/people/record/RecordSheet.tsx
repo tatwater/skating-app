@@ -1,26 +1,18 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import {
-  type Loadable,
-  loaded,
-  read,
-  readState,
-  useConsoleReadSet,
-} from '../../reads/consoleReads';
+import { loaded, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
 import { RecordSheetView } from './RecordSheetView';
 import {
-  type ItemRead,
   nextRestored,
   placeName,
-  type RecordCounts,
   type RecordSubject,
   type RecordTab,
   type Restored,
@@ -66,6 +58,16 @@ export function RecordSheet(props: RecordSheetProps) {
   const [sitting, setSitting] = useState(0);
   const [wasOpen, setWasOpen] = useState(props.open);
   const [live, setLive] = useState(props.open);
+  // The person's page this sheet belongs to: mounted while it is (the page remounts per person). A
+  // write's receipt asks it once the write answers — never shown over another person's page.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const here = useCallback(() => mounted.current, []);
   if (props.open !== wasOpen) {
     setWasOpen(props.open);
     if (props.open) {
@@ -74,7 +76,7 @@ export function RecordSheet(props: RecordSheetProps) {
     }
   }
   if (!props.open && !live) return null;
-  return <SheetSitting key={sitting} {...props} onClosed={() => setLive(false)} />;
+  return <SheetSitting key={sitting} {...props} here={here} onClosed={() => setLive(false)} />;
 }
 
 /** The sitting's own state: the tab, the filter, the open item, the chooser, what was restored. */
@@ -139,7 +141,11 @@ function SheetSitting({
   pending,
   container,
   onClosed,
-}: RecordSheetProps & { onClosed: () => void }) {
+  here,
+}: RecordSheetProps & {
+  here: () => boolean;
+  onClosed: () => void;
+}) {
   const now = useMinuteNow();
   const state = useSittingState();
   const { tab, kind, selected, chooser } = state;
@@ -166,7 +172,7 @@ function SheetSitting({
   });
 
   // The filter's counts, a secondary read: its value, or none to promise (`readState`).
-  const countsState = readState(reads.counts as Loadable<RecordCounts | null>);
+  const countsState = readState(reads.counts);
   const counts = countsState.kind === 'value' ? countsState.value : null;
   const viewer = loaded(reads.viewer) ?? null;
   const viewerName = viewer === null ? null : personName(viewer);
@@ -185,15 +191,15 @@ function SheetSitting({
   const { announce, undo } = useUndo();
 
   // Where an item is, for its receipt: from the open item's read, else the row it was opened from.
-  const item = reads.item as ItemRead | null | undefined;
+  // The open item, a secondary read: its value, or nothing while on its way, failed or gone.
+  const itemState = readState(reads.item);
+  const item = itemState.kind === 'value' ? itemState.value : null;
   const rows = list.rows;
   const placeOf = useCallback(
     (target: Target) => {
       const key = targetKey(target);
       const from =
-        item != null && !('failed' in item) && targetKey(item) === key
-          ? item
-          : rows.find((r) => targetKey(r) === key);
+        item !== null && targetKey(item) === key ? item : rows.find((r) => targetKey(r) === key);
       return from === undefined ? null : placeName(target.targetType, from);
     },
     [item, rows],
@@ -218,13 +224,11 @@ function SheetSitting({
     if (standingRows !== null) settle({ kind: 'listed', rows: standingRows });
   }, [settle, standingRows]);
   useEffect(() => {
-    if (item != null && !('failed' in item)) settle({ kind: 'item', item });
+    if (item !== null) settle({ kind: 'item', item });
   }, [settle, item]);
   const comesBackOf = useCallback(
     (target: Target) =>
-      item != null && !('failed' in item) && targetKey(item) === targetKey(target)
-        ? item.comesBack
-        : undefined,
+      item !== null && targetKey(item) === targetKey(target) ? item.comesBack : undefined,
     [item],
   );
   const onAct = useRecordWrites({
@@ -235,6 +239,7 @@ function SheetSitting({
     comesBackOf,
     onRestored,
     now,
+    here,
   });
 
   return (

@@ -52,7 +52,8 @@ export type Receipt = {
   /**
    * The write's own audit row, when the write answered with it — then the toast needs no lookup:
    * the row is the caller's newest on the target by construction. Used only together with
-   * {@link Receipt.undoNeedsReason}; a row without it falls back to the lookup, which says both.
+   * {@link Receipt.undoNeedsReason}; a row without it falls back to the lookup, which says both —
+   * unless {@link Receipt.undoable} is `false`, which offers no Undo and looks nothing up.
    */
   actionId?: string;
   /** Whether undoing the write takes something away from skaters (and so asks why). */

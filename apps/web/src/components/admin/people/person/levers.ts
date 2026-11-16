@@ -230,8 +230,11 @@ export function accountRows(
   opts: {
     now: number;
     self: boolean;
-    /** Whether the record's other two lists hold anything (`contentRecord.recordPresence`). */
-    presence?: RecordPresence | null;
+    /**
+     * Whether the record's other two lists hold anything (`contentRecord.recordPresence`): `null`
+     * while on its way; `'failed'` when it couldn't be read — then the row stands, and says so.
+     */
+    presence?: RecordPresence | 'failed' | null;
   },
 ): LeverRow[] {
   const { can } = p;
@@ -381,7 +384,9 @@ export function accountRows(
       // What stands, as the sheet's head says it (a floor that read none in words, never a zero).
       status: standingWords(p.hidden, preparing),
       tone: 'quiet',
-      ...(!preparing && p.hidden.total > 0 && { second: hiddenKinds(p.hidden) }),
+      ...(!preparing && p.hidden.total > 0
+        ? { second: hiddenKinds(p.hidden) }
+        : opts.presence === 'failed' && { second: WORDS.recordOthersFailed }),
       buttons: [],
       review: true,
     });

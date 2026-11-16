@@ -9,7 +9,7 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
-import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { isFailed, type Loadable, readState } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import type { RecordPresence } from '../record/recordModel';
 import { SectionLevel } from './headingLevel';
@@ -92,6 +92,14 @@ export type PersonViewProps = {
   className?: string;
 };
 
+/** The record's presence read, for its row: its value, `'failed'`, or nothing yet / nothing. */
+function presenceOf(
+  read: Loadable<RecordPresence | null> | undefined,
+): RecordPresence | 'failed' | null {
+  const state = readState(read);
+  return state.kind === 'value' ? state.value : state.kind === 'failed' ? 'failed' : null;
+}
+
 export function PersonView({
   person,
   trend,
@@ -167,10 +175,8 @@ export function PersonView({
               rows={accountRows(p, {
                 now,
                 self,
-                // A count still on its way, or one that failed, adds nothing: the row stands on
-                // what stands until it lands.
-                presence:
-                  recordPresence === undefined || isFailed(recordPresence) ? null : recordPresence,
+                // On its way adds nothing; failed is never drawn as nothing (`readState`).
+                presence: presenceOf(recordPresence),
               })}
               person={p}
               acting={acting}

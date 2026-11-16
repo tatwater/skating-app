@@ -8,6 +8,7 @@ import {
   type RecordSubject,
   type RecordWrite,
   receiptWords,
+  subjectName,
   type Target,
 } from './recordModel';
 import type { RecordKind } from './recordWords';
@@ -63,14 +64,20 @@ export function useRecordWrites({
   comesBackOf,
   onRestored,
   now,
+  here,
 }: {
   server: RecordServer;
-  announce: (receipt: Receipt) => Promise<void>;
+  announce: (receipt: Receipt, here?: () => boolean) => Promise<void>;
   subject: RecordSubject;
   /** Where the item is, for its receipt: the body, or a comment's Report. */
   placeOf: (target: Target) => string | null;
   /** What a Report's restore brings back, as the pane read it, for its receipt. */
   comesBackOf?: (target: Target) => ItemRead['comesBack'] | undefined;
+  /**
+   * The caller's binding (the person's page still mounted): asked once the write has answered, so a
+   * receipt never shows over another person's page (the shell's rule).
+   */
+  here?: () => boolean;
   /** A restore landed: keep its row in Standing for the sitting. */
   onRestored: (target: Target, result: RecordWriteResult) => void;
   now: number;
@@ -129,10 +136,22 @@ export function useRecordWrites({
           ? { actionId: answered.actionId, undoNeedsReason: answered.undoNeedsReason }
           : { actionId: answered.actionId, undoable: false };
       // The write landed: say so now; the receipt follows on its own and never holds this result.
-      void announce({ ...words, target: { targetType, targetId }, ...undo }).catch(() => {});
+      // Restore and Hide again don't name the person: the receipt names them after its title, as
+      // every receipt that may show over another page does. Overturn and Keep name them already.
+      const named =
+        write.kind === 'restore' || write.kind === 'hideAgain' ? subjectName(subject) : undefined;
+      void announce(
+        {
+          ...words,
+          target: { targetType, targetId },
+          ...undo,
+          ...(named !== undefined && named !== '' && { subject: named }),
+        },
+        here,
+      ).catch(() => {});
       if (write.kind === 'restore' && 'undoable' in answered) onRestored(target, answered);
       return null;
     },
-    [server, announce, subject, placeOf, comesBackOf, onRestored, now],
+    [server, announce, subject, placeOf, comesBackOf, onRestored, now, here],
   );
 }

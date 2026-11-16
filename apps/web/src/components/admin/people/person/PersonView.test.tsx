@@ -92,14 +92,18 @@ describe('On the record', () => {
     expect(onReviewRecord).toHaveBeenCalledOnce();
   });
 
-  it('a presence still on its way, or failed, adds nothing to the row', () => {
+  it('a presence still on its way adds nothing; one that failed is never drawn as nothing', () => {
     const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
     const person = { ...ROB, hidden: { total: 0, capped: false, byKind: none } };
     draw({ person, recordPresence: undefined });
     expect(document.querySelector('[data-lever="record"]')).toBeNull();
     cleanup();
     draw({ person, recordPresence: { failed: true, pending: false, retry: () => {} } });
-    expect(document.querySelector('[data-lever="record"]')).toBeNull();
+    // The row stands, says what couldn't be read, and Review still opens the sheet (which reads
+    // its own lists).
+    expect(lever('record')).toHaveTextContent('0 items');
+    expect(lever('record')).toHaveTextContent('Deleted and Reversed couldn’t be read');
+    expect(within(lever('record')).getByRole('button', { name: 'Review' })).toBeEnabled();
   });
 });
 

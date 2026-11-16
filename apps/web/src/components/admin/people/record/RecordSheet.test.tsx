@@ -222,14 +222,20 @@ describe('the writes', () => {
       targetId: 'r4oct',
       status: 'visible',
     });
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'The report is back on Mascoma Lake',
-      // What came back, as the pane read it before the restore.
-      description: 'Its 1 comment and 2 thumbs came back with it',
-      target: { targetType: 'report', targetId: 'r4oct' },
-      actionId: 'a1',
-      undoNeedsReason: true,
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'The report is back on Mascoma Lake',
+        // What came back, as the pane read it before the restore.
+        description: 'Its 1 comment and 2 thumbs came back with it',
+        target: { targetType: 'report', targetId: 'r4oct' },
+        actionId: 'a1',
+        undoNeedsReason: true,
+        // A receipt that may show over another page names whose it is…
+        subject: 'Rob Tremblay',
+      },
+      // …and asks the person's page is still the one standing before it shows.
+      expect.any(Function),
+    );
     // The row keeps its place, lit with who restored it, and its Undo is the write's own row.
     const kept = await waitFor(() => {
       const row = sheet().querySelector<HTMLElement>('[data-slot="record-row"][data-back]');
@@ -286,8 +292,25 @@ describe('the writes', () => {
       ?.mockResolvedValue({ targetId: 'r4oct', actionId: 'a1', undoable: false });
     await userEvent.click(lever() as HTMLElement);
     await waitFor(() =>
-      expect(mocks.announce).toHaveBeenCalledWith(expect.objectContaining({ undoable: false })),
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ undoable: false }),
+        expect.any(Function),
+      ),
     );
+  });
+
+  it('a receipt is bound to the person’s page: gone once the page is', async () => {
+    const view = draw();
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    mocks.mutations
+      .get('moderation:setModerationStatus')
+      ?.mockResolvedValue({ targetId: 'r4oct', actionId: 'a1', undoable: false });
+    await userEvent.click(lever() as HTMLElement);
+    await waitFor(() => expect(mocks.announce).toHaveBeenCalled());
+    const here = (mocks.announce.mock.calls[0] as unknown[])[1] as () => boolean;
+    expect(here()).toBe(true);
+    view.unmount();
+    expect(here()).toBe(false);
   });
 
   it('a refusal is the server’s own words, in place, and no toast', async () => {
@@ -315,13 +338,17 @@ describe('the writes', () => {
       targetType: 'comment',
       targetId: 'cthermo',
     });
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'The decision is off Rob Tremblay’s record',
-      description: 'The comment stays deleted',
-      target: { targetType: 'comment', targetId: 'cthermo' },
-      actionId: 'a2',
-      undoable: false,
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'The decision is off Rob Tremblay’s record',
+        description: 'The comment stays deleted',
+        target: { targetType: 'comment', targetId: 'cthermo' },
+        actionId: 'a2',
+        undoable: false,
+      },
+      // Overturn names the person in its own title: no subject after it.
+      expect.any(Function),
+    );
   });
 
   it('Keep on the record asks a reason and goes to its own write', async () => {

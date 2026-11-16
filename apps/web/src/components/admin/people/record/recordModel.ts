@@ -527,12 +527,14 @@ export function kindOptions(
  */
 export function recordRowShows(
   standing: StandingCount,
-  presence: RecordPresence | null,
+  /** `'failed'`: the read failed — never drawn as nothing (the row stands, and says so). */
+  presence: RecordPresence | 'failed' | null,
   pending: boolean,
 ): boolean {
   if (pending) return true;
   if (!settledEmpty({ count: standing.total, capped: standing.capped, pending: false }))
     return true;
+  if (presence === 'failed') return true;
   if (presence === null) return false;
   return presence.pending.length > 0 || presence.deleted || presence.reversed;
 }
