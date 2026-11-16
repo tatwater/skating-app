@@ -547,6 +547,8 @@ describe('the pin against the other writers', () => {
       });
     });
     await admin.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    // Its search text carries the alias it took, in the merge's own transaction.
+    expect((await get(t, survivor))?.searchText.toLowerCase()).toContain('glass pond');
     expect(await get(t, survivor)).toMatchObject({
       moderatorAliases: ['The Mirror', 'Glass Pond'],
       referenceLinks: [

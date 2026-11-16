@@ -3731,9 +3731,12 @@ export async function mergeBodyInto(
       await refreshPinnedFacts(ctx, survivorId, pins);
     }
     if (listsBefore.loser.aliases.length > 0) {
-      // Absent when empty, as `setAliasesImpl` stores it.
+      // Absent when empty, as `setAliasesImpl` stores it; and the search string with them, in this
+      // patch, as every alias writer keeps it (`bodySearchTextFor`).
+      const aliases = lists.aliases.length > 0 ? lists.aliases : undefined;
       await ctx.db.patch(survivorId, {
-        moderatorAliases: lists.aliases.length > 0 ? lists.aliases : undefined,
+        moderatorAliases: aliases,
+        searchText: bodySearchTextFor({ ...survivor, moderatorAliases: aliases }),
       });
     }
     if (listsBefore.loser.links.length > 0) {

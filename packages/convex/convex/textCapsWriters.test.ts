@@ -85,6 +85,7 @@ const item = (externalId: string, name = 'Mirror Lake') => ({
   bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
   centroid: { lat: 44, lng: -72 },
   surfaceAreaSqM: 40_000,
+  states: ['VT'],
 });
 async function body(t: T, externalId = 'way/1', name = 'Mirror Lake') {
   await t.mutation(internal.waterBodies.importCanonical, {
