@@ -29,13 +29,7 @@ function aloneRoot(row: Audit): Audit {
  * (`ReadBudget.measured`). `undefined` when the budget can't afford the read — the caller's figure is
  * then capped.
  */
-export function rootReader(
-  ctx: QueryCtx,
-  budget: ReadBudget,
-  known: readonly Audit[],
-  /** Counts the reads it makes, for a caller's time bound (a row whose root is in hand costs none). */
-  counter: { reads: number } = { reads: 0 },
-) {
+export function rootReader(ctx: QueryCtx, budget: ReadBudget, known: readonly Audit[]) {
   const byId = new Map<string, Audit>(known.map((r) => [r._id, r]));
   return async (row: Audit): Promise<Audit | undefined> => {
     const id = chainRootId(row);
@@ -43,7 +37,6 @@ export function rootReader(
     if (id === row._id) return row;
     const have = byId.get(id);
     if (have) return have;
-    counter.reads++;
     const read = await budget.measured('moderationAction', () => ctx.db.get(id));
     if (read === undefined) return undefined;
     if (read === null) return aloneRoot(row);
@@ -83,8 +76,9 @@ export async function readRoots(
     (id, share) => share.read('moderationAction', () => ctx.db.get(id)),
     () => 'over',
   );
+  // Every item is answered: its row, `null` (gone) or `'over'` (past the budget).
   const read = new Map<string, Audit | null | 'over'>(
-    wanted.map((id, i) => [id, got[i] === undefined ? 'over' : (got[i] as Audit | null | 'over')]),
+    wanted.map((id, i) => [id, got[i] as Audit | null | 'over']),
   );
   return {
     reads: got.filter((g) => g !== 'over').length,

@@ -10,6 +10,8 @@
  * Counted structurally, never by the clock.
  */
 
+import { SCOPE_ALL } from '@skating/core';
+import { getDocumentSize } from 'convex/values';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
@@ -25,8 +27,11 @@ import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
   REQUEST_PROFILE_BUDGET,
+  ReadBudget,
+  ROW_MAX,
   requestBudget,
 } from './lib/readBudget';
+import { readRoots } from './lib/staffTenure';
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
@@ -590,10 +595,12 @@ describe('a staffer’s figures’ rounds (B01-4c)', () => {
         });
       }
     });
-    const read = (ticks: number[] = [0]) =>
+    // With `opening`, the request's budget opens that small: what a tighter request leaves.
+    const read = (ticks: number[] = [0], opening?: number) =>
       t.run(async (raw) => {
         const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
         const { ctx, stats } = counted(raw, ticks);
+        if (opening !== undefined) requestBudget(ctx, opening);
         const figures = await staffStatsPage(ctx, viewer, { userId: staffer, now });
         return { figures, stats };
       });
@@ -611,6 +618,108 @@ describe('a staffer’s figures’ rounds (B01-4c)', () => {
     expect(busy.stats.rounds).toBeLessThanOrEqual(STAFF_FIGURES_ROUNDS);
     // The same figures whatever order the reads settle in.
     expect((await busy.read([6, 0, 3, 5, 1, 4, 2])).figures).toEqual(busy.figures);
+  });
+
+  test('a first row since gone judges its undo on its own (it stands); a root in the read is never read again; a gone flag is unrecorded, not capped', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      const row = (fields: Partial<Omit<Doc<'moderationActions'>, '_id' | '_creationTime'>>) =>
+        ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'set_posting_permission',
+          targetType: 'user',
+          targetId: 'x',
+          reason: 'r',
+          createdAt: now - 1_000,
+          ...fields,
+        });
+      // The staffer's undo of a first row someone else wrote, since erased.
+      const gone = await row({ actorId: viewerId, undoTop: 1, undoTopActorId: staffer });
+      await row({ undoesActionId: gone, undoRoot: gone, undoDepth: 1 });
+      await ctx.db.delete(gone);
+      // Their own change and their own undo of it: the first row is in the read.
+      const own = await row({ targetId: 'y', undoTop: 1, undoTopActorId: staffer });
+      await row({ targetId: 'y', undoesActionId: own, undoRoot: own, undoDepth: 1 });
+      // A change the viewer undid: undone by someone else.
+      await row({ targetId: 'z', undoTop: 1, undoTopActorId: viewerId });
+      // A decision on a flag since deleted: its filing time can't be told.
+      const flag = await ctx.db.insert('contentFlags', {
+        flaggerId: viewerId,
+        targetType: 'report',
+        targetId: 'r',
+        reason: 'spam',
+        status: 'actioned',
+        subjectUserId: null,
+        createdAt: now - 86_400_000,
+      });
+      await row({ action: 'resolve_flag', targetType: 'contentFlag', targetId: flag });
+      await ctx.db.delete(flag);
+    });
+    const figures = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+      return staffStatsPage(counted(raw).ctx, viewer, { userId: staffer, now });
+    });
+    expect(figures?.decisions.undoneByOthers).toMatchObject({ count: 1, capped: false });
+    expect(figures?.timeToDecide).toEqual({ medianMs: null, decided: 1, capped: false });
+  });
+
+  test('with no room left for a root, the undos say capped — never a throw — and the filings still read', async () => {
+    const { figures, read } = await week(3, 2);
+    expect(figures?.decisions.undoneByOthers).toMatchObject({ count: 0, capped: false });
+    const tight = await read([0], STAFF_PAGE_FIXED + DOC_MAX - 1);
+    expect(tight.figures?.decisions.undoneByOthers).toMatchObject({ count: 0, capped: true });
+    expect(tight.figures?.timeToDecide).toMatchObject({ decided: 2, capped: false });
+    expect(tight.figures?.tenureCapped).toBe(true);
+  });
+
+  test('the roots a page reads stop in page order, at the limit or the budget — the same whatever order reads settle in', async () => {
+    const t = harness();
+    const actor = await admin(t);
+    const { rows, sizes } = await t.run(async (ctx) => {
+      const rows: Doc<'moderationActions'>[] = [];
+      const sizes: number[] = [];
+      for (let i = 0; i < 6; i++) {
+        const fields = {
+          actorId: actor,
+          action: 'set_posting_permission' as const,
+          targetType: 'user' as const,
+          targetId: `x${i}`,
+          reason: 'r',
+          createdAt: NOW,
+        };
+        const root = await ctx.db.insert('moderationActions', fields);
+        sizes.push(getDocumentSize((await ctx.db.get(root)) as never));
+        const undo = await ctx.db.insert('moderationActions', {
+          ...fields,
+          undoesActionId: root,
+          undoRoot: root,
+          undoDepth: 1,
+        });
+        rows.push((await ctx.db.get(undo)) as Doc<'moderationActions'>);
+      }
+      return { rows, sizes };
+    });
+    const read = (ticks: number[], bytes: number, limit: number) =>
+      t.run(async (raw) => {
+        const { ctx } = counted(raw, ticks);
+        const { rootOf, reads } = await readRoots(ctx, new ReadBudget(bytes), [], rows, limit);
+        return { found: rows.map((r) => rootOf(r)?._id ?? null), reads };
+      });
+    const roots = rows.map((r) => r.undoRoot ?? null);
+    // Room for one root at its worst and the first two as they weigh: three read, then none.
+    const tight = DOC_MAX + (sizes[0] as number) + (sizes[1] as number);
+    const calm = await read([0], tight, Number.POSITIVE_INFINITY);
+    expect(calm).toEqual({ found: [...roots.slice(0, 3), null, null, null], reads: 3 });
+    expect(await read([5, 0, 3, 1, 4, 2], tight, Number.POSITIVE_INFINITY)).toEqual(calm);
+    // The limit, on a whole budget: the first two.
+    expect(await read([0], CHARGED_QUERY_BUDGET, 2)).toEqual({
+      found: [...roots.slice(0, 2), null, null, null, null],
+      reads: 2,
+    });
   });
 });
 
@@ -736,6 +845,136 @@ describe('a staffer’s season’s rounds (B01-4c)', () => {
     // The reads before them, the one root, the verdicts: no wave of restores read a second time.
     expect(stats.rounds).toBeLessThanOrEqual(SEASON_ROUNDS - Math.ceil(100 / 4));
   });
+
+  /** A staffer's hide whose verdict someone else's `ending` row ended. */
+  const endedHide = async (
+    ctx: MutationCtx,
+    staffer: Id<'profiles'>,
+    subject: Id<'profiles'>,
+    target: string,
+    at: number,
+    ending: Partial<Omit<Doc<'moderationActions'>, '_id' | '_creationTime'>>,
+  ) => {
+    const hide = await ctx.db.insert('moderationActions', {
+      actorId: staffer,
+      action: 'hide',
+      targetType: 'report',
+      targetId: target,
+      reason: 'r',
+      createdAt: at,
+    });
+    const ended = await ctx.db.insert('moderationActions', {
+      actorId: subject,
+      action: 'restore',
+      targetType: 'report',
+      targetId: target,
+      reason: 'r',
+      createdAt: at + 500,
+      ...ending,
+    });
+    await ctx.db.insert('contentVerdicts', {
+      subjectUserId: subject,
+      targetType: 'report',
+      targetId: target,
+      actionId: hide,
+      kind: 'hidden',
+      at,
+      standing: false,
+      endedAt: at + 500,
+      endedByActionId: ended,
+    });
+  };
+
+  test('with no room left for the rows that ended the verdicts, the season counts up to the first it can’t check and says capped — the same whatever order reads settle in', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      // Oldest, so last: the staffer's undo of a row the viewer wrote — its root a read away.
+      const root = await ctx.db.insert('moderationActions', {
+        actorId: viewerId,
+        action: 'set_posting_permission',
+        targetType: 'user',
+        targetId: 'x',
+        reason: 'r',
+        undoTop: 1,
+        undoTopActorId: staffer,
+        createdAt: now - 5_000,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: staffer,
+        action: 'set_posting_permission',
+        targetType: 'user',
+        targetId: 'x',
+        reason: 'r',
+        undoesActionId: root,
+        undoRoot: root,
+        undoDepth: 1,
+        createdAt: now - 4_000,
+      });
+      for (let i = 0; i < 3; i++) await endedHide(ctx, staffer, viewerId, `r${i}`, now - 3_000, {});
+      // Newer, so first: two decisions the viewer undid, answered from the rows alone.
+      for (let i = 0; i < 2; i++) {
+        await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'set_posting_permission',
+          targetType: 'user',
+          targetId: `u${i}`,
+          reason: 'r',
+          undoTop: 1,
+          undoTopActorId: viewerId,
+          createdAt: now - 500,
+        });
+      }
+    });
+    const read = (ticks: number[], left: number) =>
+      t.run(async (raw) => {
+        const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+        const { ctx } = counted(raw, ticks);
+        requestBudget(ctx, STAFF_PAGE_FIXED + left);
+        return staffSeasonPage(ctx, viewer, { userId: staffer, now });
+      });
+    // The verdicts (small) fit; not one audit row at its worst does — no root, no ending.
+    const calm = await read([0], DOC_MAX - 1);
+    expect(calm?.overturned).toEqual({ count: 2, capped: true });
+    expect(await read([3, 0, 2, 1], DOC_MAX - 1)).toEqual(calm);
+    // Not even a verdict fits: the same two, then capped.
+    expect((await read([0], ROW_MAX.verdict - 1))?.overturned).toEqual({ count: 2, capped: true });
+  });
+
+  test('a reversal whose own first row is gone is judged on its own (it stands); an ending that reverses nothing is no reversal', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      const gone = await ctx.db.insert('moderationActions', {
+        actorId: viewerId,
+        action: 'hide',
+        targetType: 'report',
+        targetId: 'r0',
+        reason: 'r',
+        createdAt: now - 9_000,
+      });
+      await ctx.db.delete(gone);
+      // A restore two deep in a chain whose first row was erased: nothing known above it.
+      await endedHide(ctx, staffer, viewerId, 'r0', now - 3_000, {
+        undoesActionId: gone,
+        undoRoot: gone,
+        undoDepth: 2,
+      });
+      // A verdict ended by a removal, which reverses nothing.
+      await endedHide(ctx, staffer, viewerId, 'r1', now - 2_000, { action: 'remove' });
+    });
+    const season = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+      return staffSeasonPage(counted(raw).ctx, viewer, { userId: staffer, now });
+    });
+    expect(season?.overturned).toEqual({ count: 1, capped: false });
+  });
 });
 
 describe('a queue lane’s people’s rounds (B01-4c)', () => {
@@ -762,6 +1001,35 @@ describe('a queue lane’s people’s rounds (B01-4c)', () => {
       users: calm.users,
       missing: calm.missing,
     });
+  });
+
+  test('past the budget, the queue’s later people read as missing, in its order — never a throw', async () => {
+    const t = harness();
+    const ids: Id<'profiles'>[] = [];
+    for (let i = 0; i < 10; i++) ids.push(await admin(t));
+    const sizes = await t.run(async (ctx) => {
+      const out: number[] = [];
+      for (const id of ids) {
+        await refreshPersonRow(ctx, id);
+        const row = await ctx.db
+          .query('peopleRows')
+          .withIndex('by_user', (q) => q.eq('userId', id))
+          .first();
+        out.push(getDocumentSize(row as never));
+      }
+      return out;
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const { ctx } = counted(raw, ticks);
+        // Room for one row at its worst and the first three as they weigh: four read, then none.
+        requestBudget(ctx, ROW_MAX.personRow + sizes.slice(0, 3).reduce((a, b) => a + b, 0));
+        const { rows, missing } = await listablePeople(ctx, ids);
+        return { users: rows.map((r) => r.userId), missing };
+      });
+    const calm = await read([0]);
+    expect(calm).toEqual({ users: ids.slice(0, 4), missing: true });
+    expect(await read([3, 0, 2, 1])).toEqual(calm);
   });
 });
 
@@ -927,9 +1195,19 @@ describe('the person page’s flag labels’ rounds (B01-4c)', () => {
         confirmCount: 0,
         denyCount: 0,
       });
+      const post = await ctx.db.insert('posts', {
+        authorId: skater,
+        reportIds: [report],
+        photoIds: [],
+        latestSkateEndTime: NOW,
+        moderationStatus: 'visible',
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const targets = [
         ['waterbody', body],
         ['report', report],
+        ['post', post],
         ['comment', comment],
         ['photo', photo],
         ['hazard', hazard],
@@ -969,6 +1247,98 @@ describe('the person page’s flag labels’ rounds (B01-4c)', () => {
     expect(capped).toBe(false);
     expect(labels).toEqual(flags.map(() => 'over'));
   });
+
+  test('past the budget, a flag it can’t reach is unlabeled and said so — a lake’s name read once for every flag on it, the same whatever order reads settle in', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const skater = await admin(t);
+    const { flags, bytes } = await t.run(async (ctx) => {
+      const lakes: Id<'waterBodies'>[] = [];
+      for (const name of ['Lake A', 'Lake B', 'Lake C']) {
+        const body = await ctx.db.insert('waterBodies', {
+          name,
+          searchText: name.toLowerCase(),
+          type: 'lakePond',
+          source: 'osm',
+          polygon: POLYGON,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'clean',
+          createdAt: NOW,
+        });
+        await rebuildBodyLibrary(ctx, body);
+        lakes.push(body);
+      }
+      const [a, b, c] = lakes as [Id<'waterBodies'>, Id<'waterBodies'>, Id<'waterBodies'>];
+      const report = await ctx.db.insert('reports', {
+        authorId: skater,
+        waterBodyId: a,
+        point: { lat: 44, lng: -72 },
+        skateEndTime: NOW,
+        reportTime: NOW,
+        source: 'native',
+        iceTypes: [{ type: 'black_ice' }],
+        surfaceTags: [],
+        photoIds: [],
+        moderationStatus: 'visible',
+        hazardIdsCreated: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      // The three lakes themselves (no read on the way), then a Report on the first.
+      const targets = [
+        ['waterbody', a],
+        ['waterbody', b],
+        ['waterbody', c],
+        ['report', report],
+      ] as const;
+      const out = [];
+      for (const [i, [targetType, targetId]] of targets.entries()) {
+        const flagId = await ctx.db.insert('contentFlags', {
+          flaggerId: viewerId,
+          targetType,
+          targetId,
+          reason: 'spam',
+          status: 'open',
+          subjectUserId: skater,
+          createdAt: NOW + i,
+        });
+        out.push({
+          flagId,
+          reason: 'spam' as const,
+          targetType,
+          targetId: targetId as string,
+          status: 'open' as const,
+          createdAt: NOW + i,
+        });
+      }
+      const nameRow = await ctx.db
+        .query('bodyLibraryRows')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', a).eq('scope', SCOPE_ALL))
+        .first();
+      // Room for the Report at its worst and as it weighs, Lake A's name as it weighs, and one
+      // more name at its worst: Lake A and Lake B are named, Lake C is past the budget.
+      const weight = (doc: unknown) => getDocumentSize(doc as never);
+      return {
+        flags: out,
+        bytes: DOC_MAX + weight(await ctx.db.get(report)) + weight(nameRow) + 1,
+      };
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const person = (await raw.db.get(skater)) as Doc<'profiles'>;
+        const { ctx } = counted(raw, ticks);
+        const mine: Array<(typeof flags)[number] & { targetLabel?: string }> = flags.map((f) => ({
+          ...f,
+        }));
+        const capped = await labelFlags(ctx, new ReadBudget(bytes), person, mine);
+        return { capped, labels: mine.map((f) => f.targetLabel ?? null) };
+      });
+    const calm = await read([0]);
+    // The Report on Lake A is labeled though Lake C, before it, was not: its lake's name was read.
+    expect(calm).toEqual({ capped: true, labels: ['Lake A', 'Lake B', null, 'Lake A'] });
+    expect(await read([3, 0, 2, 1])).toEqual(calm);
+  });
 });
 
 /** The rounds a page of History costs when its rows share their targets (stated, B01-3h). */
@@ -1000,18 +1370,26 @@ const STAFF_FIGURES_ROUNDS = 8 + Math.ceil(200 / 4);
 
 /**
  * The rounds `labelFlags` costs for twenty flagged Reports on twenty lakes **on a whole request
- * budget** (the 11 MiB a People query opens with): each flag reserves its Report and its lake's
- * library row at a document's worth apiece, so five go in a wave, and each wave is two rounds (the
- * Report, then the name). One after another it was forty. On the person page `labelFlags` runs after
- * the page's other reads, so fewer flags fit a wave and the rounds can be more — still two a wave,
- * never two a flag; this bound claims only the whole-budget case it measures.
+ * budget** (the 11 MiB a People query opens with): first every flag's Report, reserved at a
+ * document's worth, ten or eleven to a wave; then the twenty lakes' names, likewise — a round a
+ * wave. One after another it was forty. On the person page `labelFlags` runs after the page's other
+ * reads (about 3.5 to 5.5 MiB left in the People tests), so three to five go to a wave there and the
+ * rounds are more — still a round a wave; this bound claims only the whole-budget case it measures.
  */
-const FLAG_LABEL_ROUNDS_WHOLE_BUDGET = 2 * Math.ceil(20 / 5);
+const FLAG_LABEL_ROUNDS_WHOLE_BUDGET = Math.ceil(20 / 10) + Math.ceil(20 / 10);
 
 /**
  * The rounds a staffer's season costs when 100 of its decisions were each reversed by someone else:
  * the reads before them, then a step at a time for every row together — the verdicts (small: one
  * wave), the rows that ended them (an audit row each, reserved at a document's worth, so four or five
- * to a wave in what the season's own read leaves). One row after another it was over 300.
+ * to a wave in what the season's own read leaves). One row after another it was over 200: a verdict
+ * and the row that ended it, each.
  */
 const SEASON_ROUNDS = 8 + 1 + Math.ceil(100 / 4);
+
+/**
+ * What a staffer's figures or season charge before their per-row reads, for a test that opens the
+ * request's budget smaller: the staffer's profile, the backfill marker (four small rows), and the
+ * decisions' own read (4 MiB of real weight, charged with a document over).
+ */
+const STAFF_PAGE_FIXED = ROW_MAX.profile + 4 * ROW_MAX.small + 5 * DOC_MAX;

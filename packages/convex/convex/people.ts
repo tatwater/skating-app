@@ -955,11 +955,13 @@ const FLAG_BODY_READS: Record<OpenFlag['targetType'], RowKind[]> = {
  * Label each open flag's target, at most {@link FLAG_LABELS} distinct ones, through the request's
  * budget: a flag on the person by their own name; anything else by the body it is about — the Inbox's
  * own rule (`lib/openFlags.flagBodyId`: a report, Post, comment, photo, hazard or alert, through the
- * report it hangs on) and that body's name, read once however many of its items are flagged. Every
- * flag's reads go **at once** (B01-4c), in page order, in waves over the budget (`ReadBudget.waves`,
- * each reserving its steps' worst cases and the name's, handing back what they didn't weigh).
- * Returns whether any went unlabeled for the cap or the budget — which ones depends only on the
- * flags' order, never on settling order.
+ * report it hangs on) and that body's name, read once however many of its items are flagged. The
+ * reads go **at once** (B01-4c), in two passes of waves over the budget (`ReadBudget.waves`, each
+ * item reserving its worst cases and handing back what they didn't weigh): every flag's way to its
+ * lake, in page order; then each lake's name, in the order the flags first reach it. A lake's name is
+ * reserved once, not once a flag, so as many flags go to a wave as the budget left holds their
+ * steps. Returns whether any went unlabeled for the cap or the budget — which ones depends only on
+ * the flags' order, never on settling order.
  */
 export async function labelFlags(
   ctx: QueryCtx,
@@ -982,48 +984,48 @@ export async function labelFlags(
     if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
     else toRead.push(key);
   }
-  // Each lake's name read once, whichever flags name it: the first flag to reach it reads it through
-  // its own share; a later one waits on that read and hands its reservation back. A flag past the
-  // budget is `undefined` — never a string, which a lake's name could be.
-  const names = new Map<string, Promise<string | null>>();
-  const read = await budget.waves<string, string | null | undefined>(
+  // Each flag's way to its lake, every flag at once, each read charged to the flag's share as the
+  // step it is (one past them is a plan error). A flag past the budget is `undefined`.
+  const bodies = await budget.waves<string, Id<'waterBodies'> | null | undefined>(
     toRead,
     (key) => {
       const steps = FLAG_BODY_READS[(byKey.get(key) as OpenFlag).targetType];
-      return {
-        bytes: steps.reduce((sum, kind) => sum + ROW_MAX[kind], 0) + ROW_MAX.bodyLibraryRow,
-        reads: steps.length + 1,
-      };
+      return { bytes: steps.reduce((sum, kind) => sum + ROW_MAX[kind], 0), reads: steps.length };
     },
-    async (key, share) => {
+    (key, share) => {
       const flag = byKey.get(key) as OpenFlag;
       const steps = FLAG_BODY_READS[flag.targetType];
       let step = 0;
-      // Each read charged to the flag's share as the step it is; one past them is a plan error.
-      const bodyId = await flagBodyId(ctx, flag, (id) =>
+      return flagBodyId(ctx, flag, (id) =>
         share.read(steps[step++] ?? 'report', () => ctx.db.get(id) as Promise<never>),
       );
-      if (bodyId === null) return null;
-      let name = names.get(bodyId);
-      if (name === undefined) {
-        // A body's library row, whose name no writer caps (the label `auditTargetLabel` reads).
-        const row = share.read('bodyLibraryRow', () =>
-          ctx.db
-            .query('bodyLibraryRows')
-            .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
-            .first(),
-        );
-        name = row.then((r) => r?.name ?? null);
-        names.set(bodyId, name);
-      }
-      return name;
     },
     () => undefined,
   );
+  // Then each lake's name once, whichever flags name it, in the order they first reach it: a body's
+  // library row, whose name no writer caps (the label `auditTargetLabel` reads). A lake past the
+  // budget is `undefined` — never a string, which a lake's name could be.
+  const lakes = [...new Set(bodies.filter((b): b is Id<'waterBodies'> => typeof b === 'string'))];
+  const named = await budget.waves<Id<'waterBodies'>, string | null | undefined>(
+    lakes,
+    () => ({ bytes: ROW_MAX.bodyLibraryRow, reads: 1 }),
+    async (bodyId, share) => {
+      const row = await share.read('bodyLibraryRow', () =>
+        ctx.db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
+          .first(),
+      );
+      return row?.name ?? null;
+    },
+    () => undefined,
+  );
+  const nameOf = new Map<string, string | null | undefined>(lakes.map((id, i) => [id, named[i]]));
   let capped = false;
   for (const [i, key] of toRead.entries()) {
-    const label = read[i];
-    // Past the budget: this one unlabeled, and said so — and, in page order, every one after it.
+    const body = bodies[i];
+    const label = body === undefined ? undefined : body === null ? null : nameOf.get(body);
+    // Past the budget, on the way to its lake or at the lake's name: unlabeled, and said so.
     if (label === undefined) {
       capped = true;
       continue;
@@ -1477,7 +1479,10 @@ function shapeable(budget: ReadBudget, n: number, calls = 0, docs = 0): number {
   return k;
 }
 
-/** Rows shaped in order, each counted ahead against the request's budget (≤ 100 rows: it fits). */
+/**
+ * Rows shaped at once, in page order, each counted ahead against the request's budget (≤ 100 rows:
+ * it fits).
+ */
 export async function shapeRows(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
@@ -1924,7 +1929,8 @@ export async function staffStatsPage(
   // The query's time bound (Convex gives a query one second): at most `STAFF_CHECKED` database calls
   // for the undos and the filing times together (a row whose answer is in hand costs none), past
   // which a figure says capped, as a budget stop does. Each set is read at once, in page order, in
-  // waves (`readRoots`, `readFiledAts`) — a handful of rounds, not one per row.
+  // waves (`readRoots`, `readFiledAts`) — a round per four or five roots (each reserves an audit
+  // row's worst case, a document) and a wave or two of filings, not a round per row.
   const roots = await readRoots(ctx, budget, page.page, weekRows, STAFF_CHECKED);
   const undoers = new Map<string, number>();
   for (const r of weekRows) {
@@ -2235,9 +2241,10 @@ async function readFiledAts(
   rows: readonly Audit[],
   limit: number,
 ): Promise<(row: Audit) => number | null | undefined> {
+  // Each row's item once, kept for the lookup.
+  const itemOf = new Map(rows.map((row) => [row._id as string, filedItemOf(ctx, row)]));
   const items = new Map<string, Exclude<ReturnType<typeof filedItemOf>, number | null>>();
-  for (const row of rows) {
-    const item = filedItemOf(ctx, row);
+  for (const item of itemOf.values()) {
     if (typeof item === 'object' && item !== null && !items.has(item.id)) items.set(item.id, item);
   }
   const wanted = [...items.values()].slice(0, Math.max(0, limit));
@@ -2252,7 +2259,8 @@ async function readFiledAts(
   );
   const at = new Map<string, number | null | undefined>(wanted.map((item, i) => [item.id, got[i]]));
   return (row) => {
-    const item = filedItemOf(ctx, row);
+    // A row not asked about is `undefined`, as one past the limit is: never a guess.
+    const item = itemOf.get(row._id);
     return typeof item === 'object' && item !== null ? at.get(item.id) : item;
   };
 }
