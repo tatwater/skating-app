@@ -121,12 +121,11 @@ import {
   NEIGHBOR_ID,
   NEIGHBOR_POLYGON,
   on,
+  REMOVAL_NOTE_NEAR_CAP,
+  REMOVAL_SENTENCE_SHORTENED,
 } from './bodyFixtures';
 import type { HistoryAction } from './bodyModel';
 import { registerBodyTabs } from './tabRegistry';
-
-/** A removal's note far longer than the audit sentence that quotes it can carry. */
-const LONG_NOTE = `The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. The owner asked us to take it off the map: the gates are posted all winter and the launch is private. `;
 
 type Ref = Parameters<typeof getFunctionName>[0];
 const set = (ref: Ref, value: unknown, args?: unknown) =>
@@ -512,8 +511,8 @@ describe('BodyConsoleRoute', () => {
       action: 'remove',
       at: on(10, 2),
       // The composed sentence, shortened under the cap; the note is what was typed, whole.
-      reason: 'Removed from map (landowner request): Posted by the owner…',
-      note: LONG_NOTE,
+      reason: REMOVAL_SENTENCE_SHORTENED,
+      note: REMOVAL_NOTE_NEAR_CAP,
       removalReason: 'landowner_request',
       by,
     },
@@ -536,7 +535,8 @@ describe('BodyConsoleRoute', () => {
       expect(row).toHaveTextContent('2 Oct 2026');
       expect(row).toHaveTextContent('Teagan');
       expect(row).toHaveTextContent('Landowner request');
-      expect(row).toHaveTextContent(`“${LONG_NOTE.trim()}”`);
+      expect(row).toHaveTextContent(`“${REMOVAL_NOTE_NEAR_CAP}”`);
+      expect(row).not.toHaveTextContent('Removed from map');
       // History is the audit trail's alone.
       expect(screen.queryByRole('heading', { name: 'History' }) === null).toBe(denied.size > 0);
     },
@@ -568,6 +568,7 @@ describe('BodyConsoleRoute', () => {
         at: on(10, 2),
         reason: 'Drawn over the town beach',
         removalReason: null,
+        note: null,
         by: { displayName: 'Teagan Atwater' },
       },
       towns: [

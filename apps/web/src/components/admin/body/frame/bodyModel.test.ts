@@ -1,8 +1,16 @@
-import { COMPLETENESS_FIELDS } from '@skating/core';
+import { AUDIT_REASON_MAX, COMPLETENESS_FIELDS } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { BODY_NOW, MASCOMA_HISTORY, MASCOMA_ID, MASCOMA_RECORD, on } from './bodyFixtures';
+import {
+  BODY_NOW,
+  MASCOMA_HISTORY,
+  MASCOMA_ID,
+  MASCOMA_RECORD,
+  on,
+  REMOVAL_NOTE_NEAR_CAP,
+  REMOVAL_SENTENCE_SHORTENED,
+} from './bodyFixtures';
 import {
   acresText,
   attentionTabs,
@@ -392,6 +400,7 @@ describe('a body that left', () => {
       at: on(10, 2),
       reason: ' ',
       removalReason: 'unskateable' as const,
+      note: null,
       by: { displayName: 'Teagan Atwater' },
     };
     expect(removalFromLeft(left)).toEqual({
@@ -413,20 +422,29 @@ describe('a body that left', () => {
   });
 
   it('a removal says the moderator’s own words whole — never the composed audit sentence that may be shortened', () => {
-    const note = `${'The landowner asked us to take it off the map; '.repeat(60)}posted gates.`;
+    // What the server can hold: the note within the cap, the sentence quoting it cut to fit it.
+    expect(REMOVAL_NOTE_NEAR_CAP.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+    expect(REMOVAL_SENTENCE_SHORTENED).toHaveLength(AUDIT_REASON_MAX);
+    expect(REMOVAL_SENTENCE_SHORTENED.endsWith('…')).toBe(true);
     const left = {
       action: 'remove' as const,
       at: on(10, 2),
-      // The composed sentence, shortened under the reason cap.
-      reason: 'Removed from map (landowner request): The landowner asked us…',
+      reason: REMOVAL_SENTENCE_SHORTENED,
       removalReason: 'landowner_request' as const,
-      note,
+      note: REMOVAL_NOTE_NEAR_CAP,
       by: { displayName: 'Teagan Atwater' },
     };
-    expect(removalFromLeft(left).reason).toBe(note);
-    // No note: the row's reason stands in.
-    expect(removalFromLeft({ ...left, note: null }).reason).toBe(left.reason);
-    expect(removalFromLeft({ ...left, note: '  ' }).reason).toBe(left.reason);
+    expect(removalFromLeft(left).reason).toBe(REMOVAL_NOTE_NEAR_CAP);
+    // No note: a removal's row reason is the composed sentence (it repeats the listed reason
+    // beside it, and can't be told from a typed one here) — nothing is quoted.
+    const bare = { ...left, reason: 'Removed from map (landowner_request)', note: null };
+    expect(removalFromLeft(bare).reason).toBeNull();
+    expect(removalFromLeft({ ...bare, note: '  ' }).reason).toBeNull();
+    // A rejection's reason is typed: it stands.
+    expect(
+      removalFromLeft({ ...bare, action: 'reject_waterbody', reason: 'Drawn over the beach' })
+        .reason,
+    ).toBe('Drawn over the beach');
   });
 
   it('finds nothing in another body’s rows, or in rows of other verbs', () => {

@@ -512,7 +512,10 @@ export interface Removal {
   when: string;
   /** Who, by first name; `null` for the machine or an erased account. */
   who: string | null;
-  /** The reason the row gives, as written; `null` when it gives none. */
+  /**
+   * The words it left with, as written: a removal's note whole when one was typed, else the row's
+   * reason; `null` when there are none.
+   */
   reason: string | null;
   /** Why it was removed, from the listed reasons ("Not skateable"); a removal's only. */
   because?: string;
@@ -539,29 +542,39 @@ export const REMOVAL_REASON_WORDS: Record<RemovalReason, string> = {
 export type LeftRow = {
   action: 'remove' | 'reject_waterbody';
   at: number;
-  /** The audit row's sentence — composed, and shortened under the reason cap (D261). */
+  /**
+   * The audit row's reason: a removal's is composed around its note and shortened to fit the cap
+   * (D261); a rejection's is as typed.
+   */
   reason?: string | null;
   removalReason: RemovalReason | null;
-  /** What the moderator typed, whole (the row's `metadata.note`); `null` when nothing was typed. */
-  note?: string | null;
+  /**
+   * What the remover typed, whole (the row's `metadata.note`); `null` when nothing was typed.
+   * Required, so no source of a row can leave it out and fall back to the shortened sentence.
+   */
+  note: string | null;
   by: { displayName: string } | null;
 };
 
 /**
  * How a removed or rejected body left, from the row its standing names (`removedFacts.left`) —
  * the one rule the console's page and the list's preview share: when, who decided (first name),
- * the listed reason for a removal, and the row's own words.
+ * the listed reason for a removal, and the words it left with — a removal's note whole, else the
+ * row's reason.
  */
 export function removalFromLeft(left: LeftRow, timeZone?: string): Removal {
-  // The moderator's own words, whole, before the audit sentence that quotes them — which may have
-  // been shortened under the reason cap.
-  const note = left.note?.trim() ?? '';
-  const reason = note !== '' ? note : (left.reason?.trim() ?? '');
   return {
     verb: left.action === 'remove' ? 'Removed' : 'Rejected',
     when: statusDate(left.at, timeZone),
     who: left.by === null ? null : firstName(left.by.displayName),
-    reason: reason === '' ? null : reason,
+    // The moderator's own words, whole. A removal's row reason is a composed sentence ("Removed
+    // from map (junk)") that may be shortened under the reason cap and repeats the listed reason
+    // drawn beside it, so a removal shows only what was typed — nothing when nothing was. A
+    // rejection's reason is typed, and stands.
+    reason:
+      left.action === 'remove'
+        ? left.note?.trim() || null
+        : left.note?.trim() || left.reason?.trim() || null,
     ...(left.removalReason !== null && { because: REMOVAL_REASON_WORDS[left.removalReason] }),
   };
 }
