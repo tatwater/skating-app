@@ -16,6 +16,7 @@ import {
   LIST_SEARCH,
   NOW,
   PREVIEW_MASCOMA,
+  PREVIEW_MOREY,
 } from './bodiesFixtures';
 import type { BodyRow } from './bodiesModel';
 import { type BodiesQuery, queryOf } from './bodiesSearch';
@@ -522,6 +523,19 @@ describe('the preview', () => {
     expect(within(pane).getByText('9 / 10')).toBeInTheDocument();
     expect(within(pane).getByText('Missing bathymetry')).toBeInTheDocument();
     expect(within(pane).getByText('“Shaker cove”')).toBeInTheDocument();
+  });
+
+  it('a switch to another body already read shows only that body — the preview is keyed by it', () => {
+    // The preview holds no draft and sends no write; it is keyed by its body all the same.
+    const { rerender } = render(<Harness preview={PREVIEW_MASCOMA} />);
+    const pane = () => screen.getByRole('region', { name: 'Preview' });
+    const first = pane().firstElementChild;
+    expect(within(pane()).getByText('“Shaker cove”')).toBeInTheDocument();
+    // Lake Morey chosen in the list; its preview already read.
+    fireEvent.click(screen.getAllByText('Lake Morey')[0] as HTMLElement);
+    rerender(<Harness preview={PREVIEW_MOREY} />);
+    expect(pane().firstElementChild).not.toBe(first);
+    expect(within(pane()).queryByText('“Shaker cove”')).toBeNull();
   });
 
   it('marks a floor, holds the reports’ shape while they load, and says when they failed', () => {

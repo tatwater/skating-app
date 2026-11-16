@@ -19,8 +19,9 @@ import {
 } from '@/components/kit/select';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { statusDate } from '../../frame/bodyModel';
+import { useBodyBound } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
-import { useListWriter } from '../listWriter';
+import { sameList, useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
@@ -87,15 +88,22 @@ export function LandmarkCard({
   }
   // The other spellings are a whole list: a second chip added while the first is saving is
   // applied to the list the server acknowledged, never the one this render holds (`listWriter`).
-  const pushAliases = useListWriter(l.aliases, async (next) => {
-    try {
-      const landing = onEdit?.({ aliases: [...next] });
-      return landing instanceof Promise ? (await landing) !== false : true;
-    } catch {
-      // A write that throws (the tab's `act` never does) is a refusal, never an unhandled one.
-      return false;
-    }
-  });
+  const here = useBodyBound();
+  const pushAliases = useListWriter(
+    l.aliases,
+    async (next) => {
+      try {
+        const landing = onEdit?.({ aliases: [...next] });
+        return landing instanceof Promise ? (await landing) !== false : true;
+      } catch {
+        // A write that throws (the tab's `act` never does) is a refusal, never an unhandled one.
+        return false;
+      }
+    },
+    sameList,
+    // The console's binding: a queue whose console has gone takes up nothing more.
+    here,
+  );
   const editAliases = (aliases: readonly string[]) => {
     const added = aliases.filter((a) => !l.aliases.includes(a));
     const removed = l.aliases.filter((a) => !aliases.includes(a));

@@ -282,6 +282,58 @@ describe('BodyConsoleView', () => {
     expect(figures).not.toHaveTextContent(/(^|[^~])9\.4 \//);
   });
 
+  it('a boost refused late never moves the slider from where it has since been let go', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
+    const onBoostCommit = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{ArrowRight}');
+    expect(onBoostCommit).toHaveBeenCalledTimes(2);
+    // The first commit is refused after the second was let go: the slider stays at the second.
+    await act(async () => answers[0]?.(false));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.5',
+    );
+    // The latest one refused: back to the record.
+    await act(async () => answers[1]?.(false));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.3',
+    );
+  });
+
+  it('letting go back at the record while a change is on its way sends the way back', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
+    const onBoostCommit = vi.fn(
+      (_value: number) =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = screen.getByRole('slider', { name: 'Map boost' });
+    slider.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    // Back where the record (0.3) stands, the first change still on its way: weighed against the
+    // change, not the record, so it is sent — the change landing alone would stand at 0.4.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(onBoostCommit.mock.calls.map(([v]) => v)).toEqual([0.4, 0.3]);
+    await act(async () => answers[0]?.(true));
+    await act(async () => answers[1]?.(true));
+    expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
+      'aria-valuenow',
+      '0.3',
+    );
+  });
+
   it('never draws a capped history as whole', () => {
     render(<Page history={CAPPED_HISTORY} />);
     expect(screen.getByText('Latest 6')).toBeInTheDocument();
@@ -322,7 +374,7 @@ describe('BodyConsoleView', () => {
     const slider = screen.getByRole('slider', { name: 'Map boost' });
     act(() => slider.focus());
     await user.keyboard('{ArrowRight}');
-    expect(onBoostCommit).toHaveBeenCalledWith(0.4);
+    expect(onBoostCommit).toHaveBeenCalledWith(0.4, expect.any(Function));
     await waitFor(() => expect(slider).toHaveValue(String(MASCOMA_IDENTITY.boost.value)));
   });
 

@@ -66,7 +66,12 @@ type UndoRequest = {
 };
 
 type UndoApi = {
-  announce: (receipt: Receipt) => Promise<void>;
+  /**
+   * `here`, when given, is the caller's binding (the Body console's `currentBody`): asked again
+   * once the server has answered, so a receipt whose console went away during that round trip
+   * never shows over the next one (History keeps the row).
+   */
+  announce: (receipt: Receipt, here?: () => boolean) => Promise<void>;
   undo: (request: UndoRequest) => void;
 };
 
@@ -152,7 +157,10 @@ export function UndoProvider({
   );
 
   const announce = useCallback(
-    async ({ title, description, target, actionId, undoNeedsReason }: Receipt) => {
+    async (
+      { title, description, target, actionId, undoNeedsReason }: Receipt,
+      here?: () => boolean,
+    ) => {
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
       if (actionId !== undefined && undoNeedsReason !== undefined) {
         // The write named its own row and what undoing it asks: no lookup. Were someone to act on
@@ -168,6 +176,9 @@ export function UndoProvider({
         // Another staffer acting on it since leaves the caller's row overtaken: no Undo.
         offered = latest !== null && latest.undo.state === 'available' ? latest : null;
       }
+      // The console that asked for the receipt has gone (after the lookup's round trip, or before
+      // a write's own row came back): no receipt over whatever stands there now.
+      if (here !== undefined && !here()) return;
       toast(
         {
           title,

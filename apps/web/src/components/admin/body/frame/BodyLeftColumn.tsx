@@ -22,6 +22,7 @@ import {
   NOT_COMPUTED,
   NOT_COMPUTED_WORDS,
 } from './bodyModel';
+import { useBodyBound } from './currentBody';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -66,7 +67,11 @@ export interface BodyLeftColumnProps {
    * land, and the slider goes back to the record. Absent: the boost reads but can't be moved (the
    * role).
    */
-  onBoostCommit?: (value: number) => unknown;
+  /**
+   * Set the boost. `here` is the left column's binding (`currentBody`): the write and its receipt
+   * check it, so a commit from a console that has gone sends and says nothing.
+   */
+  onBoostCommit?: (value: number, here: () => boolean) => unknown;
   now: number;
   timeZone?: string;
   /** A story's still of the folded state. */
@@ -294,6 +299,12 @@ function BoostSlider({
   recordRef.current = record;
   const [shown, setShown] = useState(record);
   const [seen, setSeen] = useState(record);
+  const commits = useRef(0);
+  const here = useBodyBound();
+  // The latest value on its way, until its answer: a let-go is weighed against it, not the record
+  // it hasn't moved yet — so letting go back where the record stands, while a change is on its way,
+  // sends the way back rather than nothing (the change in flight would land and stand otherwise).
+  const pending = useRef<number | null>(null);
   if (seen !== record) {
     setSeen(record);
     setShown(record);
@@ -311,9 +322,15 @@ function BoostSlider({
       disabled={onCommit === undefined}
       onValueChange={(v) => setShown(one(v))}
       onValueCommitted={(v) => {
-        const next = boostToSend(one(v), recordRef.current);
+        const next = boostToSend(one(v), pending.current ?? recordRef.current);
         if (onCommit === undefined || next === null) return;
-        void Promise.resolve(onCommit(next)).then((landed) => {
+        // Only the latest commit's refusal puts the slider back: an older one landing late never
+        // moves it from where the operator has since let go.
+        const mine = ++commits.current;
+        pending.current = next;
+        void Promise.resolve(onCommit(next, here)).then((landed) => {
+          if (commits.current !== mine) return;
+          pending.current = null;
           if (landed === false) setShown(recordRef.current);
         });
       }}

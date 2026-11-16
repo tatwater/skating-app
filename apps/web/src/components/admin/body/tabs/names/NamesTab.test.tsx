@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   fail: false,
   /** The server's own effect of a write on the reads, applied when the write is called. */
   server: null as ((name: string, args: Record<string, unknown>) => void) | null,
+  /** A write held on its way until the test lets it land. */
+  hold: null as Promise<void> | null,
 }));
 
 vi.mock('convex/react', async () => {
@@ -30,6 +32,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
+      if (mocks.hold !== null) await mocks.hold;
       if (!mocks.fail) mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
       if (mocks.fail) {
         const { ConvexError } = await import('convex/values');
@@ -49,7 +52,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
-
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { NamesTab } from './NamesTab';
 
@@ -76,6 +79,7 @@ beforeEach(() => {
   mocks.announce.mockClear();
   mocks.fail = false;
   mocks.server = null;
+  mocks.hold = null;
   toasts.length = 0;
   mocks.results.set(getFunctionName(api.waterBodies.get), { available: true, body: BODY });
   mocks.results.set(getFunctionName(api.bodyConsole.places), {
@@ -95,10 +99,13 @@ describe('NamesTab', () => {
     expect(mocks.calls).toEqual([
       ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith({
-      title: 'Displaying “The Basin”',
-      target: { targetType: 'waterbody', targetId: 'wb1' },
-    });
+    expect(mocks.announce).toHaveBeenCalledWith(
+      {
+        title: 'Displaying “The Basin”',
+        target: { targetType: 'waterbody', targetId: 'wb1' },
+      },
+      expect.any(Function),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ ranking' }));
     expect(mocks.calls[1]).toEqual([
       'waterBodies:setWaterBodyName',
@@ -218,6 +225,7 @@ describe('NamesTab', () => {
     await userEvent.type(field, 'Low Plains Pond{Enter}');
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Named “Low Plains Pond”' }),
+      expect.any(Function),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Clear the name' }));
     expect(mocks.calls.at(-1)).toEqual([
@@ -226,6 +234,7 @@ describe('NamesTab', () => {
     ]);
     expect(mocks.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Cleared the name' }),
+      expect.any(Function),
     );
   });
 
@@ -335,6 +344,48 @@ describe('NamesTab', () => {
       await userEvent.type(screen.getByRole('textbox', { name: 'Community name' }), '{Enter}');
       expect(mocks.calls).toEqual([
         ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'Low Plains Pond' }],
+      ]);
+    });
+  });
+
+  describe('a switch to another body that is already read', () => {
+    const community = (id: string, name: string) =>
+      mocks.results.set(getFunctionName(api.waterBodies.get), {
+        available: true,
+        body: { ...BODY, _id: id, name, nameClaims: [{ source: 'user', value: name }] },
+      });
+
+    it('drops the typed name; nothing typed for one body is sent for the other', async () => {
+      community('wb1', 'Low Plains');
+      const { rerender } = render(<BodyTabHost Wiring={NamesTab} bodyId="wb1" />);
+      const field = screen.getByRole('textbox', { name: 'Community name' });
+      await userEvent.clear(field);
+      await userEvent.type(field, 'Low Plains Pond');
+      // The other body holds the same name, so its record moving can't reset the draft (`useDraft`
+      // follows the record): only the body's own subtree can.
+      community('wb2', 'Low Plains');
+      rerender(<BodyTabHost Wiring={NamesTab} bodyId="wb2" />);
+      const next = screen.getByRole('textbox', { name: 'Community name' });
+      expect(next).toHaveValue('Low Plains');
+      await userEvent.type(next, '{Enter}');
+      expect(mocks.calls).toEqual([]);
+    });
+
+    it('a name started on one body that lands after the switch puts up no receipt over the next', async () => {
+      let land: () => void = () => {};
+      mocks.hold = new Promise<void>((r) => {
+        land = r;
+      });
+      const { rerender } = render(<BodyTabHost Wiring={NamesTab} bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
+      community('wb2', 'High Meadow');
+      rerender(<BodyTabHost Wiring={NamesTab} bodyId="wb2" />);
+      land();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(toasts).toEqual([]);
+      expect(mocks.calls).toEqual([
+        ['waterBodies:setWaterBodyName', { waterBodyId: 'wb1', name: 'The Basin' }],
       ]);
     });
   });

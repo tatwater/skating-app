@@ -286,6 +286,8 @@ export function BodiesView({
         className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
       >
         <BodyPreview
+          // The body's own: nothing a preview holds carries to the next body chosen.
+          key={query.bodyId ?? 'none'}
           data={previewData}
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
