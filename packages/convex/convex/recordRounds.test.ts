@@ -236,10 +236,13 @@ const REVERSED_ROUNDS = 2 + waves(3 * ROW_MAX.report) + 1 + 3;
 /** Deleted: the five ranges together, each comment's hold and Report in waves, then the names. */
 const DELETED_ROUNDS = 2 + waves(ROW_MAX.verdict + ROW_MAX.report) + 1;
 /**
- * The counts: the check, Reversed's range, the Reports' range, the light kinds' ranges, then the heavy
- * kinds' doubling steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at worst).
+ * The counts: the check, then Reversed's range, the Reports' range and the light kinds' ranges together,
+ * then the heavy kinds' steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at
+ * worst).
  */
-const COUNT_ROUNDS = 4 + HEAVY_STEPS + 2;
+const COUNT_ROUNDS = 2 + HEAVY_STEPS + 2;
+/** The same with no Post or hazard deleted: the heavy kinds end on their first step. */
+const COUNT_ROUNDS_LIGHT = 2 + 1 + 2;
 
 describe('the record sheet’s rounds (B01-4d)', () => {
   test('Standing: a page of fifty costs its waves, not a round a row', async () => {
@@ -278,11 +281,13 @@ describe('the record sheet’s rounds (B01-4d)', () => {
       expect(out.reversed.count).toBe(50);
       return stats;
     });
-    console.log(`Counts: ${stats.rounds} rounds / ${stats.calls} calls (worst ${COUNT_ROUNDS})`);
-    expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
+    console.log(
+      `Counts: ${stats.rounds} rounds / ${stats.calls} calls (worst ${COUNT_ROUNDS_LIGHT})`,
+    );
+    expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS_LIGHT);
   });
 
-  test('the counts with many deleted Posts: the doubling steps, never a round a Post', async () => {
+  test('the counts with many deleted Posts: a few steps, never a round a Post', async () => {
     const t = convexTest(schema, modules);
     const { rob } = await record(t, 1);
     await t.run(async (ctx) => {
@@ -303,11 +308,36 @@ describe('the record sheet’s rounds (B01-4d)', () => {
       const { ctx: c, stats } = counted(ctx);
       const out = await countsOf(c, { userId: rob });
       // Exact as far as the steps reached; past them, a floor that says so.
-      expect(out.deleted.byKind.post).toBeGreaterThanOrEqual(1 + 2 + 4 + 8);
+      expect(out.deleted.byKind.post).toBe(40);
       expect(out.deleted.capped).toBe(out.deleted.byKind.post < 40);
       return stats;
     });
     console.log(`Counts, 40 Posts: ${stats.rounds} rounds (worst ${COUNT_ROUNDS})`);
     expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
+  });
+
+  test('the counts with Posts deleted in one instant: a floor once the ties fill the share', async () => {
+    const t = convexTest(schema, modules);
+    const { rob } = await record(t, 1);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 12; i++) {
+        await ctx.db.insert('posts', {
+          authorId: rob,
+          reportIds: [],
+          photoIds: [],
+          latestSkateEndTime: NOW,
+          moderationStatus: 'removed' as const,
+          authorDeletedAt: NOW - 10_000,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+    });
+    const out = await t.run((ctx) => countsOf(ctx, { userId: rob }));
+    // Each step reads the rows tied at the last one's time again, at a whole document a row: once
+    // they alone fill the kind's share, no further row can be reserved, and the count says so.
+    expect(out.deleted.capped).toBe(true);
+    expect(out.deleted.byKind.post).toBeGreaterThanOrEqual(1);
+    expect(out.deleted.byKind.post).toBeLessThan(12);
   });
 });

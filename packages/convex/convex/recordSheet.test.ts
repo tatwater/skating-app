@@ -705,7 +705,7 @@ describe('the counts and "still being prepared"', () => {
     }
     await t.run((ctx) => markReady(ctx, 'verdicts'));
     // Nine Posts deleted — four of them in one instant — counted by their real weight, exactly: the
-    // doubling steps read 1, 2, 4, then the rest, each passing over the rows tied with the last.
+    // steps each read their share of the budget, passing over the rows tied with the last.
     const posts: Id<'posts'>[] = [];
     for (let i = 0; i < 9; i++) {
       const { postId } = await post(1);
@@ -729,7 +729,7 @@ describe('the counts and "still being prepared"', () => {
     const { rob, matt, post, tick } = await setup();
     // Each step is at most its share of what the budget has left at a whole document a row, so the
     // seven steps reach some way past what one worst case allows — and past them, a floor.
-    const total = 80;
+    const total = 200;
     for (let i = 0; i < total; i++) {
       const { postId } = await post(1);
       await rob.as.mutation(api.posts.remove, { postId });
@@ -737,7 +737,7 @@ describe('the counts and "still being prepared"', () => {
     }
     const counts = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
     expect(counts.deleted.capped).toBe(true);
-    expect(counts.deleted.byKind.post).toBeGreaterThanOrEqual(1 + 2 + 4 + 8);
+    expect(counts.deleted.byKind.post).toBeGreaterThanOrEqual(15);
     expect(counts.deleted.byKind.post).toBeLessThan(total);
   });
 });

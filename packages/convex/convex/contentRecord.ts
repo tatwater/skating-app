@@ -582,24 +582,26 @@ const DELETED_REPORT_BYTES = DOC_MAX / 2;
 const DELETED_REPORT_ROWS = 100;
 /**
  * Rows of each light kind the Deleted count reads, at most. With the Reversed count's 501 rows and the
- * Reports' cap, these reads take about 6.9 MiB of the budget's 11; the heavy kinds count in what is
+ * Reports' cap, these reads take about 6.2 MiB of the budget's 11; the heavy kinds count in what is
  * left ({@link countHeavy}), and each row's hold check after them.
  */
 const DELETED_COUNT_TAKE = { comment: 30, accessAlert: 30 } as const;
 
-/** Steps of the heavy kinds' doubling count, at most (1 + 2 + 4 + … rows: 127 a kind). */
+/** Steps of the heavy kinds' count, at most (each step reads its kind's whole share of what is left). */
 export const HEAVY_STEPS = 7;
 
 type Heavy = 'post' | 'hazard';
 
-/** A heavy kind's withdrawn rows, newest first: after the `tied` rows already read at `key`, `k` more. */
-function heavyAfter(
+/**
+ * A heavy kind's withdrawn rows, newest first, at or before `key` (all of them when `null`). The caller
+ * takes from it inside its wave share, so the read is charged there.
+ */
+function heavyRange(
   ctx: QueryCtx,
   kind: Heavy,
   userId: Id<'profiles'>,
   key: number | null,
-  take: number,
-): Promise<RecordContentDoc[]> {
+): { take(n: number): Promise<RecordContentDoc[]> } {
   if (kind === 'post') {
     return ctx.db
       .query('posts')
@@ -607,8 +609,7 @@ function heavyAfter(
         const b = q.eq('authorId', userId).gt('authorDeletedAt', 0);
         return key === null ? b : b.lte('authorDeletedAt', key);
       })
-      .order('desc')
-      .take(take);
+      .order('desc');
   }
   return ctx.db
     .query('hazards')
@@ -616,16 +617,15 @@ function heavyAfter(
       const b = q.eq('createdByUserId', userId).gt('authorDeletedAt', 0);
       return key === null ? b : b.lte('authorDeletedAt', key);
     })
-    .order('desc')
-    .take(take);
+    .order('desc');
 }
 
 /**
  * **The heavy kinds, counted by their real weight** — a Post or a hazard is a whole document at its
- * declared worst, a few KB in fact. Each kind reads 1 row, then 2, then 4, … after the last, in steps:
- * every step reserves its rows' worst case and hands back what they really weighed when it is done
- * (`ReadBudget.waves`), so the count reaches past what the worst case alone allows, and a step is no
- * bigger than its share of what is left. A kind is exact when its range ends; a floor (`full`) when it
+ * declared worst, a few KB in fact. Each kind reads, in steps after the last row read, as many rows as
+ * its share of what is left affords at the worst case: every step reserves that and hands back what
+ * the rows really weighed when it is done (`ReadBudget.waves`), so the next step's share is nearly as
+ * large again, and the count reaches far past what one worst case allows. A kind is exact when its range ends; a floor (`full`) when it
  * reached {@link HEAVY_STEPS} or the budget couldn't reserve even one more row. Deterministic: each
  * step is one wave over the open kinds, in order, sized by what earlier steps really weighed.
  */
@@ -633,7 +633,9 @@ async function countHeavy(ctx: QueryCtx, reads: ReadBudget, userId: Id<'profiles
   const state = (['post', 'hazard'] as const).map((kind) => ({
     kind,
     rows: [] as RecordContentDoc[],
-    k: 1,
+    k: 0,
+    /** The rows already read at the last one's time: they come again first, and are passed over. */
+    tied: 0,
     done: false,
     full: false,
   }));
@@ -643,38 +645,36 @@ async function countHeavy(ctx: QueryCtx, reads: ReadBudget, userId: Id<'profiles
     for (const s of open) {
       // Its share of what is left — never past it, so one kind can't starve the other — less the
       // rows it reads again at the last one's time.
-      const share = Math.floor(reads.bytes / (open.length * ROW_MAX[s.kind]));
-      s.k = Math.min(s.k, share - tiedAtLast(s.kind, s.rows));
+      s.tied = tiedAtLast(s.kind, s.rows);
+      const rowsLeft = Math.floor(reads.bytes / (open.length * ROW_MAX[s.kind]));
+      s.k = rowsLeft - s.tied;
       if (s.k < 1) Object.assign(s, { done: true, full: true });
     }
     const asking = open.filter((s) => !s.done);
     const read = await reads.waves(
       asking,
-      (s) => {
-        // The rows already read at the last one's time come again first, and are passed over.
-        const tied = tiedAtLast(s.kind, s.rows);
-        return { bytes: (s.k + tied) * ROW_MAX[s.kind], reads: 1, docs: s.k + tied };
-      },
+      (s) => ({ bytes: (s.k + s.tied) * ROW_MAX[s.kind], reads: 1, docs: s.k + s.tied }),
       async (s, share) => {
         const last = s.rows[s.rows.length - 1];
         const key = last ? withdrawnAt(s.kind, last) : null;
-        const tied = tiedAtLast(s.kind, s.rows);
-        const rows = await share.take(s.kind, s.k + tied, () =>
-          heavyAfter(ctx, s.kind, userId, key, s.k + tied),
+        const n = s.k + s.tied;
+        const rows = await share.take(s.kind, n, () =>
+          heavyRange(ctx, s.kind, userId, key).take(n),
         );
-        return rows.slice(tied);
+        return rows.slice(s.tied);
       },
       () => null,
     );
     asking.forEach((s, i) => {
       const rows = read[i];
+      // Never reached while the shares above sum to what is left; kept so a change to them can only
+      // make the count a floor, never a miscount.
       if (rows === null || rows === undefined) {
         Object.assign(s, { done: true, full: true });
         return;
       }
       s.rows.push(...rows);
       if (rows.length < s.k) s.done = true;
-      else s.k *= 2;
     });
   }
   for (const s of state) if (!s.done) s.full = true;
@@ -733,33 +733,36 @@ export const recordCounts = query({
 export async function countsOf(ctx: QueryCtx, { userId }: { userId: Id<'profiles'> }) {
   const reads = sheetBudget(ctx);
   const pending = await recordPending(ctx, reads);
-  const reversedRows = await reads.take('verdict', VERDICT_COUNT_CAP + 1, (n) =>
-    reversedQuery(ctx, userId, undefined, undefined, null).take(n),
-  );
+  // The three ranges at once: each charges its worst case as it starts, in this order.
+  const [reversedRows, reports, light] = await Promise.all([
+    reads.take('verdict', VERDICT_COUNT_CAP + 1, (n) =>
+      reversedQuery(ctx, userId, undefined, undefined, null).take(n),
+    ),
+    // Each kind's withdrawn rows, then which a decision holds (those are Standing's, not Deleted's).
+    reads.capped(DELETED_REPORT_BYTES, DELETED_REPORT_ROWS, () =>
+      ctx.db
+        .query('reports')
+        .withIndex('by_author_deleted', (q) => q.eq('authorId', userId).gt('authorDeletedAt', 0))
+        .order('desc')
+        .paginate({
+          cursor: null,
+          numItems: DELETED_REPORT_ROWS,
+          maximumBytesRead: DELETED_REPORT_BYTES,
+        }),
+    ),
+    Promise.all(
+      (['comment', 'accessAlert'] as const).map((kind) =>
+        deletedRange(ctx, reads, kind, userId, null, DELETED_COUNT_TAKE[kind]).then((rows) => ({
+          kind,
+          rows,
+          full: rows.length >= DELETED_COUNT_TAKE[kind],
+        })),
+      ),
+    ),
+  ]);
   const reversed = byKindCount(
     reversedRows.slice(0, VERDICT_COUNT_CAP).map((r) => r.targetType),
     reversedRows.length > VERDICT_COUNT_CAP,
-  );
-  // Each kind's withdrawn rows, then which a decision holds (those are Standing's, not Deleted's).
-  const reports = await reads.capped(DELETED_REPORT_BYTES, DELETED_REPORT_ROWS, () =>
-    ctx.db
-      .query('reports')
-      .withIndex('by_author_deleted', (q) => q.eq('authorId', userId).gt('authorDeletedAt', 0))
-      .order('desc')
-      .paginate({
-        cursor: null,
-        numItems: DELETED_REPORT_ROWS,
-        maximumBytesRead: DELETED_REPORT_BYTES,
-      }),
-  );
-  const light = await Promise.all(
-    (['comment', 'accessAlert'] as const).map((kind) =>
-      deletedRange(ctx, reads, kind, userId, null, DELETED_COUNT_TAKE[kind]).then((rows) => ({
-        kind,
-        rows,
-        full: rows.length >= DELETED_COUNT_TAKE[kind],
-      })),
-    ),
   );
   const others = [...light, ...(await countHeavy(ctx, reads, userId))];
   const all: { kind: VerdictTargetType; rows: RecordContentDoc[]; full: boolean }[] = [

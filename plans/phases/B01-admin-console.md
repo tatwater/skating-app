@@ -2706,7 +2706,7 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 13 |
 | `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 23 |
 | `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 8 |
-| `recordCounts` | Reversed 501; Reports by real weight (512 KiB, one `paginate`); comments 30, alerts 30; Posts and hazards by real weight in doubling steps (1, 2, 4, … rows, each step its share of what is left, at most 7); each row's hold check | — | 13 |
+| `recordCounts` | Reversed 501, Reports by real weight (512 KiB, one `paginate`), comments 30 and alerts 30, together; then Posts and hazards by real weight in steps (each its share of what is left, at most 7); each row's hold check | — | 11 |
 | `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
 
 **The undo engine's reads on Reversed rows are counted, not weighed.** Each Reversed row's undo state
@@ -2719,15 +2719,17 @@ metadata ruling above); nothing in the engine changed here.
 
 **What the budget can't count.** Convex has no index-only count. Reports count by their real weight
 (the read's one `paginate`, 512 KiB); Posts and hazards — a whole document each at their declared
-worst, a few KB in fact — count in doubling steps (`countHeavy`: 1 row, then 2, 4, … after the last,
-each step reserving its rows' worst case and handing back what they weighed, never more than its share
-of what is left), so they count exactly well past one worst case; comments and alerts to 30 each. So
+worst, a few KB in fact — count in steps (`countHeavy`): each step reads, after the last row, as many
+rows as its kind's share of what is left affords at the worst case, then hands back what they really
+weighed, so the next step's share is nearly as large again; comments and alerts to 30 each. So
 `deleted` is exact while a person has deleted (and nothing holds) fewer than 100 Reports within 512 KiB,
-29 comments and 29 alerts not yet erased, and as many Posts and hazards as seven steps reach — at
-least 15 of each at the worst the budget allows, typically about 40; past any of those it says `capped`
-(a floor). The Deleted list pages on regardless, a heavy kind a few rows a page. **Owed:** a small stored
-row per withdrawal (ids and times, written by the clock's one writer, removed by the eraser) would make
-the list one range and the count exact to 500 at 4 MiB — not built here (a new stored fact, its writers
+29 comments and 29 alerts not yet erased, and as many Posts and hazards as seven steps reach — about
+50 of one kind alone in the suite's measure, and at least 7 of each at the worst the budget allows with
+both kinds long (500 Reversed, 30 comments, 30 alerts; each step also re-reads the row at the last
+one's time, a whole document reserved) — and past any of those it says `capped` (a floor). The
+Deleted list pages on regardless, a heavy kind a few rows a page. **Owed:** a small stored row per
+withdrawal (ids and times, written by the clock's one writer, removed by the eraser) would make the
+list one range and the count exact to 500 at 4 MiB — not built here (a new stored fact, its writers
 and a backfill).
 
 **Open for the founder:** nothing refuses a moderator acting on their own record (restoring their
