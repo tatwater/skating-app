@@ -1,5 +1,5 @@
 import type { PeopleLane } from '@skating/core';
-import { type ReactNode, type Ref, useLayoutEffect, useMemo, useRef } from 'react';
+import { type ReactNode, type Ref, useMemo, useRef } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { Lanes } from '@/components/kit/lanes';
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 import { countText } from '../../overview/overviewModel';
 import { ConsoleStatus } from '../../shell/ConsoleShell';
-import { useColumnsFit } from '../../shell/columnsFit';
+import { useColumnsFit, usePaneFocus } from '../../shell/columnsFit';
 import { SearchLane } from './kit-candidates/search-lane';
 import { PeopleList } from './PeopleList';
 import { PEOPLE_LANE_INFO } from './peopleLanes';
@@ -128,42 +128,16 @@ export function PeopleListView({
   const narrow = !fits;
   // Which panes are on screen: all three, or — narrow — the person's page, or the lanes and list.
   const shown = !narrow ? 'all' : personOpen ? 'detail' : 'list';
-  // Where focus last sat in the page, kept when it went nowhere (its control hidden or gone).
-  const held = useRef<HTMLElement | null>(null);
-  // Back to the list from a person on a narrow screen: focus goes to the list once it is drawn.
-  const backAsked = useRef(false);
-  // A pane the narrow rule hides takes no focus with it, however it went — the page's way back,
-  // the browser's, a row opened from the keys or a press, a resize: focus that sat in it (or on a
-  // control that went with it) moves to the pane now on screen, never to the page. With the columns
-  // side by side, a person's page closed some other way than Esc (the browser's back, a link) takes
-  // the control that held focus with it: focus goes back to the list, as Esc sends it.
-  useLayoutEffect(() => {
-    const asked = backAsked.current && shown === 'list';
-    backAsked.current = false;
-    const active = document.activeElement;
-    const nowhere = active === null || active === document.body;
-    const from = held.current;
-    if (shown === 'all') {
-      if (!personOpen && nowhere && from !== null && !from.isConnected) listbox.current?.focus();
-      return;
-    }
-    const hidden = (el: Element | null) => {
-      const pane = el?.closest<HTMLElement>('[data-pane]')?.dataset.pane;
-      return shown === 'detail' ? pane === 'lanes' || pane === 'middle' : pane === 'detail';
-    };
-    const lost = nowhere
-      ? from !== null && (!from.isConnected || hidden(from))
-      : page.current?.contains(active) === true && hidden(active);
-    if (!asked && !lost) return;
-    if (shown === 'list') listbox.current?.focus();
-    else
-      page.current
-        ?.querySelector<HTMLElement>(':scope > [data-pane="detail"]')
-        ?.focus({ preventScroll: true });
-  }, [shown, personOpen]);
+  const panes = usePaneFocus({
+    page,
+    shown,
+    open: personOpen,
+    focusList: () => listbox.current?.focus(),
+    detailPane: 'detail',
+  });
   const backToList = () => {
     if (narrow && onCloseDetail !== undefined) {
-      backAsked.current = true;
+      panes.askBack();
       onCloseDetail();
       return;
     }
@@ -208,15 +182,7 @@ export function PeopleListView({
       ref={page}
       data-slot="people-page"
       data-narrow={narrow ? '' : undefined}
-      onFocus={(event) => {
-        held.current = event.target as HTMLElement;
-      }}
-      onBlur={(event) => {
-        // Focus moved on out of the page: nothing to keep. Taken out from under focus (hidden or
-        // unmounted), it goes nowhere (`relatedTarget` is null) and stays held for the effect above.
-        const next = event.relatedTarget;
-        if (next !== null && !event.currentTarget.contains(next)) held.current = null;
-      }}
+      {...panes.pageProps}
       onKeyDown={(event) => {
         // / goes to the search from anywhere on the page but a field (which types it) — and never
         // from a dialog or a menu the page opened: a portal's keys bubble here through React, but
