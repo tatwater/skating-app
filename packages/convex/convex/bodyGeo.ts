@@ -402,7 +402,9 @@ async function computePlaces(
     const lists: Namesake[][] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
       towns: page,
     });
-    page.forEach((t, i) => sharedNames.set(nameKey(t), lists[i] ?? []));
+    page.forEach((t, i) => {
+      sharedNames.set(nameKey(t), lists[i] ?? []);
+    });
   }
   for (const t of reached) {
     const namesakes = sharedNames.get(nameKey(t));
@@ -548,6 +550,8 @@ export const store = internalMutation({
           state: v.string(),
           id: v.id('adminAreas'),
           kind: v.optional(v.string()),
+          /** Its county, where a namesake of its kind needs it told apart (B01-3m). */
+          inCounty: v.optional(v.string()),
         }),
       ),
     ),

@@ -252,6 +252,7 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
         state: p.state,
         id: p.id,
         ...(p.kind !== undefined ? { kind: p.kind } : {}),
+        ...(p.inCounty !== undefined ? { inCounty: p.inCounty } : {}),
       });
     }
   }

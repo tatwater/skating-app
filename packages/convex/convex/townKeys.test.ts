@@ -14,6 +14,7 @@ import { placesFrom, type ReachedTown } from './bodyGeo';
 import {
   geoFactsOf,
   markGeoStale,
+  PLACES_RULE,
   pinnedFactsFor,
   placesOf,
   townNamesOf,
@@ -323,5 +324,109 @@ describe('the loaded layer decides when a name is shared', () => {
       'Plattsburgh (city)',
       'Plattsburgh (town)',
     ]);
+  });
+
+  test('the recompute stores the county that tells two towns of one name and kind apart', async () => {
+    const t = convexTest(schema, modules);
+    const rect = (x0: number, x1: number) => ({
+      ...area('', ''),
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [x0, 44.6],
+            [x1, 44.6],
+            [x1, 44.7],
+            [x0, 44.7],
+            [x0, 44.6],
+          ],
+        ],
+      },
+      bbox: { minLat: 44.6, minLng: x0, maxLat: 44.7, maxLng: x1 },
+      centroid: { lat: 44.65, lng: (x0 + x1) / 2 },
+    });
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        {
+          ...rect(-73.5, -73.45),
+          externalId: 'tiger/3601916353',
+          name: 'Clinton',
+          fullName: 'Clinton town',
+        },
+        {
+          ...rect(-73.45, -73.4),
+          externalId: 'tiger/3606516551',
+          name: 'Clinton',
+          fullName: 'Clinton town',
+        },
+        {
+          ...rect(-73.5, -73.45),
+          externalId: 'tiger/36019',
+          name: 'Clinton County',
+          level: 'county' as const,
+        },
+        {
+          ...rect(-73.45, -73.4),
+          externalId: 'tiger/36065',
+          name: 'Oneida County',
+          level: 'county' as const,
+        },
+      ],
+    });
+    const ring: number[][] = [];
+    for (let i = 0; i < 32; i++) {
+      const a = (2 * Math.PI * i) / 32;
+      ring.push([-73.45 + 0.005 * Math.cos(a), 44.65 + 0.003 * Math.sin(a)]);
+    }
+    ring.push(ring[0] as number[]);
+    const bbox = { minLng: -73.455, maxLng: -73.445, minLat: 44.647, maxLat: 44.653 };
+    const id = await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', {
+        name: 'Across',
+        searchText: 'Across',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: { type: 'Polygon', coordinates: [ring] },
+        bbox,
+        centroid: { lat: 44.65, lng: -73.45 },
+        states: ['NY'],
+        dedupStatus: 'clean',
+        createdAt: 0,
+        minVisibleZoom: 8,
+        displayScore: 1,
+      });
+      await syncWaterBodyCells(ctx, body, { bbox, minVisibleZoom: 8, listed: true });
+      await rebuildBodyLibrary(ctx, body);
+      await markGeoStale(ctx, [body]);
+      return body;
+    });
+    await t.action(internal.bodyGeo.computeDue, {});
+    const geo = await t.run((ctx) => geoFactsOf(ctx, id));
+    expect(townNamesOf(placesOf(geo))?.sort()).toEqual([
+      'Clinton (Clinton County)',
+      'Clinton (Oneida County)',
+    ]);
+  });
+
+  test('a pinned town keeps its county in the merged list, as its pin reads it', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        area('tiger/3601916353', 'Clinton', 'Clinton town'),
+        area('tiger/3606516551', 'Clinton', 'Clinton town'),
+        { ...area('tiger/36019', 'Clinton County'), level: 'county' as const },
+        { ...area('tiger/36065', 'Oneida County'), level: 'county' as const },
+      ],
+    });
+    const pins = await t.run((ctx) =>
+      pinnedFactsFor(ctx, ['tiger/3601916353', 'tiger/3606516551']),
+    );
+    const merged = placesOf({
+      placesRule: PLACES_RULE,
+      towns: [],
+      townEntries: [],
+      ...pins,
+    } as unknown as Parameters<typeof placesOf>[0]);
+    expect(townNamesOf(merged)).toEqual(['Clinton (Clinton County)', 'Clinton (Oneida County)']);
   });
 });
