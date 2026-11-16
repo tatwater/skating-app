@@ -1007,14 +1007,13 @@ export async function labelFlags(
       let name = names.get(bodyId);
       if (name === undefined) {
         // A body's library row, whose name no writer caps (the label `auditTargetLabel` reads).
-        name = share
-          .read('bodyLibraryRow', () =>
-            ctx.db
-              .query('bodyLibraryRows')
-              .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
-              .first(),
-          )
-          .then((row) => row?.name ?? null);
+        const row = share.read('bodyLibraryRow', () =>
+          ctx.db
+            .query('bodyLibraryRows')
+            .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
+            .first(),
+        );
+        name = row.then((r) => r?.name ?? null);
         names.set(bodyId, name);
       }
       return name;
