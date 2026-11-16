@@ -3,7 +3,6 @@ import { seasonOf } from '@skating/core';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Toaster } from '@/components/kit/toast';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
@@ -80,53 +79,58 @@ export function ConsoleLayout() {
   const tape = useMemo(() => seasonTape(now, undefined, tapeFacts), [tapeFacts, now]);
   const colleagues = useMemo(() => colleaguesFrom(colleagueRows ?? []), [colleagueRows]);
 
-  if (isLoading || turnedAway) return <Splash />;
-
   const modes: RailMode[] = CONSOLE_MODES.filter((m) => can(m.capability)).map((m) => ({
     ...m,
     current: m.id === mode?.id,
   }));
   const legacy = LEGACY_PAGES.filter((p) => can(p.capability));
 
+  // **The queues' owners outlive the splash**: the pick store, the list writers and Undo sit above
+  // it, so a write still out while the viewer's role reloads keeps its queue to come back to. A
+  // reload that ends with the viewer turned away takes them with the console; a write still out
+  // then says its answer through its own sender, in the app's one dock (`AppToaster`).
   return (
     <UndoProvider server={server}>
       {/* The whole-list save queues live here, above every page: a pressed save outlives its page. */}
       <ListWritersProvider>
-        <ConsoleShell
-          modes={modes}
-          legacy={legacy}
-          onLegacy={(page) => void navigate({ to: page.to })}
-          linkFor={(to) => <Link to={to} />}
-          {...(profile != null
-            ? {
-                viewer: {
-                  name: profile.displayName,
-                  ...(profile.profileImageUrl !== undefined
-                    ? { src: profile.profileImageUrl }
-                    : {}),
-                },
-              }
-            : {})}
-          {...(userId !== undefined ? { viewerId: userId } : {})}
-          tape={tape}
-          colleagues={colleagues}
-          onSearch={() => setPaletteOpen(true)}
-          onCommandKey={() => setPaletteOpen((o) => !o)}
-          lamp={<ConnectionLamp />}
-          overlays={
-            <>
-              <ConsolePalette
-                open={paletteOpen}
-                onOpenChange={setPaletteOpen}
-                can={can}
-                onGo={({ to }) => void navigate({ to })}
-              />
-              <Toaster />
-            </>
-          }
-        >
-          {outlet}
-        </ConsoleShell>
+        {isLoading || turnedAway ? (
+          <Splash />
+        ) : (
+          <ConsoleShell
+            modes={modes}
+            legacy={legacy}
+            onLegacy={(page) => void navigate({ to: page.to })}
+            linkFor={(to) => <Link to={to} />}
+            {...(profile != null
+              ? {
+                  viewer: {
+                    name: profile.displayName,
+                    ...(profile.profileImageUrl !== undefined
+                      ? { src: profile.profileImageUrl }
+                      : {}),
+                  },
+                }
+              : {})}
+            {...(userId !== undefined ? { viewerId: userId } : {})}
+            tape={tape}
+            colleagues={colleagues}
+            onSearch={() => setPaletteOpen(true)}
+            onCommandKey={() => setPaletteOpen((o) => !o)}
+            lamp={<ConnectionLamp />}
+            overlays={
+              <>
+                <ConsolePalette
+                  open={paletteOpen}
+                  onOpenChange={setPaletteOpen}
+                  can={can}
+                  onGo={({ to }) => void navigate({ to })}
+                />
+              </>
+            }
+          >
+            {outlet}
+          </ConsoleShell>
+        )}
       </ListWritersProvider>
     </UndoProvider>
   );

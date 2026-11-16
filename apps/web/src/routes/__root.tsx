@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { type ReactNode, useEffect } from 'react';
 import { AppProviders } from '../components/AppProviders';
+import { AppToaster } from '../components/AppToaster';
 import { AuthGate } from '../components/AuthGate';
 import { RouteAnalytics } from '../components/RouteAnalytics';
 import { RoutePrefetch } from '../components/RoutePrefetch';
@@ -59,6 +60,8 @@ function RootDocument({ children }: { children: ReactNode }) {
           <RouteAnalytics />
           <RoutePrefetch />
           <AuthGate>{children}</AuthGate>
+          {/* The app's one dock: an answer reaches the viewer on any page, console or skater. */}
+          <AppToaster />
         </AppProviders>
         <Scripts />
       </body>

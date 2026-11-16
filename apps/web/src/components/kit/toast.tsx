@@ -218,6 +218,8 @@ type ToasterProps = {
   container?: HTMLElement | null;
   /** Components that call `useToastManager()` go inside. */
   children?: ReactNode;
+  /** Which queued toasts this dock draws (by their tone); all of them by default. */
+  draws?: (tone: ToastTone) => boolean;
 };
 
 /** Mounted once, near the app's root: the dock and every toast in it. */
@@ -229,6 +231,7 @@ function Toaster({
   contained = false,
   container,
   children,
+  draws,
 }: ToasterProps) {
   // The shown toasts' keys, by toast id. Which claim wins is read at the key press from the
   // toasts' current order (`stack`, front first) — never from when a claim was made: two toasts
@@ -281,7 +284,7 @@ function Toaster({
                 'bottom-gutter left-gutter w-[min(var(--size-sheet-sm),calc(100vw-2*var(--gap-gutter)))]',
             )}
           >
-            <ToastList timeout={timeout} stack={stack} />
+            <ToastList timeout={timeout} stack={stack} draws={draws} />
           </ToastPrimitive.Viewport>
         </ToastPrimitive.Portal>
       </ClaimKeyContext.Provider>
@@ -292,12 +295,16 @@ function Toaster({
 function ToastList({
   timeout,
   stack,
+  draws,
 }: {
   timeout: number;
   /** Where the Toaster's key listener reads the toasts' order: their ids, front (newest) first. */
   stack: RefObject<readonly string[]>;
+  draws?: ((tone: ToastTone) => boolean) | undefined;
 }) {
-  const { toasts } = ToastPrimitive.useToastManager();
+  const { toasts: queued } = ToastPrimitive.useToastManager();
+  const toasts =
+    draws === undefined ? queued : queued.filter((t) => draws((t.type ?? 'default') as ToastTone));
   useLayoutEffect(() => {
     stack.current = toasts.map((t) => t.id);
   }, [toasts, stack]);
