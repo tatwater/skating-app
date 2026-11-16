@@ -409,10 +409,7 @@ describe('BodyConsoleView', () => {
     const slider = screen.getByRole('slider', { name: 'Map boost' });
     act(() => slider.focus());
     await user.keyboard('{ArrowRight}');
-    expect(onBoostCommit).toHaveBeenCalledWith(
-      0.4,
-      expect.objectContaining({ here: expect.any(Function) }),
-    );
+    expect(onBoostCommit).toHaveBeenCalledWith(0.4, expect.objectContaining({ body: null }));
     await waitFor(() => expect(slider).toHaveValue(String(MASCOMA_IDENTITY.boost.value)));
   });
 

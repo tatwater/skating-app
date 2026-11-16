@@ -123,6 +123,7 @@ describe('NamesTab', () => {
           title: 'Not saved',
           description: 'The displayed name: Water body not found',
           tone: 'bad',
+          timeout: 0,
         },
       ]),
     );
@@ -145,7 +146,7 @@ describe('NamesTab', () => {
     ...over,
   });
 
-  it('saves the aliases as a whole list naming the list it was built on, and says a refusal in place', async () => {
+  it('saves the aliases as a whole list naming the list it was built on; a refusal is a toast, never under the field', async () => {
     const identity = getFunctionName(api.bodyConsole.identity);
     mocks.results.set(identity, identityOf({ moderatorAliases: ['The Basin'] }));
     // `setAliases` stores the list; the identity read answers with it.
@@ -169,13 +170,18 @@ describe('NamesTab', () => {
       expect.objectContaining({ title: 'Aliases saved' }),
     );
     rerender(<NamesTab bodyId="wb1" />);
-    // The server's refusal (past 20, past 120 characters) is said under the field.
+    // The server's refusal (past 20, past 120 characters) is a toast naming what wasn't saved.
     mocks.fail = true;
     await userEvent.type(screen.getByRole('combobox', { name: 'Aliases' }), 'Another{Enter}');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Water body not found');
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({ description: 'The aliases: Water body not found', tone: 'bad' }),
+      ]),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('an aliases refusal that comes once the field isn’t drawn (its read failed, the tab still mounted) is a toast', async () => {
+  it('an aliases refusal that comes once the field isn’t drawn (its read failed, the tab still mounted) is the same toast', async () => {
     const identity = getFunctionName(api.bodyConsole.identity);
     mocks.results.set(identity, identityOf({ moderatorAliases: ['The Basin'] }));
     let land: () => void = () => {};

@@ -313,7 +313,7 @@ describe('the writes', () => {
     expect(here()).toBe(false);
   });
 
-  it('a refusal while the sheet slides closed goes to the toast, naming the person; and once the page has gone too', async () => {
+  it('a refusal while the sheet slides closed is the toast naming the person; and once the page has gone too', async () => {
     let refuse: (e: Error) => void = () => {};
     const view = draw();
     await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
@@ -343,6 +343,7 @@ describe('the writes', () => {
         title: 'Not changed · Rob Tremblay',
         description: 'This is already up.',
         tone: 'bad',
+        timeout: 0,
       }),
     );
     expect(mocks.announce).not.toHaveBeenCalled();
@@ -363,6 +364,7 @@ describe('the writes', () => {
         title: 'Not changed · Rob Tremblay',
         description: 'This is already up.',
         tone: 'bad',
+        timeout: 0,
       }),
     );
     expect(mocks.toast).toHaveBeenCalledTimes(1);
@@ -370,6 +372,8 @@ describe('the writes', () => {
 
   it('a restore that lands while the sheet slides closed keeps no row in it; its receipt still says it', async () => {
     let land: (result: unknown) => void = () => {};
+    let sliding = false;
+    let lit = true;
     const view = draw();
     await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
     mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(
@@ -392,25 +396,39 @@ describe('the writes', () => {
       // The server lists it no longer: a row kept for the sitting would be drawn lit.
       mocks.results.set('contentRecord:personVerdicts', page(STANDING.slice(1)));
       land({ targetId: 'r4oct', actionId: 'a1', undoable: true, undoNeedsReason: true });
-      await Promise.resolve();
+      // The write's answer, through the one write helper, lands in a few microtasks.
+      for (let i = 0; i < 10 && mocks.announce.mock.calls.length === 0; i++)
+        await Promise.resolve();
+      // Still sliding out, its rows drawn: none is kept lit for a sitting on its way out.
+      sliding = document.querySelector('[data-slot="record-sheet"]') !== null;
+      lit = document.querySelector('[data-slot="record-row"][data-back]') !== null;
     });
-    // Still sliding out, its rows drawn: none is kept lit for a sitting on its way out.
-    expect(document.querySelector('[data-slot="record-sheet"]')).not.toBeNull();
-    expect(document.querySelector('[data-slot="record-row"][data-back]')).toBeNull();
+    expect(sliding).toBe(true);
+    expect(lit).toBe(false);
     expect(mocks.announce).toHaveBeenCalledWith(
       expect.objectContaining({ actionId: 'a1', undoNeedsReason: true }),
       expect.any(Function),
     );
   });
 
-  it('a refusal is the server’s own words, in place, and no toast', async () => {
+  it('a refusal with the sheet open is the same one toast, naming the person — never printed in it', async () => {
     draw();
     await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
     mocks.mutations
       .get('moderation:setModerationStatus')
       ?.mockRejectedValue(new ConvexError('This is already up.'));
     await userEvent.click(lever() as HTMLElement);
-    expect(await within(sheet()).findByRole('alert')).toHaveTextContent('This is already up.');
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This is already up.',
+        tone: 'bad',
+        timeout: 0,
+      }),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+    expect(within(sheet()).queryByRole('alert')).toBeNull();
+    expect(within(sheet()).queryByText('This is already up.')).toBeNull();
     expect(mocks.announce).not.toHaveBeenCalled();
   });
 

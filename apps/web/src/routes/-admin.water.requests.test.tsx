@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +26,11 @@ const { queryResults, reviewArgs, useMutation, useQuery } = vi.hoisted(() => {
   };
 });
 vi.mock('convex/react', () => ({ useMutation, useQuery }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 vi.mock('@skating/convex/api', () => ({
   api: {
     corpusRequests: {
@@ -200,7 +205,8 @@ describe('the request queue’s review', () => {
 });
 
 describe('the request queue’s Same place', () => {
-  it('keeps the dialog open with the server’s reason when the answer is refused', async () => {
+  it('keeps the dialog open when the answer is refused; the server’s reason is one toast, never the dialog', async () => {
+    toasts.length = 0;
     const reason = '"Long Point" has moved since you looked at it. Cancel and look again.';
     // As the client receives it: the sentence in `data`, the transport's wrapping in `message`.
     const refused = new ConvexError(reason);
@@ -218,7 +224,13 @@ describe('the request queue’s Same place', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
     const dialog = screen.getByRole('dialog');
-    expect(await within(dialog).findByText(reason)).toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent('[CONVEX');
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({ title: 'Not saved', description: reason }),
+      ]),
+    );
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(within(dialog).queryByText(reason)).toBeNull();
+    expect(screen.queryByText(reason)).toBeNull();
   });
 });
