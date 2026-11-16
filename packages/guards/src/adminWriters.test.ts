@@ -14,7 +14,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { expect, test } from 'vitest';
 
 const WEB = resolve(__dirname, '../../../apps/web/src');
@@ -73,5 +73,5 @@ test('a console file reaches a mutation directly only through a write path that 
     const client = /\.mutation\(\s*api\./.test(text);
     return hook || client;
   });
-  expect(direct.map((f) => relative('.', f)).sort()).toEqual(Object.keys(INVENTORY).sort());
+  expect(direct.sort()).toEqual(Object.keys(INVENTORY).sort());
 });

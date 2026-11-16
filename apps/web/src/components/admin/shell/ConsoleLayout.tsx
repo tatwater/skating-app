@@ -29,7 +29,8 @@ import { UndoProvider, useUndoServer } from './undo';
  *   and gives back whatever was there when it unmounts.
  * - **The keys**: ⌘K and the search trigger open the palette; G then a letter goes to a mode, the
  *   Legacy menu or the app (the kit shell's go-mode).
- * - **Undo and the toasts** are mounted here once: `useUndo()` and History work on every page.
+ * - **Undo** is mounted here once, above the splash: `useUndo()` and History work on every page.
+ *   Its toasts draw in the app's one dock at the root (`AppToaster`).
  * - **The season tape** draws the watch's record (`seasonWatch.tape`) — its marks and the day of the
  *   watch — over the calendar; **the faces** are the colleagues on staff in the console now
  *   (`console.colleagues`); and while the tab is open and visible this page says so once a minute
@@ -118,14 +119,12 @@ export function ConsoleLayout() {
             onCommandKey={() => setPaletteOpen((o) => !o)}
             lamp={<ConnectionLamp />}
             overlays={
-              <>
-                <ConsolePalette
-                  open={paletteOpen}
-                  onOpenChange={setPaletteOpen}
-                  can={can}
-                  onGo={({ to }) => void navigate({ to })}
-                />
-              </>
+              <ConsolePalette
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                can={can}
+                onGo={({ to }) => void navigate({ to })}
+              />
             }
           >
             {outlet}

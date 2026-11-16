@@ -1,5 +1,6 @@
 import { useRouterState } from '@tanstack/react-router';
 
+import { isConsolePath, usesOldShell } from '@/components/admin/shell/consoleNav';
 import { Toaster, type ToastManager, type ToastTone } from '@/components/kit/toast';
 
 /**
@@ -10,9 +11,6 @@ import { Toaster, type ToastManager, type ToastTone } from '@/components/kit/toa
  * every toast.
  */
 export const SKATER_SURFACE_TOASTS: 'all' | 'refusals' | 'none' = 'all';
-
-/** The console's routes: everything under `/admin`. */
-const onConsole = (pathname: string) => pathname === '/admin' || pathname.startsWith('/admin/');
 
 /** What a surface's dock draws, by tone. */
 export function drawsOn(
@@ -27,8 +25,9 @@ export function drawsOn(
 /**
  * **The app's one dock, at its root** — so an answer reaches the viewer wherever they are when it
  * comes: under the console's loading splash, on another console page, or in the skater app after
- * leaving the console (or being turned away from it). Placed by surface: past the rail in the
- * console, in from the corner elsewhere.
+ * leaving the console (or being turned away from it). Placed by shell: past the rail where the
+ * console's shell is drawn, in from the corner elsewhere — an old admin page (`usesOldShell`) has no
+ * rail, though it draws every toast as the console does.
  */
 export function SurfaceToaster({
   pathname,
@@ -39,11 +38,11 @@ export function SurfaceToaster({
   manager?: ToastManager;
   policy?: typeof SKATER_SURFACE_TOASTS;
 }) {
-  const surface = onConsole(pathname) ? 'console' : 'skater';
+  const surface = isConsolePath(pathname) ? 'console' : 'skater';
   const draws = drawsOn(surface, policy);
   return (
     <Toaster
-      placement={surface === 'console' ? 'rail' : 'edge'}
+      placement={surface === 'console' && !usesOldShell(pathname) ? 'rail' : 'edge'}
       {...(manager !== undefined && { manager })}
       {...(draws !== undefined && { draws })}
     />

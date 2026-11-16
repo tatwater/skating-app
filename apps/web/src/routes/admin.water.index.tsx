@@ -36,9 +36,9 @@ function AdminWater() {
     lookupArg === 'skip' ? 'skip' : { ...lookupArg, bodiesOnly: true },
   );
   const approve = useSaidMutation(api.waterBodies.approve);
-  const reject = useSaidMutation(api.waterBodies.reject);
-  const merge = useSaidMutation(api.waterBodies.merge);
-  const dismiss = useSaidMutation(api.waterBodies.dismissDuplicates);
+  const reject = useSaidMutation(api.waterBodies.reject, 'inPlace');
+  const merge = useSaidMutation(api.waterBodies.merge, 'inPlace');
+  const dismiss = useSaidMutation(api.waterBodies.dismissDuplicates, 'inPlace');
 
   return (
     <div className="flex flex-col gap-6">

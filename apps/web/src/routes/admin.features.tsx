@@ -19,7 +19,7 @@ export const Route = createFileRoute('/admin/features')({ component: AdminFeatur
 
 function AdminFeatures() {
   const features = useQuery(api.bodyFeatures.listRecent, {});
-  const demote = useSaidMutation(api.bodyFeatures.demote);
+  const demote = useSaidMutation(api.bodyFeatures.demote, 'inPlace');
 
   return (
     <div className="flex flex-col gap-4">

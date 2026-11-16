@@ -302,9 +302,17 @@ function ToastList({
   stack: RefObject<readonly string[]>;
   draws?: ((tone: ToastTone) => boolean) | undefined;
 }) {
-  const { toasts: queued } = ToastPrimitive.useToastManager();
-  const toasts =
-    draws === undefined ? queued : queued.filter((t) => draws((t.type ?? 'default') as ToastTone));
+  const { toasts: queued, close } = ToastPrimitive.useToastManager();
+  const drawn = (t: (typeof queued)[number]) =>
+    draws === undefined || draws((t.type ?? 'default') as ToastTone);
+  const toasts = draws === undefined ? queued : queued.filter(drawn);
+  // A toast this dock doesn't draw is let go at once: left in the queue it would still hold a place
+  // under the limit and in the stack, hiding a drawn one behind it (a refusal under a newer one).
+  const release = useRef(close);
+  release.current = close;
+  useEffect(() => {
+    for (const t of queued) if (t.transitionStatus !== 'ending' && !drawn(t)) release.current(t.id);
+  });
   useLayoutEffect(() => {
     stack.current = toasts.map((t) => t.id);
   }, [toasts, stack]);

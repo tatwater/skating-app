@@ -27,10 +27,10 @@ function useFlags() {
 }
 
 function FlagRow({ flag }: { flag: FlagView }) {
-  const resolveFlag = useSaidMutation(api.moderation.resolveFlag);
-  const setStatus = useSaidMutation(api.moderation.setModerationStatus);
-  const retractAlert = useSaidMutation(api.accessAlerts.retract);
-  const setAlertOfficial = useSaidMutation(api.accessAlerts.setOfficial);
+  const resolveFlag = useSaidMutation(api.moderation.resolveFlag, 'inPlace');
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
+  const retractAlert = useSaidMutation(api.accessAlerts.retract, 'inPlace');
+  const setAlertOfficial = useSaidMutation(api.accessAlerts.setOfficial, 'inPlace');
   const canTakedown = TAKEDOWNABLE.has(flag.targetType) && flag.target.exists;
   // An access alert has no `moderationStatus` to set — its takedown verb is **retraction** (D65
   // applied to access): "this was never true", which is exactly what a bogus "gate locked" is. So it
@@ -206,7 +206,7 @@ function AccessReportRow({
 }: {
   group: NonNullable<ReturnType<typeof useFlags>>['accessReports'][number];
 }) {
-  const setPublicAccess = useSaidMutation(api.waterBodies.setPublicAccess);
+  const setPublicAccess = useSaidMutation(api.waterBodies.setPublicAccess, 'inPlace');
   const waterBodyId = group.waterBodyId as Id<'waterBodies'>;
 
   return (

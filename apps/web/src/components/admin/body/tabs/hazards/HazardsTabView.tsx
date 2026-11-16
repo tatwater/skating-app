@@ -126,8 +126,10 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** The failed reads were tried again; their fresh answers aren't in (the notes say so). */
   retryPending?: boolean;
   onOpenRecurrence?: () => void;
-  /** Demote a known feature, with the reason taking it away asks for. Absent: not drawn. */
-  /** `asker`: the dialog's opening — its refusal is said there while it is open, else in a toast. */
+  /**
+   * Demote a known feature, with the reason taking it away asks for. Absent: not drawn. `asker`: the
+   * dialog's opening — its refusal is said there while it is open, else in a toast.
+   */
   onDemote?: (id: string, reason: string, asker?: Asker) => Promise<void>;
   /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
   onMarkHazard?: (() => void) | typeof UNAVAILABLE;

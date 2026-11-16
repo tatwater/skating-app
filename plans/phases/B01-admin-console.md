@@ -4506,16 +4506,21 @@ toast naming its subject and what was not changed (D268).
   person page's levers kept theirs in their own state. Both now say it once their place has gone,
   in a toast naming the person ("Not changed · …").
 - **Undo's reason dialog**: its opening is its asker — over the kept reason while the console is
-  there, else "Not undone" in a toast.
+  there, else "Not undone" in a toast. A receipt outlives the console in the root dock: its Undo
+  pressed after the console has gone, when undoing needs a reason, says in a toast that it needs
+  the console's History — never a press that does nothing.
 - **Standing's form and Hazards' demote dialog**: their writes pass the place that asked, and
   `holdFor` narrows the tab's hold to it, so a form that went while its tab stayed never takes a
   refusal with it.
-- **The Legacy pages' net** (`useSaidMutation`). Most had no `catch`: a refusal reached only the
-  browser console. `always` (said in a toast in the server's words, rethrown) where the page says
-  nothing; `inPlace` (said only once the component that asked has gone) where it says one in place.
-  The four the coordinator named (the old editor, RestorePost, ModeratorActions, SeasonWatch's run)
-  each could lose a refusal once their page had gone; each takes `inPlace`. A Legacy toast names
-  only the server's words, not its subject (owed with each page's retirement).
+- **The Legacy pages' net** (`useSaidMutation`). `always` (said in a toast in the server's words,
+  rethrown) where the page says nothing — only Support's buttons and the water list's *Approve* have
+  no `catch`; `inPlace` (said only once the component that asked has gone) where it says one in
+  place — every other Legacy write, the reason dialogs among them (`ReasonDialog` says its refusal
+  under the reason, so `always` there would say it twice). The four the coordinator named (the old
+  editor, RestorePost, ModeratorActions, SeasonWatch's run) each could lose a refusal once their
+  page had gone; each takes `inPlace`. `ReasonDialog` and ModeratorActions' dialog hold open while
+  their write is out (Esc and Cancel alike), so a refusal is never said into one that has closed. A
+  Legacy toast names only the server's words, not its subject (owed with each page's retirement).
 - **The guard** (`packages/guards/src/adminWriters.test.ts`): every console file that reaches a
   mutation directly is in an inventory naming the write path that says its refusals.
 - **Namesakes of one kind** (the two Clintons): a subdivision's boundary key carries TIGER's GEOID,
@@ -4550,8 +4555,8 @@ toast naming its subject and what was not changed (D268).
 | Undo: with a reason (asker: the dialog) | the dialog | a toast |
 | The shell: presence heartbeat | — no one asked | — |
 | The Bodies list, People list, Overview | no writes | — |
-| Legacy, no `catch` (flags, recurrence, support, features, water list, hazard controls) | a toast in the server's words | the same |
-| Legacy, said in place (old editor, seasons, requests, landmark tool, place names, posted rules, dismiss, restore, moderator actions) | in place | a toast in the server's words |
+| Legacy, no `catch` (Support's buttons, the water list's *Approve*) | a toast in the server's words | the same |
+| Legacy, said in place (old editor, seasons, requests, landmark tool, place names, posted rules, dismiss, restore, moderator actions; the reason dialogs of flags, recurrence, features, the water list and the hazard controls) | in place | a toast in the server's words |
 
 **Left:** a Legacy toast names the server's words, not its subject — owed with each page's
 retirement; across a full remount of the console (leaving it), a write from each store can be out

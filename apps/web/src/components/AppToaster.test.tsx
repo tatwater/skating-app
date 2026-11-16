@@ -48,6 +48,12 @@ describe('the app’s one dock', () => {
       'data-placement',
       'edge',
     );
+    // An old admin page draws in the old shell: no rail to sit past.
+    rerender(<SurfaceToaster pathname="/admin/flags" manager={createToastManager()} />);
+    expect(document.querySelector('[data-slot="toast-viewport"]')).toHaveAttribute(
+      'data-placement',
+      'edge',
+    );
   });
 
   it('the switch: the console draws every toast; the skater surface all, only refusals, or none', () => {
@@ -66,6 +72,20 @@ describe('the app’s one dock', () => {
       toast({ title: 'Not saved · Mascoma Lake', tone: 'bad' }, manager);
     });
     expect((await screen.findAllByText('Not saved · Mascoma Lake')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Couldn’t get your location.')).toHaveLength(0);
+  });
+
+  it('with only refusals, a skater app toast after a refusal never takes its place under the limit', async () => {
+    const manager = createToastManager();
+    render(<SurfaceToaster pathname="/" manager={manager} policy="refusals" />);
+    act(() => {
+      toast({ title: 'Not saved · Mascoma Lake', tone: 'bad' }, manager);
+    });
+    act(() => {
+      toast({ title: 'Couldn’t get your location.' }, manager);
+    });
+    const [refusal] = await screen.findAllByText('Not saved · Mascoma Lake');
+    expect(refusal?.closest('[data-slot="toast"]')).not.toHaveAttribute('data-limited');
     expect(screen.queryAllByText('Couldn’t get your location.')).toHaveLength(0);
   });
 });

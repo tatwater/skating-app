@@ -76,7 +76,15 @@ export function ReasonDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      // Held open while its write is out (Esc and an outside press included, as Cancel already is):
+      // the answer is said here, never into a dialog that has closed (D268).
+      onOpenChange={(next) => {
+        if (!next && busy) return;
+        setOpen(next);
+      }}
+    >
       <DialogTrigger render={trigger as React.ReactElement} />
       <DialogContent>
         <DialogHeader>

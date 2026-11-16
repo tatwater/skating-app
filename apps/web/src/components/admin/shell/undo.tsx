@@ -176,6 +176,19 @@ export function UndoProvider({
   const undo = useCallback(
     (request: UndoRequest) => {
       if (request.needsReason) {
+        // A receipt outlives the console in the app's one dock: pressed after the console has gone,
+        // its reason dialog has nowhere to open — say so, never a press that does nothing.
+        if (!mounted.current) {
+          toast(
+            {
+              title: 'Not undone',
+              description: 'Undoing it needs a reason: undo it from History in the console',
+              tone: 'bad',
+            },
+            manager,
+          );
+          return;
+        }
         setReason('');
         setRefusal(null);
         setAsking(request);

@@ -27,7 +27,7 @@ const FEATURE_TYPES = BODY_FEATURE_TYPES.map((value) => ({
 
 export function HazardModeratorControls({ hazardId }: { hazardId: string }) {
   const { canModerate } = useRole();
-  const promote = useSaidMutation(api.bodyFeatures.promote);
+  const promote = useSaidMutation(api.bodyFeatures.promote, 'inPlace');
   const [type, setType] = useState<(typeof FEATURE_TYPES)[number]['value']>('spring_current');
 
   if (!canModerate) return null;

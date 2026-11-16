@@ -45,6 +45,10 @@ export function ModeratorActions({
   const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // While a takedown is out the dialog holds open, so its refusal is said here and never into a
+  // dialog that has closed (D268); the net speaks once this control itself has gone.
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // `canModerate`, not `isModerator`: a departing operator's takedown mutations are refused by
   // `requireContributorRole`, so showing the control would offer a button that throws.
@@ -56,15 +60,24 @@ export function ModeratorActions({
       return;
     }
     setError(null);
+    setBusy(true);
     try {
       await setStatus({ targetType, targetId, status, reason: reason.trim() });
     } catch {
       setError('Could not apply the action. Please try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <Dialog>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && busy) return;
+        setOpen(next);
+      }}
+    >
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
         <FontAwesomeIcon icon={faShieldHalved} className="size-4" />
         {label}
@@ -87,11 +100,19 @@ export function ModeratorActions({
         </div>
         {error ? <p className="text-destructive text-sm">{error}</p> : null}
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-          <Button variant="secondary" onClick={() => act('hidden')} disabled={!reason.trim()}>
+          <DialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</DialogClose>
+          <Button
+            variant="secondary"
+            onClick={() => act('hidden')}
+            disabled={!reason.trim() || busy}
+          >
             Hide
           </Button>
-          <Button variant="destructive" onClick={() => act('removed')} disabled={!reason.trim()}>
+          <Button
+            variant="destructive"
+            onClick={() => act('removed')}
+            disabled={!reason.trim() || busy}
+          >
             Remove
           </Button>
         </DialogFooter>

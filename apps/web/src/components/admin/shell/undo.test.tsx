@@ -333,6 +333,28 @@ describe('useUndo', () => {
     expect(added).toHaveBeenCalledTimes(1);
   });
 
+  it('a reasoned undo pressed after the console has gone (a receipt in the root dock) says it needs the console', async () => {
+    const manager = createToastManager();
+    const added = vi.spyOn(manager, 'add');
+    let undoLater: (() => void) | null = null;
+    function Keep() {
+      const { undo } = useUndo();
+      undoLater = () => undo({ actionId: 'a9', needsReason: true, what: 'Hid a report' });
+      return null;
+    }
+    const view = render(
+      <UndoProvider server={server} manager={manager}>
+        <Keep />
+      </UndoProvider>,
+    );
+    view.unmount();
+    act(() => undoLater?.());
+    expect(server.run).not.toHaveBeenCalled();
+    expect(added).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Not undone', type: 'bad' }),
+    );
+  });
+
   it('says what it needs outside the provider', () => {
     const Orphan = () => {
       useUndo();
