@@ -54,6 +54,7 @@ import {
   setClassImpl,
   setCuratedBoostImpl,
   setIncludedByRequestImpl,
+  setModeratorTownsImpl,
   setPublicAccessImpl,
   setReferenceLinksImpl,
   setSatelliteImageryImpl,
@@ -125,6 +126,19 @@ const undoCuratedBoost: UndoHandler = {
 const undoReferenceLinks: UndoHandler = {
   blocked: needsPrev,
   undoTakesAway: (row) => UNDO_POLICY.set_reference_links.takesAway(meta(row).prev.referenceLinks),
+  // A merge carries a loser's list to its survivor with no row on the survivor: an undo that would put
+  // back a list that has moved since is refused, so never offered (B01-3g).
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await read.row('waterBody', id) : null;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.referenceLinks ?? [],
+      meta(row).referenceLinks ?? [],
+      'this body’s reference links',
+    );
+  },
   run: ({ ctx, actor, row, reason }) =>
     setReferenceLinksImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
@@ -519,7 +533,7 @@ const WATER_BODY: TargetUndo = {
       await removeBodyImpl(ctx, actor, {
         waterBodyId: waterBodyId(row),
         reason: meta(row).prev.removalReason,
-        note: reason,
+        auditReason: reason,
       });
     },
   },
@@ -529,12 +543,60 @@ const WATER_BODY: TargetUndo = {
 const undoAliases: UndoHandler = {
   blocked: needsPrev,
   undoTakesAway: () => UNDO_POLICY.set_aliases.takesAway(undefined),
+  // A merge carries a loser's list to its survivor with no row on the survivor: an undo that would put
+  // back a list that has moved since is refused, so never offered (B01-3g).
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await read.row('waterBody', id) : null;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.moderatorAliases ?? [],
+      meta(row).moderatorAliases ?? [],
+      'this body’s aliases',
+    );
+  },
   run: ({ ctx, actor, row, reason }) =>
     setAliasesImpl(ctx, actor, {
       waterBodyId: row.targetId as Id<'waterBodies'>,
       aliases: (meta(row).prev.moderatorAliases as string[] | undefined) ?? [],
       expected: (meta(row).moderatorAliases as string[] | undefined) ?? [],
       reason,
+    }).then(() => undefined),
+};
+
+/**
+ * set_moderator_towns → the pinned towns it replaced, through the same write. Refused (never offered)
+ * when the body was merged away or its pins moved since — a merge folds a loser's pins into its
+ * survivor with no row on the survivor, so the list it would put back may no longer follow.
+ */
+const undoModeratorTowns: UndoHandler = {
+  blocked: needsPrev,
+  // The undo moves the list from what this row set back to what it replaced: it takes away when it
+  // removes a pin this row added — the forward write's own rule, never "only when it clears".
+  undoTakesAway: (row) =>
+    UNDO_POLICY.set_moderator_towns.takesAway({
+      from: (meta(row).moderatorTownKeys as string[] | undefined) ?? [],
+      to: (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
+    }),
+  refusal: async (ctx, row, read) => {
+    const id = ctx.db.normalizeId('waterBodies', row.targetId);
+    const body = id ? await read.row('waterBody', id) : null;
+    const refused = editRefusal(body);
+    if (refused !== null || body === null) return refused;
+    return listChangedRefusal(
+      body.moderatorTownKeys ?? [],
+      (meta(row).moderatorTownKeys as string[] | undefined) ?? [],
+      'this body’s pinned towns',
+    );
+  },
+  run: ({ ctx, actor, row, reason }) =>
+    setModeratorTownsImpl(ctx, actor, {
+      waterBodyId: row.targetId as Id<'waterBodies'>,
+      townKeys: (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [],
+      expected: (meta(row).moderatorTownKeys as string[] | undefined) ?? [],
+      reason,
+      restoring: true,
     }).then(() => undefined),
 };
 
@@ -695,6 +757,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_curated_boost: undoCuratedBoost,
   set_reference_links: undoReferenceLinks,
   set_aliases: undoAliases,
+  set_moderator_towns: undoModeratorTowns,
   set_class: undoClass,
   set_water_body_name: undoWaterBodyName,
   set_lake_depth: undoLakeDepth,

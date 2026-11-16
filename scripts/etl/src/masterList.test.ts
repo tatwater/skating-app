@@ -28,6 +28,7 @@ import {
   index,
   outerRings,
   SQ_M_PER_ACRE,
+  townLayerOf,
 } from './mergeRules';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +118,20 @@ const MAINE: Boundary & { name: string; level: string } = {
   polygon: square(-71, 43, 3),
   bbox: bboxOf(square(-71, 43, 3)),
 };
+
+/** One town covering the fixtures, as the region rule's layer (D266). */
+const MAINE_TOWNS = townLayerOf(
+  [
+    {
+      externalId: 'tiger/2300100001',
+      name: 'Fixture',
+      state: 'ME',
+      polygon: MAINE.polygon,
+      bbox: MAINE.bbox,
+    },
+  ],
+  ['me'],
+);
 
 function inputFor(
   parts: Partial<
@@ -859,7 +874,7 @@ describe('the emit stage', () => {
     const osm = feat('osm', 'way/1', { name: 'Keeper Pond', gnisId: '999' });
     const nhd = feat('nhd', 'n1', { name: 'Keeper Pond' });
     const result = buildMasterList(inputFor({ osm: [osm], nhd: [nhd] }));
-    const emitted = emitCanonicalBodies(result.bodies, index([MAINE]));
+    const emitted = emitCanonicalBodies(result.bodies, MAINE_TOWNS);
     expect(emitted.emitted).toHaveLength(1);
     expect(emitted.emitted[0]).toMatchObject({
       source: 'osm',
@@ -876,6 +891,28 @@ describe('the emit stage', () => {
     expect(emitted.emitted[0]?.confidence).toMatchObject({ name: 'high' });
   });
 
+  it('emits an out-of-region body with `states: []`, never without the field (D266)', () => {
+    // An absent `states` is "the merge ran without boundaries" — the loader refuses the whole file —
+    // while `[]` is the rule's answer, out of region, which the import declines body by body.
+    const elsewhere = townLayerOf(
+      [
+        {
+          externalId: 'tiger/2300100001',
+          name: 'Far Away',
+          state: 'ME',
+          polygon: square(-60, 30, 1),
+          bbox: bboxOf(square(-60, 30, 1)),
+        },
+      ],
+      ['me'],
+    );
+    const osm = feat('osm', 'way/1', { name: 'Keeper Pond', gnisId: '999' });
+    const result = buildMasterList(inputFor({ osm: [osm] }));
+    const emitted = emitCanonicalBodies(result.bodies, elsewhere);
+    expect(emitted.emitted).toHaveLength(1);
+    expect(emitted.emitted[0]).toHaveProperty('states', []);
+  });
+
   it('counts a body whose geometry defeats the transform instead of losing the run', () => {
     const broken = feat('osm', 'way/broken', {
       name: 'Broken Pond',
@@ -884,7 +921,7 @@ describe('the emit stage', () => {
       bbox: { minLng: -70, maxLng: -70, minLat: 44, maxLat: 44 },
     });
     const result = buildMasterList(inputFor({ osm: [broken] }));
-    const emitted = emitCanonicalBodies(result.bodies, index([MAINE]));
+    const emitted = emitCanonicalBodies(result.bodies, MAINE_TOWNS);
     expect(emitted.emitted).toHaveLength(0);
     expect([...emitted.failures.values()].reduce((a, b) => a + b, 0)).toBe(1);
     expect(emitted.failureKeys).toEqual(['osm:way/broken']);

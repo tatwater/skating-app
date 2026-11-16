@@ -43,7 +43,13 @@ function meterTone(
   return 'default';
 }
 
-type MeterProps = Omit<MeterPrimitive.Root.Props, 'children'> & {
+type MeterProps = Omit<MeterPrimitive.Root.Props, 'children' | 'value'> & {
+  /**
+   * The value, in `[min, max]`. `null` is **not measured**: an empty track with its tick, no fill
+   * and no meter role — nothing claims a value it doesn't have, never a zero — and a reader hears
+   * *Not measured*.
+   */
+  value: number | null;
   /** A kicker over the track ("R2 storage"). Written capitalized; the kicker sets it in caps. */
   label?: ReactNode;
   /**
@@ -83,6 +89,42 @@ function Meter({
   className,
   ...props
 }: MeterProps) {
+  const tick =
+    mark === undefined ? null : (
+      <span
+        data-slot="meter-mark"
+        data-tone={markTone}
+        aria-hidden="true"
+        className={cn('absolute w-(--stroke-hair)', MARK[markTone])}
+        style={{ left: `${(100 * (mark - min)) / (max - min)}%` }}
+      />
+    );
+  if (value === null) {
+    // No meter role, but still its kicker over the track.
+    return (
+      <span
+        data-slot="meter"
+        data-unmeasured=""
+        className={cn(
+          'flex w-full flex-col gap-(--space-1_5)',
+          typeof className === 'string' ? className : undefined,
+        )}
+      >
+        {label != null && (
+          <span
+            data-slot="meter-label"
+            className="min-w-0 text-kick leading-(--lead-snug) font-semibold tracking-kick text-fg3 uppercase"
+          >
+            {label}
+          </span>
+        )}
+        <span data-slot="meter-track" className="relative block h-(--stroke-now) w-full bg-line">
+          <span className="sr-only">Not measured</span>
+          {tick}
+        </span>
+      </span>
+    );
+  }
   const resolved = tone ?? meterTone(value, { warnAt, badAt });
   const hasHeader = label != null || showValue !== false;
   return (
@@ -129,15 +171,7 @@ function Meter({
             FILL[resolved],
           )}
         />
-        {mark !== undefined && (
-          <span
-            data-slot="meter-mark"
-            data-tone={markTone}
-            aria-hidden="true"
-            className={cn('absolute w-(--stroke-hair)', MARK[markTone])}
-            style={{ left: `${(100 * (mark - min)) / (max - min)}%` }}
-          />
-        )}
+        {tick}
       </MeterPrimitive.Track>
     </MeterPrimitive.Root>
   );

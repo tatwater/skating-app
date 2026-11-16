@@ -3,6 +3,7 @@ import {
   HARD_MIN_SURFACE_AREA_SQM,
   isActive,
   meetsAreaFloor,
+  REMOVAL_NOTE_MAX_CHARS,
   type ReviewReason,
   satelliteImageryAvailable,
   standingOf,
@@ -74,6 +75,8 @@ const CANONICAL_ITEM = {
   bbox: SAMPLE_BODY.bbox,
   centroid: SAMPLE_BODY.centroid,
   surfaceAreaSqM: 1_000_000,
+  // The region rule's answer (D266) — every record carries one.
+  states: ['VT'],
 };
 
 /** `onlyBodyId` from inside an existing `t.run` context. */
@@ -525,6 +528,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'osm/big',
           osmId: 'osm/big',
           name: 'Big Lake',
@@ -563,6 +567,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'osm/near',
           osmId: 'osm/near',
           name: 'Near Pond',
@@ -586,6 +591,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'osm/small',
           osmId: 'osm/small',
           name: 'Small Pond',
@@ -611,6 +617,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'osm/far-big',
           osmId: 'osm/far-big',
           name: 'Far Big Lake',
@@ -635,6 +642,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
         source: 'osm' as const,
+        states: ['VT'],
         externalId: `osm/${c}`,
         osmId: `osm/${c}`,
         name: `Body ${c}`,
@@ -662,6 +670,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
         source: 'osm' as const,
+        states: ['VT'],
         externalId: `osm/${c}`,
         osmId: `osm/${c}`,
         name: `Body ${c}`,
@@ -697,6 +706,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
         const c = 0.001 + (i * 0.998) / COUNT; // spread across [0,1), inside VIEWPORT_CONTAINING
         return {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: `osm/dense/${i}`,
           osmId: `osm/dense/${i}`,
           name: `Body ${i}`,
@@ -1497,6 +1507,75 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     ).toHaveLength(0);
   });
 
+  test('a removal’s note reaches History and the removed lane, and the body stays removed across re-import (D266)', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: bodyId,
+      reason: 'other',
+      note: '  Outside the loaded states — in Quebec  ',
+    });
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target_action', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', bodyId).eq('action', 'remove'),
+        )
+        .first(),
+    );
+    expect(row).toMatchObject({
+      reason: 'Removed from map (other): Outside the loaded states — in Quebec',
+      metadata: { removalReason: 'other', note: 'Outside the loaded states — in Quebec' },
+    });
+    const facts = await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId });
+    expect(facts?.left).toMatchObject({
+      action: 'remove',
+      removalReason: 'other',
+      note: 'Outside the loaded states — in Quebec',
+    });
+    // A re-import never revives it, and the note stays where it was written.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.removedAt).toBeDefined();
+    expect(
+      (await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId }))?.left?.note,
+    ).toBe('Outside the loaded states — in Quebec');
+  });
+
+  test('a removal note past its cap is refused and nothing is written; no note (or only spaces) is today’s removal', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    await expect(
+      asAdmin.mutation(api.waterBodies.remove, {
+        waterBodyId: bodyId,
+        reason: 'other',
+        note: 'x'.repeat(REMOVAL_NOTE_MAX_CHARS + 1),
+      }),
+    ).rejects.toThrow(/Shorten it to 1,000 or fewer/);
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.removedAt).toBeUndefined();
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: bodyId,
+      reason: 'junk',
+      note: '   ',
+    });
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target_action', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', bodyId).eq('action', 'remove'),
+        )
+        .first(),
+    );
+    expect(row?.reason).toBe('Removed from map (junk)');
+    expect(row?.metadata).toEqual({ removalReason: 'junk' });
+    expect(
+      (await asAdmin.query(api.bodyConsole.removedFacts, { waterBodyId: bodyId }))?.left?.note,
+    ).toBeNull();
+  });
+
   test('carries the A06c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {
     const t = convexTestWithGeo();
 
@@ -1543,6 +1622,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'shared/1',
           osmId: 'shared/1',
           name: 'From OSM',
@@ -1550,6 +1630,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: 'shared/1',
           osmId: undefined,
           nhdId: 'shared/1',
@@ -1637,11 +1718,13 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     const t = convexTestWithGeo();
     await expect(
       t.mutation(internal.waterBodies.importCanonical, {
-        bodies: [CANONICAL_ITEM],
-        state: 'VE', // typo for VT
+        bodies: [
+          { ...CANONICAL_ITEM, osmId: 'way/ok', externalId: 'way/ok' },
+          { ...CANONICAL_ITEM, states: ['VE'] },
+        ],
       }),
     ).rejects.toThrow(/unknown state code/i);
-    // The whole batch is rejected — nothing is persisted with the bad tag.
+    // The whole batch is rejected — nothing is persisted, not even the good record before it.
     expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0);
   });
 });
@@ -2774,6 +2857,7 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 02b re-seed)', () => {
     bbox: SAMPLE_BODY.bbox,
     centroid: SAMPLE_BODY.centroid,
     surfaceAreaSqM,
+    states: ['VT'],
   });
 
   test('boosts a matched body (widens its minVisibleZoom) and reports a miss', async () => {
@@ -2803,12 +2887,10 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 02b re-seed)', () => {
     const t = convexTestWithGeo();
     // Two "Twin Lake"s: the VT one is larger, so it would win the largest-area default…
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [canonical('osm/way/twin-vt', 'Twin Lake', 999_999)],
-      state: 'VT',
+      bodies: [{ ...canonical('osm/way/twin-vt', 'Twin Lake', 999_999), states: ['VT'] }],
     });
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [canonical('osm/way/twin-ny', 'Twin Lake', 10_000)],
-      state: 'NY',
+      bodies: [{ ...canonical('osm/way/twin-ny', 'Twin Lake', 10_000), states: ['NY'] }],
     });
     // …but the NY hint targets the smaller NY body instead.
     const res = await t.mutation(internal.waterBodies.applyCuratedBoostSeed, {
@@ -3067,6 +3149,7 @@ describe('importCanonical keyed on catalog ids (A07a / D93)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: '141034078',
           osmId: undefined,
           nhdId: '141034078',
@@ -3112,6 +3195,7 @@ describe('importCanonical keyed on catalog ids (A07a / D93)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: 'n1',
           osmId: undefined,
           nhdId: 'n1',
@@ -3216,6 +3300,7 @@ describe('importCanonical keyed on catalog ids (A07a / D93)', () => {
         {
           ...CANONICAL_ITEM,
           source: '3dhp' as const,
+          states: ['VT'],
           externalId: 'I6PYK',
           osmId: undefined,
           threeDhpId: 'I6PYK',
@@ -3303,27 +3388,74 @@ describe('the merged record is accepted and stored whole', () => {
     expect(body?.states).toEqual(['NY', 'VT']);
   });
 
-  test('an explicit list replaces, where a --state tag still unions', async () => {
+  test('a record’s states replace, and nothing else can assign one: the extract tag is refused (D266)', async () => {
     const t = convexTestWithGeo();
-    // The OSM lane's behavior, unchanged: one extract at a time, accumulating.
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
-      state: 'VT',
-    });
-    await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
-      state: 'NY',
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1', states: ['VT', 'NY', 'VT'] }],
     });
     let body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
     expect(body?.states).toEqual(['NY', 'VT']);
-
-    // The merge knows the whole answer, so it replaces — otherwise a state a body no longer touches
-    // could never be removed.
+    // The merge knows the whole answer, so it replaces — a state a body no longer reaches goes.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1', states: ['ME'] }],
     });
     body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
     expect(body?.states).toEqual(['ME']);
+    // The old `--state` tag is no argument at all: the exact validator refuses it, so no loader can
+    // stamp a batch with its extract's state.
+    await expect(
+      t.mutation(internal.waterBodies.importCanonical, {
+        bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+        state: 'NY',
+      } as never),
+    ).rejects.toThrow(/validator|extra field|state/i);
+    body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.states).toEqual(['ME']);
+  });
+
+  test('a record with no region answer throws and writes nothing — never read as out of region (D266)', async () => {
+    const t = convexTestWithGeo();
+    const { states: _, ...unanswered } = CANONICAL_ITEM;
+    await expect(
+      t.mutation(internal.waterBodies.importCanonical, {
+        bodies: [{ ...CANONICAL_ITEM, osmId: 'way/2', externalId: 'way/2' }, unanswered],
+      }),
+    ).rejects.toThrow(/carries no states/);
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0);
+  });
+
+  test('out of region: a new body is not inserted, a stored one keeps its states, both are named (D266)', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/kept', externalId: 'way/kept', states: ['NY'] }],
+    });
+    const keptId = await onlyBodyId(t);
+    const res = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, osmId: 'way/new', externalId: 'way/new', states: [] },
+        {
+          ...CANONICAL_ITEM,
+          osmId: 'way/kept',
+          externalId: 'way/kept',
+          name: 'Renamed',
+          states: [],
+        },
+      ],
+    });
+    expect(res).toMatchObject({
+      inserted: 0,
+      updated: 1,
+      outOfRegion: 1,
+      outOfRegionKept: 1,
+      outsideRegion: [
+        { externalId: 'way/new', waterBodyId: null },
+        { externalId: 'way/kept', waterBodyId: keptId },
+      ],
+    });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows).toHaveLength(1);
+    // Patched as any re-import patches — but never relabeled out of the map.
+    expect(rows[0]).toMatchObject({ name: 'Renamed', states: ['NY'] });
   });
 
   test('persists the confidence scores and review reasons instead of discarding them', async () => {
@@ -4581,6 +4713,7 @@ describe('the review queue (A07a)', () => {
     bbox: SAMPLE_BODY.bbox,
     centroid: SAMPLE_BODY.centroid,
     surfaceAreaSqM: 1_000_000,
+    states: ['VT'],
     reviewReasons,
     ...over,
   });
@@ -4666,6 +4799,7 @@ describe('importCanonical duplicate flagging (A07a)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: 'nhd-1',
           osmId: undefined,
           nhdId: 'nhd-1',
@@ -4701,6 +4835,7 @@ describe('importCanonical duplicate flagging (A07a)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: 'nhd-1',
           osmId: undefined,
           nhdId: 'nhd-1',
@@ -4733,6 +4868,7 @@ describe('resolveIncomingMergeDuplicates (A07a)', () => {
         {
           ...CANONICAL_ITEM,
           source: 'nhd' as const,
+          states: ['VT'],
           externalId: 'nhd-1',
           osmId: undefined,
           nhdId: 'nhd-1',

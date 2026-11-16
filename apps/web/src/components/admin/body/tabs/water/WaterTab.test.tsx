@@ -35,7 +35,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { api } from '@skating/convex/api';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
-
+import { BodyTabHost } from '../../frame/BodyConsoleRoute';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { WaterTab } from './WaterTab';
 
@@ -149,5 +149,28 @@ describe('WaterTab', () => {
     mocks.results.delete(fn(api.waterBodies.get));
     const { container } = render(<WaterTab bodyId="wb1" />);
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it('a switch to another body already read shows only that body — Water holds no draft to carry', () => {
+    // Water's writes aren't built (the depth editor, the survey), so it has no draft; its picks
+    // follow the record. The frame keys it by body all the same.
+    const { container, rerender } = render(<BodyTabHost Wiring={WaterTab} bodyId="wb1" />);
+    const first = container.firstElementChild;
+    expect(screen.getAllByText(/9\.4/).length).toBeGreaterThan(0);
+    mocks.results.set(fn(api.waterBodies.get), {
+      available: true,
+      body: {
+        _id: 'wb2',
+        name: 'Crystal Lake',
+        states: ['NH'],
+        maxDepthM: 6,
+        maxDepthSource: 'state_agency',
+      },
+    });
+    rerender(<BodyTabHost Wiring={WaterTab} bodyId="wb2" />);
+    // Remounted, not re-rendered: the read's own answer would change the words either way.
+    expect(container.firstElementChild).not.toBe(first);
+    expect(screen.queryByText(/9\.4/)).toBeNull();
+    expect(screen.queryByText(/Mascoma/)).toBeNull();
   });
 });

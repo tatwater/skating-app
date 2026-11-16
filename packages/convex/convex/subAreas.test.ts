@@ -661,6 +661,7 @@ describe('system delists are visible where they get fixed', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/9',
           osmId: 'way/9',
           name: 'Lake Champlain',
@@ -894,6 +895,7 @@ describe('the parent-listing cascade', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Lake Champlain',
@@ -2739,6 +2741,7 @@ describe('sub-areas by chord (D201)', () => {
         bodies: [
           {
             source: 'osm' as const,
+            states: ['VT'],
             externalId: 'way/1',
             osmId: 'way/1',
             name: 'Lake Champlain',
@@ -2800,6 +2803,7 @@ describe('sub-areas by chord (D201)', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Lake Champlain',
@@ -2845,6 +2849,7 @@ describe('sub-areas by chord (D201)', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Lake Champlain',
@@ -3008,6 +3013,7 @@ describe('sub-areas by chord (D201)', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Lake Champlain',
@@ -3280,6 +3286,7 @@ describe('sub-areas by chord (D201)', () => {
       bodies: [
         {
           source: 'osm' as const,
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Lake Champlain',

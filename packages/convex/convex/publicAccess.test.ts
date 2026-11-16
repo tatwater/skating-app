@@ -49,6 +49,7 @@ function canonical(name = 'Private Pond', externalId = 'way/1', lat = 44, lng = 
     bbox: { minLat: lat - HALF, minLng: lng - HALF, maxLat: lat + HALF, maxLng: lng + HALF },
     centroid: { lat, lng },
     surfaceAreaSqM: AREA_SQM,
+    states: ['VT'],
   };
 }
 

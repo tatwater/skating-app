@@ -10,7 +10,6 @@
 import {
   type BBox,
   type ClaimSource,
-  pointInPolygon,
   RECONCILE_MIN_IOU_WITH_GNIS,
   sameName,
   type WaterBodyClass,
@@ -66,13 +65,14 @@ import {
   refereedDuplicatePairs,
   resolveGnisNames,
   SQ_M_PER_ACRE,
-  STATE_SAMPLE_POINTS,
   saltContainment,
   saltMask,
   sampleOutline,
   sampleOutlineDense,
   statesFor,
   TIDAL_MAX_ELEVATION_M,
+  type TownRow,
+  townLayerOf,
   Union,
   vetoReason,
 } from './mergeRules';
@@ -80,6 +80,11 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** A loaded town for the region rule. */
+function town(state: string, externalId: string, polygon: Polygon): TownRow {
+  return { state, externalId, name: externalId, polygon, bbox: bboxOf(polygon) };
+}
 
 /** An axis-aligned square, given its south-west corner and side length in degrees. */
 function square(lng: number, lat: number, side: number): Polygon {
@@ -956,35 +961,43 @@ describe('the emit stage', () => {
     expect(catalogIdsOf([feature('nhd', 'n1')])).toEqual({ nhdId: 'n1' });
   });
 
-  it('gives a border-spanning body every state it touches, not the first', () => {
+  it('gives a border-spanning body every state whose towns hold its shore, not the first', () => {
     // Champlain is in VT and NY, and "lakes in Vermont" has to find it.
-    const vt = square(-73.4, 43.5, 1);
-    const ny = square(-74.4, 43.5, 1);
-    const grid = index([
-      { polygon: vt, bbox: bboxOf(vt), name: 'Vermont' },
-      { polygon: ny, bbox: bboxOf(ny), name: 'New York' },
-    ]);
+    const layer = townLayerOf(
+      [
+        town('VT', 'tiger/5000100001', square(-73.4, 43.5, 1)),
+        town('NY', 'tiger/3600100001', square(-74.4, 43.5, 1)),
+      ],
+      ['vt', 'ny'],
+    );
     const straddling = square(-73.5, 44.0, 0.4); // crosses the shared edge at -73.4
-    expect(statesFor({ polygon: straddling, bbox: bboxOf(straddling) }, grid)).toEqual([
+    expect(statesFor({ polygon: straddling, bbox: bboxOf(straddling) }, layer)).toEqual([
       'NY',
       'VT',
     ]);
   });
 
-  it('returns empty rather than guessing when no state outline claims the body', () => {
-    // A wrong state code silently moves a lake into someone else's region filter; a missing one is
-    // visible. The mask is built from counties, so a body can clear it and still land in a gap here.
-    const vt = square(-73.4, 43.5, 1);
-    const grid = index([{ polygon: vt, bbox: bboxOf(vt), name: 'Vermont' }]);
+  it('is in no state when its shore lies in no town, or in one for less than 25 m (D266)', () => {
+    const layer = townLayerOf([town('VT', 'tiger/5000100001', square(-73.4, 43.5, 1))], ['vt']);
     const elsewhere = square(-60, 40, 0.1);
-    expect(statesFor({ polygon: elsewhere, bbox: bboxOf(elsewhere) }, grid)).toEqual([]);
+    expect(statesFor({ polygon: elsewhere, bbox: bboxOf(elsewhere) }, layer)).toEqual([]);
+    // A body west of the town whose east side pokes 0.0001° (about 8 m) past its west edge.
+    const graze = square(-73.9 - 0.0499, 43.5, 0.1);
+    expect(statesFor({ polygon: graze, bbox: bboxOf(graze) }, layer)).toEqual([]);
   });
 
-  it('ignores a boundary whose name is not one of the five', () => {
-    const qc = square(-73.4, 43.5, 1);
-    const grid = index([{ polygon: qc, bbox: bboxOf(qc), name: 'Québec' }]);
-    const body = square(-73.0, 44.0, 0.1);
-    expect(statesFor({ polygon: body, bbox: bboxOf(body) }, grid)).toEqual([]);
+  it('refuses to run without the towns, or with a state missing — never a corpus out of region', () => {
+    expect(() => townLayerOf([], ['vt'])).toThrow(/no town boundaries loaded/);
+    expect(() =>
+      townLayerOf([town('VT', 'tiger/5000100001', square(-73.4, 43.5, 1))], ['vt', 'ny']),
+    ).toThrow(/missing for ny/);
+    const body = square(-73.4, 43.5, 0.1);
+    expect(() =>
+      statesFor(
+        { polygon: body, bbox: bboxOf(body) },
+        { grid: new Map(), cache: new Map(), states: new Set(), size: 0 },
+      ),
+    ).toThrow(/no town boundaries loaded/);
   });
 });
 
@@ -1832,133 +1845,6 @@ describe("D92's override picks the largest qualifying member, not the first", ()
       areaSqM: 1_000,
     });
     expect(overrideGeometryForContainedBays([lake, bayA, bayB])).toHaveLength(1);
-  });
-});
-
-describe('statesFor escalates the way inRegion does', () => {
-  /** A state whose eastern edge is at -71: everything west of it is out. */
-  const state = (name: string, poly: Polygon) => ({
-    name,
-    level: 'state',
-    polygon: poly,
-    bbox: bboxOf(poly),
-  });
-
-  /**
-   * What the sparse first pass alone would answer — `statesFor` without its escalation.
-   *
-   * Written out rather than exported from the module, so a test asserting "the cheap pass was
-   * wrong here" keeps saying that even if the escalation's trigger changes.
-   */
-  const collectStatesSparsely = (
-    body: { polygon: Polygon | MultiPolygon },
-    grid: Map<string, (Boundary & { name: string })[]>,
-  ): string[] => {
-    const found = new Set<string>();
-    for (const [lng, lat] of sampleOutline(body.polygon)) {
-      const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
-      for (const b of grid.get(cell) ?? []) {
-        if (pointInPolygon({ lat, lng }, b.polygon)) {
-          found.add(b.name === 'Maine' ? 'ME' : b.name === 'New Hampshire' ? 'NH' : b.name);
-        }
-      }
-    }
-    return [...found].sort();
-  };
-
-  it('finds the state a body reaches on ONE vertex the sparse sample missed', () => {
-    // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.**
-    // A body admitted on a vertex the sparse sample missed came out belonging to no state at all —
-    // invisible in the feed, in drive-time and in every state chip. Measured: 9 bodies on the
-    // 2026-08-06 run, all border-straddlers (Greenwood Lake NY/NJ, 100 Acre Cove MA/RI).
-    const maine = state('Maine', square(-71, 44, 2));
-    // A long body mostly west of the border with a single vertex poking east of -71.
-    const ring: [number, number][] = [];
-    for (let i = 0; i < 40; i++) ring.push([-72 + i * 0.02, 44.5]);
-    ring.push([-70.9, 44.6]); // the one vertex inside Maine
-    for (let i = 39; i >= 0; i--) ring.push([-72 + i * 0.02, 44.7]);
-    ring.push(ring[0] as [number, number]);
-    const body = {
-      polygon: { type: 'Polygon' as const, coordinates: [ring] },
-      bbox: bboxOf({ type: 'Polygon', coordinates: [ring] }),
-    };
-    expect(statesFor(body, index([maine]))).toEqual(['ME']);
-  });
-
-  it('still returns empty rather than guessing when no state claims the body', () => {
-    const maine = state('Maine', square(-71, 44, 2));
-    const elsewhere = merged({ polygon: square(-60, 30, 0.1) });
-    expect(statesFor(elsewhere, index([maine]))).toEqual([]);
-  });
-
-  it('does not pay for the escalation when the cheap pass already answered', () => {
-    const maine = state('Maine', square(-71, 44, 2));
-    const inside = merged({ polygon: square(-70, 45, 0.01) });
-    expect(statesFor(inside, index([maine]))).toEqual(['ME']);
-  });
-
-  it('finds the SECOND state a body reaches on one vertex, not just the first', () => {
-    // **The half the first escalation missed** (A07a-2 audit, 2026-08-08). It triggered on an *empty*
-    // answer, which covers "belongs to no state" and not "belongs to one state and also another".
-    // A sparse `[NH]` is exactly as unproven as a sparse `[]`.
-    //
-    // Measured against the loaded corpus: 7 bodies, `Province Lake` (976 ac, ME/NH) among them,
-    // stored as New Hampshire's alone.
-    const nh = state('New Hampshire', square(-72, 44, 1)); // -72..-71
-    const me = state('Maine', square(-71, 44, 1)); //        -71..-70
-    const grid = index([nh, me]);
-    // Overwhelmingly in New Hampshire, with a single vertex across the -71 line into Maine.
-    // 41 points a side puts that vertex at index 41, which the 8-per-ring stride of 10 steps over —
-    // the whole point of the fixture is that the cheap pass cannot see it.
-    const ring: [number, number][] = [];
-    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
-    ring.push([-70.95, 44.6]); // the one vertex in Maine
-    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
-    ring.push(ring[0] as [number, number]);
-    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
-    const body = { polygon, bbox: bboxOf(polygon) };
-
-    // The sparse pass alone sees only New Hampshire — this is the bug, stated as a precondition.
-    expect(collectStatesSparsely(body, grid)).toEqual(['NH']);
-    expect(statesFor(body, grid)).toEqual(['ME', 'NH']);
-  });
-
-  it('tests every vertex of a body smaller than the sampling budget', () => {
-    // The property the budget rests on: `sampleOutlineDense` steps by `floor(total / budget)`, so
-    // for anything under 256 vertices — which is most of the corpus — the "sample" IS the exhaustive
-    // walk. That is why 64 measured identical to walking every vertex over all 7,359 candidates.
-    const nh = state('New Hampshire', square(-72, 44, 1));
-    const me = state('Maine', square(-71, 44, 1));
-    const ring: [number, number][] = [];
-    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
-    ring.push([-70.95, 44.6]);
-    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
-    ring.push(ring[0] as [number, number]);
-    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
-    expect(ring.length).toBeLessThan(STATE_SAMPLE_POINTS);
-    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, index([nh, me]))).toEqual(['ME', 'NH']);
-  });
-
-  it('unions every ring rather than returning on the first that answers', () => {
-    // An archipelago's second component can be the one in the other state. The escalation used to
-    // `return` on the first productive ring, which is this function's own headline inverted.
-    const nh = state('New Hampshire', square(-72, 44, 1));
-    const me = state('Maine', square(-71, 44, 1));
-    const grid = index([nh, me]);
-    const inNh = square(-71.5, 44.5, 0.01).coordinates[0] as number[][];
-    const inMe = square(-70.5, 44.5, 0.01).coordinates[0] as number[][];
-    const polygon = { type: 'MultiPolygon' as const, coordinates: [[inNh], [inMe]] };
-    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, grid)).toEqual(['ME', 'NH']);
-  });
-
-  it('skips the walk when no other state is even reachable from the body cells', () => {
-    // The gate that keeps the fix free: a body in the middle of Maine touches only cells holding
-    // Maine, so `reachable` equals `found` and no vertex walk happens. Asserted through behavior —
-    // a body whose sparse sample answers is unchanged by a second state 300 km away.
-    const me = state('Maine', square(-71, 44, 2));
-    const ny = state('New York', square(-76, 42, 1));
-    const inside = merged({ polygon: square(-70, 45, 0.01) });
-    expect(statesFor(inside, index([me, ny]))).toEqual(['ME']);
   });
 });
 

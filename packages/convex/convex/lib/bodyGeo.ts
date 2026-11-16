@@ -23,11 +23,19 @@
  * computed reads `null` ("not computed"), never an empty list.
  */
 
-import { allLevels, cellRangeCovering, distanceToPolygonMeters } from '@skating/core';
+import {
+  allLevels,
+  cellRangeCovering,
+  countyKeyOfSubdivision,
+  distanceToPolygonMeters,
+  isUndefinedSubdivision,
+  stateOfSubdivision,
+} from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
-import type { QueryCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { WATER_BODY_LADDER } from './cellIndex';
+import { markGeoStale as markStale } from './geoStale';
 
 /** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
 export const TOUCH_METERS = 30;
@@ -201,6 +209,130 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
 // ── Stale marks ──────────────────────────────────────────────────────────────────────────────
 
 export { markGeoStale } from './geoStale';
+
+/**
+ * **The places rule a facts row's towns, counties and states were computed by** — 2 is the body's
+ * shoreline in the town layer (D266: 25 m in a town); a row without it holds the sampled answer from
+ * before, which no read shows as the answer ({@link placesOf}).
+ */
+export const PLACES_RULE = 2;
+
+/**
+ * A computed row's places, or `null` when they were not computed by {@link PLACES_RULE} — never
+ * computed, or computed by the sampled rule before it and not recomputed since (a parked body keeps
+ * that row until its recompute goes through). Its touching bodies are read from the row as before.
+ */
+export function placesOf(geo: Doc<'bodyGeoFacts'> | null): Doc<'bodyGeoFacts'> | null {
+  if (geo === null || geo.placesRule !== PLACES_RULE) return null;
+  return withPinnedTowns(geo);
+}
+
+/**
+ * The computed places with a moderator's pinned towns merged in (B01-3g) — after the computed ones,
+ * never twice (keyed on name and state), their counties and states added. Kept apart in storage, so a
+ * pin's write and a recompute each rebuild only their own half.
+ */
+function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
+  const pins = geo.pinnedTowns ?? [];
+  if (pins.length === 0 && (geo.pinnedMissing ?? []).length === 0) return geo;
+  // A "not defined" water unit (an undo may restore a pin on one) is never listed as a town — the
+  // computed half's rule (`bodyGeo.placesFrom`) — but its county and state count.
+  const listed = pins.filter((p) => !isUndefinedSubdivision(p.key));
+  const townEntries = [...(geo.townEntries ?? [])];
+  for (const p of listed) {
+    if (!townEntries.some((e) => e.name === p.name && e.state === p.state)) {
+      townEntries.push({ name: p.name, state: p.state, id: p.id });
+    }
+  }
+  const towns = [...(geo.towns ?? [])];
+  const townStates = [...(geo.townStates ?? [])];
+  const townIds = [...(geo.townIds ?? [])];
+  for (const p of listed) {
+    if (towns.includes(p.name)) continue;
+    towns.push(p.name);
+    townStates.push(p.state);
+    townIds.push(p.id);
+  }
+  const counties = [...(geo.counties ?? [])];
+  for (const p of pins)
+    if (p.county !== undefined && !counties.includes(p.county)) counties.push(p.county);
+  // A pinned key whose town left the layer still names its state, as the body's own states do.
+  const missingStates = (geo.pinnedMissing ?? [])
+    .map(stateOfSubdivision)
+    .filter((code): code is string => code !== null);
+  const states = [
+    ...new Set([...(geo.states ?? []), ...pins.map((p) => p.state), ...missingStates]),
+  ].sort();
+  return { ...geo, towns, townStates, townIds, townEntries, counties, states };
+}
+
+/**
+ * **A moderator's pinned towns as the facts hold them** (B01-3g): each key's town row now — name,
+ * state, boundary and county (from its GEOID) — and the keys no town row has now (`pinnedMissing`),
+ * kept to be shown rather than dropped. At most eight keys: a town read each, and each county read
+ * once however many pinned towns share it (boundary rows carry their polygons, so every read counts
+ * against the writer's budget).
+ */
+export async function pinnedFactsFor(
+  ctx: QueryCtx,
+  keys: readonly string[],
+): Promise<{
+  pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']>;
+  pinnedMissing: string[];
+}> {
+  const pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']> = [];
+  const pinnedMissing: string[] = [];
+  const countyNames = new Map<string, string | null>();
+  for (const key of keys) {
+    const town = await ctx.db
+      .query('adminAreas')
+      .withIndex('by_external_id', (q) => q.eq('externalId', key))
+      .first();
+    if (town === null || town.level !== 'town') {
+      pinnedMissing.push(key);
+      continue;
+    }
+    const countyKey = countyKeyOfSubdivision(key);
+    if (countyKey !== null && !countyNames.has(countyKey)) {
+      const row = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', countyKey))
+        .first();
+      countyNames.set(countyKey, row !== null && row.level === 'county' ? row.name : null);
+    }
+    const county = countyKey === null ? null : (countyNames.get(countyKey) ?? null);
+    pinnedTowns.push({
+      key,
+      name: town.name,
+      state: town.state,
+      id: town._id,
+      ...(county !== null ? { county } : {}),
+    });
+  }
+  return { pinnedTowns, pinnedMissing };
+}
+
+/**
+ * Rebuild a body's pinned towns in its facts, in the writer's own transaction (the pin's write, its
+ * undo, a merge) — so no reader sees the pins as they were. A body with no facts row yet is owed its
+ * first computation, which builds them.
+ */
+export async function refreshPinnedFacts(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  keys: readonly string[],
+): Promise<void> {
+  const row = await ctx.db
+    .query('bodyGeoFacts')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  // No facts row yet: owed its first computation, which builds the pinned half — queue it.
+  if (row === null) {
+    await markStale(ctx, [waterBodyId]);
+    return;
+  }
+  await ctx.db.patch(row._id, await pinnedFactsFor(ctx, keys));
+}
 
 /** A body's stored geometry facts, or `null` when none were ever computed. */
 export async function geoFactsOf(

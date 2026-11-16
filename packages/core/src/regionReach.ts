@@ -1,0 +1,606 @@
+/**
+ * **Which loaded towns a body's shoreline lies in** (D266) — the one rule behind region membership,
+ * a body's town list, its counties and its states. The import asks it whether a body is ours at all
+ * (in at least one loaded town); the geometry facts ask it for the towns a body lies in. Both ask the
+ * same function, against the same layer: the TIGER county subdivisions (towns, and the "not defined"
+ * water units between them), which tile each loaded state.
+ *
+ * ## The rule
+ *
+ * A body is in a town when **at least {@link REGION_SHORE_M} of its shoreline lies inside that town**
+ * — every ring of the outline, islands included, clipped exactly against the town and measured in
+ * meters on the ground. Open water alone never lists a town: a town (or a water unit inside a big
+ * lake) that holds none of the shoreline is not one the body is in. When no town holds that much:
+ *
+ * - **outside** — at least {@link REGION_SHORE_M} of the shoreline lies outside every loaded town:
+ *   the body is elsewhere, and its shore only grazes ours. It is in no town, so out of region.
+ * - **small** — less than that lies outside: a body whose whole shoreline is shorter than the
+ *   constant, or one whose shore is split among towns in pieces each shorter. It is in the town
+ *   holding the most of its shoreline, so a body inside the towns is never left in none.
+ *
+ * ## A shore along a line
+ *
+ * A stretch of shore within {@link REACH_TOUCH_M} of a town's edge lies *on* that edge, and counts for
+ * the town on either side — both abut the water. That is the rule's own uncertainty: the stored
+ * boundaries are good to about 5–7 m, so a shore that runs along a town or state line within that
+ * distance can count for one side, both or neither, depending on a few meters of boundary error
+ * (`plans/phases/B01-admin-console.md`, *The region rule (B01-3g)*, has the measured cases).
+ *
+ * ## Exact along every edge
+ *
+ * For each shoreline edge, the stretches within {@link REACH_TOUCH_M} of a town edge are found as
+ * intervals — a line meets a capsule (the points within `r` of a segment) in one interval, solved in
+ * closed form. Every leftover piece lies off the town's boundary, so it is wholly inside the town or
+ * wholly outside it, and one point-in-polygon test settles it. An edge crossing (a town line across a
+ * pond) is a two-centimeter covered interval like any other; nothing depends on a vertex landing in
+ * the right place.
+ *
+ * **Lengths owe nothing to vertex order.** Each shoreline segment's ground length is measured from its
+ * own endpoints at its own mid-latitude ({@link groundLength}); a piece of a segment is that share of
+ * it. A local equirectangular frame is used only to tell which side of a line a piece is on, and is
+ * chosen from the body's latitude range (rounded to {@link FRAME_STEP_DEG}, so a long run shares
+ * prepared towns) — never from its vertices' order, a ring's start, or its closing vertex.
+ */
+
+import type { MultiPolygon, Polygon, Position } from 'geojson';
+
+/**
+ * **How much of a body's shoreline must lie in a town for the body to be in it, in meters.**
+ *
+ * The question is access from the land, not where the water is (founder, 2026-11-15): a body counts
+ * for a town — and so for its state — when enough of its shore is in that town for a put-in to be
+ * there. Twenty-five meters is a short beach or a launch; a shore that only grazes a town for less
+ * is a sliver of someone else's lake, and a body in Quebec whose shore crosses into Vermont for ten
+ * meters is not a Vermont lake.
+ */
+export const REGION_SHORE_M = 25;
+
+/**
+ * How close a stretch of shore must run to a town's edge to lie **on** it — one centimeter, not zero,
+ * so an edge crossing always has an interval to sit in and floating-point never leaves one uncovered.
+ */
+export const REACH_TOUCH_M = 0.01;
+
+/** The latitude step the measuring frame snaps to (see the module note). */
+export const FRAME_STEP_DEG = 0.5;
+
+/**
+ * How far a body's box is padded, in degrees (about 40 m), before its candidate towns are read — by
+ * every reader of the rule, so the merge and the geometry facts test the same towns. Generous: only a
+ * town within {@link REACH_TOUCH_M} of the box can hold any of the shore.
+ */
+export const REACH_PAD_DEG = 0.0005;
+
+/** Meters per degree of latitude on the WGS84 mean sphere (as `haversineMeters` measures). */
+const M_PER_DEG = 6_371_008.8 * (Math.PI / 180);
+
+type Geom = Polygon | MultiPolygon;
+
+/** A town (or any area) the rule tests against. */
+export interface ReachArea {
+  id: string;
+  polygon: Geom;
+}
+
+/** Why the rule answered as it did — see the module note. */
+export type ReachBasis = 'shore' | 'small' | 'outside';
+
+export interface ReachResult {
+  /** The areas the body is in, the one holding the most of its shore first; ties by id. */
+  ids: string[];
+  basis: ReachBasis;
+}
+
+/** One accumulating run of the rule over one body, fed its candidate areas a page at a time. */
+export interface Reach {
+  /** Test a page of candidate areas. Order-free; an id already tested is skipped. */
+  add(areas: readonly ReachArea[]): void;
+  /** The answer over every area added so far. */
+  result(): ReachResult;
+  /** Meters of shoreline in each area added (on its edge included) — what the answer decided on. */
+  shore(): ReadonlyMap<string, number>;
+}
+
+/** Areas prepared in one frame, kept across bodies — a long run shares them (see {@link createReach}). */
+export type ReachCache = Map<string, PreparedArea>;
+
+// ── Prepared geometry ────────────────────────────────────────────────────────────────────────
+
+/** Rings in the frame, as flat `[x0, y0, x1, y1, …]`, closed, with repeated points dropped. */
+interface Rings {
+  rings: Float64Array[];
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** A town in the frame: its rings, an edge grid for "what is near this segment", y-bands for PIP. */
+export interface PreparedArea extends Rings {
+  /** Edge endpoints, flat: `[x0, y0, x1, y1]` per edge. */
+  edges: Float64Array;
+  cell: number;
+  grid: Map<number, number[]>;
+  bands: Bands;
+}
+
+interface Bands {
+  minY: number;
+  height: number;
+  rows: number[][];
+  edges: Float64Array;
+}
+
+/**
+ * A short segment's length on the ground, in meters, from its endpoints alone: equirectangular at the
+ * segment's own mid-latitude, so it is the same however the ring around it is ordered or started.
+ * Within 1 mm per kilometer of the great-circle length for the segments a ~5 m outline holds.
+ */
+export function groundLength(lng0: number, lat0: number, lng1: number, lat1: number): number {
+  const k = Math.cos((((lat0 + lat1) / 2) * Math.PI) / 180);
+  return Math.hypot((lng1 - lng0) * k * M_PER_DEG, (lat1 - lat0) * M_PER_DEG);
+}
+
+function frameFor(lat: number): { kx: number; ky: number; lat0: number } {
+  const lat0 = Math.round(lat / FRAME_STEP_DEG) * FRAME_STEP_DEG;
+  return { kx: M_PER_DEG * Math.cos((lat0 * Math.PI) / 180), ky: M_PER_DEG, lat0 };
+}
+
+function ringsOf(geom: Geom): Position[][] {
+  return geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
+}
+
+function project(geom: Geom, kx: number, ky: number): Rings {
+  const rings: Float64Array[] = [];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const ring of ringsOf(geom)) {
+    const out: number[] = [];
+    for (const p of ring) {
+      const x = (p[0] as number) * kx;
+      const y = (p[1] as number) * ky;
+      const n = out.length;
+      if (n >= 2 && out[n - 2] === x && out[n - 1] === y) continue;
+      out.push(x, y);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    // Closed, whatever the input said: an open ring still bounds the same area.
+    if (out.length >= 2 && (out[0] !== out[out.length - 2] || out[1] !== out[out.length - 1])) {
+      out.push(out[0] as number, out[1] as number);
+    }
+    // Fewer than three distinct points bound nothing.
+    if (out.length >= 8) rings.push(Float64Array.from(out));
+  }
+  return { rings, minX, minY, maxX, maxY };
+}
+
+function edgesOf(r: Rings): Float64Array {
+  let n = 0;
+  for (const ring of r.rings) n += ring.length / 2 - 1;
+  const edges = new Float64Array(n * 4);
+  let k = 0;
+  for (const ring of r.rings) {
+    for (let i = 0; i + 3 < ring.length; i += 2) {
+      edges[k++] = ring[i] as number;
+      edges[k++] = ring[i + 1] as number;
+      edges[k++] = ring[i + 2] as number;
+      edges[k++] = ring[i + 3] as number;
+    }
+  }
+  return edges;
+}
+
+const KEY_OFFSET = 1 << 19;
+const cellKey = (ix: number, iy: number) => (ix + KEY_OFFSET) * (1 << 20) + (iy + KEY_OFFSET);
+
+function bandsOf(r: Rings, edges: Float64Array): Bands {
+  const count = edges.length / 4;
+  const n = Math.max(1, Math.min(4096, Math.ceil(count / 8)));
+  const height = Math.max((r.maxY - r.minY) / n, 1e-9);
+  const rows: number[][] = Array.from({ length: n }, () => []);
+  for (let e = 0; e < count; e++) {
+    const y0 = edges[e * 4 + 1] as number;
+    const y1 = edges[e * 4 + 3] as number;
+    const lo = Math.max(0, Math.min(n - 1, Math.floor((Math.min(y0, y1) - r.minY) / height)));
+    const hi = Math.max(0, Math.min(n - 1, Math.floor((Math.max(y0, y1) - r.minY) / height)));
+    for (let b = lo; b <= hi; b++) (rows[b] as number[]).push(e);
+  }
+  return { minY: r.minY, height, rows, edges };
+}
+
+/** Even-odd containment over every ring (holes and parts alike) — for points off the boundary. */
+function inside_(b: Bands, x: number, y: number): boolean {
+  const row = b.rows[Math.floor((y - b.minY) / b.height)];
+  if (row === undefined) return false;
+  let odd = false;
+  const E = b.edges;
+  for (const e of row) {
+    const x0 = E[e * 4] as number;
+    const y0 = E[e * 4 + 1] as number;
+    const x1 = E[e * 4 + 2] as number;
+    const y1 = E[e * 4 + 3] as number;
+    if (y0 > y !== y1 > y && x < x0 + ((y - y0) * (x1 - x0)) / (y1 - y0)) odd = !odd;
+  }
+  return odd;
+}
+
+/** Prepare a town in a frame: its edges, an edge grid sized to its edges, and its y-bands. */
+export function prepareArea(polygon: Geom, kx: number, ky: number): PreparedArea {
+  const r = project(polygon, kx, ky);
+  const edges = edgesOf(r);
+  const count = edges.length / 4;
+  let total = 0;
+  for (let e = 0; e < count; e++) {
+    total += Math.hypot(
+      (edges[e * 4 + 2] as number) - (edges[e * 4] as number),
+      (edges[e * 4 + 3] as number) - (edges[e * 4 + 1] as number),
+    );
+  }
+  // About two edges a cell: a near-edge lookup then reads a handful, however long the town's edges.
+  const cell = Math.min(5_000, Math.max(50, count > 0 ? (2 * total) / count : 50));
+  const grid = new Map<number, number[]>();
+  for (let e = 0; e < count; e++) {
+    const x0 = edges[e * 4] as number;
+    const y0 = edges[e * 4 + 1] as number;
+    const x1 = edges[e * 4 + 2] as number;
+    const y1 = edges[e * 4 + 3] as number;
+    const ix0 = Math.floor(Math.min(x0, x1) / cell);
+    const ix1 = Math.floor(Math.max(x0, x1) / cell);
+    const iy0 = Math.floor(Math.min(y0, y1) / cell);
+    const iy1 = Math.floor(Math.max(y0, y1) / cell);
+    for (let ix = ix0; ix <= ix1; ix++) {
+      for (let iy = iy0; iy <= iy1; iy++) {
+        const k = cellKey(ix, iy);
+        const list = grid.get(k);
+        if (list) list.push(e);
+        else grid.set(k, [e]);
+      }
+    }
+  }
+  return { ...r, edges, cell, grid, bands: bandsOf(r, edges) };
+}
+
+// ── The interval arithmetic ──────────────────────────────────────────────────────────────────
+
+/**
+ * Clip `t` so that `p + t·q` lies in `[lo, hi]`, narrowing `[t0, t1]` (Liang–Barsky's step). Returns
+ * the narrowed pair, or `null` when nothing is left.
+ */
+function clip(
+  p: number,
+  q: number,
+  lo: number,
+  hi: number,
+  t0: number,
+  t1: number,
+): [number, number] | null {
+  if (Math.abs(q) < 1e-300) return p < lo || p > hi ? null : [t0, t1];
+  let a = (lo - p) / q;
+  let b = (hi - p) / q;
+  if (a > b) [a, b] = [b, a];
+  const s = Math.max(t0, a);
+  const e = Math.min(t1, b);
+  return s <= e ? [s, e] : null;
+}
+
+/**
+ * The `t ∈ [0, 1]` where `a + t·d` lies within `r` of the segment `c → e` — one interval, since a
+ * capsule is convex: the hull of the line's meeting with the two end disks and the side slab.
+ * Returns `[lo, hi]`, or `null` when the edge never comes that close.
+ */
+export function capsuleInterval(
+  ax: number,
+  ay: number,
+  dx: number,
+  dy: number,
+  cx: number,
+  cy: number,
+  ex: number,
+  ey: number,
+  r: number,
+): [number, number] | null {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  const dd = dx * dx + dy * dy;
+  for (const [px, py] of [
+    [cx, cy],
+    [ex, ey],
+  ] as const) {
+    const fx = ax - px;
+    const fy = ay - py;
+    const b = dx * fx + dy * fy;
+    const c = fx * fx + fy * fy - r * r;
+    const disc = b * b - dd * c;
+    if (disc >= 0) {
+      const s = Math.sqrt(disc);
+      lo = Math.min(lo, (-b - s) / dd);
+      hi = Math.max(hi, (-b + s) / dd);
+    }
+  }
+  const len = Math.hypot(ex - cx, ey - cy);
+  if (len > 0) {
+    const ux = (ex - cx) / len;
+    const uy = (ey - cy) / len;
+    const fx = ax - cx;
+    const fy = ay - cy;
+    const along = clip(
+      fx * ux + fy * uy,
+      dx * ux + dy * uy,
+      0,
+      len,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    );
+    const slab = along && clip(-fx * uy + fy * ux, -dx * uy + dy * ux, -r, r, along[0], along[1]);
+    if (slab) {
+      lo = Math.min(lo, slab[0]);
+      hi = Math.max(hi, slab[1]);
+    }
+  }
+  lo = Math.max(lo, 0);
+  hi = Math.min(hi, 1);
+  return lo <= hi ? [lo, hi] : null;
+}
+
+/** Shorter than this (as a share of an edge) a leftover piece is a rounding artifact, not shore. */
+const PIECE_MIN = 1e-12;
+
+/** `[0, 1]` less the union of `covered` (flat pairs), as flat pairs. */
+function gapsOf(covered: number[]): number[] {
+  if (covered.length === 0) return [0, 1];
+  const pairs: [number, number][] = [];
+  for (let i = 0; i < covered.length; i += 2) {
+    pairs.push([covered[i] as number, covered[i + 1] as number]);
+  }
+  pairs.sort((p, q) => p[0] - q[0]);
+  const out: number[] = [];
+  let at = 0;
+  for (const [s, e] of pairs) {
+    if (s - at > PIECE_MIN) out.push(at, s);
+    if (e > at) at = e;
+  }
+  if (1 - at > PIECE_MIN) out.push(at, 1);
+  return out;
+}
+
+/** The overlap of two sorted, disjoint flat interval lists. */
+function intersect(a: number[], b: number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const s = Math.max(a[i] as number, b[j] as number);
+    const e = Math.min(a[i + 1] as number, b[j + 1] as number);
+    if (e - s > PIECE_MIN) out.push(s, e);
+    if ((a[i + 1] as number) < (b[j + 1] as number)) i += 2;
+    else j += 2;
+  }
+  return out;
+}
+
+// ── The run ──────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Start a run of the rule over one body. `shoreM` defaults to {@link REGION_SHORE_M}; `cache` shares
+ * prepared areas across bodies in the same frame (a long batch run passes one map).
+ */
+export function createReach(body: Geom, opts: { shoreM?: number; cache?: ReachCache } = {}): Reach {
+  const need = opts.shoreM ?? REGION_SHORE_M;
+  const cache = opts.cache;
+  const r = REACH_TOUCH_M;
+  // The frame is for topology only (which side of a line a piece is on); it comes from the body's
+  // latitude *range*, which no vertex order, ring start or closing vertex can move.
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  for (const ring of ringsOf(body)) {
+    for (const p of ring) {
+      const lat = p[1] as number;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
+  }
+  const frame = frameFor(minLat <= maxLat ? (minLat + maxLat) / 2 : 0);
+  const shape = project(body, frame.kx, frame.ky);
+  const edges = edgesOf(shape);
+  const edgeCount = edges.length / 4;
+  // Each edge's ground length from its own endpoints, at its own mid-latitude — no frame in it.
+  const lengths = new Float64Array(edgeCount);
+  let total = 0;
+  for (let i = 0; i < edgeCount; i++) {
+    lengths[i] = groundLength(
+      (edges[i * 4] as number) / frame.kx,
+      (edges[i * 4 + 1] as number) / frame.ky,
+      (edges[i * 4 + 2] as number) / frame.kx,
+      (edges[i * 4 + 3] as number) / frame.ky,
+    );
+    total += lengths[i] as number;
+  }
+  /** Each edge's stretches still outside every area added; `null` is all of it. */
+  const remaining: (number[] | null)[] = new Array(edgeCount).fill(null);
+  /** Meters of shoreline in each area (on its edge included). */
+  const shore = new Map<string, number>();
+
+  function prepared(area: ReachArea): PreparedArea {
+    if (!cache) return prepareArea(area.polygon, frame.kx, frame.ky);
+    const key = `${area.id}@${frame.lat0}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const made = prepareArea(area.polygon, frame.kx, frame.ky);
+    cache.set(key, made);
+    return made;
+  }
+
+  /** The shoreline inside `a` or on its edge, in meters — narrowing `remaining` as it goes. */
+  function measure(a: PreparedArea): number {
+    let inside = 0;
+    const seen = new Uint32Array(a.edges.length / 4);
+    let stamp = 0;
+    const E = a.edges;
+    for (let i = 0; i < edgeCount; i++) {
+      const ax = edges[i * 4] as number;
+      const ay = edges[i * 4 + 1] as number;
+      const bx = edges[i * 4 + 2] as number;
+      const by = edges[i * 4 + 3] as number;
+      const minX = Math.min(ax, bx) - r;
+      const maxX = Math.max(ax, bx) + r;
+      const minY = Math.min(ay, by) - r;
+      const maxY = Math.max(ay, by) + r;
+      if (maxX < a.minX || minX > a.maxX || maxY < a.minY || minY > a.maxY) continue;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const covered: number[] = [];
+      stamp++;
+      const ix1 = Math.floor(maxX / a.cell);
+      const iy1 = Math.floor(maxY / a.cell);
+      for (let ix = Math.floor(minX / a.cell); ix <= ix1; ix++) {
+        for (let iy = Math.floor(minY / a.cell); iy <= iy1; iy++) {
+          const list = a.grid.get(cellKey(ix, iy));
+          if (!list) continue;
+          for (const e of list) {
+            if (seen[e] === stamp) continue;
+            seen[e] = stamp;
+            const hit = capsuleInterval(
+              ax,
+              ay,
+              dx,
+              dy,
+              E[e * 4] as number,
+              E[e * 4 + 1] as number,
+              E[e * 4 + 2] as number,
+              E[e * 4 + 3] as number,
+              r,
+            );
+            if (hit) covered.push(hit[0], hit[1]);
+          }
+        }
+      }
+      const len = lengths[i] as number;
+      const gaps = gapsOf(covered);
+      // On the edge: every covered stretch (the union, so overlapping capsules count once).
+      let off = 0;
+      for (let g = 0; g < gaps.length; g += 2) off += (gaps[g + 1] as number) - (gaps[g] as number);
+      inside += (1 - off) * len;
+      const outside: number[] = [];
+      for (let g = 0; g < gaps.length; g += 2) {
+        const s = gaps[g] as number;
+        const e = gaps[g + 1] as number;
+        const t = (s + e) / 2;
+        if (inside_(a.bands, ax + dx * t, ay + dy * t)) inside += (e - s) * len;
+        else outside.push(s, e);
+      }
+      remaining[i] = intersect(remaining[i] ?? [0, 1], outside);
+    }
+    return inside;
+  }
+
+  return {
+    add(areas) {
+      for (const area of areas) {
+        if (shore.has(area.id)) continue;
+        const a = prepared(area);
+        const far =
+          a.rings.length === 0 ||
+          a.maxX < shape.minX - r ||
+          a.minX > shape.maxX + r ||
+          a.maxY < shape.minY - r ||
+          a.minY > shape.maxY + r;
+        shore.set(area.id, far ? 0 : measure(a));
+      }
+    },
+    result() {
+      const ranked = [...shore.entries()]
+        .filter(([, m]) => m > 0)
+        .sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));
+      const held = ranked.filter(([, m]) => m >= need).map(([id]) => id);
+      if (held.length > 0) return { ids: held, basis: 'shore' };
+      let out = 0;
+      remaining.forEach((pieces, i) => {
+        const len = lengths[i] as number;
+        if (pieces === null) out += len;
+        else
+          for (let k = 0; k < pieces.length; k += 2)
+            out += ((pieces[k + 1] as number) - (pieces[k] as number)) * len;
+      });
+      const first = ranked[0];
+      if (out >= need || first === undefined || total === 0) return { ids: [], basis: 'outside' };
+      return { ids: [first[0]], basis: 'small' };
+    },
+    shore() {
+      return shore;
+    },
+  };
+}
+
+/** The rule over one body and every candidate at once — {@link createReach} with one page. */
+export function areasReached(
+  body: Geom,
+  areas: readonly ReachArea[],
+  opts: { shoreM?: number; cache?: ReachCache } = {},
+): ReachResult {
+  const run = createReach(body, opts);
+  run.add(areas);
+  return run.result();
+}
+
+// ── The town layer's keys ────────────────────────────────────────────────────────────────────
+
+/** A TIGER boundary's `externalId` (`tiger/<GEOID>`) → its GEOID, or `null` for any other key. */
+function geoidOf(externalId: string): string | null {
+  const m = /^tiger\/(\d+)$/.exec(externalId);
+  return m ? (m[1] as string) : null;
+}
+
+/**
+ * A county subdivision's county, as the county row's `externalId` — a subdivision's GEOID is its
+ * state (2), county (3) and subdivision (5) codes, so its first five digits are its county's GEOID.
+ * `null` for a key that is not a subdivision's.
+ */
+export function countyKeyOfSubdivision(externalId: string): string | null {
+  const g = geoidOf(externalId);
+  return g !== null && g.length === 10 ? `tiger/${g.slice(0, 5)}` : null;
+}
+
+/**
+ * TIGER's **"County subdivisions not defined"** — the water units (Lake Ontario's, Massachusetts
+ * Bay's) between towns, subdivision code `00000`. A body reaching into one is in region and in its
+ * county and state, but it is not a town and never listed as one.
+ */
+export function isUndefinedSubdivision(externalId: string): boolean {
+  const g = geoidOf(externalId);
+  return g !== null && g.length === 10 && g.endsWith('00000');
+}
+
+/** The loaded states, by the FIPS code a TIGER GEOID starts with. */
+const STATE_BY_FIPS: Readonly<Record<string, string>> = {
+  '23': 'ME',
+  '25': 'MA',
+  '33': 'NH',
+  '36': 'NY',
+  '50': 'VT',
+};
+
+/** A county subdivision's state (from its GEOID's first two digits), or `null` outside the five. */
+export function stateOfSubdivision(externalId: string): string | null {
+  const g = geoidOf(externalId);
+  return g !== null && g.length === 10 ? (STATE_BY_FIPS[g.slice(0, 2)] ?? null) : null;
+}
+
+/**
+ * **A body's states, from their two ingredients** (D266) — the region rule's answer and the states of
+ * a moderator's pinned towns, unioned and sorted. The one builder every writer of either ingredient
+ * uses, so the two never drift and clearing a pin removes exactly what it added.
+ */
+export function effectiveStates(
+  regionStates: readonly string[],
+  pinnedTownKeys: readonly string[],
+): string[] {
+  const pinned = pinnedTownKeys
+    .map(stateOfSubdivision)
+    .filter((code): code is string => code !== null);
+  return [...new Set([...regionStates, ...pinned])].sort();
+}

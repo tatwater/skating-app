@@ -1,4 +1,4 @@
-import { type ComponentProps, useState } from 'react';
+import { type ComponentProps, useEffect, useState } from 'react';
 
 import { SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
@@ -60,4 +60,17 @@ export function useDraft<T>(value: T): [T, (next: T) => void] {
     setDraft(value);
   }
   return [draft, setDraft];
+}
+
+/**
+ * The instant a tab's clock-bound words are read against, moved on every `everyMs` — an hour for
+ * Standing's lanes (a day is the finest they draw), a day for a link's last-14-days window.
+ */
+export function useTickingNow(everyMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), everyMs);
+    return () => window.clearInterval(id);
+  }, [everyMs]);
+  return now;
 }

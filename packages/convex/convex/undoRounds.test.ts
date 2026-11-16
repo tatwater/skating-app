@@ -140,6 +140,8 @@ async function busyBody(t: T, rows: number, landmarks = true) {
         bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
         centroid: { lat: 44, lng: -72 },
         surfaceAreaSqM: 40_000,
+        // The region rule's answer (D266): an import refuses a record that carries none.
+        states: ['VT'],
       },
     ],
   });
@@ -276,6 +278,7 @@ describe('History’s rounds (B01-3h)', () => {
         bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
         centroid: { lat: 44, lng: -72 },
         surfaceAreaSqM: 40_000,
+        states: ['VT'],
       })),
     } as never);
     await t.run(async (ctx) => {

@@ -32,7 +32,7 @@
 
 /** One state's Geofabrik extract. */
 export interface ExtractSource {
-  /** Two-letter state code, matching the loader's `--state=` tag. */
+  /** Two-letter state code. */
   state: string;
   /** Geofabrik's slug under `north-america/us`. */
   slug: string;

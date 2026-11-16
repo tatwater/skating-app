@@ -26,13 +26,23 @@ import { useRef } from 'react';
 export type ListWriter<T> = {
   /** The server's list, each time a render reads it. */
   observe: (server: readonly T[]) => void;
-  /** Queue a change; resolves `true` once it is saved (or changed nothing), `false` if refused. */
+  /**
+   * Queue a change; resolves `true` once it is saved (or changed nothing), `false` if refused or
+   * dropped because its console went away (`alive`).
+   */
   push: (change: (base: readonly T[]) => readonly T[]) => Promise<boolean>;
 };
 
 export function createListWriter<T>(
   send: (next: readonly T[]) => Promise<boolean>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
+  /**
+   * The console's binding (`frame/currentBody`): checked as a queued change is taken up (and so
+   * before it is sent: nothing async runs between the two) and again before its answer is taken
+   * in, so a queue whose console has gone sends nothing more and says nothing. The binding never
+   * revives.
+   */
+  alive: () => boolean = () => true,
 ): ListWriter<T> {
   let server: readonly T[] = [];
   /**
@@ -49,10 +59,12 @@ export function createListWriter<T>(
     },
     push(change) {
       const run = chain.then(async () => {
+        if (!alive()) return false;
         const base = acked?.list ?? server;
         const next = change(base);
         if (same(next, base)) return true;
         const ok = await send(next);
+        if (!alive()) return false;
         // Already on screen (the echo rendered before the acknowledgment): the server's list is the
         // newest, and its rows carry the ids the page draws. Holding `next` instead would keep
         // building on ids no row has — a row added here, then edited, would change nothing.
@@ -73,6 +85,7 @@ export function useListWriter<T>(
   server: readonly T[],
   send: (next: readonly T[]) => Promise<boolean>,
   same: (a: readonly T[], b: readonly T[]) => boolean = sameList,
+  alive: () => boolean = () => true,
 ): ListWriter<T>['push'] {
   // The latest `send` (its closure holds the latest props), reached through a ref so the writer
   // and its queue outlive renders.
@@ -80,7 +93,7 @@ export function useListWriter<T>(
   sendRef.current = send;
   const writer = useRef<ListWriter<T> | null>(null);
   if (writer.current === null)
-    writer.current = createListWriter<T>((next) => sendRef.current(next), same);
+    writer.current = createListWriter<T>((next) => sendRef.current(next), same, alive);
   writer.current.observe(server);
   return writer.current.push;
 }

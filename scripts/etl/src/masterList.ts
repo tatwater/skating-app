@@ -88,6 +88,7 @@ import {
   saltContainment,
   saltMask,
   statesFor,
+  type TownLayer,
   Union,
 } from './mergeRules';
 import { simplifyForStorage, toCanonicalBody } from './transform';
@@ -496,9 +497,9 @@ export interface MasterListInput {
    */
   elevation?: ReadonlyMap<string, number>;
   /**
-   * The **state** outlines are deliberately not here: `statesFor` runs in `emitCanonicalBodies`,
-   * where the record is built, and nothing in the admission decision reads a state code. Passing a
-   * grid this function never consults would read as though it did.
+   * The **town layer** is deliberately not here: `statesFor` runs in `emitCanonicalBodies`, where
+   * the record is built, and nothing in the admission decision reads a state code. Passing a layer
+   * this function never consults would read as though it did.
    */
   log?: (message: string) => void;
 }
@@ -1119,37 +1120,40 @@ export const EMIT_FAILURE_SAMPLE_CAP = 10;
  * exactly what the first audit found broken (`states` was emitted, declared, and absent from the
  * validator, so every batch would have been rejected).
  */
-export function emitCanonicalBodies(
-  kept: readonly KeptBody[],
-  stateGrid: Map<string, (Boundary & { name: string })[]>,
-): EmitResult {
+export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer): EmitResult {
   const emitted: CanonicalBody[] = [];
   const emittedKeys = new Set<string>();
   const failures = new Map<string, number>();
   const failureKeys: string[] = [];
   for (const k of kept) {
     try {
-      emitted.push(
-        toCanonicalBody({
-          source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          // The arrival key stays the id of whichever catalog drew the outline, so the existing
-          // contour tile stamps keep resolving through one more campaign (D93).
-          externalId: idFromKey(k.key),
-          name: k.name,
-          type: k.cls,
-          geometry: k.polygon,
-          geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          states: statesFor(k, stateGrid),
-          // **Measured on the source geometry, which is the number the floor was decided on.**
-          sourceAreaSqM: k.areaSqM,
-          inRegionFraction: k.inRegionFraction,
-          confidence: k.confidence as never,
-          reviewReasons: k.reviewReasons,
-          nameClaims: k.nameClaims,
-          classClaims: k.classClaims,
-          ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
-        }),
-      );
+      const record = toCanonicalBody({
+        source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+        // The arrival key stays the id of whichever catalog drew the outline, so the existing
+        // contour tile stamps keep resolving through one more campaign (D93).
+        externalId: idFromKey(k.key),
+        name: k.name,
+        type: k.cls,
+        geometry: k.polygon,
+        geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+        // **Measured on the source geometry, which is the number the floor was decided on.**
+        sourceAreaSqM: k.areaSqM,
+        inRegionFraction: k.inRegionFraction,
+        confidence: k.confidence as never,
+        reviewReasons: k.reviewReasons,
+        nameClaims: k.nameClaims,
+        classClaims: k.classClaims,
+        ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
+      });
+      emitted.push({
+        ...record,
+        // **The region rule's answer (D266), on the outline the import stores** — the one the
+        // geometry facts measure, so the record's states and the console's towns come from the same
+        // shoreline (the source outline can put a near-threshold body on the other side of 25 m).
+        // Always present: `[]` is out of region, which the import refuses to insert, and
+        // `toCanonicalBody` drops an empty list — which the loader would refuse as "no states".
+        states: statesFor({ polygon: record.polygon, bbox: record.bbox }, towns),
+      });
       emittedKeys.add(k.key);
     } catch (err) {
       // A body whose geometry defeats the transform is one body, not the run.

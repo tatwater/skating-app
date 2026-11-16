@@ -2,8 +2,8 @@ import { useCallback, useMemo } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { errorText } from '../../adminUi';
 import { type Receipt, useUndo } from '../../shell/undo';
+import { sendFor, useBodyBound } from '../frame/currentBody';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -19,22 +19,23 @@ export function useTabAction(): {
   actInDialog: (write: () => Promise<unknown>, receipt: Receipt) => Promise<string | null>;
 } {
   const { announce } = useUndo();
+  // The console this tab mounted under (`currentBody`): nothing is sent once it has gone, and a
+  // refusal or receipt landing after is dropped.
+  const here = useBodyBound();
   const actInDialog = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<string | null> => {
+      // The one bound write (`sendFor`): nothing sent once the console has gone; a refusal comes
+      // back (in the server's words) only while it is here; the receipt only then too, and its
+      // failure is never a refusal — never a rejection that leaves a reason dialog waiting. The
+      // receipt asks the binding again after its own round trip (`announce`'s `here`).
       try {
-        await write();
+        await sendFor(here, write, () => announce(receipt, here));
+        return null;
       } catch (err) {
-        return errorText(err);
+        return err instanceof Error ? err.message : String(err);
       }
-      try {
-        await announce(receipt);
-      } catch {
-        // The write landed; only its receipt didn't (History keeps the row). Never a refusal,
-        // and never a rejection that leaves a reason dialog waiting on an answer.
-      }
-      return null;
     },
-    [announce],
+    [announce, here],
   );
   const act = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt): Promise<boolean> => {

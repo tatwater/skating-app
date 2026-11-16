@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { MASCOMA_SCENE } from '../frame/bodyFixtures';
+import { MASCOMA_MAP_DATA } from '../tabs/hazards/hazardsFixtures';
+import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
+import { MASCOMA_PASSES } from '../tabs/imagery/imageryFixtures';
+import { imageryMapScene } from '../tabs/imagery/imageryMap';
 import { shapeMapScene } from '../tabs/shape/shapeModel';
 import { drawScene, layerSwitches } from './bodyScene';
-import { glLayerIds } from './glLayers';
+import { glLayerIds, rasterAnchor } from './glLayers';
 
 /**
  * Each tab's scene, with its default rack, leaves its own subject visible under the layer contract
@@ -23,5 +27,44 @@ describe('Shape’s scene keeps its bays visible', () => {
     const bays = drawn.outlines.features.filter((f) => f.properties.style === 'bay');
     expect(bays.length).toBeGreaterThan(0);
     expect(ids.indexOf('body-console-outline-bay')).toBeGreaterThan(fill);
+  });
+});
+
+describe('Imagery’s scene keeps its pass visible', () => {
+  it('draws the lit pass with the Aerial layer on, placed over the body’s opaque fill', () => {
+    // Nothing lit reads as the default band's latest pass: the fixture's rows are all `visual`.
+    const rows = MASCOMA_PASSES.filter((p) => p.band === 'visual');
+    expect(rows.length).toBeGreaterThan(0);
+    const scene = imageryMapScene({ rows, band: 'visual', season: 'winter-2026-27' }, null);
+    const drawn = drawScene(scene, layerSwitches(scene.layers));
+    expect(drawn.raster).not.toBeNull();
+    // The reveal inserts the pass before this layer: above the fill, never under it.
+    const before = rasterAnchor(ids);
+    expect(ids.indexOf(before as string)).toBeGreaterThan(fill);
+  });
+});
+
+describe('Hazards’ scene keeps its fields visible', () => {
+  it('draws each hazard’s dot field, over the body’s opaque fill', () => {
+    const scene = hazardsMapScene(
+      {
+        ...MASCOMA_MAP_DATA,
+        hazards: [
+          {
+            _id: 'h1',
+            type: 'open_water',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [-72.15, 43.63] },
+            radiusMeters: 60,
+            freshness: 'fresh',
+            provisional: false,
+          },
+        ],
+      },
+      null,
+    );
+    const drawn = drawScene(scene, layerSwitches(scene.layers));
+    expect(drawn.dots.features.length).toBeGreaterThan(0);
+    expect(ids.indexOf('body-console-field-dots')).toBeGreaterThan(fill);
   });
 });

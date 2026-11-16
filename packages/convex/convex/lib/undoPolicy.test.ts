@@ -53,6 +53,14 @@ describe('the undo registry (D226)', () => {
     expect(UNDO_POLICY.set_posting_permission.takesAway(true)).toBe(false);
     expect(UNDO_POLICY.set_standing.takesAway('dormant')).toBe(true);
     expect(UNDO_POLICY.set_standing.takesAway('active')).toBe(false);
+    // Pins: any pin dropped takes away, a swap included; only adding (or reordering) gives.
+    const pins = UNDO_POLICY.set_moderator_towns.takesAway;
+    expect(pins({ from: ['a', 'b'], to: ['a'] })).toBe(true);
+    expect(pins({ from: ['a'], to: ['b'] })).toBe(true);
+    expect(pins({ from: ['a'] })).toBe(true);
+    expect(pins({ from: ['a'], to: ['a', 'b'] })).toBe(false);
+    expect(pins({ from: ['a', 'b'], to: ['b', 'a'] })).toBe(false);
+    expect(pins()).toBe(false);
     expect(UNDO_POLICY.set_satellite_imagery.takesAway('off')).toBe(true);
     expect(UNDO_POLICY.set_satellite_imagery.takesAway('auto')).toBe(false);
     expect(UNDO_POLICY.demote_body.takesAway('active')).toBe(false);

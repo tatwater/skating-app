@@ -86,6 +86,7 @@ async function imported(
     bodies: [
       {
         source: 'osm',
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name: 'Mirror Lake',

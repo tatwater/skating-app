@@ -162,7 +162,7 @@ export const backfillOutlines = internalMutation({
   },
 });
 
-/** Whether a re-imported boundary differs in anything `bodyGeo.placesFrom` reads. */
+/** Whether a re-imported boundary differs in anything a body's places are computed from (`bodyGeo`). */
 function areaPlacesMoved(
   existing: Pick<Doc<'adminAreas'>, 'name' | 'level' | 'state' | 'bbox' | 'polygon'>,
   item: Pick<Doc<'adminAreas'>, 'name' | 'level' | 'state' | 'bbox' | 'polygon'>,
@@ -276,36 +276,6 @@ export async function resolvePlaceForCoord(
   const stateCode = town?.state ?? county?.state ?? state?.state;
   if (stateCode) place.state = stateCode;
   return place.town || place.county || place.state ? place : undefined;
-}
-
-/** How many points along a body's shore the places are read at, beside its interior point (`bodyGeo`). */
-export const TOWN_SAMPLE_POINTS = 12;
-
-/**
- * The points a body's places are read at: its interior point first (the town it is "in"), then up
- * to {@link TOWN_SAMPLE_POINTS} vertices spaced evenly along the outer ring of its largest polygon.
- */
-export function placeSamplePoints(
-  body: Pick<Doc<'waterBodies'>, 'polygon' | 'interiorPoint' | 'representativePoint' | 'centroid'>,
-): { lat: number; lng: number }[] {
-  const first = body.interiorPoint ?? body.representativePoint ?? body.centroid;
-  const geom = body.polygon as unknown as Polygon | MultiPolygon;
-  const polys =
-    geom.type === 'Polygon'
-      ? [geom.coordinates]
-      : geom.type === 'MultiPolygon'
-        ? geom.coordinates
-        : [];
-  const ring = polys.map((p) => p[0] ?? []).sort((a, b) => b.length - a.length)[0] ?? [];
-  // A closed ring repeats its first vertex last.
-  const open = ring.length > 1 ? ring.slice(0, -1) : ring;
-  const step = Math.max(1, open.length / TOWN_SAMPLE_POINTS);
-  const shore: { lat: number; lng: number }[] = [];
-  for (let i = 0; i < open.length && shore.length < TOWN_SAMPLE_POINTS; i += step) {
-    const p = open[Math.floor(i)];
-    if (p !== undefined && p.length >= 2) shore.push({ lng: p[0] as number, lat: p[1] as number });
-  }
-  return [first, ...shore];
 }
 
 /**

@@ -792,6 +792,23 @@ export default defineSchema({
      */
     moderatorAliases: v.optional(v.array(v.string())),
     /**
+     * **The towns a moderator holds this body in** (B01-3g, D266) — stable boundary keys
+     * (`tiger/<GEOID>`, so a boundary reload never orphans them), at most eight. The founder's
+     * determination outranks the region rule: the facts list these towns whatever the shoreline
+     * measure says, and an import adds their states and never reads the body as out of region.
+     * Written only by `setModeratorTowns`, its undo, and a merge (which moves them to the survivor);
+     * an import, the facts computation and the drift repair never touch it.
+     */
+    moderatorTownKeys: v.optional(v.array(v.string())),
+    /**
+     * **The region rule's states, kept apart from the pins** (B01-3g) — the import's answer, so
+     * `states` (the one every reader uses) is always rebuilt from the two ingredients
+     * (`regionStatesFields`): clearing a pin removes exactly the state it added and nothing the rule
+     * found. Written by every import and pin write; absent only on a row neither has touched since,
+     * whose `states` are then wholly the rule's (`ruleStatesOf`).
+     */
+    regionStates: v.optional(v.array(v.string())),
+    /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalized on every name write, never set by a client, same shape and same
@@ -2008,14 +2025,15 @@ export default defineSchema({
 
   // Administrative-boundary polygons for point→place labels (Phase 05). A report's `point` (put-in
   // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
-  // `reports.place` at create. Imported from the same per-state OSM extracts as the water ETL
-  // (`boundary=administrative`, admin_level 4/6/7–8; same ODbL). Reused by GPS (Phase 08) + hazards
-  // (Phase 09a). Small (5 states of towns/counties ≈ single-digit thousands of rows).
+  // `reports.place` at create. TIGER/Line 2024 states, counties and county subdivisions (the town
+  // layer, simplified to ~5 m), loaded by `scripts/admin-areas`; the subdivisions also decide a
+  // body's towns, counties, states and region membership (D266). Reused by GPS (Phase 08) + hazards
+  // (Phase 09a). Small (5 states: 2,546 rows on dev).
   adminAreas: defineTable({
     name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
     level: literals(ADMIN_AREA_LEVELS), // admin granularity
     state: v.string(), // 2-letter code, denormalized onto the label
-    externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
+    externalId: v.string(), // `tiger/<GEOID>` — the upsert key; a subdivision's GEOID starts with its county's
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
     /** Representative interior point; display/debug only, never a lookup key (A01). */
@@ -5195,6 +5213,24 @@ export default defineSchema({
     townEntries: v.optional(
       v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
     ),
+    /**
+     * **A moderator's pinned towns** (B01-3g), kept apart from the computed ones — rebuilt in the same
+     * transaction as every write of the pins (`lib/bodyGeo.ts` `refreshPinnedFacts`) and by each
+     * recompute, so the readers (`placesOf`, which merges them in) never show the pins as they were.
+     */
+    pinnedTowns: v.optional(
+      v.array(
+        v.object({
+          key: v.string(),
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          county: v.optional(v.string()),
+        }),
+      ),
+    ),
+    /** Keys a moderator pinned that name no loaded town now — shown, never silently dropped. */
+    pinnedMissing: v.optional(v.array(v.string())),
     counties: v.optional(v.array(v.string())),
     states: v.optional(v.array(v.string())),
     attempts: v.optional(v.number()),
@@ -5203,6 +5239,11 @@ export default defineSchema({
     retriedAt: v.optional(v.number()),
     /** The newest places-layer mark (`geoInputMarks`) the places were computed under. */
     areasAt: v.optional(v.number()),
+    /**
+     * The rule the places were computed by (`lib/bodyGeo.ts` `PLACES_RULE`, D266): absent on a row
+     * whose places were read at sampled points, which no read shows as the answer.
+     */
+    placesRule: v.optional(v.number()),
     /** When the drift repair last checked this row's inputs against the stored answer. */
     checkedAt: v.optional(v.number()),
   })

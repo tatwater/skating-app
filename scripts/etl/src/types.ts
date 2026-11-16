@@ -50,9 +50,9 @@ export interface CanonicalBody {
   /** Whose outline `polygon` is (D92); absent means "the same as `source`". */
   geometrySource?: 'osm' | 'nhd' | '3dhp' | 'user';
   /**
-   * The states this body touches, when the producer knows. The OSM lane leaves it unset and the
-   * loader's `--state` flag tags the batch; the merge computes it per body against the admin-area
-   * mask, because a merged corpus is loaded in one pass and has no per-state batches to tag.
+   * The states this body is in — the merge's region rule (D266, `statesFor`), always present on a
+   * merged record: `[]` is out of region. Absent means the producer never decided, and the loader
+   * refuses the file (the OSM lane leaves it unset, and there is no `--state` tag any more).
    */
   states?: string[];
   name: string;

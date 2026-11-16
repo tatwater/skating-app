@@ -432,16 +432,25 @@ function LocationSection({ data }: { data: NamesData }) {
             ),
           )}
         </KeyValueRow>
-        <KeyValueRow label="County">
-          {fromBoundaries(
-            (a) =>
-              a.county ?? (
-                // Every town lies in a county: towns without one is a gap in the record, not a
-                // body in no county (the county is sampled at the interior point only).
-                <span className="text-fg3">
-                  {a.towns.length > 0 ? NOT_RECORDED : 'In no county'}
-                </span>
-              ),
+        <KeyValueRow
+          label={
+            typeof admin === 'object' && !isFailed(admin) && admin.counties.length > 1
+              ? 'Counties'
+              : 'County'
+          }
+        >
+          {fromBoundaries((a) =>
+            a.counties.length > 0 ? (
+              <span className="flex flex-col gap-(--space-1_5)">
+                {a.counties.map((c) => (
+                  <span key={c}>{c}</span>
+                ))}
+              </span>
+            ) : (
+              // Every town lies in a county: towns without one is a gap in the record, not a body in
+              // no county.
+              <span className="text-fg3">{a.towns.length > 0 ? NOT_RECORDED : 'In no county'}</span>
+            ),
           )}
         </KeyValueRow>
         <KeyValueRow label={states.length > 1 ? 'States' : 'State'}>

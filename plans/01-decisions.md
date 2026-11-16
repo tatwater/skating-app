@@ -8119,3 +8119,25 @@ the log has to plan for; and a reason is a line of accountability, not a documen
 
 **Related:** D226, D257, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
+## D266 — A body is in a town when 25 m of its shoreline is; states and region follow (B01)
+
+**2026-11-15, built in B01-3g.** Region membership, a body's towns, counties and states came from
+three rules: the merge tested 256 sampled points against the state outlines, the import filled a
+missing answer from the loader's `--state` tag, and the geometry facts read 13 sampled points. Seven
+bodies outside the five states carried a state; a big lake listed a third of its towns.
+
+**The rule.** A body is in a loaded town (a TIGER county subdivision) when at least 25 m of its
+shoreline — every ring, clipped exactly, measured on the ground — lies inside it; a shore on a town's
+edge counts for both sides; open water alone lists no town; a body with less than 25 m outside every
+town and none holding 25 m is in the town holding the most of its shore. In region means in at least
+one loaded town; states follow from the towns, counties from each town's GEOID. One function
+(`@skating/core` `createReach`) answers it for the merge and the facts. The import takes `states`
+from the record alone: absent throws, empty is out of region (a new body not inserted, a stored one
+kept and named). A moderator's pinned towns (`moderatorTownKeys`) outrank the rule.
+
+**Why:** the question is access from the land — whether a put-in can be in the state — so the founder
+set the measure as shoreline, not reach; one rule on one layer means the merge, the import and the
+console cannot disagree; a missing answer must fail loudly, never read as a corpus out of region.
+
+**Related:** D48, D226, [`phase-B01`](./phases/B01-admin-console.md) *The region rule (B01-3g)*.
+

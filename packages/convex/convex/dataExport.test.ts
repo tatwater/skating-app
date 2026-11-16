@@ -75,6 +75,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
     bodies: [
       {
         source: 'osm' as const,
+        states: ['VT'],
         externalId: 'osm/export-1',
         osmId: 'osm/export-1',
         name: 'Shelburne Pond',

@@ -18,8 +18,9 @@
  * - the body writers found are exactly the inventory below, so a new one fails until it is read and
  *   listed.
  *
- * Writers that change no ingredient need nothing: a merge moves no names (a merged-away duplicate's
- * names find its survivor at search time), and a removal or rejection leaves the names and is
+ * Writers that change no ingredient need nothing: a merge moves no catalog names (a merged-away
+ * duplicate's names find its survivor at search time) — it carries only a moderator's aliases, and
+ * rebuilds the survivor's text when it does — and a removal or rejection leaves the names and is
  * filtered by standing at search time.
  *
  * **What it can't see:** a write whose fields arrive through a variable or a spread other than
@@ -38,6 +39,7 @@ const BODY_WRITERS: Record<string, string> = {
   'waterBodies.ts:importCanonical': 'the import, insert and re-import (through `nameFields`)',
   'waterBodies.ts:create': 'a body a skater drew',
   'waterBodies.ts:setAliasesImpl': 'a moderator’s aliases, and their undo',
+  'waterBodies.ts:mergeBodyInto': 'a merge, carrying the loser’s aliases to its survivor (B01-3g)',
   'waterBodies.ts:setWaterBodyNameImpl': 'the name override, its clear and its undo',
   'waterBodies.ts:writeSearchTextOne': 'the repair pass’s item',
   'corpusRequests.ts:admitCandidate': 'a catalog body admitted on a skater’s request',

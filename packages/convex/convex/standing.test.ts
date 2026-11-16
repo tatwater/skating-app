@@ -112,6 +112,7 @@ function canonical(externalId: string, name = 'Lake Morey', over: Record<string,
     bbox: VIEWPORT,
     centroid: { lat: 0.5, lng: 0.5 },
     surfaceAreaSqM: 1_000_000,
+    states: ['VT'],
     ...over,
   };
 }
