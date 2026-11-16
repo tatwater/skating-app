@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   AlertDialog,
@@ -62,9 +62,10 @@ export function ReasonAsk({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // This opening of the dialog: a send's answer acts only on the opening that sent it. The dialog
-  // going (its page left) ends every opening.
+  // going (its page left) ends every opening — at the commit that removes it (a layout effect, as
+  // `useBodyHold`), never a passive cleanup that runs later with the dialog already off screen.
   const opening = useRef(0);
-  useEffect(
+  useLayoutEffect(
     () => () => {
       opening.current++;
     },

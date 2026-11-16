@@ -15,7 +15,7 @@ import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
 import { notSavedWhat, PICK_WHAT } from '../consoleWords';
-import { useLatestPick } from '../tabs/latestPick';
+import { outcomeOf, useLatestPick } from '../tabs/latestPick';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
 import {
   historyHead,
@@ -307,11 +307,8 @@ function BoostSlider({
   const record = tenth(Math.min(1, Math.max(0, value)));
   const hold = useBodyHold();
   const pick = useLatestPick<number>(`boost:${bodyId}`, record, {
-    // The boost's write path says its own refusal, in place or naming the body, and answers `false`.
-    send: async (next) =>
-      (await onCommit?.(next, hold)) === false
-        ? { landed: false, why: '', said: true }
-        : { landed: true },
+    // The boost's write path says its own refusal, naming the body, and answers `false`.
+    send: (next) => outcomeOf(() => onCommit?.(next, hold)),
     say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.boost, why)),
   });
   // Under the hand while it drags; the pick's value once it's let go, or once that moves.

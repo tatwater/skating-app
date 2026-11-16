@@ -44,7 +44,7 @@ import { notSavedWhat, PICK_WHAT } from '../../consoleWords';
 import { dayMonth } from '../../frame/bodyModel';
 import { sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
-import { useLatestPick } from '../latestPick';
+import { outcomeOf, useLatestPick } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -196,15 +196,7 @@ export function ImageryTabView({
     {
       // Refused here, the write path throws the server's words for this control to say in place;
       // refused off its page, it has said it already and answers `false`.
-      send: async (mode) => {
-        try {
-          return (await onSatelliteChange?.(mode)) === false
-            ? { landed: false, why: '', said: true }
-            : { landed: true };
-        } catch (err) {
-          return { landed: false, why: err instanceof Error ? err.message : String(err) };
-        }
-      },
+      send: (mode) => outcomeOf(() => onSatelliteChange?.(mode)),
       say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.satellite, why)),
       inPlace: true,
     },

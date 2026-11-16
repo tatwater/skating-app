@@ -16,6 +16,7 @@ import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
+import { PICK_WHAT } from '../../consoleWords';
 import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
@@ -177,7 +178,7 @@ function ImageryReads(props: BodyTabProps) {
                     target: { targetType: 'waterbody', targetId: waterBodyId },
                     subject,
                   }),
-                what: 'The satellite link',
+                what: PICK_WHAT.satellite,
               }),
           }
         : {})}

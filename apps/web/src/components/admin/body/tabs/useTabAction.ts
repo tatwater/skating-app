@@ -5,7 +5,7 @@ import { toast } from '@/components/kit/toast';
 import { type Receipt, useUndo } from '../../shell/undo';
 import { notSavedWhat } from '../consoleWords';
 import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../frame/currentBody';
-import type { PickOutcome } from './latestPick';
+import { type PickOutcome, SAID } from './latestPick';
 
 /**
  * How the Body console's tabs run a write: the mutation, then the receipt toast with Undo while the
@@ -15,6 +15,8 @@ import type { PickOutcome } from './latestPick';
  *   when the write landed.
  * - **`actInDialog`**, from a reason dialog: a refusal comes back as the server's words for the
  *   dialog to show over the kept reason (`null` when it landed), so nothing is typed twice.
+ * - **`attempt`**, a press-to-save control's write (`useLatestPick`): its outcome in the store's one
+ *   shape, saying nothing itself; **`sayRefused`** is the page's words for one no one else can say.
  */
 export function useTabAction(bodyId: string): {
   act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
@@ -74,9 +76,7 @@ export function useTabAction(bodyId: string): {
     async (write: () => Promise<unknown>, receipt: Receipt, what: string): Promise<PickOutcome> => {
       const { landed, refused } = await run(write, receipt, what);
       if (landed) return { landed: true };
-      return refused !== null
-        ? { landed: false, why: refused }
-        : { landed: false, why: '', said: true };
+      return refused !== null ? { landed: false, why: refused } : SAID;
     },
     [run],
   );

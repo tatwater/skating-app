@@ -17,7 +17,13 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
-import { LINK_EDITED_AWAY, LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
+import {
+  LINK_EDITED_AWAY,
+  LINKS_GONE,
+  LINKS_KEPT_MOVING,
+  LINKS_WHAT,
+  notSavedWhat,
+} from '../../consoleWords';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListMemory, useListWriter } from '../listWriter';
 import {
@@ -291,7 +297,11 @@ export function LinksTabView({
           unseen.current = [...unseen.current, rebuilt];
           return { current: rebuilt };
         }
-        setSaveError(err instanceof Error ? err.message : String(err));
+        // Thrown while the tab that sent it is here — but this view may have gone without it (the
+        // body's read failing, or going unavailable): said in place only while it is here.
+        const said = err instanceof Error ? err.message : String(err);
+        if (hold.here()) setSaveError(said);
+        else sayNotSaved(hold, notSavedWhat(LINKS_WHAT, said));
         return false;
       }
     },

@@ -7,6 +7,7 @@ import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/cons
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
+import { LINKS_WHAT } from '../../consoleWords';
 import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
@@ -84,7 +85,7 @@ function LinksReads({ bodyId: id }: BodyTabProps) {
               target: { targetType: 'waterbody', targetId: bodyId },
               subject,
             }),
-          what: 'The links',
+          what: LINKS_WHAT,
         })
       }
     />

@@ -33,6 +33,9 @@ export const OTHER_BODY = 'Not saved: this page now shows another body. Open it 
 
 // ── The whole-list queue gave up ──────────────────────────────────────────────────────────────
 
+/** What a links save's refusal names, said off its page ("The links: …"). */
+export const LINKS_WHAT = 'The links';
+
 /** A links change (an edit, a remove, an order) whose links another moderator changed meanwhile. */
 export const LINKS_GONE =
   'Another moderator changed these links while yours was saving, so your change no longer applies to them. It wasn’t saved.';

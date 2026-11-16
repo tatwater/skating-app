@@ -611,6 +611,27 @@ describe('Access: a reason’s dialog', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('confirmed after another moderator already ruled the same, its dialog gone with the tab still here, refused: said once', async () => {
+    const user = userEvent.setup();
+    CASES[2]?.setup();
+    const { rerender } = render(<AccessTab bodyId="wb1" />);
+    await user.click(screen.getByRole('button', { name: 'Rule no public access' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Posted all round');
+    setRecord({ publicAccess: { verdict: 'none', decidedAt: Date.now() } });
+    rerender(<AccessTab bodyId="wb1" />);
+    await user.click(within(dialog).getByRole('button', { name: 'Rule no public access' }));
+    expect(mocks.calls).toHaveLength(1);
+    // The body's record goes away while the write is out: the tab stays, its ruling — and the
+    // dialog that asked — go.
+    mocks.results.set(GET, { available: false });
+    rerender(<AccessTab bodyId="wb1" />);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await act(async () => refuse());
+    await settle();
+    expect(toasts).toEqual([expect.objectContaining({ description: 'The ruling: Not allowed' })]);
+  });
+
   it('confirmed behind a press on its way, it is sent after it, and the last press stands', async () => {
     const user = userEvent.setup();
     CASES[2]?.setup();

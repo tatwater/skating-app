@@ -5,6 +5,7 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -23,8 +24,8 @@ import { notSavedTitle, notSavedWhat, OTHER_BODY } from '../consoleWords';
  *   above the consoles (`ListWritersProvider`), per body, so a queued one goes out too.
  * - **A result is said honestly.** A receipt always names its body ("Links saved · Mascoma Lake"),
  *   so its Undo is unambiguous on any page. A refusal is said in place while the console that sent
- *   it is on screen; once that console has gone, it is a toast naming the body and what failed —
- *   never swallowed.
+ *   it is on screen and the part that sent it is still mounted; once either has gone, it is a toast
+ *   naming the body and what failed — never swallowed.
  * - **A missed reset still can't write.** A subtree holds the binding of the console it mounted
  *   under; a write that names another body than that one (a subtree that kept a draft across a body
  *   change) is refused, loudly.
@@ -85,22 +86,23 @@ export type BodyHold = {
 export function useBodyHold(): BodyHold {
   const current = useContext(BindingContext);
   const [held] = useState(current);
-  const [mounted] = useState(() => ({ now: false }));
+  // Set at the commit that mounts or removes the holder (a layout effect), never later.
+  const mounted = useRef(false);
   useLayoutEffect(() => {
-    mounted.now = true;
+    mounted.current = true;
     return () => {
-      mounted.now = false;
+      mounted.current = false;
     };
-  }, [mounted]);
+  }, []);
   return useMemo(
     () => ({
-      here: () => mounted.now && (held === null || held.alive),
+      here: () => mounted.current && (held === null || held.alive),
       body: held?.body ?? null,
       get subject() {
         return held?.name;
       },
     }),
-    [held, mounted],
+    [held],
   );
 }
 
@@ -128,8 +130,9 @@ export function sayNotSaved(hold: BodyHold, description: string): void {
 /**
  * **The one write path.** `body` is the body the write names; `what` says what it was ("The links",
  * "The ruling"), for a refusal said off the console. Sends unless the write names another body than
- * the console's own; a refusal is thrown (in the server's words) while that console is on screen —
- * for the caller to say in place — and otherwise put in a toast naming the body; a list that moved
+ * the console's own; a refusal is thrown (in the server's words) while `hold` is here (its console on
+ * screen, its holder mounted) — for the caller to say in place — and otherwise put in a toast naming
+ * the body; a list that moved
  * underneath is thrown as it came, for the queue to re-apply; the receipt follows a landed write
  * wherever the page is, naming its body, and its failure is never a refusal.
  *

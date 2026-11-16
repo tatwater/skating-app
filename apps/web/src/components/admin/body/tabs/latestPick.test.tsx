@@ -6,10 +6,12 @@ import { describe, expect, it } from 'vitest';
 import {
   type Asker,
   createPickStore,
+  outcomeOf,
   type PickOutcome,
   type PickSend,
   type PickStore,
   PickStoreContext,
+  SAID,
   useLatestPick,
 } from './latestPick';
 
@@ -126,6 +128,22 @@ describe('the pick store — the latest press wins', () => {
     expect([silent, words, one]).toHaveLength(3);
   });
 
+  it('a sendFor-shaped write in the one shape: `false` said, a throw the words, else landed', async () => {
+    expect(await outcomeOf(async () => false)).toBe(SAID);
+    expect(await outcomeOf(async () => true)).toEqual({ landed: true });
+    expect(await outcomeOf(() => undefined)).toEqual({ landed: true });
+    expect(
+      await outcomeOf(async () => {
+        throw new Error('Not allowed');
+      }),
+    ).toEqual({ landed: false, why: 'Not allowed' });
+    expect(
+      await outcomeOf(() => {
+        throw 'plain';
+      }),
+    ).toEqual({ landed: false, why: 'plain' });
+  });
+
   it('a refusal its write path already said is said by no one else', async () => {
     const h = harness();
     const heard = h.store.press(
@@ -210,6 +228,8 @@ describe('the pick store — the latest press wins', () => {
     let refusals = 0;
     let heardByAsker = 0;
     let heardInPlace = 0;
+    // A refusal handed to an audience no longer there: the asker gone, or a page that has left.
+    let misheard = 0;
     // Body a's control says refusals in place while mounted; body b's has no place to say one.
     const pages: Record<B, (() => void) | null> = { a: null, b: null };
     const askers: Record<B, { alive: boolean }[]> = { a: [], b: [] };
@@ -247,9 +267,10 @@ describe('the pick store — the latest press wins', () => {
         );
         void sent?.then((outcome) => {
           if (outcome !== undefined && !outcome.landed && outcome.said !== true) {
-            // Heard by the asker: it was there.
-            expect(o.asked && asker.alive).toBe(true);
-            heardByAsker++;
+            // Heard by the asker: it was there. (Counted, never asserted here: an `expect` thrown in
+            // a detached callback is an unhandled rejection, not a counterexample fast-check sees.)
+            if (o.asked && asker.alive) heardByAsker++;
+            else misheard++;
           }
         });
         presses[o.body].push(o.value);
@@ -269,8 +290,8 @@ describe('the pick store — the latest press wins', () => {
             change: () => {},
             ...(o.body === 'a' && {
               error: () => {
-                expect(pages.a).not.toBeNull();
-                heardInPlace++;
+                if (pages.a !== null) heardInPlace++;
+                else misheard++;
               },
             }),
           });
@@ -297,7 +318,8 @@ describe('the pick store — the latest press wins', () => {
     await settle();
     expect(h.held).toHaveLength(0);
     expect(h.store.size()).toBe(0);
-    // Every refusal, exactly one audience.
+    // Every refusal, exactly one audience — and that one still there.
+    expect(misheard).toBe(0);
     expect(heardByAsker + heardInPlace + h.said.page + h.said.path).toBe(refusals);
     for (const b of ['a', 'b'] as const) {
       // Press order: what the server received is the presses, in order, some skipped.

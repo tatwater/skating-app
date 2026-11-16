@@ -143,7 +143,15 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
               if (sent !== null) return forDialog(await sent);
               // The verdict already shows (another moderator's ruling landed while the dialog was
               // open): a confirmed reason is still sent, never dropped as though it were saved.
-              return reason === undefined ? null : forDialog(await send(verdict, reason));
+              if (reason === undefined) return null;
+              const outcome = await send(verdict, reason);
+              // Off the queue, so said here as the queue would: its dialog gone (the tab still
+              // here), the page says it once — never handed to a dialog no one can see.
+              if (!outcome.landed && outcome.said !== true && asker?.here() !== true) {
+                sayRefused(PICK_WHAT.ruling)(outcome.why);
+                return null;
+              }
+              return forDialog(outcome);
             }
           : undefined
       }

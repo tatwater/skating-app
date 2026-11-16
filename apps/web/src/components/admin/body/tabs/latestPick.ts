@@ -31,6 +31,21 @@ import { createContext, useCallback, useContext, useState, useSyncExternalStore 
 /** Every answer a write gives the store. `said`: refused, and already said by the write path. */
 export type PickOutcome = { landed: true } | { landed: false; why: string; said?: boolean };
 
+/** Refused, and already said by the write path (`sendFor` off its page, naming the body). */
+export const SAID: PickOutcome = Object.freeze({ landed: false, why: '', said: true });
+
+/**
+ * A `sendFor`-shaped write in the one shape: `false` is a refusal its path has already said; a throw
+ * is the server's words, for the store to hand to whoever is still there; anything else landed.
+ */
+export async function outcomeOf(write: () => unknown): Promise<PickOutcome> {
+  try {
+    return (await write()) === false ? SAID : { landed: true };
+  } catch (err) {
+    return { landed: false, why: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** The opening that asked for a press (a reason dialog): its answer is its own while it is there. */
 export type Asker = { here: () => boolean };
 

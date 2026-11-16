@@ -156,6 +156,35 @@ describe('LinksTab', () => {
     ]);
   });
 
+  it('a refusal that lands after its view has gone, the tab still here, is said once in a toast', async () => {
+    convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
+    let refuse: () => void = () => {};
+    convex.mutations.set(
+      'waterBodies:setReferenceLinks',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('A body carries at most 8 reference links'));
+          }),
+      ),
+    );
+    const { rerender } = render(<LinksTab bodyId={BODY} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // The body goes unavailable while the save is out: the tab stays, its view goes.
+    convex.results.set('waterBodies:get', { available: false });
+    rerender(<LinksTab bodyId={BODY} />);
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    await act(async () => refuse());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(toasts).toEqual([
+      expect.objectContaining({
+        description: 'The links: A body carries at most 8 reference links',
+      }),
+    ]);
+  });
+
   it('an editor open on one body never opens on the next body’s link', async () => {
     convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
     const { rerender } = render(<LinksTab bodyId={BODY} />);

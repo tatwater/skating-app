@@ -342,7 +342,8 @@ export function useBoostCommit(
     (value: number, hold: BodyHold) => {
       const rounded = Math.round(value * 10) / 10;
       // The one write path (`currentBody`): the boost runs to its end against this body; its
-      // receipt names the body; a refusal is said here while the console is on screen.
+      // receipt names the body; a refusal is a toast naming the body and what wasn't saved,
+      // whether the slider is still here or not.
       return sendFor(hold, {
         body: bodyId,
         write: () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
