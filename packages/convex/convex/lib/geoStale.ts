@@ -8,8 +8,8 @@
  *   one with no facts row yet is marked here. Nothing else is marked by a re-cell (B01-3c, the
  *   coordinator's ruling): a standing, listing or prominence change moves cells, not geometry, so a
  *   rollover never sends an unchanged body back;
- * - `importCanonical` — an outline whose stamp changed (`outlineStamp`), or a moved interior point
- *   (`placePointMoved`);
+ * - `importCanonical` — an outline whose stamp changed (`outlineStamp`) — the places come from the
+ *   outline alone (D266), so the interior point no longer marks anything;
  * - a merge and a deletion (`mergeBodyInto`, the two campaign prunes) — the merged-away or deleted
  *   body, whose facts the store then drops, fanning out to every body holding its outline;
  * - `noteAdminAreasChanged` — the places layer: `adminAreas.importCanonical` when a boundary is new

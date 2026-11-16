@@ -24,6 +24,7 @@
 
 import {
   type AttributeClaim,
+  areasReached,
   assertsOceanOrGreatLake,
   type BBox,
   bboxIntersects,
@@ -42,7 +43,9 @@ import {
   pointInPolygon,
   polygonBBox,
   polygonIoU,
+  REACH_PAD_DEG,
   RECONCILE_MIN_IOU_WITH_GNIS,
+  type ReachCache,
   surfaceAreaSqM,
   type WaterBodyClass,
 } from '@skating/core';
@@ -2273,90 +2276,77 @@ export function catalogIdsOf(
   return out;
 }
 
-/** The five states we cover, by the name their TIGER boundary carries. */
-export const STATE_CODE_BY_NAME: Readonly<Record<string, string>> = {
-  Maine: 'ME',
-  'New Hampshire': 'NH',
-  Vermont: 'VT',
-  Massachusetts: 'MA',
-  'New York': 'NY',
-};
+/** One loaded town (a TIGER county subdivision, as `adminAreas` holds it), for the region rule. */
+export interface TownRow {
+  readonly externalId: string;
+  readonly name: string;
+  /** Two-letter code. */
+  readonly state: string;
+  readonly bbox: BBox;
+  readonly polygon: Polygon | MultiPolygon;
+}
 
-/**
- * Every state this body touches — **all of them, not the first.**
- *
- * A border-spanning body belongs to each state it reaches: Champlain is in both VT and NY, and
- * filtering "lakes in Vermont" must find it. The OSM lane got this for free by importing one state
- * extract at a time and letting `importCanonical` union a `--state` tag per batch; a merged corpus
- * is loaded in a single pass, so there are no per-state batches and the answer has to be computed
- * here instead.
- *
- * Tested against **state-level** boundaries only. The region mask is built from counties and towns
- * because those are the finer, more reliable outlines, but a county does not know its state's code —
- * so this is a second, coarser pass over a different set, and a body that clears the mask can still
- * come back empty here if it sits in a gap between two state polygons. An empty result is left empty
- * rather than guessed: a wrong state code is worse than a missing one, because it silently moves a
- * lake into someone else's region filter.
- */
-export function statesFor(
-  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
-  stateGrid: Map<string, (Boundary & { name: string })[]>,
-): string[] {
-  // **One dense pass over the whole outline, and no tiering** — see `STATE_SAMPLE_POINTS`.
-  return [
-    ...collectStates(sampleOutlineDense(body.polygon, STATE_SAMPLE_POINTS), stateGrid),
-  ].sort();
+/** The loaded towns, indexed by cell, with the region rule's shared cache of prepared towns. */
+export interface TownLayer {
+  readonly grid: Map<string, TownRow[]>;
+  readonly cache: ReachCache;
+  readonly states: ReadonlySet<string>;
+  readonly size: number;
 }
 
 /**
- * Points sampled around a body's outline to decide which states it touches.
- *
- * ## Why this replaced a two-tier escalation, and what the measurement said
- *
- * This used to take `REGION_SAMPLE_POINTS` (eight) *per ring* and then escalate to every vertex only
- * when the sample found **nothing** — the "belongs to no state" case D116 fixed. That fixed half of
- * it. A sparse `[NY]` is exactly as unproven as a sparse `[]`: eight points that all land in New York
- * say nothing about the 3% of the outline sitting in Vermont, and the body is then admitted carrying
- * one state and invisible in the other one's filter. Same failure, one state along.
- *
- * Measured against the loaded corpus: **7 bodies**, and not obscure ones — `Province Lake` is 976
- * acres on the ME/NH line and was stored as New Hampshire's alone.
- *
- * **The obvious fix was to escalate on incompleteness, and measuring it is what killed that.** The
- * state grid indexes each boundary across its whole *bounding box*, so a body in western
- * Massachusetts counts New York as reachable: **29.4% of the corpus (7,359 bodies) would escalate**,
- * each one then tested vertex-by-vertex against outlines that run to 34,000 vertices at TIGER
- * fidelity. A correctness fix that turns the emit stage quadratic is not a fix.
- *
- * **So: one bounded dense pass, which is what every other fraction-valued question here already
- * does** (`inRegionFraction`, `saltContainment`). It is not a compromise between the two tiers — it
- * is *strictly more thorough than either* for the bodies that matter, because `sampleOutlineDense`
- * steps by `floor(total / budget)`: a body with fewer vertices than the budget has **every vertex
- * tested**, and the budget only bites on large outlines, where a sliver in the next state is
- * proportionally large and cannot hide between samples.
- *
- * **256, where 64 was already exact.** Measured over all 7,359 escalation candidates, a budget of 64
- * returns the identical answer to walking every vertex, in 2.8 seconds. 256 is four times that for
- * no meaningful cost, and the headroom is deliberate: the number that has to hold is not today's
- * corpus but the next catalog's geometry.
+ * **Index the loaded towns — and refuse a layer that cannot answer.** No towns at all is not "every
+ * body is out of region": it is a run without boundaries, and it throws before a single body is
+ * judged (D266). A layer short of one of `expectStates` throws too: every body in the missing state
+ * would read as out of region.
  */
-export const STATE_SAMPLE_POINTS = 256;
+export function townLayerOf(rows: readonly TownRow[], expectStates: readonly string[]): TownLayer {
+  if (rows.length === 0) {
+    throw new Error(
+      'no town boundaries loaded — the region rule cannot decide whether any body is ours ' +
+        '(build them: pnpm --filter @skating/admin-areas fetch-states)',
+    );
+  }
+  const states = new Set(rows.map((r) => r.state));
+  const missing = expectStates.filter((code) => !states.has(code.toUpperCase()));
+  if (missing.length > 0) {
+    throw new Error(
+      `town boundaries missing for ${missing.join(', ')} — every body there would read as out of ` +
+        'region (re-run pnpm --filter @skating/admin-areas fetch-states)',
+    );
+  }
+  return { grid: index(rows), cache: new Map(), states, size: rows.length };
+}
 
-/** Which of the five states these points fall in. The shared inner loop of `statesFor`'s two passes. */
-function collectStates(
-  points: readonly (readonly [number, number])[],
-  stateGrid: Map<string, (Boundary & { name: string })[]>,
-): Set<string> {
-  const found = new Set<string>();
-  for (const [lng, lat] of points) {
-    const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
-    for (const b of stateGrid.get(cell) ?? []) {
-      const code = STATE_CODE_BY_NAME[b.name];
-      if (code === undefined || found.has(code)) continue;
-      if (lng < b.bbox.minLng || lng > b.bbox.maxLng) continue;
-      if (lat < b.bbox.minLat || lat > b.bbox.maxLat) continue;
-      if (pointInPolygon({ lat, lng }, b.polygon)) found.add(code);
+/**
+ * **The states a body is in: the states of the loaded towns holding at least 25 m of its
+ * shoreline** — the one region rule (D266, `@skating/core`'s `createReach`), the same function the
+ * geometry facts use. A border-spanning body is in every state whose towns hold its shore
+ * (Champlain is VT and NY); a body whose shore barely touches ours is in none, and an empty list
+ * means out of region, which the import refuses to insert. Never guessed and never filled from an
+ * extract's tag: a wrong state silently moves a lake into someone else's region filter.
+ */
+export function statesFor(
+  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
+  layer: TownLayer,
+): string[] {
+  if (layer.size === 0) throw new Error('no town boundaries loaded');
+  const box = {
+    minLng: body.bbox.minLng - REACH_PAD_DEG,
+    maxLng: body.bbox.maxLng + REACH_PAD_DEG,
+    minLat: body.bbox.minLat - REACH_PAD_DEG,
+    maxLat: body.bbox.maxLat + REACH_PAD_DEG,
+  };
+  const candidates = new Map<string, TownRow>();
+  for (const cell of cellsFor(box)) {
+    for (const town of layer.grid.get(cell) ?? []) {
+      if (bboxIntersects(town.bbox, box)) candidates.set(town.externalId, town);
     }
   }
-  return found;
+  const reached = areasReached(
+    body.polygon,
+    [...candidates.values()].map((t) => ({ id: t.externalId, polygon: t.polygon })),
+    { cache: layer.cache },
+  );
+  return [...new Set(reached.ids.map((id) => (candidates.get(id) as TownRow).state))].sort();
 }

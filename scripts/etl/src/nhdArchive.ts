@@ -29,7 +29,7 @@ import { accepted, type Normalized, rejected } from '@skating/run-log';
 
 /** One state's NHD High Resolution geodatabase. */
 export interface NhdSource {
-  /** Two-letter state code, matching the OSM lane's `--state=` tag. */
+  /** Two-letter state code. */
   state: string;
   /** The URL segment USGS uses — a full state name with `_` for spaces. */
   slug: string;

@@ -66,6 +66,7 @@ async function seedSquareBody(
     bbox,
     centroid: { lat, lng },
     surfaceAreaSqM: areaSqM,
+    states: ['VT'],
   };
   const id = (await t.run((ctx) =>
     ctx.db.insert('waterBodies', {

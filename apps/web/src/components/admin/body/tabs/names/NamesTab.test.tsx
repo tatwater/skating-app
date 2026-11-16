@@ -165,6 +165,17 @@ describe('NamesTab', () => {
     expect(location()).toHaveTextContent('US Census BureauTIGER');
   });
 
+  it('names every county a border body’s towns lie in', () => {
+    mocks.results.set(getFunctionName(api.bodyConsole.places), {
+      towns: ['Alburgh', 'Champlain'],
+      counties: ['Grand Isle', 'Clinton'],
+      states: ['NY', 'VT'],
+      computedAt: 1,
+    });
+    render(<NamesTab bodyId="wb1" />);
+    expect(location()).toHaveTextContent('CountiesGrand IsleClinton');
+  });
+
   it('says the towns aren’t computed yet before the geometry is, never a blank', () => {
     mocks.results.set(getFunctionName(api.bodyConsole.places), null);
     render(<NamesTab bodyId="wb1" />);

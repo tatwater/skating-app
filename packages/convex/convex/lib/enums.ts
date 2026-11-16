@@ -300,6 +300,8 @@ export const MODERATION_ACTIONS = [
   // B01-3d: a moderator's own aliases for a body, and its class (each its own fact, never a claim).
   'set_aliases',
   'set_class',
+  // B01-3g: a moderator pins a body into region, in the towns they name (D266).
+  'set_moderator_towns',
   // B01-3d: a moderator's choice of the source a body's mean or max depth reads from.
   'choose_depth_source',
   // B01-3d: a known feature redrawn (its geometry, box and bay; never the body's outline).

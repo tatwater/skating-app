@@ -62,8 +62,8 @@ export type ClassOption = {
 /** A town line crossing the body, as the boundary read returns it. */
 export type TownLine = { id: string; path: LatLng[]; faces: [string, string] };
 
-/** The towns and county a body lies in, from the boundaries (`bodyConsole.places`). */
-export type AdminPlaces = { towns: string[]; county: string | null };
+/** The towns and counties a body lies in, from the boundaries (`bodyConsole.places`). */
+export type AdminPlaces = { towns: string[]; counties: string[] };
 
 export type Place = {
   /**
@@ -200,15 +200,15 @@ export function namesFromBody(
 }
 
 /**
- * The towns and county from the boundary read. Counties are read at the interior point only (a body
- * rarely spans two), so the first is the county. Not computed yet until the geometry is.
+ * The towns and counties from the boundary read — every town the outline reaches into, and each of
+ * their counties (a border lake spans several). Not computed yet until the geometry is.
  */
 export function adminOf(
   places: Loadable<PlacesInput>,
 ): Loadable<AdminPlaces | typeof NOT_COMPUTED> {
   if (places === undefined || isFailed(places)) return places;
   if (places === null) return NOT_COMPUTED;
-  return { towns: [...places.towns], county: places.counties[0] ?? null };
+  return { towns: [...places.towns], counties: [...places.counties] };
 }
 
 /** The class options with the current class among them, so Now always has a row to sit on. */

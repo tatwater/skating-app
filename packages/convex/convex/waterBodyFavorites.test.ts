@@ -64,6 +64,7 @@ async function seedBody(
     bodies: [
       {
         source: 'osm',
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name,

@@ -99,6 +99,34 @@ describe('DuplicateGroupCard', () => {
     expect(screen.getByRole('button', { name: 'Not duplicates' })).toBeInTheDocument();
   });
 
+  it('never offers a merge the write would refuse: a survivor that can’t hold every pin says why', () => {
+    const keys = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => `tiger/36027${String(10_000 + from + i)}`);
+    render(
+      <DuplicateGroupCard
+        group={group([
+          member({
+            _id: 'a' as DuplicateMember['_id'],
+            name: 'Duncan Lake',
+            moderatorTownKeys: keys(0, 6),
+          }),
+          member({
+            _id: 'b' as DuplicateMember['_id'],
+            name: 'Duncan Pond',
+            moderatorTownKeys: keys(6, 3),
+          }),
+        ])}
+        onMerge={noop}
+        onDismiss={noop}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Keep Duncan Lake/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Keep Duncan Pond/ })).toBeDisabled();
+    expect(
+      screen.getByText(/Can't merge into “Duncan Lake”: together the bodies hold 9 pinned towns/),
+    ).toBeInTheDocument();
+  });
+
   it('does not fetch outlines until they are asked for', async () => {
     render(
       <DuplicateGroupCard

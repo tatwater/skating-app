@@ -16,6 +16,18 @@ export const ACCESS_ALERT_NOTE_MAX_CHARS = 500;
 export const PHOTO_CAPTION_MAX_CHARS = 500;
 /** The note a person adds to a flag. */
 export const FLAG_NOTE_MAX_CHARS = 1_000;
+/**
+ * A moderator's reason written into an audit row — the words History shows for a write that takes
+ * something away (a pin cleared, B01-3g). Main has no general cap on audit reasons yet (the
+ * tagged-reason type, #125, brings one for every writer); until then the writers this phase added
+ * share this one.
+ */
+export const AUDIT_REASON_MAX_CHARS = 1_000;
+/**
+ * A moderator's note on why a body was removed — the plain words History and the removed lane show
+ * beside the fixed reason (D266's removals). An audit reason, capped as one.
+ */
+export const REMOVAL_NOTE_MAX_CHARS = AUDIT_REASON_MAX_CHARS;
 /** An offline write's retry key: the apps send a UUID, about 36 characters. */
 export const IDEMPOTENCY_KEY_MAX_CHARS = 128;
 

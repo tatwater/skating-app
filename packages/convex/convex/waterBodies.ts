@@ -11,6 +11,7 @@
  */
 
 import {
+  AUDIT_REASON_MAX_CHARS,
   type BodyNames,
   bboxIntersects,
   belongsInCorpus,
@@ -30,6 +31,7 @@ import {
   type DepthSource,
   distinctNameClaims,
   ELEVATION_SOURCES,
+  effectiveStates,
   externalIdFits,
   haversineMeters,
   type IdMatch,
@@ -42,16 +44,21 @@ import {
   isPlausibleMeanWindMps,
   isPlausibleStrongWindHours,
   isPlausibleWindRose,
+  isUndefinedSubdivision,
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_EXTERNAL_ID_CHARS,
+  MAX_MODERATOR_ALIASES,
+  MAX_MODERATOR_TOWNS,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  type MergeListSide,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
+  mergedModeratorLists,
   type NameClaim,
   nameTooLong,
   nearestBodyForPoint,
@@ -60,6 +67,7 @@ import {
   polygonBBox,
   polygonIoU,
   primaryReviewReason,
+  REMOVAL_NOTE_MAX_CHARS,
   REQUEST_KINDS,
   REQUEST_STATUSES,
   REVIEW_REASONS,
@@ -71,9 +79,11 @@ import {
   SATELLITE_IMAGERY_MODES,
   satelliteImageryAvailable,
   standingOf,
+  stateOfSubdivision,
+  tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
-import { ConvexError, v } from 'convex/values';
+import { ConvexError, type Infer, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -96,7 +106,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { markGeoStale, outlineStamp } from './lib/bodyGeo';
+import { markGeoStale, outlineStamp, refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -114,6 +124,7 @@ import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { reasonFor } from './lib/peopleCan';
 import { ReadBudget } from './lib/readBudget';
 import {
   affords,
@@ -127,6 +138,7 @@ import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
+import { UNDO_POLICY } from './lib/undoPolicy';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -197,33 +209,39 @@ function sanitizeLimit(limit: number | undefined): number {
 }
 
 /**
- * A body's `states`, from whichever producer actually knows.
+ * **A body's `states`: the producer's region answer, and nothing else** (D266).
  *
- * ## Two producers, and only one of them used to be heard
+ * The merge computes them per body with the one region rule (`@skating/core`'s `createReach`): the
+ * states of the loaded towns holding at least 25 m of its shoreline. That answer is the
+ * only source. The OSM lane's `--state` tag — "this batch came from Vermont" — used to stand in when
+ * a record carried none, and it stamped seven bodies in Quebec, Pennsylvania and New Jersey with a
+ * state they are not in; there is no tag any more, and no fallback of any kind.
  *
- * The **OSM lane** imports one state extract at a time, so it knows only "this batch came from
- * Vermont" — and a border-spanning body accumulates its states by being imported once per extract,
- * which is what `--state` and the union are for. The **merge** loads a single pass with no per-state
- * batches, computes `statesFor` per body against the state-level admin areas, and knows the whole
- * answer at once.
- *
- * The handler only ever read the first of those. Adding `states` to the validator without this would
- * have accepted the field and then written nothing from it: 27,074 rows with no state at all, and
- * every regional filter in the app — the feed, drive-time, the state chips — silently empty.
- *
- * So: **an explicit list from the producer is authoritative and replaces**; a `--state` tag is a
- * partial observation and unions. The rule is the same one `assertedCatalogIds` follows for the
- * catalog ids, and for the same reason — the difference between a complete record and a partial one
- * has to be expressed by the caller, because nothing in here can tell them apart.
+ * - `undefined` — the producer computed no region answer (no town boundaries were loaded when it
+ *   ran). That is a broken artifact, not a body in no state, so the batch **throws** and nothing in
+ *   it is written; treating it as "in no state" would turn a missing layer into a whole corpus
+ *   refused as out of region.
+ * - `[]` — the boundaries were loaded and the body reaches into none: **out of region**. A new one
+ *   is not inserted; one already stored keeps the states it has (no import relabels a body out of
+ *   the map) and is named in the import's summary for a person to decide.
+ * - a list — authoritative; it replaces. A code outside the five loaded states throws.
  */
-function resolveStates(
-  existing: string[] | undefined,
-  incoming: string[] | undefined,
-  state: string | undefined,
-): string[] | undefined {
-  if (incoming?.length) return [...new Set(incoming)].sort();
-  if (!state) return existing;
-  return [...new Set([...(existing ?? []), state])].sort();
+function regionStatesOf(item: { externalId: string; states?: string[] }): string[] {
+  if (item.states === undefined) {
+    throw new ConvexError(
+      `Body ${item.externalId} carries no states: the producer ran without the town boundaries, so ` +
+        'it never decided whether the body is in region. Rebuild the merge with them loaded; ' +
+        'nothing in this batch was written.',
+    );
+  }
+  for (const code of item.states) {
+    if (!isKnownStateCode(code)) {
+      throw new ConvexError(
+        `Unknown state code: ${code}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
+      );
+    }
+  }
+  return [...new Set(item.states)].sort();
 }
 
 /**
@@ -258,12 +276,9 @@ const canonicalBody = v.object({
   name: v.string(),
   type: literals(WATER_BODY_CLASSES),
   /**
-   * The states this body touches — **computed by the producer, not by the loader's `--state` flag.**
-   *
-   * The OSM lane got this for free by importing one state extract at a time and letting the loader
-   * tag each batch. A merged corpus is loaded in a *single pass*, so there are no per-state batches
-   * and `statesFor` computes it per body against the state-level admin areas — giving a
-   * border-spanning body every state it touches rather than the first.
+   * The states this body is in — **computed by the producer's region rule (D266), and required.**
+   * Absent throws (the producer ran without boundaries); empty is out of region — see
+   * `regionStatesOf`. Optional in the validator only so the refusal can say why.
    *
    * **This field was missing from this validator while the ETL emitted it**, which is a wire break
    * rather than an omission: Convex object validators are exact, so every batch of a merged load
@@ -490,21 +505,6 @@ export function footprintMoved(
   return vertexCount(existing.polygon) !== vertexCount(next.polygon);
 }
 
-/**
- * Whether a re-import moves the point a body's places are first read at (`placeSamplePoints`: the
- * interior point, else the representative point, else the centroid) — its first town and its county
- * come from there, so its geometry facts are behind even when the outline is unchanged (B01-3b).
- */
-export function placePointMoved(
-  existing: Pick<Doc<'waterBodies'>, 'interiorPoint' | 'representativePoint' | 'centroid'>,
-  next: { interiorPoint?: LatLng; centroid: LatLng },
-): boolean {
-  const a = existing.interiorPoint ?? existing.representativePoint ?? existing.centroid;
-  // The patch writes `representativePoint` and `centroid` from the record's centroid.
-  const b = next.interiorPoint ?? next.centroid;
-  return a.lat !== b.lat || a.lng !== b.lng;
-}
-
 /** Total positions across every ring — a shape fingerprint that costs no geometry math. */
 function vertexCount(geometry: unknown): number {
   const g = geometry as { type?: string; coordinates?: unknown[] };
@@ -595,34 +595,34 @@ async function lookupByCatalogIds(
  * landowner takedown (D48). Re-running on unchanged data is a no-op on the final state.
  */
 export const importCanonical = internalMutation({
-  // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
-  // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
+  // No `state` argument (D266): a body's states are its record's own, from the region rule. The
+  // validator is exact, so a loader still passing the old extract tag is refused outright.
   args: {
     bodies: v.array(canonicalBody),
-    state: v.optional(v.string()),
     /**
      * The campaign this load belongs to. Stamped on every row it inserts or patches, so step 6's
      * prune can ask "did the master list re-affirm this body?" without re-deriving any rule.
      */
     campaignId: v.optional(v.string()),
   },
-  handler: async (ctx, { bodies, state, campaignId }) => {
-    // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
-    // write so a bad tag can never be unioned into a body's `states` (Phase 02b review).
-    if (state !== undefined && !isKnownStateCode(state)) {
-      throw new ConvexError(
-        `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
-      );
-    }
+  handler: async (ctx, { bodies, campaignId }) => {
+    // Every record's region answer first, before any write: one broken record refuses the batch.
+    const statesByItem = bodies.map(regionStatesOf);
     let inserted = 0;
     let updated = 0;
     let landmarksRetired = 0;
     let queuedForMerge = 0;
     let conflicts = 0;
+    // Out of region (D266): new bodies not inserted, stored ones kept as they are — both named.
+    let outOfRegion = 0;
+    let outOfRegionKept = 0;
+    let keptByPin = 0;
+    const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     let tooLong = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
-    for (const item of bodies) {
+    for (const [index, item] of bodies.entries()) {
+      const states = statesByItem[index] as string[];
       // A name or catalog id past its cap (B01-3h) skips the row, counted — never the campaign.
       const overCap =
         ([item.externalId, item.osmId, item.nhdId, item.threeDhpId, item.gnisId].some(
@@ -693,6 +693,24 @@ export const importCanonical = internalMutation({
       }
 
       const existing = verdict.action === 'patch' ? await ctx.db.get(verdict.key) : null;
+      // A moderator's pinned towns outrank the rule (B01-3g): their states are the body's too, and a
+      // pinned body is never read as out of region.
+      const pins = existing?.moderatorTownKeys ?? [];
+      const pinned = pins.some((k) => stateOfSubdivision(k) !== null);
+      const outside = states.length === 0 && !pinned;
+      if (states.length === 0 && pinned) keptByPin++;
+      if (outside) {
+        outsideRegion.push({ externalId: item.externalId, waterBodyId: existing?._id ?? null });
+        console.log(
+          `importCanonical: ${item.externalId} reaches into no loaded town — ` +
+            (existing ? 'kept with its stored states' : 'not inserted'),
+        );
+        if (!existing) {
+          outOfRegion++;
+          continue;
+        }
+        outOfRegionKept++;
+      }
 
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
@@ -743,7 +761,10 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: resolveStates(existing.states, item.states, state),
+          // Out of region: kept as stored, never relabeled out of the map (see `regionStatesOf`).
+          // The rule's ingredient kept apart from the pins; out of region, the stored one stands.
+          // No town holds its shore: the stored rule half stands, pinned or not.
+          ...regionStatesFields(states.length === 0 ? ruleStatesOf(existing) : states, pins),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -785,9 +806,9 @@ export const importCanonical = internalMutation({
         const stampMoved =
           outlineStamp(existing) !==
           outlineStamp({ polygon: item.polygon as never, bbox: item.bbox });
-        if (stampMoved || placePointMoved(existing, item)) {
-          // Its touching bodies and places were computed for the old outline — or its places at the
-          // old interior point, which the same patch rewrites (`shapeFields`) (B01-3b).
+        if (stampMoved) {
+          // Its touching bodies and places were computed for the old outline (B01-3b). Its places
+          // come from the outline alone since D266, so an interior point moving marks nothing.
           await markGeoStale(ctx, [existing._id]);
         }
         if (outlineMoved) {
@@ -832,7 +853,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: resolveStates(undefined, item.states, state),
+          ...regionStatesFields(states, []),
           ...scores,
           ...shapeFields(item),
           ...mergeFields(item),
@@ -863,6 +884,14 @@ export const importCanonical = internalMutation({
       queuedForMerge,
       conflicts,
       landmarksRetired,
+      /** New bodies in no loaded town, not inserted (D266). */
+      outOfRegion,
+      /** Stored bodies a re-import places in no loaded town: patched, their states kept (D266). */
+      outOfRegionKept,
+      /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
+      keptByPin,
+      /** Both, named — capped as `unresolved` is. */
+      outsideRegion: outsideRegion.slice(0, 20),
       /** Rows skipped for a name or catalog id past its cap (B01-3h). */
       tooLong,
       unresolved: unresolved.slice(0, 20),
@@ -2948,21 +2977,43 @@ export const approve = mutation({
  * `transitionStanding`.
  */
 export const remove = mutation({
-  args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
-  handler: async (ctx, args) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    reason: literals(REMOVAL_REASONS),
+    /**
+     * Why, in a person's own words — trimmed, refused past {@link REMOVAL_NOTE_MAX_CHARS}, and written
+     * beside the fixed reason so History and the removed lane read it. Owed: this writer adopts the
+     * tagged-reason type when #125 lands.
+     */
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { waterBodyId, reason, note }) => {
     const actor = await requireCapability(ctx, 'body.remove');
-    return removeBodyImpl(ctx, actor, args);
+    const text = note?.trim();
+    const tooLong = tooLongMessage('The note', text, REMOVAL_NOTE_MAX_CHARS);
+    if (tooLong !== null) throw new ConvexError(tooLong);
+    return removeBodyImpl(ctx, actor, {
+      waterBodyId,
+      reason,
+      ...(text !== undefined && text.length > 0 ? { note: text } : {}),
+    });
   },
 });
 
 /**
- * `remove`'s body, shared with the undo of a restore (D226). `note` replaces the audit row's
- * generated reason — an undo's own reason; the mutation never passes it.
+ * `remove`'s body, shared with the undo of a restore (D226). `note` is the person's words, written
+ * beside the fixed reason and kept in the row's metadata; `auditReason` replaces the generated reason
+ * whole — an undo's own reason, which the mutation never passes.
  */
 export async function removeBodyImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  args: { waterBodyId: Id<'waterBodies'>; reason: RemovalReason; note?: string },
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    reason: RemovalReason;
+    note?: string;
+    auditReason?: string;
+  },
 ): Promise<Id<'waterBodies'>> {
   const body = await ctx.db.get(args.waterBodyId);
   if (!body) throw new ConvexError('Water body not found');
@@ -2981,8 +3032,13 @@ export async function removeBodyImpl(
     action: 'remove',
     targetType: 'waterbody',
     targetId: args.waterBodyId,
-    reason: args.note ?? `Removed from map (${args.reason})`,
-    metadata: { removalReason: args.reason },
+    reason:
+      args.auditReason ??
+      `Removed from map (${args.reason})${args.note !== undefined ? `: ${args.note}` : ''}`,
+    metadata: {
+      removalReason: args.reason,
+      ...(args.note !== undefined ? { note: args.note } : {}),
+    },
     createdAt: now,
   });
   return args.waterBodyId;
@@ -3370,6 +3426,13 @@ export interface MergeChangeSet {
     removed: boolean;
     mergedIntoId?: Id<'bodyLandmarks'>;
   }[];
+  /** Both bodies' pinned towns before the merge folded the loser's into the survivor (B01-3g). */
+  pinsBefore?: { survivor: string[]; loser: string[] };
+  /** Both bodies' moderator-held lists before the merge took their union (B01-3g), for the unmerge. */
+  listsBefore?: Record<
+    'survivor' | 'loser',
+    { pins: string[]; aliases: string[]; links: { label: string; url: string }[] }
+  >;
 }
 
 function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {
@@ -3522,6 +3585,11 @@ export async function mergeBodyInto(
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
   const loserId = loser._id;
+  // The survivor holds the union of both bodies' moderator-held lists, or the merge does not happen
+  // (B01-3g): refused before any write, never truncated. The caller that offers or runs a merge asks
+  // the same function first (`mergedModeratorLists`).
+  const lists = mergedModeratorLists(survivor, [loser]);
+  if (lists.refusal !== null) throw new ConvexError(lists.refusal);
   {
     // Re-point every child from loser → survivor. Merge is a rare manual action on a typically-small
     // dedup loser, so a bounded `collect()` per child table is acceptable (cf. `listPendingReview`).
@@ -3641,9 +3709,62 @@ export async function mergeBodyInto(
       landmarksRetiredAsBay: landmarks.retiredAsBay,
     };
 
+    // A moderator's lists move to the survivor (B01-3g): each the union, the survivor's own first —
+    // the pins with the states they feed, and its facts' pinned half, in this transaction. The
+    // loser's pins and aliases go with them (a merged-away body carries neither; its links stay on the
+    // tombstone, which nothing reads), all kept in the change set for the unmerge. Recorded in the change set either way.
+    const listsBefore = {
+      survivor: {
+        pins: survivor.moderatorTownKeys ?? [],
+        aliases: survivor.moderatorAliases ?? [],
+        links: survivor.referenceLinks ?? [],
+      },
+      loser: {
+        pins: loser.moderatorTownKeys ?? [],
+        aliases: loser.moderatorAliases ?? [],
+        links: loser.referenceLinks ?? [],
+      },
+    };
+    const pinsBefore = { survivor: listsBefore.survivor.pins, loser: listsBefore.loser.pins };
+    const pins = lists.pins;
+    if (pinsBefore.loser.length > 0) {
+      await ctx.db.patch(survivorId, {
+        moderatorTownKeys: pins,
+        ...regionStatesFields(ruleStatesOf(survivor), pins),
+      });
+      await refreshPinnedFacts(ctx, survivorId, pins);
+    }
+    if (listsBefore.loser.aliases.length > 0) {
+      // Absent when empty, as `setAliasesImpl` stores it; and the search string with them, in this
+      // patch, as every alias writer keeps it (`bodySearchTextFor`).
+      const aliases = lists.aliases.length > 0 ? lists.aliases : undefined;
+      await ctx.db.patch(survivorId, {
+        moderatorAliases: aliases,
+        searchText: bodySearchTextFor({ ...survivor, moderatorAliases: aliases }),
+      });
+    }
+    if (listsBefore.loser.links.length > 0) {
+      await ctx.db.patch(survivorId, { referenceLinks: lists.links });
+    }
+
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
-    // `merged` as unlisted, so drop its cell rows too.
-    await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
+    // `merged` as unlisted, so drop its cell rows too. Its pins went to the survivor: none left.
+    await ctx.db.patch(loserId, {
+      dedupStatus: 'merged',
+      mergedIntoId: survivorId,
+      ...(pinsBefore.loser.length > 0
+        ? { moderatorTownKeys: undefined, ...regionStatesFields(ruleStatesOf(loser), []) }
+        : {}),
+      // Its aliases moved to the survivor too: off the tombstone, whose search text a hit follows to
+      // the survivor — else a carried alias the survivor's moderator removes would still find it.
+      // The change set keeps them, for the unmerge.
+      ...(listsBefore.loser.aliases.length > 0
+        ? {
+            moderatorAliases: undefined,
+            searchText: bodySearchTextFor({ ...loser, moderatorAliases: undefined }),
+          }
+        : {}),
+    });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
     // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
@@ -3712,6 +3833,8 @@ export async function mergeBodyInto(
       subAreasDelisted: [],
       landmarksBefore: landmarksBefore.map(snapshotDoc),
       landmarksAfter: [],
+      ...(pinsBefore.survivor.length > 0 || pinsBefore.loser.length > 0 ? { pinsBefore } : {}),
+      listsBefore,
     };
     for (const before of subAreasBefore) {
       const after = await ctx.db.get(before._id);
@@ -3747,6 +3870,15 @@ export async function mergeBodyInto(
     return { repointed };
   }
 }
+
+/** One survivor's moderator-held lists as they stand by now in a retire pass, merges included. */
+const takenListsV = v.object({
+  key: v.string(),
+  pins: v.array(v.string()),
+  aliases: v.array(v.string()),
+  links: v.array(v.object({ label: v.string(), url: v.string() })),
+});
+type TakenLists = Infer<typeof takenListsV>;
 
 /**
  * Retire the rows the merge absorbed — **the half of `osm→osm` that was missing** (A07a-3, D136).
@@ -3815,8 +3947,18 @@ export const retireAbsorbedBodies = internalMutation({
      * and therefore to the same string. `retiredKeys` in the return value is what to feed back.
      */
     alreadyRetired: v.optional(v.array(v.string())),
+    /**
+     * **The moderator-held lists each survivor holds by now in this pass** (B01-3g) — its own and
+     * every absorbed row's, merged as the merge itself merges them — keyed on the resolved row's
+     * `source:externalId` and fed back from the last batch's `taken`, so the cap check reads the
+     * lists a survivor would hold by now whatever the batch boundaries: a dry run, where nothing
+     * merged and the survivor re-reads as it was, then predicts the apply exactly. Under `--apply`
+     * the survivor already holds them, and a union is idempotent. Only non-empty lists are carried;
+     * an empty one adds nothing to a union.
+     */
+    taken: v.optional(v.array(takenListsV)),
   },
-  handler: async (ctx, { pairs, campaignId, apply, alreadyRetired }) => {
+  handler: async (ctx, { pairs, campaignId, apply, alreadyRetired, taken: carriedIn }) => {
     /**
      * Resolve a merge-group key to the row that actually holds it.
      *
@@ -3885,6 +4027,18 @@ export const retireAbsorbedBodies = internalMutation({
     const handled = new Set<Id<'waterBodies'>>();
     const handledKeys = new Set<string>(alreadyRetired ?? []);
     const keyOf = (b: Doc<'waterBodies'>) => `${b.source}:${b.externalId}`;
+    // The lists each survivor holds by now in this pass — across the caller's batches (`taken`), so
+    // the cap check reads what it would hold by then, in a dry run too (see the argument's note).
+    const takenBy = new Map<string, TakenLists>((carriedIn ?? []).map((t) => [t.key, t] as const));
+    const sideOf = (key: string): MergeListSide => {
+      const t = takenBy.get(key);
+      return {
+        name: '',
+        moderatorTownKeys: t?.pins ?? [],
+        moderatorAliases: t?.aliases ?? [],
+        referenceLinks: t?.links ?? [],
+      };
+    };
 
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
@@ -3909,7 +4063,14 @@ export const retireAbsorbedBodies = internalMutation({
         skip('survivor and absorbed are the same row', label);
         continue;
       }
-      if (survivor.mergedIntoId !== undefined) {
+      // A survivor retired by an earlier pair of this pass is merged by now under `--apply`; the dry
+      // run, where it re-reads unmerged, reads the same off the pass's own record, or it would fold
+      // a row into a body the apply has already tombstoned.
+      if (
+        survivor.mergedIntoId !== undefined ||
+        handled.has(survivor._id) ||
+        handledKeys.has(keyOf(survivor))
+      ) {
         skip('survivor is itself merged', label);
         continue;
       }
@@ -3917,6 +4078,30 @@ export const retireAbsorbedBodies = internalMutation({
         skip('already retired by an earlier pair in this pass', label);
         continue;
       }
+      // A merge that can't hold both bodies' moderator-set lists is a person's call, never a
+      // truncation: the pair is skipped and named, and the batch goes on (B01-3g).
+      const held = mergedModeratorLists(survivor, [
+        sideOf(keyOf(survivor)),
+        sideOf(keyOf(absorbed)),
+        absorbed,
+      ]);
+      if (held.refusal !== null) {
+        skip('their moderator-set lists together pass a cap, so a person merges them', label);
+        // Put the pair in front of that person: the duplicate queue, where the card shows why it
+        // can't merge as it stands (applied runs only; a dry run writes nothing).
+        if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
+        continue;
+      }
+      // What the survivor holds now — merged under its own name, as the merge merges, so an alias
+      // the merge drops for matching that name is never carried into a later cap check. The absorbed
+      // row's lists live on in the survivor's; it is never a side of a pair again this pass.
+      takenBy.set(keyOf(survivor), {
+        key: keyOf(survivor),
+        pins: held.pins,
+        aliases: held.aliases,
+        links: held.links,
+      });
+      takenBy.delete(keyOf(absorbed));
       handled.add(absorbed._id);
       handledKeys.add(keyOf(absorbed));
       retired.push({
@@ -3945,6 +4130,10 @@ export const retireAbsorbedBodies = internalMutation({
       // caller feeds it back as the next batch's `alreadyRetired`, so truncating it would silently
       // re-open the cross-batch double-count at whatever `--batch` exceeds the sample cap.
       retiredKeys: retired.map((r) => r.absorbed),
+      // Fed back as the next batch's `taken`, uncapped for the same reason; non-empty lists only.
+      taken: [...takenBy.values()].filter(
+        (t) => t.pins.length + t.aliases.length + t.links.length > 0,
+      ),
       skipped,
       skippedSamples,
     };
@@ -4056,8 +4245,8 @@ export async function setCuratedBoostImpl(
 // ── A moderator's aliases and class (B01-3d) ───────────────────────────────────────────────────
 
 /** The most aliases a moderator adds to a body, and the longest one. */
-export const MAX_MODERATOR_ALIASES = 20;
 export const MAX_MODERATOR_ALIAS_CHARS = 120;
+export { MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS };
 
 /**
  * A moderator's aliases, normalized once at the edge: each trimmed (inner whitespace collapsed), the
@@ -4163,6 +4352,144 @@ export async function setAliasesImpl(
         ? 'Cleared the moderator aliases'
         : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
     metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
+    createdAt: Date.now(),
+  });
+  return waterBodyId;
+}
+
+/** The region rule's states as a body stores them: `regionStates`, else (no pin ever) `states`. */
+export function ruleStatesOf(body: Pick<Doc<'waterBodies'>, 'regionStates' | 'states'>): string[] {
+  return body.regionStates ?? body.states ?? [];
+}
+
+/**
+ * **The one builder of a body's stored `states`** (B01-3g, D266): the rule's ingredient kept as
+ * `regionStates`, and `states` rebuilt from it and the pinned towns (`effectiveStates`). Every writer
+ * of either ingredient — the import, the pin's write and its undo, a merge — patches through this, in
+ * its own transaction, so skater search, the library and the console all read the states at once.
+ */
+export function regionStatesFields(
+  regionStates: readonly string[],
+  pinnedTownKeys: readonly string[],
+): { regionStates: string[]; states: string[] } {
+  return {
+    regionStates: [...regionStates],
+    states: effectiveStates(regionStates, pinnedTownKeys),
+  };
+}
+
+/**
+ * Moderator: **hold a body in region, in the towns named** (B01-3g, D266) — the founder's
+ * determination where the shoreline rule alone would put a body out (two bodies kept by hand sit
+ * just under its 25 m). Stable boundary keys (`tiger/<GEOID>` of a county subdivision); an empty list
+ * clears the pin. A whole-list write: `expected` is the list the edit was built on.
+ */
+export const setModeratorTowns = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    townKeys: v.array(v.string()),
+    /** The list this edit was built on: refused, with the current list, if it moved. */
+    expected: v.optional(v.array(v.string())),
+    /**
+     * Why. Required (nonblank) when the write removes any pin — a takeaway (D226); optional when it
+     * only adds, defaulted then and marked so. Trimmed; refused past `AUDIT_REASON_MAX_CHARS`.
+     */
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { waterBodyId, townKeys, expected, reason }) => {
+    const actor = await requireCapability(ctx, 'body.identity');
+    // The person's words are capped here, not in the shared body: an undo passes its own reason —
+    // `Undid …: <this row's reason>`, which can run past the cap when the row's reason is near it —
+    // and an undo offered must not then refuse on words nobody typed (`remove` caps the same way).
+    const trimmed = reason?.trim();
+    const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
+    if (tooLong !== null) throw new ConvexError(tooLong);
+    return setModeratorTownsImpl(ctx, actor, {
+      waterBodyId,
+      townKeys,
+      ...(expected !== undefined ? { expected } : {}),
+      ...(trimmed !== undefined ? { reason: trimmed } : {}),
+    });
+  },
+});
+
+/**
+ * `setModeratorTowns`'s body, shared with its undo (D226). A key must name a county subdivision of a
+ * loaded state, and — for a person's pick — a town row loaded now; an undo puts back exactly the list
+ * it replaced (`restoring`), even a key whose town has since gone, which the facts then show as
+ * missing rather than dropping it. The body's `states` and its facts' pinned towns are rebuilt in
+ * the same transaction; the computed towns don't depend on pins and stay as they are.
+ */
+export async function setModeratorTownsImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    townKeys,
+    expected,
+    reason,
+    restoring = false,
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    townKeys: readonly string[];
+    expected?: readonly string[];
+    reason?: string;
+    restoring?: boolean;
+  },
+): Promise<Id<'waterBodies'>> {
+  const body = await editableBody(ctx, waterBodyId);
+  const prev = body.moderatorTownKeys ?? [];
+  assertListUnchanged(prev, expected, 'this body’s pinned towns');
+  const next = [...new Set(townKeys.map((k) => k.trim()).filter((k) => k !== ''))];
+  if (next.length > MAX_MODERATOR_TOWNS) {
+    throw new ConvexError(`A body is pinned in at most ${MAX_MODERATOR_TOWNS} towns`);
+  }
+  for (const key of next) {
+    if (stateOfSubdivision(key) === null) {
+      throw new ConvexError(`${key} is not a town of a loaded state`);
+    }
+    if (restoring || prev.includes(key)) continue;
+    // A "not defined" water unit is never listed as a town (`bodyGeo.placesFrom`), so a pin on one
+    // would show neither as pinned nor as missing — refused, as a person's pick.
+    if (isUndefinedSubdivision(key)) {
+      throw new ConvexError(`${key} is open water between towns, not a town`);
+    }
+    const town = await ctx.db
+      .query('adminAreas')
+      .withIndex('by_external_id', (q) => q.eq('externalId', key))
+      .first();
+    if (town === null || town.level !== 'town') {
+      throw new ConvexError(`No loaded town has the key ${key}`);
+    }
+  }
+  // Removing any pin takes a body out of a town (and maybe a state's filter): a takeaway, so it asks
+  // why (D226) — the same refusal every reason-required write gives. Only adding is a give: the
+  // reason is optional, defaulted and marked so (History leaves a defaulted line out). The rule is
+  // the undo policy's, so the write and its undo give one answer.
+  const said = reasonFor(
+    reason,
+    UNDO_POLICY.set_moderator_towns.takesAway({ from: prev, to: next }),
+    next.length === 0
+      ? 'Cleared the pinned towns'
+      : `Pinned in ${next.length} town${next.length === 1 ? '' : 's'}`,
+  );
+  // The pins and the states they feed, together; the facts' pinned half in the same transaction.
+  await ctx.db.patch(waterBodyId, {
+    moderatorTownKeys: next.length > 0 ? next : undefined,
+    ...regionStatesFields(ruleStatesOf(body), next),
+  });
+  await refreshPinnedFacts(ctx, waterBodyId, next);
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_moderator_towns',
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason: said.reason,
+    metadata: {
+      moderatorTownKeys: next,
+      prev: { moderatorTownKeys: prev },
+      ...(said.defaulted ? { reasonDefaulted: true } : {}),
+    },
     createdAt: Date.now(),
   });
   return waterBodyId;

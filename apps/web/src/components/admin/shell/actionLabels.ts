@@ -49,6 +49,7 @@ const VERB: Record<AuditAction, string> = {
   set_reference_links: 'Set the reference links',
   set_aliases: 'Set the aliases',
   set_class: 'Set the class',
+  set_moderator_towns: 'Pinned a body’s towns',
   set_included_by_request: 'Changed whether a body is kept by request',
   set_standing: 'Set a body’s standing',
   activate_body: 'Activated a body',

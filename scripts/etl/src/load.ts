@@ -8,7 +8,7 @@
  * target unless `--prod` is passed. Thin subprocess + file I/O — excluded from coverage; all
  * real work is in the tested transform.
  *
- *   pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]
+ *   pnpm --filter @skating/etl load <bodies.ndjson> [--prod]
  *     [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]
  *     [--transform-summary=<run.json>] [--filter-command=<text>]
  *     [--merge-manifest=<merge-manifest.json>] [--no-run-log]
@@ -31,7 +31,6 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
-import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
 import {
   convexRun,
   type ExtractManifest,
@@ -99,14 +98,17 @@ interface ImportResult {
   queuedForMerge: number;
   /** One id resolving to two rows, or a record carrying no id at all. */
   conflicts: number;
+  /** New bodies in no loaded town, not inserted (D266). */
+  outOfRegion: number;
+  /** Stored bodies a re-import places in no loaded town: patched, their states kept (D266). */
+  outOfRegionKept: number;
+  /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
+  keptByPin: number;
+  outsideRegion: { externalId: string; waterBodyId: string | null }[];
   unresolved: { externalId: string; action: string; reason: string }[];
 }
 
-function runImport(
-  bodies: unknown[],
-  state: string | undefined,
-  campaignId: string | undefined,
-): ImportResult {
+function runImport(bodies: unknown[], campaignId: string | undefined): ImportResult {
   // Anything we can't read as the expected shape is a hard error — the mutation may well have
   // committed, so reporting zeroes would mislead the operator.
   //
@@ -116,7 +118,6 @@ function runImport(
   // was this?" a statement the operator makes once, on the command line, for every pass at once.
   const parsed = convexRun<unknown>('waterBodies:importCanonical', {
     bodies,
-    ...(state ? { state } : {}),
     ...(campaignId ? { campaignId } : {}),
   });
   if (
@@ -133,6 +134,10 @@ function runImport(
     updated: r.updated,
     queuedForMerge: r.queuedForMerge ?? 0,
     conflicts: r.conflicts ?? 0,
+    outOfRegion: r.outOfRegion ?? 0,
+    outOfRegionKept: r.outOfRegionKept ?? 0,
+    keptByPin: r.keptByPin ?? 0,
+    outsideRegion: r.outsideRegion ?? [],
     unresolved: r.unresolved ?? [],
   };
 }
@@ -185,13 +190,15 @@ interface TransformSummaryFile {
 function main(): void {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
-  // `--state=XX` (2-letter code) tags the batch's bodies with their source region; unioned into each
-  // body's `states` so a border-spanning body imported from several state extracts accumulates them
-  // all (Phase 02b). Equals-form so it doesn't look like the positional input path.
-  const state = args
-    .find((arg) => arg.startsWith('--state='))
-    ?.slice('--state='.length)
-    .toUpperCase();
+  // **`--state=` is retired (D266).** It tagged a batch with its extract's state and filled in any
+  // body that carried none — which stamped bodies in Quebec and Pennsylvania with a state they are
+  // not in. A body's states are its record's, from the merge's region rule; there is no tag.
+  if (args.some((arg) => arg.startsWith('--state='))) {
+    process.stderr.write(
+      "[etl] refusing: --state= is retired — a body's states come from the merge's region rule (D266)\n",
+    );
+    process.exit(1);
+  }
   const flag = (name: string) =>
     args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
   const label = flag('label');
@@ -204,7 +211,7 @@ function main(): void {
   const inputPath = args.find((arg) => !arg.startsWith('--'));
   if (!inputPath) {
     process.stderr.write(
-      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n' +
+      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--prod]\n' +
         '       [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]\n' +
         '       [--transform-summary=<run.json>] [--filter-command=<text>]\n' +
         '       [--merge-manifest=<merge-manifest.json>] [--no-run-log]\n' +
@@ -212,16 +219,6 @@ function main(): void {
         'A merge-manifest.json sitting beside <bodies.ndjson> is read automatically: its stages,\n' +
         "campaign id and label become this run's, so the corpus load carries the same path the\n" +
         'merge did. --merge-manifest= overrides the location; --no-run-log opts out entirely.\n',
-    );
-    process.exit(1);
-  }
-
-  // Guard the region tag: a typo (`--state=VE`, `--state=VERMONT`) would silently union a bad code
-  // into every body's `states`, corrupting the state label + boost-seed disambiguation for the run.
-  // Fail before any write rather than let it reach importCanonical (Phase 02b review).
-  if (state !== undefined && !isKnownStateCode(state)) {
-    process.stderr.write(
-      `[etl] refusing: unknown --state=${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.\n`,
     );
     process.exit(1);
   }
@@ -241,6 +238,20 @@ function main(): void {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  // **Every record carries its region answer, or nothing loads** (D266). A record without `states`
+  // came from a run without town boundaries; the mutation would refuse its batch anyway, but one
+  // refusal up front names the cause instead of a streak of failed batches.
+  const unanswered = lines.filter(
+    (line) => !Array.isArray((JSON.parse(line) as { states?: unknown }).states),
+  );
+  if (unanswered.length > 0) {
+    process.stderr.write(
+      `[etl] refusing: ${unanswered.length} record(s) carry no states — the merge ran without the ` +
+        'town boundaries, so it never decided which bodies are in region. Rebuild them ' +
+        '(pnpm --filter @skating/admin-areas fetch-states) and re-run the merge.\n',
+    );
+    process.exit(1);
+  }
   const batches = chunk(lines);
   /**
    * Every record by its arrival key, so an unresolved verdict can be written back out whole.
@@ -254,10 +265,7 @@ function main(): void {
   }
   /** Records the loader declined to write — see the `unresolved` handling below. */
   const unresolvedRecords: string[] = [];
-  process.stderr.write(
-    `[etl] loading ${lines.length} bodies in ${batches.length} batch(es)` +
-      `${state ? ` (state: ${state})` : ''}…\n`,
-  );
+  process.stderr.write(`[etl] loading ${lines.length} bodies in ${batches.length} batch(es)…\n`);
 
   // ---- Run history (A06c §6.2) -------------------------------------------------------------------
   // Assembled before the first batch so a killed process still leaves a row naming what it was
@@ -328,7 +336,7 @@ function main(): void {
 
   const logger = new RunLogger({
     kind: 'canonical_water',
-    label: label ?? mergedLabel ?? `${state ?? 'unscoped'} canonical water`,
+    label: label ?? mergedLabel ?? 'unscoped canonical water',
     campaignId,
     target,
     stages,
@@ -360,6 +368,9 @@ function main(): void {
   let updated = 0;
   let queuedForMerge = 0;
   let conflicts = 0;
+  let outOfRegion = 0;
+  let outOfRegionKept = 0;
+  let keptByPin = 0;
   let applied = 0;
   let failedBatches = 0;
   let bodiesInFailedBatches = 0;
@@ -370,13 +381,27 @@ function main(): void {
     try {
       const result = runImport(
         batch.map((line) => JSON.parse(line)),
-        state,
         campaignId,
       );
       inserted += result.inserted;
       updated += result.updated;
       queuedForMerge += result.queuedForMerge;
       conflicts += result.conflicts;
+      outOfRegion += result.outOfRegion;
+      outOfRegionKept += result.outOfRegionKept;
+      keptByPin += result.keptByPin;
+      // **Out of region, named** (D266): a new body not inserted, or a stored one the rule now places
+      // in no loaded town — kept with its states, for a person to decide.
+      for (const o of result.outsideRegion) {
+        logger.fail({
+          stage: 'load',
+          key: o.externalId,
+          reason:
+            o.waterBodyId === null
+              ? 'out of region: no loaded town holds 25 m of its shore — not inserted'
+              : 'out of region: no loaded town holds 25 m of its shore — kept with its stored states',
+        });
+      }
       // **An ambiguous identity is a failure of this run, itemized.** It is not a batch error — the
       // other 149 bodies loaded — but it is a body that did not land, and the whole point of the
       // ledger is that those stop scrolling past in a terminal.
@@ -441,6 +466,9 @@ function main(): void {
   logger.count('updated', updated);
   logger.count('queuedForMerge', queuedForMerge);
   logger.count('conflicts', conflicts);
+  logger.count('outOfRegion', outOfRegion);
+  logger.count('outOfRegionKept', outOfRegionKept);
+  logger.count('keptByPin', keptByPin);
   // The denominator is the *polygon features the filter emitted*, not the bodies the transform
   // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
   const featuresIn = transform?.total ?? lines.length;
@@ -462,6 +490,10 @@ function main(): void {
       {
         reason: 'identity conflict — an id resolves to two rows, or no id at all',
         count: conflicts,
+      },
+      {
+        reason: 'out of region — no loaded town holds 25 m of its shore (D266), not inserted',
+        count: outOfRegion,
       },
     ].filter((o) => o.count > 0),
   });
@@ -508,6 +540,8 @@ function main(): void {
     `[etl] load complete: ${inserted} inserted · ${updated} updated` +
       `${queuedForMerge > 0 ? ` · ${queuedForMerge} queued for dedup review` : ''}` +
       `${conflicts > 0 ? ` · ${conflicts} identity conflict(s)` : ''}` +
+      `${outOfRegion > 0 ? ` · ${outOfRegion} out of region, not inserted` : ''}` +
+      `${outOfRegionKept > 0 ? ` · ${outOfRegionKept} stored body(ies) now out of region, kept` : ''}` +
       `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}` +
       `${declined > 0 ? ` · ${declined} itemized failure(s) recorded` : ''}\n`,
   );

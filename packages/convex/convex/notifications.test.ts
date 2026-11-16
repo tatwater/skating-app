@@ -107,6 +107,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
     bodies: [
       {
         source: 'osm',
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name: 'Lake Morey',

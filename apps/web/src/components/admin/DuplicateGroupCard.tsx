@@ -10,6 +10,8 @@ import {
   compareBodies,
   describeAgreement,
   differingFieldCount,
+  type MergeListSide,
+  mergedModeratorLists,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
@@ -43,8 +45,14 @@ import { ReasonDialog } from './ReasonDialog';
  * a page of tables cost megabytes of polygon.
  */
 
-/** One member of a flagged group, as the queue query returns it (everything but the outline). */
-export type DuplicateMember = ComparableBody & { _id: Id<'waterBodies'> };
+/**
+ * One member of a flagged group, as the queue query returns it (everything but the outline) — with
+ * its moderator-held lists, which decide whether a merge fits.
+ */
+export type DuplicateMember = ComparableBody &
+  Pick<MergeListSide, 'moderatorTownKeys' | 'moderatorAliases' | 'referenceLinks'> & {
+    _id: Id<'waterBodies'>;
+  };
 
 export interface DuplicateGroup {
   key: string;
@@ -205,19 +213,37 @@ export function DuplicateGroupCard({
 
         <div className="flex flex-wrap gap-2 border-border border-t pt-3">
           {live.length > 1
-            ? group.members.map((survivor, i) =>
-                survivor.dedupStatus === 'merged' ? null : (
+            ? group.members.map((survivor, i) => {
+                if (survivor.dedupStatus === 'merged') return null;
+                // A merge that can't hold every member's moderator-set lists is refused by the write;
+                // it is never offered here, and the card says why (B01-3g).
+                const refusal = mergedModeratorLists(
+                  survivor,
+                  live.filter((m) => m._id !== survivor._id),
+                ).refusal;
+                const button = (
+                  <Button
+                    key={survivor._id}
+                    variant="outline"
+                    size="sm"
+                    disabled={refusal !== null}
+                  >
+                    <span
+                      className="mr-1 inline-block size-2 rounded-full"
+                      style={{ backgroundColor: colorFor(i) }}
+                    />
+                    Keep {bodyLabel(survivor)}
+                  </Button>
+                );
+                return refusal !== null ? (
+                  <span key={survivor._id} className="flex flex-col gap-1">
+                    {button}
+                    <span className="text-foreground-muted text-xs">{refusal}</span>
+                  </span>
+                ) : (
                   <ReasonDialog
                     key={survivor._id}
-                    trigger={
-                      <Button variant="outline" size="sm">
-                        <span
-                          className="mr-1 inline-block size-2 rounded-full"
-                          style={{ backgroundColor: colorFor(i) }}
-                        />
-                        Keep {bodyLabel(survivor)}
-                      </Button>
-                    }
+                    trigger={button}
                     title={`Keep “${bodyLabel(survivor)}”`}
                     description={`Merges ${live.length - 1} other row${
                       live.length === 2 ? '' : 's'
@@ -227,8 +253,8 @@ export function DuplicateGroupCard({
                     requireReason={false}
                     onConfirm={(reason) => onMerge(survivor._id, reason)}
                   />
-                ),
-              )
+                );
+              })
             : null}
           <ReasonDialog
             trigger={

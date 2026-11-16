@@ -170,6 +170,7 @@ describe('every creation path marks a body’s facts', () => {
       bodies: [
         {
           source: 'osm',
+          states: ['VT'],
           externalId: 'way/1',
           osmId: 'way/1',
           name: 'Imported',
@@ -187,7 +188,7 @@ describe('every creation path marks a body’s facts', () => {
     expect((await facts(t, body?._id as Id<'waterBodies'>))?.computedAt).toBe(NOW);
   });
 
-  test('a re-import that moves only the interior point marks the body; an unchanged one does not', async () => {
+  test('a re-import marks a body only when its outline moved — not for an interior point alone (D266)', async () => {
     const t = harness();
     const record = {
       source: 'osm' as const,
@@ -199,6 +200,7 @@ describe('every creation path marks a body’s facts', () => {
       bbox: boxAt(-72, 44),
       centroid: { lat: 44, lng: -72 },
       surfaceAreaSqM: 1_000_000,
+      states: ['VT'],
     };
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [record] });
     await drain(t);
@@ -206,9 +208,14 @@ describe('every creation path marks a body’s facts', () => {
     // The same record again: nothing a body's facts read moved.
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [record] });
     expect((await facts(t, id as Id<'waterBodies'>))?.staleAt).toBeUndefined();
-    // Only the interior point: the first town and the county are read there.
+    // Only the interior point: the places come from the outline alone, so nothing moved.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...record, interiorPoint: { lat: 44.005, lng: -72.005 } }],
+    });
+    expect((await facts(t, id as Id<'waterBodies'>))?.staleAt).toBeUndefined();
+    // The outline: marked.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...record, polygon: square(-72.001, 44) }],
     });
     expect((await facts(t, id as Id<'waterBodies'>))?.staleAt).toEqual(expect.any(Number));
   });
@@ -360,6 +367,24 @@ describe('the drift repair', () => {
     expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 2 });
     expect((await facts(t, old))?.staleAt).toBe(NOW + 1_000);
     expect((await facts(t, bare))?.staleAt).toBe(NOW + 1_000);
+  });
+
+  test('a row whose places the sampled rule computed is behind; one computed by today’s is not (D266)', async () => {
+    const t = harness();
+    const sampled = await seedBody(t, 'Sampled', -72);
+    const current = await seedBody(t, 'Current', -60);
+    await drain(t);
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', sampled))
+        .first();
+      if (row) await ctx.db.patch(row._id, { placesRule: undefined });
+    });
+    vi.setSystemTime(NOW + 1_000);
+    expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
+    expect((await facts(t, sampled))?.staleAt).toBe(NOW + 1_000);
+    expect((await facts(t, current))?.staleAt).toBeUndefined();
   });
 
   test('finds an outline changed with no mark, a stale held copy, a newer places layer, a missing row', async () => {

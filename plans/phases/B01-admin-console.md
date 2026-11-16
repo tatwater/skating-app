@@ -997,7 +997,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once). **Added 2026-11-15:** D266 (a body is in a town when 25 m of its shoreline is; states and region follow; one rule for the merge, the import and the facts).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -3443,7 +3443,8 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
   search); a removed or rejected body is found by no name. Every writer of an ingredient rebuilds the
   text through the builder (`searchTextWriters.test.ts` inventories them: the import, a drawn body,
   `setAliases` and its undo, the name override and its undo, an admitted catalog body, the repair
-  pass); a merge moves no names, a removal leaves them. No backfill: with no moderator aliases the
+  pass, and — since B01-3g — a merge, which carries a loser's aliases to its survivor); a merge moves
+  no catalog names, a removal leaves them. No backfill: with no moderator aliases the
   rule gives today's string, and dev carries none. The repair pass (`backfillSearchText`) reads the
   builder; dry by default, one page a call or `chain`, each stale body its own nested write.
   The search read, measured worst case (a full page of heavy outlines, every alias at its bound, half
@@ -3482,6 +3483,151 @@ and the answer the same whatever order reads settle in. Reserve, never queue.
 **Held — the survey filing** (`fileBathymetrySurvey`): the board shows the field (*A survey the next
 build should load*, *Paste a link or a citation*) but not what appears once one is filed; it waits on
 the founder's call.
+
+### The region rule (B01-3g, D266)
+
+**Why.** Seven dormant bodies had no town. All seven lay outside the five states, and the catalog had
+stamped them with a state anyway: `importCanonical` filled any record without `states` from the
+loader's `--state` tag. The facts' towns came from 13 sampled points (the interior point and twelve
+shore vertices), so a big lake listed a fraction of its towns and called the list complete (Lake
+Champlain: 13 of 40), and a shore point a few meters across a state line placed a Connecticut pond in
+Massachusetts. Membership, towns, counties and states now come from one rule and one function.
+
+**The rule (the founder's, 2026-11-15).** A body is in a town when at least `REGION_SHORE_M` (25 m)
+of its shoreline lies inside that town — every ring, islands included, clipped exactly against the
+town's polygon and measured in meters on the ground. The test is access from the land, not where the
+water is: 25 m is enough shore for a put-in. Open water alone lists no town (a TIGER "not defined"
+water unit holding none of the shore is not one the body is in; one that holds 25 m counts for its
+county and state, and is never listed as a town). A stretch within 1 cm of a town's edge lies on it
+and counts for both sides. When no town holds 25 m: if 25 m or more of the shore lies outside every
+loaded town the body is **out of region**; otherwise (a short shore, or one split among towns in short
+pieces) it is in the town holding the most of it, so a body inside the towns is never in none. In
+region means in at least one loaded town; states follow from the towns, counties from each town's
+GEOID (`tiger/SSCCCsssss`: its first five digits are its county's).
+
+**One function, two readers.** `@skating/core`'s `createReach` (`regionReach.ts`) is the rule: exact
+along every edge (a line meets the 1 cm capsule around each town edge in one closed-form interval; what
+is left of the edge is wholly in or out, settled by one point-in-polygon test; each segment's ground
+length comes from its own endpoints at its own mid-latitude, so nothing depends on vertex order, a
+ring's start or its closing vertex — Greptile on #130 found the frame once did), pageable (towns are
+added a page at a time, order-free), with a brute-force reference and fast-check properties under
+pinned seeds plus one random run (monotone in the constant; invariant to vertex order and ring start;
+equal to the reference; split by a line lists both; on a line lists both; short shores go to the most;
+inside the towns is never none). Its readers:
+
+| Reader | Layer | What it decides |
+|---|---|---|
+| The merge's `statesFor` (`scripts/etl`) | The rows `scripts/admin-areas` loads into `adminAreas` (`.raw/areas-*.ndjson`), read directly | A record's `states`, measured on the outline the import stores (the one the facts read); `[]` is out of region, always emitted |
+| The geometry facts (`bodyGeo`) | `adminAreas` towns, paged by cell | A body's towns, counties, states (`placesRule: 2`) |
+
+**The import.** `importCanonical` has no `state` argument any more (the exact validator refuses the
+old tag), and the loader refuses `--state=`. A record without `states` throws before any write (the
+producer ran without boundaries, which must never read as a corpus out of region); the loader refuses
+such a file up front; the merge's `townLayerOf` throws on a missing, empty or short town layer. An
+empty `states` is out of region: a new body is not inserted, and a stored body is patched but keeps
+its states — no import relabels a body off the map — and both are counted and named (`outOfRegion`,
+`outOfRegionKept`, `outsideRegion`, on the run row as itemized failures).
+
+**Limits (the geometry facts).** Candidates come from `adminAreaCells` over the body's box padded by
+0.0005°, at most 2,000 cell reads a query (`CANDIDATE_CELL_READS`), paged by a `{ z, i }` cursor that
+must move on (else the body fails); a cell holding more than 64 town rows throws. Towns are read 11 to
+a query (`TOWN_PAGE`: a polygon is uncapped, so each is charged at 1 MiB against the 12 MiB budget;
+dev's largest is 98 KB) and counties 11 to a query. The action never holds more than one page of town
+polygons. The worst body is Lake Champlain: 75 candidate towns, seven town pages; the rule took 28 ms
+for it offline, and the whole dev corpus (24,953 bodies) 8.6 s. The chain keeps its run, attempt and
+parking pattern unchanged. Tested on a 14,151-vertex outline over 81 towns.
+
+**Honest states.** A facts row without `placesRule: 2` holds the sampled answer from before, and no
+read shows it: places, town lines, the preview's town and the frame's towns read *not computed yet*,
+the touching bodies still show. The drift repair marks such a row; a parked body keeps reading *not
+computed yet* until its recompute goes through. The interior point no longer marks a body stale.
+
+**What changed, measured on dev data offline** (the rule over every body against the loaded towns,
+compared with the sampled rule's answer):
+
+| The 20 largest bodies | Listed (stored, sampled) | Touched (vertex measure, Part C) | Under the rule |
+|---|---|---|---|
+| Sum | 95 | 155 | 155 |
+| Lake Champlain | 13 | 40 | 40 |
+| Seneca / Cayuga | 10 / 10 | 16 / 15 | 16 / 15 |
+
+(The earlier report's 85 and 145 were each 10 short; every per-body figure stands.) Every one of the
+20 lists exactly the towns it touches. Corpus-wide: **248** bodies change their town list, **647**
+their counties (a border lake now names every county its towns lie in, not the interior point's),
+**12** their states, and **8** are out of region. The full recompute's live cost is owed (measured
+after merge).
+
+**A shore along a line is the rule's own uncertainty.** The stored boundaries are good to ~5–7 m, so
+a shore that follows a town or state line can count for one side, both or neither depending on a few
+meters. Two of the seven are the worked examples: a quarry pond on the PA/NY line near Chemung holds
+0 m of shore in New York by the stored layer and 247.6 m by raw TIGER (that shore lies within 3.4 m of
+the raw line, 4.2 m of ours), and a 1,965-acre Quebec body holds 0 m by the stored layer and 546.1 m by
+raw TIGER (within 0.2 m of the raw line). Two kept bodies sit just under the constant (24.2 m and
+22.8 m). The constant is the founder's and is not tuned to these.
+
+**Readers of the towns.** Console only: the preview's place line and its "+N" (the tooltip now names
+a dozen and counts the rest), the frame's towns, Names (every county, labeled *Counties* when more than
+one), Places, and town lines (cap raised from 24 to 48: Champlain is 40). The skater apps read only
+`waterBodies.states` (the import's) — the search sub-lines, the lake kicker, the region filters; no
+skater screen lists towns, and body search is by name only, so no skater wording changes until a
+body's states change at its next campaign. The phone picker's empty state says "Try another spelling,
+or the lake's town" though search does not match towns (owed, below).
+
+**A removal can say why.** `waterBodies.remove` takes an optional note: trimmed, refused past
+`REMOVAL_NOTE_MAX_CHARS` (1,000) with the shared message, written into the audit reason beside the
+fixed one and kept in its metadata, returned by `bodyConsole.removedFacts` (`left.note`). No note is
+exactly the old removal; the undo is unchanged.
+
+**A moderator's pin outranks the rule.** `waterBodies.moderatorTownKeys` — stable `tiger/<GEOID>`
+keys (a boundary reload keeps the document, and a key survives even a delete and reload), at most 8 —
+holds a body in region in the towns named. `setModeratorTowns` is a whole-list write (`expected`,
+`list_changed`), audited (`set_moderator_towns`) and undone through the same write. **A write that
+removes any pin is a takeaway** and refuses without a nonblank reason ("A reason is required", as
+every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
+in N towns") and marked `reasonDefaulted` in the audit row. The person's reason is trimmed and
+refused past `AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings
+one), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
+run past it. Its undo follows the same rule on the list it puts back (one rule, the undo policy's
+`{ from, to }`): undoing an add removes pins and asks a reason; undoing a removal only adds and asks
+none. The undo is refused, so never offered, when a merge moved the list since its row. A body's states are built from two ingredients kept apart —
+the rule's (`regionStates`) and the pinned towns' — by one builder (`regionStatesFields`), which
+the pin's write, its undo, a merge and the import all patch through, so skater search, the library
+and the console read a pin's state in the write's own transaction, and clearing a pin removes exactly
+the state it added (Greptile on #130). The facts keep the pinned towns apart too (`pinnedTowns`,
+rebuilt in the same transaction as every pin write and by each recompute) and the readers merge them
+in, so no reader shows the pins as they were; a key whose town is gone is kept in `pinnedMissing`. The
+import adds pinned states and never reads a pinned body as out of region (`keptByPin`). A merge folds
+the loser's pins into the survivor and records both in its change set; a removal leaves them.
+**Nothing a moderator set is dropped by a merge** (Greptile on #130): the survivor takes the union of
+both bodies' pins, aliases and reference links (`mergedModeratorLists`) — the aliases with the
+survivor's search text, rebuilt in the same patch (`bodySearchTextFor`) — and a union past a cap is a
+refusal in a sentence (which list, how many, the cap, clear some first) — never a truncation. The
+duplicate card never offers that merge and shows the sentence; the import's automated merge skips
+the pair, names it and flags it into the duplicate queue on an applied run. Its dry run predicts
+the apply exactly whatever the batch boundaries (Greptile on #130): each call returns `taken`, every
+survivor's lists as they stand by now in this pass, merged under its own name as the merge merges
+them, and the script feeds it to the next batch — chosen over keeping a survivor's pairs in one batch
+because it holds for any batch size, order and chained absorption. A survivor the pass retired earlier
+is skipped as merged in the dry run too, as the apply skips its tombstone. Weather sample points are not carried: each lies on its own body's outline.
+The merge's change set keeps both bodies' lists as they were, for the unmerge (not built yet). A
+guard reads the functions' source: nothing else writes the pins.
+
+**The founder's determinations (2026-11-15), by hand, after the PR deploys.** Of the seven: keep the
+Sterling Forest body (Warwick, NY; inside the state park), remove the other six with notes. Of the
+twelve further out-of-state bodies: keep four (the Amity ME land-trust preserve, the Hodgdon ME public
+reserved land, South Pond by Taconic State Park, Hatchet Pond by the Southbridge town reserve) and pin
+South Pond (North East, NY) and Hatchet Pond (Southbridge, MA), which sit under 25 m; remove eight
+with notes. Every removal runs as the founder through the run-as marker, reason `other`.
+
+**Owed.**
+- The console control for a pin (the server write and its reads are built; no page sets one).
+- Better ownership and public-land data — a parcel or protected-area layer — so a call like these
+  nineteen is made from data rather than by hand (OSM's land-use and protected-area polygons were
+  the only evidence; no state parcel layer was queryable).
+- The boundary-following shore caveat above stands documented; nothing in the rule resolves it.
+- The full recompute's measured cost on dev, after merge.
+- The phone picker's "or the lake's town" hint, which search does not honor.
+- `waterBodies.remove` adopts the tagged-reason type when #125 lands.
 
 ### The People pages (B01-4, the page)
 

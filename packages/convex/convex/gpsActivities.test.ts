@@ -95,6 +95,7 @@ async function seedBody(
     bodies: [
       {
         source: 'osm' as const,
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name: overrides.name ?? 'Shelburne Pond',

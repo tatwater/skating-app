@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D266
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -841,6 +841,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - History's rounds (B01-3i): a page of History in a handful of rounds, its refusal checks reserved in page order → the plan's *A page of History in a handful of rounds*
 - Aliases in skater search and the text caps (B01-3h): every search finds a moderator's alias; names, URLs and catalog ids capped at their writers; the landmark undo's full rule where one landmark is in view; a stored list of a body's names is owed → the plan's *B01-3h*
 - The Bodies reads made right (B01-3b) need their jobs on dev after deploy: `bodyGeo:seedAll` then `bodyGeo:computeAll` (until a body's facts are computed, its touching bodies and places read *not computed*), `auditLinks:backfill` (until it finishes, History holds only the rows linked so far), `waterBodies:retargetMergedAsks`, `bodyLibrary:requeueCapped` → the plan's *The Bodies reads made right*
+- B01-3g's after-merge steps on dev (D266): `convex dev --once`; `bodyGeo:seedAll` then `bodyGeo:computeAll` (one chain; until a body is recomputed its places read *not computed*), its cost measured; verify the straddlers carry their towns; then the founder's removals with their notes and the two pins (South Pond, Hatchet Pond); the pin's console control, ownership data, and the boundary-following shore caveat → the plan's *The region rule (B01-3g)*
 - The Body console's three PRs (the frame and Shape; Names, Places, Access and Water; Imagery, Hazards, Standing and Links), after the list — the founder's call on sizes, 2026-11-14
 - The People pages (B01-4, the page) wait on the People server's follow-up: `endCursor` on the list, staff rows' last-seen, role-since and decisions this week, the oldest open flag or ticket per row, `lanesFor` from core, `{ actionId, undoNeedsReason }` from each write, `ledger.since`, `rights.since`, the bounty season line, explicit `can` entries, a profile-opens flag, flag target labels and appeal text, and who undid a row; the record sheet awaits a design round; the People kit candidates (`SearchLane`, `LeverRow`) await a kit pass → the plan's *The People pages*
 

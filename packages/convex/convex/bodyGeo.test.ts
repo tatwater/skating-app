@@ -8,11 +8,12 @@ import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { placesFrom } from './bodyGeo';
+import { COUNTY_PAGE, movedOn, placesFrom, TOWN_PAGE } from './bodyGeo';
 import {
   coverTiles,
   markGeoStale,
   outlineStamp,
+  PLACES_RULE,
   samplePoints,
   simplifiedRing,
   touches,
@@ -59,6 +60,21 @@ function ellipse(cx: number, cy: number, rx: number, ry: number, n: number): Pol
   ring.push(ring[0] as number[]);
   return { type: 'Polygon', coordinates: [ring] };
 }
+/** An axis-aligned rectangle from its corners. */
+function rectangle(x0: number, y0: number, x1: number, y1: number): Polygon {
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1],
+        [x0, y0],
+      ],
+    ],
+  };
+}
 const boxOf = (cx: number, cy: number, rx: number, ry: number) => ({
   minLng: cx - rx,
   maxLng: cx + rx,
@@ -92,6 +108,39 @@ async function seedBody(
     });
     await syncWaterBodyCells(ctx, id, { bbox, minVisibleZoom: opts.zoom ?? 8, listed: true });
     await rebuildBodyLibrary(ctx, id);
+    return id;
+  });
+}
+
+/** A boundary, indexed as the import indexes it. */
+async function seedArea(
+  t: T,
+  name: string,
+  level: 'town' | 'county' | 'state',
+  state: string,
+  externalId: string,
+  polygon: Polygon,
+): Promise<Id<'adminAreas'>> {
+  return t.run(async (ctx) => {
+    const xs = polygon.coordinates[0]?.map((p) => p[0] as number) ?? [];
+    const ys = polygon.coordinates[0]?.map((p) => p[1] as number) ?? [];
+    const bbox = {
+      minLng: Math.min(...xs),
+      maxLng: Math.max(...xs),
+      minLat: Math.min(...ys),
+      maxLat: Math.max(...ys),
+    };
+    const id = await ctx.db.insert('adminAreas', {
+      name,
+      level,
+      state,
+      externalId,
+      polygon,
+      bbox,
+      centroid: { lat: (bbox.minLat + bbox.maxLat) / 2, lng: (bbox.minLng + bbox.maxLng) / 2 },
+      createdAt: NOW,
+    });
+    await syncAdminAreaCells(ctx, id, { bbox, level });
     return id;
   });
 }
@@ -181,52 +230,57 @@ describe('pure helpers', () => {
     expect(touches(lake, far, true)).toBe(false);
     expect(touches(lake, ellipse(0.0201, 0, 0.0101, 0.01, 64), false)).toBe(true);
   });
-  test('places: towns in sample order, the county at the interior point only', () => {
-    const square = ellipse(0, 0, 1, 1, 4);
+  test('places: towns in the rule’s order, counties from each town’s GEOID, states from the towns', () => {
+    const town = (id: string, name: string, state: string, externalId: string) => ({
+      id: id as Id<'adminAreas'>,
+      name,
+      state,
+      externalId,
+    });
     const out = placesFrom(
       [
-        { lat: 0, lng: 0 },
-        { lat: 0.5, lng: 0 },
+        town('a', 'Alburgh', 'VT', 'tiger/5001300850'),
+        // A water unit between towns: in region, its county and state count — never listed.
+        town('u', 'County subdivisions not defined', 'NY', 'tiger/3601900000'),
+        town('b', 'Champlain', 'NY', 'tiger/3601913420'),
+        // A legacy key names no county.
+        town('c', 'Legacy', 'VT', 'relation/1'),
       ],
-      {
-        perPoint: [
-          { town: ['t1'], county: ['c1'] },
-          { town: ['t1', 't2'], county: ['c2'] },
-        ],
-        areas: [
-          { id: 't1', name: 'Enfield', state: 'NH', bbox: boxOf(0, 0, 1, 1), polygon: square },
-          { id: 't2', name: 'Elsewhere', state: 'VT', bbox: boxOf(5, 5, 1, 1), polygon: square },
-          { id: 'c1', name: 'Grafton', state: 'NH', bbox: boxOf(0, 0, 1, 1), polygon: square },
-          { id: 'c2', name: 'Other', state: 'NH', bbox: boxOf(0, 0, 1, 1), polygon: square },
-        ],
-      },
+      new Map([
+        ['tiger/50013', 'Grand Isle'],
+        ['tiger/36019', 'Clinton'],
+      ]),
     );
     expect(out).toEqual({
-      towns: ['Enfield'],
-      townStates: ['NH'],
-      townIds: [expect.any(String)],
-      townEntries: [{ name: 'Enfield', state: 'NH', id: 't1' }],
-      counties: ['Grafton'],
-      states: ['NH'],
+      towns: ['Alburgh', 'Champlain', 'Legacy'],
+      townStates: ['VT', 'NY', 'VT'],
+      townIds: ['a', 'b', 'c'],
+      townEntries: [
+        { name: 'Alburgh', state: 'VT', id: 'a' },
+        { name: 'Champlain', state: 'NY', id: 'b' },
+        { name: 'Legacy', state: 'VT', id: 'c' },
+      ],
+      counties: ['Grand Isle', 'Clinton'],
+      states: ['NY', 'VT'],
     });
   });
   test('a border lake’s same-named towns in two states are two entries; `towns` keeps one name (B01-3d)', () => {
-    const square = ellipse(0, 0, 1, 1, 4);
     const out = placesFrom(
       [
-        { lat: 0, lng: 0 },
-        { lat: 0.5, lng: 0 },
+        {
+          id: 'vt' as Id<'adminAreas'>,
+          name: 'Franklin',
+          state: 'VT',
+          externalId: 'tiger/5001126800',
+        },
+        {
+          id: 'nh' as Id<'adminAreas'>,
+          name: 'Franklin',
+          state: 'NH',
+          externalId: 'tiger/3301327380',
+        },
       ],
-      {
-        perPoint: [
-          { town: ['vt'], county: [] },
-          { town: ['nh'], county: [] },
-        ],
-        areas: [
-          { id: 'vt', name: 'Franklin', state: 'VT', bbox: boxOf(0, 0, 1, 1), polygon: square },
-          { id: 'nh', name: 'Franklin', state: 'NH', bbox: boxOf(0, 0, 1, 1), polygon: square },
-        ],
-      },
+      new Map(),
     );
     expect(out.towns).toEqual(['Franklin']);
     expect(out.townEntries).toEqual([
@@ -243,6 +297,13 @@ describe('pure helpers', () => {
       { name: 'Franklin', state: 'VT' },
       { name: 'Franklin', state: 'NH' },
     ]);
+  });
+  test('a candidates page must move on, or the body fails rather than loop', () => {
+    expect(movedOn(undefined, { z: 4, i: 0 })).toBe(true);
+    expect(movedOn({ z: 9, i: 10 }, { z: 9, i: 11 })).toBe(true);
+    expect(movedOn({ z: 9, i: 10 }, { z: 10, i: 0 })).toBe(true);
+    expect(movedOn({ z: 9, i: 10 }, { z: 9, i: 10 })).toBe(false);
+    expect(movedOn({ z: 9, i: 10 }, { z: 8, i: 99 })).toBe(false);
   });
 });
 
@@ -398,24 +459,8 @@ describe('computed at the write, read without geometry', () => {
     const t = harness();
     const as = await seedModerator(t);
     const id = await seedBody(t, 'Placed', [-72, 44], [0.01, 0.01]);
-    await t.run(async (ctx) => {
-      for (const [name, level, r] of [
-        ['Enfield', 'town', 0.2],
-        ['Grafton', 'county', 0.5],
-      ] as const) {
-        const area = await ctx.db.insert('adminAreas', {
-          name,
-          level,
-          state: 'NH',
-          externalId: `relation/${name}`,
-          polygon: ellipse(-72, 44, r, r, 4),
-          bbox: boxOf(-72, 44, r, r),
-          centroid: { lat: 44, lng: -72 },
-          createdAt: NOW,
-        });
-        await syncAdminAreaCells(ctx, area, { bbox: boxOf(-72, 44, r, r), level });
-      }
-    });
+    await seedArea(t, 'Enfield', 'town', 'NH', 'tiger/3300924900', ellipse(-72, 44, 0.2, 0.2, 4));
+    await seedArea(t, 'Grafton', 'county', 'NH', 'tiger/33009', ellipse(-72, 44, 0.5, 0.5, 4));
     // Before the computation: the preview has no town and says the towns aren't computed yet.
     expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
       town: null,
@@ -433,8 +478,11 @@ describe('computed at the write, read without geometry', () => {
       townsWithState: [{ name: 'Enfield', state: 'NH' }],
       counties: ['Grafton'],
       states: ['NH'],
+      pinned: [],
+      pinnedMissing: [],
       computedAt: NOW,
     });
+    expect((await facts(t, id))?.placesRule).toBe(PLACES_RULE);
     // Each town's state reaches the preview and the frame too (B01-3c).
     expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
       town: 'Enfield',
@@ -457,6 +505,156 @@ describe('computed at the write, read without geometry', () => {
     const lines = await as.query(api.bodyConsole.townLines, { waterBodyId: id });
     expect(lines?.towns[0]?.ring?.length).toBeGreaterThan(3);
     expect(lines?.towns[0]?.ring?.length).toBeLessThanOrEqual(97);
+  });
+
+  test('a town holding 25 m of the shore is listed; one holding less is not; a body in none is computed empty', async () => {
+    const t = harness();
+    const as = await seedModerator(t);
+    // Two towns meeting on the meridian 72°W; a pond across the line, and one 5 m short of it.
+    await seedArea(t, 'West', 'town', 'VT', 'tiger/5000100001', rectangle(-72.2, 43.9, -72, 44.1));
+    await seedArea(t, 'East', 'town', 'NH', 'tiger/3300100002', rectangle(-72, 43.9, -71.8, 44.1));
+    const across = await seedBody(t, 'Across', [-72, 44], [0.005, 0.005]);
+    // Its east tip 0.4 m past the line: about 20 m of shore in East, under the 25 m it takes.
+    const grazing = await seedBody(t, 'Grazing', [-72.005 + 0.000005, 44.05], [0.005, 0.002]);
+    const nowhere = await seedBody(t, 'Nowhere', [-70, 44], [0.005, 0.005]);
+    await stale(t, [across, grazing, nowhere]);
+    await compute(t);
+    const placesOfBody = (id: Id<'waterBodies'>) =>
+      as.query(api.bodyConsole.places, { waterBodyId: id });
+    expect((await placesOfBody(across))?.towns.sort()).toEqual(['East', 'West']);
+    expect((await placesOfBody(across))?.states).toEqual(['NH', 'VT']);
+    expect(await placesOfBody(grazing)).toMatchObject({ towns: ['West'], states: ['VT'] });
+    expect(await placesOfBody(nowhere)).toEqual({
+      towns: [],
+      townsWithState: [],
+      counties: [],
+      states: [],
+      pinned: [],
+      pinnedMissing: [],
+      computedAt: NOW,
+    });
+  });
+
+  test('places computed by the sampled rule before read as not computed; the touching bodies still show', async () => {
+    const t = harness();
+    const as = await seedModerator(t);
+    const id = await seedBody(t, 'Old', [-72, 44], [0.01, 0.01]);
+    const near = await seedBody(t, 'Near', [-72.02, 44], [0.01, 0.01]);
+    await t.run(async (ctx) => {
+      // The cell index's mark left a row; replace it with the one the sampled rule stored.
+      for (const r of await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+        .collect()) {
+        await ctx.db.delete(r._id);
+      }
+      await ctx.db.insert('bodyGeoFacts', {
+        waterBodyId: id,
+        computedAt: NOW,
+        checkedAt: NOW,
+        stamp: 'old',
+        neighbors: [{ waterBodyId: near, name: 'Near', ring: [[0, 0]] }],
+        neighborsCapped: false,
+        towns: ['Sampled'],
+        townStates: ['VT'],
+        townIds: [],
+        townEntries: [],
+        counties: ['Sampled County'],
+        states: ['VT'],
+        areasAt: 0,
+        // A parked row keeps its old answer until its recompute goes through.
+        parkedAt: NOW,
+      });
+    });
+    expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toBeNull();
+    expect(await as.query(api.bodyConsole.townLines, { waterBodyId: id })).toBeNull();
+    expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
+      town: null,
+      townsComputedAt: null,
+    });
+    const extras = await as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    expect(extras).toMatchObject({ towns: null, townsWithState: null, touchingBodyIds: [near] });
+  });
+
+  test('the largest dev lake against the most candidates: towns paged, every one tested, within the action’s limits', async () => {
+    const t = harness();
+    // 14,151 vertices — the largest outline on dev — over a 9 × 9 grid of towns, as Lake Champlain
+    // meets 75 candidate towns on dev. The lake (rx 0.3°, ry 0.2°) reaches into the inner towns only.
+    const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.3, 0.2], { n: 14_151 });
+    const step = 0.1;
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        const x0 = -73.75 + i * step;
+        const y0 = 44.05 + j * step;
+        await seedArea(
+          t,
+          `T${i}${j}`,
+          'town',
+          'VT',
+          `tiger/50007${String(i * 9 + j).padStart(5, '1')}`,
+          rectangle(x0, y0, x0 + step, y0 + step),
+        );
+      }
+    }
+    await seedArea(t, 'Chittenden', 'county', 'VT', 'tiger/50007', rectangle(-74, 44, -72.5, 45));
+    expect(TOWN_PAGE).toBe(11);
+    expect(COUNTY_PAGE).toBe(11);
+    await stale(t, [giant]);
+    const started = performance.now();
+    expect(await compute(t)).toMatchObject({ computed: 1, failed: 0 });
+    const ms = performance.now() - started;
+    const row = await facts(t, giant);
+    // The ellipse spans x −73.6…−73.0 and y 44.3…44.7: towns i 1–7 by j 2–6 at most, and every one of
+    // those it reaches more than 15 m into.
+    expect(row?.towns?.length).toBeGreaterThan(TOWN_PAGE);
+    expect(row?.towns?.length).toBeLessThanOrEqual(35);
+    expect(row?.counties).toEqual(['Chittenden']);
+    expect(row?.states).toEqual(['VT']);
+    expect(row?.placesRule).toBe(PLACES_RULE);
+    // Generous: the rule itself measured 150 ms for Lake Champlain against its 75 towns.
+    expect(ms).toBeLessThan(20_000);
+  });
+
+  test('a town cell holding more rows than its cap throws rather than answer short', async () => {
+    const t = harness();
+    for (let i = 0; i < 65; i++) {
+      await seedArea(
+        t,
+        `Tiny ${i}`,
+        'town',
+        'VT',
+        `tiger/50001${String(i).padStart(5, '2')}`,
+        rectangle(-72, 44, -71.999, 44.001),
+      );
+    }
+    await expect(
+      t.query(internal.bodyGeo.townCandidates, { box: boxOf(-72, 44, 0.01, 0.01) }),
+    ).rejects.toThrow(/more than 64 rows/);
+  });
+
+  test('candidates past one page’s cell reads hand on where they stopped, and the pages together are complete', async () => {
+    const t = harness();
+    await seedArea(
+      t,
+      'Far corner',
+      'town',
+      'VT',
+      'tiger/5000100003',
+      rectangle(-71.01, 44.99, -71, 45),
+    );
+    // A box wide enough that its finest rung alone covers more cells than one page reads.
+    const box = { minLng: -73.5, maxLng: -71, minLat: 43, maxLat: 45 };
+    const first = await t.query(internal.bodyGeo.townCandidates, { box });
+    expect(first.next).not.toBeNull();
+    const ids = new Set(first.ids);
+    let from = first.next;
+    while (from !== null) {
+      const page = await t.query(internal.bodyGeo.townCandidates, { box, from });
+      for (const id of page.ids) ids.add(id);
+      expect(page.next === null || movedOn(from, page.next)).toBe(true);
+      from = page.next;
+    }
+    expect(ids.size).toBe(1);
   });
 });
 

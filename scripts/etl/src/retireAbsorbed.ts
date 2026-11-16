@@ -117,6 +117,14 @@ function main(): void {
   // These are the RESOLVED row keys the mutation returns, not the input refs, which is what lets two
   // differing keys collapse to one string.
   const retiredKeys: string[] = [];
+  // **And the moderator-held lists each survivor holds by now** (B01-3g): the cap check reads them,
+  // so the dry run predicts the apply across any batch boundary.
+  let taken: {
+    key: string;
+    pins: string[];
+    aliases: string[];
+    links: { label: string; url: string }[];
+  }[] = [];
 
   for (let i = 0; i < pairs.length; i += batch) {
     const slice = pairs
@@ -128,6 +136,7 @@ function main(): void {
       retired: number;
       samples: { absorbed: string; into: string; name: string }[];
       retiredKeys: string[];
+      taken: typeof taken;
       skipped: Record<string, number>;
       skippedSamples: { pair: string; why: string }[];
     }>('waterBodies:retireAbsorbedBodies', {
@@ -135,8 +144,10 @@ function main(): void {
       ...(campaignId ? { campaignId } : {}),
       ...(apply ? { apply: true } : {}),
       ...(retiredKeys.length > 0 ? { alreadyRetired: retiredKeys } : {}),
+      ...(taken.length > 0 ? { taken } : {}),
     });
     retiredKeys.push(...result.retiredKeys);
+    taken = result.taken ?? [];
     totals.scanned += result.scanned;
     totals.retired += result.retired;
     for (const [why, n] of Object.entries(result.skipped)) skipped[why] = (skipped[why] ?? 0) + n;

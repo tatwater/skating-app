@@ -75,6 +75,7 @@ async function imported(
     bodies: [
       {
         source: 'osm',
+        states: ['VT'],
         externalId,
         osmId: externalId,
         name,
@@ -252,7 +253,10 @@ describe('the search read’s cost (B01-3h, measured)', () => {
     const base = await bytesOf('Twin Pond');
     // After: every alias a body may carry, at its longest, on every body; half the corpus merged.
     const long = (i: number, j: number) => `Twin ${i} ${j} `.padEnd(MAX_MODERATOR_ALIAS_CHARS, 'x');
-    for (const [i, id] of ids.entries()) {
+    // Set on the four duplicates only: a merge carries a loser's aliases to its survivor (and
+    // refuses a union past the cap), so after the merges every body — tombstone and survivor —
+    // holds the full list.
+    for (const [i, id] of ids.slice(0, 4).entries()) {
       await mod.as.mutation(api.waterBodies.setAliases, {
         waterBodyId: id,
         aliases: Array.from({ length: MAX_MODERATOR_ALIASES }, (_, j) => long(i, j)),

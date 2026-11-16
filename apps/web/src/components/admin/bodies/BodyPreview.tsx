@@ -173,14 +173,23 @@ function placeKicker(data: BodyPreviewData): ReactNode {
   );
 }
 
+/** Other towns the tooltip names before it counts the rest — a big lake reaches into dozens. */
+export const TOOLTIP_TOWNS = 12;
+
 /**
  * "Canaan, NH": the other towns, each with its state when the body lies in one state (a town it
  * touches is in it); a border body's towns go without, since the read doesn't say whose each is.
+ * Past {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
  */
-function otherTowns(data: BodyPreviewData): string {
+export function otherTowns(data: Pick<BodyPreviewData, 'states' | 'moreTowns'>): string {
   const [only, ...more] = data.states;
   const state = only !== undefined && more.length === 0 ? `, ${only}` : '';
-  return data.moreTowns.map((t) => `${t}${state}`).join(' · ');
+  const named = data.moreTowns
+    .slice(0, TOOLTIP_TOWNS)
+    .map((t) => `${t}${state}`)
+    .join(' · ');
+  const rest = data.moreTowns.length - TOOLTIP_TOWNS;
+  return rest > 0 ? `${named} and ${rest} more` : named;
 }
 
 /**
