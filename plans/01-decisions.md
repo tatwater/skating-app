@@ -8200,3 +8200,29 @@ it; every read's `can` answers by it):
 number that guesses, is the same lie in the lists.
 
 **Related:** D3, D217, D226, D248, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
+
+## D268 — A server's refusal is never buried by navigation (B01)
+
+**2026-11-16, the founder:** server-side errors and refusals show as toasts, so they arrive wherever
+the moderator is when they come; an issue is never buried by navigation. **The rule, for every admin
+write:** while the place that asked is still open — the dialog with its typed reason, the control that
+says refusals in place, the form, the person's page — the answer is said there, once. In every other
+case (another tab, another body or person, the list, another section, the sheet or dialog closing or
+closed, the console's loading splash, the console left or the viewer turned away) a refusal or error
+becomes a toast naming its subject and what was not changed. Never dropped, never said twice, never
+said into something closed or closing. "Refusal" means returned refusals, thrown server errors and
+failed sends alike.
+
+- **One dock at the app's root** (`AppToaster`), placed by surface, so the splash and the skater app
+  can draw an answer; whether the skater surface draws its own toasts sits behind one switch
+  (`SKATER_SURFACE_TOASTS`), the founder's call.
+- **The queues' owners outlive the splash** (the pick store, the list writers, Undo).
+- **Every console write reaches the server through a path that names its audience**; a guard
+  (`packages/guards/src/adminWriters.test.ts`) holds the files that reach a mutation directly to an
+  inventory. The Legacy pages, until each retires, take a net (`useSaidMutation`) that says a refusal
+  in the server's words — always where the page says nothing, only once the page has gone where it
+  says one in place.
+
+**Why:** a refusal said into a page that has gone is a write the moderator believes landed.
+
+**Related:** D3, D226, D265, D267, [`phase-B01`](./phases/B01-admin-console.md) *B01-3m*.

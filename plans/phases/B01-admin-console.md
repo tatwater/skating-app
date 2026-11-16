@@ -4482,6 +4482,82 @@ town entry per boundary, above) as its own commits.
   on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
   strip's spoken value (the kit).
 
+### Late answers are never buried (B01-3m, D268)
+
+The founder's call of 2026-11-16: a server's refusal or error reaches the moderator wherever they are
+when it comes. While the place that asked is open, it is said there, once; everywhere else it is a
+toast naming its subject and what was not changed (D268).
+
+- **One dock at the app's root** (`AppToaster`). The console's only toaster sat inside its shell,
+  after the loading splash, and the skater app had none: an answer during a role reload, or after
+  leaving the console (or being turned away), had nowhere to be drawn. It is placed by surface (past
+  the rail in the console, in from the corner elsewhere). Whether the skater surface draws toasts is
+  one switch, `SKATER_SURFACE_TOASTS` — `all` for now, the founder's call pending; `refusals` draws
+  only tone-`bad` toasts there (the console's late answers), `none` nothing. With it on, the skater
+  app's own three toasts start to show (the map's location button): *Your location isn't available
+  in this browser.*, *You're outside the area Gli covers, so the map stayed put.*, *Couldn't get your
+  location.*
+- **The queues' owners outlive the splash.** The pick store, the list writers and Undo sit above the
+  console's splash, so a write out while the viewer's role reloads keeps its queue. A reload that
+  turns the viewer away takes them with the console: a write still out says its answer through its
+  own sender and words, in the root dock on whatever page the viewer landed (the store's model holds
+  "the owner remounts mid-flight": every refusal still said once, every store drained).
+- **People.** The record sheet said a late refusal only while the person's page was mounted; the
+  person page's levers kept theirs in their own state. Both now say it once their place has gone,
+  in a toast naming the person ("Not changed · …").
+- **Undo's reason dialog**: its opening is its asker — over the kept reason while the console is
+  there, else "Not undone" in a toast.
+- **Standing's form and Hazards' demote dialog**: their writes pass the place that asked, and
+  `holdFor` narrows the tab's hold to it, so a form that went while its tab stayed never takes a
+  refusal with it.
+- **The Legacy pages' net** (`useSaidMutation`). Most had no `catch`: a refusal reached only the
+  browser console. `always` (said in a toast in the server's words, rethrown) where the page says
+  nothing; `inPlace` (said only once the component that asked has gone) where it says one in place.
+  The four the coordinator named (the old editor, RestorePost, ModeratorActions, SeasonWatch's run)
+  each could lose a refusal once their page had gone; each takes `inPlace`. A Legacy toast names
+  only the server's words, not its subject (owed with each page's retirement).
+- **The guard** (`packages/guards/src/adminWriters.test.ts`): every console file that reaches a
+  mutation directly is in an inventory naming the write path that says its refusals.
+- **Namesakes of one kind** (the two Clintons): a subdivision's boundary key carries TIGER's GEOID,
+  whose first five digits are its county's, and the recompute already reads each loaded county's
+  name — so no new data was needed, only a widen-only field (`inCounty` on the facts' town entries
+  and pins). `namesakeTells` in core is the one rule: the kind where the namesakes carry more than
+  one, the county where another has its own kind ("Clinton (Clinton County), NY"). **After merge, on
+  dev:** `convex dev --once`, then `bodyGeo:seedAll` and `bodyGeo:computeAll` (the B01-3l timing,
+  about 32 minutes); no boundary re-load.
+
+**Every admin write, and where its refusal is said:**
+
+| Write | Its place open | Its place gone |
+|---|---|---|
+| Names: *Display this*, the class (pick store) | a toast naming body and what | the same toast |
+| Names: aliases (list queue) | under the field | a toast naming the body |
+| Names: a community name (`act`) | a toast | a toast naming the body (`sendFor`) |
+| Water: depth source (pick store) | a toast naming body and what | the same toast |
+| Access: ruling buttons (pick store) | a toast naming body and what | the same toast |
+| Access: *Rule no public access* (pick store, asker) | the dialog, over the reason | a toast naming body and what |
+| Access: *Make official* (`act`) / *Hide* (`actInDialog`, asker) | a toast / the dialog | a toast naming the body |
+| Places: landmark card and spellings (list queue) | in the card | a toast naming the body |
+| Places: *Dismiss*, *Decline* (`actInDialog`, asker) / *Same place* (`act`) | the dialog / a toast | a toast naming the body |
+| Links (list queue) | the section's note | a toast naming the body |
+| Imagery: satellite link (pick store, in place) / pass override | under the control / the dialog | a toast naming the body |
+| Hazards: demote (`holdFor` the dialog) | the dialog | a toast naming the body |
+| Standing: dormant, active, remove, restore (`holdFor` the form) | the form | a toast naming the body |
+| The frame: map boost (pick store) | a toast naming the body | the same toast |
+| People: a person's levers (asker: the page) | the lever, or its dialog | a toast naming the person |
+| People: the record sheet's levers (`useRecordActing`) | the item, or its dialog | a toast naming the person |
+| Undo: from a toast or History (no reason) | a toast | the same toast |
+| Undo: with a reason (asker: the dialog) | the dialog | a toast |
+| The shell: presence heartbeat | — no one asked | — |
+| The Bodies list, People list, Overview | no writes | — |
+| Legacy, no `catch` (flags, recurrence, support, features, water list, hazard controls) | a toast in the server's words | the same |
+| Legacy, said in place (old editor, seasons, requests, landmark tool, place names, posted rules, dismiss, restore, moderator actions) | in place | a toast in the server's words |
+
+**Left:** a Legacy toast names the server's words, not its subject — owed with each page's
+retirement; across a full remount of the console (leaving it), a write from each store can be out
+at once (the accepted limit, said in the model); a namesake pair in one county with one kind would
+still read the same (TIGER holds none we know of; not counted on dev).
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
