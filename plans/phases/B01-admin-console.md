@@ -2677,6 +2677,16 @@ only; the sheet itself is the web's next pass. Every shape change is additive ex
 - **Counts are a sibling read**, not `people.person.record`: Reversed to 500 (4 MiB of verdict rows
   at their declared worst) and Deleted beside it don't fit in the person page's budget without
   shrinking its other figures. Standing stays `person.hidden`. `person.pending` now names `verdicts`.
+- **A restore of what is already up writes nothing** (refused, *This is already up.*): a restore needs
+  no reason now, so a second press would otherwise write a second row. Before this build a restore of
+  a visible item wrote a row (its reason a re-assertion); a hide of a hidden item still does.
+- **The item pane names every decision's end**: `endedHow` is `restore`, `undo`, `overturn` — or, in
+  the pane, which shows superseded decisions too, `superseded` (a later hide, removal or retraction).
+- **Known and left:** an erased comment that had replies stays a shell with its `authorDeletedAt`, so
+  it stays in the `by_author_deleted` range the Deleted list and count read: the list passes over it
+  (a page can come back empty with `isDone: false`, and the next moves on), and a person with 30 or
+  more such shells has a Deleted count that is always a floor. Clearing the field at erasure, or the
+  stored withdrawal row below, would fix it.
 - **The content record is a People backfill** (`peopleJobs:backfillVerdicts`, fourth in
   `PEOPLE_BACKFILLS`): its run's lease rides the walk (`contentRecord.backfillVerdicts`), every item's
   replay and the clocks (`erasure.backfillClocks`), each pass taking the lease and moving the token
