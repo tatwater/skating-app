@@ -55,7 +55,7 @@ function bodies(text: string): Array<{ name: string; body: string }> {
 }
 
 /** The writers that decide something after their first audit call, with what they decide. */
-export function decidesAfterAudit(text: string): string[] {
+function decidesAfterAudit(text: string): string[] {
   const late: string[] = [];
   for (const { name, body } of bodies(text)) {
     const at = body.search(AUDIT);

@@ -50,6 +50,7 @@ import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from
 import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
+import { ownContentRefusal } from './lib/ownContent';
 import {
   assertWrite,
   DISCIPLINE_REFUSALS,
@@ -68,6 +69,7 @@ import {
   OVERTURN_NOTHING_STANDING,
   POST_RESTORE_NEEDS_A_CHOICE,
   POST_UNRESTORABLE,
+  recordActorRefusal,
   recordFactsOf,
   recordRefusal,
   UNDO_LEAVES_POST_EMPTY,
@@ -601,6 +603,9 @@ export async function setContentStatus(
     // choice, not by undo — and nothing else moves it either: it stays as the deletion left it. The
     // standing verdict is not read: neither refusal here rests on it.
     const facts = recordFactsOf(args.targetType, typedTarget, false);
+    // Never on their own content (D269) — a forward write or an undo: the lever's one rule.
+    const own = recordActorRefusal(actor, facts);
+    if (own !== null) throw new ConvexError(own);
     if (facts.erased) throw new ConvexError(ERASED_ALREADY);
     if (facts.authorDeleted) {
       if (asUndo) throw new ConvexError(authorDeletedRefusal(args.status, true));
@@ -1073,7 +1078,8 @@ export const overturnVerdict = mutation({
       standing,
       post,
     );
-    const why = recordRefusal(facts, 'overturn');
+    // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
+    const why = recordActorRefusal(actor, facts) ?? recordRefusal(facts, 'overturn');
     if (why !== null) throw new ConvexError(why);
     const now = Date.now();
     const actionId = await writeAudit(ctx, {
@@ -1133,7 +1139,9 @@ export const keepOnRecord = mutation({
       | Doc<'comments'>
       | Doc<'hazards'>
       | Doc<'accessAlerts'>;
-    const why = recordRefusal(recordFactsOf(args.targetType, doc, standing), 'keep');
+    const keepFacts = recordFactsOf(args.targetType, doc, standing);
+    // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
+    const why = recordActorRefusal(actor, keepFacts) ?? recordRefusal(keepFacts, 'keep');
     if (why !== null) throw new ConvexError(why);
     const now = Date.now();
     const actionId =
@@ -1171,6 +1179,9 @@ export const resolveFlag = mutation({
 
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new ConvexError('Flag not found');
+    // A flag about them, or about their content, is decided by someone else (D269).
+    const own = ownContentRefusal(actor, flag.subjectUserId);
+    if (own !== null) throw new ConvexError(own);
     // Resolution is terminal and single-shot. Guard it so a stale queue view — two moderators acting
     // on the same open flag, or a re-submit of an already-closed one — can't patch it twice, write a
     // second audit row, or (worse) double-count the disposition metric below and even record the flag

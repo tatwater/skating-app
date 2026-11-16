@@ -21,8 +21,9 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf, composed, fitComposed } from './audit';
 import { hasCapability } from './auth';
-import { authorDeletedAtOn, authorDeletedRefusal } from './authorDeletion';
+import { authorDeletedRefusal, contentFactsOn } from './authorDeletion';
 import { seesLedgerGrants } from './ledgerEditors';
+import { ownContentRefusal } from './ownContent';
 import { type PersonWrite, refusalFor, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { ROW_MAX, requestBudget } from './readBudget';
@@ -250,10 +251,15 @@ async function stateBeforeRefusal(
   if (blocked) return { state: 'unavailable', why: blocked };
   // Content its author deleted stays as the deletion left it (D248). The author's own row usually
   // overtakes the takedown above; a withdrawal stamped with no row of its own (a backfill) doesn't,
-  // so the undo would be offered and then refused — read the stamp, and give the refusal here.
-  if ((await authorDeletedAtOn(ctx, row.targetType, row.targetId)) !== undefined) {
+  // so the undo would be offered and then refused — read the stamp, and give the refusal here. The
+  // same read says who wrote it: an undo is a decision on it, never its author's (D269) — rows
+  // from before that rule, where a moderator acted on their own content, included.
+  const content = await contentFactsOn(ctx, row.targetType, row.targetId);
+  if (content.authorDeletedAt !== undefined) {
     return { state: 'unavailable', why: authorDeletedRefusal(meta(row).priorStatus, true) };
   }
+  const own = ownContentRefusal(viewer, content.authorId);
+  if (own !== null) return { state: 'unavailable', why: own };
   // A change to a person is refused through the same rule its forward write uses (`lib/peopleCan`):
   // an account being deleted, or deleted, can't be disciplined back or forth — so History never
   // offers an undo the write would turn down. Someone with no People row yet is decided after
