@@ -476,6 +476,16 @@ export default defineSchema({
     reputationPoints: v.number(),
     createdAt: v.number(),
     refreshedAt: v.number(),
+    /**
+     * A staffer's tenure (`lib/staffTenure`, the rule `people.staffStats` reads live), stamped at each
+     * role write: when they took the role they hold and when they became staff — absent when no row on
+     * record says so. `tenureAt` is when it was stamped (absent: never, or not staff); `tenureCapped`
+     * when the read stopped before it could say.
+     */
+    roleSince: v.optional(v.number()),
+    staffSince: v.optional(v.number()),
+    tenureCapped: v.optional(v.boolean()),
+    tenureAt: v.optional(v.number()),
   })
     .index('by_user', ['userId'])
     .index('by_live_name', ['live', 'nameKey'])
@@ -518,10 +528,10 @@ export default defineSchema({
     /** The current run's number: the only run whose passes may write. */
     run: v.number(),
     /**
-     * A backfill: the last run to reach the end of its range had no failures (and began at the start,
-     * or kept an earlier such conclusion), and none since found a gap.
+     * A backfill: the last run to reach the end of its range had no failures, and none since found a
+     * gap. Absent on a sweep's record — a sweep is never "ready", only run.
      */
-    ready: v.boolean(),
+    ready: v.optional(v.boolean()),
     /** The current run has a pass scheduled or under way. */
     running: v.boolean(),
     /** Where the current run's next pass resumes (`null`: the start, or the run ended). */
@@ -3563,7 +3573,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_blocker', ['blockerId'])
-    .index('by_blocked', ['blockedId']),
+    .index('by_blocked', ['blockedId'])
+    // Whether one person blocked another: a point read, however long either one's list is.
+    .index('by_blocker_blocked', ['blockerId', 'blockedId']),
 
   /**
    * Corpus requests (A07b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,
@@ -4826,7 +4838,9 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_created_at', ['createdAt']) // the charts' bounded window read + the retention prune
-    .index('by_water_body', ['waterBodyId']),
+    .index('by_water_body', ['waterBodyId'])
+    // A person's asks over the window still kept — the People page's bounty season line (B01).
+    .index('by_requester_created', ['requesterId', 'createdAt']),
 
   /**
    * Per-user rate-limit bookkeeping for the client analytics signal (Phase 07-2). `recordClientSignal`

@@ -17,7 +17,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
-import { writeAudit } from './lib/audit';
+import { composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { refreshBodyLibrary } from './lib/bodyLibrary';
 import { type PutInMarker, putInMarkersForBody } from './lib/putInMarkers';
@@ -127,7 +127,8 @@ export const setOfficial = mutation({
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason:
-        reason ?? (trimmedName ? `Set official put-in: ${trimmedName}` : 'Set official put-in'),
+        reason ??
+        (trimmedName ? composed`Set official put-in: ${trimmedName}` : 'Set official put-in'),
       // The **snapped** coord, which is what was stored — an audit row recording the raw click
       // would describe a marker that never existed.
       metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
@@ -296,7 +297,10 @@ export function directionRefusal(
   return null;
 }
 
-/** Hidden coordinates a promotion checks its launch against (a body holds a handful). */
+/**
+ * Hidden coordinates a promotion checks its launch against (a body holds a handful) — and so the
+ * documents its undo's refusal reads, which its share reserves (`refusalCost`, `lib/undoHandlersBody`).
+ */
 export const SUPPRESSION_ROWS_READ = 200;
 
 /**
@@ -356,7 +360,7 @@ export async function promotePutInImpl(
     targetId: body._id,
     reason:
       args.reason?.trim() ||
-      (after ? `Made the put-in official: ${after}` : 'Made the put-in official'),
+      (after ? composed`Made the put-in official: ${after}` : 'Made the put-in official'),
     metadata: {
       putInId: row._id,
       coord: row.coord,

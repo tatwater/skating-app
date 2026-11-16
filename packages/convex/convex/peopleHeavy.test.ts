@@ -97,7 +97,7 @@ describe('no People read loads profiles past the read limit', () => {
       .withIdentity({ subject: 'a0' })
       .query(api.people.person, { userId: target });
     expect(page?.can.suspend).toEqual({ ok: true, needsReason: true });
-    expect(page?.ledger).toEqual({ editor: true, last: false });
+    expect(page?.ledger).toMatchObject({ editor: true, last: false });
   });
 
   test('History over sixty rows by thirty heavy moderators, and a holder banned and lifted twenty times', async () => {
@@ -150,6 +150,7 @@ describe('no People read loads profiles past the read limit', () => {
       });
     }
     const d = await s.query(api.people.decisions, { userId: staffer, limit: 100 });
+    if (!d) throw new Error('no such person');
     expect(d.rows).toHaveLength(30);
     const stats = await s.query(api.people.staffStats, { userId: staffer as Id<'profiles'> });
     expect(stats?.decisions.thisWeek.count).toBe(30);
@@ -171,6 +172,7 @@ describe('no People read loads profiles past the read limit', () => {
       (p) => p.username === 'adm',
     )?._id as Id<'profiles'>;
     const d = await adm.query(api.people.decisions, { userId: admId, limit: 100 });
+    if (!d) throw new Error('no such person');
     expect(d.rows).toHaveLength(24);
     // Every lift's undo would ban a holder: each asks the last-editor check, read once for the page.
     expect(
@@ -222,6 +224,7 @@ describe('no People read loads profiles past the read limit', () => {
       }
     });
     const d = await a.query(api.people.decisions, { userId: adm, limit: 100 });
+    if (!d) throw new Error('no such person');
     expect(d.rows).toHaveLength(16);
     // As many heavy profiles as the request's one budget has left are read; the rest say why they
     // can't be checked here — and the page never reads past the limit.

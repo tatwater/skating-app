@@ -103,7 +103,7 @@ describe('staffStats at its maximum supported input', () => {
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
     expect(s?.decisions.thisWeek).toEqual({ count: 1_999, capped: false });
-    expect(s?.decisions.undoneByOthers).toEqual({ count: 1_999, capped: false });
+    expect(s?.decisions.undoneByOthers).toMatchObject({ count: 1_999, capped: false });
     const ss = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffSeason, { userId: matt });
@@ -176,7 +176,7 @@ describe('staffStats at its maximum supported input', () => {
       const s = await t
         .withIdentity({ subject: 'adm' })
         .query(api.people.staffStats, { userId: matt });
-      expect(s?.decisions.undoneByOthers).toEqual({ count: undone, capped: false });
+      expect(s?.decisions.undoneByOthers).toMatchObject({ count: undone, capped: false });
     }
   });
 
@@ -207,7 +207,7 @@ describe('staffStats at its maximum supported input', () => {
     const s = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(s?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
+    expect(s?.decisions.undoneByOthers).toMatchObject({ count: 1, capped: false });
   });
 
   test('before the undo-chain backfill, the undo figures say not ready (not capped); the backfill places old chains', async () => {
@@ -240,14 +240,14 @@ describe('staffStats at its maximum supported input', () => {
     const before = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(before?.decisions.undoneByOthers).toEqual({ count: 0, capped: false });
+    expect(before?.decisions.undoneByOthers).toMatchObject({ count: 0, capped: false });
     expect(before?.pending).toEqual(['undoChains']);
     await t.mutation(internal.peopleJobs.backfillUndoChains, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers, 1_000);
     const after = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(after?.decisions.undoneByOthers).toEqual({ count: 1, capped: false });
+    expect(after?.decisions.undoneByOthers).toMatchObject({ count: 1, capped: false });
     expect(after?.pending).toEqual([]);
   });
 });
@@ -365,7 +365,7 @@ describe('the figures say capped rather than throw or mislead', () => {
     const s = await t
       .withIdentity({ subject: 'adm' })
       .query(api.people.staffStats, { userId: matt });
-    expect(s?.decisions.undoneByOthers).toEqual({ count: 0, capped: false });
+    expect(s?.decisions.undoneByOthers).toMatchObject({ count: 0, capped: false });
   });
 
   test('before the backfill, a role undo from before the chains makes the dates not ready, never wrong', async () => {

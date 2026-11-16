@@ -222,6 +222,7 @@ describe('the status note', () => {
       reason: '  ',
       suspendedUntil: null,
       lapsed: false,
+      atCapped: false,
     };
     expect(statusNoteWords({ ...base, action: 'ban' }, NOW)).toMatchObject({
       badge: 'Banned',
@@ -320,7 +321,10 @@ describe('the staff strip', () => {
     expect(
       decisionsFact({
         ...SARAH_STATS,
-        decisions: { ...SARAH_STATS.decisions, undoneByOthers: { count: 0, capped: false } },
+        decisions: {
+          ...SARAH_STATS.decisions,
+          undoneByOthers: { count: 0, capped: false, by: [], byMore: 0 },
+        },
       }).sub,
     ).toBe('None undone by others');
     expect(decisionsFact(STATS_PENDING).sub).toBe('Undone by others · still being prepared');

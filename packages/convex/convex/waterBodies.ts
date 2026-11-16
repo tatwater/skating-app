@@ -11,7 +11,6 @@
  */
 
 import {
-  AUDIT_REASON_MAX_CHARS,
   type BodyNames,
   bboxIntersects,
   belongsInCorpus,
@@ -67,7 +66,6 @@ import {
   polygonBBox,
   polygonIoU,
   primaryReviewReason,
-  REMOVAL_NOTE_MAX_CHARS,
   REQUEST_KINDS,
   REQUEST_STATUSES,
   REVIEW_REASONS,
@@ -80,7 +78,6 @@ import {
   satelliteImageryAvailable,
   standingOf,
   stateOfSubdivision,
-  tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, type Infer, v } from 'convex/values';
@@ -98,7 +95,15 @@ import {
   query,
 } from './_generated/server';
 import { failedAttempt } from './lib/attempts';
-import { isUndoing, snapshotDoc, writeAudit, writeSnapshot } from './lib/audit';
+import {
+  type AuditReasonOrText,
+  checkedReason,
+  composed,
+  isUndoing,
+  snapshotDoc,
+  writeAudit,
+  writeSnapshot,
+} from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -2981,17 +2986,18 @@ export const remove = mutation({
     waterBodyId: v.id('waterBodies'),
     reason: literals(REMOVAL_REASONS),
     /**
-     * Why, in a person's own words — trimmed, refused past {@link REMOVAL_NOTE_MAX_CHARS}, and written
-     * beside the fixed reason so History and the removed lane read it. Owed: this writer adopts the
-     * tagged-reason type when #125 lands.
+     * Why, in a person's own words — trimmed, refused past the audit-reason cap (D261,
+     * `AUDIT_REASON_MAX`), and written beside the fixed reason so History and the removed lane read
+     * it; the metadata keeps it whole.
      */
     note: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, reason, note }) => {
     const actor = await requireCapability(ctx, 'body.remove');
     const text = note?.trim();
-    const tooLong = tooLongMessage('The note', text, REMOVAL_NOTE_MAX_CHARS);
-    if (tooLong !== null) throw new ConvexError(tooLong);
+    // The person's words are capped here: the line they go into is composed, which `writeAudit`
+    // shortens to fit rather than refuses, so this is the one place a note too long is turned down.
+    if (text !== undefined) checkedReason(text);
     return removeBodyImpl(ctx, actor, {
       waterBodyId,
       reason,
@@ -3032,9 +3038,13 @@ export async function removeBodyImpl(
     action: 'remove',
     targetType: 'waterbody',
     targetId: args.waterBodyId,
+    // Composed: a note at the cap and the fixed words beside it are shortened to fit, never refused
+    // (the note was held to the cap where the person typed it; the metadata keeps it whole).
     reason:
       args.auditReason ??
-      `Removed from map (${args.reason})${args.note !== undefined ? `: ${args.note}` : ''}`,
+      (args.note !== undefined
+        ? composed`Removed from map (${args.reason}): ${args.note}`
+        : composed`Removed from map (${args.reason})`),
     metadata: {
       removalReason: args.reason,
       ...(args.note !== undefined ? { note: args.note } : {}),
@@ -3369,7 +3379,7 @@ export const merge = mutation({
       survivor,
       loser,
       actorId: actor._id,
-      reason: reason?.trim() || `Merged into ${survivor.name}`,
+      reason: reason?.trim() || composed`Merged into ${survivor.name}`,
     });
     return survivorId;
   },
@@ -3580,7 +3590,7 @@ export async function mergeBodyInto(
     survivor: Doc<'waterBodies'>;
     loser: Doc<'waterBodies'>;
     actorId?: Id<'profiles'>;
-    reason: string;
+    reason: AuditReasonOrText;
   },
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
@@ -4110,12 +4120,11 @@ export const retireAbsorbedBodies = internalMutation({
         name: absorbed.name || '(unnamed)',
       });
       if (apply === true) {
+        const campaign = campaignId ? ` (${campaignId})` : '';
         await mergeBodyInto(ctx, {
           survivor,
           loser: absorbed,
-          reason:
-            `Absorbed by the merge${campaignId ? ` (${campaignId})` : ''}: one catalog published ` +
-            `this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
+          reason: composed`Absorbed by the merge${campaign}: one catalog published this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
         });
       }
     }
@@ -4225,7 +4234,7 @@ export async function setCuratedBoostImpl(
         reason ??
         (curatedBoost === undefined
           ? 'Cleared curatedBoost'
-          : `Set curatedBoost to ${curatedBoost}`),
+          : composed`Set curatedBoost to ${curatedBoost}`),
       metadata: {
         curatedBoost: curatedBoost ?? null,
         minVisibleZoom: after?.minVisibleZoom,
@@ -4350,7 +4359,7 @@ export async function setAliasesImpl(
       reason ??
       (next.length === 0
         ? 'Cleared the moderator aliases'
-        : `Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
+        : composed`Set ${next.length} alias${next.length === 1 ? '' : 'es'}`),
     metadata: { moderatorAliases: next, prev: { moderatorAliases: prev } },
     createdAt: Date.now(),
   });
@@ -4392,18 +4401,17 @@ export const setModeratorTowns = mutation({
     expected: v.optional(v.array(v.string())),
     /**
      * Why. Required (nonblank) when the write removes any pin — a takeaway (D226); optional when it
-     * only adds, defaulted then and marked so. Trimmed; refused past `AUDIT_REASON_MAX_CHARS`.
+     * only adds, defaulted then and marked so. Trimmed; refused past the audit-reason cap (D261).
      */
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, townKeys, expected, reason }) => {
     const actor = await requireCapability(ctx, 'body.identity');
-    // The person's words are capped here, not in the shared body: an undo passes its own reason —
-    // `Undid …: <this row's reason>`, which can run past the cap when the row's reason is near it —
-    // and an undo offered must not then refuse on words nobody typed (`remove` caps the same way).
+    // The person's words, refused past the cap before anything is read. `writeAudit` holds the same
+    // plain string to the same cap, so this is the early refusal, not the only one; an undo's own
+    // reason never trips either — `runUndo` fits the line it composes to the cap before passing it.
     const trimmed = reason?.trim();
-    const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
-    if (tooLong !== null) throw new ConvexError(tooLong);
+    if (trimmed !== undefined) checkedReason(trimmed);
     return setModeratorTownsImpl(ctx, actor, {
       waterBodyId,
       townKeys,
@@ -4580,7 +4588,7 @@ export async function setClassImpl(
     targetId: waterBodyId,
     reason:
       reason ??
-      (bodyClass === null ? 'Cleared the class override' : `Set the class to ${bodyClass}`),
+      (bodyClass === null ? 'Cleared the class override' : composed`Set the class to ${bodyClass}`),
     metadata: { moderatorClass: bodyClass, type: restored, prev },
     createdAt: Date.now(),
   });
@@ -4670,7 +4678,7 @@ export async function setReferenceLinksImpl(
         reason ??
         (trimmed.length === 0
           ? 'Cleared the reference links'
-          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`),
+          : composed`Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`),
       // **`prev` alongside the new value (A06c §6.1).** An audit row that records only what a field *became*
       // can answer "who changed this" and never "changed it from what", which is most of what someone
       // reading the timeline actually wants. Same convention as `setDepth`.
@@ -4744,8 +4752,8 @@ export async function setSatelliteImageryImpl(
       reason:
         reason ??
         (mode === 'auto'
-          ? `Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
-          : `Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`),
+          ? composed`Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
+          : composed`Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`),
       metadata: {
         satelliteImagery: mode,
         available: after,
@@ -4844,7 +4852,7 @@ export async function setWeatherSamplePointsImpl(
       reason:
         reason ??
         (points.length > 0
-          ? `Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
+          ? composed`Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
           : 'Cleared weather sample points (back to the centroid default)'),
       // The count of the grid it replaced; the grid itself is the snapshot (D226).
       metadata: { count: points.length, prev: { count: prevPoints.length, snapshot: true } },
@@ -5117,8 +5125,8 @@ export async function chooseDepthSourceImpl(
     reason:
       reason ??
       (source === null
-        ? `Handed the ${measure} depth back to the ladder`
-        : `Chose ${source} for the ${measure} depth`),
+        ? composed`Handed the ${measure} depth back to the ladder`
+        : composed`Chose ${source} for the ${measure} depth`),
     metadata: { measure, choice: source, valueM: pick?.valueM ?? null, prev },
     createdAt: Date.now(),
   });
@@ -5168,7 +5176,7 @@ export async function writeDepth(
   }: {
     body: Doc<'waterBodies'>;
     patch: Partial<DepthFields>;
-    reason: string;
+    reason: AuditReasonOrText;
     metadata: Record<string, unknown>;
   },
 ): Promise<void> {
@@ -5431,7 +5439,7 @@ export async function setWaterBodyNameImpl(
         reason:
           reason ??
           (restored
-            ? `Cleared the name override; back to "${restored}"`
+            ? composed`Cleared the name override; back to "${restored}"`
             : 'Cleared the community name; back to unnamed (no catalog claim)'),
         metadata: { name: restored, prev: { name: body.name, overridden } },
         createdAt: Date.now(),
@@ -5475,8 +5483,8 @@ export async function setWaterBodyNameImpl(
         reason:
           reason ??
           (body.name
-            ? `Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
-            : `Community name "${chosen}" for an unnamed body (no catalog claim)`),
+            ? composed`Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
+            : composed`Community name "${chosen}" for an unnamed body (no catalog claim)`),
         metadata: { name: chosen, source: 'user', prev: { name: body.name, overridden } },
         createdAt: Date.now(),
       });
@@ -5508,7 +5516,8 @@ export async function setWaterBodyNameImpl(
       action: 'set_water_body_name',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: reason ?? `Display "${match.value}" (${match.source}) instead of "${body.name}"`,
+      reason:
+        reason ?? composed`Display "${match.value}" (${match.source}) instead of "${body.name}"`,
       metadata: { name: match.value, source: match.source, prev: { name: body.name, overridden } },
       createdAt: Date.now(),
     });
@@ -5555,7 +5564,7 @@ export const clearDepthOverride = mutation({
     await writeDepth(ctx, actor, {
       body,
       patch,
-      reason: `Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
+      reason: composed`Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
       metadata: { released },
     });
     return waterBodyId;

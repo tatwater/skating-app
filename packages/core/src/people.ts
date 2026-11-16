@@ -7,6 +7,7 @@
 
 import { DELETION_GRACE_DAYS } from './profile';
 import { MAX_OPEN_BOUNTIES_PER_DAY } from './reputationConfig';
+import { MAX_URL_CHARS } from './textCaps';
 
 /**
  * The lanes, in the order the sidebar draws them. `appeals` reads support tickets (PII, D37), so a
@@ -25,6 +26,15 @@ export const PEOPLE_LANES = [
   'deleted',
 ] as const;
 export type PeopleLane = (typeof PEOPLE_LANES)[number];
+
+/**
+ * The lanes a viewer gets, in the sidebar's order: every lane, but Appeals open only for a viewer who
+ * may read support (`inbox.support.read`, PII — D37). The server's lanes and the page read this one
+ * rule.
+ */
+export function peopleLanesFor(readsSupport: boolean): PeopleLane[] {
+  return PEOPLE_LANES.filter((lane) => lane !== 'appeals' || readsSupport);
+}
 
 /** What each lane is called on the page. */
 export const PEOPLE_LANE_LABELS: Record<PeopleLane, string> = {
@@ -128,4 +138,19 @@ export function effectiveBountyLimitOf(limit: number | undefined | null): number
   return limit !== undefined && limit !== null && Number.isFinite(limit) && limit >= 0
     ? limit
     : MAX_OPEN_BOUNTIES_PER_DAY;
+}
+
+/**
+ * The longest avatar URL a profile mirrors from Clerk: the URL cap every writer holds a link to
+ * ({@link MAX_URL_CHARS}), counted in UTF-8 bytes — an encoded URL is ASCII, so its bytes are its
+ * characters, and a raw non-ASCII one can't weigh more than it says. Clerk's image URLs run to a few
+ * hundred; past this one is not stored (the person shows their initials) rather than refusing the
+ * sync, so a People row — which carries the URL beside the names — stays a light row.
+ */
+export const AVATAR_URL_MAX_BYTES = MAX_URL_CHARS;
+
+/** `url` if a profile may store it as an avatar, else `undefined` ({@link AVATAR_URL_MAX_BYTES}). */
+export function storableAvatarUrl(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  return new TextEncoder().encode(url).length <= AVATAR_URL_MAX_BYTES ? url : undefined;
 }

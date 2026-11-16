@@ -38,8 +38,31 @@ export const SELF_REFUSAL = 'You cannot moderate your own account';
 export const LAST_EDITOR =
   'They are the last person who can edit the ledger; give another admin ledger editing first';
 
+type CanBase = Omit<
+  PersonRead['can'],
+  'extend' | 'restore' | 'flaggingOn' | 'bountyRaise' | 'bountyLower'
+>;
+
+/**
+ * `can` with the levers a fixture derives rather than spells out: a new window answers as `suspend`
+ * does, every give-back — flagging switched back on included — as `restrict` does but asks no reason
+ * (D226; the server's rule, `lib/peopleCan.writeRefusal`: only switching flagging *off* has a staff
+ * refusal of its own), and lowering the bounty limit asks one where raising it doesn't.
+ */
+export function canOf(base: CanBase): PersonRead['can'] {
+  const giveBack = base.restrict.ok ? yes(false) : base.restrict;
+  return {
+    ...base,
+    extend: base.suspend,
+    restore: { reports: giveBack, hazards: giveBack, comments: giveBack },
+    flaggingOn: giveBack,
+    bountyRaise: giveBack,
+    bountyLower: base.restrict,
+  };
+}
+
 /** Everything allowed, to a member, by an admin who holds the ledger. */
-const CAN_ALL: PersonRead['can'] = {
+const CAN_ALL: PersonRead['can'] = canOf({
   restrict: yes(true),
   flaggingOff: yes(true),
   suspend: yes(true),
@@ -47,14 +70,15 @@ const CAN_ALL: PersonRead['can'] = {
   lift: yes(false),
   role: { admin: yes(false), moderator: yes(false), member: no('This is their role now.') },
   ledger: null,
-};
+});
 
 /** A person read, from a member's defaults. */
 export function personOf(over: Partial<PersonRead> = {}): PersonRead {
+  const username = over.username ?? 'rtremblay';
   return {
     userId: IDS.rob,
     displayName: 'Rob Tremblay',
-    username: 'rtremblay',
+    username,
     profileImageUrl: null,
     profileVisibility: 'public',
     role: 'member',
@@ -64,6 +88,11 @@ export function personOf(over: Partial<PersonRead> = {}): PersonRead {
     leavingUntil: null,
     deletedAt: null,
     statusNote: null,
+    bountySeason: null,
+    rightsSince: { reports: null, hazards: null, comments: null, flagging: null },
+    rightsSinceCapped: false,
+    // The profile read's own path: the person's handle.
+    publicProfile: { opens: true, private: false, path: `/u/${username}` },
     strip: {
       contradictions: 0,
       openFlags: { onUser: { count: 0, capped: false }, onContent: { count: 0, capped: false } },
@@ -81,7 +110,13 @@ export function personOf(over: Partial<PersonRead> = {}): PersonRead {
       flagsFiled: { count: 0, capped: false },
     },
     pending: [],
-    open: { flags: [], flagsCapped: false, appeals: [], appealsCapped: false },
+    open: {
+      flags: [],
+      flagsCapped: false,
+      flagLabelsCapped: false,
+      appeals: [],
+      appealsCapped: false,
+    },
     hidden: {
       total: 0,
       byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
@@ -115,6 +150,7 @@ export const ROB: PersonRead = personOf({
     reason: 'Second unsafe report in a week; cooling off',
     suspendedUntil: at(10, 15, 19, 48),
     lapsed: false,
+    atCapped: false,
   },
   strip: {
     contradictions: 3,
@@ -144,8 +180,14 @@ export const ROB: PersonRead = personOf({
       },
     ],
     flagsCapped: false,
+    flagLabelsCapped: false,
     appeals: [
-      { ticketId: 'ticket1' as Id<'supportTickets'>, status: 'open', createdAt: at(10, 13, 10, 0) },
+      {
+        ticketId: 'ticket1' as Id<'supportTickets'>,
+        status: 'open',
+        createdAt: at(10, 13, 10, 0),
+        body: 'The second report was right; the ice had been cut',
+      },
     ],
     appealsCapped: false,
   },
@@ -277,11 +319,12 @@ export const SARAH_PAGE: PersonRead = personOf({
       },
     ],
     flagsCapped: false,
+    flagLabelsCapped: false,
     appeals: [],
     appealsCapped: false,
   },
-  ledger: { editor: false, last: false },
-  can: {
+  ledger: { editor: false, last: false, since: null, sinceCapped: false },
+  can: canOf({
     restrict: yes(true),
     flaggingOff: no('Staff can always flag, so flagging can’t be switched off for them.'),
     suspend: yes(true),
@@ -289,7 +332,7 @@ export const SARAH_PAGE: PersonRead = personOf({
     lift: yes(false),
     role: { admin: no('This is their role now.'), moderator: yes(true), member: yes(true) },
     ledger: { grant: yes(false), revoke: no('They cannot edit the ledger') },
-  },
+  }),
 });
 
 export const SARAH_TREND: TrendRead = {
@@ -317,7 +360,7 @@ const weeksOf = (counts: number[]): StaffStatsRead['weeks'] => {
 export const SARAH_STATS: StaffStatsRead = {
   decisions: {
     thisWeek: { count: 18, capped: false },
-    undoneByOthers: { count: 2, capped: false },
+    undoneByOthers: { count: 2, capped: false, by: [], byMore: 0 },
   },
   timeToDecide: { medianMs: 41 * 60_000, decided: 7, capped: false },
   staffSince: { at: at(1, 12), role: 'moderator' },
@@ -401,6 +444,7 @@ export const SARAH_DECISIONS: DecisionsRead = {
     }),
   ],
   isDone: false,
+  capped: false,
   continueCursor: 'cursor1',
 };
 
@@ -408,7 +452,7 @@ export const SARAH_DECISIONS: DecisionsRead = {
 
 export const SARAH_GRANTED: PersonRead = {
   ...SARAH_PAGE,
-  ledger: { editor: true, last: false },
+  ledger: { editor: true, last: false, since: at(10, 14, 11, 52), sinceCapped: false },
   can: {
     ...SARAH_PAGE.can,
     ledger: { grant: no('They can already edit the ledger'), revoke: yes(true) },
@@ -456,8 +500,8 @@ export const TEAGAN_PAGE: PersonRead = personOf({
     restrictions: [],
     flagsFiled: { count: 2, capped: false },
   },
-  ledger: { editor: true, last: true },
-  can: {
+  ledger: { editor: true, last: true, since: at(1, 2, 12, 5), sinceCapped: false },
+  can: canOf({
     restrict: no(SELF_REFUSAL),
     flaggingOff: no(SELF_REFUSAL),
     suspend: no(SELF_REFUSAL),
@@ -469,14 +513,14 @@ export const TEAGAN_PAGE: PersonRead = personOf({
       member: no('You cannot change your own role'),
     },
     ledger: { grant: no('They can already edit the ledger'), revoke: no(LAST_EDITOR) },
-  },
+  }),
 });
 
 export const TEAGAN_STATS: StaffStatsRead = {
   ...SARAH_STATS,
   decisions: {
     thisWeek: { count: 31, capped: false },
-    undoneByOthers: { count: 1, capped: false },
+    undoneByOthers: { count: 1, capped: false, by: [], byMore: 0 },
   },
   timeToDecide: { medianMs: 22 * 60_000, decided: 12, capped: false },
   staffSince: { at: at(1, 2), role: 'admin' },
@@ -529,6 +573,7 @@ export const TEAGAN_DECISIONS: DecisionsRead = {
     }),
   ],
   isDone: true,
+  capped: false,
   continueCursor: '',
 };
 
@@ -539,7 +584,7 @@ export const SARAH_BY_MODERATOR: PersonRead = {
   strip: { ...SARAH_PAGE.strip, trustPoints: null },
   open: { ...SARAH_PAGE.open, appeals: null },
   ledger: null,
-  can: {
+  can: canOf({
     restrict: no('Only an admin can moderate an admin'),
     flaggingOff: no('Only an admin can moderate an admin'),
     suspend: no('Only an admin can moderate an admin'),
@@ -551,7 +596,7 @@ export const SARAH_BY_MODERATOR: PersonRead = {
       member: no('Only an admin can change roles.'),
     },
     ledger: null,
-  },
+  }),
 };
 
 // ── The three answers that aren't numbers ───────────────────────────────────────────────────
@@ -585,7 +630,7 @@ export const STATS_CAPPED: StaffStatsRead = {
   ...SARAH_STATS,
   decisions: {
     thisWeek: { count: 2000, capped: true },
-    undoneByOthers: { count: 3, capped: true },
+    undoneByOthers: { count: 3, capped: true, by: [], byMore: 0 },
   },
   timeToDecide: { medianMs: null, decided: 40, capped: true },
   staffSince: null,
@@ -607,6 +652,7 @@ export const ROB_UNRECORDED: PersonRead = {
     reason: null,
     suspendedUntil: at(10, 15, 19, 48),
     lapsed: false,
+    atCapped: false,
   },
   strip: { ...ROB.strip, contradictions: null },
 };
@@ -629,7 +675,13 @@ export const SEASON_EMPTY: StaffSeasonRead = {
 export const ROB_LEAVING: PersonRead = {
   ...personOf(),
   leavingUntil: at(11, 2, 12, 0),
-  can: { ...CAN_ALL, suspend: no('Leaving'), ban: no('Leaving'), lift: no('Leaving') },
+  can: {
+    ...CAN_ALL,
+    suspend: no('Leaving'),
+    extend: no('Leaving'),
+    ban: no('Leaving'),
+    lift: no('Leaving'),
+  },
 };
 export const ROB_DELETED: PersonRead = {
   ...personOf(),
@@ -637,7 +689,7 @@ export const ROB_DELETED: PersonRead = {
   trustClass: null,
   deletedAt: at(10, 3),
   profileVisibility: 'private',
-  can: {
+  can: canOf({
     restrict: no('This account is deleted, so there is nothing to restrict.'),
     flaggingOff: no('This account is deleted, so there is nothing to restrict.'),
     suspend: no('This account is deleted, so it can’t be suspended or banned.'),
@@ -649,5 +701,5 @@ export const ROB_DELETED: PersonRead = {
       member: no('This account is being deleted, so its role can’t change.'),
     },
     ledger: null,
-  },
+  }),
 };

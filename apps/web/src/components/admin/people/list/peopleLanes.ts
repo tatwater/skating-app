@@ -1,4 +1,4 @@
-import { PEOPLE_LANE_LABELS, PEOPLE_LANES, type PeopleLane } from '@skating/core';
+import { PEOPLE_LANE_LABELS, PEOPLE_LANES, type PeopleLane, peopleLanesFor } from '@skating/core';
 
 import { LANE_WORDS } from './peopleWords';
 
@@ -66,8 +66,9 @@ export const PEOPLE_LANE_INFO: Readonly<Record<PeopleLane, PeopleLaneInfo>> = Ob
 
 /**
  * The lanes a viewer has, in the sidebar's order: Appeals open only with support's read (D37) —
- * the server's own rule (`people.lanes`), asked here so the page knows before the counts land.
+ * the server's own rule (`peopleLanesFor`, which `people.lanes` reads too), asked here so the page
+ * knows before the counts land.
  */
 export function lanesFor(canReadSupport: boolean): PeopleLane[] {
-  return PEOPLE_LANES.filter((lane) => lane !== 'appeals' || canReadSupport);
+  return peopleLanesFor(canReadSupport);
 }

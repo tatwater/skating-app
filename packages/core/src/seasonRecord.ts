@@ -81,5 +81,13 @@ export function lastDays(now: number, count: number): { days: string[]; from: nu
  * still reads its sign-ins.
  */
 export function signInRetentionFrom(now: number): string {
-  return metricDay(seasonStartMs(seasonOf(now) - 1));
+  return metricDay(signInRetentionFromMs(now));
+}
+
+/**
+ * {@link signInRetentionFrom} as an instant: the start of the previous season. A console sighting
+ * older than it reads as not recorded (the sign-in record's own retention, D254).
+ */
+export function signInRetentionFromMs(now: number): number {
+  return seasonStartMs(seasonOf(now) - 1);
 }

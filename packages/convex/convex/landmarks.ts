@@ -45,6 +45,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { composed } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import {
@@ -701,7 +702,7 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    await auditLandmark(ctx, actor._id, 'create_landmark', id, `Added "${names.name}"`, {
+    await auditLandmark(ctx, actor._id, 'create_landmark', id, composed`Added "${names.name}"`, {
       kind: args.kind,
     });
     if (args.requestId !== undefined) {
@@ -806,7 +807,7 @@ export async function updateLandmarkImpl(
       actor._id,
       'edit_landmark',
       row._id,
-      args.reason ?? `Edited "${names.name}"`,
+      args.reason ?? composed`Edited "${names.name}"`,
       {
         ...(names.name !== row.name ? { from: row.name } : {}),
         ...(moved ? { moved: true } : {}),
@@ -851,7 +852,7 @@ export async function removeLandmarkImpl(
       actor._id,
       'remove',
       landmarkId,
-      reason?.trim() || `Removed "${row.name}"`,
+      reason?.trim() || composed`Removed "${row.name}"`,
     );
   }
 }
@@ -906,9 +907,16 @@ export async function restoreLandmarkImpl(
       mergedIntoId: row.mergedIntoId ?? null,
       moderatorEditedAt: row.moderatorEditedAt ?? null,
     };
-    await auditLandmark(ctx, actor._id, 'restore', landmarkId, reason ?? `Restored "${row.name}"`, {
-      prev,
-    });
+    await auditLandmark(
+      ctx,
+      actor._id,
+      'restore',
+      landmarkId,
+      reason ?? composed`Restored "${row.name}"`,
+      {
+        prev,
+      },
+    );
   }
 }
 

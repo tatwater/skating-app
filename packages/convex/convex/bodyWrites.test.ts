@@ -10,10 +10,18 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
 import { OVERRIDES_READ } from './imageryOverrides';
-import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
+import {
+  CHARGED_QUERY_BUDGET,
+  DOC_MAX,
+  REQUEST_PROFILE_BUDGET,
+  requestBudget,
+  TX_DOCS,
+} from './lib/readBudget';
 import { savedPutInsOf } from './lib/standing';
 import { undoState } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
+import { ROW_SHAPE_DOCS, shapeRows } from './people';
+import { SUPPRESSION_ROWS_READ } from './putIns';
 import schema from './schema';
 import { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES } from './waterBodies';
 
@@ -1511,5 +1519,120 @@ describe('undo after an un-audited change: write → change → undo → redo', 
     // Less than one worst case: nothing is read, both overflow, nothing is charged.
     const none = await run(DOC_MAX - 1);
     expect(none).toEqual({ got: ['overflow', 'overflow'], started: 0, left: DOC_MAX - 1 });
+  });
+
+  test('the per-row plan and the refusal shares are charged, not declared: a page of launch lines each at the hidden-read peak reads within them, and a short budget shapes fewer and says capped', async () => {
+    const t = harness();
+    const promoted = await launch(t);
+    const promote = (await t.run((ctx) =>
+      ctx.db.get(promoted.actionId),
+    )) as Doc<'moderationActions'>;
+    await t.run(async (ctx) => {
+      // The launch refusal's document peak: its body's hidden launches read to the cap.
+      for (let i = 0; i < SUPPRESSION_ROWS_READ; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: promoted.id,
+          coord: { lat: 44.5 + i * 1e-3, lng: -72.5 },
+          source: 'osm',
+          status: 'hidden',
+          createdAt: NOW,
+        });
+      }
+      // 99 more lines on that launch, each written on a body of its own: lines on one body are
+      // overtaken by its newest and never reach the refusal, so only lines on distinct targets make a
+      // page where every line reads the hidden launches.
+      for (let i = 0; i < 99; i++) {
+        const body = await ctx.db.insert('waterBodies', {
+          name: `Pond ${i}`,
+          searchText: 'pond',
+          type: 'lakePond',
+          source: 'osm',
+          polygon: POLYGON,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'clean',
+          createdAt: NOW,
+        });
+        const { _id, _creationTime, ...row } = promote;
+        void _id;
+        void _creationTime;
+        await ctx.db.insert('moderationActions', {
+          ...row,
+          targetId: body,
+          createdAt: NOW - 1 - i,
+        });
+      }
+    });
+    const page = await promoted.admin.as.query(api.people.decisions, {
+      userId: promoted.admin.id,
+      limit: 100,
+    });
+    expect(page?.rows.length).toBe(100);
+    // Every line reached the refusal and passed it — none stopped short at "overtaken".
+    expect(page?.rows.every((r) => r.undo.state === 'available')).toBe(true);
+    // The documents shaping those lines really reads, measured: past the peak's floor (each line's
+    // hidden launches), and within what the page charged for them — the per-row plan, and each
+    // line's refusal share (`undoStates` reserves the launch and its hidden ones on the same budget).
+    const read = await t.run(async (ctx) => {
+      const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
+      const rows = (await ctx.db.query('moderationActions').collect()).filter(
+        (r) => r.action === promote.action,
+      );
+      const before = (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      const shaped = await shapeRows(ctx as never, viewer, rows, new Map());
+      const after = (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      return { rows: shaped.length, docs: after - before };
+    });
+    expect(read.rows).toBe(100);
+    expect(read.docs).toBeGreaterThanOrEqual(100 * SUPPRESSION_ROWS_READ);
+    expect(read.docs).toBeLessThanOrEqual(100 * (ROW_SHAPE_DOCS + 1 + SUPPRESSION_ROWS_READ));
+    // The same rows with the documents a page had already spent leaving room for three rows' plans:
+    // three are shaped and the rest left for the caller to call capped, and with no room left for a
+    // refusal's share, those three say "check elsewhere" — charged, never thrown, never over-read.
+    const shaped = await t.run(async (ctx) => {
+      const budget = requestBudget(ctx, CHARGED_QUERY_BUDGET);
+      budget.reserveCalls(0, TX_DOCS - 3 * ROW_SHAPE_DOCS - 1);
+      const viewer = (await ctx.db.get(promoted.admin.id)) as Doc<'profiles'>;
+      const rows = (await ctx.db.query('moderationActions').collect()).filter(
+        (r) => r.action === promote.action,
+      );
+      return (await shapeRows(ctx as never, viewer, rows, new Map())).map((r) => r.undo);
+    });
+    expect(shaped).toHaveLength(3);
+    expect(shaped.every((u) => u.state === 'unavailable' && u.why === UNDO_CHECKED_ELSEWHERE)).toBe(
+      true,
+    );
+  });
+
+  test('a staffer’s Decisions (People) asks the same refusal: each axis’s worst verb answers, never throws', async () => {
+    // The redraw is the hook's most calls (feature, body, snapshot); the launch its most documents
+    // (the launch and its body's hidden ones) — the two peaks a refusal's share reserves.
+    const decisionsLine = async (who: Who, id: Id<'moderationActions'>) => {
+      const page = await who.as.query(api.people.decisions, { userId: who.id });
+      return page?.rows.find((r) => r.id === id)?.undo;
+    };
+    const t1 = harness();
+    const shaped = await feature(t1);
+    expect(await decisionsLine(shaped.admin, shaped.subject)).toMatchObject({ state: 'available' });
+    await t1.run((ctx) =>
+      ctx.db.patch(shaped.id, {
+        bbox: { minLat: 44.004, minLng: -72.006, maxLat: 44.006, maxLng: -72.004 },
+      }),
+    );
+    expect(await decisionsLine(shaped.admin, shaped.subject)).toEqual({
+      state: 'unavailable',
+      why: expect.stringMatching(/has to be on its lake/),
+    });
+
+    const t2 = harness();
+    const promoted = await launch(t2);
+    expect(await decisionsLine(promoted.admin, promoted.actionId)).toMatchObject({
+      state: 'available',
+    });
+    await t2.run((ctx) => ctx.db.patch(promoted.putInId, { status: 'hidden' }));
+    expect(await decisionsLine(promoted.admin, promoted.actionId)).toEqual({
+      state: 'unavailable',
+      why: expect.stringMatching(/hidden/),
+    });
   });
 });

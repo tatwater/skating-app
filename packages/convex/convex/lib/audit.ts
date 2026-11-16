@@ -8,7 +8,8 @@
  * sources to this file being the only writer.
  */
 
-import { isAuditVia } from '@skating/core';
+import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG, isAuditVia } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { noteAuditedAction } from './bodyLibrary';
@@ -23,8 +24,12 @@ export interface AuditEntry {
   action: ModerationAction;
   targetType: ModerationTargetType;
   targetId: string;
-  /** Required: accountability for appeals and reversals. */
-  reason: string;
+  /**
+   * Required: accountability for appeals and reversals. A string is what a person typed, refused past
+   * {@link AUDIT_REASON_MAX} (D261); a reason the system builds from stored names or text is a
+   * {@link composed} one, shortened to fit and never refused.
+   */
+  reason: AuditReasonOrText;
   /** Prior and new state, and whatever the verb's undo needs (B01 §11). */
   metadata?: Record<string, unknown>;
   /** Set when this row is the undo of an earlier one (D226). */
@@ -33,11 +38,127 @@ export interface AuditEntry {
   createdAt?: number;
 }
 
+/**
+ * A reason the system composes from fixed words and stored names or text — built with the
+ * {@link composed} tag, so the writer says which parts are its own words and which it quoted.
+ */
+/** Made only here: a reason shape a writer can't spell as a literal around `typed` or `composed`. */
+declare const TAGGED: unique symbol;
+
+export interface ComposedReason {
+  readonly [TAGGED]: 'composed';
+  readonly composed: true;
+  readonly fixed: readonly string[];
+  readonly values: readonly string[];
+}
+
+/**
+ * A reason held to the cap exactly as written — a person's words, or a fixed sentence of ours —
+ * made by {@link typed}, which refuses it past {@link AUDIT_REASON_MAX} (D261).
+ */
+export interface TypedReason {
+  readonly [TAGGED]: 'typed';
+  readonly typed: string;
+}
+
+/** A reason the audit writer can take: typed (refused past the cap) or composed (shortened to fit). */
+export type AuditReason = TypedReason | ComposedReason;
+
+/**
+ * What the other writers still pass (compatible): a tagged reason, or a plain string held to the cap
+ * as typed. The People writers take {@link AuditReason} only (`writePersonAudit`).
+ */
+export type AuditReasonOrText = AuditReason | string;
+
+/** A reason as written, refused past the cap with its plain message (D261). */
+export function typed(text: string): TypedReason {
+  return { typed: checkedReason(text) } as TypedReason;
+}
+
+/**
+ * Tag a reason the system builds itself: `composed\`Drew "${name}" on ${body.name}\``. The audit
+ * writer keeps the fixed words and trims the quoted values with an ellipsis until it fits the cap
+ * (D261's cap is for what a person types; a composed reason never makes its own write fail).
+ */
+export function composed(fixed: TemplateStringsArray, ...values: unknown[]): ComposedReason {
+  return composedOf(
+    [...fixed],
+    values.map((v) => String(v)),
+  );
+}
+
+/**
+ * A composed reason from its parts — for a writer whose fixed words aren't a template (a person's
+ * checked words kept whole, a system line shortened around them).
+ */
+export function composedOf(fixed: readonly string[], values: readonly string[]): ComposedReason {
+  return { composed: true, fixed, values } as unknown as ComposedReason;
+}
+
+/** A person's typed reason, refused past the cap (D261) — for a writer that quotes it in a composed one. */
+export function checkedReason(typed: string): string {
+  if (typed.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
+  return typed;
+}
+
+/** A composed reason as text, its values trimmed — the longest first — until it fits the cap. */
+export function fitComposed(reason: ComposedReason): string {
+  const join = (values: readonly string[]) =>
+    reason.fixed.reduce((out, part, i) => out + part + (values[i] ?? ''), '');
+  const whole = join(reason.values);
+  if (whole.length <= AUDIT_REASON_MAX) return whole;
+  const fixedLength = reason.fixed.reduce((n, part) => n + part.length, 0);
+  // Water-fill the room left by the fixed words: short values keep their length, long ones share.
+  let room = Math.max(0, AUDIT_REASON_MAX - fixedLength);
+  const allowed = new Array<number>(reason.values.length).fill(0);
+  const lengths = reason.values.map((v) => v.length);
+  const order = lengths.map((_, i) => i).sort((a, b) => (lengths[a] ?? 0) - (lengths[b] ?? 0));
+  order.forEach((i, k) => {
+    const share = Math.floor(room / (order.length - k));
+    const take = Math.min(lengths[i] ?? 0, share);
+    allowed[i] = take;
+    room -= take;
+  });
+  const fitted = join(reason.values.map((v, i) => trimTo(v, allowed[i] as number)));
+  // Fixed words longer than the cap themselves (none are): cut, never refuse.
+  return fitted.length <= AUDIT_REASON_MAX ? fitted : trimTo(fitted, AUDIT_REASON_MAX);
+}
+
+/** `text` in at most `max` UTF-16 units, an ellipsis marking a cut, never through a surrogate pair. */
+function trimTo(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 0) return '';
+  let cut = text.slice(0, max - 1);
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return `${cut}…`;
+}
+
+/**
+ * The People writers' entry (B01-4b): an audit entry whose reason is tagged — typed or composed — so
+ * a bare string, built in a variable and quoting stored text, can't compile into a person write. The
+ * other writers still pass strings to {@link writeAudit} (compatible: a string is held to the cap as
+ * typed); `packages/guards` holds the People modules to this entry.
+ */
+export function writePersonAudit(
+  ctx: MutationCtx,
+  entry: Omit<AuditEntry, 'reason'> & { reason: AuditReason },
+): Promise<Id<'moderationActions'>> {
+  return writeAudit(ctx, entry);
+}
+
 export async function writeAudit(
   ctx: MutationCtx,
   entry: AuditEntry,
 ): Promise<Id<'moderationActions'>> {
-  const { createdAt, ...row } = entry;
+  const { createdAt, reason: given, ...rest } = entry;
+  // The one place a reason enters the log (D261). What a person typed is refused past the cap, the
+  // whole write with it; a reason the system composed is shortened to fit — its names trimmed, its
+  // fixed words kept — so no job or lever ever fails on a name it quoted.
+  const reason =
+    typeof given === 'string' ? given : 'typed' in given ? given.typed : fitComposed(given);
+  if (reason.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
+  const row = { ...rest, reason };
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
   const at = createdAt ?? Date.now();
   const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;

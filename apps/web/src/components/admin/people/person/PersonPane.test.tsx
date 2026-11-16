@@ -111,7 +111,7 @@ function answer(over: Record<string, unknown> = {}) {
     'people:history': ROB_HISTORY,
     'people:staffStats': null,
     'people:staffSeason': null,
-    'people:decisions': { rows: [], isDone: true, continueCursor: '' },
+    'people:decisions': { rows: [], isDone: true, capped: false, continueCursor: '' },
     ...over,
   };
   for (const [k, v] of Object.entries(all)) mocks.results.set(k, v);

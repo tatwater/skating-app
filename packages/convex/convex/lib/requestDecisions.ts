@@ -23,7 +23,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { writeAudit } from './audit';
+import { composed, writeAudit } from './audit';
 import { liveLandmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
@@ -200,7 +200,8 @@ export async function closeRow(
     action: status === 'approved' ? 'approve_request' : 'decline_request',
     targetType: 'waterBodyRequest',
     targetId: row._id,
-    reason: note || `${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
+    reason:
+      note || composed`${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
     metadata: {
       kind: row.kind,
       // When it was filed, for a staffer's time to decide (People).

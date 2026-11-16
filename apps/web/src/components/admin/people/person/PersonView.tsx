@@ -314,7 +314,8 @@ function StatusNoteBlock({
         className="flex flex-wrap items-center gap-(--space-2_5) text-assist text-fg3"
       >
         {w.by === null ? (
-          <span>{WORDS.whoAndWhenUnrecorded}</span>
+          // The start lies past the rows the read walked (`atCapped`): "can't say", not "not recorded".
+          <span>{note.atCapped ? WORDS.whoAndWhenTooOld : WORDS.whoAndWhenUnrecorded}</span>
         ) : (
           <>
             <span className="inline-flex items-center gap-(--space-1_5) text-fg1">

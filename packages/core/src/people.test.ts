@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import {
+  AVATAR_URL_MAX_BYTES,
   bountyLimitRestricts,
   effectiveBountyLimitOf,
   isPeopleLane,
@@ -10,8 +11,10 @@ import {
   PEOPLE_PAGE_MAX,
   PEOPLE_PAGE_SIZE,
   PEOPLE_SEARCH_MAX_CHARS,
+  peopleLanesFor,
   RESTRICTIONS,
   restrictionsOf,
+  storableAvatarUrl,
 } from './people';
 import { MAX_OPEN_BOUNTIES_PER_DAY } from './reputationConfig';
 
@@ -101,5 +104,22 @@ describe('restrictions', () => {
     expect(effectiveBountyLimitOf(undefined)).toBe(MAX_OPEN_BOUNTIES_PER_DAY);
     expect(effectiveBountyLimitOf(1)).toBe(1);
     expect(effectiveBountyLimitOf(-1)).toBe(MAX_OPEN_BOUNTIES_PER_DAY);
+  });
+});
+
+describe('peopleLanesFor — Appeals open only for a viewer who reads support (D37)', () => {
+  test('every lane in order, or every lane but appeals', () => {
+    expect(peopleLanesFor(true)).toEqual([...PEOPLE_LANES]);
+    expect(peopleLanesFor(false)).toEqual(PEOPLE_LANES.filter((l) => l !== 'appeals'));
+  });
+});
+
+describe('storableAvatarUrl — a URL stored only up to the cap, in bytes', () => {
+  test('at the cap it is kept; a byte past, or non-ASCII that crosses it, it is not', () => {
+    const at = `https://x/${'a'.repeat(AVATAR_URL_MAX_BYTES - 10)}`;
+    expect(storableAvatarUrl(at)).toBe(at);
+    expect(storableAvatarUrl(`${at}a`)).toBeUndefined();
+    expect(storableAvatarUrl(`https://x/${'é'.repeat(AVATAR_URL_MAX_BYTES / 2)}`)).toBeUndefined();
+    expect(storableAvatarUrl(undefined)).toBeUndefined();
   });
 });

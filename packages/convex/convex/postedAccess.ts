@@ -18,7 +18,7 @@ import { ConvexError, type Infer, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation } from './_generated/server';
-import { writeAudit } from './lib/audit';
+import { type AuditReasonOrText, checkedReason, composedOf, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { postedAccess as postedAccessValidator } from './lib/validators';
 
@@ -128,12 +128,18 @@ export async function setPostedAccessImpl(
   const prev = doc.postedAccess;
   await patchTarget(ctx, target, next);
 
+  // A person's reason is held to the cap as typed (D261) and kept whole: it is the composed reason's
+  // fixed part, and the line the system puts before it is the value shortened around it — so a reason
+  // at the cap still fits once the change is described, and never loses its own words to it.
+  const auditReason: AuditReasonOrText = reason
+    ? composedOf(['', checkedReason(reason)], [`${describeChange(next)} — `])
+    : describeChange(next);
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_posted_access',
     targetType: target.type,
     targetId: target.id,
-    reason: reason ? `${describeChange(next)} — ${reason}` : describeChange(next),
+    reason: auditReason,
     // `prev` alongside the new value (the A06c §6.1 convention): an audit row that records only what a
     // field *became* can answer "who changed this" and never "changed it from what", which is most
     // of what someone reading a wrong closure back would want.

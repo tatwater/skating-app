@@ -31,6 +31,7 @@ import {
   type PostCardData,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
+  storableAvatarUrl,
   TRAVEL_BASE_MAX_MS,
   type TrustClass,
 } from '@skating/core';
@@ -132,7 +133,7 @@ export const upsertFromClerk = mutation({
     // Avatar is Clerk-managed for v1 (Phase 03 decision #2): mirror the OIDC `picture` claim into
     // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
     // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
-    const profileImageUrl = identity.pictureUrl;
+    const profileImageUrl = storableAvatarUrl(identity.pictureUrl);
     // The email, likewise mirrored from the `email` claim (A08 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
     // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
@@ -217,7 +218,8 @@ export const upsertFromClerk = mutation({
         ...(renamed ? { usernameChangedAt: now } : {}),
         dateOfBirth: args.dateOfBirth,
         profileVisibility: minor ? 'private' : existing.profileVisibility,
-        ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
+        // A claim present but past the cap clears the old mirror (initials), never keeps a stale one.
+        ...(identity.pictureUrl !== undefined ? { profileImageUrl } : {}),
         ...(email !== undefined ? { email } : {}),
         riskAckVersion: args.riskAckVersion,
         // Server-stamped: freshly on a new acceptance (version bump), otherwise the
@@ -648,11 +650,11 @@ async function applyClerkMirrorsTo(
   if (claims.email !== undefined && (claims.email ?? undefined) !== profile.email) {
     patch.email = claims.email ?? undefined;
   }
-  if (
-    claims.profileImageUrl !== undefined &&
-    (claims.profileImageUrl ?? undefined) !== profile.profileImageUrl
-  ) {
-    patch.profileImageUrl = claims.profileImageUrl ?? undefined;
+  // An over-long URL is not stored: the person shows their initials, and the sync still lands. The
+  // stored value is compared, so the same over-long claim on the next sync writes nothing.
+  const storable = storableAvatarUrl(claims.profileImageUrl ?? undefined);
+  if (claims.profileImageUrl !== undefined && storable !== profile.profileImageUrl) {
+    patch.profileImageUrl = storable;
   }
   if (Object.keys(patch).length > 0) {
     await ctx.db.patch(profile._id, patch);

@@ -318,7 +318,7 @@ const robPage = (
     history={ROB_HISTORY}
     staffStats={null}
     staffSeason={null}
-    decisions={{ rows: [], isDone: true, continueCursor: '' }}
+    decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
     now={PERSON_NOW}
     viewerId={null}
     onAct={async () => null}

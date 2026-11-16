@@ -15,9 +15,11 @@ import { refreshPersonRow } from './lib/peopleRows';
 import {
   AFTER_MERGE_PROCEDURE,
   BACKFILL_STALL_MS,
+  endRun,
   PASS_SIZE,
   PEOPLE_BACKFILLS,
   type Preparation,
+  takeLease,
 } from './lib/peopleRuns';
 import schema from './schema';
 
@@ -68,7 +70,8 @@ const COMMANDS = [...AFTER_MERGE_PROCEDURE.matchAll(/`convex run (\S+) '([^']*)'
   fn: m[1] as string,
   args: m[2] as string,
 }));
-const [START, CHECK, RERUN, RESTORE] = COMMANDS as [
+const [START, CHECK, RERUN, RESTORE, RESTAMP] = COMMANDS as [
+  (typeof COMMANDS)[number],
   (typeof COMMANDS)[number],
   (typeof COMMANDS)[number],
   (typeof COMMANDS)[number],
@@ -164,7 +167,9 @@ test('the procedure’s text parses into the commands it means', () => {
     'peopleJobs:preparation',
     '<job>',
     'peopleJobs:restoreTombstoneStatus',
+    PEOPLE_BACKFILLS[0].job,
   ]);
+  expect(JSON.parse(RESTAMP.args)).toEqual({ alone: true });
   expect(AFTER_MERGE_PROCEDURE).toContain('`convex dev --once`');
 });
 
@@ -297,6 +302,47 @@ describe('the after-merge procedure, performed as written', () => {
     expect(done).toMatchObject(ALL_READY);
     expect(done.backfills[0]?.run).toBe(2);
     expect(await t.run((ctx) => ctx.db.query('peopleRows').collect())).toHaveLength(60);
+  });
+});
+
+describe('step 6: staff rows written before tenure was stamped (B01-4b)', () => {
+  test('the documented re-run stamps each staffer’s tenure, as the strip reads it, and stays ready', async () => {
+    const t = convexTest(schema, modules);
+    // As #115's procedure left them: every backfill ready, a staffer's row with no tenure stamp.
+    const mod = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('profiles', profile('mod', { role: 'moderator' }));
+      await refreshPersonRow(ctx, id);
+      await ctx.db.insert('moderationActions', {
+        action: 'grant_role',
+        targetType: 'user',
+        targetId: id,
+        reason: 'r',
+        metadata: { role: 'moderator', priorRole: 'member' },
+        createdAt: T0 - 5_000,
+      });
+      for (const { backfill } of PEOPLE_BACKFILLS) {
+        const lease = await takeLease(ctx, backfill, { alone: true });
+        if (lease) await endRun(ctx, lease, 0);
+      }
+      return id;
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('profiles', profile('adm', { role: 'admin' }));
+    });
+    const rowOf = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query('peopleRows')
+          .withIndex('by_user', (q) => q.eq('userId', mod))
+          .first(),
+      );
+    expect((await rowOf())?.tenureAt).toBeUndefined();
+    await run(t, RESTAMP.fn, RESTAMP.args);
+    await drain(t);
+    const row = await rowOf();
+    expect(row?.roleSince).toBe(T0 - 5_000);
+    expect(row?.staffSince).toBe(T0 - 5_000);
+    expect(await run(t, CHECK.fn, CHECK.args)).toMatchObject(ALL_READY);
   });
 });
 

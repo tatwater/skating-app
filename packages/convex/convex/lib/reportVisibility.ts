@@ -61,10 +61,32 @@ export async function profileAccess(
   if (target.status === 'deleted') return 'hidden';
   if (viewer?._id === target._id) return 'full';
   if (isLeaving(target)) return 'hidden';
-  if (viewer !== null && (await loadBlockedAuthorIds(ctx, viewer._id)).has(target._id)) {
-    return 'hidden';
-  }
+  if (viewer !== null && (await blockedEitherWay(ctx, viewer._id, target._id))) return 'hidden';
   return target.profileVisibility === 'private' ? 'private' : 'full';
+}
+
+/**
+ * Whether either of two people blocked the other (a block hides both ways, D32): two point reads,
+ * never either one's whole block list — a moderator many skaters have blocked costs the same.
+ */
+export async function blockedEitherWay(
+  ctx: QueryCtx,
+  a: Id<'profiles'>,
+  b: Id<'profiles'>,
+): Promise<boolean> {
+  for (const [blockerId, blockedId] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    const row = await ctx.db
+      .query('blocks')
+      .withIndex('by_blocker_blocked', (q) =>
+        q.eq('blockerId', blockerId).eq('blockedId', blockedId),
+      )
+      .first();
+    if (row !== null) return true;
+  }
+  return false;
 }
 
 /**

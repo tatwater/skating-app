@@ -700,6 +700,9 @@ export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
  * - `notifications`, `prompts`, `cards` — a small **mirror** of the state the queue-shaped jobs keep
  *   on their own rows (a queue row, a recording, a card's refresh row, keyed by its id or body id),
  *   so the Machinery read counts small rows and never loads the heavy documents themselves.
+ * - `lapses` — a small **mirror** of the lapsed-suspension sweep's attempt state, which lives on the
+ *   profile (its due range must leave a parked lapse out); keyed by profile id, so Machinery counts a
+ *   parked lapse from a small row and never loads a profile.
  * - `finalizeDeletions` — an account more than a day past its deletion date (keyed by profile id,
  *   never parked); `expiredExports` — an expired bundle whose blob would not delete (keyed by id).
  */
@@ -721,6 +724,7 @@ export const FAILING_JOBS = [
   'bodyGeo',
   'geoDrift',
   'geoMissing',
+  'lapses',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];
 
@@ -733,5 +737,8 @@ export const LAPPING_JOBS = [
   'finalizeDeletions',
   'redactGhosts',
   'expiredExports',
+  // The daily check of the parked-lapse mirrors (B01-4b): it laps the mirrors, so ones it keeps
+  // never hold a stale one behind them.
+  'lapseMirrors',
 ] as const;
 export type LappingJob = (typeof LAPPING_JOBS)[number];

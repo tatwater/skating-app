@@ -41,6 +41,7 @@ import {
   reportStripState,
   seasonOf,
   signInRetentionFrom,
+  signInRetentionFromMs,
   standingOf,
   TEXT_LENGTH_CAPS,
   TEXT_LENGTH_KINDS,
@@ -77,7 +78,7 @@ const PROFILE_SCAN_CAP = 5_000;
 const WINDOW_SCAN_CAP = 10_000;
 
 /** How long a `bountyGateEvents` row is kept. Long enough to tune a season; short enough not to be a record. */
-const GATE_EVENT_RETENTION_DAYS = 180;
+export const GATE_EVENT_RETENTION_DAYS = 180;
 
 /** Trailing window for the bounty outcome funnel — long enough to include expiries at a 30d lifetime. */
 const BOUNTY_FUNNEL_DAYS = 90;
@@ -924,20 +925,30 @@ export const pruneClientSignals = internalMutation({
  * season's 1 July is erased. A page per transaction: a full page schedules the next, so a backlog
  * drains in one run without any one transaction reading past the cap. The day range carries its
  * lower bound, as every range over this index does.
+ *
+ * The console's presence rows (`consolePresence`, B01-4b) follow the same rule: a staffer last seen
+ * before the previous season's 1 July is no longer kept — a page of them per transaction beside the
+ * days, each row its own delete, chained while either page comes back full.
  */
 export const pruneSignInDays = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const keepFrom = signInRetentionFrom(Date.now());
+    const now = Date.now();
+    const keepFrom = signInRetentionFrom(now);
     const stale = await ctx.db
       .query('signInDays')
       .withIndex('by_day', (q) => q.gte('day', '0000-01-01').lt('day', keepFrom))
       .take(DAY_SCAN_CAP);
     for (const row of stale) await ctx.db.delete(row._id);
-    if (stale.length === DAY_SCAN_CAP) {
+    const stalePresence = await ctx.db
+      .query('consolePresence')
+      .withIndex('by_seen_at', (q) => q.gte('seenAt', 0).lt('seenAt', signInRetentionFromMs(now)))
+      .take(DAY_SCAN_CAP);
+    for (const row of stalePresence) await ctx.db.delete(row._id);
+    if (stale.length === DAY_SCAN_CAP || stalePresence.length === DAY_SCAN_CAP) {
       await ctx.scheduler.runAfter(0, internal.analyticsRollup.pruneSignInDays, {});
     }
-    return { deleted: stale.length, keepFrom };
+    return { deleted: stale.length, presenceDeleted: stalePresence.length, keepFrom };
   },
 });
 
