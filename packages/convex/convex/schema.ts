@@ -2033,6 +2033,12 @@ export default defineSchema({
   // (Phase 09a). Small (5 states: 2,546 rows on dev).
   adminAreas: defineTable({
     name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
+    /**
+     * TIGER's `NAMELSAD` — the name with its legal class ("Plattsburgh city", "Plattsburgh town")
+     * (B01-3l). What tells two same-named subdivisions of one state apart in a label; written by the
+     * loader on upsert. Absent on rows loaded before it (and on OSM-sourced rows): they read by name.
+     */
+    fullName: v.optional(v.string()),
     level: literals(ADMIN_AREA_LEVELS), // admin granularity
     state: v.string(), // 2-letter code, denormalized onto the label
     externalId: v.string(), // `tiger/<GEOID>` — the upsert key; a subdivision's GEOID starts with its county's
@@ -2046,7 +2052,10 @@ export default defineSchema({
   })
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
     // Containment lookups go through `adminAreaCells`, not a level scan — see `findContainingArea`.
-    .index('by_external_id', ['externalId']),
+    .index('by_external_id', ['externalId'])
+    // Whether another subdivision of a state shares a town's name (B01-3l): an equality on all three,
+    // required fields, so no sparse-index trap.
+    .index('by_level_state_name', ['level', 'state', 'name']),
 
   // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
   // (sample point, window start, current-hour bucket): concurrent viewers of the same body/window share a
