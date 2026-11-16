@@ -221,6 +221,21 @@ describe('the record', () => {
     expect(within(sheet).getByText('Nothing on the record')).toBeInTheDocument();
     expect(mocks.calls.get('contentRecord:recordCounts')).toEqual({ userId: ROB_ID });
   });
+
+  it('an open sheet stays open through a blink of the person read', async () => {
+    answer({
+      'contentRecord:recordPresence': { deleted: false, reversed: false, pending: [] },
+      'contentRecord:personVerdicts': { page: [], isDone: true, continueCursor: '', pending: [] },
+    });
+    const { rerender } = render(<PersonPane userId={ROB_ID} />);
+    const row = document.querySelector('[data-lever="record"]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Review' }));
+    await screen.findByRole('dialog');
+    // The person read drops back to loading (a retry, a failure): the sitting holds.
+    mocks.results.set('people:person', undefined);
+    rerender(<PersonPane userId={ROB_ID} />);
+    expect(screen.getByRole('dialog')).toHaveTextContent('Nothing on the record');
+  });
 });
 
 describe('one person at a time', () => {

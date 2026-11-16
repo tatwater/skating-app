@@ -215,6 +215,7 @@ export const RECORD_WORDS = {
   undoTheRestore: 'Undo the restore',
   cantUndo: 'Can’t undo',
   somethingWrong: 'Something went wrong. Try again.',
+  anotherOnItsWay: 'A change to this is already on its way.',
 
   // ── The dialogs ──
   hideAgainTitle: 'Hide this again?',
@@ -224,13 +225,24 @@ export const RECORD_WORDS = {
   keepBody: (name: string, kind: string) =>
     `It goes on ${name}’s record with the reason given. The ${kind} stays deleted and is kept until the decision is overturned.`,
   overturnTitle: 'Overturn this decision?',
-  /** `erased`: a day ("Sun 25 Oct"), `'atOnce'`, or `null` while something else holds it. */
-  overturnBody: (name: string, kind: string, erased: string | 'atOnce' | null) =>
-    erased === null
-      ? `It comes off ${name}’s record. The ${kind} stays deleted, and isn’t erased while anything else holds it.`
-      : erased === 'atOnce'
-        ? `It comes off ${name}’s record. The ${kind} stays deleted and is erased at once.`
-        : `It comes off ${name}’s record. The ${kind} stays deleted and is erased ${erased}.`,
+  /**
+   * `erased`: a day ("Sun 25 Oct"), `'atOnce'`, `'already'` (its words were erased before), or
+   * `null` while something else holds it.
+   */
+  overturnBody: (
+    name: string,
+    kind: string,
+    erased: string | 'atOnce' | 'already' | 'unrecorded' | null,
+  ) =>
+    erased === 'unrecorded'
+      ? `It comes off ${name}’s record. The ${kind} stays deleted.`
+      : erased === null
+        ? `It comes off ${name}’s record. The ${kind} stays deleted, and isn’t erased while anything else holds it.`
+        : erased === 'atOnce'
+          ? `It comes off ${name}’s record. The ${kind} stays deleted and is erased at once.`
+          : erased === 'already'
+            ? `It comes off ${name}’s record. The ${kind} stays deleted; its words were already erased.`
+            : `It comes off ${name}’s record. The ${kind} stays deleted and is erased ${erased}.`,
   reasonLabel: 'Reason · kept in the audit log',
   reasonOptionalLabel: 'Reason · optional · kept in the audit log',
   reasonOptionalPlaceholder: 'Why, if there’s something to say',

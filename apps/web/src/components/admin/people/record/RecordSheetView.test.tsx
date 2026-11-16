@@ -341,6 +341,35 @@ describe('the item’s answers', () => {
     expect(onSelect).toHaveBeenCalledWith({ targetType: 'report', targetId: 'r4oct' });
   });
 
+  it('while the list loads, a restored row it isn’t drawing yet never opens itself', () => {
+    const onSelect = vi.fn();
+    const restored = {
+      row: STANDING[1] as (typeof STANDING)[number],
+      at: NOW,
+      actionId: 'a1',
+      undo: null,
+    };
+    const view = render(
+      <RecordSheetView
+        {...props({
+          selected: null,
+          item: undefined,
+          onSelect,
+          list: { ...LIST, status: 'loading', rows: [] },
+          restored: [restored],
+        })}
+      />,
+    );
+    expect(onSelect).not.toHaveBeenCalled();
+    // Once the rows are in, the first row drawn is the one that opens.
+    view.rerender(
+      <RecordSheetView
+        {...props({ selected: null, item: undefined, onSelect, restored: [restored] })}
+      />,
+    );
+    expect(onSelect).toHaveBeenCalledWith({ targetType: 'report', targetId: 'r4oct' });
+  });
+
   it('a Post needing a choice opens its chooser instead of writing', async () => {
     const onChooser = vi.fn();
     const onAct = vi.fn();

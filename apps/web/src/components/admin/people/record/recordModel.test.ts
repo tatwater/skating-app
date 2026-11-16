@@ -53,7 +53,7 @@ import {
   titleOf,
   withRestored,
 } from './recordModel';
-import { kindCount } from './recordWords';
+import { kindCount, RECORD_WORDS } from './recordWords';
 
 const row = (i: number) => STANDING[i] as (typeof STANDING)[number];
 const lines = (v: { lines: Array<{ text: string; quote?: string }> }) =>
@@ -660,7 +660,13 @@ describe('what an overturn would leave', () => {
     });
     // Not ahead of the moment it was read: the 30 days are past.
     expect(erasureOf(NOW - 60_000, at(8, 1), NOW)).toEqual({ kind: 'atOnce', days: 74 });
+    // The server read it a moment after this minute-old clock: its own now, still at once — never
+    // today's date as if the clock were running.
+    expect(erasureOf(NOW + 30_000, at(8, 1), NOW)).toEqual({ kind: 'atOnce', days: 74 });
     expect(erasureOf(null, deleted, NOW)).toEqual({ kind: 'held' });
+    // No deletion time to count from (a Post its Reports' deletions withdrew): no date recorded.
+    expect(erasureOf(null, null, NOW)).toEqual({ kind: 'unrecorded' });
+    expect(erasureWords({ kind: 'unrecorded' }, 'Rob')).toBe('Not recorded yet');
     expect(erasureOf(at(10, 25), null, NOW)).toMatchObject({ kind: 'on', days: null });
     expect(erasureWords({ kind: 'atOnce', days: 74 }, 'Rob')).toBe(
       'At once · 74 days after Rob deleted it',
@@ -668,6 +674,27 @@ describe('what an overturn would leave', () => {
     expect(erasureWords({ kind: 'atOnce', days: null }, 'Rob')).toBe('At once');
     expect(erasureWords({ kind: 'on', day: 'Sun 25 Oct', days: null }, 'Rob')).toBe('Sun 25 Oct');
     expect(erasureWords({ kind: 'held' }, 'Rob')).toBe('Not erased while anything else holds it');
+    expect(erasureWords({ kind: 'erased' }, 'Rob')).toBe('The words were erased');
+  });
+
+  it('an erased shell’s overturn says its words are already gone, never that they wait', () => {
+    const shell = itemView(
+      {
+        ...ITEM_DELETED,
+        published: null,
+        content: null,
+        erasedAt: at(10, 26, 8, 2),
+        eraseAtIfReleased: null,
+      },
+      SUBJECT,
+      NOW,
+    );
+    expect(shell.lever).toMatchObject({ action: 'overturn', ok: true });
+    expect(shell.erasure).toEqual({ kind: 'erased' });
+    expect(shell.would?.rows.at(-1)).toEqual({ label: 'Erased', text: 'The words were erased' });
+    expect(RECORD_WORDS.overturnBody('Rob Tremblay', 'comment', 'already')).toBe(
+      'It comes off Rob Tremblay’s record. The comment stays deleted; its words were already erased.',
+    );
   });
 
   it('the pane says so in its life and its rows', () => {
@@ -680,6 +707,17 @@ describe('what an overturn would leave', () => {
     expect(held.life?.stations.at(-1)).toMatchObject({
       title: 'The decision comes off Rob’s record',
       sub: 'Not erased while anything else holds it',
+    });
+    const unstamped = itemView(
+      { ...ITEM_DELETED, authorDeletedAt: null, eraseAtIfReleased: null },
+      SUBJECT,
+      NOW,
+    );
+    expect(unstamped.erasure).toEqual({ kind: 'unrecorded' });
+    expect(unstamped.life?.stations.at(-1)).toEqual({
+      when: 'If overturned',
+      title: 'The decision comes off Rob’s record',
+      mark: 'end',
     });
     const now = itemView({ ...ITEM_DELETED, eraseAtIfReleased: NOW }, SUBJECT, NOW);
     expect(now.life?.stations.at(-1)?.title).toBe('Erased at once');

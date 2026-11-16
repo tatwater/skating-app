@@ -52,8 +52,9 @@ export type RecordSheetProps = {
 
 export function RecordSheet(props: RecordSheetProps) {
   // A fresh sitting each time it opens: nothing restored, nothing open. It starts on opening, so a
-  // closing sheet slides out as it was; its reads stay live until it has (`live`), then it unmounts
-  // and asks nothing more. Nothing is mounted, or asked of the server, until it first opens.
+  // closing sheet slides out as it was; the sitting stays mounted, its reads live, until the slide
+  // is over (`live`), then it unmounts and asks nothing more. Nothing is mounted, or asked of the
+  // server, until it first opens — so a mounted sitting is always a live one.
   const [sitting, setSitting] = useState(0);
   const [wasOpen, setWasOpen] = useState(props.open);
   const [live, setLive] = useState(props.open);
@@ -65,7 +66,7 @@ export function RecordSheet(props: RecordSheetProps) {
     }
   }
   if (!props.open && !live) return null;
-  return <SheetSitting key={sitting} {...props} live={live} onClosed={() => setLive(false)} />;
+  return <SheetSitting key={sitting} {...props} onClosed={() => setLive(false)} />;
 }
 
 /** The sitting's own state: the tab, the filter, the open item, the chooser, what was restored. */
@@ -118,31 +119,29 @@ function SheetSitting({
   standing,
   pending,
   container,
-  live,
   onClosed,
-}: RecordSheetProps & { live: boolean; onClosed: () => void }) {
+}: RecordSheetProps & { onClosed: () => void }) {
   const now = useMinuteNow();
   const state = useSittingState();
   const { tab, kind, selected, chooser } = state;
   const userId = subject.userId;
 
-  const list = useRecordList(live ? { tab, userId, kind } : null);
+  // Mounted only while open or sliding out: every read here is the open sheet's own.
+  const list = useRecordList({ tab, userId, kind });
   const { reads } = useConsoleReadSet({
     // Who is restoring, for a restored row's chip.
-    viewer: live ? read(api.profiles.current, {}) : null,
+    viewer: read(api.profiles.current, {}),
     // The tabs' counts by kind, for the filter: only while the sheet is open.
-    counts: live
-      ? read(api.contentRecord.recordCounts, { userId: userId as Id<'profiles'> })
-      : null,
+    counts: read(api.contentRecord.recordCounts, { userId: userId as Id<'profiles'> }),
     item:
-      live && selected !== null
+      selected !== null
         ? read(api.contentRecord.item, {
             targetType: selected.targetType,
             targetId: selected.targetId,
           })
         : null,
     choices:
-      live && chooser !== null
+      chooser !== null
         ? read(api.moderation.postRestoreChoices, { postId: chooser.targetId as Id<'posts'> })
         : null,
   });

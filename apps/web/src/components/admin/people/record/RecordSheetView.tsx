@@ -213,8 +213,9 @@ function SheetBodyView({
   });
   const counted = tabCounts(tab, standing, counts);
 
-  // Two columns and nothing open: the first row opens, as the boards draw it.
-  const first = rows.rows[0]?.view.target ?? null;
+  // Two columns and nothing open: the first row opens, as the boards draw it — once the list has
+  // drawn its rows (while it loads, only a restored row could be first, and it isn't drawn).
+  const first = status === 'loading' ? null : (rows.rows[0]?.view.target ?? null);
   useEffect(() => {
     if (!narrow && selected === null && first !== null) onSelect(first);
   }, [narrow, selected, first, onSelect]);
@@ -406,11 +407,15 @@ function SheetBodyView({
                 : W.overturnBody(
                     subjectName(subject),
                     KIND_WORDS[ask.target.targetType].one,
-                    ask.view.erasure === null || ask.view.erasure.kind === 'held'
-                      ? null
-                      : ask.view.erasure.kind === 'atOnce'
-                        ? 'atOnce'
-                        : ask.view.erasure.day,
+                    ask.view.erasure === null || ask.view.erasure.kind === 'unrecorded'
+                      ? 'unrecorded'
+                      : ask.view.erasure.kind === 'held'
+                        ? null
+                        : ask.view.erasure.kind === 'atOnce'
+                          ? 'atOnce'
+                          : ask.view.erasure.kind === 'erased'
+                            ? 'already'
+                            : ask.view.erasure.day,
                   )
           }
           confirm={W.lever[ask.action]}

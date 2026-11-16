@@ -117,22 +117,27 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     reads.recordPresence === undefined || isFailed(reads.recordPresence)
       ? null
       : reads.recordPresence;
+  // The person the record sheet is about, held through a blink of the person read (a failure, a
+  // retry): an open sitting never unmounts under the operator, taking its open item and every row
+  // restored in it along. The page is keyed on the person, so what is held is always theirs.
+  const sheetPerson = useHeldRead(loaded ?? undefined, !valid || !people);
   // The record sheet's subject, rebuilt only when what it names changes: the sheet's item view and
   // its write path key on it.
-  const subjectName = loaded?.displayName ?? null;
-  const subjectHandle = loaded?.username ?? null;
-  const subjectImage = loaded?.profileImageUrl ?? null;
+  const subjectId = sheetPerson?.userId ?? null;
+  const subjectName = sheetPerson?.displayName ?? null;
+  const subjectHandle = sheetPerson?.username ?? null;
+  const subjectImage = sheetPerson?.profileImageUrl ?? null;
   const subject = useMemo(
     () =>
-      targetId === null
+      subjectId === null
         ? null
         : {
-            userId: targetId,
+            userId: subjectId,
             displayName: subjectName,
             username: subjectHandle,
             profileImageUrl: subjectImage,
           },
-    [targetId, subjectName, subjectHandle, subjectImage],
+    [subjectId, subjectName, subjectHandle, subjectImage],
   );
   return (
     <>
@@ -164,13 +169,13 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
         onReviewRecord={() => setRecordOpen(true)}
         {...(className !== undefined && { className })}
       />
-      {loaded !== null && subject !== null && (
+      {sheetPerson !== undefined && subject !== null && (
         <RecordSheet
           open={recordOpen}
           onOpenChange={setRecordOpen}
           subject={subject}
-          standing={loaded.hidden}
-          pending={loaded.pending.includes('verdicts') || (presence?.pending.length ?? 0) > 0}
+          standing={sheetPerson.hidden}
+          pending={sheetPerson.pending.includes('verdicts') || (presence?.pending.length ?? 0) > 0}
           container={shell?.main ?? null}
         />
       )}

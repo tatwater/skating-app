@@ -5,6 +5,7 @@ import {
   type HazardType,
   hazardTypeLabel,
   seasonOf,
+  WITHDRAWN_ERASE_MS,
 } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
@@ -544,16 +545,24 @@ export type ItemView = {
   place: string | null;
 };
 
-/** When an overturn would leave the words erased: a day, at once, or held by something else. */
+/**
+ * When an overturn would leave the words erased: a day, at once, held by something else — or never
+ * again, because they already were (an erased comment's shell, whose decision can still come off).
+ */
 export type Erasure =
   | { kind: 'on'; day: string; days: number | null }
   | { kind: 'atOnce'; days: number | null }
-  | { kind: 'held' };
+  | { kind: 'held' }
+  | { kind: 'erased' }
+  /** No deletion time on record to count from (a Post its Reports' deletions withdrew, an old alert). */
+  | { kind: 'unrecorded' };
 
 /**
- * The server's `eraseAtIfReleased` in words. It is read when the query runs, so a date not ahead of
- * `now` means the 30 days are already past: at once. `null` with an overturn on offer means
- * something else — its Post's decision, an open flag — would still hold it.
+ * The server's `eraseAtIfReleased` in words. The server's clock is the later of thirty days after
+ * the deletion and the moment the query ran — a moment after this minute-old `now`, so a date past
+ * the thirty days is that moment: at once, as is any date not ahead of `now`. `null` with an
+ * overturn on offer means something else — its Post's decision, an open flag — would still hold it;
+ * or, with no deletion time on record to count from, that no date is recorded.
  */
 export function erasureOf(
   at: number | null,
@@ -561,9 +570,10 @@ export function erasureOf(
   now: number,
   tz?: string,
 ): Erasure {
-  if (at === null) return { kind: 'held' };
+  if (at === null) return deletedAt === null ? { kind: 'unrecorded' } : { kind: 'held' };
   const days = deletedAt === null ? null : daysBetween(deletedAt, Math.max(at, now));
-  return at <= now ? { kind: 'atOnce', days } : { kind: 'on', day: dayWords(at, now, tz), days };
+  const due = at <= now || (deletedAt !== null && at > deletedAt + WITHDRAWN_ERASE_MS);
+  return due ? { kind: 'atOnce', days } : { kind: 'on', day: dayWords(at, now, tz), days };
 }
 
 /** "Sun 25 Oct · 30 days after Rob deleted it", "At once", or held: the *If overturned* row. */
@@ -575,6 +585,10 @@ export function erasureWords(e: Erasure, author: string): string {
       return e.days === null ? W.atOnce : W.erasedWhen(W.atOnce, e.days, author);
     case 'held':
       return W.erasedHeld;
+    case 'erased':
+      return W.wordsErased;
+    case 'unrecorded':
+      return W.notRecorded;
   }
 }
 
@@ -688,7 +702,7 @@ export function itemView(
           title:
             item.erasedAt === null
               ? W.erasedPlateNoDate
-              : W.erasedPlate(momentWords(item.erasedAt, now, tz).replace(/ \d\d:\d\d$/, '')),
+              : W.erasedPlate(dayWords(item.erasedAt, now, tz)),
           sub:
             item.erasedAt !== null && deletedAt !== null
               ? W.erasedAfter(daysBetween(deletedAt, item.erasedAt), author)
@@ -720,9 +734,13 @@ export function itemView(
 
   // ── The lever, and what it would do ──
   const lever = leverOf(item.can);
-  const erasure =
+  // An erased comment's shell can still have its decision overturned; its words are already gone,
+  // so there is no erasure ahead to say (the server sends no date for it either).
+  const erasure: Erasure | null =
     lever?.ok === true && lever.action === 'overturn'
-      ? erasureOf(item.eraseAtIfReleased, deletedAt, now, tz)
+      ? content === null
+        ? { kind: 'erased' }
+        : erasureOf(item.eraseAtIfReleased, deletedAt, now, tz)
       : null;
   let would: ItemView['would'] = null;
   if (lever?.ok === true && lever.action === 'overturn') {
@@ -796,10 +814,8 @@ function comesBackOf(
   const restored =
     standing === null && deletedAt === null && (ended === 'restore' || ended === 'undo');
   if (!restoring && !restored) return null;
-  const counted = (c: { count: number; capped: boolean }, one: string, many: string) =>
-    c.count === 0 && !c.capped
-      ? W.noneOf
-      : `${floorText(c)} ${c.count === 1 && !c.capped ? one : many}`;
+  const counted = (c: Counted, one: string, many: string) =>
+    c.count === 0 && !c.capped ? W.noneOf : countedWords(c, one, many);
   return {
     title: restoring ? W.comesBack : W.cameBack,
     rows: [
@@ -808,6 +824,12 @@ function comesBackOf(
     ],
   };
 }
+
+type Counted = { count: number; capped: boolean };
+
+/** "1 comment", "3 thumbs", "50+ comments" — a floor's plural is always the many form. */
+const countedWords = (c: Counted, one: string, many: string): string =>
+  `${floorText(c)} ${c.count === 1 && !c.capped ? one : many}`;
 
 /** One event in an item's life, and the state it left the item in. */
 type LifeEvent = {
@@ -992,6 +1014,15 @@ function ifStation(
           };
         case 'atOnce':
           return { when: W.ifOverturned, title: W.erasedAtOnce, mark: 'end' };
+        case 'erased':
+          return {
+            when: W.ifOverturned,
+            title: W.comesOff(o.author),
+            sub: W.wordsErased,
+            mark: 'end',
+          };
+        case 'unrecorded':
+          return { when: W.ifOverturned, title: W.comesOff(o.author), mark: 'end' };
         default:
           return {
             when: W.ifOverturned,
@@ -1061,10 +1092,10 @@ export function receiptWords(
 function cameBackWords(back: NonNullable<ItemRead['comesBack']>): string | null {
   const parts = [
     back.comments.count > 0 || back.comments.capped
-      ? `${floorText(back.comments)} ${back.comments.count === 1 && !back.comments.capped ? 'comment' : 'comments'}`
+      ? countedWords(back.comments, 'comment', 'comments')
       : null,
     back.ratings.count > 0 || back.ratings.capped
-      ? `${floorText(back.ratings)} ${back.ratings.count === 1 && !back.ratings.capped ? 'thumb' : 'thumbs'}`
+      ? countedWords(back.ratings, 'thumb', 'thumbs')
       : null,
   ].filter((p): p is string => p !== null);
   return parts.length === 0 ? null : W.cameBackReceipt(parts.join(' and '));
@@ -1082,7 +1113,7 @@ export type ChooserMember = {
 /** The chooser's rows (8.9 *A post*): what each Report is and why it's down; nothing pre-chosen. */
 export function chooserMembers(choices: ChoicesRead, now: number, tz?: string): ChooserMember[] {
   return choices.members.map((m) => {
-    const title = [m.waterBodyName, momentWords(m.skateEndTime, now, tz).replace(/ \d\d:\d\d$/, '')]
+    const title = [m.waterBodyName, dayWords(m.skateEndTime, now, tz)]
       .filter((p): p is string => p !== null)
       .join(' · ');
     if (m.standing === 'author_deleted') {

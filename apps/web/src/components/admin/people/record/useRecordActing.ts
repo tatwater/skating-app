@@ -67,7 +67,8 @@ export function useRecordActing({
   const run = useCallback<RecordActing['run']>(
     async (target, write, { region, inline }) => {
       const key = targetKey(target);
-      if (running.current.has(key)) return null;
+      // A second press while its own write is out is not a second write — and not a landing.
+      if (running.current.has(key)) return W.anotherOnItsWay;
       running.current.add(key);
       const action: RecordAction = write.kind;
       const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
