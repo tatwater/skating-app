@@ -79,10 +79,12 @@ export type KeyedLink = StaffLink & { key: string };
  * **Each link's id, kept across an edit.** The record's links carry no id of their own, and a key
  * made from a link's words changes when its words do — so an edited link would look like a new row
  * (and a lift or a focus held on it would lose it). `carryIds` gives the new list the ids of the
- * old one: a link with the same words in the same place keeps its id first (so an edit that makes
- * one link read like another, or like its twin, never takes the other's id), then one with the same
- * words anywhere (a reorder); a link whose words changed takes the id of the link that stood in its
- * place (an edit); anything else is new. Pure; `fresh` mints an id.
+ * old one — **only to the same link**: one with exactly the same words in the same place keeps its id
+ * first (so twins keep their own), then one with the same words anywhere (a reorder). A link whose
+ * words changed is never inferred from its place — it may be another moderator's replacement — so it
+ * is new, and a change aimed at the old link finds nothing to change (refused, never re-aimed). The
+ * page's own edits keep their ids another way: a list the server shows that is exactly one the page
+ * sent takes that list's keys (`LinksTabView`). Pure; `fresh` mints an id.
  */
 export function carryIds(
   prev: readonly KeyedLink[],
@@ -108,15 +110,7 @@ export function carryIds(
     const p = prev.find((q) => same(q, link));
     if (p !== undefined) claim(i, p);
   });
-  return next.map((link, i) => {
-    let id = ids[i] ?? null;
-    if (id === null) {
-      const inPlace = prev[i];
-      id = inPlace !== undefined && !used.has(inPlace.key) ? inPlace.key : fresh();
-      used.add(id);
-    }
-    return { label: link.label, url: link.url, key: id };
-  });
+  return next.map((link, i) => ({ label: link.label, url: link.url, key: ids[i] ?? fresh() }));
 }
 
 /**

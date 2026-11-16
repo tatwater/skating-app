@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ConvexError } from 'convex/values';
 import fc from 'fast-check';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -1123,5 +1124,198 @@ describe('LinksTabView — a link’s id outlives the page, as its queue does', 
     expect(after[ASSOC.label]).toBe(before[ASSOC.label]);
     expect(after[added.label]).toBeTruthy();
     expect([before[ASSOC.label], before[DAM.label]]).not.toContain(after[added.label]);
+  });
+});
+
+describe('LinksTabView — a retry after the list moved never lands on a link it did not address', () => {
+  /** A server that keeps the list, refuses a save built on a list that moved, and lets another moderator write. */
+  function makeServer(initial: StaffLink[]) {
+    const state = { links: initial, answers: [] as (() => void)[], set: (_: StaffLink[]) => {} };
+    const same = (a: readonly StaffLink[], b: readonly StaffLink[]) =>
+      a.length === b.length && a.every((l, i) => l.label === b[i]?.label && l.url === b[i]?.url);
+    const onSave = async (next: StaffLink[], expected: StaffLink[]) => {
+      await new Promise<void>((r) => state.answers.push(r));
+      if (!same(expected, state.links)) {
+        throw new ConvexError({ code: 'list_changed', message: 'moved', current: state.links });
+      }
+      state.links = next;
+      state.set(next);
+    };
+    const other = (next: StaffLink[]) => {
+      state.links = next;
+      state.set(next);
+    };
+    return { state, onSave, other };
+  }
+  let keyN = 0;
+  function Page({ server }: { server: ReturnType<typeof makeServer> }) {
+    const [links, setLinks] = useState(server.state.links);
+    server.state.set = setLinks;
+    const [queueKey] = useState(() => `links:test-${++keyN}`);
+    return (
+      <LinksTabView
+        {...base}
+        queueKey={queueKey}
+        body={{ ...MASCOMA, referenceLinks: links }}
+        onSave={server.onSave}
+      />
+    );
+  }
+  const C = { label: 'Town page', url: 'https://enfield.nh.gov' };
+  const answerAll = async (server: ReturnType<typeof makeServer>) => {
+    for (let i = 0; i < 8 && server.state.answers.length > 0; i++) {
+      await act(async () => server.state.answers.shift()?.());
+      await act(async () => new Promise((r) => setTimeout(r, 0)));
+    }
+  };
+
+  it('Greptile’s case: A edited, another moderator replaces A with C — C is untouched, the edit is refused in words', async () => {
+    const user = userEvent.setup();
+    const server = makeServer([ASSOC, DAM]);
+    render(<Page server={server} />);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    const label = screen.getByRole('textbox', { name: 'Label' });
+    await user.clear(label);
+    await user.type(label, 'The Association');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    // Another moderator replaces A with C before the save is answered.
+    act(() => server.other([C, DAM]));
+    await answerAll(server);
+    expect(server.state.links).toEqual([C, DAM]);
+    expect(screen.getByText(/the link you changed is gone/)).toBeInTheDocument();
+  });
+
+  type Op =
+    | { kind: 'edit'; row: number }
+    | { kind: 'remove'; row: number }
+    | { kind: 'otherReplace'; row: number }
+    | { kind: 'otherInsert' }
+    | { kind: 'otherRemove'; row: number }
+    | { kind: 'otherReorder' }
+    | { kind: 'answer' };
+  const op: fc.Arbitrary<Op> = fc.oneof(
+    fc.record({ kind: fc.constant('edit' as const), row: fc.nat(2) }),
+    fc.record({ kind: fc.constant('remove' as const), row: fc.nat(2) }),
+    fc.record({ kind: fc.constant('otherReplace' as const), row: fc.nat(2) }),
+    fc.constant({ kind: 'otherInsert' as const }),
+    fc.record({ kind: fc.constant('otherRemove' as const), row: fc.nat(2) }),
+    fc.constant({ kind: 'otherReorder' as const }),
+    fc.constant({ kind: 'answer' as const }),
+  );
+
+  it('over any interleaving with another moderator’s writes: mine land only on the links I addressed (fast-check)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
+        const user = userEvent.setup({ delay: null });
+        const server = makeServer([ASSOC, DAM]);
+        const { unmount } = render(<Page server={server} />);
+        let minted = 0;
+        // The words each of my saves addressed, and what it would make of them.
+        const mine: { from: string; to: string | null }[] = [];
+        // Links another moderator put in and still means to keep.
+        const theirs = new Set<string>();
+        try {
+          for (const o of ops) {
+            if (screen.queryByRole('textbox', { name: 'Label' }) !== null) {
+              await user.click(screen.getByRole('button', { name: 'Cancel' }));
+            }
+            const rows = [...document.querySelectorAll<HTMLElement>('[data-link-key]')];
+            if (o.kind === 'edit' || o.kind === 'remove') {
+              const row = rows[o.row];
+              const edit = row?.querySelector<HTMLElement>('[data-slot="link-edit"]');
+              if (row === undefined || edit == null) continue;
+              const from = row.querySelector('.text-body')?.textContent ?? '';
+              await user.click(edit);
+              if (o.kind === 'remove') {
+                await user.click(screen.getByRole('button', { name: 'Remove' }));
+                mine.push({ from, to: null });
+              } else {
+                const to = `${from} (${++minted})`;
+                const label = screen.getByRole('textbox', { name: 'Label' });
+                await user.clear(label);
+                await user.type(label, to);
+                await user.click(screen.getByRole('button', { name: 'Done' }));
+                mine.push({ from, to });
+              }
+            } else if (o.kind === 'answer') {
+              await act(async () => server.state.answers.shift()?.());
+              await act(async () => new Promise((r) => setTimeout(r, 0)));
+            } else {
+              const now = server.state.links;
+              const next =
+                o.kind === 'otherReplace'
+                  ? now.map((l, i) =>
+                      i === o.row % Math.max(1, now.length)
+                        ? { label: `X${++minted}`, url: 'https://x.org' }
+                        : l,
+                    )
+                  : o.kind === 'otherInsert'
+                    ? [...now, { label: `Y${++minted}`, url: 'https://y.org' }]
+                    : o.kind === 'otherRemove'
+                      ? now.filter((_, i) => i !== o.row % Math.max(1, now.length))
+                      : [...now].reverse();
+              for (const l of now) if (!next.includes(l)) theirs.delete(l.label);
+              for (const l of next) if (/^(X|Y)\d+$/.test(l.label)) theirs.add(l.label);
+              act(() => server.other(next));
+            }
+          }
+          await answerAll(server);
+          // Every link the server holds is one nobody touched, another moderator's, or one of my
+          // edits of a link I addressed — never my words on a link I didn't address.
+          const others = (l: StaffLink) => /^(X|Y)\d+$/.test(l.label);
+          for (const l of server.state.links) {
+            if (others(l) || l.label === ASSOC.label || l.label === DAM.label) continue;
+            const edit = mine.find((m) => m.to === l.label);
+            expect(edit).toBeDefined();
+            // My edit's words keep the address of the link they were made from.
+            expect(l.url).toBe(
+              edit?.from === ASSOC.label ? ASSOC.url : edit?.from === DAM.label ? DAM.url : l.url,
+            );
+          }
+          // Every link another moderator kept is still there unless I addressed it myself.
+          for (const label of theirs) {
+            if (mine.some((m) => m.from === label)) continue;
+            expect(server.state.links.map((l) => l.label)).toContain(label);
+          }
+          // No link of another moderator's ever carries my words.
+          for (const l of server.state.links)
+            if (/\(\d+\)$/.test(l.label)) expect(l.url).not.toMatch(/x\.org|y\.org/);
+        } finally {
+          unmount();
+        }
+      }),
+      {
+        numRuns: 12,
+        // Pinned: Greptile's sequence, a remove whose link another moderator replaced, and an edit
+        // across another's reorder and insert; the rest random.
+        examples: [
+          [
+            [
+              { kind: 'edit', row: 0 },
+              { kind: 'otherReplace', row: 0 },
+              { kind: 'answer' },
+              { kind: 'answer' },
+            ],
+          ],
+          [
+            [
+              { kind: 'remove', row: 1 },
+              { kind: 'otherReplace', row: 1 },
+              { kind: 'answer' },
+              { kind: 'answer' },
+            ],
+          ],
+          [
+            [
+              { kind: 'edit', row: 1 },
+              { kind: 'otherReorder' },
+              { kind: 'otherInsert' },
+              { kind: 'answer' },
+              { kind: 'answer' },
+            ],
+          ],
+        ],
+      },
+    );
   });
 });
