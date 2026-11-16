@@ -3,8 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The narrow-screen rule is measured; here a test says which side of it the page is on.
+const columns = vi.hoisted(() => ({ fit: true }));
+vi.mock('../shell/columnsFit', async (original) => ({
+  ...(await original<typeof import('../shell/columnsFit')>()),
+  useColumnsFit: () => columns.fit,
+}));
+
 import { KeysProvider } from '@/lib/keys';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
+import { measureViewports } from '../people/list/testLayout';
 import { BodiesTable, resetScrollMemory } from './BodiesTable';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import { otherTowns, TOOLTIP_TOWNS } from './BodyPreview';
@@ -48,8 +56,14 @@ beforeAll(() => {
   }
 });
 
-beforeEach(() => resetScrollMemory());
-afterEach(() => vi.useRealTimers());
+beforeEach(() => {
+  resetScrollMemory();
+  columns.fit = true;
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 type HarnessProps = Partial<BodiesViewProps> & {
   initial?: BodiesQuery;
@@ -554,6 +568,7 @@ describe('the list’s reading', () => {
   });
 
   it('asks for the next page at once when one came back short, and again after an empty one', () => {
+    measureViewports(vi.spyOn);
     const onLoadMore = vi.fn();
     const short: BodiesListData = { ...LIST_ACTIVE, rows: LIST_ACTIVE.rows.slice(0, 2) };
     const { rerender } = render(<Harness list={short} onLoadMore={onLoadMore} />);
@@ -566,6 +581,89 @@ describe('the list’s reading', () => {
     expect(onLoadMore).toHaveBeenCalledTimes(2);
     rerender(<Harness list={{ ...short, status: 'done' }} onLoadMore={onLoadMore} />);
     expect(onLoadMore).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a list out of sight or unmeasured asks for no page (`useLoadAhead`)', () => {
+  it('a viewport of no height asks for nothing, and asks once it takes a size', () => {
+    const viewports = measureViewports(vi.spyOn, 0);
+    const onLoadMore = vi.fn();
+    const short: BodiesListData = { ...LIST_ACTIVE, rows: LIST_ACTIVE.rows.slice(0, 2) };
+    render(<Harness list={short} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).not.toHaveBeenCalled();
+    act(() => viewports.show(600));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a narrow screen (the console’s master–detail rule)', () => {
+  const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
+
+  it('keeps the board’s three columns while they fit', () => {
+    render(<Harness />);
+    expect(document.querySelector('[data-slot="bodies-page"]')).not.toHaveAttribute('data-narrow');
+    for (const name of ['lanes', 'middle', 'inspector']) {
+      expect(pane(name)).not.toHaveClass('hidden');
+    }
+    expect(screen.queryByRole('button', { name: 'Back to the list' })).toBeNull();
+  });
+
+  it('gives the page to the open body, with the way back; nothing scrolls sideways', async () => {
+    columns.fit = false;
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    const page = document.querySelector('[data-slot="bodies-page"]');
+    expect(page).toHaveAttribute('data-narrow');
+    expect(page).toHaveClass('overflow-x-hidden');
+    expect(pane('lanes')).toHaveClass('hidden');
+    expect(pane('middle')).toHaveClass('hidden');
+    expect(pane('inspector')).not.toHaveClass('hidden');
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ bodyId: null }), {
+      replace: true,
+    });
+    // Back on the list, the rows have focus once they are drawn.
+    expect(pane('inspector')).toHaveClass('hidden');
+    expect(screen.getByRole('grid')).toHaveFocus();
+  });
+
+  it('⇧⏎ in the open body goes back to the list', () => {
+    columns.fit = false;
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    fireEvent.keyDown(pane('inspector') as HTMLElement, { key: 'Enter', shiftKey: true });
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ bodyId: null }), {
+      replace: true,
+    });
+  });
+
+  it('with no body open, gives it to the lanes and the list', () => {
+    columns.fit = false;
+    render(<Harness initial={queryOf({})} />);
+    expect(pane('lanes')).not.toHaveClass('hidden');
+    expect(pane('middle')).not.toHaveClass('hidden');
+    expect(pane('inspector')).toHaveClass('hidden');
+  });
+
+  it('asks for no more pages while the open body hides the list, and again once it shows', async () => {
+    measureViewports(vi.spyOn);
+    columns.fit = false;
+    const onLoadMore = vi.fn();
+    const short: BodiesListData = { ...LIST_ACTIVE, rows: LIST_ACTIVE.rows.slice(0, 2) };
+    render(<Harness list={short} onLoadMore={onLoadMore} />);
+    expect(onLoadMore).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    expect(onLoadMore).toHaveBeenCalled();
+  });
+
+  it('a row opened takes the page, and focus goes with it', async () => {
+    columns.fit = false;
+    render(<Harness initial={queryOf({})} />);
+    const grid = screen.getByRole('grid');
+    act(() => grid.focus());
+    await userEvent.keyboard('{Enter}');
+    expect(pane('inspector')).not.toHaveClass('hidden');
+    expect(pane('inspector')).toHaveFocus();
   });
 });
 

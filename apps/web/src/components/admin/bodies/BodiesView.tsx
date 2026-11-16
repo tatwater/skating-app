@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useRef, useState } from 'react';
 
+import { Button } from '@/components/kit/button';
 import { Lanes } from '@/components/kit/lanes';
 import { isTextEntry, usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
@@ -7,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { type Count, countText } from '../overview/overviewModel';
 import { type Loadable, loaded } from '../reads/consoleReads';
 import { ConsoleStatus } from '../shell/ConsoleShell';
+import { useColumnsFit, usePaneFocus } from '../shell/columnsFit';
 import { BodiesTable } from './BodiesTable';
 import { BodyPreview, OPEN_LABEL } from './BodyPreview';
 import {
@@ -20,6 +22,7 @@ import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
 import { BODY_LANES, type BodyLane, laneById, laneGroups } from './bodyLanes';
 import { ListTools } from './ListTools';
+import { BACK_TO_LIST } from './listWords';
 
 /**
  * The Bodies library (boards 5.1–5.3) as the console mounts it, from what the route hands it: the
@@ -28,7 +31,10 @@ import { ListTools } from './ListTools';
  * the real shell.
  *
  * Three panes, as the boards draw them: **the lanes** (which list), **the list** (its word and
- * kicker, the search, the facet row, the applied chips, the table) and **the preview**. Tab moves
+ * kicker, the search, the facet row, the applied chips, the table) and **the preview** — while
+ * their widths fit; below that the console's narrow rule (`useColumnsFit`) makes it master–detail:
+ * an open body takes the page with a way back (its button, or ⇧⏎), and with none open the lanes
+ * and the list do. Nothing scrolls sideways. Tab moves
  * between them and ↑↓ within; ⏎ or Space on a row opens it in the preview and moves focus there,
  * where ⏎ opens the body's console and ⇧⏎ comes back to the list. F opens the filter while the list
  * pane has focus (and not a field or the rows, which type ahead); / goes to the search.
@@ -87,6 +93,9 @@ export type BodiesViewProps = {
   className?: string;
 };
 
+/** The three columns' width tokens: below their sum, the page is master–detail. */
+const COLUMNS = ['--size-lanes', '--size-list', '--size-inspector'] as const;
+
 export function BodiesView({
   lanes = BODY_LANES,
   query,
@@ -115,8 +124,31 @@ export function BodiesView({
   const inspector = useRef<HTMLElement>(null);
   const grid = useRef<HTMLTableElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  const page = useRef<HTMLDivElement>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const { lane } = query;
+  // The console's narrow-screen rule: three columns while they fit, else the open body takes the
+  // page and, with none open, the lanes and the list do.
+  const narrow = !useColumnsFit(page, COLUMNS);
+  const bodyOpen = query.bodyId !== null;
+  const shown = !narrow ? 'all' : bodyOpen ? 'detail' : 'list';
+  const panes = usePaneFocus({
+    page,
+    shown,
+    open: bodyOpen,
+    focusList: () => grid.current?.focus(),
+    detailPane: 'inspector',
+  });
+  // Back to the list: narrow, the body gives the page back (focus lands on the rows once they are
+  // drawn); side by side, focus goes to the rows.
+  const backToList = () => {
+    if (!narrow) {
+      grid.current?.focus();
+      return;
+    }
+    panes.askBack();
+    onQueryChange({ ...query, bodyId: null }, { replace: true });
+  };
   // The order the list is in — a search too short to run keeps the lane's, its heading lit.
   const sort = listSort(query);
   const set = (patch: Partial<BodiesQuery>, how?: { replace?: boolean }) =>
@@ -158,7 +190,7 @@ export function BodiesView({
         preview !== 'error' &&
         preview !== 'unavailable',
     },
-    { key: 'Shift+Enter', label: 'Back to the list', run: () => grid.current?.focus() },
+    { key: 'Shift+Enter', label: BACK_TO_LIST, run: backToList },
   ]);
 
   const applied = appliedOptions(query.facets);
@@ -175,9 +207,15 @@ export function BodiesView({
 
   return (
     <div
+      ref={page}
       data-slot="bodies-page"
+      data-narrow={narrow ? '' : undefined}
+      {...panes.pageProps}
       className={cn(
-        'grid h-full min-h-0 grid-cols-[var(--size-lanes)_minmax(0,1fr)_var(--size-inspector)]',
+        'h-full min-h-0',
+        narrow
+          ? 'flex flex-col overflow-x-hidden'
+          : 'grid grid-cols-[var(--size-lanes)_minmax(0,1fr)_var(--size-inspector)]',
         className,
       )}
     >
@@ -185,7 +223,11 @@ export function BodiesView({
       <section
         data-pane="lanes"
         aria-label="Lanes"
-        className="flex min-h-0 min-w-0 flex-col border-0 border-r border-solid border-line"
+        // Narrow: over the list, its own height; hidden (kept mounted) while a body has the page.
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line',
+          narrow ? cn('shrink-0 border-b', bodyOpen && 'hidden') : 'border-r',
+        )}
       >
         <Lanes
           label="Bodies"
@@ -232,7 +274,10 @@ export function BodiesView({
           event.preventDefault();
           search.current?.focus();
         }}
-        className="flex min-h-0 min-w-0 flex-col border-0 border-r border-solid border-line outline-none"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line outline-none',
+          narrow ? cn('flex-1', bodyOpen && 'hidden') : 'border-r',
+        )}
       >
         <div
           data-slot="bodies-head"
@@ -289,6 +334,7 @@ export function BodiesView({
               inspector.current?.focus();
             }}
             {...(onLoadMore !== undefined && { onLoadMore })}
+            paused={narrow && bodyOpen}
             {...(onRetryList !== undefined && { onRetry: onRetryList })}
             {...(onRetryOthers !== undefined && { onRetryOthers })}
             memoryKey={listKey(query)}
@@ -303,8 +349,21 @@ export function BodiesView({
         data-pane="inspector"
         aria-label="Preview"
         tabIndex={-1}
-        className="flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]"
+        className={cn(
+          'flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
+          shown === 'detail' ? 'flex-1' : shown === 'list' && 'hidden',
+        )}
       >
+        {shown === 'detail' && (
+          <div
+            data-slot="bodies-back"
+            className="flex shrink-0 border-0 border-b border-solid border-line px-gutter py-(--space-2)"
+          >
+            <Button size="xs" onClick={backToList}>
+              {BACK_TO_LIST}
+            </Button>
+          </div>
+        )}
         <BodyPreview
           // The body's own: nothing a preview holds carries to the next body chosen.
           key={query.bodyId ?? 'none'}

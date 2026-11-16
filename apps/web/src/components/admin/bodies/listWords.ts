@@ -32,3 +32,6 @@ export const RECORD_FAILED = 'What its record still holds couldn’t be read';
 
 /** A removed body's report floor, in the console's words for the same count. */
 export const reportsSinceWords = (count: string): string => `${count} since the record began`;
+
+/** The way back to the list from an open body on a narrow screen, where the body takes the page. */
+export const BACK_TO_LIST = 'Back to the list';
