@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D269 D270
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -826,6 +826,8 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - **A second admin app** — D37 stands
 
 #### Owed
+- The People rules (B01-4f) on dev: the rows backfill once, alone, to date each suspended or banned person's row by the write that set their terms (the after-merge procedure's step 6, quoted below); not run by the build → the plan's *B01-4f*
+- ❓ Whether a moderator's own-content rule binds admins too (D269) — every role is bound until the founder says; with one admin and no moderator, that admin's flagged content has no one to rule on it → the plan's *B01-4f*
 - Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)

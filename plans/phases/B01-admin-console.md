@@ -2870,6 +2870,58 @@ concludes, the record's reads say `pending: ['verdicts']`. The new indexes (`con
 `by_subject_reversed`, `by_subject_reversed_type`, `by_target_superseded`, `by_target_at`;
 `accessAlerts` `by_author_retracted`) build with the deploy.
 
+**B01-4f (2026-11-16): the People rules — three founder calls** (D269, D270; server, and one line
+on the person page).
+
+- **A write that changes nothing writes nothing (D270).** The no-op inventory, every person write on
+  main and the towns:
+
+  | Write | Changes nothing when | Since |
+  | --- | --- | --- |
+  | `setPostingPermission` | the right already has that value (missing is allowed) | returns `changed: false` |
+  | `setBountyPostLimit` | the limit in force is the one set (both absent included) | returns `changed: false` |
+  | `banUser` | banned, same reason, no end | returns `changed: false` |
+  | `suspendUser` | suspended, same reason, same end | returns `changed: false` |
+  | `unbanUser` | active, no reason, no end | returns `changed: false` |
+  | `grantRole` / `revokeRole` | the role is the one held | refused, as before (nothing written) |
+  | `grantEditor` / `revokeEditor` | they hold it / they don't | refused, as before |
+  | `setModeratorTowns` | the same towns, in the same order | returns early (nothing written) |
+
+  A no-op writes no audit row, offers no undo and skips the undo lookup; the person page says
+  *Nothing changed — ‹name› was already set that way* (`WORDS.alreadySo`). Rows written before that
+  changed nothing offer no undo (`NOTHING_TO_UNDO`). A refused write, person or record, leaves every
+  table as it was (`peopleRefusals.test`); `packages/guards`' `writersDecideFirst` holds every People
+  and record writer to deciding before it writes the log. **Left:** a record write that changes
+  nothing — a hide of what is already hidden, a removal of what is already removed — still writes a
+  row (offered no undo, as before); it is a content write, outside this call's person writes.
+- **One reason after a repeat ban.** A person's terms are their status, its reason and a suspension's
+  end (`lib/peopleCan.StatusTerms`). The person page's status note and the list row answer from one
+  reading (`lib/statusTerms`): the write that set the terms as they stand — its date, who and through
+  what on the note, its reason (the one on file) on both, and its time as the row's `statusSince`
+  (the status writers say they set terms: `termsSet`). A repeat that changed nothing is passed over. A
+  suspension's new end is new terms, so it dates the note and the row anew (before, the note kept the
+  status's start). **Rollout, for the dev agent:** after the deploy, `convex run
+  peopleJobs:backfillRows '{"alone":true}'` once — it stamps each suspended or banned person's row by
+  the same reading (`stampStatusTerms`; a reading that can't say leaves the row as it was) — then
+  `convex run peopleJobs:preparation '{}'` until `ready: true` (step 6 of the procedure above). Not run
+  by the build.
+- **A moderator may not act on their own content (D269).** The inventory of decisions on authored
+  content: the record sheet's writes (`setModerationStatus` hide, remove and restore; `overturnVerdict`;
+  `keepOnRecord` — through `lib/recordRules.recordActorRefusal`, which `can` asks too); the Inbox's
+  `resolveFlag` on a flag whose subject is the moderator; `accessAlerts.setOfficial` (pin, release) on
+  their own alert; and every undo of one (the undo engine reads the author with the deletion stamp). A
+  moderator's own retraction of their alert is an author's act, unchanged. Person writes aimed at
+  oneself were already refused — discipline and roles by `lib/peopleCan`, a ledger grant to a holder —
+  except stepping down from the ledger, which another holder makes safe. The record sheet shows the
+  write's own sentence where the lever is (*This is yours, so another moderator decides on it.*); the
+  web needed no change. Rows written before the rule, where a moderator acted on their own content:
+  their undo is refused to that moderator and open to any other — an undo is a decision on the
+  content too. **Default and what it strands:** every role is bound (`OWN_CONTENT_EXEMPT_ROLES = []`).
+  A staffer's own content, and flags about them, are cleared by any other holder of the capability
+  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins); nothing is stuck while a
+  second staffer exists. With one admin and no moderator, that admin's flagged content (Inbox *Flags*,
+  the record sheet's levers on their own record) and their alerts' pins have no one to decide them.
+
 ### The B01-2 server register (owed to the server agent)
 
 Every seam request the B01-2 builders raised against `packages/convex` and `packages/core`, and
