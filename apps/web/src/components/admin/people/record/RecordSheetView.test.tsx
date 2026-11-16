@@ -796,4 +796,155 @@ describe('an open dialog follows the live answer', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
   });
+
+  it('a refusal for a write the answer moved under closes it, the refusal said in its place', async () => {
+    const user = userEvent.setup();
+    const write = deferred();
+    const target = targetOf(ITEM_DELETED);
+    const onAct = vi.fn(() => write.promise);
+    const view = render(
+      <RecordSheetView {...props({ selected: target, item: ITEM_DELETED, onAct })} />,
+    );
+    await user.click(lever() as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: /Overturn/ }));
+    // Someone else's answer lands while the write is out (held), and the write is refused.
+    view.rerender(
+      <RecordSheetView
+        {...props({
+          selected: target,
+          item: { ...ITEM_DELETED, can: { keep: { ok: true, needsReason: true } } },
+          onAct,
+        })}
+      />,
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    await act(async () => {
+      write.settle('Someone kept this on the record.');
+      await write.promise;
+    });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(document.querySelector('[data-slot="record-refusal"]')).toHaveTextContent(
+      'Someone kept this on the record.',
+    );
+  });
+
+  it('a refused dialog, cancelled, never lends its refusal to a later close', async () => {
+    const user = userEvent.setup();
+    const target = targetOf(ITEM_DELETED);
+    const onAct = vi.fn(async () => 'Not now.');
+    const view = render(
+      <RecordSheetView {...props({ selected: target, item: ITEM_DELETED, onAct })} />,
+    );
+    await user.click(lever() as HTMLElement);
+    let dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: /Overturn/ }));
+    expect(await within(dialog).findByText('Not now.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // Opened again, and the answer moves under it: it says the change, not the old refusal.
+    await user.click(lever() as HTMLElement);
+    dialog = await screen.findByRole('alertdialog');
+    view.rerender(
+      <RecordSheetView
+        {...props({
+          selected: target,
+          item: { ...ITEM_DELETED, can: { keep: { ok: true, needsReason: true } } },
+          onAct,
+        })}
+      />,
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(document.querySelector('[data-slot="record-refusal"]')).toHaveTextContent(
+      'This changed while it was open.',
+    );
+  });
+
+  const POST_UP = { ...ITEM_POST, can: { hideAgain: { ok: true, needsReason: true } } } as ItemRead;
+
+  it('the chooser’s landed restore holds nothing after it: Hide again on the post still follows', async () => {
+    const user = userEvent.setup();
+    const onAct = vi.fn(async () => null);
+    const onChooser = vi.fn();
+    const view = render(
+      <RecordSheetView
+        {...props({
+          selected: post,
+          item: ITEM_POST,
+          chooser: post,
+          choices: CHOICES,
+          onAct,
+          onChooser,
+        })}
+      />,
+    );
+    const chooser = document.querySelector('[data-slot="post-chooser"]') as HTMLElement;
+    await user.click(within(chooser).getAllByRole('checkbox')[0] as HTMLElement);
+    await user.click(document.querySelector('[data-slot="chooser-restore"]') as HTMLElement);
+    await waitFor(() => expect(onChooser).toHaveBeenCalledWith(null));
+    view.rerender(
+      <RecordSheetView {...props({ selected: post, item: POST_UP, onAct, onChooser })} />,
+    );
+    await user.click(lever() as HTMLElement);
+    await screen.findByRole('alertdialog');
+    view.rerender(
+      <RecordSheetView
+        {...props({ selected: post, item: { ...POST_UP, can: {} }, onAct, onChooser })}
+      />,
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('a closed Ask on the same post never lets go of the chooser’s write while it is out', async () => {
+    const user = userEvent.setup();
+    const write = deferred();
+    const onAct = vi.fn((_: Target, w: RecordWrite) =>
+      w.kind === 'hideAgain' ? Promise.resolve(null) : write.promise,
+    );
+    const onChooser = vi.fn();
+    const view = render(
+      <RecordSheetView {...props({ selected: post, item: POST_UP, onAct, onChooser })} />,
+    );
+    // Hidden again through its dialog: the Ask closes, and stays behind, closed.
+    await user.click(lever() as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Still unsafe');
+    await user.click(within(dialog).getByRole('button', { name: /Hide again/ }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // Restored through the chooser: its own write lands (Hide again offered) before it answers.
+    view.rerender(
+      <RecordSheetView
+        {...props({
+          selected: post,
+          item: ITEM_POST,
+          chooser: post,
+          choices: CHOICES,
+          onAct,
+          onChooser,
+        })}
+      />,
+    );
+    const chooser = document.querySelector('[data-slot="post-chooser"]') as HTMLElement;
+    await user.click(within(chooser).getAllByRole('checkbox')[0] as HTMLElement);
+    await user.click(document.querySelector('[data-slot="chooser-restore"]') as HTMLElement);
+    view.rerender(
+      <RecordSheetView
+        {...props({
+          selected: post,
+          item: POST_UP,
+          chooser: post,
+          choices: CHOICES,
+          onAct,
+          onChooser,
+        })}
+      />,
+    );
+    expect(onChooser).not.toHaveBeenCalled();
+    await act(async () => {
+      write.settle(null);
+      await write.promise;
+    });
+    expect(onChooser).toHaveBeenCalledWith(null);
+    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+  });
 });

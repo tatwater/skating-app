@@ -8,6 +8,7 @@ import {
   at,
   CHOICES,
   COUNTS_PENDING,
+  DANA,
   DELETED,
   HIDDEN_CAPPED,
   HIDDEN_NONE,
@@ -119,7 +120,8 @@ export const JustRestored: Story = {
         row: STANDING[0] as (typeof STANDING)[number],
         at: at(10, 14, 11, 52),
         actionId: 'a-r4oct',
-        actorId: 'me',
+        // The viewer the board restores as, and the item reads as its restorer.
+        actorId: DANA.userId,
         undo: { needsReason: true },
       },
     ],

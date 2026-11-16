@@ -85,8 +85,7 @@ function ChooserBody({
   const picked = chosen.filter((id) => members.some((m) => m.reportId === id && m.choosable));
   // Live, every render: the server's current answer decides whether this choice — the empty one
   // included, once a plain restore brings a report back — can restore the post.
-  const ready =
-    read !== null && read.restorable && (picked.length > 0 || read.plainRestoreBringsBack);
+  const ready = read?.restorable === true && (picked.length > 0 || read.plainRestoreBringsBack);
 
   const confirm = () => {
     if (busy || !ready) return;

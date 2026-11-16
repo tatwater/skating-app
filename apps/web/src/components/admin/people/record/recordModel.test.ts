@@ -925,8 +925,37 @@ describe('a restore kept for the sitting never outlives the server’s answer', 
       })),
     };
     expect(nextRestored(kept, { kind: 'item', item: byMe })).toEqual(kept);
+    // Who restored it not known — a name past the read's budget, or the viewer not read yet — is
+    // not another hand: the row stays until the list says otherwise.
+    const unnamed = {
+      ...ITEM_RESTORED,
+      decisions: ITEM_RESTORED.decisions.map((d) => ({ ...d, endedBy: null })),
+    };
+    expect(nextRestored(kept, { kind: 'item', item: unnamed })).toEqual(kept);
+    const unknownViewer = nextRestored([], {
+      kind: 'kept',
+      restored: { ...mine('a1'), actorId: null },
+    });
+    expect(nextRestored(unknownViewer, { kind: 'item', item: ITEM_RESTORED })).toEqual(
+      unknownViewer,
+    );
+    // Overturned since: another decision's end, whoever it was.
+    const overturned = {
+      ...byMe,
+      decisions: byMe.decisions.map((d) => ({ ...d, endedHow: 'overturn' as const })),
+    };
+    expect(nextRestored(kept, { kind: 'item', item: overturned })).toEqual([]);
     // Another item's read says nothing of this one.
     expect(nextRestored(kept, { kind: 'item', item: ITEM_DELETED })).toEqual(kept);
+  });
+
+  it('an answer that supersedes nothing hands back the same array, so nothing redraws', () => {
+    const kept = nextRestored([], { kind: 'kept', restored: mine('a1') });
+    expect(nextRestored(kept, { kind: 'listed', rows: null })).toBe(kept);
+    expect(nextRestored(kept, { kind: 'listed', rows: STANDING.slice(1) })).toBe(kept);
+    expect(nextRestored(kept, { kind: 'item', item: ITEM_DELETED })).toBe(kept);
+    // One that does, a new one.
+    expect(nextRestored(kept, { kind: 'listed', rows: [row] })).not.toBe(kept);
   });
 
   /**
@@ -952,7 +981,7 @@ describe('a restore kept for the sitting never outlives the server’s answer', 
           { up: false, latest: null },
           { up: false, latest: null },
         ];
-        let kept: Restored[] = [];
+        let kept: readonly Restored[] = [];
         let n = 0;
         const listed = () => ROWS.filter((_, i) => !(server[i] as Server).up);
         for (const s of steps) {

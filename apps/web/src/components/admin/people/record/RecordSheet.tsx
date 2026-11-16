@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
+import { isFailed, loaded, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
@@ -78,12 +78,9 @@ export function useSittingState() {
   const [selected, setSelected] = useState<Target | null>(null);
   const [chooser, setChooser] = useState<Target | null>(null);
   const [restored, setRestored] = useState<readonly Restored[]>([]);
+  // An answer that superseded nothing hands back the same array: nothing redraws for it.
   const settle = useCallback((event: RestoredEvent) => {
-    setRestored((list) => {
-      const next = nextRestored(list, event);
-      // Unchanged, the same array: nothing redraws for an answer that superseded nothing.
-      return next.length === list.length && next.every((r, i) => r === list[i]) ? list : next;
-    });
+    setRestored((list) => nextRestored(list, event));
   }, []);
   return {
     tab,
@@ -164,11 +161,9 @@ function SheetSitting({
 
   const counts =
     reads.counts === undefined || isFailed(reads.counts) ? null : (reads.counts as RecordCounts);
-  const viewer = reads.viewer;
-  const viewerName =
-    viewer === undefined || viewer === null || isFailed(viewer) ? null : personName(viewer);
-  const viewerId =
-    viewer === undefined || viewer === null || isFailed(viewer) ? null : (viewer._id as string);
+  const viewer = loaded(reads.viewer) ?? null;
+  const viewerName = viewer === null ? null : personName(viewer);
+  const viewerId = viewer === null ? null : (viewer._id as string);
   const setModerationStatus = useMutation(api.moderation.setModerationStatus);
   const overturnVerdict = useMutation(api.moderation.overturnVerdict);
   const keepOnRecord = useMutation(api.moderation.keepOnRecord);

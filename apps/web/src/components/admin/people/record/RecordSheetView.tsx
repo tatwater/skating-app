@@ -55,7 +55,7 @@ import { useRecordActing } from './useRecordActing';
  * - **The head counts what stands** (`people.person.hidden`): "6 items", a floor ("500+ items"), or
  *   *Still being prepared* — never a zero for not knowing.
  * - **A row restored in this sitting keeps its place** (lit, its Undo beside it) until the sheet
- *   closes (8.8).
+ *   closes (8.8) — or the server's answer supersedes it (`nextRestored`).
  * - **Narrow** (`shell/columnsFit`): below the two columns' width the sheet is the list, then one
  *   item with *The record* to go back; its life reads top to bottom, and no key hints show.
  * - **Every write is tied to its attempt** (`useRecordActing`): a late answer never acts on what the
@@ -111,6 +111,9 @@ type Ask = {
   needsReason: boolean;
   serial: number;
 };
+
+/** A dialog's write on one item, held as that dialog's own while it is out. */
+type Held = { by: 'ask' | 'chooser'; key: string };
 
 export function RecordSheetView(props: RecordSheetViewProps) {
   const { open, onOpenChange, onClosed, container } = props;
@@ -256,12 +259,20 @@ function SheetBodyView({
   // Each render reads the item's `can` as the server answers it now. A dialog (or the chooser) whose
   // lever no longer stands — refused, another lever offered, nothing offered — closes: a refusal is
   // the foot's, in the server's words; anything else is said in the item's place. Never while its
-  // own write is out: that write is what moves the answer, and it answers for itself.
-  const writing = useRef<string | null>(null);
-  const lastRefusal = useRef<string | null>(null);
+  // own write is out: that write is what moves the answer, and it answers for itself. A hold and a
+  // kept refusal are each dialog's own (the Ask's or the chooser's, on one item), and end with it.
+  const writing = useRef<Held | null>(null);
+  const lastRefusal = useRef<(Held & { text: string }) | null>(null);
+  // A refusal ends the hold: the dialog judges the live answer again, which may have moved while
+  // its write was out (a ref alone would never run the check again).
+  const [refusals, setRefusals] = useState(0);
+  const holds = (by: Held['by'], key: string | null) =>
+    writing.current !== null && writing.current.by === by && writing.current.key === key;
   const liveLever = (target: Target | null): Lever | null | undefined => {
     if (target === null || selectedKey !== targetKey(target)) return null;
-    return view === null ? undefined : view.lever;
+    // On its way, or failed: the answer can't be judged yet. Gone: nothing is offered.
+    if (item === undefined || isFailed(item)) return undefined;
+    return view === null ? null : view.lever;
   };
   const askKey = ask === null ? null : targetKey(ask.target);
   const askLive = liveLever(ask?.target ?? null);
@@ -270,42 +281,53 @@ function SheetBodyView({
   const chooserLive = liveLever(chooser);
   const chooserStands =
     chooserLive != null && chooserLive.ok === true && chooserLive.action === 'restore';
-  const closeUnder = (target: Target, live: Lever | null | undefined) => {
-    if (live?.ok === false) return; // The foot says the server's why.
-    acting.say(target, lastRefusal.current ?? W.changedWhileOpen);
+  const closeUnder = (by: Held['by'], target: Target, live: Lever | null | undefined) => {
+    const key = targetKey(target);
+    const kept = lastRefusal.current;
+    lastRefusal.current = null;
+    // The foot says the server's why; an item no longer open is not spoken over.
+    if (live?.ok === false || selectedKey !== key) return;
+    acting.say(
+      target,
+      kept !== null && kept.by === by && kept.key === key ? kept.text : W.changedWhileOpen,
+    );
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the live answer, by value.
   useEffect(() => {
     if (!askOpen || ask === null) {
-      if (writing.current === askKey) writing.current = null;
+      // Closed: its hold and its refusal end with it — never the chooser's.
+      if (writing.current?.by === 'ask') writing.current = null;
+      if (lastRefusal.current?.by === 'ask') lastRefusal.current = null;
       return;
     }
     // Still being read (the answer can't be judged yet), or its own write is out: hold.
-    if (askLive === undefined || writing.current === askKey || askStands) return;
+    if (askLive === undefined || holds('ask', askKey) || askStands) return;
     setAskOpen(false);
-    closeUnder(ask.target, askLive);
-    lastRefusal.current = null;
-  }, [askOpen, askKey, askStands, askLive === undefined, askLive?.ok]);
+    closeUnder('ask', ask.target, askLive);
+  }, [askOpen, askKey, askStands, askLive === undefined, askLive?.ok, refusals]);
   const chooserKey = chooser === null ? null : targetKey(chooser);
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the live answer, by value.
   useEffect(() => {
     if (chooser === null) {
+      // Closed: its hold and its refusal end with it — never the Ask's.
+      if (writing.current?.by === 'chooser') writing.current = null;
+      if (lastRefusal.current?.by === 'chooser') lastRefusal.current = null;
       return;
     }
-    if (chooserLive === undefined || writing.current === chooserKey || chooserStands) return;
+    if (chooserLive === undefined || holds('chooser', chooserKey) || chooserStands) return;
     onChooser(null);
-    closeUnder(chooser, chooserLive);
-    lastRefusal.current = null;
-  }, [chooserKey, chooserStands, chooserLive === undefined, chooserLive?.ok]);
+    closeUnder('chooser', chooser, chooserLive);
+  }, [chooserKey, chooserStands, chooserLive === undefined, chooserLive?.ok, refusals]);
   /** A dialog's write: held as its own while out; a refusal kept for a close that follows. */
-  const dialogWrite = async (target: Target, write: RecordWrite) => {
+  const dialogWrite = async (by: Held['by'], target: Target, write: RecordWrite) => {
     const key = targetKey(target);
-    writing.current = key;
+    writing.current = { by, key };
     lastRefusal.current = null;
     const refused = await acting.run(target, write, { region: pane.current, inline: false });
     if (refused !== null) {
-      writing.current = null;
-      lastRefusal.current = refused;
+      if (holds(by, key)) writing.current = null;
+      lastRefusal.current = { by, key, text: refused };
+      setRefusals((n) => n + 1);
     }
     return refused;
   };
@@ -491,7 +513,7 @@ function SheetBodyView({
               ask.action === 'overturn'
                 ? { kind: 'overturn', ...(reason !== '' && { reason }) }
                 : { kind: ask.action, reason };
-            return dialogWrite(ask.target, write);
+            return dialogWrite('ask', ask.target, write);
           }}
         />
       )}
@@ -508,6 +530,7 @@ function SheetBodyView({
           chooser === null
             ? Promise.resolve(null)
             : dialogWrite(
+                'chooser',
                 chooser,
                 // Nothing chosen is a plain restore (the server's answer allowed it): nothing beside it.
                 withReportIds.length === 0
