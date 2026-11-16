@@ -694,14 +694,42 @@ describe('Opened recently, this browser’s own', () => {
       name(api.bodies.rowsByIds),
       answer([
         { requested: C, status: 'unknown', row: null },
-        { requested: B, status: 'unlisted', row: null },
+        { requested: B, status: 'unlisted', row: null, name: 'Lake Morey', why: 'not_listed' },
         ok(A, 'Mascoma Lake'),
       ]),
     );
     mount();
     expect(names()).toEqual(['Mascoma Lake']);
+    // Each by name, with why; an id that no longer exists says so plainly.
     expect(
-      screen.getByText('All 1 · 1 opened isn’t in the library · 1 is no longer a body'),
+      screen.getByText('All 1 · Lake Morey isn’t listed yet · 1 opened body no longer exists'),
+    ).toBeInTheDocument();
+  });
+
+  it('names a merged body whose survivor isn’t listed, and the survivor (B01-3n)', () => {
+    rememberOpened(A);
+    rememberOpened(B);
+    mocks.search = { lane: 'opened' };
+    mocks.results.set(
+      name(api.bodies.rowsByIds),
+      answer([
+        {
+          requested: B,
+          status: 'unlisted',
+          row: null,
+          name: 'Old Lake',
+          why: 'merged',
+          survivor: { id: A, name: 'Lake Survivor' },
+        },
+        { requested: A, status: 'unlisted', row: null, name: 'Taken Pond', why: 'removed' },
+      ]),
+    );
+    mount();
+    expect(names()).toEqual([]);
+    expect(
+      screen.getByText(
+        'None here · Old Lake was merged into Lake Survivor, which isn’t listed yet · Taken Pond was removed and isn’t listed yet',
+      ),
     ).toBeInTheDocument();
   });
 

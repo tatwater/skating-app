@@ -1,8 +1,11 @@
 /**
  * **The Bodies list's and preview's words added by the follow-up (B01-3e)** — a search's other
- * standings, Opened recently's ids the library didn't list, and a removed body's record on the
- * preview. In one place for the founder to read; listed in the phase doc until reviewed.
+ * standings, Opened recently's ids the library didn't list (each by name since B01-3n), and a
+ * removed body's record on the preview. In one place for the founder to read; listed in the phase
+ * doc until reviewed.
  */
+
+import type { NotListed } from './bodiesData';
 
 /** Said after the tally when the other standings were counted across the lane's facets. */
 export const OTHERS_UNFILTERED = ' (other standings unfiltered)';
@@ -10,20 +13,36 @@ export const OTHERS_UNFILTERED = ' (other standings unfiltered)';
 /** The other standings' read failed: said in the groups' place, with Try again. */
 export const OTHERS_FAILED = 'Other standings couldn’t be checked';
 
+/** A body opened here that the read gave no name for (a read from before it named them). */
+export const UNNAMED_OPENED = 'A body opened here';
+
+/** One body the library didn't list, by name, with why. */
+function notListedBody(b: NotListed['bodies'][number]): string {
+  if (b.why === 'merged') {
+    return b.survivor === null
+      ? `${b.name} was merged into a body that can’t be found`
+      : `${b.name} was merged into ${b.survivor}, which isn’t listed yet`;
+  }
+  if (b.why === 'removed') return `${b.name} was removed and isn’t listed yet`;
+  if (b.why === 'rejected') return `${b.name} was rejected and isn’t listed yet`;
+  return `${b.name} isn’t listed yet`;
+}
+
 /**
- * "1 opened isn't in the library · 1 is no longer a body": Opened recently's ids the library
- * didn't list, said rather than dropped.
+ * Opened recently's ids the library didn't list, said rather than dropped: each body by name with
+ * why it isn't listed ("Old Lake was merged into Lake Morey, which isn't listed yet"), then the ids
+ * that are no body ("1 opened body no longer exists") and those past one read ("1 older not read").
  */
-export function notListedWords(
-  n: { unlisted: number; unknown: number; dropped: number } | undefined,
-): string | null {
+export function notListedWords(n: NotListed | undefined): string | null {
   if (n === undefined) return null;
   const parts = [
-    n.unlisted > 0 &&
-      `${n.unlisted} opened ${n.unlisted === 1 ? 'isn’t' : 'aren’t'} in the library`,
-    n.unknown > 0 && `${n.unknown} ${n.unknown === 1 ? 'is' : 'are'} no longer a body`,
+    ...n.bodies.map(notListedBody),
+    n.unknown > 0 &&
+      (n.unknown === 1
+        ? '1 opened body no longer exists'
+        : `${n.unknown} opened bodies no longer exist`),
     n.dropped > 0 && `${n.dropped} older not read`,
-  ].filter((p): p is string => p !== false);
+  ].filter((p): p is string => typeof p === 'string');
   return parts.length === 0 ? null : parts.join(' · ');
 }
 

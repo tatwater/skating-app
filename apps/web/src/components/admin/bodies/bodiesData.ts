@@ -84,11 +84,22 @@ export interface BodiesListData {
   /** The state tabs, in order (All is always first and is not here). */
   states: readonly string[];
   /**
-   * Opened recently's ids the library didn't list: `unlisted` — a body with no library row;
-   * `unknown` — no such body; `dropped` — past what one read takes. Said at the list's end.
+   * Opened recently's ids the library didn't list: `bodies` — each body with no library row, by
+   * name, with why; `unknown` — ids that are no body (any more); `dropped` — past what one read
+   * takes. Said at the list's end.
    */
-  notListed?: { unlisted: number; unknown: number; dropped: number };
+  notListed?: NotListed;
 }
+
+/** Why a body opened here has no row in the library (`bodies.rowsByIds`' `why`). */
+export type NotListedWhy = 'merged' | 'removed' | 'rejected' | 'not_listed';
+
+/** Opened recently's ids the library didn't list, said at the list's end. */
+export type NotListed = {
+  bodies: readonly { name: string; why: NotListedWhy; survivor: string | null }[];
+  unknown: number;
+  dropped: number;
+};
 
 export const UNREAD_LIST: BodiesListData = {
   status: 'unread',

@@ -16,6 +16,7 @@ import {
   type BodyPreviewData,
   type ListServes,
   type ListStatus,
+  type NotListed,
   type PreviewCount,
   type RemovedPreviewData,
   SERVES_NOTHING,
@@ -25,6 +26,7 @@ import { type BodyRow, type BodySort, standingGroupWord } from './bodiesModel';
 import { type BodiesQuery, listSort } from './bodiesSearch';
 import { FACET_IDS } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
+import { UNNAMED_OPENED } from './listWords';
 
 /**
  * The Bodies library's server reads, turned into what the page draws — pure, so each mapping is
@@ -240,8 +242,9 @@ export type RowsByIds = FunctionReturnType<typeof api.bodies.rowsByIds>;
  * the library lists them (`bodies.rowsByIds`, one read for the lane). While it is on its way the
  * list holds; a failed read is the list's error (with its Try again) — never a body quietly left
  * out of a count that says it is exact. A merged id is listed as the body that took it in, once,
- * where it was opened first. An id the library has no row for, or that is no body at all, is said
- * at the list's end (`notListed`) — never dropped unsaid. No read gives other standings.
+ * where it was opened first. An id the library has no row for is said at the list's end by name,
+ * with why (`notListed`); one that is no body at all is counted there — never dropped unsaid. No
+ * read gives other standings.
  */
 export function listFromOpened(read: Loadable<RowsByIds> | null): BodiesListData {
   if (read === null) return { ...EMPTY_OPENED };
@@ -249,22 +252,29 @@ export function listFromOpened(read: Loadable<RowsByIds> | null): BodiesListData
   if (isFailed(read)) return { ...UNREAD_LIST, status: 'error' };
   const seen = new Set<string>();
   const rows: BodyRow[] = [];
-  let unlisted = 0;
+  const bodies: NotListed['bodies'][number][] = [];
   let unknown = 0;
   for (const entry of read.entries) {
-    if (entry.status === 'unlisted') unlisted += 1;
-    else if (entry.status === 'unknown') unknown += 1;
+    if (entry.status === 'unlisted') {
+      // Named, with why (B01-3n). A read from before the server named it is still said: as a body
+      // not listed, with no name to give — counted among those that are no body is never right.
+      bodies.push({
+        name: entry.name ?? UNNAMED_OPENED,
+        why: entry.why ?? 'not_listed',
+        survivor: entry.survivor?.name ?? null,
+      });
+    } else if (entry.status === 'unknown') unknown += 1;
     else if (entry.row !== null && !seen.has(entry.row.id)) {
       seen.add(entry.row.id);
       rows.push(rowFromLibrary(entry.row));
     }
   }
-  const notListed = { unlisted, unknown, dropped: read.dropped };
+  const notListed: NotListed = { bodies, unknown, dropped: read.dropped };
   return {
     ...EMPTY_OPENED,
     rows,
     total: { count: rows.length, capped: false },
-    ...(unlisted + unknown + read.dropped > 0 && { notListed }),
+    ...(bodies.length + unknown + read.dropped > 0 && { notListed }),
   };
 }
 
