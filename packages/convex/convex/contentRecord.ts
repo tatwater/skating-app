@@ -288,6 +288,18 @@ const replayStateValidator = v.object({
     }),
   ),
   previousEnded: v.boolean(),
+  reversed: v.optional(
+    v.union(
+      v.null(),
+      v.object({
+        actionId: v.id('moderationActions'),
+        kind: literals(['hidden', 'removed', 'retracted'] as const),
+        at: v.number(),
+        endedAt: v.number(),
+        endedByActionId: v.id('moderationActions'),
+      }),
+    ),
+  ),
 });
 const resumeValidator = v.object({ cursor: v.union(v.string(), v.null()), skip: v.number() });
 
@@ -432,9 +444,9 @@ export const replayVerdictHistory = internalMutation({
       let subjectUserId = args.subjectUserId;
       let unnamed = 0;
       const reads = new ReadBudget();
-      // A row's work beside its read, in the write pass: the row keyed by it and the one it ends, each
-      // looked up and written. The finish is kept back.
-      const work = 4 * ROW_MAX.verdict;
+      // A row's work beside its read, in the write pass: the row keyed by it, the one it ends and the
+      // reversed one it supersedes, each looked up and written. The finish is kept back.
+      const work = 6 * ROW_MAX.verdict;
       const page = await reads.page(
         'moderationAction',
         sizePage(reads, 'moderationAction', {
@@ -472,7 +484,8 @@ export const replayVerdictHistory = internalMutation({
         }
         if (
           existing.standing === verdict.standing &&
-          existing.endedByActionId === verdict.endedByActionId
+          existing.endedByActionId === verdict.endedByActionId &&
+          existing.superseded === verdict.superseded
         ) {
           return 0;
         }
@@ -481,6 +494,7 @@ export const replayVerdictHistory = internalMutation({
           standing: verdict.standing,
           endedAt: verdict.endedAt,
           endedByActionId: verdict.endedByActionId,
+          superseded: verdict.superseded,
         });
         return 1;
       };
@@ -512,6 +526,7 @@ export const replayVerdictHistory = internalMutation({
               }
             }
             if (step.ended) written += await upsert(step.ended);
+            if (step.superseding) written += await upsert(step.superseding);
           });
         state = step.state;
       }
@@ -546,7 +561,7 @@ export const replayVerdictHistory = internalMutation({
       // there, since a verdict outlives its content (D248) — and the clock follows, on an item that is.
       const standing = state.standing;
       await reads.row(FINISH, async () => {
-        if (standing) written += await upsert({ ...standing, standing: true });
+        if (standing) written += await upsert({ ...standing, standing: true, superseded: false });
         if (await loadTarget(ctx, reads, targetType, targetId)) {
           await holdMoved(ctx, targetType, targetId, Date.now(), reads);
         }

@@ -198,7 +198,11 @@ const literally = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\
 async function expectBackfillAgrees(t: T) {
   const snapshot = async () =>
     (await t.run((ctx) => ctx.db.query('contentVerdicts').collect()))
-      .map((v) => `${v.actionId} ${v.kind} ${v.standing} ${v.endedByActionId ?? '-'}`)
+      // `superseded` too (B01-4d): the record sheet shows each item once, by the flag both keep.
+      .map(
+        (v) =>
+          `${v.actionId} ${v.kind} ${v.standing} ${v.endedByActionId ?? '-'} ${v.superseded ?? '-'}`,
+      )
       .sort();
   const live = await snapshot();
   await t.run(async (ctx) => {
