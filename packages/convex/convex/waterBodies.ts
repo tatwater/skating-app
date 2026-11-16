@@ -11,7 +11,6 @@
  */
 
 import {
-  AUDIT_REASON_MAX_CHARS,
   type BodyNames,
   bboxIntersects,
   belongsInCorpus,
@@ -67,7 +66,6 @@ import {
   polygonBBox,
   polygonIoU,
   primaryReviewReason,
-  REMOVAL_NOTE_MAX_CHARS,
   REQUEST_KINDS,
   REQUEST_STATUSES,
   REVIEW_REASONS,
@@ -80,7 +78,6 @@ import {
   satelliteImageryAvailable,
   standingOf,
   stateOfSubdivision,
-  tooLongMessage,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, type Infer, v } from 'convex/values';
@@ -102,7 +99,6 @@ import {
   type AuditReasonOrText,
   checkedReason,
   composed,
-  composedOf,
   isUndoing,
   snapshotDoc,
   writeAudit,
@@ -2990,17 +2986,17 @@ export const remove = mutation({
     waterBodyId: v.id('waterBodies'),
     reason: literals(REMOVAL_REASONS),
     /**
-     * Why, in a person's own words — trimmed, refused past {@link REMOVAL_NOTE_MAX_CHARS}, and written
-     * beside the fixed reason so History and the removed lane read it. Owed: this writer adopts the
-     * tagged-reason type when #125 lands.
+     * Why, in a person's own words — trimmed, refused past the audit-reason cap (D261,
+     * `AUDIT_REASON_MAX`), and written beside the fixed reason so History and the removed lane read
+     * it; the metadata keeps it whole.
      */
     note: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, reason, note }) => {
     const actor = await requireCapability(ctx, 'body.remove');
     const text = note?.trim();
-    const tooLong = tooLongMessage('The note', text, REMOVAL_NOTE_MAX_CHARS);
-    if (tooLong !== null) throw new ConvexError(tooLong);
+    // The person's words are capped here, not in the shared body, which an undo also runs.
+    if (text !== undefined) checkedReason(text);
     return removeBodyImpl(ctx, actor, {
       waterBodyId,
       reason,
@@ -3041,12 +3037,12 @@ export async function removeBodyImpl(
     action: 'remove',
     targetType: 'waterbody',
     targetId: args.waterBodyId,
-    // The fixed words are composed (shortened to fit, never refused); the person's note is checked
-    // as typed and kept whole beside them (D261).
+    // Composed: a note at the cap and the fixed words beside it are shortened to fit, never refused
+    // (the note was held to the cap where the person typed it; the metadata keeps it whole).
     reason:
       args.auditReason ??
       (args.note !== undefined
-        ? composedOf(['', `: ${checkedReason(args.note)}`], [`Removed from map (${args.reason})`])
+        ? composed`Removed from map (${args.reason}): ${args.note}`
         : composed`Removed from map (${args.reason})`),
     metadata: {
       removalReason: args.reason,
@@ -4404,7 +4400,7 @@ export const setModeratorTowns = mutation({
     expected: v.optional(v.array(v.string())),
     /**
      * Why. Required (nonblank) when the write removes any pin — a takeaway (D226); optional when it
-     * only adds, defaulted then and marked so. Trimmed; refused past `AUDIT_REASON_MAX_CHARS`.
+     * only adds, defaulted then and marked so. Trimmed; refused past the audit-reason cap (D261).
      */
     reason: v.optional(v.string()),
   },
@@ -4414,8 +4410,7 @@ export const setModeratorTowns = mutation({
     // `Undid …: <this row's reason>`, which can run past the cap when the row's reason is near it —
     // and an undo offered must not then refuse on words nobody typed (`remove` caps the same way).
     const trimmed = reason?.trim();
-    const tooLong = tooLongMessage('The reason', trimmed, AUDIT_REASON_MAX_CHARS);
-    if (tooLong !== null) throw new ConvexError(tooLong);
+    if (trimmed !== undefined) checkedReason(trimmed);
     return setModeratorTownsImpl(ctx, actor, {
       waterBodyId,
       townKeys,

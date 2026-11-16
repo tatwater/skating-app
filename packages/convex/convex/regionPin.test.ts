@@ -6,7 +6,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUDIT_REASON_MAX_CHARS, bodySearchTextFor, MAX_REFERENCE_LINKS } from '@skating/core';
+import {
+  AUDIT_REASON_MAX,
+  AUDIT_REASON_TOO_LONG,
+  bodySearchTextFor,
+  MAX_REFERENCE_LINKS,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -284,8 +289,8 @@ describe('setModeratorTowns', () => {
     // Removing one pin without a reason (or with only spaces) is refused, as every takeaway is.
     await expect(set([NORTH_EAST])).rejects.toThrow('A reason is required');
     await expect(set([NORTH_EAST], '   ')).rejects.toThrow('A reason is required');
-    await expect(set([NORTH_EAST], 'x'.repeat(AUDIT_REASON_MAX_CHARS + 1))).rejects.toThrow(
-      /Shorten it to 1,000 or fewer/,
+    await expect(set([NORTH_EAST], 'x'.repeat(AUDIT_REASON_MAX + 1))).rejects.toThrow(
+      AUDIT_REASON_TOO_LONG,
     );
     expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
     await set([NORTH_EAST], 'Southbridge holds none of the shore');
@@ -327,7 +332,7 @@ describe('setModeratorTowns', () => {
     await admin.as.mutation(api.waterBodies.setModeratorTowns, {
       waterBodyId: id,
       townKeys: [NORTH_EAST],
-      reason: 'x'.repeat(AUDIT_REASON_MAX_CHARS),
+      reason: 'x'.repeat(AUDIT_REASON_MAX),
     });
     // The undo only adds, so it asks none; its own reason quotes the row's, past the cap.
     await admin.as.mutation(api.undo.run, {

@@ -3799,8 +3799,9 @@ body's states change at its next campaign. The phone picker's empty state says "
 or the lake's town" though search does not match towns (owed, below).
 
 **A removal can say why.** `waterBodies.remove` takes an optional note: trimmed, refused past
-`REMOVAL_NOTE_MAX_CHARS` (1,000) with the shared message, written into the audit reason beside the
-fixed one and kept in its metadata, returned by `bodyConsole.removedFacts` (`left.note`). No note is
+the audit-reason cap (D261: 2,000, `AUDIT_REASON_MAX`, its own sentence), written into the audit
+reason beside the fixed one (composed, so a note at the cap shortens the line rather than failing it)
+and kept whole in its metadata, returned by `bodyConsole.removedFacts` (`left.note`). No note is
 exactly the old removal; the undo is unchanged.
 
 **A moderator's pin outranks the rule.** `waterBodies.moderatorTownKeys` — stable `tiger/<GEOID>`
@@ -3810,8 +3811,8 @@ holds a body in region in the towns named. `setModeratorTowns` is a whole-list w
 removes any pin is a takeaway** and refuses without a nonblank reason ("A reason is required", as
 every reason-required write says); a write that only adds takes an optional reason, defaulted ("Pinned
 in N towns") and marked `reasonDefaulted` in the audit row. The person's reason is trimmed and
-refused past `AUDIT_REASON_MAX_CHARS` (1,000 — main has no general audit-reason cap yet; #125 brings
-one), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
+refused past the audit-reason cap (D261, `AUDIT_REASON_MAX`; #130's interim 1,000-character cap is
+gone, one cap for every audit reason), in the mutation and not the shared body, since an undo's own reason quotes the row's and can
 run past it. Its undo follows the same rule on the list it puts back (one rule, the undo policy's
 `{ from, to }`): undoing an add removes pins and asks a reason; undoing a removal only adds and asks
 none. The undo is refused, so never offered, when a merge moved the list since its row. A body's states are built from two ingredients kept apart —

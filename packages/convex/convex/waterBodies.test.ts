@@ -1,9 +1,10 @@
 import {
+  AUDIT_REASON_MAX,
+  AUDIT_REASON_TOO_LONG,
   DORMANT_MIN_VISIBLE_ZOOM,
   HARD_MIN_SURFACE_AREA_SQM,
   isActive,
   meetsAreaFloor,
-  REMOVAL_NOTE_MAX_CHARS,
   type ReviewReason,
   satelliteImageryAvailable,
   standingOf,
@@ -1552,9 +1553,9 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
       asAdmin.mutation(api.waterBodies.remove, {
         waterBodyId: bodyId,
         reason: 'other',
-        note: 'x'.repeat(REMOVAL_NOTE_MAX_CHARS + 1),
+        note: 'x'.repeat(AUDIT_REASON_MAX + 1),
       }),
-    ).rejects.toThrow(/Shorten it to 1,000 or fewer/);
+    ).rejects.toThrow(AUDIT_REASON_TOO_LONG);
     expect((await t.run((ctx) => ctx.db.get(bodyId)))?.removedAt).toBeUndefined();
     await asAdmin.mutation(api.waterBodies.remove, {
       waterBodyId: bodyId,

@@ -76,3 +76,42 @@ test('the People writers go through writePersonAudit, never writeAudit', () => {
   expect(auditUser).toContain('writePersonAudit(ctx');
   expect(auditUser).toContain('reason: AuditReason,');
 });
+
+/**
+ * One cap for every audit reason (D261: `AUDIT_REASON_MAX`, 2,000, and its own refusal sentence). A
+ * second constant for the same limit — #130 brought an interim 1,000-character one before D261 landed
+ * — would let two writers refuse the same words at different lengths. Any exported constant whose
+ * name pairs a reason or a note with a cap, in core or the server, is that regression.
+ */
+test('one audit-reason cap: AUDIT_REASON_MAX, nowhere a second', () => {
+  const CORE = resolve(__dirname, '../../core/src');
+  const exported = /export const ([A-Z][A-Z0-9_]*)\s*=/g;
+  // A name's words: one of them a reason or a note, one of them a cap.
+  const isReasonCap = (name: string) => {
+    const words = name.split('_');
+    return (
+      words.some((w) => w === 'REASON' || w === 'NOTE') &&
+      words.some((w) => w === 'MAX' || w === 'CAP' || w === 'LIMIT')
+    );
+  };
+  const found: string[] = [];
+  for (const root of [CORE, CONVEX]) {
+    for (const p of sources(root)) {
+      const text = readFileSync(p, 'utf8');
+      for (let m = exported.exec(text); m; m = exported.exec(text)) {
+        if (isReasonCap(m[1] as string)) found.push(m[1] as string);
+      }
+    }
+  }
+  // Text stored on rows of its own, with its own reader and limit — not an audit reason's cap: a
+  // flag's note, an access alert's note, a skater's request note, a posted-access citation, and the
+  // reason an imagery pass override keeps on its row (shown with the pass).
+  const notReasons = new Set([
+    'FLAG_NOTE_MAX_CHARS',
+    'ACCESS_ALERT_NOTE_MAX_CHARS',
+    'MAX_REQUEST_NOTE_LENGTH',
+    'MAX_POSTED_NOTE_LENGTH',
+    'MAX_OVERRIDE_REASON_CHARS',
+  ]);
+  expect(found.filter((name) => !notReasons.has(name)).sort()).toEqual(['AUDIT_REASON_MAX']);
+});
