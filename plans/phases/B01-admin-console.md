@@ -2706,17 +2706,21 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 13 |
 | `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 23 |
 | `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 8 |
-| `recordCounts` | Reversed 501; Reports by real weight (512 KiB, one `paginate`); posts 2, hazards 2, comments 30, alerts 30; each row's hold check | — | 6 |
+| `recordCounts` | Reversed 501; Reports by real weight (512 KiB, one `paginate`); comments 30, alerts 30; Posts and hazards by real weight in doubling steps (1, 2, 4, … rows, each step its share of what is left, at most 7); each row's hold check | — | 13 |
 | `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
 
-**What the budget can't count.** Convex has no index-only count, and a withdrawn Report, Post or
-hazard is a whole document at its declared worst, so `deleted` is exact only while a person has
-deleted (and nothing holds) fewer than 100 Reports within 512 KiB, one Post, one hazard, 29 comments and
-29 alerts not yet erased; past any of those it says `capped` (a floor). The Deleted list pages on
-regardless, a heavy kind a few rows a page. **Recommendation:** a small stored row per withdrawal
-(ids and times, written by the clock's one writer, removed by the eraser), which would make the list
-one range and the count exact to 500 at 4 MiB — not built here (a new stored fact, its writers and a
-backfill).
+**What the budget can't count.** Convex has no index-only count. Reports count by their real weight
+(the read's one `paginate`, 512 KiB); Posts and hazards — a whole document each at their declared
+worst, a few KB in fact — count in doubling steps (`countHeavy`: 1 row, then 2, 4, … after the last,
+each step reserving its rows' worst case and handing back what they weighed, never more than its share
+of what is left), so they count exactly well past one worst case; comments and alerts to 30 each. So
+`deleted` is exact while a person has deleted (and nothing holds) fewer than 100 Reports within 512 KiB,
+29 comments and 29 alerts not yet erased, and as many Posts and hazards as seven steps reach — at
+least 15 of each at the worst the budget allows, typically about 40; past any of those it says `capped`
+(a floor). The Deleted list pages on regardless, a heavy kind a few rows a page. **Owed:** a small stored
+row per withdrawal (ids and times, written by the clock's one writer, removed by the eraser) would make
+the list one range and the count exact to 500 at 4 MiB — not built here (a new stored fact, its writers
+and a backfill).
 
 **Open for the founder:** nothing refuses a moderator acting on their own record (restoring their
 own hidden report, overturning a decision on their own content) — not before this build, and not now;

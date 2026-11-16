@@ -704,17 +704,41 @@ describe('the counts and "still being prepared"', () => {
       expect((await matt.as.query(q, { userId: rob.id })).pending).toEqual(['verdicts']);
     }
     await t.run((ctx) => markReady(ctx, 'verdicts'));
-    // Three Posts deleted: the count reads two Posts at most, so it is a floor.
-    for (const _ of [0, 1, 2]) {
+    // Nine Posts deleted — four of them in one instant — counted by their real weight, exactly: the
+    // doubling steps read 1, 2, 4, then the rest, each passing over the rows tied with the last.
+    const posts: Id<'posts'>[] = [];
+    for (let i = 0; i < 9; i++) {
       const { postId } = await post(1);
       await rob.as.mutation(api.posts.remove, { postId });
+      posts.push(postId);
+      tick();
     }
-    const floor = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
-    expect(floor.pending).toEqual([]);
-    expect(floor.deleted.capped).toBe(true);
-    expect(floor.deleted.byKind.post).toBe(2);
+    await t.run(async (ctx) => {
+      const at = (await ctx.db.get(posts[2] as Id<'posts'>))?.authorDeletedAt as number;
+      for (const id of posts.slice(3, 6)) await ctx.db.patch(id, { authorDeletedAt: at });
+    });
+    const exact = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
+    expect(exact.pending).toEqual([]);
+    expect(exact.deleted).toMatchObject({ capped: false, byKind: { post: 9, comment: 1 } });
     const listed = await deletedOf(matt.as, rob.id);
-    expect(listed.rows.filter((d) => d.targetType === 'post')).toHaveLength(3);
+    expect(listed.rows.filter((d) => d.targetType === 'post')).toHaveLength(9);
+    expect(exact.deleted.count).toBe(listed.rows.length);
+  });
+
+  test('a heavy kind past its last step is a floor, never a guess', async () => {
+    const { rob, matt, post, tick } = await setup();
+    // Each step is at most its share of what the budget has left at a whole document a row, so the
+    // seven steps reach some way past what one worst case allows — and past them, a floor.
+    const total = 80;
+    for (let i = 0; i < total; i++) {
+      const { postId } = await post(1);
+      await rob.as.mutation(api.posts.remove, { postId });
+      tick();
+    }
+    const counts = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
+    expect(counts.deleted.capped).toBe(true);
+    expect(counts.deleted.byKind.post).toBeGreaterThanOrEqual(1 + 2 + 4 + 8);
+    expect(counts.deleted.byKind.post).toBeLessThan(total);
   });
 });
 

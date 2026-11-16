@@ -13,7 +13,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import { countsOf, deletedPage, reversedPage, standingPage } from './contentRecord';
+import { countsOf, deletedPage, HEAVY_STEPS, reversedPage, standingPage } from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { CHARGED_QUERY_BUDGET, ROW_MAX } from './lib/readBudget';
 import { RECORD_PAGE } from './lib/recordReads';
@@ -235,8 +235,11 @@ const STANDING_ROUNDS = 2 + waves(2 * ROW_MAX.report) + 1;
 const REVERSED_ROUNDS = 2 + waves(3 * ROW_MAX.report) + 1 + 3;
 /** Deleted: the five ranges together, each comment's hold and Report in waves, then the names. */
 const DELETED_ROUNDS = 2 + waves(ROW_MAX.verdict + ROW_MAX.report) + 1;
-/** The counts: the check, Reversed's range, the Reports' range, the four other ranges, the holds. */
-const COUNT_ROUNDS = 6;
+/**
+ * The counts: the check, Reversed's range, the Reports' range, the light kinds' ranges, then the heavy
+ * kinds' doubling steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at worst).
+ */
+const COUNT_ROUNDS = 4 + HEAVY_STEPS + 2;
 
 describe('the record sheet’s rounds (B01-4d)', () => {
   test('Standing: a page of fifty costs its waves, not a round a row', async () => {
@@ -276,6 +279,35 @@ describe('the record sheet’s rounds (B01-4d)', () => {
       return stats;
     });
     console.log(`Counts: ${stats.rounds} rounds / ${stats.calls} calls (worst ${COUNT_ROUNDS})`);
+    expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
+  });
+
+  test('the counts with many deleted Posts: the doubling steps, never a round a Post', async () => {
+    const t = convexTest(schema, modules);
+    const { rob } = await record(t, 1);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 40; i++) {
+        await ctx.db.insert('posts', {
+          authorId: rob,
+          reportIds: [],
+          photoIds: [],
+          latestSkateEndTime: NOW,
+          moderationStatus: 'removed' as const,
+          authorDeletedAt: NOW - 10_000 + i,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+    });
+    const stats = await t.run(async (ctx) => {
+      const { ctx: c, stats } = counted(ctx);
+      const out = await countsOf(c, { userId: rob });
+      // Exact as far as the steps reached; past them, a floor that says so.
+      expect(out.deleted.byKind.post).toBeGreaterThanOrEqual(1 + 2 + 4 + 8);
+      expect(out.deleted.capped).toBe(out.deleted.byKind.post < 40);
+      return stats;
+    });
+    console.log(`Counts, 40 Posts: ${stats.rounds} rounds (worst ${COUNT_ROUNDS})`);
     expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
   });
 });
