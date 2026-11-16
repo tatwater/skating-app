@@ -17,7 +17,7 @@ import {
 } from '@/components/kit/sheet';
 import { SkeletonText } from '@/components/kit/skeleton';
 
-import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { type Loadable, readState } from '../../reads/consoleReads';
 import { type ChoicesRead, chooserMembers } from './recordModel';
 import { RECORD_WORDS as W } from './recordWords';
 
@@ -78,7 +78,9 @@ function ChooserBody({
   const [chosen, setChosen] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const read = choices === undefined || isFailed(choices) || choices === null ? null : choices;
+  // The chooser's read, its four answers apart (`readState`).
+  const state = readState(choices);
+  const read = state.kind === 'value' ? state.value : null;
   const members = read === null ? [] : chooserMembers(read, now, timeZone);
   // What is chosen and still choosable: a member that came up, or was deleted, since it was ticked
   // (the read is live) is neither counted nor sent.
@@ -112,22 +114,22 @@ function ChooserBody({
           }
         }}
       >
-        {choices === undefined ? (
+        {state.kind === 'loading' ? (
           <div aria-busy="true" className="flex flex-col gap-(--space-3)">
             <SkeletonText className="text-row" width="90%" />
             <SkeletonText className="text-row" width="70%" />
           </div>
-        ) : isFailed(choices) ? (
-          <RetryNote onRetry={choices.retry} pending={choices.pending}>
+        ) : state.kind === 'failed' ? (
+          <RetryNote onRetry={state.failure.retry} pending={state.failure.pending}>
             {W.chooserFailed}
           </RetryNote>
-        ) : choices === null ? (
+        ) : state.kind === 'none' ? (
           <Note>{W.noSuchItem}</Note>
         ) : (
           <>
-            {choices.prompt !== null && (
+            {state.value.prompt !== null && (
               <p data-slot="chooser-lead" className="m-0 text-row leading-body text-fg2">
-                {choices.prompt}
+                {state.value.prompt}
               </p>
             )}
             {refusal !== null && <AlertDialogError>{refusal}</AlertDialogError>}

@@ -13,7 +13,7 @@ import { SkeletonText } from '@/components/kit/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { cn } from '@/lib/utils';
 
-import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { type Loadable, readState } from '../../reads/consoleReads';
 import { personName } from '../person/personModel';
 import { LabelRows } from './kit-candidates/label-rows';
 import { LifeList } from './kit-candidates/life-list';
@@ -58,25 +58,32 @@ export type RecordItemProps = {
 };
 
 export function RecordItem(props: RecordItemProps) {
-  const { item } = props;
-  if (item === undefined) return <ItemSkeleton />;
-  if (isFailed(item)) {
-    return (
-      <div className="p-gutter">
-        <RetryNote data-slot="record-item-failed" onRetry={item.retry} pending={item.pending}>
-          {W.itemFailed}
-        </RetryNote>
-      </div>
-    );
+  // The read's four answers, apart (`readState`): on its way, failed, never existed, the item.
+  const state = readState(props.item);
+  switch (state.kind) {
+    case 'loading':
+      return <ItemSkeleton />;
+    case 'failed':
+      return (
+        <div className="p-gutter">
+          <RetryNote
+            data-slot="record-item-failed"
+            onRetry={state.failure.retry}
+            pending={state.failure.pending}
+          >
+            {W.itemFailed}
+          </RetryNote>
+        </div>
+      );
+    case 'none':
+      return (
+        <div className="p-gutter">
+          <Note data-slot="record-item-none">{W.noSuchItem}</Note>
+        </div>
+      );
+    case 'value':
+      return <ItemBody {...props} read={state.value} />;
   }
-  if (item === null) {
-    return (
-      <div className="p-gutter">
-        <Note data-slot="record-item-none">{W.noSuchItem}</Note>
-      </div>
-    );
-  }
-  return <ItemBody {...props} read={item} />;
 }
 
 function ItemBody({

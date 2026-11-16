@@ -7,7 +7,7 @@ import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/comp
 import { isTextEntry } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
-import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { type Loadable, readState } from '../../reads/consoleReads';
 import { useColumnsFit } from '../../shell/columnsFit';
 import { AskDialog } from '../person/AskDialog';
 import { PostChooser } from './PostChooser';
@@ -226,7 +226,8 @@ function SheetBodyView({
   }, [narrow, selected, first, onSelect]);
 
   // ── The item ──
-  const read = item === undefined || isFailed(item) || item === null ? null : item;
+  const itemState = readState(item);
+  const read = itemState.kind === 'value' ? itemState.value : null;
   const view = useMemo(
     () => (read === null ? null : itemView(read, subject, now, timeZone)),
     [read, subject, now, timeZone],
@@ -271,7 +272,7 @@ function SheetBodyView({
   const liveLever = (target: Target | null): Lever | null | undefined => {
     if (target === null || selectedKey !== targetKey(target)) return null;
     // On its way, or failed: the answer can't be judged yet. Gone: nothing is offered.
-    if (item === undefined || isFailed(item)) return undefined;
+    if (itemState.kind === 'loading' || itemState.kind === 'failed') return undefined;
     return view === null ? null : view.lever;
   };
   const askKey = ask === null ? null : targetKey(ask.target);

@@ -5,7 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
-import { isFailed, loaded, read, useConsoleReadSet } from '../../reads/consoleReads';
+import {
+  type Loadable,
+  loaded,
+  read,
+  readState,
+  useConsoleReadSet,
+} from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
@@ -159,8 +165,9 @@ function SheetSitting({
         : null,
   });
 
-  const counts =
-    reads.counts === undefined || isFailed(reads.counts) ? null : (reads.counts as RecordCounts);
+  // The filter's counts, a secondary read: its value, or none to promise (`readState`).
+  const countsState = readState(reads.counts as Loadable<RecordCounts | null>);
+  const counts = countsState.kind === 'value' ? countsState.value : null;
   const viewer = loaded(reads.viewer) ?? null;
   const viewerName = viewer === null ? null : personName(viewer);
   const viewerId = viewer === null ? null : (viewer._id as string);
