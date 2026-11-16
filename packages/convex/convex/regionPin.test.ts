@@ -151,6 +151,38 @@ async function seedTowns(t: T) {
 
 const get = (t: T, id: Id<'waterBodies'>) => t.run((ctx) => ctx.db.get(id));
 const recompute = (t: T) => t.action(internal.bodyGeo.computeDue, {});
+/** The retire pass as the ETL script runs it: in batches, carrying the retired keys and the lists. */
+async function retireInBatches(
+  t: T,
+  pairs: {
+    survivor: { source: string; externalId: string };
+    absorbed: { source: string; externalId: string };
+  }[],
+  batch: number,
+  apply: boolean,
+): Promise<{ retired: string[]; refused: string[] }> {
+  const retired: string[] = [];
+  const refused: string[] = [];
+  let taken: {
+    key: string;
+    pins: string[];
+    aliases: string[];
+    links: { label: string; url: string }[];
+  }[] = [];
+  for (let i = 0; i < pairs.length; i += batch) {
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: pairs.slice(i, i + batch),
+      ...(apply ? { apply: true } : {}),
+      ...(retired.length > 0 ? { alreadyRetired: retired } : {}),
+      ...(taken.length > 0 ? { taken } : {}),
+    });
+    retired.push(...res.retiredKeys);
+    taken = res.taken;
+    for (const sk of res.skippedSamples) if (/pass a cap/.test(sk.why)) refused.push(sk.pair);
+  }
+  return { retired, refused };
+}
+
 const lastAction = (t: T, action: Doc<'moderationActions'>['action']) =>
   t.run(async (ctx) => {
     const rows = await ctx.db.query('moderationActions').order('desc').collect();
@@ -706,6 +738,68 @@ describe('the pin against the other writers', () => {
     });
   });
 
+  test('the dry run predicts the apply across batch boundaries (Greptile on #130)', async () => {
+    // A survivor at four pins absorbing two bodies of three distinct pins each, one pair a batch:
+    // only one can merge, in the dry run as in the apply.
+    const t = harness();
+    const s = await imported(t, 'way/1');
+    const a = await imported(t, 'way/2');
+    const b = await imported(t, 'way/3');
+    const keys = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => `tiger/36027${String(10_000 + from + i)}`);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(s, { moderatorTownKeys: keys(0, 4) });
+      await ctx.db.patch(a, { moderatorTownKeys: keys(4, 3) });
+      await ctx.db.patch(b, { moderatorTownKeys: keys(7, 3) });
+    });
+    const pairs = [
+      {
+        survivor: { source: 'osm', externalId: 'way/1' },
+        absorbed: { source: 'osm', externalId: 'way/2' },
+      },
+      {
+        survivor: { source: 'osm', externalId: 'way/1' },
+        absorbed: { source: 'osm', externalId: 'way/3' },
+      },
+    ];
+    expect((await retireInBatches(t, pairs, 1, false)).retired).toEqual(['osm:way/2']);
+    expect((await retireInBatches(t, pairs, 1, true)).retired).toEqual(['osm:way/2']);
+  });
+
+  test('property: for any pairs, lists and batch size, the dry run’s merged and refused sets equal the apply’s', async () => {
+    const prop = fc.asyncProperty(
+      fc.array(fc.uniqueArray(fc.integer({ min: 0, max: 9 }), { maxLength: 5 }), {
+        minLength: 5,
+        maxLength: 7,
+      }),
+      fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 4, maxLength: 4 }),
+      fc.integer({ min: 1, max: 4 }),
+      async (pinSets, survivorOf, batch) => {
+        const t = harness();
+        const ids: Id<'waterBodies'>[] = [];
+        for (let i = 0; i < pinSets.length; i++) ids.push(await imported(t, `way/${i}`));
+        await t.run(async (ctx) => {
+          for (const [i, set] of pinSets.entries()) {
+            await ctx.db.patch(ids[i] as Id<'waterBodies'>, {
+              moderatorTownKeys: set.map((n) => `tiger/36027${String(10_000 + n)}`),
+            });
+          }
+        });
+        // Bodies 0–2 survive; 3 onward are absorbed, each into the survivor it drew.
+        const pairs = survivorOf.slice(0, pinSets.length - 3).map((si, k) => ({
+          survivor: { source: 'osm', externalId: `way/${si}` },
+          absorbed: { source: 'osm', externalId: `way/${k + 3}` },
+        }));
+        const dry = await retireInBatches(t, pairs, batch, false);
+        const applied = await retireInBatches(t, pairs, batch, true);
+        expect(dry.retired.sort()).toEqual(applied.retired.sort());
+        expect(dry.refused.sort()).toEqual(applied.refused.sort());
+      },
+    );
+    for (const seed of [11, 2027]) await fc.assert(prop, { seed, numRuns: 6 });
+    await fc.assert(prop, { numRuns: 6 });
+  });
+
   test('a removal leaves the pin, so undoing the removal brings the body back pinned', async () => {
     const t = harness();
     await seedTowns(t);
@@ -754,7 +848,13 @@ describe('the pin against the other writers', () => {
     // two (the survivor's union, the loser's clear).
     const pinWrites = source
       .map((l, i) => ({ l, i }))
-      .filter(({ l }) => /moderatorTownKeys\s*:/.test(l) && !/metadata:|v\.optional/.test(l));
+      .filter(
+        ({ l }) =>
+          /moderatorTownKeys\s*:/.test(l) &&
+          // A schema line, an audit row's metadata, and the retire pass's in-memory list of what a
+          // survivor took (no write) are not writes of the field.
+          !/metadata:|v\.optional|t\?\.pins/.test(l),
+      );
     expect(pinWrites).toHaveLength(3);
     for (const { i } of pinWrites) {
       expect(source.slice(i - 2, i + 3).join('\n')).toMatch(/regionStatesFields\(/);

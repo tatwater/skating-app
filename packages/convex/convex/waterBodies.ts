@@ -53,6 +53,7 @@ import {
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  type MergeListSide,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
@@ -3909,6 +3910,20 @@ export async function mergeBodyInto(
  * `apply` defaults to **false**: this reports what it would do and changes nothing, like every other
  * destructive pass in the campaign.
  */
+/** One survivor's moderator-held lists taken from absorbed rows so far in a retire pass. */
+const takenListsV = v.object({
+  key: v.string(),
+  pins: v.array(v.string()),
+  aliases: v.array(v.string()),
+  links: v.array(v.object({ label: v.string(), url: v.string() })),
+});
+type TakenLists = {
+  key: string;
+  pins: string[];
+  aliases: string[];
+  links: { label: string; url: string }[];
+};
+
 export const retireAbsorbedBodies = internalMutation({
   args: {
     pairs: v.array(
@@ -3934,8 +3949,17 @@ export const retireAbsorbedBodies = internalMutation({
      * and therefore to the same string. `retiredKeys` in the return value is what to feed back.
      */
     alreadyRetired: v.optional(v.array(v.string())),
+    /**
+     * **The moderator-held lists each survivor has taken so far in this pass** (B01-3g), keyed on the
+     * resolved row's `source:externalId` — fed back from the last batch's `taken`, so the cap check
+     * reads the lists a survivor would hold by now whatever the batch boundaries: a dry run, where
+     * nothing merged and the survivor re-reads as it was, then predicts the apply exactly. Under
+     * `--apply` the survivor already holds them, and a union is idempotent. Only non-empty lists are
+     * carried; an empty one adds nothing to a union.
+     */
+    taken: v.optional(v.array(takenListsV)),
   },
-  handler: async (ctx, { pairs, campaignId, apply, alreadyRetired }) => {
+  handler: async (ctx, { pairs, campaignId, apply, alreadyRetired, taken: carriedIn }) => {
     /**
      * Resolve a merge-group key to the row that actually holds it.
      *
@@ -4004,10 +4028,18 @@ export const retireAbsorbedBodies = internalMutation({
     const handled = new Set<Id<'waterBodies'>>();
     const handledKeys = new Set<string>(alreadyRetired ?? []);
     const keyOf = (b: Doc<'waterBodies'>) => `${b.source}:${b.externalId}`;
-    // The rows each survivor took earlier in this pass, so the cap check below reads the lists it
-    // would hold by then — in a dry run too, where nothing was merged and the survivor re-reads
-    // as it was. Under `--apply` the survivor already holds them, and a union is idempotent.
-    const absorbedInto = new Map<Id<'waterBodies'>, Doc<'waterBodies'>[]>();
+    // The lists each survivor took earlier in this pass — across the caller's batches (`taken`), so
+    // the cap check reads what it would hold by then, in a dry run too (see the argument's note).
+    const takenBy = new Map<string, TakenLists>((carriedIn ?? []).map((t) => [t.key, t] as const));
+    const sideOf = (key: string): MergeListSide => {
+      const t = takenBy.get(key);
+      return {
+        name: '',
+        moderatorTownKeys: t?.pins ?? [],
+        moderatorAliases: t?.aliases ?? [],
+        referenceLinks: t?.links ?? [],
+      };
+    };
 
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
@@ -4042,11 +4074,7 @@ export const retireAbsorbedBodies = internalMutation({
       }
       // A merge that can't hold both bodies' moderator-set lists is a person's call, never a
       // truncation: the pair is skipped and named, and the batch goes on (B01-3g).
-      const taken = [
-        ...(absorbedInto.get(survivor._id) ?? []),
-        ...(absorbedInto.get(absorbed._id) ?? []),
-        absorbed,
-      ];
+      const taken = [sideOf(keyOf(survivor)), sideOf(keyOf(absorbed)), absorbed];
       if (mergedModeratorLists(survivor, taken).refusal !== null) {
         skip('their moderator-set lists together pass a cap, so a person merges them', label);
         // Put the pair in front of that person: the duplicate queue, where the card shows why it
@@ -4054,7 +4082,15 @@ export const retireAbsorbedBodies = internalMutation({
         if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
         continue;
       }
-      absorbedInto.set(survivor._id, taken);
+      // What the survivor holds of others' lists now: the union of what it and the absorbed row took
+      // before, and the absorbed row's own.
+      const held = mergedModeratorLists({ name: '' }, taken);
+      takenBy.set(keyOf(survivor), {
+        key: keyOf(survivor),
+        pins: held.pins,
+        aliases: held.aliases,
+        links: held.links,
+      });
       handled.add(absorbed._id);
       handledKeys.add(keyOf(absorbed));
       retired.push({
@@ -4083,6 +4119,10 @@ export const retireAbsorbedBodies = internalMutation({
       // caller feeds it back as the next batch's `alreadyRetired`, so truncating it would silently
       // re-open the cross-batch double-count at whatever `--batch` exceeds the sample cap.
       retiredKeys: retired.map((r) => r.absorbed),
+      // Fed back as the next batch's `taken`, uncapped for the same reason; non-empty lists only.
+      taken: [...takenBy.values()].filter(
+        (t) => t.pins.length + t.aliases.length + t.links.length > 0,
+      ),
       skipped,
       skippedSamples,
     };
