@@ -3043,7 +3043,7 @@ export async function removeBodyImpl(
     reason:
       args.auditReason ??
       (args.note !== undefined
-        ? composed`Removed from map (${args.reason}): ${args.note}`
+        ? composed`Removed from map (${args.reason}): ${checkedReason(args.note)}`
         : composed`Removed from map (${args.reason})`),
     metadata: {
       removalReason: args.reason,

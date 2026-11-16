@@ -19,6 +19,7 @@
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { normalizeReason } from './audit';
 import { type StatusTerms, statusTermsOf } from './peopleCan';
 import { personRowOf } from './peopleRows';
 import { DOC_MAX, ReadBudget } from './readBudget';
@@ -59,8 +60,13 @@ function termsFoundBy(row: Audit): StatusTerms | undefined {
   };
 }
 
+/** Terms as one comparable key — the reason normalized, as `sameStatusTerms` compares it (B01-4h). */
 const keyOf = (terms: StatusTerms) =>
-  JSON.stringify([terms.status, terms.statusReason, terms.suspendedUntil]);
+  JSON.stringify([
+    terms.status,
+    terms.statusReason === null ? null : normalizeReason(terms.statusReason),
+    terms.suspendedUntil,
+  ]);
 
 /**
  * **The write that set `person`'s current terms** — for a suspended or banned person, the newest row

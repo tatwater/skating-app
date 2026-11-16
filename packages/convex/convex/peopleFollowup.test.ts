@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  type CheckedText,
   composed,
   composedOf,
   fitComposed,
@@ -248,7 +249,8 @@ describe('a reason the system composes is shortened to fit, never refused (D261)
         (fixedParts, values) => {
           const fixed = [...fixedParts];
           while (fixed.length < values.length + 1) fixed.push('');
-          const reason = composedOf(fixed, values.slice(0, fixed.length - 1));
+          // Any fixed words at all, as if each were a person's checked words (the type asks for that).
+          const reason = composedOf(fixed as CheckedText[], values.slice(0, fixed.length - 1));
           const whole = fixed.reduce((o, p, i) => o + p + (reason.values[i] ?? ''), '');
           const fitted = fitComposed(reason);
           expect(fitted.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
