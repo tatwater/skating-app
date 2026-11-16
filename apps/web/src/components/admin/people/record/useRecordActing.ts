@@ -35,11 +35,17 @@ export type RecordActing = {
 
 export function useRecordActing({
   current,
+  present,
   onAct,
   onLateRefusal,
 }: {
   /** The item open now. */
   current: Target | null;
+  /**
+   * Whether the item's place is on screen and staying: the sheet open (not sliding closed) and its
+   * pane drawn (not the narrow layout's list). `false` from the moment leaving starts.
+   */
+  present: boolean;
   /** The write; resolves to the server's refusal, or `null` once it landed. */
   onAct: (target: Target, write: RecordWrite) => Promise<string | null>;
   /** A refusal for an item no longer open. */
@@ -49,12 +55,25 @@ export function useRecordActing({
   const [refusal, setRefusal] = useState<{ key: string; text: string } | null>(null);
   const currentKey = current === null ? null : targetKey(current);
   const open = useRef(currentKey);
+  const shown = useRef(present);
   const mounted = useRef(true);
   const running = useRef(new Set<string>());
 
   useLayoutEffect(() => {
     open.current = currentKey;
-  }, [currentKey]);
+    shown.current = present;
+  }, [currentKey, present]);
+  /**
+   * **The one rule for "is the place this result belongs still there"** — every write's answer asks
+   * it, and so does the focus it would move: the sheet mounted, its item's place on screen and
+   * staying, and that item the one open. False from the moment leaving starts (Close, Esc, the
+   * backdrop; another item, another tab; the narrow layout's way back; the page going), not when
+   * the unmount finishes: an answer that lands during the slide out is a late one.
+   */
+  const stillHere = useCallback(
+    (key: string) => mounted.current && shown.current && open.current === key,
+    [],
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -83,29 +102,29 @@ export function useRecordActing({
         refused = W.somethingWrong;
       }
       running.current.delete(key);
-      if (!mounted.current) {
-        if (refused !== null) onLateRefusal(refused);
-        return refused;
+      // The press is over wherever it was made: no spinner left behind for a later visit.
+      if (mounted.current) {
+        setBusy((b) => {
+          const next = new Map(b);
+          next.delete(key);
+          return next;
+        });
       }
-      setBusy((b) => {
-        const next = new Map(b);
-        next.delete(key);
-        return next;
-      });
-      // Moved on: nothing here may touch the item open now.
-      if (open.current !== key) {
+      // Left (or leaving): a refusal is said once, out of the way, and nothing is written into
+      // what is on its way out — to the caller (a dialog, the chooser) the answer is settled.
+      if (!stillHere(key)) {
         if (refused !== null) onLateRefusal(refused);
-        return refused;
+        return null;
       }
       if (refused !== null && inline) setRefusal({ key, text: refused });
       if (refused === null || inline) {
         requestAnimationFrame(() => {
-          if (open.current === key) keepFocus(region, before, 'record-lever');
+          if (stillHere(key)) keepFocus(region, before, 'record-lever');
         });
       }
       return refused;
     },
-    [onAct, onLateRefusal],
+    [onAct, onLateRefusal, stillHere],
   );
 
   return {

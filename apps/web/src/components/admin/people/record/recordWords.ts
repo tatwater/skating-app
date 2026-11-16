@@ -279,5 +279,6 @@ export const RECORD_WORDS = {
   withReports: (n: number) =>
     `${n.toLocaleString('en-US')} ${n === 1 ? 'report' : 'reports'} came back with it`,
   lateRefusal: 'Not changed',
+  lateRefusalOf: (name: string) => (name === '' ? 'Not changed' : `Not changed · ${name}`),
   cameBackReceipt: (what: string) => `Its ${what} came back with it`,
 } as const;

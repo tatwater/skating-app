@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -227,47 +227,101 @@ const OTHER: ItemRead = {
 };
 
 describe('a write that comes back after the operator moved on', () => {
+  /**
+   * Every way of leaving, once it has begun — the sheet closing (Close, Esc and the backdrop are
+   * all its `open` going false: it slides out with its content still mounted), another item open
+   * under the pane, another tab, the narrow layout's way back, the page itself going — for every
+   * write and both answers: a refusal goes to the toast (`onLateRefusal`); a landing writes
+   * nothing; nothing is drawn into what is leaving, and focus is not moved. A dialog whose write is
+   * out is held through each (its write answers for itself, never into the closing dialog).
+   */
+  type Way = 'close' | 'item' | 'tab' | 'back' | 'page';
+  const WAYS: Way[] = ['close', 'item', 'tab', 'back', 'page'];
+
   for (const c of CASES) {
-    for (const outcome of ['landed', 'refused'] as const) {
-      it(`${c.write}, ${outcome}: nothing lights, says or moves on the item open now`, async () => {
-        const user = userEvent.setup();
-        const write = deferred();
-        const onAct = vi.fn((_t: Target, _w: RecordWrite) => write.promise);
-        const onLateRefusal = vi.fn();
-        const view = render(
-          <RecordSheetView
-            {...props({ selected: targetOf(c.item), item: c.item, onAct, onLateRefusal })}
-          />,
-        );
-        await user.click(lever() as HTMLElement);
-        await c.confirm(user);
-        expect(onAct).toHaveBeenCalledWith(targetOf(c.item), c.sent);
-        // A reason dialog holds while its write is out: Esc does nothing.
-        if (c.write !== 'restore') {
-          await user.keyboard('{Escape}');
-          expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-        }
-        // Moved on: another item is open, and focus is somewhere of the operator's choosing.
-        view.rerender(
-          <RecordSheetView
-            {...props({ selected: targetOf(OTHER), item: OTHER, onAct, onLateRefusal })}
-          />,
-        );
-        const there = lever() as HTMLElement;
-        const before = document.activeElement;
-        await act(async () => {
-          write.settle(outcome === 'refused' ? 'Someone changed this since.' : null);
-          await write.promise;
-          await new Promise((r) => requestAnimationFrame(() => r(null)));
+    for (const way of WAYS) {
+      for (const outcome of ['landed', 'refused'] as const) {
+        it(`${c.write}, ${outcome}, leaving by ${way}: nothing lights, says or moves`, async () => {
+          const user = userEvent.setup();
+          const write = deferred();
+          const onAct = vi.fn((_t: Target, _w: RecordWrite) => write.promise);
+          const onLateRefusal = vi.fn();
+          const base = {
+            selected: targetOf(c.item),
+            item: c.item,
+            onAct,
+            onLateRefusal,
+            narrow: way === 'back',
+          };
+          const view = render(<RecordSheetView {...props(base)} />);
+          if (way === 'back') {
+            // On a narrow screen the item is opened from the list: its pane takes the sheet.
+            await user.click(
+              document.querySelector('[data-slot="record-row-button"]') as HTMLElement,
+            );
+          }
+          await user.click(lever() as HTMLElement);
+          await c.confirm(user);
+          expect(onAct).toHaveBeenCalledWith(targetOf(c.item), c.sent);
+          // A reason dialog holds while its write is out: Esc does nothing.
+          if (c.write !== 'restore') {
+            await user.keyboard('{Escape}');
+            expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+          }
+          // Leaving starts.
+          switch (way) {
+            case 'close':
+              view.rerender(<RecordSheetView {...props({ ...base, open: false })} />);
+              break;
+            case 'item':
+              view.rerender(
+                <RecordSheetView {...props({ ...base, selected: targetOf(OTHER), item: OTHER })} />,
+              );
+              break;
+            case 'tab':
+              view.rerender(
+                <RecordSheetView
+                  {...props({ ...base, tab: 'reversed', selected: null, item: undefined })}
+                />,
+              );
+              break;
+            case 'back':
+              // The way back is pressed (a dialog over it doesn't stop a press made in code).
+              fireEvent.click(
+                document.querySelector('[data-slot="record-back"] button') as HTMLElement,
+              );
+              break;
+            case 'page':
+              view.unmount();
+              break;
+          }
+          const before = document.activeElement;
+          await act(async () => {
+            write.settle(outcome === 'refused' ? 'Someone changed this since.' : null);
+            await write.promise;
+            await new Promise((r) => requestAnimationFrame(() => r(null)));
+          });
+          // Nothing said into what is leaving: not in place, not in a dialog.
+          expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+          expect(document.querySelector('[data-slot="alert-dialog-error"]')).toBeNull();
+          // Focus is not moved by the write: where leaving left it (the next item, the page), or
+          // where the sheet's own close or way back puts it — never onto a lever or into the pane
+          // that is leaving.
+          if (way === 'item' || way === 'tab' || way === 'page') {
+            expect(document.activeElement).toBe(before);
+          } else {
+            expect(document.activeElement?.closest('[data-slot="record-pane"]') ?? null).toBeNull();
+          }
+          if (outcome === 'refused')
+            expect(onLateRefusal).toHaveBeenCalledWith('Someone changed this since.');
+          else expect(onLateRefusal).not.toHaveBeenCalled();
+          // Another item open now: its own lever at rest.
+          if (way === 'item') {
+            expect(lever()).not.toHaveAttribute('aria-busy');
+            expect(lever()).toHaveTextContent('Restore');
+          }
         });
-        expect(there).not.toHaveAttribute('aria-busy');
-        expect(there).toHaveTextContent('Restore');
-        expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
-        expect(document.activeElement).toBe(before);
-        if (outcome === 'refused')
-          expect(onLateRefusal).toHaveBeenCalledWith('Someone changed this since.');
-        else expect(onLateRefusal).not.toHaveBeenCalled();
-      });
+      }
     }
   }
 
@@ -945,6 +999,25 @@ describe('an open dialog follows the live answer', () => {
       await write.promise;
     });
     expect(onChooser).toHaveBeenCalledWith(null);
+    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+  });
+});
+
+describe('a write that comes back once leaving has begun', () => {
+  it('Restore refused while the sheet slides closed: the toast says it, nothing in the closing sheet', async () => {
+    const user = userEvent.setup();
+    const write = deferred();
+    const onLateRefusal = vi.fn();
+    const onAct = vi.fn(() => write.promise);
+    const view = render(<RecordSheetView {...props({ onAct, onLateRefusal })} />);
+    await user.click(lever() as HTMLElement);
+    // Close pressed: the sheet is on its way out (its content stays mounted while it slides).
+    view.rerender(<RecordSheetView {...props({ open: false, onAct, onLateRefusal })} />);
+    await act(async () => {
+      write.settle('This is already up.');
+      await write.promise;
+    });
+    expect(onLateRefusal).toHaveBeenCalledWith('This is already up.');
     expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
   });
 });

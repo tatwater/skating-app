@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
@@ -21,6 +21,7 @@ import {
   receiptWords,
   type StandingCount,
   type StandingRow,
+  subjectName,
   type Target,
   targetKey,
 } from './recordModel';
@@ -205,8 +206,15 @@ function SheetSitting({
     [item, rows],
   );
   const keepRestored = state.keepRestored;
+  // Whether the sheet is open and staying: a restore that lands while it slides closed keeps no
+  // row in a sitting on its way out (its receipt still says it, with its Undo).
+  const staying = useRef(open);
+  useLayoutEffect(() => {
+    staying.current = open;
+  }, [open]);
   const onRestored = useCallback(
     (target: Target, result: RecordWriteResult) => {
+      if (!staying.current) return;
       const key = targetKey(target);
       const row =
         tab === 'standing' ? (rows as StandingRow[]).find((r) => targetKey(r) === key) : undefined;
@@ -294,7 +302,12 @@ function SheetSitting({
           ).title,
         });
       }}
-      onLateRefusal={(text) => toast({ title: W.lateRefusal, description: text, tone: 'bad' })}
+      onLateRefusal={(text) => {
+        // Said once, out of the way, naming the person — and never over another person's page
+        // (main's binding: this sheet's page still mounted).
+        if (!here()) return;
+        toast({ title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' });
+      }}
     />
   );
 }

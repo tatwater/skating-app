@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -311,6 +311,53 @@ describe('the writes', () => {
     expect(here()).toBe(true);
     view.unmount();
     expect(here()).toBe(false);
+  });
+
+  it('a refusal while the sheet slides closed goes to the toast, naming the person; none once the page has gone', async () => {
+    let refuse: (e: Error) => void = () => {};
+    const view = draw();
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    await userEvent.click(lever() as HTMLElement);
+    const closed = (
+      <RecordSheet
+        open={false}
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+      />
+    );
+    view.rerender(closed);
+    await act(async () => {
+      refuse(new ConvexError('This is already up.'));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This is already up.',
+        tone: 'bad',
+      }),
+    );
+    expect(mocks.announce).not.toHaveBeenCalled();
+    // Again, but the person's page goes (another person opened): no toast over it.
+    mocks.toast.mockClear();
+    view.unmount();
+    const again = draw();
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    await userEvent.click(lever() as HTMLElement);
+    again.unmount();
+    await act(async () => {
+      refuse(new ConvexError('This is already up.'));
+      await Promise.resolve();
+    });
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 
   it('a refusal is the server’s own words, in place, and no toast', async () => {

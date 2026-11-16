@@ -28,10 +28,12 @@ import {
   type ReversedRow,
   type StandingCount,
   type StandingRow,
+  subjectName,
   type Target,
   targetKey,
 } from './recordModel';
 import type { RecordListState } from './recordReads';
+import { RECORD_WORDS as W } from './recordWords';
 import { type RecordServer, type RecordWriteResult, useRecordWrites } from './useRecordWrites';
 
 export type BoardList = {
@@ -279,7 +281,10 @@ function Board({
         undo({ actionId: row.endActionId, needsReason: row.undo.needsReason })
       }
       onLateRefusal={(text) =>
-        toast({ title: 'Not changed', description: text, tone: 'bad' }, manager)
+        toast(
+          { title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' },
+          manager,
+        )
       }
       {...(narrow !== undefined && { narrow })}
       {...(keys !== undefined && { keys })}

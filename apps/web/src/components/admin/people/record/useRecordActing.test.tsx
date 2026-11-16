@@ -15,7 +15,7 @@ describe('a write tied to its attempt', () => {
         }),
     );
     const { result } = renderHook(() =>
-      useRecordActing({ current: T, onAct, onLateRefusal: () => {} }),
+      useRecordActing({ current: T, present: true, onAct, onLateRefusal: () => {} }),
     );
     let first: Promise<string | null> = Promise.resolve(null);
     let second: string | null = null;

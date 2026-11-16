@@ -138,6 +138,7 @@ export function RecordSheetView(props: RecordSheetViewProps) {
 }
 
 function SheetBodyView({
+  open: sheetOpen,
   container,
   subject,
   standing,
@@ -172,7 +173,10 @@ function SheetBodyView({
   const [shown, setShown] = useState<'list' | 'item'>('list');
   const keys = keysProp ?? finePointer();
 
-  const acting = useRecordActing({ current: selected, onAct, onLateRefusal });
+  // The item's place is on screen and staying: the sheet open (not sliding closed), and its pane
+  // drawn (on a narrow screen, not the list). False from the moment leaving starts.
+  const present = sheetOpen && (!narrow || shown === 'item');
+  const acting = useRecordActing({ current: selected, present, onAct, onLateRefusal });
   const [ask, setAsk] = useState<Ask | null>(null);
   const [askOpen, setAskOpen] = useState(false);
 
