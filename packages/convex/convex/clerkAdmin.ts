@@ -29,6 +29,9 @@ const CLERK_API_BASE = 'https://api.clerk.com/v1';
 /** Backoff between retries; its length is also the retry budget (3 tries after the first). */
 const RETRY_DELAYS_MS = [30_000, 5 * 60_000, 30 * 60_000];
 
+/** Requests one run of `setBanned` sends at most while Convex's wish moves under it. */
+const SETTLE_ROUNDS = 3;
+
 /**
  * Whether a failed Clerk response is worth retrying. 5xx and rate-limit/timeout responses are transient;
  * any other 4xx (unknown user id, revoked key, malformed request) will fail identically forever, so it
@@ -51,36 +54,77 @@ export const setBanned = internalAction({
     attempt: v.optional(v.number()),
   },
   handler: async (ctx, { clerkUserId, banned: scheduled, attempt = 0 }) => {
-    // What Convex says now, not what this was scheduled with: a ban's retry still in flight after a
-    // lift (or the reverse) must never undo the later write. The scheduled value stands only for a
-    // person with no profile to read, or one being deleted (its own step deletes the Clerk user).
-    const banned =
-      (await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId })) ?? scheduled;
-    const verb = banned ? 'ban' : 'unban';
     const key = process.env.CLERK_SECRET_KEY;
     if (!key) {
       console.warn(
-        `CLERK_SECRET_KEY not set — skipping Clerk ${verb} for ${clerkUserId} (the Convex status gate still applies)`,
+        `CLERK_SECRET_KEY not set — skipping Clerk ${scheduled ? 'ban' : 'unban'} for ${clerkUserId} (the Convex status gate still applies)`,
       );
       return;
     }
+    // What Convex says, read before each send and again after each answer. The scheduled value stands
+    // only for a person with no profile to read, or one being deleted (its own step deletes the Clerk
+    // user).
+    const wanted = async () =>
+      (await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId })) ?? scheduled;
 
-    const endpoint = `${CLERK_API_BASE}/users/${clerkUserId}/${verb}`;
-    let failure: string;
-    let retryable: boolean;
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (res.ok) return;
-      failure = `${res.status} ${res.statusText}`;
-      retryable = isRetryableStatus(res.status);
-    } catch (err) {
-      // A thrown fetch is a network/DNS blip — always worth another try.
-      failure = err instanceof Error ? err.message : String(err);
+    /*
+     * **Why this ends where Convex is** (the mirror has no ordering of its own, and these actions
+     * overlap: every status write schedules one, and a retry runs later still). Clerk answers a request
+     * only after applying it. Take the last request Clerk applies, R, sent by action A. After R's
+     * answer A reads Convex again; that read is later than R's application. If Convex then wants what
+     * R set, A stops — and Clerk holds what Convex said at a moment after every earlier request was
+     * applied. If not, A sends again, and that request is applied after R — so R wasn't the last.
+     * Any status change after A's read schedules its own action, whose read and request come after
+     * the change, so after R. Hence: once every request has answered and no retry is pending, Clerk's
+     * lock equals Convex's status at the last read — whatever the interleaving, a suspension that
+     * replaces a ban, an undo and a redo in quick succession, or a retry crossing a newer change (a
+     * retry is just another action). A failure is no different: an answer we give up on is followed by
+     * the same read, and a changed wish is sent rather than mailed about.
+     *
+     * Bounded: an action sends at most `SETTLE_ROUNDS` times; a wish still moving after that goes to
+     * the retry schedule (its next run reads afresh) and, past its budget, to the operator — never a
+     * silent stop. The one gap: an action that dies between an answer and its read (Convex runs an
+     * action at most once) leaves the last request's value standing until the next status write; only
+     * a reconcile over every account would close that.
+     */
+    let banned = await wanted();
+    let failure = '';
+    let retryable = false;
+    let settled = false;
+    for (let round = 0; round < SETTLE_ROUNDS; round++) {
+      const verb = banned ? 'ban' : 'unban';
+      let ok = false;
+      try {
+        const res = await fetch(`${CLERK_API_BASE}/users/${clerkUserId}/${verb}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        ok = res.ok;
+        if (!ok) {
+          failure = `${res.status} ${res.statusText}`;
+          retryable = isRetryableStatus(res.status);
+        }
+      } catch (err) {
+        // A thrown fetch is a network/DNS blip — always worth another try.
+        failure = err instanceof Error ? err.message : String(err);
+        retryable = true;
+      }
+      // After the answer, success or failure: what does Convex want now?
+      const now = await wanted();
+      if (now !== banned) {
+        banned = now;
+        continue;
+      }
+      if (ok) return;
+      settled = true;
+      break;
+    }
+    if (!settled) {
+      // Still moving after every round: the retry schedule reads afresh at its next run.
+      failure = 'the status kept changing while it was sent';
       retryable = true;
     }
+    const verb = banned ? 'ban' : 'unban';
 
     const delayMs = RETRY_DELAYS_MS[attempt]; // undefined ⇒ the retry budget is spent
     if (retryable && delayMs !== undefined) {

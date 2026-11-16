@@ -5,8 +5,10 @@
  * and a spent retry budget pages the operator instead of vanishing into a log line.
  */
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -154,5 +156,189 @@ describe('clerkAdmin.setBanned', () => {
       attempt: 1,
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/users\/u_lifted\/unban$/);
+  });
+});
+
+// ── Overlapping syncs: Clerk ends where Convex is ───────────────────────────────────────────────
+
+const PREFS = {
+  activityDetected: true,
+  bountyRequest: true,
+  hazardConfirmation: true,
+  bountyAnswered: true,
+  reportRated: true,
+  reportCommented: true,
+  contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
+};
+
+/**
+ * A fake Clerk whose requests answer only when released, in any order: a request is applied when it
+ * is released (Clerk's lock becomes its verb), then its answer — success, or a failure — reaches the
+ * action. No real call leaves the test.
+ */
+function fakeClerk() {
+  const pending: Array<{ banned: boolean; done: boolean; release: (fail?: boolean) => void }> = [];
+  const state = { locked: null as boolean | null, sends: 0 };
+  vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          state.sends++;
+          const banned = String(url).endsWith('/ban');
+          const request = {
+            banned,
+            done: false,
+            release: (fail = false) => {
+              if (request.done) return;
+              request.done = true;
+              if (fail) {
+                resolve(new Response('boom', { status: 503 }));
+                return;
+              }
+              state.locked = banned;
+              resolve(new Response('{}', { status: 200 }));
+            },
+          };
+          pending.push(request);
+        }),
+    ),
+  );
+  /** Let the actions run up to their next request (or their end). */
+  const settle = async () => {
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  /** Wait until `n` requests have been sent. */
+  const sent = async (n: number) => {
+    for (let i = 0; i < 400 && pending.length < n; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(pending.length).toBeGreaterThanOrEqual(n);
+  };
+  return { pending, state, settle, sent };
+}
+
+async function person(t: ReturnType<typeof convexTest>, status: 'active' | 'banned') {
+  return t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: 'u_mirror',
+      displayName: 'x',
+      username: 'x',
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public',
+      notificationPrefs: PREFS,
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'member',
+      status,
+      createdAt: Date.UTC(2026, 0, 1),
+    }),
+  );
+}
+
+const setStatus = (
+  t: ReturnType<typeof convexTest>,
+  id: Id<'profiles'>,
+  status: 'active' | 'banned',
+) => t.run((ctx) => ctx.db.patch(id, { status }));
+
+describe('clerkAdmin.setBanned — overlapping syncs converge on Convex', () => {
+  test.each([
+    ['a ban, then a lift, answered in reverse: Clerk ends unlocked', 'banned', 'active', false],
+    ['a lift, then a ban, answered in reverse: Clerk ends locked', 'active', 'banned', true],
+  ] as const)('%s', async (_, first, second, locked) => {
+    const t = convexTest(schema, modules);
+    const clerk = fakeClerk();
+    const id = await person(t, first);
+    const a = t.action(internal.clerkAdmin.setBanned, {
+      clerkUserId: 'u_mirror',
+      banned: first === 'banned',
+    });
+    await clerk.sent(1);
+    await setStatus(t, id, second);
+    const b = t.action(internal.clerkAdmin.setBanned, {
+      clerkUserId: 'u_mirror',
+      banned: second === 'banned',
+    });
+    await clerk.sent(2);
+    expect(clerk.pending.map((r) => r.banned)).toEqual([first === 'banned', second === 'banned']);
+    // The later request answers first; the earlier one lands on Clerk after it.
+    clerk.pending[1]?.release();
+    clerk.pending[0]?.release();
+    // Whatever either sends next, answer it, until both have ended.
+    let done = false;
+    void Promise.all([a, b]).then(() => {
+      done = true;
+    });
+    for (let i = 2; !done && i < 40; i++) {
+      await clerk.settle();
+      for (const r of clerk.pending.slice(2)) r.release();
+    }
+    await Promise.all([a, b]);
+    expect(clerk.state.locked).toBe(locked);
+  });
+});
+
+describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
+  test('once every request has answered and no retry is pending, Clerk says what Convex says; sends are bounded', async () => {
+    type Op = { kind: 'set'; banned: boolean } | { kind: 'answer'; pick: number; fail: boolean };
+    const op: fc.Arbitrary<Op> = fc.oneof(
+      fc.record({ kind: fc.constant('set' as const), banned: fc.boolean() }),
+      fc.record({ kind: fc.constant('answer' as const), pick: fc.nat(5), fail: fc.boolean() }),
+    );
+    const run = fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 6 }), async (ops) => {
+      const t = convexTest(schema, modules);
+      const clerk = fakeClerk();
+      const id = await person(t, 'active');
+      const actions: Array<Promise<unknown>> = [];
+      const start = (banned: boolean, attempt?: number) =>
+        actions.push(
+          t.action(internal.clerkAdmin.setBanned, {
+            clerkUserId: 'u_mirror',
+            banned,
+            ...(attempt !== undefined ? { attempt } : {}),
+          }),
+        );
+      const open = () => clerk.pending.filter((r) => !r.done);
+      for (const o of ops) {
+        if (o.kind === 'set') {
+          // A status write, and the sync it schedules.
+          await setStatus(t, id, o.banned ? 'banned' : 'active');
+          start(o.banned);
+        } else {
+          const waiting = open();
+          if (waiting.length > 0) waiting[o.pick % waiting.length]?.release(o.fail);
+        }
+        await clerk.settle();
+      }
+      // Drain: answer everything, run every retry the failures scheduled, until nothing is left.
+      for (let guard = 0; guard < 50; guard++) {
+        await clerk.settle();
+        for (const r of open()) r.release();
+        await clerk.settle();
+        const retries = await t.run(async (ctx) =>
+          (await ctx.db.system.query('_scheduled_functions').collect()).filter(
+            (j) => j.state.kind === 'pending' && j.name.includes('setBanned'),
+          ),
+        );
+        for (const job of retries) {
+          await t.run((ctx) => ctx.scheduler.cancel(job._id));
+          const args = job.args[0] as { banned: boolean; attempt?: number };
+          start(args.banned, args.attempt);
+        }
+        if (retries.length === 0 && open().length === 0) break;
+      }
+      await Promise.all(actions);
+      const status = (await t.run((ctx) => ctx.db.get(id)))?.status;
+      // Nothing sent at all only if nothing was ever asked of Clerk.
+      if (clerk.state.locked !== null) expect(clerk.state.locked).toBe(status === 'banned');
+      else expect(actions.length).toBe(0);
+      expect(clerk.state.sends).toBeLessThanOrEqual(3 * actions.length);
+    });
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261116, 8]) await fc.assert(run, { seed, numRuns: 6 });
+    await fc.assert(run, { numRuns: 3 });
   });
 });
