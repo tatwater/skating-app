@@ -14,15 +14,19 @@ import { useUndo } from '../../../shell/undo';
 import { ALIASES_KEPT_MOVING, RECEIPTS } from '../../consoleWords';
 import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useLatestPick } from '../latestPick';
 import { chipChange, sameList, useListWriter } from '../listWriter';
 import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
 import {
+  classChoice,
   classLabel,
   type NamesData,
   type NamesIdentity,
+  nameChoice,
   namesFromBody,
   namesMapScene,
+  namesWithPicks,
   type TownLinesRead,
 } from './namesModel';
 
@@ -81,14 +85,20 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const canEdit = can('body.identity');
   const write = (name: string | null, title: string) =>
-    void act(() => setName({ waterBodyId, name }), { title, target });
-  const choose = canEdit
-    ? (name: string | null) =>
-        write(name, name === null ? 'Back to the catalogs’ ranking' : `Displaying “${name}”`)
-    : undefined;
+    act(() => setName({ waterBodyId, name }), { title, target });
+  const loaded = data !== undefined && !isFailed(data) ? data : null;
+  // **The latest press wins** (`useLatestPick`): the name and the class each show the latest one
+  // chosen at once, each choice is sent in press order through the tab's one write path, and the
+  // server's answer is drawn again once every choice has been answered — a second choice is never
+  // weighed against a record that hasn't moved yet and dropped.
+  const namePick = useLatestPick<string | null>(loaded === null ? null : nameChoice(loaded), (n) =>
+    write(n, n === null ? 'Back to the catalogs’ ranking' : `Displaying “${n}”`),
+  );
+  const choose = canEdit ? (name: string | null) => namePick.press(name) : undefined;
   // A body no catalog names has no ranking to go back to: clearing leaves it nameless.
   const community = canEdit
-    ? (name: string | null) => write(name, name === null ? 'Cleared the name' : `Named “${name}”`)
+    ? (name: string | null) =>
+        void write(name, name === null ? 'Cleared the name' : `Named “${name}”`)
     : undefined;
 
   // **The aliases are a whole list** (`setAliases`, at most 20, each at most 120 characters): one
@@ -129,11 +139,22 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
     },
   );
   const editAliases = (aliases: string[]) => void pushAliases(chipChange(shown, aliases));
-  const classWrite = (bodyClass: WaterBodyClass | null, title: string) =>
-    void act(() => setClass({ waterBodyId, bodyClass }), { title, target });
+  const classPick = useLatestPick<WaterBodyClass | null>(
+    loaded === null ? null : classChoice(loaded),
+    (bodyClass) =>
+      act(() => setClass({ waterBodyId, bodyClass }), {
+        title:
+          bodyClass === null ? RECEIPTS.classCleared : RECEIPTS.classSet(classLabel(bodyClass)),
+        target,
+      }),
+  );
   return (
     <NamesView
-      data={data}
+      data={
+        loaded === null
+          ? data
+          : namesWithPicks(loaded, { name: namePick.shown, cls: classPick.shown })
+      }
       onRetry={retry}
       retryPending={pending}
       lit={lit}
@@ -145,9 +166,8 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
         ? {
             onAliasesChange: editAliases,
             aliasesError,
-            onClassChange: (cls: WaterBodyClass) =>
-              classWrite(cls, RECEIPTS.classSet(classLabel(cls))),
-            onClassClear: () => classWrite(null, RECEIPTS.classCleared),
+            onClassChange: (cls: WaterBodyClass) => classPick.press(cls),
+            onClassClear: () => classPick.press(null),
           }
         : {})}
     />

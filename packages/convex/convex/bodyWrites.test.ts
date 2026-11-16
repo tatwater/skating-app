@@ -210,6 +210,8 @@ describe('setClass and the class claims', () => {
         { source: 'osm', value: 'lakePond' },
       ],
       moderatorClass: 'lakePond',
+      // What a clear puts back: the import's class, kept under the moderator's.
+      baseClass: 'reservoir',
       moderatorAliases: [],
     });
     // Clearing puts the import's class back.
@@ -246,10 +248,15 @@ describe('setClass and the class claims', () => {
     const mod = await person(t);
     const id = await imported(t, 'way/1', { type: 'reservoir' });
     // Imported before claims were stored: the tab reads *not recorded*.
-    expect(
-      (await mod.as.query(api.bodyConsole.identity, { waterBodyId: id })).classClaims,
-    ).toBeNull();
+    expect(await mod.as.query(api.bodyConsole.identity, { waterBodyId: id })).toMatchObject({
+      classClaims: null,
+      // No moderator's class: a clear would leave the record's own.
+      baseClass: 'reservoir',
+    });
     await mod.as.mutation(api.waterBodies.setClass, { waterBodyId: id, bodyClass: 'lakePond' });
+    expect((await mod.as.query(api.bodyConsole.identity, { waterBodyId: id })).baseClass).toBe(
+      'reservoir',
+    );
     await mod.as.mutation(api.undo.run, { actionId: (await lastAction(t, 'set_class'))._id });
     const undone = await get(t, id);
     expect(undone?.type).toBe('reservoir');

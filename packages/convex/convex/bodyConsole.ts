@@ -788,8 +788,8 @@ export const townLines = query({
 /**
  * **A body's class claims and a moderator's identity facts** (B01-3d) — what the Names tab shows
  * beside the name: each catalog's class claim (`null`, *not recorded*, for a body imported before the
- * import stored them — no backfill can recover them), the moderator's class (`null` when none), and
- * the moderator's own aliases. A merged-away id reads its survivor's.
+ * import stored them — no backfill can recover them), the moderator's class (`null` when none), the
+ * class a clear would put back, and the moderator's own aliases. A merged-away id reads its survivor's.
  */
 export const identity = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -800,6 +800,10 @@ export const identity = query({
       bodyClass: body.type,
       classClaims: body.classClaims ?? null,
       moderatorClass: body.moderatorClass ?? null,
+      // The class a clear puts back (`setClass`'s `baseClass`), so the tab can show a clear at once:
+      // the record's own class with no moderator's; `null` when a moderator's class predates the
+      // kept one (the clear then reads it from history, and the tab waits for the answer).
+      baseClass: body.moderatorClass === undefined ? body.type : (body.baseClass ?? null),
       moderatorAliases: body.moderatorAliases ?? [],
     };
   },
