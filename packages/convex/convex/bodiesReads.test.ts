@@ -174,11 +174,75 @@ describe('rowsByIds', () => {
       ['unlisted', null],
     ]);
     expect(r.entries[1]?.survivorId).toBe(survivor);
+    // An id with no row of its own is named, and says why it isn't listed (B01-3n).
+    expect(r.entries[4]).toMatchObject({ name: 'No Row', why: 'not_listed' });
+    // An id that no longer exists (or never named a body) carries no name: there is none to give.
+    expect(r.entries[2]).not.toHaveProperty('name');
+    expect(r.entries[3]).not.toHaveProperty('name');
     expect(r.dropped).toBe(1);
+    const member = await person(t);
+    await expect(member.as.query(api.bodies.rowsByIds, { ids: [a] })).rejects.toThrow();
     const many = Array.from({ length: ROWS_BY_IDS_MAX + 3 }, (_, i) => `id-${i}`);
     const bounded = await as.query(api.bodies.rowsByIds, { ids: many });
     expect(bounded.entries).toHaveLength(ROWS_BY_IDS_MAX);
     expect(bounded.dropped).toBe(3);
+  });
+
+  test('an id with no row names its body and why: merged into a survivor with none, removed, not listed yet (B01-3n)', async () => {
+    const t = harness();
+    const { as } = await person(t, 'moderator');
+    const dropRow = (id: Id<'waterBodies'>) =>
+      t.run(async (ctx) => {
+        const rows = await ctx.db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .collect();
+        for (const row of rows) await ctx.db.delete(row._id);
+      });
+    // A survivor whose own row isn't written yet: the merged id is named, and so is its survivor.
+    const survivor = await body(t, 'Lake Survivor');
+    const merged = await body(t, 'Old Lake', { dedupStatus: 'merged', mergedIntoId: survivor });
+    await dropRow(survivor);
+    // A merge chain that dead-ends: no survivor to name.
+    const orphan = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Orphan Pond',
+        searchText: 'orphan pond',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: { type: 'Polygon', coordinates: [] },
+        bbox: { minLat: 0, minLng: 0, maxLat: 0, maxLng: 0 },
+        centroid: { lat: 0, lng: 0 },
+        dedupStatus: 'merged',
+        createdAt: NOW,
+      }),
+    );
+    // Removed and rejected bodies whose rows aren't written (a refresh still queued).
+    const removed = await body(t, 'Taken Pond', { removedAt: NOW - 1, removalReason: 'other' });
+    const rejected = await body(t, 'Not A Pond', { source: 'user', reviewStatus: 'rejected' });
+    await dropRow(removed);
+    await dropRow(rejected);
+    const r = await as.query(api.bodies.rowsByIds, { ids: [merged, orphan, removed, rejected] });
+    expect(r.entries).toEqual([
+      {
+        requested: merged,
+        status: 'unlisted',
+        row: null,
+        name: 'Old Lake',
+        why: 'merged',
+        survivor: { id: survivor, name: 'Lake Survivor' },
+      },
+      {
+        requested: orphan,
+        status: 'unlisted',
+        row: null,
+        name: 'Orphan Pond',
+        why: 'merged',
+        survivor: null,
+      },
+      { requested: removed, status: 'unlisted', row: null, name: 'Taken Pond', why: 'removed' },
+      { requested: rejected, status: 'unlisted', row: null, name: 'Not A Pond', why: 'rejected' },
+    ]);
   });
 });
 
