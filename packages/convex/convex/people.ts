@@ -84,7 +84,7 @@ import {
 } from './lib/readBudget';
 import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
-import { readRoots, readTenure, rootReader, tenureCappedOf } from './lib/staffTenure';
+import { readRoots, readTenure, tenureCappedOf } from './lib/staffTenure';
 import { startOfCurrentState } from './lib/stateSince';
 import { type UndoState, undoStates } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
@@ -2029,98 +2029,159 @@ const SEASON_CHECKED = 600;
  */
 export const staffSeason = query({
   args: { userId: v.string(), season: v.optional(v.number()), ...nowArg },
-  handler: async (ctx, args) => {
-    const viewer = await requireCapability(ctx, 'audit.read');
-    const now = clock(args.now);
-    const budget = queryBudget(ctx);
-    const userId = profileIdOf(ctx, args.userId);
-    if (userId === null) return null;
-    const target = await budget.one('profile', () => ctx.db.get(userId));
-    if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
-    // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
-    const season: Season = resolveSeason(args.season, seasonOf(now));
-    const span = seasonRecordSpan(season, now);
-    const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
-    if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
-    const ledgerVisible = seesLedgerGrants(viewer);
-    const staffer = target._id;
-    const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
-    const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_actor', (q) =>
-          q
-            .eq('actorId', staffer)
-            .gte('_creationTime', span.from - DAY_MS)
-            .lt('_creationTime', span.to + DAY_MS),
-        )
-        .order('desc')
-        .paginate({
-          cursor: null,
-          numItems: DECISION_ROWS,
-          maximumRowsRead: DECISION_ROWS,
-          maximumBytesRead: DECISION_BYTES,
-        }),
-    );
-    const rootOf = rootReader(ctx, budget, page.page);
-    const inSeason = page.page.filter(
-      (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
-    );
-    let count = 0;
-    let short = !page.isDone || inSeason.length > SEASON_CHECKED;
-    for (const r of inSeason.slice(0, SEASON_CHECKED)) {
-      const reversed = await reversedByOther(ctx, budget, rootOf, r, staffer);
-      if (reversed === undefined) {
-        short = true;
-        break;
-      }
-      if (reversed) count++;
-    }
-    return {
-      ...head,
-      overturned: { count, capped: short } as Count,
-      /** Backfills not yet run that `overturned` rests on (see `staffStats.pending`). */
-      pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
-    };
-  },
+  handler: async (ctx, args) =>
+    staffSeasonPage(ctx, await requireCapability(ctx, 'audit.read'), args),
 });
 
+/** `people.staffSeason` for a viewer already let in — the figure itself, for the round counts. */
+export async function staffSeasonPage(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  args: { userId: string; season?: number; now?: number },
+) {
+  const now = clock(args.now);
+  const budget = queryBudget(ctx);
+  const userId = profileIdOf(ctx, args.userId);
+  if (userId === null) return null;
+  const target = await budget.one('profile', () => ctx.db.get(userId));
+  if (!target || ROLE_RANK[target.role] < ROLE_RANK.moderator) return null;
+  // A season no one can name (`NaN`, a fraction, a year past what a date can hold) is this season.
+  const season: Season = resolveSeason(args.season, seasonOf(now));
+  const span = seasonRecordSpan(season, now);
+  const head = { season, opensOn: seasonRecordWindow(season, now).opensOn, empty: span === null };
+  if (span === null) return { ...head, overturned: null, pending: [] as PeopleBackfill[] };
+  const ledgerVisible = seesLedgerGrants(viewer);
+  const staffer = target._id;
+  const chainsReady = (await preparationOf(budget, ctx)).pending.includes('undoChains') === false;
+  const page = await budget.capped(DECISION_BYTES, DECISION_ROWS, () =>
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_actor', (q) =>
+        q
+          .eq('actorId', staffer)
+          .gte('_creationTime', span.from - DAY_MS)
+          .lt('_creationTime', span.to + DAY_MS),
+      )
+      .order('desc')
+      .paginate({
+        cursor: null,
+        numItems: DECISION_ROWS,
+        maximumRowsRead: DECISION_ROWS,
+        maximumBytesRead: DECISION_BYTES,
+      }),
+  );
+  const inSeason = page.page.filter(
+    (r) => r.createdAt >= span.from && r.createdAt < span.to && isDecision(r, ledgerVisible),
+  );
+  const checked = inSeason.slice(0, SEASON_CHECKED);
+  const reversed = await reversedByOthers(ctx, budget, page.page, checked, staffer);
+  let count = 0;
+  let short = !page.isDone || inSeason.length > SEASON_CHECKED;
+  for (const r of reversed) {
+    if (r === undefined) {
+      short = true;
+      break;
+    }
+    if (r) count++;
+  }
+  return {
+    ...head,
+    overturned: { count, capped: short } as Count,
+    /** Backfills not yet run that `overturned` rests on (see `staffStats.pending`). */
+    pending: (chainsReady ? [] : ['undoChains']) as PeopleBackfill[],
+  };
+}
+
 /**
- * Whether someone else reversed `row` on net — undid it, or ended the verdict it recorded with a
- * restore, an overturn or an undo that still stands. `undefined` when the budget ran out first.
+ * Whether someone else reversed each of `rows` on net — undid it, or ended the verdict it recorded
+ * with a restore, an overturn or an undo that still stands — read **at once** (B01-4c): each step's
+ * reads for every row together, in page order, in waves over the budget (`ReadBudget.waves`) — the
+ * chain roots not in hand, the verdicts, the rows that ended them, and those rows' roots. `undefined`
+ * for a row a read it needed didn't fit; which rows those are depends only on the page's order.
  */
-async function reversedByOther(
+async function reversedByOthers(
   ctx: QueryCtx,
   budget: ReadBudget,
-  rootOf: (row: Audit) => Promise<Audit | undefined>,
-  row: Audit,
+  known: readonly Audit[],
+  rows: readonly Audit[],
   staffer: Id<'profiles'>,
-): Promise<boolean | undefined> {
-  const root = await rootOf(row);
-  if (root === undefined) return undefined;
-  const by = undoneBy(row, root);
-  if (by !== null && by !== undefined && by !== staffer) return true;
-  if (!VERDICT_ACTIONS.has(row.action)) return false;
-  const verdict = await budget.measured('verdict', () =>
-    ctx.db
-      .query('contentVerdicts')
-      .withIndex('by_action', (q) => q.eq('actionId', row._id))
-      .first(),
+): Promise<Array<boolean | undefined>> {
+  const OVER = 'over' as const;
+  const roots = await readRoots(ctx, budget, known, rows, Number.POSITIVE_INFINITY);
+  const byOther = (by: Id<'profiles'> | null | undefined) =>
+    by !== null && by !== undefined && by !== staffer;
+  // Undone by someone else, from the row and its first row; else a verdict to look at.
+  const first = rows.map((row): boolean | undefined | 'verdict' => {
+    const root = roots.rootOf(row);
+    if (root === undefined) return undefined;
+    if (byOther(undoneBy(row, root))) return true;
+    return VERDICT_ACTIONS.has(row.action) ? 'verdict' : false;
+  });
+  const asked = rows.filter((_, i) => first[i] === 'verdict');
+  const verdicts = await budget.waves<Audit, Doc<'contentVerdicts'> | null | typeof OVER>(
+    asked,
+    () => ({ bytes: ROW_MAX.verdict, reads: 1 }),
+    (row, share) =>
+      share.read('verdict', () =>
+        ctx.db
+          .query('contentVerdicts')
+          .withIndex('by_action', (q) => q.eq('actionId', row._id))
+          .first(),
+      ),
+    () => OVER,
   );
-  if (verdict === undefined) return undefined;
-  if (verdict === null || verdict.standing || verdict.endedByActionId === undefined) return false;
-  const endedBy = verdict.endedByActionId;
-  const ending = await budget.measured('moderationAction', () => ctx.db.get(endedBy));
-  if (ending === undefined) return undefined;
-  if (ending === null || ending.actorId === undefined || ending.actorId === staffer) return false;
-  const reverses =
+  const verdictOf = new Map(asked.map((row, i) => [row._id as string, verdicts[i]]));
+  // The rows that ended a verdict, once each.
+  const endedBy = [
+    ...new Set(
+      verdicts.flatMap((v) =>
+        v && v !== OVER && !v.standing && v.endedByActionId !== undefined
+          ? [v.endedByActionId]
+          : [],
+      ),
+    ),
+  ];
+  const endings = await budget.waves<Id<'moderationActions'>, Audit | null | typeof OVER>(
+    endedBy,
+    () => ({ bytes: ROW_MAX.moderationAction, reads: 1 }),
+    (id, share) => share.read('moderationAction', () => ctx.db.get(id)),
+    () => OVER,
+  );
+  const endingOf = new Map(endedBy.map((id, i) => [id as string, endings[i]]));
+  const reversing = (ending: Audit) =>
     ending.action === 'restore' ||
     ending.action === 'overturn_verdict' ||
     ending.undoesActionId !== undefined;
-  if (!reverses) return false;
-  const endingRoot = await rootOf(ending);
-  if (endingRoot === undefined) return undefined;
-  return stands(ending, endingRoot);
+  const ends = endings.filter(
+    (e): e is Audit =>
+      e !== null &&
+      e !== OVER &&
+      e !== undefined &&
+      e.actorId !== undefined &&
+      e.actorId !== staffer &&
+      reversing(e),
+  );
+  const endingRoots = await readRoots(
+    ctx,
+    budget,
+    [...known, ...ends],
+    ends,
+    Number.POSITIVE_INFINITY,
+  );
+  return rows.map((row, i) => {
+    const step = first[i];
+    if (step !== 'verdict') return step;
+    const verdict = verdictOf.get(row._id);
+    if (verdict === OVER || verdict === undefined) return undefined;
+    if (verdict === null || verdict.standing || verdict.endedByActionId === undefined) return false;
+    const ending = endingOf.get(verdict.endedByActionId);
+    if (ending === OVER || ending === undefined) return undefined;
+    if (ending === null || ending.actorId === undefined || ending.actorId === staffer) return false;
+    if (!reversing(ending)) return false;
+    const endingRoot = endingRoots.rootOf(ending);
+    if (endingRoot === undefined) return undefined;
+    return stands(ending, endingRoot);
+  });
 }
 
 /** The item a filed decision decided, when its filing time has to be read (older rows). */

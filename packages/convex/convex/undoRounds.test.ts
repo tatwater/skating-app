@@ -28,7 +28,7 @@ import {
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
-import { decisionsPage, labelFlags, shapeRows, staffStatsPage } from './people';
+import { decisionsPage, labelFlags, shapeRows, staffSeasonPage, staffStatsPage } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -612,6 +612,61 @@ describe('a staffer’s figures’ rounds (B01-4c)', () => {
   });
 });
 
+describe('a staffer’s season’s rounds (B01-4c)', () => {
+  test('a season of 100 hides each restored by someone else: every one counted, in a stated few rounds', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const staffer = await admin(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staffer, { role: 'moderator' });
+      for (let i = 0; i < 100; i++) {
+        const hide = await ctx.db.insert('moderationActions', {
+          actorId: staffer,
+          action: 'hide',
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'r',
+          createdAt: now - 2_000,
+        });
+        const restore = await ctx.db.insert('moderationActions', {
+          actorId: viewerId,
+          action: 'restore',
+          targetType: 'report',
+          targetId: `r${i}`,
+          reason: 'r',
+          createdAt: now - 1_000,
+        });
+        await ctx.db.insert('contentVerdicts', {
+          subjectUserId: viewerId,
+          targetType: 'report',
+          targetId: `r${i}`,
+          actionId: hide,
+          kind: 'hidden',
+          at: now - 2_000,
+          standing: false,
+          endedAt: now - 1_000,
+          endedByActionId: restore,
+        });
+      }
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const viewer = (await raw.db.get(viewerId)) as Doc<'profiles'>;
+        const { ctx, stats } = counted(raw, ticks);
+        const season = await staffSeasonPage(ctx, viewer, { userId: staffer, now });
+        return { season, stats };
+      });
+    const calm = await read([0]);
+    console.log(
+      `Season rounds: 100 reversals ${calm.stats.rounds} rounds / ${calm.stats.calls} calls`,
+    );
+    expect(calm.season?.overturned).toEqual({ count: 100, capped: false });
+    expect(calm.stats.rounds).toBeLessThanOrEqual(SEASON_ROUNDS);
+    expect((await read([5, 0, 3, 6, 1, 4, 2])).season).toEqual(calm.season);
+  });
+});
+
 describe('the person page’s flag labels’ rounds (B01-4c)', () => {
   test('twenty flagged Reports on twenty lakes: every one labelled, in a stated few rounds', async () => {
     const t = harness();
@@ -731,3 +786,11 @@ const STAFF_FIGURES_ROUNDS = 8 + Math.ceil(200 / 4);
  * another it was forty.
  */
 const FLAG_LABEL_ROUNDS = 2 * Math.ceil(20 / 5);
+
+/**
+ * The rounds a staffer's season costs when 100 of its decisions were each reversed by someone else:
+ * the reads before them, then a step at a time for every row together — the verdicts (small: one
+ * wave), the rows that ended them (an audit row each, reserved at a document's worth, so four or five
+ * to a wave in what the season's own read leaves). One row after another it was over 300.
+ */
+const SEASON_ROUNDS = 8 + 1 + Math.ceil(100 / 4);
