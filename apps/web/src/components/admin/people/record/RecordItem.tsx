@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from 'react';
+import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -55,7 +55,6 @@ export type RecordItemProps = {
   reversal: ReversedRow | null;
   onLever: (lever: Extract<Lever, { ok: true }>, view: ItemView) => void;
   onUndoEnd: (row: ReversedRow) => void;
-  footRef?: Ref<HTMLDivElement>;
 };
 
 export function RecordItem(props: RecordItemProps) {
@@ -92,7 +91,6 @@ function ItemBody({
   reversal,
   onLever,
   onUndoEnd,
-  footRef,
   view: given,
 }: RecordItemProps & { read: ItemRead }) {
   const view = given ?? itemView(read, subject, now, timeZone);
@@ -148,7 +146,6 @@ function ItemBody({
         )}
       </div>
       <Foot
-        footRef={footRef}
         lever={lever}
         keys={keys && !narrow}
         busy={busy}
@@ -292,7 +289,6 @@ function Foot({
   undo,
   onLever,
   onUndo,
-  footRef,
 }: {
   lever: Lever | null;
   keys: boolean;
@@ -300,7 +296,6 @@ function Foot({
   undo: ReversedRow['undo'];
   onLever: (lever: Extract<Lever, { ok: true }>) => void;
   onUndo: (() => void) | undefined;
-  footRef?: Ref<HTMLDivElement> | undefined;
 }) {
   const parts: ReactNode[] = [];
   if (lever !== null && !lever.ok) {
@@ -358,7 +353,6 @@ function Foot({
   if (parts.length === 0) return null;
   return (
     <div
-      ref={footRef}
       tabIndex={-1}
       data-slot="record-foot"
       className="flex min-h-(--size-foot,3.5rem) shrink-0 items-center justify-end gap-(--space-2_5) border-0 border-t border-solid border-line px-gutter py-(--space-3) outline-none"

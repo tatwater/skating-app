@@ -64,6 +64,8 @@ import { useRecordActing } from './useRecordActing';
 export type RecordSheetViewProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The sheet has finished closing (its slide out is over). */
+  onClosed?: () => void;
   /** The main region the sheet sits over (the rail and status bar stay lit). */
   container?: HTMLElement | null;
   subject: RecordSubject;
@@ -109,9 +111,15 @@ type Ask = {
 };
 
 export function RecordSheetView(props: RecordSheetViewProps) {
-  const { open, onOpenChange, container } = props;
+  const { open, onOpenChange, onClosed, container } = props;
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => onOpenChange(next)}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) onClosed?.();
+      }}
+    >
       <SheetContent
         size="default"
         data-slot="record-sheet"
@@ -125,6 +133,7 @@ export function RecordSheetView(props: RecordSheetViewProps) {
 }
 
 function SheetBodyView({
+  container,
   subject,
   standing,
   pending,
@@ -165,7 +174,11 @@ function SheetBodyView({
   // ── The list's rows ──
   const rows = useMemo(() => {
     if (tab === 'standing') {
-      const merged = withRestored(list.rows as StandingRow[], restored);
+      // A list narrowed to one kind holds only that kind's restored rows.
+      const merged = withRestored(
+        list.rows as StandingRow[],
+        kind === null ? restored : restored.filter((r) => r.row.targetType === kind),
+      );
       return {
         restoredCount: merged.restoredCount,
         rows: merged.rows.map(({ row, restored: r }) => ({
@@ -187,7 +200,7 @@ function SheetBodyView({
         restored: null,
       })),
     };
-  }, [tab, list.rows, restored, viewerFirst, now, timeZone]);
+  }, [tab, kind, list.rows, restored, viewerFirst, now, timeZone]);
 
   const status = list.status === 'unread' ? 'loading' : list.status;
   const end = listEnd({
@@ -237,6 +250,9 @@ function SheetBodyView({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!keys || narrow || askOpen || chooser !== null) return;
+    // React bubbles a portal's keys here too (the Filter popover, a tooltip): only a key pressed in
+    // the sheet itself, and not already used by the control it was pressed in, pulls a lever.
+    if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
     if (event.metaKey || event.ctrlKey || event.altKey || isTextEntry(event.target as Element))
       return;
     const lever = view?.lever;
@@ -414,6 +430,7 @@ function SheetBodyView({
         choices={choices}
         now={now}
         {...(timeZone !== undefined && { timeZone })}
+        {...(container != null && { container })}
         onRestore={(withReportIds) =>
           chooser === null
             ? Promise.resolve(null)

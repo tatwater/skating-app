@@ -85,13 +85,16 @@ beforeAll(() => {
   }
 });
 
-const ITEMS: Record<string, unknown> = {
+const START_ITEMS: Readonly<Record<string, unknown>> = {
   'report:r4oct': ITEM_HIDDEN,
   'comment:cthermo': ITEM_DELETED,
   'comment:dstop': ITEM_WITHDRAWN,
 };
+/** The items as each test's server answers them; a test may change them, and the next starts over. */
+let ITEMS: Record<string, unknown> = { ...START_ITEMS };
 
 beforeEach(() => {
+  ITEMS = { ...START_ITEMS };
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   resetConsoleReads();
@@ -110,7 +113,11 @@ beforeEach(() => {
     (a: { targetType: string; targetId: string }) => ITEMS[`${a.targetType}:${a.targetId}`],
   );
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  // A spy a test set (a measured list) never outlives it, even when the test fails.
+  vi.restoreAllMocks();
+});
 
 function draw(open = true) {
   const onOpenChange = vi.fn();
@@ -190,7 +197,6 @@ describe('the reads', () => {
         cursor: 'p2',
       }),
     );
-    vi.restoreAllMocks();
   });
 });
 
@@ -230,7 +236,6 @@ describe('the writes', () => {
       needsReason: true,
       what: 'The report is back on Mascoma Lake',
     });
-    ITEMS['report:r4oct'] = ITEM_HIDDEN;
   });
 
   it('a write that says it can’t be undone gets a receipt with none', async () => {
@@ -317,7 +322,6 @@ describe('the writes', () => {
       status: 'hidden',
       reason: 'Still wrong',
     });
-    ITEMS['report:r4oct'] = ITEM_HIDDEN;
   });
 });
 
@@ -334,12 +338,42 @@ describe('a reversal’s undo', () => {
     expect(mocks.undo).toHaveBeenCalledWith({
       actionId: 'end-xguess',
       needsReason: true,
-      what: 'Undo the restore',
+      what: 'The comment is back on Jamie Moreau’s report',
     });
   });
 });
 
 describe('closing', () => {
+  it('slides out as it was, then asks nothing more; opening again starts a new sitting', async () => {
+    const view = draw();
+    await userEvent.click(within(sheet()).getByRole('button', { name: 'Deleted' }));
+    view.rerender(
+      <RecordSheet
+        open={false}
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+        counts={COUNTS}
+      />,
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    mocks.calls.clear();
+    view.rerender(
+      <RecordSheet
+        open
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+        counts={COUNTS}
+      />,
+    );
+    // A new sitting: back on Standing.
+    await waitFor(() => expect(mocks.calls.has('contentRecord:personVerdicts')).toBe(true));
+    expect(mocks.calls.has('contentRecord:personDeleted')).toBe(false);
+  });
+
   it('Close ends the sitting', async () => {
     const { onOpenChange } = draw();
     await userEvent.click(within(sheet()).getByRole('button', { name: /Close/ }));

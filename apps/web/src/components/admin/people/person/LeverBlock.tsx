@@ -200,10 +200,12 @@ export function LeverBlock({
             .find((r): r is string => r !== undefined);
           const action =
             row.review === true ? (
-              // *Review* opens the record sheet over the page.
-              <Button size="sm" data-lever-button="record" onClick={onReview}>
-                {WORDS.review}
-              </Button>
+              // *Review* opens the record sheet over the page — drawn only where it can.
+              onReview === undefined ? null : (
+                <Button size="sm" data-lever-button="record" onClick={onReview}>
+                  {WORDS.review}
+                </Button>
+              )
             ) : row.buttons.length === 0 ? null : row.joined === true ? (
               <ButtonGroup aria-label={row.label}>{row.buttons.map(button)}</ButtonGroup>
             ) : (

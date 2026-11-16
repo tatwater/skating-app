@@ -80,13 +80,15 @@ function ChooserBody({
   const [refusal, setRefusal] = useState<string | null>(null);
   const read = choices === undefined || isFailed(choices) || choices === null ? null : choices;
   const members = read === null ? [] : chooserMembers(read, now, timeZone);
-  const choosable = members.filter((m) => m.choosable).length;
+  // What is chosen and still choosable: a member that came up, or was deleted, since it was ticked
+  // (the read is live) is neither counted nor sent.
+  const picked = chosen.filter((id) => members.some((m) => m.reportId === id && m.choosable));
 
   const confirm = () => {
-    if (busy || chosen.length === 0) return;
+    if (busy || picked.length === 0) return;
     setBusy(true);
     onBusy(true);
-    void onRestore([...chosen]).then((refused) => {
+    void onRestore(picked).then((refused) => {
       setBusy(false);
       onBusy(false);
       if (refused === null) onDone();
@@ -135,7 +137,7 @@ function ChooserBody({
                     data-choosable={m.choosable ? '' : undefined}
                     className="border-0 border-b-(length:--stroke-hair) border-dotted border-line py-(--space-2_5) last:border-b-0"
                     disabled={!m.choosable || busy}
-                    checked={chosen.includes(m.reportId)}
+                    checked={picked.includes(m.reportId)}
                     onCheckedChange={(on) =>
                       setChosen((c) =>
                         on ? [...c, m.reportId] : c.filter((id) => id !== m.reportId),
@@ -175,12 +177,12 @@ function ChooserBody({
             size="sm"
             variant="primary"
             data-slot="chooser-restore"
-            disabled={chosen.length === 0 || choosable === 0}
+            disabled={picked.length === 0}
             loading={busy}
             aria-keyshortcuts="Meta+Enter Control+Enter"
             onClick={confirm}
           >
-            {W.restoreWith(chosen.length)}
+            {W.restoreWith(picked.length)}
             <Kbd variant="dim" aria-hidden="true">
               ⌘⏎
             </Kbd>

@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   isFailed,
@@ -113,15 +113,20 @@ export function useRecordList<T extends RecordTab>(
 
   const joined = useJoined(args === null ? null : pages);
   const last = loaded(pages.at(-1));
+  // The next page's cursor, or `null` when there is none to ask for (closed, on its way, or done).
+  const next = args === null || last === undefined || last.isDone ? null : last.continueCursor;
+  // Stable while the chain holds still, so the list's load-ahead check isn't rebuilt every render.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `cursors` is derived from `chain` and `key`.
+  const loadMore = useCallback(() => {
+    if (next === null) return;
+    setChain({ key, cursors: [...cursors, next] });
+  }, [next, key, chain]);
   return {
     status: joined.status,
     rows: joined.rows as RecordRowOf<T>[],
     pending: joined.pending,
     failure: joined.failed ? { failed: true, pending: retrying, retry } : null,
-    loadMore: () => {
-      if (args === null || last === undefined || last.isDone) return;
-      setChain({ key, cursors: [...cursors, last.continueCursor] });
-    },
+    loadMore,
   };
 }
 

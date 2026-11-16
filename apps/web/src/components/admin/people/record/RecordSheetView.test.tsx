@@ -340,6 +340,16 @@ describe('the item’s answers', () => {
     await userEvent.keyboard('r');
     expect(onAct).toHaveBeenCalledWith(targetOf(ITEM_HIDDEN), { kind: 'restore' });
   });
+
+  it('a key pressed in a popover over the sheet (the Filter) pulls no lever', async () => {
+    const onAct = vi.fn(async () => null);
+    render(<RecordSheetView {...props({ keys: true, onAct })} />);
+    await userEvent.click(screen.getByRole('button', { name: /Filter/ }));
+    const option = await screen.findByRole('button', { name: /Reports/ });
+    option.focus();
+    await userEvent.keyboard('r');
+    expect(onAct).not.toHaveBeenCalled();
+  });
 });
 
 describe('the list', () => {
@@ -397,6 +407,27 @@ describe('the list', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(onUndoRestored).toHaveBeenCalledWith(restored);
+  });
+
+  it('a list narrowed to one kind holds only that kind’s restored rows', () => {
+    const report = STANDING[0] as (typeof STANDING)[number];
+    expect(report.targetType).toBe('report');
+    const restored = { row: report, at: NOW, actionId: 'a1', undo: { needsReason: true } };
+    const comments = STANDING.filter((r) => r.targetType === 'comment');
+    render(
+      <RecordSheetView
+        {...props({
+          kind: 'comment',
+          list: { ...LIST, rows: comments },
+          restored: [restored],
+        })}
+      />,
+    );
+    expect(document.querySelector('[data-slot="record-row"][data-back]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(document.querySelector('[data-slot="record-end"]')).toHaveTextContent(
+      `All ${comments.length}`,
+    );
   });
 });
 
@@ -472,5 +503,27 @@ describe('the Post’s chooser', () => {
     ).toBeInTheDocument();
     await user.click(within(chooser() as HTMLElement).getByRole('button', { name: 'Cancel' }));
     expect(onChooser).toHaveBeenCalledWith(null);
+  });
+
+  it('a report that came up since it was chosen is neither counted nor sent', async () => {
+    const user = userEvent.setup();
+    const onAct = vi.fn(async () => null);
+    const view = render(<RecordSheetView {...chooserProps({ choices: CHOICES, onAct })} />);
+    const boxes = within(chooser() as HTMLElement).getAllByRole('checkbox');
+    await user.click(boxes[0] as HTMLElement);
+    await user.click(boxes[1] as HTMLElement);
+    // The live read moves on: m1 is up now (someone restored it on its own).
+    const moved = {
+      ...CHOICES,
+      members: CHOICES.members.map((m) =>
+        m.reportId === 'm1' ? { ...m, standing: 'visible' as const } : m,
+      ),
+    } as typeof CHOICES;
+    view.rerender(<RecordSheetView {...chooserProps({ choices: moved, onAct })} />);
+    const restore = within(chooser() as HTMLElement).getByRole('button', {
+      name: /Restore with 1 report/,
+    });
+    await user.click(restore);
+    expect(onAct).toHaveBeenCalledWith(post, { kind: 'restore', withReportIds: ['m2'] });
   });
 });

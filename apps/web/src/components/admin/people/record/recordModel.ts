@@ -13,7 +13,14 @@ import { shortAge } from '@/lib/ages';
 import { historyWhen, seasonYears } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
 import { dateWords, firstName, momentWords, personName } from '../person/personModel';
-import { KIND_WORDS, kindCount, type RecordKind, RECORD_WORDS as W } from './recordWords';
+import { WORDS as PERSON_WORDS } from '../person/personWords';
+import {
+  KIND_ORDER,
+  KIND_WORDS,
+  kindCount,
+  type RecordKind,
+  RECORD_WORDS as W,
+} from './recordWords';
 
 /**
  * **The record sheet's view model** (boards 8.7–8.9) — pure: the server's answers in, what the sheet
@@ -261,7 +268,8 @@ export function deletedRowView(row: DeletedRow, now: number, tz?: string): RowVi
         text: [...whereParts(kind, row), ...whenPart(kind, row, row.content, now, tz)].join(' · '),
       },
       {
-        text: `${W.deletedThen(dateWords(row.deletedAt, now, tz))} · ${
+        // An alert's withdrawal is its author's retraction, as its chip says.
+        text: `${(kind === 'accessAlert' ? W.retractedThen : W.deletedThen)(dateWords(row.deletedAt, now, tz))} · ${
           row.eraseAt === null ? W.eraseUnrecorded : W.erasedOn(dateWords(row.eraseAt, now, tz))
         }`,
       },
@@ -413,7 +421,16 @@ export type StandingCount = {
 /** The head's count — what stands on the record: "6 items", "500+ items", *Still being prepared*. */
 export function headCount(standing: StandingCount | null, pending: boolean): string | null {
   if (pending) return W.pending;
-  if (standing === null) return null;
+  return standing === null ? null : standingWords(standing, false);
+}
+
+/**
+ * What stands, in words — the sheet's head and the person page's *On the record* row, one rule:
+ * *Still being prepared*, a floor that read none in words (never a zero), else "6 items", "500+".
+ */
+export function standingWords(standing: StandingCount, pending: boolean): string {
+  if (pending) return W.pending;
+  if (standing.total === 0 && standing.capped) return PERSON_WORDS.recordUncounted;
   return W.items(standing.total, standing.capped);
 }
 
@@ -440,7 +457,7 @@ export function kindOptions(
   pending: boolean,
 ): Array<{ id: RecordKind; label: string; count?: number }> {
   const exact = counted !== null && !counted.capped && !pending;
-  return (Object.keys(KIND_WORDS) as RecordKind[]).map((kind) => ({
+  return KIND_ORDER.map((kind) => ({
     id: kind,
     label: KIND_WORDS[kind].many.replace(/^./, (c) => c.toUpperCase()),
     ...(exact ? { count: counted.byKind[kind] } : {}),
@@ -468,8 +485,7 @@ export function recordRowShows(
 
 /** "2 reports · 1 comment": each kind with any, in order; a floor's figures are floors. */
 export function kindsLine(byKind: Readonly<Record<RecordKind, number>>, capped: boolean): string {
-  return (Object.keys(KIND_WORDS) as RecordKind[])
-    .filter((k) => byKind[k] > 0)
+  return KIND_ORDER.filter((k) => byKind[k] > 0)
     .map((k) => kindCount(k, byKind[k], capped))
     .join(' · ');
 }

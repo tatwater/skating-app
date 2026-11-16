@@ -55,6 +55,7 @@ function draw(over: Partial<PersonViewProps> = {}) {
     viewerId: IDS.teagan,
     onAct,
     onUndo,
+    onReviewRecord: vi.fn(),
     ...over,
   };
   const view = render(<PersonView {...props} />);

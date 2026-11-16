@@ -85,6 +85,8 @@ function Wired({
         return null;
       }}
       onUndo={(row) => onUndone?.(row.id)}
+      // The board draws Review; its sheet is the record sheet's own story.
+      onReviewRecord={view.onReviewRecord ?? (() => {})}
     />
   );
 }

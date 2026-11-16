@@ -96,6 +96,7 @@ export const RECORD_WORDS = {
   onAReport: 'On a report',
   reportsInPost: (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'report' : 'reports'}`,
   deletedThen: (date: string) => `Deleted ${date}`,
+  retractedThen: (date: string) => `Retracted ${date}`,
   erasedOn: (date: string) => `erased ${date} unless kept`,
   eraseUnrecorded: 'when it’s erased: not recorded yet',
   erasedLine: (date: string) => `Erased ${date}`,

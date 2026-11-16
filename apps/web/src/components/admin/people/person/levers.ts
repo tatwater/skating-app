@@ -1,10 +1,9 @@
 import { timeLeftInWords } from '@/lib/ages';
-import { type RecordCounts, recordRowShows } from '../record/recordModel';
+import { kindsLine, type RecordCounts, recordRowShows, standingWords } from '../record/recordModel';
 import {
   countText,
   type PersonCan,
   type PersonRead,
-  plural,
   ROLE_WORDS,
   type Role,
   shownName,
@@ -374,12 +373,8 @@ export function accountRows(
     rows.push({
       key: 'record',
       label: WORDS.onTheRecord,
-      status: preparing
-        ? WORDS.pending
-        : p.hidden.total === 0 && p.hidden.capped
-          ? // A floor that read none says so in words, never as a zero.
-            WORDS.recordUncounted
-          : `${countText({ count: p.hidden.total, capped: p.hidden.capped })} ${p.hidden.total === 1 && !p.hidden.capped ? 'item' : 'items'}`,
+      // What stands, as the sheet's head says it (a floor that read none in words, never a zero).
+      status: standingWords(p.hidden, preparing),
       tone: 'quiet',
       ...(!preparing && p.hidden.total > 0 && { second: hiddenKinds(p.hidden) }),
       buttons: [],
@@ -389,28 +384,12 @@ export function accountRows(
   return rows;
 }
 
-const KIND_WORDS: Record<keyof PersonRead['hidden']['byKind'], [string, string]> = {
-  report: ['report', 'reports'],
-  post: ['post', 'posts'],
-  comment: ['comment', 'comments'],
-  hazard: ['hazard', 'hazards'],
-  accessAlert: ['access alert', 'access alerts'],
-};
-
 /**
  * "2 reports · 2 comments": each kind with any, in a fixed order. No photos: they have no verdicts.
  * Under a cap each kind's count is a floor too ("300+ reports"), never an exact number.
  */
-export function hiddenKinds(hidden: PersonRead['hidden']): string {
-  return (Object.keys(KIND_WORDS) as Array<keyof typeof KIND_WORDS>)
-    .filter((k) => hidden.byKind[k] > 0)
-    .map((k) =>
-      hidden.capped
-        ? `${countText({ count: hidden.byKind[k], capped: true })} ${KIND_WORDS[k][1]}`
-        : plural(hidden.byKind[k], ...KIND_WORDS[k]),
-    )
-    .join(' · ');
-}
+export const hiddenKinds = (hidden: PersonRead['hidden']): string =>
+  kindsLine(hidden.byKind, hidden.capped);
 
 /** Every button a set of rows draws, menu items included — for the property tests. */
 export function allButtons(rows: readonly LeverRow[]): LeverButton[] {

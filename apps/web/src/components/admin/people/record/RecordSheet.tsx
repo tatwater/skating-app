@@ -51,22 +51,21 @@ export type RecordSheetProps = {
 };
 
 export function RecordSheet(props: RecordSheetProps) {
-  // A fresh sitting each time it opens: nothing restored, nothing open.
+  // A fresh sitting each time it opens: nothing restored, nothing open. It starts on opening, so a
+  // closing sheet slides out as it was; its reads stay live until it has (`live`), then it unmounts
+  // and asks nothing more. Nothing is mounted, or asked of the server, until it first opens.
   const [sitting, setSitting] = useState(0);
-  // Nothing is mounted, or asked of the server, until the sheet first opens.
-  const [opened, setOpened] = useState(props.open);
-  if (props.open && !opened) setOpened(true);
-  if (!opened) return null;
-  return (
-    <SheetSitting
-      key={sitting}
-      {...props}
-      onOpenChange={(open) => {
-        props.onOpenChange(open);
-        if (!open) setSitting((n) => n + 1);
-      }}
-    />
-  );
+  const [wasOpen, setWasOpen] = useState(props.open);
+  const [live, setLive] = useState(props.open);
+  if (props.open !== wasOpen) {
+    setWasOpen(props.open);
+    if (props.open) {
+      setSitting((n) => n + 1);
+      setLive(true);
+    }
+  }
+  if (!props.open && !live) return null;
+  return <SheetSitting key={sitting} {...props} live={live} onClosed={() => setLive(false)} />;
 }
 
 /** The sitting's own state: the tab, the filter, the open item, the chooser, what was restored. */
@@ -120,25 +119,27 @@ function SheetSitting({
   pending,
   counts,
   container,
-}: RecordSheetProps) {
+  live,
+  onClosed,
+}: RecordSheetProps & { live: boolean; onClosed: () => void }) {
   const now = useMinuteNow();
   const state = useSittingState();
   const { tab, kind, selected, chooser } = state;
   const userId = subject.userId;
 
-  const list = useRecordList(open ? { tab, userId, kind } : null);
+  const list = useRecordList(live ? { tab, userId, kind } : null);
   const { reads } = useConsoleReadSet({
     // Who is restoring, for a restored row's chip.
-    viewer: open ? read(api.profiles.current, {}) : null,
+    viewer: live ? read(api.profiles.current, {}) : null,
     item:
-      open && selected !== null
+      live && selected !== null
         ? read(api.contentRecord.item, {
             targetType: selected.targetType,
             targetId: selected.targetId,
           })
         : null,
     choices:
-      open && chooser !== null
+      live && chooser !== null
         ? read(api.moderation.postRestoreChoices, { postId: chooser.targetId as Id<'posts'> })
         : null,
   });
@@ -189,6 +190,7 @@ function SheetSitting({
     <RecordSheetView
       open={open}
       onOpenChange={onOpenChange}
+      onClosed={onClosed}
       {...(container !== undefined && { container })}
       subject={subject}
       standing={standing}
@@ -227,7 +229,13 @@ function SheetSitting({
         undo({
           actionId: row.endActionId,
           needsReason: row.undo.needsReason,
-          what: W.undoTheRestore,
+          // What happened, as every undo path says it: the restore's own receipt.
+          what: receiptWords(
+            { kind: 'restore' },
+            { kind: row.targetType, place: placeName(row.targetType, row), subject },
+            {},
+            now,
+          ).title,
         });
       }}
       onLateRefusal={(text) => toast({ title: W.lateRefusal, description: text, tone: 'bad' })}

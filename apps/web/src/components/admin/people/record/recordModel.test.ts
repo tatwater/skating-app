@@ -46,6 +46,7 @@ import {
   reversedRowView,
   spanWords,
   standingRowView,
+  standingWords,
   tabCounts,
   titleOf,
   withRestored,
@@ -235,6 +236,17 @@ describe('rows', () => {
     ]);
     expect(inlet && lines(inlet)[1]).toBe('Deleted 3 Oct · when it’s erased: not recorded yet');
     expect(stop?.meta).toBe('4 d');
+    // An alert its author took back was retracted, as its chip says — never "deleted".
+    const alert = deletedRowView(
+      {
+        ...(DELETED[0] as (typeof DELETED)[number]),
+        targetType: 'accessAlert',
+        content: { at: NOW, title: 'gate_locked', text: null },
+      },
+      NOW,
+    );
+    expect(alert.chips.map((c) => c.label)).toEqual(['access alert', 'retracted']);
+    expect(lines(alert)[1]).toBe('Retracted 9 Oct · erased 8 Nov unless kept');
   });
 
   it('Reversed says how it ended and who, or that its words were erased', () => {
@@ -347,6 +359,12 @@ describe('counts', () => {
     expect(headCount(HIDDEN_CAPPED, false)).toBe('500+ items');
     expect(headCount(HIDDEN, true)).toBe('Still being prepared');
     expect(headCount(null, false)).toBeNull();
+    // A floor that read none says so in words, never "0+" — the person page's row says the same.
+    expect(headCount({ ...HIDDEN_NONE, capped: true }, false)).toBe('More than one read covers');
+    expect(standingWords({ ...HIDDEN_NONE, capped: true }, false)).toBe(
+      'More than one read covers',
+    );
+    expect(standingWords(HIDDEN, true)).toBe('Still being prepared');
   });
 
   it('each tab counts from its own read', () => {

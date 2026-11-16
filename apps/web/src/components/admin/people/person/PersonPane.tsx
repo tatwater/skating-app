@@ -114,6 +114,23 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
 
   const counts =
     reads.recordCounts === undefined || isFailed(reads.recordCounts) ? null : reads.recordCounts;
+  // The record sheet's subject, rebuilt only when what it names changes: the sheet's item view and
+  // its write path key on it.
+  const subjectName = loaded?.displayName ?? null;
+  const subjectHandle = loaded?.username ?? null;
+  const subjectImage = loaded?.profileImageUrl ?? null;
+  const subject = useMemo(
+    () =>
+      targetId === null
+        ? null
+        : {
+            userId: targetId,
+            displayName: subjectName,
+            username: subjectHandle,
+            profileImageUrl: subjectImage,
+          },
+    [targetId, subjectName, subjectHandle, subjectImage],
+  );
   return (
     <>
       <PersonView
@@ -144,16 +161,11 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
         onReviewRecord={() => setRecordOpen(true)}
         {...(className !== undefined && { className })}
       />
-      {loaded !== null && (
+      {loaded !== null && subject !== null && (
         <RecordSheet
           open={recordOpen}
           onOpenChange={setRecordOpen}
-          subject={{
-            userId: loaded.userId,
-            displayName: loaded.displayName,
-            username: loaded.username,
-            profileImageUrl: loaded.profileImageUrl,
-          }}
+          subject={subject}
           standing={loaded.hidden}
           pending={loaded.pending.includes('verdicts') || (counts?.pending.length ?? 0) > 0}
           counts={counts}
