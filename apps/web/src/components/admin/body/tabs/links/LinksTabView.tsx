@@ -137,6 +137,11 @@ export function LinksTabView({
     while (at >= 0 && !sameLinks(unseen.current[at] ?? [], list)) at--;
     const sent = unseen.current[at];
     if (sent !== undefined) unseen.current = unseen.current.slice(at + 1);
+    // A list that still reads as the rows drawn keeps them whole — a page come back before its own
+    // edit's echo, or the same list delivered again: nothing it hasn't seen has happened to them (the
+    // queue reads such a list so too, `observe`), so a change pressed on a row meanwhile still finds
+    // its link, never a fresh id the edit in flight left it under.
+    if (sent === undefined && sameLinks(ids.current, list)) return ids.current;
     // Otherwise ids carry by exact words (`carryIds`), from what the page drew and from the newest
     // list it sent — so its own edit keeps its id when its echo arrives beside another moderator's
     // change, and nothing is ever inferred from a place.
@@ -145,7 +150,8 @@ export function LinksTabView({
     const next = sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(prev, list, mintLink);
     ids.current = next;
     return next;
-  }, [links, queueKey]);
+    // `ids` and `unseen` are the list's own (`useListMemory`): new objects whenever `queueKey` changes.
+  }, [links, ids, unseen]);
   const section = useRef<HTMLDivElement | null>(null);
   // **Focus is never taken from the keyboard by a save**: after an edit or an add lands, the link's
   // own Edit takes focus back (its id survives the edit; an add's was minted at Add) once its row

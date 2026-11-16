@@ -1,7 +1,9 @@
+import { render, renderHook } from '@testing-library/react';
 import fc from 'fast-check';
+import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { type KeyedLink, linkChanges } from './links/linksModel';
-import { createListWriter, sameList } from './listWriter';
+import { createListWriter, ListWritersProvider, sameList, useListMemory } from './listWriter';
 
 type Item = { id: string; label: string };
 type Change = (base: readonly Item[]) => readonly Item[];
@@ -350,3 +352,39 @@ async function everyInterleaving(changes: typeof CHANGES) {
     { numRuns: 300 },
   );
 }
+
+describe('useListMemory — what a queued change names lives beside its queue', () => {
+  it('under the shell: a page coming back holds the same value; another list or name its own', () => {
+    const seen: { current: { n: number } }[] = [];
+    function Probe({ k, n }: { k: string; n: string }) {
+      seen.push(useListMemory(k, n, () => ({ n: 0 })));
+      return null;
+    }
+    // One provider across the mounts, as the shell's outlives the page.
+    const tree = (probe: { k: string; n: string } | null) =>
+      createElement(ListWritersProvider, null, probe && createElement(Probe, probe));
+    const view = render(tree({ k: 'links:a', n: 'ids' }));
+    const first = seen.at(-1) as { current: { n: number } };
+    first.current.n = 1;
+    view.rerender(tree(null));
+    view.rerender(tree({ k: 'links:a', n: 'ids' }));
+    expect(seen.at(-1)).toBe(first);
+    view.rerender(tree({ k: 'links:b', n: 'ids' }));
+    expect(seen.at(-1)?.current.n).toBe(0);
+    view.rerender(tree({ k: 'links:a', n: 'unseen' }));
+    expect(seen.at(-1)?.current.n).toBe(0);
+  });
+
+  it('outside the shell: the component’s own, started afresh when it names another list', () => {
+    const view = renderHook(({ k }) => useListMemory(k, 'ids', () => ({ n: 0 })), {
+      initialProps: { k: 'links:a' },
+    });
+    const own = view.result.current;
+    own.current.n = 1;
+    view.rerender({ k: 'links:a' });
+    expect(view.result.current).toBe(own);
+    view.rerender({ k: 'links:b' });
+    expect(view.result.current).not.toBe(own);
+    expect(view.result.current.current.n).toBe(0);
+  });
+});

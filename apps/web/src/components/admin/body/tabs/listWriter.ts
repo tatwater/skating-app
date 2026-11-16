@@ -146,16 +146,17 @@ export function ListWritersProvider({ children }: { children: ReactNode }) {
 
 /**
  * A value kept beside the queue `key` (its `name` tells several apart): the same object for every
- * page of that list while the shell lives. Outside a `ListWritersProvider` it is the component's own.
+ * page of that list while the shell lives. Outside a `ListWritersProvider` it is the component's own,
+ * started afresh when `key` names another list — never one list's value carried to the next.
  */
 export function useListMemory<T>(key: string, name: string, init: () => T): { current: T } {
   const shared = useContext(Memories);
-  const own = useRef<{ current: T } | null>(null);
-  if (shared === null) {
-    if (own.current === null) own.current = { current: init() };
-    return own.current;
-  }
+  const own = useRef<{ at: string; held: { current: T } } | null>(null);
   const at = `${key}#${name}`;
+  if (shared === null) {
+    if (own.current?.at !== at) own.current = { at, held: { current: init() } };
+    return own.current.held;
+  }
   let held = shared.get(at) as { current: T } | undefined;
   if (held === undefined) {
     held = { current: init() };

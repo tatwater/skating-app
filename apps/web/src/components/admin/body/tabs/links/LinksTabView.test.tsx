@@ -1168,8 +1168,13 @@ describe('LinksTabView — a link’s id outlives the page, as its queue does', 
 });
 
 describe('LinksTabView — a retry after the list moved never lands on a link it did not address', () => {
-  /** A server that keeps the list, refuses a save built on a list that moved, and lets another moderator write. */
-  function makeServer(initial: StaffLink[]) {
+  /**
+   * A server that keeps the list, refuses a save built on a list that moved, and lets another
+   * moderator write. With `receipt`, a landed save is answered in two steps, as the wiring's is (its
+   * receipt's lookup runs before the queue hears the save landed): the page is shown its save — or
+   * leaves and comes back — before the queue knows.
+   */
+  function makeServer(initial: StaffLink[], { receipt = false }: { receipt?: boolean } = {}) {
     const state = { links: initial, answers: [] as (() => void)[], set: (_: StaffLink[]) => {} };
     const onSave = async (next: StaffLink[], expected: StaffLink[]) => {
       await new Promise<void>((r) => state.answers.push(r));
@@ -1178,6 +1183,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
       }
       state.links = next;
       state.set(next);
+      if (receipt) await new Promise<void>((r) => state.answers.push(r));
     };
     /** Another moderator's write, held by the server before the page is shown it (`show`). */
     const move = (next: StaffLink[]) => {
@@ -1207,7 +1213,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
   }
   const C = { label: 'Town page', url: 'https://enfield.nh.gov' };
   const answerAll = async (server: ReturnType<typeof makeServer>) => {
-    for (let i = 0; i < 8 && server.state.answers.length > 0; i++) {
+    for (let i = 0; i < 24 && server.state.answers.length > 0; i++) {
       await act(async () => server.state.answers.shift()?.());
       await act(async () => new Promise((r) => setTimeout(r, 0)));
     }
@@ -1353,8 +1359,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
   it('over any interleaving with another moderator’s writes: mine land only on the links I addressed (fast-check)', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(op, { maxLength: 10 }), async (ops) => {
-        const user = userEvent.setup({ delay: null });
-        const server = makeServer([ASSOC, DAM]);
+        // No pointer-events walk per click: which controls are live is the page's own business here.
+        const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 });
+        const server = makeServer([ASSOC, DAM], { receipt: true });
         // The shell's queues outlive the page: one provider; the page itself comes and goes.
         const list = `links:leave-${++keyN}`;
         const view = (shown: boolean) => (
@@ -1364,8 +1371,13 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         );
         const { unmount, rerender } = render(view(true));
         let shown = true;
-        let refusedOnlyMine = false;
+        // With only my own writes, a change of mine is refused as gone only when a remove of mine
+        // took its link first (I addressed it again before that remove landed). My links' words are
+        // all different then, so the link a change addresses is told by its words.
         const onlyMine = !ops.some((o) => o.kind.startsWith('other'));
+        const removedByMe = new Set<string>();
+        let addressedAfterMyRemove = false;
+        let refused = false;
         let minted = 0;
         // The link each of my saves addressed (its words), and what it would make of them.
         const mine: { from: string; fromUrl: string; to: string | null }[] = [];
@@ -1381,9 +1393,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               await act(async () => new Promise((r) => setTimeout(r, 0)));
               continue;
             }
-            if (onlyMine && screen.queryByText(/your change no longer applies/) !== null) {
-              refusedOnlyMine = true;
-            }
+            if (screen.queryByText(/your change no longer applies/) !== null) refused = true;
             if (!shown) {
               if (o.kind === 'answer') {
                 await act(async () => server.state.answers.shift()?.());
@@ -1402,6 +1412,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               if (row === undefined || edit == null) continue;
               const from = row.querySelector('.text-body')?.textContent ?? '';
               const fromUrl = row.querySelector('a[href]')?.getAttribute('href') ?? '';
+              const addressed = `${from}\n${fromUrl}`;
+              if (removedByMe.has(addressed)) addressedAfterMyRemove = true;
+              if (o.kind === 'remove') removedByMe.add(addressed);
               await user.click(edit);
               if (o.kind === 'remove') {
                 await user.click(screen.getByRole('button', { name: 'Remove' }));
@@ -1410,7 +1423,9 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
                 const to = `${from} (${++minted})`;
                 const label = screen.getByRole('textbox', { name: 'Label' });
                 await user.clear(label);
-                await user.type(label, to);
+                // Pasted, not typed key by key: what's typed isn't what this property is about,
+                // and the run stays inside its time.
+                await user.paste(to);
                 await user.click(screen.getByRole('button', { name: 'Done' }));
                 mine.push({ from, fromUrl, to });
               }
@@ -1438,12 +1453,10 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
           }
           if (!shown) rerender(view(true));
           await answerAll(server);
-          // With only my own writes, a queued change of mine is never refused as gone — its link
-          // can only have gone by my own hand — whatever leaving and coming back did meanwhile.
-          if (onlyMine && screen.queryByText(/your change no longer applies/) !== null) {
-            refusedOnlyMine = true;
-          }
-          expect(refusedOnlyMine).toBe(false);
+          // With only my own writes, a queued change of mine is never refused as gone unless a
+          // remove of mine took its link first — whatever leaving and coming back did meanwhile.
+          if (screen.queryByText(/your change no longer applies/) !== null) refused = true;
+          if (onlyMine && !addressedAfterMyRemove) expect(refused).toBe(false);
           // Every link the server holds is one nobody touched, another moderator's, or one of my
           // edits of a link I addressed — never my words on a link I didn't address.
           const others = (l: StaffLink) => /^(X|Y)\d+$/.test(l.label);
@@ -1466,11 +1479,14 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         }
       }),
       {
-        numRuns: 4,
-        // Pinned: Greptile's sequence, a remove whose link another moderator replaced, an edit
-        // across another's reorder and insert, an edit of another moderator's link opened from
-        // its own row (it keeps that link's address), and Greptile's second (an edit, a remove
-        // queued behind it, leaving, the edit landing, coming back); the rest random.
+        // The pinned examples count toward `numRuns` (fast-check runs them first): six pinned, one
+        // random.
+        numRuns: 7,
+        // Pinned, in order: Greptile's second (an edit, a remove queued behind it, leaving, the edit
+        // landing, coming back before its receipt), coming back before an edit's echo and removing
+        // its link from the row, an edit of another moderator's link opened from its own row (it
+        // keeps that link's address), Greptile's sequence, a remove whose link another moderator
+        // replaced, and an edit across another's reorder and insert; the rest random.
         examples: [
           [
             [
@@ -1479,6 +1495,16 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               { kind: 'leave' },
               { kind: 'answer' },
               { kind: 'back' },
+              { kind: 'answer' },
+            ],
+          ],
+          [
+            [
+              { kind: 'edit', row: 0 },
+              { kind: 'leave' },
+              { kind: 'back' },
+              { kind: 'remove', row: 0 },
+              { kind: 'answer' },
               { kind: 'answer' },
             ],
           ],
@@ -1578,8 +1604,8 @@ describe('LinksTabView — my edit keeps its id when its echo arrives with anoth
 });
 
 describe('LinksTabView — what a queued change names lives as long as the queue, not the page', () => {
-  it('Greptile’s sequence: edit A, then Remove A queued; leave; the edit commits; come back — the Remove lands on A', async () => {
-    const user = userEvent.setup();
+  /** A server answering each landed save in two steps, as the wiring does, and a page that comes and goes. */
+  function leaveAndReturn(queueKey: string) {
     const answers: (() => void)[] = [];
     const server = { links: [ASSOC, DAM] as StaffLink[], set: (_: StaffLink[]) => {} };
     const onSave = async (next: StaffLink[], expected: StaffLink[]) => {
@@ -1598,7 +1624,7 @@ describe('LinksTabView — what a queued change names lives as long as the queue
       return (
         <LinksTabView
           {...base}
-          queueKey="links:leave-and-return"
+          queueKey={queueKey}
           body={{ ...MASCOMA, referenceLinks: links }}
           onSave={onSave}
         />
@@ -1607,13 +1633,29 @@ describe('LinksTabView — what a queued change names lives as long as the queue
     const page = (shown: boolean) => (
       <ListWritersProvider>{shown ? <Page /> : null}</ListWritersProvider>
     );
-    const { rerender } = render(page(true));
-    // Edit A and press Done; the save waits.
+    const answer = async () => {
+      await act(async () => answers.shift()?.());
+      await act(async () => new Promise((r) => setTimeout(r, 0)));
+    };
+    const answerAll = async () => {
+      for (let i = 0; i < 6 && answers.length > 0; i++) await answer();
+    };
+    return { server, page, answers, answerAll };
+  }
+  /** Edit A to "The Association" and press Done; the save waits. */
+  async function editA(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
     const label = screen.getByRole('textbox', { name: 'Label' });
     await user.clear(label);
     await user.type(label, 'The Association');
     await user.click(screen.getByRole('button', { name: 'Done' }));
+  }
+
+  it('Greptile’s sequence: edit A, then Remove A queued; leave; the edit commits; come back — the Remove lands on A', async () => {
+    const user = userEvent.setup();
+    const { server, page, answers, answerAll } = leaveAndReturn('links:leave-and-return');
+    const { rerender } = render(page(true));
+    await editA(user);
     // Cancel, reopen A, press Remove: queued behind the edit.
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
@@ -1624,13 +1666,26 @@ describe('LinksTabView — what a queued change names lives as long as the queue
     await act(async () => answers.shift()?.());
     rerender(page(true));
     await act(async () => new Promise((r) => setTimeout(r, 0)));
-    await act(async () => answers.shift()?.());
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
-    for (let i = 0; i < 4 && answers.length > 0; i++) {
-      await act(async () => answers.shift()?.());
-      await act(async () => new Promise((r) => setTimeout(r, 0)));
-    }
+    await answerAll();
     // The queued Remove landed on A — the link the edit made — and nothing was refused.
+    expect(server.links).toEqual([DAM]);
+    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+  });
+
+  it('come back before the edit’s echo: A’s row keeps its id, and a Remove pressed from it lands on A', async () => {
+    const user = userEvent.setup();
+    const { server, page, answerAll } = leaveAndReturn('links:back-before-echo');
+    const { rerender } = render(page(true));
+    const before = document.querySelector('[data-link-key]')?.getAttribute('data-link-key');
+    await editA(user);
+    // Leave and come back while the edit is still out: the server still holds A as it was.
+    rerender(page(false));
+    rerender(page(true));
+    expect(document.querySelector('[data-link-key]')?.getAttribute('data-link-key')).toBe(before);
+    // Remove A from its row, behind the edit.
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await answerAll();
     expect(server.links).toEqual([DAM]);
     expect(screen.queryByText(/your change no longer applies/)).toBeNull();
   });
