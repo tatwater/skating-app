@@ -10,9 +10,9 @@ import {
   filledPolygon,
   haversineMeters,
   type LandmarkKind,
+  landmarkIdsToKeep,
   landmarkNameKey,
   landmarksAreSamePlace,
-  MAX_LANDMARK_EXTERNAL_IDS,
   MAX_LANDMARKS_PER_BODY,
   normalizeLandmarkNames,
   pointInPolygon,
@@ -384,12 +384,28 @@ export async function repointLandmarksOnMerge(
   actorId: Id<'profiles'> | undefined,
   /** Did the merge move any of the loser's bays? Then the survivor's own labels meet new bays. */
   baysMoved: boolean,
-): Promise<{ repointed: number; folded: number; overCap: number; retiredAsBay: number }> {
+): Promise<{
+  repointed: number;
+  folded: number;
+  overCap: number;
+  retiredAsBay: number;
+  /** Twins whose combined catalog ids passed their total, the oldest dropped (B01-3j). */
+  idsTrimmed: number;
+  /** Those twins, by id — the first twenty — for the merge's audit row. */
+  idsTrimmedOn: Id<'bodyLandmarks'>[];
+}> {
   const moving = await landmarksForBody(ctx, loserId);
   // Nothing moved — no landmark, no bay — and nothing on the survivor can have changed: skip its
   // reads, which `retireAbsorbedBodies` would otherwise pay once per label-less loser.
   if (moving.length === 0 && !baysMoved) {
-    return { repointed: 0, folded: 0, overCap: 0, retiredAsBay: 0 };
+    return {
+      repointed: 0,
+      folded: 0,
+      overCap: 0,
+      retiredAsBay: 0,
+      idsTrimmed: 0,
+      idsTrimmedOn: [],
+    };
   }
   const staying = await landmarksForBody(ctx, survivorId);
   const index = new LandmarkRowIndex(staying);
@@ -397,6 +413,7 @@ export async function repointLandmarksOnMerge(
   let live = staying.filter((row) => row.removedAt === undefined).length;
   let folded = 0;
   let overCap = 0;
+  const idsTrimmedOn: Id<'bodyLandmarks'>[] = [];
   // Decided together, against the survivor's rows only: two of the loser's places near one survivor
   // row cannot both fold into it, and neither takes the other's nearer twin.
   const twins = index.assign(moving.filter((row) => row.removedAt === undefined));
@@ -419,16 +436,17 @@ export async function repointLandmarksOnMerge(
             : keeper.kind;
         const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
         const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
+        // Bounded by their total length, never their count (`landmarkIdsToKeep`, B01-3j): the union
+        // kept whole under it; past it, the oldest dropped — counted in the merge's row, never silent.
+        const ids = landmarkIdsToKeep([...twin.externalIds, ...row.externalIds]);
+        if (ids.dropped > 0) idsTrimmedOn.push(twin._id);
         const patch = {
           name: keeper.name,
           kind,
           point: keeper.point,
           ...(areaSqM !== undefined ? { areaSqM } : {}),
           ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
-          // At most `MAX_LANDMARK_EXTERNAL_IDS`, the newest kept (B01-3h).
-          externalIds: [...new Set([...twin.externalIds, ...row.externalIds])].slice(
-            -MAX_LANDMARK_EXTERNAL_IDS,
-          ),
+          externalIds: ids.kept,
           aliases:
             normalizeLandmarkNames(keeper.name, [
               twin.name,
@@ -496,7 +514,14 @@ export async function repointLandmarksOnMerge(
     survivorId,
     await liveBaysForNaming(ctx, survivorId),
   );
-  return { repointed: moving.length, folded, overCap, retiredAsBay };
+  return {
+    repointed: moving.length,
+    folded,
+    overCap,
+    retiredAsBay,
+    idsTrimmed: idsTrimmedOn.length,
+    idsTrimmedOn: idsTrimmedOn.slice(0, 20),
+  };
 }
 
 /**
