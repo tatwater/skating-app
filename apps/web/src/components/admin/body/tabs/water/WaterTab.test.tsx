@@ -76,6 +76,12 @@ beforeEach(() => {
       bbox: { maxLat: 43.6497901, maxLng: -72.1206902, minLat: 43.6061979, minLng: -72.1819521 },
     },
   });
+  // A body whose other sources' depths were never stored: settled, not recorded.
+  mocks.results.set(fn(api.bodyConsole.depthChoices), {
+    mean: { choices: [] },
+    max: { choices: [] },
+    recorded: false,
+  });
   mocks.results.set(fn(api.bodyConsole.consoleExtras), {
     towns: ['Enfield'],
     hasBathymetry: false,
@@ -149,6 +155,27 @@ describe('WaterTab', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
     // The depth still stands.
     expect(screen.getByText('NH state survey')).toBeTruthy();
+  });
+
+  it('says the other sources’ depths couldn’t be read when their read failed — never “not recorded”', () => {
+    mocks.results.set(fn(api.bodyConsole.depthChoices), new Error('nope'));
+    render(<WaterTab bodyId="wb1" />);
+    expect(screen.queryByText(/Other sources’ depths: Not recorded yet/)).toBeNull();
+    expect(document.querySelector('[data-slot="depth-others"]')).toHaveTextContent(
+      'Couldn’t be read',
+    );
+    const note = document.querySelector('[data-slot="read-failures"]') as HTMLElement;
+    expect(note).toHaveTextContent('the other sources’ depths');
+    expect(within(note).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('holds the other sources’ place while their read loads — never “not recorded”', () => {
+    mocks.results.set(fn(api.bodyConsole.depthChoices), undefined);
+    render(<WaterTab bodyId="wb1" />);
+    expect(screen.queryByText(/Other sources’ depths: Not recorded yet/)).toBeNull();
+    expect(
+      document.querySelector('[data-slot="depth-others"] [data-slot="skeleton"]'),
+    ).not.toBeNull();
   });
 
   it('says the record couldn’t be read when it failed', () => {

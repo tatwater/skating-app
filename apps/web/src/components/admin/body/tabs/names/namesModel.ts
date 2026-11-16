@@ -359,6 +359,9 @@ function townLinesPart(extras: {
   extent?: Extent | null;
 }): Pick<Place, 'townLines' | 'townLinesShort'> {
   const got = extras.townLinesRead;
+  // The read's own answers, apart: on its way or failed draws no lines (`null`; a failure is in
+  // the tab's note); settled with the places not computed is no lines at all (`[]`).
+  if (got === null && 'townLinesRead' in extras) return { townLines: [] };
   if (got === undefined || isFailed(got) || got === null) {
     return { townLines: extras.townLines ?? null };
   }

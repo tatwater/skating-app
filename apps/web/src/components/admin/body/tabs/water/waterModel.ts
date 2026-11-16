@@ -6,7 +6,7 @@ import {
   isMeasuredDepthSource,
   spansMultipleSampleCells,
 } from '@skating/core';
-import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { isFailed, type Loadable, type ReadState } from '@/components/admin/reads/consoleReads';
 import { statusDate } from '../../frame/bodyModel';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
@@ -34,11 +34,11 @@ export type Depth = {
   meanFrom: DepthSource | null;
   maxFrom: DepthSource | null;
   /**
-   * Whether the other sources' offers are on the ladder. The depth loader keeps only each
-   * measurement's winner, so this is `null` (not recorded) until the candidates are stored; `kept`
-   * once they are (the board's).
+   * Whether the other sources' offers are on the ladder: `kept` once the loader stores them (the
+   * board's), `null` (not recorded) for a body whose candidates were never stored, and their read's
+   * own state otherwise — `loading` or `failed`, never folded into not recorded.
    */
-  others: 'kept' | null;
+  others: 'kept' | null | 'loading' | 'failed';
 };
 
 export type Sampling = {
@@ -104,7 +104,11 @@ export type WaterBody = {
  * one rung per source in use (two when mean and max came from different sources); the other
  * sources' offers arrive with the candidates read (`extra`), best first.
  */
-export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Depth {
+export function depthOf(
+  body: WaterBody,
+  extra: readonly DepthRung[] = [],
+  othersState: 'loading' | 'failed' | null = null,
+): Depth {
   const rungs = new Map<DepthSource, DepthRung>();
   for (const r of extra) rungs.set(r.source, { ...r });
   const put = (source: DepthSource | undefined, key: 'mean' | 'max', value: number | undefined) => {
@@ -121,7 +125,7 @@ export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Dept
       .sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]),
     meanFrom: body.meanDepthM !== undefined ? (body.meanDepthSource ?? null) : null,
     maxFrom: body.maxDepthM !== undefined ? (body.maxDepthSource ?? null) : null,
-    others: extra.length > 0 ? 'kept' : null,
+    others: extra.length > 0 ? 'kept' : othersState,
   };
 }
 
@@ -225,7 +229,8 @@ export function waterFrom(
     hasBathymetry: boolean;
     bathymetrySearched?: { label: string; at: number } | null;
   }>,
-  extras: { candidates?: readonly DepthRung[] } = {},
+  /** `bodyConsole.depthChoices`, as its read stands (`readState`): never folded into not recorded. */
+  choices: ReadState<DepthChoicesRead> = { kind: 'none' },
 ): WaterData {
   const box = body.bbox ?? null;
   const bathymetry: Loadable<Bathymetry> =
@@ -235,7 +240,10 @@ export function waterFrom(
   return {
     name: body.name,
     state: body.states?.[0] ?? null,
-    depth: depthOf(body, extras.candidates),
+    depth:
+      choices.kind === 'value'
+        ? depthOf(body, candidatesOf(choices.value))
+        : depthOf(body, [], choices.kind === 'none' ? null : choices.kind),
     depthNote: body.depthSourceNote?.trim() || null,
     sampling: {
       interior: body.interiorPoint ?? null,
@@ -248,7 +256,10 @@ export function waterFrom(
     },
     bathymetry,
     box,
-    failures: isFailed(extrasRead) ? ['the bathymetry state'] : [],
+    failures: [
+      ...(isFailed(extrasRead) ? ['the bathymetry state'] : []),
+      ...(choices.kind === 'failed' ? ['the other sources’ depths'] : []),
+    ],
   };
 }
 

@@ -7,6 +7,7 @@ import {
   isFailed,
   type Loadable,
   read,
+  readState,
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
@@ -15,7 +16,6 @@ import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry'
 import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
 import {
-  candidatesOf,
   type DepthChoicesRead,
   sourceWords,
   type WaterData,
@@ -46,12 +46,16 @@ export function useWaterRead(bodyId: string): {
     () =>
       body === undefined || isFailed(body)
         ? body
-        : waterFrom(body, extras, {
-            // Every source's offer, once the loader keeps them (`depthCandidates`).
-            ...(choices !== undefined && !isFailed(choices) && choices.recorded
-              ? { candidates: candidatesOf(choices as DepthChoicesRead) }
-              : {}),
-          }),
+        : // Every source's offer, once the loader keeps them (`depthCandidates`); a body whose
+          // candidates were never stored is not recorded — a read on its way or failed is said so.
+          waterFrom(
+            body,
+            extras,
+            readState(
+              choices as Loadable<DepthChoicesRead & { recorded: boolean }>,
+              (c) => !c.recorded,
+            ),
+          ),
     [body, extras, choices],
   );
   return { data, retry, pending };
