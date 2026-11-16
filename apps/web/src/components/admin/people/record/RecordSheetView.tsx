@@ -275,7 +275,7 @@ function SheetBodyView({
           data-slot="record-person"
           className="min-w-0"
           name={subjectName(subject)}
-          {...(!narrow && subject.username !== null && { handle: `@${subject.username}` })}
+          {...(!narrow && subject.username !== null && { handle: subject.username })}
           src={subject.profileImageUrl}
         />
         {count !== null && !narrow && (

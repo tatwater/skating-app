@@ -437,13 +437,13 @@ describe('the item', () => {
       ['Restored it Wed 14 Oct 11:52', null],
     ]);
     expect(v.plate).toMatchObject({ heading: 'On Mascoma Lake again' });
-    expect(v.life?.stations.map((s) => s.title)).toEqual([
-      'Posted',
-      'Hidden',
-      'Restored',
-      'Visible to skaters',
-      'Out of sight again',
+    // Restored today: that station is today's, with its time, and nothing after it.
+    expect(v.life?.stations.map((s) => [s.when, s.title, s.mark])).toEqual([
+      ['Sun 4 Oct', 'Posted', 'dot'],
+      ['Sat 10 Oct', 'Hidden', 'hollow'],
+      ['14 Oct · 11:52', 'Restored', 'now'],
     ]);
+    expect(v.life?.ifLabel).toBeNull();
     expect(v.lever).toMatchObject({ action: 'hideAgain', needsReason: true });
   });
 
@@ -485,7 +485,8 @@ describe('the item', () => {
     expect(v.byLines.map((b) => b.note)).toEqual(['erased Sun 8 Nov 22:15 unless it’s kept']);
     expect(v.would?.title).toBe('If kept');
     expect(v.lever).toMatchObject({ action: 'keep', needsReason: true });
-    expect(v.life?.stations.at(-1)).toMatchObject({ when: 'If kept', mark: 'end' });
+    // Nobody decided on it: no life drawn (the board's 8.9 frame).
+    expect(v.life).toBeNull();
   });
 
   it('overturned, then erased: the words gone, the decision kept, no lever', () => {
@@ -507,7 +508,8 @@ describe('the item', () => {
       sub: 'Who decided what, and why, stays here.',
     });
     expect(v.lever).toBeNull();
-    expect(v.life?.stations.at(-1)).toMatchObject({ title: 'Erased', mark: 'end' });
+    // Its words are gone: its decisions stand above, and no life is drawn.
+    expect(v.life).toBeNull();
   });
 
   it('an erased comment says how long after its author deleted it', () => {

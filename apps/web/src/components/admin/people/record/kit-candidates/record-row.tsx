@@ -68,7 +68,6 @@ function RecordRow({
           'outline-none focus-visible:shadow-select-rule focus-visible:bg-lift-05',
           '[@media(hover:hover)]:not-data-selected:hover:bg-lift-05',
           'data-selected:bg-lift-08 data-selected:shadow-select-rule',
-          action !== undefined && 'pe-[calc(var(--gap-gutter)+5rem)]',
           className,
         )}
         {...props}
@@ -113,6 +112,8 @@ function RecordRow({
             className={cn(
               'col-span-2 col-start-1 mt-(--space-0_5) min-w-0 truncate text-assist leading-list text-fg3 in-data-selected:text-fg2',
               back && 'text-fg3',
+              // The row's own control sits at the right of its last lines: they stop short of it.
+              action !== undefined && 'pe-[5rem]',
             )}
             style={{ gridRowStart: i + 3 }}
           >

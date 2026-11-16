@@ -113,7 +113,7 @@ export function RecordList({
     >
       <div
         data-slot="record-tabs"
-        className="flex shrink-0 items-center gap-(--space-2_5) border-0 border-b border-solid border-line px-gutter py-(--space-2_5)"
+        className="flex shrink-0 items-center gap-(--space-2) border-0 border-b border-solid border-line px-(--space-2_5) py-(--space-2_5)"
       >
         <ToggleGroup
           aria-label={W.tabsLabel}
@@ -121,7 +121,8 @@ export function RecordList({
           onValueChange={(value) => onTab(value as RecordTab)}
         >
           {TABS.map((t) => (
-            <ToggleGroupItem key={t} value={t} data-tab={t}>
+            // The boards' compact tab row: three lists and Filter fit the list column.
+            <ToggleGroupItem key={t} value={t} data-tab={t} className="px-[0.8em]">
               {W.tabs[t]}
             </ToggleGroupItem>
           ))}

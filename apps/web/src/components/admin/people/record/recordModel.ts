@@ -769,8 +769,15 @@ type LifeEvent = {
   title: string;
   sub?: string;
   mark: LifeStationView['mark'];
-  after: 'up' | 'down' | 'end';
+  after: 'up' | 'down';
 };
+
+/** "Sun 4 Oct": a station's day. */
+const dayWords = (at: number, now: number, tz?: string) =>
+  momentWords(at, now, tz).replace(/ \d\d:\d\d$/, '');
+/** "14:52": a moment's time. */
+const timeOf = (at: number, now: number, tz?: string) =>
+  /\d\d:\d\d$/.exec(momentWords(at, now, tz))?.[0] ?? '';
 
 /**
  * **Its life** (8.7): a station per event, oldest first — posted, each decision and how it ended,
@@ -794,16 +801,18 @@ function lifeOf(args: {
   const { item, kind, content, standing, place, lever, releasedAt, subject, now, tz } = args;
   const author = firstOf(subject);
   const deletedAt = item.authorDeletedAt;
+  // A record of decisions: an item nobody decided on, or whose words are gone, has no life drawn.
+  if (args.decisions.length === 0 || content === null) return null;
   const events: LifeEvent[] = [];
-  if (content !== null) {
-    events.push({
-      at: content.at,
-      title: W.posted,
-      ...(place !== null ? { sub: kind === 'comment' ? `On ${place}` : place } : {}),
-      mark: 'dot',
-      after: 'up',
-    });
-  }
+  const created = (item.published as unknown as { _creationTime?: unknown } | null)?._creationTime;
+  events.push({
+    // When it was posted — the document's own birth; a report's skate time can come after a hide.
+    at: typeof created === 'number' ? created : content.at,
+    title: W.posted,
+    ...(place !== null ? { sub: kind === 'comment' ? `On ${place}` : place } : {}),
+    mark: 'dot',
+    after: 'up',
+  });
   for (const d of [...args.decisions].sort((a, b) => a.at - b.at)) {
     const isKept = keptAfter(d.at, deletedAt);
     events.push({
@@ -842,36 +851,37 @@ function lifeOf(args: {
   if (deletedAt !== null) {
     for (const e of events) if (e.at >= deletedAt && e.after === 'up') e.after = 'down';
   }
-  if (item.erasedAt !== null) {
-    events.push({ at: item.erasedAt, title: W.badge.erased, mark: 'end', after: 'end' });
-  }
-  if (events.length === 0) return null;
 
   const stations: LifeStationView[] = events.map((e, i) => {
     const next = events[i + 1];
     return {
-      when: momentWords(e.at, now, tz).replace(/ \d\d:\d\d$/, ''),
+      when: dayWords(e.at, now, tz),
       title: e.title,
       ...(e.sub !== undefined ? { sub: e.sub } : {}),
       mark: e.mark,
-      ...(next !== undefined && e.after !== 'end'
+      ...(next !== undefined
         ? { next: e.after === 'up' ? 'heavy' : 'thin', lasted: spanWords(next.at - e.at) }
         : {}),
     };
   });
 
-  let ifLabel: string | null = null;
   const last = events.at(-1) as LifeEvent;
-  if (last.after !== 'end') {
+  const lastStation = stations.at(-1) as LifeStationView;
+  let now_: LifeStationView;
+  if (dateWords(last.at, now, tz) === dateWords(now, now, tz)) {
+    // Its last event was today: that station is today, with its time (8.8's restore).
+    lastStation.mark = 'now';
+    lastStation.when = `${dateWords(now, now, tz)} · ${timeOf(last.at, now, tz)}`;
+    now_ = lastStation;
+  } else {
     // Today: the state it is in, and how long it has been out of sight.
-    const lastStation = stations.at(-1) as LifeStationView;
     lastStation.next = last.after === 'up' ? 'heavy' : 'thin';
     lastStation.lasted = spanWords(now - last.at);
     const downSince = [...events].reverse().find((e, i, all) => {
       const before = all[i + 1];
       return e.after === 'down' && (before === undefined || before.after !== 'down');
     });
-    const today: LifeStationView = {
+    now_ = {
       when: W.today(dateWords(now, now, tz)),
       title:
         standing !== null
@@ -888,17 +898,19 @@ function lifeOf(args: {
         : {}),
       mark: 'now',
     };
-    stations.push(today);
-    const ahead = lever?.ok === true ? lever.action : null;
-    const station =
-      ahead === null
-        ? null
-        : ifStation(ahead, { place, content, releasedAt, deletedAt, author, now, tz });
-    if (station !== null) {
-      today.next = 'dashed';
-      stations.push(station);
-      ifLabel = station.when;
-    }
+    stations.push(now_);
+  }
+  let ifLabel: string | null = null;
+  const ahead = lever?.ok === true ? lever.action : null;
+  const station =
+    ahead === null
+      ? null
+      : ifStation(ahead, { place, content, releasedAt, deletedAt, author, now, tz });
+  if (station !== null) {
+    now_.next = 'dashed';
+    delete now_.lasted;
+    stations.push(station);
+    ifLabel = station.when;
   }
   return { stations, ifLabel };
 }
@@ -936,7 +948,8 @@ function ifStation(
     case 'keep':
       return { when: W.ifKept, title: W.onRecordUntilOverturned, mark: 'end' };
     case 'hideAgain':
-      return { when: W.ifHidden, title: W.outOfSightAgain, mark: 'end' };
+      // The boards draw no station for a hide again: the restore is today's.
+      return null;
   }
 }
 

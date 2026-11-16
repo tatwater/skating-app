@@ -163,7 +163,6 @@ export const RECORD_WORDS = {
   ifRestored: 'If restored',
   ifOverturned: 'If overturned',
   ifKept: 'If kept',
-  ifHidden: 'If hidden again',
   backOn: (place: string) => `Back on ${place}`,
   backUp: 'Back up',
   datedThen: (date: string) => `Dated ${date}`,
@@ -171,7 +170,6 @@ export const RECORD_WORDS = {
   daysAfterDeleted: (days: number, first: string) =>
     `${days} ${days === 1 ? 'day' : 'days'} after ${first} deleted it`,
   onRecordUntilOverturned: 'Held until overturned',
-  outOfSightAgain: 'Out of sight again',
 
   // ── What a lever would do ──
   record: 'Record',
