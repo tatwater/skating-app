@@ -136,7 +136,7 @@ export async function grantRoleImpl(
   await refreshPersonRow(ctx, userId);
   // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
   await stampTenure(ctx, userId);
-  return personWriteResult(ctx, actor, userId, actionId);
+  return personWriteResult(ctx, actor._id, userId, actionId);
 }
 
 /**
@@ -185,5 +185,5 @@ export async function revokeRoleImpl(
   await refreshPersonRow(ctx, userId);
   // The Staff lane's row carries the tenure this write just changed (`lib/staffTenure`).
   await stampTenure(ctx, userId);
-  return personWriteResult(ctx, actor, userId, actionId);
+  return personWriteResult(ctx, actor._id, userId, actionId);
 }

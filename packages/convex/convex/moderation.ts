@@ -49,6 +49,7 @@ import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
+import { requestBudget } from './lib/readBudget';
 import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState, undoStates } from './lib/undo';
@@ -1535,15 +1536,19 @@ export type PersonWriteResult = { userId: Id<'profiles'> } & (
 /**
  * A person write's answer, from the undo engine's own reading of the row for this viewer — in the
  * toast's scope (`one`, as `undo.latestOwn` reads it), so what the write offers is what the toast does.
+ * The viewer is read **as the write left them**, never the copy loaded before it: a write can change
+ * its own caller's standing (a holder stepping down loses the grant its undo needs), and the toast
+ * and the undo reload the caller. Read here, once, so no write can forget it.
  */
 export async function personWriteResult(
   ctx: MutationCtx,
-  actor: Doc<'profiles'>,
+  actorId: Id<'profiles'>,
   userId: Id<'profiles'>,
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
-  const row = await ctx.db.get(actionId);
-  const state = row ? await undoState(ctx, actor, row, 'one') : null;
+  const actor = await requestBudget(ctx).one('profile', () => ctx.db.get(actorId));
+  const row = actor ? await ctx.db.get(actionId) : null;
+  const state = actor && row ? await undoState(ctx, actor, row, 'one') : null;
   return state?.state === 'available'
     ? { userId, undoable: true, actionId, undoNeedsReason: state.needsReason }
     : { userId, undoable: false };
@@ -1619,7 +1624,7 @@ export async function banImpl(
       clerkUserId: target.clerkUserId,
       banned: true,
     });
-    return personWriteResult(ctx, actor, userId, actionId);
+    return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }
 
@@ -1677,7 +1682,7 @@ export async function suspendImpl(
         banned: false,
       });
     }
-    return personWriteResult(ctx, actor, userId, actionId);
+    return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }
 
@@ -1728,7 +1733,7 @@ export async function unbanImpl(
       clerkUserId: target.clerkUserId,
       banned: false,
     });
-    return personWriteResult(ctx, actor, userId, actionId);
+    return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }
 
@@ -1788,7 +1793,7 @@ export async function setBountyLimitImpl(
       ...(defaulted ? { reasonDefaulted: true } : {}),
     },
   );
-  return personWriteResult(ctx, actor, userId, actionId);
+  return personWriteResult(ctx, actor._id, userId, actionId);
 }
 
 /**
@@ -1867,5 +1872,5 @@ export async function setPostingPermissionImpl(
       ...(defaulted ? { reasonDefaulted: true } : {}),
     },
   );
-  return personWriteResult(ctx, actor, userId, actionId);
+  return personWriteResult(ctx, actor._id, userId, actionId);
 }

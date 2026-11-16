@@ -2425,7 +2425,14 @@ Every shape change is additive except where noted.
   nothing; no client read it). `undoNeedsReason` is `lib/undo.undoNeedsReason` — the rule `undoState`,
   and so `undo.latestOwn` and `undo.run`, answers by: the undo of a give-back takes something away and
   asks; the undo of a take-away gives back and doesn't. One test holds the three to one answer for every
-  person verb, so the toast needs no lookup.
+  person verb, so the toast needs no lookup. The offer is read for the caller **as the write left
+  them** (`personWriteResult` re-reads them, in one place): a holder stepping down while another holds
+  the ledger loses the grant its undo needs, so it is offered none. Every other person write is
+  refused on the caller themselves — the discipline writes and the role writes by their own rules, a
+  ledger grant because the caller already holds it — so stepping down is the one write that changes
+  its own caller's standing. A property holds "what a write returns is what `undo.latestOwn` and
+  `undo.run` give that caller right after" over every state, every write, the caller themselves, and
+  one or two holders.
 - **Ids at the edge.** The People queries take the person's id as a string and normalize it once:
   anything that isn't a profile id is `null` — no such person — rather than a validator error.
   `people.decisions` can now return `null` for that case.

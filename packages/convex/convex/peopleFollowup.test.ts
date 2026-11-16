@@ -534,37 +534,79 @@ describe('a person write offers its undo only when the undo is available to this
     ledgerOff: (a, id) => a.mutation(api.ledger.revokeEditor, { userId: id, reason: 'r' }),
   };
 
-  test('returned ⇒ available, not returned ⇒ not available, over every state and every person write', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.constantFrom(...Object.keys(STATES)),
-        fc.constantFrom(...Object.keys(WRITES)),
-        async (state, write) => {
-          vi.setSystemTime(T0);
-          const t = await setup();
-          await seed(t, 'adm', { role: 'admin', canEditLedger: true });
-          const id = await seed(t, 'them', STATES[state]);
-          const a = as(t, 'adm');
-          // A write the server refuses offers nothing: there is no answer to read.
-          const out = await (WRITES[write] as NonNullable<(typeof WRITES)[string]>)(a, id).catch(
-            () => null,
-          );
-          if (out === null) return;
-          const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
-          if (out.undoable) {
-            expect(toast?.actionId, `${state}/${write}`).toBe(out.actionId);
-            expect(toast?.undo, `${state}/${write}`).toEqual({
-              state: 'available',
-              needsReason: out.undoNeedsReason,
-            });
-          } else {
-            expect(out.actionId, `${state}/${write}`).toBeUndefined();
-            expect(toast?.undo.state, `${state}/${write}`).not.toBe('available');
-          }
-        },
-      ),
-      { numRuns: 24 },
+  /**
+   * One write, then what the caller sees right after, as the write left them: what it returns
+   * matches the toast (`undo.latestOwn`) and the undo itself (`undo.run`).
+   */
+  const check = async (state: string, write: string, self: boolean, otherHolder: boolean) => {
+    vi.setSystemTime(T0);
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+    if (otherHolder) await seed(t, 'other', { role: 'admin', canEditLedger: true });
+    const id = self ? adm : await seed(t, 'them', STATES[state]);
+    const a = as(t, 'adm');
+    const at = `${self ? 'self' : state}/${write}/${otherHolder ? 'two holders' : 'one holder'}`;
+    // A write the server refuses offers nothing: there is no answer to read.
+    const out = await (WRITES[write] as NonNullable<(typeof WRITES)[string]>)(a, id).catch(
+      () => null,
     );
+    if (out === null) return;
+    const toast = await a
+      .query(api.undo.latestOwn, { targetType: 'user', targetId: id })
+      .catch(() => null);
+    if (out.undoable) {
+      expect(toast?.actionId, at).toBe(out.actionId);
+      expect(toast?.undo, at).toEqual({ state: 'available', needsReason: out.undoNeedsReason });
+      // Offered, so it runs.
+      await a.mutation(api.undo.run, { actionId: out.actionId, reason: 'r' });
+    } else {
+      expect(out.actionId, at).toBeUndefined();
+      expect(toast?.undo.state, at).not.toBe('available');
+      if (toast) {
+        await expect(
+          a.mutation(api.undo.run, { actionId: toast.actionId as never, reason: 'r' }),
+          at,
+        ).rejects.toThrow();
+      }
+    }
+  };
+
+  test('returned ⇒ available, not returned ⇒ not available, over every state, every person write, and the caller themselves', async () => {
+    const same = fc.asyncProperty(
+      fc.constantFrom(...Object.keys(STATES)),
+      fc.constantFrom(...Object.keys(WRITES)),
+      // On someone else, or on the caller — a write that can change its own caller's standing.
+      fc.boolean(),
+      // Whether another admin holds the ledger too, so a holder can step down.
+      fc.boolean(),
+      check,
+    );
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261116, 77]) await fc.assert(same, { seed, numRuns: 12 });
+    await fc.assert(same, { numRuns: 6 });
+  });
+
+  test('every write on the caller themselves, with and without another holder: refused, or offered only what runs', async () => {
+    for (const write of Object.keys(WRITES)) {
+      for (const otherHolder of [false, true]) await check('active', write, true, otherHolder);
+    }
+  });
+
+  test('a holder stepping down while another holds the ledger is offered no undo it would be refused', async () => {
+    vi.setSystemTime(T0);
+    const t = await setup();
+    const adm = await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+    await seed(t, 'other', { role: 'admin', canEditLedger: true });
+    const a = as(t, 'adm');
+    const out = await a.mutation(api.ledger.revokeEditor, { userId: adm, reason: 'r' });
+    // The write left them without the grant: the toast and the undo both refuse, so nothing is offered.
+    expect(out).toEqual({ userId: adm, undoable: false });
+    const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: adm });
+    expect(toast?.undo.state).not.toBe('available');
+    if (toast)
+      await expect(
+        a.mutation(api.undo.run, { actionId: toast.actionId as never, reason: 'r' }),
+      ).rejects.toThrow();
   });
 
   test('the cases that can’t be undone now say so: a lift of a run-out suspension, of an active account', async () => {
