@@ -335,6 +335,62 @@ describe('the pick store — the latest press wins', () => {
     }
   });
 
+  /**
+   * **The owner unmounts and remounts mid-flight** — since B01-3m only when the viewer leaves the
+   * console (a role reload's splash keeps the owner). The old store's writes keep their own senders
+   * and words: every refusal is still said exactly once, and every store drains. (Across a remount a
+   * write from each store can be out at once — the accepted limit of leaving the console.)
+   */
+  type RemountOp =
+    | { kind: 'press'; value: string }
+    | { kind: 'remount' }
+    | { kind: 'answer'; ok: boolean };
+  const remountOp: fc.Arbitrary<RemountOp> = fc.oneof(
+    fc.record({ kind: fc.constant('press' as const), value: fc.constantFrom('x', 'y') }),
+    fc.record({ kind: fc.constant('remount' as const) }),
+    fc.record({ kind: fc.constant('answer' as const), ok: fc.boolean() }),
+  );
+  const remounting = fc.asyncProperty(fc.array(remountOp, { maxLength: 24 }), async (ops) => {
+    const h = harness();
+    const stores = [h.store];
+    let server = 'x';
+    let refusals = 0;
+    const p = h.page('k', 'a');
+    const answer = async (ok: boolean) => {
+      const w = h.held.shift();
+      if (w === undefined) return;
+      if (ok) server = w.value;
+      else refusals++;
+      w.answer(ok ? 'ok' : 'returned');
+      await settle();
+    };
+    for (const o of ops) {
+      const store = stores.at(-1) as PickStore;
+      if (o.kind === 'press') store.press('k', { value: o.value, server }, p);
+      else if (o.kind === 'remount') stores.push(createPickStore());
+      else await answer(o.ok);
+      for (const s of stores) expect(s.inFlight('k')).toBeLessThanOrEqual(1);
+    }
+    for (let i = 0; i < 60 && h.held.length > 0; i++) await answer(true);
+    await settle();
+    for (const s of stores) expect(s.size()).toBe(0);
+    // No page is mounted in this model: every refusal is the page's words, said exactly once.
+    expect(h.said.page).toBe(refusals);
+  });
+
+  it.each([7, 99])(
+    'the owner remounting mid-flight loses nothing (pinned seed %i)',
+    async (seed) => {
+      await fc.assert(remounting, { seed, numRuns: 60 });
+    },
+  );
+
+  it('the owner remounting mid-flight loses nothing (a random seed, logged)', async () => {
+    const seed = Date.now() % 2_147_483_647;
+    console.info(`pick store remount model: seed ${seed}`);
+    await fc.assert(remounting, { seed, numRuns: 60 });
+  });
+
   it.each([1, 42, 2026])('the model holds (pinned seed %i)', async (seed) => {
     await fc.assert(property, { seed, numRuns: 60 });
   });
