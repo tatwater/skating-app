@@ -360,7 +360,11 @@ export const opacity = {
   muted: 0.5,
 } as const;
 
-/** Stacking order; meaningful and consistent, kept from the audit. */
+/**
+ * Stacking order; meaningful and consistent, kept from the audit. A toast sits over everything,
+ * a modal's scrim and a viewer included: a server's refusal reaches the operator wherever they are,
+ * an open dialog too (D268).
+ */
 export const zIndex = {
   raised: 1,
   'map-control': 2,
@@ -370,11 +374,11 @@ export const zIndex = {
   actbar: 6,
   icard: 8,
   gobar: 9,
-  toast: 20,
   scrim: 40,
   sheet: 41,
   'viewer-scrim': 50,
   viewer: 51,
+  toast: 60,
 } as const;
 
 // ── Motion ────────────────────────────────────────────────────────────────────────────────────

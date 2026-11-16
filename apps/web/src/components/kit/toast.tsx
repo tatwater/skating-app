@@ -47,6 +47,11 @@ import { Kbd } from './kbd';
  *   wins; a plain key (⏎, Esc) acts only when nothing has focus, since every control, list and
  *   dialog uses those. A key some handler already took (`defaultPrevented`) is left alone. Like
  *   every binding in the console, never J, K or a number key.
+ * - **A toast that never times out** (`timeout: 0` — a server's refusal) carries a *Dismiss* at its
+ *   right and stays until it is pressed (or the toast swiped, or Esc pressed inside it). It is drawn
+ *   over everything, a modal dialog's scrim included, and stays operable there: F6 reaches the dock
+ *   from inside a dialog (Base UI's), and Esc inside the toast closes the toast, never the dialog
+ *   under it. A failure is announced once, as it arrives (Base UI's alert for a `high` toast).
  * - **Safety (binding):** toast copy reports what an operator did ("Rate updated", "Photo hidden").
  *   It never says or implies that ice is safe, skateable or clear.
  */
@@ -377,12 +382,32 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
     return () => claimKey(t.id, null);
   }, [key, shown, claimKey, t.id]);
 
+  // Esc inside the toast closes the toast alone: a modal dialog under it listens for Esc on the
+  // document, and would close too, its typed reason with it. Caught on the toast's own element, so
+  // the key never reaches the document's listeners (Base UI's own close among them, so it is run here).
+  const root = useRef<HTMLDivElement | null>(null);
+  const close = useRef(() => manager.close(t.id));
+  close.current = () => manager.close(t.id);
+  useEffect(() => {
+    const el = root.current;
+    /* v8 ignore next */
+    if (el === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.stopPropagation();
+      close.current();
+    };
+    el.addEventListener('keydown', onKeyDown);
+    return () => el.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <ToastPrimitive.Root
       toast={t}
       data-slot="toast"
       swipeDirection={['left', 'down']}
       className={cn(ROOT)}
+      ref={root}
       render={(props, state) => (
         <ExpandedContext.Provider value={state.expanded}>
           <div {...props} />
@@ -408,6 +433,13 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
             className="text-assist leading-list font-regular text-fg3 empty:hidden"
           />
         </span>
+        {action === undefined && !timed && (
+          <span data-slot="toast-actions" className="flex items-center gap-(--space-2)">
+            <ToastPrimitive.Close data-slot="toast-dismiss" render={<Button size="sm" />}>
+              Dismiss
+            </ToastPrimitive.Close>
+          </span>
+        )}
         {action !== undefined && (
           <span data-slot="toast-actions" className="flex items-center gap-(--space-2)">
             {timed && <Countdown key={t.updateKey} time={time} duration={timeout} />}

@@ -9,7 +9,6 @@ import {
   type ComponentProps,
   type FormEvent,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -29,9 +28,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
-import { usePlace } from '../../../place';
 import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
-import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -67,12 +64,12 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   canSetStanding: boolean;
   /** The viewer holds `body.remove` (take off the map, restore). */
   canRemove: boolean;
-  // Each write takes the form that asked (`asker`): its refusal is said in the form while it is
-  // there, else in a toast naming the body — never kept by a form that has gone.
-  onSetDormant?: (note: string, asker?: Asker) => Promise<void>;
-  onSetActive?: (asker?: Asker) => Promise<void>;
-  onRemove?: (reason: RemovalReason, asker?: Asker) => Promise<void>;
-  onRestore?: (asker?: Asker) => Promise<void>;
+  // Each write resolves whether it landed: a refusal is a toast naming the body, and the form keeps
+  // what was typed or chosen, to send again.
+  onSetDormant?: (note: string) => Promise<boolean>;
+  onSetActive?: () => Promise<boolean>;
+  onRemove?: (reason: RemovalReason) => Promise<boolean>;
+  onRestore?: () => Promise<boolean>;
 };
 
 /** A standing note's ceiling — the server's (`MAX_STANDING_NOTE_LENGTH`). */
@@ -289,39 +286,18 @@ function PickForm({
   const [note, setNote] = useState('');
   const [reason, setReason] = useState<RemovalReason | null>(null);
   const [busy, setBusy] = useState(false);
-  // A refusal belongs to the pick whose write raised it: the form is one component across picks,
-  // so another pick's form never says it.
-  const [refusal, setRefusal] = useState<{ pick: Pick; text: string } | null>(null);
-  const error = refusal?.pick === pick ? refusal.text : null;
 
   // One write at a time (⏎ in the note submits the form again otherwise), so each answer is the
-  // only attempt's.
+  // only attempt's. Its refusal is said in a toast; the form keeps what was typed or chosen.
   const sending = useRef(false);
-  // The form that asks: mounted, and still on the pick its write was raised for.
-  const shownPick = useRef(pick);
-  shownPick.current = pick;
-  const mounted = useRef(false);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  // The form drawn when the answer comes: one that returns nothing (a permission gone) has no place.
-  const place = usePlace();
-  const askerFor = (raised: Pick): Asker => ({
-    here: () => mounted.current && shownPick.current === raised && place.here(),
-  });
-  async function run(write: (asker: Asker) => Promise<void>) {
+  async function run(write: () => Promise<boolean>) {
     if (sending.current) return;
     sending.current = true;
-    const raisedFor = pick;
     setBusy(true);
-    setRefusal(null);
     try {
-      await write(askerFor(raisedFor));
-    } catch (err) {
-      setRefusal({ pick: raisedFor, text: err instanceof Error ? err.message : String(err) });
+      await write();
+    } catch {
+      // A sender that threw rather than answering: never a form stuck busy.
     } finally {
       sending.current = false;
       setBusy(false);
@@ -331,11 +307,10 @@ function PickForm({
   if (pick === 'dormant' && onSetDormant) {
     const submit = (event: FormEvent) => {
       event.preventDefault();
-      void run((asker) => onSetDormant(note.trim(), asker));
+      void run(() => onSetDormant(note.trim()));
     };
     return (
       <form
-        ref={place.ref}
         data-slot="standing-form"
         onSubmit={submit}
         className="flex flex-col gap-(--space-2)"
@@ -369,7 +344,6 @@ function PickForm({
         <span className="text-assist leading-(--lead-list) text-fg3">
           Skaters read it after “A moderator set this lake inactive:”
         </span>
-        <FormError error={error} />
         <Button type="submit" loading={busy} className="self-start">
           Set dormant <Kbd variant="dim">⏎</Kbd>
         </Button>
@@ -379,7 +353,7 @@ function PickForm({
 
   if (pick === 'removed' && onRemove) {
     return (
-      <div ref={place.ref} data-slot="standing-form" className="flex flex-col gap-(--space-2)">
+      <div data-slot="standing-form" className="flex flex-col gap-(--space-2)">
         <span className="text-kick leading-none font-semibold tracking-kick text-fg3 uppercase">
           Reason
         </span>
@@ -406,7 +380,6 @@ function PickForm({
             Skaters read “{describeStanding({ standing: 'removed', since: 0, reason })}”
           </span>
         )}
-        <FormError error={error} />
         {/* Inert until there is a reason (Review 14 #10): armed, waiting. */}
         <Button
           variant="danger"
@@ -415,7 +388,7 @@ function PickForm({
           loading={busy}
           className="self-start"
           onClick={() => {
-            if (reason !== null) void run((asker) => onRemove(reason, asker));
+            if (reason !== null) void run(() => onRemove(reason));
           }}
         >
           Remove from the map
@@ -427,28 +400,14 @@ function PickForm({
   const back = current === 'removed' ? onRestore : onSetActive;
   if (pick === 'active' && back) {
     return (
-      <div ref={place.ref} data-slot="standing-form" className="flex flex-col gap-(--space-2)">
-        <FormError error={error} />
-        <Button
-          loading={busy}
-          className="self-start"
-          onClick={() => void run((asker) => back(asker))}
-        >
+      <div data-slot="standing-form" className="flex flex-col gap-(--space-2)">
+        <Button loading={busy} className="self-start" onClick={() => void run(back)}>
           {current === 'removed' ? 'Restore to the map' : 'Bring back to the active map'}
         </Button>
       </div>
     );
   }
   return null;
-}
-
-function FormError({ error }: { error: string | null }) {
-  if (error === null) return null;
-  return (
-    <p role="alert" className="m-0 text-assist text-bad">
-      {error}
-    </p>
-  );
 }
 
 /** What keeps it active: one lane per reason that holds, on the years ahead. */

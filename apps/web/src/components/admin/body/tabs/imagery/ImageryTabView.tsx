@@ -9,7 +9,6 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogError,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogReason,
@@ -39,10 +38,9 @@ import {
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
-import { usePlace } from '../../../place';
-import { notSavedWhat, PICK_WHAT } from '../../consoleWords';
+import { PICK_WHAT } from '../../consoleWords';
 import { dayMonth } from '../../frame/bodyModel';
-import { sayNotSaved, useBodyHold } from '../../frame/currentBody';
+import { notSavedWords, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
 import { outcomeOf, useLatestPick } from '../latestPick';
 import { LoadingSection } from '../tabParts';
@@ -86,10 +84,11 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /**
    * Show a hidden pass anyway, or hide a shown one. Hiding takes the pass from skaters, so it asks
    * a reason first; showing asks nothing. Absent: no call is offered; `'unavailable'`: the call is
-   * drawn and says *Not available yet* (no writer on the server).
+   * drawn and says *Not available yet* (no writer on the server). Resolves whether it landed: a
+   * refusal is a toast, and the reason dialog stays open over its reason.
    */
   onOverride?:
-    | ((id: string, verdict: 'show' | 'hide', reason?: string) => Promise<void>)
+    | ((id: string, verdict: 'show' | 'hide', reason?: string) => Promise<boolean>)
     | typeof UNAVAILABLE;
   satellite: {
     /**
@@ -104,8 +103,8 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
     url: string | null;
   };
   /**
-   * Set the satellite link. Absent: the choice is drawn read-only. Throws the server's words for a
-   * refusal to say here; answers `false` for one already said (off its page).
+   * Set the satellite link. Absent: the choice is drawn read-only. Answers `false` for a refusal,
+   * already said in its toast naming the body.
    */
   onSatelliteChange?: (mode: SatelliteImageryMode) => Promise<unknown>;
 };
@@ -120,12 +119,6 @@ const SATELLITE_CHOICES: ReadonlyArray<{ value: SatelliteImageryMode; label: str
   { value: 'off', label: 'Never' },
 ];
 
-/** A satellite choice in the control's words. */
-const choiceLabel = (mode: SatelliteImageryMode): string =>
-  SATELLITE_CHOICES.find((c) => c.value === mode)?.label ?? mode;
-
-/** A refused choice, named, so it never reads as a later choice's refusal. */
-const notSavedChoice = (label: string, why: string): string => `“${label}” wasn’t saved: ${why}`;
 
 export function ImageryTabView({
   season,
@@ -147,7 +140,6 @@ export function ImageryTabView({
   const index = selectedPass(passes, lit);
   const row = passes[index];
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const hidden = row !== undefined && !isShown(row.seen);
   const unavailable = override === UNAVAILABLE;
   const onOverride = unavailable ? undefined : override;
@@ -162,12 +154,9 @@ export function ImageryTabView({
   const write = async (verdict: 'show' | 'hide', why?: string) => {
     if (row === undefined || !onOverride) return false;
     setBusy(true);
-    setError(null);
     try {
-      await onOverride(row.id, verdict, why);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      return await onOverride(row.id, verdict, why);
+    } catch {
       return false;
     } finally {
       setBusy(false);
@@ -183,24 +172,19 @@ export function ImageryTabView({
       return;
     }
     setReason('');
-    setError(null);
     setAsking(true);
   };
   // The satellite link: the latest press always wins — shown at once, sent one write at a time in
   // press order (a press waiting behind the write out is replaced by a newer one), the server's
   // answer drawn again once every write has answered (`useLatestPick`).
   const hold = useBodyHold();
-  // Where a refusal of the link is said: under the control, while that is drawn.
-  const satPlace = usePlace();
   const sat = useLatestPick<SatelliteImageryMode>(
     `imagery-satellite:${satellite.bodyId}`,
     satellite.mode,
     {
-      // Refused here, the write path throws the server's words for this control to say in place;
-      // refused off its page, it has said it already and answers `false`.
+      // The write path says its own refusal in a toast naming the body, and answers `false`.
       send: (mode) => outcomeOf(() => onSatelliteChange?.(mode)),
-      say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.satellite, why)),
-      inPlace: satPlace,
+      words: notSavedWords(hold, PICK_WHAT.satellite),
     },
   );
   const go = (to: number) => {
@@ -312,11 +296,6 @@ export function ImageryTabView({
                 </Button>
               )
             )}
-            {error !== null && !asking && (
-              <p role="alert" className="m-0 text-assist text-bad">
-                {error}
-              </p>
-            )}
             <div
               data-slot="pass-pager"
               className="-mx-(--space-4) grid grid-cols-[1fr_auto_1fr] items-center gap-(--space-3) border-t border-solid border-line px-(--space-4) py-(--space-2)"
@@ -422,14 +401,9 @@ export function ImageryTabView({
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <p ref={satPlace.ref} className="m-0 text-assist leading-(--lead-list) text-fg3">
+        <p className="m-0 text-assist leading-(--lead-list) text-fg3">
           {satelliteAssist(satellite.name, satellite.areaSqM, sat.shown)}
         </p>
-        {sat.error !== null && (
-          <p role="alert" className="m-0 text-assist text-bad">
-            {notSavedChoice(choiceLabel(sat.error.value), sat.error.why)}
-          </p>
-        )}
       </Section>
       <AlertDialog
         open={asking}
@@ -446,7 +420,6 @@ export function ImageryTabView({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogBody>
-            {error !== null && <AlertDialogError>{error}</AlertDialogError>}
             {/* A sent reason is held while its one-shot write is out (it can't be sent again). */}
             <AlertDialogReason
               value={reason}

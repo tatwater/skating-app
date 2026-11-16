@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import type { WaterBodyClass } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -10,10 +10,9 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
-import { usePlace } from '../../../place';
 import { useUndo } from '../../../shell/undo';
 import { ALIASES_KEPT_MOVING, PICK_WHAT, RECEIPTS } from '../../consoleWords';
-import { holdFor, listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
+import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useLatestPick } from '../latestPick';
 import { chipChange, sameList, useListWriter } from '../listWriter';
@@ -81,7 +80,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { data, retry, pending } = useNamesRead(bodyId);
   const setName = useMutation(api.waterBodies.setWaterBodyName);
-  const { act, attempt, sayRefused } = useTabAction(bodyId);
+  const { act, attempt, words } = useTabAction(bodyId);
   const { can } = useRole();
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const canEdit = can('body.identity');
@@ -106,7 +105,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
           },
           PICK_WHAT.name,
         ),
-      say: sayRefused(PICK_WHAT.name),
+      words: words(PICK_WHAT.name),
     },
   );
   const choose = canEdit ? (name: string | null) => namePick.press(name) : undefined;
@@ -118,23 +117,18 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
 
   // **The aliases are a whole list** (`setAliases`, at most 20, each at most 120 characters): one
   // queue for the body, above the page, each save naming the list it was built on (`expected`);
-  // a list another moderator moved is re-applied on top. The server's refusals are said in place.
+  // a list another moderator moved is re-applied on top. A refusal is a toast naming the body.
   const setAliases = useMutation(api.waterBodies.setAliases);
   const setClass = useMutation(api.waterBodies.setClass);
-  const tabHold = useBodyHold();
-  // Here only while the aliases' refusal line is drawn (a failed read draws no field).
-  const aliasesPlace = usePlace();
-  const hold = holdFor(tabHold, aliasesPlace);
+  const hold = useBodyHold();
   const { announce } = useUndo();
-  const [aliasesError, setAliasesError] = useState<string | null>(null);
   const shown = data !== undefined && !isFailed(data) ? data.aliases : [];
   const pushAliases = useListWriter<string>(
     `names-aliases:${bodyId}`,
     shown,
     async (next, base) => {
-      setAliasesError(null);
       try {
-        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
+        // `false`: refused, and said in its toast — never taken as acknowledged.
         return await sendFor(hold, {
           body: bodyId,
           write: () => setAliases({ waterBodyId, aliases: [...next], expected: [...base] }),
@@ -142,19 +136,15 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
           what: 'The aliases',
         });
       } catch (err) {
+        // The one throw `sendFor` passes on: the list moved underneath, for the queue to re-apply.
         const current = listChanged(err);
         if (current !== null) return { current: current as string[] };
-        setAliasesError(err instanceof Error ? err.message : String(err));
-        return false;
+        throw err;
       }
     },
     sameList,
-    // A list that kept moving under the change is said, never dropped quietly: here while this
-    // page is on screen, else in a toast naming the body.
-    () => {
-      if (hold.here()) setAliasesError(ALIASES_KEPT_MOVING);
-      else sayNotSaved(hold, ALIASES_KEPT_MOVING);
-    },
+    // A list that kept moving under the change is said, never dropped quietly: a toast naming the body.
+    () => sayNotSaved(hold, ALIASES_KEPT_MOVING),
   );
   const editAliases = (aliases: string[]) => void pushAliases(chipChange(shown, aliases));
   const classPick = useLatestPick<WaterBodyClass | null>(
@@ -171,7 +161,7 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
           },
           PICK_WHAT.cls,
         ),
-      say: sayRefused(PICK_WHAT.cls),
+      words: words(PICK_WHAT.cls),
     },
   );
   return (
@@ -191,8 +181,6 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
       {...(canEdit
         ? {
             onAliasesChange: editAliases,
-            aliasesError,
-            aliasesPlace: aliasesPlace.ref,
             onClassChange: (cls: WaterBodyClass) => classPick.press(cls),
             onClassClear: () => classPick.press(null),
           }

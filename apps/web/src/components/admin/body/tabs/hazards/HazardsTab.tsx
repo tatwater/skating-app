@@ -16,9 +16,8 @@ import { useMinuteNow } from '@/components/admin/shell/presence';
 import { useUndo } from '@/components/admin/shell/undo';
 import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
-import { holdFor, sendFor, useBodyHold } from '../../frame/currentBody';
+import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import type { Asker } from '../latestPick';
 import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
 import { type FeatureRowWithGlyph, HazardsTabView, type Read } from './HazardsTabView';
@@ -168,8 +167,8 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
             onMarkHazard: UNAVAILABLE,
             onAddFeature: UNAVAILABLE,
             onEditShape: UNAVAILABLE,
-            onDemote: async (featureId: string, reason: string, asker?: Asker) => {
-              await sendFor(holdFor(hold, asker), {
+            onDemote: (featureId: string, reason: string) =>
+              sendFor(hold, {
                 body: waterBodyId,
                 write: () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
                 receipt: (subject) =>
@@ -179,8 +178,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
                     subject,
                   }),
                 what: 'The demotion',
-              });
-            },
+              }),
           }
         : {})}
       lit={lit}

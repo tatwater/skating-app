@@ -16,15 +16,8 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
-import { usePlace } from '../../../place';
-import {
-  LINK_EDITED_AWAY,
-  LINKS_GONE,
-  LINKS_KEPT_MOVING,
-  LINKS_WHAT,
-  notSavedWhat,
-} from '../../consoleWords';
-import { holdFor, listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
+import { LINK_EDITED_AWAY, LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
+import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useListMemory, useListWriter } from '../listWriter';
 import {
   carryIds,
@@ -52,8 +45,8 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /**
    * Writes the whole staff list (add, edit, remove and reorder all land here), naming the list it
    * was built on (`expected`, the server's compare-and-set): a list that moved underneath is thrown
-   * as `list_changed` with the current one. Resolves `false` for a write refused off its console
-   * (already said there).
+   * as `list_changed` with the current one. Resolves `false` for a write refused (already said in
+   * its toast, naming the body).
    */
   onSave?: (links: StaffLink[], expected: StaffLink[]) => Promise<unknown>;
   /** The queue's name above the page (`links:<body>`), so a pressed save outlives the page. */
@@ -265,27 +258,25 @@ export function LinksTabView({
   };
   // Writes in flight: the grips hold a dropped order until the server's echo moves the rows.
   const [inFlight, setInFlight] = useState(0);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
-  const tabHold = useBodyHold();
-  // Here only while the line that says a save's refusal is drawn, not merely while this view is mounted.
-  const savePlace = usePlace();
-  const hold = holdFor(tabHold, savePlace);
+  // A refusal is a toast naming the body (D268).
+  const hold = useBodyHold();
   const words = (l: readonly KeyedLink[]) => l.map(({ label, url }) => ({ label, url }));
   const push = useListWriter<KeyedLink>(
     queueKey,
     staff,
     async (next, base) => {
       if (!onSave) return false;
-      setSaveError(null);
       // The list this attempt sends, keys and all: the server's echo of it takes these keys.
       unseen.current = [...unseen.current, next];
       try {
-        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
-        return (await onSave(words(next), words(base))) !== false;
+        // `false`: refused, and said in its toast — never taken as acknowledged.
+        if ((await onSave(words(next), words(base))) !== false) return true;
+        unseen.current = unseen.current.filter((s) => s !== next);
+        return false;
       } catch (err) {
         // Refused or moved: the server never held this list, so nothing it shows takes its keys.
         unseen.current = unseen.current.filter((s) => s !== next);
@@ -300,24 +291,15 @@ export function LinksTabView({
           unseen.current = [...unseen.current, rebuilt];
           return { current: rebuilt };
         }
-        // Thrown while the tab that sent it is here — but this view may have gone without it (the
-        // body's read failing, or going unavailable): said in place only while it is here.
-        const said = err instanceof Error ? err.message : String(err);
-        if (hold.here()) setSaveError(said);
-        else sayNotSaved(hold, notSavedWhat(LINKS_WHAT, said));
+        // `onSave` passes on nothing else (`sendFor` says every refusal itself): never taken as saved.
         return false;
       }
     },
     // The keys are the page's own: a link the queue added is the same link once its echo shows.
     sameLinks,
     // A change that no longer applies (its link was removed meanwhile), or a list that kept moving
-    // under it, is said, never dropped quietly: here while this page is on screen, else in a toast
-    // naming the body.
-    (why) => {
-      const said = why === 'gone' ? LINKS_GONE : LINKS_KEPT_MOVING;
-      if (hold.here()) setSaveError(said);
-      else sayNotSaved(hold, said);
-    },
+    // under it, is said, never dropped quietly: a toast naming the body.
+    (why) => sayNotSaved(hold, why === 'gone' ? LINKS_GONE : LINKS_KEPT_MOVING),
   );
   const save = async (change: Change) => {
     setInFlight((n) => n + 1);
@@ -466,14 +448,6 @@ export function LinksTabView({
             onRemove={() => void removeEdited()}
           />
         )}
-        {/* The save's place: drawn or not when an answer comes (a refusal is said here only then). */}
-        <p
-          ref={savePlace.ref}
-          {...(saveError !== null && { role: 'alert' })}
-          className="m-0 text-assist text-bad empty:hidden"
-        >
-          {saveError}
-        </p>
       </Section>
 
       <Section

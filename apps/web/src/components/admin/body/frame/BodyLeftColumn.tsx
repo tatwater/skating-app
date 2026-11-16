@@ -14,7 +14,7 @@ import { Slider } from '@/components/kit/slider';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
-import { notSavedWhat, PICK_WHAT } from '../consoleWords';
+import { PICK_WHAT } from '../consoleWords';
 import { outcomeOf, useLatestPick } from '../tabs/latestPick';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
 import {
@@ -24,7 +24,7 @@ import {
   NOT_COMPUTED,
   NOT_COMPUTED_WORDS,
 } from './bodyModel';
-import { type BodyHold, sayNotSaved, useBodyHold } from './currentBody';
+import { type BodyHold, notSavedWords, useBodyHold } from './currentBody';
 import { keyedTowns } from './townKeys';
 
 /**
@@ -309,7 +309,7 @@ function BoostSlider({
   const pick = useLatestPick<number>(`boost:${bodyId}`, record, {
     // The boost's write path says its own refusal, naming the body, and answers `false`.
     send: (next) => outcomeOf(() => onCommit?.(next, hold)),
-    say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.boost, why)),
+    words: notSavedWords(hold, PICK_WHAT.boost),
   });
   // Under the hand while it drags; the pick's value once it's let go, or once that moves.
   const [drag, setDrag] = useState<number | null>(null);

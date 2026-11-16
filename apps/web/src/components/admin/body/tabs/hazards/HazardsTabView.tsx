@@ -5,7 +5,6 @@ import {
   createContext,
   type ReactNode,
   useContext,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -16,7 +15,6 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogError,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogReason,
@@ -46,9 +44,7 @@ import {
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
-import { usePlace } from '../../../place';
 import { useTabKeys } from '../../frame/tabKeys';
-import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
@@ -127,10 +123,10 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   retryPending?: boolean;
   onOpenRecurrence?: () => void;
   /**
-   * Demote a known feature, with the reason taking it away asks for. Absent: not drawn. `asker`: the
-   * dialog's opening — its refusal is said there while it is open, else in a toast.
+   * Demote a known feature, with the reason taking it away asks for. Absent: not drawn. Resolves
+   * whether it landed: a refusal is a toast, and the dialog stays open over the reason.
    */
-  onDemote?: (id: string, reason: string, asker?: Asker) => Promise<void>;
+  onDemote?: (id: string, reason: string) => Promise<boolean>;
   /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
   onMarkHazard?: (() => void) | typeof UNAVAILABLE;
   /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
@@ -363,9 +359,9 @@ export function HazardsTabView({
           <DemoteDialog
             feature={demoting}
             onClose={() => setDemoting(null)}
-            onDemote={async (reason, asker) => {
-              if (demoting !== null) await demote(demoting.id, reason, asker);
-            }}
+            onDemote={async (reason) =>
+              demoting === null ? true : demote(demoting.id, reason)
+            }
           />
         )}
       </div>
@@ -888,22 +884,12 @@ function DemoteDialog({
 }: {
   feature: FeatureRowWithGlyph | null;
   onClose: () => void;
-  onDemote: (reason: string, asker: Asker) => Promise<void>;
+  onDemote: (reason: string) => Promise<boolean>;
 }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // This opening (one feature asked about): a demote's answer acts only on the opening that sent it.
+  // This opening (one feature asked about): a demote's answer closes only the opening that sent it.
   const opening = useRef(0);
-  // The dialog's body drawn when the answer comes.
-  const place = usePlace();
-  const mounted = useRef(false);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   const openFor = useRef<string | null>(null);
   if ((feature?.id ?? null) !== openFor.current) {
     openFor.current = feature?.id ?? null;
@@ -915,7 +901,6 @@ function DemoteDialog({
       onOpenChange={(open) => {
         if (!open && !busy) {
           setReason('');
-          setError(null);
           onClose();
         }
       }}
@@ -929,8 +914,7 @@ function DemoteDialog({
             winter; the sightings behind it stay. It can be added again.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogBody ref={place.ref}>
-          {error !== null && <AlertDialogError>{error}</AlertDialogError>}
+        <AlertDialogBody>
           {/* A sent reason is held while its one-shot write is out: the demotion can't be sent
               again, so words typed then could never be recorded — the field takes none. */}
           <AlertDialogReason
@@ -946,21 +930,15 @@ function DemoteDialog({
             waiting={reason.trim().length === 0 || busy}
             onClick={() => {
               setBusy(true);
-              setError(null);
               const mine = opening.current;
-              void onDemote(reason.trim(), {
-                here: () => mounted.current && opening.current === mine && place.here(),
-              })
-                .then(() => {
-                  if (opening.current !== mine) return;
+              // Refused: said in its toast, and the dialog stays open over the reason.
+              void onDemote(reason.trim())
+                .then((landed) => {
+                  if (!landed || opening.current !== mine) return;
                   setReason('');
                   onClose();
                 })
-                .catch((err: unknown) => {
-                  if (opening.current === mine) {
-                    setError(err instanceof Error ? err.message : String(err));
-                  }
-                })
+                .catch(() => {})
                 .finally(() => setBusy(false));
             }}
           >
