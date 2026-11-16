@@ -341,6 +341,54 @@ describe('setModeratorTowns', () => {
     expect((await get(t, id))?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
   });
 
+  test('a Bodies write accepted with the person’s words at or near the cap has an undo that runs — never refused for length', async () => {
+    // A pin's removal (its reason) and a body's removal (its note): each undo gives back, so it asks
+    // no reason, and its own line quotes the row's — composed, so shortened rather than refused.
+    const check = async (write: 'unpin' | 'remove', length: number) => {
+      const t = harness();
+      await seedTowns(t);
+      const admin = await person(t);
+      const id = await imported(t, 'way/1');
+      const words = 'w'.repeat(length);
+      let action: Doc<'moderationActions'>['action'];
+      if (write === 'unpin') {
+        await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+          waterBodyId: id,
+          townKeys: [NORTH_EAST, SOUTHBRIDGE],
+        });
+        await admin.as.mutation(api.waterBodies.setModeratorTowns, {
+          waterBodyId: id,
+          townKeys: [NORTH_EAST],
+          reason: words,
+        });
+        action = 'set_moderator_towns';
+      } else {
+        await admin.as.mutation(api.waterBodies.remove, {
+          waterBodyId: id,
+          reason: 'other',
+          note: words,
+        });
+        action = 'remove';
+      }
+      const row = await lastAction(t, action);
+      await admin.as.mutation(api.undo.run, { actionId: row._id });
+      const after = await get(t, id);
+      if (write === 'unpin') expect(after?.moderatorTownKeys).toEqual([NORTH_EAST, SOUTHBRIDGE]);
+      else expect(after?.removedAt).toBeUndefined();
+    };
+    const near = fc.asyncProperty(
+      fc.constantFrom('unpin' as const, 'remove' as const),
+      fc.integer({ min: AUDIT_REASON_MAX - 40, max: AUDIT_REASON_MAX }),
+      check,
+    );
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261116, 9]) await fc.assert(near, { seed, numRuns: 3 });
+    await fc.assert(near, { numRuns: 2 });
+    // The cap itself, for each write.
+    await check('unpin', AUDIT_REASON_MAX);
+    await check('remove', AUDIT_REASON_MAX);
+  });
+
   test('a pin reaches every reader at once — the body’s states, skater search, the library, the facts — and its clear takes back only what it added (Greptile on #130)', async () => {
     const t = harness();
     await seedTowns(t);

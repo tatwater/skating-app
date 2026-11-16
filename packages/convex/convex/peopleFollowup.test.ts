@@ -146,6 +146,57 @@ describe('an audit reason is capped at the one place it enters the log (D261)', 
     expect(undo?.reason.endsWith('…')).toBe(true);
     expect(undo?.reason.length).toBe(AUDIT_REASON_MAX);
   });
+
+  test('every People take-away accepted with a reason at or near the cap has an undo that runs — never refused for length', async () => {
+    // Each write that takes something away, with the person's reason; its undo gives back, so it
+    // asks none, and the engine's own line quotes the row's.
+    const TAKEAWAYS: Record<
+      string,
+      // biome-ignore lint/suspicious/noExplicitAny: each write's own answer
+      (a: ReturnType<typeof as>, id: Id<'profiles'>, reason: string) => Promise<any>
+    > = {
+      ban: (a, id, reason) => a.mutation(api.moderation.banUser, { userId: id, reason }),
+      suspend: (a, id, reason) =>
+        a.mutation(api.moderation.suspendUser, {
+          userId: id,
+          reason,
+          suspendedUntil: T0 + 2 * DAY,
+        }),
+      rightOff: (a, id, reason) =>
+        a.mutation(api.moderation.setPostingPermission, {
+          userId: id,
+          permission: 'comments',
+          allowed: false,
+          reason,
+        }),
+      bountyLower: (a, id, reason) =>
+        a.mutation(api.moderation.setBountyPostLimit, { userId: id, limit: 0, reason }),
+      demote: (a, id, reason) => a.mutation(api.admin.revokeRole, { userId: id, reason }),
+      ledgerOff: (a, id, reason) => a.mutation(api.ledger.revokeEditor, { userId: id, reason }),
+    };
+    const check = async (write: string, length: number) => {
+      vi.setSystemTime(T0);
+      const t = await setup();
+      await seed(t, 'adm', { role: 'admin', canEditLedger: true });
+      const staff = write === 'demote' || write === 'ledgerOff';
+      const them = await seed(t, 'them', staff ? { role: 'admin', canEditLedger: true } : {});
+      const a = as(t, 'adm');
+      const write_ = TAKEAWAYS[write] as NonNullable<(typeof TAKEAWAYS)[string]>;
+      const out = undoable(await write_(a, them, 'r'.repeat(length)));
+      expect(out.undoNeedsReason, write).toBe(false);
+      await a.mutation(api.undo.run, { actionId: out.actionId });
+    };
+    const near = fc.asyncProperty(
+      fc.constantFrom(...Object.keys(TAKEAWAYS)),
+      fc.integer({ min: AUDIT_REASON_MAX - 40, max: AUDIT_REASON_MAX }),
+      check,
+    );
+    // Pinned seeds, so a failure replays; then one run on a fresh seed.
+    for (const seed of [20261116, 9]) await fc.assert(near, { seed, numRuns: 6 });
+    await fc.assert(near, { numRuns: 3 });
+    // The cap itself, for every write.
+    for (const write of Object.keys(TAKEAWAYS)) await check(write, AUDIT_REASON_MAX);
+  });
 });
 
 describe('a reason the system composes is shortened to fit, never refused (D261)', () => {
