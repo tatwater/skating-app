@@ -84,6 +84,8 @@ export interface RecordFacts {
   targetType: VerdictTargetType;
   /** Gone, or a comment the sweep reduced to its placeholder. */
   erased: boolean;
+  /** Gone altogether (no document): nothing to act on, not even an overturn. */
+  gone?: boolean;
   /** Its author deleted it (the stamp), or retracted their alert. */
   authorDeleted: boolean;
   /**
@@ -122,11 +124,15 @@ export const RECORD_NEEDS_REASON: Record<RecordAction, boolean> = {
  * choice passes — which `can` turns into `needsChoice`.
  */
 export function recordRefusal(facts: RecordFacts, action: RecordAction): string | null {
-  if (facts.erased) return ERASED_ALREADY;
+  // An erased comment's shell keeps its record: a decision standing on it can still come off it
+  // (Overturn); nothing else is left to act on. An item gone altogether has nothing to act on at all.
+  if (facts.gone || (facts.erased && action !== 'overturn')) return ERASED_ALREADY;
   switch (action) {
     case 'restore': {
       if (facts.authorDeleted) return AUTHOR_DELETED_RESTORE;
-      if (facts.status === 'visible') return RESTORE_ALREADY_UP;
+      // Up already: nothing to change — unless a decision still stands on it (a history rebuilt from
+      // before the record), which the restore ends.
+      if (facts.status === 'visible' && !facts.standing) return RESTORE_ALREADY_UP;
       if (facts.targetType !== 'post') return null;
       if (facts.post === undefined) return RECORD_CHECK_ON_ITEM;
       if (facts.post.visibleAfter > 0) return null;
@@ -178,17 +184,19 @@ export type RecordLevers = Partial<Record<RecordAction, RecordCan>>;
  * **Which levers apply to the item as it stands** (the sheet's one action per item): a decision that
  * stands on content still its author's — Restore; on content they took back since — Overturn; content
  * they took back that no decision holds — Keep on the record; content that is up — Hide again. An
- * erased item offers nothing. A Post whose members weren't read and whose author didn't delete it
- * answers Restore with {@link RECORD_CHECK_ON_ITEM} (its members decide between the two).
+ * erased item offers nothing, and an alert is never restored (only overturned or kept). A Post whose
+ * members weren't read and whose author didn't delete it answers Restore with
+ * {@link RECORD_CHECK_ON_ITEM} (its members decide between the two).
  */
 export function recordLevers(viewer: RecordViewer, facts: RecordFacts): RecordLevers {
-  if (facts.erased) return {};
   const answer = (action: RecordAction) => ({ [action]: recordCan(viewer, facts, action) });
+  if (facts.gone) return {};
+  if (facts.erased) return facts.standing ? answer('overturn') : {};
   if (facts.standing) {
     if (facts.withdrawn === true) return answer('overturn');
-    // A Post that is up has a member up, so not every one was withdrawn: its members, unread, would
-    // answer as the pane does — nothing to restore.
-    if (facts.status === 'visible') return {};
+    // An alert has no moderation status to restore (`setModerationStatus` takes no alert): its one
+    // verdict is on an alert its author retracted, which `withdrawn` sends to Overturn above.
+    if (facts.status === null) return {};
     return answer('restore');
   }
   if (facts.authorDeleted) return answer('keep');
@@ -213,6 +221,7 @@ export function recordFactsOf(
     return {
       targetType,
       erased: true,
+      gone: true,
       authorDeleted: false,
       withdrawn: false,
       status: null,

@@ -2679,7 +2679,9 @@ only; the sheet itself is the web's next pass. Every shape change is additive ex
 - **Counts are a sibling read**, not `people.person.record`: Reversed to 500 (4 MiB of verdict rows
   at their declared worst) and Deleted beside it don't fit in the person page's budget without
   shrinking its other figures. Standing stays `person.hidden`. `person.pending` now names `verdicts`.
-- **A restore of what is already up writes nothing** (refused, *This is already up.*): a restore needs
+- **A restore of what is already up writes nothing** (refused, *This is already up.*) — unless a
+  decision still stands on it, which the restore ends; and an erased comment's shell offers Overturn
+  for a decision standing on it, nothing else (the review over `origin/main..HEAD`). A restore needs
   no reason now, so a second press would otherwise write a second row. Before this build a restore of
   a visible item wrote a row (its reason a re-assertion); a hide of a hidden item still does.
 - **The item pane names every decision's end**: `endedHow` is `restore`, `undo`, `overturn` — or, in

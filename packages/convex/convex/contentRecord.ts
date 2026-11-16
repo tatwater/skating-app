@@ -339,6 +339,11 @@ export async function standingPage(
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
   const page = rows.map((l) => {
     const { verdict, decision, target } = l;
+    // A comment the sweep reduced to its placeholder keeps no words: `null`, as Reversed and the pane.
+    const erasedComment =
+      target !== null &&
+      verdict.targetType === 'comment' &&
+      (target as Doc<'comments'>).erasedAt !== undefined;
     return {
       targetType: verdict.targetType,
       targetId: verdict.targetId,
@@ -347,7 +352,7 @@ export async function standingPage(
       reason: decision?.reason ?? null,
       byUserId: decision?.actorId ?? null,
       decidedBy: names.person(decision?.actorId),
-      content: target ? contentOf(verdict.targetType, target) : null,
+      content: target && !erasedComment ? contentOf(verdict.targetType, target) : null,
       authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
       ...placeOf(l, verdict.targetType, names),
       can: rowLevers(viewer, l, true),
@@ -920,7 +925,10 @@ export const item = query({
           )
         : Promise.resolve(null),
     ]);
+    // Only a standing verdict's lever (Restore or Overturn) rests on the members; with none standing
+    // the levers never read them, so neither does the pane.
     const members =
+      standing &&
       targetType === 'post' &&
       target !== null &&
       authorDeletedAtOf(target as Doc<'posts'>) === undefined

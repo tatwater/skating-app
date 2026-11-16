@@ -22,6 +22,7 @@ import {
   RECORD_CHECK_ON_ITEM,
   RECORD_LEAVING,
   RECORD_NOT_STAFF,
+  RESTORE_ALREADY_UP,
 } from './lib/recordRules';
 import { undoState } from './lib/undo';
 import schema from './schema';
@@ -234,7 +235,8 @@ describe('the writes', () => {
         reason: 'x'.repeat(2_001),
       }),
     ).rejects.toThrow('at most 2,000');
-    // An erased comment's placeholder, under a verdict a backfill left: nothing left to act on.
+    // An erased comment's placeholder, under a verdict a backfill left: its words are gone, but the
+    // decision can still come off the record.
     await t.run(async (ctx) => {
       await ctx.db.patch(c, { erasedAt: Date.now(), body: '' });
       await ctx.db.insert('contentVerdicts', {
@@ -248,9 +250,15 @@ describe('the writes', () => {
         superseded: false,
       });
     });
-    await expect(
-      matt.as.mutation(api.moderation.overturnVerdict, { targetType: 'comment', targetId: c }),
-    ).rejects.toThrow(ERASED_ALREADY);
+    const pane = await matt.as.query(api.contentRecord.item, {
+      targetType: 'comment',
+      targetId: c,
+    });
+    expect(pane).toMatchObject({ published: null, can: { overturn: { ok: true } } });
+    await matt.as.mutation(api.moderation.overturnVerdict, { targetType: 'comment', targetId: c });
+    expect((await standingOf(matt.as, rob.id)).rows).toEqual([]);
+    // Nothing else is left to act on there.
+    await expect(set('comment', c, 'hidden', 'again')).rejects.toThrow(ERASED_ALREADY);
   });
 
   test('keep on the record records a removal that holds the content, and its undo is the overturn', async () => {
@@ -349,6 +357,39 @@ describe('the writes', () => {
       }),
     ]);
     expect((await deletedOf(matt.as, rob.id)).rows).toEqual([]);
+  });
+});
+
+describe('a decision standing on an item that is up', () => {
+  test('a restore ends it (a history rebuilt from before the record leaves one); then it is already up', async () => {
+    const { t, rob, matt, report, set } = await setup();
+    const r = await report(rob.id);
+    await t.run(async (ctx) => {
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: matt.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: r,
+        reason: 'old hide',
+        metadata: { priorStatus: 'visible', newStatus: 'hidden' },
+        createdAt: Date.now() - 1_000,
+      });
+      await ctx.db.insert('contentVerdicts', {
+        subjectUserId: rob.id,
+        targetType: 'report',
+        targetId: r,
+        actionId,
+        kind: 'hidden',
+        at: Date.now() - 1_000,
+        standing: true,
+        superseded: false,
+      });
+    });
+    const [row] = (await standingOf(matt.as, rob.id)).rows;
+    expect(row?.can).toEqual({ restore: { ok: true, needsReason: false } });
+    await set('report', r, 'visible');
+    expect((await standingOf(matt.as, rob.id)).rows).toEqual([]);
+    await expect(set('report', r, 'visible')).rejects.toThrow(RESTORE_ALREADY_UP);
   });
 });
 

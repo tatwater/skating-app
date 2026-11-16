@@ -36,6 +36,7 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
   .record({
     targetType: fc.constantFrom(...KINDS),
     erased: fc.boolean(),
+    gone: fc.boolean(),
     authorDeleted: fc.boolean(),
     membersWithdrawn: fc.constantFrom<boolean | 'unknown'>(true, false, 'unknown'),
     status: fc.constantFrom('visible' as const, 'hidden' as const, 'removed' as const),
@@ -45,8 +46,10 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
       { nil: undefined },
     ),
   })
-  .map(({ membersWithdrawn, post, ...f }) => ({
+  .map(({ membersWithdrawn, post, gone, ...f }) => ({
     ...f,
+    // Gone is erased too; an erased shell (a comment's placeholder) is not gone.
+    ...(gone && f.erased ? { gone: true } : {}),
     status: f.targetType === 'accessAlert' ? null : f.status,
     withdrawn: f.authorDeleted ? true : f.targetType === 'post' ? membersWithdrawn : false,
     ...(f.targetType === 'post' && post !== undefined ? { post } : {}),
@@ -70,7 +73,9 @@ describe('lib/recordRules', () => {
           const levers = recordLevers(viewer, facts);
           const keys = Object.keys(levers) as RecordAction[];
           expect(keys.length).toBeLessThanOrEqual(1);
-          if (facts.erased) expect(keys).toEqual([]);
+          // Gone offers nothing; an erased shell, only the overturn of a decision standing on it.
+          if (facts.gone) expect(keys).toEqual([]);
+          else if (facts.erased) expect(keys).toEqual(facts.standing ? ['overturn'] : []);
           const staff = viewer.role !== 'member' && viewer.deletionRequestedAt === undefined;
           for (const action of ACTIONS) {
             const can = recordCan(viewer, facts, action);
@@ -111,7 +116,17 @@ describe('lib/recordRules', () => {
     expect(recordRefusal({ ...base, authorDeleted: true, withdrawn: true }, 'restore')).toBe(
       AUTHOR_DELETED_RESTORE,
     );
-    expect(recordRefusal({ ...base, status: 'visible' }, 'restore')).toBe(RESTORE_ALREADY_UP);
+    expect(recordRefusal({ ...base, status: 'visible', standing: false }, 'restore')).toBe(
+      RESTORE_ALREADY_UP,
+    );
+    // Up, but a decision still stands on it (a history rebuilt from before the record): the restore
+    // ends it.
+    expect(recordRefusal({ ...base, status: 'visible' }, 'restore')).toBe(null);
+    // An erased shell keeps its record: an overturn still takes a standing decision off it.
+    const shell = { ...base, erased: true, authorDeleted: true, withdrawn: true } as RecordFacts;
+    expect(recordRefusal(shell, 'overturn')).toBe(null);
+    expect(recordRefusal(shell, 'restore')).toBe(ERASED_ALREADY);
+    expect(recordRefusal({ ...shell, gone: true }, 'overturn')).toBe(ERASED_ALREADY);
     expect(recordRefusal(base, 'overturn')).toBe(OVERTURN_NOT_DELETED);
     expect(recordRefusal({ ...base, withdrawn: true, standing: false }, 'overturn')).toBe(
       OVERTURN_NOTHING_STANDING,
@@ -134,7 +149,7 @@ describe('lib/recordRules', () => {
     );
   });
 
-  test('a standing Post that is up offers nothing, its members read or not — the list is the pane', () => {
+  test('a standing Post that is up: Restore ends its decision — checked on the item, exact in the pane', () => {
     const viewer: RecordViewer = { role: 'moderator', canEditLedger: false };
     const up: RecordFacts = {
       targetType: 'post',
@@ -144,12 +159,29 @@ describe('lib/recordRules', () => {
       status: 'visible',
       standing: true,
     };
-    expect(recordLevers(viewer, up)).toEqual({});
-    expect(recordLevers(viewer, { ...up, withdrawn: false })).toEqual({});
-    // Down, the list still sends the moderator to the item, whose members decide.
-    expect(recordLevers(viewer, { ...up, status: 'hidden' })).toEqual({
-      restore: { ok: false, why: RECORD_CHECK_ON_ITEM },
-    });
+    // A list row, its members unread, sends the moderator to the item (as for a Post that is down).
+    expect(recordLevers(viewer, up)).toEqual({ restore: { ok: false, why: RECORD_CHECK_ON_ITEM } });
+    // The pane read them: a member is up, so the restore brings the Post back and ends the decision.
+    expect(
+      recordLevers(viewer, { ...up, withdrawn: false, post: { visibleAfter: 1, choosable: 0 } }),
+    ).toEqual({ restore: { ok: true, needsReason: false, needsChoice: false } });
+  });
+
+  test('a standing alert its author didn’t retract offers nothing — no write restores an alert', () => {
+    const viewer: RecordViewer = { role: 'moderator', canEditLedger: false };
+    const alert: RecordFacts = {
+      targetType: 'accessAlert',
+      erased: false,
+      authorDeleted: false,
+      withdrawn: false,
+      status: null,
+      standing: true,
+    };
+    expect(recordLevers(viewer, alert)).toEqual({});
+    // Retracted by its author, the verdict on it is overturned.
+    expect(
+      Object.keys(recordLevers(viewer, { ...alert, authorDeleted: true, withdrawn: true })),
+    ).toEqual(['overturn']);
   });
 
   test('the facts of a document: gone is erased; a Post its author didn’t delete waits on its members', () => {

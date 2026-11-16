@@ -395,11 +395,6 @@ export interface PostRestorePlan {
 }
 
 /**
- * The one decision both Post writers share (founder call, 2026-11-13): which members a restore
- * brings back, and whether the Post would show any. Reads only — a refusal writes nothing. A
- * chosen id that isn't a member, isn't down, or was withdrawn by its author is refused.
- */
-/**
  * How the plan reads a member and the newest row on it: from the database (the writes), or from what
  * a read already holds (the record sheet's item pane, which read them within its budget).
  */
@@ -408,6 +403,11 @@ export interface PostMemberReader {
   newest(id: Id<'reports'>): Promise<Doc<'moderationActions'> | null>;
 }
 
+/**
+ * The one decision both Post writers share (founder call, 2026-11-13): which members a restore
+ * brings back, and whether the Post would show any. Reads only — a refusal writes nothing. A
+ * chosen id that isn't a member, isn't down, or was withdrawn by its author is refused.
+ */
 export async function planPostRestore(
   ctx: QueryCtx,
   post: Doc<'posts'>,
@@ -622,7 +622,12 @@ export async function setContentStatus(
       priorStatus === 'visible' &&
       !args.withReportIds?.length
     ) {
-      throw new ConvexError(recordRefusal(facts, 'restore') as string);
+      // Unless a decision still stands on it, which the restore ends (the rule reads it).
+      const standing = (await standingVerdictsOn(ctx, args.targetType, args.targetId)).length > 0;
+      // A Post that is up shows a Report (D186), as its plan below would find.
+      const shown = args.targetType === 'post' ? { post: { visibleAfter: 1, choosable: 0 } } : {};
+      const why = recordRefusal({ ...facts, standing, ...shown }, 'restore');
+      if (why !== null) throw new ConvexError(why);
     }
     // A restore's default reason is marked on every row it writes — the members it brings back and a
     // Post it derives back up — as on its own, so History and the record sheet leave each one out.

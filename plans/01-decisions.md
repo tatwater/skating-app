@@ -8149,9 +8149,12 @@ it; every read's `can` answers by it):
 
 - **Restore** takes a reason only if one is given — a give-back (D226) — otherwise a default the row
   marks `reasonDefaulted`, on every row the restore writes. **Restoring what is already up is refused**
-  and writes nothing: with no reason asked, a second press would otherwise write a second row.
+  and writes nothing — unless a decision still stands on it (a history rebuilt from before the record
+  can leave one), which the restore ends: with no reason asked, a second press would otherwise write a
+  second row.
 - **Overturn** takes a reason only if one is given (the same default and mark), and returns when the
-  words are now due to be erased.
+  words are now due to be erased. It is the one lever an erased comment's shell still offers: its
+  words are gone, but a decision standing on it can come off the record.
 - **Keep on the record** is its own write (`moderation.keepOnRecord`): a removal on the person's record
   (an alert's, a retraction), marked `keptOnRecord`, holding the content from erasure until a moderator
   overturns it. A takeaway, so a reason is required; refused on content its author still has up, and on
