@@ -204,4 +204,39 @@ describe('an undo of a terms change puts the prior terms back — the reason inc
     expect(both.note).toMatchObject({ reason: 'b', at: T0 });
     expect(both.row).toMatchObject({ statusReason: 'b', statusSince: T0 });
   });
+
+  test.each([
+    ['ban', {}],
+    ['suspend', { suspendedUntil: T0 + 2 * DAY }],
+  ] as const)(
+    'terms with no reason on file come back with none — a %s, never the undo’s reason',
+    async (verb, over) => {
+      const t = await setup();
+      await seed(t, 'adm', { role: 'admin' });
+      // Terms set before reasons were kept: the status, and no reason on file.
+      const id = await seed(t, 'them', {
+        status: verb === 'ban' ? 'banned' : 'suspended',
+        ...over,
+      });
+      const a = as(t, 'adm');
+      vi.setSystemTime(T0 - DAY);
+      const changed = (
+        verb === 'ban'
+          ? await a.mutation(api.moderation.banUser, { userId: id, reason: 'b' })
+          : await a.mutation(api.moderation.suspendUser, {
+              userId: id,
+              reason: 'b',
+              suspendedUntil: T0 + 2 * DAY,
+            })
+      ) as { actionId: Id<'moderationActions'> };
+      vi.setSystemTime(T0);
+      await a.mutation(api.undo.run, { actionId: changed.actionId, reason: 'oops' });
+      const person = await t.run((ctx) => ctx.db.get(id));
+      expect(person?.statusReason).toBeUndefined();
+      const both = await bothAnswers(t, id);
+      expect(both.note).toMatchObject({ reason: null, at: T0 });
+      expect(both.row?.statusReason).toBeUndefined();
+      expect(both.row?.statusSince).toBe(T0);
+    },
+  );
 });

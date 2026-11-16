@@ -1954,7 +1954,7 @@ export async function banImpl(
   // The one normalizer (`lib/audit.checkedReason`): compared and kept trimmed, refused past the cap.
   const reason = checkedReason(given);
   {
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (reason.length === 0) throw new ConvexError('A reason is required');
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
     // in an undo that puts a ban back, which comes through this same writer.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
@@ -1981,10 +1981,7 @@ export async function banImpl(
       prev: statusPrev(target),
     });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
-    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
-      clerkUserId: target.clerkUserId,
-      banned: true,
-    });
+    await syncClerkBan(ctx, target, true);
     return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }
@@ -2023,7 +2020,7 @@ export async function suspendImpl(
   // The one normalizer (`lib/audit.checkedReason`): compared and kept trimmed, refused past the cap.
   const reason = checkedReason(given);
   {
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (reason.length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
     }
@@ -2050,12 +2047,7 @@ export async function suspendImpl(
     // A suspension that replaces a ban — softened on appeal, or a ban's undo back to the suspension
     // it replaced (D226) — has to lift the ban's Clerk lock too: a suspension never holds one, so
     // left in place it would outlive the window and lock the person out for good (the reason above).
-    if (target.status === 'banned') {
-      await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
-        clerkUserId: target.clerkUserId,
-        banned: false,
-      });
-    }
+    if (target.status === 'banned') await syncClerkBan(ctx, target, false);
     return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }
@@ -2109,10 +2101,7 @@ export async function unbanImpl(
       prev: statusPrev(target),
       ...(defaulted ? { reasonDefaulted: true } : {}),
     });
-    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
-      clerkUserId: target.clerkUserId,
-      banned: false,
-    });
+    await syncClerkBan(ctx, target, false);
     return personWriteResult(ctx, actor._id, userId, actionId);
   }
 }

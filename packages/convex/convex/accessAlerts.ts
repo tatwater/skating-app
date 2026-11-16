@@ -445,9 +445,15 @@ export const retract = mutation({
       // existed is the author's all the same (the clocks backfill gives it its time).
       const authorWithdrew = authorRetracted(alert);
       // A retraction already held as evidence changes nothing: nothing more is written (D270), as
-      // this write answers a retraction already made.
-      const held = (await standingVerdictsOn(ctx, 'accessAlert', accessAlertId)).length > 0;
-      if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0 && !held) {
+      // this write answers a retraction already made. The verdicts are read last, only where they
+      // can change the answer.
+      if (
+        isModerator &&
+        !isAuthor &&
+        authorWithdrew &&
+        verdictReason.length > 0 &&
+        (await standingVerdictsOn(ctx, 'accessAlert', accessAlertId)).length === 0
+      ) {
         await recordAlertVerdict(ctx, profile, alert, verdictReason, Date.now());
       }
       // The author again, on a retraction from before `retractedAt` existed: it has no clock to

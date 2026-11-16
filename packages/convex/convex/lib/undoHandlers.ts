@@ -164,7 +164,9 @@ async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   // The prior terms whole — their reason too, kept on file; the undo's own reason is its audit row's.
   // A row from before `prev` recorded one has none to put back: `null`, "not recorded", as the page
   // then says.
-  const statusReason = prev.statusReason;
+  // `?? null`, as `lib/statusTerms` reads a `prev`: a missing reason must never fall back to the
+  // undo's own (`banImpl` reads `undefined` as "this write's reason").
+  const statusReason = prev.statusReason ?? null;
   if (write.kind === 'ban') {
     assertChanged(await banImpl(call.ctx, call.actor, { userId, reason, statusReason }));
   } else if (write.kind === 'suspend') {
