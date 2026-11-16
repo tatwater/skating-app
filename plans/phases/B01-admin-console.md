@@ -2858,6 +2858,11 @@ time — the reads narrow by one), the open item beside, master–detail under t
   *Deleted by its author 28 Sep* from `PostRestoreMember.authorDeletedAt`.
 - **Ages** are the console's one short form (`shortAge`, "209 d"), not the board's "7 mo" — one call,
   `RECORD_WORDS.rowAge`, while the founder decides.
+- **Known and left:** *Kept* is told by when a decision came (on or after the author's deletion),
+  not by a fact the server states — a hide on content already deleted reads *Kept* too, where
+  History says hidden; a stored `keptOnRecord` on the row would settle it. A Post restored with
+  chosen Reports keeps its own row for the sitting; the Reports that came back with it leave
+  Standing without one.
 
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
