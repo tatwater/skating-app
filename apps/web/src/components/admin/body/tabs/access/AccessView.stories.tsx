@@ -36,9 +36,9 @@ const slots = (root: ParentNode, name: string) => [
 const EVERY_LEVER = {
   data: MASCOMA_ACCESS,
   canPlace: true,
-  onRule: fn(async () => null),
+  onRule: fn(async () => true),
   onMakeOfficial: fn(),
-  onHide: fn(async () => null),
+  onHide: fn(async () => true),
 };
 
 /** Board 5.4.4 as drawn. */

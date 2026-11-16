@@ -54,9 +54,9 @@ const EVERY_LEVER = {
   data: MASCOMA_PLACES,
   canPlace: true,
   onFileAsSpelling: fn(),
-  onDismissName: fn(async () => null),
+  onDismissName: fn(async () => true),
   onSamePlace: fn(),
-  onDecline: fn(async () => null),
+  onDecline: fn(async () => true),
   onEditLandmark: fn(),
   onLitChange: fn(),
 };

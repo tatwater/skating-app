@@ -28,8 +28,11 @@ import { type RefusalWords, said } from '../../said';
  * The outcome carries no words: a reason dialog that waited on its press learns only whether to close.
  */
 
-/** Every answer a write gives the store: landed, or refused — and said already, in its toast. */
-export type PickOutcome = { landed: boolean };
+/**
+ * Every answer a write gives the store: landed, or refused — and said already, in its toast. It
+ * carries no words (`why` can never be set): those go only to the toast.
+ */
+export type PickOutcome = { readonly landed: boolean; readonly why?: never };
 
 /** Landed. */
 export const LANDED: PickOutcome = Object.freeze({ landed: true });

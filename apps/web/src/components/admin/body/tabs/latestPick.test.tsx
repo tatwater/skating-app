@@ -1,40 +1,52 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** The toasts the one write helper drew: a sender that threw is said by the store, through it. */
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 
 import {
-  type Asker,
   createPickStore,
+  LANDED,
   outcomeOf,
   type PickOutcome,
   type PickSend,
   type PickStore,
   PickStoreContext,
-  SAID,
+  REFUSED,
   useLatestPick,
 } from './latestPick';
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-/** How a write answers: landed; refused (returned, or thrown); or refused and said by its path. */
-type Answer = 'ok' | 'returned' | 'thrown' | 'said';
+beforeEach(() => {
+  toasts.length = 0;
+});
+
+/**
+ * How a write answers: landed; refused and said by its write path (as `sendFor` says every one, in a
+ * toast naming the body), answering `REFUSED`; or a sender that threw rather than answering.
+ */
+type Answer = 'ok' | 'refused' | 'thrown';
 
 /** A write the test answers. */
 type Held = { key: string; body: string; value: string; answer: (a: Answer) => void };
 
 /**
  * One store, its sends recorded. A page's sender names the body it was composed for; a page coming
- * back hands the queue a new sender for the same body (`adopt`), as a remounted tab does. `said`
- * counts the refusals the page's own words said (`say`), and the ones a write path said itself.
+ * back hands the queue a new sender for the same body (`adopt`), as a remounted tab does. `said.path`
+ * counts the refusals a write path said itself; the store's own are the toasts.
  */
 function harness() {
   const held: Held[] = [];
-  const said = { page: 0, path: 0 };
+  const said = { path: 0 };
   const store = createPickStore();
-  const say = () => {
-    said.page++;
-  };
+  const words = (why: string) => ({ title: 'Not saved · Mascoma Lake', description: why });
   const senderFor = (key: string, body: string) => (value: string) =>
     new Promise<PickOutcome>((resolve, reject) => {
       held.push({
@@ -42,17 +54,16 @@ function harness() {
         body,
         value,
         answer: (a) => {
-          if (a === 'ok') resolve({ landed: true });
-          else if (a === 'returned') resolve({ landed: false, why: 'refused' });
+          if (a === 'ok') resolve(LANDED);
           else if (a === 'thrown') reject(new Error('refused'));
           else {
             said.path++;
-            resolve({ landed: false, why: '', said: true });
+            resolve(REFUSED);
           }
         },
       });
     });
-  const page = (key: string, body: string) => ({ send: senderFor(key, body), say });
+  const page = (key: string, body: string) => ({ send: senderFor(key, body), words });
   return { store, held, said, page };
 }
 
@@ -90,87 +101,49 @@ describe('the pick store — the latest press wins', () => {
     expect(h.held.map((w) => w.value)).toEqual(['d']);
   });
 
-  it.each(['returned', 'thrown'] as const)(
-    'a refusal %s is one thing: the asker there hears it; gone, a control in place; else the page',
+  it.each(['refused', 'thrown'] as const)(
+    'a refusal (%s) is said exactly once, and its press hears only that it did not land',
     async (how) => {
       const h = harness();
-      const p = h.page('k', 'a');
-      const asker = { alive: true };
-      const ask: Asker = { here: () => asker.alive };
-      const heard = h.store.press('k', { value: 'b', server: 'a', asker: ask }, p);
+      const heard = h.store.press('k', { value: 'b', server: 'a' }, h.page('k', 'a'));
       h.held.shift()?.answer(how);
-      expect(await heard).toEqual({ landed: false, why: 'refused' });
-      expect(h.said.page).toBe(0);
-      // The asker gone, a control mounted that says refusals in place hears it.
-      const inPlace: string[] = [];
-      const stop = h.store.watch('k', { change: () => {}, error: (why) => inPlace.push(why) });
-      asker.alive = false;
-      const gone = h.store.press('k', { value: 'b', server: 'a', asker: ask }, p);
-      h.held.shift()?.answer(how);
-      expect(await gone).toMatchObject({ landed: false, said: true });
-      expect(inPlace).toEqual(['refused']);
-      stop();
-      // No one there at all: the page's words.
-      h.store.press('k', { value: 'b', server: 'a' }, p);
-      h.held.shift()?.answer(how);
-      await settle();
-      expect(h.said.page).toBe(1);
+      const outcome = await heard;
+      // No words reach the caller: the outcome is `{ landed: false }` and nothing else.
+      expect(outcome).toEqual({ landed: false });
+      expect(h.said.path + toasts.length).toBe(1);
+      if (how === 'thrown') {
+        // Said by the store, through the one write helper, in the page's words.
+        expect(toasts).toEqual([
+          expect.objectContaining({
+            title: 'Not saved · Mascoma Lake',
+            description: 'Something went wrong — check your connection and try again.',
+          }),
+        ]);
+      }
       expect(h.store.size()).toBe(0);
     },
   );
 
-  it('a write answers in one shape: one that answers nothing does not compile', () => {
+  it('a write answers in one shape, which carries no words', () => {
     // @ts-expect-error — a write that resolves nothing is one whose refusal the store can't see.
     const silent: PickSend<string, undefined> = async () => {};
     // @ts-expect-error — nor a bare refusal string, the dialog's old shape.
     const words: PickSend<string, undefined> = async () => 'Not saved';
-    const one: PickSend<string, undefined> = async () => ({ landed: false, why: 'Not allowed' });
-    expect([silent, words, one]).toHaveLength(3);
+    // @ts-expect-error — nor a refusal carrying the server's words: those go only to the toast.
+    const why: PickSend<string, undefined> = async () => ({ landed: false, why: 'Not allowed' });
+    const one: PickSend<string, undefined> = async () => REFUSED;
+    expect([silent, words, why, one]).toHaveLength(4);
   });
 
-  it('a sendFor-shaped write in the one shape: `false` said, a throw the words, else landed', async () => {
-    expect(await outcomeOf(async () => false)).toBe(SAID);
-    expect(await outcomeOf(async () => true)).toEqual({ landed: true });
-    expect(await outcomeOf(() => undefined)).toEqual({ landed: true });
-    expect(
-      await outcomeOf(async () => {
+  it('a sendFor-shaped write in the one shape: `false` refused (and said), else landed; a throw passes on', async () => {
+    expect(await outcomeOf(async () => false)).toBe(REFUSED);
+    expect(await outcomeOf(async () => true)).toBe(LANDED);
+    expect(await outcomeOf(() => undefined)).toBe(LANDED);
+    await expect(
+      outcomeOf(async () => {
         throw new Error('Not allowed');
       }),
-    ).toEqual({ landed: false, why: 'Not allowed' });
-    expect(
-      await outcomeOf(() => {
-        throw 'plain';
-      }),
-    ).toEqual({ landed: false, why: 'plain' });
-  });
-
-  it('a control mounted but not drawn (hidden, or drawing something else) hears nothing: the page says it', async () => {
-    const h = harness();
-    const heard: string[] = [];
-    let drawnNow = true;
-    h.store.watch('k', {
-      change: () => {},
-      error: (why) => heard.push(why),
-      here: () => drawnNow,
-    });
-    h.store.press('k', { value: 'b', server: 'a' }, h.page('k', 'a'));
-    drawnNow = false;
-    h.held.shift()?.answer('returned');
-    await settle();
-    expect(heard).toEqual([]);
-    expect(h.said.page).toBe(1);
-  });
-
-  it('a refusal its write path already said is said by no one else', async () => {
-    const h = harness();
-    const heard = h.store.press(
-      'k',
-      { value: 'b', server: 'a', asker: { here: () => true } },
-      h.page('k', 'a'),
-    );
-    h.held.shift()?.answer('said');
-    expect(await heard).toMatchObject({ landed: false, said: true });
-    expect(h.said).toEqual({ page: 0, path: 1 });
+    ).rejects.toThrow('Not allowed');
   });
 
   it('back to the verdict on its way with no one waiting, and its own reason: folded into it', async () => {
@@ -184,30 +157,38 @@ describe('the pick store — the latest press wins', () => {
     expect(h.held).toHaveLength(0);
   });
 
-  it('back to the verdict on its way with a new reason, or an asker waiting: a write of its own', async () => {
+  it('back to the verdict on its way with a new reason: a write of its own', async () => {
     const h = harness();
     const p = h.page('k', 'a');
     h.store.press('k', { value: 'none', server: 'open', note: 'Posted' }, p);
+    h.store.press('k', { value: 'open', server: 'open' }, p);
     h.store.press('k', { value: 'none', server: 'open', note: 'Gated' }, p);
     expect(h.store.shown('k', 'open')).toBe('none');
-    h.store.press('k', { value: 'open', server: 'open' }, p);
-    h.store.press(
-      'k',
-      { value: 'none', server: 'open', note: 'Posted', asker: { here: () => true } },
-      p,
-    );
     h.held.shift()?.answer('ok');
     await settle();
     expect(h.held.map((w) => w.value)).toEqual(['none']);
   });
 
-  // Each step: press a value on a body's control (from an opening that waits on its answer, or
-  // not), close that opening, leave or come back to the body's page, or answer the oldest write
-  // out for a body — landed, refused returned or thrown, or refused and said by its write path.
+  it('a reason dialog pressing what is already on its way, with the same reason, hears that write’s answer', async () => {
+    const h = harness();
+    const p = h.page('k', 'a');
+    const first = h.store.press('k', { value: 'none', server: 'open', note: 'Posted' }, p);
+    h.store.press('k', { value: 'open', server: 'open' }, p);
+    const again = h.store.press('k', { value: 'none', server: 'open', note: 'Posted' }, p);
+    h.held.shift()?.answer('refused');
+    expect(await again).toEqual({ landed: false });
+    expect(await first).toEqual({ landed: false });
+    // One write, one refusal, said once.
+    expect(h.said.path + toasts.length).toBe(1);
+    expect(h.held).toHaveLength(0);
+  });
+
+  // Each step: press a value on a body's control, leave or come back to the body's page, or answer
+  // the oldest write out for a body — landed, refused and said by its write path, or thrown.
   type B = 'a' | 'b';
   type Op =
-    | { kind: 'press'; body: B; value: string; asked: boolean }
-    | { kind: 'close' | 'leave' | 'return' | 'hide'; body: B }
+    | { kind: 'press'; body: B; value: string }
+    | { kind: 'leave' | 'return'; body: B }
     | { kind: 'answer'; body: B; how: Answer };
   const body = fc.constantFrom<B>('a', 'b');
   const op: fc.Arbitrary<Op> = fc.oneof(
@@ -215,43 +196,35 @@ describe('the pick store — the latest press wins', () => {
       kind: fc.constant('press' as const),
       body,
       value: fc.constantFrom('x', 'y', 'z'),
-      asked: fc.boolean(),
     }),
-    fc.record({
-      kind: fc.constantFrom('close' as const, 'leave' as const, 'return' as const, 'hide' as const),
-      body,
-    }),
+    fc.record({ kind: fc.constantFrom('leave' as const, 'return' as const), body }),
     fc.record({
       kind: fc.constant('answer' as const),
       body,
-      how: fc.constantFrom<Answer>('ok', 'returned', 'thrown', 'said'),
+      how: fc.constantFrom<Answer>('ok', 'refused', 'thrown'),
     }),
   );
 
   /**
-   * The model: over any presses, openings closed, leavings, returns and answers on two bodies'
-   * controls — one write in flight per key, writes in press order and only to their own body, the
-   * latest press shown while anything is out, and **every refusal said exactly once, by an audience
-   * still there** (the asker while open; else body a's control, which says refusals in place, while
-   * mounted; else the page's words; or the write path that said it) — and the store empty at the end.
+   * The model: over any presses, leavings, returns and answers on two bodies' controls — one write in
+   * flight per key, writes in press order and only to their own body, the latest press shown while
+   * anything is out, the store empty at the end, and **every refusal said exactly once** (by its
+   * write path, or by the store for a sender that threw) wherever the page has gone — its press
+   * hearing only `{ landed: false }`, never the words.
    */
   const property = fc.asyncProperty(fc.array(op, { maxLength: 30 }), async (ops) => {
     const h = harness();
+    toasts.length = 0;
     const server: Record<B, string> = { a: 'x', b: 'x' };
     const presses: Record<B, string[]> = { a: [], b: [] };
     const received: Record<B, string[]> = { a: [], b: [] };
     const lastOk: Record<B, boolean> = { a: true, b: true };
     const requested: Record<B, string | null> = { a: null, b: null };
     let refusals = 0;
-    let heardByAsker = 0;
-    let heardInPlace = 0;
-    // A refusal handed to an audience no longer there: the asker gone, or a page that has left.
-    let misheard = 0;
-    // Body a's control says refusals in place while mounted; body b's has no place to say one.
+    // An outcome that carried more than whether it landed (counted, never asserted in a detached
+    // callback: an `expect` thrown there is an unhandled rejection, not a counterexample).
+    let worded = 0;
     const pages: Record<B, (() => void) | null> = { a: null, b: null };
-    // Body a's control can be hidden while mounted: its place is asked when the answer comes.
-    let drawnA = true;
-    const askers: Record<B, { alive: boolean }[]> = { a: [], b: [] };
     const sends: Record<B, ReturnType<typeof h.page>> = {
       a: h.page('k:a', 'a'),
       b: h.page('k:b', 'b'),
@@ -273,52 +246,19 @@ describe('the pick store — the latest press wins', () => {
       const key = `k:${o.body}`;
       if (o.kind === 'press') {
         const before = h.store.shown(key, server[o.body]);
-        const asker = { alive: true };
-        if (o.asked) askers[o.body].push(asker);
-        const sent = h.store.press(
-          key,
-          {
-            value: o.value,
-            server: server[o.body],
-            ...(o.asked && { asker: { here: () => asker.alive } }),
-          },
-          sends[o.body],
-        );
+        const sent = h.store.press(key, { value: o.value, server: server[o.body] }, sends[o.body]);
         void sent?.then((outcome) => {
-          if (outcome !== undefined && !outcome.landed && outcome.said !== true) {
-            // Heard by the asker: it was there. (Counted, never asserted here: an `expect` thrown in
-            // a detached callback is an unhandled rejection, not a counterexample fast-check sees.)
-            if (o.asked && asker.alive) heardByAsker++;
-            else misheard++;
-          }
+          if (outcome !== undefined && Object.keys(outcome).join() !== 'landed') worded++;
         });
         presses[o.body].push(o.value);
         if (o.value !== before) requested[o.body] = o.value;
         expect(h.store.shown(key, server[o.body])).toBe(o.value);
-      } else if (o.kind === 'close') {
-        const last = askers[o.body].pop();
-        if (last !== undefined) last.alive = false;
-      } else if (o.kind === 'hide') {
-        if (o.body === 'a') drawnA = false;
       } else if (o.kind === 'leave') {
         pages[o.body]?.();
         pages[o.body] = null;
-        for (const a of askers[o.body]) a.alive = false;
-        askers[o.body] = [];
       } else if (o.kind === 'return') {
-        if (o.body === 'a') drawnA = true;
         if (pages[o.body] === null) {
-          pages[o.body] = h.store.watch(key, {
-            change: () => {},
-            ...(o.body === 'a' && {
-              error: () => {
-                // Heard in place only by a control mounted *and* drawn.
-                if (pages.a !== null && drawnA) heardInPlace++;
-                else misheard++;
-              },
-              here: () => drawnA,
-            }),
-          });
+          pages[o.body] = h.store.watch(key, () => {});
           // The page that comes back hands the queue its own sender, for the same body.
           sends[o.body] = h.page(key, o.body);
           h.store.adopt(key, sends[o.body] as never);
@@ -342,9 +282,9 @@ describe('the pick store — the latest press wins', () => {
     await settle();
     expect(h.held).toHaveLength(0);
     expect(h.store.size()).toBe(0);
-    // Every refusal, exactly one audience — and that one still there.
-    expect(misheard).toBe(0);
-    expect(heardByAsker + heardInPlace + h.said.page + h.said.path).toBe(refusals);
+    // Every refusal said exactly once; no outcome carried words.
+    expect(h.said.path + toasts.length).toBe(refusals);
+    expect(worded).toBe(0);
     for (const b of ['a', 'b'] as const) {
       // Press order: what the server received is the presses, in order, some skipped.
       let at = 0;
@@ -376,6 +316,7 @@ describe('the pick store — the latest press wins', () => {
   );
   const remounting = fc.asyncProperty(fc.array(remountOp, { maxLength: 24 }), async (ops) => {
     const h = harness();
+    toasts.length = 0;
     const stores = [h.store];
     let server = 'x';
     let refusals = 0;
@@ -385,7 +326,7 @@ describe('the pick store — the latest press wins', () => {
       if (w === undefined) return;
       if (ok) server = w.value;
       else refusals++;
-      w.answer(ok ? 'ok' : 'returned');
+      w.answer(ok ? 'ok' : 'refused');
       await settle();
     };
     for (const o of ops) {
@@ -398,8 +339,8 @@ describe('the pick store — the latest press wins', () => {
     for (let i = 0; i < 60 && h.held.length > 0; i++) await answer(true);
     await settle();
     for (const s of stores) expect(s.size()).toBe(0);
-    // No page is mounted in this model: every refusal is the page's words, said exactly once.
-    expect(h.said.page).toBe(refusals);
+    // Every refusal, said exactly once — by its write path, wherever the console has gone.
+    expect(h.said.path + toasts.length).toBe(refusals);
   });
 
   it.each([7, 99])(
@@ -426,22 +367,11 @@ describe('the pick store — the latest press wins', () => {
   });
 });
 
-const done = (): Promise<PickOutcome> => Promise.resolve({ landed: true });
+const done = (): Promise<PickOutcome> => Promise.resolve(LANDED);
+const words = (why: string) => ({ title: 'Not saved', description: why });
 
-function Probe({
-  server,
-  send,
-  say = () => {},
-}: {
-  server: string;
-  send: (v: string) => Promise<PickOutcome>;
-  say?: (why: string) => void;
-}) {
-  const { shown, press, error } = useLatestPick('probe:a', server, {
-    send,
-    say,
-    inPlace: { here: () => true },
-  });
+function Probe({ server, send }: { server: string; send: (v: string) => Promise<PickOutcome> }) {
+  const { shown, press } = useLatestPick('probe:a', server, { send, words });
   return (
     <div>
       {['auto', 'never', 'on'].map((v) => (
@@ -449,7 +379,6 @@ function Probe({
           {v}
         </button>
       ))}
-      {error !== null && <p role="alert">{error.why}</p>}
     </div>
   );
 }
@@ -457,8 +386,7 @@ function Probe({
 describe('useLatestPick', () => {
   it('shows each press at once and takes the server back once the writes are answered', async () => {
     const answers: (() => void)[] = [];
-    const send = (_: string) =>
-      new Promise<PickOutcome>((r) => answers.push(() => r({ landed: true })));
+    const send = (_: string) => new Promise<PickOutcome>((r) => answers.push(() => r(LANDED)));
     render(<Probe server="auto" send={send} />);
     await userEvent.click(screen.getByRole('button', { name: 'never' }));
     expect(screen.getByRole('button', { name: 'never' })).toHaveAttribute('aria-pressed', 'true');
@@ -476,19 +404,12 @@ describe('useLatestPick', () => {
     expect(screen.getByRole('button', { name: 'auto' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('a control that says refusals in place says one there, and the page’s words stay quiet', async () => {
-    const said: string[] = [];
-    render(
-      <Probe
-        server="auto"
-        send={async () => ({ landed: false, why: 'Not allowed' })}
-        say={(why) => said.push(why)}
-      />,
-    );
+  it('a refused press goes back to the server’s value, and the control prints nothing', async () => {
+    render(<Probe server="auto" send={async () => REFUSED} />);
     await userEvent.click(screen.getByRole('button', { name: 'never' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Not allowed');
-    expect(said).toEqual([]);
+    await act(settle);
     expect(screen.getByRole('button', { name: 'auto' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   /**
@@ -525,7 +446,7 @@ describe('useLatestPick', () => {
    */
   it('a queue that moves before the control subscribes is still drawn', () => {
     const waits = (_: string) => new Promise<PickOutcome>(() => {});
-    const page = { send: waits, say: () => {} };
+    const page = { send: waits, words };
     const store = createPickStore();
     store.press('probe:a', { value: 'never', server: 'auto' }, page);
     let moved = false;

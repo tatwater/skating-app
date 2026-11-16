@@ -3,7 +3,7 @@ import type { FunctionReference } from 'convex/server';
 import { ConvexError } from 'convex/values';
 import { useCallback } from 'react';
 
-import { type ToastManager, toast, toastManager } from '@/components/kit/toast';
+import { type ToastManager, toast } from '@/components/kit/toast';
 
 /**
  * **A server's refusal is a toast — always** (D268, the founder's call of 2026-11-16). A write the
@@ -32,7 +32,7 @@ function errorText(err: unknown): string {
 }
 
 /** What a write tells its caller: whether it landed. A refusal's words went to its toast. */
-export type Said<T> = { landed: true; value: T } | { landed: false };
+export type Said<T> = { landed: true; value: T } | { landed: false; why?: never };
 
 /** A refusal's toast: its subject and what was not changed, then why. It stays until dismissed. */
 export type RefusalWords = { title: string; description?: string };
@@ -43,18 +43,17 @@ export type RefusalWords = { title: string; description?: string };
  */
 export function sayRefusal(
   { title, description }: RefusalWords,
-  /** The app's one queue, unless a story or a test draws its own. */
-  manager: ToastManager = toastManager,
+  /** The toast queue: the app's one, unless a story or a test draws its own. */
+  manager?: ToastManager,
 ): void {
-  toast(
-    {
-      title,
-      ...(description !== undefined && description !== '' && { description }),
-      tone: 'bad',
-      timeout: 0,
-    },
-    manager,
-  );
+  const options = {
+    title,
+    ...(description !== undefined && description !== '' && { description }),
+    tone: 'bad' as const,
+    timeout: 0,
+  };
+  if (manager === undefined) toast(options);
+  else toast(options, manager);
 }
 
 /**

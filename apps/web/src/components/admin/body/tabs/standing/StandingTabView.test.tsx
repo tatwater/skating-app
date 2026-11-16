@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -22,10 +22,10 @@ const base: StandingTabViewProps = {
   now: BODY_NOW,
   canSetStanding: true,
   canRemove: true,
-  onSetDormant: vi.fn(async () => {}),
-  onSetActive: vi.fn(async () => {}),
-  onRemove: vi.fn(async () => {}),
-  onRestore: vi.fn(async () => {}),
+  onSetDormant: vi.fn(async () => true),
+  onSetActive: vi.fn(async () => true),
+  onRemove: vi.fn(async () => true),
+  onRestore: vi.fn(async () => true),
 };
 
 const radio = (name: string) => screen.getByRole('radio', { name: new RegExp(`^${name}`) });
@@ -83,7 +83,7 @@ describe('StandingTabView', () => {
   });
 
   it('picking Dormant opens its form; the note counts and is sent trimmed', async () => {
-    const onSetDormant = vi.fn(async () => {});
+    const onSetDormant = vi.fn(async () => true);
     render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
     await userEvent.click(radio('Dormant'));
     const form = document.querySelector<HTMLElement>('[data-slot="standing-form"]');
@@ -92,18 +92,15 @@ describe('StandingTabView', () => {
     await userEvent.type(input, '  Dam work  ');
     expect(screen.getByText('12 / 160')).toBeVisible();
     await userEvent.type(input, '{Enter}');
-    expect(onSetDormant).toHaveBeenCalledWith(
-      'Dam work',
-      expect.objectContaining({ here: expect.any(Function) }),
-    );
+    expect(onSetDormant).toHaveBeenCalledWith('Dam work');
   });
 
   it('a second ⏎ in the note while its write is on its way sends nothing more', async () => {
     let land: () => void = () => {};
     const onSetDormant = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
-          land = resolve;
+        new Promise<boolean>((resolve) => {
+          land = () => resolve(true);
         }),
     );
     render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
@@ -115,11 +112,11 @@ describe('StandingTabView', () => {
   });
 
   it('a sent note is held while its write is out — never typed into and then thrown away', async () => {
-    let refuse: (why: Error) => void = () => {};
+    let refuse: () => void = () => {};
     const onSetDormant = vi.fn(
       () =>
-        new Promise<void>((_, reject) => {
-          refuse = reject;
+        new Promise<boolean>((resolve) => {
+          refuse = () => resolve(false);
         }),
     );
     render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
@@ -129,14 +126,16 @@ describe('StandingTabView', () => {
     expect(input).toHaveAttribute('readonly');
     await userEvent.type(input, ' until May');
     expect(input).toHaveValue('Dam work');
-    await act(async () => refuse(new Error('Not allowed')));
+    // Refused: said in its toast (the write path's); the form keeps the note and prints nothing.
+    await act(async () => refuse());
     expect(input).not.toHaveAttribute('readonly');
+    expect(screen.queryByRole('alert')).toBeNull();
     await userEvent.type(input, ' until May');
     expect(input).toHaveValue('Dam work until May');
   });
 
   it('a sent removal reason is held while its write is out', async () => {
-    const onRemove = vi.fn(() => new Promise<void>(() => {}));
+    const onRemove = vi.fn(() => new Promise<boolean>(() => {}));
     render(<StandingTabView {...base} onRemove={onRemove} />);
     await userEvent.click(radio('Removed'));
     await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
@@ -146,15 +145,12 @@ describe('StandingTabView', () => {
     if (onRemove.mock.calls.length === 0) {
       await userEvent.click(screen.getByRole('button', { name: /again/ }));
     }
-    expect(onRemove).toHaveBeenCalledWith(
-      'unskateable',
-      expect.objectContaining({ here: expect.any(Function) }),
-    );
+    expect(onRemove).toHaveBeenCalledWith('unskateable');
     expect(screen.getByRole('combobox', { name: 'Reason' })).toHaveAttribute('data-readonly');
   });
 
   it('Remove from the map waits, armed, until a reason is chosen', async () => {
-    const onRemove = vi.fn(async () => {});
+    const onRemove = vi.fn(async () => true);
     render(<StandingTabView {...base} onRemove={onRemove} />);
     await userEvent.click(radio('Removed'));
     const remove = screen.getByRole('button', { name: 'Remove from the map' });
@@ -162,29 +158,24 @@ describe('StandingTabView', () => {
     expect(remove).toHaveAttribute('data-armed');
   });
 
-  it('a write that fails says why and keeps the form', async () => {
-    const onSetDormant = vi.fn(async () => {
-      throw new Error('Only an active body can be set dormant');
-    });
+  it.each([
+    ['refused', async () => false],
+    [
+      'a sender that threw',
+      async () => {
+        throw new Error('x');
+      },
+    ],
+  ])('a write %s keeps the form and its note, and prints nothing', async (_, answer) => {
+    const onSetDormant = vi.fn(answer);
     render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
     await userEvent.click(radio('Dormant'));
+    const input = screen.getByRole('textbox', { name: 'Note for skaters · optional' });
+    await userEvent.type(input, 'Dam work');
     await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Only an active body can be set dormant',
-    );
-  });
-
-  it('a refusal is said only under the pick whose write raised it', async () => {
-    const onSetDormant = vi.fn(async () => {
-      throw new Error('Only an active body can be set dormant');
-    });
-    render(<StandingTabView {...base} onSetDormant={onSetDormant} />);
-    await userEvent.click(radio('Dormant'));
-    await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    // Another pick's form never wears it.
-    await userEvent.click(radio('Removed'));
-    expect(screen.getByRole('button', { name: 'Remove from the map' })).toBeInTheDocument();
+    await waitFor(() => expect(input).not.toHaveAttribute('readonly'));
+    expect(onSetDormant).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue('Dam work');
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -199,7 +190,7 @@ describe('StandingTabView', () => {
   });
 
   it('a hand-set dormancy says since when and why, and offers the way back', async () => {
-    const onSetActive = vi.fn(async () => {});
+    const onSetActive = vi.fn(async () => true);
     render(<StandingTabView {...base} standing={DORMANT_BY_HAND} onSetActive={onSetActive} />);
     expect(radio('Dormant')).toBeChecked();
     expect(screen.getByText('Since 2 Oct 2026 · Moderator')).toBeVisible();
@@ -222,7 +213,7 @@ describe('StandingTabView', () => {
   });
 
   it('a removed body is restored, by an admin only', async () => {
-    const onRestore = vi.fn(async () => {});
+    const onRestore = vi.fn(async () => true);
     const { unmount } = render(
       <StandingTabView {...base} standing={REMOVED} onRestore={onRestore} />,
     );

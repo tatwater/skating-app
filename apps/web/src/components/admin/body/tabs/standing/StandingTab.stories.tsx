@@ -31,10 +31,10 @@ const meta = {
     now: BODY_NOW,
     canSetStanding: true,
     canRemove: true,
-    onSetDormant: fn(async () => {}),
-    onSetActive: fn(async () => {}),
-    onRemove: fn(async () => {}),
-    onRestore: fn(async () => {}),
+    onSetDormant: fn(async () => true),
+    onSetActive: fn(async () => true),
+    onRemove: fn(async () => true),
+    onRestore: fn(async () => true),
   },
   render: (args) => (
     <Inspector>

@@ -30,11 +30,11 @@ beforeEach(() => {
 });
 
 /**
- * **A takedown's answer is said in its dialog** (D268): the dialog holds open while the write is
- * out — Esc and Cancel alike — so a refusal never lands in a dialog that has closed.
+ * **A takedown's refusal is a toast, always** (D268): the dialog holds open while the write is out —
+ * Esc and Cancel alike — and, refused, stays open over its reason with nothing printed in it.
  */
 describe('ModeratorActions', () => {
-  it('holds open while its takedown is out, and says the refusal there', async () => {
+  it('holds open while its takedown is out; refused, one toast and the reason kept', async () => {
     render(<ModeratorActions targetType="comment" targetId="c1" />);
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Moderate' }));
@@ -44,10 +44,15 @@ describe('ModeratorActions', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     await user.keyboard('{Escape}');
     expect(dialog).toBeInTheDocument();
-    await act(async () => mocks.refuse(new Error('Not allowed')));
+    await act(async () => mocks.refuse(new ConvexError('Already hidden')));
     await waitFor(() =>
-      expect(screen.getByText('Could not apply the action. Please try again.')).toBeInTheDocument(),
+      expect(mocks.toasts).toEqual([
+        expect.objectContaining({ title: 'Not saved', description: 'Already hidden', tone: 'bad' }),
+      ]),
     );
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Reason' })).toHaveValue('Spam');
+    expect(screen.queryByText('Already hidden')).toBeNull();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });

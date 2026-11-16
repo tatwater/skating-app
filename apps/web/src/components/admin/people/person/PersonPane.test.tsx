@@ -265,7 +265,7 @@ describe('one person at a time', () => {
     expect(screen.getByRole('button', { name: 'Show more' })).toHaveFocus();
   });
 
-  it('a refusal, and the decisions asked for, stay with the person they were for', async () => {
+  it('a refusal is its toast, and the decisions asked for stay with the person they were for', async () => {
     answer({
       'people:person': { ...ROB, role: 'moderator' as const },
       'people:staffStats': SARAH_STATS,
@@ -286,9 +286,15 @@ describe('one person at a time', () => {
       return el;
     };
     await user.click(within(suspension()).getByRole('button', { name: 'Lift' }));
-    expect(await within(suspension()).findByRole('alert')).toHaveTextContent(
-      'Refused for this one',
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not changed · Rob Tremblay',
+          description: 'Refused for this one',
+        }),
+      ),
     );
+    expect(within(suspension()).queryByRole('alert')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Show more' }));
     const other = 'other'.padEnd(32, '0');
     rerender(<PersonPane userId={other} />);
@@ -360,7 +366,7 @@ describe('the writes', () => {
     expect(mocks.toast).toHaveBeenCalledTimes(1);
   });
 
-  it('a refusal is the server’s own words, and no toast', async () => {
+  it('a refusal is one toast in the server’s own words, naming the person — never printed in place', async () => {
     answer();
     mocks.mutations.set(
       'moderation:unbanUser',
@@ -373,9 +379,16 @@ describe('the writes', () => {
     render(<PersonPane userId={ROB_ID} />);
     const user = userEvent.setup({ advanceTimers: () => {} });
     await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
-    expect(await within(lever('suspension')).findByRole('alert')).toHaveTextContent(
-      'This account is being deleted, so its suspension or ban can’t be lifted.',
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This account is being deleted, so its suspension or ban can’t be lifted.',
+        tone: 'bad',
+        timeout: 0,
+      }),
     );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/This account is being deleted/)).toBeNull();
     expect(mocks.announce).not.toHaveBeenCalled();
   });
 
@@ -405,6 +418,7 @@ describe('the writes', () => {
         title: 'Not changed · Rob Tremblay',
         description: 'This account is being deleted.',
         tone: 'bad',
+        timeout: 0,
       }),
     );
     expect(mocks.toast).toHaveBeenCalledTimes(1);
@@ -600,7 +614,7 @@ describe('the write hook', () => {
     let lookup: () => void = () => {};
     mocks.announce.mockImplementationOnce(() => new Promise<void>((r) => (lookup = r)));
     const result = await hook()({ kind: 'lift' });
-    expect(result).toBeNull();
+    expect(result).toBe(true);
     expect(mocks.announce).toHaveBeenCalledTimes(1);
     lookup();
   });
@@ -609,7 +623,7 @@ describe('the write hook', () => {
     mocks.announce.mockImplementationOnce(async () => {
       throw new Error('lookup failed');
     });
-    expect(await hook()({ kind: 'lift' })).toBeNull();
+    expect(await hook()({ kind: 'lift' })).toBe(true);
   });
 
   it('carries the audit row a write answers with, when it does', async () => {
@@ -657,7 +671,7 @@ describe('the write hook', () => {
       'moderation:banUser',
       vi.fn(async () => ({ userId: ROB_ID, changed: false, undoable: false })),
     );
-    expect(await hook()({ kind: 'ban', reason: 'Spam' })).toBeNull();
+    expect(await hook()({ kind: 'ban', reason: 'Spam' })).toBe(true);
     expect(mocks.announce).toHaveBeenLastCalledWith({
       title: 'Nothing changed — Rob Tremblay was already set that way',
       target: { targetType: 'user', targetId: ROB_ID },
@@ -668,17 +682,28 @@ describe('the write hook', () => {
     expect(changedOf(null)).toBeNull();
   });
 
-  it('says so when there is no person to write to, and when the network fails', async () => {
+  it('says so in a toast when there is no person to write to, and when the network fails', async () => {
     const none = renderHook(() => usePersonWrites(null, NOW)).result.current;
-    expect(await none({ kind: 'lift' })).toBe('This person couldn’t be read');
+    expect(await none({ kind: 'lift' })).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Not changed',
+        description: 'This person couldn’t be read',
+      }),
+    );
     mocks.mutations.set(
       'moderation:unbanUser',
       vi.fn(async () => {
         throw new Error('offline');
       }),
     );
-    expect(await hook()({ kind: 'lift' })).toBe(
-      'Something went wrong — check your connection and try again.',
+    expect(await hook()({ kind: 'lift' })).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Not changed · Rob Tremblay',
+        description: 'Something went wrong — check your connection and try again.',
+      }),
     );
+    expect(mocks.toast).toHaveBeenCalledTimes(2);
   });
 });

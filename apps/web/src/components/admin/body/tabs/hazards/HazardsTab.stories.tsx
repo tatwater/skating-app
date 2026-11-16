@@ -43,7 +43,7 @@ const meta = {
     patternsWaiting: { count: 2, capped: false },
     onRetry: fn(),
     onOpenRecurrence: fn(),
-    onDemote: fn(async () => {}),
+    onDemote: fn(async () => true),
     onMarkHazard: fn() as HazardsTabViewProps['onMarkHazard'],
     onAddFeature: fn() as HazardsTabViewProps['onAddFeature'],
     onEditShape: fn() as HazardsTabViewProps['onEditShape'],

@@ -148,7 +148,7 @@ export const AdminHoldsInvoices: Story = {
         onWrite={(action) => {
           args.onWrite?.(action);
           if (action.kind === 'ledger' && action.grant) setGranted(true);
-          return null;
+          return true;
         }}
       />
     );

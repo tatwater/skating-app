@@ -82,7 +82,7 @@ beforeEach(() => {
 });
 
 const inKeys = (node: ReactNode) => <KeysProvider>{node}</KeysProvider>;
-const settle = async () => null;
+const settle = async () => true;
 
 // ── The tabs with every lever ─────────────────────────────────────────────────────────────────
 
@@ -130,10 +130,10 @@ const LEVERS: Record<string, ReactNode> = {
       rows={MASCOMA_PASSES}
       lit={granuleOf(10)}
       onLitChange={() => {}}
-      onOverride={async () => {}}
+      onOverride={async () => true}
       onRetry={() => {}}
       satellite={MASCOMA_SATELLITE}
-      onSatelliteChange={async () => {}}
+      onSatelliteChange={async () => true}
     />
   ),
   Hazards: (
@@ -149,7 +149,7 @@ const LEVERS: Record<string, ReactNode> = {
       winters={MASCOMA_WINTERS}
       patternsWaiting={{ count: 2, capped: false }}
       onOpenRecurrence={() => {}}
-      onDemote={async () => {}}
+      onDemote={async () => true}
       onRetry={() => {}}
       onMarkHazard={() => {}}
       onAddFeature={() => {}}
@@ -166,10 +166,10 @@ const LEVERS: Record<string, ReactNode> = {
       now={STANDING_NOW}
       canSetStanding
       canRemove
-      onSetDormant={async () => {}}
-      onSetActive={async () => {}}
-      onRemove={async () => {}}
-      onRestore={async () => {}}
+      onSetDormant={async () => true}
+      onSetActive={async () => true}
+      onRemove={async () => true}
+      onRestore={async () => true}
     />
   ),
   Links: (
@@ -359,7 +359,7 @@ describe('no tab draws an absent fact as a blank', () => {
 // ── Each tab's keys, every way it is reached ──────────────────────────────────────────────────
 
 const marked = vi.fn();
-const overridden = vi.fn(async () => {});
+const overridden = vi.fn(async () => true);
 /** A toast from the tool named by its words: the right tool spoke, and only it. */
 const toldBy = (words: RegExp) => () => toasts.said.length === 1 && words.test(said()[0] ?? '');
 
@@ -499,7 +499,7 @@ function AccessSettles() {
       now={BOARD_TODAY}
       onRule={async (verdict) => {
         setData({ ...data, ruling: { ...data.ruling, verdict: verdict ?? null, before: 'open' } });
-        return null;
+        return true;
       }}
     />
   );
@@ -535,7 +535,10 @@ function HazardsSettles() {
       features={features}
       winters={MASCOMA_WINTERS}
       patternsWaiting={null}
-      onDemote={async (id) => setFeatures(features.filter((f) => f.id !== id))}
+      onDemote={async (id) => {
+        setFeatures(features.filter((f) => f.id !== id));
+        return true;
+      }}
       lit={null}
       onLitChange={() => {}}
     />
@@ -562,6 +565,7 @@ function ImagerySettles() {
               : r,
           ),
         );
+        return true;
       }}
       satellite={MASCOMA_SATELLITE}
     />
@@ -578,8 +582,11 @@ function StandingSettles() {
       now={STANDING_NOW}
       canSetStanding
       canRemove={false}
-      onSetActive={async () => setStanding(ACTIVE)}
-      onSetDormant={async () => {}}
+      onSetActive={async () => {
+        setStanding(ACTIVE);
+        return true;
+      }}
+      onSetDormant={async () => true}
     />
   );
 }
@@ -596,7 +603,7 @@ function PlacesSettles() {
           ...data,
           asks: Array.isArray(data.asks) ? data.asks.filter((a) => a.id !== askId) : data.asks,
         });
-        return null;
+        return true;
       }}
     />
   );
