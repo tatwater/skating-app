@@ -4198,13 +4198,13 @@ draws 34; the role menu's item takes two lines.
   section not shown, a list not yet laid out) or a background tab, which would read as "near the
   end" for every page — and asks again when it comes into sight. People's list reads it (the only
   People list that pages on scroll: History is one read, Decisions pages on a press). The Bodies
-  library on main has the same trigger without the rule; it hides no list today, so it pages only
-  in a background tab, and it adopts the rule with the narrow-screen one.
+  library reads it too since B01-3k, with the narrow-screen rule.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
   columns fit side by side (their size tokens summed), the open record takes the page with a way
-  back, and with none open the list does; nothing scrolls sideways. People has it; the Bodies
-  library and the Body console lay out their own columns and break the same way at phone width —
-  each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
+  back, and with none open the list does; nothing scrolls sideways. People and the Bodies library
+  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); the Body
+  console lays out its own columns and breaks the same way at phone width — it adopts the rule in
+  its own pass (owed). The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
 
 ### The Body console follow-up (B01-3e)
@@ -4257,10 +4257,10 @@ Names' aliases can bind an edit to the wrong entry by its text.
   the tab's note, with *Try again*), settled with nothing (*Not recorded yet*), or a value —
   `readState` in the read layer. Water's other sources' depths were the case (a failed read drew
   *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
-  holds Water's two reads, Names' two and Places' provenance to it. **Owed:** rows for Access
-  (landmarks, ruling history), Shape (bay provenance, extras), Hazards (patterns waiting, the day
-  strips) and Standing (retention) — each already keeps its answers apart, but none is a table row
-  yet (each needs its tab's model fixtures built for the table).
+  holds Water's two reads, Names' two and Places' provenance to it; B01-3k adds Access's two (who
+  ruled, where each launch is), Shape's bay provenance, Hazards' day strips and Standing's
+  retention. **Owed:** Shape's extras and Hazards' patterns-waiting count — their mapping is inline
+  in the tab's wiring, and a settled zero there is a value, not a nothing.
 - **A rendered property stays under a second locally** (CI's coverage run is about ten times
   slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
   is a few short runs, and the arithmetic is fuzzed without rendering. Each test is its own: a
@@ -4333,11 +4333,56 @@ Names' aliases can bind an edit to the wrong entry by its text.
   saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
   again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}
   depth from {source}*; *1 reported crossing*.
-- **What the server still lacks:** the typed note on the history rows (`bodyConsole.history`, the audit feed: today they carry only the composed reason, which may be shortened under the reason cap, so History can quote it cut off beside the whole note); `removedFacts` saying which words are a person's own (a restore's undo carries its person's reason and no note — the page can't tell it from a composed removal sentence, so it quotes neither); names for an unlisted or unknown id in `rowsByIds`
+- **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
   (`entries[].name`, so the list can say *which* opened body isn't listed); **low priority** — the
   borders between towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so
   a shared border is one line; the doubled lines are accepted for now); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
   *Other catalogs that gave the same spelling: not recorded*).
+
+### The Body console's second follow-up (B01-3k)
+
+What B01-3e left, built on its head and rebased onto main once #132 merged; it carries B01-3l (one
+town entry per boundary, above) as its own commits.
+
+- **The latest press wins, on every control that writes on press** (`useLatestPick`, as Imagery's
+  satellite link): Names' *Display this* and class, Water's depth source, Access's ruling and the
+  map boost. Each shows the latest press at once, sends every press once in press order (one at a
+  time), and draws the server again once all are answered — a second press is never weighed
+  against a record that hasn't moved yet and dropped (*The Basin*, then *Lake Auburn* before the
+  first answer: the second button wasn't offered). The views draw the picks through
+  `namesWithPicks` and `rulingWithPick` (who ruled and what stood before wait for the answer).
+  A clear of the class shows the class it puts back: `bodyConsole.identity` now returns
+  `baseClass` (`null` only for an override older than the kept class, when the tab keeps the
+  record's class until the answer). Ruling no public access is a press once its reason is
+  confirmed: the pick hands each press its own note and answer, so the reason dialog stays over the
+  shown ruling (its trigger hidden, never unmounted) until that answer and says a refusal over the
+  kept reason. The boost's let-gos now go one at a time (they went in parallel); an earlier one
+  landing no longer moves the slider from a later one on its way.
+- **A late answer never acts on moved UI** — a table over the four wired tabs
+  (`tabs/latestPress.test.tsx`): A pressed and held, then B before A's answer (A landing shows B
+  still, B stored), or a move outside the tab (A lands taking no focus); Access's dialog canceled
+  is no press. Mutation-checked.
+- **The Bodies library reads the narrow rule and `lib/loadAhead`** (above). Back to the list is a
+  button and ⇧⏎ (it replaces the place, as opening a row does).
+- **The day strip's neighbors.** `LedStrip`'s meter said "1 of 4" for on, unknown, off, unknown —
+  the dashed parts folded into the dark one; it now says "1 of 4, 2 not recorded yet". The matrix
+  chart has no such gap: each cell is a grid cell named by row, column and reading, one tab stop,
+  arrows and Home/End, and the plate a hover brings comes on focus too.
+- **A dry run's row always says it wrote nothing.** The landmark loader's close now always sends
+  its trimmed-id notes, which replace the start's on the server — so a dry run's row read as
+  applied. The run logger owns the label (`dryRun`): the row's notes end with *dry run — nothing
+  written* from start to close, and the close says `applied: false`, so a dry run schedules no
+  weather-cell reconcile. Landmark names, the bays loader (whose dry run never said so),
+  reconciliation, the 3DHP measure and retire-absorbed (whose dry run, a `canonical_water` row,
+  scheduled a reconcile) pass it too.
+- **The two server asks.** A removal's typed note on History's rows was already served:
+  `bodyConsole.history` returns each row's `metadata`, `note` included (and the frame's History
+  draws no reasons). A removal's reason that is a person's own words — a restore's undo — is marked
+  on its row (`metadata.reasonIsOwn`) and returned by `removedFacts` (`left.reasonIsOwn`), so the
+  shared rule quotes it; rows written before read as today.
+- **Wording the mock did not supply** (standing until the founder reviews it): *Back to the list*
+  on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
+  strip's spoken value (the kit).
 
 ## Ruled out
 
