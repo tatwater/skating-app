@@ -5,6 +5,7 @@ import {
   createContext,
   type ReactNode,
   useContext,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -47,6 +48,7 @@ import {
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
+import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
@@ -125,7 +127,8 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   retryPending?: boolean;
   onOpenRecurrence?: () => void;
   /** Demote a known feature, with the reason taking it away asks for. Absent: not drawn. */
-  onDemote?: (id: string, reason: string) => Promise<void>;
+  /** `asker`: the dialog's opening — its refusal is said there while it is open, else in a toast. */
+  onDemote?: (id: string, reason: string, asker?: Asker) => Promise<void>;
   /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
   onMarkHazard?: (() => void) | typeof UNAVAILABLE;
   /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
@@ -358,8 +361,8 @@ export function HazardsTabView({
           <DemoteDialog
             feature={demoting}
             onClose={() => setDemoting(null)}
-            onDemote={async (reason) => {
-              if (demoting !== null) await demote(demoting.id, reason);
+            onDemote={async (reason, asker) => {
+              if (demoting !== null) await demote(demoting.id, reason, asker);
             }}
           />
         )}
@@ -883,13 +886,20 @@ function DemoteDialog({
 }: {
   feature: FeatureRowWithGlyph | null;
   onClose: () => void;
-  onDemote: (reason: string) => Promise<void>;
+  onDemote: (reason: string, asker: Asker) => Promise<void>;
 }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // This opening (one feature asked about): a demote's answer acts only on the opening that sent it.
   const opening = useRef(0);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const openFor = useRef<string | null>(null);
   if ((feature?.id ?? null) !== openFor.current) {
     openFor.current = feature?.id ?? null;
@@ -934,7 +944,9 @@ function DemoteDialog({
               setBusy(true);
               setError(null);
               const mine = opening.current;
-              void onDemote(reason.trim())
+              void onDemote(reason.trim(), {
+                here: () => mounted.current && opening.current === mine,
+              })
                 .then(() => {
                   if (opening.current !== mine) return;
                   setReason('');

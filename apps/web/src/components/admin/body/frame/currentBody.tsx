@@ -106,6 +106,22 @@ export function useBodyHold(): BodyHold {
   );
 }
 
+/**
+ * The hold narrowed to the place that asked (a form, a dialog's opening): a result is said "here"
+ * only while the console, its holder *and* that place are all still there — else in a toast naming
+ * the body. A form that went while its tab stayed never takes a refusal with it.
+ */
+export function holdFor(hold: BodyHold, asker: { here: () => boolean } | undefined): BodyHold {
+  if (asker === undefined) return hold;
+  return {
+    here: () => hold.here() && asker.here(),
+    body: hold.body,
+    get subject() {
+      return hold.subject;
+    },
+  };
+}
+
 /** A whole-list write refused because the list moved underneath (`{ code: 'list_changed', current }`). */
 export function listChanged(err: unknown): readonly unknown[] | null {
   if (!(err instanceof ConvexError)) return null;

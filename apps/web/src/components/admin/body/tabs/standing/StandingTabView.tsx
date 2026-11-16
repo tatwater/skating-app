@@ -5,8 +5,14 @@ import {
   type RemovalReason,
   standingReasonLabel,
 } from '@skating/core';
-import { type ComponentProps, type FormEvent, useId, useRef, useState } from 'react';
-
+import {
+  type ComponentProps,
+  type FormEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Input, InputGroup, InputGroupKbd } from '@/components/kit/input';
@@ -24,6 +30,7 @@ import {
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
 import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
+import type { Asker } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -59,10 +66,12 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   canSetStanding: boolean;
   /** The viewer holds `body.remove` (take off the map, restore). */
   canRemove: boolean;
-  onSetDormant?: (note: string) => Promise<void>;
-  onSetActive?: () => Promise<void>;
-  onRemove?: (reason: RemovalReason) => Promise<void>;
-  onRestore?: () => Promise<void>;
+  // Each write takes the form that asked (`asker`): its refusal is said in the form while it is
+  // there, else in a toast naming the body — never kept by a form that has gone.
+  onSetDormant?: (note: string, asker?: Asker) => Promise<void>;
+  onSetActive?: (asker?: Asker) => Promise<void>;
+  onRemove?: (reason: RemovalReason, asker?: Asker) => Promise<void>;
+  onRestore?: (asker?: Asker) => Promise<void>;
 };
 
 /** A standing note's ceiling — the server's (`MAX_STANDING_NOTE_LENGTH`). */
@@ -287,14 +296,27 @@ function PickForm({
   // One write at a time (⏎ in the note submits the form again otherwise), so each answer is the
   // only attempt's.
   const sending = useRef(false);
-  async function run(write: () => Promise<void>) {
+  // The form that asks: mounted, and still on the pick its write was raised for.
+  const shownPick = useRef(pick);
+  shownPick.current = pick;
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const askerFor = (raised: Pick): Asker => ({
+    here: () => mounted.current && shownPick.current === raised,
+  });
+  async function run(write: (asker: Asker) => Promise<void>) {
     if (sending.current) return;
     sending.current = true;
     const raisedFor = pick;
     setBusy(true);
     setRefusal(null);
     try {
-      await write();
+      await write(askerFor(raisedFor));
     } catch (err) {
       setRefusal({ pick: raisedFor, text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -306,7 +328,7 @@ function PickForm({
   if (pick === 'dormant' && onSetDormant) {
     const submit = (event: FormEvent) => {
       event.preventDefault();
-      void run(() => onSetDormant(note.trim()));
+      void run((asker) => onSetDormant(note.trim(), asker));
     };
     return (
       <form data-slot="standing-form" onSubmit={submit} className="flex flex-col gap-(--space-2)">
@@ -385,7 +407,7 @@ function PickForm({
           loading={busy}
           className="self-start"
           onClick={() => {
-            if (reason !== null) void run(() => onRemove(reason));
+            if (reason !== null) void run((asker) => onRemove(reason, asker));
           }}
         >
           Remove from the map
@@ -399,7 +421,11 @@ function PickForm({
     return (
       <div data-slot="standing-form" className="flex flex-col gap-(--space-2)">
         <FormError error={error} />
-        <Button loading={busy} className="self-start" onClick={() => void run(back)}>
+        <Button
+          loading={busy}
+          className="self-start"
+          onClick={() => void run((asker) => back(asker))}
+        >
           {current === 'removed' ? 'Restore to the map' : 'Bring back to the active map'}
         </Button>
       </div>

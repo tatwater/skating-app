@@ -14,8 +14,9 @@ import {
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
-import { sendFor, useBodyHold } from '../../frame/currentBody';
+import { holdFor, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import type { Asker } from '../latestPick';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { StandingTabView } from './StandingTabView';
 import type { RetentionFacts } from './standingModel';
@@ -124,8 +125,12 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
 
   // The form waits on the write; a refusal off this console (`false`) was said there, and this form
   // went with it.
-  const write = async (run: () => Promise<unknown>, title: string): Promise<void> => {
-    await sendFor(hold, {
+  const write = async (
+    run: () => Promise<unknown>,
+    title: string,
+    asker?: Asker,
+  ): Promise<void> => {
+    await sendFor(holdFor(hold, asker), {
       body: bodyId,
       write: run,
       receipt: (subject) => announce({ title, target, subject }),
@@ -143,7 +148,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
       now={now}
       canSetStanding={can('body.standing')}
       canRemove={can('body.remove')}
-      onSetDormant={(note) =>
+      onSetDormant={(note, asker) =>
         write(
           () =>
             setStanding({
@@ -152,18 +157,22 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
               ...(note !== '' ? { note } : {}),
             }),
           'Set dormant',
+          asker,
         )
       }
-      onSetActive={() =>
+      onSetActive={(asker) =>
         write(
           () => setStanding({ waterBodyId: bodyId, standing: 'active' }),
           'Back on the active map',
+          asker,
         )
       }
-      onRemove={(reason: RemovalReason) =>
-        write(() => remove({ waterBodyId: bodyId, reason }), 'Removed from the map')
+      onRemove={(reason: RemovalReason, asker) =>
+        write(() => remove({ waterBodyId: bodyId, reason }), 'Removed from the map', asker)
       }
-      onRestore={() => write(() => restore({ waterBodyId: bodyId }), 'Restored to the map')}
+      onRestore={(asker) =>
+        write(() => restore({ waterBodyId: bodyId }), 'Restored to the map', asker)
+      }
     />
   );
 }
