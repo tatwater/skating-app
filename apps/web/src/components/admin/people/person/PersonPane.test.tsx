@@ -321,6 +321,45 @@ describe('the writes', () => {
     });
   });
 
+  it('a Restore refused after another admin promoted the person — its row’s buttons gone — is one toast naming them', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:setPostingPermission',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('Staff can’t be restricted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('comments')).getByRole('button', { name: 'Restore' }));
+    // Another admin makes them a moderator while the Restore is out: the new read takes the row's
+    // buttons away, and the block that holds the row stays drawn.
+    mocks.results.set('people:person', {
+      ...ROB,
+      role: 'moderator',
+      can: { ...ROB.can, restrict: { ok: false, why: 'Staff can’t be restricted.' } },
+    });
+    view.rerender(<PersonPane userId={ROB_ID} />);
+    expect(within(lever('comments')).queryByRole('button')).toBeNull();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not changed · Rob Tremblay',
+          description: 'Staff can’t be restricted.',
+        }),
+      ),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+  });
+
   it('a refusal is the server’s own words, and no toast', async () => {
     answer();
     mocks.mutations.set(
