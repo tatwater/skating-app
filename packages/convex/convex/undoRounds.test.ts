@@ -18,11 +18,17 @@ import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
-import { DOC_MAX, REQUEST_PROFILE_BUDGET, requestBudget } from './lib/readBudget';
+import { rebuildBodyLibrary } from './lib/bodyLibrary';
+import {
+  CHARGED_QUERY_BUDGET,
+  DOC_MAX,
+  REQUEST_PROFILE_BUDGET,
+  requestBudget,
+} from './lib/readBudget';
 import { UNDO_NEEDS_ROWS, type UndoState, undoStates } from './lib/undo';
 import { UNDO_CHECKED_ELSEWHERE } from './lib/undoReads';
 import { listActionsPage } from './moderation';
-import { decisionsPage, shapeRows, staffStatsPage } from './people';
+import { decisionsPage, labelFlags, shapeRows, staffStatsPage } from './people';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -606,6 +612,91 @@ describe('a staffer’s figures’ rounds (B01-4c)', () => {
   });
 });
 
+describe('the person page’s flag labels’ rounds (B01-4c)', () => {
+  test('twenty flagged Reports on twenty lakes: every one labelled, in a stated few rounds', async () => {
+    const t = harness();
+    const viewerId = await admin(t);
+    const skater = await admin(t);
+    const flags = await t.run(async (ctx) => {
+      const out = [];
+      for (let i = 0; i < 20; i++) {
+        const body = await ctx.db.insert('waterBodies', {
+          name: `Lake ${i}`,
+          searchText: `lake ${i}`,
+          type: 'lakePond',
+          source: 'osm',
+          polygon: POLYGON,
+          bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+          centroid: { lat: 44, lng: -72 },
+          dedupStatus: 'clean',
+          createdAt: NOW,
+        });
+        await rebuildBodyLibrary(ctx, body);
+        const report = await ctx.db.insert('reports', {
+          authorId: skater,
+          waterBodyId: body,
+          point: { lat: 44, lng: -72 },
+          skateEndTime: NOW,
+          reportTime: NOW,
+          source: 'native',
+          iceTypes: [{ type: 'black_ice' }],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+        const flagId = await ctx.db.insert('contentFlags', {
+          flaggerId: viewerId,
+          targetType: 'report',
+          targetId: report,
+          reason: 'spam',
+          status: 'open',
+          subjectUserId: skater,
+          createdAt: NOW + i,
+        });
+        out.push({
+          flagId,
+          reason: 'spam' as const,
+          targetType: 'report' as const,
+          targetId: report as string,
+          status: 'open' as const,
+          createdAt: NOW + i,
+        });
+      }
+      return out;
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const person = (await raw.db.get(skater)) as Doc<'profiles'>;
+        const { ctx, stats } = counted(raw, ticks);
+        const mine: Array<(typeof flags)[number] & { targetLabel?: string }> = flags.map((f) => ({
+          ...f,
+        }));
+        const capped = await labelFlags(
+          ctx,
+          requestBudget(ctx, CHARGED_QUERY_BUDGET),
+          person,
+          mine,
+        );
+        return { capped, labels: mine.map((f) => f.targetLabel ?? null), stats };
+      });
+    const calm = await read([0]);
+    console.log(
+      `Flag label rounds: 20 lakes ${calm.stats.rounds} rounds / ${calm.stats.calls} calls`,
+    );
+    expect(calm.capped).toBe(false);
+    expect(calm.labels).toEqual(flags.map((_, i) => `Lake ${i}`));
+    expect(calm.stats.rounds).toBeLessThanOrEqual(FLAG_LABEL_ROUNDS);
+    const shuffled = await read([5, 0, 3, 6, 1, 4, 2]);
+    expect({ capped: shuffled.capped, labels: shuffled.labels }).toEqual({
+      capped: calm.capped,
+      labels: calm.labels,
+    });
+  });
+});
+
 /** The rounds a page of History costs when its rows share their targets (stated, B01-3h). */
 const PAGE_ROUNDS = 8;
 /**
@@ -632,3 +723,11 @@ const DECISIONS_WORST_ROUNDS = WORST_PAGE_ROUNDS;
  * in a wave or two. Read one after another, the same week was over 400 rounds.
  */
 const STAFF_FIGURES_ROUNDS = 8 + Math.ceil(200 / 4);
+
+/**
+ * The rounds the person page's flag labels cost for twenty flagged Reports on twenty lakes: each flag
+ * reserves its Report and its lake's library row at a document's worth apiece, so five go in a wave
+ * of the request's 11 MiB, and each wave is two rounds (the Report, then the name). One after
+ * another it was forty.
+ */
+const FLAG_LABEL_ROUNDS = 2 * Math.ceil(20 / 5);

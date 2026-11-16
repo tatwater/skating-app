@@ -29,6 +29,7 @@ import {
   ROLE_RANK,
   resolveSeason,
   restrictionsOf,
+  SCOPE_ALL,
   type Season,
   seasonOf,
   seasonRecordSpan,
@@ -39,10 +40,10 @@ import {
   type UserRole,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { Doc, Id, TableNames } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
-import { auditTargetLabel, auditTargetLabels, targetKey } from './lib/auditReads';
+import { auditTargetLabels, targetKey } from './lib/auditReads';
 import { hasCapability, isSuspendedNow, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
 import {
@@ -938,51 +939,36 @@ async function ledgerSinceOf(
 /** Distinct flagged things the person page names, at most. */
 const FLAG_LABELS = 20;
 
-/** A read on the way to a flag's body the request's budget couldn't afford: the label is capped. */
-class LabelUnaffordable extends Error {}
+/** The reads on the way from a flagged thing to its body, in order (`lib/openFlags.flagBodyId`). */
+const FLAG_BODY_READS: Record<OpenFlag['targetType'], RowKind[]> = {
+  waterbody: [],
+  report: ['report'],
+  post: ['post', 'report'],
+  comment: ['comment', 'report'],
+  photo: ['photo', 'report'],
+  hazard: ['hazard'],
+  accessAlert: ['accessAlert'],
+  user: [],
+};
 
 /**
  * Label each open flag's target, at most {@link FLAG_LABELS} distinct ones, through the request's
  * budget: a flag on the person by their own name; anything else by the body it is about — the Inbox's
  * own rule (`lib/openFlags.flagBodyId`: a report, Post, comment, photo, hazard or alert, through the
- * report it hangs on), each read as it really weighs. A body's name is read once however many of
- * its items are flagged. Returns whether any went unlabeled for the cap or the budget.
+ * report it hangs on) and that body's name, read once however many of its items are flagged. Every
+ * flag's reads go **at once** (B01-4c), in page order, in waves over the budget (`ReadBudget.waves`,
+ * each reserving its steps' worst cases and the name's, handing back what they didn't weigh).
+ * Returns whether any went unlabeled for the cap or the budget — which ones depends only on the
+ * flags' order, never on settling order.
  */
-async function labelFlags(
+export async function labelFlags(
   ctx: QueryCtx,
   budget: ReadBudget,
   person: Doc<'profiles'>,
   flags: OpenFlag[],
 ): Promise<boolean> {
-  const bodyNames = new Map<string, string | null>();
   const personName = person.displayName.trim() || person.username;
-  // Each read on the way to the body: started only while a whole document fits, charged its weight.
-  const get = async <T extends TableNames>(id: Id<T>): Promise<Doc<T> | null> => {
-    const doc = await budget.measured('report', () => ctx.db.get(id));
-    if (doc === undefined) throw new LabelUnaffordable();
-    return doc;
-  };
-  const labelOf = async (flag: OpenFlag): Promise<string | null | undefined> => {
-    let bodyId: Id<'waterBodies'> | null;
-    try {
-      bodyId = await flagBodyId(ctx, flag, get);
-    } catch (err) {
-      if (err instanceof LabelUnaffordable) return undefined;
-      throw err;
-    }
-    if (bodyId === null) return null;
-    // Each lake read once, whichever flags name it.
-    const known = bodyNames.get(bodyId);
-    if (known !== undefined) return known;
-    // A body's library row, whose name no writer caps.
-    if (!budget.affordsRead('bodyLibraryRow') || !budget.affordsCalls(1, 1)) return undefined;
-    budget.reserve('bodyLibraryRow', 1);
-    const name = await auditTargetLabel(ctx, 'waterbody', bodyId);
-    bodyNames.set(bodyId, name);
-    return name;
-  };
-  // The distinct things flagged, at most `FLAG_LABELS`, labelled one after another (at once follows
-  // with the shared reservation, B01-3i).
+  // The distinct things flagged, at most `FLAG_LABELS`.
   const byKey = new Map<string, OpenFlag>();
   for (const flag of flags) {
     const key = `${flag.targetType}:${flag.targetId}`;
@@ -996,11 +982,50 @@ async function labelFlags(
     if (flag.targetType === 'user' && flag.targetId === person._id) labels.set(key, personName);
     else toRead.push(key);
   }
+  const OVER = 'over' as const;
+  // Each lake's name read once, whichever flags name it: the first flag to reach it reads it through
+  // its own share; a later one waits on that read and hands its reservation back.
+  const names = new Map<string, Promise<string | null>>();
+  const read = await budget.waves<string, string | null | typeof OVER>(
+    toRead,
+    (key) => {
+      const steps = FLAG_BODY_READS[(byKey.get(key) as OpenFlag).targetType];
+      return {
+        bytes: steps.reduce((sum, kind) => sum + ROW_MAX[kind], 0) + ROW_MAX.bodyLibraryRow,
+        reads: steps.length + 1,
+      };
+    },
+    async (key, share) => {
+      const flag = byKey.get(key) as OpenFlag;
+      const steps = FLAG_BODY_READS[flag.targetType];
+      let step = 0;
+      // Each read charged to the flag's share as the step it is; one past them is a plan error.
+      const bodyId = await flagBodyId(ctx, flag, (id) =>
+        share.read(steps[step++] ?? 'report', () => ctx.db.get(id) as Promise<never>),
+      );
+      if (bodyId === null) return null;
+      let name = names.get(bodyId);
+      if (name === undefined) {
+        // A body's library row, whose name no writer caps (the label `auditTargetLabel` reads).
+        name = share
+          .read('bodyLibraryRow', () =>
+            ctx.db
+              .query('bodyLibraryRows')
+              .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId).eq('scope', SCOPE_ALL))
+              .first(),
+          )
+          .then((row) => row?.name ?? null);
+        names.set(bodyId, name);
+      }
+      return name;
+    },
+    () => OVER,
+  );
   let capped = false;
-  for (const key of toRead) {
-    const label = await labelOf(byKey.get(key) as OpenFlag);
-    // Past the budget: this one unlabelled (and said so); later ones may still fit.
-    if (label === undefined) {
+  for (const [i, key] of toRead.entries()) {
+    const label = read[i];
+    // Past the budget: this one unlabelled, and said so — and, in page order, every one after it.
+    if (label === OVER || label === undefined) {
       capped = true;
       continue;
     }
