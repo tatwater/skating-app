@@ -300,6 +300,18 @@ describe('clerkAdmin.setBanned — overlapping syncs converge on Convex', () => 
   });
 });
 
+describe('clerkAdmin.setBanned — a person being deleted', () => {
+  test('a sync for someone deleted, or being deleted, sends nothing and pages no one', async () => {
+    const t = convexTest(schema, modules);
+    const clerk = fakeClerk();
+    const id = await person(t, 'banned');
+    await t.run((ctx) => ctx.db.patch(id, { status: 'deleted' }));
+    await t.action(internal.clerkAdmin.setBanned, { clerkUserId: 'u_mirror', banned: true });
+    expect(clerk.state.sends).toBe(0);
+    expect(await scheduled(t)).toHaveLength(0);
+  });
+});
+
 describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
   test('once every request has answered and no retry is pending, Clerk says what Convex says; sends are bounded', async () => {
     type Op = { kind: 'set'; banned: boolean } | { kind: 'answer'; pick: number; fail: boolean };

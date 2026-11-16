@@ -2947,12 +2947,12 @@ rollout stands and needs no re-run.
   has paged the operator, Clerk's lock is Convex's status — a suspension replacing a ban, an undo and
   a redo in quick succession and the retry schedule's delayed runs included (a model test drives
   random status changes, answer orders and transient failures; named tests cover a permanent failure
-  whose wish moved and a wish that keeps moving past every round). A person whose deletion starts
-  mid-run keeps the wish last read rather than falling back to the scheduled one. **Left:** a run that
-  dies between an answer and its read, and a request whose answer is lost (a timeout included) but
-  which Clerk applies later than the retry that follows it, leave the last applied value until the
-  next status write; a reconcile over every account (the
-  mirror's state tracked) would close both.
+  whose wish moved and a wish that keeps moving past every round). A person being deleted, or
+  deleted, stops the run — account deletion deletes their Clerk user itself — so no ban is sent to a
+  deleted Clerk user and no page is mailed about one. **Left:** a run that dies between an answer and
+  its read, and a request whose answer is lost (a timeout included) but which Clerk applies later
+  than the retry that follows it, leave the last applied value until the next status write; a
+  reconcile over every account (the mirror's state tracked) would close both.
 - **The sweep for the same shape** — outbound writes that mirror a Convex value and can be sent by
   more than one action for the same subject: `clerkAdmin.setBanned` (fixed above);
   `clerkAdmin.deleteUser` (account deletion's last step — one-way, a 404 is success, so any order

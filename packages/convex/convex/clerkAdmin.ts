@@ -68,10 +68,13 @@ export const setBanned = internalAction({
       return;
     }
     // What Convex says, read before each send and again after each answer. With no profile to read,
-    // or one being deleted (its own step deletes the Clerk user), the wish stands where it was — the
-    // scheduled value at first, and never flipped back to it by a deletion that starts mid-run.
-    const wanted = async (fallback: boolean) =>
-      (await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId })) ?? fallback;
+    // the wish stands where it was — the scheduled value at first. A person being deleted, or
+    // deleted, is no one's to lock: account deletion deletes the Clerk user itself, so the run stops
+    // (never a ban sent to a deleted Clerk user, nor a page about one).
+    const wanted = async (fallback: boolean) => {
+      const read = await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId });
+      return read === 'gone' ? read : (read ?? fallback);
+    };
 
     /*
      * **Why this ends where Convex is** (the mirror has no ordering of its own, and these actions
@@ -95,7 +98,9 @@ export const setBanned = internalAction({
      * included) but which Clerk applies after the retry that follows it, leave the last applied value
      * standing until the next status write; only a reconcile over every account would close them.
      */
-    let banned = await wanted(scheduled);
+    const first = await wanted(scheduled);
+    if (first === 'gone') return;
+    let banned = first;
     let failure = '';
     let retryable = false;
     for (let round = 1; ; round++) {
@@ -119,6 +124,7 @@ export const setBanned = internalAction({
       }
       // After the answer, success or failure: what does Convex want now?
       const now = await wanted(banned);
+      if (now === 'gone') return;
       if (now === banned) {
         if (ok) return;
         break; // a failure Convex still stands behind: the retry schedule, or the operator
@@ -166,16 +172,18 @@ export const setBanned = internalAction({
 
 /**
  * Whether Clerk should lock this person now: a ban locks; any other live status — active, suspended
- * (a suspension never locks Clerk) — unlocks. `null` with no profile, or one on its way out.
+ * (a suspension never locks Clerk) — unlocks. `'gone'` for one being deleted or deleted (account
+ * deletion deletes their Clerk user); `null` with no profile.
  */
 export const lockWanted = internalQuery({
   args: { clerkUserId: v.string() },
-  handler: async (ctx, { clerkUserId }): Promise<boolean | null> => {
+  handler: async (ctx, { clerkUserId }): Promise<boolean | 'gone' | null> => {
     const profile = await ctx.db
       .query('profiles')
       .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
       .first();
-    if (!profile || profile.status === 'deleting' || profile.status === 'deleted') return null;
+    if (!profile) return null;
+    if (profile.status === 'deleting' || profile.status === 'deleted') return 'gone';
     return profile.status === 'banned';
   },
 });
