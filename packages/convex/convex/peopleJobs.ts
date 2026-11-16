@@ -30,6 +30,7 @@ import { internalMutation, internalQuery, type MutationCtx, query } from './_gen
 import { nextAttemptState } from './lib/attempts';
 import { typed, writePersonAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { ERASABLE } from './lib/eraseClock';
 import { flagSubjectOf } from './lib/flagSubject';
 import { refreshPersonRow } from './lib/peopleRows';
 import {
@@ -41,6 +42,7 @@ import {
   readPreparation,
   savePass,
   takeLease,
+  VERDICTS_DONE,
 } from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
 import {
@@ -631,7 +633,11 @@ const BACKFILL_JOB = {
     self: internal.peopleJobs.backfillFlagSubjects,
     next: internal.peopleJobs.backfillUndoChains,
   },
-  undoChains: { self: internal.peopleJobs.backfillUndoChains, next: null },
+  undoChains: {
+    self: internal.peopleJobs.backfillUndoChains,
+    next: internal.peopleJobs.backfillVerdicts,
+  },
+  verdicts: { self: internal.peopleJobs.backfillVerdicts, next: null },
 } as const;
 
 /**
@@ -940,6 +946,60 @@ export const backfillUndoChains = internalMutation({
       }
       await finishBackfill(ctx, lease, failed, placed > 0);
       return { done: true, failed };
+    }),
+});
+
+/** Whether the audit log and every erasable table are empty: then the content record has no work. */
+async function nothingToRecord(ctx: MutationCtx, reads: ReadBudget): Promise<boolean> {
+  const audit = await reads.one('moderationAction', () =>
+    ctx.db.query('moderationActions').first(),
+  );
+  if (audit !== null) return false;
+  for (const kind of Object.keys(ERASABLE) as (keyof typeof ERASABLE)[]) {
+    const row = await reads.one(kind, () => ctx.db.query(ERASABLE[kind]).first());
+    if (row !== null) return false;
+  }
+  return true;
+}
+
+/**
+ * Backfill: **the content record** (D248, B01-4d) — every item's verdicts rebuilt from its whole audit
+ * history, each item's newest decision marked (`contentVerdicts.superseded`), then every withdrawn
+ * row's erasure clock. Its work is three chained jobs that already existed —
+ * `contentRecord.backfillVerdicts` (the audit walk), `contentRecord.replayVerdictHistory` (one item's
+ * history, a page a transaction) and `erasure.backfillClocks` (after the verdicts, so no clock runs
+ * before the verdict that holds it exists) — and this run's lease rides every pass of them: a pass of
+ * a superseded run does nothing. Started with no `run`, it starts a new run and hands it to the walk
+ * (at `cursor`, an audit-log cursor, if given: then a run begun part-way, which can't conclude
+ * `ready`); the clocks' last pass hands it back with `cursor: VERDICTS_DONE`, and the run concludes.
+ * Every pass that rewrote a verdict or set a clock found a gap, which takes back an earlier `ready`.
+ */
+export const backfillVerdicts = internalMutation({
+  args: BACKFILL_ARGS,
+  handler: (ctx, args) =>
+    traced('peopleJobs.backfillVerdicts', args, async () => {
+      const reads = new ReadBudget();
+      reads.reserve('small', 4);
+      const lease = await takeLease(ctx, 'verdicts', args);
+      if (lease === null) return SUPERSEDED;
+      const failed = lease.failed;
+      if (args.run !== undefined && args.cursor === VERDICTS_DONE) {
+        await finishBackfill(ctx, lease, failed, false);
+        return { done: true, failed };
+      }
+      // A database with nothing to replay or clock — no audit row, no row of any erasable table —
+      // ends at once, ready, as every People backfill does (a fresh deployment takes the procedure).
+      if (args.run === undefined && (await nothingToRecord(ctx, reads))) {
+        await finishBackfill(ctx, lease, failed, false);
+        return { done: true, failed };
+      }
+      const start = args.cursor === VERDICTS_DONE ? null : (args.cursor ?? null);
+      const next = await savePass(ctx, lease, { cursor: start, failed });
+      await ctx.scheduler.runAfter(0, internal.contentRecord.backfillVerdicts, {
+        cursor: start,
+        lease: next,
+      });
+      return { done: false };
     }),
 });
 

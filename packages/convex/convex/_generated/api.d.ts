@@ -118,6 +118,8 @@ import type * as lib_putInMarkers from "../lib/putInMarkers.js";
 import type * as lib_putInSuppression from "../lib/putInSuppression.js";
 import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_readBudget from "../lib/readBudget.js";
+import type * as lib_recordReads from "../lib/recordReads.js";
+import type * as lib_recordRules from "../lib/recordRules.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as lib_recurringWork from "../lib/recurringWork.js";
 import type * as lib_reportSubAreas from "../lib/reportSubAreas.js";
@@ -302,6 +304,8 @@ declare const fullApi: ApiFromModules<{
   "lib/putInSuppression": typeof lib_putInSuppression;
   "lib/r2": typeof lib_r2;
   "lib/readBudget": typeof lib_readBudget;
+  "lib/recordReads": typeof lib_recordReads;
+  "lib/recordRules": typeof lib_recordRules;
   "lib/recurrence": typeof lib_recurrence;
   "lib/recurringWork": typeof lib_recurringWork;
   "lib/reportSubAreas": typeof lib_reportSubAreas;

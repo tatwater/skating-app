@@ -41,6 +41,11 @@ export const PEOPLE_BACKFILLS = [
   { backfill: 'rows', job: 'peopleJobs:backfillRows' },
   { backfill: 'flagSubjects', job: 'peopleJobs:backfillFlagSubjects' },
   { backfill: 'undoChains', job: 'peopleJobs:backfillUndoChains' },
+  // The content record (D248, B01-4d): every item's verdicts replayed from the audit log, each item's
+  // newest decision marked, then the erasure clocks — one run across the three chained jobs
+  // (`contentRecord.backfillVerdicts`, `contentRecord.replayVerdictHistory`, `erasure.backfillClocks`),
+  // which carry its lease.
+  { backfill: 'verdicts', job: 'peopleJobs:backfillVerdicts' },
 ] as const;
 
 /**
@@ -54,6 +59,7 @@ export const PEOPLE_JOBS = [
   'rows',
   'flagSubjects',
   'undoChains',
+  'verdicts',
   'lapseSweep',
   'lapseRetry',
 ] as const;
@@ -70,6 +76,7 @@ export const PASS_SIZE: Record<PeopleJob, number> = {
   rows: 50,
   flagSubjects: 200,
   undoChains: 200,
+  verdicts: 200,
   lapseSweep: 1_000,
   lapseRetry: 1_000,
 };
@@ -106,7 +113,7 @@ export interface BackfillArgs {
  */
 export const AFTER_MERGE_PROCEDURE = [
   '(1) `convex dev --once`.',
-  "(2) `convex run peopleJobs:backfillRows '{}'` — it runs the three People backfills in turn (rows, flag subjects, undo chains). Estimate: unmeasured.",
+  "(2) `convex run peopleJobs:backfillRows '{}'` — it runs the four People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks). Estimate: unmeasured.",
   "(3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`.",
   '(4) For each job in its `rerun`: `convex run <job> \'{"alone":true}\'` (a new run, which supersedes any older one), then step 3 again.',
   '(5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus \'{"userId":"<id>"}\'`.',
@@ -215,6 +222,45 @@ export async function endRun(ctx: MutationCtx, lease: Lease, failed: number): Pr
 export async function foundGap(ctx: MutationCtx, lease: Lease): Promise<void> {
   const row = await runRow(ctx, lease.job);
   if (row?.run === lease.run && row.ready) await ctx.db.patch(row._id, { ready: false });
+}
+
+/** The cursor the content record's last pass hands back with: its run reached the end of its range. */
+export const VERDICTS_DONE = 'done';
+
+/**
+ * A chained job's pass hands its lease on: the run and the pass token the next pass must carry — for
+ * a backfill whose run spans several functions (the content record's walk, replays and clocks), each
+ * pass of which takes the lease ({@link takeLease}) and moves the token ({@link savePass}).
+ */
+export const LEASE_ARG = v.optional(v.object({ run: v.number(), pass: v.number() }));
+export type LeaseArg = { run: number; pass: number };
+
+/**
+ * A chained pass's lease: `undefined` for a pass run by hand without one (it concludes nothing), the
+ * lease while its run is current, `null` when it was superseded — and the pass must do nothing.
+ */
+export async function chainedLease(
+  ctx: MutationCtx,
+  job: PeopleJob,
+  arg: LeaseArg | undefined,
+): Promise<Lease | null | undefined> {
+  if (arg === undefined) return undefined;
+  return takeLease(ctx, job, arg);
+}
+
+/**
+ * Hand a chained pass's lease to the next pass: the pass recorded (where it got to; a `gap` it fixed
+ * takes back an earlier `ready`) and the token moved — what the scheduled call carries, or nothing for
+ * a pass run without a lease.
+ */
+export async function handOn(
+  ctx: MutationCtx,
+  lease: Lease | undefined,
+  { cursor, gap }: { cursor: string | null; gap: boolean },
+): Promise<{ lease?: LeaseArg }> {
+  if (lease === undefined) return {};
+  if (gap) await foundGap(ctx, lease);
+  return { lease: await savePass(ctx, lease, { cursor, failed: lease.failed }) };
 }
 
 /** Mark a backfill concluded ready, as a clean run does (for tests and seeds). */

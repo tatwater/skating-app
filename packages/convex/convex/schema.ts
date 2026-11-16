@@ -522,6 +522,8 @@ export default defineSchema({
       v.literal('rows'),
       v.literal('flagSubjects'),
       v.literal('undoChains'),
+      // The content record (B01-4d): the verdict replay and the erasure clocks after it.
+      v.literal('verdicts'),
       v.literal('lapseSweep'),
       v.literal('lapseRetry'),
     ),
@@ -3872,6 +3874,15 @@ export default defineSchema({
     /** When it stopped standing, and the action that ended it (a reversal, or a later verdict). */
     endedAt: v.optional(v.number()),
     endedByActionId: v.optional(v.id('moderationActions')),
+    /**
+     * A later verdict on the same item exists (B01-4d): the record sheet shows an item once, as its
+     * newest decision — a hide that became a removal is the removal, never also a Reversed hide.
+     * `false` on an item's newest verdict, standing or ended; `true` once a later one is minted.
+     * Written by every verdict writer (`lib/contentVerdicts`, the replay in `contentRecord`;
+     * `packages/guards`' `verdictWriters.test.ts`); absent on a row from before, until the verdict
+     * backfill (`peopleJobs:backfillVerdicts`) reaches it — the reads say `pending` until then.
+     */
+    superseded: v.optional(v.boolean()),
   })
     .index('by_subject_standing', ['subjectUserId', 'standing', 'at'])
     // The person's record of one kind (the People page's Hidden content filter).
@@ -3879,7 +3890,17 @@ export default defineSchema({
     // Their verdicts in the order they ended (People's History, newest first): `gt(0)` on the optional
     // field, which a standing verdict lacks.
     .index('by_subject_ended', ['subjectUserId', 'endedAt'])
+    // The record sheet's Reversed list (B01-4d): each item's newest verdict, once a moderator ended it —
+    // `eq('superseded', false)` then `gt('endedAt', 0)` (a standing verdict lacks `endedAt`, which sorts
+    // first; a row from before the flag lacks `superseded` and matches no `eq`).
+    .index('by_subject_reversed', ['subjectUserId', 'superseded', 'endedAt'])
+    .index('by_subject_reversed_type', ['subjectUserId', 'superseded', 'targetType', 'endedAt'])
+    // An item's newest verdict, to mark it superseded when a later one is minted (equality reads only).
+    .index('by_target_superseded', ['targetType', 'targetId', 'superseded'])
     .index('by_target_standing', ['targetType', 'targetId', 'standing'])
+    // An item's decisions by when they were made (the record sheet's pane, B01-4d): `at` is required,
+    // so the range needs no lower bound.
+    .index('by_target_at', ['targetType', 'targetId', 'at'])
     .index('by_action', ['actionId'])
     // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads
     // only, so the unset value on every standing row never matches (no sparse-index trap).
@@ -4630,6 +4651,11 @@ export default defineSchema({
     // filed seasons ago falls out behind the settled rows filed since; and status alone still holds
     // lapsed rows the sweep has not reached, so `active` is read `gt('expiresAt', now)`.
     .index('by_author_status_expires_at', ['createdByUserId', 'status', 'expiresAt'])
+    // What a person retracted themselves, newest first (the record sheet's Deleted list, B01-4d):
+    // `eq(author).eq('retractedByUserId', author).gt('retractedAt', 0)` — their own retractions only, in
+    // the order they made them. A retraction from before `retractedAt` existed joins once the clocks
+    // backfill stamps it (the reads say `pending` until then).
+    .index('by_author_retracted', ['createdByUserId', 'retractedByUserId', 'retractedAt'])
     // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
     .index('by_idempotency_key', ['idempotencyKey'])
     // The erasure clock (D248): a `gt(0).lte(now)` range holds only due work.

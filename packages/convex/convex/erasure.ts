@@ -54,6 +54,7 @@ import {
   unparkOnProgress,
   withdrawnAtOf,
 } from './lib/eraseClock';
+import { chainedLease, handOn, LEASE_ARG, VERDICTS_DONE } from './lib/peopleRuns';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { postSearchText } from './lib/postSync';
 import {
@@ -1569,6 +1570,8 @@ export const backfillClocks = internalMutation({
     /** The creation time of the last row of this kind looked at: the walk resumes after it. */
     after: v.optional(v.number()),
     pageSize: v.optional(v.number()),
+    /** The content record's People run (`peopleJobs:backfillVerdicts`); absent when run by hand. */
+    lease: LEASE_ARG,
   },
   handler: (ctx, args) =>
     traced('erasure.backfillClocks', args, async () => {
@@ -1579,6 +1582,11 @@ export const backfillClocks = internalMutation({
       const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
       const now = Date.now();
       const reads = new ReadBudget();
+      // The run's lease: its row read here, again to hand it on, and once more when the pass found a
+      // gap (`foundGap`).
+      reads.reserve('small', 3);
+      const lease = await chainedLease(ctx, 'verdicts', args.lease);
+      if (lease === null) return { kind: current, set: 0, stamped: 0, more: false };
       // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one
       // row, so every pass gets through at least one; most rows are not withdrawn and cost only the read.
       const work = 2 * ROW_MAX[current] + HOLD_COST[current];
@@ -1635,11 +1643,20 @@ export const backfillClocks = internalMutation({
       // A short read, every row of it looked at, was the rest of this kind.
       const kindDone = looked === rows.length && rows.length < requested;
       const next = kindDone ? kinds[kinds.indexOf(current) + 1] : current;
+      // A clock set or a retraction stamped is what the content record's backfill exists to fix.
+      const handed = await handOn(ctx, lease, { cursor: null, gap: set > 0 || stamped > 0 });
       if (next !== undefined) {
         await ctx.scheduler.runAfter(0, internal.erasure.backfillClocks, {
           kind: next,
           ...(next === current && lookedTo !== undefined ? { after: lookedTo } : {}),
           ...(pageSize !== undefined ? { pageSize } : {}),
+          ...handed,
+        });
+      } else if (handed.lease !== undefined) {
+        // The end of the run's range: the run concludes.
+        await ctx.scheduler.runAfter(0, internal.peopleJobs.backfillVerdicts, {
+          ...handed.lease,
+          cursor: VERDICTS_DONE,
         });
       }
       return { kind: current, set, stamped, more: next !== undefined };
