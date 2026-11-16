@@ -2824,6 +2824,46 @@ own hidden report, overturning a decision on their own content) — not before t
 the levers only follow the writes. A self rule would belong in `lib/recordRules`, beside a matching
 refusal in `setModerationStatus`.
 
+**B01-4e (2026-11-15): the record sheet on the web** (boards 8.7–8.9; stacked on *B01-4d*). The
+sheet behind the Account row's *On the record › Review* (`people/record/`): 1000 wide over the
+person's page, Standing / Deleted / Reversed as tabs with the kinds behind *Filter* (one kind at a
+time — the reads narrow by one), the open item beside, master–detail under the two columns' width
+(`shell/columnsFit`; its life then reads top to bottom). What it found and decided:
+
+- **The lever is `can`, and only `can`.** The pane draws the one lever `contentRecord.item` offers
+  (`leverOf`, a fast-check property over every `can`, in the model and drawn); a refusal is the
+  server's sentence in the foot. List rows draw no levers — a Post's row answers *Open it to see
+  what can be done with it* there, so the pane is where a lever lives.
+- **A restore keeps its row for the sitting** (8.8): lit *Restored ·* and who restored it, with its Undo while the
+  write said `undoable`, until the server lists it again (an undo, a hide again) or the sheet closes.
+  A receipt now says when its write can't be undone (`Receipt.undoable: false`): no Undo, no lookup —
+  Keep on the record and Overturn answer so.
+- **Every write is tied to its attempt** (`useRecordActing`): a late answer never lights, refuses or
+  moves focus on the item open now; a late refusal is said once in a toast. A reason dialog holds
+  while its write is out. A table test runs the four writes, landed and refused.
+- **The Account row widened** to all three lists (`recordRowShows`): it stands for anything on any
+  list, a floor, or a record still being prepared, and says what stands ("0 items" when only the
+  other two hold anything). The page reads `recordPresence` (cheap, live); `recordCounts` — the
+  filter's counts by kind — is the sheet's own, read only while it is open, as is everything else
+  the sheet asks.
+- **Its life** is drawn from the item's own read (posted, each decision and how it ended, the
+  author's deletion; today; what the lever would do, dashed) — no second read. Only for an item with
+  a decision whose words are still kept, as the boards draw it.
+- **The contract's additions, drawn as they come** (the coordinator's, 2026-11-15): the item's
+  `content` (the rows' own words; the web reads no document fields of its own), *If overturned*'s
+  date from `eraseAtIfReleased` — a date not ahead of the read is *at once*, and `null` with an
+  overturn offered is *Not erased while anything else holds it* (its Post's decision, an open
+  flag) — *Comes back with it* / *Came back with it* from `comesBack` (comments still up and thumbs,
+  a floor past the cap, *None* for none; the restore's toast says what came back), and the chooser's
+  *Deleted by its author 28 Sep* from `PostRestoreMember.authorDeletedAt`.
+- **Ages** are the console's one short form (`shortAge`, "209 d"), not the board's "7 mo" — one call,
+  `RECORD_WORDS.rowAge`, while the founder decides.
+- **Known and left:** *Kept* is told by when a decision came (on or after the author's deletion),
+  not by a fact the server states — a hide on content already deleted reads *Kept* too, where
+  History says hidden; a stored `keptOnRecord` on the row would settle it. A Post restored with
+  chosen Reports keeps its own row for the sitting; the Reports that came back with it leave
+  Standing without one.
+
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
 concludes, the record's reads say `pending: ['verdicts']`. The new indexes (`contentVerdicts`
@@ -4158,10 +4198,8 @@ draws 34; the role menu's item takes two lines.
   as not recorded. The merge filled the fixtures with the new fields and made the list row's staff
   overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`; the status note's who-and-when
   line tells a start past the read (`statusNote.atCapped`) from one not recorded.
-- The record sheet (boards 8.7–8.9) is not built on the web. Its server is (*B01-4d*, above): the
-  *On the record* row should appear whenever any of the three lists has items, is capped, or is still
-  being prepared — `people.person.hidden` for Standing, `contentRecord.recordPresence` for the other
-  two (`contentRecord.recordCounts` once the sheet is open).
+- The record sheet's kit candidates (`RecordRow`, `LifeList`, `LabelRows`) await a kit pass with the
+  others.
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.

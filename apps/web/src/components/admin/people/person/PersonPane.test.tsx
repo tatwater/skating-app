@@ -199,6 +199,45 @@ describe('the reads', () => {
   });
 });
 
+describe('the record', () => {
+  it('asks only whether the record’s lists hold anything with the page; its counts wait for the sheet', async () => {
+    answer({
+      'contentRecord:recordPresence': { deleted: false, reversed: false, pending: [] },
+      'contentRecord:personVerdicts': { page: [], isDone: true, continueCursor: '', pending: [] },
+    });
+    render(<PersonPane userId={ROB_ID} />);
+    expect(mocks.calls.get('contentRecord:recordPresence')).toEqual({ userId: ROB_ID });
+    // Nothing of the sheet is asked until it opens — its counts neither.
+    expect(mocks.calls.has('contentRecord:personVerdicts')).toBe(false);
+    expect(mocks.calls.has('contentRecord:recordCounts')).toBe(false);
+    const row = document.querySelector('[data-lever="record"]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Review' }));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getByText('On the record')).toBeInTheDocument();
+    expect(mocks.calls.get('contentRecord:personVerdicts')).toEqual({
+      userId: ROB_ID,
+      cursor: null,
+    });
+    expect(within(sheet).getByText('Nothing on the record')).toBeInTheDocument();
+    expect(mocks.calls.get('contentRecord:recordCounts')).toEqual({ userId: ROB_ID });
+  });
+
+  it('an open sheet stays open through a blink of the person read', async () => {
+    answer({
+      'contentRecord:recordPresence': { deleted: false, reversed: false, pending: [] },
+      'contentRecord:personVerdicts': { page: [], isDone: true, continueCursor: '', pending: [] },
+    });
+    const { rerender } = render(<PersonPane userId={ROB_ID} />);
+    const row = document.querySelector('[data-lever="record"]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Review' }));
+    await screen.findByRole('dialog');
+    // The person read drops back to loading (a retry, a failure): the sitting holds.
+    mocks.results.set('people:person', undefined);
+    rerender(<PersonPane userId={ROB_ID} />);
+    expect(screen.getByRole('dialog')).toHaveTextContent('Nothing on the record');
+  });
+});
+
 describe('one person at a time', () => {
   it('Show more keeps the rows drawn, and its focus, while the larger page loads', async () => {
     answer({

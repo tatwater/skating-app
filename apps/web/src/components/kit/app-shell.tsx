@@ -107,6 +107,11 @@ type ShellState = {
 
 const ShellContext = createContext<ShellState | null>(null);
 
+/** The shell, or `null` outside one (a story or a test that draws a page alone). */
+export function useOptionalShell(): ShellState | null {
+  return useContext(ShellContext);
+}
+
 /** The shell around a page: its main region, its panes. Throws outside an `AppShell`. */
 export function useShell(): ShellState {
   const shell = useContext(ShellContext);

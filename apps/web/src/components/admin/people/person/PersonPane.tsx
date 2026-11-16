@@ -2,13 +2,15 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { useOptionalShell } from '@/components/kit/app-shell';
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
-import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
+import { isFailed, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
 import { ID_SHAPE, useClockFor } from '../../reads/readArgs';
 import { actionLabel } from '../../shell/actionLabels';
 import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
+import { RecordSheet } from '../record/RecordSheet';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
 import { type PersonRead, shownName } from './personModel';
@@ -70,7 +72,12 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     staffSeason: valid && audit ? read(api.people.staffSeason, { userId: id, now: held }) : null,
     decisions:
       valid && audit ? read(api.people.decisions, { userId: id, limit: decisionRows }) : null,
+    // Whether the record's other two lists hold anything, for the *On the record* row — cheap, so
+    // it stays live; the counts are the sheet's, read once it opens.
+    recordPresence: valid && people ? read(api.contentRecord.recordPresence, { userId: id }) : null,
   });
+  const [recordOpen, setRecordOpen] = useState(false);
+  const shell = useOptionalShell();
 
   // *Show more* asks a larger page, a new subscription: the rows already drawn hold while it loads,
   // so the list (and the button holding focus) never blanks into a skeleton.
@@ -103,32 +110,71 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     <Link {...routerTarget(to.kind === 'people' ? back : personHref(to))} />
   );
 
+  // A secondary read: its value, or nothing to add while on its way, failed or empty (`readState`).
+  const presenceState = readState(reads.recordPresence);
+  const presence = presenceState.kind === 'value' ? presenceState.value : null;
+  // The person the record sheet is about, held through a blink of the person read (a failure, a
+  // retry): an open sitting never unmounts under the operator, taking its open item and every row
+  // restored in it along. The page is keyed on the person, so what is held is always theirs.
+  const sheetPerson = useHeldRead(loaded ?? undefined, !valid || !people);
+  // The record sheet's subject, rebuilt only when what it names changes: the sheet's item view and
+  // its write path key on it.
+  const subjectId = sheetPerson?.userId ?? null;
+  const subjectName = sheetPerson?.displayName ?? null;
+  const subjectHandle = sheetPerson?.username ?? null;
+  const subjectImage = sheetPerson?.profileImageUrl ?? null;
+  const subject = useMemo(
+    () =>
+      subjectId === null
+        ? null
+        : {
+            userId: subjectId,
+            displayName: subjectName,
+            username: subjectHandle,
+            profileImageUrl: subjectImage,
+          },
+    [subjectId, subjectName, subjectHandle, subjectImage],
+  );
   return (
-    <PersonView
-      // A malformed id, or a viewer without the read, is no such person to this page.
-      person={!valid || !people ? null : person}
-      trend={reads.trend}
-      history={audit ? reads.history : 'not-shown'}
-      // Without the audit read the staff reads aren't asked: no strip, no Decisions — never a
-      // skeleton waiting on a read that will not come.
-      staffStats={audit ? reads.staffStats : null}
-      staffSeason={audit ? reads.staffSeason : null}
-      decisions={audit ? decisions : 'not-shown'}
-      now={live}
-      viewerId={viewerId ?? null}
-      linkTo={linkTo}
-      onAct={onAct}
-      onUndo={(row) =>
-        undo({
-          actionId: row.id,
-          needsReason: row.undo.state === 'available' && row.undo.needsReason,
-          what: actionLabel(row.action, row.targetType),
-        })
-      }
-      {...(decisionRows < DECISIONS_MOST && {
-        onMoreDecisions: () => setDecisionRows((n) => Math.min(DECISIONS_MOST, n * 2)),
-      })}
-      {...(className !== undefined && { className })}
-    />
+    <>
+      <PersonView
+        // A malformed id, or a viewer without the read, is no such person to this page.
+        person={!valid || !people ? null : person}
+        trend={reads.trend}
+        history={audit ? reads.history : 'not-shown'}
+        // Without the audit read the staff reads aren't asked: no strip, no Decisions — never a
+        // skeleton waiting on a read that will not come.
+        staffStats={audit ? reads.staffStats : null}
+        staffSeason={audit ? reads.staffSeason : null}
+        decisions={audit ? decisions : 'not-shown'}
+        now={live}
+        viewerId={viewerId ?? null}
+        linkTo={linkTo}
+        onAct={onAct}
+        onUndo={(row) =>
+          undo({
+            actionId: row.id,
+            needsReason: row.undo.state === 'available' && row.undo.needsReason,
+            what: actionLabel(row.action, row.targetType),
+          })
+        }
+        {...(decisionRows < DECISIONS_MOST && {
+          onMoreDecisions: () => setDecisionRows((n) => Math.min(DECISIONS_MOST, n * 2)),
+        })}
+        recordPresence={reads.recordPresence}
+        onReviewRecord={() => setRecordOpen(true)}
+        {...(className !== undefined && { className })}
+      />
+      {sheetPerson !== undefined && subject !== null && (
+        <RecordSheet
+          open={recordOpen}
+          onOpenChange={setRecordOpen}
+          subject={subject}
+          standing={sheetPerson.hidden}
+          pending={sheetPerson.pending.includes('verdicts') || (presence?.pending.length ?? 0) > 0}
+          container={shell?.main ?? null}
+        />
+      )}
+    </>
   );
 }

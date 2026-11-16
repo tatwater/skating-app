@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -55,6 +55,7 @@ function draw(over: Partial<PersonViewProps> = {}) {
     viewerId: IDS.teagan,
     onAct,
     onUndo,
+    onReviewRecord: vi.fn(),
     ...over,
   };
   const view = render(<PersonView {...props} />);
@@ -76,6 +77,35 @@ const lever = (key: string) => {
   if (el === null) throw new Error(`no lever ${key}`);
   return el;
 };
+
+describe('On the record', () => {
+  it('Review opens the record sheet; the row shows when only the other lists hold anything', async () => {
+    const onReviewRecord = vi.fn();
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    draw({
+      person: { ...ROB, hidden: { total: 0, capped: false, byKind: none } },
+      recordPresence: { deleted: false, reversed: true, pending: [] },
+      onReviewRecord,
+    });
+    expect(lever('record')).toHaveTextContent('0 items');
+    await userEvent.click(within(lever('record')).getByRole('button', { name: 'Review' }));
+    expect(onReviewRecord).toHaveBeenCalledOnce();
+  });
+
+  it('a presence still on its way adds nothing; one that failed is never drawn as nothing', () => {
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    const person = { ...ROB, hidden: { total: 0, capped: false, byKind: none } };
+    draw({ person, recordPresence: undefined });
+    expect(document.querySelector('[data-lever="record"]')).toBeNull();
+    cleanup();
+    draw({ person, recordPresence: { failed: true, pending: false, retry: () => {} } });
+    // The row stands, says what couldn't be read, and Review still opens the sheet (which reads
+    // its own lists).
+    expect(lever('record')).toHaveTextContent('0 items');
+    expect(lever('record')).toHaveTextContent('Deleted and Reversed couldn’t be read');
+    expect(within(lever('record')).getByRole('button', { name: 'Review' })).toBeEnabled();
+  });
+});
 
 describe('board 8.1 — a suspended skater', () => {
   it('draws the head, the status note, the strip, the levers, what is open and the history', () => {
@@ -101,10 +131,9 @@ describe('board 8.1 — a suspended skater', () => {
     expect(within(lever('suspension')).getByRole('button', { name: 'Lift' })).toBeInTheDocument();
     expect(lever('record')).toHaveTextContent('4 items');
     expect(lever('record')).toHaveTextContent('2 reports · 2 comments');
-    // The board's Review, drawn as the working button; it says it isn't here yet, never a dead click.
+    // The board's Review opens the record sheet.
     const review = within(lever('record')).getByRole('button', { name: 'Review' });
-    expect(review).toHaveAttribute('aria-disabled', 'true');
-    expect(review).toHaveAttribute('data-unavailable');
+    expect(review).toBeEnabled();
     expect(screen.queryByText(/photo/i)).toBeNull();
     expect(screen.queryByText(/Restore all/)).toBeNull();
     const open = slot('open-about');

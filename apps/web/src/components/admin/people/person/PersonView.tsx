@@ -9,8 +9,9 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { SkeletonBlock, SkeletonText } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
-import { isFailed, type Loadable } from '../../reads/consoleReads';
+import { isFailed, type Loadable, readState } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
+import type { RecordPresence } from '../record/recordModel';
 import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
@@ -84,8 +85,20 @@ export type PersonViewProps = {
   onUndo: (row: ActionRow) => void;
   /** Asks for more decisions, while the read says there are more. */
   onMoreDecisions?: () => void;
+  /** Whether Deleted and Reversed hold anything (`contentRecord.recordPresence`), for its row. */
+  recordPresence?: Loadable<RecordPresence | null>;
+  /** *On the record*'s *Review*: opens the record sheet. */
+  onReviewRecord?: () => void;
   className?: string;
 };
+
+/** The record's presence read, for its row: its value, `'failed'`, or nothing yet / nothing. */
+function presenceOf(
+  read: Loadable<RecordPresence | null> | undefined,
+): RecordPresence | 'failed' | null {
+  const state = readState(read);
+  return state.kind === 'value' ? state.value : state.kind === 'failed' ? 'failed' : null;
+}
 
 export function PersonView({
   person,
@@ -101,6 +114,8 @@ export function PersonView({
   onAct,
   onUndo,
   onMoreDecisions,
+  recordPresence,
+  onReviewRecord,
   className,
 }: PersonViewProps) {
   const acting = useActing(onAct);
@@ -157,11 +172,17 @@ export function PersonView({
           <div data-slot="person-right" className="flex min-w-0 flex-col">
             <LeverBlock
               title="Account"
-              rows={accountRows(p, { now, self })}
+              rows={accountRows(p, {
+                now,
+                self,
+                // On its way adds nothing; failed is never drawn as nothing (`readState`).
+                presence: presenceOf(recordPresence),
+              })}
               person={p}
               acting={acting}
               now={now}
               {...tz}
+              {...(onReviewRecord !== undefined && { onReview: onReviewRecord })}
             />
             {staff
               ? decisions !== 'not-shown' &&

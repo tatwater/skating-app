@@ -70,7 +70,8 @@ export const WORDS = {
   bannedStatus: 'Banned · account kept for appeal',
   review: 'Review',
   onTheRecord: 'On the record',
-  reviewRecordWhat: 'Reviewing what is on their record comes with its own sheet',
+  /** The record's Deleted and Reversed couldn't be read: the row stands, and Review still opens. */
+  recordOthersFailed: 'Deleted and Reversed couldn’t be read',
   switchOn: 'Switch on',
 
   // ── The dialogs ──

@@ -28,7 +28,9 @@ import type { AuditTarget } from './actionLabels';
  * - **`announce`**, after an action lands: shows the receipt toast, with Undo (⌘Z) while the server
  *   offers one. A write that answered with its own audit row and whether undoing it asks a reason
  *   needs nothing more; otherwise the toast asks the server for the caller's own newest action on
- *   the target (`undo.latestOwn`) first. Undo is never drawn when the server would refuse it.
+ *   the target (`undo.latestOwn`) first; a write that said it can't be undone now (`undoable:
+ *   false`) gets its receipt with no Undo and no lookup. Undo is never drawn when the server would
+ *   refuse it.
  * - **`undo`**, from the toast or a History row: runs `undo.run`. When the undo takes something
  *   away from skaters it asks the reason first, in the reason dialog; restoring asks nothing.
  * - **A refusal is the server's own words.** Someone acted on the same thing since, the row was
@@ -50,11 +52,17 @@ export type Receipt = {
   /**
    * The write's own audit row, when the write answered with it — then the toast needs no lookup:
    * the row is the caller's newest on the target by construction. Used only together with
-   * {@link Receipt.undoNeedsReason}; a row without it falls back to the lookup, which says both.
+   * {@link Receipt.undoNeedsReason}; a row without it falls back to the lookup, which says both —
+   * unless {@link Receipt.undoable} is `false`, which offers no Undo and looks nothing up.
    */
   actionId?: string;
   /** Whether undoing the write takes something away from skaters (and so asks why). */
   undoNeedsReason?: boolean;
+  /**
+   * `false` when the write itself said it can't be undone now (`undoable: false`): the receipt
+   * shows with no Undo, and nothing is looked up.
+   */
+  undoable?: false;
   /**
    * Whose it is, by name ("Mascoma Lake"), set after the title ("Links saved · Mascoma Lake"):
    * a receipt that may show over another page names its subject, so its Undo is never ambiguous —
@@ -164,7 +172,7 @@ export function UndoProvider({
 
   const announce = useCallback(
     async (
-      { title: said, description, target, actionId, undoNeedsReason, subject }: Receipt,
+      { title: said, description, target, actionId, undoNeedsReason, undoable, subject }: Receipt,
       here?: () => boolean,
     ) => {
       // A receipt that may show over another page names its subject ("Links saved · Mascoma Lake").
@@ -177,7 +185,10 @@ export function UndoProvider({
           </>
         );
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
-      if (actionId !== undefined && undoNeedsReason !== undefined) {
+      if (undoable === false) {
+        // The write said so: no Undo to offer, and no lookup that could disagree with it.
+        offered = null;
+      } else if (actionId !== undefined && undoNeedsReason !== undefined) {
         // The write named its own row and what undoing it asks: no lookup. Were someone to act on
         // the same thing in the moment between, the undo's run refuses in the server's own words.
         offered = { actionId, undo: { needsReason: undoNeedsReason } };
