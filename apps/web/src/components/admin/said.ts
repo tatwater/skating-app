@@ -1,10 +1,9 @@
 import { useMutation } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
+import { ConvexError } from 'convex/values';
 import { useCallback } from 'react';
 
 import { type ToastManager, toast, toastManager } from '@/components/kit/toast';
-
-import { errorText } from './adminUi';
 
 /**
  * **A server's refusal is a toast — always** (D268, the founder's call of 2026-11-16). A write the
@@ -19,6 +18,18 @@ import { errorText } from './adminUi';
  * with what was typed, or to go back to the server's value — and never the words, so no component
  * has anything to print. `packages/guards/src/adminWriters.test.ts` holds the console to it.
  */
+
+/**
+ * A refusal's words: the operator-facing line the server wrote (a `ConvexError`'s), or — a server
+ * error, or a send that failed — the same plain line for both. Read here and nowhere else.
+ */
+function errorText(err: unknown): string {
+  if (err instanceof ConvexError) {
+    const data = err.data as { message?: string } | string;
+    return typeof data === 'string' ? data : (data?.message ?? 'That write was rejected.');
+  }
+  return 'Something went wrong — check your connection and try again.';
+}
 
 /** What a write tells its caller: whether it landed. A refusal's words went to its toast. */
 export type Said<T> = { landed: true; value: T } | { landed: false };

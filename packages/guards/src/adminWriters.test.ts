@@ -1,16 +1,16 @@
 /**
- * **Every console write says its refusal to someone still there** (D268). An admin write's refusal
- * is said where it was asked while that place is open, and otherwise in a toast naming what wasn't
- * changed — never dropped, never said twice, never said into something gone. The console's writes
- * keep that by going through a write path that names its audience: `sendFor` with a hold (the
- * Bodies tabs, the boost), the pick store's one outcome shape (`useLatestPick`), `actInDialog` with
- * the dialog's opening, the People write paths with their page as asker, Undo's own dialog. The
- * Legacy pages, until each retires, go through the net (`useSaidMutation`).
+ * **Every server refusal is a toast, and only a toast** (D268, the founder's call of 2026-11-16).
+ * A write the server refuses, that throws, or whose send fails is said once, in a toast naming its
+ * subject and what was not changed, wherever the operator is — never also printed in place, and
+ * never routed by a guess at whether the place that asked is still drawn (three such guesses were
+ * three defects on #138). The console keeps that by sending every write through the one helper
+ * (`said`, in `components/admin/said.ts`), which says the refusal in its toast and hands its caller
+ * only *that* the write was refused — never the words, so no component has anything to print.
  *
- * This lint holds the list: a file in the console's tree that reaches a Convex mutation directly —
- * `useMutation` from `convex/react`, or `convex.mutation(…)` on a client — must be in the inventory,
- * with the write path that says its refusals. A new one is read and listed, or goes through the net.
- * A lint over the source text, not a proof (`latestPress.test.tsx` and its neighbors are the proofs).
+ * These lints hold the shape: a file that reaches a mutation directly is in the inventory, with
+ * the path that says its refusals; only the helper reads a refusal's words or draws a refusal's
+ * toast; and the prediction machinery stays gone. Lints over the source text, not proofs (the
+ * write paths' own tests and `lateAnswers.test.tsx` are the proofs).
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -25,25 +25,21 @@ const ROUTES = /^routes\/admin[.\w$-]*\.tsx$/;
 
 /** Every file allowed to reach a mutation directly, and the path that says its refusals. */
 const INVENTORY: Record<string, string> = {
-  'components/admin/saidMutation.ts': 'the Legacy net itself',
-  'components/admin/body/frame/BodyConsoleRoute.tsx': 'the boost: sendFor with the slider’s hold',
-  'components/admin/body/tabs/access/AccessTab.tsx':
-    'the pick store (asker: the reason dialog); actInDialog',
-  'components/admin/body/tabs/hazards/HazardsTab.tsx':
-    'sendFor, its hold narrowed to the demote dialog',
-  'components/admin/body/tabs/imagery/ImageryTab.tsx': 'sendFor; the pick store says in place',
-  'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor with the tab’s hold',
-  'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue',
-  'components/admin/body/tabs/places/PlacesTab.tsx': 'act; actInDialog with the dialog’s opening',
-  'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor, its hold narrowed to the form',
+  'components/admin/said.ts': 'the one helper itself, and the Legacy net (`useSaidMutation`)',
+  'components/admin/body/frame/BodyConsoleRoute.tsx': 'the boost: sendFor',
+  'components/admin/body/tabs/access/AccessTab.tsx': 'the pick store; act (sendFor)',
+  'components/admin/body/tabs/hazards/HazardsTab.tsx': 'sendFor',
+  'components/admin/body/tabs/imagery/ImageryTab.tsx': 'sendFor, through the pick store',
+  'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor',
+  'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue; sendFor',
+  'components/admin/body/tabs/places/PlacesTab.tsx': 'act (sendFor)',
+  'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
-  'components/admin/people/person/usePersonWrites.ts':
-    'its page as asker; gone, a toast naming the person',
-  'components/admin/people/record/RecordSheet.tsx':
-    'useRecordActing: in place, else a toast naming the person',
+  'components/admin/people/person/usePersonWrites.ts': 'said, naming the person',
+  'components/admin/people/record/RecordSheet.tsx': 'useRecordWrites: said, naming the person',
   'components/admin/shell/ConsoleLayout.tsx':
     'the presence heartbeat: no one asked, nothing to say',
-  'components/admin/shell/undo.tsx': 'Undo: its dialog while the console is there, else a toast',
+  'components/admin/shell/undo.tsx': 'said: "Not undone"',
 };
 
 function files(path: string): string[] {
@@ -81,17 +77,43 @@ test('a console file reaches a mutation directly only through a write path that 
   expect(direct.sort()).toEqual(Object.keys(INVENTORY).sort());
 });
 
+/** The console's source files that contain `pattern`, besides `allowed`. */
+function holding(pattern: RegExp, allowed: readonly string[]): string[] {
+  return consoleSources().filter(
+    (f) => !allowed.includes(f) && pattern.test(readFileSync(join(WEB, f), 'utf8')),
+  );
+}
+
 /**
- * **A place is a drawn element, never a claim** (Greptile on #138): an in-place answer is handed a
- * place that asks, when the answer comes, whether the element that would say it is drawn (`usePlace`,
- * `drawn`). A place that answers "here" without asking — `here: () => true` — or that stands on a
- * mounted flag alone would bring back the refusal said into nothing drawn.
+ * **Only the helper reads a refusal's words.** `errorText` (the server's sentence out of a
+ * `ConvexError`) is private to `said.ts`, and no console file reads an error's `message` —
+ * so a component that caught a write's error has nothing of the server's to print.
  */
-test('no console place says it is drawn without asking', () => {
-  // The Legacy routes too: they are where a page hands its own place (`usePlace`, `PagePlace`).
-  const claims = consoleSources().filter((f) => {
-    const text = readFileSync(join(WEB, f), 'utf8');
-    return /here:\s*\(\)\s*=>\s*(true|mounted\.current\s*[,}\n])/.test(text);
-  });
-  expect(claims).toEqual([]);
+test('only the one write helper reads what a server said', () => {
+  expect(holding(/\berrorText\(/, ['components/admin/said.ts'])).toEqual([]);
+  expect(holding(/\.message\b/, ['components/admin/said.ts'])).toEqual([]);
+  // `listChanged` reads a refused list's `code` and `current` (for its queue), never its words.
+  expect(
+    holding(/\binstanceof ConvexError\b/, [
+      'components/admin/said.ts',
+      'components/admin/body/frame/currentBody.tsx',
+    ]),
+  ).toEqual([]);
+});
+
+/** **Only the helper draws a refusal's toast**: one shape — its tone, held until dismissed. */
+test('a refusal toast is drawn only by the one write helper', () => {
+  const draws = holding(/\btoast\(\s*\{[^}]*\btone:\s*'bad'/, ['components/admin/said.ts']);
+  expect(draws).toEqual([]);
+});
+
+/**
+ * **Nothing predicts whether a place is drawn** (Greptile on #138, three times): the machinery that
+ * routed a refusal between a place and a toast — a drawn-place ref, a dialog's asking place, a page's
+ * place, a hold narrowed to a form, a late-refusal callback, an in-place control — stays gone.
+ */
+test('no console write routes a refusal by where the operator is', () => {
+  const names =
+    /\b(usePlace|askFrom\(place|keepAsking|PagePlace|refusalOnPage|holdFor|onLateRefusal|inPlace|refusalOn|sayRefused)\b|from '[./]*place'/;
+  expect(holding(names, [])).toEqual([]);
 });
