@@ -405,7 +405,9 @@ export async function reversedPage(
   const verdicts = found.slice(0, RECORD_PAGE);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
   const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
-  const states = await undoStates(ctx, viewer, endings);
+  // List rows: the `list` scope (a page never runs a refusal only a single view can afford), read by
+  // the page (`read`: the last-editor sentence for a holder only).
+  const states = await undoStates(ctx, viewer, endings, 'list', 'read');
   const undoOf = new Map(endings.map((e, i) => [e._id as string, states[i] as UndoState]));
   const page = rows.map((l) => {
     const { verdict, decision, ending, target, erase } = l;

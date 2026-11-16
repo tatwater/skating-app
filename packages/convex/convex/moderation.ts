@@ -494,11 +494,7 @@ async function recordWriteResult(
   targetId: string,
   actionId: Id<'moderationActions'>,
 ): Promise<RecordWriteResult> {
-  const row = await ctx.db.get(actionId);
-  const state = row ? await undoState(ctx, actor, row, 'one') : null;
-  return state?.state === 'available'
-    ? { targetId, actionId, undoable: true, undoNeedsReason: state.needsReason }
-    : { targetId, actionId, undoable: false };
+  return { targetId, actionId, ...(await undoOfferAfterWrite(ctx, actor._id, actionId)) };
 }
 
 /**
@@ -1776,12 +1772,27 @@ export async function personWriteResult(
   userId: Id<'profiles'>,
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
+  const offer = await undoOfferAfterWrite(ctx, actorId, actionId);
+  return offer.undoable ? { userId, actionId, ...offer } : { userId, undoable: false };
+}
+
+/**
+ * **The one reading of what a write offers to undo** (H3), for every write that returns its row — the
+ * person writes and the record sheet's: the caller re-read as the write left them (never the copy
+ * loaded before it), and the undo engine's answer for the row in the toast's scope (`one`, as
+ * `undo.latestOwn` reads it). Its reads are the write's own, uncharged (see `personWriteResult`).
+ */
+export async function undoOfferAfterWrite(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  actionId: Id<'moderationActions'>,
+): Promise<{ undoable: true; undoNeedsReason: boolean } | { undoable: false }> {
   const actor = await ctx.db.get(actorId);
   const row = actor ? await ctx.db.get(actionId) : null;
   const state = actor && row ? await undoState(ctx, actor, row, 'one') : null;
   return state?.state === 'available'
-    ? { userId, undoable: true, actionId, undoNeedsReason: state.needsReason }
-    : { userId, undoable: false };
+    ? { undoable: true, undoNeedsReason: state.needsReason }
+    : { undoable: false };
 }
 
 async function auditUser(

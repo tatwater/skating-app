@@ -3,9 +3,10 @@
  * their counts, the item pane, and the four levers' writes, each refusing by the one rule its `can`
  * answers by (`lib/recordRules`). Run under Convex's real transaction limits.
  */
-import { WITHDRAWN_ERASE_MS } from '@skating/core';
+import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG, WITHDRAWN_ERASE_MS } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -739,6 +740,77 @@ describe('the counts and "still being prepared"', () => {
     expect(counts.deleted.capped).toBe(true);
     expect(counts.deleted.byKind.post).toBeGreaterThanOrEqual(15);
     expect(counts.deleted.byKind.post).toBeLessThan(total);
+  });
+});
+
+describe('a reason at the cap (D261)', () => {
+  test('every record lever accepted with a reason at or near the cap has its way back never refused for length', async () => {
+    type Lever = 'hideAgain' | 'keep' | 'overturn';
+    // What each lever's way back is: Hide again's undo; Keep's overturn (its undo, as History says);
+    // a typed Overturn has none ("record it again"), so only its own write is held to the cap.
+    const check = async (lever: Lever, length: number) => {
+      vi.setSystemTime(T0);
+      const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+      const reason = 'r'.repeat(length);
+      if (lever === 'hideAgain') {
+        const r = await report(rob.id);
+        await set('report', r, 'hidden', 'first');
+        tick();
+        await set('report', r, 'visible');
+        tick();
+        const out = await set('report', r, 'hidden', reason);
+        expect(out).toMatchObject({ undoable: true, undoNeedsReason: false });
+        await matt.as.mutation(api.undo.run, { actionId: out.actionId });
+        const undo = await t.run((ctx) =>
+          ctx.db
+            .query('moderationActions')
+            .withIndex('by_undoes', (q) => q.eq('undoesActionId', out.actionId))
+            .first(),
+        );
+        expect(undo?.reason.length).toBeLessThanOrEqual(AUDIT_REASON_MAX);
+        return;
+      }
+      const c = await comment(await report(kate.id));
+      if (lever === 'overturn') await set('comment', c, 'hidden', 'hidden');
+      tick();
+      await rob.as.mutation(api.comments.remove, { commentId: c });
+      tick();
+      if (lever === 'keep') {
+        await matt.as.mutation(api.moderation.keepOnRecord, {
+          targetType: 'comment',
+          targetId: c,
+          reason,
+        });
+        tick();
+        const back = await matt.as.mutation(api.moderation.overturnVerdict, {
+          targetType: 'comment',
+          targetId: c,
+        });
+        expect(back.actionId).toBeDefined();
+        return;
+      }
+      const out = await matt.as.mutation(api.moderation.overturnVerdict, {
+        targetType: 'comment',
+        targetId: c,
+        reason,
+      });
+      expect((await t.run((ctx) => ctx.db.get(out.actionId)))?.reason.length).toBe(length);
+    };
+    const near = fc.asyncProperty(
+      fc.constantFrom<Lever>('hideAgain', 'keep', 'overturn'),
+      fc.integer({ min: AUDIT_REASON_MAX - 40, max: AUDIT_REASON_MAX }),
+      check,
+    );
+    // Pinned seeds, so a failure replays; then one run on a fresh seed, logged.
+    for (const seed of [20261115, 9]) await fc.assert(near, { seed, numRuns: 3 });
+    const fresh = Math.floor(Math.random() * 2 ** 31);
+    console.log(`record near-cap seed ${fresh}`);
+    await fc.assert(near, { seed: fresh, numRuns: 2 });
+    // The cap itself, for every lever; one past it, refused before anything is written.
+    for (const lever of ['hideAgain', 'keep', 'overturn'] as const) {
+      await check(lever, AUDIT_REASON_MAX);
+      await expect(check(lever, AUDIT_REASON_MAX + 1)).rejects.toThrow(AUDIT_REASON_TOO_LONG);
+    }
   });
 });
 
