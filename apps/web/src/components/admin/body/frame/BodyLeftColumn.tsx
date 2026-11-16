@@ -14,6 +14,7 @@ import { Slider } from '@/components/kit/slider';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
+import { useLatestPick } from '../tabs/latestPick';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
 import {
   historyHead,
@@ -286,7 +287,10 @@ export function boostToSend(v: number, record: number): number | null {
 /**
  * The map boost, held to the record: it moves under the operator's hand, and follows the record
  * whenever the record moves (an Undo from the toast, another moderator) or a change didn't land.
- * Letting go where it already stood sends nothing — no write, no receipt.
+ * Letting go where it already stands sends nothing — no write, no receipt. **The latest let-go
+ * wins** (`useLatestPick`): it shows at once, each let-go is sent in order, and an earlier one
+ * landing never moves the slider from a later one still on its way; once all are answered it shows
+ * the record — the last let-go if it landed.
  */
 function BoostSlider({
   value,
@@ -295,20 +299,17 @@ function BoostSlider({
   value: number;
   onCommit: BodyLeftColumnProps['onBoostCommit'];
 }) {
-  const record = Math.min(1, Math.max(0, value));
-  const recordRef = useRef(record);
-  recordRef.current = record;
-  const [shown, setShown] = useState(record);
-  const [seen, setSeen] = useState(record);
-  const commits = useRef(0);
+  const record = tenth(Math.min(1, Math.max(0, value)));
   const hold = useBodyHold();
-  // The latest value on its way, until its answer: a let-go is weighed against it, not the record
-  // it hasn't moved yet — so letting go back where the record stands, while a change is on its way,
-  // sends the way back rather than nothing (the change in flight would land and stand otherwise).
-  const pending = useRef<number | null>(null);
-  if (seen !== record) {
-    setSeen(record);
-    setShown(record);
+  const pick = useLatestPick<number>(record, async (next) => {
+    await onCommit?.(next, hold);
+  });
+  // Under the hand while it drags; the pick's value once it's let go, or once that moves.
+  const [drag, setDrag] = useState<number | null>(null);
+  const [seen, setSeen] = useState(pick.shown);
+  if (seen !== pick.shown) {
+    setSeen(pick.shown);
+    setDrag(null);
   }
   const one = (v: number | readonly number[]) => (Array.isArray(v) ? (v[0] ?? 0) : (v as number));
   return (
@@ -319,21 +320,15 @@ function BoostSlider({
       step={0.1}
       ticks
       ends
-      value={shown}
+      value={drag ?? pick.shown}
       disabled={onCommit === undefined}
-      onValueChange={(v) => setShown(one(v))}
+      onValueChange={(v) => setDrag(one(v))}
       onValueCommitted={(v) => {
-        const next = boostToSend(one(v), pending.current ?? recordRef.current);
+        setDrag(null);
+        // Weighed against what's shown (a change on its way included), never the record alone.
+        const next = boostToSend(one(v), pick.shown);
         if (onCommit === undefined || next === null) return;
-        // Only the latest commit's refusal puts the slider back: an older one landing late never
-        // moves it from where the operator has since let go.
-        const mine = ++commits.current;
-        pending.current = next;
-        void Promise.resolve(onCommit(next, hold)).then((landed) => {
-          if (commits.current !== mine) return;
-          pending.current = null;
-          if (landed === false) setShown(recordRef.current);
-        });
+        pick.press(next);
       }}
     />
   );

@@ -295,9 +295,11 @@ describe('BodyConsoleView', () => {
     slider.focus();
     await userEvent.keyboard('{ArrowRight}');
     await userEvent.keyboard('{ArrowRight}');
-    expect(onBoostCommit).toHaveBeenCalledTimes(2);
+    // One at a time, in order: the second goes once the first is answered.
+    expect(onBoostCommit).toHaveBeenCalledTimes(1);
     // The first commit is refused after the second was let go: the slider stays at the second.
     await act(async () => answers[0]?.(false));
+    expect(onBoostCommit).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
       'aria-valuenow',
       '0.5',
@@ -308,6 +310,39 @@ describe('BodyConsoleView', () => {
       'aria-valuenow',
       '0.3',
     );
+  });
+
+  it('the latest let-go wins: an earlier change landing never moves the slider from it', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
+    const onBoostCommit = vi.fn(
+      (_value: number) =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const { rerender } = render(<Page onBoostCommit={onBoostCommit} />);
+    const slider = () => screen.getByRole('slider', { name: 'Map boost' });
+    slider().focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{ArrowRight}');
+    // The first lands: the record moves to 0.4 under the second, still on its way.
+    await act(async () => answers.shift()?.(true));
+    rerender(
+      <Page
+        identity={{ ...MASCOMA_IDENTITY, boost: { value: 0.4, note: null } }}
+        onBoostCommit={onBoostCommit}
+      />,
+    );
+    expect(slider()).toHaveAttribute('aria-valuenow', '0.5');
+    await act(async () => answers.shift()?.(true));
+    rerender(
+      <Page
+        identity={{ ...MASCOMA_IDENTITY, boost: { value: 0.5, note: null } }}
+        onBoostCommit={onBoostCommit}
+      />,
+    );
+    expect(onBoostCommit.mock.calls.map(([v]) => v)).toEqual([0.4, 0.5]);
+    expect(slider()).toHaveAttribute('aria-valuenow', '0.5');
   });
 
   it('letting go back at the record while a change is on its way sends the way back', async () => {
@@ -325,8 +360,8 @@ describe('BodyConsoleView', () => {
     // Back where the record (0.3) stands, the first change still on its way: weighed against the
     // change, not the record, so it is sent — the change landing alone would stand at 0.4.
     await userEvent.keyboard('{ArrowLeft}');
-    expect(onBoostCommit.mock.calls.map(([v]) => v)).toEqual([0.4, 0.3]);
     await act(async () => answers[0]?.(true));
+    expect(onBoostCommit.mock.calls.map(([v]) => v)).toEqual([0.4, 0.3]);
     await act(async () => answers[1]?.(true));
     expect(screen.getByRole('slider', { name: 'Map boost' })).toHaveAttribute(
       'aria-valuenow',
