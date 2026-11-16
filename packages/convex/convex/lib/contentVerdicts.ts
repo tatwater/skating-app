@@ -57,6 +57,11 @@ export function verdictKindOf(action: string): 'hidden' | 'removed' | 'retracted
 /** A person's standing verdicts counted at most, for the People page's Hidden content row. */
 export const VERDICT_COUNT_CAP = 500;
 
+/** Each kind's count, every one zero — the record's counts by kind start here. */
+export function zeroByKind(): Record<VerdictTargetType, number> {
+  return { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+}
+
 /**
  * How much of a person's content stands under a verdict, by kind — the People page's *Hidden
  * content* row ("5 items · 2 reports · 2 comments"). Read from the same range `personVerdicts` pages
@@ -74,13 +79,7 @@ export async function readVerdictCounts(
     )
     .take(VERDICT_COUNT_CAP + 1);
   const counted = rows.slice(0, VERDICT_COUNT_CAP);
-  const byKind: Record<VerdictTargetType, number> = {
-    report: 0,
-    post: 0,
-    comment: 0,
-    hazard: 0,
-    accessAlert: 0,
-  };
+  const byKind = zeroByKind();
   for (const row of counted) byKind[row.targetType]++;
   return { total: counted.length, byKind, capped: rows.length > VERDICT_COUNT_CAP };
 }

@@ -186,8 +186,10 @@ export function recordLevers(viewer: RecordViewer, facts: RecordFacts): RecordLe
   const answer = (action: RecordAction) => ({ [action]: recordCan(viewer, facts, action) });
   if (facts.standing) {
     if (facts.withdrawn === true) return answer('overturn');
-    if (facts.withdrawn === 'unknown') return answer('restore');
-    return facts.status === 'visible' ? {} : answer('restore');
+    // A Post that is up has a member up, so not every one was withdrawn: its members, unread, would
+    // answer as the pane does — nothing to restore.
+    if (facts.status === 'visible') return {};
+    return answer('restore');
   }
   if (facts.authorDeleted) return answer('keep');
   if (facts.status === 'visible') return answer('hideAgain');

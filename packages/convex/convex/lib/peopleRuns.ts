@@ -224,14 +224,14 @@ export async function foundGap(ctx: MutationCtx, lease: Lease): Promise<void> {
   if (row?.run === lease.run && row.ready) await ctx.db.patch(row._id, { ready: false });
 }
 
+/** The cursor the content record's last pass hands back with: its run reached the end of its range. */
+export const VERDICTS_DONE = 'done';
+
 /**
  * A chained job's pass hands its lease on: the run and the pass token the next pass must carry — for
  * a backfill whose run spans several functions (the content record's walk, replays and clocks), each
  * pass of which takes the lease ({@link takeLease}) and moves the token ({@link savePass}).
  */
-/** The cursor the content record's last pass hands back with: its run reached the end of its range. */
-export const VERDICTS_DONE = 'done';
-
 export const LEASE_ARG = v.optional(v.object({ run: v.number(), pass: v.number() }));
 export type LeaseArg = { run: number; pass: number };
 

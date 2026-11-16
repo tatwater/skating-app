@@ -1582,8 +1582,9 @@ export const backfillClocks = internalMutation({
       const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
       const now = Date.now();
       const reads = new ReadBudget();
-      // The run's lease, its row read and written once each.
-      reads.reserve('small', 2);
+      // The run's lease: its row read here, again to hand it on, and once more when the pass found a
+      // gap (`foundGap`).
+      reads.reserve('small', 3);
       const lease = await chainedLease(ctx, 'verdicts', args.lease);
       if (lease === null) return { kind: current, set: 0, stamped: 0, more: false };
       // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one

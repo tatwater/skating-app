@@ -91,6 +91,19 @@ const MODERATION_TABLE = {
 
 type ModerationStatus = (typeof MODERATION_STATUSES)[number];
 
+/** Who moved an item, why and when — what the rows a verdict's cascade writes carry with it. */
+interface CascadeAudit {
+  actorId: Id<'profiles'>;
+  reason: string;
+  now: number;
+  /** The reason is a restore's default (D226): every row the restore writes says so for History. */
+  reasonDefaulted?: boolean;
+}
+
+/** A cascade row's mark when its reason is the give-back's default, as the item's own row has it. */
+const defaultedMark = (audit: CascadeAudit) =>
+  audit.reasonDefaulted === true ? { reasonDefaulted: true } : {};
+
 /**
  * One Report's verdict, and everything that has to move with it: the row, the author's visible
  * count, the body's map card (A06c §5 — a hidden report must leave the card, the one surface where
@@ -102,7 +115,7 @@ async function applyReportStatus(
   ctx: MutationCtx,
   report: Doc<'reports'>,
   status: ModerationStatus,
-  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+  audit: CascadeAudit,
 ): Promise<void> {
   await ctx.db.patch(report._id, { moderationStatus: status });
   await bumpContributionCount(
@@ -133,7 +146,7 @@ async function derivePostVisibility(
   postId: Id<'posts'>,
   reportId: Id<'reports'>,
   status: ModerationStatus,
-  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+  audit: CascadeAudit,
 ): Promise<void> {
   const post = await ctx.db.get(postId);
   if (!post) return;
@@ -150,7 +163,12 @@ async function derivePostVisibility(
       targetType: 'post',
       targetId: postId,
       reason: audit.reason,
-      metadata: { priorStatus: 'visible', newStatus: 'hidden', derivedFromReportId: reportId },
+      metadata: {
+        priorStatus: 'visible',
+        newStatus: 'hidden',
+        derivedFromReportId: reportId,
+        ...defaultedMark(audit),
+      },
       createdAt: audit.now,
     });
   } else if (post.moderationStatus === 'hidden') {
@@ -173,7 +191,12 @@ async function derivePostVisibility(
       targetType: 'post',
       targetId: postId,
       reason: audit.reason,
-      metadata: { priorStatus: 'hidden', newStatus: 'visible', derivedFromReportId: reportId },
+      metadata: {
+        priorStatus: 'hidden',
+        newStatus: 'visible',
+        derivedFromReportId: reportId,
+        ...defaultedMark(audit),
+      },
       createdAt: audit.now,
     });
   }
@@ -605,7 +628,9 @@ export async function setContentStatus(
     ) {
       throw new ConvexError(recordRefusal(facts, 'restore') as string);
     }
-    const audit = { actorId: actor._id, reason: args.reason, now };
+    // A restore's default reason is marked on every row it writes — the members it brings back and a
+    // Post it derives back up — as on its own, so History and the record sheet leave each one out.
+    const audit: CascadeAudit = { actorId: actor._id, reason: args.reason, now, ...defaulted };
     // Every member a Post's verdict moved, and from what to what — on the Post's own row, so its undo
     // can put each member back to its own prior status (founder call, 2026-11-13).
     const cascaded: PostCascade[] = [];
@@ -817,7 +842,7 @@ async function moveMember(
   postId: Id<'posts'>,
   report: Doc<'reports'>,
   to: ModerationStatus,
-  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+  audit: CascadeAudit,
   chosen = false,
   undoing?: Id<'moderationActions'>,
 ): Promise<PostCascade> {
@@ -836,6 +861,7 @@ async function moveMember(
       cascadedFromPostId: postId,
       subjectUserId: report.authorId,
       ...mark,
+      ...defaultedMark(audit),
     },
     createdAt: audit.now,
   });

@@ -134,6 +134,24 @@ describe('lib/recordRules', () => {
     );
   });
 
+  test('a standing Post that is up offers nothing, its members read or not — the list is the pane', () => {
+    const viewer: RecordViewer = { role: 'moderator', canEditLedger: false };
+    const up: RecordFacts = {
+      targetType: 'post',
+      erased: false,
+      authorDeleted: false,
+      withdrawn: 'unknown',
+      status: 'visible',
+      standing: true,
+    };
+    expect(recordLevers(viewer, up)).toEqual({});
+    expect(recordLevers(viewer, { ...up, withdrawn: false })).toEqual({});
+    // Down, the list still sends the moderator to the item, whose members decide.
+    expect(recordLevers(viewer, { ...up, status: 'hidden' })).toEqual({
+      restore: { ok: false, why: RECORD_CHECK_ON_ITEM },
+    });
+  });
+
   test('the facts of a document: gone is erased; a Post its author didn’t delete waits on its members', () => {
     expect(recordFactsOf('report', null, true)).toMatchObject({ erased: true, standing: true });
     const post = {

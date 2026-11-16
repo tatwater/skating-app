@@ -421,6 +421,80 @@ describe('Standing', () => {
     });
     expect(chosen.undoable).toBe(true);
     expect((await standingOf(matt.as, rob.id)).rows.map((r) => r.targetId)).toEqual([reportIds[1]]);
+    // Restored with no reason given: the chosen member's own row carries the default's mark, so its
+    // Reversed line shows no reason, as the Post's does.
+    const member = (await reversedOf(matt.as, rob.id)).rows.find(
+      (r) => r.targetId === reportIds[0],
+    );
+    expect(member).toMatchObject({ endedHow: 'restore', endedReason: null });
+  });
+});
+
+describe('the item pane', () => {
+  test('a hide that became a removal shows the hide superseded, never restored', async () => {
+    const { rob, matt, report, set, tick } = await setup();
+    const r = await report(rob.id);
+    await set('report', r, 'hidden', 'first look');
+    tick();
+    await set('report', r, 'removed', 'a duplicate');
+    const pane = await matt.as.query(api.contentRecord.item, { targetType: 'report', targetId: r });
+    expect(pane?.decisions).toEqual([
+      expect.objectContaining({ kind: 'removed', standing: true, endedHow: null }),
+      expect.objectContaining({ kind: 'hidden', standing: false, endedHow: 'superseded' }),
+    ]);
+  });
+
+  test('a history longer than the pane reads still finds the decision that stands', async () => {
+    const { t, rob, matt, report, set, tick } = await setup();
+    const r = await report(rob.id);
+    await set('report', r, 'removed', 'the one that stands');
+    tick();
+    await rob.as.mutation(api.reports.remove, { reportId: r });
+    // Fifty-five older decisions, each ended, written after it (as a backfill writes them).
+    await t.run(async (ctx) => {
+      const action = await ctx.db.query('moderationActions').order('desc').first();
+      for (let i = 0; i < 55; i++) {
+        await ctx.db.insert('contentVerdicts', {
+          subjectUserId: rob.id,
+          targetType: 'report',
+          targetId: r,
+          actionId: action?._id as Id<'moderationActions'>,
+          kind: 'hidden',
+          at: T0 - (i + 1) * DAY,
+          standing: false,
+          endedAt: T0 - i * DAY,
+          endedByActionId: action?._id as Id<'moderationActions'>,
+          superseded: true,
+        });
+      }
+    });
+    const pane = await matt.as.query(api.contentRecord.item, { targetType: 'report', targetId: r });
+    expect(pane?.decisionsCapped).toBe(true);
+    expect(pane?.decisions[0]).toMatchObject({ kind: 'removed', standing: true });
+    // It stands, so the lever is the overturn — never a Keep its write would refuse.
+    expect(pane?.can).toEqual({ overturn: { ok: true, needsReason: false } });
+  });
+});
+
+describe('the replay over a record already right', () => {
+  test('restored, hidden again and restored again: a rerun writes nothing', async () => {
+    const { t, rob, report, set, tick } = await setup();
+    const r = await report(rob.id);
+    for (const status of ['hidden', 'visible', 'hidden', 'visible'] as const) {
+      await set('report', r, status);
+      tick();
+    }
+    const replay = (pass: 'scan' | 'write') =>
+      t.mutation(internal.contentRecord.replayVerdictHistory, {
+        targetType: 'report',
+        targetId: r,
+        subjectUserId: rob.id,
+        pass,
+        resume: { cursor: null, skip: 0 },
+        clocks: false,
+      });
+    expect(await replay('scan')).toMatchObject({ written: 0 });
+    expect(await replay('write')).toMatchObject({ written: 0 });
   });
 });
 

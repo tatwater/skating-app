@@ -20,6 +20,7 @@ import {
   subjectOf,
   VERDICT_COUNT_CAP,
   type VerdictTargetType,
+  zeroByKind,
 } from './lib/contentVerdicts';
 import { ERASABLE, HOLD_COST, holdMoved } from './lib/eraseClock';
 import {
@@ -213,7 +214,7 @@ async function verdictRange(
     tie === null ? null : (m) => range(ctx, userId, targetType, key, tie).take(m),
     (m) => range(ctx, userId, targetType, key, null).take(m),
   );
-  return list === 'reversed' ? reversedKind(targetType)(rows) : rows;
+  return rows;
 }
 
 /** A record list's arguments: whose record, one kind or all, and where the last page ended. */
@@ -228,10 +229,21 @@ function rowLevers(viewer: RecordViewer, load: VerdictLoad, standing: boolean): 
   return recordLevers(viewer, recordFactsOf(load.verdict.targetType, load.target, standing));
 }
 
-/** How a decision was ended, read off the row that ended it. */
-function endedHowOf(ending: Doc<'moderationActions'>): 'restore' | 'undo' | 'overturn' {
+/**
+ * How a decision was ended, read off the row that ended it: a reversal — or, on the item pane, which
+ * shows every decision, a later hide, removal or retraction that superseded it (a hide that became a
+ * removal was not restored).
+ */
+function endedHowOf(
+  ending: Doc<'moderationActions'>,
+): 'restore' | 'undo' | 'overturn' | 'superseded' {
   if (ending.action === 'overturn_verdict') return 'overturn';
-  return ending.undoesActionId !== undefined ? 'undo' : 'restore';
+  if (ending.undoesActionId !== undefined) return 'undo';
+  const takedown =
+    ending.action === 'hide' ||
+    ending.action === 'remove' ||
+    ending.action === 'retract_access_alert';
+  return takedown ? 'superseded' : 'restore';
 }
 
 /** A reason as the sheet shows it: `null` for a give-back's default (History leaves those out too). */
@@ -411,7 +423,10 @@ export async function reversedPage(
     after,
     RECORD_PAGE + 1,
   );
-  const verdicts = found.slice(0, RECORD_PAGE);
+  // Over `by_subject_ended` (the flip) a kind is filtered after the read: the page's place is then
+  // the last row read, kept or not, so a page of other kinds still moves the list on.
+  const considered = found.slice(0, RECORD_PAGE);
+  const verdicts = reversedKind(targetType)(considered);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
   const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
   const states = await undoStates(ctx, viewer, endings);
@@ -447,9 +462,10 @@ export async function reversedPage(
       can: rowLevers(viewer, l, false),
     };
   });
+  const read = cut ? rows.map((l) => l.verdict) : considered;
   return pageOf(
     page,
-    rows.map((l) => ({ key: l.verdict.endedAt as number, ct: l.verdict._creationTime })),
+    read.map((v) => ({ key: v.endedAt as number, ct: v._creationTime })),
     { more: cut || found.length > RECORD_PAGE, after, pending },
   );
 }
@@ -607,13 +623,7 @@ function byKindCount(
   kinds: VerdictTargetType[],
   capped: boolean,
 ): Count & { byKind: Record<VerdictTargetType, number> } {
-  const byKind: Record<VerdictTargetType, number> = {
-    report: 0,
-    post: 0,
-    comment: 0,
-    hazard: 0,
-    accessAlert: 0,
-  };
+  const byKind = zeroByKind();
   for (const k of kinds) byKind[k]++;
   return { count: kinds.length, capped, byKind };
 }
@@ -772,12 +782,15 @@ export const item = query({
     if (id === null) return null;
     const [target, verdicts] = await Promise.all([
       reads.one(targetType, () => ctx.db.get(id)) as Promise<ContentDoc | null>,
+      // Descending: the standing verdict first (`true` sorts after `false`), then the newest ended —
+      // so a long history cut at the cap still says whether a decision stands, and keeps the newest.
       reads.take('verdict', ITEM_DECISIONS + 1, (n) =>
         ctx.db
           .query('contentVerdicts')
           .withIndex('by_target_standing', (q) =>
             q.eq('targetType', targetType).eq('targetId', targetId),
           )
+          .order('desc')
           .take(n),
       ),
     ]);
@@ -1152,7 +1165,9 @@ export const replayVerdictHistory = internalMutation({
       let subjectUserId = args.subjectUserId;
       let unnamed = 0;
       const reads = new ReadBudget();
-      reads.reserve('small', 2);
+      // The run's lease: its row read here, again to hand it on, and once more when the pass found a
+      // gap (`foundGap`).
+      reads.reserve('small', 3);
       const lease = await chainedLease(ctx, 'verdicts', args.lease);
       if (lease === null) return { written: 0, more: false, superseded: true };
       // A row's work beside its read, in the write pass: the row keyed by it, the one it ends and the
@@ -1236,7 +1251,11 @@ export const replayVerdictHistory = internalMutation({
                 written++;
               }
             }
-            if (step.ended) written += await upsert(step.ended);
+            // A verdict a reversal ended is the item's newest until a later one is minted, so it is
+            // written once its flag is known — superseded, by the row that mints the next, or as the
+            // history leaves it, at the end — never first unsuperseded and then superseded again,
+            // which would rewrite a record already right on every run and report that as a gap.
+            if (step.ended?.superseded) written += await upsert(step.ended);
             if (step.superseding) written += await upsert(step.superseding);
           });
         state = step.state;
@@ -1274,8 +1293,14 @@ export const replayVerdictHistory = internalMutation({
       // The end of its history: what it leaves standing stands — whether or not the item is still
       // there, since a verdict outlives its content (D248) — and the clock follows, on an item that is.
       const standing = state.standing;
+      // The write pass's last reversal, held back above: the item's newest decision, ended (never
+      // beside a standing one, so the finish writes one or the other).
+      const reversed = pass === 'write' ? (state.reversed ?? null) : null;
       await reads.row(FINISH, async () => {
         if (standing) written += await upsert({ ...standing, standing: true, superseded: false });
+        else if (reversed) {
+          written += await upsert({ ...reversed, standing: false, superseded: false });
+        }
         if (await loadTarget(ctx, reads, targetType, targetId)) {
           await holdMoved(ctx, targetType, targetId, Date.now(), reads);
         }
