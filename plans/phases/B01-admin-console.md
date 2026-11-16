@@ -2719,9 +2719,9 @@ kind (`recordRounds.test.ts`, which states each worst case from the budget):
 | --- | --- | --- | --- |
 | `personVerdicts` | 51 verdicts; decision R + item (≤ 1 MiB); comment/Post → its Report; library row and People rows once a page | 5 (a Report) | 17 |
 | `personReversed` | 51 verdicts; decision R + ending R + item; a gone item → its erasure row; then the undo engine's first step (main's: calls and documents counted, bytes not) | 3 | 27 |
-| `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check and Report | 10 | 9 |
+| `personDeleted` | report 2, post 1, comment 50, hazard 1, alert 50 a merged page (narrowed to one kind: 4, 2, 50, 4, 50); each row's hold check; each distinct Report once a page (none for a row the list leaves out) | 10 (a Report) | 13 |
 | `recordCounts` | Reversed 501, Reports by real weight (512 KiB, one `paginate`), comments 30 and alerts 30, together; then Posts and hazards by real weight in steps (each its share of what is left, at most 7); each row's hold check | — | 11 |
-| `item` | the item, ≤ 51 decisions (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
+| `item` | the item, its 51 newest decisions and the standing one (each R, ending R), its Report, a Post's ≤ 10 members (Report + newest row) | — | a fixed few |
 
 **The undo engine's reads on Reversed rows are counted, not weighed.** Each Reversed row's undo state
 is main's engine (`lib/undo.undoStates`): its first step reads the row's undoing row (up to 16 tagged),

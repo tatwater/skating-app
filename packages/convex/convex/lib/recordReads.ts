@@ -9,8 +9,8 @@
  * 2. **each row's documents** — its decision and the action that ended it, the item — in waves
  *    (`ReadBudget.waves`): each row reserves its worst case before it reads, the difference is handed
  *    back when its wave is done, and which rows are read depends only on the page's order;
- * 3. **what a row is on** — the Report a comment or a Post names its body through, the erasure row of
- *    an item that is gone — in waves again;
+ * 3. **what a row is on** — the Report a comment or a Post names its body through (each once a page,
+ *    `PageCache`), the erasure row of an item that is gone — in waves again;
  * 4. **the names** — each distinct body's library row and each distinct person's People row, once a
  *    page, in waves.
  *
@@ -241,10 +241,9 @@ export async function readReports(
   ids: readonly (Id<'reports'> | null)[],
   cache: PageCache,
 ): Promise<Set<string>> {
-  const wanted: Id<'reports'>[] = [];
-  for (const id of ids) {
-    if (id !== null && !cache.reports.has(id) && !wanted.includes(id)) wanted.push(id);
-  }
+  const wanted = [
+    ...new Set(ids.filter((id): id is Id<'reports'> => id !== null && !cache.reports.has(id))),
+  ];
   const read = await reads.waves(
     wanted,
     () => ({ bytes: ROW_MAX.report, reads: 1 }),
@@ -404,12 +403,16 @@ export async function readNames(
     },
     () => null,
   );
-  const { names, persons } = cache;
   for (const f of found) {
     if (f === null) continue;
-    if ('person' in f && f.person) persons.set(f.key, f.person);
-    else names.set(f.key, (f as { name: string | null }).name);
+    if ('person' in f && f.person) cache.persons.set(f.key, f.person);
+    else cache.names.set(f.key, (f as { name: string | null }).name);
   }
+  return namesOf(cache);
+}
+
+/** Every name a page has read so far (`readNames` into `cache`), as its rows look them up. */
+export function namesOf({ names, persons }: PageCache): Names {
   const reached = (id: string) => names.has(id) || persons.has(id);
   return {
     body: (id) => (id !== null && names.has(id) ? { id, name: names.get(id) ?? null } : null),

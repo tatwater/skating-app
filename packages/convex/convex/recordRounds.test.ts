@@ -13,7 +13,14 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import { countsOf, deletedPage, HEAVY_STEPS, reversedPage, standingPage } from './contentRecord';
+import {
+  countsOf,
+  DELETED_ALONE,
+  deletedPage,
+  HEAVY_STEPS,
+  reversedPage,
+  standingPage,
+} from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { CHARGED_QUERY_BUDGET, ROW_MAX } from './lib/readBudget';
 import { DELETED_TAKE, RECORD_PAGE } from './lib/recordReads';
@@ -226,21 +233,24 @@ const perWave = (rowCost: number) =>
 const waves = (rowCost: number) => Math.ceil(RECORD_PAGE / perWave(rowCost));
 
 /**
+ * A page's first row, read whole on its own before any other is admitted (so a page always moves on):
+ * its documents, its Report, its erasure row, its names — four rounds at most.
+ */
+const HEAD_ROUNDS = 4;
+/**
  * The worst rounds a page of fifty costs: the backfill check and the rows (two), the first row whole
  * ({@link HEAD_ROUNDS}), the rest's documents in waves
  * (a Standing Report: its decision beside the item; a Reversed one, the action that ended it too), the
  * names (one wave: one body, a few people) — and on Reversed the undo engine's first step (main's,
  * three rounds: the undoing row and the newest together, then the author's stamp).
  */
-/**
- * A page's first row, read whole on its own before any other is admitted (so a page always moves on):
- * its documents, its Report, its erasure row, its names — four rounds at most.
- */
-const HEAD_ROUNDS = 4;
 const STANDING_ROUNDS = 2 + HEAD_ROUNDS + waves(2 * ROW_MAX.report) + 1;
 const REVERSED_ROUNDS = 2 + HEAD_ROUNDS + waves(3 * ROW_MAX.report) + 1 + 3;
-/** Deleted: the five ranges together, each row's hold, the Reports once a page, then the names. */
-const DELETED_ROUNDS = 2 + HEAD_ROUNDS + 3;
+/**
+ * Deleted: the five ranges together, each row's hold, the Reports once a page — fifty comments on fifty
+ * Reports take a Report's waves (the fixture shares one, so it measures fewer) — then the names.
+ */
+const DELETED_ROUNDS = 2 + HEAD_ROUNDS + waves(ROW_MAX.verdict) + waves(ROW_MAX.report) + 1;
 /**
  * The counts: the check, then Reversed's range, the Reports' range and the light kinds' ranges together,
  * then the heavy kinds' steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at
@@ -268,6 +278,11 @@ describe('a page’s first row always fits (B01-4d)', () => {
     const ranges = parts.reduce((a, b) => a + b, 0) + Math.max(...parts);
     const deletedHead = ROW_MAX.verdict + ROW_MAX.report + names;
     expect(prep + ranges + deletedHead).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
+    // Narrowed to one kind: that kind's range in its two parts (the tie and the rest).
+    for (const [kind, n] of Object.entries(DELETED_ALONE)) {
+      const alone = 2 * n * ROW_MAX[kind as keyof typeof DELETED_ALONE];
+      expect(prep + alone + deletedHead, kind).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
+    }
   });
 });
 

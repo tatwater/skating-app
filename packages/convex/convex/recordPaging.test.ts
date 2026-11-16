@@ -11,7 +11,9 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { headFirst } from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
+import { OverBudget } from './lib/readBudget';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -191,7 +193,46 @@ async function walk(w: W, list: List) {
   }
 }
 
+describe('headFirst', () => {
+  test('the first row alone, then the rest; nothing read for no rows', async () => {
+    const calls: number[][] = [];
+    const shape = async (some: readonly number[]) => {
+      calls.push([...some]);
+      return some.map((n) => `${n}`);
+    };
+    expect(await headFirst([], shape)).toEqual([]);
+    expect(await headFirst([7], shape)).toEqual(['7']);
+    expect(await headFirst([1, 2, 3], shape)).toEqual(['1', '2', '3']);
+    expect(calls).toEqual([[7], [1], [2, 3]]);
+  });
+
+  test('a first row that doesn’t come back whole is a plan error, never an empty page', async () => {
+    await expect(headFirst([1, 2], async () => [])).rejects.toThrow(OverBudget);
+  });
+});
+
 describe('a page always moves on', () => {
+  test('fifteen whole-document Reports on Standing and Reversed: cut, carried on, each once', async () => {
+    const w = await world();
+    const want = { standing: [] as string[], reversed: [] as string[] };
+    for (let i = 0; i < 15; i++) {
+      for (const list of ['standing', 'reversed'] as const) {
+        const id = await report(w, w.rob, 900 * KIB, { moderationStatus: 'hidden' });
+        await verdict(w, 'report', id, T0 - 100_000 + i * 10, list === 'reversed');
+        want[list].push(id);
+      }
+    }
+    for (const [list, key] of [
+      ['personVerdicts', 'standing'],
+      ['personReversed', 'reversed'],
+    ] as const) {
+      const { ids, pages } = await walk(w, list);
+      expect([...ids].sort(), list).toEqual([...want[key]].sort());
+      // Fifteen whole documents don't fit one page's budget: the page was cut and the next went on.
+      expect(pages, list).toBeGreaterThan(1);
+    }
+  });
+
   test('Greptile’s case: fifty deleted comments on one ~250 KiB Report, every one listed once', async () => {
     const w = await world();
     const on = await report(w, w.kate, 250 * KIB);
@@ -232,11 +273,12 @@ describe('a page always moves on', () => {
             let at = T0 - 100_000;
             for (const it of items) {
               at += 10;
-              // A comment on a heavy Report (the one shared, or its own), or a heavy Report.
-              const on = it.shared ? shared : await report(w, w.kate, it.size);
-              const id =
-                it.kind === 'comment'
-                  ? it.list === 'deleted'
+              let id: string;
+              if (it.kind === 'comment') {
+                // A comment on a heavy Report: the one shared, or its own.
+                const on = it.shared ? shared : await report(w, w.kate, it.size);
+                id =
+                  it.list === 'deleted'
                     ? await deletedComment(w, on, at)
                     : await w.t.run((ctx) =>
                         ctx.db.insert('comments', {
@@ -247,11 +289,14 @@ describe('a page always moves on', () => {
                           source: 'native' as const,
                           createdAt: at,
                         } as never),
-                      )
-                  : await report(w, w.rob, it.size, {
-                      moderationStatus: it.list === 'deleted' ? 'removed' : 'hidden',
-                      ...(it.list === 'deleted' ? { authorDeletedAt: at } : {}),
-                    });
+                      );
+              } else {
+                // A heavy Report of rob's own.
+                id = await report(w, w.rob, it.size, {
+                  moderationStatus: it.list === 'deleted' ? 'removed' : 'hidden',
+                  ...(it.list === 'deleted' ? { authorDeletedAt: at } : {}),
+                });
+              }
               if (it.list !== 'deleted') await verdict(w, it.kind, id, at, it.list === 'reversed');
               want[it.list].push(id);
             }
@@ -285,5 +330,17 @@ describe('the pane selects its decisions in the order it shows them', () => {
     // Newest first throughout.
     const ats = (pane?.decisions ?? []).map((d) => d.at);
     expect(ats).toEqual([...ats].sort((a, b) => b - a));
+  });
+
+  test('a standing decision older than the newest fifty is still shown, last', async () => {
+    const w = await world();
+    const r = await report(w, w.rob, 64);
+    await verdict(w, 'report', r, T0 - 900_000, false);
+    for (let i = 0; i < 51; i++) await verdict(w, 'report', r, T0 - 500_000 + i * 10, true);
+    const pane = await w.mod.query(api.contentRecord.item, { targetType: 'report', targetId: r });
+    expect(pane?.decisions).toHaveLength(51);
+    expect(pane?.decisions.at(-1)).toMatchObject({ at: T0 - 900_000, standing: true });
+    expect(pane?.decisions.filter((d) => d.standing)).toHaveLength(1);
+    expect(pane?.decisionsCapped).toBe(true);
   });
 });

@@ -34,6 +34,7 @@ import {
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
+  OverBudget,
   ReadBudget,
   ROW_MAX,
   requestBudget,
@@ -53,6 +54,7 @@ import {
   encodePosition,
   loadVerdicts,
   type Names,
+  namesOf,
   newPageCache,
   type Position,
   RECORD_PAGE,
@@ -253,23 +255,22 @@ function placeOf(
   };
 }
 
-/** A page's first row couldn't be read whole on a fresh budget: a plan error, never a data condition. */
-export class RecordPlanError extends Error {}
-
 /**
  * **A page always moves on.** Its first row is read whole — every stage, by itself — before any other
- * row is admitted (its worst case fits a fresh budget, `recordRounds.test.ts` holds that), so a page
- * that says `isDone: false` has returned a row or moved its cursor, whatever its other rows weigh;
- * the rest follow in waves with what is left, sharing what the first already read (`PageCache`).
+ * row is admitted (its worst case fits what the page's rows leave of the budget,
+ * `recordRounds.test.ts` holds that), so a page that says `isDone: false` has returned a row or moved
+ * its cursor, whatever its other rows weigh; the rest follow in waves with what is left, sharing what
+ * the first already read (`PageCache`). `shape` answers the leading run of `some` it read whole.
  */
-export async function headFirst<R>(
+export async function headFirst<R, S>(
   rows: readonly R[],
-  shape: (some: readonly R[]) => Promise<R[]>,
-): Promise<R[]> {
+  shape: (some: readonly R[]) => Promise<S[]>,
+): Promise<S[]> {
   if (rows.length === 0) return [];
   const head = await shape(rows.slice(0, 1));
   if (head.length === 0) {
-    throw new RecordPlanError('record: a page’s first row did not fit a fresh budget');
+    // A plan error, never a data condition.
+    throw new OverBudget('record: a page’s first row did not fit what its rows left of the budget');
   }
   return rows.length === 1 ? head : [...head, ...(await shape(rows.slice(1)))];
 }
@@ -288,31 +289,23 @@ async function shapeVerdictPage(
     l.ending?.actorId,
     l.verdict.targetType === 'comment' ? l.report?.authorId : undefined,
   ];
-  let names: Names | null = null;
-  const loads = new Map<Doc<'contentVerdicts'>, VerdictLoad>();
-  const shape = async (some: readonly Doc<'contentVerdicts'>[]) => {
+  const rows = await headFirst(verdicts, async (some) => {
     const loaded = await loadVerdicts(ctx, reads, some, { ended, cache });
-    names = await readNames(
+    const names = await readNames(
       ctx,
       reads,
       loaded.rows.flatMap(bodiesOf),
       loaded.rows.flatMap(peopleOf),
       cache,
     );
-    const whole: Doc<'contentVerdicts'>[] = [];
+    const whole: VerdictLoad[] = [];
     for (const l of loaded.rows) {
       if (names.missed(bodiesOf(l), peopleOf(l))) break;
-      loads.set(l.verdict, l);
-      whole.push(l.verdict);
+      whole.push(l);
     }
     return whole;
-  };
-  const read = await headFirst(verdicts, shape);
-  return {
-    rows: read.map((v) => loads.get(v) as VerdictLoad),
-    names: names as unknown as Names,
-    cut: read.length < verdicts.length,
-  };
+  });
+  return { rows, names: namesOf(cache), cut: rows.length < verdicts.length };
 }
 
 /** A page's answer: its rows, whether more follow, the cursor after its last row, and `pending`. */
@@ -489,7 +482,7 @@ export async function reversedPage(
 }
 
 /** Rows of one kind a page asks for when the Deleted list is narrowed to it. */
-const DELETED_ALONE: Record<VerdictTargetType, number> = {
+export const DELETED_ALONE: Record<VerdictTargetType, number> = {
   report: 4,
   post: 2,
   comment: RECORD_PAGE,
@@ -553,14 +546,21 @@ export async function deletedPage(
   const considered = candidates.slice(0, RECORD_PAGE);
   // Each row: whether a decision holds it (then it is Standing's, not here); the Report a comment or
   // a Post names its body through, once a page; then the names — the first row whole before the rest.
+  // A row the list leaves out (held, an erased comment's placeholder) moves the cursor on and needs
+  // nothing more read: its Report and names would be read only to be dropped.
   type Candidate = (typeof candidates)[number];
   type Checked = Candidate & { held: boolean; report: Doc<'reports'> | null };
   const cache = newPageCache();
-  const checkedOf = new Map<Candidate, Checked>();
-  const bodyOfRow = (c: Checked) => [bodyIdOf(c.kind, c.doc, c.report)];
-  const personOfRow = (c: Checked) => [c.kind === 'comment' ? c.report?.authorId : undefined];
-  let names: Names | null = null;
-  const shape = async (some: readonly Candidate[]): Promise<Candidate[]> => {
+  const listed = (c: Candidate, held: boolean) =>
+    !held &&
+    withdrawnAt(c.kind, c.doc) !== null &&
+    !(c.kind === 'comment' && (c.doc as Doc<'comments'>).erasedAt !== undefined);
+  const reportOfRow = (c: Candidate, held: boolean) =>
+    listed(c, held) ? reportIdOf(c.kind, c.doc) : null;
+  const bodyOfRow = (c: Checked) => (listed(c, c.held) ? [bodyIdOf(c.kind, c.doc, c.report)] : []);
+  const personOfRow = (c: Checked) =>
+    listed(c, c.held) && c.kind === 'comment' ? [c.report?.authorId] : [];
+  const whole = await headFirst(considered, async (some): Promise<Checked[]> => {
     const held = takeUntilNull(
       await reads.waves(
         some,
@@ -583,39 +583,32 @@ export async function deletedPage(
     const missed = await readReports(
       ctx,
       reads,
-      held.map(({ c }) => reportIdOf(c.kind, c.doc)),
+      held.map(({ c, held: h }) => reportOfRow(c, h)),
       cache,
     );
-    const reached: { from: Candidate; row: Checked }[] = [];
+    const reached: Checked[] = [];
     for (const { c, held: h } of held) {
-      const reportId = reportIdOf(c.kind, c.doc);
+      const reportId = reportOfRow(c, h);
       if (reportId !== null && missed.has(reportId)) break;
       const report = reportId !== null ? (cache.reports.get(reportId) ?? null) : null;
-      reached.push({ from: c, row: { ...c, held: h, report } });
+      reached.push({ ...c, held: h, report });
     }
-    const named = await readNames(
+    const names = await readNames(
       ctx,
       reads,
-      reached.flatMap(({ row }) => bodyOfRow(row)),
-      reached.flatMap(({ row }) => personOfRow(row)),
+      reached.flatMap(bodyOfRow),
+      reached.flatMap(personOfRow),
       cache,
     );
-    names = named;
-    const done: Candidate[] = [];
-    for (const { from, row } of reached) {
-      if (named.missed(bodyOfRow(row), personOfRow(row))) break;
-      checkedOf.set(from, row);
-      done.push(from);
+    const done: Checked[] = [];
+    for (const row of reached) {
+      if (names.missed(bodyOfRow(row), personOfRow(row))) break;
+      done.push(row);
     }
     return done;
-  };
-  const whole = (await headFirst(considered, shape)).map((c) => checkedOf.get(c) as Checked);
-  const shown = whole.filter(
-    (c) =>
-      !c.held &&
-      withdrawnAt(c.kind, c.doc) !== null &&
-      !(c.kind === 'comment' && (c.doc as Doc<'comments'>).erasedAt !== undefined),
-  );
+  });
+  const names = namesOf(cache);
+  const shown = whole.filter((c) => listed(c, c.held));
   const page = shown.map((c) => ({
     targetType: c.kind,
     targetId: c.doc._id as string,
@@ -623,7 +616,7 @@ export async function deletedPage(
     /** When it is due to be erased; `null` while something holds it or no clock is set yet. */
     eraseAt: c.doc.eraseAt ?? null,
     content: contentOf(c.kind, c.doc),
-    ...placeOf({ target: c.doc, report: c.report }, c.kind, names as unknown as Names),
+    ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
     can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
   }));
   return pageOf(
@@ -956,7 +949,6 @@ export const item = query({
       ...newest.slice(0, ITEM_DECISIONS),
       ...standingRows.filter((d) => !shownIds.has(d._id)),
     ].sort((a, b) => b.at - a.at || b._creationTime - a._creationTime);
-    const verdicts = newest;
     // Never anything on the record, and no item: nothing to show.
     if (target === null && decisions.length === 0) return null;
     const standing = decisions.some((d) => d.standing);
@@ -1041,7 +1033,7 @@ export const item = query({
         endedReason: shownReason(ending),
       })),
       /** More decisions than the pane read (or the budget reached): these are the newest. */
-      decisionsCapped: verdicts.length > ITEM_DECISIONS || shown.length < decisions.length,
+      decisionsCapped: newest.length > ITEM_DECISIONS || shown.length < decisions.length,
       can: recordLevers(viewer, recordFactsOf(targetType, target, standing, members)),
       pending,
     };
