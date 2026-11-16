@@ -4305,7 +4305,7 @@ Names' aliases can bind an edit to the wrong entry by its text.
   saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
   again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}
   depth from {source}*; *1 reported crossing*.
-- **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
+- **What the server still lacks:** the typed note on the history rows (`bodyConsole.history`, the audit feed: today they carry only the composed reason, which may be shortened under the reason cap, so History can quote it cut off beside the whole note); `removedFacts` saying which words are a person's own (a restore's undo carries its person's reason and no note — the page can't tell it from a composed removal sentence, so it quotes neither); names for an unlisted or unknown id in `rowsByIds`
   (`entries[].name`, so the list can say *which* opened body isn't listed); **low priority** — the
   borders between towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so
   a shared border is one line; the doubled lines are accepted for now); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
