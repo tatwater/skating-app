@@ -88,6 +88,8 @@ function main(): void {
     campaignId,
     target,
     call: convexRun,
+    // A dry run's row says it wrote nothing, and invalidates nothing (no weather-cell reconcile).
+    dryRun: !apply,
     stages: [
       {
         name: 'retire',

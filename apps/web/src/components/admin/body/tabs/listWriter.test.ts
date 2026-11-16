@@ -1,9 +1,16 @@
+import { landmarkNameKey } from '@skating/core';
 import { render, renderHook } from '@testing-library/react';
 import fc from 'fast-check';
 import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { type KeyedLink, linkChanges } from './links/linksModel';
-import { createListWriter, ListWritersProvider, sameList, useListMemory } from './listWriter';
+import {
+  chipChange,
+  createListWriter,
+  ListWritersProvider,
+  sameList,
+  useListMemory,
+} from './listWriter';
 
 type Item = { id: string; label: string };
 type Change = (base: readonly Item[]) => readonly Item[];
@@ -386,5 +393,65 @@ describe('useListMemory — what a queued change names lives beside its queue', 
     view.rerender({ k: 'links:b' });
     expect(view.result.current).not.toBe(own);
     expect(view.result.current.current.n).toBe(0);
+  });
+});
+
+describe('chipChange — a chip edit binds to the entries it names, never another by its text', () => {
+  /** The server's fold (`setAliases`, a landmark's spellings): trimmed, one per case-insensitive word. */
+  const fold = (list: readonly string[]) => {
+    const seen = new Set<string>();
+    return list
+      .map((a) => a.trim())
+      .filter((a) => {
+        const k = a.toLowerCase();
+        if (a === '' || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+  };
+  const word = fc.constantFrom('Basin', 'basin', 'BASIN', 'Cove', 'cove', 'Narrows', 'The Flats');
+  const list = fc.array(word, { maxLength: 6 }).map(fold);
+  const key = (a: string) => a.toLowerCase();
+
+  it('removes what was taken off and adds what was put on — whatever case another moderator stored since', () => {
+    fc.assert(
+      fc.property(list, list, list, (shown, value, base) => {
+        const next = fold(chipChange(shown, value)(base));
+        // What the chips changed, word for word (a recased word is one taken off, one put on).
+        const removed = shown.filter((a) => !value.includes(a));
+        const added = value.filter((a) => !shown.includes(a));
+        for (const r of removed) {
+          if (added.some((a) => key(a) === key(r))) continue;
+          expect(next.some((n) => key(n) === key(r))).toBe(false);
+        }
+        for (const a of added) expect(next.some((n) => key(n) === key(a))).toBe(true);
+        // Every other entry the list holds now is untouched, in its own case.
+        for (const b of base) {
+          const touched = [...removed, ...added].some((x) => key(x) === key(b));
+          if (!touched) expect(next).toContain(b);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe('chipChange — the named cases', () => {
+  it('takes off a word another moderator recased since, and adds nothing twice', () => {
+    expect(chipChange(['basin'], [])(['Basin', 'Cove'])).toEqual(['Cove']);
+    expect(chipChange([], ['Cove'])(['Cove'])).toEqual(['Cove']);
+    expect(chipChange([], ['cove'])(['Cove', 'Narrows'])).toEqual(['Narrows', 'cove']);
+    // A word recased on purpose takes the new case.
+    expect(chipChange(['basin'], ['Basin'])(['basin', 'Cove'])).toEqual(['Cove', 'Basin']);
+  });
+
+  it('matches as each server folds: an alias’s spaces run together, a landmark’s “the” and marks', () => {
+    // `setAliases` takes "Big  Pond" and "Big Pond" for one alias.
+    expect(chipChange(['Big Pond'], [])(['Big  Pond', 'Cove'])).toEqual(['Cove']);
+    // A landmark's spellings fold as `landmarkNameKey` does: "The Gut" and "Gut" are one.
+    expect(chipChange(['Gut'], [], landmarkNameKey)(['The Gut', 'Narrows'])).toEqual(['Narrows']);
+    expect(chipChange([], ["Mallett's Bay"], landmarkNameKey)(['Malletts Bay'])).toEqual([
+      "Mallett's Bay",
+    ]);
   });
 });

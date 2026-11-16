@@ -11,6 +11,20 @@
 export const notSavedTitle = (subject: string | undefined): string =>
   subject === undefined ? 'Not saved' : `Not saved · ${subject}`;
 
+/**
+ * What a press-to-save control's refusal names, said where no one who asked is still there ("Not
+ * saved · Mascoma Lake" — "The ruling: …").
+ */
+export const PICK_WHAT = {
+  name: 'The displayed name',
+  cls: 'The class',
+  ruling: 'The ruling',
+  mean: 'The mean depth’s source',
+  max: 'The max depth’s source',
+  boost: 'The map boost',
+  satellite: 'The satellite link',
+} as const;
+
 /** A save off its console's toast: what it was, then the server's words. */
 export const notSavedWhat = (what: string, said: string): string => `${what}: ${said}`;
 
@@ -18,6 +32,9 @@ export const notSavedWhat = (what: string, said: string): string => `${what}: ${
 export const OTHER_BODY = 'Not saved: this page now shows another body. Open it again to save.';
 
 // ── The whole-list queue gave up ──────────────────────────────────────────────────────────────
+
+/** What a links save's refusal names, said off its page ("The links: …"). */
+export const LINKS_WHAT = 'The links';
 
 /** A links change (an edit, a remove, an order) whose links another moderator changed meanwhile. */
 export const LINKS_GONE =

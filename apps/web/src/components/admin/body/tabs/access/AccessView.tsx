@@ -13,6 +13,7 @@ import {
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
+import type { Asker } from '../latestPick';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
@@ -45,7 +46,12 @@ export type AccessViewProps = {
   /** The clock the ruling's days are counted to. */
   now: number;
   /** Rule the body (or clear the ruling). Ruling no public access passes its reason. */
-  onRule?: (verdict: PublicAccessVerdict | null, reason?: string) => Promise<string | null>;
+  onRule?: (
+    verdict: PublicAccessVerdict | null,
+    reason?: string,
+    /** The reason dialog's opening that asked, for an answer that comes after it has gone. */
+    asker?: { here: () => boolean },
+  ) => Promise<string | null>;
   /** The viewer may place put-ins and lots (`body.access`): the map tools' entry points are drawn. */
   canPlace?: boolean;
   /**
@@ -55,7 +61,7 @@ export type AccessViewProps = {
    */
   onMakeOfficial?: ((putIn: PutInRow) => void) | typeof UNAVAILABLE;
   /** Hide a put-in, with the reason. Resolves the refusal, or `null`. */
-  onHide?: (putIn: PutInRow, reason: string) => Promise<string | null>;
+  onHide?: (putIn: PutInRow, reason: string, asker?: Asker) => Promise<string | null>;
 };
 
 const TOOLS = {
@@ -250,14 +256,20 @@ function RulingSection({
 }) {
   const { ruling } = data;
   const rule = (v: PublicAccessVerdict | null) => () => void onRule?.(v);
-  const noAccess = onRule && ruling.verdict !== 'none' && (
+  // Mounted whatever the verdict: confirmed, the ruling shows at once (the latest press wins), and
+  // the dialog stays over it until its own answer — a refusal is said over the kept reason.
+  const noAccess = onRule && (
     <ReasonAsk
-      trigger={<Button size="sm">Rule no public access</Button>}
+      trigger={
+        <Button size="sm" hidden={ruling.verdict === 'none'}>
+          Rule no public access
+        </Button>
+      }
       title="Rule no public access"
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"
       label="Reason · kept in History"
-      onConfirm={(reason) => onRule('none', reason)}
+      onConfirm={(reason, asker) => onRule('none', reason, asker)}
     />
   );
   return (
@@ -387,7 +399,7 @@ function PutInItem({
           description="It comes off the map and out of the drawer, with every launch close by."
           confirm="Hide"
           label="Reason · kept in History"
-          onConfirm={(reason) => onHide(p, reason)}
+          onConfirm={(reason, asker) => onHide(p, reason, asker)}
         />
       )}
     </span>

@@ -59,6 +59,23 @@ async function seedAreas(t: ReturnType<typeof convexTest>) {
 }
 
 describe('adminAreas.importCanonical', () => {
+  test('a re-load that only gains TIGER’s full name writes it, marks no recompute, and a load without it keeps it', async () => {
+    const t = convexTestWithGeo();
+    const row = area('tiger/3601958431', 'Plattsburgh', 'town', 'NY', [0, 0, 1, 1]);
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [row] });
+    const marks = () => t.run((ctx) => ctx.db.query('geoInputMarks').collect());
+    const before = (await marks()).length;
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [{ ...row, fullName: 'Plattsburgh city' }],
+    });
+    expect((await marks()).length).toBe(before);
+    const stored = () => t.run((ctx) => ctx.db.query('adminAreas').first());
+    expect((await stored())?.fullName).toBe('Plattsburgh city');
+    await t.mutation(internal.adminAreas.importCanonical, { areas: [row] });
+    expect((await stored())?.fullName).toBe('Plattsburgh city');
+    expect((await marks()).length).toBe(before);
+  });
+
   test('inserts new rows, then upserts (updates) on the external id', async () => {
     const t = convexTestWithGeo();
     const first = await t.mutation(internal.adminAreas.importCanonical, {

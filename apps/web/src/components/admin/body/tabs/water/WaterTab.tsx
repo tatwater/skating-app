@@ -11,8 +11,9 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
-import { RECEIPTS } from '../../consoleWords';
+import { PICK_WHAT, RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { type PickOutcome, useLatestPick } from '../latestPick';
 import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
 import {
@@ -76,11 +77,44 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const { can } = useRole();
   const canEdit = can('body.water');
   const choose = useMutation(api.waterBodies.chooseDepthSource);
-  const { act } = useTabAction(bodyId);
+  const { attempt, sayRefused } = useTabAction(bodyId);
   const state = data !== undefined && !isFailed(data) ? data.state : null;
+  const depth = data !== undefined && !isFailed(data) ? data.depth : null;
+  // **The latest press wins** (`useLatestPick`): each measure's source shows the latest one chosen
+  // at once, choices are sent one at a time in press order (one waiting behind the write out is
+  // replaced by a newer one), and the server's answer is drawn again once every choice has been
+  // answered — a second choice is never compared with a stale record and dropped.
+  const choose1 = (measure: 'mean' | 'max') => ({
+    send: async (source: DepthSource | null): Promise<PickOutcome> =>
+      source === null
+        ? { landed: true }
+        : attempt(
+            () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
+            {
+              title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
+              target: { targetType: 'waterbody', targetId: bodyId },
+            },
+            PICK_WHAT[measure],
+          ),
+    say: sayRefused(PICK_WHAT[measure]),
+  });
+  const mean = useLatestPick<DepthSource | null>(
+    `water-depth-mean:${bodyId}`,
+    depth?.meanFrom ?? null,
+    choose1('mean'),
+  );
+  const max = useLatestPick<DepthSource | null>(
+    `water-depth-max:${bodyId}`,
+    depth?.maxFrom ?? null,
+    choose1('max'),
+  );
+  const shown =
+    data === undefined || isFailed(data) || depth === null
+      ? data
+      : { ...data, depth: { ...depth, meanFrom: mean.shown, maxFrom: max.shown } };
   return (
     <WaterView
-      data={data}
+      data={shown}
       onRetry={retry}
       retryPending={pending}
       lit={lit}
@@ -92,13 +126,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
             // nothing about ice). The server refuses a source with no value or a mean deeper than
             // the max, said in a toast in its words.
             onChooseDepth: (measure: 'mean' | 'max', source: DepthSource) =>
-              void act(
-                () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
-                {
-                  title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
-                  target: { targetType: 'waterbody', targetId: bodyId },
-                },
-              ),
+              (measure === 'mean' ? mean : max).press(source),
           }
         : {})}
     />

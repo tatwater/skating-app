@@ -101,6 +101,7 @@ async function main(): Promise<void> {
     campaignId,
     target: resolveDeployment(),
     call: convexRun,
+    dryRun,
     notes: [
       'A collapsed group receives the dedup queue rather than the nhdId: writing one id to two rows is the corrupt state resolveUpsert refuses to work with.',
     ],

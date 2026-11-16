@@ -9,6 +9,7 @@ import {
   nameRungs,
   namesFromBody,
   namesMapScene,
+  namesWithPicks,
   otherClasses,
   stateName,
   townLinesFrom,
@@ -340,6 +341,23 @@ describe('town lines from each town’s outline', () => {
     expect(townLinesFrom(null, null)).toEqual({ lines: [], missing: 0 });
   });
 
+  it('gives two towns that read the same lines of their own ids', () => {
+    const { lines } = townLinesFrom(
+      {
+        towns: [
+          { name: 'Clinton', state: 'NY', ring: square(0, 43, 1, 44, true) },
+          { name: 'Clinton', state: 'NY', ring: square(1, 43, 2, 44, true) },
+        ],
+        capped: false,
+        computedAt: 1,
+      },
+      null,
+    );
+    const ids = lines.map((l) => l.id);
+    expect(ids).toContain('Clinton|NY|0');
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('draws a stretch that runs through the ring’s start as one line, named once', () => {
     // The square starts at its south-west corner; the body sits there, so the stretch near it is the
     // ring's last side and its first — one line, never two pieces each named.
@@ -387,5 +405,52 @@ describe('town lines from each town’s outline', () => {
     const failed = namesFromBody(body, null, { townLinesRead: FAILED_READ });
     expect(failed.place.townLines).toBeNull();
     expect(failed.failures).toContain('the town lines');
+  });
+});
+
+describe('namesWithPicks', () => {
+  const body = {
+    name: 'Lake Auburn',
+    type: 'reservoir' as const,
+    nameClaims: [
+      { source: 'user' as const, value: 'Lake Auburn' },
+      { source: 'nhd' as const, value: 'The Basin' },
+      { source: 'osm' as const, value: 'Lake Auburn' },
+    ],
+  };
+  const data = namesFromBody(body, null, {
+    identity: {
+      bodyClass: 'reservoir',
+      classClaims: [{ source: 'osm', value: 'lakePond' }],
+      moderatorClass: 'reservoir',
+      baseClass: 'lakePond',
+      moderatorAliases: [],
+    },
+  });
+
+  it('keeps the data itself when the server already holds both picks', () => {
+    expect(namesWithPicks(data, { name: 'Lake Auburn', cls: 'reservoir' })).toBe(data);
+  });
+
+  it('a name chosen wears Now; the ranking puts its first rung back', () => {
+    const chosen = namesWithPicks(data, { name: 'The Basin', cls: 'reservoir' });
+    expect(chosen.name).toBe('The Basin');
+    expect(chosen.rungs.map((r) => r.now)).toEqual([true, false]);
+    const ranked = namesWithPicks(data, { name: null, cls: 'reservoir' });
+    expect(ranked).toMatchObject({ name: 'The Basin', overridden: false });
+  });
+
+  it('a clear shows the class it puts back, or keeps the record’s when the read can’t say', () => {
+    expect(namesWithPicks(data, { name: 'Lake Auburn', cls: null })).toMatchObject({
+      cls: 'lakePond',
+      moderatorClass: null,
+    });
+    const unknown = { ...data, baseClass: null };
+    expect(namesWithPicks(unknown, { name: 'Lake Auburn', cls: null }).cls).toBe('reservoir');
+  });
+
+  it('a class the catalogs never gave still has a row to sit on', () => {
+    const picked = namesWithPicks(data, { name: 'Lake Auburn', cls: 'wetland' });
+    expect(picked.classOptions?.map((o) => o.cls)).toContain('wetland');
   });
 });

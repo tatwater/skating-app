@@ -3048,6 +3048,8 @@ export async function removeBodyImpl(
     metadata: {
       removalReason: args.reason,
       ...(args.note !== undefined ? { note: args.note } : {}),
+      // The reason is a person's own words, whole (an undo's), never the composed sentence.
+      ...(args.auditReason !== undefined ? { reasonIsOwn: true } : {}),
     },
     createdAt: now,
   });

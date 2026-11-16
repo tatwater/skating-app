@@ -16,6 +16,7 @@ import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
+import { PICK_WHAT } from '../../consoleWords';
 import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
@@ -159,6 +160,7 @@ function ImageryReads(props: BodyTabProps) {
       // The pass override's writer isn't on the server yet: drawn, and not available yet.
       {...(can('body.water') ? { onOverride: UNAVAILABLE } : {})}
       satellite={{
+        bodyId: waterBodyId,
         mode: body.satelliteImagery ?? 'auto',
         name: body.name,
         areaSqM: body.surfaceAreaSqM,
@@ -166,8 +168,8 @@ function ImageryReads(props: BodyTabProps) {
       }}
       {...(can('body.water')
         ? {
-            onSatelliteChange: async (mode: SatelliteImageryMode) => {
-              await sendFor(hold, {
+            onSatelliteChange: (mode: SatelliteImageryMode) =>
+              sendFor(hold, {
                 body: waterBodyId,
                 write: () => setMode({ waterBodyId, mode }),
                 receipt: (subject) =>
@@ -176,9 +178,8 @@ function ImageryReads(props: BodyTabProps) {
                     target: { targetType: 'waterbody', targetId: waterBodyId },
                     subject,
                   }),
-                what: 'The satellite link',
-              });
-            },
+                what: PICK_WHAT.satellite,
+              }),
           }
         : {})}
     />

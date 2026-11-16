@@ -82,6 +82,15 @@ describe('featureToAdminArea', () => {
     expect(area.centroid.lat).toBeLessThan(2);
   });
 
+  it('keeps TIGER’s full name beside the name, and leaves it off when the source has none', () => {
+    const city = featureToAdminArea(
+      boundary({ admin_level: '8', name: 'Plattsburgh', full_name: 'Plattsburgh city' }),
+    );
+    expect(city).toMatchObject({ name: 'Plattsburgh', fullName: 'Plattsburgh city' });
+    const osm = featureToAdminArea(boundary({ admin_level: '8', name: 'Burlington' }));
+    expect(osm && 'fullName' in osm).toBe(false);
+  });
+
   it('skips a non-administrative boundary (returns null)', () => {
     expect(
       featureToAdminArea(boundary({ boundary: 'postal_code', admin_level: '8', name: 'X' })),

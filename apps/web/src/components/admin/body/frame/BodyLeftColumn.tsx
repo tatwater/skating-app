@@ -14,6 +14,8 @@ import { Slider } from '@/components/kit/slider';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
+import { notSavedWhat, PICK_WHAT } from '../consoleWords';
+import { outcomeOf, useLatestPick } from '../tabs/latestPick';
 import type { BodyAsk, BodyHistoryView, BodyIdentity, OutlineTrust } from './bodyModel';
 import {
   historyHead,
@@ -22,7 +24,8 @@ import {
   NOT_COMPUTED,
   NOT_COMPUTED_WORDS,
 } from './bodyModel';
-import { type BodyHold, useBodyHold } from './currentBody';
+import { type BodyHold, sayNotSaved, useBodyHold } from './currentBody';
+import { keyedTowns } from './townKeys';
 
 /**
  * The Body console's left column (§5.4): the body's lockup, its figures, how complete its record
@@ -260,7 +263,7 @@ function Figures({
       )}
       <CompletenessBlock completeness={completeness} />
       <div data-slot="body-boost" className="mt-(--space-1) flex flex-col gap-(--space-2)">
-        <BoostSlider value={identity.boost.value} onCommit={onBoostCommit} />
+        <BoostSlider bodyId={identity.id} value={identity.boost.value} onCommit={onBoostCommit} />
         <p className="m-0 text-assist leading-list text-fg3">
           Draws the body from farther out.
           {identity.boost.note !== null ? ` ${identity.boost.note}` : ''}
@@ -285,29 +288,35 @@ export function boostToSend(v: number, record: number): number | null {
 /**
  * The map boost, held to the record: it moves under the operator's hand, and follows the record
  * whenever the record moves (an Undo from the toast, another moderator) or a change didn't land.
- * Letting go where it already stood sends nothing — no write, no receipt.
+ * Letting go where it already stands sends nothing — no write, no receipt. **The latest let-go
+ * wins** (`useLatestPick`): it shows at once, let-gos are sent one at a time in order (one waiting
+ * behind the write out is replaced by a newer one), and an earlier one
+ * landing never moves the slider from a later one still on its way; once all are answered it shows
+ * the record — the last let-go if it landed.
  */
 function BoostSlider({
+  bodyId,
   value,
   onCommit,
 }: {
+  /** Whose boost: the let-gos queue by body, outside the column (`useLatestPick`). */
+  bodyId: string;
   value: number;
   onCommit: BodyLeftColumnProps['onBoostCommit'];
 }) {
-  const record = Math.min(1, Math.max(0, value));
-  const recordRef = useRef(record);
-  recordRef.current = record;
-  const [shown, setShown] = useState(record);
-  const [seen, setSeen] = useState(record);
-  const commits = useRef(0);
+  const record = tenth(Math.min(1, Math.max(0, value)));
   const hold = useBodyHold();
-  // The latest value on its way, until its answer: a let-go is weighed against it, not the record
-  // it hasn't moved yet — so letting go back where the record stands, while a change is on its way,
-  // sends the way back rather than nothing (the change in flight would land and stand otherwise).
-  const pending = useRef<number | null>(null);
-  if (seen !== record) {
-    setSeen(record);
-    setShown(record);
+  const pick = useLatestPick<number>(`boost:${bodyId}`, record, {
+    // The boost's write path says its own refusal, naming the body, and answers `false`.
+    send: (next) => outcomeOf(() => onCommit?.(next, hold)),
+    say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.boost, why)),
+  });
+  // Under the hand while it drags; the pick's value once it's let go, or once that moves.
+  const [drag, setDrag] = useState<number | null>(null);
+  const [seen, setSeen] = useState(pick.shown);
+  if (seen !== pick.shown) {
+    setSeen(pick.shown);
+    setDrag(null);
   }
   const one = (v: number | readonly number[]) => (Array.isArray(v) ? (v[0] ?? 0) : (v as number));
   return (
@@ -318,21 +327,15 @@ function BoostSlider({
       step={0.1}
       ticks
       ends
-      value={shown}
+      value={drag ?? pick.shown}
       disabled={onCommit === undefined}
-      onValueChange={(v) => setShown(one(v))}
+      onValueChange={(v) => setDrag(one(v))}
       onValueCommitted={(v) => {
-        const next = boostToSend(one(v), pending.current ?? recordRef.current);
+        setDrag(null);
+        // Weighed against what's shown (a change on its way included), never the record alone.
+        const next = boostToSend(one(v), pick.shown);
         if (onCommit === undefined || next === null) return;
-        // Only the latest commit's refusal puts the slider back: an older one landing late never
-        // moves it from where the operator has since let go.
-        const mine = ++commits.current;
-        pending.current = next;
-        void Promise.resolve(onCommit(next, hold)).then((landed) => {
-          if (commits.current !== mine) return;
-          pending.current = null;
-          if (landed === false) setShown(recordRef.current);
-        });
+        pick.press(next);
       }}
     />
   );
@@ -483,8 +486,8 @@ function Identity({
                 <Faint>{IN_NO_TOWN_WORDS}</Faint>
               ) : (
                 <Stack>
-                  {towns.map((t) => (
-                    <span key={t}>{t}</span>
+                  {keyedTowns(towns).map(({ name, key }) => (
+                    <span key={key}>{name}</span>
                   ))}
                 </Stack>
               )}

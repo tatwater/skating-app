@@ -13,6 +13,7 @@ import { NOT_RECORDED } from '../tabs/tabStates';
 import { BodyHistorySection } from './BodyLeftColumn';
 import type { Removal } from './bodyModel';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
+import { keyedTowns } from './townKeys';
 import type { BodyGoneData } from './useBodyConsole';
 
 /**
@@ -169,8 +170,8 @@ function TownsRow({ towns }: { towns: Loadable<readonly string[] | typeof NOT_CO
   return (
     <KeyValueRow label="Towns">
       <span className="flex flex-col gap-(--space-1_5)">
-        {towns.map((t) => (
-          <span key={t}>{t}</span>
+        {keyedTowns(towns).map(({ name, key }) => (
+          <span key={key}>{name}</span>
         ))}
       </span>
     </KeyValueRow>

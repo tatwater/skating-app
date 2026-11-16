@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,7 +28,7 @@ vi.mock('convex/react', async () => {
       ),
     useMutation: (ref: Parameters<typeof getFunctionName>[0]) => async (args: unknown) => {
       mocks.calls.push([getFunctionName(ref), args]);
-      mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
+      await mocks.server?.(getFunctionName(ref), args as Record<string, unknown>);
     },
   };
 });
@@ -253,6 +253,44 @@ describe('WaterTab', () => {
     rerender(<WaterTab bodyId="wb1" />);
     expect(screen.queryByRole('button', { name: /Use HydroLAKES for the mean/ })).toBeNull();
     expect(mocks.calls).toHaveLength(1);
+  });
+
+  it('the latest press wins: HydroLAKES, then back to the state survey before the first answer, ends on the survey', async () => {
+    mocks.can = new Set(['body.water']);
+    const get = fn(api.waterBodies.get);
+    mocks.results.set(fn(api.bodyConsole.depthChoices), choices('state_agency'));
+    const answers: (() => void)[] = [];
+    mocks.server = (name, args) => {
+      if (name !== 'waterBodies:chooseDepthSource') return;
+      return new Promise<void>((resolve) =>
+        answers.push(() => {
+          const prior = mocks.results.get(get) as { body: Record<string, unknown> };
+          mocks.results.set(get, {
+            available: true,
+            body: { ...prior.body, meanDepthSource: args.source },
+          });
+          mocks.results.set(fn(api.bodyConsole.depthChoices), choices(args.source as string));
+          resolve();
+        }),
+      );
+    };
+    const { rerender } = render(<WaterTab bodyId="wb1" />);
+    await userEvent.click(screen.getByRole('radio', { name: 'HydroLAKES, 8.1 m' }));
+    await userEvent.click(screen.getByRole('button', { name: /Use HydroLAKES for the mean/ }));
+    // Shown at once, though the server hasn't answered: the survey can be chosen back.
+    await userEvent.click(screen.getByRole('radio', { name: /state survey, 9\.4 m/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Use NH state survey for the mean/ }));
+    await act(async () => answers.shift()?.());
+    rerender(<WaterTab bodyId="wb1" />);
+    await act(async () => answers.shift()?.());
+    rerender(<WaterTab bodyId="wb1" />);
+    expect(mocks.calls.map((c) => (c[1] as { source: string }).source)).toEqual([
+      'hydrolakes_modeled',
+      'state_agency',
+    ]);
+    expect(
+      (mocks.results.get(get) as { body: { meanDepthSource: string } }).body.meanDepthSource,
+    ).toBe('state_agency');
   });
 
   it('says what was searched for contours, and when, once a search is recorded', () => {

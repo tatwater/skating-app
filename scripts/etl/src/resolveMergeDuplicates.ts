@@ -92,6 +92,9 @@ async function main(): Promise<void> {
     campaignId,
     target,
     call: convexRun,
+    // A dry run's row says it wrote nothing, and invalidates nothing (`dedup_resolve` otherwise
+    // schedules a weather-cell reconcile, a walk of the corpus, for deletions that never happened).
+    dryRun: !apply,
   });
   logger.start();
 

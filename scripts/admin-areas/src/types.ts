@@ -18,6 +18,8 @@ export type OsmBoundaryProperties = Record<string, unknown> & {
   boundary?: string;
   admin_level?: string | number;
   name?: string;
+  /** TIGER's `NAMELSAD` — the name with its legal class ("Plattsburgh city"); absent for OSM rows. */
+  full_name?: string;
 };
 
 /**
@@ -37,6 +39,8 @@ export type AdminAreaLevel = 'state' | 'county' | 'town';
 export interface AdminAreaRecord {
   externalId: string;
   name: string;
+  /** TIGER's `NAMELSAD` ("Plattsburgh city"), when the source carries one (B01-3l). */
+  fullName?: string;
   level: AdminAreaLevel;
   polygon: Polygon | MultiPolygon;
   bbox: BBox;

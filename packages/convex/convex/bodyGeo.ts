@@ -19,6 +19,7 @@ import {
   createReach,
   isUndefinedSubdivision,
   REACH_PAD_DEG,
+  townKindOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -36,6 +37,7 @@ import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
   hasTownEntries,
+  kindsDiffer,
   markGeoStale,
   outlineStamp,
   PLACES_RULE,
@@ -187,6 +189,7 @@ export const townPage = internalQuery({
       name: string;
       state: string;
       externalId: string;
+      fullName?: string;
       polygon: unknown;
     }[] = [];
     for (const id of ids) {
@@ -197,9 +200,31 @@ export const townPage = internalQuery({
         name: a.name,
         state: a.state,
         externalId: a.externalId,
+        ...(a.fullName !== undefined ? { fullName: a.fullName } : {}),
         polygon: a.polygon,
       });
     }
+    return out;
+  },
+});
+
+/**
+ * Town names one sharing page asks about — each reads at most {@link NAMESAKES_READ} boundaries, so a
+ * page is one name: charged as a town page, inside its eleven documents.
+ */
+export const SHARING_PAGE = 1;
+
+/**
+ * Which of these town names its state's subdivisions share **with a kind of their own** (B01-3l) —
+ * `kindsDiffer` on `by_level_state_name`. What decides whether a town's label shows its kind
+ * ("Plattsburgh (city)"): only where a kind tells the namesakes apart.
+ */
+export const townNamesShared = internalQuery({
+  args: { towns: v.array(v.object({ state: v.string(), name: v.string() })) },
+  handler: async (ctx, { towns }) => {
+    if (towns.length > SHARING_PAGE) throw new ConvexError(`at most ${SHARING_PAGE} names a page`);
+    const out: boolean[] = [];
+    for (const { state, name } of towns) out.push(await kindsDiffer(ctx, state, name));
     return out;
   },
 });
@@ -224,7 +249,19 @@ export const countyPage = internalQuery({
 // ── The pure work the action does ────────────────────────────────────────────────────────────
 
 /** A town the rule placed the body in, as {@link townPage} returned it (its polygon no longer needed). */
-export type ReachedTown = { id: Id<'adminAreas'>; name: string; state: string; externalId: string };
+export type ReachedTown = {
+  id: Id<'adminAreas'>;
+  name: string;
+  state: string;
+  externalId: string;
+  /** TIGER's full name ("Plattsburgh city"), when the boundary carries one (B01-3l). */
+  fullName?: string;
+  /** Another loaded subdivision of the state shares the name: the label shows the kind. */
+  shared?: boolean;
+};
+
+/** A town entry as the facts store it: keyed by its boundary, its kind when its name is shared. */
+export type TownEntry = { name: string; state: string; id: Id<'adminAreas'>; kind?: string };
 
 /**
  * **The places a body lies in, from the towns holding its shoreline** (D266, `@skating/core`'s
@@ -241,7 +278,7 @@ export function placesFrom(
   towns: string[];
   townStates: string[];
   townIds: Id<'adminAreas'>[];
-  townEntries: { name: string; state: string; id: Id<'adminAreas'> }[];
+  townEntries: TownEntry[];
   counties: string[];
   states: string[];
 } {
@@ -249,9 +286,11 @@ export function placesFrom(
   // Each town's state, in the same order (B01-3c): a border lake's towns are in two states.
   const townStates: string[] = [];
   const townIds: Id<'adminAreas'>[] = [];
-  // Keyed on name and state (B01-3d): a border lake's Franklin, VT and Franklin, NH are two towns.
-  // `towns` stays keyed on the name alone, as the pages written before read it.
-  const townEntries: { name: string; state: string; id: Id<'adminAreas'> }[] = [];
+  // Keyed by boundary (B01-3l), never by name: Plattsburgh the town and Plattsburgh the city are two,
+  // and so are a border lake's Franklin, VT and Franklin, NH. A name a state's subdivisions share
+  // carries its kind, read from TIGER's full name, for the label (`townLabel`). `towns` stays keyed
+  // on the name alone, as the pages written before read it.
+  const townEntries: TownEntry[] = [];
   const counties: string[] = [];
   const states = new Set<string>();
   for (const area of reached) {
@@ -260,8 +299,14 @@ export function placesFrom(
     const county = countyKey === null ? undefined : countyNames.get(countyKey);
     if (county !== undefined && !counties.includes(county)) counties.push(county);
     if (isUndefinedSubdivision(area.externalId)) continue;
-    if (!townEntries.some((e) => e.name === area.name && e.state === area.state)) {
-      townEntries.push({ name: area.name, state: area.state, id: area.id });
+    if (!townEntries.some((e) => e.id === area.id)) {
+      const kind = area.shared === true ? townKindOf(area.name, area.fullName) : undefined;
+      townEntries.push({
+        name: area.name,
+        state: area.state,
+        id: area.id,
+        ...(kind !== undefined ? { kind } : {}),
+      });
     }
     if (!towns.includes(area.name)) {
       towns.push(area.name);
@@ -324,6 +369,31 @@ async function computePlaces(
     for (const { polygon: _, ...town } of rows) byId.set(town.id, town);
   }
   const reached = run.result().ids.map((id) => byId.get(id) as ReachedTown);
+  // Whether each reached town's name is shared in its state (B01-3l): a page of names at a time, each
+  // asked once, and only of a listed town whose full name gives a kind — with none there is nothing
+  // to show, so its two boundary reads would be wasted (every town, before the full names load).
+  const nameKey = (t: { state: string; name: string }) => JSON.stringify([t.state, t.name]);
+  const asks = [
+    ...new Map(
+      reached
+        .filter(
+          (t) =>
+            !isUndefinedSubdivision(t.externalId) && townKindOf(t.name, t.fullName) !== undefined,
+        )
+        .map((t) => [nameKey(t), { state: t.state, name: t.name }] as const),
+    ).values(),
+  ];
+  const sharedNames = new Set<string>();
+  for (let k = 0; k < asks.length; k += SHARING_PAGE) {
+    const page = asks.slice(k, k + SHARING_PAGE);
+    const shared: boolean[] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
+      towns: page,
+    });
+    page.forEach((t, i) => {
+      if (shared[i] === true) sharedNames.add(nameKey(t));
+    });
+  }
+  for (const t of reached) if (sharedNames.has(nameKey(t))) t.shared = true;
   const keys = [
     ...new Set(
       reached
@@ -456,9 +526,16 @@ export const store = internalMutation({
     townStates: v.optional(v.array(v.string())),
     /** Each town's boundary, in `towns`' order. */
     townIds: v.optional(v.array(v.id('adminAreas'))),
-    /** The towns keyed on name and state, each with its boundary. */
+    /** The towns keyed by boundary, each with its kind when its name is shared (B01-3l). */
     townEntries: v.optional(
-      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+      v.array(
+        v.object({
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          kind: v.optional(v.string()),
+        }),
+      ),
     ),
     counties: v.array(v.string()),
     states: v.array(v.string()),

@@ -162,7 +162,12 @@ export const DeclineAProposal: Story = {
     await expect(action).toBeDisabled();
     await userEvent.type(within(dialog).getByRole('textbox'), 'The dam is already on the map');
     await userEvent.click(action);
-    await expect(args.onDecline).toHaveBeenCalledWith('ask-flats', 'The dam is already on the map');
+    await expect(args.onDecline).toHaveBeenCalledWith(
+      'ask-flats',
+      'The dam is already on the map',
+      // The dialog's opening, for an answer that comes after it has gone.
+      expect.anything(),
+    );
     await waitFor(() => expect(document.querySelector('[data-slot="reason-ask"]')).toBeNull());
   },
 };

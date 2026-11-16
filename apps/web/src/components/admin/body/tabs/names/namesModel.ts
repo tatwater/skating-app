@@ -102,7 +102,15 @@ export function townLinesFrom(
       Math.min(a.lat, b.lat) <= view[3]);
   const lines: TownLine[] = [];
   let missing = 0;
+  // Two towns can read the same (one per boundary since B01-3l: New York's two Clintons, or two
+  // Plattsburghs before their kinds load), so a repeat's lines carry how many came before — never
+  // two lines with one id. The first keeps the id it always had.
+  const seen = new Map<string, number>();
   for (const town of read.towns) {
+    const key = `${town.name}|${town.state ?? ''}`;
+    const repeat = seen.get(key) ?? 0;
+    seen.set(key, repeat + 1);
+    const prefix = repeat === 0 ? key : `${key}#${repeat}`;
     if (town.ring === null || town.ring.length < 2) {
       missing += 1;
       continue;
@@ -144,7 +152,7 @@ export function townLinesFrom(
     }
     flush();
     runs.forEach((path, n) => {
-      const id = `${town.name}|${town.state ?? ''}|${n}`;
+      const id = `${prefix}|${n}`;
       lines.push({ id, path, faces: facesOf(path, ccw, town.name) });
     });
   }
@@ -220,6 +228,8 @@ export type NamesData = {
   aliasesFailed?: boolean;
   /** A moderator set the class over the catalogs' (`moderatorClass`); `null` the import's. */
   moderatorClass?: WaterBodyClass | null;
+  /** The class a clear would put back (`bodyConsole.identity`); `null` when the read can't say. */
+  baseClass?: WaterBodyClass | null;
   cls: WaterBodyClass;
   /** Each catalog's answer; `null` until the claims are stored. Always holds the current class. */
   classOptions: ClassOption[] | null;
@@ -325,6 +335,7 @@ export function namesFromBody(
     aliasesEditable: identity !== null,
     ...(extras.identity !== undefined && isFailed(extras.identity) && { aliasesFailed: true }),
     moderatorClass: identity?.moderatorClass ?? null,
+    baseClass: identity?.baseClass ?? null,
     cls: body.type,
     classOptions: options === null ? null : withCurrentClass(options, body.type),
     perCatalogClaims: null,
@@ -379,6 +390,8 @@ export type NamesIdentity = {
   /** Each catalog's class, `null` until the import stores them (a body's next campaign). */
   classClaims: { source: string; value: WaterBodyClass }[] | null;
   moderatorClass: WaterBodyClass | null;
+  /** The class a clear would put back; `null` when the record can't say without its history. */
+  baseClass?: WaterBodyClass | null;
   moderatorAliases: string[];
 };
 
@@ -402,6 +415,45 @@ export function adminOf(
   if (places === undefined || isFailed(places)) return places;
   if (places === null) return NOT_COMPUTED;
   return { towns: [...places.towns], counties: [...places.counties] };
+}
+
+/** The displayed name a moderator chose over the ranking, or `null` for the catalogs' ranking. */
+export const nameChoice = (data: NamesData): string | null => (data.overridden ? data.name : null);
+
+/** The moderator's class over the catalogs', or `null` for the catalogs' own. */
+export const classChoice = (data: NamesData): WaterBodyClass | null => data.moderatorClass ?? null;
+
+/**
+ * **The tab's data with its latest presses shown** (`useLatestPick`), before the server answers:
+ * the name chosen (`null`, the catalogs' ranking — its first rung, as `setWaterBodyName` puts back)
+ * wears Now, and the class chosen (`null`, the class a clear puts back, when the read says which) is
+ * the checked one. A pick the server already holds changes nothing, and the data keeps its identity.
+ */
+export function namesWithPicks(
+  data: NamesData,
+  picks: { name: string | null; cls: WaterBodyClass | null },
+): NamesData {
+  let out = data;
+  if (picks.name !== nameChoice(data)) {
+    const name = picks.name ?? data.rungs[0]?.value ?? data.name;
+    out = {
+      ...out,
+      name,
+      overridden: picks.name !== null,
+      rungs: data.rungs.map((r) => ({ ...r, now: same(r.value, name) })),
+    };
+  }
+  if (picks.cls !== classChoice(data)) {
+    // A clear whose class the read can't say keeps the record's until the server answers.
+    const cls = picks.cls ?? data.baseClass ?? data.cls;
+    out = {
+      ...out,
+      cls,
+      moderatorClass: picks.cls,
+      classOptions: data.classOptions === null ? null : withCurrentClass(data.classOptions, cls),
+    };
+  }
+  return out;
 }
 
 /** The class options with the current class among them, so Now always has a row to sit on. */

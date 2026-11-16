@@ -5,6 +5,7 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -23,8 +24,8 @@ import { notSavedTitle, notSavedWhat, OTHER_BODY } from '../consoleWords';
  *   above the consoles (`ListWritersProvider`), per body, so a queued one goes out too.
  * - **A result is said honestly.** A receipt always names its body ("Links saved · Mascoma Lake"),
  *   so its Undo is unambiguous on any page. A refusal is said in place while the console that sent
- *   it is on screen; once that console has gone, it is a toast naming the body and what failed —
- *   never swallowed.
+ *   it is on screen and the part that sent it is still mounted; once either has gone, it is a toast
+ *   naming the body and what failed — never swallowed.
  * - **A missed reset still can't write.** A subtree holds the binding of the console it mounted
  *   under; a write that names another body than that one (a subtree that kept a draft across a body
  *   change) is refused, loudly.
@@ -76,13 +77,26 @@ export type BodyHold = {
   subject: string | undefined;
 };
 
-/** The binding current when the subtree mounted — never a later one. */
+/**
+ * The binding current when the subtree mounted — never a later one. **Here** is the console alive
+ * *and* the holder still mounted: a tab another tab replaced, a card closed, a dialog's page gone
+ * can't say a result in place, so a refusal for it is said in a toast naming the body — never set
+ * on a page no one can see.
+ */
 export function useBodyHold(): BodyHold {
   const current = useContext(BindingContext);
   const [held] = useState(current);
+  // Set at the commit that mounts or removes the holder (a layout effect), never later.
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   return useMemo(
     () => ({
-      here: () => held === null || held.alive,
+      here: () => mounted.current && (held === null || held.alive),
       body: held?.body ?? null,
       get subject() {
         return held?.name;
@@ -116,8 +130,9 @@ export function sayNotSaved(hold: BodyHold, description: string): void {
 /**
  * **The one write path.** `body` is the body the write names; `what` says what it was ("The links",
  * "The ruling"), for a refusal said off the console. Sends unless the write names another body than
- * the console's own; a refusal is thrown (in the server's words) while that console is on screen —
- * for the caller to say in place — and otherwise put in a toast naming the body; a list that moved
+ * the console's own; a refusal is thrown (in the server's words) while `hold` is here (its console on
+ * screen, its holder mounted) — for the caller to say in place — and otherwise put in a toast naming
+ * the body; a list that moved
  * underneath is thrown as it came, for the queue to re-apply; the receipt follows a landed write
  * wherever the page is, naming its body, and its failure is never a refusal.
  *

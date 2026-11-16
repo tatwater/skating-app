@@ -175,6 +175,7 @@ async function main(): Promise<void> {
     campaignId,
     target: resolveDeployment(),
     call: convexRun,
+    dryRun,
     notes: [
       'Expected to read zero for our states for some years. A series that starts at zero is only legible if somebody recorded the zeroes.',
     ],

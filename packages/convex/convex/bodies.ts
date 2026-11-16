@@ -49,7 +49,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf, placesOf, townsWithStateOf } from './lib/bodyGeo';
+import { geoFactsOf, placesOf, townNamesOf, townsWithStateOf } from './lib/bodyGeo';
 import { type LibraryRow, openAsksFor, readCount } from './lib/bodyLibrary';
 import { FLAG_REASONS } from './lib/enums';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
@@ -693,7 +693,8 @@ export const preview = query({
     // Places only when computed by today's rule (D266); a row holding the sampled answer reads as not
     // computed yet.
     const geo = placesOf(await geoFactsOf(ctx, body._id));
-    const towns = geo === null ? [] : (geo.towns ?? []);
+    // One per boundary, as `townName` shows it (B01-3l): two same-named towns are two.
+    const towns = townNamesOf(geo) ?? [];
     const withState = townsWithStateOf(geo) ?? [];
 
     return {
@@ -716,7 +717,9 @@ export const preview = query({
       askCount: { count: openAsks.count, capped: openAsks.capped },
       /** `asks` is not every open ask: show it as "N of the count". */
       asksListCapped: openAsks.capped || openAsks.count > asks.length,
-      town: towns[0] ?? null,
+      // The lead town by its own name, never the names list's "Franklin, VT": `townState` goes beside
+      // it, and the page joins the two (a name two states share would read "Franklin, VT, VT").
+      town: withState[0]?.name ?? null,
       moreTowns: towns.slice(1),
       /** `town`'s state; `null` with no town, or on facts computed before towns carried states. */
       townState: withState[0]?.state ?? null,

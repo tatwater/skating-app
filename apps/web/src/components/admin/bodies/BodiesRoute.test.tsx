@@ -102,6 +102,7 @@ import { getFunctionName } from 'convex/server';
 import { KeysProvider } from '@/lib/keys';
 import { REMOVAL_NOTE_NEAR_CAP, REMOVAL_SENTENCE_SHORTENED } from '../body/frame/bodyFixtures';
 import { statusDate } from '../body/frame/bodyModel';
+import { measureViewports } from '../people/list/testLayout';
 import { resetConsoleReads } from '../reads/consoleReads';
 import { BODY_PATH, BodiesRoute, resetShownMemory, startingPageSize } from './BodiesRoute';
 import { resetScrollMemory } from './BodiesTable';
@@ -296,6 +297,8 @@ describe('the list', () => {
   });
 
   it('keeps asking past a page its scan budget cut short, and draws no end until done', () => {
+    // A measured list in sight (`useLoadAhead`): jsdom lays nothing out, so say how tall it is.
+    measureViewports(vi.spyOn);
     mocks.paged = { results: [row('a', 'Crystal Lake')], status: 'CanLoadMore' };
     const { rerender } = mount();
     expect(mocks.loadMore).toHaveBeenCalledWith(LIBRARY_PAGE_SIZE);

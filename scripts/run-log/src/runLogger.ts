@@ -26,6 +26,13 @@ import type { ImportRunCoverage, ImportRunKind, RunCount, RunFailure, RunStage }
  */
 export const MAX_FORWARDED_FAILURES = 200;
 
+/** A dry run's last note, start to finish: the row says it wrote nothing, whatever else it says. */
+export const DRY_RUN_NOTE = 'dry run — nothing written';
+
+/** The notes with the dry-run label last, once — for a dry run; as given otherwise. */
+const labeled = (dryRun: boolean, notes: string[] | undefined): string[] | undefined =>
+  dryRun ? [...(notes ?? []).filter((n) => n !== DRY_RUN_NOTE), DRY_RUN_NOTE] : notes;
+
 /** How the logger reaches Convex. Injectable so the logic is testable without a deployment. */
 export type ConvexCaller = <T>(functionName: string, args: unknown) => T;
 
@@ -37,6 +44,12 @@ export interface RunLoggerOptions {
   /** Stages already known before the run starts — the archived extract, the filter command. */
   stages?: RunStage[];
   notes?: string[];
+  /**
+   * The loader writes nothing (no `--apply`): the row's notes end with {@link DRY_RUN_NOTE} from
+   * its start through its close — a close's own notes replace the start's on the server, so the
+   * label is put back after them — and it closes as not applied, so it invalidates nothing.
+   */
+  dryRun?: boolean;
   call: ConvexCaller;
   /** Defaults to `process.stderr.write`; injectable so tests can assert the warnings. */
   warn?: (message: string) => void;
@@ -64,7 +77,7 @@ export class RunLogger {
         deployment: this.options.target.label,
         isProd: this.options.target.isProd,
         stages: this.options.stages ?? [],
-        notes: this.options.notes,
+        notes: labeled(this.options.dryRun === true, this.options.notes),
       });
     });
   }
@@ -137,11 +150,14 @@ export class RunLogger {
     if (this.runId === undefined || this.closed) return;
     this.closed = true;
     this.guard('finish', () => {
+      const dryRun = this.options.dryRun === true;
       this.options.call('importRuns:finish', {
         runId: this.runId,
         status,
         error,
-        notes,
+        // Absent keeps the start's notes, which already carry the label.
+        notes: notes === undefined ? undefined : labeled(dryRun, notes),
+        ...(dryRun && { applied: false }),
         ...this.drain(),
       });
     });

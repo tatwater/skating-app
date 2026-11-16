@@ -5,7 +5,12 @@ import { useMutation } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useMemo } from 'react';
 
-import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
+import {
+  isFailed,
+  type Loadable,
+  read,
+  useConsoleReadSet,
+} from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
@@ -53,6 +58,16 @@ const NOT_RECORDED: RetentionFacts = {
   putInKeeps: null,
 };
 
+/**
+ * The retention read's four answers as the lanes take them: on its way (`undefined`), failed
+ * (`'error'`), settled with no such body (every fact not recorded, never zero), or its facts.
+ */
+export function retentionOf(got: Loadable<Retention | null>): RetentionFacts | 'error' | undefined {
+  if (got === undefined) return undefined;
+  if (isFailed(got)) return 'error';
+  return got === null ? NOT_RECORDED : retentionFacts(got);
+}
+
 function StandingReads({ bodyId: id }: BodyTabProps) {
   const bodyId = id as Id<'waterBodies'>;
   const {
@@ -72,18 +87,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   // The instant the lanes start from, moved on hourly: the finest thing they draw is a day.
   const now = useTickingNow(3_600_000);
   const retentionRead = got.retention;
-  const retention = useMemo(
-    () =>
-      retentionRead === undefined
-        ? undefined
-        : isFailed(retentionRead)
-          ? ('error' as const)
-          : retentionRead === null
-            ? // No such body on the server: every fact is not recorded, never zero.
-              NOT_RECORDED
-            : retentionFacts(retentionRead),
-    [retentionRead],
-  );
+  const retention = useMemo(() => retentionOf(retentionRead), [retentionRead]);
 
   const result = got.body;
   if (result === undefined) {

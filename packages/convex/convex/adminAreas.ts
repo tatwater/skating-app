@@ -31,6 +31,8 @@ import { bbox, geoJson, latLng, literals } from './lib/validators';
 const adminArea = v.object({
   externalId: v.string(), // OSM relation id — the idempotent upsert key
   name: v.string(), // this row's own name ("Burlington" / "Chittenden County")
+  /** TIGER's `NAMELSAD` ("Plattsburgh city") — optional, so an artifact made before it still loads. */
+  fullName: v.optional(v.string()),
   level: literals(ADMIN_AREA_LEVELS),
   state: v.string(), // 2-letter code, denormalized onto the label
   polygon: geoJson,
@@ -60,8 +62,12 @@ export const importCanonical = internalMutation({
       let id: Id<'adminAreas'>;
       if (existing) {
         if (!placesMoved && areaPlacesMoved(existing, item)) placesMoved = true;
+        // A full name gained or changed is not a move of the places layer (`areaPlacesMoved` reads no
+        // full name): no mark, no recompute. A body's town label takes it at its next recompute (the
+        // facts hold each entry's kind). One a load omits is kept, not erased.
         await ctx.db.patch(existing._id, {
           name: item.name,
+          ...(item.fullName !== undefined ? { fullName: item.fullName } : {}),
           level: item.level,
           state: item.state,
           polygon: item.polygon,
@@ -75,6 +81,7 @@ export const importCanonical = internalMutation({
         id = await ctx.db.insert('adminAreas', {
           externalId: item.externalId,
           name: item.name,
+          ...(item.fullName !== undefined ? { fullName: item.fullName } : {}),
           level: item.level,
           state: item.state,
           polygon: item.polygon,

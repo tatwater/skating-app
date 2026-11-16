@@ -35,7 +35,10 @@ describe('ReasonAsk', () => {
     expect(await within(dialog).findByText(/Something went wrong/)).toBeTruthy();
     expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
     await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
-    expect(onConfirm).toHaveBeenLastCalledWith('A private dock');
+    expect(onConfirm).toHaveBeenLastCalledWith(
+      'A private dock',
+      expect.objectContaining({ here: expect.any(Function) }),
+    );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 

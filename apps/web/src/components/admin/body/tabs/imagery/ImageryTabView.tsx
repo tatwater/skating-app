@@ -40,9 +40,11 @@ import {
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
+import { notSavedWhat, PICK_WHAT } from '../../consoleWords';
 import { dayMonth } from '../../frame/bodyModel';
+import { sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
-import { useLatestPick } from '../latestPick';
+import { outcomeOf, useLatestPick } from '../latestPick';
 import { LoadingSection } from '../tabParts';
 
 import {
@@ -90,14 +92,22 @@ export type ImageryTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
     | ((id: string, verdict: 'show' | 'hide', reason?: string) => Promise<void>)
     | typeof UNAVAILABLE;
   satellite: {
+    /**
+     * Whose link: its presses queue by body, outside the tab (`useLatestPick`). Required: a queue
+     * shared by every body would send one body's waiting press through another body's writer.
+     */
+    bodyId: string;
     mode: SatelliteImageryMode;
     name: string | undefined;
     areaSqM: number | undefined;
     /** The Copernicus link for this body, or `null` with no point to open it on. */
     url: string | null;
   };
-  /** Set the satellite link. Absent: the choice is drawn read-only. */
-  onSatelliteChange?: (mode: SatelliteImageryMode) => Promise<void>;
+  /**
+   * Set the satellite link. Absent: the choice is drawn read-only. Throws the server's words for a
+   * refusal to say here; answers `false` for one already said (off its page).
+   */
+  onSatelliteChange?: (mode: SatelliteImageryMode) => Promise<unknown>;
 };
 
 /** What the pass call will do, for its *Not available yet*. */
@@ -176,10 +186,20 @@ export function ImageryTabView({
     setError(null);
     setAsking(true);
   };
-  // The satellite link: the latest press always wins — shown at once, each press sent in order,
-  // the server's answer drawn again once every write has answered (`useLatestPick`).
-  const sat = useLatestPick<SatelliteImageryMode>(satellite.mode, async (mode) =>
-    onSatelliteChange?.(mode),
+  // The satellite link: the latest press always wins — shown at once, sent one write at a time in
+  // press order (a press waiting behind the write out is replaced by a newer one), the server's
+  // answer drawn again once every write has answered (`useLatestPick`).
+  const hold = useBodyHold();
+  const sat = useLatestPick<SatelliteImageryMode>(
+    `imagery-satellite:${satellite.bodyId}`,
+    satellite.mode,
+    {
+      // Refused here, the write path throws the server's words for this control to say in place;
+      // refused off its page, it has said it already and answers `false`.
+      send: (mode) => outcomeOf(() => onSatelliteChange?.(mode)),
+      say: (why) => sayNotSaved(hold, notSavedWhat(PICK_WHAT.satellite, why)),
+      inPlace: true,
+    },
   );
   const go = (to: number) => {
     const next = passes[to];

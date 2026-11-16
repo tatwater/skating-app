@@ -553,6 +553,8 @@ export type LeftRow = {
    * Required, so no source of a row can leave it out and fall back to the shortened sentence.
    */
   note: string | null;
+  /** `reason` is a person's own words, whole (a restore's undo), never the composed sentence. */
+  reasonIsOwn?: boolean;
   by: { displayName: string } | null;
 };
 
@@ -569,10 +571,11 @@ export function removalFromLeft(left: LeftRow, timeZone?: string): Removal {
     who: left.by === null ? null : firstName(left.by.displayName),
     // The moderator's own words, whole. A removal's row reason is a composed sentence ("Removed
     // from map (junk)") that may be shortened under the reason cap and repeats the listed reason
-    // drawn beside it, so a removal shows only what was typed — nothing when nothing was. A
-    // rejection's reason is typed, and stands.
+    // drawn beside it, so a removal shows only what was typed — nothing when nothing was — or its
+    // reason when the server says those words are a person's own (a restore's undo). A rejection's
+    // reason is typed, and stands.
     reason:
-      left.action === 'remove'
+      left.action === 'remove' && left.reasonIsOwn !== true
         ? left.note?.trim() || null
         : left.note?.trim() || left.reason?.trim() || null,
     ...(left.removalReason !== null && { because: REMOVAL_REASON_WORDS[left.removalReason] }),

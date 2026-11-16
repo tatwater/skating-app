@@ -35,6 +35,7 @@ export {
 export { identityArgs, type RunAs } from './runAs';
 export {
   type ConvexCaller,
+  DRY_RUN_NOTE,
   MAX_FORWARDED_FAILURES,
   RunLogger,
   type RunLoggerOptions,

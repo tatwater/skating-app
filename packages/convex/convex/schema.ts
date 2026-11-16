@@ -2033,6 +2033,12 @@ export default defineSchema({
   // (Phase 09a). Small (5 states: 2,546 rows on dev).
   adminAreas: defineTable({
     name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
+    /**
+     * TIGER's `NAMELSAD` — the name with its legal class ("Plattsburgh city", "Plattsburgh town")
+     * (B01-3l). What tells two same-named subdivisions of one state apart in a label; written by the
+     * loader on upsert. Absent on rows loaded before it (and on OSM-sourced rows): they read by name.
+     */
+    fullName: v.optional(v.string()),
     level: literals(ADMIN_AREA_LEVELS), // admin granularity
     state: v.string(), // 2-letter code, denormalized onto the label
     externalId: v.string(), // `tiger/<GEOID>` — the upsert key; a subdivision's GEOID starts with its county's
@@ -2046,7 +2052,10 @@ export default defineSchema({
   })
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
     // Containment lookups go through `adminAreaCells`, not a level scan — see `findContainingArea`.
-    .index('by_external_id', ['externalId']),
+    .index('by_external_id', ['externalId'])
+    // Whether another subdivision of a state shares a town's name (B01-3l): an equality on all three,
+    // required fields, so no sparse-index trap.
+    .index('by_level_state_name', ['level', 'state', 'name']),
 
   // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
   // (sample point, window start, current-hour bucket): concurrent viewers of the same body/window share a
@@ -5232,12 +5241,20 @@ export default defineSchema({
     /** Each town's boundary, in `towns`' order (B01-3c) — for its drawn outline. */
     townIds: v.optional(v.array(v.id('adminAreas'))),
     /**
-     * The towns keyed on name **and state**, each with its boundary (B01-3d) — a border lake's
-     * Franklin, VT and Franklin, NH are two. `towns` stays keyed on the name alone for the pages that
-     * read it; every read that offers a town's state reads this.
+     * The towns keyed by their boundary (B01-3l; on name and state before it, B01-3d) — a border
+     * lake's Franklin, VT and Franklin, NH are two, and so are Plattsburgh the town and the city.
+     * `towns` stays keyed on the name alone for the pages that read it; every town list reads this.
      */
     townEntries: v.optional(
-      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+      v.array(
+        v.object({
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          /** The town's kind ("city"), only when another subdivision of its state shares its name. */
+          kind: v.optional(v.string()),
+        }),
+      ),
     ),
     /**
      * **A moderator's pinned towns** (B01-3g), kept apart from the computed ones — rebuilt in the same
@@ -5252,6 +5269,8 @@ export default defineSchema({
           state: v.string(),
           id: v.id('adminAreas'),
           county: v.optional(v.string()),
+          /** The town's kind ("city"), only when another subdivision of its state shares its name. */
+          kind: v.optional(v.string()),
         }),
       ),
     ),

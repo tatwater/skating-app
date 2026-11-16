@@ -31,7 +31,8 @@ import { cn } from '@/lib/utils';
  *   ignores `fill-opacity` and `opacity`. The band's fill is the token resolved for the drawing's
  *   own theme (its nearest `data-surface` × `data-mode`), written as `rgba()`.
  * - **`LedStrip`** — the segment strip (`.led`): a count of a fixed whole ("Complete · 9 / 10"),
- *   so a `meter` to a reader. On segments light in the bright ink with its glow.
+ *   so a `meter` to a reader, whose value text says the parts not recorded yet apart from the
+ *   parts that are off. On segments light in the bright ink with its glow.
  * - **`StageBar`** — a run's passes (`.stage`): done, running (ice: a live run is transient), late
  *   (amber), stalled (red), failed and waiting; a gap parts the campaign's passes from the by-hand
  *   ones.
@@ -544,6 +545,7 @@ function LedStrip({
 }: LedStripProps) {
   const parts = ledSegments({ value, max, segments } as Parameters<typeof ledSegments>[0]);
   const lit = parts.filter((s) => s === 'on').length;
+  const unknown = parts.filter((s) => s === 'unknown').length;
   return (
     <MeterPrimitive.Root
       data-slot="led-strip"
@@ -552,7 +554,11 @@ function LedStrip({
       min={0}
       max={parts.length}
       value={lit}
-      getAriaValueText={() => `${lit} of ${parts.length}`}
+      // Every state a segment shows a pointer, said: a part nobody can say about yet is never
+      // folded into the parts that are off.
+      getAriaValueText={() =>
+        `${lit} of ${parts.length}${unknown > 0 ? `, ${unknown} not recorded yet` : ''}`
+      }
       className={cn(
         full ? 'grid w-full gap-segment' : 'inline-flex items-end gap-(--space-0_5) align-baseline',
         className,

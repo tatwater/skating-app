@@ -131,7 +131,16 @@ export function featureToAdminArea(feature: OsmBoundaryFeature): AdminAreaRecord
     );
   }
   const centroid: LatLng = representativePoint(polygon); // throws on a collapsed / degenerate ring
-  return { externalId, name, level, polygon, bbox: polygonBBox(polygon), centroid };
+  const fullName = typeof props.full_name === 'string' ? props.full_name.trim() : '';
+  return {
+    externalId,
+    name,
+    ...(fullName !== '' ? { fullName } : {}),
+    level,
+    polygon,
+    bbox: polygonBBox(polygon),
+    centroid,
+  };
 }
 
 /** Per-feature outcome tally for the run summary. */

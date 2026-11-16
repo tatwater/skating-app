@@ -112,7 +112,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       }
       onDismissName={
         can('corpus.placeNames')
-          ? (askId, reason, note) =>
+          ? (askId, reason, note, asker) =>
               actInDialog(
                 () =>
                   dismiss({
@@ -124,6 +124,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
                   title: `Dismissed “${askName(askId)}”`,
                   target: { targetType: 'corpusPlaceName', targetId: askId },
                 },
+                asker,
               )
           : undefined
       }
@@ -153,11 +154,15 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       }
       onDecline={
         can('inbox.request')
-          ? (askId, note) =>
-              actInDialog(() => decline({ requestId: askId as Id<'waterBodyRequests'>, note }), {
-                title: `Declined “${askName(askId)}”`,
-                target: { targetType: 'waterBodyRequest', targetId: askId },
-              })
+          ? (askId, note, asker) =>
+              actInDialog(
+                () => decline({ requestId: askId as Id<'waterBodyRequests'>, note }),
+                {
+                  title: `Declined “${askName(askId)}”`,
+                  target: { targetType: 'waterBodyRequest', targetId: askId },
+                },
+                asker,
+              )
           : undefined
       }
     />

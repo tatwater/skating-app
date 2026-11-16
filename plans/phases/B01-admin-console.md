@@ -4040,6 +4040,34 @@ skater screen lists towns, and body search is by name only, so no skater wording
 body's states change at its next campaign. The phone picker's empty state says "Try another spelling,
 or the lake's town" though search does not match towns (owed, below).
 
+**One entry per boundary, never per name (B01-3l).** After #130's recompute the rule reached 40
+subdivisions for Lake Champlain and the facts listed 39: the town and the city of Plattsburgh share
+TIGER's name "Plattsburgh, NY", and the entries B01-3d keyed on name and state folded them (Lake
+Memphremagog's Newport town and city likewise, 3 listed from 4). The rule was right; the key was wrong.
+Now a town entry is keyed by its boundary (`placesFrom`, the pins' merge), and two subdivisions of one
+state with one name are told apart by their kind — TIGER's legal class, the suffix of its full name
+(`NAMELSAD`, "Plattsburgh city") past its name, read by `townKindOf`, never guessed. `adminAreas` keeps
+the full name (`fullName`, optional, written by the loader on upsert; a re-load that only gains it marks
+nothing), an index (`by_level_state_name`) finds a town's namesakes in its state, and an entry carries its `kind`
+only where they carry more than one kind (`kindsDiffer`) — two Clinton towns gain nothing from
+"(town)": each is its own entry, and both read "Clinton, NY" (owed, B01-3k). One function names a town for every reader (`townName` / `townLabel`):
+"Plattsburgh (city), NY" and "Plattsburgh (town), NY"; every other town reads as before. The lists the
+console reads (the frame, Places, the preview, town lines, a removed body's towns, the pins) take their
+names from the entries, one per boundary (`townNamesOf`; a name two states share in one list shows its
+state there — Franklin, VT and Franklin, NH — and nothing else changes); the facts' name-keyed `towns`
+stays for the pages written before. Before the re-load brings the full names, the two Plattsburghs are two entries reading the
+same — the count right, the label not yet. **The recompute is a step, not the sweep:** a row stored
+before keeps its folded entries (B01-3d's entries still pass the drift repair's `hasTownEntries`), and
+the re-load that brings the full names marks nothing, so after the TIGER re-fetch and each state's
+load, run `bodyGeo:seedAll` then `bodyGeo:computeAll`. A town's namesakes are read (at most eight
+boundary rows, polygons and all, one name a query) only when its full name gives a kind, once per name. There is no town filter: the
+Bodies list filters by state; were one added, picking one Plattsburgh would match only its own bodies.
+The web keys its town lists by name and occurrence (the reads return names, not boundaries), so two
+reading the same never share a key. **Left keyed by name:** two same-kind subdivisions of one state with one name (TIGER
+has same-named towns in different counties) would still read the same — the county, which a pinned
+town carries and a computed entry does not, would tell them apart; whether any pair touches one body
+is not counted yet (owed).
+
 **A removal can say why.** `waterBodies.remove` takes an optional note: trimmed, refused past
 the audit-reason cap (D261: 2,000, `AUDIT_REASON_MAX`, its own sentence), written into the audit
 reason beside the fixed one (composed, so a note at the cap shortens the line rather than failing it)
@@ -4208,13 +4236,13 @@ draws 34; the role menu's item takes two lines.
   section not shown, a list not yet laid out) or a background tab, which would read as "near the
   end" for every page — and asks again when it comes into sight. People's list reads it (the only
   People list that pages on scroll: History is one read, Decisions pages on a press). The Bodies
-  library on main has the same trigger without the rule; it hides no list today, so it pages only
-  in a background tab, and it adopts the rule with the narrow-screen one.
+  library reads it too since B01-3k, with the narrow-screen rule.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
   columns fit side by side (their size tokens summed), the open record takes the page with a way
-  back, and with none open the list does; nothing scrolls sideways. People has it; the Bodies
-  library and the Body console lay out their own columns and break the same way at phone width —
-  each adopts the rule once its open PRs land. The kit `AppShell`'s own stacking (below `lg`, for
+  back, and with none open the list does; nothing scrolls sideways. People and the Bodies library
+  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); the Body
+  console lays out its own columns and breaks the same way at phone width — it adopts the rule in
+  its own pass (owed). The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
 
 ### The Body console follow-up (B01-3e)
@@ -4267,10 +4295,10 @@ Names' aliases can bind an edit to the wrong entry by its text.
   the tab's note, with *Try again*), settled with nothing (*Not recorded yet*), or a value —
   `readState` in the read layer. Water's other sources' depths were the case (a failed read drew
   *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
-  holds Water's two reads, Names' two and Places' provenance to it. **Owed:** rows for Access
-  (landmarks, ruling history), Shape (bay provenance, extras), Hazards (patterns waiting, the day
-  strips) and Standing (retention) — each already keeps its answers apart, but none is a table row
-  yet (each needs its tab's model fixtures built for the table).
+  holds Water's two reads, Names' two and Places' provenance to it; B01-3k adds Access's two (who
+  ruled, where each launch is), Shape's bay provenance, Hazards' day strips and Standing's
+  retention. **Owed:** Shape's extras and Hazards' patterns-waiting count — their mapping is inline
+  in the tab's wiring, and a settled zero there is a value, not a nothing.
 - **A rendered property stays under a second locally** (CI's coverage run is about ten times
   slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
   is a few short runs, and the arithmetic is fuzzed without rendering. Each test is its own: a
@@ -4343,11 +4371,116 @@ Names' aliases can bind an edit to the wrong entry by its text.
   saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
   again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}
   depth from {source}*; *1 reported crossing*.
-- **What the server still lacks:** the typed note on the history rows (`bodyConsole.history`, the audit feed: today they carry only the composed reason, which may be shortened under the reason cap, so History can quote it cut off beside the whole note); `removedFacts` saying which words are a person's own (a restore's undo carries its person's reason and no note — the page can't tell it from a composed removal sentence, so it quotes neither); names for an unlisted or unknown id in `rowsByIds`
+- **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
   (`entries[].name`, so the list can say *which* opened body isn't listed); **low priority** — the
   borders between towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so
   a shared border is one line; the doubled lines are accepted for now); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
   *Other catalogs that gave the same spelling: not recorded*).
+
+### The Body console's second follow-up (B01-3k)
+
+What B01-3e left, built on its head and rebased onto main once #132 merged; it carries B01-3l (one
+town entry per boundary, above) as its own commits.
+
+- **The latest press wins, on every control that writes on press** (`useLatestPick`, as Imagery's
+  satellite link): Names' *Display this* and class, Water's depth source, Access's ruling and the
+  map boost. Each shows the latest press at once, sends one write at a time in press order (a
+  newer press replaces one still waiting, so the server's last write is the last press), and draws
+  the server again once all are answered — a second press is never weighed
+  against a record that hasn't moved yet and dropped (*The Basin*, then *Lake Auburn* before the
+  first answer: the second button wasn't offered). The views draw the picks through
+  `namesWithPicks` and `rulingWithPick` (who ruled and what stood before wait for the answer).
+  A clear of the class shows the class it puts back: `bodyConsole.identity` now returns
+  `baseClass` (`null` only for an override older than the kept class, when the tab keeps the
+  record's class until the answer). Ruling no public access is a press once its reason is
+  confirmed: the pick hands each press its own note and answer, so the reason dialog stays over the
+  shown ruling (its trigger hidden, never unmounted) until that answer and says a refusal over the
+  kept reason. The boost's let-gos now go one at a time (they went in parallel); an earlier one
+  landing no longer moves the slider from a later one on its way.
+- **A pick's queue outlives its tab** (Greptile's P1 on #136). Reservoir, then Wetland while it
+  waited; another tab and back; then another class: the returning tab started a fresh queue and
+  sent at once, and the old one sent Wetland after it, so the server stored the older choice last.
+  The class: every press-to-save control kept its queue and waiting press in the tab while the
+  writes outlived it — the shape #132 fixed for whole lists. The queues now live in one store
+  (`createPickStore`), keyed by control and body (`names-class:<body>`), which
+  `ListWritersProvider` mounts in the admin shell beside the list queues: one owner for every queue
+  a page's writes outlive. A control that mounts joins the queue there (it shows the press on its
+  way; its press waits behind the write in flight), the latest mounted page's sender stands, and an
+  entry leaves once drained. **A refusal while away** is said in a toast — the console's own: the
+  tabs' write path says one in the server's words (naming the body once its console has gone), and
+  the store says one for a control that throws its refusal to be said in place when none is
+  mounted — and the control that comes back shows the record. Two browser windows on one body each
+  have their own store (the server's last write wins between them, as between two moderators).
+  People's person levers are one-shot dialogs with no waiting press: not this shape. **Left:** the
+  shell's splash while the viewer's role reloads unmounts the provider, so a write out then has no
+  queue on return (the list queues share it); the store's own refusal toast names neither the body
+  nor what (a sender carrying its own words is a design change).
+- **A pick's answer reaches exactly one audience still there** (Greptile's second P1 on #136).
+  Clear the ruling, confirm no public access behind it, Back and Forward before the clear answers;
+  the ruling is refused — and no one was told. Two faults met: a refusal *returned* as a value (the
+  dialog's string) was invisible to the store, which spoke only for thrown ones; and the answer went
+  through the sender the store had handed to the returning tab, to a dialog that had gone. Now every
+  write answers the store in one shape (`PickOutcome`: landed; refused, in the server's words; or
+  refused and already said by its write path) — a sender that answers anything else doesn't
+  compile — and a press carries its asker (a reason dialog's opening, ended when it closes or
+  goes). A refusal goes to the asker while it is there (said over the kept reason); else to a
+  control that says refusals in place (the satellite link); else the page's words — a toast naming
+  the body and what wasn't saved ("Not saved · Mascoma Lake" / "The ruling: …", `PICK_WHAT` beside
+  `notSavedWhat`, the shape of #135's late-refusal toast). The same fault outside the store: a
+  result was said "here" whenever its console was on screen, even when the page that sent it had
+  gone, so the Links queue set its error on a page no one saw; `useBodyHold().here()` is now the
+  console alive *and* the holder mounted, and the one-shot reason dialogs (Hide, Dismiss, Decline)
+  hand their opening to `actInDialog`, which says a refusal once when it has gone. **Left:**
+  Standing's and Hazards' forms keep a refusal in the form's own state while their tab's hold
+  decides "here" — a form that unmounts under a mounted tab could still lose one (outside the
+  pick and list mechanism; owed); Undo's reason dialog, in the shell, is untouched.
+- **A late answer never acts on moved UI** — a table over the wired tabs and the boost
+  (`tabs/latestPress.test.tsx`): A pressed and held, then B before A's answer (A landing shows B
+  still, B stored), a move outside the tab (A lands taking no focus), or the control left and
+  returned while A waits (landed: it joins, and B pressed then is stored after; refused: said, and
+  the record shows), and who hears the answer — every control × still there / tab away / tab
+  returned / another body shown × landed / refused, and the reason dialog in flight and waiting ×
+  its four places; Access's dialog canceled is no press. The store has a model test over two
+  bodies — presses, leaving, returning, answers landed and refused (three pinned seeds, one
+  random; askers, closings, and answers landed, returned, thrown and already said, with every refusal
+  said exactly once by an audience still there) — and a remount that must join its queue, the guard that no queue lives in a component
+  again. Mutation-checked.
+- **The Bodies library reads the narrow rule and `lib/loadAhead`** (above). Back to the list is a
+  button and ⇧⏎ (it replaces the place, as opening a row does).
+- **The day strip's neighbors.** `LedStrip`'s meter said "1 of 4" for on, unknown, off, unknown —
+  the dashed parts folded into the dark one; it now says "1 of 4, 2 not recorded yet". The matrix
+  chart has no such gap: each cell is a grid cell named by row, column and reading, one tab stop,
+  arrows and Home/End, and the plate a hover brings comes on focus too.
+- **A dry run's row always says it wrote nothing.** The landmark loader's close now always sends
+  its trimmed-id notes, which replace the start's on the server — so a dry run's row read as
+  applied. The run logger owns the label (`dryRun`): the row's notes end with *dry run — nothing
+  written* from start to close, and the close says `applied: false`, so a dry run schedules no
+  weather-cell reconcile. Landmark names, the bays loader (whose dry run never said so),
+  reconciliation, the 3DHP measure, retire-absorbed and resolve-merge-duplicates (whose dry runs,
+  `canonical_water` and `dedup_resolve` rows, scheduled a reconcile) pass it too.
+- **The two server asks.** A removal's typed note on History's rows was already served:
+  `bodyConsole.history` returns each row's `metadata`, `note` included (and the frame's History
+  draws no reasons). A removal's reason that is a person's own words — a restore's undo — is marked
+  on its row (`metadata.reasonIsOwn`) and returned by `removedFacts` (`left.reasonIsOwn`), so the
+  shared rule quotes it; rows written before read as today.
+- **Owed from B01-3k's review** (the town-keys series):
+  - **Two same-kind namesakes read identically.** Two subdivisions of one state with one name and
+    one kind (New York's two Clinton towns, in different counties) are two entries reading
+    "Clinton, NY" in one body's list — B01-3d folded them into one. The fix is the county in the
+    label, which a computed entry does not carry yet; whether any body touches such a pair has not
+    been counted on dev.
+  - The namesake check reads up to `NAMESAKES_READ` boundary polygons per name on every recompute,
+    one query per name; deciding it once at boundary load would be cheaper (a schema and loader
+    change).
+  - Mid-load, a namesake without its full name counts as a kind of its own (`''`), so one town can
+    read "(city)" while its namesake reads bare.
+  - `townLabel` in core repeats the web's `townWithState` and `townNamesOf`'s inline
+    name-and-state; one of the three should go.
+  - `townNamesShared` takes an array but refuses more than one name (`SHARING_PAGE = 1`): the array
+    and its paging do nothing.
+- **Wording the mock did not supply** (standing until the founder reviews it): *Back to the list*
+  on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
+  strip's spoken value (the kit).
 
 ## Ruled out
 

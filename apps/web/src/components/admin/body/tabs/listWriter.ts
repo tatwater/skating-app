@@ -1,5 +1,7 @@
 import { createContext, createElement, type ReactNode, useContext, useRef, useState } from 'react';
 
+import { createPickStore, PickStoreContext } from './latestPick';
+
 /**
  * **One queue for a whole-list write** (Links' staff links, a landmark's or a body's other
  * spellings). A whole-list write built from the list a render held can undo a write still on its
@@ -32,18 +34,31 @@ export type Unapplied = 'gone' | 'moved';
 /**
  * A chip field's new value as a change by item: what it added and removed since `shown` (the list
  * the render held), applied to whatever list the queue builds on — never the whole field's value.
+ * A word is matched as the server folds it (`fold`; a body's aliases by default — spaces run
+ * together, trimmed, any case: one alias per word), so a word taken off goes even if another
+ * moderator stored it in another spelling the server takes for the same since, and one put on isn't
+ * added twice; a recased word (one off, one on) takes the new case.
  */
 export function chipChange(
   shown: readonly string[],
   value: readonly string[],
+  fold: (word: string) => string = aliasFold,
 ): (base: readonly string[]) => string[] {
   const added = value.filter((a) => !shown.includes(a));
   const removed = shown.filter((a) => !value.includes(a));
-  return (base) => [
-    ...base.filter((a) => !removed.includes(a)),
-    ...added.filter((a) => !base.includes(a)),
-  ];
+  return (base) => {
+    // A word put on that the list already holds exactly is no change (nothing moves).
+    const fresh = added.filter((a) => !base.includes(a));
+    // Every word the chips changed leaves, whatever its stored case; the rest stay as stored.
+    const out = new Set([...removed, ...fresh].map(fold));
+    // A word the chips put on that the list holds exactly stays where it is.
+    return [...base.filter((a) => !out.has(fold(a)) || added.includes(a)), ...fresh];
+  };
 }
+
+/** A body alias as `setAliases` keys it (`normalizeModeratorAliases`): spaces run together, any case. */
+export const aliasFold = (word: string): string =>
+  word.replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
 
 export type ListWriter<T> = {
   /** The server's list, each time a render reads it. */
@@ -134,13 +149,22 @@ const Writers = createContext<Map<string, Entry> | null>(null);
  */
 const Memories = createContext<Map<string, { current: unknown }> | null>(null);
 
+/**
+ * The console's write queues, above the consoles: the lists' (`useListWriter`) and the picks'
+ * (`useLatestPick`, its store) — one owner for every queue a page's writes outlive.
+ */
 export function ListWritersProvider({ children }: { children: ReactNode }) {
   const [writers] = useState(() => new Map<string, Entry>());
   const [memories] = useState(() => new Map<string, { current: unknown }>());
+  const [picks] = useState(() => createPickStore());
   return createElement(
     Writers.Provider,
     { value: writers },
-    createElement(Memories.Provider, { value: memories }, children),
+    createElement(
+      Memories.Provider,
+      { value: memories },
+      createElement(PickStoreContext.Provider, { value: picks }, children),
+    ),
   );
 }
 

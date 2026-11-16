@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -116,9 +116,16 @@ describe('NamesTab', () => {
     render(<NamesTab bodyId="wb1" />);
     await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
     expect(mocks.announce).not.toHaveBeenCalled();
-    expect(toasts).toEqual([
-      { title: 'Not saved', description: 'Water body not found', tone: 'bad' },
-    ]);
+    // Said once, naming what wasn't saved (no body name outside a console's frame).
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        {
+          title: 'Not saved',
+          description: 'The displayed name: Water body not found',
+          tone: 'bad',
+        },
+      ]),
+    );
   });
 
   it('draws no control for a viewer without body.identity', () => {
@@ -357,6 +364,153 @@ describe('NamesTab', () => {
     });
     rerender(<NamesTab bodyId="wb1" />);
     expect(checked()).toHaveAccessibleName(/Reservoir/i);
+  });
+
+  /**
+   * **The latest press wins** (`useLatestPick`): a pick shows at once, each press is sent in press
+   * order, and the server's answer is drawn again once every press has been answered — a second
+   * press is never weighed against a record that hasn't moved yet and dropped.
+   */
+  describe('the latest press wins', () => {
+    const get = getFunctionName(api.waterBodies.get);
+    const identity = getFunctionName(api.bodyConsole.identity);
+    const record = () => (mocks.results.get(get) as { body: { type: string } }).body;
+    let land: () => void = () => {};
+    beforeEach(() => {
+      mocks.hold = new Promise<void>((r) => {
+        land = r;
+      });
+    });
+
+    it('Display The Basin, then Lake Auburn before the first answer: ends on Lake Auburn', async () => {
+      // `setWaterBodyName`: the chosen name with a `user` claim over the catalogs'.
+      mocks.server = (_name, args) => {
+        const prior = (mocks.results.get(get) as { body: typeof BODY }).body;
+        const catalog = prior.nameClaims.filter((c) => c.source !== 'user');
+        const chosen = args.name as string;
+        mocks.results.set(get, {
+          available: true,
+          body: {
+            ...prior,
+            name: chosen,
+            nameClaims: [{ source: 'user', value: chosen }, ...catalog],
+          },
+        });
+      };
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
+      // Shown at once, though the server hasn't answered: The Basin is Now, Lake Auburn offered.
+      const now = document.querySelectorAll('[data-slot="name-rung"]');
+      expect(now[0]).toHaveTextContent(/The Basin.*Now/);
+      await userEvent.click(screen.getByRole('button', { name: 'Display this' }));
+      await act(async () => land());
+      rerender(<NamesTab bodyId="wb1" />);
+      await waitFor(() =>
+        expect(mocks.calls.map((c) => (c[1] as { name: string }).name)).toEqual([
+          'The Basin',
+          'Lake Auburn',
+        ]),
+      );
+      rerender(<NamesTab bodyId="wb1" />);
+      expect((mocks.results.get(get) as { body: typeof BODY }).body.name).toBe('Lake Auburn');
+      expect(document.querySelectorAll('[data-slot="name-rung"]')[1]).toHaveTextContent(
+        /Lake Auburn.*Now/,
+      );
+    });
+
+    it('Set as Reservoir, then back to Lake or pond before the first answer: ends on Lake or pond', async () => {
+      mocks.results.set(identity, identityOf());
+      mocks.server = (name, args) => {
+        if (name !== 'waterBodies:setClass') return;
+        const cls = (args.bodyClass as string | null) ?? 'lakePond';
+        mocks.results.set(get, { available: true, body: { ...BODY, type: cls } });
+        mocks.results.set(identity, identityOf({ bodyClass: cls, moderatorClass: args.bodyClass }));
+      };
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Reservoir' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Set as Reservoir' }));
+      // Shown at once: Reservoir is checked and Now; Lake or pond can be set again.
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Reservoir/);
+      await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: /Lake or pond/i }));
+      await userEvent.click(screen.getByRole('button', { name: /Set as Lake or pond/i }));
+      await act(async () => land());
+      await waitFor(() =>
+        expect(mocks.calls.map((c) => (c[1] as { bodyClass: string }).bodyClass)).toEqual([
+          'reservoir',
+          'lakePond',
+        ]),
+      );
+      rerender(<NamesTab bodyId="wb1" />);
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Lake or pond/i);
+    });
+
+    it('Reservoir, then Wetland while it waits; away and back, then Slow river reach: one queue, the last press stored', async () => {
+      mocks.results.set(identity, identityOf());
+      mocks.server = (name, args) => {
+        if (name !== 'waterBodies:setClass') return;
+        const cls = (args.bodyClass as string | null) ?? 'lakePond';
+        mocks.results.set(get, { available: true, body: { ...BODY, type: cls } });
+        mocks.results.set(identity, identityOf({ bodyClass: cls, moderatorClass: args.bodyClass }));
+      };
+      const pick = async (label: string | RegExp) => {
+        await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+        await userEvent.click(await screen.findByRole('menuitem', { name: label }));
+        await userEvent.click(screen.getByRole('button', { name: /^Set as/ }));
+      };
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await pick('Reservoir');
+      await pick('Wetland');
+      // Another tab, and back to Names, before the first write answers.
+      rerender(<div />);
+      rerender(<NamesTab bodyId="wb1" />);
+      // The tab joins the queue that is there: the waiting choice shows, never the older record.
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Wetland/);
+      await pick('Slow river reach');
+      await act(async () => land());
+      await waitFor(() => expect(record().type).toBe('river'));
+      // One write at a time, in press order; the waiting Wetland was replaced, never sent last.
+      expect(mocks.calls.map((c) => (c[1] as { bodyClass: string }).bodyClass)).toEqual([
+        'reservoir',
+        'river',
+      ]);
+    });
+
+    it('Back to the catalogs’ class, then Reservoir again before the first answer: the catalogs’ class shows at once, ends on Reservoir', async () => {
+      // A moderator's class over the catalogs' Lake or pond (`baseClass`, the class a clear puts back).
+      mocks.results.set(get, { available: true, body: { ...BODY, type: 'reservoir' } });
+      mocks.results.set(
+        identity,
+        identityOf({ bodyClass: 'reservoir', moderatorClass: 'reservoir', baseClass: 'lakePond' }),
+      );
+      mocks.server = (name, args) => {
+        if (name !== 'waterBodies:setClass') return;
+        const cls = (args.bodyClass as string | null) ?? 'lakePond';
+        mocks.results.set(get, { available: true, body: { ...BODY, type: cls } });
+        mocks.results.set(
+          identity,
+          identityOf({ bodyClass: cls, moderatorClass: args.bodyClass, baseClass: 'lakePond' }),
+        );
+      };
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await userEvent.click(screen.getByRole('button', { name: 'Back to the catalogs’ class' }));
+      // Shown at once: the catalogs' class is checked, and Reservoir can be set again.
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Lake or pond/i);
+      expect(screen.queryByRole('button', { name: 'Back to the catalogs’ class' })).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Reservoir' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Set as Reservoir' }));
+      await act(async () => land());
+      await waitFor(() =>
+        expect(mocks.calls.map((c) => (c[1] as { bodyClass: string | null }).bodyClass)).toEqual([
+          null,
+          'reservoir',
+        ]),
+      );
+      rerender(<NamesTab bodyId="wb1" />);
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Reservoir/);
+    });
   });
 
   it('holds its place while the record loads, and for a body that is not listed', () => {

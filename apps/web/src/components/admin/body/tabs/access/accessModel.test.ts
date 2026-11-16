@@ -10,6 +10,7 @@ import {
   rulingFrom,
   rulingOf,
   rulingStatement,
+  rulingWithPick,
   verdictWords,
   whereOf,
 } from './accessModel';
@@ -293,5 +294,25 @@ describe('accessMapScene', () => {
     expect(accessMapScene(data, 'lot:lot-smith').lit).toBe('lot:lot-smith');
     expect(accessMapScene(data, 'publicAccess:ruling').lit).toBeNull();
     expect(accessMapScene(MASCOMA_ACCESS, null)).toEqual({ items: [], lit: null });
+  });
+});
+
+describe('rulingWithPick', () => {
+  const ruling = rulingFrom(open, 'wb1', {
+    entries: [{ targetType: 'waterbody', targetId: 'wb1', ...row(RULED, null) }],
+    capped: false,
+  });
+
+  it('keeps the ruling itself when the record already holds the verdict pressed', () => {
+    expect(rulingWithPick(ruling, 'open', RULED)).toBe(ruling);
+  });
+
+  it('a verdict pressed shows at once, dated as the server will; who ruled waits for the answer', () => {
+    const none = rulingWithPick(ruling, 'none', RULED);
+    expect(none).toMatchObject({ verdict: 'none', decidedAt: null, decidedBy: null });
+    expect(none.before).toBeUndefined();
+    expect(none.statement).toBe(rulingStatement({ ...open, verdict: 'none' }));
+    expect(none.history).toBe(ruling.history);
+    expect(rulingWithPick(ruling, null, RULED)).toMatchObject({ verdict: null, statement: null });
   });
 });

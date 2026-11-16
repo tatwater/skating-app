@@ -14,7 +14,10 @@ vi.mock('../../shell/ConsoleShell', async (original) => ({
 
 // The narrow-screen rule is measured; here a test says which side of it the page is on.
 const columns = vi.hoisted(() => ({ fit: true }));
-vi.mock('../../shell/columnsFit', () => ({ useColumnsFit: () => columns.fit }));
+vi.mock('../../shell/columnsFit', async (original) => ({
+  ...(await original<typeof import('../../shell/columnsFit')>()),
+  useColumnsFit: () => columns.fit,
+}));
 
 import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';

@@ -101,6 +101,9 @@ function asOsmShaped(
       boundary: 'administrative',
       admin_level: adminLevel,
       name: props.NAME ?? '',
+      // TIGER's full name with its legal class ("Plattsburgh city"), kept beside the name a label
+      // shows: what tells two same-named subdivisions of a state apart (B01-3l).
+      ...(props.NAMELSAD ? { full_name: props.NAMELSAD } : {}),
       '@type': 'tiger',
       '@id': props.GEOID ?? '',
     },

@@ -11,7 +11,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type Ref,
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -27,6 +26,7 @@ import { Table, TableCell, TableHead, TableRow } from '@/components/kit/table';
 import { TableGroupRow } from '@/components/kit/table-group-row';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { KEYS_PASS_THROUGH } from '@/lib/keys';
+import { useLoadAhead } from '@/lib/loadAhead';
 import { cn } from '@/lib/utils';
 import { countText } from '../overview/overviewModel';
 import { allRows, type BodiesListData } from './bodiesData';
@@ -62,8 +62,10 @@ import { spacedRows, withPinned } from './virtualRows';
  *   preview and moves focus there; a click opens it where you are. G and ? pass through to the
  *   keyboard layer; / goes to the search.
  * - **Pages arrive as it scrolls**: near the end it asks for more, so the server is asked for a page
- *   at a time, never for the corpus. A page that came back short (its scan ran out) is still near
- *   the end, so the next is asked for at once; the end tab is drawn only once the read is done.
+ *   at a time, never for the corpus — and only while the list is in sight and measured
+ *   (`useLoadAhead`): a list a narrow screen hid, or not yet laid out, asks for nothing until it
+ *   shows. A page that came back short (its scan ran out) is still near the end, so the next is
+ *   asked for at once; the end tab is drawn only once the read is done.
  *   Above a hundred rows only the rows in view are in the page.
  * - **It comes back as it was**: the scroll offset is kept per list (lane, search, facets, sort) for
  *   this tab, so returning from a body's console lands where you left.
@@ -71,8 +73,6 @@ import { spacedRows, withPinned } from './virtualRows';
 
 /** Rows above this virtualize. */
 const VIRTUALIZE_ABOVE = 100;
-/** Ask for the next page this far (px) from the end. */
-const LOAD_AHEAD_PX = 640;
 const TYPE_AHEAD_MS = 500;
 
 /** Where each list was scrolled to, this tab (a list is its `listKey`). */
@@ -187,6 +187,8 @@ type BodiesTableProps = {
   onOpen: (id: string) => void;
   /** Near the end with more to come. */
   onLoadMore?: () => void;
+  /** The list is hidden (a narrow screen's open body has the page): it asks for no page. */
+  paused?: boolean;
   /** Re-runs a failed list. */
   onRetry?: () => void;
   /** Re-runs a failed other-standings read. */
@@ -209,6 +211,7 @@ export function BodiesTable({
   onSelect,
   onOpen,
   onLoadMore,
+  paused = false,
   onRetry,
   onRetryOthers,
   memoryKey,
@@ -310,16 +313,26 @@ export function BodiesTable({
     }
     el.scrollTop = 0;
   }, [memoryKey, entries.length]);
+  // Shown again after a narrow screen hid it (`paused`): a hidden scroller loses its offset, and
+  // no scroll says so, so the place it remembers is put back — Back to the list lands where it was.
+  const wasPaused = useRef(paused);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (wasPaused.current && !paused && el !== null && restored.current === memoryKey) {
+      const top = scrollMemory.get(memoryKey);
+      if (top !== undefined) el.scrollTop = top;
+    }
+    wasPaused.current = paused;
+  }, [paused, memoryKey]);
 
   const status = list.status;
-  const maybeLoadMore = () => {
-    const el = scroller.current;
-    if (el === null || status !== 'more' || onLoadMore === undefined) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < LOAD_AHEAD_PX) onLoadMore();
-  };
-  // A first page shorter than the viewport asks for the next straight away.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check whenever a page lands.
-  useEffect(maybeLoadMore, [entries.length, status]);
+  // A first page shorter than the viewport asks for the next straight away — while in sight.
+  const maybeLoadMore = useLoadAhead(
+    scroller,
+    !paused && status === 'more',
+    onLoadMore,
+    entries.length,
+  );
 
   const moveTo = (id: string | undefined) => {
     if (id === undefined) return;

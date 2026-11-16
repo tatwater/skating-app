@@ -108,6 +108,7 @@ function main(): void {
     target,
     stages: found?.manifest.stages ?? [],
     call: convexRun,
+    dryRun: !apply,
     notes: [
       'Bays the merge found a parent for. Parent resolved by catalog id, outline clipped to it.',
       'Run AFTER waterBodies:importCanonical — the parent has to exist.',

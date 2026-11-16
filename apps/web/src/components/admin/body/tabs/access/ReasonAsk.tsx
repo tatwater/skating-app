@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   AlertDialog,
@@ -38,8 +38,12 @@ export type ReasonAskProps = {
   placeholder?: string;
   /** Fields above the reason (a choice of why). */
   extra?: ReactNode;
-  /** Sends it. Resolves `null` when it landed (the dialog closes), else the refusal to show. */
-  onConfirm: (reason: string) => Promise<string | null>;
+  /**
+   * Sends it. Resolves `null` when it landed (the dialog closes), else the refusal to show. `asker`
+   * is this opening of the dialog: there until it closes or the dialog goes, so an answer that comes
+   * later is said by someone still there, never into a dialog that has gone.
+   */
+  onConfirm: (reason: string, asker: { here: () => boolean }) => Promise<string | null>;
 };
 
 export function ReasonAsk({
@@ -57,8 +61,16 @@ export function ReasonAsk({
   const [reason, setReason] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // This opening of the dialog: a send's answer acts only on the opening that sent it.
+  // This opening of the dialog: a send's answer acts only on the opening that sent it. The dialog
+  // going (its page left) ends every opening — at the commit that removes it (a layout effect, as
+  // `useBodyHold`), never a passive cleanup that runs later with the dialog already off screen.
   const opening = useRef(0);
+  useLayoutEffect(
+    () => () => {
+      opening.current++;
+    },
+    [],
+  );
   const trimmed = reason.trim();
   return (
     <AlertDialog
@@ -100,7 +112,7 @@ export function ReasonAsk({
               setBusy(true);
               const mine = opening.current;
               const current = () => opening.current === mine;
-              void onConfirm(trimmed).then(
+              void onConfirm(trimmed, { here: current }).then(
                 (refused) => {
                   setBusy(false);
                   if (!current()) return;
