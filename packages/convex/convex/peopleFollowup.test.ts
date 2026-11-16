@@ -672,7 +672,7 @@ describe('a person write offers its undo only when the undo is available to this
     const a = as(t, 'adm');
     const out = await a.mutation(api.ledger.revokeEditor, { userId: adm, reason: 'r' });
     // The write left them without the grant: the toast and the undo both refuse, so nothing is offered.
-    expect(out).toEqual({ userId: adm, undoable: false });
+    expect(out).toEqual({ userId: adm, changed: true, undoable: false });
     const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: adm });
     expect(toast?.undo.state).not.toBe('available');
     if (toast)
@@ -684,14 +684,14 @@ describe('a person write offers its undo only when the undo is available to this
       ).rejects.toThrow();
   });
 
-  test('the cases that can’t be undone now say so: a lift of a run-out suspension, of an active account', async () => {
+  test('the cases that can’t be undone now say so: a lift of a run-out or open-ended suspension; a lift of an active account changes nothing (D270)', async () => {
     for (const state of ['lapsed', 'active', 'openEnded'] as const) {
       vi.setSystemTime(T0);
       const t = await setup();
       await seed(t, 'adm', { role: 'admin' });
       const id = await seed(t, 'them', STATES[state]);
       const out = await as(t, 'adm').mutation(api.moderation.unbanUser, { userId: id });
-      expect(out, state).toEqual({ userId: id, undoable: false });
+      expect(out, state).toEqual({ userId: id, changed: state !== 'active', undoable: false });
     }
   });
 });

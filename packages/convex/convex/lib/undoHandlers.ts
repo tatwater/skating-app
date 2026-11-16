@@ -29,7 +29,7 @@ import {
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
-import type { PersonWrite } from './peopleCan';
+import { type PersonWrite, type StatusTerms, sameStatusTerms } from './peopleCan';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
@@ -167,6 +167,23 @@ const disciplinePrev = (row: Doc<'moderationActions'>): StatusPrev =>
     suspendedUntil: null,
   };
 
+/**
+ * A person write that changed nothing — a row written before D270, when a repeat still recorded one
+ * (its `prev` equals what it set). There is nothing to put back, and the write an undo would run
+ * would change nothing either, so it is never offered.
+ */
+export const NOTHING_TO_UNDO = 'Nothing changed, so there is nothing to undo.';
+
+/** The terms a ban or suspension row set: its status, its reason, a suspension's end. */
+function termsSetBy(row: Doc<'moderationActions'>): StatusTerms {
+  return {
+    status: row.action === 'ban' ? 'banned' : 'suspended',
+    statusReason: row.reason,
+    suspendedUntil:
+      row.action === 'suspend' ? ((meta(row).suspendedUntil as number) ?? null) : null,
+  };
+}
+
 /** A suspension that has since run out can't be put back; everything else can. */
 function statusPrevBlocked(prev: StatusPrev | undefined, now: number): string | null {
   if (prev === undefined) return null;
@@ -181,7 +198,11 @@ function statusPrevBlocked(prev: StatusPrev | undefined, now: number): string | 
 
 /** ban / suspend → whatever the person was before (rows from before undo assume active). */
 const undoDiscipline: UndoHandler = {
-  blocked: (row) => statusPrevBlocked(meta(row).prev as StatusPrev | undefined, Date.now()),
+  blocked: (row) => {
+    const prev = meta(row).prev as StatusPrev | undefined;
+    if (prev !== undefined && sameStatusTerms(prev, termsSetBy(row))) return NOTHING_TO_UNDO;
+    return statusPrevBlocked(prev, Date.now());
+  },
   undoTakesAway: (row) => {
     const prev = meta(row).prev as StatusPrev | undefined;
     return prev !== undefined && prev.status !== 'active';
@@ -205,7 +226,15 @@ const undoLift: UndoHandler = {
 
 /** set_posting_permission → the right or the bounty limit it replaced. */
 const undoPostingPermission: UndoHandler = {
-  blocked: (row) => (meta(row).prev === undefined ? PREDATES : null),
+  blocked: (row) => {
+    const { prev, permission, allowed, limit } = meta(row);
+    if (prev === undefined) return PREDATES;
+    const same =
+      permission === 'bounties'
+        ? (prev.limit ?? null) === (limit ?? null)
+        : prev.allowed === allowed;
+    return same ? NOTHING_TO_UNDO : null;
+  },
   undoTakesAway: (row) => {
     const { prev, permission, limit } = meta(row);
     return UNDO_POLICY.set_posting_permission.takesAway(

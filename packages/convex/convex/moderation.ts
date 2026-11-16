@@ -50,7 +50,14 @@ import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from
 import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
-import { assertWrite, DISCIPLINE_REFUSALS, type PersonWrite, reasonFor } from './lib/peopleCan';
+import {
+  assertWrite,
+  DISCIPLINE_REFUSALS,
+  type PersonWrite,
+  reasonFor,
+  sameStatusTerms,
+  statusTermsOf,
+} from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import {
@@ -1758,12 +1765,24 @@ async function clearLapseMirror(ctx: MutationCtx, userId: Id<'profiles'>): Promi
  * right now (`undoState` says available) — that row and whether its undo asks a reason, so the
  * console's toast offers Undo without a second read and never offers one the undo would refuse.
  * `undoable: false` when it can't be undone now (a lift of a suspension that had already run out, a
- * lift of an account already active, a suspension replacing one that had run out).
+ * suspension replacing one that had run out). `changed: false` when the write would have changed
+ * nothing, so it wrote nothing ({@link unchanged}).
  */
 export type PersonWriteResult = { userId: Id<'profiles'> } & (
-  | { undoable: true; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }
-  | { undoable: false }
+  | ({ changed: true } & (
+      | { undoable: true; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }
+      | { undoable: false }
+    ))
+  | { changed: false; undoable: false }
 );
+
+/**
+ * A person write that would leave the person exactly as they were (D270): nothing is written — no
+ * audit row, no undo — and the answer says so, so the console tells the operator nothing changed.
+ */
+function unchanged(userId: Id<'profiles'>): PersonWriteResult {
+  return { userId, changed: false, undoable: false };
+}
 
 /**
  * A person write's answer, from the undo engine's own reading of the row for this viewer — in the
@@ -1781,7 +1800,9 @@ export async function personWriteResult(
   actionId: Id<'moderationActions'>,
 ): Promise<PersonWriteResult> {
   const offer = await undoOfferAfterWrite(ctx, actorId, actionId);
-  return offer.undoable ? { userId, actionId, ...offer } : { userId, undoable: false };
+  return offer.undoable
+    ? { userId, changed: true, actionId, ...offer }
+    : { userId, changed: true, undoable: false };
 }
 
 /**
@@ -1856,6 +1877,8 @@ export async function banImpl(
     // Refused on an account in or past its deletion, and for the last ledger editor (D252), here and
     // in an undo that puts a ban back, which comes through this same writer.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'ban' });
+    const terms = { status: 'banned' as const, statusReason: reason, suspendedUntil: null };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'banned',
@@ -1909,6 +1932,8 @@ export async function suspendImpl(
     // The same rule for a suspension: a suspended editor can't edit or pass the grant on (D252),
     // and a suspension that later lapsed would unlock an account partway through its deletion.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
+    const terms = { status: 'suspended' as const, statusReason: reason, suspendedUntil };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -1938,7 +1963,7 @@ export async function suspendImpl(
 /**
  * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
  * reason, audits `unban`, and unlocks the Clerk user (reverses a prior ban; harmless if they were only
- * suspended). Idempotent: unbanning an already-active account still records the moderator's decision.
+ * suspended). A lift of an account already active changes nothing, so it writes nothing (D270).
  */
 export const unbanUser = mutation({
   // Giving back asks no reason (D226): one typed is kept, and none gets a default.
@@ -1965,6 +1990,8 @@ export async function unbanImpl(
     // A lift puts the account back to `active`, which would bring a deleted one back and let a
     // departing one write again (D33, D62). Refused here, so an undo that lifts is refused too.
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'lift' });
+    const terms = { status: 'active' as const, statusReason: null, suspendedUntil: null };
+    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
 
     await ctx.db.patch(userId, {
       status: 'active',
@@ -2021,6 +2048,7 @@ export async function setBountyLimitImpl(
     throw new ConvexError('A bounty limit has to be a whole number, zero or more');
   }
   const target = await loadModeratableUser(ctx, actor, userId, { kind: 'bountyLimit' });
+  if ((target.activeBountyPostLimit ?? null) === (limit ?? null)) return unchanged(userId);
   // Lowering the limit in force takes something away and asks why; raising or clearing it does not.
   const { reason, defaulted } = reasonFor(
     given,
@@ -2106,6 +2134,8 @@ export async function setPostingPermissionImpl(
   });
 
   const field = POSTING_PERMISSION_FIELD[permission];
+  // Missing means allowed (D57).
+  if ((target[field] !== false) === allowed) return unchanged(userId);
   await ctx.db.patch(userId, { [field]: allowed });
   const actionId = await auditUser(
     ctx,

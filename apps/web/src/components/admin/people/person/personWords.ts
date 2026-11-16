@@ -186,6 +186,8 @@ export const WORDS = {
   suspendedAgain: (name: string) => `${name} is suspended again`,
   liftsOnItsOwnReceipt: (moment: string) => `It lifts on its own ${moment}`,
   canSignIn: (name: string) => `${name} can sign in again`,
+  /** A write that would have left them exactly as they were: the server wrote nothing. */
+  alreadySo: (name: string) => `Nothing changed — ${name} was already set that way`,
   isBanned: (name: string) => `${name} is banned`,
   keptForAppeal: 'The account is kept for an appeal',
   isNow: (name: string, article: string) => `${name} is now ${article}`,
