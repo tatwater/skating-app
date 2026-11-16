@@ -2916,11 +2916,13 @@ on the person page).
   write's own sentence where the lever is (*This is yours, so another moderator decides on it.*); the
   web needed no change. Rows written before the rule, where a moderator acted on their own content:
   their undo is refused to that moderator and open to any other — an undo is a decision on the
-  content too. **Default and what it strands:** every role is bound (`OWN_CONTENT_EXEMPT_ROLES = []`).
-  A staffer's own content, and flags about them, are cleared by any other holder of the capability
-  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins); nothing is stuck while a
-  second staffer exists. With one admin and no moderator, that admin's flagged content (Inbox *Flags*,
-  the record sheet's levers on their own record) and their alerts' pins have no one to decide them.
+  content too. **Every role is bound — admins included** (the founder, 2026-11-16: there are two
+  more admins, and there will always be more than one; `OWN_CONTENT_EXEMPT_ROLES` stays empty). A
+  staffer's own content, and flags about them, are cleared by any other holder of the capability
+  (`content.moderate`, `inbox.flag`, `access.alert` — moderators and admins), so nothing is stuck. The
+  one condition it rests on: if the console were ever down to a single admin with no moderators, that
+  admin's own flagged content (Inbox *Flags*, the record sheet's levers on their own record) and their
+  alerts' pins would wait for a second staff member.
 
 **B01-4g (2026-11-16): the follow-ons to B01-4f** (D270 refined; server only). Rollout: nothing new
 for dev — the rows backfill writes what it wrote under B01-4f (`termsSetBy` reads a row's

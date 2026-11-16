@@ -11,9 +11,10 @@ import type { Doc, Id } from '../_generated/dataModel';
 type Role = Doc<'profiles'>['role'];
 
 /**
- * **The roles the rule does not bind** — empty: every role, admins included (the default while the
- * founder decides whether an admin may rule on their own content; with one admin, a report on that
- * admin's content has no one to rule on it). Naming `'admin'` here is the whole change.
+ * **The roles the rule does not bind** — none: every role, admins included (the founder, 2026-11-16:
+ * there will always be more than one admin, so another staff member can always decide). It rests on
+ * that: a console down to a single admin with no moderators would leave that admin's own flagged
+ * content and alerts waiting for a second staff member.
  */
 export const OWN_CONTENT_EXEMPT_ROLES: readonly Role[] = [];
 

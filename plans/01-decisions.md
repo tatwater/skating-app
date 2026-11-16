@@ -8213,9 +8213,10 @@ Inbox's flag ruling, by the alert pin, and by the undo engine, so no lever or Un
 write refuses; the lever shows the write's own plain sentence. Person writes aimed at oneself were
 already refused (discipline, roles; a ledger grant to a holder), except stepping down from the ledger.
 
-**Open:** whether admins are bound too. With one admin and no moderator, content of that admin's
-would have no one to rule on it. Until the founder says, every role is bound
-(`OWN_CONTENT_EXEMPT_ROLES` is empty; naming `admin` there is the whole change).
+**Admins are bound too** (the founder, 2026-11-16: there are two more admins, and there will always
+be more than one). No role is exempt (`OWN_CONTENT_EXEMPT_ROLES` is empty). It rests on one condition:
+if the console were ever down to a single admin with no moderators, that admin's own flagged content
+and their alerts would wait for a second staff member.
 
 **Why:** a decision on one's own content is no decision — the record it writes is evidence only when
 someone else made it.
