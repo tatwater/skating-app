@@ -48,6 +48,8 @@ async function body(t: T, externalId: string, x = -72) {
         bbox: { minLat: 43.99, minLng: x - 0.01, maxLat: 44.01, maxLng: x + 0.01 },
         centroid: { lat: 44, lng: x },
         surfaceAreaSqM: 40_000,
+        // The import's region rule (D266): a body carries the states its producer decided.
+        states: ['NH'],
       },
     ],
   } as never);
