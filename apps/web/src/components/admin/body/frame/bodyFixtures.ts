@@ -1,4 +1,4 @@
-import type { LandmarkKind } from '@skating/core';
+import { AUDIT_REASON_MAX, type LandmarkKind } from '@skating/core';
 
 import type { Completeness } from '../completeness';
 
@@ -37,6 +37,14 @@ export const BODY_NOW = new Date(2026, 9, 14, 12, 0).getTime();
 export const on = (month: number, day: number) => new Date(2026, month - 1, day, 12, 0).getTime();
 
 export const MASCOMA_ID = 'j57mascoma0000000000000000000000';
+
+/**
+ * A removal's note near the cap `waterBodies.remove` holds it to (D261) — kept whole in the row's
+ * metadata — and the row's sentence that quotes it, composed and so shortened to fit the same cap.
+ */
+export const REMOVAL_NOTE_NEAR_CAP = `${'The owner asked us to take it off the map: the gates are posted all winter and the launch is private. '.repeat(19)}Call the town office before anyone goes back out.`;
+const REMOVED_FROM_MAP = 'Removed from map (landowner_request): ';
+export const REMOVAL_SENTENCE_SHORTENED = `${REMOVED_FROM_MAP}${REMOVAL_NOTE_NEAR_CAP.slice(0, AUDIT_REASON_MAX - REMOVED_FROM_MAP.length - 1)}…`;
 
 export const MASCOMA_RECORD: BodyRecord = {
   _id: MASCOMA_ID as BodyRecord['_id'],
@@ -145,7 +153,14 @@ export const MASCOMA_TOWNS: readonly string[] = ['Enfield, NH', 'Lebanon, NH'];
 
 /** `consoleExtras` for Mascoma: the 12 Oct campaign re-affirmed the outline; nothing touches it. */
 export const MASCOMA_EXTRAS = {
-  towns: ['Enfield, NH', 'Lebanon, NH'],
+  towns: ['Enfield', 'Lebanon'],
+  // Each town with its own state, as the boundaries store it.
+  townsWithState: [
+    { name: 'Enfield', state: 'NH' },
+    { name: 'Lebanon', state: 'NH' },
+  ],
+  // The library row's completeness (the frame's one field).
+  complete: { have: 9, of: 10, missing: ['bathymetry'] },
   hasBathymetry: false,
   outlineTrustedSince: on(10, 12),
   outlineTrustedVia: 'campaign' as const,

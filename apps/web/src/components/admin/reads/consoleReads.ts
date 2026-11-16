@@ -67,6 +67,30 @@ export function loaded<T>(value: Loadable<T>): T | undefined {
   return isFailed(value) ? undefined : (value as T | undefined);
 }
 
+/**
+ * **A secondary read's four answers, never folded** — on its way, failed, settled with nothing
+ * recorded, or a value. A tab reading something beside its main read (choices, candidates, counts,
+ * labels) turns the read into one of these, so loading is drawn as loading, a failure inside the
+ * page's note with *Try again*, and *Not recorded yet* only from a settled nothing — never a failed
+ * or unfinished read drawn as unrecorded. `none` says which settled values mean nothing recorded
+ * (default: `null`).
+ */
+export type ReadState<T> =
+  | { kind: 'loading' }
+  | { kind: 'failed'; failure: ReadFailure }
+  | { kind: 'none' }
+  | { kind: 'value'; value: T };
+
+export function readState<T>(
+  value: Loadable<T | null>,
+  none: (v: T) => boolean = () => false,
+): ReadState<T> {
+  if (value === undefined) return { kind: 'loading' };
+  if (isFailed(value)) return { kind: 'failed', failure: value };
+  if (value === null || none(value as T)) return { kind: 'none' };
+  return { kind: 'value', value: value as T };
+}
+
 /** Maps a loaded value; loading and failure pass through as they are. */
 export function mapLoadable<T, U>(value: Loadable<T>, map: (v: T) => U): Loadable<U> {
   if (value === undefined) return undefined;

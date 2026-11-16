@@ -23,6 +23,7 @@ import type { BodyRow } from './bodiesModel';
 import { type BodiesQuery, queryOf } from './bodiesSearch';
 import { laneById } from './bodyLanes';
 import { SEARCH_DEBOUNCE_MS } from './ListTools';
+import { notListedWords } from './listWords';
 
 /**
  * The library page from props: every change of place goes out through `onQueryChange` (the URL),
@@ -106,11 +107,36 @@ describe('the page', () => {
   });
 
   it('names a big lake’s other towns up to a dozen, then counts the rest', () => {
-    const many = Array.from({ length: 39 }, (_, i) => `Town ${i + 1}`);
-    const words = otherTowns({ states: ['NY', 'VT'], moreTowns: many });
+    const many = Array.from({ length: 39 }, (_, i) => ({ name: `Town ${i + 1}`, state: null }));
+    const words = otherTowns({ moreTowns: many });
     expect(words.split(' · ')).toHaveLength(TOOLTIP_TOWNS);
     expect(words.endsWith('Town 12 and 27 more')).toBe(true);
-    expect(otherTowns({ states: ['NH'], moreTowns: ['Canaan'] })).toBe('Canaan, NH');
+    expect(otherTowns({ moreTowns: [{ name: 'Canaan', state: 'NH' }] })).toBe('Canaan, NH');
+  });
+
+  it('names a border body’s town bare when the read gives no state — never one guessed', () => {
+    render(<Harness preview={{ ...PREVIEW_MASCOMA, states: ['NH', 'VT'], townState: null }} />);
+    expect(screen.getByText('Reservoir · Enfield ·')).toBeInTheDocument();
+  });
+
+  it('draws the intake review reasons, each with what is stored beside it', () => {
+    render(
+      <Harness
+        preview={{
+          ...PREVIEW_MASCOMA,
+          intake: [
+            {
+              reason: 'duplicate-candidate',
+              title: 'Possible duplicate',
+              sub: 'Overlaps 2 bodies',
+            },
+          ],
+        }}
+      />,
+    );
+    const list = document.querySelector('[data-slot=preview-intake]') as HTMLElement;
+    expect(within(list).getByText('Possible duplicate')).toBeInTheDocument();
+    expect(within(list).getByText('Overlaps 2 bodies')).toBeInTheDocument();
   });
 
   it('picks a lane as a fresh list: no body, search, tab, filter or order carried over', async () => {
@@ -400,6 +426,26 @@ describe('the search', () => {
     expect(spy.mock.lastCall?.[0].sort).toEqual({ column: 'reports', dir: 'asc' });
   });
 
+  it('counts each other standing as the server does, a floor as “50+”, and says the facets it ignores', () => {
+    const [dormant] = LIST_SEARCH.others ?? [];
+    if (dormant === undefined) throw new Error('fixture');
+    render(
+      <Harness
+        initial={queryOf({ q: 'mor' })}
+        list={{
+          ...LIST_SEARCH,
+          others: [{ ...dormant, count: 50, capped: true }],
+          othersFacetsIgnored: true,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText('2 active · 50+ dormant (other standings unfiltered)'),
+    ).toBeInTheDocument();
+    // The group's divider says the same floor, never "50" as a total.
+    expect(document.querySelector('[data-slot=table-group-count]')).toHaveTextContent(/^50\+$/);
+  });
+
   it('draws no other-standing group and no tally while no read gives the other standings', () => {
     render(<Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, others: null }} />);
     expect(document.querySelector('[data-slot=search-tally]')).toBeNull();
@@ -663,5 +709,15 @@ describe('the list’s place', () => {
     fireEvent.scroll(scroller());
     rerender(table(LIST_ACTIVE, 'b'));
     expect(scroller().scrollTop).toBe(500);
+  });
+});
+
+describe('Opened recently’s ids the library didn’t list', () => {
+  it('says each kind in its count, and nothing when there is none', () => {
+    expect(notListedWords(undefined)).toBeNull();
+    expect(notListedWords({ unlisted: 0, unknown: 0, dropped: 0 })).toBeNull();
+    expect(notListedWords({ unlisted: 2, unknown: 3, dropped: 1 })).toBe(
+      '2 opened aren’t in the library · 3 are no longer a body · 1 older not read',
+    );
   });
 });

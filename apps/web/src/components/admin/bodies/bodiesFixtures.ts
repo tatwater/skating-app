@@ -202,7 +202,8 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   bodyClass: 'reservoir',
   states: ['NH'],
   town: 'Enfield',
-  moreTowns: ['Canaan'],
+  townState: 'NH',
+  moreTowns: [{ name: 'Canaan', state: 'NH' }],
   centroid: { lat: 43.63, lng: -72.15 },
   outline: {
     polygons: [MASCOMA_RINGS.map((r) => [...r])],

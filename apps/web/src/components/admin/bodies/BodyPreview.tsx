@@ -3,7 +3,7 @@ import { type ComponentProps, cloneElement, type ReactElement, type ReactNode } 
 
 import { Badge } from '@/components/kit/badge';
 import { Button, buttonVariants } from '@/components/kit/button';
-import { HistoryList, HistoryRow } from '@/components/kit/grid-list';
+import { HistoryList, HistoryRow, KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Kbd } from '@/components/kit/kbd';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
@@ -15,10 +15,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/toolti
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 import { completenessSegments, missingSentence } from '../body/completeness';
+import { IN_NO_TOWN_WORDS, NOT_COMPUTED_WORDS, townWithState } from '../body/frame/bodyModel';
+import { NOT_RECORDED } from '../body/tabs/tabStates';
 import { countText } from '../overview/overviewModel';
+import { isFailed, type Loadable, loaded } from '../reads/consoleReads';
 import { historyWhen } from '../shell/consoleTime';
-import type { BodyPreviewData, PreviewCount } from './bodiesData';
+import type { BodyPreviewData, PreviewCount, RemovedPreviewData } from './bodiesData';
 import { acresText, type BodyRow, changedWhen, STANDING_LABEL } from './bodiesModel';
+import { RECORD_FAILED, reportsSinceWords } from './listWords';
 import { coordText, OutlineStill } from './OutlineStill';
 
 /**
@@ -38,7 +42,12 @@ type BodyPreviewProps = {
    * `{ unavailable }` for a body the reads can't serve (a rejected one) — with its list row, if the
    * list holds it.
    */
-  data: BodyPreviewData | null | undefined | 'error' | { unavailable: BodyRow | null };
+  data:
+    | BodyPreviewData
+    | null
+    | undefined
+    | 'error'
+    | { unavailable: BodyRow | null; removed?: Loadable<RemovedPreviewData | null> | null };
   /** The instant ages are read against. */
   now: number;
   /** The router's link to the body's console (`<Link to="/admin/body/$id" … />`). */
@@ -91,7 +100,14 @@ export function BodyPreview({
         ) : data === null ? (
           <ListEnd className="mt-(--space-3)">No body open</ListEnd>
         ) : data === 'error' ? null : 'unavailable' in data ? (
-          <RowOnly row={data.unavailable} now={now} />
+          <RowOnly
+            row={data.unavailable}
+            // `undefined` is the record on its way; a caller that gave none has `null`.
+            removed={'removed' in data ? data.removed : null}
+            now={now}
+            onRetry={onRetry}
+            pending={pending}
+          />
         ) : (
           <PreviewBody data={data} now={now} onRetry={onRetry} pending={pending} />
         )}
@@ -147,9 +163,11 @@ function PreviewLoading() {
 
 /** "Reservoir · Enfield, NH" with the other towns behind "+1". */
 function placeKicker(data: BodyPreviewData): ReactNode {
+  // The town with its own state when the read says; else the bare town — never a state inferred
+  // (a border body's town is in one of its states, and the read alone says which).
   const where =
     data.town !== null
-      ? `${data.town}, ${data.states.join(' · ')}`
+      ? townWithState({ name: data.town, state: data.townState ?? null })
       : data.states.length > 0
         ? data.states.join(' · ')
         : null;
@@ -177,17 +195,11 @@ function placeKicker(data: BodyPreviewData): ReactNode {
 export const TOOLTIP_TOWNS = 12;
 
 /**
- * "Canaan, NH": the other towns, each with its state when the body lies in one state (a town it
- * touches is in it); a border body's towns go without, since the read doesn't say whose each is.
- * Past {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
+ * The other towns, each as the read gives it ("Canaan, NH", or bare when no state is stored — never
+ * inferred). Past {@link TOOLTIP_TOWNS}, the rest are counted ("and 27 more").
  */
-export function otherTowns(data: Pick<BodyPreviewData, 'states' | 'moreTowns'>): string {
-  const [only, ...more] = data.states;
-  const state = only !== undefined && more.length === 0 ? `, ${only}` : '';
-  const named = data.moreTowns
-    .slice(0, TOOLTIP_TOWNS)
-    .map((t) => `${t}${state}`)
-    .join(' · ');
+export function otherTowns(data: Pick<BodyPreviewData, 'moreTowns'>): string {
+  const named = data.moreTowns.slice(0, TOOLTIP_TOWNS).map(townWithState).join(' · ');
   const rest = data.moreTowns.length - TOOLTIP_TOWNS;
   return rest > 0 ? `${named} and ${rest} more` : named;
 }
@@ -232,26 +244,52 @@ const KICK = 'text-kick leading-none font-semibold tracking-kick text-fg3 upperc
  * list row says (name, class and states, standing, its last change), and plainly that the full
  * preview isn't shown. No way into the Body console, which can't read it either.
  */
-function RowOnly({ row, now }: { row: BodyRow | null; now: number }) {
+function RowOnly({
+  row,
+  removed,
+  now,
+  onRetry,
+  pending,
+}: {
+  row: BodyRow | null;
+  removed: Loadable<RemovedPreviewData | null> | null;
+  now: number;
+  onRetry: (() => void) | undefined;
+  pending: boolean;
+}) {
+  const record = loaded(removed ?? undefined) ?? null;
+  // The record names it once read; until then (or without it) the list row does.
+  const head =
+    record !== null
+      ? {
+          name: record.name,
+          bodyClass: record.bodyClass,
+          states: record.states,
+          standing: record.standing,
+        }
+      : row;
+  const standing = head?.standing ?? null;
   return (
     <div data-slot="preview-unavailable" className="flex flex-col gap-(--space-2) pt-(--space-3_5)">
-      {row !== null && (
+      {head !== null && (
         <>
           <span className={KICK}>
-            {waterBodyClassLabel(row.bodyClass)}
-            {row.states.length > 0 && ` · ${row.states.join(' · ')}`}
+            {waterBodyClassLabel(head.bodyClass)}
+            {head.states.length > 0 && ` · ${head.states.join(' · ')}`}
           </span>
           <h2
             data-slot="preview-name"
             className="m-0 text-disp leading-none font-semibold tracking-disp text-fg uppercase"
           >
-            {row.name}
+            {head.name}
           </h2>
           <span className="flex items-center gap-(--space-2)">
-            <Badge tone="dim" className="normal-case">
-              {STANDING_LABEL[row.standing]}
-            </Badge>
-            {row.changedAt !== null && (
+            {standing !== null && (
+              <Badge tone="dim" className="normal-case">
+                {STANDING_LABEL[standing]}
+              </Badge>
+            )}
+            {row !== null && row.changedAt !== null && (
               <span className="text-assist leading-none text-fg3">
                 Last changed {changedWhen(row.changedAt, now)}
               </span>
@@ -260,11 +298,64 @@ function RowOnly({ row, now }: { row: BodyRow | null; now: number }) {
         </>
       )}
       <Note data-slot="preview-unavailable-note" className="mt-(--space-1)">
-        {row !== null
-          ? `The full preview isn’t available for a ${STANDING_LABEL[row.standing].toLowerCase()} body.`
+        {standing !== null
+          ? `The full preview isn’t available for a ${STANDING_LABEL[standing].toLowerCase()} body.`
           : 'The full preview isn’t available for a body that isn’t listed.'}
       </Note>
+      {removed === undefined && <SkeletonText lines={3} width="60%" className="mt-(--space-2)" />}
+      {record !== null && <RecordList record={record} />}
+      <RetryNote
+        data-slot="preview-removed-error"
+        className="mt-(--space-2) empty:mt-0"
+        onRetry={onRetry}
+        pending={pending}
+      >
+        {isFailed(removed) ? RECORD_FAILED : null}
+      </RetryNote>
     </div>
+  );
+}
+
+/** What a removed or rejected body's record still holds: area, how it left, towns, reports. */
+function RecordList({ record }: { record: RemovedPreviewData }) {
+  const left = record.left;
+  return (
+    <KeyValueList
+      data-slot="preview-removed"
+      keyWidth="5.5rem"
+      className="mt-(--space-2) w-full gap-y-(--space-2_5)"
+    >
+      <KeyValueRow label="Area">
+        {record.areaSqM === null ? (
+          <span className="text-fg3">{NOT_RECORDED}</span>
+        ) : (
+          `${acresText(record.areaSqM)} ac`
+        )}
+      </KeyValueRow>
+      {left !== null && (
+        <KeyValueRow label={left.verb}>
+          <span className="flex flex-col gap-(--space-1)">
+            <span>
+              {left.when}
+              {left.who !== null && ` · ${left.who}`}
+            </span>
+            {left.because !== undefined && <span>{left.because}</span>}
+            {left.reason !== null && <span className="text-fg3">“{left.reason}”</span>}
+          </span>
+        </KeyValueRow>
+      )}
+      <KeyValueRow label="Towns">
+        {record.towns === null ? (
+          <span className="text-fg3">{NOT_COMPUTED_WORDS}</span>
+        ) : record.towns.length === 0 ? (
+          <span className="text-fg3">{IN_NO_TOWN_WORDS}</span>
+        ) : (
+          record.towns.join(' · ')
+        )}
+      </KeyValueRow>
+      {/* The console's words for the same count: a floor when capped, never a total. */}
+      <KeyValueRow label="Reports">{reportsSinceWords(countText(record.reports))}</KeyValueRow>
+    </KeyValueList>
   );
 }
 
@@ -405,6 +496,20 @@ function PreviewBody({
           </div>
         )}
       </div>
+      {data.intake != null && data.intake.length > 0 && (
+        <Section title="Intake review" count={data.intake.length} className="mt-(--space-5_5)">
+          <ul data-slot="preview-intake" className="m-0 flex list-none flex-col p-0">
+            {data.intake.map((item) => (
+              <li key={item.reason} className="flex flex-col gap-(--space-1) py-(--space-2)">
+                <span className="text-body leading-list text-fg">{item.title}</span>
+                {item.sub !== null && (
+                  <span className="text-assist leading-list text-fg3">{item.sub}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       {data.asks !== null && data.asks.length > 0 && (
         <Section
           title="Asked of this body"

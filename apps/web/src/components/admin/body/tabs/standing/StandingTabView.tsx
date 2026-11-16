@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
-import { statusDate } from '../../frame/bodyModel';
+import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
 
@@ -70,14 +70,6 @@ export const STANDING_NOTE_MAX = 160;
 
 /** "17 Sep 2026" — a status date carries its year (the frame's `statusDate`). */
 const sinceWords = (at: number): string => statusDate(at);
-
-const REMOVAL_LABEL: Record<RemovalReason, string> = {
-  landowner_request: 'Landowner request',
-  unskateable: 'Not skateable',
-  junk: 'Not a real body of water',
-  duplicate: 'Duplicate',
-  other: 'Other',
-};
 
 /** The radio a standing is drawn on (unlisted has none: it isn't a choice). */
 function currentPick(s: BodyStanding): Pick | null {
@@ -172,7 +164,7 @@ export function StandingTabView({
                 meaning="Drawn only when zoomed in on it. Never in search."
                 since={
                   standing.standing === 'removed'
-                    ? `Since ${sinceWords(standing.since)} · ${REMOVAL_LABEL[standing.reason]}`
+                    ? `Since ${sinceWords(standing.since)} · ${REMOVAL_REASON_WORDS[standing.reason]}`
                     : null
                 }
                 disabled={!reachable.removed}
@@ -205,20 +197,23 @@ export function StandingTabView({
         )}
       </Section>
 
-      {standing.standing === 'active' &&
-        (retention === undefined ? (
-          <Section title="What keeps it active" data-slot="standing-retention" aria-busy="true">
+      {standing.standing === 'active' && (
+        <Section
+          title="What keeps it active"
+          data-slot="standing-retention"
+          aria-busy={retention === undefined || undefined}
+        >
+          {/* Mounted in every state: a failure's words are announced, and focus stays when they go. */}
+          <RetryNote onRetry={onRetry} pending={retryPending}>
+            {retention === 'error' ? 'What keeps it active couldn’t be read' : null}
+          </RetryNote>
+          {retention === undefined ? (
             <LoadingSection lines={3} />
-          </Section>
-        ) : retention === 'error' ? (
-          <Section title="What keeps it active" data-slot="standing-retention">
-            <RetryNote onRetry={onRetry} pending={retryPending}>
-              What keeps it active couldn’t be read
-            </RetryNote>
-          </Section>
-        ) : (
-          <Retention facts={retention} now={now} />
-        ))}
+          ) : retention === 'error' ? null : (
+            <Retention facts={retention} now={now} />
+          )}
+        </Section>
+      )}
     </div>
   );
 }
@@ -363,7 +358,7 @@ function PickForm({
           // The sent reason is held while its write is out (a pick then could never be sent).
           readOnly={busy}
           onValueChange={(v) => setReason(v as RemovalReason)}
-          items={REMOVAL_REASONS.map((r) => ({ value: r, label: REMOVAL_LABEL[r] }))}
+          items={REMOVAL_REASONS.map((r) => ({ value: r, label: REMOVAL_REASON_WORDS[r] }))}
         >
           <SelectTrigger aria-label="Reason">
             <SelectValue placeholder="Choose a reason" />
@@ -371,7 +366,7 @@ function PickForm({
           <SelectContent>
             {REMOVAL_REASONS.map((r) => (
               <SelectItem key={r} value={r}>
-                {REMOVAL_LABEL[r]}
+                {REMOVAL_REASON_WORDS[r]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -426,7 +421,7 @@ function FormError({ error }: { error: string | null }) {
 function Retention({ facts, now }: { facts: RetentionFacts; now: number }) {
   const model = retentionModel(facts, now);
   return (
-    <Section title="What keeps it active" data-slot="standing-retention">
+    <>
       {model.lanes.length > 0 && (
         <LaneTimeline
           start={model.start}
@@ -449,6 +444,6 @@ function Retention({ facts, now }: { facts: RetentionFacts; now: number }) {
           Not recorded yet: {model.notRecorded}.
         </p>
       )}
-    </Section>
+    </>
   );
 }

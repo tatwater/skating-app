@@ -9,7 +9,7 @@ import { isFailed, read, useConsoleReadSet } from '@/components/admin/reads/cons
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useUndo } from '@/components/admin/shell/undo';
 import { useRole } from '@/lib/useRole';
-import { sendFor, useBodyBound } from '../../frame/currentBody';
+import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { StandingTabView } from './StandingTabView';
@@ -68,7 +68,7 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const restore = useMutation(api.waterBodies.restore);
   const { can } = useRole();
   const { announce } = useUndo();
-  const here = useBodyBound();
+  const hold = useBodyHold();
   // The instant the lanes start from, moved on hourly: the finest thing they draw is a day.
   const now = useTickingNow(3_600_000);
   const retentionRead = got.retention;
@@ -118,8 +118,16 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
   const body = result.body;
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
 
-  const write = (run: () => Promise<unknown>, title: string) =>
-    sendFor(here, run, () => announce({ title, target }, here));
+  // The form waits on the write; a refusal off this console (`false`) was said there, and this form
+  // went with it.
+  const write = async (run: () => Promise<unknown>, title: string): Promise<void> => {
+    await sendFor(hold, {
+      body: bodyId,
+      write: run,
+      receipt: (subject) => announce({ title, target, subject }),
+      what: title,
+    });
+  };
 
   return (
     <StandingTabView

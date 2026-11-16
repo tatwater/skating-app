@@ -46,9 +46,7 @@ describe('derivedRows', () => {
 
 /** A reorder by keys, as the record stores it (no keys). */
 const inKeyOrder = (keyed: readonly KeyedLink[], keys: readonly string[]) =>
-  linkChanges
-    .order(keys)(keyed)
-    .map(({ label, url }) => ({ label, url }));
+  (linkChanges.order(keys)(keyed) ?? []).map(({ label, url }) => ({ label, url }));
 
 describe('the staff links’ keys', () => {
   it('survive a reorder and tell repeats apart', () => {
@@ -63,7 +61,8 @@ describe('the staff links’ keys', () => {
       a,
       a,
     ]);
-    expect(inKeyOrder(keyed, ['missing']).map((l) => l.label)).toEqual(['A', 'B', 'A']);
+    // An order naming a link the list no longer has is refused (`null`).
+    expect(linkChanges.order(['missing'])(keyed)).toBeNull();
   });
 
   it('a reorder by keys is a permutation of the list', () => {
@@ -144,7 +143,7 @@ describe('the map', () => {
   });
 });
 
-describe('carryIds — a link keeps its id across an edit', () => {
+describe('carryIds — a link keeps its id while it is the same link', () => {
   it('an edit that makes a link read like another never takes the other’s id', () => {
     let n = 0;
     const fresh = () => `id${++n}`;
@@ -153,11 +152,14 @@ describe('carryIds — a link keeps its id across an edit', () => {
     // Twins: the first is edited; the second, untouched, keeps its own id.
     const twins = carryIds([], [a, a], fresh);
     const firstEdited = carryIds(twins, [{ ...a, label: 'A2' }, a], fresh);
-    expect(firstEdited.map((l) => l.key)).toEqual(twins.map((l) => l.key));
-    // The first is edited to read like the second: each keeps the id of its own place.
+    // The edited one is a new link (its id never inferred from its place); its twin keeps its own.
+    expect(firstEdited[1]?.key).toBe(twins[1]?.key);
+    expect(twins.map((l) => l.key)).not.toContain(firstEdited[0]?.key);
+    // The first is edited to read like the second: the second keeps its id, the first is new.
     const pair = carryIds([], [a, b], fresh);
     const nowTwins = carryIds(pair, [b, b], fresh);
-    expect(nowTwins.map((l) => l.key)).toEqual(pair.map((l) => l.key));
+    expect(nowTwins[1]?.key).toBe(pair[1]?.key);
+    expect(pair.map((l) => l.key)).not.toContain(nowTwins[0]?.key);
   });
 
   const link = fc.record({
@@ -165,7 +167,7 @@ describe('carryIds — a link keeps its id across an edit', () => {
     url: fc.constantFrom('https://a.org', 'https://b.org'),
   });
 
-  it('an edit keeps the edited link’s id; a reorder keeps every id; an add is new', () => {
+  it('an edited link is new; a reorder keeps every id; an add is new', () => {
     let n = 0;
     const fresh = () => `id${++n}`;
     const first = carryIds(
@@ -184,11 +186,12 @@ describe('carryIds — a link keeps its id across an edit', () => {
       ],
       fresh,
     );
-    expect(edited.map((l) => l.key)).toEqual(first.map((l) => l.key));
+    expect(edited[0]?.key).toBe(first[0]?.key);
+    expect(edited[1]?.key).toBe('id3');
     const swapped = carryIds(edited, [edited[1] as never, edited[0] as never], fresh);
     expect(swapped.map((l) => l.key)).toEqual([edited[1]?.key, edited[0]?.key]);
     const added = carryIds(swapped, [...swapped, { label: 'C', url: 'https://a.org' }], fresh);
-    expect(added[2]?.key).toBe('id3');
+    expect(added[2]?.key).toBe('id4');
   });
 
   it('ids are unique, and a link whose words didn’t change keeps its id (fast-check)', () => {
@@ -214,5 +217,58 @@ describe('carryIds — a link keeps its id across an edit', () => {
         }
       }),
     );
+  });
+});
+
+describe('carryIds — a key carries only to the same link, never to whatever stands in its place', () => {
+  it('Greptile’s case: A replaced by C before a retry — C is a new link, never A by its place', () => {
+    let n = 0;
+    const fresh = () => `new${++n}`;
+    const a = { label: 'A', url: 'https://a.org', key: 'kA' };
+    const b = { label: 'B', url: 'https://b.org', key: 'kB' };
+    const rebuilt = carryIds([a, b], [{ label: 'C', url: 'https://c.org' }, b], fresh);
+    expect(rebuilt.map((l) => l.key)).toEqual(['new1', 'kB']);
+    // An edit aimed at A finds no A to change: refused, never re-aimed at C.
+    expect(linkChanges.edit('kA', { label: 'A2', url: 'https://a.org' })(rebuilt)).toBeNull();
+  });
+
+  const link = fc.record({
+    label: fc.constantFrom('A', 'B', 'C'),
+    url: fc.constantFrom('https://a.org', 'https://b.org'),
+  });
+
+  it('every carried key names a link with exactly the words it had (fast-check)', () => {
+    fc.assert(
+      fc.property(fc.array(link, { maxLength: 6 }), fc.array(link, { maxLength: 6 }), (a, b) => {
+        let n = 0;
+        const fresh = () => `new${++n}`;
+        const before = carryIds([], a, fresh);
+        const after = carryIds(before, b, fresh);
+        for (const l of after) {
+          const was = before.find((p) => p.key === l.key);
+          if (was !== undefined) expect([was.label, was.url]).toEqual([l.label, l.url]);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe('linkChanges — a change whose links moved is refused, never re-aimed', () => {
+  const a = { label: 'A', url: 'https://a.org', key: 'kA' };
+  const b = { label: 'B', url: 'https://b.org', key: 'kB' };
+  const c = { label: 'C', url: 'https://c.org', key: 'kC' };
+  const d = { label: 'D', url: 'https://d.org', key: 'kD' };
+
+  it('a remove whose link is gone finds nothing to remove', () => {
+    expect(linkChanges.remove('kA')([c, b])).toBeNull();
+    expect(linkChanges.remove('kA')([a, b])).toEqual([b]);
+  });
+
+  it('a reorder of links that are no longer the list’s is refused, never moving a replacement', () => {
+    // I put D first over [A, B, D]; another moderator replaced A with C meanwhile.
+    expect(linkChanges.order(['kD', 'kA', 'kB'])([c, b, d])).toBeNull();
+    // A link added since doesn't stop the order: it keeps its place after the ones I ordered.
+    expect(linkChanges.order(['kD', 'kA', 'kB'])([a, b, d, c])).toEqual([d, a, b, c]);
   });
 });

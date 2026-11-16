@@ -16,7 +16,7 @@ import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useFreezeUpTimeline } from '@/components/useFreezeUpTimeline';
 import { env } from '@/lib/env';
 import { useRole } from '@/lib/useRole';
-import { sendFor, useBodyBound } from '../../frame/currentBody';
+import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody, useTickingNow } from '../tabParts';
 import { ImageryDockView } from './ImageryDockView';
@@ -122,7 +122,7 @@ function ImageryReads(props: BodyTabProps) {
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);
   const { can } = useRole();
   const { announce } = useUndo();
-  const here = useBodyBound();
+  const hold = useBodyHold();
   // Copernicus' window is the last 14 days from now: moved on daily.
   const now = useTickingNow(86_400_000);
 
@@ -166,19 +166,19 @@ function ImageryReads(props: BodyTabProps) {
       }}
       {...(can('body.water')
         ? {
-            onSatelliteChange: (mode: SatelliteImageryMode) =>
-              sendFor(
-                here,
-                () => setMode({ waterBodyId, mode }),
-                () =>
-                  announce(
-                    {
-                      title: 'Satellite link set',
-                      target: { targetType: 'waterbody', targetId: waterBodyId },
-                    },
-                    here,
-                  ),
-              ),
+            onSatelliteChange: async (mode: SatelliteImageryMode) => {
+              await sendFor(hold, {
+                body: waterBodyId,
+                write: () => setMode({ waterBodyId, mode }),
+                receipt: (subject) =>
+                  announce({
+                    title: 'Satellite link set',
+                    target: { targetType: 'waterbody', targetId: waterBodyId },
+                    subject,
+                  }),
+                what: 'The satellite link',
+              });
+            },
           }
         : {})}
     />

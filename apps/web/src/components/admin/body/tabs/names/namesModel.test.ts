@@ -1,5 +1,7 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
+import { townLinesShortWords } from '../../consoleWords';
 import { MASCOMA_NAMES } from './namesFixtures';
 import {
   aliasesOf,
@@ -9,6 +11,7 @@ import {
   namesMapScene,
   otherClasses,
   stateName,
+  townLinesFrom,
   townNames,
 } from './namesModel';
 
@@ -272,3 +275,117 @@ function must<T>(v: T | null): T {
   if (v === null) throw new Error('missing');
   return v;
 }
+
+describe('town lines from each town’s outline', () => {
+  // A square town, counter-clockwise or not, around the body at the origin.
+  const square = (w: number, s: number, e: number, n: number, ccw: boolean) => {
+    const ring = [
+      [w, s],
+      [e, s],
+      [e, n],
+      [w, n],
+      [w, s],
+    ];
+    return ccw ? ring : [...ring].reverse();
+  };
+  const inside = ([lng = 0, lat = 0]: readonly number[], [w, s, e, n]: readonly number[]) =>
+    lng > (w ?? 0) && lng < (e ?? 0) && lat > (s ?? 0) && lat < (n ?? 0);
+
+  it('names each line on its own town’s side, whichever way the outline was drawn', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0.01, max: 0.2, noNaN: true }),
+        fc.double({ min: 0.01, max: 0.2, noNaN: true }),
+        fc.boolean(),
+        (half, tall, ccw) => {
+          const box = [-half, 43 - tall, half, 43 + tall] as const;
+          const { lines } = townLinesFrom(
+            {
+              towns: [
+                { name: 'Enfield', state: 'NH', ring: square(box[0], box[1], box[2], box[3], ccw) },
+              ],
+              capped: false,
+              computedAt: 1,
+            },
+            null,
+          );
+          for (const line of lines) {
+            const at = townNames(line.path);
+            if (at === null) continue;
+            const named = line.faces[0] === 'Enfield' ? at.left : at.right;
+            expect(line.faces).toContain('');
+            expect(inside(named, box)).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+
+  it('draws only where an outline passes near the body, and counts a town with none stored', () => {
+    const { lines, missing } = townLinesFrom(
+      {
+        towns: [
+          // Its east side runs past the body; the rest lies far off.
+          { name: 'Canaan', state: 'NH', ring: square(-1, 42, 0.001, 44, true) },
+          { name: 'Lebanon', state: 'NH', ring: null },
+        ],
+        capped: false,
+        computedAt: 1,
+      },
+      [0, 42.99, 0.01, 43.01],
+    );
+    expect(missing).toBe(1);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.path.every((p) => p.lng === 0.001)).toBe(true);
+    expect(townLinesFrom(null, null)).toEqual({ lines: [], missing: 0 });
+  });
+
+  it('draws a stretch that runs through the ring’s start as one line, named once', () => {
+    // The square starts at its south-west corner; the body sits there, so the stretch near it is the
+    // ring's last side and its first — one line, never two pieces each named.
+    const { lines } = townLinesFrom(
+      {
+        towns: [{ name: 'Canaan', state: 'NH', ring: square(0, 43, 1, 44, true) }],
+        capped: false,
+        computedAt: 1,
+      },
+      [-0.001, 42.999, 0.001, 43.001],
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.path.map((p) => [p.lng, p.lat])).toEqual([
+      [0, 44],
+      [0, 43],
+      [1, 43],
+    ]);
+  });
+
+  it('says what the map leaves out, and nothing when it leaves out nothing', () => {
+    expect(townLinesShortWords(undefined)).toBeNull();
+    expect(townLinesShortWords({ unstored: 0, capped: false })).toBeNull();
+    expect(townLinesShortWords({ unstored: 1, capped: false })).toBe(
+      'On the map, 1 town’s line isn’t stored yet',
+    );
+    expect(townLinesShortWords({ unstored: 2, capped: true })).toBe(
+      'On the map, 2 towns’ lines aren’t stored yet; more towns than one read returns: some lines aren’t drawn',
+    );
+  });
+
+  it('carries the read into the data, a failed read said and never drawn as no lines', () => {
+    const body = {
+      name: 'Mascoma Lake',
+      type: 'reservoir' as const,
+      bbox: { minLng: 0, minLat: 42.99, maxLng: 0.01, maxLat: 43.01 },
+    };
+    const read = {
+      towns: [{ name: 'Lebanon', state: 'NH', ring: null }],
+      capped: false,
+      computedAt: 1,
+    };
+    const data = namesFromBody(body, null, { townLinesRead: read });
+    expect(data.place.townLines).toEqual([]);
+    expect(data.place.townLinesShort).toEqual({ unstored: 1, capped: false });
+    const failed = namesFromBody(body, null, { townLinesRead: FAILED_READ });
+    expect(failed.place.townLines).toBeNull();
+    expect(failed.failures).toContain('the town lines');
+  });
+});

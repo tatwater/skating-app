@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -65,5 +65,29 @@ describe('ReasonAsk', () => {
     const again = await screen.findByRole('alertdialog');
     expect(within(again).getByRole('textbox')).toHaveValue('');
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('a sent reason is held while it is out — never typed into and then thrown away', async () => {
+    let answer: (refused: string | null) => void = () => {};
+    const onConfirm = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    render(<Ask onConfirm={onConfirm} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const field = within(dialog).getByRole('textbox');
+    await userEvent.type(field, 'A private dock');
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+    expect(field).toHaveAttribute('readonly');
+    await userEvent.type(field, ' since May');
+    expect(field).toHaveValue('A private dock');
+    // Refused: the field is the moderator's again, the reason whole.
+    await act(async () => answer('Not allowed'));
+    expect(field).not.toHaveAttribute('readonly');
+    await userEvent.type(field, ' since May');
+    expect(field).toHaveValue('A private dock since May');
   });
 });

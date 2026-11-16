@@ -1,4 +1,5 @@
 import type { LatLng } from '@skating/core';
+import { MAX_LANDMARK_EXTERNAL_ID_CHARS } from '@skating/core';
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
@@ -526,6 +527,25 @@ describe('mergeSamePlace', () => {
 });
 
 describe('placeLandmarks', () => {
+  it('reports a landmark stitched from so many features its ids pass the total a landmark keeps', () => {
+    const many = Array.from({ length: 200 }, (_, i) =>
+      candidate(
+        'Gull Island',
+        'island',
+        { lat: 44.05, lng: -73.05 },
+        {
+          sourceId: `osm:way/${String(i).padStart(92, '0')}`,
+        },
+      ),
+    );
+    const { overIdTotal } = placeLandmarks(many, index);
+    expect(overIdTotal).toHaveLength(1);
+    expect(overIdTotal[0]).toMatchObject({ name: 'Gull Island', ids: 200 });
+    expect(overIdTotal[0]?.chars).toBeGreaterThan(MAX_LANDMARK_EXTERNAL_ID_CHARS);
+    // A few such features stay well inside it, and nothing is reported.
+    expect(placeLandmarks(many.slice(0, 20), index).overIdTotal).toEqual([]);
+  });
+
   it('runs the standalone rule, places, merges per body, and counts each step', () => {
     const { byBody, counts } = placeLandmarks(
       [

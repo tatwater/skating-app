@@ -24,13 +24,14 @@ import {
   type LandmarkKind,
   type LandmarkSourceCheck,
   landmarkDropsHeld,
+  landmarkIdsToKeep,
   landmarkLabelMinZoom,
   landmarkProminence,
   landmarkSourceCheck,
   landmarkSourceReasons,
   landmarkSourcesVouch,
   landmarksAreSamePlace,
-  MAX_LANDMARK_EXTERNAL_IDS,
+  MAX_LANDMARK_EXTERNAL_ID_CHARS,
   MAX_LANDMARKS_PER_BODY,
   nextLandmarkSourceBar,
   normalizeLandmarkNames,
@@ -223,13 +224,24 @@ type ImportCounts = {
   bodyNotListed: number;
   alreadyBay: number;
   invalidName: number;
-  /** Candidates skipped for a catalog id past its cap, or too many ids (B01-3h). */
+  /** Candidates skipped for a catalog id past its 128 characters (B01-3h). */
   tooLong: number;
+  /**
+   * Rows whose catalog ids passed their total length, the oldest dropped (B01-3j) — each named in
+   * the run's `notes`. Never a skip: a waterway stitched from many ways is updated like any row.
+   */
+  idsTrimmed: number;
   dropped: number;
   /** Rows a complete line would have dropped, held by the per-lake brake (`landmarkDropsHeld`). */
   dropsHeld: number;
   returned: number;
 };
+
+/** A row the run names, by a catalog id it keeps, and why. */
+interface LoadNote {
+  key: string;
+  reason: string;
+}
 
 function emptyCounts(): ImportCounts {
   return {
@@ -243,6 +255,7 @@ function emptyCounts(): ImportCounts {
     alreadyBay: 0,
     invalidName: 0,
     tooLong: 0,
+    idsTrimmed: 0,
     dropped: 0,
     dropsHeld: 0,
     returned: 0,
@@ -294,6 +307,7 @@ export const importBatch = internalMutation({
     const vouched = landmarkSourcesVouch(check, acceptSourceDrop);
     const shortfalls = landmarkSourceReasons(check);
     const total = emptyCounts();
+    const notes: LoadNote[] = [];
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
         complete: complete === true && vouched,
@@ -301,12 +315,14 @@ export const importBatch = internalMutation({
         acceptMassDrop: args.acceptMassDrop === true,
         campaignId,
         write: dryRun === false,
+        notes,
       });
       // The load leaves no audit row: the Bodies library's landmarks fact is refreshed by the queue.
       if (dryRun === false) await queueLibraryRefresh(ctx, [waterBodyId]);
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
-    return { ...total, shortfalls: vouched ? [] : shortfalls };
+    // Twenty notes are enough to see a pattern and never dominate the return.
+    return { ...total, shortfalls: vouched ? [] : shortfalls, notes: notes.slice(0, 20) };
   },
 });
 
@@ -359,12 +375,15 @@ async function importOneBody(
     acceptMassDrop,
     campaignId,
     write,
+    notes,
   }: {
     complete: boolean;
     matchedAt: number | undefined;
     acceptMassDrop: boolean;
     campaignId: string | undefined;
     write: boolean;
+    /** What the run says by name — a row whose ids were trimmed (B01-3j). */
+    notes: LoadNote[];
   },
 ): Promise<ImportCounts> {
   const counts = emptyCounts();
@@ -412,11 +431,9 @@ async function importOneBody(
       counts.invalidName++;
       continue;
     }
-    // A catalog id past its cap, or more ids than a landmark keeps, skips the candidate (B01-3h).
-    if (
-      incoming.externalIds.length > MAX_LANDMARK_EXTERNAL_IDS ||
-      !incoming.externalIds.every(externalIdFits)
-    ) {
+    // A catalog id past its 128 characters skips the candidate (B01-3h). How many ids it carries
+    // never does: their total is bounded where they are written (`idsOf`, B01-3j).
+    if (!incoming.externalIds.every(externalIdFits)) {
       counts.tooLong++;
       continue;
     }
@@ -449,15 +466,24 @@ async function importOneBody(
   // A feature's id accumulates (one that left the catalog still finds its row); a *placement's* —
   // a river mouth's `osm:way/1#in@44.0213,-73.1002` — is this run's alone, or a shore redrawn by a
   // campaign would grow every mouth's ids run after run.
-  // At most `MAX_LANDMARK_EXTERNAL_IDS`, the newest kept: an id the catalogs still use outranks one
-  // that left them (B01-3h).
-  const idsOf = (members: readonly Incoming[], also: readonly string[] = []) =>
-    [
-      ...new Set([
-        ...also.filter((id) => !id.includes('#')),
-        ...members.flatMap((m) => m.externalIds),
-      ]),
-    ].slice(-MAX_LANDMARK_EXTERNAL_IDS);
+  // Bounded by their total length, never their count (`landmarkIdsToKeep`, B01-3j): past it the
+  // newest are kept — an id the catalogs still use outranks one that left them — counted and named.
+  // It counts, so it runs once per row the run would patch or create, and never inside a `write`
+  // gate: a dry run's `idsTrimmed` is the applied run's.
+  const idsOf = (members: readonly Incoming[], also: readonly string[] = []) => {
+    const { kept, dropped } = landmarkIdsToKeep([
+      ...also.filter((id) => !id.includes('#')),
+      ...members.flatMap((m) => m.externalIds),
+    ]);
+    if (dropped > 0) {
+      counts.idsTrimmed++;
+      notes.push({
+        key: kept.at(-1) ?? '',
+        reason: `"${members[0]?.name ?? ''}": ${dropped} of the oldest catalog ids dropped — a landmark keeps at most ${MAX_LANDMARK_EXTERNAL_ID_CHARS} characters of them`,
+      });
+    }
+    return kept;
+  };
   const spellingsOf = (members: readonly Incoming[]) =>
     members.flatMap((m) => [m.name, ...m.aliases]);
   const corpusOf = (members: readonly Incoming[], floor = 0) =>
@@ -541,9 +567,11 @@ async function importOneBody(
       }
       live++;
       counts.returned++;
+      // Outside the gate: it counts trimmed ids, which a dry run reports too.
+      const patch = catalogPatch(existing, members);
       if (write) {
         await ctx.db.patch(existing._id, {
-          ...catalogPatch(existing, members),
+          ...patch,
           removedAt: undefined,
           catalogDroppedAt: undefined,
           ...stamp,
@@ -590,6 +618,8 @@ async function importOneBody(
     counts.created++;
     const first = members[0] as Incoming;
     const corpusMessages = corpusOf(members);
+    // Before the gate: it counts trimmed ids, which a dry run reports too.
+    const externalIds = idsOf(members);
     if (!write) continue;
     await ctx.db.insert('bodyLandmarks', {
       waterBodyId,
@@ -599,7 +629,7 @@ async function importOneBody(
       ...(first.areaSqM !== undefined ? { areaSqM: first.areaSqM } : {}),
       ...(subAreaFor(first.point, candidates) ?? {}),
       source: first.source,
-      externalIds: idsOf(members),
+      externalIds,
       aliases: normalizeLandmarkNames(first.name, spellingsOf(members))?.aliases ?? [],
       ...(corpusMessages !== undefined ? { corpusMessages } : {}),
       ...stamp,

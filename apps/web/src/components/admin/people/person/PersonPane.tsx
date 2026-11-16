@@ -5,11 +5,11 @@ import { useMemo, useState } from 'react';
 import { useOptionalShell } from '@/components/kit/app-shell';
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
-import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
+import { isFailed, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
+import { ID_SHAPE, useClockFor } from '../../reads/readArgs';
 import { actionLabel } from '../../shell/actionLabels';
 import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
-import { useClockFor } from '../clock';
 import { RecordSheet } from '../record/RecordSheet';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
@@ -42,9 +42,6 @@ export type PersonPaneProps = {
   returnTo?: string;
   className?: string;
 };
-
-/** A Convex id's shape, so a hand-edited URL never reaches a query as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 
 /** How many decisions a page asks for first, and the most a page may hold. */
 const DECISIONS_FIRST = 25;
@@ -113,10 +110,9 @@ function PersonPage({ userId, returnTo, className }: PersonPaneProps) {
     <Link {...routerTarget(to.kind === 'people' ? back : personHref(to))} />
   );
 
-  const presence =
-    reads.recordPresence === undefined || isFailed(reads.recordPresence)
-      ? null
-      : reads.recordPresence;
+  // A secondary read: its value, or nothing to add while on its way, failed or empty (`readState`).
+  const presenceState = readState(reads.recordPresence);
+  const presence = presenceState.kind === 'value' ? presenceState.value : null;
   // The person the record sheet is about, held through a blink of the person read (a failure, a
   // retry): an open sitting never unmounts under the operator, taking its open item and every row
   // restored in it along. The page is keyed on the person, so what is held is always theirs.

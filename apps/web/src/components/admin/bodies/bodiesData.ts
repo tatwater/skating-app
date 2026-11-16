@@ -1,4 +1,5 @@
 import type { DepthSource } from '@skating/core';
+import type { Removal } from '../body/frame/bodyModel';
 import type { Count } from '../overview/overviewModel';
 import type { BodyColumnId, BodyRow, Completeness } from './bodiesModel';
 import type { FacetCounts, FacetId } from './bodyFacets';
@@ -47,7 +48,11 @@ export const SERVES_NOTHING: ListServes = { sort: [], facets: [], states: false,
 export interface BodyGroup {
   key: string;
   label: string;
+  /** Its best matches (the server's five). */
   rows: readonly BodyRow[];
+  /** How many match in all, counted to the server's bound; `capped`: a floor ("50+"). */
+  count?: number;
+  capped?: boolean;
 }
 
 export interface BodiesListData {
@@ -59,6 +64,16 @@ export interface BodiesListData {
    * them — then neither the group nor the search's tally is drawn, never an empty one or a zero.
    */
   others: readonly BodyGroup[] | null;
+  /**
+   * The other standings' search ignores the lane's facets (`facetsIgnored`): said plainly, so a
+   * tally that counts across them is never read as filtered.
+   */
+  othersFacetsIgnored?: boolean;
+  /**
+   * The other standings' read failed: the kit's note in the groups' place, with Try again
+   * (`pending` while tried again) — never drawn as no matches there.
+   */
+  othersFailed?: { pending: boolean };
   /** How many the list holds after filters, when the read says. */
   total: Count | null;
   serves: ListServes;
@@ -68,6 +83,11 @@ export interface BodiesListData {
   facetCounts: FacetCounts | null;
   /** The state tabs, in order (All is always first and is not here). */
   states: readonly string[];
+  /**
+   * Opened recently's ids the library didn't list: `unlisted` — a body with no library row;
+   * `unknown` — no such body; `dropped` — past what one read takes. Said at the list's end.
+   */
+  notListed?: { unlisted: number; unknown: number; dropped: number };
 }
 
 export const UNREAD_LIST: BodiesListData = {
@@ -92,6 +112,33 @@ export interface PreviewAsk {
   /** What kind and from where ("name_bay · asked by 3 · inbox"). */
   kicker: string;
   /** The ask itself ("“Shaker cove”"). */
+  title: string;
+  sub: string | null;
+}
+
+/**
+ * What a removed or rejected body's record still holds (`bodyConsole.removedFacts`), for the
+ * preview's page in place of the full preview.
+ */
+export interface RemovedPreviewData {
+  name: string;
+  bodyClass: string;
+  states: readonly string[];
+  /** `null` — not recorded. */
+  areaSqM: number | null;
+  /** `null` — the library files it under no standing. */
+  standing: BodyRow['standing'] | null;
+  /** How it left (when, who, why); `null` when no row says. */
+  left: Removal | null;
+  /** Its towns, each with its state when recorded; `null` — not computed yet. */
+  towns: readonly string[] | null;
+  /** Visible reports, a floor when capped. */
+  reports: Count;
+}
+
+/** One intake review reason on the body, worded ("Possible duplicate", "Overlaps 2 bodies"). */
+export interface PreviewIntake {
+  reason: string;
   title: string;
   sub: string | null;
 }
@@ -121,8 +168,10 @@ export interface BodyPreviewData {
   town: string | null;
   /** The body's towns aren't computed yet (`townsComputedAt` unset): not the same as no town. */
   townsNotComputed?: boolean;
-  /** Other towns it reaches. */
-  moreTowns: readonly string[];
+  /** `town`'s state, when the read says ("NH"); `null` — not recorded, never inferred. */
+  townState?: string | null;
+  /** Other towns it reaches, each with its state when the read says. */
+  moreTowns: readonly { name: string; state: string | null }[];
   centroid: { lat: number; lng: number };
   outline: BodyOutline | null;
   putIns: readonly { lat: number; lng: number }[] | null;
@@ -149,6 +198,8 @@ export interface BodyPreviewData {
   allTime: PreviewCount | null;
   complete: Completeness | null;
   asks: readonly PreviewAsk[] | null;
+  /** The body's intake review reasons, worst first; `null` while the facts aren't in. */
+  intake?: readonly PreviewIntake[] | null;
   /** How many asks are open in all (a floor when capped); `null` while the facts aren't in. */
   askCount: Count | null;
   /** `asks` is the newest of them, not all: the list says "Newest 20 of 21", never reads whole. */

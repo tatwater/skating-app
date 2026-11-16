@@ -37,7 +37,7 @@ const base: HazardsTabViewProps = {
   archived: [],
   features: MASCOMA_FEATURE_ROWS,
   winters: MASCOMA_WINTERS,
-  patternsWaiting: 2,
+  patternsWaiting: { count: 2, capped: false },
   onOpenRecurrence: vi.fn(),
   onDemote: vi.fn(async () => {}),
   onRetry: vi.fn(),
@@ -506,7 +506,24 @@ describe('HazardsTabView — the winters, a day at a time', () => {
         },
       ),
       // Each run renders the tab; the arithmetic's breadth is the model test's.
-      { numRuns: 12 },
+      {
+        // The day-by-day arithmetic is fuzzed without rendering (`hazardsModel.test.ts`); here a few
+        // renders, and two pinned: a capped winter, and two hazards first reported on one day.
+        numRuns: 3,
+        examples: [
+          [
+            Array.from({ length: 8 }, (_, i) => ({ day: 20 + i * 3, hour: 12, active: false })),
+            true,
+          ],
+          [
+            [
+              { day: 40, hour: 2, active: false },
+              { day: 40, hour: 22, active: false },
+            ],
+            false,
+          ],
+        ],
+      },
     );
   });
 
@@ -717,4 +734,38 @@ describe('HazardsTabView — a list, and a past winter', () => {
     expect(screen.getByRole('button', { name: /Archived in 2025–26/ })).toBeVisible();
     expect(BODY_NOW).toBeGreaterThan(FEB_NOW);
   });
+});
+
+describe('HazardsTabView — each failure note is a region mounted before its words', () => {
+  // Each read's note: its words, the props that fail it, and the state that brings it back.
+  const notes: [string, Partial<HazardsTabViewProps>][] = [
+    ['The hazards on the lake couldn’t be read', { hazards: 'error' }],
+    ['The pre-ice pass couldn’t be read', { patternsWaiting: 'error' }],
+    ['The archived hazards couldn’t be read', { archived: 'error' }],
+    ['The winter’s day-by-day count couldn’t be read', { winters: 'error' }],
+    ['The known features couldn’t be read', { features: 'error' }],
+  ];
+
+  it.each(notes)(
+    '“%s” is announced as it comes, and focus stays when it goes',
+    async (words, failed) => {
+      const { rerender } = render(<HazardsTabView {...base} {...failed} />);
+      const region = screen.getByText(words).closest('[role="status"]') as HTMLElement;
+      await userEvent.click(within(region).getByRole('button', { name: 'Try again' }));
+      rerender(<HazardsTabView {...base} />);
+      // The same region, still in the page, empty — and focus kept on it, never dropped to the page.
+      expect(region).toBeInTheDocument();
+      expect(region).toHaveTextContent('');
+      expect(region).toHaveFocus();
+      cleanup();
+      // Mounted before any failure: the region is there, empty, while the read is on its way.
+      render(
+        <HazardsTabView
+          {...base}
+          {...Object.fromEntries(Object.keys(failed).map((k) => [k, undefined]))}
+        />,
+      );
+      expect(screen.queryByText(words)).toBeNull();
+    },
+  );
 });

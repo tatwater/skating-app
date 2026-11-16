@@ -221,16 +221,18 @@ export function ImageryTabView({
           )
         }
       >
+        {/* Mounted in every state: a failure's words are announced, and focus stays when they go. */}
+        <RetryNote data-slot="archive-failed" onRetry={onRetry} pending={retryPending}>
+          {rows === undefined && !archiveUnconfigured && archiveError
+            ? 'The imagery archive couldn’t be read. That is about the archive, not the lake.'
+            : null}
+        </RetryNote>
         {rows === undefined ? (
           archiveUnconfigured ? (
             <Note data-slot="archive-unconfigured">
               No imagery archive is set up for this deployment, so no passes can be read here.
             </Note>
-          ) : archiveError ? (
-            <RetryNote data-slot="archive-failed" onRetry={onRetry} pending={retryPending}>
-              The imagery archive couldn’t be read. That is about the archive, not the lake.
-            </RetryNote>
-          ) : (
+          ) : archiveError ? null : (
             <div aria-busy="true" data-slot="passes-loading">
               <LoadingSection lines={4} />
             </div>

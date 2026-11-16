@@ -331,13 +331,24 @@ export function dayIndex(at: number, season: Season): number | null {
  */
 export type DailyHazards = {
   season: Season;
-  days: readonly { at: number; count: number; unknown: number }[];
+  /**
+   * Each day: hazards known on the lake, those that may have been (`unknown`), and reported
+   * crossings live that day (`crossings`, counted on their own — a crossing is a passage marker,
+   * never a hazard, and never makes a day read safer).
+   */
+  days: readonly { at: number; count: number; unknown: number; crossings?: number }[];
   unknownEnds: number;
   /**
-   * Each hazard counted: the day it was first reported, and whether its end is recorded — the
-   * strip's marks (one on its first-report day for each with no recorded end).
+   * Each report counted: the day it was first reported, whether its end is recorded, its type, and
+   * whether it is a reported crossing (`passage`) — the strip's marks (one on its first-report day
+   * for each hazard with no recorded end; a crossing is never a hazard's mark).
    */
-  hazards: readonly { firstReportedDay: number; endRecorded: boolean }[];
+  hazards: readonly {
+    firstReportedDay: number;
+    endRecorded: boolean;
+    type?: string;
+    passage?: boolean;
+  }[];
   capped: boolean;
   watchOpensOn: number | null;
 };
@@ -347,7 +358,13 @@ export type DailyHazards = {
  * (`unknown`, the server's), and how many hazards with no recorded end were first reported that
  * day (`reported`, each a mark — from the read's own `hazards`).
  */
-export type DayOnLake = { count: number; unknown: number; reported: number };
+export type DayOnLake = {
+  count: number;
+  unknown: number;
+  reported: number;
+  /** Reported crossings live that day (the server's count): said on their own, never a hazard. */
+  crossings?: number;
+};
 
 /**
  * The read's first reports, as a count per day of the season's window — the strip's marks. **One
@@ -371,7 +388,8 @@ export function firstReports(
   const out = Array.from({ length: days }, () => 0);
   const noEnd = Array.from({ length: days }, () => 0);
   for (const h of read.hazards) {
-    if (h.endRecorded) continue;
+    // A reported crossing is the server's to count (`days[].crossings`), never a hazard's mark.
+    if (h.endRecorded || h.passage === true) continue;
     const i = dayIndex(h.firstReportedDay, read.season);
     if (i !== null) noEnd[i] = (noEnd[i] ?? 0) + 1;
   }
@@ -429,6 +447,9 @@ export function stripDays(
       ...held,
       count: held.count + Math.max(0, d.count),
       unknown: held.unknown + Math.max(0, d.unknown),
+      ...(d.crossings !== undefined && d.crossings > 0
+        ? { crossings: (held.crossings ?? 0) + d.crossings }
+        : {}),
     };
   }
   reported?.forEach((n, i) => {
@@ -442,9 +463,12 @@ export function stripDays(
 /** A day in words, as its strip's title and today's line write it (`HAZARDS_WORDS.day`). */
 export function dayWords(day: DayOnLake | null, capped: boolean): string {
   if (day === null) return 'Not yet';
-  return HAZARDS_WORDS.day(
+  const words = HAZARDS_WORDS.day(
     wordsContext({ count: knownOn(day), unknown: day.unknown, reported: day.reported, capped }),
   );
+  return day.crossings !== undefined && day.crossings > 0
+    ? `${words} · ${CROSSING_WORDS.live(day.crossings)}`
+    : words;
 }
 
 /**

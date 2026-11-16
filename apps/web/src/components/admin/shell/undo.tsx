@@ -28,7 +28,9 @@ import type { AuditTarget } from './actionLabels';
  * - **`announce`**, after an action lands: shows the receipt toast, with Undo (⌘Z) while the server
  *   offers one. A write that answered with its own audit row and whether undoing it asks a reason
  *   needs nothing more; otherwise the toast asks the server for the caller's own newest action on
- *   the target (`undo.latestOwn`) first. Undo is never drawn when the server would refuse it.
+ *   the target (`undo.latestOwn`) first; a write that said it can't be undone now (`undoable:
+ *   false`) gets its receipt with no Undo and no lookup. Undo is never drawn when the server would
+ *   refuse it.
  * - **`undo`**, from the toast or a History row: runs `undo.run`. When the undo takes something
  *   away from skaters it asks the reason first, in the reason dialog; restoring asks nothing.
  * - **A refusal is the server's own words.** Someone acted on the same thing since, the row was
@@ -60,6 +62,12 @@ export type Receipt = {
    * shows with no Undo, and nothing is looked up.
    */
   undoable?: false;
+  /**
+   * Whose it is, by name ("Mascoma Lake"), set after the title ("Links saved · Mascoma Lake"):
+   * a receipt that may show over another page names its subject, so its Undo is never ambiguous —
+   * as the People receipts name their person.
+   */
+  subject?: string;
 };
 
 type UndoRequest = {
@@ -163,9 +171,18 @@ export function UndoProvider({
 
   const announce = useCallback(
     async (
-      { title, description, target, actionId, undoNeedsReason, undoable }: Receipt,
+      { title: said, description, target, actionId, undoNeedsReason, undoable, subject }: Receipt,
       here?: () => boolean,
     ) => {
+      // A receipt that may show over another page names its subject ("Links saved · Mascoma Lake").
+      const title =
+        subject === undefined ? (
+          said
+        ) : (
+          <>
+            {said} · {subject}
+          </>
+        );
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
       if (undoable === false) {
         // The write said so: no Undo to offer, and no lookup that could disagree with it.
@@ -241,7 +258,12 @@ export function UndoProvider({
           </AlertDialogHeader>
           <AlertDialogBody>
             {refusal !== null && <AlertDialogError title="Not undone.">{refusal}</AlertDialogError>}
-            <AlertDialogReason value={reason} onChange={(e) => setReason(e.target.value)} />
+            {/* A sent reason is held while the undo is out (it lands once, closing the dialog). */}
+            <AlertDialogReason
+              value={reason}
+              readOnly={busy}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel />

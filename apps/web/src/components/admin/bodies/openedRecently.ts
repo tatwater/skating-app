@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { ID_SHAPE } from '../reads/readArgs';
 
 /**
  * **Opened recently** — the bodies this browser opened in the Body console, newest first (the
@@ -13,8 +14,6 @@ import { useSyncExternalStore } from 'react';
 export const OPENED_KEY = 'gli.admin.bodies.opened';
 /** How many it keeps: a working session's worth, not a history. */
 export const OPENED_MAX = 12;
-/** A Convex id's shape, so a hand-edited entry never reaches a query as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 /** Same-tab writes, which the `storage` event doesn't carry. */
 const CHANGED = 'gli:bodies-opened';
 

@@ -5,10 +5,16 @@ import { isTextEntry, usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
 import { type Count, countText } from '../overview/overviewModel';
+import { type Loadable, loaded } from '../reads/consoleReads';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { BodiesTable } from './BodiesTable';
 import { BodyPreview, OPEN_LABEL } from './BodyPreview';
-import { allRows, type BodiesListData, type BodyPreviewData } from './bodiesData';
+import {
+  allRows,
+  type BodiesListData,
+  type BodyPreviewData,
+  type RemovedPreviewData,
+} from './bodiesData';
 import { laneKicker, nextSort } from './bodiesModel';
 import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
@@ -43,6 +49,8 @@ export type BodiesViewProps = {
   onLoadMore?: () => void;
   /** Re-runs a failed list (its *Try again*). */
   onRetryList?: () => void;
+  /** Re-runs a failed other-standings read (its note's *Try again*). */
+  onRetryOthers?: () => void;
   /** Re-runs the preview's failed reads. */
   onRetryPreview?: () => void;
   /** The preview's failed reads were tried again; their fresh answers aren't in. */
@@ -56,6 +64,11 @@ export type BodiesViewProps = {
    * `'unavailable'` for a body the reads can't serve (a rejected one) — drawn from its list row.
    */
   preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
+  /**
+   * For an `'unavailable'` preview: what its record still holds — `undefined` on its way, failed,
+   * or read; `null` when none is read.
+   */
+  previewRemoved?: Loadable<RemovedPreviewData | null> | null;
   /** The instant ages are read against. */
   now: number;
   /** The open action's words (where it opens the body). */
@@ -81,11 +94,14 @@ export function BodiesView({
   list,
   onLoadMore,
   onRetryList,
+  onRetryOthers,
   onRetryPreview,
   previewPending = false,
   laneCounts,
   corpus,
   preview,
+  // Never defaulted: `undefined` is the record on its way (its skeleton), not none asked (`null`).
+  previewRemoved,
   now,
   bodyLink,
   openLabel = OPEN_LABEL,
@@ -109,12 +125,15 @@ export function BodiesView({
   // the pane holds its shape rather than saying the list doesn't hold it.
   const unavailableRow =
     preview === 'unavailable' ? (allRows(list).find((r) => r.id === query.bodyId) ?? null) : null;
+  // Its record, once read, names it without the row.
   const previewData =
     preview !== 'unavailable'
       ? preview
-      : unavailableRow === null && list.status === 'loading'
+      : unavailableRow === null &&
+          list.status === 'loading' &&
+          loaded(previewRemoved ?? undefined) == null
         ? undefined
-        : { unavailable: unavailableRow };
+        : { unavailable: unavailableRow, removed: previewRemoved };
 
   // F opens the filter from the list's tools (the tabs, the buttons, the chips) — not from the
   // search, which types it, nor from the rows, whose letters type ahead.
@@ -271,6 +290,7 @@ export function BodiesView({
             }}
             {...(onLoadMore !== undefined && { onLoadMore })}
             {...(onRetryList !== undefined && { onRetry: onRetryList })}
+            {...(onRetryOthers !== undefined && { onRetryOthers })}
             memoryKey={listKey(query)}
             onSearchKey={() => search.current?.focus()}
             gridRef={grid}

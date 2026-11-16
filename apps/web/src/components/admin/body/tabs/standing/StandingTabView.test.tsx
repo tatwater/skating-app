@@ -62,6 +62,20 @@ describe('StandingTabView', () => {
     expect(screen.getByRole('button', { name: 'Trying again…' })).toBeVisible();
   });
 
+  it('keeps the retention note’s region mounted, and focus on it, when the fresh answer lands', async () => {
+    const { rerender } = render(<StandingTabView {...base} retention="error" onRetry={vi.fn()} />);
+    const region = screen
+      .getByText('What keeps it active couldn’t be read')
+      .closest('[role="status"]') as HTMLElement;
+    await userEvent.click(within(region).getByRole('button', { name: 'Try again' }));
+    rerender(<StandingTabView {...base} />);
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveFocus();
+    expect(
+      screen.getByText('Any one keeps it. The report alone holds through 2029–30.'),
+    ).toBeVisible();
+  });
+
   it('names what no read serves yet instead of drawing a zero', () => {
     render(<StandingTabView {...base} retention={RETENTION_PART_UNREAD} />);
     expect(screen.queryByText(/Favorites/)).toBeNull();

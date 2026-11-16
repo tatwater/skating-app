@@ -38,3 +38,27 @@ export const States: Story = {
 
 /** The states in all four maps. */
 export const FourUp: Story = { ...States, parameters: { fourUp: true } };
+
+/**
+ * Empty, in a section: it takes none of the section's gap, so the heading sits exactly 12 px over
+ * its content, as it would with no note there at all.
+ */
+export const EmptyInASection: Story = {
+  args: { children: null },
+  render: (args) => (
+    <div className="flex w-[22rem] flex-col gap-heading" data-testid="section">
+      <span data-testid="heading">Heading</span>
+      <RetryNote {...args} />
+      <p className="m-0" data-testid="content">
+        Content
+      </p>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = canvas.getByTestId('heading').getBoundingClientRect();
+    const content = canvas.getByTestId('content').getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(canvas.getByTestId('section')).rowGap);
+    await expect(Math.round(content.top - heading.bottom)).toBe(Math.round(gap));
+  },
+};
