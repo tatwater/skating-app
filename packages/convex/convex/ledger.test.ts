@@ -9,8 +9,9 @@ import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { LAST_EDITOR_MESSAGE } from './lib/ledgerEditors';
-import { disciplineRefusal } from './lib/peopleCan';
+import { disciplineRefusal, LEDGER_NEUTRAL_REFUSAL } from './lib/peopleCan';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
+import { undoState } from './lib/undo';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -565,6 +566,49 @@ describe('discipline never leaves the ledger without an editor (the governor’s
       expect((await profile(t, target.id))?.status).toBe('active');
     });
   }
+
+  test('a page reads that undo’s last-editor refusal masked unless it holds the grant, and the undo itself in full — with or without a People row', async () => {
+    const t = convexTest(schema, modules);
+    const target = await editor(t, 'target');
+    const other = await editor(t, 'other');
+    const admin = await seedUser(t, 'admin', 'admin');
+    await admin.as.mutation(api.moderation.banUser, { userId: target.id, reason: 'x' });
+    await admin.as.mutation(api.moderation.unbanUser, { userId: target.id, reason: 'appeal' });
+    const unban = await newestOn(t, target.id);
+    await target.as.mutation(api.ledger.revokeEditor, { userId: other.id, reason: 'x' });
+
+    const states = () =>
+      t.run(async (ctx) => {
+        const viewer = await ctx.db.get(admin.id);
+        const row = await ctx.db.get(unban._id as Id<'moderationActions'>);
+        if (!viewer || !row) throw new Error('seeded rows missing');
+        return {
+          // History, Decisions and the toast, read by an admin who doesn't hold the grant.
+          page: await undoState(ctx, viewer, row),
+          // The same page, read by a holder: the sentence is theirs to read.
+          holder: await undoState(ctx, { ...viewer, canEditLedger: true }, row),
+          // The undo's own write keeps its words for whoever presses it.
+          write: await undoState(ctx, viewer, row, 'write'),
+        };
+      });
+    const want = {
+      page: { state: 'unavailable', why: LEDGER_NEUTRAL_REFUSAL },
+      holder: { state: 'unavailable', why: LAST_EDITOR_MESSAGE },
+      write: { state: 'unavailable', why: LAST_EDITOR_MESSAGE },
+    };
+    expect(await states()).toEqual(want);
+    // Before the rows backfill reaches them, their profile is read instead (`afterRowlessProfile`):
+    // the same three answers.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', target.id))
+        .first();
+      if (!row) throw new Error('the writes should have built their row');
+      await ctx.db.delete(row._id);
+    });
+    expect(await states()).toEqual(want);
+  });
 });
 
 describe('undo (D226)', () => {

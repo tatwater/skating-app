@@ -1058,9 +1058,9 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     const p = await as(t, 'mod').query(api.people.person, { userId: skater });
     expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
     expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, atCapped: false });
-    // The date is the start's; who and why are the newest write's, never one's words on the other.
-    expect(p?.statusNote).toMatchObject({ reason: 'again' });
-    expect(p?.statusNote?.by?.username).toBe('mod2');
+    // When, who and why are all the start's: no one is credited with another's date or words.
+    expect(p?.statusNote).toMatchObject({ reason: 'first' });
+    expect(p?.statusNote?.by?.username).toBe('mod');
   });
 
   test('a suspension’s new window keeps its start; a walk that runs out of rows says can’t say', async () => {

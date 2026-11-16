@@ -43,7 +43,7 @@ import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { GATE_EVENT_RETENTION_DAYS } from './analyticsRollup';
 import { auditTargetLabel } from './lib/auditReads';
-import { hasCapability, requireCapability } from './lib/auth';
+import { hasCapability, isSuspendedNow, requireCapability } from './lib/auth';
 import { readVerdictCounts, VERDICT_COUNT_CAP } from './lib/contentVerdicts';
 import {
   isLastLedgerEditor,
@@ -812,8 +812,9 @@ const STATUS_ROWS_BYTES = DOC_MAX;
 
 /**
  * The status a ban or suspension row found, as a status note's start weighs it (`lib/stateSince`):
- * a suspension whose window had run out by the write was over — it lapses at read time, and the sweep
- * may not have reset the stored status yet — so a suspension after it begins a new one.
+ * a suspension whose window had run out by the write was over — it lapses at read time (the gate's
+ * own rule, `isSuspendedNow`), and the sweep may not have reset the stored status yet — so a
+ * suspension after it begins a new one.
  */
 function statusFound(row: Doc<'moderationActions'>): string | undefined {
   const prev = (
@@ -821,8 +822,10 @@ function statusFound(row: Doc<'moderationActions'>): string | undefined {
   )?.prev;
   if (
     prev?.status === 'suspended' &&
-    typeof prev.suspendedUntil === 'number' &&
-    prev.suspendedUntil <= row.createdAt
+    !isSuspendedNow(
+      { status: 'suspended', suspendedUntil: prev.suspendedUntil ?? undefined },
+      row.createdAt,
+    )
   ) {
     return 'lapsed';
   }
@@ -1118,20 +1121,21 @@ export const person = query({
         target.status as string,
         complete,
       );
-      // Who and why come from one write — the newest of the verb, which set the reason and window
-      // the note shows — so a second moderator's words are never credited to the first. Only the
-      // date is the start's.
-      const newest = seen[0];
+      // When, who, via and why all come from one write — the one that began the status — so the
+      // note is one true sentence: no moderator is credited with another's date or words. The window
+      // is the state's own. With no start found, the reason on file stands alone, unattributed.
+      const row = start.row;
       statusNote = {
         action: verb,
         /** When the status began (`lib/stateSince`), not when it was last set. */
         at: start.since,
         /** The status began before the rows read: `at` is "can't say", not "not recorded". */
         atCapped: start.capped,
-        /** Who last set it — the write whose reason and window these are. */
-        by: await personRef(ctx, newest?.actorId),
-        via: newest?.via ?? null,
-        reason: target.statusReason ?? null,
+        /** Who began it, and through what — the write `at` dates. */
+        by: await personRef(ctx, row?.actorId),
+        via: row?.via ?? null,
+        /** The reason that write gave; the one on file when no start was found. */
+        reason: (row === null ? target.statusReason : row.reason) ?? null,
         suspendedUntil: target.status === 'suspended' ? (target.suspendedUntil ?? null) : null,
         lapsed:
           target.status === 'suspended' &&
@@ -1488,8 +1492,9 @@ export async function shapeRows(
 ): Promise<PersonActionRow[]> {
   const budget = queryBudget(ctx);
   // Every row's calls are counted before any starts (as many rows as fit; the caller says capped for
-  // the rest). Rows are shaped one after another for now; doing them at once waits on the shared
-  // reservation in flight (B01-3i) and follows in its own PR.
+  // the rest). Rows are shaped one after another for now, each asking `undoState` alone; B01-3i's
+  // page reading (`undoStates`, in waves) has landed, and shaping them at once on it follows in its
+  // own PR (`b01-4c-people-rounds`).
   const n = shapeable(budget, rows.length);
   budget.reserveCalls(ROW_SHAPE_CALLS * n, ROW_SHAPE_DOCS * n);
   const out: PersonActionRow[] = [];

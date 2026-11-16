@@ -2480,9 +2480,10 @@ Every shape change is additive except where noted.
 - **The time axis is owed, in its own PR.** A query has one second, and `people.decisions` still awaits
   its rows one after another: about 480 ms for a page of 50, measured on dev, from roughly three point
   reads a row. So do History, the person page's flag labels, staffStats' and staffSeason's per-row
-  checks and a queue lane's rows. The fix waits on the shared reservation B01-3i is landing
-  (`ReadBudget.measured` reserving a read's worst case and handing back the difference), so one budget
-  has one rule. It comes next as `b01-4c-people-rounds`, with a round bound per page and a guard test.
+  checks and a queue lane's rows. The fix builds on the shared reservation B01-3i landed (#128:
+  `ReadBudget.measured` reserving a read's worst case and handing back the difference, and
+  `undoStates` reading a page's undo states in waves), so one budget has one rule. It comes next as
+  `b01-4c-people-rounds`, with a round bound per page and a guard test.
   The concurrency first built here is parked on a local branch to be redone on that rule.
   `staffStats` keeps its time bound in the meantime: at most 400 reads across its per-row loops, counted
   as they are made.
@@ -2499,8 +2500,8 @@ Every shape change is additive except where noted.
   `atCapped`, walking up to ten rows of the verb and one document's weight; a suspension whose window
   had run out before the next one, which the sweep hadn't reset yet, counts as over, so the next one
   starts a new run, and the list row's `statusSince` counts it the same way; the note's who, via and
-  reason stay the newest write's — the one whose window and words it shows — so only its date
-  moved). The ledger grant and the tenure dates were already starts: a grant to a holder is refused
+  reason come from the same write as its date — the one that began the status — so no moderator is
+  credited with another's date or words; with no start found, the reason on file stands alone). The ledger grant and the tenure dates were already starts: a grant to a holder is refused
   (since the grant was built, #108), and so is a move to the role held — but only since #115; before
   that `grantRole` recorded a regrant, so dev's older role rows can hold a no-op that `staffTenure`'s
   role since would take as the move (prod has none). A fast-check property holds the rule over

@@ -454,7 +454,8 @@ const personArb = fc
           role: x.can.role,
           ledger: x.ledgerShown ? { grant: x.can.grant, revoke: x.can.revoke } : null,
           restore: { reports: x.can.restrict, hazards: x.can.restrict, comments: x.can.restrict },
-          flaggingOn: x.can.flaggingOff,
+          // Switching flagging back on is a give-back: `restrict`'s rule, not `flaggingOff`'s.
+          flaggingOn: x.can.restrict,
           bountyRaise: x.can.restrict,
           bountyLower: x.can.restrict,
           // The server follow-up's explicit answer, or none (a server without it).
