@@ -125,9 +125,43 @@ type Entry = {
  */
 const Writers = createContext<Map<string, Entry> | null>(null);
 
+/**
+ * **What a queued change names lives as long as its queue** — the ids a page gives its list's rows
+ * and the lists it sent (by which it recognizes its own saves when their echo returns). A change
+ * still queued names them after the page that pressed it has gone, so they live here, beside the
+ * queue, keyed by its list and a name, and a page coming back adopts them; never in a component a
+ * pending write outlives.
+ */
+const Memories = createContext<Map<string, { current: unknown }> | null>(null);
+
 export function ListWritersProvider({ children }: { children: ReactNode }) {
   const [writers] = useState(() => new Map<string, Entry>());
-  return createElement(Writers.Provider, { value: writers }, children);
+  const [memories] = useState(() => new Map<string, { current: unknown }>());
+  return createElement(
+    Writers.Provider,
+    { value: writers },
+    createElement(Memories.Provider, { value: memories }, children),
+  );
+}
+
+/**
+ * A value kept beside the queue `key` (its `name` tells several apart): the same object for every
+ * page of that list while the shell lives. Outside a `ListWritersProvider` it is the component's own.
+ */
+export function useListMemory<T>(key: string, name: string, init: () => T): { current: T } {
+  const shared = useContext(Memories);
+  const own = useRef<{ current: T } | null>(null);
+  if (shared === null) {
+    if (own.current === null) own.current = { current: init() };
+    return own.current;
+  }
+  const at = `${key}#${name}`;
+  let held = shared.get(at) as { current: T } | undefined;
+  if (held === undefined) {
+    held = { current: init() };
+    shared.set(at, held as { current: unknown });
+  }
+  return held;
 }
 
 /**

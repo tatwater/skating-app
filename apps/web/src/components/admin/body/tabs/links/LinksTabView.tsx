@@ -19,7 +19,7 @@ import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
 import { LINK_EDITED_AWAY, LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
-import { useListWriter } from '../listWriter';
+import { useListMemory, useListWriter } from '../listWriter';
 import {
   carryIds,
   type DerivedRow,
@@ -98,14 +98,14 @@ type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[] | null;
 
 /**
  * **A link's id outlives the page, as its queue does** (`ListWritersProvider`): a change queued
- * behind a save still on its way names links by id, and may be taken up after the page has gone
- * and come back. So ids are minted once across every mount (never `link-1` again for another link),
- * and a page coming back to a list carries the ids the last one gave it (`carryIds`, by words) —
- * never a fresh numbering under which a queued "remove link-3" would take another link.
+ * behind a save still on its way names links by id, and may be taken up after the page has gone and
+ * come back. So ids are minted once across every mount (never `link-1` again for another link), and
+ * the rows' ids and the lists the page sent live beside the queue (`useListMemory`), which a page
+ * coming back adopts — never a fresh numbering under which a queued "remove link-3" would take
+ * another link, or its own edit go unrecognized.
  */
 let mintedLinks = 0;
 const mintLink = () => `link-${++mintedLinks}`;
-const lastIds = new Map<string, KeyedLink[]>();
 
 export function LinksTabView({
   body,
@@ -120,7 +120,9 @@ export function LinksTabView({
   const derived = derivedRows(body, now);
   // Each link's id: the page's own sends name it exactly; any other list carries it only to a link
   // with exactly its words (`carryIds`).
-  const ids = useRef<KeyedLink[]>(lastIds.get(queueKey) ?? []);
+  // The rows' ids and the lists this page sent live beside the queue (`useListMemory`): a change
+  // still queued names them after the page has gone, and a page coming back adopts them.
+  const ids = useListMemory<KeyedLink[]>(queueKey, 'ids', () => []);
   const links = body.referenceLinks;
   // **The rows' identities come from the page's own writes where it can tell**: a list the server
   // shows that is exactly one this page sent and hasn't seen shown yet takes that list's keys, row
@@ -128,7 +130,7 @@ export function LinksTabView({
   // of its words, and even when its echo renders after the next save has gone out. Once shown, a
   // sent list is spent, with every one sent before it: a later list that only reads the same (an
   // undo, another moderator's edits) carries ids by their words (`carryIds`), like any other list.
-  const unseen = useRef<(readonly KeyedLink[])[]>([]);
+  const unseen = useListMemory<(readonly KeyedLink[])[]>(queueKey, 'unseen', () => []);
   const staff = useMemo(() => {
     const list = links ?? [];
     let at = unseen.current.length - 1;
@@ -142,7 +144,6 @@ export function LinksTabView({
     const prev = [...newest, ...ids.current.filter((l) => !newest.some((n) => n.key === l.key))];
     const next = sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(prev, list, mintLink);
     ids.current = next;
-    lastIds.set(queueKey, next);
     return next;
   }, [links, queueKey]);
   const section = useRef<HTMLDivElement | null>(null);

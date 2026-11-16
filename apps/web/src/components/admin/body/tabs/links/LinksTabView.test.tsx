@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SortableRows } from '@/components/kit/sortable-rows';
+import { ListWritersProvider } from '../listWriter';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { type StaffLink, sameLinks } from './linksModel';
@@ -1137,21 +1138,27 @@ describe('LinksTabView — a link’s id outlives the page, as its queue does', 
 
   it('a page back on the same list carries the ids the last one gave it; a new link takes a new id', () => {
     const queueKey = 'links:carry-test';
-    const first = render(<LinksTabView {...base} queueKey={queueKey} />);
+    const added = { label: 'Town beach', url: 'https://example.org/beach' };
+    // The shell's queues (and what they keep) outlive the page: one provider across the mounts.
+    const page = (shown: boolean, links = MASCOMA.referenceLinks) => (
+      <ListWritersProvider>
+        {shown ? (
+          <LinksTabView
+            {...base}
+            queueKey={queueKey}
+            body={{ ...MASCOMA, referenceLinks: links }}
+          />
+        ) : null}
+      </ListWritersProvider>
+    );
+    const { rerender } = render(page(true));
     const before = keyed();
     expect(before[ASSOC.label]).toBeTruthy();
     expect(before[DAM.label]).toBeTruthy();
-    first.unmount();
+    rerender(page(false));
     // Meanwhile another moderator put a link first and moved the dam above the association: a queued
     // change naming the dam's id must still find the dam, never whatever row is now in its place.
-    const added = { label: 'Town beach', url: 'https://example.org/beach' };
-    render(
-      <LinksTabView
-        {...base}
-        queueKey={queueKey}
-        body={{ ...MASCOMA, referenceLinks: [added, DAM, ASSOC] }}
-      />,
-    );
+    rerender(page(true, [added, DAM, ASSOC]));
     const after = keyed();
     expect(after[DAM.label]).toBe(before[DAM.label]);
     expect(after[ASSOC.label]).toBe(before[ASSOC.label]);
@@ -1515,6 +1522,65 @@ describe('LinksTabView — my edit keeps its id when its echo arrives with anoth
       DAM,
     ]);
     expect(server.links.map((l) => l.label)).toContain('Y1');
+    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+  });
+});
+
+describe('LinksTabView — what a queued change names lives as long as the queue, not the page', () => {
+  it('Greptile’s sequence: edit A, then Remove A queued; leave; the edit commits; come back — the Remove lands on A', async () => {
+    const user = userEvent.setup();
+    const answers: (() => void)[] = [];
+    const server = { links: [ASSOC, DAM] as StaffLink[], set: (_: StaffLink[]) => {} };
+    const onSave = async (next: StaffLink[], expected: StaffLink[]) => {
+      await new Promise<void>((r) => answers.push(r));
+      if (!sameLinks(expected, server.links)) {
+        throw new ConvexError({ code: 'list_changed', message: 'moved', current: server.links });
+      }
+      server.links = next;
+      server.set(next);
+      // The receipt's lookup (`announce`) runs before the queue hears the save landed.
+      await new Promise<void>((r) => answers.push(r));
+    };
+    function Page() {
+      const [links, setLinks] = useState<readonly StaffLink[]>(server.links);
+      server.set = setLinks;
+      return (
+        <LinksTabView
+          {...base}
+          queueKey="links:leave-and-return"
+          body={{ ...MASCOMA, referenceLinks: links }}
+          onSave={onSave}
+        />
+      );
+    }
+    const page = (shown: boolean) => (
+      <ListWritersProvider>{shown ? <Page /> : null}</ListWritersProvider>
+    );
+    const { rerender } = render(page(true));
+    // Edit A and press Done; the save waits.
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    const label = screen.getByRole('textbox', { name: 'Label' });
+    await user.clear(label);
+    await user.type(label, 'The Association');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    // Cancel, reopen A, press Remove: queued behind the edit.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    // Leave the page; the edit commits while it's gone; come back before its receipt finishes.
+    rerender(page(false));
+    server.set = () => {};
+    await act(async () => answers.shift()?.());
+    rerender(page(true));
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    await act(async () => answers.shift()?.());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    for (let i = 0; i < 4 && answers.length > 0; i++) {
+      await act(async () => answers.shift()?.());
+      await act(async () => new Promise((r) => setTimeout(r, 0)));
+    }
+    // The queued Remove landed on A — the link the edit made — and nothing was refused.
+    expect(server.links).toEqual([DAM]);
     expect(screen.queryByText(/your change no longer applies/)).toBeNull();
   });
 });
