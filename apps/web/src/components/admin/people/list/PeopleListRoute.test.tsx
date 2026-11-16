@@ -55,9 +55,11 @@ import { PEOPLE_PAGE_SIZE } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { resetConsoleReads } from '../../reads/consoleReads';
+import { fakeListPage } from './listPageFake';
 import { resetScrollMemory } from './PeopleList';
 import { PeopleListRoute } from './PeopleListRoute';
-import { KATE, LANES, LUC, MATT, page, ROB, SARAH, TEAGAN } from './peopleFixtures';
+import { KATE, LANES, LUC, MATT, page, personRow, ROB, SARAH, TEAGAN } from './peopleFixtures';
+import type { PersonListRow } from './peopleModel';
 import { resetShownMemory, startingPageSize } from './peopleReads';
 import { measureViewports, stubLayout } from './testLayout';
 
@@ -67,6 +69,7 @@ type PageArgs = {
   lane: string;
   search?: string;
   cursor: string | null;
+  endCursor?: string;
   pageSize: number;
   now: number;
 };
@@ -198,7 +201,7 @@ describe('the chain of pages', () => {
     expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
   });
 
-  it('re-anchors the pages after one whose end moved', () => {
+  it('re-anchors the pages after one whose end moved all the same (a server that didn’t hold it)', () => {
     let end = 'c1';
     mocks.results.set(PAGE_READ, (args: PageArgs) =>
       args.cursor === null
@@ -306,7 +309,7 @@ describe('a list out of sight', () => {
 });
 
 describe('the server follow-up’s page', () => {
-  it('reads a page carrying splitCursor and pageStatus as before, and sends no endCursor', () => {
+  it('sends no endCursor on a list of one page, and splits nothing the server only recommends', () => {
     mocks.results.set(PAGE_READ, {
       ...page([KATE, LUC]),
       splitCursor: 'split',
@@ -316,6 +319,91 @@ describe('the server follow-up’s page', () => {
     expect(screen.getAllByRole('option')).toHaveLength(2);
     expect(screen.getByText('All 2')).toBeInTheDocument();
     expect(pageCalls().every((a) => !('endCursor' in a))).toBe(true);
+  });
+});
+
+describe('a chain kept stitched', () => {
+  /** Ninety people keyed in the list's order: under the size where the list virtualizes. */
+  const person = (n: number, tag = '') =>
+    personRow(`u${String(n).padStart(4, '0')}${tag}`, `Skater ${n}${tag}`, `skater${n}${tag}`);
+  let rows: PersonListRow[] = [];
+  const put = (row: PersonListRow) => {
+    rows = [...rows, row].sort((a, b) => (a.userId < b.userId ? -1 : 1));
+  };
+  /** Reads asked before `late` answer at once; a read first asked after it is on its way. */
+  let late = false;
+  const known = new Set<string>();
+  /** The server's paging over `rows` (`fakeListPage`), with its cap and whether it can split. */
+  function serve(opts: { cap: number; split: boolean }, slow?: (a: PageArgs) => boolean) {
+    mocks.results.set(PAGE_READ, (args: PageArgs) => {
+      const id = JSON.stringify(args);
+      if ((late && !known.has(id)) || slow?.(args)) return undefined;
+      known.add(id);
+      return { ...page([]), ...fakeListPage(rows, (r) => r.userId, args, opts) };
+    });
+  }
+  const names = () =>
+    screen
+      .getAllByRole('option')
+      .map((o) => o.querySelector('[data-slot="person-name"]')?.textContent);
+  const expectAll = () => {
+    expect(names()).toEqual(rows.map((r) => r.displayName));
+    expect(screen.getByText(`All ${rows.length}`)).toBeInTheDocument();
+  };
+
+  beforeEach(() => {
+    rows = Array.from({ length: 90 }, (_, i) => person(i * 10));
+    late = false;
+    known.clear();
+  });
+
+  it('pins the page it read past to where it ended, drawing its rows while the pinned read comes', () => {
+    serve({ cap: 200, split: true }, (a) => a.endCursor !== undefined);
+    mount();
+    const end = rows[PEOPLE_PAGE_SIZE - 1]?.userId;
+    expect(pageCalls()).toContainEqual(expect.objectContaining({ cursor: null, endCursor: end }));
+    // The pinned read is still on its way: the first page's rows stand from its last answer.
+    expectAll();
+  });
+
+  it('keeps the deeper pages when someone joins or leaves an earlier one', () => {
+    serve({ cap: 200, split: true });
+    const { rerender } = mount();
+    expectAll();
+    // From here a read the list hasn't made before is slow: a re-anchored chain would show it.
+    late = true;
+    put(person(105, 'b'));
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expectAll();
+    rows = rows.filter((r) => r.displayName !== 'Skater 20' && r.displayName !== 'Skater 30');
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expectAll();
+    expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('splits a page that grew past the server’s cap where the server says', () => {
+    serve({ cap: PEOPLE_PAGE_SIZE, split: true });
+    const { rerender } = mount();
+    const end = rows[PEOPLE_PAGE_SIZE - 1]?.userId;
+    for (const n of [1, 2, 3]) put(person(n));
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expectAll();
+    const split = rows[PEOPLE_PAGE_SIZE - 1]?.userId;
+    expect(pageCalls()).toContainEqual(expect.objectContaining({ cursor: null, endCursor: split }));
+    expect(pageCalls()).toContainEqual(expect.objectContaining({ cursor: split, endCursor: end }));
+  });
+
+  it('reads a search’s page to split again unbounded, and goes on from where it now ends', () => {
+    mocks.search = { q: 'skater' };
+    serve({ cap: PEOPLE_PAGE_SIZE, split: false });
+    const { rerender } = mount();
+    for (const n of [1, 2, 3]) put(person(n));
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expectAll();
   });
 });
 
