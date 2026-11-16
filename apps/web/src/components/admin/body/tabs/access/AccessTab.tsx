@@ -112,6 +112,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       : act(write, receipt).then((ok) => (ok ? null : 'Not saved'));
   };
   const rule = useLatestPick<PublicAccessVerdict | null, string | null, string>(
+    `access-ruling:${bodyId}`,
     loaded?.ruling.verdict ?? null,
     send,
   );

@@ -262,7 +262,7 @@ function Figures({
       )}
       <CompletenessBlock completeness={completeness} />
       <div data-slot="body-boost" className="mt-(--space-1) flex flex-col gap-(--space-2)">
-        <BoostSlider value={identity.boost.value} onCommit={onBoostCommit} />
+        <BoostSlider bodyId={identity.id} value={identity.boost.value} onCommit={onBoostCommit} />
         <p className="m-0 text-assist leading-list text-fg3">
           Draws the body from farther out.
           {identity.boost.note !== null ? ` ${identity.boost.note}` : ''}
@@ -293,15 +293,18 @@ export function boostToSend(v: number, record: number): number | null {
  * the record — the last let-go if it landed.
  */
 function BoostSlider({
+  bodyId,
   value,
   onCommit,
 }: {
+  /** Whose boost: the let-gos queue by body, outside the column (`useLatestPick`). */
+  bodyId: string;
   value: number;
   onCommit: BodyLeftColumnProps['onBoostCommit'];
 }) {
   const record = tenth(Math.min(1, Math.max(0, value)));
   const hold = useBodyHold();
-  const pick = useLatestPick<number>(record, async (next) => {
+  const pick = useLatestPick<number>(`boost:${bodyId}`, record, async (next) => {
     await onCommit?.(next, hold);
   });
   // Under the hand while it drags; the pick's value once it's let go, or once that moves.

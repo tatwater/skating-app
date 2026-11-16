@@ -159,6 +159,7 @@ function ImageryReads(props: BodyTabProps) {
       // The pass override's writer isn't on the server yet: drawn, and not available yet.
       {...(can('body.water') ? { onOverride: UNAVAILABLE } : {})}
       satellite={{
+        bodyId: waterBodyId,
         mode: body.satelliteImagery ?? 'auto',
         name: body.name,
         areaSqM: body.surfaceAreaSqM,

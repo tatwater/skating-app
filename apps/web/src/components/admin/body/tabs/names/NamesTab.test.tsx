@@ -367,6 +367,7 @@ describe('NamesTab', () => {
   describe('the latest press wins', () => {
     const get = getFunctionName(api.waterBodies.get);
     const identity = getFunctionName(api.bodyConsole.identity);
+    const record = () => (mocks.results.get(get) as { body: { type: string } }).body;
     let land: () => void = () => {};
     beforeEach(() => {
       mocks.hold = new Promise<void>((r) => {
@@ -436,6 +437,37 @@ describe('NamesTab', () => {
       );
       rerender(<NamesTab bodyId="wb1" />);
       expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Lake or pond/i);
+    });
+
+    it('Reservoir, then Wetland while it waits; away and back, then Slow river reach: one queue, the last press stored', async () => {
+      mocks.results.set(identity, identityOf());
+      mocks.server = (name, args) => {
+        if (name !== 'waterBodies:setClass') return;
+        const cls = (args.bodyClass as string | null) ?? 'lakePond';
+        mocks.results.set(get, { available: true, body: { ...BODY, type: cls } });
+        mocks.results.set(identity, identityOf({ bodyClass: cls, moderatorClass: args.bodyClass }));
+      };
+      const pick = async (label: string | RegExp) => {
+        await userEvent.click(screen.getByRole('button', { name: /Another class/ }));
+        await userEvent.click(await screen.findByRole('menuitem', { name: label }));
+        await userEvent.click(screen.getByRole('button', { name: /^Set as/ }));
+      };
+      const { rerender } = render(<NamesTab bodyId="wb1" />);
+      await pick('Reservoir');
+      await pick('Wetland');
+      // Another tab, and back to Names, before the first write answers.
+      rerender(<div />);
+      rerender(<NamesTab bodyId="wb1" />);
+      // The tab joins the queue that is there: the waiting choice shows, never the older record.
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName(/Wetland/);
+      await pick('Slow river reach');
+      await act(async () => land());
+      await waitFor(() => expect(record().type).toBe('river'));
+      // One write at a time, in press order; the waiting Wetland was replaced, never sent last.
+      expect(mocks.calls.map((c) => (c[1] as { bodyClass: string }).bodyClass)).toEqual([
+        'reservoir',
+        'river',
+      ]);
     });
 
     it('Back to the catalogs’ class, then Reservoir again before the first answer: the catalogs’ class shows at once, ends on Reservoir', async () => {

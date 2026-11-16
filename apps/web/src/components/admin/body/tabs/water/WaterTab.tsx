@@ -90,8 +90,16 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
       target: { targetType: 'waterbody', targetId: bodyId },
     });
   };
-  const mean = useLatestPick<DepthSource | null>(depth?.meanFrom ?? null, choose1('mean'));
-  const max = useLatestPick<DepthSource | null>(depth?.maxFrom ?? null, choose1('max'));
+  const mean = useLatestPick<DepthSource | null>(
+    `water-depth-mean:${bodyId}`,
+    depth?.meanFrom ?? null,
+    choose1('mean'),
+  );
+  const max = useLatestPick<DepthSource | null>(
+    `water-depth-max:${bodyId}`,
+    depth?.maxFrom ?? null,
+    choose1('max'),
+  );
   const shown =
     data === undefined || isFailed(data) || depth === null
       ? data

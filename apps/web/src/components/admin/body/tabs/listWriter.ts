@@ -1,5 +1,7 @@
 import { createContext, createElement, type ReactNode, useContext, useRef, useState } from 'react';
 
+import { createPickStore, PickStoreContext } from './latestPick';
+
 /**
  * **One queue for a whole-list write** (Links' staff links, a landmark's or a body's other
  * spellings). A whole-list write built from the list a render held can undo a write still on its
@@ -147,13 +149,22 @@ const Writers = createContext<Map<string, Entry> | null>(null);
  */
 const Memories = createContext<Map<string, { current: unknown }> | null>(null);
 
+/**
+ * The console's write queues, above the consoles: the lists' (`useListWriter`) and the picks'
+ * (`useLatestPick`, its store) — one owner for every queue a page's writes outlive.
+ */
 export function ListWritersProvider({ children }: { children: ReactNode }) {
   const [writers] = useState(() => new Map<string, Entry>());
   const [memories] = useState(() => new Map<string, { current: unknown }>());
+  const [picks] = useState(() => createPickStore());
   return createElement(
     Writers.Provider,
     { value: writers },
-    createElement(Memories.Provider, { value: memories }, children),
+    createElement(
+      Memories.Provider,
+      { value: memories },
+      createElement(PickStoreContext.Provider, { value: picks }, children),
+    ),
   );
 }
 

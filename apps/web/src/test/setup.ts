@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import { resetLatestPicks } from '@/components/admin/body/tabs/latestPick';
 
 // jsdom has no `matchMedia`; the theme provider (and anything that reads a media query) calls it on mount.
 // Stub a stable "no dark preference" matcher so themed components — the admin charts especially —
@@ -33,6 +34,10 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 // Testing Library's automatic afterEach cleanup doesn't self-register — do it here, or rendered
 // trees leak across tests and duplicate-match queries.
 afterEach(cleanup);
+
+// The pick queues outside any provider live for the page (never in a tab): start each test afresh,
+// so a write a test left waiting never joins the next test's control.
+afterEach(() => resetLatestPicks());
 
 // `findBy*` and `waitFor` give up after 1 s by default. On CI the runner is load-starved (turbo runs
 // every package at once), and a debounce plus a render has outrun that budget while being fast in
