@@ -26,7 +26,6 @@ import type { Doc } from '../_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE, authorDeletedAtOf } from './authorDeletion';
 import type { VerdictTargetType } from './contentVerdicts';
 import { authorRetracted } from './eraseClock';
-import type { Can } from './peopleCan';
 
 /** Anything a moderator tries on an item the sweep erased. */
 export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';

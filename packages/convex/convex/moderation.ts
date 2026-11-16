@@ -61,7 +61,6 @@ import {
   OVERTURN_NOTHING_STANDING,
   POST_RESTORE_NEEDS_A_CHOICE,
   POST_UNRESTORABLE,
-  type RecordFacts,
   recordFactsOf,
   recordRefusal,
   UNDO_LEAVES_POST_EMPTY,
@@ -377,10 +376,23 @@ export interface PostRestorePlan {
  * brings back, and whether the Post would show any. Reads only — a refusal writes nothing. A
  * chosen id that isn't a member, isn't down, or was withdrawn by its author is refused.
  */
+/**
+ * How the plan reads a member and the newest row on it: from the database (the writes), or from what
+ * a read already holds (the record sheet's item pane, which read them within its budget).
+ */
+export interface PostMemberReader {
+  report(id: Id<'reports'>): Promise<Doc<'reports'> | null>;
+  newest(id: Id<'reports'>): Promise<Doc<'moderationActions'> | null>;
+}
+
 export async function planPostRestore(
   ctx: QueryCtx,
   post: Doc<'posts'>,
   { reviveRemoved = false, chosen = [] }: { reviveRemoved?: boolean; chosen?: Id<'reports'>[] },
+  read: PostMemberReader = {
+    report: (id) => ctx.db.get(id),
+    newest: (id) => newestRowOn(ctx, id),
+  },
 ): Promise<PostRestorePlan> {
   const memberIds = new Set<string>(post.reportIds);
   const chosenSet = new Set<string>(chosen);
@@ -396,7 +408,7 @@ export async function planPostRestore(
     visibleAfter: 0,
   };
   for (const id of post.reportIds) {
-    const report = await ctx.db.get(id);
+    const report = await read.report(id);
     if (!report) {
       if (chosenSet.has(id)) throw new ConvexError('A chosen report no longer exists');
       continue;
@@ -407,7 +419,7 @@ export async function planPostRestore(
       plan.visibleAfter++;
       continue;
     }
-    const last = await newestRowOn(ctx, report._id);
+    const last = await read.newest(report._id);
     // A member a moderator chose to bring back, then put back down by that restore's undo, is down
     // on its own decision again, though the row naming the Post is the last word on it.
     const revivable =

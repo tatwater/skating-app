@@ -522,6 +522,8 @@ export default defineSchema({
       v.literal('rows'),
       v.literal('flagSubjects'),
       v.literal('undoChains'),
+      // The content record (B01-4d): the verdict replay and the erasure clocks after it.
+      v.literal('verdicts'),
       v.literal('lapseSweep'),
       v.literal('lapseRetry'),
     ),

@@ -1312,9 +1312,14 @@ export const person = query({
       },
       /**
        * Backfills not yet finished that this page rests on: until `flagSubjects` is done, flags on
-       * their content filed before the stamp aren't found (`strip.openFlags.onContent`, `open.flags`).
+       * their content filed before the stamp aren't found (`strip.openFlags.onContent`, `open.flags`);
+       * until `verdicts` is, the record (`hidden`, the *On the record* row) may miss a decision made
+       * before the record existed (`contentRecord.recordCounts` says the same).
        */
-      pending: (stored.flagSubjectsReady ? [] : ['flagSubjects']) as PeopleBackfill[],
+      pending: [
+        ...(stored.flagSubjectsReady ? [] : ['flagSubjects']),
+        ...stored.pending.filter((b) => b === 'verdicts'),
+      ] as PeopleBackfill[],
       open: {
         flags: openFlags,
         flagsCapped: userCapped || contentCapped,
