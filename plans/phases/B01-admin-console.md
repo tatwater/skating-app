@@ -4586,35 +4586,50 @@ toast naming its subject and what was not changed (D268).
 
 **Every admin write, and where its refusal is said:**
 
-| Write | Its place open | Its place gone |
-|---|---|---|
-| Names: *Display this*, the class (pick store) | a toast naming body and what | the same toast |
-| Names: aliases (list queue) | under the field | a toast naming the body |
-| Names: a community name (`act`) | a toast | a toast naming the body (`sendFor`) |
-| Water: depth source (pick store) | a toast naming body and what | the same toast |
-| Access: ruling buttons (pick store) | a toast naming body and what | the same toast |
-| Access: *Rule no public access* (pick store, asker) | the dialog, over the reason | a toast naming body and what |
-| Access: *Make official* (`act`) / *Hide* (`actInDialog`, asker) | a toast / the dialog | a toast naming the body |
-| Places: landmark card and spellings (list queue) | in the card | a toast naming the body |
-| Places: *Dismiss*, *Decline* (`actInDialog`, asker) / *Same place* (`act`) | the dialog / a toast | a toast naming the body |
-| Links (list queue) | the section's note | a toast naming the body |
-| Imagery: satellite link (pick store, in place) / pass override | under the control / the dialog | a toast naming the body |
-| Hazards: demote (`holdFor` the dialog) | the dialog | a toast naming the body |
-| Standing: dormant, active, remove, restore (`holdFor` the form) | the form | a toast naming the body |
-| The frame: map boost (pick store) | a toast naming the body | the same toast |
-| People: a person's levers (asker: the page) | the lever, or its dialog | a toast naming the person |
-| People: the record sheet's levers (`useRecordActing`) | the item, or its dialog | a toast naming the person |
-| Undo: from a toast or History (no reason) | a toast | the same toast |
-| Undo: with a reason (asker: the dialog) | the dialog | a toast |
-| The shell: presence heartbeat | — no one asked | — |
-| The Bodies list, People list, Overview | no writes | — |
-| Legacy, no `catch` (Support's buttons, the water list's *Approve*) | a toast in the server's words | the same |
-| Legacy, said in place (old editor, seasons, requests, landmark tool, place names, posted rules, dismiss, restore, moderator actions; the reason dialogs of flags, recurrence, features, the water list and the hazard controls) | in place | a toast in the server's words |
+| Write | Its place open | Its place gone | What stops its place being drawn while mounted, and the place it asks |
+|---|---|---|---|
+| Names: *Display this*, the class (pick store) | a toast naming body and what | the same toast | nothing to draw: said by toast either way |
+| Names: aliases (list queue) | under the field | a toast naming the body | the identity read failing (no field): the refusal line, by ref (tested) |
+| Names: a community name (`act`) | a toast | a toast naming the body (`sendFor`) | nothing to draw: a toast either way |
+| Water: depth source (pick store) | a toast naming body and what | the same toast | nothing to draw: a toast either way |
+| Access: ruling buttons (pick store) | a toast naming body and what | the same toast | nothing to draw: a toast either way |
+| Access: *Rule no public access* (pick store, asker) | the dialog, over the reason | a toast naming body and what | its permission flipping, its row going: the dialog's body, by ref |
+| Access: *Make official* (`act`) / *Hide* (`actInDialog`, asker) | a toast / the dialog | a toast naming the body | the launch's row going (tested): the dialog's body, by ref |
+| Places: landmark card and spellings (list queue) | in the card | a toast naming the body | the card closing: its refusals are the tab's `act` toasts, nothing said in place |
+| Places: *Dismiss*, *Decline* (`actInDialog`, asker) / *Same place* (`act`) | the dialog / a toast | a toast naming the body | the ask's row going: the dialog's body, by ref |
+| Links (list queue) | the section's note | a toast naming the body | the view drawing something else: the refusal line, by ref |
+| Imagery: satellite link (pick store, in place) / pass override | under the control / the dialog | a toast naming the body | the section not drawn: the control's assist line, by ref (store tested) |
+| Hazards: demote (`holdFor` the dialog) | the dialog | a toast naming the body | the feature going, the season moving: the dialog's body, by ref |
+| Standing: dormant, active, remove, restore (`holdFor` the form) | the form | a toast naming the body | another standing picked (tested): the form, by ref, on its pick |
+| The frame: map boost (pick store) | a toast naming the body | the same toast | nothing to draw: a toast either way |
+| People: a person's levers (asker: the page) | the lever, or its dialog | a toast naming the person | the person read failing or going (tested), a permission flipping: the lever block, by ref |
+| People: a lever's write that changed nothing | the receipt "Nothing changed — … was already set that way" | the same receipt | said as a landed write is, wherever the moderator is (tested) |
+| People: a decision on one's own content | a refusal like any other, where it was asked | a toast naming the person | as the levers (tested) |
+| People: the record sheet's levers (`useRecordActing`) | the item, or its dialog | a toast naming the person | the sheet closing, another item, the narrow list: its "still here" rule and the item region, by ref |
+| Undo: from a toast or History (no reason) | a toast | the same toast | nothing to draw |
+| Undo: with a reason (asker: the dialog) | the dialog | a toast | nothing can: the dialog is drawn by the provider whenever it asks, over the splash too; gone with the console (tested) |
+| The shell: presence heartbeat | — no one asked | — | — |
+| The Bodies list, People list, Overview | no writes | — | — |
+| Legacy, no `catch` (Support's buttons, the water list's *Approve*) | a toast in the server's words | the same | nothing to draw |
+| Legacy, behind a reason dialog (flags, recurrence, features, the water list, place-name dismiss, the hazard controls) | the dialog | a toast in the server's words | the permission flipping (tested on the hazard controls), the row going: the dialog's refusal line, by ref (`askFrom`) |
+| Legacy: moderator actions | its dialog | a toast in the server's words | the permission flipping (tested): its refusal line, by ref |
+| Legacy, said on the page (old editor's banner, seasons, requests, place names, restore) | on the page | a toast in the server's words | the page's read failing or loading: the banner or the page's root, by ref |
 
 **Left:** a Legacy toast names the server's words, not its subject — owed with each page's
 retirement; across a full remount of the console (leaving it), a write from each store can be out
 at once (the accepted limit, said in the model); a namesake pair in one county with one kind would
-still read the same (TIGER holds none we know of; not counted on dev).
+still read the same (TIGER holds none we know of; not counted on dev); a Legacy page whose refusal is
+said in a card inside the page (seasons' cards) asks the page's root, not the card.
+
+**The drawn place (Greptile on #138).** "Its place is still there" was answered by a mounted
+component — and a mounted component is not a drawn place: a moderator who lost a permission while a
+takedown was out saw nothing (the control returned null, its hook stayed mounted, the error went into
+a dialog no longer drawn). A place now registers itself by being rendered — a ref on the element that
+says the refusal (`usePlace`; drawn = in the document and not inside anything hidden or inert), asked
+when the answer comes. The reason dialogs hand theirs to every write their confirm starts (`askFrom`),
+so no caller remembers to; a Legacy page that says refusals on the page hands its banner or root
+(`PagePlace`). The pick store's in-place control takes its place (`inPlace: Place`). A guard holds
+that no console place says it is drawn without asking.
 
 ## Ruled out
 
