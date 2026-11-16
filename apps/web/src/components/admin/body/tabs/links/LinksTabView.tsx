@@ -66,9 +66,17 @@ type Editing = {
   opening: number;
 };
 
-/** Focus has fallen to the page (or is nowhere): the only focus a completion may take back. */
-const focusIsLost = (): boolean =>
-  document.activeElement === null || document.activeElement === document.body;
+/**
+ * Focus is nowhere the moderator put it — nowhere, the page, or a container holding `region` (the
+ * console's panel, where its floor, `useKeepFocus`, catches focus a closed editor dropped, and may
+ * do so before this tab's effect runs): the only focus a completion may take back.
+ */
+const focusIsLost = (region: HTMLElement | null): boolean => {
+  const active = document.activeElement;
+  return (
+    active === null || active === document.body || (region !== null && active.contains(region))
+  );
+};
 
 /** Said when an added link's row can't be told from the list any more (another write moved it). */
 const LOST_ADD =
@@ -120,10 +128,11 @@ export function LinksTabView({
     const key = refocus.current;
     if (key === null) return;
     refocus.current = null;
-    // Only focus the closed editor left behind (fallen to the page) is taken back — never focus the
-    // moderator has since put somewhere else.
-    if (!focusIsLost()) return;
     const root = section.current;
+    // **Only focus the closed editor dropped is taken back** — fallen to the page with it, or caught
+    // by the console's floor — never focus the moderator has since put somewhere else. Decided here,
+    // after the editor has gone, the one place that sees where focus ended up.
+    if (!focusIsLost(root)) return;
     const target =
       root?.querySelector<HTMLElement>(
         `[data-link-key="${CSS.escape(key)}"] [data-slot="link-edit"]`,
@@ -161,13 +170,9 @@ export function LinksTabView({
         return;
       }
     }
-    // It hands focus to the link's Edit only from inside its own editor (or from nowhere): never
-    // from a control the moderator has moved to while the save was out.
-    const editor = section.current?.querySelector('[data-slot="link-editor"]') ?? null;
-    const active = document.activeElement;
-    if (focusIsLost() || (editor !== null && active !== null && editor.contains(active))) {
-      refocus.current = key;
-    }
+    // Asks for the link's Edit to take focus; the effect hands it over only if focus left with the
+    // editor, never from a control the moderator has moved to while the save was out.
+    refocus.current = key;
     setEditing(null);
   };
   // The openings with a save on its way: an opening's own Done and Remove don't send twice (a ref,

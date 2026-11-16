@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -16,9 +16,10 @@ beforeAll(stubJsdomAnimations);
 
 /**
  * **A write's completion moves focus only if it may**: the attempt is the one that started it, its
- * editor is still the open one, and focus is still inside that editor (or nowhere). It never takes
- * focus from a control the moderator has since moved to. Each case starts a write, holds it, moves
- * on (cancels where there is an editor, then focuses a control outside the tab), and lands it late.
+ * editor is still the open one, and focus left with that editor (to the page, or the console's floor
+ * around the tab) or was nowhere. It never takes focus from a control the moderator has since moved
+ * to. Each case starts a write, holds it, moves on (where there is an editor, cancels it or leaves
+ * it open; then focuses a control outside the tab), and lands it late.
  */
 
 /** A control outside the tab the moderator moves to. */
@@ -36,6 +37,17 @@ const held = () => {
   const write = () => new Promise<void>((r) => answers.push(r));
   return { answers, write, land: () => act(async () => answers.shift()?.()) };
 };
+
+/** A frame and a tick: long enough for a focus move deferred to the next frame to have happened. */
+const settle = () =>
+  act(async () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0))));
+
+/** A staff link's own Edit, found by the label its row shows. */
+const editOf = (label: string) =>
+  within(screen.getByText(label).closest<HTMLElement>('[data-link-key]') as HTMLElement).getByRole(
+    'button',
+    { name: 'Edit' },
+  );
 
 function LinksServer({ write }: { write: () => Promise<void> }) {
   const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
@@ -147,34 +159,68 @@ const CASES: Case[] = [
   },
 ];
 
+// Each case with an editor runs twice: canceled before the move, and left open — the save then
+// closes its editor, and still takes no focus from where the moderator went.
+const RUNS = CASES.flatMap((c) =>
+  c.cancel === undefined
+    ? [{ ...c, leftOpen: false }]
+    : [
+        { ...c, leftOpen: false },
+        { ...c, name: `${c.name}, its editor left open`, cancel: undefined, leftOpen: true },
+      ],
+);
+
 describe('a late completion never takes focus from where the moderator moved it', () => {
-  it.each(CASES)('$name', async (c) => {
+  it.each(RUNS)('$name', async (c) => {
     const user = userEvent.setup();
     const h = held();
     render(<Elsewhere>{c.render(h.write)}</Elsewhere>);
     await c.start(user);
+    // The write really is out: a case whose start sent nothing would pass with nothing tested.
+    expect(h.answers).toHaveLength(1);
     await c.cancel?.(user);
+    // No hand moves on inside the frame its own keystroke asked for (a grip's step refocuses then).
+    await settle();
     const elsewhere = screen.getByRole('textbox', { name: 'Somewhere else' });
     await user.click(elsewhere);
     await h.land();
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    await settle();
     expect(elsewhere).toHaveFocus();
+    // Left open, the editor was the one that sent: the save closed it all the same.
+    if (c.leftOpen) expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
   });
 });
 
 describe('a completion whose editor is still open and focused keeps today’s behavior', () => {
-  it('Links: an edit that lands hands focus to its link’s Edit', async () => {
+  it('Links: an edit that lands hands focus to its own link’s Edit', async () => {
     const user = userEvent.setup();
     const h = held();
     render(<Elsewhere>{<LinksServer write={h.write} />}</Elsewhere>);
-    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
-    await editLabel(user, 'The Association');
+    // The second link, so its own Edit can't be confused with the section's first stop.
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
+    await editLabel(user, 'Dam level');
     await user.click(screen.getByRole('button', { name: 'Done' }));
     await h.land();
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
-    const edit = document.querySelector<HTMLElement>(
-      '[data-link-key] [data-slot="link-edit"]',
-    ) as HTMLElement;
-    expect(edit).toHaveFocus();
+    await settle();
+    expect(editOf('Dam level')).toHaveFocus();
+  });
+
+  it('Links: focus the console’s floor holds (the panel around the tab) is taken back too', async () => {
+    const user = userEvent.setup();
+    const h = held();
+    render(
+      <div tabIndex={-1} data-slot="body-tab-panel">
+        <LinksServer write={h.write} />
+      </div>,
+    );
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
+    await editLabel(user, 'Dam level');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    // `useKeepFocus` puts focus dropped to the page on the panel, and can get there before the
+    // tab's own effect: the panel is not a place the moderator moved to.
+    act(() => document.querySelector<HTMLElement>('[data-slot="body-tab-panel"]')?.focus());
+    await h.land();
+    await settle();
+    expect(editOf('Dam level')).toHaveFocus();
   });
 });
