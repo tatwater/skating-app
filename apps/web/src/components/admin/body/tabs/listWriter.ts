@@ -32,17 +32,25 @@ export type Unapplied = 'gone' | 'moved';
 /**
  * A chip field's new value as a change by item: what it added and removed since `shown` (the list
  * the render held), applied to whatever list the queue builds on — never the whole field's value.
+ * A word is matched as the server folds it (trimmed, any case: one alias per word), so a word taken
+ * off goes even if another moderator stored it in another case since, and one put on isn't added
+ * twice; a recased word (one off, one on) takes the new case.
  */
 export function chipChange(
   shown: readonly string[],
   value: readonly string[],
 ): (base: readonly string[]) => string[] {
+  const fold = (a: string) => a.trim().toLowerCase();
   const added = value.filter((a) => !shown.includes(a));
   const removed = shown.filter((a) => !value.includes(a));
-  return (base) => [
-    ...base.filter((a) => !removed.includes(a)),
-    ...added.filter((a) => !base.includes(a)),
-  ];
+  return (base) => {
+    // A word put on that the list already holds exactly is no change (nothing moves).
+    const fresh = added.filter((a) => !base.includes(a));
+    // Every word the chips changed leaves, whatever its stored case; the rest stay as stored.
+    const out = new Set([...removed, ...fresh].map(fold));
+    // A word the chips put on that the list holds exactly stays where it is.
+    return [...base.filter((a) => !out.has(fold(a)) || added.includes(a)), ...fresh];
+  };
 }
 
 export type ListWriter<T> = {
