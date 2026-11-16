@@ -11,14 +11,22 @@ import { join, resolve } from 'node:path';
 import { expect, test } from 'vitest';
 
 const CONVEX = resolve(__dirname, '../../convex/convex');
-/** Where the person writes and the record sheet's writes live. */
-const WRITERS = ['moderation.ts', 'admin.ts', 'ledger.ts', join('lib', 'ledgerEditors.ts')];
+/** Where the person writes, the record sheet's writes and the alert pin live. */
+const WRITERS = [
+  'moderation.ts',
+  'admin.ts',
+  'ledger.ts',
+  'accessAlerts.ts',
+  join('lib', 'ledgerEditors.ts'),
+];
 
 /** A call that writes the audit log. */
 const AUDIT = /\b(?:auditUser|writePersonAudit|writeAudit|takeLedgerGrant)\(/;
 /** What decides a write: a refusal, a refusal helper, or an early "nothing changed". */
 const DECIDES =
-  /throw new ConvexError|\bassertWrite\(|\bloadModeratableUser\(|\brecordRefusal\(|return unchanged\(/g;
+  /throw new ConvexError|\bassertWrite\(|\bloadModeratableUser\(|\brecordRefusal\(|\brecordActorRefusal\(|\bownContentRefusal\(|return unchanged\(/g;
+
+const count = (text: string, char: string) => text.split(char).length - 1;
 
 /** The `{ … }` block that opens at or after `from`. */
 function blockAt(text: string, from: number): string {
@@ -36,15 +44,22 @@ function bodies(text: string): Array<{ name: string; body: string }> {
   const out: Array<{ name: string; body: string }> = [];
   const fn = /(?:async )?function (\w+)\s*(?:<[^>]*>)?\(/g;
   for (let m = fn.exec(text); m; m = fn.exec(text)) {
-    // Past the parameter list, to the body: the first brace that ends its line.
+    // Past the parameter list, to the body: the first brace that ends its line once the return type
+    // is closed — `Promise<{` on a line of its own opens the type, not the body.
     let depth = 0;
     let i = text.indexOf('(', m.index);
     for (; i < text.length; i++) {
       if (text[i] === '(') depth++;
       else if (text[i] === ')' && --depth === 0) break;
     }
+    const typeClosed = (to: number) => {
+      const sig = text.slice(i, to).replace(/=>/g, '');
+      return count(sig, '<') === count(sig, '>') && count(sig, '{') === count(sig, '}');
+    };
     let open = text.indexOf('{', i);
-    while (open > 0 && text[open + 1] !== '\n') open = text.indexOf('{', open + 1);
+    while (open > 0 && (text[open + 1] !== '\n' || !typeClosed(open))) {
+      open = text.indexOf('{', open + 1);
+    }
     out.push({ name: m[1] as string, body: blockAt(text, open) });
   }
   const handler = /export const (\w+) = (?:internalMutation|mutation)\(\{[\s\S]*?handler:[^=]*=>/g;
@@ -93,4 +108,15 @@ test('the guard sees a refusal, or a "nothing changed", after the audit call', (
   await writePersonAudit(ctx, row);
 }`),
   ).toEqual([]);
+  // A return type that opens a brace at the end of its line is the type, not the body.
+  expect(
+    decidesAfterAudit(`export async function setStatus(
+  ctx: MutationCtx,
+): Promise<{
+  targetId: Id<'reports'>;
+}> {
+  await writeAudit(ctx, row);
+  const own = recordActorRefusal(actor, facts);
+}`),
+  ).toEqual(['setStatus: recordActorRefusal(']);
 });

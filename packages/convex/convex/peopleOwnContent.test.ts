@@ -262,6 +262,42 @@ describe('the Inbox: no ruling on a flag about you or your content', () => {
       ).rejects.toThrow(OWN_CONTENT_REFUSAL);
     }
   });
+
+  test('a flag the subjects backfill has not stamped is read from its target: refused all the same', async () => {
+    const t = await setup();
+    const me = await seed(t, 'me', { role: 'moderator' });
+    const filer = await seed(t, 'filer');
+    const body = await lake(t);
+    const mine = await report(t, me, body);
+    const [onMine, onMe] = await t.run(async (ctx) => [
+      // A content flag filed before subjects were stamped, and a flag on the moderator themselves.
+      await ctx.db.insert('contentFlags', {
+        flaggerId: filer,
+        targetType: 'report',
+        targetId: mine,
+        reason: 'spam',
+        status: 'open',
+        createdAt: T0,
+      }),
+      await ctx.db.insert('contentFlags', {
+        flaggerId: filer,
+        targetType: 'user',
+        targetId: me,
+        reason: 'spam',
+        status: 'open',
+        createdAt: T0,
+      }),
+    ]);
+    for (const flagId of [onMine, onMe]) {
+      await expect(
+        as(t, 'me').mutation(api.moderation.resolveFlag, {
+          flagId: flagId as Id<'contentFlags'>,
+          resolution: 'dismissed',
+          reason: 'r',
+        }),
+      ).rejects.toThrow(OWN_CONTENT_REFUSAL);
+    }
+  });
 });
 
 describe('over roles × writes × whose content (property)', () => {

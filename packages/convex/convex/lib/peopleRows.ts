@@ -78,10 +78,14 @@ export function derivePersonRow(
   // New terms — a status write that set a reason or an end that differs (it says so: the row keeps
   // only a line of the reason) — date the status anew, as the person page's status note does.
   const statusChanged = prev !== null && (prev.status !== profile.status || termsSet);
+  // A row first written by a status write (a person the rows backfill hasn't reached) is dated by
+  // that write, as the person page's note dates it — never 0 beside a note that names the write.
   const statusSince = deleted
     ? (profile.deletedAt ?? (statusChanged ? now : (prev?.statusSince ?? 0)))
     : prev === null
-      ? 0
+      ? termsSet
+        ? now
+        : 0
       : statusChanged
         ? now
         : prev.statusSince;

@@ -49,6 +49,7 @@ import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
+import { flagSubject, flagSubjectOf } from './lib/flagSubject';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { ownContentRefusal } from './lib/ownContent';
 import {
@@ -1179,8 +1180,13 @@ export const resolveFlag = mutation({
 
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new ConvexError('Flag not found');
-    // A flag about them, or about their content, is decided by someone else (D269).
-    const own = ownContentRefusal(actor, flag.subjectUserId);
+    // A flag about them, or about their content, is decided by someone else (D269). A flag on a
+    // person names them by its target; a content flag the subjects backfill hasn't stamped yet is
+    // read from its target, so an unstamped flag is never the way around the rule.
+    const known = flagSubject(flag);
+    const subject =
+      known === undefined ? await flagSubjectOf(ctx, flag.targetType, flag.targetId) : known;
+    const own = ownContentRefusal(actor, subject);
     if (own !== null) throw new ConvexError(own);
     // Resolution is terminal and single-shot. Guard it so a stale queue view — two moderators acting
     // on the same open flag, or a re-submit of an already-closed one — can't patch it twice, write a
@@ -1871,14 +1877,11 @@ export const banUser = mutation({
   },
 });
 
-/** What a lifecycle action replaced — the whole status, so its undo puts back exactly that (D226). */
-function statusPrev(target: Doc<'profiles'>) {
-  return {
-    status: target.status,
-    statusReason: target.statusReason ?? null,
-    suspendedUntil: target.suspendedUntil ?? null,
-  };
-}
+/**
+ * What a lifecycle action replaced — the person's whole terms, so its undo puts back exactly that
+ * (D226): the reading the no-op test and `lib/statusTerms` make, never a second copy of it.
+ */
+const statusPrev = statusTermsOf;
 
 export async function banImpl(
   ctx: MutationCtx,

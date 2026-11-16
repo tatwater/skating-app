@@ -310,3 +310,58 @@ describe('a row written before D270 that changed nothing offers no undo', () => 
     }
   });
 });
+
+describe('an undo whose write would change nothing is refused, not silently empty', () => {
+  test('undoing a reason change with the reason that stands: refused, no row, still offered', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them');
+    const a = as(t, 'adm');
+    await a.mutation(api.moderation.banUser, { userId: id, reason: 'first' });
+    vi.setSystemTime(T0 + 60_000);
+    const changed = await a.mutation(api.moderation.banUser, { userId: id, reason: 'again' });
+    if (!changed.changed || !changed.undoable) throw new Error('the reason change is undoable');
+    const rows = await auditRows(t);
+    // The undo's reason is the ban's reason (`restoreStatus`): the one that stands changes nothing.
+    await expect(
+      a.mutation(api.undo.run, { actionId: changed.actionId, reason: 'again' }),
+    ).rejects.toThrow(NOTHING_TO_UNDO);
+    expect(await auditRows(t)).toBe(rows);
+    const toast = await a.query(api.undo.latestOwn, { targetType: 'user', targetId: id });
+    expect(toast?.actionId).toBe(changed.actionId);
+    expect(toast?.undo.state).toBe('available');
+  });
+});
+
+describe('a person first given a row by a status write', () => {
+  test('is dated by that write — the list row and the page note agree', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    // No People row yet (the rows backfill hasn't reached them).
+    const id = await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'rowless',
+        displayName: 'rowless',
+        username: 'rowless',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: NOTIF_PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: T0 - 30 * DAY,
+      }),
+    );
+    await as(t, 'adm').mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
+    const page = await as(t, 'adm').query(api.people.person, { userId: id });
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('peopleRows')
+        .withIndex('by_user', (q) => q.eq('userId', id))
+        .first(),
+    );
+    expect(page?.statusNote?.at).toBe(T0);
+    expect(row?.statusSince).toBe(T0);
+  });
+});
