@@ -5246,7 +5246,15 @@ export default defineSchema({
      * read it; every read that offers a town's state reads this.
      */
     townEntries: v.optional(
-      v.array(v.object({ name: v.string(), state: v.string(), id: v.id('adminAreas') })),
+      v.array(
+        v.object({
+          name: v.string(),
+          state: v.string(),
+          id: v.id('adminAreas'),
+          /** The town's kind ("city"), only when another subdivision of its state shares its name. */
+          kind: v.optional(v.string()),
+        }),
+      ),
     ),
     /**
      * **A moderator's pinned towns** (B01-3g), kept apart from the computed ones — rebuilt in the same
@@ -5261,6 +5269,8 @@ export default defineSchema({
           state: v.string(),
           id: v.id('adminAreas'),
           county: v.optional(v.string()),
+          /** The town's kind ("city"), only when another subdivision of its state shares its name. */
+          kind: v.optional(v.string()),
         }),
       ),
     ),

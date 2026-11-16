@@ -30,6 +30,8 @@ import {
   distanceToPolygonMeters,
   isUndefinedSubdivision,
   stateOfSubdivision,
+  townKindOf,
+  townName,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -239,9 +241,16 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
   // computed half's rule (`bodyGeo.placesFrom`) — but its county and state count.
   const listed = pins.filter((p) => !isUndefinedSubdivision(p.key));
   const townEntries = [...(geo.townEntries ?? [])];
+  // Keyed by boundary, never by name (B01-3l): a pinned Plattsburgh town beside a computed
+  // Plattsburgh city is two towns.
   for (const p of listed) {
-    if (!townEntries.some((e) => e.name === p.name && e.state === p.state)) {
-      townEntries.push({ name: p.name, state: p.state, id: p.id });
+    if (!townEntries.some((e) => e.id === p.id)) {
+      townEntries.push({
+        name: p.name,
+        state: p.state,
+        id: p.id,
+        ...(p.kind !== undefined ? { kind: p.kind } : {}),
+      });
     }
   }
   const towns = [...(geo.towns ?? [])];
@@ -301,12 +310,22 @@ export async function pinnedFactsFor(
       countyNames.set(countyKey, row !== null && row.level === 'county' ? row.name : null);
     }
     const county = countyKey === null ? null : (countyNames.get(countyKey) ?? null);
+    // Its kind when another subdivision of its state shares its name (B01-3l), as the computed
+    // half's entries carry it — one label for a pinned town and a computed one.
+    const namesakes = await ctx.db
+      .query('adminAreas')
+      .withIndex('by_level_state_name', (q) =>
+        q.eq('level', 'town').eq('state', town.state).eq('name', town.name),
+      )
+      .take(2);
+    const kind = namesakes.length > 1 ? townKindOf(town.name, town.fullName) : undefined;
     pinnedTowns.push({
       key,
       name: town.name,
       state: town.state,
       id: town._id,
       ...(county !== null ? { county } : {}),
+      ...(kind !== undefined ? { kind } : {}),
     });
   }
   return { pinnedTowns, pinnedMissing };
@@ -358,6 +377,17 @@ export function townsWithStateOf(
 }
 
 /**
+ * A body's towns as a list of names (B01-3l) — one per boundary, each as `townName` shows it
+ * ("Plattsburgh (city)" when its state has two of that name). What every list of towns reads, in
+ * place of the facts' name-keyed `towns`, which folded two same-named towns into one.
+ */
+export function townNamesOf(
+  geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townIds' | 'townEntries'> | null,
+): string[] | null {
+  return townRowsOf(geo)?.map(({ name }) => name) ?? null;
+}
+
+/**
  * Whether the facts carry the towns keyed on name and state (B01-3d) — at least one entry per
  * distinct name. The one rule the readers and the drift repair share: a row without them is read by
  * the name-keyed lists and is behind.
@@ -375,7 +405,10 @@ export function townRowsOf(
   geo: Pick<Doc<'bodyGeoFacts'>, 'towns' | 'townStates' | 'townIds' | 'townEntries'> | null,
 ): { name: string; state: string | null; id: Id<'adminAreas'> | null }[] | null {
   if (geo === null) return null;
-  if (hasTownEntries(geo)) return (geo.townEntries ?? []).map((e) => ({ ...e }));
+  // Each entry by its boundary, named as `townName` shows it (B01-3l): its kind when carried.
+  if (hasTownEntries(geo)) {
+    return (geo.townEntries ?? []).map((e) => ({ name: townName(e), state: e.state, id: e.id }));
+  }
   return (geo.towns ?? []).map((name, i) => ({
     name,
     state: geo.townStates?.[i] ?? null,

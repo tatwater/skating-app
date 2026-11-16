@@ -28,6 +28,7 @@ import {
   type Season,
   seasonEndMs,
   seasonStartMs,
+  townName,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -36,7 +37,7 @@ import type { ModerationAction } from './lib/audit';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { geoFactsOf, placesOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
+import { geoFactsOf, placesOf, townNamesOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { landmarksForBody } from './lib/landmarkRows';
@@ -139,7 +140,7 @@ export const consoleExtras = query({
     const placed = placesOf(geo);
     return {
       // `null` until computed (`geoComputedAt`); computed, the towns it lies in — empty for none.
-      towns: placed === null ? null : (placed.towns ?? []),
+      towns: townNamesOf(placed),
       hasBathymetry,
       outlineTrustedSince,
       outlineTrustedVia,
@@ -402,13 +403,14 @@ export const places = query({
     const geo = placesOf(await geoFactsOf(ctx, (await bodyOrThrow(ctx, waterBodyId))._id));
     if (geo === null) return null;
     return {
-      towns: geo.towns ?? [],
+      // One per boundary, as `townName` shows it (B01-3l).
+      towns: townNamesOf(geo) ?? [],
       /** `towns`, each with its state (B01-3c). */
       townsWithState: townsWithStateOf(geo) ?? [],
       counties: geo.counties ?? [],
       states: geo.states ?? [],
       /** The towns a moderator holds the body in (B01-3g), from the facts' `pinnedTowns`. */
-      pinned: (geo.pinnedTowns ?? []).map(({ name, state }) => ({ name, state })),
+      pinned: (geo.pinnedTowns ?? []).map((p) => ({ name: townName(p), state: p.state })),
       /** Pinned boundary keys that name no loaded town now — to show, never to drop. */
       pinnedMissing: geo.pinnedMissing ?? [],
       computedAt: geo.computedAt as number,

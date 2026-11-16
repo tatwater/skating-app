@@ -153,6 +153,7 @@ export * from './subAreaSpread';
 export * from './textCaps';
 export * from './textLengths';
 export * from './tileSurvey';
+export * from './townLabels';
 export * from './track';
 export * from './trackPrivacy';
 export * from './trackQueue';
