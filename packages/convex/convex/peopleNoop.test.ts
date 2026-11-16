@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
-import { NOTHING_TO_UNDO } from './lib/undoHandlers';
+import { NOTHING_TO_UNDO } from './lib/undoTypes';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
