@@ -402,6 +402,25 @@ describe('the Clerk mirror: nothing changed must be true of the whole effect', (
     expect(await syncs(t)).toEqual([true, true]);
   });
 
+  test('the same suspension again resends the unlock a suspension holds, and writes nothing else', async () => {
+    const t = await setup();
+    await seed(t, 'adm', { role: 'admin' });
+    const id = await seed(t, 'them', {
+      status: 'suspended',
+      statusReason: 'cool off',
+      suspendedUntil: T0 + DAY,
+    });
+    const rows = await auditRows(t);
+    const out = await as(t, 'adm').mutation(api.moderation.suspendUser, {
+      userId: id,
+      reason: 'cool off',
+      suspendedUntil: T0 + DAY,
+    });
+    expect(out).toEqual({ userId: id, changed: false, undoable: false });
+    expect(await auditRows(t)).toBe(rows);
+    expect(await syncs(t)).toEqual([false]);
+  });
+
   test('a lift of an active account sends the unlock again, and writes nothing else', async () => {
     const t = await setup();
     await seed(t, 'adm', { role: 'admin' });

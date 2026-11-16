@@ -115,4 +115,44 @@ describe('clerkAdmin.setBanned', () => {
     const rows = await scheduled(t);
     expect(rows[0]?.args[0]).toMatchObject({ attempt: 1 });
   });
+
+  test('a retry sends what Convex says now, not what it was scheduled with — a ban retry after a lift unlocks', async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+    const fetchMock = vi.fn(async (_url: string) => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'u_lifted',
+        displayName: 'x',
+        username: 'x',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyAnswered: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member',
+        status: 'active',
+        createdAt: Date.UTC(2026, 0, 1),
+      }),
+    );
+    // A ban's retry, still in flight after the person was lifted.
+    await t.action(internal.clerkAdmin.setBanned, {
+      clerkUserId: 'u_lifted',
+      banned: true,
+      attempt: 1,
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/users\/u_lifted\/unban$/);
+  });
 });

@@ -22,7 +22,7 @@
 
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalAction } from './_generated/server';
+import { internalAction, internalQuery } from './_generated/server';
 
 const CLERK_API_BASE = 'https://api.clerk.com/v1';
 
@@ -50,7 +50,12 @@ export const setBanned = internalAction({
     /** Retry counter — 0 (absent) on the first, scheduler-driven attempt. */
     attempt: v.optional(v.number()),
   },
-  handler: async (ctx, { clerkUserId, banned, attempt = 0 }) => {
+  handler: async (ctx, { clerkUserId, banned: scheduled, attempt = 0 }) => {
+    // What Convex says now, not what this was scheduled with: a ban's retry still in flight after a
+    // lift (or the reverse) must never undo the later write. The scheduled value stands only for a
+    // person with no profile to read, or one being deleted (its own step deletes the Clerk user).
+    const banned =
+      (await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId })) ?? scheduled;
     const verb = banned ? 'ban' : 'unban';
     const key = process.env.CLERK_SECRET_KEY;
     if (!key) {
@@ -105,6 +110,22 @@ export const setBanned = internalAction({
       ],
       deepLinkPath: '/admin/users',
     });
+  },
+});
+
+/**
+ * Whether Clerk should lock this person now: a ban locks; any other live status — active, suspended
+ * (a suspension never locks Clerk) — unlocks. `null` with no profile, or one on its way out.
+ */
+export const lockWanted = internalQuery({
+  args: { clerkUserId: v.string() },
+  handler: async (ctx, { clerkUserId }): Promise<boolean | null> => {
+    const profile = await ctx.db
+      .query('profiles')
+      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
+      .first();
+    if (!profile || profile.status === 'deleting' || profile.status === 'deleted') return null;
+    return profile.status === 'banned';
   },
 });
 

@@ -2029,7 +2029,11 @@ export async function suspendImpl(
     const target = await loadModeratableUser(ctx, actor, userId, { kind: 'suspend' });
     const onFile = kept === undefined ? reason : kept;
     const terms = { status: 'suspended' as const, statusReason: onFile, suspendedUntil };
-    if (sameStatusTerms(statusTermsOf(target), terms)) return unchanged(userId);
+    if (sameStatusTerms(statusTermsOf(target), terms)) {
+      // A suspension never locks Clerk: the unlock a ban's replacement sent is resent too.
+      await syncClerkBan(ctx, target, false);
+      return unchanged(userId);
+    }
 
     await ctx.db.patch(userId, {
       status: 'suspended',
