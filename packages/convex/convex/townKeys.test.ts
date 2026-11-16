@@ -172,7 +172,7 @@ describe('a body’s towns, keyed by boundary', () => {
 });
 
 describe('the loaded layer decides when a name is shared', () => {
-  test('two of one name and one kind gain nothing from it: they read as before', async () => {
+  test('two of one name and one kind gain nothing from it: no kind in either label', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.adminAreas.importCanonical, {
       areas: [

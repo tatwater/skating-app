@@ -281,7 +281,8 @@ export const NAMESAKES_READ = 8;
 /**
  * Whether the loaded subdivisions of `state` named `name` carry more than one kind (B01-3l) — the one
  * rule for when a town's label shows its kind. Two of one kind (New York's two Clinton towns) gain
- * nothing from it and read as before; Plattsburgh city and town do. Reads at most
+ * nothing from it: each is its own entry and both read "Clinton, NY" — where B01-3d folded them into
+ * one (the county would tell them apart; owed). Plattsburgh city and town do. Reads at most
  * {@link NAMESAKES_READ} boundaries (each its polygon) on `by_level_state_name`.
  */
 export async function kindsDiffer(ctx: QueryCtx, state: string, name: string): Promise<boolean> {

@@ -4010,7 +4010,7 @@ state with one name are told apart by their kind — TIGER's legal class, the su
 the full name (`fullName`, optional, written by the loader on upsert; a re-load that only gains it marks
 nothing), an index (`by_level_state_name`) finds a town's namesakes in its state, and an entry carries its `kind`
 only where they carry more than one kind (`kindsDiffer`) — two Clinton towns gain nothing from
-"(town)" and read as before. One function names a town for every reader (`townName` / `townLabel`):
+"(town)": each is its own entry, and both read "Clinton, NY" (owed, B01-3k). One function names a town for every reader (`townName` / `townLabel`):
 "Plattsburgh (city), NY" and "Plattsburgh (town), NY"; every other town reads as before. The lists the
 console reads (the frame, Places, the preview, town lines, a removed body's towns, the pins) take their
 names from the entries, one per boundary (`townNamesOf`; a name two states share in one list shows its
@@ -4380,6 +4380,21 @@ town entry per boundary, above) as its own commits.
   draws no reasons). A removal's reason that is a person's own words — a restore's undo — is marked
   on its row (`metadata.reasonIsOwn`) and returned by `removedFacts` (`left.reasonIsOwn`), so the
   shared rule quotes it; rows written before read as today.
+- **Owed from B01-3k's review** (the town-keys series):
+  - **Two same-kind namesakes read identically.** Two subdivisions of one state with one name and
+    one kind (New York's two Clinton towns, in different counties) are two entries reading
+    "Clinton, NY" in one body's list — B01-3d folded them into one. The fix is the county in the
+    label, which a computed entry does not carry yet; whether any body touches such a pair has not
+    been counted on dev.
+  - The namesake check reads up to `NAMESAKES_READ` boundary polygons per name on every recompute,
+    one query per name; deciding it once at boundary load would be cheaper (a schema and loader
+    change).
+  - Mid-load, a namesake without its full name counts as a kind of its own (`''`), so one town can
+    read "(city)" while its namesake reads bare.
+  - `townLabel` in core repeats the web's `townWithState` and `townNamesOf`'s inline
+    name-and-state; one of the three should go.
+  - `townNamesShared` takes an array but refuses more than one name (`SHARING_PAGE = 1`): the array
+    and its paging do nothing.
 - **Wording the mock did not supply** (standing until the founder reviews it): *Back to the list*
   on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
   strip's spoken value (the kit).
