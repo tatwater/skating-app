@@ -99,9 +99,10 @@ describe('the words the tab can say', () => {
     expect(CROSSING_WORDS.label).not.toMatch(LAKE_CLAIM);
     fc.assert(
       fc.property(fc.nat(500), (n) => {
-        const said = CROSSING_WORDS.again(n);
-        expect(said).not.toMatch(CROSSING_CLAIM);
-        expect(said).not.toMatch(LAKE_CLAIM);
+        for (const said of [CROSSING_WORDS.again(n), CROSSING_WORDS.live(Math.max(1, n))]) {
+          expect(said).not.toMatch(CROSSING_CLAIM);
+          expect(said).not.toMatch(LAKE_CLAIM);
+        }
       }),
     );
   });
@@ -185,7 +186,7 @@ const base: HazardsTabViewProps = {
   archived: [],
   features: MASCOMA_FEATURE_ROWS,
   winters: MASCOMA_WINTERS,
-  patternsWaiting: 2,
+  patternsWaiting: { count: 2, capped: false },
   onRetry: vi.fn(),
   lit: null,
   onLitChange: vi.fn(),

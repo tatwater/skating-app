@@ -125,13 +125,10 @@ describe('ImageryTab', () => {
       waterBodyId: BODY,
       mode: 'on',
     });
-    expect(undo.announce).toHaveBeenCalledWith(
-      {
-        title: 'Satellite link set',
-        target: { targetType: 'waterbody', targetId: BODY },
-      },
-      expect.any(Function),
-    );
+    expect(undo.announce).toHaveBeenCalledWith({
+      title: 'Satellite link set',
+      target: { targetType: 'waterbody', targetId: BODY },
+    });
   });
 
   it('a refused satellite write reads in the server’s words and announces nothing', async () => {
@@ -283,7 +280,7 @@ describe('ImageryTab', () => {
   describe('a switch to another body that is already read', () => {
     const OTHER = 'k2' as Id<'waterBodies'>;
 
-    it('a satellite write started on one body that lands after the switch puts up no receipt over the next', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
       let land: () => void = () => {};
       convex.mutations.set(
@@ -295,16 +292,22 @@ describe('ImageryTab', () => {
             }),
         ),
       );
-      const { rerender } = render(<BodyTabHost Wiring={ImageryTab} bodyId={BODY} />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={ImageryTab} name="Mascoma Lake" bodyId={BODY} />,
+      );
       await userEvent.click(screen.getByRole('button', { name: 'Always offer' }));
       convex.results.set('waterBodies:get', {
         available: true,
         body: { ...MASCOMA, _id: OTHER, name: 'Crystal Lake' },
       });
-      rerender(<BodyTabHost Wiring={ImageryTab} bodyId={OTHER} />);
+      rerender(<BodyTabHost Wiring={ImageryTab} name="Crystal Lake" bodyId={OTHER} />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(undo.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(undo.announce).toHaveBeenCalledTimes(1);
+      expect(undo.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(screen.queryByRole('alert')).toBeNull();
       expect(convex.mutations.get('waterBodies:setSatelliteImagery')).toHaveBeenCalledTimes(1);
     });

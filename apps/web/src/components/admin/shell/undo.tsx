@@ -55,6 +55,12 @@ export type Receipt = {
   actionId?: string;
   /** Whether undoing the write takes something away from skaters (and so asks why). */
   undoNeedsReason?: boolean;
+  /**
+   * Whose it is, by name ("Mascoma Lake"), set after the title ("Links saved · Mascoma Lake"):
+   * a receipt that may show over another page names its subject, so its Undo is never ambiguous —
+   * as the People receipts name their person.
+   */
+  subject?: string;
 };
 
 type UndoRequest = {
@@ -158,9 +164,18 @@ export function UndoProvider({
 
   const announce = useCallback(
     async (
-      { title, description, target, actionId, undoNeedsReason }: Receipt,
+      { title: said, description, target, actionId, undoNeedsReason, subject }: Receipt,
       here?: () => boolean,
     ) => {
+      // A receipt that may show over another page names its subject ("Links saved · Mascoma Lake").
+      const title =
+        subject === undefined ? (
+          said
+        ) : (
+          <>
+            {said} · {subject}
+          </>
+        );
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;
       if (actionId !== undefined && undoNeedsReason !== undefined) {
         // The write named its own row and what undoing it asks: no lookup. Were someone to act on
@@ -233,7 +248,12 @@ export function UndoProvider({
           </AlertDialogHeader>
           <AlertDialogBody>
             {refusal !== null && <AlertDialogError title="Not undone.">{refusal}</AlertDialogError>}
-            <AlertDialogReason value={reason} onChange={(e) => setReason(e.target.value)} />
+            {/* A sent reason is held while the undo is out (it lands once, closing the dialog). */}
+            <AlertDialogReason
+              value={reason}
+              readOnly={busy}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel />

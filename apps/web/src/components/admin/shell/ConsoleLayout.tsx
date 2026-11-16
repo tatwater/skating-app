@@ -7,7 +7,9 @@ import { Toaster } from '@/components/kit/toast';
 import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
+import { ListWritersProvider } from '../body/tabs/listWriter';
 import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
+import { minuteOf } from '../reads/readArgs';
 import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
@@ -43,7 +45,7 @@ export function ConsoleLayout() {
   const server = useUndoServer();
   useAdminSurface();
   const now = useMinuteNow();
-  const minute = Math.floor(now / 60_000) * 60_000;
+  const minute = minuteOf(now);
 
   // The season the tape draws, sent: a read keyed on nothing would keep its cached season across
   // 1 July, and the tape drops facts for another season than its own.
@@ -88,39 +90,44 @@ export function ConsoleLayout() {
 
   return (
     <UndoProvider server={server}>
-      <ConsoleShell
-        modes={modes}
-        legacy={legacy}
-        onLegacy={(page) => void navigate({ to: page.to })}
-        linkFor={(to) => <Link to={to} />}
-        {...(profile != null
-          ? {
-              viewer: {
-                name: profile.displayName,
-                ...(profile.profileImageUrl !== undefined ? { src: profile.profileImageUrl } : {}),
-              },
-            }
-          : {})}
-        {...(userId !== undefined ? { viewerId: userId } : {})}
-        tape={tape}
-        colleagues={colleagues}
-        onSearch={() => setPaletteOpen(true)}
-        onCommandKey={() => setPaletteOpen((o) => !o)}
-        lamp={<ConnectionLamp />}
-        overlays={
-          <>
-            <ConsolePalette
-              open={paletteOpen}
-              onOpenChange={setPaletteOpen}
-              can={can}
-              onGo={({ to }) => void navigate({ to })}
-            />
-            <Toaster />
-          </>
-        }
-      >
-        {outlet}
-      </ConsoleShell>
+      {/* The whole-list save queues live here, above every page: a pressed save outlives its page. */}
+      <ListWritersProvider>
+        <ConsoleShell
+          modes={modes}
+          legacy={legacy}
+          onLegacy={(page) => void navigate({ to: page.to })}
+          linkFor={(to) => <Link to={to} />}
+          {...(profile != null
+            ? {
+                viewer: {
+                  name: profile.displayName,
+                  ...(profile.profileImageUrl !== undefined
+                    ? { src: profile.profileImageUrl }
+                    : {}),
+                },
+              }
+            : {})}
+          {...(userId !== undefined ? { viewerId: userId } : {})}
+          tape={tape}
+          colleagues={colleagues}
+          onSearch={() => setPaletteOpen(true)}
+          onCommandKey={() => setPaletteOpen((o) => !o)}
+          lamp={<ConnectionLamp />}
+          overlays={
+            <>
+              <ConsolePalette
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                can={can}
+                onGo={({ to }) => void navigate({ to })}
+              />
+              <Toaster />
+            </>
+          }
+        >
+          {outlet}
+        </ConsoleShell>
+      </ListWritersProvider>
     </UndoProvider>
   );
 }

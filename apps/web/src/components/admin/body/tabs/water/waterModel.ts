@@ -6,7 +6,8 @@ import {
   isMeasuredDepthSource,
   spansMultipleSampleCells,
 } from '@skating/core';
-import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
+import { isFailed, type Loadable, type ReadState } from '@/components/admin/reads/consoleReads';
+import { statusDate } from '../../frame/bodyModel';
 import type { BodyMapScene, MapItem } from '../../map/mapDescriptors';
 
 type LatLng = { lat: number; lng: number };
@@ -33,11 +34,11 @@ export type Depth = {
   meanFrom: DepthSource | null;
   maxFrom: DepthSource | null;
   /**
-   * Whether the other sources' offers are on the ladder. The depth loader keeps only each
-   * measurement's winner, so this is `null` (not recorded) until the candidates are stored; `kept`
-   * once they are (the board's).
+   * Whether the other sources' offers are on the ladder: `kept` once the loader stores them (the
+   * board's), `null` (not recorded) for a body whose candidates were never stored, and their read's
+   * own state otherwise — `loading` or `failed`, never folded into not recorded.
    */
-  others: 'kept' | null;
+  others: 'kept' | null | 'loading' | 'failed';
 };
 
 export type Sampling = {
@@ -103,7 +104,11 @@ export type WaterBody = {
  * one rung per source in use (two when mean and max came from different sources); the other
  * sources' offers arrive with the candidates read (`extra`), best first.
  */
-export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Depth {
+export function depthOf(
+  body: WaterBody,
+  extra: readonly DepthRung[] = [],
+  othersState: 'loading' | 'failed' | null = null,
+): Depth {
   const rungs = new Map<DepthSource, DepthRung>();
   for (const r of extra) rungs.set(r.source, { ...r });
   const put = (source: DepthSource | undefined, key: 'mean' | 'max', value: number | undefined) => {
@@ -120,18 +125,48 @@ export function depthOf(body: WaterBody, extra: readonly DepthRung[] = []): Dept
       .sort((a, b) => DEPTH_SOURCE_RANK[a.source] - DEPTH_SOURCE_RANK[b.source]),
     meanFrom: body.meanDepthM !== undefined ? (body.meanDepthSource ?? null) : null,
     maxFrom: body.maxDepthM !== undefined ? (body.maxDepthSource ?? null) : null,
-    others: extra.length > 0 ? 'kept' : null,
+    others: extra.length > 0 ? 'kept' : othersState,
   };
 }
 
 /**
- * The bathymetry state from whether contours were drawn for the body (`consoleExtras`). What was
- * searched, and when, no read records yet.
+ * The bathymetry state from whether contours were drawn for the body (`consoleExtras`), and what was
+ * searched and when (`bathymetrySearched`), when a search is recorded.
  */
-export function bathymetryOf(hasBathymetry: boolean): Bathymetry {
+export function bathymetryOf(
+  hasBathymetry: boolean,
+  /** `consoleExtras.bathymetrySearched`: the newest recorded contour search of the body's states. */
+  searched: { label: string; at: number } | null = null,
+): Bathymetry {
+  // A status date carries its year: a search may be seasons old, and "12 Sep" alone reads as this one.
+  const when = searched === null ? null : { source: searched.label, when: statusDate(searched.at) };
   return hasBathymetry
-    ? { searched: null, found: 'Contour lines drawn', missing: false }
-    : { searched: null, found: 'No contour lines', missing: true };
+    ? { searched: when, found: 'Contour lines drawn', missing: false }
+    : { searched: when, found: 'No contour lines', missing: true };
+}
+
+/** `bodyConsole.depthChoices`, as the tab reads it. */
+export type DepthChoicesRead = {
+  mean: { choices: { source: DepthSource; valueM: number; inUse: boolean }[] };
+  max: { choices: { source: DepthSource; valueM: number; inUse: boolean }[] };
+  /** The loader keeps every offer (`depthCandidates`); `false` for a body loaded before it did. */
+  recorded: boolean;
+};
+
+/** Every source's offer, mean and max together, as the ladder's rungs. */
+export function candidatesOf(read: DepthChoicesRead): DepthRung[] {
+  const rungs = new Map<DepthSource, DepthRung>();
+  for (const [key, side] of [
+    ['mean', read.mean],
+    ['max', read.max],
+  ] as const) {
+    for (const c of side.choices) {
+      const rung = rungs.get(c.source) ?? { source: c.source, mean: null, max: null };
+      rung[key] = c.valueM;
+      rungs.set(c.source, rung);
+    }
+  }
+  return [...rungs.values()];
 }
 
 /** A source's name on the ladder, and the line under it when the name alone would mislead. */
@@ -190,18 +225,25 @@ export function spansKm(box: BBox): { ew: number; ns: number } {
 export function waterFrom(
   body: WaterBody,
   // Required, never defaulted: a default would read the extras still loading as landed.
-  extrasRead: Loadable<{ hasBathymetry: boolean }>,
-  extras: { candidates?: readonly DepthRung[] } = {},
+  extrasRead: Loadable<{
+    hasBathymetry: boolean;
+    bathymetrySearched?: { label: string; at: number } | null;
+  }>,
+  /** `bodyConsole.depthChoices`, as its read stands (`readState`): never folded into not recorded. */
+  choices: ReadState<DepthChoicesRead> = { kind: 'none' },
 ): WaterData {
   const box = body.bbox ?? null;
   const bathymetry: Loadable<Bathymetry> =
     extrasRead === undefined || isFailed(extrasRead)
       ? extrasRead
-      : bathymetryOf(extrasRead.hasBathymetry);
+      : bathymetryOf(extrasRead.hasBathymetry, extrasRead.bathymetrySearched ?? null);
   return {
     name: body.name,
     state: body.states?.[0] ?? null,
-    depth: depthOf(body, extras.candidates),
+    depth:
+      choices.kind === 'value'
+        ? depthOf(body, candidatesOf(choices.value))
+        : depthOf(body, [], choices.kind === 'none' ? null : choices.kind),
     depthNote: body.depthSourceNote?.trim() || null,
     sampling: {
       interior: body.interiorPoint ?? null,
@@ -214,7 +256,10 @@ export function waterFrom(
     },
     bathymetry,
     box,
-    failures: isFailed(extrasRead) ? ['the bathymetry state'] : [],
+    failures: [
+      ...(isFailed(extrasRead) ? ['the bathymetry state'] : []),
+      ...(choices.kind === 'failed' ? ['the other sources’ depths'] : []),
+    ],
   };
 }
 

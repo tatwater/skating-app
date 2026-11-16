@@ -79,10 +79,12 @@ export type KeyedLink = StaffLink & { key: string };
  * **Each link's id, kept across an edit.** The record's links carry no id of their own, and a key
  * made from a link's words changes when its words do — so an edited link would look like a new row
  * (and a lift or a focus held on it would lose it). `carryIds` gives the new list the ids of the
- * old one: a link with the same words in the same place keeps its id first (so an edit that makes
- * one link read like another, or like its twin, never takes the other's id), then one with the same
- * words anywhere (a reorder); a link whose words changed takes the id of the link that stood in its
- * place (an edit); anything else is new. Pure; `fresh` mints an id.
+ * old one — **only to the same link**: one with exactly the same words in the same place keeps its id
+ * first (so twins keep their own), then one with the same words anywhere (a reorder). A link whose
+ * words changed is never inferred from its place — it may be another moderator's replacement — so it
+ * is new, and a change aimed at the old link finds nothing to change (refused, never re-aimed). The
+ * page's own edits keep their ids another way: a list the server shows that is exactly one the page
+ * sent takes that list's keys (`LinksTabView`). Pure; `fresh` mints an id.
  */
 export function carryIds(
   prev: readonly KeyedLink[],
@@ -108,15 +110,7 @@ export function carryIds(
     const p = prev.find((q) => same(q, link));
     if (p !== undefined) claim(i, p);
   });
-  return next.map((link, i) => {
-    let id = ids[i] ?? null;
-    if (id === null) {
-      const inPlace = prev[i];
-      id = inPlace !== undefined && !used.has(inPlace.key) ? inPlace.key : fresh();
-      used.add(id);
-    }
-    return { label: link.label, url: link.url, key: id };
-  });
+  return next.map((link, i) => ({ label: link.label, url: link.url, key: ids[i] ?? fresh() }));
 }
 
 /**
@@ -125,28 +119,34 @@ export function carryIds(
  * A change to a link that is gone (another moderator removed it) changes nothing.
  */
 export const linkChanges = {
-  /** `keys` first, in that order; links it doesn't name (added since) stay last, in theirs. */
+  /**
+   * `keys` first, in that order; links it doesn't name (added since) stay last, in theirs. `null`
+   * when a link it orders is no longer there (removed, or replaced — a new link): the order was
+   * made for a list that has moved, and is refused rather than moving a link it never addressed.
+   */
   order:
     (keys: readonly string[]) =>
-    (base: readonly KeyedLink[]): KeyedLink[] => {
+    (base: readonly KeyedLink[]): KeyedLink[] | null => {
       const byKey = new Map(base.map((l) => [l.key, l]));
-      const named = keys.flatMap((k) => {
-        const l = byKey.get(k);
-        return l === undefined ? [] : [l];
-      });
+      if (keys.some((k) => !byKey.has(k))) return null;
+      const named = keys.map((k) => byKey.get(k) as KeyedLink);
       return [...named, ...base.filter((l) => !keys.includes(l.key))];
     },
   add:
     (link: KeyedLink) =>
     (base: readonly KeyedLink[]): KeyedLink[] => [...base, link],
+  /** `null` when the link is no longer there (another moderator removed it): nothing to edit. */
   edit:
     (key: string, link: StaffLink) =>
-    (base: readonly KeyedLink[]): KeyedLink[] =>
-      base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l)),
+    (base: readonly KeyedLink[]): KeyedLink[] | null =>
+      base.some((l) => l.key === key)
+        ? base.map((l) => (l.key === key ? { label: link.label, url: link.url, key } : l))
+        : null,
+  /** `null` when the link is no longer there: nothing to remove (said, never a quiet success). */
   remove:
     (key: string) =>
-    (base: readonly KeyedLink[]): KeyedLink[] =>
-      base.filter((l) => l.key !== key),
+    (base: readonly KeyedLink[]): KeyedLink[] | null =>
+      base.some((l) => l.key === key) ? base.filter((l) => l.key !== key) : null,
 };
 
 /**

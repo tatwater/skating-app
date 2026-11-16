@@ -245,12 +245,21 @@ function DepthSection({
               )}
             </div>
           )}
-          {others === null && (
+          {others !== 'kept' && (
+            // The other sources' read in its own state: on its way, failed (the page's note offers
+            // Try again), or settled with none stored — only then *Not recorded yet*.
             <span
               data-slot="depth-others"
-              className="mt-(--space-2_5) text-assist leading-list text-fg3"
+              className="mt-(--space-2_5) flex items-baseline gap-(--space-1_5) text-assist leading-list text-fg3"
             >
-              Other sources’ depths: {NOT_RECORDED}
+              Other sources’ depths:{' '}
+              {others === 'loading' ? (
+                <LoadingLine width="6rem" />
+              ) : others === 'failed' ? (
+                <CouldntRead />
+              ) : (
+                NOT_RECORDED
+              )}
             </span>
           )}
         </div>

@@ -44,6 +44,7 @@ import {
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
 import { type BodyLane, laneStanding } from './bodyLanes';
+import { notListedWords, OTHERS_FAILED } from './listWords';
 import { spacedRows, withPinned } from './virtualRows';
 
 /**
@@ -101,7 +102,8 @@ const MONO: ReadonlySet<BodyColumnId> = new Set(['acres', 'asks', 'reports', 'ch
 
 type Entry =
   | { kind: 'row'; row: BodyRow; other: boolean }
-  | { kind: 'group'; key: string; label: string; count: number };
+  /** `count` as drawn: "50+" when the server's count stopped at its bound (a floor, never a total). */
+  | { kind: 'group'; key: string; label: string; count: string };
 
 type CellCtx = { q: string; now: number; showStanding: (row: BodyRow) => boolean };
 
@@ -187,6 +189,8 @@ type BodiesTableProps = {
   onLoadMore?: () => void;
   /** Re-runs a failed list. */
   onRetry?: () => void;
+  /** Re-runs a failed other-standings read. */
+  onRetryOthers?: () => void;
   /** This list, as it stands — the scroll is remembered under it. */
   memoryKey: string;
   /** / was pressed in the rows. */
@@ -206,6 +210,7 @@ export function BodiesTable({
   onOpen,
   onLoadMore,
   onRetry,
+  onRetryOthers,
   memoryKey,
   onSearchKey,
   gridRef,
@@ -247,7 +252,12 @@ export function BodiesTable({
     () => [
       ...list.rows.map((row) => ({ kind: 'row' as const, row, other: false })),
       ...(list.others ?? []).flatMap((g) => [
-        { kind: 'group' as const, key: g.key, label: g.label, count: g.rows.length },
+        {
+          kind: 'group' as const,
+          key: g.key,
+          label: g.label,
+          count: `${(g.count ?? g.rows.length).toLocaleString('en-US')}${g.capped ? '+' : ''}`,
+        },
         ...g.rows.map((row) => ({ kind: 'row' as const, row, other: true })),
       ]),
     ],
@@ -520,6 +530,16 @@ export function BodiesTable({
                 : entries.map((entry, i) => renderEntry(entry, i))}
           </tbody>
         </Table>
+        {/* The other standings' read, failed: said in the groups' place with Try again. Mounted
+            always, so its words are announced, and focus stays when they go. */}
+        <RetryNote
+          data-slot="others-error"
+          className="px-gutter pt-(--space-3) empty:p-0"
+          onRetry={onRetryOthers}
+          pending={list.othersFailed?.pending === true}
+        >
+          {list.othersFailed !== undefined ? OTHERS_FAILED : null}
+        </RetryNote>
         <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />
       </div>
     </div>
@@ -557,6 +577,7 @@ function ListFoot({
         return `All ${list.total !== null && !list.total.capped ? countText(list.total) : rows.toLocaleString('en-US')}`;
     }
   })();
+  const notListed = list.status === 'done' ? notListedWords(list.notListed) : null;
   return (
     <>
       {/* Mounted in every state, so a failure's words are announced as they come, Try again holds
@@ -571,7 +592,7 @@ function ListFoot({
       </RetryNote>
       {list.status !== 'error' && list.status !== 'loading' && (
         <ListEnd data-slot="bodies-end" data-status={list.status}>
-          {words}
+          {notListed === null ? words : `${words} · ${notListed}`}
         </ListEnd>
       )}
     </>

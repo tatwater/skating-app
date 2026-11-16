@@ -3717,6 +3717,7 @@ export async function mergeBodyInto(
       landmarksFolded: landmarks.folded,
       landmarksOverCap: landmarks.overCap,
       landmarksRetiredAsBay: landmarks.retiredAsBay,
+      landmarkIdsTrimmed: landmarks.idsTrimmed,
     };
 
     // A moderator's lists move to the survivor (B01-3g): each the union, the survivor's own first —
@@ -3817,7 +3818,15 @@ export async function mergeBodyInto(
       targetType: 'waterbody',
       targetId: loserId,
       reason,
-      metadata: { survivorId, repointed, changeSet: true },
+      metadata: {
+        survivorId,
+        repointed,
+        changeSet: true,
+        // The twins whose combined catalog ids passed their total (B01-3j), named.
+        ...(landmarks.idsTrimmedOn.length > 0
+          ? { landmarkIdsTrimmedOn: landmarks.idsTrimmedOn }
+          : {}),
+      },
       createdAt: Date.now(),
     });
     // **Every row this merge moved or deleted, in the same transaction (D226, B01 §11).** The counts

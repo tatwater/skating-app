@@ -97,14 +97,13 @@ describe('LinksTab', () => {
     expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledWith({
       waterBodyId: BODY,
       links: [MASCOMA.referenceLinks?.[0]],
+      // The list it was built on: the server refuses the write if it moved meanwhile.
+      expected: MASCOMA.referenceLinks,
     });
-    expect(undo.announce).toHaveBeenCalledWith(
-      {
-        title: 'Links saved',
-        target: { targetType: 'waterbody', targetId: BODY },
-      },
-      expect.any(Function),
-    );
+    expect(undo.announce).toHaveBeenCalledWith({
+      title: 'Links saved',
+      target: { targetType: 'waterbody', targetId: BODY },
+    });
   });
 
   it('a refusal reads in the server’s words', async () => {
@@ -192,7 +191,7 @@ describe('LinksTab', () => {
       expect(convex.mutations.get('waterBodies:setReferenceLinks')).not.toHaveBeenCalled();
     });
 
-    it('a save started on one body that lands after the switch changes nothing on the next, and puts up no receipt', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       open(BODY);
       let land: () => void = () => {};
       convex.mutations.set(
@@ -204,15 +203,21 @@ describe('LinksTab', () => {
             }),
         ),
       );
-      const { rerender } = render(<BodyTabHost Wiring={LinksTab} bodyId={BODY} />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={LinksTab} name="Mascoma Lake" bodyId={BODY} />,
+      );
       await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
       await userEvent.type(screen.getByRole('textbox', { name: /Label/ }), '!{Enter}');
       expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
       open(OTHER);
-      rerender(<BodyTabHost Wiring={LinksTab} bodyId={OTHER} />);
+      rerender(<BodyTabHost Wiring={LinksTab} name="Crystal Lake" bodyId={OTHER} />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(undo.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(undo.announce).toHaveBeenCalledTimes(1);
+      expect(undo.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(screen.queryByRole('alert')).toBeNull();
       expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
     });

@@ -61,7 +61,10 @@ function RetryNote({
       data-state={shown ? (pending ? 'pending' : 'failed') : 'idle'}
       className={cn(
         'min-w-0 outline-none',
-        shown && 'flex flex-col items-start gap-heading',
+        // Empty, it is out of its parent's flow: an empty item in a flex or grid parent still takes
+        // that parent's gap (a section's 12 px heading gap would read 24). Still rendered, so it
+        // stays a live region and can hold focus.
+        shown ? 'flex flex-col items-start gap-heading' : 'absolute',
         className,
       )}
       onFocus={(event: FocusEvent<HTMLDivElement>) => {

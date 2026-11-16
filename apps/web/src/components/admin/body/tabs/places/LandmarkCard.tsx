@@ -18,10 +18,11 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
+import { SPELLINGS_KEPT_MOVING } from '../../consoleWords';
 import { statusDate } from '../../frame/bodyModel';
-import { useBodyBound } from '../../frame/currentBody';
+import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
-import { sameList, useListWriter } from '../listWriter';
+import { chipChange, sameList, useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
 import {
@@ -42,7 +43,11 @@ import {
  */
 
 /** One edit to a landmark: its name, its other spellings, or its kind. */
-export type LandmarkEdit = { name: string } | { aliases: string[] } | { kind: LandmarkKind };
+export type LandmarkEdit =
+  | { name: string }
+  /** The whole list, and the list it was built on (the server's compare-and-set). */
+  | { aliases: string[]; expectedAliases?: string[] }
+  | { kind: LandmarkKind };
 
 const TOOLS = {
   move: 'Moving a landmark on the map comes with the map’s landmark tools.',
@@ -88,30 +93,28 @@ export function LandmarkCard({
   }
   // The other spellings are a whole list: a second chip added while the first is saving is
   // applied to the list the server acknowledged, never the one this render holds (`listWriter`).
-  const here = useBodyBound();
-  const pushAliases = useListWriter(
+  const hold = useBodyHold();
+  const pushAliases = useListWriter<string>(
+    `aliases:${l.id}`,
     l.aliases,
-    async (next) => {
+    async (next, base) => {
       try {
-        const landing = onEdit?.({ aliases: [...next] });
+        const landing = onEdit?.({ aliases: [...next], expectedAliases: [...base] });
         return landing instanceof Promise ? (await landing) !== false : true;
-      } catch {
-        // A write that throws (the tab's `act` never does) is a refusal, never an unhandled one.
+      } catch (err) {
+        // Moved underneath: the queue re-applies the change on the list as it now stands.
+        const current = listChanged(err);
+        if (current !== null) return { current: current as string[] };
+        // Any other throw (the tab's `act` says its own refusals) is a refusal, never unhandled.
         return false;
       }
     },
     sameList,
-    // The console's binding: a queue whose console has gone takes up nothing more.
-    here,
+    // Spelling changes always re-apply; a list that keeps moving is said, never dropped quietly.
+    () => sayNotSaved(hold, SPELLINGS_KEPT_MOVING),
   );
-  const editAliases = (aliases: readonly string[]) => {
-    const added = aliases.filter((a) => !l.aliases.includes(a));
-    const removed = l.aliases.filter((a) => !aliases.includes(a));
-    void pushAliases((base) => [
-      ...base.filter((a) => !removed.includes(a)),
-      ...added.filter((a) => !base.includes(a)),
-    ]);
-  };
+  const editAliases = (aliases: readonly string[]) =>
+    void pushAliases(chipChange(l.aliases, aliases));
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },

@@ -5,10 +5,10 @@ import { useMemo, useState } from 'react';
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
 import { isFailed, read, useConsoleReadSet } from '../../reads/consoleReads';
+import { ID_SHAPE, useClockFor } from '../../reads/readArgs';
 import { actionLabel } from '../../shell/actionLabels';
 import { useHeldRead, useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
-import { useClockFor } from '../clock';
 import { type LinkTo, personHref } from './PersonFeeds';
 import { PersonView } from './PersonView';
 import { type PersonRead, shownName } from './personModel';
@@ -40,9 +40,6 @@ export type PersonPaneProps = {
   returnTo?: string;
   className?: string;
 };
-
-/** A Convex id's shape, so a hand-edited URL never reaches a query as junk. */
-const ID_SHAPE = /^[0-9a-z]{30,34}$/;
 
 /** How many decisions a page asks for first, and the most a page may hold. */
 const DECISIONS_FIRST = 25;

@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 
 import { seasonFromSummary } from '@/components/admin/season/seasonFacts';
 
+import { minuteOf } from '../reads/readArgs';
 import { useHeldRead } from '../shell/presence';
 import type { OverviewHomeData } from './OverviewHome';
 import {
@@ -59,7 +60,7 @@ export function useOverviewHome({
   const overview = useQuery(api.console.overview, can('inbox.read') ? {} : 'skip');
   const reviewCounts = useQuery(api.waterBodies.reviewQueueCounts, canCorpus ? {} : 'skip');
   const corpusCounts = useQuery(api.console.corpusCounts, canCorpus ? {} : 'skip');
-  const minute = Math.floor(now / 60_000) * 60_000;
+  const minute = minuteOf(now);
   // Held through each minute's new subscription, so the card doesn't fall back to loading as it lands.
   const jobs = useHeldRead(
     useQuery(api.machinery.overviewJobs, canMachinery ? { now: minute } : 'skip'),

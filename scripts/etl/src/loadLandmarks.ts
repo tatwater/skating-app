@@ -43,6 +43,8 @@ const DEFAULT_INPUT = join(
  */
 const BATCH_LANDMARKS = 300;
 const MAX_CONSECUTIVE_FAILURES = 5;
+/** The named rows a run keeps for its log — enough to see a pattern. */
+const MAX_NOTES = 50;
 
 type Counts = Record<
   | 'created'
@@ -54,11 +56,16 @@ type Counts = Record<
   | 'bodyNotListed'
   | 'alreadyBay'
   | 'invalidName'
+  | 'tooLong'
+  | 'idsTrimmed'
   | 'dropped'
   | 'dropsHeld'
   | 'returned',
   number
 >;
+/** A row the mutation names, and why (`notes`: a landmark whose catalog ids passed their total). */
+type Note = { key: string; reason: string };
+type BatchResult = Counts & { shortfalls?: string[]; notes?: Note[] };
 
 let activeLogger: RunLogger | undefined;
 
@@ -121,6 +128,8 @@ function main(): void {
     bodyNotListed: 0,
     alreadyBay: 0,
     invalidName: 0,
+    tooLong: 0,
+    idsTrimmed: 0,
     dropped: 0,
     dropsHeld: 0,
     returned: 0,
@@ -133,12 +142,15 @@ function main(): void {
   const acceptMassDrop = args.includes('--accept-mass-drop');
   let batchesRetried = 0;
   const shortfalls = new Set<string>();
+  // The rows a batch names (`notes`: a landmark whose catalog ids passed their total) — the first
+  // few kept, for stderr and the run's record.
+  const named: Note[] = [];
   let failedBatches = 0;
   let consecutive = 0;
   for (const [i, batch] of batches.entries()) {
     try {
       const call = () =>
-        convexRun<Counts & { shortfalls?: string[] }>('landmarks:importBatch', {
+        convexRun<BatchResult>('landmarks:importBatch', {
           bodies: batch,
           ...(campaignId !== undefined ? { campaignId } : {}),
           ...matchedAtOf(summary),
@@ -152,6 +164,7 @@ function main(): void {
       const counts = withOneRetry(call, () => batchesRetried++);
       for (const key of Object.keys(totals) as (keyof Counts)[]) totals[key] += counts[key] ?? 0;
       for (const shortfall of counts.shortfalls ?? []) shortfalls.add(shortfall);
+      for (const note of counts.notes ?? []) if (named.length < MAX_NOTES) named.push(note);
       consecutive = 0;
     } catch (err) {
       failedBatches++;
@@ -176,13 +189,19 @@ function main(): void {
   for (const shortfall of shortfalls) {
     process.stderr.write(`[landmarks] sources do not vouch — nothing retired: ${shortfall}\n`);
   }
+  if (totals.idsTrimmed > 0) {
+    process.stderr.write(
+      `[landmarks] ${totals.idsTrimmed} landmark(s) carry more catalog ids than a landmark keeps — the oldest dropped:\n`,
+    );
+    for (const { key, reason } of named) process.stderr.write(`[landmarks]   ${key}: ${reason}\n`);
+  }
   if (totals.dropsHeld > 0) {
     process.stderr.write(
       `[landmarks] ${totals.dropsHeld} drops held by the per-lake brake — a lake was about to lose most of its labels. Check the extract and the matcher; --accept-mass-drop if it is real.\n`,
     );
   }
   // Only now, with every batch landed, may this load become the bar the next one is held to.
-  const notes: string[] = [];
+  const notes: string[] = named.map(({ key, reason }) => `${key}: ${reason}`);
   if (sources !== undefined && acceptsLoad({ apply, lines, failedBatches })) {
     const accept = () =>
       convexRun<{ accepted: boolean; shortfalls: string[] }>('landmarks:acceptCompleteLoad', {

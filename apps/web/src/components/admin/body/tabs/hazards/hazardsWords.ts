@@ -50,6 +50,8 @@ export type WordsContext = {
   named: boolean;
   /** Patterns waiting in the pre-ice pass. */
   patterns: number;
+  /** The waiting count stopped at the server's bound: `patterns` is a floor. */
+  patternsCapped?: boolean;
 };
 
 /** A context with nothing in it but `over`: a string that reads only some of it. */
@@ -178,9 +180,11 @@ export const HAZARDS_WORDS = {
 
   /** The promotion queue's line. */
   patternsLine: (c: WordsContext): string =>
-    c.patterns === 0
-      ? `No patterns on ${c.body} wait in the pre-ice pass`
-      : `${plural(c.patterns, 'pattern', 'patterns')} on ${c.body} ${c.patterns === 1 ? 'waits' : 'wait'} in the pre-ice pass`,
+    c.patternsCapped === true
+      ? `At least ${c.patterns.toLocaleString('en-US')} patterns on ${c.body} wait in the pre-ice pass; the count stopped short`
+      : c.patterns === 0
+        ? `No patterns on ${c.body} wait in the pre-ice pass`
+        : `${plural(c.patterns, 'pattern', 'patterns')} on ${c.body} ${c.patterns === 1 ? 'waits' : 'wait'} in the pre-ice pass`,
 } as const satisfies Record<string, (c: WordsContext) => string>;
 
 /**
@@ -198,6 +202,8 @@ export const CROSSING_CLAIM =
 export const CROSSING_WORDS = {
   /** The row's kicker and the map mark's name. */
   label: 'Reported crossing',
+  /** A day's crossings, said on their own: reports that someone crossed, nothing more. */
+  live: (n: number): string => (n === 1 ? '1 reported crossing' : `${n} reported crossings`),
   /** How many more skaters reported the same crossing. */
   again: (n: number): string =>
     n === 0 ? 'No other report' : `Reported again ${n === 1 ? 'once' : `${n} times`}`,

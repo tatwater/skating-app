@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   push: vi.fn(),
   can: true,
+  /** Capabilities this viewer lacks, beside `can`. */
+  denied: new Set<string>(),
   /** The viewer's role still on its way (`can` says no until it lands). */
   roleLoading: false,
   mutate: vi.fn(() => Promise.resolve()),
@@ -77,9 +79,17 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 vi.mock('@/lib/useRole', () => ({
-  useRole: () => ({ can: () => mocks.can, isLoading: mocks.roleLoading }),
+  useRole: () => ({
+    can: (c: string) => mocks.can && !mocks.denied.has(c),
+    isLoading: mocks.roleLoading,
+  }),
 }));
 vi.mock('../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 vi.mock('../map/useBodyMapCanvas', () => ({
   FIT_PADDING: { top: 0, right: 0, bottom: 0, left: 0 },
   useBodyMapCanvas: () => ({
@@ -98,6 +108,7 @@ import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { readOpened } from '../../bodies/openedRecently';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
+import { ListWritersProvider } from '../tabs/listWriter';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
 import { BodyConsoleRoute } from './BodyConsoleRoute';
 import {
@@ -110,6 +121,8 @@ import {
   NEIGHBOR_ID,
   NEIGHBOR_POLYGON,
   on,
+  REMOVAL_NOTE_NEAR_CAP,
+  REMOVAL_SENTENCE_SHORTENED,
 } from './bodyFixtures';
 import type { HistoryAction } from './bodyModel';
 import { registerBodyTabs } from './tabRegistry';
@@ -126,7 +139,12 @@ const askedFor = (ref: Ref): string[] =>
     .map((k) => k.slice(k.indexOf('|') + 1));
 
 function Mounted({ children }: { children?: ReactNode }) {
-  return <KeysProvider>{children ?? <BodyConsoleRoute />}</KeysProvider>;
+  // The whole-list queues sit above the route, as the admin shell mounts them.
+  return (
+    <ListWritersProvider>
+      <KeysProvider>{children ?? <BodyConsoleRoute />}</KeysProvider>
+    </ListWritersProvider>
+  );
 }
 
 const historyRow = (h: (typeof MASCOMA_HISTORY)[number]) => ({
@@ -145,6 +163,7 @@ beforeEach(() => {
   mocks.search = {};
   mocks.params = { id: MASCOMA_ID };
   mocks.can = true;
+  mocks.denied = new Set();
   mocks.roleLoading = false;
   mocks.navigate.mockReset();
   mocks.push.mockReset();
@@ -193,10 +212,6 @@ beforeEach(() => {
   set(api.corpusPlaceNames.openForBody, { names: [], more: false });
   set(api.corpusRequests.openLandmarkRequestsForBody, { proposals: [], more: false });
   set(api.bodyConsole.consoleExtras, MASCOMA_EXTRAS);
-  set(api.bodies.preview, {
-    complete: { have: 9, of: 10, missing: ['bathymetry'] },
-    allTime: { count: 42, capped: false, firstSeason: 2023 },
-  });
   set(api.bodyConsole.history, { entries: MASCOMA_HISTORY.map(historyRow), capped: false });
 });
 
@@ -230,15 +245,14 @@ describe('BodyConsoleRoute', () => {
     expect(askedFor(api.bodyConsole.history)).toContain(
       JSON.stringify({ waterBodyId: MASCOMA_ID, limit: 50 }),
     );
-    expect(
-      askedFor(api.bodies.preview).every((a) => JSON.parse(a).waterBodyId === MASCOMA_ID),
-    ).toBe(true);
+    // Completeness rides on the extras now: the preview and its report scan are never asked.
+    expect(askedFor(api.bodies.preview)).toEqual([]);
     // The main read was whole and held the ruling: no read of the one verb.
     expect(askedFor(api.bodyConsole.history).some((a) => a.includes('action'))).toBe(false);
   });
 
   it('says *Not recorded yet* for a body with no stored completeness — never a guess', () => {
-    set(api.bodies.preview, null);
+    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, complete: null });
     render(<Mounted />);
     expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
     expect(screen.queryByRole('meter', { name: /Complete/ })).toBeNull();
@@ -293,13 +307,11 @@ describe('BodyConsoleRoute', () => {
   it('says in its own place each read that failed, and tries it again', async () => {
     const user = userEvent.setup();
     set(api.bodyConsole.history, new Error('history down'));
-    set(api.bodies.preview, new Error('preview down'));
     set(api.subAreas.listForBody, new Error('bays down'));
     set(api.accessPoints.accessForBody, new Error('lots down'));
     render(<Mounted />);
     expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
     expect(screen.getByText('The history couldn’t be read')).toBeInTheDocument();
-    expect(screen.getByText('Completeness couldn’t be read')).toBeInTheDocument();
     expect(screen.getByText('The bays couldn’t be read')).toBeInTheDocument();
     expect(screen.getByText('The map couldn’t read the bays and the lots')).toBeInTheDocument();
     mocks.asked.length = 0;
@@ -488,8 +500,83 @@ describe('BodyConsoleRoute', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeInTheDocument();
   });
 
+  const removedFacts = (by: { displayName: string } | null) => ({
+    id: MASCOMA_ID,
+    name: 'Mascoma Lake',
+    bodyClass: 'lakePond',
+    states: ['NH'],
+    areaSqM: 4_623_575,
+    standing: 'removed',
+    left: {
+      action: 'remove',
+      at: on(10, 2),
+      // The composed sentence, shortened under the cap; the note is what was typed, whole.
+      reason: REMOVAL_SENTENCE_SHORTENED,
+      note: REMOVAL_NOTE_NEAR_CAP,
+      removalReason: 'landowner_request',
+      by,
+    },
+    towns: [{ name: 'Enfield', state: 'NH' }],
+    reports: { count: 3, capped: false },
+  });
+
+  it.each([
+    ['with', new Set<string>()],
+    ['without', new Set(['audit.read'])],
+  ])(
+    'draws how a removed body left exactly as removedFacts serves it, %s audit.read',
+    (_, denied) => {
+      mocks.denied = denied;
+      set(api.waterBodies.get, { available: false });
+      set(api.bodyConsole.removedFacts, removedFacts({ displayName: 'Teagan Atwater' }));
+      set(api.bodyConsole.history, { entries: [], capped: false });
+      render(<Mounted />);
+      const row = document.querySelector('[data-slot="body-gone-removal"]') as HTMLElement;
+      expect(row).toHaveTextContent('2 Oct 2026');
+      expect(row).toHaveTextContent('Teagan');
+      expect(row).toHaveTextContent('Landowner request');
+      expect(row).toHaveTextContent(`“${REMOVAL_NOTE_NEAR_CAP}”`);
+      expect(row).not.toHaveTextContent('Removed from map');
+      // History is the audit trail's alone.
+      expect(screen.queryByRole('heading', { name: 'History' }) === null).toBe(denied.size > 0);
+    },
+  );
+
+  it('draws no one where the server withholds who decided — never “not recorded”', () => {
+    mocks.denied = new Set(['audit.read']);
+    set(api.waterBodies.get, { available: false });
+    set(api.bodyConsole.removedFacts, removedFacts(null));
+    render(<Mounted />);
+    const row = document.querySelector('[data-slot="body-gone-removal"]') as HTMLElement;
+    expect(row).toHaveTextContent('2 Oct 2026');
+    expect(row).not.toHaveTextContent('Teagan');
+    expect(row).not.toHaveTextContent(/Not recorded/);
+  });
+
   it('says a rejected body has been removed, and what the record still holds', () => {
     set(api.waterBodies.get, { available: false });
+    // What the record still holds (`bodyConsole.removedFacts`).
+    set(api.bodyConsole.removedFacts, {
+      id: MASCOMA_ID,
+      name: 'Mascoma Lake',
+      bodyClass: 'lakePond',
+      states: ['NH'],
+      areaSqM: 4_623_575,
+      standing: 'rejected',
+      left: {
+        action: 'reject_waterbody',
+        at: on(10, 2),
+        reason: 'Drawn over the town beach',
+        removalReason: null,
+        note: null,
+        by: { displayName: 'Teagan Atwater' },
+      },
+      towns: [
+        { name: 'Enfield', state: 'NH' },
+        { name: 'Lebanon', state: 'NH' },
+      ],
+      reports: { count: 42, capped: false },
+    });
     set(api.bodyConsole.history, {
       entries: [
         {
@@ -597,7 +684,7 @@ describe('BodyConsoleRoute', () => {
     expect(screen.getByText('Not computed yet')).toBeInTheDocument();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
     unmount();
-    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, towns: [] });
+    set(api.bodyConsole.consoleExtras, { ...MASCOMA_EXTRAS, towns: [], townsWithState: [] });
     render(<Mounted />);
     expect(screen.getByText('In no town')).toBeInTheDocument();
   });
@@ -668,10 +755,9 @@ describe('BodyConsoleRoute', () => {
   });
 
   /**
-   * The binding's named examples, in the real route with the real tabs (the model-based test in
-   * `bodyBinding.model.test.tsx` proves it over any session): saves queued or on their way on one
-   * body never send, and never speak, once that body's console has gone — to an uncached body, a
-   * body that fails to load, or out of the Bodies area and back.
+   * The save lifetime's named examples, in the real route with the real tabs (the model-based test
+   * in `bodyBinding.model.test.tsx` proves it over any session): a pressed save reaches the body it
+   * was composed for whatever the page does next, and its result always names that body.
    */
   describe('the binding — named examples', () => {
     const releases: ((ok: boolean) => void)[] = [];
@@ -688,6 +774,7 @@ describe('BodyConsoleRoute', () => {
       });
     };
     const landAll = async (ok = true) => {
+      toasts.length = 0;
       for (let i = 0; i < 6 && releases.length > 0; i++) {
         await act(async () => releases.shift()?.(ok));
       }
@@ -719,7 +806,9 @@ describe('BodyConsoleRoute', () => {
       mocks.params = { id: NEIGHBOR_ID };
     };
 
-    it('Greptile’s sequence: two Links saves queued on A, then an uncached B — the second never goes', async () => {
+    const A = { waterBodyId: MASCOMA_ID };
+
+    it('Greptile’s sequence: two Links saves queued on A, then an uncached B — both reach A, each receipt naming A', async () => {
       withLinks();
       mocks.search = { tab: 'links' };
       hold();
@@ -728,11 +817,17 @@ describe('BodyConsoleRoute', () => {
       toNeighbor('uncached');
       rerender(<Mounted />);
       await landAll();
-      expect(mocks.mutate).toHaveBeenCalledTimes(1);
-      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(mocks.mutate).toHaveBeenCalledTimes(2);
+      for (const [args] of mocks.mutate.mock.calls as unknown as [Record<string, unknown>][]) {
+        expect(args).toMatchObject(A);
+      }
+      expect(mocks.announce).toHaveBeenCalledTimes(2);
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
     });
 
-    it('A, then a body that fails to load: A’s queue dies there, and its refusal says nothing', async () => {
+    it('A, then a body that fails to load: A’s refusal is said in a toast naming A — never swallowed', async () => {
       withLinks();
       mocks.search = { tab: 'links' };
       hold();
@@ -741,11 +836,12 @@ describe('BodyConsoleRoute', () => {
       toNeighbor('fails');
       rerender(<Mounted />);
       await landAll(false);
-      expect(mocks.mutate).toHaveBeenCalledTimes(1);
-      expect(screen.queryByText('refused')).toBeNull();
+      expect(mocks.mutate).toHaveBeenCalledTimes(2);
+      expect(toasts.map((t) => t.title)).toContain('Not saved · Mascoma Lake');
+      expect(mocks.announce).not.toHaveBeenCalled();
     });
 
-    it('A, out of the Bodies area, back to A: the old queue is not resurrected', async () => {
+    it('A, out of the Bodies area, back to A: the queued save goes out once, never twice', async () => {
       withLinks();
       mocks.search = { tab: 'links' };
       hold();
@@ -754,11 +850,11 @@ describe('BodyConsoleRoute', () => {
       rerender(<p>Inbox</p>);
       rerender(<Mounted />);
       await landAll();
-      expect(mocks.mutate).toHaveBeenCalledTimes(1);
-      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(mocks.mutate).toHaveBeenCalledTimes(2);
+      expect(mocks.announce).toHaveBeenCalledTimes(2);
     });
 
-    it('Standing’s form: a write started on A says nothing over an uncached B', async () => {
+    it('Standing’s form: a write started on A lands on A over an uncached B, its receipt naming A', async () => {
       set(api.standing.retentionForBody, null);
       mocks.search = { tab: 'standing' };
       hold();
@@ -766,16 +862,16 @@ describe('BodyConsoleRoute', () => {
       const user = userEvent.setup();
       await user.click(screen.getByRole('radio', { name: /^Dormant/ }));
       await user.type(screen.getByRole('textbox', { name: /Note for skaters/ }), 'Dam work{Enter}');
-      expect(mocks.mutate).toHaveBeenCalledTimes(1);
+      expect(mocks.mutate).toHaveBeenCalledWith(expect.objectContaining(A));
       toNeighbor('uncached');
       rerender(<Mounted />);
-      // It lands (it was the right body when sent), and its receipt stays unsaid over B.
       await landAll();
-      expect(screen.queryByRole('alert')).toBeNull();
-      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
     });
 
-    it('the map boost: a commit on A says nothing over an uncached B (the console’s own binding, not a tab’s)', async () => {
+    it('the map boost: a commit on A lands on A over an uncached B, its receipt naming A', async () => {
       hold();
       const { rerender } = render(<Mounted />);
       const slider = screen.getByRole('slider', { name: 'Map boost' });
@@ -785,10 +881,12 @@ describe('BodyConsoleRoute', () => {
       toNeighbor('uncached');
       rerender(<Mounted />);
       await landAll();
-      expect(mocks.announce).not.toHaveBeenCalled();
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
     });
 
-    it('a dialog-driven write (Access’s Hide) started on A says nothing over an uncached B', async () => {
+    it('a dialog-driven write (Access’s Hide) started on A: refused over an uncached B, it is said naming A', async () => {
       set(api.accessPoints.accessForBody, {
         putIns: [
           { id: 'pi1', coord: { lat: 43.6489, lng: -72.1793 }, name: 'NW launch', source: 'osm' },
@@ -805,11 +903,10 @@ describe('BodyConsoleRoute', () => {
       const dialog = await screen.findByRole('alertdialog');
       await user.type(within(dialog).getByRole('textbox'), 'A private dock');
       await user.click(within(dialog).getByRole('button', { name: /^Hide/ }));
-      expect(mocks.mutate).toHaveBeenCalledTimes(1);
       toNeighbor('uncached');
       rerender(<Mounted />);
-      await landAll();
-      expect(mocks.announce).not.toHaveBeenCalled();
+      await landAll(false);
+      expect(toasts).toContainEqual(expect.objectContaining({ title: 'Not saved · Mascoma Lake' }));
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
   });

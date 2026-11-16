@@ -33,6 +33,14 @@ describe('RetryNote', () => {
     expect(screen.getByRole('status')).toHaveAttribute('data-state', 'pending');
   });
 
+  it('empty, is out of its parent’s flow (no gap of a flex parent), and back in it with words', () => {
+    const { rerender } = render(<RetryNote onRetry={() => {}}>{null}</RetryNote>);
+    const region = screen.getByRole('status');
+    expect(region).toHaveClass('absolute');
+    rerender(<RetryNote onRetry={() => {}}>The history couldn’t be read</RetryNote>);
+    expect(region).not.toHaveClass('absolute');
+  });
+
   it('draws no button when nothing can retry', () => {
     render(<RetryNote>The archive couldn’t be read</RetryNote>);
     expect(screen.queryByRole('button')).toBeNull();

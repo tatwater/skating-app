@@ -17,8 +17,9 @@ import { Input } from '@/components/kit/input';
 import { Section } from '@/components/kit/section-slug';
 import { SortableRows } from '@/components/kit/sortable-rows';
 import { cn } from '@/lib/utils';
-import { useBodyBound } from '../../frame/currentBody';
-import { useListWriter } from '../listWriter';
+import { LINK_EDITED_AWAY, LINKS_GONE, LINKS_KEPT_MOVING } from '../../consoleWords';
+import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
+import { useListMemory, useListWriter } from '../listWriter';
 import {
   carryIds,
   type DerivedRow,
@@ -42,8 +43,15 @@ export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   now: number;
   /** The viewer holds `body.identity` (the staff links are theirs to edit). */
   canEdit: boolean;
-  /** Writes the whole staff list (add, edit, remove and reorder all land here). */
-  onSave?: (links: StaffLink[]) => Promise<void>;
+  /**
+   * Writes the whole staff list (add, edit, remove and reorder all land here), naming the list it
+   * was built on (`expected`, the server's compare-and-set): a list that moved underneath is thrown
+   * as `list_changed` with the current one. Resolves `false` for a write refused off its console
+   * (already said there).
+   */
+  onSave?: (links: StaffLink[], expected: StaffLink[]) => Promise<unknown>;
+  /** The queue's name above the page (`links:<body>`), so a pressed save outlives the page. */
+  queueKey?: string;
   /** The skater's lake sheet for this body, opened in a new tab; `null` draws no link. */
   lakeSheetHref: string | null;
 };
@@ -82,22 +90,39 @@ const focusIsLost = (region: HTMLElement | null): boolean => {
 const LOST_ADD =
   'The list changed while this link was saving, so this editor can’t tell which row it is. Cancel, then edit the link from its row.';
 
-/** A change to the staff list, by link id: what the write queue applies to its newest list. */
-type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[];
+/**
+ * A change to the staff list, by link id: what the write queue applies to its newest list. `null`:
+ * the change no longer applies (what it changes was removed meanwhile).
+ */
+type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[] | null;
+
+/**
+ * **A link's id outlives the page, as its queue does** (`ListWritersProvider`): a change queued
+ * behind a save still on its way names links by id, and may be taken up after the page has gone and
+ * come back. So ids are minted once across every mount (never `link-1` again for another link), and
+ * the rows' ids and the lists the page sent live beside the queue (`useListMemory`), which a page
+ * coming back adopts — never a fresh numbering under which a queued "remove link-3" would take
+ * another link, or its own edit go unrecognized.
+ */
+let mintedLinks = 0;
+const mintLink = () => `link-${++mintedLinks}`;
 
 export function LinksTabView({
   body,
   now,
   canEdit,
   onSave,
+  queueKey = 'links',
   lakeSheetHref,
   className,
   ...props
 }: LinksTabViewProps) {
   const derived = derivedRows(body, now);
-  // Each link keeps its id across an edit (its words change, its id doesn't): `carryIds`.
-  const minted = useRef(0);
-  const ids = useRef<KeyedLink[]>([]);
+  // Each link's id: the page's own sends name it exactly; any other list carries it only to a link
+  // with exactly its words (`carryIds`).
+  // The rows' ids and the lists this page sent live beside the queue (`useListMemory`): a change
+  // still queued names them after the page has gone, and a page coming back adopts them.
+  const ids = useListMemory<KeyedLink[]>(queueKey, 'ids', () => []);
   const links = body.referenceLinks;
   // **The rows' identities come from the page's own writes where it can tell**: a list the server
   // shows that is exactly one this page sent and hasn't seen shown yet takes that list's keys, row
@@ -105,20 +130,28 @@ export function LinksTabView({
   // of its words, and even when its echo renders after the next save has gone out. Once shown, a
   // sent list is spent, with every one sent before it: a later list that only reads the same (an
   // undo, another moderator's edits) carries ids by their words (`carryIds`), like any other list.
-  const unseen = useRef<(readonly KeyedLink[])[]>([]);
+  const unseen = useListMemory<(readonly KeyedLink[])[]>(queueKey, 'unseen', () => []);
   const staff = useMemo(() => {
     const list = links ?? [];
     let at = unseen.current.length - 1;
     while (at >= 0 && !sameLinks(unseen.current[at] ?? [], list)) at--;
     const sent = unseen.current[at];
     if (sent !== undefined) unseen.current = unseen.current.slice(at + 1);
-    const next =
-      sent !== undefined
-        ? sent.map((l) => ({ ...l }))
-        : carryIds(ids.current, list, () => `link-${++minted.current}`);
+    // A list that still reads as the rows drawn keeps them whole — a page come back before its own
+    // edit's echo, or the same list delivered again: nothing it hasn't seen has happened to them (the
+    // queue reads such a list so too, `observe`), so a change pressed on a row meanwhile still finds
+    // its link, never a fresh id the edit in flight left it under.
+    if (sent === undefined && sameLinks(ids.current, list)) return ids.current;
+    // Otherwise ids carry by exact words (`carryIds`), from what the page drew and from the newest
+    // list it sent — so its own edit keeps its id when its echo arrives beside another moderator's
+    // change, and nothing is ever inferred from a place.
+    const newest = unseen.current.at(-1) ?? [];
+    const prev = [...newest, ...ids.current.filter((l) => !newest.some((n) => n.key === l.key))];
+    const next = sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(prev, list, mintLink);
     ids.current = next;
     return next;
-  }, [links]);
+    // `ids` and `unseen` are the list's own (`useListMemory`): new objects whenever `queueKey` changes.
+  }, [links, ids, unseen]);
   const section = useRef<HTMLDivElement | null>(null);
   // **Focus is never taken from the keyboard by a save**: after an edit or an add lands, the link's
   // own Edit takes focus back (its id survives the edit; an add's was minted at Add) once its row
@@ -180,6 +213,21 @@ export function LinksTabView({
   const sending = useRef(new Set<number>());
   const [busyOpenings, setBusyOpenings] = useState<ReadonlySet<number>>(new Set());
   const editorBusy = editing !== null && busyOpenings.has(editing.opening);
+  // **A row's editor whose link is no longer in the list** (changed or removed by another write) is
+  // drawn at the foot, holding what was typed and saying why — never bound to no row, which would
+  // hide it and, while it stays open, every Edit and Add with it. Not while its own save is out
+  // (that save closes it, or is refused and it shows then); its Done and Remove send nothing, the
+  // link they would change being gone.
+  const orphaned =
+    editing !== null &&
+    !editing.added &&
+    !busyOpenings.has(editing.opening) &&
+    !staff.some((l) => l.key === editing.key);
+  // It takes focus only if focus fell with its row — never from where the moderator moved since.
+  useEffect(() => {
+    if (!orphaned || !focusIsLost(section.current)) return;
+    section.current?.querySelector<HTMLElement>('[data-slot="link-editor"] input')?.focus();
+  }, [orphaned]);
   const editorSave = async (opening: number, change: Change) => {
     sending.current.add(opening);
     setBusyOpenings(new Set(sending.current));
@@ -216,28 +264,47 @@ export function LinksTabView({
   // **Every save goes through one queue** (`listWriter`): reorder, add, edit and remove each hand
   // it a change by link id, applied to the newest list the server acknowledged — so a remove
   // pressed while a reorder saves can't put the old order back, and two saves never overlap.
-  const here = useBodyBound();
+  const hold = useBodyHold();
+  const words = (l: readonly KeyedLink[]) => l.map(({ label, url }) => ({ label, url }));
   const push = useListWriter<KeyedLink>(
+    queueKey,
     staff,
-    async (next) => {
+    async (next, base) => {
       if (!onSave) return false;
       setSaveError(null);
       // The list this attempt sends, keys and all: the server's echo of it takes these keys.
       unseen.current = [...unseen.current, next];
       try {
-        await onSave(next.map(({ label, url }) => ({ label, url })));
-        return true;
+        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
+        return (await onSave(words(next), words(base))) !== false;
       } catch (err) {
-        // Refused: the server never held this list, so nothing it shows takes its keys.
+        // Refused or moved: the server never held this list, so nothing it shows takes its keys.
         unseen.current = unseen.current.filter((s) => s !== next);
+        const current = listChanged(err) as StaffLink[] | null;
+        if (current !== null) {
+          // Moved underneath: the queue re-applies the change on the list as it now stands, keyed as
+          // the rows key it — never a second minting of the same list, under which an edit opened
+          // from a row would find nothing to change. Already drawn: the rows' own keys. Not drawn
+          // yet: carried by words from the base, and held for the render that shows it.
+          if (sameLinks(ids.current, current)) return { current: ids.current };
+          const rebuilt = carryIds(base, current, mintLink);
+          unseen.current = [...unseen.current, rebuilt];
+          return { current: rebuilt };
+        }
         setSaveError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
     // The keys are the page's own: a link the queue added is the same link once its echo shows.
     sameLinks,
-    // The console's binding: a queue whose console has gone takes up nothing more.
-    here,
+    // A change that no longer applies (its link was removed meanwhile), or a list that kept moving
+    // under it, is said, never dropped quietly: here while this page is on screen, else in a toast
+    // naming the body.
+    (why) => {
+      const said = why === 'gone' ? LINKS_GONE : LINKS_KEPT_MOVING;
+      if (hold.here()) setSaveError(said);
+      else sayNotSaved(hold, said);
+    },
   );
   const save = async (change: Change) => {
     setInFlight((n) => n + 1);
@@ -250,6 +317,10 @@ export function LinksTabView({
 
   const commitEdit = async () => {
     if (editing === null || sending.current.has(editing.opening)) return;
+    if (orphaned) {
+      setEditing({ ...editing, error: LINK_EDITED_AWAY });
+      return;
+    }
     const draft = { label: editing.label, url: editing.url };
     const error = referenceLinkError(draft);
     if (error !== null) {
@@ -271,6 +342,10 @@ export function LinksTabView({
       return;
     }
     if (sending.current.has(editing.opening)) return;
+    if (orphaned) {
+      setEditing({ ...editing, error: LINK_EDITED_AWAY });
+      return;
+    }
     const { key, opening } = editing;
     const ok = await editorChange(editing, linkChanges.remove(key));
     // A removed link has no row left to edit: its editor goes whatever was typed.
@@ -308,7 +383,7 @@ export function LinksTabView({
               data-slot="link-add"
               onClick={() =>
                 open({
-                  key: `link-${++minted.current}`,
+                  key: mintLink(),
                   added: true,
                   label: '',
                   url: '',
@@ -361,12 +436,16 @@ export function LinksTabView({
             }
           />
         )}
-        {editing?.added && (
+        {editing !== null && (editing.added || orphaned) && (
           <LinkEditor
             // One instance for the add's whole life — saved or not — so focus, caret, selection
-            // and an IME's composition are never touched by a save.
+            // and an IME's composition are never touched by a save. (An orphaned row's editor
+            // mounts here once its row has gone, and takes focus only if focus fell with it.)
             key={editing.opening}
-            editing={editing}
+            autoFocus={editing.added}
+            editing={
+              orphaned && editing.error === null ? { ...editing, error: LINK_EDITED_AWAY } : editing
+            }
             busy={editorBusy}
             onChange={setEditing}
             onDone={() => void commitEdit()}
@@ -511,6 +590,7 @@ function StaffLinkRow({
 function LinkEditor({
   editing,
   busy,
+  autoFocus = true,
   onChange,
   onDone,
   onCancel,
@@ -518,6 +598,8 @@ function LinkEditor({
 }: {
   editing: Editing;
   busy: boolean;
+  /** The label takes focus as it mounts: an editor the moderator opened. */
+  autoFocus?: boolean;
   onChange: (next: Editing) => void;
   onDone: () => void;
   onCancel: () => void;
@@ -547,7 +629,7 @@ function LinkEditor({
       </label>
       <Input
         id={labelId}
-        autoFocus
+        autoFocus={autoFocus}
         value={editing.label}
         placeholder="What the link is, as skaters read it"
         onChange={(e) => onChange({ ...editing, label: e.target.value, error: null })}

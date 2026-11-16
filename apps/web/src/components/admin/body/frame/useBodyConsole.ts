@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { polygonBBox, waterBodyDisplayName } from '@skating/core';
-import { useMemo, useState } from 'react';
+import { polygonBBox, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
+import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -14,10 +14,12 @@ import {
 } from '@/components/admin/reads/consoleReads';
 import type { BBoxLike } from '@/lib/mapSurface';
 import { useRole } from '@/lib/useRole';
+import { ID_SHAPE } from '../../reads/readArgs';
 import type { Completeness } from '../completeness';
 import { type BodyMapBaseInput, bodyMapBase } from '../map/bodyMapBase';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import {
+  acresText,
   attentionTabs,
   type BodyAsk,
   type BodyHistoryView,
@@ -31,9 +33,11 @@ import {
   type OutlineTrust,
   outlineTrust,
   type Removal,
+  removalFromLeft,
   removalOf,
+  townWithState,
 } from './bodyModel';
-import { type BodyTabKey, ID_SHAPE } from './bodySearch';
+import type { BodyTabKey } from './bodySearch';
 import { neighborsOf } from './touching';
 
 /**
@@ -72,15 +76,29 @@ export interface BodyGoneData {
   /** The body it was merged into, when the merge can be followed; `null` for a rejected body. */
   survivor: { id: string; name: string } | null;
   /**
-   * How it left, from the history read: `null` when the rows read don't say. Drawn only when the
-   * viewer reads the audit trail (`history` isn't `null`).
+   * How it left: `null` when no row says. A removed or rejected body's from
+   * `bodyConsole.removedFacts` — the server's rule for who may see it, the same as the list's
+   * preview (a `by` it withholds is simply not drawn); a merged body's from the history read.
    */
   removal: Loadable<Removal | null>;
+  /** Whether the viewer is served how it left at all (`body.read`; for a merge, `audit.read`). */
+  removalShown: boolean;
   /** The towns it lies in (empty: in no town), for a rejected body; not computed yet, said so. */
   towns: Loadable<readonly string[] | typeof NOT_COMPUTED | null> | null;
   /** Its reports since the record began, for a rejected body; `null`: the read found no body. */
   reports: Loadable<{ count: number; capped: boolean } | null> | null;
   history: Loadable<BodyHistoryView> | null;
+  /**
+   * What the stored record still says of a body that left (`bodyConsole.removedFacts`): its name,
+   * class, states and area. `null` for a merged body (the survivor's page has them), or none read.
+   * Required: `undefined` is a read on its way, so an absent one would draw a skeleton for good.
+   */
+  record: Loadable<{
+    name: string;
+    kind: string;
+    states: readonly string[];
+    area: string | null;
+  } | null>;
 }
 
 /** The map's reads that failed: named for the notice, and run again together. */
@@ -117,19 +135,6 @@ export type BodyConsoleData =
       canSetBoost: boolean;
     };
 
-/** The minute a body was opened at, held while it stays open: the clock its reads are asked at. */
-function useOpenedAt(bodyId: string): number {
-  const [clock, setClock] = useState(() => ({ bodyId, at: minute(Date.now()) }));
-  if (clock.bodyId !== bodyId) {
-    const next = { bodyId, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
-}
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
-
 export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleData {
   const valid = ID_SHAPE.test(bodyId);
   const waterBodyId = bodyId as Id<'waterBodies'>;
@@ -139,7 +144,6 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
   // A read the viewer's role withholds: on its way while the role loads (`can` says no until it
   // lands), never `null` — which says *not recorded*, a claim about the body.
   const withheld = isLoading ? undefined : null;
-  const now = useOpenedAt(bodyId);
   const on = valid;
   const r = useConsoleReads({
     body: on ? read(api.waterBodies.get, { waterBodyId }) : null,
@@ -151,11 +155,17 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     placeNames: on ? read(api.corpusPlaceNames.openForBody, { waterBodyId }) : null,
     landmarkAsks: on ? read(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId }) : null,
     extras: on && canRead ? read(api.bodyConsole.consoleExtras, { waterBodyId }) : null,
-    facts: on && canRead ? read(api.bodies.preview, { waterBodyId, now }) : null,
     history:
       on && canAudit ? read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_LIMIT }) : null,
   });
 
+  // A body that left (rejected: the body's read answers only that it is unavailable): what its
+  // record still holds — its towns with their states, its report floor, how it left —
+  // `bodyConsole.removedFacts`, read only for such a body.
+  const left = loaded(r.body)?.available === false;
+  const removed = useConsoleReads({
+    facts: on && canRead && left ? read(api.bodyConsole.removedFacts, { waterBodyId }) : null,
+  }).facts;
   const result = loaded(r.body);
   const body = result?.available === true && result.body._id === bodyId ? result.body : null;
   const historyRows = loaded(r.history);
@@ -245,17 +255,47 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
       state: 'gone',
       gone: {
         survivor,
-        removal: mapLoadable(r.history, (h) =>
-          removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
-        ),
+        // How it left. A removed or rejected body: exactly what `removedFacts` serves this viewer
+        // (one rule, the server's — the preview draws the same). A merge: the history read's rows.
+        removal:
+          survivor === null
+            ? mapLoadable(removed, (f) =>
+                f?.left == null ? null : removalFromLeft(f.left, timeZone),
+              )
+            : mapLoadable(r.history, (h) =>
+                removalOf(h.entries as readonly HistoryAction[], bodyId, timeZone),
+              ),
+        removalShown: survivor === null ? canRead || isLoading : canAudit || isLoading,
+        record:
+          survivor !== null
+            ? null
+            : !canRead
+              ? withheld
+              : mapLoadable(removed, (f) =>
+                  f === null
+                    ? null
+                    : {
+                        name: waterBodyDisplayName(f.name),
+                        kind: waterBodyClassLabel(f.bodyClass),
+                        states: f.states,
+                        area: f.areaSqM === null ? null : acresText(f.areaSqM),
+                      },
+                ),
         // A merged body's facts went with it to the survivor; a rejected one's are still its own.
-        towns: survivor !== null ? null : !canRead ? withheld : mapLoadable(r.extras, townsOf),
+        towns:
+          survivor !== null
+            ? null
+            : !canRead
+              ? withheld
+              : mapLoadable(removed, (f) =>
+                  f === null || f.towns === null ? NOT_COMPUTED : f.towns.map(townWithState),
+                ),
         reports:
           survivor !== null
             ? null
             : !canRead
               ? withheld
-              : mapLoadable(r.facts, (f) => (f === null ? null : f.allTime)),
+              : mapLoadable(removed, (f) => (f === null ? null : f.reports)),
         history,
       },
     };
@@ -270,9 +310,11 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
     ...(timeZone !== undefined ? { timeZone } : {}),
   });
 
+  // The library row's completeness, on the extras (`consoleExtras.complete`): one small field, no
+  // longer `bodies.preview` and its report scan.
   const completeness: Loadable<Completeness | null> = !canRead
     ? withheld
-    : mapLoadable(r.facts, (f) => f?.complete ?? null);
+    : mapLoadable(r.extras, (e) => (e.complete ?? null) as Completeness | null);
 
   const askReads = [r.bayAsks, r.placeNames, r.landmarkAsks];
   const askFailures = askReads.filter(isFailed);
@@ -329,7 +371,10 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
 /** The towns from the extras: not computed yet until the body's geometry is; empty is no town. */
 function townsOf(e: {
   towns: readonly string[] | null;
+  townsWithState?: readonly { name: string; state: string | null }[] | null;
   geoComputedAt: number | null;
 }): readonly string[] | typeof NOT_COMPUTED {
-  return e.geoComputedAt === null || e.towns === null ? NOT_COMPUTED : e.towns;
+  if (e.geoComputedAt === null || e.towns === null) return NOT_COMPUTED;
+  // Each town with its own state, as the boundaries store it — never one inferred from the body's.
+  return e.townsWithState != null ? e.townsWithState.map(townWithState) : e.towns;
 }

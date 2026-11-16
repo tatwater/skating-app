@@ -191,13 +191,10 @@ describe('StandingTab', () => {
       standing: 'dormant',
       note: 'Dam work',
     });
-    expect(undo.announce).toHaveBeenCalledWith(
-      {
-        title: 'Set dormant',
-        target: { targetType: 'waterbody', targetId: BODY },
-      },
-      expect.any(Function),
-    );
+    expect(undo.announce).toHaveBeenCalledWith({
+      title: 'Set dormant',
+      target: { targetType: 'waterbody', targetId: BODY },
+    });
   });
 
   it('a refusal reads in the server’s words and announces nothing', async () => {
@@ -240,7 +237,6 @@ describe('StandingTab', () => {
     expect(convex.mutations.get('waterBodies:restore')).toHaveBeenCalledWith({ waterBodyId: BODY });
     expect(undo.announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: 'Restored to the map' }),
-      expect.any(Function),
     );
   });
 
@@ -294,7 +290,7 @@ describe('StandingTab', () => {
       expect(convex.mutations.get('standing:setStanding')).not.toHaveBeenCalled();
     });
 
-    it('a write started on one body that lands after the switch changes nothing on the next, and puts up no receipt', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       both();
       let land: () => void = () => {};
       convex.mutations.set(
@@ -306,15 +302,21 @@ describe('StandingTab', () => {
             }),
         ),
       );
-      const { rerender } = render(<BodyTabHost Wiring={StandingTab} bodyId={BODY} />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={StandingTab} name="Mascoma Lake" bodyId={BODY} />,
+      );
       await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
       await userEvent.type(screen.getByRole('textbox'), 'Dam work{Enter}');
       expect(convex.mutations.get('standing:setStanding')).toHaveBeenCalledTimes(1);
       convex.results.set('waterBodies:get', body({ _id: OTHER }));
-      rerender(<BodyTabHost Wiring={StandingTab} bodyId={OTHER} />);
+      rerender(<BodyTabHost Wiring={StandingTab} name="Crystal Lake" bodyId={OTHER} />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(undo.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(undo.announce).toHaveBeenCalledTimes(1);
+      expect(undo.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(screen.getByRole('radio', { name: /^Active/ })).toBeChecked();
     });
   });

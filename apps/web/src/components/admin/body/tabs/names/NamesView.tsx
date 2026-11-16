@@ -18,6 +18,7 @@ import { Section } from '@/components/kit/section-slug';
 import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { UnavailableField } from '@/components/kit/unavailable-field';
 import { cn } from '@/lib/utils';
+import { CLASS_CLAIMS_NOT_RECORDED, townLinesShortWords } from '../../consoleWords';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from '../../frame/bodyModel';
 import { LIT_ROW, LoadingSection, litAttr, TabBody, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
@@ -69,6 +70,10 @@ export type NamesViewProps = {
   onAliasesChange?: (aliases: string[]) => void;
   /** Set the class. */
   onClassChange?: (cls: WaterBodyClass) => void;
+  /** Put the import's class back over a moderator's (`setClass(null)`). */
+  onClassClear?: () => void;
+  /** The server's refusal of the last aliases save, said under the field (`null` none). */
+  aliasesError?: string | null;
   /** The viewer could edit the aliases: with no `onAliasesChange` yet, the field says so. */
   canEditAliases?: boolean;
   /** The viewer could change the class: with no `onClassChange` yet, the control says so. */
@@ -84,6 +89,8 @@ export function NamesView({
   onCommunityName,
   onAliasesChange,
   onClassChange,
+  onClassClear,
+  aliasesError = null,
   canEditAliases = false,
   canEditClass = false,
 }: NamesViewProps) {
@@ -113,14 +120,30 @@ export function NamesView({
     <TabBody data-slot="names-tab">
       <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <NameSection data={data} lit={lit} onChoose={onChooseName} onCommunity={onCommunityName} />
-      <Section title="Aliases" count={data.aliases.length} data-slot="aliases">
-        {onAliasesChange ? (
-          <ChipInput
-            aria-label="Aliases"
-            value={data.aliases}
-            onValueChange={onAliasesChange}
-            placeholder="Add a name skaters use"
-          />
+      <Section
+        title="Aliases"
+        // No count for a list that couldn't be read: never the catalogs' figure in its place.
+        count={onAliasesChange && data.aliasesFailed ? undefined : data.aliases.length}
+        data-slot="aliases"
+      >
+        {/* A failed read of the moderator's list draws no field: the tab's failure note says so. */}
+        {onAliasesChange && data.aliasesFailed ? null : onAliasesChange && data.aliasesEditable ? (
+          <>
+            <ChipInput
+              aria-label="Aliases"
+              value={data.aliases}
+              onValueChange={onAliasesChange}
+              placeholder="Add a name skaters use"
+            />
+            {aliasesError !== null && (
+              <p role="alert" data-slot="aliases-refused" className="m-0 text-assist text-bad">
+                {aliasesError}
+              </p>
+            )}
+          </>
+        ) : onAliasesChange ? (
+          // The moderator's own list is on its way: the field holds its place, not the catalogs'.
+          <LoadingLine width="10rem" />
         ) : canEditAliases ? (
           <UnavailableField what={NOT_YET.aliases} label="Aliases">
             <ChipInput
@@ -149,7 +172,13 @@ export function NamesView({
           )
         )}
       </Section>
-      <ClassSection data={data} lit={lit} onChange={onClassChange} canEdit={canEditClass} />
+      <ClassSection
+        data={data}
+        lit={lit}
+        onChange={onClassChange}
+        onClear={onClassClear}
+        canEdit={canEditClass}
+      />
       <LocationSection data={data} />
     </TabBody>
   );
@@ -296,11 +325,13 @@ function ClassSection({
   data,
   lit,
   onChange,
+  onClear,
   canEdit,
 }: {
   data: NamesData;
   lit: string | null;
   onChange: NamesViewProps['onClassChange'];
+  onClear?: NamesViewProps['onClassClear'];
   canEdit: boolean;
 }) {
   // Back on the record's class whenever it moves, so the checked row is never a class it left.
@@ -385,8 +416,13 @@ function ClassSection({
       </RadioGroup>
       {data.classOptions === null && (
         <span data-slot="class-claims" className="text-assist leading-list text-fg3">
-          Each catalog’s class: {NOT_RECORDED}
+          {CLASS_CLAIMS_NOT_RECORDED}
         </span>
+      )}
+      {onClear && data.moderatorClass != null && pick === data.cls && (
+        <Button className="self-start" onClick={onClear}>
+          Back to the catalogs’ class
+        </Button>
       )}
       {onChange && pick !== data.cls && (
         <Button className="self-start" onClick={() => onChange(pick)}>
@@ -411,6 +447,7 @@ function LocationSection({ data }: { data: NamesData }) {
       fact(admin)
     );
   const known = typeof admin === 'object' && !isFailed(admin);
+  const short = townLinesShortWords(data.place.townLinesShort);
   return (
     <Section title="Location" data-slot="location">
       <KeyValueList keyWidth="6.5rem">
@@ -430,6 +467,11 @@ function LocationSection({ data }: { data: NamesData }) {
             ) : (
               <span className="text-fg3">{IN_NO_TOWN_WORDS}</span>
             ),
+          )}
+          {short !== null && (
+            <span data-slot="town-lines-short" className="mt-(--space-1_5) block text-fg3">
+              {short}
+            </span>
           )}
         </KeyValueRow>
         <KeyValueRow

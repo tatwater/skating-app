@@ -7,16 +7,27 @@ import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
-import { ID_SHAPE } from '../body/frame/bodySearch';
 
-import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
+import {
+  isFailed,
+  type Loadable,
+  loaded,
+  mapLoadable,
+  read,
+  useConsoleReadSet,
+} from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
+import { ID_SHAPE, useClockFor } from '../reads/readArgs';
 
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
-import { type BodiesListData, type BodyPreviewData, UNREAD_LIST } from './bodiesData';
 import {
-  type GetResult,
+  type BodiesListData,
+  type BodyPreviewData,
+  type RemovedPreviewData,
+  UNREAD_LIST,
+} from './bodiesData';
+import {
   type LibraryRow,
   type ListArgs,
   type ListSummary,
@@ -24,7 +35,9 @@ import {
   listArgsOf,
   listFrom,
   listFromOpened,
+  type OtherStandings,
   previewFrom,
+  removedFrom,
   servesFrom,
 } from './bodiesReads';
 import { type BodiesQuery, type BodiesSearch, listKey, queryOf, searchFor } from './bodiesSearch';
@@ -91,7 +104,9 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const args = canRead ? listArgsOf(query, listNow) : null;
   // A lane no server read lists (Opened recently) still counts the others: All's summary.
   const summary = useSummary(canRead ? (args ?? { lane: 'all', now: listNow }) : null);
-  const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer');
+  const othersRead = useOtherStandings(args);
+  const others = othersRead === null ? undefined : loaded(othersRead);
+  const opened = useOpenedList(canRead && query.lane.read.kind === 'openedByViewer', listNow);
   const preview = usePreview(query.bodyId, canRead, can('audit.read'));
   const paged = usePaged(key);
 
@@ -118,12 +133,15 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
   const view: Omit<BodiesViewProps, 'list'> = {
     query,
     onQueryChange: go,
+    // A failed other-standings read is said in the groups' place, never drawn as none there.
+    ...(isFailed(othersRead) && { onRetryOthers: othersRead.retry }),
     laneCounts: {
       ...laneCountsFrom(counted, BODY_LANES),
       ...(opened?.list.status === 'done' && { [query.lane.id]: opened.list.total }),
     },
     corpus: counted?.corpus ?? null,
     preview: preview.data,
+    previewRemoved: preview.removed,
     onRetryPreview: preview.retry,
     previewPending: preview.pending,
     now,
@@ -155,7 +173,13 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
       >
         <PagedRead args={args} memoryKey={key} onPage={paged.put} />
       </ReadBoundary>
-      <PagedView view={view} paged={paged} summary={summary} />
+      <PagedView
+        view={view}
+        paged={paged}
+        summary={summary}
+        others={others}
+        othersFailed={isFailed(othersRead) ? { pending: othersRead.pending } : null}
+      />
     </>
   );
 }
@@ -285,13 +309,19 @@ function PagedView({
   view,
   paged,
   summary,
+  others,
+  othersFailed,
 }: {
   view: Omit<BodiesViewProps, 'list'>;
   paged: PagedState;
   summary: SummaryRead;
+  others: OtherStandings | undefined;
+  othersFailed: { pending: boolean } | null;
 }): ReactNode {
   const { page, failure, retrying } = paged;
   const { current, laneHeld } = summary;
+  // The other standings' failure by value, so the list rebuilds only when it changes.
+  const othersPending = othersFailed === null ? null : othersFailed.pending;
   // Rows keep their identity between renders (a minute's tick, a row selected), so the table
   // rebuilds its model only when a page or the summary lands.
   const list = useMemo((): BodiesListData => {
@@ -308,8 +338,10 @@ function PagedView({
       status: page?.status ?? 'LoadingFirstPage',
       current,
       held: laneHeld,
+      others,
+      ...(othersPending !== null && { othersFailed: { pending: othersPending } }),
     });
-  }, [page, failure, retrying, current, laneHeld]);
+  }, [page, failure, retrying, current, laneHeld, others, othersPending]);
   return (
     <BodiesView
       {...view}
@@ -352,20 +384,23 @@ function useSummary(args: ListArgs | null): SummaryRead {
 }
 
 /**
- * The minute a place was opened at, held while it stays open: the clock a list (or a preview) is
- * read against, so the clock moving on never restarts a read. A new `key` reads the clock again.
+ * A search's matches in the other standings (`bodies.searchOtherStandings`): read only for a search
+ * in one standing's lane — *All* and *Changed* already hold every standing. The read as the shared
+ * layer holds it (on its way, failed, or its value); `null` when none is asked.
  */
-function useClockFor(key: string): number {
-  const [clock, setClock] = useState(() => ({ key, at: minute(Date.now()) }));
-  if (clock.key !== key) {
-    const next = { key, at: minute(Date.now()) };
-    setClock(next);
-    return next.at;
-  }
-  return clock.at;
+function useOtherStandings(args: ListArgs | null): Loadable<OtherStandings> | null {
+  const asked =
+    args !== null &&
+    (args.q ?? '').trim().length >= 2 &&
+    args.lane !== 'all' &&
+    args.lane !== 'changed'
+      ? (({ sort: _sort, ...rest }) => rest)(args)
+      : null;
+  const { reads } = useConsoleReadSet({
+    others: asked === null ? null : read(api.bodies.searchOtherStandings, asked),
+  });
+  return asked === null ? null : reads.others;
 }
-
-const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
 
 // ── Opened recently ──────────────────────────────────────────────────────────────────────────
 
@@ -374,20 +409,18 @@ const minute = (at: number) => Math.floor(at / 60_000) * 60_000;
  * on screen (and nothing is read). The reads are keyed on the ids' value, so a render with the same
  * list keeps its subscriptions.
  */
-function useOpenedList(on: boolean): { list: BodiesListData; retry: () => void } | null {
+function useOpenedList(
+  on: boolean,
+  now: number,
+): { list: BodiesListData; retry: () => void } | null {
   const ids = useOpenedBodies();
-  // Through the read layer, keyed on the ids' value: Try again re-runs only the failed reads, and
-  // a body the preview also reads is one read, retried once.
-  const { reads, retry, pending } = useConsoleReadSet(
-    Object.fromEntries(
-      (on ? ids : []).map((id) => [
-        id,
-        read(api.waterBodies.get, { waterBodyId: id as Id<'waterBodies'> }),
-      ]),
-    ),
-  );
+  // One read for the lane, through the read layer: Try again re-runs it.
+  const asked = on && ids.length > 0;
+  const { reads, retry, pending } = useConsoleReadSet({
+    rows: asked ? read(api.bodies.rowsByIds, { ids: [...ids], now }) : null,
+  });
   if (!on) return null;
-  const list = listFromOpened(ids, reads as Record<string, Loadable<GetResult>>);
+  const list = listFromOpened(asked ? reads.rows : null);
   return { list: list.status === 'error' ? { ...list, retryPending: pending } : list, retry };
 }
 
@@ -407,6 +440,8 @@ function usePreview(
   pending: boolean;
   /** The body `bodyId` was merged into, which `waterBodies.get` serves in its place; else `null`. */
   survivor: string | null;
+  /** A body the reads can't serve: what its record still holds (`bodyConsole.removedFacts`). */
+  removed: Loadable<RemovedPreviewData | null> | null;
 } {
   const id =
     canRead && bodyId !== null && ID_SHAPE.test(bodyId) ? (bodyId as Id<'waterBodies'>) : null;
@@ -422,8 +457,23 @@ function usePreview(
         ? null
         : read(api.bodyConsole.history, { waterBodyId, limit: HISTORY_ROWS }),
   });
-  if (id === null) return { data: null, retry, pending, survivor: null };
   const body = reads.body;
+  // A body the reads can't serve (removed or rejected): its record, read only for such a body.
+  const unserved = body != null && !isFailed(body) && !body.available;
+  const gone = useConsoleReadSet({
+    removed: id !== null && unserved ? read(api.bodyConsole.removedFacts, { waterBodyId }) : null,
+  });
+  const removed =
+    id !== null && unserved
+      ? mapLoadable(gone.reads.removed, (f) => (f === null ? null : removedFrom(f)))
+      : null;
+  const retryAll = () => {
+    retry();
+    gone.retry();
+  };
+  const pendingAny = pending || gone.pending;
+  if (id === null)
+    return { data: null, retry: retryAll, pending: pendingAny, survivor: null, removed: null };
   // `waterBodies.get` follows a merge to the survivor; the other reads are of the id asked. The
   // pane never draws the one's outline over the other's facts: it holds while the place moves on.
   const survivor =
@@ -447,7 +497,7 @@ function usePreview(
       now,
     });
   }
-  return { data, retry, pending, survivor };
+  return { data, retry: retryAll, pending: pendingAny, survivor, removed };
 }
 
 /** How many of a body's latest changes the preview lists. */

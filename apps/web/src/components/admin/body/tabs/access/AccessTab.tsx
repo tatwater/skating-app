@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import type { PublicAccessVerdict } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -10,9 +10,9 @@ import {
   retryAll,
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useTickingNow } from '../tabParts';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
 import {
@@ -29,8 +29,8 @@ import {
  * is (`landmarks.listForBody`), and the ruling's history for who ruled, what stood before and how
  * many rulings came earlier (`bodyConsole.history` by verb, `audit.read`). Writes, each behind its
  * capability and announced for undo: the ruling (`waterBodies.setPublicAccess`, `access.rule` — no
- * public access asks its reason), and a mapped launch hidden (`putIns.hide`, `body.access`).
- * Making a launch official isn't available yet (the server has no promote in place). Placing
+ * public access asks its reason), and a mapped launch made official in place (`putIns.promote`)
+ * or hidden (`putIns.hide`), `body.access`. Placing
  * put-ins and lots, linking a lot and the posted-rules editor are task modes.
  */
 /**
@@ -87,8 +87,9 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const { data, retry, pending } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
-  const { act, actInDialog } = useTabAction();
-  const now = useDayClock();
+  const promote = useMutation(api.putIns.promote);
+  const { act, actInDialog } = useTabAction(bodyId);
+  const now = useTickingNow(3_600_000);
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const ruled = (v: PublicAccessVerdict | null) =>
@@ -118,9 +119,19 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
             }
           : undefined
       }
-      // Not available yet: `putIns.setOfficial` inserts a second, official put-in beside the launch
-      // (no parking, no walk) instead of promoting it, so the launch would stay, twice.
-      {...(can('body.access') ? { onMakeOfficial: UNAVAILABLE } : {})}
+      // `putIns.promote`: the launch made official on its own row — its point, bay, lot and walk
+      // kept. No name is sent: the control asks for none, and the name the row shows may be the
+      // server's compass fallback ("NW launch", `resolvePutInName`) or the tab's placeholder —
+      // neither is the launch's own, and sending it would store it as one.
+      onMakeOfficial={
+        can('body.access')
+          ? (p) =>
+              void act(() => promote({ putInId: p.id as Id<'putIns'> }), {
+                title: `Made ${p.name} official`,
+                target,
+              })
+          : undefined
+      }
       onHide={
         can('body.access')
           ? (p, reason) =>
@@ -132,16 +143,6 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       }
     />
   );
-}
-
-/** The day a ruling's age is counted to, moved on once an hour (a day count is the finest it says). */
-function useDayClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 3_600_000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
 }
 
 /** The Access tab's registration in the frame's registry. */

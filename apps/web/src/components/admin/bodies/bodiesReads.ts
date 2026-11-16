@@ -1,29 +1,27 @@
 import type { api } from '@skating/convex/api';
-import {
-  currentSeason,
-  type LibraryListLane,
-  libraryStandingOf,
-  seasonRecordOpensMs,
-} from '@skating/core';
+import { currentSeason, type LibraryListLane, seasonRecordOpensMs } from '@skating/core';
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
+import { removalFromLeft, townWithState } from '../body/frame/bodyModel';
 import { VANTAGE_LABELS } from '../metrics/metricsModel';
 import type { Count } from '../overview/overviewModel';
 import { isFailed, type Loadable, type ReadFailure } from '../reads/consoleReads';
 import { actionLabel, actorWords } from '../shell/actionLabels';
 import { dayMonth, seasonYears } from '../shell/consoleTime';
-import { askFrom } from './askWords';
+import { askFrom, intakeFrom } from './askWords';
 import {
   type BodiesListData,
+  type BodyGroup,
   type BodyPreviewData,
   type ListServes,
   type ListStatus,
   type PreviewCount,
+  type RemovedPreviewData,
   SERVES_NOTHING,
   UNREAD_LIST,
 } from './bodiesData';
-import type { BodyRow, BodySort } from './bodiesModel';
+import { type BodyRow, type BodySort, standingGroupWord } from './bodiesModel';
 import { type BodiesQuery, listSort } from './bodiesSearch';
 import { FACET_IDS } from './bodyFacets';
 import type { BodyLane } from './bodyLanes';
@@ -36,10 +34,12 @@ import type { BodyLane } from './bodyLanes';
  *   state tab, the facets, the search and the order are all the server's. A page that comes back
  *   short because its scan ran out is not the end (`isDone` stays false): the list keeps asking,
  *   and draws its end only once the read says it is done.
- * - **Opened recently** — this browser's own list (`openedRecently.ts`), no server lane: each body
- *   read by `waterBodies.get` and drawn as the body carries it, newest opened first. Nothing the
- *   body alone doesn't say (completeness, asks, reports, the last change) is drawn, and nothing
- *   narrows or orders it — the page filters no list itself, and twelve rows need none.
+ * - **Opened recently** — this browser's own list (`openedRecently.ts`), no server lane: its ids
+ *   read as the library's rows (`bodies.rowsByIds`), newest opened first; nothing narrows or orders
+ *   it — the page filters no list itself, and twelve rows need none.
+ * - **A search's other standings** — `bodies.searchOtherStandings`: each other standing's count
+ *   (a floor past the server's bound) and best matches, gathered under the board's dividers; the
+ *   lane's facets aren't applied there, and the tally says so.
  * - **The counts** — `bodies.listSummary`: every lane's total (*Changed this week* to a cap), the
  *   corpus, the lane's state tabs, the list's total and the facet counts the stored counts answer
  *   exactly. A count it can't answer is `null` — no number, never a zero.
@@ -168,11 +168,43 @@ export function servesFrom(summary: ListSummary | undefined): ListServes {
  * landed (what controls the read honors, and the lane's state tabs, which don't move with a
  * filter).
  */
+/** `bodies.searchOtherStandings`'s answer. */
+export type OtherStandings = FunctionReturnType<typeof api.bodies.searchOtherStandings>;
+
+/**
+ * The other standings as the board groups them ("2 active · 4 dormant"): the server's lanes gathered
+ * under their divider's word (the three dormant lanes are one *Dormant*), in the server's order.
+ * A group's count is its lanes' together, a floor ("50+") when any of them stopped at the server's
+ * bound; its rows are each lane's best, every row saying its own standing.
+ */
+export function othersFrom(others: OtherStandings): BodyGroup[] {
+  const groups: BodyGroup[] = [];
+  for (const g of others.groups) {
+    const label = standingGroupWord(g.lane);
+    const rows = g.rows.map(rowFromLibrary);
+    const at = groups.findIndex((x) => x.key === label);
+    const held = groups[at];
+    if (held === undefined) {
+      groups.push({ key: label, label, rows, count: g.count, capped: g.capped });
+    } else {
+      groups[at] = {
+        ...held,
+        rows: [...held.rows, ...rows],
+        count: (held.count ?? 0) + g.count,
+        capped: held.capped === true || g.capped,
+      };
+    }
+  }
+  return groups;
+}
+
 export function listFrom({
   rows,
   status,
   current,
   held,
+  others,
+  othersFailed,
 }: {
   rows: readonly LibraryRow[];
   status: PaginationStatus;
@@ -180,13 +212,19 @@ export function listFrom({
   current: ListSummary | undefined;
   /** The last summary for this lane, if any. */
   held: ListSummary | undefined;
+  /** `bodies.searchOtherStandings` for a search, `undefined` while it loads (or none asked). */
+  others?: OtherStandings | undefined;
+  /** That read failed (`pending` once tried again): said in the groups' place. */
+  othersFailed?: { pending: boolean };
 }): BodiesListData {
   return {
     status: listStatusOf(status),
     rows: rows.map(rowFromLibrary),
-    // A search answers this lane only: matches in other standings need a read of their own, so
-    // none is drawn — not an empty group.
-    others: null,
+    // A search's matches in the other standings, from their own read; none while it is on its way
+    // (never an empty group or a zero).
+    others: others === undefined ? null : othersFrom(others),
+    ...(others?.facetsIgnored ? { othersFacetsIgnored: true } : {}),
+    ...(othersFailed !== undefined && { othersFailed }),
     total: current?.total ?? null,
     serves: servesFrom(current ?? held),
     facetCounts: current?.facetCounts ?? null,
@@ -194,60 +232,51 @@ export function listFrom({
   };
 }
 
+/** `bodies.rowsByIds`'s answer: each id asked, in order, with what became of it. */
+export type RowsByIds = FunctionReturnType<typeof api.bodies.rowsByIds>;
+
 /**
- * A body from `waterBodies.get` as the list draws it — only what the body itself carries; the
- * library row's facts are not recorded here. A merged body has no standing of its own: none.
+ * The Opened recently lane: the bodies this browser opened, in the order opened (newest first), as
+ * the library lists them (`bodies.rowsByIds`, one read for the lane). While it is on its way the
+ * list holds; a failed read is the list's error (with its Try again) — never a body quietly left
+ * out of a count that says it is exact. A merged id is listed as the body that took it in, once,
+ * where it was opened first. An id the library has no row for, or that is no body at all, is said
+ * at the list's end (`notListed`) — never dropped unsaid. No read gives other standings.
  */
-export function rowFromBody(body: BodyDoc): BodyRow | null {
-  const standing = libraryStandingOf(body);
-  if (standing === null) return null;
+export function listFromOpened(read: Loadable<RowsByIds> | null): BodiesListData {
+  if (read === null) return { ...EMPTY_OPENED };
+  if (read === undefined) return { ...UNREAD_LIST, status: 'loading' };
+  if (isFailed(read)) return { ...UNREAD_LIST, status: 'error' };
+  const seen = new Set<string>();
+  const rows: BodyRow[] = [];
+  let unlisted = 0;
+  let unknown = 0;
+  for (const entry of read.entries) {
+    if (entry.status === 'unlisted') unlisted += 1;
+    else if (entry.status === 'unknown') unknown += 1;
+    else if (entry.row !== null && !seen.has(entry.row.id)) {
+      seen.add(entry.row.id);
+      rows.push(rowFromLibrary(entry.row));
+    }
+  }
+  const notListed = { unlisted, unknown, dropped: read.dropped };
   return {
-    id: body._id,
-    name: body.name,
-    bodyClass: body.type,
-    states: body.states ?? [],
-    areaSqM: area(body.surfaceAreaSqM),
-    complete: null,
-    asks: null,
-    reports: null,
-    changedAt: null,
-    standing,
+    ...EMPTY_OPENED,
+    rows,
+    total: { count: rows.length, capped: false },
+    ...(unlisted + unknown + read.dropped > 0 && { notListed }),
   };
 }
 
-/**
- * The Opened recently lane: the bodies this browser opened, each read by id, in the order opened
- * (newest first). An id still loading holds the list; a read that failed makes the list's error
- * (with its Try again) — never a body quietly left out of a count that says it is exact. A body that
- * can no longer be opened (gone or unavailable) is left out. `waterBodies.get` follows a merge to
- * its survivor, so a merged id reads as the body that took it in — listed once, where it was opened
- * first. Its count is exact once every read lands. No read gives other standings: `others` is none.
- */
-export function listFromOpened(
-  ids: readonly string[],
-  got: Readonly<Record<string, Loadable<GetResult>>>,
-): BodiesListData {
-  if (ids.some((id) => got[id] === undefined)) return { ...UNREAD_LIST, status: 'loading' };
-  if (ids.some((id) => isFailed(got[id]))) return { ...UNREAD_LIST, status: 'error' };
-  const seen = new Set<string>();
-  const rows = ids.flatMap((id) => {
-    const r = got[id];
-    if (r == null || isFailed(r) || !r.available) return [];
-    const row = rowFromBody(r.body);
-    if (row === null || seen.has(row.id)) return [];
-    seen.add(row.id);
-    return [row];
-  });
-  return {
-    status: 'done',
-    rows,
-    others: null,
-    total: { count: rows.length, capped: false },
-    serves: SERVES_NOTHING,
-    facetCounts: null,
-    states: [],
-  };
-}
+const EMPTY_OPENED: BodiesListData = {
+  status: 'done',
+  rows: [],
+  others: null,
+  total: { count: 0, capped: false },
+  serves: SERVES_NOTHING,
+  facetCounts: null,
+  states: [],
+};
 
 /** Each lane's count by the page's lane id, from the summary; `null` where no read counts it. */
 export function laneCountsFrom(
@@ -278,6 +307,26 @@ export function polygonsOf(
 
 /** A recorded area; a body never measured reads `0` or nothing. */
 const area = (sqm: number | undefined) => (sqm === undefined || sqm <= 0 ? null : sqm);
+
+/** `bodyConsole.removedFacts`' answer. */
+export type RemovedFacts = NonNullable<FunctionReturnType<typeof api.bodyConsole.removedFacts>>;
+
+/**
+ * A removed or rejected body's record, as the preview draws it: how it left by the shared rule
+ * (`removalFromLeft`), each town with its state when recorded (never inferred).
+ */
+export function removedFrom(facts: RemovedFacts, timeZone?: string): RemovedPreviewData {
+  return {
+    name: facts.name,
+    bodyClass: facts.bodyClass,
+    states: facts.states,
+    areaSqM: area(facts.areaSqM ?? undefined),
+    standing: facts.standing,
+    left: facts.left === null ? null : removalFromLeft(facts.left, timeZone),
+    towns: facts.towns === null ? null : facts.towns.map(townWithState),
+    reports: facts.reports,
+  };
+}
 
 /** "2 on the ice · 1 from shore": how the season's reports were made, the kinds with any. */
 export function vantageWords(byVantage: PreviewFacts['season']['byVantage']): string | null {
@@ -344,7 +393,15 @@ export function previewFrom({
       ready.townsComputedAt === null && {
         townsNotComputed: true,
       }),
-    moreTowns: ready?.moreTowns ?? [],
+    townState: ready?.townState ?? null,
+    // Each town with its own state, as the read gives it (a name in two states is two towns);
+    // facts computed before towns carried states give the bare names — no state inferred.
+    moreTowns:
+      ready === null
+        ? []
+        : ready.moreTownsWithState.length >= ready.moreTowns.length
+          ? ready.moreTownsWithState.map((t) => ({ name: t.name, state: t.state ?? null }))
+          : ready.moreTowns.map((name) => ({ name, state: null })),
     centroid: body.centroid,
     outline: {
       polygons: polygonsOf(body.polygon),
@@ -365,6 +422,7 @@ export function previewFrom({
     // Core's rule, as the stored row holds it; a body with no row yet is not recorded.
     complete: ready?.complete ?? null,
     asks: ready === null ? null : ready.asks.map(askFrom),
+    intake: ready === null ? null : ready.intake.map(intakeFrom),
     askCount: ready === null ? null : ready.askCount,
     asksPartial: ready?.asksListCapped === true,
     history: isFailed(history)

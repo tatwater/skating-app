@@ -82,10 +82,13 @@ export function ReasonAsk({
         <AlertDialogBody>
           {refusal !== null && <AlertDialogError title="Not done.">{refusal}</AlertDialogError>}
           {extra}
+          {/* A sent reason is held while its write is out: the dialog closes when it lands, so
+              words typed then could never be sent — the field takes none. */}
           <AlertDialogReason
             label={label}
             placeholder={placeholder}
             value={reason}
+            readOnly={busy}
             onChange={(e) => setReason(e.target.value)}
           />
         </AlertDialogBody>

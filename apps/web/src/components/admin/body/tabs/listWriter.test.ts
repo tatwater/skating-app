@@ -1,7 +1,9 @@
+import { render, renderHook } from '@testing-library/react';
 import fc from 'fast-check';
+import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { type KeyedLink, linkChanges } from './links/linksModel';
-import { createListWriter, sameList } from './listWriter';
+import { createListWriter, ListWritersProvider, sameList, useListMemory } from './listWriter';
 
 type Item = { id: string; label: string };
 type Change = (base: readonly Item[]) => readonly Item[];
@@ -33,9 +35,9 @@ const CHANGES = {
 const toLink = ({ id, label }: Item): KeyedLink => ({ key: id, label, url: `https://${label}` });
 const toItem = ({ key, label }: KeyedLink): Item => ({ id: key, label });
 const lift =
-  (change: (base: readonly KeyedLink[]) => readonly KeyedLink[]): Change =>
+  (change: (base: readonly KeyedLink[]) => readonly KeyedLink[] | null): Change =>
   (base) =>
-    change(base.map(toLink)).map(toItem);
+    (change(base.map(toLink)) ?? base.map(toLink)).map(toItem);
 const LINK_CHANGES: typeof CHANGES = {
   add: (id) => lift(linkChanges.add(toLink({ id, label: id }))),
   remove: (id) => lift(linkChanges.remove(id)),
@@ -215,51 +217,64 @@ describe('createListWriter', () => {
     expect(w.server.map((x) => x.id)).toEqual(['a', 'b', 'c']);
   });
 
-  describe('the console’s binding (`alive`)', () => {
-    /** A queue bound to `alive`, whose sends wait for the test's answer. */
-    const bound = () => {
-      let alive = true;
-      const sent: (readonly string[])[] = [];
-      const answers: ((ok: boolean) => void)[] = [];
+  describe('the server’s compare-and-set (`expected`)', () => {
+    /** A queue over a server that refuses a write built on a list that moved. */
+    const guarded = (server: { list: string[] }) => {
+      const sent: { next: readonly string[]; base: readonly string[] }[] = [];
+      let unapplied = 0;
       const writer = createListWriter<string>(
-        (next) =>
-          new Promise<boolean>((resolve) => {
-            sent.push(next);
-            answers.push(resolve);
-          }),
-        sameList,
-        () => alive,
-      );
-      writer.observe(['a']);
-      return {
-        writer,
-        sent,
-        answer: (ok: boolean) => answers.shift()?.(ok),
-        die: () => {
-          alive = false;
+        async (next, base) => {
+          sent.push({ next, base });
+          if (!sameList(base, server.list)) return { current: [...server.list] };
+          server.list = [...next];
+          return true;
         },
-      };
+        sameList,
+        () => {
+          unapplied++;
+        },
+      );
+      writer.observe(server.list);
+      return { writer, sent, unapplied: () => unapplied };
     };
 
-    it('a change queued behind one on its way is never taken up once its console has gone', async () => {
-      const q = bound();
-      const first = q.writer.push((base) => [...base, 'b']);
-      const second = q.writer.push((base) => [...base, 'c']);
-      await settle();
-      expect(q.sent).toEqual([['a', 'b']]);
-      q.die();
-      q.answer(true);
-      // The first landed, but its answer is not taken in; the second is dropped, never sent.
-      await expect(first).resolves.toBe(false);
-      await expect(second).resolves.toBe(false);
-      expect(q.sent).toHaveLength(1);
+    it('names the list each write was built on', async () => {
+      const server = { list: ['a'] };
+      const q = guarded(server);
+      await q.writer.push((base) => [...base, 'b']);
+      expect(q.sent).toEqual([{ next: ['a', 'b'], base: ['a'] }]);
     });
 
-    it('a dead queue takes up nothing new', async () => {
-      const q = bound();
-      q.die();
-      await expect(q.writer.push((base) => [...base, 'b'])).resolves.toBe(false);
-      expect(q.sent).toEqual([]);
+    it('a list that moved underneath is refused with the current one; the change is re-applied on top', async () => {
+      const server = { list: ['a'] };
+      const q = guarded(server);
+      // Another moderator's write lands before ours, which was built on ['a'].
+      server.list = ['a', 'x'];
+      await expect(q.writer.push((base) => [...base, 'b'])).resolves.toBe(true);
+      expect(q.sent.map((w) => w.base)).toEqual([['a'], ['a', 'x']]);
+      expect(server.list).toEqual(['a', 'x', 'b']);
+    });
+
+    it('a change that no longer applies is said (`unapplied`), never sent or dropped quietly', async () => {
+      const server = { list: ['a', 'b'] };
+      const q = guarded(server);
+      server.list = ['a'];
+      // An edit of 'b', which another moderator removed meanwhile.
+      const edit = (base: readonly string[]) =>
+        base.includes('b') ? base.map((x) => (x === 'b' ? 'B' : x)) : null;
+      await expect(q.writer.push(edit)).resolves.toBe(false);
+      expect(q.unapplied()).toBe(1);
+      expect(server.list).toEqual(['a']);
+    });
+
+    it('a change already on the list as it now stands sends nothing more', async () => {
+      const server = { list: ['a'] };
+      const q = guarded(server);
+      server.list = ['a', 'b'];
+      await expect(
+        q.writer.push((base) => (base.includes('b') ? base : [...base, 'b'])),
+      ).resolves.toBe(true);
+      expect(q.sent).toHaveLength(1);
     });
   });
 
@@ -337,3 +352,39 @@ async function everyInterleaving(changes: typeof CHANGES) {
     { numRuns: 300 },
   );
 }
+
+describe('useListMemory — what a queued change names lives beside its queue', () => {
+  it('under the shell: a page coming back holds the same value; another list or name its own', () => {
+    const seen: { current: { n: number } }[] = [];
+    function Probe({ k, n }: { k: string; n: string }) {
+      seen.push(useListMemory(k, n, () => ({ n: 0 })));
+      return null;
+    }
+    // One provider across the mounts, as the shell's outlives the page.
+    const tree = (probe: { k: string; n: string } | null) =>
+      createElement(ListWritersProvider, null, probe && createElement(Probe, probe));
+    const view = render(tree({ k: 'links:a', n: 'ids' }));
+    const first = seen.at(-1) as { current: { n: number } };
+    first.current.n = 1;
+    view.rerender(tree(null));
+    view.rerender(tree({ k: 'links:a', n: 'ids' }));
+    expect(seen.at(-1)).toBe(first);
+    view.rerender(tree({ k: 'links:b', n: 'ids' }));
+    expect(seen.at(-1)?.current.n).toBe(0);
+    view.rerender(tree({ k: 'links:a', n: 'unseen' }));
+    expect(seen.at(-1)?.current.n).toBe(0);
+  });
+
+  it('outside the shell: the component’s own, started afresh when it names another list', () => {
+    const view = renderHook(({ k }) => useListMemory(k, 'ids', () => ({ n: 0 })), {
+      initialProps: { k: 'links:a' },
+    });
+    const own = view.result.current;
+    own.current.n = 1;
+    view.rerender({ k: 'links:a' });
+    expect(view.result.current).toBe(own);
+    view.rerender({ k: 'links:b' });
+    expect(view.result.current).not.toBe(own);
+    expect(view.result.current.current.n).toBe(0);
+  });
+});

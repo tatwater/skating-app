@@ -78,10 +78,10 @@ export const Reorder: Story = {
       expect(q.getByRole('button', { name: 'Move Mascoma Lake Association' })).toHaveFocus(),
     );
     await userEvent.keyboard(' ');
-    await expect(args.onSave).toHaveBeenCalledWith([
-      { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' },
-      { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' },
-    ]);
+    const association = { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' };
+    const dam = { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' };
+    // The new order, and the list it was built on (the server refuses it if that moved).
+    await expect(args.onSave).toHaveBeenCalledWith([dam, association], [association, dam]);
   },
 };
 

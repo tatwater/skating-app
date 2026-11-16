@@ -1,7 +1,8 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { WaterBodyClass } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   isFailed,
   type Loadable,
@@ -9,10 +10,21 @@ import {
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { useUndo } from '../../../shell/undo';
+import { ALIASES_KEPT_MOVING, RECEIPTS } from '../../consoleWords';
+import { listChanged, sayNotSaved, sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { chipChange, sameList, useListWriter } from '../listWriter';
 import { useTabAction } from '../useTabAction';
 import { NamesView } from './NamesView';
-import { type NamesData, namesFromBody, namesMapScene } from './namesModel';
+import {
+  classLabel,
+  type NamesData,
+  type NamesIdentity,
+  namesFromBody,
+  namesMapScene,
+  type TownLinesRead,
+} from './namesModel';
 
 /**
  * The Names tab's reads and its data: the body's record (`waterBodies.get`) and the boundaries it
@@ -29,12 +41,20 @@ export function useNamesRead(bodyId: string): {
   const { reads, retry, pending } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     places: read(api.bodyConsole.places, { waterBodyId }),
+    identity: read(api.bodyConsole.identity, { waterBodyId }),
+    townLines: read(api.bodyConsole.townLines, { waterBodyId }),
   });
-  const { body: got, places } = reads;
+  const { body: got, places, identity, townLines } = reads;
   const body = isFailed(got) ? got : got?.available ? got.body : undefined;
   const data = useMemo<Loadable<NamesData>>(
-    () => (body === undefined || isFailed(body) ? body : namesFromBody(body, places)),
-    [body, places],
+    () =>
+      body === undefined || isFailed(body)
+        ? body
+        : namesFromBody(body, places, {
+            identity: identity as Loadable<NamesIdentity>,
+            townLinesRead: townLines as Loadable<TownLinesRead>,
+          }),
+    [body, places, identity, townLines],
   );
   return { data, retry, pending };
 }
@@ -50,13 +70,13 @@ export function useNamesData(bodyId: string): NamesData | undefined {
  * server has today, `waterBodies.setWaterBodyName` (`body.identity`), with its undo. What no read
  * or mutation serves yet is drawn and says so — the aliases' editor and the class's change are
  * *Not available yet* for a viewer who could use them, each catalog's own claims *Not recorded yet*
- * — and the town lines on the map wait on a read of their own (the B01-3 server register).
+ * — and the town lines on the map, from each town's stored outline (`bodyConsole.townLines`).
  */
 export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { data, retry, pending } = useNamesRead(bodyId);
   const setName = useMutation(api.waterBodies.setWaterBodyName);
-  const { act } = useTabAction();
+  const { act } = useTabAction(bodyId);
   const { can } = useRole();
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
   const canEdit = can('body.identity');
@@ -70,6 +90,47 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
   const community = canEdit
     ? (name: string | null) => write(name, name === null ? 'Cleared the name' : `Named “${name}”`)
     : undefined;
+
+  // **The aliases are a whole list** (`setAliases`, at most 20, each at most 120 characters): one
+  // queue for the body, above the page, each save naming the list it was built on (`expected`);
+  // a list another moderator moved is re-applied on top. The server's refusals are said in place.
+  const setAliases = useMutation(api.waterBodies.setAliases);
+  const setClass = useMutation(api.waterBodies.setClass);
+  const hold = useBodyHold();
+  const { announce } = useUndo();
+  const [aliasesError, setAliasesError] = useState<string | null>(null);
+  const shown = data !== undefined && !isFailed(data) ? data.aliases : [];
+  const pushAliases = useListWriter<string>(
+    `names-aliases:${bodyId}`,
+    shown,
+    async (next, base) => {
+      setAliasesError(null);
+      try {
+        // `false`: refused off its console (said in a toast) — never taken as acknowledged.
+        return await sendFor(hold, {
+          body: bodyId,
+          write: () => setAliases({ waterBodyId, aliases: [...next], expected: [...base] }),
+          receipt: (subject) => announce({ title: RECEIPTS.aliasesSaved, target, subject }),
+          what: 'The aliases',
+        });
+      } catch (err) {
+        const current = listChanged(err);
+        if (current !== null) return { current: current as string[] };
+        setAliasesError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+    sameList,
+    // A list that kept moving under the change is said, never dropped quietly: here while this
+    // page is on screen, else in a toast naming the body.
+    () => {
+      if (hold.here()) setAliasesError(ALIASES_KEPT_MOVING);
+      else sayNotSaved(hold, ALIASES_KEPT_MOVING);
+    },
+  );
+  const editAliases = (aliases: string[]) => void pushAliases(chipChange(shown, aliases));
+  const classWrite = (bodyClass: WaterBodyClass | null, title: string) =>
+    void act(() => setClass({ waterBodyId, bodyClass }), { title, target });
   return (
     <NamesView
       data={data}
@@ -80,6 +141,15 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
       onCommunityName={community}
       canEditAliases={canEdit}
       canEditClass={canEdit}
+      {...(canEdit
+        ? {
+            onAliasesChange: editAliases,
+            aliasesError,
+            onClassChange: (cls: WaterBodyClass) =>
+              classWrite(cls, RECEIPTS.classSet(classLabel(cls))),
+            onClassClear: () => classWrite(null, RECEIPTS.classCleared),
+          }
+        : {})}
     />
   );
 }

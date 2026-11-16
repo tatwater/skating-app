@@ -148,7 +148,6 @@ describe('PlacesTab', () => {
     ]);
     expect(mocks.announce).toHaveBeenCalledWith(
       expect.objectContaining({ target: { targetType: 'waterBodyRequest', targetId: 'rq1' } }),
-      expect.any(Function),
     );
   });
 
@@ -189,13 +188,10 @@ describe('PlacesTab', () => {
     expect(mocks.calls).toEqual([
       ['landmarks:update', { landmarkId: 'lm-dam', name: 'Mascoma Dam' }],
     ]);
-    expect(mocks.announce).toHaveBeenCalledWith(
-      {
-        title: 'Saved · Mascoma Dam',
-        target: { targetType: 'bodyLandmark', targetId: 'lm-dam' },
-      },
-      expect.any(Function),
-    );
+    expect(mocks.announce).toHaveBeenCalledWith({
+      title: 'Saved · Mascoma Dam',
+      target: { targetType: 'bodyLandmark', targetId: 'lm-dam' },
+    });
   });
 
   it('sends a name once when ⏎ is followed by a blur, and again after a refusal', async () => {
@@ -238,7 +234,7 @@ describe('PlacesTab', () => {
     // The first save hasn't landed (and the page still shows the record without it).
     await userEvent.type(spellings, 'Shaker Dam{Enter}');
     expect(mocks.calls).toEqual([
-      ['landmarks:update', { landmarkId: 'lm-dam', aliases: ['the Dam'] }],
+      ['landmarks:update', { landmarkId: 'lm-dam', aliases: ['the Dam'], expectedAliases: [] }],
     ]);
     mocks.gate = null;
     land();
@@ -246,7 +242,7 @@ describe('PlacesTab', () => {
     await waitFor(() => expect(mocks.calls).toHaveLength(2));
     expect(mocks.calls[1]).toEqual([
       'landmarks:update',
-      { landmarkId: 'lm-dam', aliases: ['the Dam', 'Shaker Dam'] },
+      { landmarkId: 'lm-dam', aliases: ['the Dam', 'Shaker Dam'], expectedAliases: ['the Dam'] },
     ]);
   });
 
@@ -573,20 +569,26 @@ describe('PlacesTab', () => {
       expect(mocks.calls).toEqual([]);
     });
 
-    it('a decline started on one body that lands after the switch puts up no receipt over the next', async () => {
+    it('a write started on one body still lands after the switch, and its receipt names that body', async () => {
       let land = () => {};
       mocks.gate = new Promise<void>((resolve) => {
         land = resolve;
       });
-      const { rerender } = render(<BodyTabHost Wiring={PlacesTab} bodyId="wb1" />);
+      const { rerender } = render(
+        <BodyTabHost Wiring={PlacesTab} name="Mascoma Lake" bodyId="wb1" />,
+      );
       await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
       const dialog = await screen.findByRole('alertdialog');
       await userEvent.type(within(dialog).getByRole('textbox'), 'Already on the map');
       await userEvent.click(within(dialog).getByRole('button', { name: /^Decline/ }));
-      rerender(<BodyTabHost Wiring={PlacesTab} bodyId="wb2" />);
+      rerender(<BodyTabHost Wiring={PlacesTab} name="Crystal Lake" bodyId="wb2" />);
       land();
       await new Promise((r) => setTimeout(r, 0));
-      expect(mocks.announce).not.toHaveBeenCalled();
+      // Pressed is committed: it lands on its own body, and its receipt says whose it was.
+      expect(mocks.announce).toHaveBeenCalledTimes(1);
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      );
       expect(toasts).toEqual([]);
       expect(mocks.calls).toEqual([
         ['corpusRequests:decline', { requestId: 'rq1', note: 'Already on the map' }],

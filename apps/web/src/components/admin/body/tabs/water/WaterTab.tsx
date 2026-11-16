@@ -1,16 +1,27 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { DepthSource } from '@skating/core';
+import { useMutation } from 'convex/react';
 import { useMemo } from 'react';
 import {
   isFailed,
   type Loadable,
   read,
+  readState,
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
+import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
-import { type WaterData, waterFrom, waterMapScene } from './waterModel';
+import {
+  type DepthChoicesRead,
+  sourceWords,
+  type WaterData,
+  waterFrom,
+  waterMapScene,
+} from './waterModel';
 
 /**
  * The Water tab's reads and its data: the body's record (`waterBodies.get` — depth and its sources,
@@ -27,12 +38,22 @@ export function useWaterRead(bodyId: string): {
   const { reads, retry, pending } = useConsoleReadSet({
     body: read(api.waterBodies.get, { waterBodyId }),
     extras: read(api.bodyConsole.consoleExtras, { waterBodyId }),
+    choices: read(api.bodyConsole.depthChoices, { waterBodyId }),
   });
-  const { body: got, extras } = reads;
+  const { body: got, extras, choices } = reads;
   const body = isFailed(got) ? got : got?.available ? got.body : undefined;
   const data = useMemo<Loadable<WaterData>>(
-    () => (body === undefined || isFailed(body) ? body : waterFrom(body, extras)),
-    [body, extras],
+    () =>
+      body === undefined || isFailed(body)
+        ? body
+        : // Every source's offer, once the loader keeps them (`depthCandidates`); a body whose
+          // candidates were never stored is not recorded — a read on its way or failed is said so.
+          waterFrom(
+            body,
+            extras,
+            readState(choices as Loadable<DepthChoicesRead>, (c) => !c.recorded),
+          ),
+    [body, extras, choices],
   );
   return { data, retry, pending };
 }
@@ -54,6 +75,9 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const { data, retry, pending } = useWaterRead(bodyId);
   const { can } = useRole();
   const canEdit = can('body.water');
+  const choose = useMutation(api.waterBodies.chooseDepthSource);
+  const { act } = useTabAction(bodyId);
+  const state = data !== undefined && !isFailed(data) ? data.state : null;
   return (
     <WaterView
       data={data}
@@ -62,6 +86,21 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
       lit={lit}
       canChooseDepth={canEdit}
       canFileSurvey={canEdit}
+      {...(canEdit
+        ? {
+            // `chooseDepthSource`: the measure follows this source (a depth is the basin's; it says
+            // nothing about ice). The server refuses a source with no value or a mean deeper than
+            // the max, said in a toast in its words.
+            onChooseDepth: (measure: 'mean' | 'max', source: DepthSource) =>
+              void act(
+                () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
+                {
+                  title: RECEIPTS.depthFrom(measure, sourceWords(source, state).name),
+                  target: { targetType: 'waterbody', targetId: bodyId },
+                },
+              ),
+          }
+        : {})}
     />
   );
 }

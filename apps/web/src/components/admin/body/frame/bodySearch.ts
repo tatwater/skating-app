@@ -42,12 +42,6 @@ export const RETURN_PATHS = ['/admin/bodies', '/admin/water'] as const;
 /** Where the place control and ⇧⏎ go when no `from` came with the link: the Bodies list. */
 export const DEFAULT_RETURN = '/admin/bodies';
 
-/**
- * A Convex id's shape, so a hand-edited link (`/admin/body/<id>`, the list's `?body=`) never
- * reaches a read as junk.
- */
-export const ID_SHAPE = /^[0-9a-z]{30,34}$/;
-
 /** A lit address: a lower-camel kind, a colon, an id of word characters, dots and dashes. */
 const LIT = /^[a-z][a-zA-Z]{0,31}:[A-Za-z0-9_.-]{1,128}$/;
 

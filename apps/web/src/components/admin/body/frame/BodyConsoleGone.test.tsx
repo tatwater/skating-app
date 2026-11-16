@@ -13,9 +13,11 @@ beforeAll(stubJsdomAnimations);
 const REJECTED: BodyConsoleGoneProps = {
   survivor: null,
   removal: { verb: 'Rejected', when: '2 Oct 2026', who: 'Teagan', reason: 'Drawn over a beach' },
+  removalShown: true,
   towns: ['Enfield, NH'],
   reports: { count: 1000, capped: true },
   history: { entries: [], capped: false },
+  record: null,
   now: BODY_NOW,
 };
 
@@ -31,12 +33,28 @@ describe('BodyConsoleGone', () => {
   it('says a rejected body has been removed, and how, by whom and why', () => {
     render(page());
     expect(screen.getByText(/This body has been removed/)).toBeInTheDocument();
-    expect(screen.getByText(/its name and outline can’t be shown here/)).toBeInTheDocument();
+    expect(screen.getByText(/what its record still holds is below/)).toBeInTheDocument();
     expect(screen.getByText('Rejected')).toBeInTheDocument();
     expect(screen.getByText('Teagan')).toBeInTheDocument();
     expect(screen.getByText('“Drawn over a beach”')).toBeInTheDocument();
     // A capped count is a floor, never a total.
     expect(screen.getByText('1,000+ since the record began')).toBeInTheDocument();
+  });
+
+  it('says a removal’s listed reason beside the row’s own words', () => {
+    render(
+      page({
+        removal: {
+          verb: 'Removed',
+          when: '2 Oct 2026',
+          who: 'Teagan',
+          reason: 'Posted by the owner',
+          because: 'Landowner request',
+        },
+      }),
+    );
+    expect(screen.getByText('Landowner request')).toBeInTheDocument();
+    expect(screen.getByText('“Posted by the owner”')).toBeInTheDocument();
   });
 
   it('holds each fact’s place while its read is on its way', () => {
@@ -79,10 +97,23 @@ describe('BodyConsoleGone', () => {
   });
 
   it('leaves out what isn’t recorded, and History without the audit trail', () => {
-    render(page({ towns: null, reports: null, history: null }));
+    render(page({ towns: null, reports: null, history: null, removalShown: false }));
     expect(screen.queryByText('Towns')).toBeNull();
     expect(screen.queryByText('Reports')).toBeNull();
     expect(screen.queryByText('Rejected')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
+  });
+
+  it('draws how it left without the audit trail, and no name the server withheld', () => {
+    render(
+      page({
+        history: null,
+        removal: { verb: 'Removed', when: '2 Oct 2026', who: null, reason: null },
+      }),
+    );
+    expect(screen.getByText('Removed')).toBeInTheDocument();
+    expect(screen.getByText('2 Oct 2026')).toBeInTheDocument();
+    expect(screen.queryByText(/Not recorded/)).toBeNull();
     expect(screen.queryByRole('heading', { name: 'History' })).toBeNull();
   });
 
@@ -107,5 +138,19 @@ describe('BodyConsoleGone', () => {
     open.focus();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
     expect(onReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws what the stored record still holds — name, class, states, area — and not recorded for an unknown area', () => {
+    const { rerender } = render(
+      page({
+        record: { name: 'Mascoma Lake', kind: 'Lake', states: ['NH'], area: '1,143 ac' },
+      }),
+    );
+    expect(document.querySelector('[data-slot="body-gone-name"]')).toHaveTextContent(
+      'Mascoma Lake',
+    );
+    expect(screen.getByText('1,143 ac')).toBeInTheDocument();
+    rerender(page({ record: { name: 'Mascoma Lake', kind: 'Lake', states: [], area: null } }));
+    expect(screen.getByText('Not recorded yet')).toBeInTheDocument();
   });
 });
