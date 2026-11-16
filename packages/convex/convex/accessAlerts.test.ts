@@ -11,6 +11,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { ALERT_ALREADY_PINNED, ALERT_NOT_PINNED } from './accessAlerts';
 import { OWN_CONTENT_REFUSAL } from './lib/ownContent';
 import schema from './schema';
 
@@ -364,6 +365,21 @@ describe('accessAlerts.setOfficial — the founder exemption', () => {
     await expect(pin(mod, true)).rejects.toThrow(OWN_CONTENT_REFUSAL);
     await pin(other, true);
     await expect(pin(mod, false)).rejects.toThrow(OWN_CONTENT_REFUSAL);
+  });
+
+  test('a pin of a pinned alert, or a release of one that isn’t pinned, changes nothing: refused, nothing written', async () => {
+    const { t, putInId, author } = await setup();
+    const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const rows = async () =>
+      (await t.run((ctx) => ctx.db.query('moderationActions').collect())).length;
+    const pin = (official: boolean) =>
+      mod.as.mutation(api.accessAlerts.setOfficial, { accessAlertId: id, official, reason: 'x' });
+    await expect(pin(false)).rejects.toThrow(ALERT_NOT_PINNED);
+    await pin(true);
+    const before = await rows();
+    await expect(pin(true)).rejects.toThrow(ALERT_ALREADY_PINNED);
+    expect(await rows()).toBe(before);
   });
 
   test('pinning clears the expiry entirely, and audits', async () => {

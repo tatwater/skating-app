@@ -65,7 +65,7 @@ import {
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
-import { recordVerdict } from './lib/contentVerdicts';
+import { recordVerdict, standingVerdictsOn } from './lib/contentVerdicts';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
@@ -444,7 +444,10 @@ export const retract = mutation({
       // Who retracted it, not whether it has a time yet: a retraction from before `retractedAt`
       // existed is the author's all the same (the clocks backfill gives it its time).
       const authorWithdrew = authorRetracted(alert);
-      if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0) {
+      // A retraction already held as evidence changes nothing: nothing more is written (D270), as
+      // this write answers a retraction already made.
+      const held = (await standingVerdictsOn(ctx, 'accessAlert', accessAlertId)).length > 0;
+      if (isModerator && !isAuthor && authorWithdrew && verdictReason.length > 0 && !held) {
         await recordAlertVerdict(ctx, profile, alert, verdictReason, Date.now());
       }
       // The author again, on a retraction from before `retractedAt` existed: it has no clock to
@@ -515,6 +518,11 @@ export const setOfficial = mutation({
   },
 });
 
+/** A pin of an alert already pinned: nothing would change (D270). */
+export const ALERT_ALREADY_PINNED = 'This alert is already pinned.';
+/** A release of an alert that isn't pinned: nothing to release (D270). */
+export const ALERT_NOT_PINNED = 'This alert isn’t pinned.';
+
 /**
  * `setOfficial`'s body — also what undoing a pin or an unpin runs (D226). The row records the alert's
  * prior `status` and `expiresAt` as `prev`, so an undo can tell whether the release it is about to
@@ -544,6 +552,10 @@ export async function setOfficialImpl(
         : 'Its author retracted this alert, so it can’t be released.',
     );
   }
+  // A pin of a pinned alert, or a release of one that isn't pinned, changes nothing: refused, and
+  // nothing is written (D270).
+  if (official && alert.status === 'official') throw new ConvexError(ALERT_ALREADY_PINNED);
+  if (!official && alert.status !== 'official') throw new ConvexError(ALERT_NOT_PINNED);
 
   if (official) {
     await ctx.db.patch(accessAlertId, {

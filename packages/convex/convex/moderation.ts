@@ -73,6 +73,7 @@ import {
   recordActorRefusal,
   recordFactsOf,
   recordRefusal,
+  TAKEDOWN_ALREADY,
   UNDO_LEAVES_POST_EMPTY,
 } from './lib/recordRules';
 import { clearFailure } from './lib/recurringWork';
@@ -541,6 +542,24 @@ export const setModerationStatus = mutation({
 
 export type ContentTargetType = keyof typeof MODERATION_TABLE;
 
+/** Whether a standing decision of `kind` already holds the item (the writers keep at most one). */
+async function heldAs(
+  ctx: MutationCtx,
+  targetType: VerdictTargetType,
+  targetId: string,
+  kind: 'hidden' | 'removed',
+): Promise<boolean> {
+  return (await standingVerdictsOn(ctx, targetType, targetId)).some((v) => v.kind === kind);
+}
+
+/** Whether any of a Post's Reports is up — a takedown of the Post would take it down too. */
+async function anyMemberUp(ctx: MutationCtx, post: Doc<'posts'>): Promise<boolean> {
+  for (const id of post.reportIds) {
+    if ((await ctx.db.get(id))?.moderationStatus === 'visible') return true;
+  }
+  return false;
+}
+
 /**
  * The body of {@link setModerationStatus}, callable by an undo (D226) so the restore runs the same
  * cascade the hide did — a Post brings back the reports *it* hid, and every count and card follows.
@@ -616,7 +635,11 @@ export async function setContentStatus(
       // A moderator's hide or remove on content its author already deleted (a flag that arrives
       // after the delete) is still their decision, and goes on the person's record as evidence
       // (D248) — the content stays exactly as the deletion left it, and the verdict holds it back
-      // from erasure until a moderator overturns it.
+      // from erasure until a moderator overturns it. One of that kind already holding it: nothing
+      // would change, so nothing is written (D270).
+      if (await heldAs(ctx, args.targetType, args.targetId, args.status)) {
+        throw new ConvexError(TAKEDOWN_ALREADY[args.status]);
+      }
       const actionId = await recordOnWithdrawn(ctx, actor, {
         targetType: args.targetType,
         target: typedTarget,
@@ -641,6 +664,17 @@ export async function setContentStatus(
       const shown = args.targetType === 'post' ? { post: { visibleAfter: 1, choosable: 0 } } : {};
       const why = recordRefusal({ ...facts, standing, ...shown }, 'restore');
       if (why !== null) throw new ConvexError(why);
+    }
+    // A hide or removal of what a decision of that kind already holds changes nothing — the item, its
+    // record, and on a Post none of its Reports are up to take down — so it writes nothing (D270).
+    if (
+      !asUndo &&
+      args.status !== 'visible' &&
+      priorStatus === args.status &&
+      (await heldAs(ctx, args.targetType, args.targetId, args.status)) &&
+      !(args.targetType === 'post' && (await anyMemberUp(ctx, target as Doc<'posts'>)))
+    ) {
+      throw new ConvexError(TAKEDOWN_ALREADY[args.status]);
     }
     // A restore's default reason is marked on every row it writes — the members it brings back and a
     // Post it derives back up — as on its own, so History and the record sheet leave each one out.
