@@ -92,7 +92,10 @@ describe('StandingTabView', () => {
     await userEvent.type(input, '  Dam work  ');
     expect(screen.getByText('12 / 160')).toBeVisible();
     await userEvent.type(input, '{Enter}');
-    expect(onSetDormant).toHaveBeenCalledWith('Dam work');
+    expect(onSetDormant).toHaveBeenCalledWith(
+      'Dam work',
+      expect.objectContaining({ here: expect.any(Function) }),
+    );
   });
 
   it('a second ⏎ in the note while its write is on its way sends nothing more', async () => {
@@ -143,7 +146,10 @@ describe('StandingTabView', () => {
     if (onRemove.mock.calls.length === 0) {
       await userEvent.click(screen.getByRole('button', { name: /again/ }));
     }
-    expect(onRemove).toHaveBeenCalledWith('unskateable');
+    expect(onRemove).toHaveBeenCalledWith(
+      'unskateable',
+      expect.objectContaining({ here: expect.any(Function) }),
+    );
     expect(screen.getByRole('combobox', { name: 'Reason' })).toHaveAttribute('data-readonly');
   });
 

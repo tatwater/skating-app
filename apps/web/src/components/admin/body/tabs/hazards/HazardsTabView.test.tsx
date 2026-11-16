@@ -147,7 +147,11 @@ describe('HazardsTabView — the default board', () => {
     await userEvent.type(within(dialog).getByRole('textbox'), 'The bridge was replaced');
     await userEvent.click(confirm);
     await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
-    expect(onDemote).toHaveBeenCalledWith('f-narrows', 'The bridge was replaced');
+    expect(onDemote).toHaveBeenCalledWith(
+      'f-narrows',
+      'The bridge was replaced',
+      expect.objectContaining({ here: expect.any(Function) }),
+    );
   });
 
   it('a sent reason is held while its demotion is out — never typed into and then thrown away', async () => {
