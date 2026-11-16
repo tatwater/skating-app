@@ -75,7 +75,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
 import { NOW, ROB, ROB_HISTORY, ROB_TREND, SARAH_STATS, SEASON } from './personFixtures';
-import { actionIdOf, undoNeedsReasonOf, usePersonWrites } from './usePersonWrites';
+import { actionIdOf, changedOf, undoNeedsReasonOf, usePersonWrites } from './usePersonWrites';
 
 const ROB_ID = ROB.userId;
 
@@ -555,6 +555,22 @@ describe('the write hook', () => {
     );
     expect(undoNeedsReasonOf({ undoNeedsReason: 'yes' })).toBeNull();
     expect(undoNeedsReasonOf(null)).toBeNull();
+  });
+
+  it('a write that changed nothing says so — no Undo, nothing looked up', async () => {
+    mocks.mutations.set(
+      'moderation:banUser',
+      vi.fn(async () => ({ userId: ROB_ID, changed: false, undoable: false })),
+    );
+    expect(await hook()({ kind: 'ban', reason: 'Spam' })).toBeNull();
+    expect(mocks.announce).toHaveBeenLastCalledWith({
+      title: 'Nothing changed — Rob Tremblay was already set that way',
+      target: { targetType: 'user', targetId: ROB_ID },
+      undoable: false,
+    });
+    expect(changedOf({ changed: true })).toBe(true);
+    expect(changedOf({ changed: 'no' })).toBeNull();
+    expect(changedOf(null)).toBeNull();
   });
 
   it('says so when there is no person to write to, and when the network fails', async () => {

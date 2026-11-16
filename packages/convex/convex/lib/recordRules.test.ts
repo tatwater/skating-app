@@ -6,7 +6,9 @@
  */
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
+import type { Id } from '../_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE } from './authorDeletion';
+import { OWN_CONTENT_REFUSAL } from './ownContent';
 import {
   ERASED_ALREADY,
   KEEP_ALREADY_HELD,
@@ -30,6 +32,8 @@ import {
 } from './recordRules';
 
 const KINDS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
+const ME = 'me' as Id<'profiles'>;
+const OTHER = 'other' as Id<'profiles'>;
 const ACTIONS: RecordAction[] = ['restore', 'hideAgain', 'overturn', 'keep'];
 
 const factsArb: fc.Arbitrary<RecordFacts> = fc
@@ -45,6 +49,8 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
       fc.record({ visibleAfter: fc.nat({ max: 3 }), choosable: fc.nat({ max: 3 }) }),
       { nil: undefined },
     ),
+    // Theirs, someone else's, or no one's (gone): a moderator never decides their own (D269).
+    authorId: fc.constantFrom<Id<'profiles'> | null>(ME, OTHER, null),
   })
   .map(({ membersWithdrawn, post, gone, ...f }) => ({
     ...f,
@@ -56,6 +62,7 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
   }));
 
 const viewerArb: fc.Arbitrary<RecordViewer> = fc.record({
+  _id: fc.constant(ME),
   role: fc.constantFrom('member' as const, 'moderator' as const, 'admin' as const),
   canEditLedger: fc.boolean(),
   deletionRequestedAt: fc.option(fc.constant(Date.UTC(2026, 10, 1)), { nil: undefined }),
@@ -87,6 +94,11 @@ describe('lib/recordRules', () => {
               });
               continue;
             }
+            // Their own content: no lever, whatever its state (D269; no role exempt by default).
+            if (facts.authorId === viewer._id) {
+              expect(can).toEqual({ ok: false, why: OWN_CONTENT_REFUSAL });
+              continue;
+            }
             if (why === null || why === POST_RESTORE_NEEDS_A_CHOICE) {
               expect(can).toMatchObject({ ok: true, needsReason: RECORD_NEEDS_REASON[action] });
               if (why === POST_RESTORE_NEEDS_A_CHOICE)
@@ -111,6 +123,7 @@ describe('lib/recordRules', () => {
       withdrawn: false,
       status: 'hidden',
       standing: true,
+      authorId: OTHER,
     };
     expect(recordRefusal({ ...base, erased: true }, 'restore')).toBe(ERASED_ALREADY);
     expect(recordRefusal({ ...base, authorDeleted: true, withdrawn: true }, 'restore')).toBe(
@@ -150,7 +163,7 @@ describe('lib/recordRules', () => {
   });
 
   test('a standing Post that is up: Restore ends its decision — checked on the item, exact in the pane', () => {
-    const viewer: RecordViewer = { role: 'moderator', canEditLedger: false };
+    const viewer: RecordViewer = { _id: ME, role: 'moderator', canEditLedger: false };
     const up: RecordFacts = {
       targetType: 'post',
       erased: false,
@@ -158,6 +171,7 @@ describe('lib/recordRules', () => {
       withdrawn: 'unknown',
       status: 'visible',
       standing: true,
+      authorId: OTHER,
     };
     // A list row, its members unread, sends the moderator to the item (as for a Post that is down).
     expect(recordLevers(viewer, up)).toEqual({ restore: { ok: false, why: RECORD_CHECK_ON_ITEM } });
@@ -168,7 +182,7 @@ describe('lib/recordRules', () => {
   });
 
   test('a standing alert its author didn’t retract offers nothing — no write restores an alert', () => {
-    const viewer: RecordViewer = { role: 'moderator', canEditLedger: false };
+    const viewer: RecordViewer = { _id: ME, role: 'moderator', canEditLedger: false };
     const alert: RecordFacts = {
       targetType: 'accessAlert',
       erased: false,
@@ -176,6 +190,7 @@ describe('lib/recordRules', () => {
       withdrawn: false,
       status: null,
       standing: true,
+      authorId: OTHER,
     };
     expect(recordLevers(viewer, alert)).toEqual({});
     // Retracted by its author, the verdict on it is overturned.

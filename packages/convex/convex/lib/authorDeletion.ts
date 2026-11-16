@@ -5,8 +5,9 @@
  * path reads it through here, and every refusal is worded here, so a writer, an undo and History
  * give the same answer.
  */
-import type { Doc } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
+import { authorOf } from './ownContent';
 
 type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
 
@@ -42,16 +43,31 @@ export function authorDeletedAtOf(target: ContentDoc): number | undefined {
   return 'authorDeletedAt' in target ? target.authorDeletedAt : undefined;
 }
 
-/** The same, read off an audit row's target: `undefined` for a target no author can withdraw. */
-export async function authorDeletedAtOn(
+/**
+ * An audit row's target as the undo engine weighs it, in one read: when its author deleted it
+ * (`undefined` for a target no author can withdraw, or one they haven't), and who wrote it (`null`
+ * for a target with no author, or gone) — a moderator never decides their own (D269).
+ */
+export async function contentFactsOn(
   ctx: QueryCtx,
   targetType: string,
   targetId: string,
-): Promise<number | undefined> {
-  if (!isWithdrawable(targetType)) return undefined;
-  const id = ctx.db.normalizeId(WITHDRAWABLE_TABLE[targetType], targetId);
+): Promise<{ authorDeletedAt: number | undefined; authorId: Id<'profiles'> | null }> {
+  const table = isWithdrawable(targetType)
+    ? WITHDRAWABLE_TABLE[targetType]
+    : targetType === 'accessAlert'
+      ? 'accessAlerts'
+      : null;
+  if (table === null) return { authorDeletedAt: undefined, authorId: null };
+  const id = ctx.db.normalizeId(table, targetId);
   const target = id ? await ctx.db.get(id) : null;
-  return target ? authorDeletedAtOf(target) : undefined;
+  if (!target) return { authorDeletedAt: undefined, authorId: null };
+  return {
+    authorDeletedAt: isWithdrawable(targetType)
+      ? authorDeletedAtOf(target as ContentDoc)
+      : undefined,
+    authorId: authorOf(target),
+  };
 }
 
 /** Why content its author deleted can't be moved to `status` — by a verdict, or by an undo. */

@@ -86,6 +86,7 @@ import { profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { readRoots, readTenure, tenureCappedOf } from './lib/staffTenure';
 import { startOfCurrentState } from './lib/stateSince';
+import { readTermsSet } from './lib/statusTerms';
 import { type UndoState, undoStates } from './lib/undo';
 import { stands, undoneBy } from './lib/undoChains';
 
@@ -804,35 +805,6 @@ async function bountySeasonOf(
   };
 }
 
-/**
- * A status verb's rows a status note walks back at most, looking for the write that began it, and
- * their real weight at most (as the rights read is held to one document's worth).
- */
-const STATUS_ROWS = 10;
-const STATUS_ROWS_BYTES = DOC_MAX;
-
-/**
- * The status a ban or suspension row found, as a status note's start weighs it (`lib/stateSince`):
- * a suspension whose window had run out by the write was over — it lapses at read time (the gate's
- * own rule, `isSuspendedNow`), and the sweep may not have reset the stored status yet — so a
- * suspension after it begins a new one.
- */
-function statusFound(row: Doc<'moderationActions'>): string | undefined {
-  const prev = (
-    row.metadata as { prev?: { status?: string; suspendedUntil?: number | null } } | undefined
-  )?.prev;
-  if (
-    prev?.status === 'suspended' &&
-    !isSuspendedNow(
-      { status: 'suspended', suspendedUntil: prev.suspendedUntil ?? undefined },
-      row.createdAt,
-    )
-  ) {
-    return 'lapsed';
-  }
-  return prev?.status;
-}
-
 /** A person's posting-right rows read at most, newest first, and their real weight at most. */
 const RIGHT_ROWS = 50;
 const RIGHT_ROWS_BYTES = DOC_MAX;
@@ -1093,7 +1065,7 @@ export const person = query({
         ? await ledgerSinceOf(ctx, budget, userId)
         : { at: null, capped: false };
 
-    // ── The status note: when the suspension or ban began, and who began it ──
+    // ── The status note: the write that set their terms as they stand (`lib/statusTerms`) ──
     let statusNote: {
       action: 'ban' | 'suspend';
       at: number | null;
@@ -1105,65 +1077,22 @@ export const person = query({
       lapsed: boolean;
     } | null = null;
     if (target.status === 'suspended' || target.status === 'banned') {
-      const verb = target.status === 'banned' ? 'ban' : 'suspend';
-      // When the status began (`lib/stateSince`): a ban of a banned account, or a
-      // suspension's new window, changed nothing about the status, so the walk passes over it to the
-      // write that did. A few rows of the verb, newest first, each read as it weighs — a suspension
-      // that had run out before the next one is no run of it (`statusFound`).
-      const seen: Doc<'moderationActions'>[] = [];
-      let complete = false;
-      let before = Number.POSITIVE_INFINITY;
-      const walkFrom = budget.bytes;
-      for (let i = 0; i < STATUS_ROWS; i++) {
-        // Held to its weight too: past it, the start is "can't say", never the budget's last bytes.
-        if (walkFrom - budget.bytes >= STATUS_ROWS_BYTES) break;
-        const next = await budget.measured('moderationAction', () =>
-          ctx.db
-            .query('moderationActions')
-            .withIndex('by_target_action', (q) =>
-              q
-                .eq('targetType', 'user')
-                .eq('targetId', userId)
-                .eq('action', verb)
-                .lt('_creationTime', before),
-            )
-            .order('desc')
-            .first(),
-        );
-        if (next === undefined) break;
-        if (next === null) {
-          complete = true;
-          break;
-        }
-        seen.push(next);
-        before = next._creationTime;
-        // A real change ends the walk — the same test `startOfCurrentState` makes below (a row
-        // with no `prev` is taken as one, and `undefined` is never the current status).
-        if (statusFound(next) !== target.status) break;
-      }
-      const start = startOfCurrentState(
-        seen,
-        (r) => ({ at: r.createdAt, after: target.status as string, before: statusFound(r) }),
-        target.status as string,
-        complete,
-      );
-      // When, who, via and why all come from one write — the one that began the status — so the
-      // note is one true sentence: no moderator is credited with another's date or words. The window
-      // is the state's own. With no start found, the reason on file stands alone, unattributed.
-      const row = start.row;
+      // A repeat that changed nothing is passed over; one whose reason or end differs set the terms
+      // — the same answer the list row's `statusSince` and `statusReason` give.
+      const set = await readTermsSet(ctx, budget, target);
       statusNote = {
-        action: verb,
-        /** When the status began (`lib/stateSince`), not when it was last set. */
-        at: start.since,
-        /** The status began before the rows read: `at` is "can't say", not "not recorded". */
-        atCapped: start.capped,
-        /** Who began it, and through what — the write `at` dates. */
-        by: await personRef(ctx, row?.actorId),
-        via: row?.via ?? null,
-        /** The reason that write gave; the one on file when no start was found. */
-        reason: (row === null ? target.statusReason : row.reason) ?? null,
+        action: target.status === 'banned' ? 'ban' : 'suspend',
+        /** When the terms as they stand were set — by a change of status, reason or end. */
+        at: set.at,
+        /** The terms were set before the rows read: `at` is "can't say", not "not recorded". */
+        atCapped: set.capped,
+        /** Who set them, and through what — the write `at` dates, whose reason this is. */
+        by: await personRef(ctx, set.row?.actorId),
+        via: set.row?.via ?? null,
+        /** The reason on file — the list row's too; that write's own when it was found. */
+        reason: target.statusReason ?? null,
         suspendedUntil: target.status === 'suspended' ? (target.suspendedUntil ?? null) : null,
-        // The gate's own rule, as `statusFound` asks it.
+        // The gate's own rule.
         lapsed: target.status === 'suspended' && !isSuspendedNow(target, now),
       };
     }

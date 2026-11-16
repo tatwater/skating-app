@@ -67,7 +67,14 @@ import { listChangedRefusal } from './listCas';
 import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE } from './undoReads';
-import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
+import {
+  meta,
+  NOTHING_TO_UNDO,
+  PREDATES,
+  type TargetUndo,
+  type UndoCall,
+  type UndoHandler,
+} from './undoTypes';
 
 /** Rows that recorded no `prev` predate undo (D226); everything here needs one. */
 const needsPrev = (row: Doc<'moderationActions'>): string | null =>
@@ -571,7 +578,16 @@ const undoAliases: UndoHandler = {
  * survivor with no row on the survivor, so the list it would put back may no longer follow.
  */
 const undoModeratorTowns: UndoHandler = {
-  blocked: needsPrev,
+  // A row written before D270 that set the list it found changed nothing: nothing to put back.
+  blocked: (row) => {
+    const missing = needsPrev(row);
+    if (missing !== null) return missing;
+    const set = (meta(row).moderatorTownKeys as string[] | undefined) ?? [];
+    const prev = (meta(row).prev.moderatorTownKeys as string[] | undefined) ?? [];
+    return set.length === prev.length && set.every((key, i) => key === prev[i])
+      ? NOTHING_TO_UNDO
+      : null;
+  },
   // The undo moves the list from what this row set back to what it replaced: it takes away when it
   // removes a pin this row added — the forward write's own rule, never "only when it clears".
   undoTakesAway: (row) =>

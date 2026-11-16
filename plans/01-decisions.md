@@ -8226,3 +8226,46 @@ failed sends alike.
 **Why:** a refusal said into a page that has gone is a write the moderator believes landed.
 
 **Related:** D3, D226, D265, D267, [`phase-B01`](./phases/B01-admin-console.md) *B01-3m*.
+
+## D269 — A moderator may not act on their own content (B01)
+
+**2026-11-16, the founder's call (asked in B01-4d).** No one decides on content they wrote: a hide, a
+removal, a restore, an overturn or a keep on the record of their own Report, Post, comment or hazard; a
+pin or release of their own access alert; a ruling on a flag about them or their content; and every
+undo of such a decision — rows written before the rule, where a moderator did act on their own
+content, included (their undo is a decision on it too, so another moderator undoes it). One rule
+(`lib/ownContent`) is asked by the record sheet's levers and writes alike (`lib/recordRules`), by the
+Inbox's flag ruling, by the alert pin, and by the undo engine, so no lever or Undo is offered that its
+write refuses; the lever shows the write's own plain sentence. Person writes aimed at oneself were
+already refused (discipline, roles; a ledger grant to a holder), except stepping down from the ledger.
+
+**Open:** whether admins are bound too. With one admin and no moderator, content of that admin's
+would have no one to rule on it. Until the founder says, every role is bound
+(`OWN_CONTENT_EXEMPT_ROLES` is empty; naming `admin` there is the whole change).
+
+**Why:** a decision on one's own content is no decision — the record it writes is evidence only when
+someone else made it.
+
+**Related:** D37, D217, D226, D248, D267, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.
+
+## D270 — A write that changes nothing writes nothing; a refused write leaves nothing (B01)
+
+**2026-11-16, the founder's call ("failed writes should not write to the log", on #125).** A person
+write that would leave the person exactly as they were — a right set to the value it has, a bounty
+limit set to the one in force, a ban or suspension with the same terms, a lift of an active account,
+the same pinned towns — writes no audit row, offers no undo and answers `changed: false`, and the
+console says nothing changed; role and ledger no-ops were already refused. A write that is refused or
+throws leaves no audit row and no partial write (Convex rolls the mutation back; a guard holds every
+People and record writer to deciding before it writes the log). Rows written before that changed
+nothing offer no undo.
+
+**A person's terms** are their status, its reason and a suspension's end. A ban or suspension whose
+reason or end differs is a real change: audited, and what both the person page's status note and
+their list row then show — the note dates, names and quotes the write that set the terms as they
+stand, and the row's `statusSince` is that write's time (the founder's "Sure" to one reason after a
+repeat ban). Rows written before this rule are stamped by the rows backfill.
+
+**Why:** the log is a record of what happened; a row for something that didn't happen, or two places
+giving two reasons for one ban, is the record lying.
+
+**Related:** D226, D257, D261, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.

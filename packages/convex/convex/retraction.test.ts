@@ -843,7 +843,9 @@ describe('an access alert', () => {
       putInId,
       reason: 'not_plowed',
     });
-    await mod.as.mutation(api.accessAlerts.setOfficial, {
+    // Pinned by another moderator: no one pins their own (D269).
+    const other = await seedUser(t, 'other-mod', 'moderator');
+    await other.as.mutation(api.accessAlerts.setOfficial, {
       accessAlertId: own,
       official: true,
       reason: 'confirmed by the town',

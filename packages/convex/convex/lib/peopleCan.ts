@@ -238,3 +238,35 @@ export function viewerCan(
 ): boolean {
   return canUse(viewer.role, isLeaving(viewer), capability, viewer);
 }
+
+/**
+ * **A person's status terms** (D270): their status, its reason and a suspension's end — what a ban,
+ * a suspension and a lift set, all of it. A status write whose terms equal the person's changes
+ * nothing, so it writes nothing (no audit row, no undo); one whose reason or end differs is a real
+ * change, audited — and is what the person's page and their list row then show.
+ */
+export interface StatusTerms {
+  status: Profile['status'];
+  statusReason: string | null;
+  suspendedUntil: number | null;
+}
+
+/** A person's terms as they stand. */
+export function statusTermsOf(
+  person: Pick<Profile, 'status' | 'statusReason' | 'suspendedUntil'>,
+): StatusTerms {
+  return {
+    status: person.status,
+    statusReason: person.statusReason ?? null,
+    suspendedUntil: person.suspendedUntil ?? null,
+  };
+}
+
+/** Whether two sets of terms are the same — a status write between them changes nothing. */
+export function sameStatusTerms(a: StatusTerms, b: StatusTerms): boolean {
+  return (
+    a.status === b.status &&
+    a.statusReason === b.statusReason &&
+    a.suspendedUntil === b.suspendedUntil
+  );
+}

@@ -55,6 +55,7 @@ import {
   saveLap,
 } from './lib/recurringWork';
 import { STAMP_WORK, stampTenure } from './lib/staffTenure';
+import { stampStatusTerms, TERMS_STAMP_WORK } from './lib/statusTerms';
 
 const DAY = 86_400_000;
 
@@ -575,6 +576,15 @@ export const stampOne = internalMutation({
   handler: (ctx, { userId }) => stampTenure(ctx, userId),
 });
 
+/**
+ * When a suspended or banned person's terms were set, stamped on their row in its own transaction
+ * (`lib/statusTerms`) — for rows written before that rule (B01-4f).
+ */
+export const stampTermsOne = internalMutation({
+  args: { userId: v.id('profiles') },
+  handler: (ctx, { userId }) => stampStatusTerms(ctx, userId),
+});
+
 /** What a pass of a superseded run returns: it read its lease and did nothing else. */
 const SUPERSEDED = { done: false, superseded: true } as const;
 
@@ -722,7 +732,14 @@ export const backfillRows = internalMutation({
         // A staffer's row also carries their tenure (the Staff lane's dates), stamped by the rule
         // the strip reads (`lib/staffTenure`): the item starts only when both fit.
         const staff = profile.role !== 'member' && profile.status !== 'deleted';
-        if (!reads.affords(NESTED_NEED + (staff ? STAMP_WORK + ROW_MAX.profile : 0))) {
+        // A suspended or banned person's row also carries when their terms were set
+        // (`lib/statusTerms`), stamped by the rule the person page reads.
+        const disciplined = profile.status === 'suspended' || profile.status === 'banned';
+        const need =
+          NESTED_NEED +
+          (staff ? STAMP_WORK + ROW_MAX.profile : 0) +
+          (disciplined ? TERMS_STAMP_WORK + ROW_MAX.profile : 0);
+        if (!reads.affords(need)) {
           stopped = true;
           break;
         }
@@ -760,6 +777,22 @@ export const backfillRows = internalMutation({
             reads.spend(stampAllowance);
             failed++;
             console.error(`peopleJobs.backfillRows: ${profile._id} tenure (${errorClassOf(err)})`);
+          }
+        }
+        if (disciplined) {
+          const termsAllowance = nestedAllowance(reads);
+          try {
+            const moved = await ctx.runMutation(
+              internal.peopleJobs.stampTermsOne,
+              { userId: profile._id },
+              { transactionLimits: { bytesRead: termsAllowance } },
+            );
+            reads.spend(TERMS_STAMP_WORK);
+            if (moved) gap = true;
+          } catch (err) {
+            reads.spend(termsAllowance);
+            failed++;
+            console.error(`peopleJobs.backfillRows: ${profile._id} terms (${errorClassOf(err)})`);
           }
         }
         last = profile;

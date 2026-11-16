@@ -4481,6 +4481,8 @@ export async function setModeratorTownsImpl(
       throw new ConvexError(`No loaded town has the key ${key}`);
     }
   }
+  // The same towns again change nothing, so nothing is written — no audit row, no undo (D270).
+  if (next.length === prev.length && next.every((key, i) => key === prev[i])) return waterBodyId;
   // Removing any pin takes a body out of a town (and maybe a state's filter): a takeaway, so it asks
   // why (D226) — the same refusal every reason-required write gives. Only adding is a give: the
   // reason is optional, defaulted and marked so (History leaves a defaulted line out). The rule is
