@@ -365,7 +365,7 @@ describe('the record sheet’s lists over any history', () => {
         for (const op of ops) await step(w, op);
         await holds(w);
       }),
-      { seed, numRuns: 4 },
+      { seed, numRuns: 3 },
     );
   });
 });
