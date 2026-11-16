@@ -19,6 +19,8 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
+import { listablePeople } from './lib/peopleFigures';
+import { refreshPersonRow } from './lib/peopleRows';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -664,6 +666,33 @@ describe('a staffer’s season’s rounds (B01-4c)', () => {
     expect(calm.season?.overturned).toEqual({ count: 100, capped: false });
     expect(calm.stats.rounds).toBeLessThanOrEqual(SEASON_ROUNDS);
     expect((await read([5, 0, 3, 6, 1, 4, 2])).season).toEqual(calm.season);
+  });
+});
+
+describe('a queue lane’s people’s rounds (B01-4c)', () => {
+  test('the 200 people a queue names are read in one round, in the queue’s order', async () => {
+    const t = harness();
+    const ids: Id<'profiles'>[] = [];
+    for (let i = 0; i < 200; i++) ids.push(await admin(t));
+    await t.run(async (ctx) => {
+      // Every other person has a People row; the rest can't be listed yet.
+      for (const [i, id] of ids.entries()) if (i % 2 === 0) await refreshPersonRow(ctx, id);
+    });
+    const read = (ticks: number[]) =>
+      t.run(async (raw) => {
+        const { ctx, stats } = counted(raw, ticks);
+        const { rows, missing } = await listablePeople(ctx, ids);
+        return { users: rows.map((r) => r.userId), missing, stats };
+      });
+    const calm = await read([0]);
+    expect(calm.users).toEqual(ids.filter((_, i) => i % 2 === 0));
+    expect(calm.missing).toBe(true);
+    expect(calm.stats.rounds).toBe(1);
+    const shuffled = await read([5, 0, 3, 6, 1, 4, 2]);
+    expect({ users: shuffled.users, missing: shuffled.missing }).toEqual({
+      users: calm.users,
+      missing: calm.missing,
+    });
   });
 });
 

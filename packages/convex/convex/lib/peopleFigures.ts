@@ -24,7 +24,7 @@ import {
   readPreparation,
   type StoredCountKey,
 } from './peopleRows';
-import { requestBudget } from './readBudget';
+import { ROW_MAX, requestBudget } from './readBudget';
 
 const DAY_MS = 86_400_000;
 
@@ -144,20 +144,23 @@ export function flaggedPeopleFrom(
 
 /**
  * The People rows of the people a queue lane names, in the queue's order, and whether any of them has
- * no row yet (it can't be listed). Light reads, at most one per person the queue names (≤ 200). The
- * queue lanes' counts and lists — and the Overview's flagged figure — all count through this, so a
- * count is the people its list can show.
+ * no row yet (it can't be listed). Light reads, at most one per person the queue names (≤ 200), all
+ * at once (B01-4c): in the queue's order, in waves over the request's budget (`ReadBudget.waves`) —
+ * one wave, at a light row's worth each. A person past the budget counts as not listable, as one with
+ * no row does. The queue lanes' counts and lists — and the Overview's flagged figure — all count
+ * through this, so a count is the people its list can show.
  */
 export async function listablePeople(
   ctx: QueryCtx,
   ids: readonly Id<'profiles'>[],
 ): Promise<{ rows: Doc<'peopleRows'>[]; missing: boolean }> {
-  const rows: Doc<'peopleRows'>[] = [];
-  const budget = requestBudget(ctx);
-  for (const id of ids) {
-    const row = await budget.one('personRow', () => personRowOf(ctx, id));
-    if (row) rows.push(row);
-  }
+  const read = await requestBudget(ctx).waves<Id<'profiles'>, Doc<'peopleRows'> | null>(
+    ids,
+    () => ({ bytes: ROW_MAX.personRow, reads: 1 }),
+    (id, share) => share.read('personRow', () => personRowOf(ctx, id)),
+    () => null,
+  );
+  const rows = read.filter((row): row is Doc<'peopleRows'> => row !== null);
   return { rows, missing: rows.length < ids.length };
 }
 
