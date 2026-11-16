@@ -506,7 +506,24 @@ describe('HazardsTabView — the winters, a day at a time', () => {
         },
       ),
       // Each run renders the tab; the arithmetic's breadth is the model test's.
-      { numRuns: 12 },
+      {
+        // The day-by-day arithmetic is fuzzed without rendering (`hazardsModel.test.ts`); here a few
+        // renders, and two pinned: a capped winter, and two hazards first reported on one day.
+        numRuns: 3,
+        examples: [
+          [
+            Array.from({ length: 8 }, (_, i) => ({ day: 20 + i * 3, hour: 12, active: false })),
+            true,
+          ],
+          [
+            [
+              { day: 40, hour: 2, active: false },
+              { day: 40, hour: 22, active: false },
+            ],
+            false,
+          ],
+        ],
+      },
     );
   });
 

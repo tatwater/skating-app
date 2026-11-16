@@ -1025,7 +1025,7 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
 
   it('an editor is never bound to another link than the one it was opened for or added', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.array(op, { maxLength: 12 }), async (ops) => {
+      fc.asyncProperty(fc.array(op, { maxLength: 8 }), async (ops) => {
         const user = userEvent.setup({ delay: null });
         const sent: StaffLink[][] = [];
         const answers: ((ok: boolean) => void)[] = [];
@@ -1107,7 +1107,7 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
         }
       }),
       {
-        numRuns: 12,
+        numRuns: 5,
         // The review's case: a duplicate of an existing link added, typed on before the answer.
         examples: [
           [
@@ -1419,7 +1419,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         }
       }),
       {
-        numRuns: 12,
+        numRuns: 6,
         // Pinned: Greptile's sequence, a remove whose link another moderator replaced, an edit
         // across another's reorder and insert, and an edit of another moderator's link opened from
         // its own row (it keeps that link's address); the rest random.

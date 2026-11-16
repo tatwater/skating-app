@@ -4038,7 +4038,16 @@ Names' aliases can bind an edit to the wrong entry by its text.
 - **A secondary read's four answers are never folded** (Greptile on #132): on its way, failed (in
   the tab's note, with *Try again*), settled with nothing (*Not recorded yet*), or a value —
   `readState` in the read layer. Water's other sources' depths were the case (a failed read drew
-  *Not recorded yet*); Names' town lines go through it too.
+  *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
+  holds Water's two reads, Names' two and Places' provenance to it. **Owed:** rows for Access
+  (landmarks, ruling history), Shape (bay provenance, extras), Hazards (patterns waiting, the day
+  strips) and Standing (retention) — each already keeps its answers apart, but none is a table row
+  yet (each needs its tab's model fixtures built for the table).
+- **A rendered property stays under a second locally** (CI's coverage run is about ten times
+  slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
+  is a few short runs, and the arithmetic is fuzzed without rendering. Each test is its own: a
+  property a timeout cut short stops at the next step (a run counter), and pages and timers are torn
+  down after every test.
 - **Reads adopted.** The search's other standings (`searchOtherStandings`: counted to the server's
   bound, a floor past it, gathered under the board's dividers — the three dormant lanes are one
   *Dormant* — and *(other standings unfiltered)* when the lane's facets are set); *Opened recently*

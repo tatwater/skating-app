@@ -436,7 +436,7 @@ describe('a pressed save completes against its own body (fast-check, model-based
       fc.asyncProperty(fc.array(op, { maxLength: 24 }), async (ops) => {
         expect(await session(ops)).toEqual([]);
       }),
-      { numRuns: 200, examples: [[GREPTILE], [TAB_SWITCH]] },
+      { numRuns: 100, examples: [[GREPTILE], [TAB_SWITCH]] },
     );
   });
 });
