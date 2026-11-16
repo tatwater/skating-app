@@ -8233,17 +8233,17 @@ throws leaves no audit row and no partial write (Convex rolls the mutation back;
 People, record and alert writer to deciding before it writes the log). Rows written before that
 changed nothing offer no undo, and an undo whose write would change nothing is refused.
 
-**The whole effect, the mirror included.** A ban or lift with unchanged terms still resends Clerk's
-lock or unlock — the mirror isn't tracked, its sync retries and then pages a human, and pressing again
-is how an operator repairs one that gave up — with no audit row and no undo.
+**The whole effect, the mirror included.** A ban, suspension or lift with unchanged terms still
+resends Clerk's lock or unlock (the mirror isn't tracked), with no audit row and no undo; and every
+Clerk sync sends what Convex says when it runs, never a stale value it was scheduled with.
 
 **Content writes too** (as D267's restore of what is up): a hide or removal of what a decision of
 that kind already holds, a pin of a pinned alert and a release of one that isn't pinned are refused
 with a plain sentence and write nothing; a moderator's word on an alert retraction already held as
 evidence writes no second verdict.
 
-**Reasons are normalized at the write** (`lib/audit.checkedReason`: trimmed, then held to D261's cap),
-so a trailing space is never a change.
+**A typed reason is normalized at the write** (`lib/audit.checkedReason`: trimmed, then held to D261's
+cap; `typed()` and the person writes go through it), so a trailing space is never a change.
 
 **A person's terms** are their status, its reason and a suspension's end. A ban or suspension whose
 reason or end differs is a real change: audited, and what both the person page's status note and

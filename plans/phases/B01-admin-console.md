@@ -2929,12 +2929,16 @@ rollout stands and needs no re-run.
 
 - **The Clerk mirror.** Clerk's side of a ban is a lock on new sign-ins: a banned person whose Clerk
   was never told can still sign in, but every Convex function refuses them (the status gate is the
-  boundary). After a lift, a Clerk still locked keeps an active person out. A suspension never locks
-  Clerk; one that replaces a ban unlocks it. A failed sync retries three times
-  (`clerkAdmin.setBanned`: 30 s, 5 min, 30 min), then pages the operator to fix it in Clerk; there is
-  no `jobFailures` row and no reconcile job. Pressing the lever again was the other repair, so a ban
-  or lift whose terms stand still resends the sync — no audit row, no undo (the smaller of the two
-  correct fixes; a reconcile job would need the mirror's state tracked).
+  boundary). After a lift, a Clerk still locked keeps an active person out of sign-in. A suspension
+  never locks Clerk; one that replaces a ban unlocks it. A failed sync retries three times
+  (`clerkAdmin.setBanned`: 30 s, 5 min, 30 min), then pages the operator to fix it in the Clerk
+  dashboard; there is no `jobFailures` row and no reconcile job. No screen offers Ban on a banned
+  person or Lift on an active one, so pressing again was never an operator's repair — only a raw call
+  or a double submit reached it. What #137 dropped was that resend; it is back for a ban, a
+  suspension and a lift whose terms stand (no audit row, no undo), and `setBanned` now asks Convex
+  for the person's status each time it runs (`lockWanted`) and sends that — so a retry still in
+  flight after a later write converges on it, never locking an active person out. A reconcile job
+  over every account was the larger alternative; it would need the mirror's state tracked.
 - **Content writes under the same rule.** The inventory:
 
   | Write | Changes nothing when | Now |
