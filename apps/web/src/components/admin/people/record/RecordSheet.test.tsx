@@ -59,6 +59,7 @@ import {
   ITEM_DELETED,
   ITEM_HIDDEN,
   ITEM_RESTORED,
+  ITEM_UNDO_GONE,
   ITEM_WITHDRAWN,
   NOW,
   page,
@@ -317,6 +318,24 @@ describe('the writes', () => {
       reason: 'Still wrong',
     });
     ITEMS['report:r4oct'] = ITEM_HIDDEN;
+  });
+});
+
+describe('a reversal’s undo', () => {
+  it('runs the shell’s undo on the row that ended the decision', async () => {
+    mocks.results.set(
+      'contentRecord:personReversed',
+      page([{ ...REVERSED[0], undo: { state: 'available', needsReason: true } }]),
+    );
+    ITEMS['comment:xguess'] = ITEM_UNDO_GONE;
+    draw();
+    await userEvent.click(within(sheet()).getByRole('button', { name: 'Reversed' }));
+    await userEvent.click(await within(sheet()).findByRole('button', { name: 'Undo the restore' }));
+    expect(mocks.undo).toHaveBeenCalledWith({
+      actionId: 'end-xguess',
+      needsReason: true,
+      what: 'Undo the restore',
+    });
   });
 });
 

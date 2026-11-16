@@ -199,6 +199,40 @@ describe('the reads', () => {
   });
 });
 
+describe('the record', () => {
+  it('asks the record’s counts with the page, and Review opens its sheet on Standing', async () => {
+    answer({
+      'contentRecord:recordCounts': {
+        reversed: {
+          count: 0,
+          capped: false,
+          byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+        },
+        deleted: {
+          count: 0,
+          capped: false,
+          byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+        },
+        pending: [],
+      },
+      'contentRecord:personVerdicts': { page: [], isDone: true, continueCursor: '', pending: [] },
+    });
+    render(<PersonPane userId={ROB_ID} />);
+    expect(mocks.calls.get('contentRecord:recordCounts')).toEqual({ userId: ROB_ID });
+    // Nothing of the sheet is asked until it opens.
+    expect(mocks.calls.has('contentRecord:personVerdicts')).toBe(false);
+    const row = document.querySelector('[data-lever="record"]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Review' }));
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getByText('On the record')).toBeInTheDocument();
+    expect(mocks.calls.get('contentRecord:personVerdicts')).toEqual({
+      userId: ROB_ID,
+      cursor: null,
+    });
+    expect(within(sheet).getByText('Nothing on the record')).toBeInTheDocument();
+  });
+});
+
 describe('one person at a time', () => {
   it('Show more keeps the rows drawn, and its focus, while the larger page loads', async () => {
     answer({

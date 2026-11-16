@@ -36,6 +36,7 @@ import {
   kindsLine,
   leverOf,
   listEnd,
+  publishedContent,
   type RecordAction,
   type RecordLevers,
   type Restored,
@@ -599,6 +600,45 @@ describe('the item', () => {
     expect(alert.byLines[1]?.who).toBeNull();
     expect(alert.plate).toMatchObject({ heading: 'As skaters saw it', text: { quoted: true } });
     expect(alert.life?.stations[1]?.title).toBe('Retracted by Rob');
+  });
+});
+
+describe('the words an item holds', () => {
+  it('reads each kind’s own fields from the whole document', () => {
+    const hazard = { firstReportedAt: 5, type: 'open_water', description: 'By the dam' };
+    expect(publishedContent('hazard', hazard as never)).toEqual({
+      at: 5,
+      title: 'open_water',
+      text: 'By the dam',
+    });
+    expect(publishedContent('post', { title: 'T' } as never)).toEqual({
+      at: 0,
+      title: 'T',
+      text: null,
+    });
+    expect(publishedContent('report', null)).toBeNull();
+  });
+
+  it('a hazard’s plate names its type, and two rows restored in one sitting keep their order', () => {
+    const v = itemView(
+      {
+        ...ITEM_HIDDEN,
+        targetType: 'hazard',
+        published: { firstReportedAt: at(10, 4), type: 'open_water' } as never,
+      },
+      SUBJECT,
+      NOW,
+    );
+    expect(v.plate).toMatchObject({ kind: 'words', text: null });
+    expect((v.plate as { display: string }).display).not.toBe('open_water');
+    const r = (i: number): Restored => ({
+      row: STANDING[i] as (typeof STANDING)[number],
+      at: NOW,
+      actionId: `a${i}`,
+      undo: null,
+    });
+    const merged = withRestored(STANDING.slice(2), [r(1), r(0)]);
+    expect(merged.rows.map((m) => m.row.targetId).slice(0, 3)).toEqual(['r4oct', 'alert', 'ckate']);
   });
 });
 

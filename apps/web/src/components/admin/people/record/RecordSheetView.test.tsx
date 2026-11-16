@@ -8,12 +8,16 @@ import { assertSeeded } from '@/test/seeded';
 import type { ReadFailure } from '../../reads/consoleReads';
 import { RecordSheetView, type RecordSheetViewProps } from './RecordSheetView';
 import {
+  CHOICES,
   HIDDEN,
   ITEM_DELETED,
   ITEM_HIDDEN,
+  ITEM_POST,
   ITEM_RESTORED,
+  ITEM_UNDO_GONE,
   ITEM_WITHDRAWN,
   NOW,
+  REVERSED,
   STANDING,
   SUBJECT,
 } from './recordFixtures';
@@ -335,5 +339,138 @@ describe('the item’s answers', () => {
     expect(onAct).not.toHaveBeenCalled();
     await userEvent.keyboard('r');
     expect(onAct).toHaveBeenCalledWith(targetOf(ITEM_HIDDEN), { kind: 'restore' });
+  });
+});
+
+describe('the list', () => {
+  it('one tab stop: the arrows, Home and End move between rows', async () => {
+    const user = userEvent.setup();
+    render(<RecordSheetView {...props()} />);
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-slot="record-row-button"]')];
+    expect(rows.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    await user.click(rows[0] as HTMLElement);
+    expect(document.activeElement).toBe(rows[0]);
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(rows[1]);
+    await user.keyboard('{End}');
+    expect(document.activeElement).toBe(rows.at(-1));
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(rows.at(-1));
+    await user.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(rows.at(-2));
+    await user.keyboard('{Home}');
+    expect(document.activeElement).toBe(rows[0]);
+    await user.keyboard('x');
+    expect(document.activeElement).toBe(rows[0]);
+  });
+
+  it('loading draws skeleton rows and no end', () => {
+    render(
+      <RecordSheetView
+        {...props({
+          list: { ...LIST, status: 'loading', rows: [] },
+          selected: null,
+          item: undefined,
+        })}
+      />,
+    );
+    expect(document.querySelector('[data-slot="record-list-loading"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="record-end"]')).toBeNull();
+  });
+
+  it('a row restored in this sitting offers its own Undo', async () => {
+    const onUndoRestored = vi.fn();
+    const restored = {
+      row: STANDING[0] as (typeof STANDING)[number],
+      at: NOW,
+      actionId: 'a1',
+      undo: { needsReason: true },
+    };
+    render(
+      <RecordSheetView
+        {...props({
+          list: { ...LIST, rows: STANDING.slice(1) },
+          restored: [restored],
+          onUndoRestored,
+        })}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(onUndoRestored).toHaveBeenCalledWith(restored);
+  });
+});
+
+describe('a reversal’s undo', () => {
+  const reversed = (undo: (typeof REVERSED)[number]['undo']) =>
+    ({ ...REVERSED[0], undo }) as (typeof REVERSED)[number];
+  const at = (row: (typeof REVERSED)[number]) =>
+    props({
+      tab: 'reversed',
+      list: { ...LIST, rows: [row] } as unknown as RecordSheetViewProps['list'],
+      selected: { targetType: 'comment', targetId: 'xguess' },
+      item: ITEM_UNDO_GONE,
+    });
+
+  it('offered while the server says available', async () => {
+    const onUndoEnd = vi.fn();
+    const row = reversed({ state: 'available', needsReason: true });
+    render(<RecordSheetView {...at(row)} onUndoEnd={onUndoEnd} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Undo the restore' }));
+    expect(onUndoEnd).toHaveBeenCalledWith(row);
+  });
+
+  it('drawn off once it ran out; gone once undone', () => {
+    const view = render(
+      <RecordSheetView {...at(reversed({ state: 'unavailable', why: 'No.' }))} />,
+    );
+    expect(screen.getByRole('button', { name: 'Undo the restore' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    view.rerender(
+      <RecordSheetView {...at(reversed({ state: 'undone', byActionId: 'x' as never }))} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Undo the restore' })).toBeNull();
+  });
+});
+
+describe('the Post’s chooser', () => {
+  const post = targetOf(ITEM_POST);
+  const chooserProps = (over: Partial<RecordSheetViewProps>) =>
+    props({ selected: post, item: ITEM_POST, chooser: post, ...over });
+  const chooser = () => document.querySelector<HTMLElement>('[data-slot="post-chooser"]');
+
+  it('says while its reports load, when they couldn’t be read, and when the post is gone', () => {
+    const retry = vi.fn();
+    const view = render(<RecordSheetView {...chooserProps({ choices: undefined })} />);
+    expect(chooser()?.querySelector('[aria-busy="true"]')).not.toBeNull();
+    view.rerender(
+      <RecordSheetView {...chooserProps({ choices: { failed: true, pending: false, retry } })} />,
+    );
+    expect(chooser()).toHaveTextContent('Its reports couldn’t be read');
+    view.rerender(<RecordSheetView {...chooserProps({ choices: null })} />);
+    expect(chooser()).toHaveTextContent('Nothing on the record by that name');
+  });
+
+  it('⌘⏎ restores with the reports chosen; a refusal stands over them, and Cancel closes', async () => {
+    const user = userEvent.setup();
+    const onAct = vi.fn(async () => 'Something changed this since.');
+    const onChooser = vi.fn();
+    render(<RecordSheetView {...chooserProps({ choices: CHOICES, onAct, onChooser })} />);
+    const boxes = within(chooser() as HTMLElement).getAllByRole('checkbox');
+    // Nothing chosen: ⌘⏎ does nothing.
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    expect(onAct).not.toHaveBeenCalled();
+    await user.click(boxes[0] as HTMLElement);
+    await user.click(boxes[1] as HTMLElement);
+    await user.click(boxes[1] as HTMLElement);
+    (boxes[0] as HTMLElement).focus();
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    expect(onAct).toHaveBeenCalledWith(post, { kind: 'restore', withReportIds: ['m1'] });
+    expect(
+      await within(chooser() as HTMLElement).findByText('Something changed this since.'),
+    ).toBeInTheDocument();
+    await user.click(within(chooser() as HTMLElement).getByRole('button', { name: 'Cancel' }));
+    expect(onChooser).toHaveBeenCalledWith(null);
   });
 });
