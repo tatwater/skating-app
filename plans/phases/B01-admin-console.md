@@ -3201,14 +3201,12 @@ operator leaving), running the same function the write refuses by — `depthChoi
 `shapeRefusal`, `launchRefusal` and `directionRefusal`, `samplePointsRefusal`, `listChangedRefusal`.
 Its row reads (`lib/undoReads`) are charged at their real weight to the request's budget, one after
 another, read once per query; past it the line reads *unavailable* — "This page has too much to check
-this undo here — open what it changed to undo it." — never a read past the limit. **Owed:** a
-refusal's snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) are
-not charged their bytes — People's per-row plan counts their calls and documents (`REFUSAL_CALLS`,
-`REFUSAL_DOCS`, since B01-4b's merge of this); the reads wait on each other across a page — that wait
-is what keeps reads started together (`moderation.listActions` shapes its lines at once) under the
-limit, since `ReadBudget.measured` charges a read's real weight only after it — and it costs up to
-two round trips a line; the landmark undo's refusal checks the spellings only, not the duplicate and
-bay-name rules its write also takes.
+this undo here — open what it changed to undo it." — never a read past the limit. A refusal's
+snapshot read and a launch's hidden-neighbor read (at most 200, a handful in practice) went
+uncharged at first; since B01-3h (#131) they go through the share `undoStates` reserves for the row,
+so People's per-row plan (`ROW_SHAPE_DOCS`) counts none of a refusal's reads — a row with no room
+for its share says "check elsewhere". **Owed:** the landmark undo's refusal checks the spellings
+only on a page, not the duplicate and bay-name rules its write also takes.
 
 **A page of History in a handful of rounds (B01-3i).** After #127 deployed, one busy body's first
 page of History took 803 and 710 ms uncached on dev. Counted structurally (a round: a database call
