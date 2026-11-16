@@ -48,7 +48,6 @@ import {
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** What the unbuilt controls will do, in the operator's words. */
-
 const NOT_YET = {
   aliases: 'Adding and removing the names skaters use comes with the aliases editor.',
   cls: 'Changing a body’s class comes with the class editor.',

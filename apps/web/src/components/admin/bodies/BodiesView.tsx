@@ -64,7 +64,10 @@ export type BodiesViewProps = {
    * `'unavailable'` for a body the reads can't serve (a rejected one) — drawn from its list row.
    */
   preview: BodyPreviewData | null | undefined | 'error' | 'unavailable';
-  /** For an `'unavailable'` preview: what its record still holds, on its way or failed. */
+  /**
+   * For an `'unavailable'` preview: what its record still holds — `undefined` on its way, failed,
+   * or read; `null` when none is read.
+   */
   previewRemoved?: Loadable<RemovedPreviewData | null> | null;
   /** The instant ages are read against. */
   now: number;
@@ -97,7 +100,8 @@ export function BodiesView({
   laneCounts,
   corpus,
   preview,
-  previewRemoved = null,
+  // Never defaulted: `undefined` is the record on its way (its skeleton), not none asked (`null`).
+  previewRemoved,
   now,
   bodyLink,
   openLabel = OPEN_LABEL,

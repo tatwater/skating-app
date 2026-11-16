@@ -1091,3 +1091,37 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
     );
   });
 });
+
+describe('LinksTabView — a link’s id outlives the page, as its queue does', () => {
+  const keyed = () =>
+    Object.fromEntries(
+      [...document.querySelectorAll('[data-slot="link-row"]')].map((r) => [
+        r.querySelector('.text-body')?.textContent,
+        r.getAttribute('data-link-key'),
+      ]),
+    );
+
+  it('a page back on the same list carries the ids the last one gave it; a new link takes a new id', () => {
+    const queueKey = 'links:carry-test';
+    const first = render(<LinksTabView {...base} queueKey={queueKey} />);
+    const before = keyed();
+    expect(before[ASSOC.label]).toBeTruthy();
+    expect(before[DAM.label]).toBeTruthy();
+    first.unmount();
+    // Meanwhile another moderator put a link first and moved the dam above the association: a queued
+    // change naming the dam's id must still find the dam, never whatever row is now in its place.
+    const added = { label: 'Town beach', url: 'https://example.org/beach' };
+    render(
+      <LinksTabView
+        {...base}
+        queueKey={queueKey}
+        body={{ ...MASCOMA, referenceLinks: [added, DAM, ASSOC] }}
+      />,
+    );
+    const after = keyed();
+    expect(after[DAM.label]).toBe(before[DAM.label]);
+    expect(after[ASSOC.label]).toBe(before[ASSOC.label]);
+    expect(after[added.label]).toBeTruthy();
+    expect([before[ASSOC.label], before[DAM.label]]).not.toContain(after[added.label]);
+  });
+});

@@ -90,9 +90,22 @@ const focusIsLost = (region: HTMLElement | null): boolean => {
 const LOST_ADD =
   'The list changed while this link was saving, so this editor can’t tell which row it is. Cancel, then edit the link from its row.';
 
-/** A change to the staff list, by link id: what the write queue applies to its newest list. */
-/** `null`: the change no longer applies (what it changes was removed meanwhile). */
+/**
+ * A change to the staff list, by link id: what the write queue applies to its newest list. `null`:
+ * the change no longer applies (what it changes was removed meanwhile).
+ */
 type Change = (base: readonly KeyedLink[]) => readonly KeyedLink[] | null;
+
+/**
+ * **A link's id outlives the page, as its queue does** (`ListWritersProvider`): a change queued
+ * behind a save still on its way names links by id, and may be taken up after the page has gone
+ * and come back. So ids are minted once across every mount (never `link-1` again for another link),
+ * and a page coming back to a list carries the ids the last one gave it (`carryIds`, by words) —
+ * never a fresh numbering under which a queued "remove link-3" would take another link.
+ */
+let mintedLinks = 0;
+const mintLink = () => `link-${++mintedLinks}`;
+const lastIds = new Map<string, KeyedLink[]>();
 
 export function LinksTabView({
   body,
@@ -106,8 +119,7 @@ export function LinksTabView({
 }: LinksTabViewProps) {
   const derived = derivedRows(body, now);
   // Each link keeps its id across an edit (its words change, its id doesn't): `carryIds`.
-  const minted = useRef(0);
-  const ids = useRef<KeyedLink[]>([]);
+  const ids = useRef<KeyedLink[]>(lastIds.get(queueKey) ?? []);
   const links = body.referenceLinks;
   // **The rows' identities come from the page's own writes where it can tell**: a list the server
   // shows that is exactly one this page sent and hasn't seen shown yet takes that list's keys, row
@@ -123,12 +135,11 @@ export function LinksTabView({
     const sent = unseen.current[at];
     if (sent !== undefined) unseen.current = unseen.current.slice(at + 1);
     const next =
-      sent !== undefined
-        ? sent.map((l) => ({ ...l }))
-        : carryIds(ids.current, list, () => `link-${++minted.current}`);
+      sent !== undefined ? sent.map((l) => ({ ...l })) : carryIds(ids.current, list, mintLink);
     ids.current = next;
+    lastIds.set(queueKey, next);
     return next;
-  }, [links]);
+  }, [links, queueKey]);
   const section = useRef<HTMLDivElement | null>(null);
   // **Focus is never taken from the keyboard by a save**: after an edit or an add lands, the link's
   // own Edit takes focus back (its id survives the edit; an add's was minted at Add) once its row
@@ -247,7 +258,7 @@ export function LinksTabView({
           // Moved underneath: the queue re-applies the change on the list as it now stands, keyed as
           // the page keys it (a link with the same words keeps its id).
           return {
-            current: carryIds(base, current as StaffLink[], () => `link-${++minted.current}`),
+            current: carryIds(base, current as StaffLink[], mintLink),
           };
         }
         setSaveError(err instanceof Error ? err.message : String(err));
@@ -334,7 +345,7 @@ export function LinksTabView({
               data-slot="link-add"
               onClick={() =>
                 open({
-                  key: `link-${++minted.current}`,
+                  key: mintLink(),
                   added: true,
                   label: '',
                   url: '',

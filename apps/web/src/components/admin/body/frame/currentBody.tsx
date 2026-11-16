@@ -54,7 +54,9 @@ export function BodyBindingProvider({
   // The name is the body's, and may land after the console does: kept current on the same
   // binding, never a new one (that would leave every mounted consumer holding a dead binding) —
   // and only while it is the same body (never the last body's binding taking the next one's name).
-  else binding.name = name;
+  // A name once landed is kept while the same body's console reloads or fails (no name then): a
+  // result said in that moment still names its body.
+  else if (name !== undefined) binding.name = name;
   useLayoutEffect(() => {
     binding.alive = true;
     return () => {

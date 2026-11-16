@@ -70,6 +70,29 @@ describe('useBodyHold — the console a subtree mounted under', () => {
     expect(first.here()).toBe(false);
   });
 
+  it('takes its body’s name when it lands, and keeps it while the same console reloads', () => {
+    const h = holder();
+    const { rerender } = render(
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
+    );
+    expect(h.get().subject).toBeUndefined();
+    rerender(
+      <BodyBindingProvider bodyId="wb1" name="Mascoma Lake">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
+    );
+    expect(h.get().subject).toBe('Mascoma Lake');
+    // The same body's console reloads or fails: no name is given, and the landed one stands.
+    rerender(
+      <BodyBindingProvider bodyId="wb1">
+        <Probe seen={h.seen} />
+      </BodyBindingProvider>,
+    );
+    expect(h.get().subject).toBe('Mascoma Lake');
+  });
+
   it('outside a frame there is no other console', () => {
     const h = holder();
     render(<Probe seen={h.seen} />);

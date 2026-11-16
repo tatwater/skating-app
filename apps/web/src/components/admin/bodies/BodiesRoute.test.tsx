@@ -1038,6 +1038,9 @@ describe('the preview', () => {
     expect(
       within(pane()).getByText('The full preview isn’t available for a body that isn’t listed.'),
     ).toBeInTheDocument();
+    // Its record is on its way (`removedFacts` hasn't answered): its place is held, never empty.
+    const unavailable = pane().querySelector('[data-slot=preview-unavailable]') as HTMLElement;
+    expect(unavailable.querySelector('[data-slot=skeleton-text]')).not.toBeNull();
   });
 
   it('says nothing is open for a body that doesn’t exist', () => {

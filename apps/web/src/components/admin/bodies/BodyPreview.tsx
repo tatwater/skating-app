@@ -102,7 +102,8 @@ export function BodyPreview({
         ) : data === 'error' ? null : 'unavailable' in data ? (
           <RowOnly
             row={data.unavailable}
-            removed={data.removed ?? null}
+            // `undefined` is the record on its way; a caller that gave none has `null`.
+            removed={'removed' in data ? data.removed : null}
             now={now}
             onRetry={onRetry}
             pending={pending}
@@ -301,9 +302,7 @@ function RowOnly({
           ? `The full preview isn’t available for a ${STANDING_LABEL[standing].toLowerCase()} body.`
           : 'The full preview isn’t available for a body that isn’t listed.'}
       </Note>
-      {removed !== null && removed === undefined && (
-        <SkeletonText lines={3} width="60%" className="mt-(--space-2)" />
-      )}
+      {removed === undefined && <SkeletonText lines={3} width="60%" className="mt-(--space-2)" />}
       {record !== null && <RecordList record={record} />}
       <RetryNote
         data-slot="preview-removed-error"
