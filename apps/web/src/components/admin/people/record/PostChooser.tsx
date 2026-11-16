@@ -83,9 +83,13 @@ function ChooserBody({
   // What is chosen and still choosable: a member that came up, or was deleted, since it was ticked
   // (the read is live) is neither counted nor sent.
   const picked = chosen.filter((id) => members.some((m) => m.reportId === id && m.choosable));
+  // Live, every render: the server's current answer decides whether this choice — the empty one
+  // included, once a plain restore brings a report back — can restore the post.
+  const ready =
+    read !== null && read.restorable && (picked.length > 0 || read.plainRestoreBringsBack);
 
   const confirm = () => {
-    if (busy || picked.length === 0) return;
+    if (busy || !ready) return;
     setBusy(true);
     onBusy(true);
     void onRestore(picked).then((refused) => {
@@ -177,12 +181,16 @@ function ChooserBody({
             size="sm"
             variant="primary"
             data-slot="chooser-restore"
-            disabled={picked.length === 0}
+            disabled={!ready}
             loading={busy}
             aria-keyshortcuts="Meta+Enter Control+Enter"
             onClick={confirm}
           >
-            {W.restoreWith(picked.length)}
+            {/* The board's "Restore with 0 reports" while a choice is needed; a plain Restore once
+                none is. */}
+            {picked.length === 0 && read?.plainRestoreBringsBack === true
+              ? W.lever.restore
+              : W.restoreWith(picked.length)}
             <Kbd variant="dim" aria-hidden="true">
               ⌘⏎
             </Kbd>

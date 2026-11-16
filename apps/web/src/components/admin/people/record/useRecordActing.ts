@@ -24,6 +24,8 @@ export type RecordActing = {
   busyOn: (target: Target) => RecordAction | null;
   /** The refusal standing on this item's lever, if any. */
   refusalOn: (target: Target) => string | null;
+  /** Say something in the item's place (a dialog closed under a change), as a refusal stands. */
+  say: (target: Target, text: string) => void;
   run: (
     target: Target,
     write: RecordWrite,
@@ -107,6 +109,7 @@ export function useRecordActing({
   );
 
   return {
+    say: useCallback((t: Target, text: string) => setRefusal({ key: targetKey(t), text }), []),
     busyOn: (t) => busy.get(targetKey(t)) ?? null,
     refusalOn: (t) => (refusal !== null && refusal.key === targetKey(t) ? refusal.text : null),
     run,

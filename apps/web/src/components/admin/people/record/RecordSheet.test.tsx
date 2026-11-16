@@ -107,7 +107,12 @@ beforeEach(() => {
   mocks.results.set('contentRecord:personVerdicts', page(STANDING));
   mocks.results.set('contentRecord:personDeleted', page(DELETED));
   mocks.results.set('contentRecord:personReversed', page(REVERSED));
-  mocks.results.set('profiles:current', DANA);
+  // The viewer, as `profiles.current` answers: their profile.
+  mocks.results.set('profiles:current', {
+    _id: DANA.userId,
+    displayName: DANA.displayName,
+    username: DANA.username,
+  });
   mocks.results.set('contentRecord:recordCounts', COUNTS);
   mocks.results.set(
     'contentRecord:item',
@@ -238,6 +243,39 @@ describe('the writes', () => {
       needsReason: true,
       what: 'The report is back on Mascoma Lake',
     });
+  });
+
+  it('a kept row goes for good once the server lists the item again — never back for another hand', async () => {
+    const view = draw();
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(async () => {
+      mocks.results.set('contentRecord:personVerdicts', page(STANDING.slice(1)));
+      // The open item reads restored, by the viewer.
+      ITEMS['report:r4oct'] = ITEM_RESTORED;
+      return { targetId: 'r4oct', actionId: 'a1', undoable: true, undoNeedsReason: true };
+    });
+    await userEvent.click(lever() as HTMLElement);
+    const kept = () => sheet().querySelector('[data-slot="record-row"][data-back]');
+    await waitFor(() => expect(kept()).not.toBeNull());
+    const redraw = () =>
+      view.rerender(
+        <RecordSheet
+          open
+          onOpenChange={() => {}}
+          subject={SUBJECT}
+          standing={HIDDEN}
+          pending={false}
+        />,
+      );
+    // Its restore undone (from the toast): the server lists it again.
+    mocks.results.set('contentRecord:personVerdicts', page(STANDING));
+    redraw();
+    await waitFor(() => expect(kept()).toBeNull());
+    // Another moderator restores it: the server lists it no longer, and no row of ours comes back.
+    mocks.results.set('contentRecord:personVerdicts', page(STANDING.slice(1)));
+    redraw();
+    await waitFor(() => expect(rowButton('Mascoma Lake · 3 reports')).toBeDefined());
+    expect(kept()).toBeNull();
   });
 
   it('a write that says it can’t be undone gets a receipt with none', async () => {

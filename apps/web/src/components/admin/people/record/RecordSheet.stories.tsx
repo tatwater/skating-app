@@ -119,6 +119,7 @@ export const JustRestored: Story = {
         row: STANDING[0] as (typeof STANDING)[number],
         at: at(10, 14, 11, 52),
         actionId: 'a-r4oct',
+        actorId: 'me',
         undo: { needsReason: true },
       },
     ],

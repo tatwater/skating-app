@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
@@ -12,11 +12,13 @@ import { firstName, personName } from '../person/personModel';
 import { RecordSheetView } from './RecordSheetView';
 import {
   type ItemRead,
+  nextRestored,
   placeName,
   type RecordCounts,
   type RecordSubject,
   type RecordTab,
   type Restored,
+  type RestoredEvent,
   type ReversedRow,
   receiptWords,
   type StandingCount,
@@ -76,6 +78,13 @@ export function useSittingState() {
   const [selected, setSelected] = useState<Target | null>(null);
   const [chooser, setChooser] = useState<Target | null>(null);
   const [restored, setRestored] = useState<readonly Restored[]>([]);
+  const settle = useCallback((event: RestoredEvent) => {
+    setRestored((list) => {
+      const next = nextRestored(list, event);
+      // Unchanged, the same array: nothing redraws for an answer that superseded nothing.
+      return next.length === list.length && next.every((r, i) => r === list[i]) ? list : next;
+    });
+  }, []);
   return {
     tab,
     kind,
@@ -92,23 +101,30 @@ export function useSittingState() {
     }, []),
     onSelect: setSelected,
     onChooser: setChooser,
-    /** A restore landed on a row the sheet holds: it keeps its place, with its undo, till closing. */
+    /** A restore landed on a row the sheet holds: it keeps its place, with its undo, for now. */
     keepRestored: useCallback(
-      (row: StandingRow | undefined, result: RecordWriteResult, at: number) => {
+      (
+        row: StandingRow | undefined,
+        result: RecordWriteResult,
+        at: number,
+        actorId: string | null,
+      ) => {
         if (row === undefined) return;
-        const key = targetKey(row);
-        setRestored((list) => [
-          ...list.filter((r) => targetKey(r.row) !== key),
-          {
+        settle({
+          kind: 'kept',
+          restored: {
             row,
             at,
             actionId: result.actionId,
+            actorId,
             undo: result.undoable ? { needsReason: result.undoNeedsReason } : null,
           },
-        ]);
+        });
       },
-      [],
+      [settle],
     ),
+    /** The server's answers that can supersede a kept row: the list, the open item, an Undo. */
+    settle,
   };
 }
 
@@ -151,6 +167,8 @@ function SheetSitting({
   const viewer = reads.viewer;
   const viewerName =
     viewer === undefined || viewer === null || isFailed(viewer) ? null : personName(viewer);
+  const viewerId =
+    viewer === undefined || viewer === null || isFailed(viewer) ? null : (viewer._id as string);
   const setModerationStatus = useMutation(api.moderation.setModerationStatus);
   const overturnVerdict = useMutation(api.moderation.overturnVerdict);
   const keepOnRecord = useMutation(api.moderation.keepOnRecord);
@@ -184,10 +202,22 @@ function SheetSitting({
       const key = targetKey(target);
       const row =
         tab === 'standing' ? (rows as StandingRow[]).find((r) => targetKey(r) === key) : undefined;
-      keepRestored(row, result, Date.now());
+      keepRestored(row, result, Date.now(), viewerId);
     },
-    [tab, rows, keepRestored],
+    [tab, rows, keepRestored, viewerId],
   );
+  // The server's answers settle the rows kept for the sitting: Standing as loaded, the open item.
+  const settle = state.settle;
+  const standingRows =
+    tab === 'standing' && list.status !== 'loading' && list.status !== 'error'
+      ? (rows as StandingRow[])
+      : null;
+  useEffect(() => {
+    if (standingRows !== null) settle({ kind: 'listed', rows: standingRows });
+  }, [settle, standingRows]);
+  useEffect(() => {
+    if (item != null && !('failed' in item)) settle({ kind: 'item', item });
+  }, [settle, item]);
   const comesBackOf = useCallback(
     (target: Target) =>
       item != null && !('failed' in item) && targetKey(item) === targetKey(target)

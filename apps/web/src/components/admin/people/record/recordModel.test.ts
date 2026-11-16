@@ -39,6 +39,7 @@ import {
   kindsLine,
   leverOf,
   listEnd,
+  nextRestored,
   type RecordAction,
   type RecordLevers,
   type Restored,
@@ -281,6 +282,7 @@ describe('a row restored in this sitting', () => {
     row: row(0),
     at: at(10, 14, 11, 52),
     actionId: 'a1',
+    actorId: 'me',
     undo: { needsReason: true },
   };
 
@@ -643,6 +645,7 @@ describe('the words an item holds', () => {
       row: STANDING[i] as (typeof STANDING)[number],
       at: NOW,
       actionId: `a${i}`,
+      actorId: 'me',
       undo: null,
     });
     const merged = withRestored(STANDING.slice(2), [r(1), r(0)]);
@@ -865,5 +868,153 @@ describe('spans', () => {
     expect(spanWords(3_600_000)).toBe('1 hour');
     expect(spanWords(5 * 3_600_000)).toBe('5 hours');
     expect(spanWords(60_000)).toBe('Under an hour');
+  });
+});
+
+describe('a restore kept for the sitting never outlives the server’s answer', () => {
+  const row = STANDING[0] as (typeof STANDING)[number];
+  const mine = (actionId: string): Restored => ({
+    row,
+    at: NOW,
+    actionId,
+    actorId: 'me',
+    undo: { needsReason: true },
+  });
+  const shown = (kept: readonly Restored[], rows: readonly (typeof STANDING)[number][]) =>
+    withRestored(rows, kept).rows.flatMap((r) => (r.restored === null ? [] : [r.restored]));
+
+  it('restore, undo, then another moderator’s restore: the old row never comes back', () => {
+    // I restore it: the server lists it no longer; the sheet keeps its row.
+    let kept = nextRestored([], { kind: 'kept', restored: mine('a1') });
+    expect(shown(kept, [])).toEqual([mine('a1')]);
+    // My restore is undone (from the toast): the server lists it again.
+    kept = nextRestored(kept, { kind: 'listed', rows: [row] });
+    expect(shown(kept, [row])).toEqual([]);
+    // Another moderator restores it: the server lists it no longer — and nothing of mine returns.
+    kept = nextRestored(kept, { kind: 'listed', rows: [] });
+    expect(shown(kept, [])).toEqual([]);
+    expect(kept).toEqual([]);
+  });
+
+  it('restore, someone hides it, someone else restores it: the row is never mine again', () => {
+    // The sequence the property below found against the first build.
+    let kept = nextRestored([], { kind: 'kept', restored: { ...mine('a1'), undo: null } });
+    kept = nextRestored(kept, { kind: 'listed', rows: [row] });
+    kept = nextRestored(kept, { kind: 'listed', rows: [] });
+    expect(shown(kept, [])).toEqual([]);
+  });
+
+  it('a list still on its way judges nothing', () => {
+    let kept = nextRestored([], { kind: 'kept', restored: mine('a1') });
+    kept = nextRestored(kept, { kind: 'listed', rows: null });
+    expect(kept).toEqual([mine('a1')]);
+    // A restore again replaces the earlier one, never beside it.
+    kept = nextRestored(kept, { kind: 'kept', restored: mine('a2') });
+    expect(kept).toEqual([mine('a2')]);
+  });
+
+  it('the open item’s read drops it once another decision holds it, or another hand restored it', () => {
+    const kept = nextRestored([], { kind: 'kept', restored: mine('a1') });
+    expect(nextRestored(kept, { kind: 'item', item: ITEM_HIDDEN })).toEqual([]);
+    expect(nextRestored(kept, { kind: 'item', item: ITEM_RESTORED })).toEqual([]);
+    const byMe = {
+      ...ITEM_RESTORED,
+      decisions: ITEM_RESTORED.decisions.map((d) => ({
+        ...d,
+        endedBy: d.endedBy === null ? null : { ...d.endedBy, userId: 'me' as never },
+      })),
+    };
+    expect(nextRestored(kept, { kind: 'item', item: byMe })).toEqual(kept);
+    // Another item's read says nothing of this one.
+    expect(nextRestored(kept, { kind: 'item', item: ITEM_DELETED })).toEqual(kept);
+  });
+
+  /**
+   * Restore, undo (from the row or the toast), another moderator's restore, a hide again, and list
+   * reloads, in any order, over two items: a row lit *Restored · <name>* names only the latest
+   * restore — the viewer's own, still standing — with its own action and time, and offers Undo only
+   * when that write said `undoable`.
+   */
+  it('over any order of restores, undos, other hands and reloads', () => {
+    type Server = { up: boolean; latest: { by: 'me' | 'other'; id: string; undo: boolean } | null };
+    const ROWS = [STANDING[0], STANDING[2]] as (typeof STANDING)[number][];
+    const step = fc.oneof(
+      fc.record({ kind: fc.constant('myRestore' as const), t: fc.nat(1), undo: fc.boolean() }),
+      fc.record({ kind: fc.constant('rowUndo' as const), t: fc.nat(1) }),
+      fc.record({ kind: fc.constant('toastUndo' as const), t: fc.nat(1) }),
+      fc.record({ kind: fc.constant('otherRestore' as const), t: fc.nat(1) }),
+      fc.record({ kind: fc.constant('hide' as const), t: fc.nat(1) }),
+      fc.record({ kind: fc.constant('reload' as const), t: fc.nat(1) }),
+    );
+    assertSeeded(
+      fc.property(fc.array(step, { maxLength: 24 }), (steps) => {
+        const server: Server[] = [
+          { up: false, latest: null },
+          { up: false, latest: null },
+        ];
+        let kept: Restored[] = [];
+        let n = 0;
+        const listed = () => ROWS.filter((_, i) => !(server[i] as Server).up);
+        for (const s of steps) {
+          const srv = server[s.t] as Server;
+          const row = ROWS[s.t] as (typeof STANDING)[number];
+          switch (s.kind) {
+            case 'myRestore':
+              if (srv.up) continue;
+              n++;
+              srv.up = true;
+              srv.latest = { by: 'me', id: `a${n}`, undo: s.undo };
+              kept = nextRestored(kept, {
+                kind: 'kept',
+                restored: {
+                  row,
+                  at: n,
+                  actionId: `a${n}`,
+                  actorId: 'me',
+                  undo: s.undo ? { needsReason: true } : null,
+                },
+              });
+              break;
+            case 'rowUndo': {
+              const r = kept.find((k) => k.row.targetId === row.targetId);
+              if (r === undefined || r.undo === null) continue;
+              // Its Undo, pressed on the row: the server lists it again.
+              srv.up = false;
+              break;
+            }
+            case 'toastUndo':
+              if (!srv.up || srv.latest?.by !== 'me' || !srv.latest.undo) continue;
+              srv.up = false;
+              break;
+            case 'otherRestore':
+              if (srv.up) continue;
+              n++;
+              srv.up = true;
+              srv.latest = { by: 'other', id: `o${n}`, undo: false };
+              break;
+            case 'hide':
+              if (!srv.up) continue;
+              srv.up = false;
+              break;
+            case 'reload':
+              // The list on its way again, then its answer.
+              kept = nextRestored(kept, { kind: 'listed', rows: null });
+              break;
+          }
+          // The live list answers after every change.
+          kept = nextRestored(kept, { kind: 'listed', rows: listed() });
+          for (const r of shown(kept, listed())) {
+            const i = ROWS.findIndex((x) => x.targetId === r.row.targetId);
+            const truth = server[i] as Server;
+            if (!truth.up || truth.latest?.by !== 'me' || truth.latest.id !== r.actionId)
+              return false;
+            if ((r.undo !== null) !== truth.latest.undo) return false;
+            if (r.at !== Number(r.actionId.slice(1))) return false;
+          }
+        }
+        return true;
+      }),
+      { numRuns: 200 },
+    );
   });
 });

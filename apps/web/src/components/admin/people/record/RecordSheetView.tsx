@@ -107,6 +107,8 @@ type Ask = {
   target: Target;
   view: ItemView;
   action: 'hideAgain' | 'keep' | 'overturn';
+  /** Whether the lever asked a reason when it was pressed; the live answer wins while it stands. */
+  needsReason: boolean;
   serial: number;
 };
 
@@ -244,10 +246,71 @@ function SheetBodyView({
       target,
       view: v,
       action: lever.action as Ask['action'],
+      needsReason: lever.needsReason,
       serial: (prev?.serial ?? 0) + 1,
     }));
     setAskOpen(true);
   };
+
+  // ── An open dialog follows the live answer ──
+  // Each render reads the item's `can` as the server answers it now. A dialog (or the chooser) whose
+  // lever no longer stands — refused, another lever offered, nothing offered — closes: a refusal is
+  // the foot's, in the server's words; anything else is said in the item's place. Never while its
+  // own write is out: that write is what moves the answer, and it answers for itself.
+  const writing = useRef<string | null>(null);
+  const lastRefusal = useRef<string | null>(null);
+  const liveLever = (target: Target | null): Lever | null | undefined => {
+    if (target === null || selectedKey !== targetKey(target)) return null;
+    return view === null ? undefined : view.lever;
+  };
+  const askKey = ask === null ? null : targetKey(ask.target);
+  const askLive = liveLever(ask?.target ?? null);
+  const askStands =
+    ask !== null && askLive != null && askLive.ok === true && askLive.action === ask.action;
+  const chooserLive = liveLever(chooser);
+  const chooserStands =
+    chooserLive != null && chooserLive.ok === true && chooserLive.action === 'restore';
+  const closeUnder = (target: Target, live: Lever | null | undefined) => {
+    if (live?.ok === false) return; // The foot says the server's why.
+    acting.say(target, lastRefusal.current ?? W.changedWhileOpen);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the live answer, by value.
+  useEffect(() => {
+    if (!askOpen || ask === null) {
+      if (writing.current === askKey) writing.current = null;
+      return;
+    }
+    // Still being read (the answer can't be judged yet), or its own write is out: hold.
+    if (askLive === undefined || writing.current === askKey || askStands) return;
+    setAskOpen(false);
+    closeUnder(ask.target, askLive);
+    lastRefusal.current = null;
+  }, [askOpen, askKey, askStands, askLive === undefined, askLive?.ok]);
+  const chooserKey = chooser === null ? null : targetKey(chooser);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the live answer, by value.
+  useEffect(() => {
+    if (chooser === null) {
+      return;
+    }
+    if (chooserLive === undefined || writing.current === chooserKey || chooserStands) return;
+    onChooser(null);
+    closeUnder(chooser, chooserLive);
+    lastRefusal.current = null;
+  }, [chooserKey, chooserStands, chooserLive === undefined, chooserLive?.ok]);
+  /** A dialog's write: held as its own while out; a refusal kept for a close that follows. */
+  const dialogWrite = async (target: Target, write: RecordWrite) => {
+    const key = targetKey(target);
+    writing.current = key;
+    lastRefusal.current = null;
+    const refused = await acting.run(target, write, { region: pane.current, inline: false });
+    if (refused !== null) {
+      writing.current = null;
+      lastRefusal.current = refused;
+    }
+    return refused;
+  };
+  const askView = askStands && view !== null ? view : ask?.view;
+  const askReason = askStands && askLive?.ok === true ? askLive.needsReason : ask?.needsReason;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!keys || narrow || askOpen || chooser !== null) return;
@@ -407,27 +470,28 @@ function SheetBodyView({
                 : W.overturnBody(
                     subjectName(subject),
                     KIND_WORDS[ask.target.targetType].one,
-                    ask.view.erasure === null || ask.view.erasure.kind === 'unrecorded'
+                    askView?.erasure == null || askView.erasure.kind === 'unrecorded'
                       ? 'unrecorded'
-                      : ask.view.erasure.kind === 'held'
+                      : askView.erasure.kind === 'held'
                         ? null
-                        : ask.view.erasure.kind === 'atOnce'
+                        : askView.erasure.kind === 'atOnce'
                           ? 'atOnce'
-                          : ask.view.erasure.kind === 'erased'
+                          : askView.erasure.kind === 'erased'
                             ? 'already'
-                            : ask.view.erasure.day,
+                            : askView.erasure.day,
                   )
           }
           confirm={W.lever[ask.action]}
-          reason={ask.action === 'overturn' ? 'optional' : true}
-          reasonLabel={ask.action === 'overturn' ? W.reasonOptionalLabel : W.reasonLabel}
-          {...(ask.action === 'overturn' && { reasonPlaceholder: W.reasonOptionalPlaceholder })}
+          // A reason exactly when the live answer asks one; else one may be given.
+          reason={askReason === true ? true : 'optional'}
+          reasonLabel={askReason === true ? W.reasonLabel : W.reasonOptionalLabel}
+          {...(askReason !== true && { reasonPlaceholder: W.reasonOptionalPlaceholder })}
           onConfirm={(reason) => {
             const write: RecordWrite =
               ask.action === 'overturn'
                 ? { kind: 'overturn', ...(reason !== '' && { reason }) }
                 : { kind: ask.action, reason };
-            return acting.run(ask.target, write, { region: pane.current, inline: false });
+            return dialogWrite(ask.target, write);
           }}
         />
       )}
@@ -443,10 +507,12 @@ function SheetBodyView({
         onRestore={(withReportIds) =>
           chooser === null
             ? Promise.resolve(null)
-            : acting.run(
+            : dialogWrite(
                 chooser,
-                { kind: 'restore', withReportIds },
-                { region: pane.current, inline: false },
+                // Nothing chosen is a plain restore (the server's answer allowed it): nothing beside it.
+                withReportIds.length === 0
+                  ? { kind: 'restore' }
+                  : { kind: 'restore', withReportIds },
               )
         }
       />

@@ -6,7 +6,7 @@
  * imports it.
  */
 import { ConvexError } from 'convex/values';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { createToastManager, Toaster, toast } from '@/components/kit/toast';
 
@@ -14,7 +14,7 @@ import type { ReadFailure } from '../../reads/consoleReads';
 import { UndoProvider, type UndoServer, useUndo } from '../../shell/undo';
 import { useSittingState } from './RecordSheet';
 import { RecordSheetView } from './RecordSheetView';
-import { COUNTS, HIDDEN, NOW, SUBJECT } from './recordFixtures';
+import { COUNTS, DANA, HIDDEN, NOW, SUBJECT } from './recordFixtures';
 import {
   type ChoicesRead,
   type DeletedRow,
@@ -135,7 +135,7 @@ function Board({
     if (initialTab !== 'standing') state.onTab(initialTab);
     if (initialSelected !== null) state.onSelect(initialSelected);
     for (const r of initialRestored) {
-      state.keepRestored(r.row, restoredResult(r), r.at);
+      state.keepRestored(r.row, restoredResult(r), r.at, r.actorId);
     }
   }
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
@@ -160,6 +160,12 @@ function Board({
     loadMore: () => {},
   };
 
+  // The board's server answers settle the rows kept for the sitting, as the console's do.
+  const settle = state.settle;
+  const standingRows = state.tab === 'standing' && !shown.failed ? (rows as StandingRow[]) : null;
+  useEffect(() => {
+    if (standingRows !== null) settle({ kind: 'listed', rows: standingRows });
+  }, [settle, standingRows]);
   const key = state.selected === null ? null : targetKey(state.selected);
   const raw = key === null ? undefined : (over[key] ?? items[key]);
   const item = raw === 'loading' ? undefined : raw === 'failed' ? failure(onRetry) : raw;
@@ -214,7 +220,7 @@ function Board({
       const row = (lists.standing?.rows as StandingRow[] | undefined)?.find(
         (r) => targetKey(r) === k,
       );
-      keepRestored(row, result, now);
+      keepRestored(row, result, now, DANA.userId);
       // The server no longer lists it as standing; the item reads restored.
       setGone((g) => new Set(g).add(k));
       const after = restoredItems[k];

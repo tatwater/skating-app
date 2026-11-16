@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -347,6 +347,7 @@ describe('the item’s answers', () => {
       row: STANDING[1] as (typeof STANDING)[number],
       at: NOW,
       actionId: 'a1',
+      actorId: 'me',
       undo: null,
     };
     const view = render(
@@ -450,6 +451,7 @@ describe('the list', () => {
       row: STANDING[0] as (typeof STANDING)[number],
       at: NOW,
       actionId: 'a1',
+      actorId: 'me',
       undo: { needsReason: true },
     };
     render(
@@ -468,7 +470,13 @@ describe('the list', () => {
   it('a list narrowed to one kind holds only that kind’s restored rows', () => {
     const report = STANDING[0] as (typeof STANDING)[number];
     expect(report.targetType).toBe('report');
-    const restored = { row: report, at: NOW, actionId: 'a1', undo: { needsReason: true } };
+    const restored = {
+      row: report,
+      at: NOW,
+      actionId: 'a1',
+      actorId: 'me',
+      undo: { needsReason: true },
+    };
     const comments = STANDING.filter((r) => r.targetType === 'comment');
     render(
       <RecordSheetView
@@ -581,5 +589,211 @@ describe('the Post’s chooser', () => {
     });
     await user.click(restore);
     expect(onAct).toHaveBeenCalledWith(post, { kind: 'restore', withReportIds: ['m2'] });
+  });
+});
+
+describe('an open dialog follows the live answer', () => {
+  const post = targetOf(ITEM_POST);
+
+  it('the chooser: a report that came up while it was open lets the post restore with none chosen', async () => {
+    const user = userEvent.setup();
+    const onAct = vi.fn(async () => null);
+    const view = render(
+      <RecordSheetView
+        {...props({ selected: post, item: ITEM_POST, chooser: post, choices: CHOICES, onAct })}
+      />,
+    );
+    const restore = () =>
+      document.querySelector<HTMLElement>('[data-slot="chooser-restore"]') as HTMLElement;
+    expect(restore()).toBeDisabled();
+    // Someone restored m1 on its own: a plain restore now brings the post back with it.
+    const live = {
+      ...CHOICES,
+      plainRestoreBringsBack: true,
+      prompt: null,
+      members: CHOICES.members.map((m) =>
+        m.reportId === 'm1' ? { ...m, status: 'visible', standing: 'visible' } : m,
+      ),
+    } as typeof CHOICES;
+    view.rerender(
+      <RecordSheetView
+        {...props({ selected: post, item: ITEM_POST, chooser: post, choices: live, onAct })}
+      />,
+    );
+    expect(restore()).toBeEnabled();
+    expect(restore()).toHaveTextContent('Restore');
+    await user.click(restore());
+    // A plain restore: nothing chosen, nothing sent beside it.
+    expect(onAct).toHaveBeenCalledWith(post, { kind: 'restore' });
+  });
+
+  it('the chooser: nothing left that can come back disables it, in the server’s words', () => {
+    const view = render(
+      <RecordSheetView
+        {...props({ selected: post, item: ITEM_POST, chooser: post, choices: CHOICES })}
+      />,
+    );
+    const gone = {
+      ...CHOICES,
+      restorable: false,
+      prompt: 'Every report in this post was deleted by its author, so the post can’t be restored.',
+      members: CHOICES.members.map((m) => ({ ...m, standing: 'author_deleted' })),
+    } as typeof CHOICES;
+    view.rerender(
+      <RecordSheetView
+        {...props({ selected: post, item: ITEM_POST, chooser: post, choices: gone })}
+      />,
+    );
+    expect(document.querySelector('[data-slot="chooser-restore"]')).toBeDisabled();
+    expect(document.querySelector('[data-slot="chooser-lead"]')).toHaveTextContent(
+      'deleted by its author, so the post can’t be restored',
+    );
+  });
+
+  it('the chooser closes when the post no longer offers Restore, and says why in its place', async () => {
+    const onChooser = vi.fn();
+    const view = render(
+      <RecordSheetView
+        {...props({ selected: post, item: ITEM_POST, chooser: post, choices: CHOICES, onChooser })}
+      />,
+    );
+    view.rerender(
+      <RecordSheetView
+        {...props({
+          selected: post,
+          item: { ...ITEM_POST, can: { restore: { ok: false, why: 'This is already up.' } } },
+          chooser: post,
+          choices: CHOICES,
+          onChooser,
+        })}
+      />,
+    );
+    expect(onChooser).toHaveBeenCalledWith(null);
+    expect(document.querySelector('[data-slot="record-say"]')).toHaveTextContent(
+      'This is already up.',
+    );
+  });
+
+  type Change = [string, RecordLevers, 'closes' | 'stays', string | null];
+  const DIALOGS: Array<[RecordAction, ItemRead, RegExp, Change[]]> = [
+    [
+      'hideAgain',
+      ITEM_RESTORED,
+      /Hide again/,
+      [
+        [
+          'refused',
+          { hideAgain: { ok: false, why: 'Only a moderator can change this.' } },
+          'closes',
+          'Only a moderator can change this.',
+        ],
+        [
+          'another lever now',
+          { restore: { ok: true, needsReason: false } },
+          'closes',
+          'This changed while it was open.',
+        ],
+        ['nothing on offer', {}, 'closes', 'This changed while it was open.'],
+        ['no reason asked now', { hideAgain: { ok: true, needsReason: false } }, 'stays', null],
+      ],
+    ],
+    [
+      'keep',
+      ITEM_WITHDRAWN,
+      /Keep on the record/,
+      [
+        [
+          'refused',
+          { keep: { ok: false, why: 'A decision already keeps this on their record.' } },
+          'closes',
+          'A decision already keeps this on their record.',
+        ],
+        [
+          'another lever now',
+          { overturn: { ok: true, needsReason: false } },
+          'closes',
+          'This changed while it was open.',
+        ],
+        ['no reason asked now', { keep: { ok: true, needsReason: false } }, 'stays', null],
+      ],
+    ],
+    [
+      'overturn',
+      ITEM_DELETED,
+      /Overturn/,
+      [
+        [
+          'refused',
+          {
+            overturn: {
+              ok: false,
+              why: 'Your account is being deleted, so you can no longer change this.',
+            },
+          },
+          'closes',
+          'Your account is being deleted, so you can no longer change this.',
+        ],
+        [
+          'another lever now',
+          { keep: { ok: true, needsReason: true } },
+          'closes',
+          'This changed while it was open.',
+        ],
+        ['a reason asked now', { overturn: { ok: true, needsReason: true } }, 'stays', null],
+      ],
+    ],
+  ];
+
+  for (const [action, item, confirmName, changes] of DIALOGS) {
+    for (const [what, can, outcome, said] of changes) {
+      it(`${action}, ${what} while it is open: it ${outcome}`, async () => {
+        const user = userEvent.setup();
+        const target = targetOf(item);
+        const view = render(<RecordSheetView {...props({ selected: target, item })} />);
+        await user.click(lever() as HTMLElement);
+        await screen.findByRole('alertdialog');
+        view.rerender(<RecordSheetView {...props({ selected: target, item: { ...item, can } })} />);
+        if (outcome === 'closes') {
+          await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+          const place = document.querySelector(
+            '[data-slot="record-refusal"], [data-slot="record-say"]',
+          );
+          expect(place).toHaveTextContent(said as string);
+          return;
+        }
+        // It stays, and asks a reason exactly when the live answer does.
+        const dialog = screen.getByRole('alertdialog');
+        const confirm = within(dialog).getByRole('button', { name: confirmName });
+        const asked = (can[action] as { needsReason: boolean }).needsReason;
+        if (asked) expect(confirm).toBeDisabled();
+        else expect(confirm).toBeEnabled();
+      });
+    }
+  }
+
+  it('a dialog whose own write is out holds through the change its write makes', async () => {
+    const user = userEvent.setup();
+    const write = deferred();
+    const target = targetOf(ITEM_DELETED);
+    const onAct = vi.fn(() => write.promise);
+    const view = render(
+      <RecordSheetView {...props({ selected: target, item: ITEM_DELETED, onAct })} />,
+    );
+    await user.click(lever() as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: /Overturn/ }));
+    // Its own write landed on the server first: the lever is gone before the write answers.
+    view.rerender(
+      <RecordSheetView
+        {...props({ selected: target, item: { ...ITEM_DELETED, can: {} }, onAct })}
+      />,
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    await act(async () => {
+      write.settle(null);
+      await write.promise;
+    });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
   });
 });

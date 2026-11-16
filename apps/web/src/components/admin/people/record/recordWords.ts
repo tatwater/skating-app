@@ -216,6 +216,8 @@ export const RECORD_WORDS = {
   cantUndo: 'Can’t undo',
   somethingWrong: 'Something went wrong. Try again.',
   anotherOnItsWay: 'A change to this is already on its way.',
+  /** A dialog closed because what it would do changed under it (someone else acted). */
+  changedWhileOpen: 'This changed while it was open.',
 
   // ── The dialogs ──
   hideAgainTitle: 'Hide this again?',

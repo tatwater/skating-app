@@ -320,10 +320,55 @@ export function reversedRowView(row: ReversedRow, now: number, tz?: string): Row
 export type Restored = {
   row: StandingRow;
   at: number;
+  /** The write that made it: what it stands in for, and what its Undo undoes. */
   actionId: string;
+  /** Who restored it (the viewer), for telling their restore from another hand's. */
+  actorId: string | null;
   /** The write's word: whether this viewer can undo it now, and whether that asks a reason. */
   undo: { needsReason: boolean } | null;
 };
+
+/** What can supersede a row kept for the sitting. */
+export type RestoredEvent =
+  /** A restore landed: its row is kept, replacing any earlier one for the same item. */
+  | { kind: 'kept'; restored: Restored }
+  /** The server's Standing rows as loaded (`null` while on their way: nothing can be judged). */
+  | { kind: 'listed'; rows: readonly StandingRow[] | null }
+  /** The open item's read. */
+  | { kind: 'item'; item: ItemRead };
+
+/**
+ * **The rows kept for the sitting, after `event`** — each keyed by the write that made it, dropped
+ * the moment the server's answer supersedes it, and never brought back: the server lists the item
+ * again (an undo — from its row or the toast — or a hide again, anyone's), or the open item's read
+ * shows a
+ * decision standing on it or its last restore by another hand. An entry, once dropped, is gone;
+ * a later restore by anyone is never drawn with this one's name, time or Undo.
+ */
+export function nextRestored(kept: readonly Restored[], event: RestoredEvent): Restored[] {
+  switch (event.kind) {
+    case 'kept': {
+      const key = targetKey(event.restored.row);
+      return [...kept.filter((r) => targetKey(r.row) !== key), event.restored];
+    }
+    case 'listed': {
+      if (event.rows === null) return [...kept];
+      const listed = new Set(event.rows.map((r) => targetKey(r)));
+      return kept.filter((r) => !listed.has(targetKey(r.row)));
+    }
+    case 'item': {
+      const { item } = event;
+      const key = targetKey(item);
+      return kept.filter((r) => {
+        if (targetKey(r.row) !== key) return true;
+        if (item.decisions.some((d) => d.standing)) return false;
+        const newest = [...item.decisions].sort((a, b) => b.at - a.at)[0];
+        const restorer = newest?.endedBy?.userId ?? null;
+        return newest !== undefined && restorer !== null && restorer === r.actorId;
+      });
+    }
+  }
+}
 
 export function restoredRowView(
   restored: Restored,
