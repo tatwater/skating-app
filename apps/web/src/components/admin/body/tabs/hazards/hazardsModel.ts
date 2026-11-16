@@ -339,13 +339,16 @@ export type DailyHazards = {
   days: readonly { at: number; count: number; unknown: number; crossings?: number }[];
   unknownEnds: number;
   /**
-   * Each report counted: the day it was first reported, whether its end is recorded, its type, and
-   * whether it is a reported crossing (`passage`) — the strip's marks (one on its first-report day
-   * for each hazard with no recorded end; a crossing is never a hazard's mark).
+   * Each report counted: the day it was first reported, whether its end is recorded, whether it is
+   * still active by its record (`active`), its type, and whether it is a reported crossing
+   * (`passage`) — the strip's marks (one on its first-report day for each archived hazard with no
+   * recorded end; a crossing is never a hazard's mark). `active` absent — a read from before the
+   * server said it — is a state unknown, and never reads as archived.
    */
   hazards: readonly {
     firstReportedDay: number;
     endRecorded: boolean;
+    active?: boolean;
     type?: string;
     passage?: boolean;
   }[];
@@ -372,13 +375,17 @@ export type DayOnLake = {
  * 2026-11-14); a hazard whose end is recorded, or that is still active (on the lake through
  * today), is bars for its days on the lake, never a mark.
  *
- * The read's `hazards` give each first-report day and whether an end is recorded, but not whether a
- * hazard is still active (an active one has no end either). The day after tells them apart: an
- * archived hazard with no recorded end is *unknown* every day after its first, an active one is
- * *known*. So a day's marks are its first reports with no recorded end, held to how much the
- * unknown part grows the next day — on the day itself (today, or the season's last), nothing yet
- * says, and they are bars: on the lake that day, which is true. (Server request: an `active` flag
- * on each hazard, which would make this the read's word alone.)
+ * **Archived only on a recorded fact.** Since B01-3n the read says whether each hazard is still
+ * active by its record (`active`): a mark is drawn only for one the read says is no longer active
+ * (`active: false`) and whose end isn't recorded — the server's own word, on any day, today's
+ * included. A hazard still active is never marked: it is bars for the days the server counts it.
+ *
+ * A read from before the server said it (`active` absent) keeps the old rule, which is also the
+ * server's own word, a day later: its archived hazards with no recorded end are *unknown* every day
+ * after their first, so a day's first reports with no recorded end are marked only as far as the
+ * unknown part grows the next day. On the day itself (today, or the season's last) nothing yet
+ * says, and they are bars: on the lake that day, which is true. A state the read doesn't give is
+ * never drawn as archived or gone.
  */
 export function firstReports(
   read: Pick<DailyHazards, 'season' | 'hazards' | 'days'>,
@@ -386,10 +393,19 @@ export function firstReports(
 ): number[] {
   const { start, days } = winterWindow(read.season);
   const out = Array.from({ length: days }, () => 0);
+  // A reported crossing is the server's to count (`days[].crossings`), never a hazard's mark.
+  const hazards = read.hazards.filter((h) => h.passage !== true);
+  if (hazards.every((h) => h.active !== undefined)) {
+    for (const h of hazards) {
+      if (h.endRecorded || h.active !== false) continue;
+      const i = dayIndex(h.firstReportedDay, read.season);
+      if (i !== null) out[i] = (out[i] ?? 0) + 1;
+    }
+    return out;
+  }
   const noEnd = Array.from({ length: days }, () => 0);
-  for (const h of read.hazards) {
-    // A reported crossing is the server's to count (`days[].crossings`), never a hazard's mark.
-    if (h.endRecorded || h.passage === true) continue;
+  for (const h of hazards) {
+    if (h.endRecorded || h.active === true) continue;
     const i = dayIndex(h.firstReportedDay, read.season);
     if (i !== null) noEnd[i] = (noEnd[i] ?? 0) + 1;
   }

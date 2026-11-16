@@ -153,8 +153,9 @@ export const HAZARDS_WORDS = {
 
   /**
    * Archived reports with no recorded end, on a strip that marks their first reports. `reported` is
-   * the marks the strip draws in all: one first reported on the strip's last day (today, or the
-   * season's last) is a bar until the day after says it was archived, so "each is marked" is said
+   * the marks the strip draws in all. The read says each hazard's state (B01-3n), so every one is
+   * marked; a read from before it did leaves one first reported on the strip's last day (today, or
+   * the season's last) a bar until the day after says it was archived, so "each is marked" is said
    * only when every one is — otherwise how many are, and that the rest are counted without one.
    */
   unknownEndsNote: (c: WordsContext): string => {

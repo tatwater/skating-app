@@ -11,6 +11,7 @@ import {
   FEB_HAZARDS,
   FEB_NOW,
   LAST_WINTER_DAILY,
+  LAST_WINTER_DAILY_TOLD,
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
@@ -30,6 +31,7 @@ import {
   hazardKind,
   hazardRows,
   kindOf,
+  knownOn,
   lineDayWords,
   lineSummary,
   monthTicks,
@@ -640,26 +642,45 @@ describe('first-report marks — from the read’s own hazards', () => {
 
   it('marks each archived hazard with no recorded end once, on its first-report day; an ended or active one never', () => {
     const day = (n: number) => start + n * DAY + 5 * HOUR;
-    const read = dailyFrom(
-      season,
-      [
-        { first: day(3), active: false },
-        { first: day(3), active: false },
-        { first: day(3), active: true },
-        { first: day(9), active: false, ended: day(12) },
-        // First reported in September: on the strip, a mark in September.
-        { first: Date.UTC(2025, 8, 12, 5), active: false },
-      ],
-      Date.UTC(2026, 6, 1),
-    );
-    const marks = firstReports(read, Date.UTC(2026, 6, 1));
-    expect(marks).toHaveLength(days);
-    expect(marks[3]).toBe(2);
-    expect(marks[dayIndex(Date.UTC(2025, 8, 12), season) as number]).toBe(1);
-    expect(marks.reduce((a, b) => a + b, 0)).toBe(3);
+    const hazards = [
+      { first: day(3), active: false },
+      { first: day(3), active: false },
+      { first: day(3), active: true },
+      { first: day(9), active: false, ended: day(12) },
+      // First reported in September: on the strip, a mark in September.
+      { first: Date.UTC(2025, 8, 12, 5), active: false },
+    ];
+    // The same marks whether the read says each hazard's state or the next day does.
+    for (const told of [true, false]) {
+      const read = dailyFrom(season, hazards, Date.UTC(2026, 6, 1), { told });
+      const marks = firstReports(read, Date.UTC(2026, 6, 1));
+      expect(marks).toHaveLength(days);
+      expect(marks[3]).toBe(2);
+      expect(marks[dayIndex(Date.UTC(2025, 8, 12), season) as number]).toBe(1);
+      expect(marks.reduce((a, b) => a + b, 0)).toBe(3);
+    }
   });
 
-  it('a hazard first reported today is a bar until the day after says whether it is still there', () => {
+  it('an archived hazard first reported today is marked today, on the read’s own word', () => {
+    const now = start + 40 * DAY + 10 * HOUR;
+    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now, { told: true });
+    expect(firstReports(read, now).reduce((a, b) => a + b, 0)).toBe(1);
+    const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
+    expect(line.days[40]).toMatchObject({ count: 1, reported: 1 });
+    expect(drawnDay(line.days[40] as NonNullable<WinterLine['days'][number]>)).toEqual({
+      bars: 0,
+      marks: 1,
+    });
+  });
+
+  it('a hazard first reported today and still active is a bar, never a mark', () => {
+    const now = start + 40 * DAY + 10 * HOUR;
+    const read = dailyFrom(season, [{ first: now - HOUR, active: true }], now, { told: true });
+    const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
+    expect(line.days[40]).toMatchObject({ count: 1, reported: 0 });
+  });
+
+  it('a read that doesn’t say a hazard’s state marks a hazard first reported today as a bar, until the day after says', () => {
     const now = start + 40 * DAY + 10 * HOUR;
     const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now);
     expect(firstReports(read, now).reduce((a, b) => a + b, 0)).toBe(0);
@@ -668,13 +689,15 @@ describe('first-report marks — from the read’s own hazards', () => {
   });
 
   it('every winter is marked from its own read — last winter beside this one too', () => {
-    const w = wintersFrom([LAST_WINTER_DAILY], BODY_NOW);
-    const line = w?.lines[0] as WinterLine;
-    const total = line.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
-    expect(total).toBe(LAST_WINTER_DAILY.unknownEnds);
-    expect(lineSummary(line)).toMatch(
-      /8 first reports with no recorded end, \d+ with some unknown$/,
-    );
+    for (const read of [LAST_WINTER_DAILY, LAST_WINTER_DAILY_TOLD]) {
+      const w = wintersFrom([read], BODY_NOW);
+      const line = w?.lines[0] as WinterLine;
+      const total = line.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
+      expect(total).toBe(read.unknownEnds);
+      expect(lineSummary(line)).toMatch(
+        /8 first reports with no recorded end, \d+ with some unknown$/,
+      );
+    }
   });
 
   it('a hazard with a recorded end is bars for its days on the lake, and no mark (fast-check)', () => {
@@ -682,12 +705,14 @@ describe('first-report marks — from the read’s own hazards', () => {
       fc.property(
         fc.integer({ min: 0, max: days - 40 }),
         fc.integer({ min: 0, max: 30 }),
-        (first, length) => {
+        fc.boolean(),
+        (first, length, told) => {
           const at = start + first * DAY + 5 * HOUR;
           const read = dailyFrom(
             season,
             [{ first: at, active: false, ended: at + length * DAY }],
             Date.UTC(2026, 6, 1),
+            { told },
           );
           const line = (wintersFrom([read], Date.UTC(2026, 6, 1)) as Winters)
             .lines[0] as WinterLine;
@@ -699,7 +724,7 @@ describe('first-report marks — from the read’s own hazards', () => {
     );
   });
 
-  it('every hazard with no recorded end yields exactly one mark, on its first-report day, and no day draws fewer than the count (fast-check)', () => {
+  it('every archived hazard with no recorded end yields exactly one mark, on its first-report day, and no day draws fewer than the count (fast-check)', () => {
     const entry = fc.record({
       day: fc.integer({ min: 0, max: days - 1 }),
       hour: fc.integer({ min: 0, max: 23 }),
@@ -709,7 +734,8 @@ describe('first-report marks — from the read’s own hazards', () => {
       fc.property(
         fc.array(entry, { maxLength: 40 }),
         fc.integer({ min: start, max: start + (days + 20) * DAY }),
-        (entries, now) => {
+        fc.boolean(),
+        (entries, now, told) => {
           const seen = entries
             .map((e) => ({ ...e, first: start + e.day * DAY + e.hour * HOUR }))
             .filter((e) => e.first < now);
@@ -721,13 +747,16 @@ describe('first-report marks — from the read’s own hazards', () => {
               ...(e.kind === 'ended' ? { ended: e.first + 2 * DAY } : {}),
             })),
             now,
+            { told },
           );
           const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
           const expected = Array.from({ length: line.days.length }, () => 0);
           const today = Math.floor((now - start) / DAY);
           for (const e of seen) {
-            // Reported on its own last day (today, or the season's last): a bar until the day after.
-            if (e.kind !== 'unended' || e.day + 1 > today || e.day + 1 >= days) continue;
+            if (e.kind !== 'unended') continue;
+            // Told, the read's word marks it — today's included. Untold, one reported on its own
+            // last day (today, or the season's last) is a bar until the day after says.
+            if (!told && (e.day + 1 > today || e.day + 1 >= days)) continue;
             const at = axisIndex(e.day, season);
             expected[at] = (expected[at] ?? 0) + 1;
           }
@@ -740,6 +769,73 @@ describe('first-report marks — from the read’s own hazards', () => {
         },
       ),
     );
+  });
+});
+
+describe('the strip’s safety rule: no recorded end never reads as ended, archived or gone (B01-3n)', () => {
+  const season = 2025;
+  const { start, days } = winterWindow(season);
+  const ENDED_WORDS = /\b(end(ed|s)?|gone|archived|clear(ed)?|safe)\b/i;
+  const entry = fc.record({
+    day: fc.integer({ min: 0, max: days - 1 }),
+    hour: fc.integer({ min: 0, max: 23 }),
+    // Still active; archived with no recorded end; archived with one.
+    kind: fc.constantFrom('active', 'unended', 'ended'),
+  });
+  // Any instant in the winter and a little past it, at any hour, with each hazard's state said or
+  // not (a read from before the server said it: the state unknown) — the strip is in UTC days, and
+  // the suite runs in three time zones (CI), so no local date may move a mark or a bar.
+  const property = fc.property(
+    fc.array(entry, { maxLength: 24 }),
+    fc.integer({ min: start, max: start + (days + 10) * DAY }),
+    fc.boolean(),
+    (entries, now, told) => {
+      const seen = entries
+        .map((e) => ({ ...e, first: start + e.day * DAY + e.hour * HOUR }))
+        .filter((e) => e.first < now);
+      const read = dailyFrom(
+        season,
+        seen.map((e) => ({
+          first: e.first,
+          active: e.kind === 'active',
+          ...(e.kind === 'ended' ? { ended: e.first + 2 * DAY } : {}),
+        })),
+        now,
+        { told },
+      );
+      const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
+      const today = Math.floor((now - start) / DAY);
+      const unendedOn = (i: number) =>
+        seen.filter((e) => e.kind === 'unended' && e.day === i).length;
+      for (let i = 0; i < days; i++) {
+        const d = line.days[axisIndex(i, season)] ?? null;
+        // **Archived only on a recorded fact**: a day's marks never exceed the archived hazards
+        // with no recorded end first reported that day — none for an active or ended one, ever.
+        const marks = d === null ? 0 : drawnDay(d).marks;
+        expect(marks).toBeLessThanOrEqual(unendedOn(i));
+        // Told, the read's own word marks every one.
+        if (told) expect(marks).toBe(unendedOn(i));
+        // Each hazard with no recorded end that was on the lake by this day, through today.
+        const present = seen.filter(
+          (e) => e.kind !== 'ended' && e.day <= i && i <= Math.min(today, days - 1),
+        ).length;
+        if (present === 0) continue;
+        // **Never fewer than were there**: drawn known plus unknown covers every one — never a
+        // blank or a zero day.
+        expect(d).not.toBeNull();
+        const day = d as NonNullable<typeof d>;
+        expect(knownOn(day) + day.unknown).toBeGreaterThanOrEqual(present);
+        const words = dayWords(day, line.capped);
+        expect(words).not.toMatch(LAKE_CLAIM);
+        // With nothing archived on record, a day never says ended, gone or archived.
+        if (seen.every((e) => e.kind === 'active')) expect(words).not.toMatch(ENDED_WORDS);
+      }
+    },
+  );
+
+  it('holds over generated hazards and days (pinned seeds, then one random)', () => {
+    for (const pinned of [20261116, 42, 9]) fc.assert(property, { seed: pinned, numRuns: 25 });
+    fc.assert(property, { numRuns: 25 });
   });
 });
 
