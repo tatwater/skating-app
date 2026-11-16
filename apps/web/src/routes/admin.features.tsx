@@ -1,9 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -18,7 +19,7 @@ export const Route = createFileRoute('/admin/features')({ component: AdminFeatur
 
 function AdminFeatures() {
   const features = useQuery(api.bodyFeatures.listRecent, {});
-  const demote = useMutation(api.bodyFeatures.demote);
+  const demote = useSaidMutation(api.bodyFeatures.demote);
 
   return (
     <div className="flex flex-col gap-4">

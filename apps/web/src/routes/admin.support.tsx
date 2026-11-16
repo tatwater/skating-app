@@ -1,9 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -26,8 +27,8 @@ const STATUSES = ['open', 'in_progress', 'resolved'] as const;
 function AdminSupport() {
   const [status, setStatus] = useState<'all' | (typeof STATUSES)[number]>('open');
   const tickets = useQuery(api.support.list, status === 'all' ? {} : { status });
-  const assign = useMutation(api.support.assign);
-  const resolve = useMutation(api.support.resolve);
+  const assign = useSaidMutation(api.support.assign);
+  const resolve = useSaidMutation(api.support.resolve);
 
   return (
     <div className="flex flex-col gap-4">

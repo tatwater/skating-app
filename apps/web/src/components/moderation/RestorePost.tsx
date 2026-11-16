@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
 import { errorText } from '@/components/admin/adminUi';
@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/kit/dialog';
+import { useSaidMutation } from '../admin/saidMutation';
 
 /** What `moderation.postRestoreChoices` returns for a Post that exists. */
 export type PostRestoreChoices = NonNullable<
@@ -185,7 +186,7 @@ export function RestorePostView({
  */
 export function RestorePost({ postId, reason }: { postId: Id<'posts'>; reason: string }) {
   const choices = useQuery(api.moderation.postRestoreChoices, { postId });
-  const setStatus = useMutation(api.moderation.setModerationStatus);
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
   if (!choices) return null;
   return (
     <RestorePostView

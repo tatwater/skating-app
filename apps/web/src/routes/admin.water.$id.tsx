@@ -30,7 +30,7 @@ import {
   timingWindowLabel,
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader, errorText, ToolCard } from '../components/admin/adminUi';
@@ -39,6 +39,7 @@ import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -375,7 +376,7 @@ function NameTool({
   };
   onResult: SetBanner;
 }) {
-  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName, 'inPlace');
   const claims = body.nameClaims ?? [];
   const overridden = claims.some((c) => c.source === 'user');
   // One row per distinct name, carrying every publisher that asserted it — the dedupe is here rather
@@ -473,7 +474,7 @@ function CommunityNameTool({
   body: { _id: string; name: string };
   onResult: SetBanner;
 }) {
-  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName, 'inPlace');
   const [draft, setDraft] = useState(body.name);
   const trimmed = draft.trim();
   const unchanged = trimmed === body.name;
@@ -547,7 +548,7 @@ function ProminenceTool({
   body: { _id: string; surfaceAreaSqM?: number; curatedBoost?: number; minVisibleZoom?: number };
   onResult: SetBanner;
 }) {
-  const setCuratedBoost = useMutation(api.waterBodies.setCuratedBoost);
+  const setCuratedBoost = useSaidMutation(api.waterBodies.setCuratedBoost, 'inPlace');
   const [boost, setBoost] = useState(String(body.curatedBoost ?? 0));
   const parsed = Number(boost);
   const preview = Number.isFinite(parsed)
@@ -629,8 +630,8 @@ interface DepthBody {
  * bathymetry chart in our region is in feet: that echo is the real units guard, not the 400 m ceiling.
  */
 function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner }) {
-  const setDepth = useMutation(api.waterBodies.setDepth);
-  const clearOverride = useMutation(api.waterBodies.clearDepthOverride);
+  const setDepth = useSaidMutation(api.waterBodies.setDepth, 'inPlace');
+  const clearOverride = useSaidMutation(api.waterBodies.clearDepthOverride, 'inPlace');
 
   // Only an `operator` value belongs in an editable box — see the note above.
   const operatorValue = (source: DepthSource | undefined, value: number | undefined) =>
@@ -889,15 +890,15 @@ function SubAreaTool({
   onPromotionTaken: () => void;
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.subAreas.create);
-  const createFromChord = useMutation(api.subAreas.createFromChord);
-  const updateChord = useMutation(api.subAreas.updateChord);
-  const redraw = useMutation(api.subAreas.redraw);
-  const rename = useMutation(api.subAreas.rename);
-  const remove = useMutation(api.subAreas.remove);
-  const restore = useMutation(api.subAreas.restore);
-  const approveRequest = useMutation(api.corpusRequests.approve);
-  const declineRequest = useMutation(api.corpusRequests.decline);
+  const create = useSaidMutation(api.subAreas.create, 'inPlace');
+  const createFromChord = useSaidMutation(api.subAreas.createFromChord, 'inPlace');
+  const updateChord = useSaidMutation(api.subAreas.updateChord, 'inPlace');
+  const redraw = useSaidMutation(api.subAreas.redraw, 'inPlace');
+  const rename = useSaidMutation(api.subAreas.rename, 'inPlace');
+  const remove = useSaidMutation(api.subAreas.remove, 'inPlace');
+  const restore = useSaidMutation(api.subAreas.restore, 'inPlace');
+  const approveRequest = useSaidMutation(api.corpusRequests.approve, 'inPlace');
+  const declineRequest = useSaidMutation(api.corpusRequests.decline, 'inPlace');
   // Per-bay evidence beside the redraw control (A09): the mouth-line count and the depth's currency.
   const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
   // The lake's open bay asks (D201) — the queue the moderator works down.
@@ -1421,7 +1422,7 @@ function SamplePointTool({
   setSuggested: (points: LatLng[]) => void;
   onResult: SetBanner;
 }) {
-  const save = useMutation(api.waterBodies.setWeatherSamplePoints);
+  const save = useSaidMutation(api.waterBodies.setWeatherSamplePoints, 'inPlace');
   const [spacing, setSpacing] = useState(String(DEFAULT_SAMPLE_SPACING_KM));
   const saved = body.weatherSamplePoints ?? [];
 
@@ -1514,7 +1515,7 @@ function SamplePointTool({
  * screen would be editing a lake that draws nowhere.
  */
 function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const restore = useMutation(api.waterBodies.restore);
+  const restore = useSaidMutation(api.waterBodies.restore, 'inPlace');
   const [error, setError] = useState<string | null>(null);
 
   return (
@@ -1578,9 +1579,9 @@ const REMOVAL_REASON_LABELS: Record<string, string> = {
  * rather than refines, and nothing that refines should sit below it.
  */
 function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const remove = useMutation(api.waterBodies.remove);
-  const restore = useMutation(api.waterBodies.restore);
-  const setStanding = useMutation(api.standing.setStanding);
+  const remove = useSaidMutation(api.waterBodies.remove, 'inPlace');
+  const restore = useSaidMutation(api.waterBodies.restore, 'inPlace');
+  const setStanding = useSaidMutation(api.standing.setStanding, 'inPlace');
   const [reason, setReason] = useState('landowner_request');
   const [note, setNote] = useState('');
   const standing = standingOf(body);
@@ -1767,8 +1768,8 @@ function PutInTool({
   onClearPoint: () => void;
   onResult: SetBanner;
 }) {
-  const setOfficial = useMutation(api.putIns.setOfficial);
-  const hide = useMutation(api.putIns.hide);
+  const setOfficial = useSaidMutation(api.putIns.setOfficial, 'inPlace');
+  const hide = useSaidMutation(api.putIns.hide, 'inPlace');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -1912,8 +1913,8 @@ function AccessTool({
   onResult: SetBanner;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
-  const setParking = useMutation(api.accessPoints.setOfficialParking);
-  const setPutInAccess = useMutation(api.accessPoints.setPutInAccess);
+  const setParking = useSaidMutation(api.accessPoints.setOfficialParking, 'inPlace');
+  const setPutInAccess = useSaidMutation(api.accessPoints.setPutInAccess, 'inPlace');
 
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2124,8 +2125,8 @@ function BodyFeatureTool({
   mapRef: { current: maplibregl.Map | null };
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.bodyFeatures.create);
-  const demote = useMutation(api.bodyFeatures.demote);
+  const create = useSaidMutation(api.bodyFeatures.create, 'inPlace');
+  const demote = useSaidMutation(api.bodyFeatures.demote, 'inPlace');
   const [type, setType] = useState<BodyFeatureType>('spring_current');
   const [radius, setRadius] = useState(30);
   const [note, setNote] = useState('');
@@ -2407,10 +2408,10 @@ function RecurrenceTool({
   onResult: SetBanner;
 }) {
   const clusters = useQuery(api.recurrence.listForBodyAdmin, { waterBodyId });
-  const promote = useMutation(api.recurrence.promoteFromRecurrence);
-  const suppress = useMutation(api.recurrence.suppress);
-  const unsuppress = useMutation(api.recurrence.unsuppress);
-  const recompute = useMutation(api.recurrence.recomputeForBody);
+  const promote = useSaidMutation(api.recurrence.promoteFromRecurrence, 'inPlace');
+  const suppress = useSaidMutation(api.recurrence.suppress, 'inPlace');
+  const unsuppress = useSaidMutation(api.recurrence.unsuppress, 'inPlace');
+  const recompute = useSaidMutation(api.recurrence.recomputeForBody, 'inPlace');
   const [busy, setBusy] = useState(false);
 
   const onRecompute = async () => {
@@ -2580,7 +2581,7 @@ function PromotionTool({
   onResult: (banner: { tone: 'ok' | 'error'; text: string }) => void;
 }) {
   const candidates = useQuery(api.hazards.listPromotionCandidates, { waterBodyId });
-  const promote = useMutation(api.bodyFeatures.promote);
+  const promote = useSaidMutation(api.bodyFeatures.promote, 'inPlace');
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const lastSeason = seasonOf(Date.now()) - 1;
@@ -2681,7 +2682,7 @@ function PromotionTool({
  * first and labeled with its consequence, since it is both the default and the undo.
  */
 function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setMode = useMutation(api.waterBodies.setSatelliteImagery);
+  const setMode = useSaidMutation(api.waterBodies.setSatelliteImagery, 'inPlace');
   const [busy, setBusy] = useState(false);
   const mode: SatelliteImageryMode = body.satelliteImagery ?? 'auto';
 
@@ -2760,7 +2761,7 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
  * thousands. That is the exception proving the rule, not a coverage gap.
  */
 function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setLinks = useMutation(api.waterBodies.setReferenceLinks);
+  const setLinks = useSaidMutation(api.waterBodies.setReferenceLinks, 'inPlace');
   const [links, setLinks_] = useState<{ label: string; url: string }[]>(body.referenceLinks ?? []);
   const [busy, setBusy] = useState(false);
 

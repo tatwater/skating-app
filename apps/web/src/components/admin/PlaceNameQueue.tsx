@@ -6,13 +6,14 @@ import {
   type CorpusNameStatus,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
 import { BodyPicker } from '../sheet/BodyPicker';
 import { Button, buttonVariants } from '../ui/button';
 import { AdminEmpty, AdminPageHeader, errorText, Table, Td, Th } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
+import { useSaidMutation } from './saidMutation';
 
 const TABS: readonly { status: CorpusNameStatus; label: string }[] = [
   { status: 'open', label: 'Open' },
@@ -41,8 +42,8 @@ export function PlaceNameQueue() {
     status,
     ...(recurringOnly ? { minMessages: 2 } : {}),
   });
-  const setLake = useMutation(api.corpusPlaceNames.setLake);
-  const reopen = useMutation(api.corpusPlaceNames.reopen);
+  const setLake = useSaidMutation(api.corpusPlaceNames.setLake, 'inPlace');
+  const reopen = useSaidMutation(api.corpusPlaceNames.reopen, 'inPlace');
   const [picking, setPicking] = useState<Row | null>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 

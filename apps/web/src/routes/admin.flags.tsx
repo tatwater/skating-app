@@ -1,9 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -26,10 +27,10 @@ function useFlags() {
 }
 
 function FlagRow({ flag }: { flag: FlagView }) {
-  const resolveFlag = useMutation(api.moderation.resolveFlag);
-  const setStatus = useMutation(api.moderation.setModerationStatus);
-  const retractAlert = useMutation(api.accessAlerts.retract);
-  const setAlertOfficial = useMutation(api.accessAlerts.setOfficial);
+  const resolveFlag = useSaidMutation(api.moderation.resolveFlag);
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus);
+  const retractAlert = useSaidMutation(api.accessAlerts.retract);
+  const setAlertOfficial = useSaidMutation(api.accessAlerts.setOfficial);
   const canTakedown = TAKEDOWNABLE.has(flag.targetType) && flag.target.exists;
   // An access alert has no `moderationStatus` to set — its takedown verb is **retraction** (D65
   // applied to access): "this was never true", which is exactly what a bogus "gate locked" is. So it
@@ -205,7 +206,7 @@ function AccessReportRow({
 }: {
   group: NonNullable<ReturnType<typeof useFlags>>['accessReports'][number];
 }) {
-  const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
+  const setPublicAccess = useSaidMutation(api.waterBodies.setPublicAccess);
   const waterBodyId = group.waterBodyId as Id<'waterBodies'>;
 
   return (

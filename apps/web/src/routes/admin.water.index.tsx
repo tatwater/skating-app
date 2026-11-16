@@ -1,11 +1,12 @@
 import { api } from '@skating/convex/api';
 import { searchQueryArg } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
 import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -34,10 +35,10 @@ function AdminWater() {
     api.waterBodies.searchByName,
     lookupArg === 'skip' ? 'skip' : { ...lookupArg, bodiesOnly: true },
   );
-  const approve = useMutation(api.waterBodies.approve);
-  const reject = useMutation(api.waterBodies.reject);
-  const merge = useMutation(api.waterBodies.merge);
-  const dismiss = useMutation(api.waterBodies.dismissDuplicates);
+  const approve = useSaidMutation(api.waterBodies.approve);
+  const reject = useSaidMutation(api.waterBodies.reject);
+  const merge = useSaidMutation(api.waterBodies.merge);
+  const dismiss = useSaidMutation(api.waterBodies.dismissDuplicates);
 
   return (
     <div className="flex flex-col gap-6">

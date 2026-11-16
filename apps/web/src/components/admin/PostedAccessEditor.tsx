@@ -7,13 +7,14 @@ import {
   type PostedDailyWindow,
   postedAccessError,
 } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { errorText } from './adminUi';
+import { useSaidMutation } from './saidMutation';
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
 
@@ -67,7 +68,7 @@ export function PostedAccessTool({
   onResult: (banner: Banner) => void;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId: body._id });
-  const setPostedAccess = useMutation(api.postedAccess.setPostedAccess);
+  const setPostedAccess = useSaidMutation(api.postedAccess.setPostedAccess, 'inPlace');
   const [targetKey, setTargetKey] = useState<TargetKey>('body');
   const [busy, setBusy] = useState(false);
 

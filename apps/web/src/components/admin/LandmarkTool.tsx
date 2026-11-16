@@ -7,7 +7,7 @@ import {
   type LatLng,
   landmarkNameKey,
 } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
 import type { ReviewPoints, ReviewShow } from '../../lib/reviewMarkers';
@@ -20,6 +20,7 @@ import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
 import { ReviewClosedNotice } from './ReviewClosedNotice';
+import { useSaidMutation } from './saidMutation';
 import { useReviewWatch } from './useReviewWatch';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
@@ -116,18 +117,18 @@ export function LandmarkTool({
   onReview: (review: ReviewPoints | null) => void;
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.landmarks.create);
-  const update = useMutation(api.landmarks.update);
-  const remove = useMutation(api.landmarks.remove);
-  const restore = useMutation(api.landmarks.restore);
-  const approveRequest = useMutation(api.corpusRequests.approve);
-  const declineRequest = useMutation(api.corpusRequests.decline);
+  const create = useSaidMutation(api.landmarks.create, 'inPlace');
+  const update = useSaidMutation(api.landmarks.update, 'inPlace');
+  const remove = useSaidMutation(api.landmarks.remove, 'inPlace');
+  const restore = useSaidMutation(api.landmarks.restore, 'inPlace');
+  const approveRequest = useSaidMutation(api.corpusRequests.approve, 'inPlace');
+  const declineRequest = useSaidMutation(api.corpusRequests.decline, 'inPlace');
   // What skaters have named on this lake that no map has (D202's proposal lane).
   const proposalQueue = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
   const proposals = proposalQueue?.proposals;
   // What the community's emails name on this lake that no landmark took (the Place names queue).
   const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId })?.names;
-  const fileAsSpelling = useMutation(api.corpusPlaceNames.fileAsSpelling);
+  const fileAsSpelling = useSaidMutation(api.corpusPlaceNames.fileAsSpelling, 'inPlace');
 
   const [filter, setFilter] = useState('');
   const [showRemoved, setShowRemoved] = useState(false);

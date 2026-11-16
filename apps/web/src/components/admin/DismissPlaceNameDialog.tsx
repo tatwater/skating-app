@@ -5,12 +5,12 @@ import {
   CORPUS_NAME_DISMISS_REASONS,
   type CorpusNameDismissReason,
 } from '@skating/core';
-import { useMutation } from 'convex/react';
 import { type ReactElement, useState } from 'react';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { errorText } from './adminUi';
 import { ReasonDialog } from './ReasonDialog';
+import { useSaidMutation } from './saidMutation';
 
 /**
  * Dismiss a corpus place name (D202's queue): a reason from the short list, and a note if the
@@ -27,7 +27,7 @@ export function DismissPlaceNameDialog({
   trigger: ReactElement;
   onDone?: () => void;
 }) {
-  const dismiss = useMutation(api.corpusPlaceNames.dismiss);
+  const dismiss = useSaidMutation(api.corpusPlaceNames.dismiss, 'inPlace');
   const [reason, setReason] = useState<CorpusNameDismissReason>('not_a_place');
   return (
     <ReasonDialog

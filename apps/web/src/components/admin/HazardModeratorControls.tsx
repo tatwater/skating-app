@@ -1,7 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { BODY_FEATURE_TYPE_LABELS, BODY_FEATURE_TYPES } from '@skating/core';
-import { useMutation } from 'convex/react';
 import { useState } from 'react';
 import { useRole } from '../../lib/useRole';
 import { ModeratorActions } from '../ModeratorActions';
@@ -9,6 +8,7 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ReasonDialog } from './ReasonDialog';
+import { useSaidMutation } from './saidMutation';
 
 /**
  * In-context moderator affordances for a hazard pin (D37/D53) — take the pin down (hide/remove, the
@@ -27,7 +27,7 @@ const FEATURE_TYPES = BODY_FEATURE_TYPES.map((value) => ({
 
 export function HazardModeratorControls({ hazardId }: { hazardId: string }) {
   const { canModerate } = useRole();
-  const promote = useMutation(api.bodyFeatures.promote);
+  const promote = useSaidMutation(api.bodyFeatures.promote);
   const [type, setType] = useState<(typeof FEATURE_TYPES)[number]['value']>('spring_current');
 
   if (!canModerate) return null;

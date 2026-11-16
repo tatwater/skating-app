@@ -1,9 +1,10 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faShieldHalved } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { useRole } from '@/lib/useRole';
+import { useSaidMutation } from './admin/saidMutation';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -41,7 +42,7 @@ export function ModeratorActions({
   label?: string;
 }) {
   const { canModerate } = useRole();
-  const setStatus = useMutation(api.moderation.setModerationStatus);
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus, 'inPlace');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 

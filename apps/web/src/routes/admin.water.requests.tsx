@@ -8,7 +8,7 @@ import {
   waterBodyClassLabel,
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useEffect, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
@@ -16,6 +16,7 @@ import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleD
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
+import { useSaidMutation } from '../components/admin/saidMutation';
 import { useReviewWatch } from '../components/admin/useReviewWatch';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -55,9 +56,9 @@ function RequestQueue() {
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
   const rows = useQuery(api.corpusRequests.listQueue, { status });
   const count = useQuery(api.corpusRequests.queueCount, {});
-  const approve = useMutation(api.corpusRequests.approve);
-  const decline = useMutation(api.corpusRequests.decline);
-  const reresolve = useMutation(api.corpusRequests.reresolve);
+  const approve = useSaidMutation(api.corpusRequests.approve, 'inPlace');
+  const decline = useSaidMutation(api.corpusRequests.decline, 'inPlace');
+  const reresolve = useSaidMutation(api.corpusRequests.reresolve, 'inPlace');
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   /**
    * The row on the map, frozen at the click (`pickReview`). A colleague deciding what it is about says
