@@ -937,9 +937,10 @@ are used below) and `plans/research/web-frontend-stack-2026-10-30.md` §2.
 | Sortable rows (`sortable-rows`) | ✅ | custom | admin | Rows that reorder by a grip, by pointer or keys (B01-3, Links' staff links) |
 | Day strips (`day-strips`) | ✅ | custom SVG | admin | A few series on one day axis, stacked, each a baseline with its days (B01-3, Hazards' winters) |
 | Search parts (`search-parts`) | ✅ | custom on Base UI Autocomplete; promoted from `GlobalSearch` (B01-2) | both | `FootKey` (one dim cap per key), `SearchGroupLabel` (`plate` / `palette` looks, optional count and rule), `SearchStatus` (spinner, else the caller's note); the rows stay each list's own; one popover plate (`POPOVER_PLATE`) so the two can't drift |
+| Theme picker (`theme-picker`) | ✅ | custom on ToggleGroup; promoted from the skater menu's `ThemeMenu` (B01-2c) | both | System · Light · Dark, the stored one filled; props only, over the one shared choice (`useThemeChoice`: the cookie, `theme_changed`), so both surfaces' menus remember the same preference the same way |
 
-**Count:** 70 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 36 custom (B01-3 added
-sixteen). Sixty-nine are done; the mobile bar waits for a later phase.
+**Count:** 71 components: 30 re-skinned shadcn atoms, 4 Base UI primitives, 37 custom (B01-3 added
+sixteen, B01-2c the theme picker). Seventy are done; the mobile bar waits for a later phase.
 
 **Kit extensions (B01-3, 2026-11-13)** — the B01-2 owed list, built on `b01-3-kit` and carried with
 B01-3, and what the Overview adopted:
@@ -3131,6 +3132,78 @@ Raised by the builders as kit candidates or gaps; each is the governor's to prom
 **Known bug, skater territory (owed, not B01-2):** client-side navigation from a skater page to an
 old admin page leaves `data-surface="skater"` on `<html>` — the old page wants it absent, and no
 shell on that path takes it off.
+
+### The viewer's menu (B01-2c)
+
+The founder's request of 2026-11-16: a user menu in the console, like the skater app's — sign out,
+change the theme, go to their own page. **The boards draw no menu**: every board in *Review 5* puts
+the viewer's 26 px circle (the viewer tone, initials) at the rail's foot under the App item, closed,
+and nothing reads *Sign out* or *Theme* anywhere in the file. So this is the plainest kit menu
+(`DropdownMenu`) on that circle, and every choice below is the build's, the founder's to overturn.
+
+- **Where it sits.** The circle is the trigger, a button the rail's width so the menu opens at the
+  rail's edge, beside it, as Legacy's does (`side="right"`, `align="end"`). The rail never collapses,
+  so a phone reaches the menu exactly where a desktop does (a 360 px story holds the plate inside the
+  screen and over the page). Layering is the kit menu's own: one step above the toast dock (B01-3m
+  moved the kit's popups there, so a menu just opened is never under a refusal).
+- **What it says.** A reader hears *Your account, ‹name›* on the trigger; the open menu's head is
+  the circle and the real name through `PersonName` — no handle, no role, no sub-line. Then **Your
+  page in People**, **Theme** (System · Light · Dark) and **Sign out**, with hairlines between.
+- **Their page in People** (the founder's correction, same day: "their own profile" is the console's
+  person page, not the skater-facing one) — `/admin/people/<profile id>`, in this tab through the
+  router (navigation inside the console, so the new-tab rule does not apply). The id is the one the
+  gate's own `profiles.current` read carries; nothing is looked up by name. It lands on the person
+  route itself, so a phone's stacked People opens on the person, never the list. The page draws for
+  oneself as board 8.6 does (no levers on yourself; the existing `PersonView` test). Gated on
+  `people.read`, which every role that can enter the console holds (moderator and admin, leaving or
+  not: it is a read) — so today it is always there; a viewer without it would get no row.
+- **The theme** is the skater menu's, shared, never copied: `useThemeChoice` moved to
+  `components/useThemeChoice.ts` (the cookie, `data-mode`, the `.dark` sync, `theme_changed` on a
+  real change only), and the picker into the kit (`theme-picker`). The menu's words — *Your account*,
+  *Theme*, *Sign out* — are one source with the skater menus (`lib/account.ts`); the console's own
+  are `shell/shellWords.ts`.
+- **Sign out** is the skater menu's: the draft guard (`useGuardedSignOut`), then Clerk. A report this
+  browser still holds unsent from the app is never discarded without asking; *Open the draft* opens
+  the app in a new tab on it (the console never opens the report sheet over itself). Signed out,
+  Clerk navigates home and `AuthGate` holds every path — `/admin` ones included — on the splash and
+  sends it to `/sign-in`, so Back never draws a console page. When Clerk doesn't answer, a toast says
+  *Not signed out* (still signed in) and the button can be pressed again — the guard gained an
+  optional `onFailed`; the skater app passes none and behaves as before.
+- **A write still out at sign-out.** Nothing throws and nothing sticks: the console unmounts with its
+  queues, the Convex client sends the write's message before the auth change on the same socket, so
+  the server answers under the moderator's identity; a refusal is said through `said` in the root
+  dock, wherever the viewer is by then — the sign-in page — and a landing says nothing more.
+- **Loading and failure.** Past the gate the viewer's profile is always read (the splash holds while
+  it loads; no profile turns the viewer away), so these heads are for a read that changes under the
+  menu: loading keeps the circle's box (a skeleton) and says *Loading your profile* to a reader;
+  unreadable is the empty circle, still, and the head says *Your profile didn't load*. Either way the
+  page row is disabled and the theme and Sign out work.
+- **A theme switch over the Body map** neither crashes nor remounts the page (the test drives the
+  real menu, provider, `useBodyMapCanvas` and `useMapCanvas` over a MapLibre fake that throws on any
+  write before `load` or after `remove`). The MapLibre instance itself **is rebuilt** for the new
+  mode — by the shared shell's design (its basemap style is built per flavor, inherited from the
+  skater map) — at the operator's own view, and the console's layers are repainted once it loads.
+
+**Every string, for the founder's copy pass:** *Your account* (the trigger and the menu, to a
+reader); *Your page in People*; *Theme*; *System*, *Light*, *Dark*; *Sign out*; *Loading your
+profile*; *Your profile didn't load*; the toast *Not signed out* — *You're still signed in. Check
+your connection and try again.* The draft guard's dialog is the skater app's own (*Sign out and
+discard your draft?*, *Open the draft*, *Cancel*, *Sign out*).
+
+**Found, not fixed here:**
+- **Back after sign-out can't leave the console's paths.** `AuthGate` sends a signed-out path to
+  `/sign-in` with `history.push`, so each Back lands on the console path again and is pushed
+  forward again; `replace` would let Back through. Every gated path does this, not only the
+  console's — a shared seam.
+- **The Body map is built twice on a light OS.** The route reads `resolvedTheme`, which is
+  `undefined` until the provider's first effect, and draws dark until then; the map is created dark
+  and re-created light on mount (body territory).
+- **`/admin/people/<id>` is spelled inline in six places** (the Overview's routes and links, the
+  palette, `ModeratorTools`, the old user route, and now this menu); a People-owned helper would
+  make it one.
+- **The Legacy pages keep the old header** (they draw in the old `AppShell`, not the console's
+  shell): its own *Sign out*, theme toggle and profile link were already there, so this menu is
+  the console shell's only.
 
 ### The Bodies library on the server (B01-3, the design)
 
