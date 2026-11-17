@@ -5075,8 +5075,8 @@ count. An exact count needs a stored counter kept by the writers of `reviewReaso
 
 | Owed | What was true | What changed |
 |---|---|---|
-| The namesake check reads polygons | Each recompute read every reached town's namesakes, up to 8 whole boundaries a name, one query a name, for every body | Convex reads documents, never fields, and no lighter row holds a boundary's name, so the reads are still whole rows — but a run asks each name once and its bodies share the answer (`NamesakeReads`, keyed by the places-layer mark). A light mirror (state, name, full name, key: about 2,425 rows of ~150 bytes, indexed by state and name) would make it light; a schema change, owed |
-| A namesake mid-load | A namesake without its full name carried the kind `''` and counted as a second kind: one Plattsburgh read "(city)", its namesake bare | Its kind is unknown (`null`, `namesakeKindOf`), and an unknown namesake holds every tell back: the town reads by its name alone until the load finishes — never a kind or a county the loaded layer doesn't prove. A full name giving no kind (`''`) is known and still tells. The one change to any answer: only where a namesake lacks its full name |
+| The namesake check reads polygons | Each recompute read every reached town's namesakes, up to 8 whole boundaries a name, one query a name, for every body | Convex reads documents, never fields, and no lighter row holds a boundary's name, so the reads are still whole rows — but a run asks each name once and its bodies share the answer (`NamesakeReads`, keyed by the places-layer mark; a body marked stale after a held read started reads afresh, since a full-name load moves no mark). A light mirror (state, name, full name, key: about 2,425 rows of ~150 bytes, indexed by state and name) would make it light; a schema change, owed |
+| A namesake mid-load | A namesake without its full name carried the kind `''` and counted as a second kind: one Plattsburgh read "(city)", its namesake bare | Its kind is unknown (`null`, `namesakeKindOf`), and an unknown namesake — the town's own entry included — holds every tell back: the town reads by its name alone until the load finishes — never a kind or a county the loaded layer doesn't prove. A full name giving no kind (`''`) is known and still tells. The one change to any answer: only where a namesake lacks its full name |
 | `townLabel` three times | Core's `townLabel`, the web's `townWithState`, and `townNamesOf`'s inline "name, state" | The web's `townWithState` is core's `townLabel`; `townNamesOf` labels through it |
 | A paging array of one | `townNamesShared` took an array and refused more than one name (`SHARING_PAGE = 1`) | It takes one name: a second, at eight whole boundaries planned at 1 MiB each, would not fit the read budget's twelve |
 
@@ -5119,7 +5119,9 @@ the count reads at most 306 rows.
    Winnipesaukee, Lake George, and the body with the widest box (the one whose page filled 2,000
    cells) — run `bodyGeo:checkStored '{"waterBodyIds":[…]}'` (at most 25 ids; computes each in full
    and compares with its stored row, writing nothing). Every one should read `same`; `behind` means
-   the row was owed a recompute anyway; `differs` names the fields — stop there and report them. The
+   the row was owed a recompute anyway, and so does `stale: true` (a neighbor's outline or relation
+   moved since — a `differs` on such a row is that, not this build); `differs` on a row that is not
+   stale names the fields — stop there and report them. The
    one expected difference: a body with a town whose namesake has no full name (labels now hold back);
    count such towns first with a one-off read of `adminAreas` towns missing `fullName` (zero after
    B01-3l's re-load, if every town came from TIGER).

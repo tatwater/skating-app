@@ -37,7 +37,9 @@ export interface Namesake {
  *
  * **A namesake whose kind is not known yet holds every tell back** (B01-3p): mid-load, before its
  * full name arrives, it is neither another kind nor this one, so the town reads by its name alone —
- * never a kind or a county the loaded layer does not prove. Its next recompute tells it.
+ * never a kind or a county the loaded layer does not prove. Its next recompute tells it. The town
+ * itself counts too: one whose own full name has not loaded (its own entry `null`) is not known to
+ * share a kind with anyone, so it claims no county either.
  */
 export function namesakeTells(
   id: string,
@@ -45,7 +47,7 @@ export function namesakeTells(
   namesakes: readonly Namesake[],
 ): { kind: boolean; county: boolean } {
   const others = namesakes.filter((n) => n.id !== id);
-  if (others.length === 0 || others.some((n) => n.kind === null)) {
+  if (others.length === 0 || namesakes.some((n) => n.kind === null)) {
     return { kind: false, county: false };
   }
   const kinds = new Set([kind, ...others.map((n) => n.kind)]);

@@ -162,6 +162,10 @@ describe('the read plan', () => {
       const columns = townColumnsOf(cells);
       // Every cell in exactly one column; a column's cells are every row from its first to its last.
       expect(columns.reduce((n, c) => n + c.cells.length, 0)).toBe(cells.length);
+      // In the order of their first cells: the waves' overflow is a suffix, so the page's cut is too.
+      for (let k = 1; k < columns.length; k++) {
+        expect(columns[k]?.first).toBeGreaterThan(columns[k - 1]?.first ?? -1);
+      }
       for (const c of columns) {
         expect(c.cells.length).toBe(c.maxY - c.minY + 1);
         for (const index of c.cells) expect(cells[index]).toMatchObject({ z: c.z, x: c.x });
@@ -689,6 +693,30 @@ describe('a run asks each town name once', () => {
     await names.of(ctx, 2, 'NY', 'Plattsburgh');
     expect(calls).toBe(3);
     expect(names.reads).toBe(3);
+  });
+
+  test('a body marked stale after a held read started reads afresh: a full-name load moves no mark', async () => {
+    let calls = 0;
+    const ctx = {
+      runQuery: async () => {
+        calls++;
+        return [{ id: 'a', kind: calls === 1 ? null : 'town' }];
+      },
+    } as unknown as ActionCtx;
+    const names = new NamesakeReads();
+    const before = Date.now() - 1;
+    const first = await names.of(ctx, 1, 'NY', 'Plattsburgh', before);
+    // Marked before the held read started: shared.
+    expect(await names.of(ctx, 1, 'NY', 'Plattsburgh', before)).toBe(first);
+    expect(calls).toBe(1);
+    // Marked after it (a `seedAll` that follows a full-name load, mid-run): read again, and held.
+    const later = Date.now() + 60_000;
+    const fresh = await names.of(ctx, 1, 'NY', 'Plattsburgh', later);
+    expect(fresh).not.toBe(first);
+    expect(fresh[0]?.kind).toBe('town');
+    expect(calls).toBe(2);
+    expect(await names.of(ctx, 1, 'NY', 'Plattsburgh', null)).toBe(fresh);
+    expect(calls).toBe(2);
   });
 });
 

@@ -277,7 +277,9 @@ export function townColumnsOf(cells: readonly TownCell[]): TownColumn[] {
       column.cells.push(index);
     }
   }
-  return [...byColumn.values()].sort((a, b) => a.first - b.first);
+  // A map keeps its keys in insertion order, and each column is inserted at its first cell, so the
+  // columns already run in the order of their first cells — the order `townCandidates`' waves need.
+  return [...byColumn.values()];
 }
 
 // ── Stale marks ──────────────────────────────────────────────────────────────────────────────

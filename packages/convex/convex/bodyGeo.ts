@@ -512,26 +512,37 @@ export function movedOn(
  * boundary polygons a time at most. One run (`computeDue`) now asks each name once and its bodies
  * share the answer — in flight too, so two bodies computed together wait on one read. Keyed by the
  * places-layer mark the body's inputs were read under (`areasAt`): a load that moves the layer moves
- * the mark, so a body computed after it reads afresh. (A re-load that only adds full names moves no
- * mark; its documented follow-up, `seedAll` then `computeAll`, starts new runs.) A read that fails is
- * forgotten, so the next body asks again.
+ * the mark, so a body computed after it reads afresh. A re-load that only adds full names moves no
+ * mark, and its follow-up, `seedAll`, may mark bodies a run already in flight then takes — so a held
+ * read is shared only with a body marked stale before that read started (`markedAt`, the body's
+ * `staleAt`); a body marked since reads afresh, and the fresh read is held from then on. A read that
+ * fails is forgotten, so the next body asks again.
  */
 export class NamesakeReads {
-  private readonly held = new Map<string, Promise<Namesake[]>>();
+  private readonly held = new Map<string, { since: number; read: Promise<Namesake[]> }>();
   /** Reads made, for the tests. */
   reads = 0;
 
-  of(ctx: ActionCtx, areasAt: number, state: string, name: string): Promise<Namesake[]> {
+  of(
+    ctx: ActionCtx,
+    areasAt: number,
+    state: string,
+    name: string,
+    markedAt: number | null = null,
+  ): Promise<Namesake[]> {
     const key = JSON.stringify([areasAt, state, name]);
     const held = this.held.get(key);
-    if (held !== undefined) return held;
+    if (held !== undefined && (markedAt === null || held.since >= markedAt)) return held.read;
     this.reads++;
-    const read = ctx.runQuery(internal.bodyGeo.townNamesShared, { state, name });
-    this.held.set(key, read);
-    read.catch(() => {
-      if (this.held.get(key) === read) this.held.delete(key);
+    const entry = {
+      since: Date.now(),
+      read: ctx.runQuery(internal.bodyGeo.townNamesShared, { state, name }),
+    };
+    this.held.set(key, entry);
+    entry.read.catch(() => {
+      if (this.held.get(key) === entry) this.held.delete(key);
     });
-    return read;
+    return entry.read;
   }
 }
 
@@ -547,6 +558,7 @@ async function computePlaces(
   bbox: Box,
   names: NamesakeReads,
   areasAt: number,
+  staleAt: number | null,
 ): Promise<ReturnType<typeof placesFrom>> {
   const box = {
     minLat: bbox.minLat - REACH_PAD_DEG,
@@ -596,7 +608,9 @@ async function computePlaces(
         .map((t) => [nameKey(t), { state: t.state, name: t.name }] as const),
     ).values(),
   ];
-  const lists = await Promise.all(asks.map((t) => names.of(ctx, areasAt, t.state, t.name)));
+  const lists = await Promise.all(
+    asks.map((t) => names.of(ctx, areasAt, t.state, t.name, staleAt)),
+  );
   const sharedNames = new Map(asks.map((t, i) => [nameKey(t), lists[i] as Namesake[]]));
   for (const t of reached) {
     const namesakes = sharedNames.get(nameKey(t));
@@ -955,7 +969,7 @@ async function computeFacts(
       );
     })
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
-  const places = await computePlaces(ctx, geom, input.bbox, names, input.areasAt);
+  const places = await computePlaces(ctx, geom, input.bbox, names, input.areasAt, input.staleAt);
   return {
     stamp: input.stamp,
     staleAt: input.staleAt,
@@ -1048,7 +1062,8 @@ function canonical(value: unknown): string {
  * full, compared field by field, and **nothing written**. The rollout check after a change meant to
  * leave every answer as it was: `same` for each, or the fields that differ. `behind` when the stored
  * answer was computed for another outline, places layer or rule (it is owed a recompute anyway);
- * `stale` says the row is marked for one. At most {@link CHECK_MAX} bodies a call.
+ * `stale` says the row is marked for one — a neighbor's outline or relation moved since — so a
+ * `differs` on a stale row may be that move, not the code. At most {@link CHECK_MAX} bodies a call.
  */
 export const checkStored = internalAction({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
@@ -1069,8 +1084,11 @@ export const checkStored = internalAction({
     const names = new NamesakeReads();
     const out = [];
     for (const waterBodyId of waterBodyIds) {
-      const stored = await ctx.runQuery(internal.bodyGeo.storedFacts, { waterBodyId });
-      const fresh = await computeFacts(ctx, waterBodyId, names);
+      // Independent reads: the stored row and the fresh computation, together.
+      const [stored, fresh] = await Promise.all([
+        ctx.runQuery(internal.bodyGeo.storedFacts, { waterBodyId }),
+        computeFacts(ctx, waterBodyId, names),
+      ]);
       const stale = stored?.stale ?? false;
       if (fresh === null) {
         out.push({ waterBodyId, status: 'gone' as const, stale, differs: [] });

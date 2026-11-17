@@ -134,6 +134,16 @@ describe('mid-load: a namesake whose full name has not loaded yet (B01-3p)', () 
     ).toEqual({ kind: true, county: true });
   });
 
+  it('a town whose own full name has not loaded claims no county from a namesake with no kind', () => {
+    // Its own kind is unknown (`null` in the list); asked as '' it would match the '' namesake.
+    const ownUnknown = [
+      { id: 't', kind: null },
+      { id: 'u', kind: '' },
+      { id: 'c', kind: 'city' },
+    ];
+    expect(namesakeTells('t', '', ownUnknown)).toEqual({ kind: false, county: false });
+  });
+
   /** Whatever is loaded, a tell shown is one the loaded namesakes prove: never a wrong kind. */
   const loading = fc.array(
     fc.record({
@@ -147,7 +157,7 @@ describe('mid-load: a namesake whose full name has not loaded yet (B01-3p)', () 
       if (n.kind === null) continue;
       const tells = namesakeTells(n.id, n.kind, all);
       const others = all.filter((o) => o.id !== n.id);
-      if (tells.kind || tells.county) expect(others.every((o) => o.kind !== null)).toBe(true);
+      if (tells.kind || tells.county) expect(all.every((o) => o.kind !== null)).toBe(true);
       if (tells.kind) expect(others.some((o) => o.kind !== n.kind)).toBe(true);
       if (tells.county) expect(others.some((o) => o.kind === n.kind)).toBe(true);
     }
@@ -161,5 +171,79 @@ describe('mid-load: a namesake whose full name has not loaded yet (B01-3p)', () 
     const seed = Date.now() % 2_147_483_647;
     console.info(`town label mid-load: seed ${seed}`);
     fc.assert(sound, { seed, numRuns: 300 });
+  });
+});
+
+describe('every namesake loaded: exactly the labels before B01-3p', () => {
+  /** The rule as it stood on main before B01-3p, for loaded namesakes. */
+  const before = (id: string, kind: string, namesakes: readonly { id: string; kind: string }[]) => {
+    const others = namesakes.filter((n) => n.id !== id);
+    if (others.length === 0) return { kind: false, county: false };
+    const kinds = new Set([kind, ...others.map((n) => n.kind)]);
+    return { kind: kinds.size > 1, county: others.some((n) => n.kind === kind) };
+  };
+  const label = (
+    name: string,
+    n: { id: string; kind: string; county: string },
+    all: readonly { id: string; kind: string; county: string }[],
+  ) => {
+    const tells = namesakeTells(n.id, n.kind, all);
+    return townLabel({
+      name,
+      state: 'NY',
+      ...(tells.kind && n.kind !== '' ? { kind: n.kind } : {}),
+      ...(tells.county ? { inCounty: n.county } : {}),
+    });
+  };
+
+  it('dev’s shapes: same-kind pairs and triples by county; a city beside its town by kind and county', () => {
+    const triple = [
+      { id: 'a', kind: 'town', county: 'Clinton County' },
+      { id: 'b', kind: 'town', county: 'Dutchess County' },
+      { id: 'c', kind: 'town', county: 'Oneida County' },
+    ];
+    expect(triple.map((n) => label('Clinton', n, triple))).toEqual([
+      'Clinton (Clinton County), NY',
+      'Clinton (Dutchess County), NY',
+      'Clinton (Oneida County), NY',
+    ]);
+    // A city and a town of one name in one county, and a second town of that name elsewhere.
+    const geneva = [
+      { id: 'city', kind: 'city', county: 'Ontario County' },
+      { id: 'town', kind: 'town', county: 'Ontario County' },
+      { id: 'other', kind: 'town', county: 'Other County' },
+    ];
+    expect(geneva.map((n) => label('Geneva', n, geneva))).toEqual([
+      'Geneva (city), NY',
+      'Geneva (town, Ontario County), NY',
+      'Geneva (town, Other County), NY',
+    ]);
+    const cities = [
+      { id: 'c1', kind: 'city', county: 'Ontario County' },
+      { id: 'c2', kind: 'city', county: 'Other County' },
+      { id: 't', kind: 'town', county: 'Ontario County' },
+    ];
+    expect(label('Geneva', cities[0] as never, cities)).toBe('Geneva (city, Ontario County), NY');
+  });
+
+  const loaded = fc.array(fc.record({ kind: fc.constantFrom('town', 'city', 'village', '') }), {
+    minLength: 1,
+    maxLength: 8,
+  });
+  const unchanged = fc.property(loaded, (set) => {
+    const all = set.map((n, i) => ({ id: String(i), ...n }));
+    for (const n of all)
+      expect(namesakeTells(n.id, n.kind, all)).toEqual(before(n.id, n.kind, all));
+  });
+  it.each([13, 4242])(
+    'the rule is unchanged where every full name has loaded (seed %i)',
+    (seed) => {
+      fc.assert(unchanged, { seed, numRuns: 300 });
+    },
+  );
+  it('the rule is unchanged where every full name has loaded (a random seed, logged)', () => {
+    const seed = Date.now() % 2_147_483_647;
+    console.info(`town label unchanged: seed ${seed}`);
+    fc.assert(unchanged, { seed, numRuns: 300 });
   });
 });
