@@ -2989,7 +2989,7 @@ rollout stands and needs no re-run.
   the trimmed reason from then on.~~ (Closed by B01-4h: comparisons read both sides normalized, so the
   repeat writes nothing.)
 
-**B01-4h (2026-11-16): the record's rules, closed as classes** (D271; server only; PR #<n>). Six
+**B01-4h (2026-11-16): the record's rules, closed as classes** (D271; server only; PR #140). Six
 follow-ons to B01-4f and B01-4g, each found still true on main, each fixed as its class with a failing
 test first.
 
