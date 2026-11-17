@@ -2413,10 +2413,10 @@ lane counts people. Both were left as they were (the brief: the Overview's numbe
 a ruling changes a rule).
 
 **Owed to the record sheet's PR** (ruling 1): the verdict and withdrawal lists' mock round and any
-read solely for them; overturn on the sheet. **Owed to the web builders:** `RestorePost.tsx` names
-the person by `@username` in its "why down" line (the rule is real names) and is a Dialog where the
-boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
-the Bounties lever.
+read solely for them; overturn on the sheet. **Owed to the web builders:** ~~`RestorePost.tsx` names
+the person by `@username` in its "why down" line (the rule is real names)~~ (B01-4j) and is a Dialog
+where the boards draw a sheet. **Deferred:** the decisions' target names (S5), and ~~bounty asks this
+season on the Bounties lever~~ (drawn since B01-4j).
 
 **B01-4b (2026-11-15): the People server's follow-up** (stacked on #115; the list and person pages'
 requests, and the founder's rulings of the same day — D261, and the Overview's figures as the lanes').
@@ -2861,8 +2861,8 @@ time — the reads narrow by one), the open item beside, master–detail under t
 - **Known and left:** *Kept* is told by when a decision came (on or after the author's deletion),
   not by a fact the server states — a hide on content already deleted reads *Kept* too, where
   History says hidden; a stored `keptOnRecord` on the row would settle it. A Post restored with
-  chosen Reports keeps its own row for the sitting; the Reports that came back with it leave
-  Standing without one.
+  chosen Reports keeps its own row for the sitting; ~~the Reports that came back with it leave
+  Standing without one~~ (each keeps its row beside the Post's since B01-4j).
 
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
@@ -3067,7 +3067,8 @@ test first.
   failure path (`retryOrPage`: 30 s, 5 min, 30 min, then the operator's page with the manual fix). Tests:
   success, 404 as success, 503/429/408 retried, a hung request timed out (the timeout's signal aborted by
   the test), a spent budget and a permanent 4xx paging the operator; no test calls Clerk.
-- **The pane's decisions name the write that ended them** (server half; the web half follows #138).
+- **The pane's decisions name the write that ended them** (server half; the web half landed in
+  B01-4j).
   `contentRecord.item`'s decisions carry `endActionId` (absent while standing), and the item's newest
   decision, while Reversed, carries that write's undo for the viewer (`undo`, main's engine, one row in
   view) — as History says it; every older decision has none (a newer decision's write overtook its
@@ -3778,8 +3779,8 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   nowhere on the map (core's rule: "nowhere rather than somewhere wrong"), while the list counts it,
   so the map can show fewer hazards than the list. Also owed: Imagery builds its freeze-up timeline
   three times (inspector, dock, map); the four tabs' write wrappers and clock hooks are copies of
-  `useTabAction`'s and each other's; a failed archived read over a list says so only inside the
-  collapsed group; every Hazards open reads the body's whole archived history (`includeArchived`);
+  `useTabAction`'s and each other's; ~~a failed archived read over a list says so only inside the
+  collapsed group~~ (B01-3o); every Hazards open reads the body's whole archived history (`includeArchived`);
   the Hazards, Imagery and Standing views' own notes are still drawn only in their failed branch —
   they hold as *Trying again…* through a retry, but mount with their words (so they aren't
   announced as reliably as a region mounted before them) and leave with the fresh answer, so focus
@@ -4530,11 +4531,12 @@ draws 34; the role menu's item takes two lines.
 - A web pass on the server follow-up (B01-4b), which supplies what was owed to it here:
   ~~`people.listPage` taking an `endCursor`~~ (B01-4i, below); staff rows' `lastSeenInConsoleAt`,
   `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
-  time; `{ actionId, undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the
-  bounty season line; explicit `can` entries for every lever; a profile-opens flag; ~~flag target
-  labels and appeal text~~; ~~who undid a row~~ (both B01-4i) — and the capped answers beside them
-  the page doesn't draw yet (`decisions.capped`, ~~`open.flagLabelsCapped`~~, `ledger.sinceCapped`,
-  `rightsSinceCapped`, and a staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a
+  time; `{ actionId, undoNeedsReason }` from every People write; ~~`ledger.since`; `rightsSince`; the
+  bounty season line; explicit `can` entries for every lever; a profile-opens flag~~ (B01-4j); ~~flag
+  target labels and appeal text~~; ~~who undid a row~~ (both B01-4i) — and the capped answers beside
+  them the page doesn't draw yet (`decisions.capped`, ~~`open.flagLabelsCapped`~~,
+  ~~`ledger.sinceCapped`, `rightsSinceCapped`~~ (B01-4j), and a staff row's `staff.lastSeenCapped`
+  and `staff.roleSinceCapped`), so a
   capped date there still reads as not recorded. The merge filled the fixtures with the new fields
   and made the list row's staff overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`;
   the status note's who-and-when line tells a start past the read (`statusNote.atCapped`) from one
@@ -4553,9 +4555,9 @@ draws 34; the role menu's item takes two lines.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
   columns fit side by side (their size tokens summed), the open record takes the page with a way
   back, and with none open the list does; nothing scrolls sideways. People and the Bodies library
-  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); the Body
+  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); ~~the Body
   console lays out its own columns and breaks the same way at phone width — it adopts the rule in
-  its own pass (owed). The kit `AppShell`'s own stacking (below `lg`, for
+  its own pass (owed)~~ — the Body console has it too since B01-3o, one pane at a time. The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
 
 ### The People pages draw what the server sends (B01-4i)
@@ -4648,16 +4650,187 @@ don’t say which body they’re on: more than one read names*; *Show all*; *Sho
 undone by* (followed by the names); *‹N› more*; *and*.
 
 **Owed:**
-- **`endCursor` on the record sheet's three lists** (`contentRecord.personVerdicts`, `personReversed`,
+- ~~**`endCursor` on the record sheet's three lists** (`contentRecord.personVerdicts`, `personReversed`,
   `personDeleted`) — the server agent's: each reads `(cursor, endCursor]` and keeps the end as its
   `continueCursor`, as `people.listPage` does; then `recordReads` reads `pageChain` as the list does.
-  Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.
+  Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.~~
+  (B01-4j, below.)
 - What else B01-4b sent that the pages don't draw yet stays on *The People pages*' list above.
 - **The skater feed has the same fault** (`components/skater/cards/FeedCard.tsx`): *Read more* is
   decided by 240 characters or four newlines while `line-clamp-4` cuts by rendered lines, so a short
   body that wraps past four lines at phone width is clipped with no *Read more*, and a long one that
   fits shows one that does nothing. For Phase B04's running list; `ClampedText` is the shape of the
   fix once it is promoted.
+
+### The People part's owed items (B01-4j)
+
+The People part's remaining owed items, server and web, each found still true on main (`4b7d6ffa`),
+each fixed as its class with a failing test first (2026-11-16). No decision minted.
+
+- **A People backfill in flight re-ran every People read on every pass** (measured on dev: about
+  2,200 re-runs during one backfill, the Overview's People card among them). Every People read's
+  `pending` read the backfills' run rows (`peopleJobRuns`), and every pass patched its job's row —
+  cursor, failures, pass token, heartbeat — so each pass invalidated every subscriber. Now what
+  changes every pass is a new table, **`peopleJobProgress`** (one row per job: `run`, `pass`,
+  `cursor`, `failed`, `updatedAt`), and `peopleJobRuns` is written only when a run starts, ends or
+  finds a gap (the conclusion readers rest on: the run, whether it runs, `ready`). The reading is two:
+  `readPending` (the run rows alone — every People read, the Overview card and the ledger's editor
+  check) and `readPreparation` (the operator's check, joining each running run's progress for
+  `stalled`, `rerun` and the cursor); one rule for `ready` in both. **A new table, not new optional
+  fields:** Convex re-runs a subscription when any document it read changes, whichever field, so the
+  progress needs a document of its own; a table of its own keeps it out of the readers' `by_job`
+  ranges too (two rows per job in one index range would have put it back in). Widen-only: the run
+  row's fields stay, holding the run as it started or ended. **A run in flight at the deploy carries
+  across:** its progress is on its run row (the old shape) until its next pass, which takes the lease
+  from there (`progressOf`: the progress row only when it is this run's and the run is running) and
+  writes the progress row from then on — no cursor lost, the same token, so a duplicate of that pass
+  finds it spent. Tests (`peopleRuns.test.ts`): a recording database proxy holds `readPending`'s read
+  set to the run rows; over a whole chain of four backfills (seventeen-plus passes) each run row goes
+  absent → started → concluded and nothing between (red against main's `savePass`); a run in the old
+  shape resumes at its cursor and token, its duplicate pass a no-op, the walked profile not walked
+  again; a stalled run is still told by its progress's heartbeat. The two-runs property covers both
+  tables. `packages/guards`' `peopleBackfills.test.ts` holds both tables to `lib/peopleRuns` and
+  `readPreparation` to the operator's check alone, and `savePass` to the progress row.
+- **The class — per-tick progress in a document a hot read depends on**, swept across
+  `packages/convex/convex`:
+
+  | Job | What it writes per tick | Hot reads of that document | Here |
+  | --- | --- | --- | --- |
+  | The People backfills, the lapse sweep and its retry (`lib/peopleRuns`) | cursor, failures, token, heartbeat | every People read's `pending`, the Overview's People card | **fixed** (the sweep's rows were already outside the readers' ranges) |
+  | ETL imports (`importRuns.progress`) | the run's counts, stages and failures, a call per loader batch | `console.overview`'s Bodies counts (the newest `corpus_merge` / `canonical_water` run, for its start), `console.systemFeed` (the newest `limit` runs), `machinery.overviewJobs` (the newest ten), `bodyConsole` (a campaign's run, for its start) — beside Machinery's own run pages, which do show progress | **same shape, not fixed** (`importRuns.ts`, `console.ts`, `machinery.ts`, `bodyConsole.ts` are not this build's): every loader batch re-runs the Overview's counts and jobs card and the activity feed while an import runs |
+  | The imagery poll (`imageryLive.setWindowTo`) | the season row's `imageryWindowTo`, once a poll | the season readers (`seasonWatch`, `console.systemFeed`, `bodyConsole`, Machinery) | same shape, four times a day: left |
+  | The imagery pump (`lib/imageryPump`) | its lease row at a beat's start and end | `machinery.overviewJobs` (`runStartedAt`) | per run, not per pass, and the card shows the run: not the shape |
+  | Weather archive walks (`weatherCellSyncs`) | the run row at its start and its last page only | `lib/standing` | already the right shape |
+  | The walks' saved places (`jobPositions`), the recurring jobs' failures (`jobFailures`) | a position a pass; a failure when one happens | positions: internal reads only; failures: `recurringJobs.health`, which shows them | not the shape |
+  | The Bodies library drain, the imagery counts, the season series, the metric rollups | the rows and counts the pages show | the pages that show them | the data itself, not progress |
+
+  Related but not progress: a staffer's console heartbeat (`consolePresence`, once a minute while a
+  console page is open) re-runs the Staff lane, whose *last seen* it is; left. And during a rows or
+  flag-subject backfill the lanes still re-run as the backfill writes the rows and stamps they read
+  (`peopleRows`, `peopleCounts`, `contentFlags`) — the data changing, though a lane draws no count
+  while `pending`; skipping those reads while pending is possible, not built.
+- **The record sheet's three lists take `endCursor`** (`contentRecord.personVerdicts`,
+  `personReversed`, `personDeleted`, one `LIST_ARGS`), as `people.listPage` does: once a page has been
+  read past it reads exactly `(cursor, endCursor]` — the rows its existing read already fetched,
+  filtered to its end (`within`), so no new read and no new budget — and keeps that end as its
+  `continueCursor` even when its rows have all left. A range grown past what one page returns, or cut
+  by the budget, answers `pageStatus: 'SplitRequired'` with a `splitCursor` after the last row it
+  returned; the merged Deleted list is whole only when every kind's range is known to its end (its
+  fence at or past it), else it splits the same way. `isDone` stays true only when nothing follows
+  (a pinned page reads one row past its end, as before). Page rows have a test seam
+  (`RECORD_PAGE_ROWS`; every budget still reserves for `RECORD_PAGE`). A model property
+  (`recordEndCursor.test.ts`, each list, pinned seeds plus one random): the web's chain rule restated
+  against random adds and removals anywhere while deeper pages are held — no row twice, the list
+  from its start in order, every row a held page showed still shown while the list holds it, done
+  only when nothing follows; red without the end (deeper pages cut and re-asked).
+- **The record sheet's lists stitch their pages as the People list does.** The chain is one hook,
+  `list/useChainedPages` (the People list's, moved: its stand-ins for a page being pinned or split
+  included), over the pure `list/pageChain`; `useRecordList` reads it, and its own re-anchoring
+  (`reanchor`) is gone. `joinRecordPages` stops at a page to split, as `joinPages` does. Sheet tests:
+  a page read past is asked again with its `endCursor` and its rows stand meanwhile; a pinned page
+  that outgrew a page is read as its two halves.
+- **The record pane offers Undo on the write that ended its newest decision**, from the item's own
+  read (`contentRecord.item`'s `endActionId` and `undo`, the server's B01-4h fields), whichever list
+  it was opened from — no longer only from the Reversed row it was opened from (`endingUndoOf`):
+  offered while the server says available; drawn off with the server's why when a restore's or an
+  undo's ran out (8.9); nothing for an overturn's no, or once undone or overtaken. Its label says how
+  the decision ended; its dialog says what is being undone. A refusal is Undo's own toast (`said`).
+  A property holds the offer to exactly the server's word.
+- **A person write answering `{ undoable: false }` still did the undo lookup** (`usePersonWrites`
+  handled only `changed: false`). Now its receipt carries `undoable: false`: no Undo, no lookup. The
+  record writes already read it (`useRecordWrites`); the Bodies writes never answer `undoable` (no
+  instance).
+- **The person page draws the lever facts the server sends:** since when each right now off was
+  turned off (`rightsSince`) and since when ledger editing has been held (`ledger.since`) — a date, *not
+  recorded yet*, or *not found in what this read covers* for `rightsSinceCapped` / `ledger.sinceCapped`
+  (the read stopped short, or the budget couldn't afford it — so never "old");
+  this season's bounty asks under the limit (`bountySeason`, floors as "500+", *not recorded yet* when
+  the season began before the gate's record); the head's link by the profile read's own answer for
+  this viewer (`publicProfile.opens`, its `path`; *Private profile* when it opens to name and picture
+  only — a blocked, leaving or deleted account draws none, where the page had decided from visibility
+  and status); and every lever by its own `can`: each right given back (`can.restore`), flagging
+  switched on (`can.flaggingOn`), the bounty limit (*Set limit* drawn while `bountyRaise` or
+  `bountyLower` is open; its dialog sends only a way that is, asks a reason exactly when that answer
+  does, and shows a refused way's answer). These facts are the person read's own, so their answers
+  are three (a value, not recorded, not found in the read) — loading and failure are the page's.
+  The *can is the law* property now draws every entry independently.
+- **A Post restored with chosen Reports**: those Reports left Standing with no row for the rest of
+  the sitting. Now each Report the write restored with its Post (the chooser's `withReportIds`) keeps
+  its row beside the Post's, on the Post's write (`Restored.cameWith`): its Undo is the Post's
+  restore, its dialog names the Post. Each goes when the server lists it again, and with the Post's
+  own row when that goes (a hide again of the Post takes its Reports down with no decision of their
+  own, so the server lists only the Post). Model and sheet tests.
+- **A profile's moderator tools say *Nothing changed***. The brief named `ModeratorActions.tsx`, which
+  only takes content down — those writes are refused, never `changed: false` (D270). The tools that
+  do person writes are `skater/profile/ModeratorTools.tsx` (the levers on a person's profile), which
+  closed on a no-op as if it changed something — and printed the server's refusal inside its dialog
+  (D268's class, outside the writers guard's walk). Now every lever goes through `said`: a refusal is
+  one toast naming the person (*Not changed · ‹name›*), the dialog open over its reason and printing
+  nothing; a no-op is the person page's receipt from the same words entry (`WORDS.alreadySo`). The
+  guard (`adminWriters.test.ts`) now walks the file. **Found, not this build's:**
+  `skater/lake/ModeratorCard.tsx` prints its own sentence for a refused ruling in place and swallows a
+  refused approve or reject without a word (`.catch(() => {})`) — D268's class on the skater surface.
+- **`RestorePost` names who took a Report down by their real name** (the handle only for an account
+  with none), masked from analytics (`PersonName`). Its dialog-versus-sheet shape is left for the
+  Inbox.
+
+- **The record lists' model runs over what the web sends** (Greptile on #145, P2: the Deleted model
+  always narrowed to comments, so the merged default tab — and its fence, `known` — never ran). The
+  class: a model that pins a parameter the page varies. The property now runs every scope — the
+  default tab (no `targetType`) or one kind — on every seed, for all three lists, over all five
+  kinds the filter sends (Reports, Posts, comments, hazards, access alerts — an alert withdrawn by its
+  own author's retraction, its own index), with times from a small set so kinds tie. The scope is enumerated, not drawn: drawn
+  over five runs, seed 7 never drew the merged list, and a narrowed run held a row or two of its
+  kind — one page, nothing to pin. Narrowed, most rows are the scope's kind. The comment and alert
+  ranges shrink with the page (`DELETED_TAKE` / `DELETED_ALONE`, a page's worth), so a full comment range
+  fences a page too. Whether *merged* is its own path: **Standing and Reversed** read one index
+  range either way (`by_subject_standing` / `…_reversed`, or the `…_type` index narrowed) — merged
+  is a different index, not a merge, its order the key then the newer row; **Deleted** merges five
+  ranges (`DELETED_KINDS`, a few heavy rows a page) by withdrawal time, then the kind's place, then
+  the newer row, and only it has a fence. The fence's contract is written beside the code: a row is
+  placed only once every kind that could sort ahead of it is known up to it, so a pinned page is
+  whole only when the fence is at or past its end. Merged Deleted adds Greptile's case (a full
+  Report range ending before a pinned end: the page splits, every row stays in order), an explicit
+  tie across kinds (Report, Post, comment; the newer first within a kind), and a property over mixes
+  where a full range ends before another kind's rows — each run ending with two Reports or hazards
+  landing at the top of the pinned first page, so its heavy range fills ahead of the page's end;
+  Greptile's case holds its page to fewer rows
+  than a page, so the split is the fence's, not its size. **Mutation check:** `known` forced true
+  turns Greptile's case, the comment page that grew past a page, and the mixes property on every
+  seed red (pinned and random); the per-scope property catches it on some seeds, not all (it needs a
+  heavy row added inside a held page, which the mixes property forces). No bug surfaced in the merged path. **The web side:** the People list's
+  stitching tests ran one lane and one search, and the record sheet's pinning tests the default tab
+  only; both now run every list the pages can show (every lane, a search over a lane; each tab
+  merged and narrowed), each later read holding the list's own arguments, and the pinned, asked-on
+  and split reads each asserted made. `pageChain`'s model is lane-agnostic by design — the server's
+  two paging modes (a split point, or none) are what it varies.
+
+**Words this pass added** (for the founder's copy pass): in `person/factWords.ts` — *Since ‹date›*;
+*Since: not recorded yet*; *Since: not found in what this read covers*; *This season: ‹N asks›, ‹N› over
+the limit, ‹N› turned away for a recent report*; *‹N› ask* / *‹N› asks*; *No bounty asks this
+season*; *This season’s asks: not recorded yet*; *Private profile*. In `record/recordWords.ts` — *Put
+the decision back*; *Undo the overturn*; *The decision on this ‹kind› was undone*; *The decision on
+this ‹kind› was overturned*. The profile tools reuse *Not changed · ‹name›* and *Nothing changed —
+‹name› was already set that way*.
+
+**Rollout, for the dev agent:**
+1. `convex dev --once` from main (the new table `peopleJobProgress`; widen-only; no index on an
+   optional field; nothing to backfill).
+2. **A People backfill in flight** when it deploys needs nothing: its next pass resumes from the
+   cursor and token on its run row and records its progress in the new table from then on;
+   `peopleJobs:preparation` reports it as before (a run that read as stalled still does).
+3. **To verify the fix on dev:** open the console's Overview in one tab and the People list
+   (Everyone) in another, then `convex run peopleJobs:backfillVerdicts '{"alone":true}'` and, once
+   `peopleJobs:preparation '{}'` says it is not running, count the executions of `console:overview`
+   and `people:listPage` in `convex logs` (or the dashboard's logs) for the window it ran. Expected:
+   a handful each (its start and its end), where before every pass re-ran both. Pick the verdicts or
+   undo-chains backfill: the rows and flag-subject backfills write the rows and flag stamps the
+   lanes read, so those re-run the lanes as the data changes. Count from the function's executions,
+   not raw log lines (a write-conflict retry logs a line of its own).
+
+**Left:** the importRuns progress re-running the Overview while an import runs (table above);
+`skater/lake/ModeratorCard.tsx`'s refusals; what of B01-4b's facts *The People pages*' list above
+still names (this pass took only the lever facts).
 
 ### The Body console follow-up (B01-3e)
 
@@ -4711,8 +4884,9 @@ Names' aliases can bind an edit to the wrong entry by its text.
   *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
   holds Water's two reads, Names' two and Places' provenance to it; B01-3k adds Access's two (who
   ruled, where each launch is), Shape's bay provenance, Hazards' day strips and Standing's
-  retention. **Owed:** ~~Shape's extras~~ (B01-3n) and Hazards' patterns-waiting count — their mapping is inline
-  in the tab's wiring, and a settled zero there is a value, not a nothing.
+  retention. **Owed:** ~~Shape's extras~~ (B01-3n) and ~~Hazards' patterns-waiting count~~
+  (B01-3o) — their mapping is inline in the tab's wiring, and a settled zero there is a value, not a
+  nothing.
 - **A rendered property stays under a second locally** (CI's coverage run is about ten times
   slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
   is a few short runs, and the arithmetic is fuzzed without rendering. Each test is its own: a
@@ -5256,6 +5430,185 @@ the count reads at most 306 rows.
 - The namesakes from a light row (schema): a boundary's name, full name and key without its polygon.
 - The sweep's items in other files.
 - Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
+
+### The Body console's owed web items (B01-3o)
+
+Six items the Body console's reviews left on the web side, each checked against main first, closed as
+a class with its failing test first. No server behavior changed and no decision was minted; four
+convex files take a constant from core instead of their own (below), so dev takes a
+`convex dev --once` and nothing else.
+
+- **The Body console under the one narrow rule.** The Bodies library, People and the record sheet
+  stacked by `columnsFit`; the console laid out its own grid and never stacked. It now reads the same
+  rule (`useColumnsFit`), over its own three columns' tokens — the left column, a lanes column's worth
+  of map, the inspector: the Bodies library's own sum, so both pages turn narrow at one width (956 px
+  of page; at the boards' 1440 nothing changes). Below it the page shows **one pane at a time**: the
+  body (the left column) first; the map and the tab are reached from a head of buttons on each pane —
+  *Show the map* and *Show the tabs* on the body, *Back to the body* and the other one on each of the
+  two — drawn as the Bodies library's *Back to the list* is. An ask opened from the body goes to its
+  tab, focus in the tab's panel, as at full width; an arrival with an item lit (a task, a deep link)
+  opens on the tab; another body opens on its front. Focus moves by the same hook as the other pages
+  (`usePaneFocus`), generalized rather than copied: it names the list's panes (`listPanes`, the
+  library's two unless said) and whichever detail pane is on screen, so a move from the map to the tab
+  is the same move as from the list. **Every pane stays mounted**, hidden, so a draft, an open dialog
+  or a write out in one survives going to another; the pick store and the list writers stay in the
+  admin shell, above the page. **The map is mounted the first time it is shown and kept**: created into
+  a pane with no size it would frame the body at a meaningless zoom (its load reads the container),
+  and a switch never re-creates it; a window narrowed under the columns keeps the map it made. ⇧⏎ is
+  still *Back to the list* (the Bodies library), from any pane. Checked in a real browser at 360 px
+  (`Admin/Body/Console` *Phone*, light too, and *Phone | Open an ask*): each pane takes the page's
+  width, nothing scrolls sideways, every control lies inside the page, and focus follows the pane;
+  every tab's own board at a phone's width (`Admin/Body/Phone width`, the inspector's token set to
+  360 px) the same — Names, Places, Access, Water, Hazards, Standing and Links. Imagery's board is its
+  dock over the map, which the console's story covers; Shape is the console story's own tab.
+  - **What the 360 px check found:** the day strips' screen-reader table (`DayStrips`) carried
+    `sr-only` on the table itself, and a table never shrinks to its 1 px, so its days' width (633 px
+    on Mascoma's winter) spilled into the pane's sideways overflow — at the inspector's width too,
+    invisible behind the panel's hidden scrollbar. It is now clipped in a box of its own; nothing
+    drawn changed.
+  - **The map key's row** scrolls sideways on a phone by the kit's own design (`MapKey`: "a phone's
+    width scrolls the row rather than wrapping it", its scrollbar hidden). Left as built — a founder
+    call if a phone board wants it wrapped — and excepted, by name, from the story's sideways check.
+  - **Layout choices made without a board** (the founder has not reviewed a phone board for the
+    console; each is the plainest stacking of what exists, nothing restyled): the body is the front
+    pane; the three panes are reached by buttons in a head row, not a tab bar; the map is a pane of
+    its own (its dock — Imagery's — goes with it), not a strip over the tab; the threshold is the
+    Bodies library's sum, with a lanes column standing for the map's least width; the panes drop the
+    side rules that divided the columns; ⇧⏎ keeps its one meaning; the map stays pannable — §6's "the
+    map is view-only below `lg`" is not built (it was never built at any width), and is a founder call
+    if it should be.
+- **Hazards' patterns waiting through `readState`.** Its mapping was inline in the tab's wiring, so a
+  settled nothing could not be told from a value. `patternsWaitingOf` now maps the read's four answers
+  — on its way, failed (the tab's note), settled with nothing (*Not recorded yet* in the Promotion
+  section), a count whose zero is a value ("No patterns on … wait in the pre-ice pass"). Its row is in
+  the four-answers table (`tabs/secondaryReads.test.ts`, with a settled zero held as a value), and
+  the Promotion section's drawing of each answer beside the tab (`hazards/patternsWaiting.test.tsx`).
+  Today the server never answers with nothing: a body it can't resolve reads `{ count: 0 }`, the same
+  as none waiting (`recurrence.waitingCountForBody`) — a server ask for whoever next touches it.
+- **A removal's note reaches the server.** The old editor's removal dialog asked for a note and
+  dropped it; the console's Standing tab could not take one, though `waterBodies.remove` accepts it
+  (checked there by `checkedReason`, written beside the fixed reason in History and the removed lane).
+  Both now send it, trimmed, only when typed. Standing's removal form gains *Note · optional*, held to
+  the audit cap (`AUDIT_REASON_MAX`, D261) where it is typed, read-only while its write is out and kept
+  when refused; its form starts its note afresh on each pick, so a dormant note typed and then left
+  never carries into the removal's (one form across the picks, never keyed by one: its
+  one-write-at-a-time guard outlives a pick moved while a write is out). The old editor's
+  `ReasonDialog` now caps every reason at the audit cap; a write with a stricter cap passes its own —
+  the two request declines (`corpusRequests.decline` refuses past `MAX_REQUEST_NOTE_LENGTH`) and the
+  place-name dismissal, whose note `corpusPlaceNames.dismiss` cuts silently to the same 280 (its copied
+  `280` now that constant), as the console's Places dismissal does. **The sweep** — every dialog and form in the console and the
+  Legacy pages whose text no write receives: the old editor's removal and the console's Standing were
+  the two; every other reason and note dialog passes what it collects (the Legacy flag, feature,
+  recurrence, requests, duplicate, landmark and place-name dialogs; the console's Access, Places,
+  Hazards and Undo reasons). Imagery's pass-override reason has no write behind it yet, its control
+  drawn *Not available yet*. The skater app's moderator tools were outside the sweep.
+- **Every console field takes the server's cap from the one definition.** Names' aliases and community
+  name, a landmark's name and other spellings, a link's label and address, and every reason box set
+  no `maxLength`, though the server refuses past its caps. The stricter caps a writer held were
+  defined beside it — a landmark's name in core's `landmarks.ts`, a link's label in
+  `referenceLinks.ts`, a request's note in `corpusRequests.ts`, and a moderator's alias and a standing
+  note inside the server (`waterBodies.ts`, `standing.ts`) — so a page could take them only as copied
+  numbers (Standing's note was one, `160`). Each is now defined once in `packages/core/src/textCaps.ts`
+  and imported by its writer — a launch's name too (`putIns.ts`'s `60`), which the old editor's
+  Put-ins name field takes; the kit's `ChipInput` gains `maxLength`, `ReasonAsk` requires the cap of
+  the write it feeds, and the audit log's cap stays `AUDIT_REASON_MAX`. The kit's input has no count,
+  so none is drawn (Standing's dormant note keeps the count it had). A guard
+  (`packages/guards/src/consoleTextCaps.test.ts`) holds every text field in the Body console, the
+  Bodies library and the shell to a cap imported from core and defined in `textCaps` (or the audit
+  cap), with the three fields no capped write receives named and why — Water's survey field (no write
+  yet), Imagery's override reason (no write yet), the Bodies search (the server cuts a long search,
+  never refuses it) — and no field capped by a number. People's pages are outside it (their owner's):
+  their reason dialog (`AskDialog`) sets no cap yet.
+- **The old editor's *Make official* promotes in place.** The old editor had no *Make official*: the one
+  way to make a mapped launch official was to place an official point on it, and `setOfficial`
+  inserted a second row beside the first. Each stored, unofficial launch in its Put-ins list now has
+  *Make official*, which calls `putIns.promote` as the console's Access tab does (no name sent: the
+  row keeps its own); placing stays for a point no row stands on. The server's in-place rule (one row
+  before and after, its point, lot and walk kept) was already tested (`bodyWrites.test.ts`); the page's
+  test shows the button reaching `promote`, never `setOfficial`, once per press. The Standing and
+  Put-ins cards moved out of the route file (`components/admin/RemovalTool.tsx`, `PutInTool.tsx`), as
+  `LandmarkTool` did, to be tested.
+- **A failed archive read is said outside its group** (the owed review leftover). Over a list of open
+  reports the archived group is collapsed, and a failed read was said only inside it. The note now
+  stands above the group, mounted whenever the group is.
+- **Owed — the archive read on open, sized and held** (the brief's stop: an item over ~300 lines). Every
+  open of Hazards still reads the body's whole history (`hazards.listForBody` with `includeArchived`,
+  a `.collect()` over the body's every hazard). No bounded or paged archived read exists, and none can
+  be made of the skater-facing `listForBody` without editing it. The build it needs: a bounded count
+  of the season's archived hazards for the quiet winter's headline and the group's count line (*N
+  archived*, or *at least N* past the bound — never fewer, never clear), and a paged read of the
+  archived rows the group runs only once opened (the body's archived rows on `by_water_body_status`,
+  newest first from the season's start), each a new query beside `listForBody`, with convex tests;
+  the tab reading the count instead of the whole list, the group's rows on the paginated hook under
+  the kit `ReadBoundary`, the count line saying what is known and what isn't loaded, and their tests —
+  about 450–550 lines with codegen. Until then the tab's reads and words stand as before.
+
+**The review round on #144 (Greptile, 4/5).**
+
+- **A hidden map kept the wrong view** (P1). Leaving the map's pane before its map loaded — or the
+  map re-created for another body while the pane was hidden — let the load fit the body into a zero
+  box, which `fitCamera` reads as one pixel of room; nothing fitted it again. The class: work that
+  measures an element, done while it is mounted but not laid out. **The rule** (`frameInRealBox`,
+  `map/bodyMapFraming.ts`, run on load and on every `resize` of the live map — MapLibre's own
+  observer fires one as the pane is shown): a zero box measures nothing and the fit stays owed; the
+  floor follows every real size; the camera is framed once per body, the first time it is drawn in a
+  real box. **Owed fit versus the operator's camera:** a fit is owed only for bounds never yet framed
+  in a real box; once paid, a hide and a show, a resize, a pan or a zoom never frame it again, and a
+  theme re-create keeps the view the shell restores. A map for other bounds loaded hidden takes the
+  camera (the shell re-creates each map at the last one's view, clamped to its own reach), so it
+  clears the earlier bounds' paid fit: coming back to them is owed a frame afresh. The traps held:
+  the container is still sized, never positioned; nothing waits on `idle`; the resize handler is
+  attached to the live map only (`liveMap()` is its effect's whole dependency), and asks once at
+  attach, for a box that became real between the load and the effect. Tests (failing first, through
+  one seam: the fake map's box): loaded hidden then shown — framed; another body loaded hidden — the
+  new body framed on show; a body left for another loaded hidden, then returned to — framed afresh
+  on show; a moved camera left and returned — not re-framed; a resize while hidden — the shown
+  size's floor. Over the real layout at 360 px (`Admin/Body/Console` *Phone | Map loads hidden*): a
+  stand-in map on the pane's own element, resized by the browser, loads while its pane is hidden —
+  nothing framed while the box is zero — and is framed for the pane's real size when shown.
+- **The sweep for the same shape** under the new stacking: the map's chrome (`BodyMapPane`'s
+  graticule keep-outs), the kit `Toolbar`'s fit, `LedStrip` and the day strips' marks (`TraceChart`),
+  `ListEnd` — each measures on a `ResizeObserver`, which fires as a hidden pane becomes real, so each
+  re-measures on show; the matrix chart, the sortable rows and Imagery's pass rail measure at the
+  moment of a pointer or a key, which a hidden pane can't receive; `columnsFit` measures the page,
+  which is never hidden; focus goes only to the pane on screen (`usePaneFocus`, the arrival, an ask's
+  panel), and the panel's keep-focus rescue is ended by the move to another pane; the lockup's fold
+  reads scroll events, and a hidden pane keeps its scroll in the browser — a story holds that the
+  body's column comes back where it was, folded (*Phone | Coming back keeps the place*); the
+  console's panes draw no virtualized list (the Bodies library's grid pauses its loading while
+  hidden, as before). Only the map's fit measured once and never again.
+- **Stored launches lacked the button** (P2). `putIns.listForBody` dropped the id from a stored
+  `derived` row (one written down for a departed skater's report), so the old editor's *Make
+  official* — offered only where an id came — skipped it, though `putIns.promote` accepts it. The
+  class: identity dropped by a read, so a write that needs it can't be offered. The read's kinds:
+  stored `official`, `osm` and persisted `derived` rows, each now with its id; and live clusters of
+  report points, which have no row and now say so by type (`cluster: true`; the server's
+  `PutInMarker` is a union of the two). One rule, core's `canMakeOfficial` (a stored row not
+  official), is read by `putIns.promote`, the console's Access tab and the old editor's list; a live
+  cluster's row says it has no row and that placing an official point is the way (its derived marker
+  gives way to an official one within the hide radius). The read is skater-facing: an id was already
+  on every other stored marker, the rows are launches (no person's data), and both fields are
+  optional additions no client keys on (the skater web's report-derived list keys by coordinate; the
+  phone's put-in reads were checked for `id` and `cluster` and read neither). **Against the Access
+  tab:** it lists the body's stored rows (`accessPoints.accessForBody`), never live clusters, so the
+  two offer *Make official* by the same rule on every stored launch each lists; the lists themselves
+  differ at the edges (`listForBody` folds a stored launch within the hide radius of an earlier
+  marker into it, and reads up to 1,000 rows against the Access read's 64), so the Access tab can
+  offer it on a launch the old editor folds away. The old editor alone lists clusters, as
+  report-derived spots with the note.
+- Also from the review's fixes before the round: the Places dismissal's note was cut to 280 by a
+  copied number (`corpusPlaceNames.dismiss`) while its field allowed 2,000 — the cut and both fields
+  now read `MAX_REQUEST_NOTE_LENGTH`; the Legacy declines pass their 280 cap to `ReasonDialog`; a
+  launch's name cap (60) moved to `textCaps` and caps the old editor's name field; the three
+  focusable panes wear the shell's inset focus ring; Standing's form clears its note on a pick change
+  instead of remounting (a remount dropped its one-write guard, and let a second write out).
+
+**Wording the mock did not supply** (standing until the founder's copy pass): *Back to the body*, *Show
+the map*, *Show the tabs* and the map pane's name *Map* (`body/consoleWords.ts`, `PANE_WORDS`); *Note ·
+optional*, *Why, in your own words*, *Kept in History beside the reason* (`REMOVAL_NOTE_WORDS`); the
+old editor's *Make official*, *Made official, on its own row.* and *From reports, with no row: place
+an official point here to make it official* (`components/admin/legacyWords.ts`, new: the Legacy pages
+had no words file).
 
 ## Ruled out
 

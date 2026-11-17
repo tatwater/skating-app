@@ -7,7 +7,11 @@ import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
-
+import { shownName } from '../../admin/people/person/personModel';
+import { WORDS as PERSON_WORDS } from '../../admin/people/person/personWords';
+import { changedOf } from '../../admin/people/person/usePersonWrites';
+import { RECORD_WORDS } from '../../admin/people/record/recordWords';
+import { said } from '../../admin/said';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +19,6 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogError,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogReason,
@@ -25,12 +28,15 @@ import {
 import { Button, buttonVariants } from '../../kit/button';
 import { Field, FieldLabel, Input } from '../../kit/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../kit/select';
+import { toast } from '../../kit/toast';
 import { shortDay } from './profileModel';
 
 /** The subset of `profiles.getAdmin` the levers read. */
 export interface ModeratedUser {
   userId: string;
   username: string;
+  /** Their name, for the toasts (a person is named, as the console names them). */
+  displayName?: string;
   status: UserStatus;
   suspendedUntil?: number;
   canPostReports: boolean;
@@ -72,11 +78,20 @@ export function statusLabel(user: Pick<ModeratedUser, 'status' | 'suspendedUntil
   return { value: 'Active' };
 }
 
+/** Who a toast names: by the console's person page's own rule (`shownName`). */
+export const toastName = (user: Pick<ModeratedUser, 'displayName' | 'username'>): string =>
+  shownName({ displayName: user.displayName ?? null, username: user.username });
+
 /**
  * The moderator's tools on someone's page (6.8, D37): the same levers as the console, over the same
  * server-gated mutations, so the two can't drift. Every lever goes through the reason dialog —
  * the server keeps the reason in the audit log — and the ones that take something away arm before
  * they act. The full record is the console's, in a new tab.
+ *
+ * Every answer is said as the console's person page says it (D268): a refusal is one toast naming
+ * the person in the server's own words (`said`), the dialog staying open over its reason and
+ * printing nothing; a write that changed nothing is the page's receipt, *Nothing changed — ‹name›
+ * was already set that way*, and the dialog closes as a landed one does.
  */
 export function ModeratorToolsView({
   user,
@@ -125,6 +140,7 @@ export function ModeratorToolsView({
               description="A lever finer than a ban — their other contributions stand."
               action="Restrict"
               destructive
+              name={toastName(user)}
               onConfirm={(reason) => levers.setPermission(permission, false, reason)}
             />
           ) : (
@@ -132,6 +148,7 @@ export function ModeratorToolsView({
               trigger="Restore"
               title={`Restore ${permission} for @${user.username}?`}
               action="Restore"
+              name={toastName(user)}
               onConfirm={(reason) => levers.setPermission(permission, true, reason)}
             />
           )}
@@ -152,6 +169,7 @@ export function ModeratorToolsView({
               description="Indefinite. The account is kept for an appeal, and their sign-in is locked."
               action="Ban"
               destructive
+              name={toastName(user)}
               onConfirm={levers.ban}
             />
           </>
@@ -160,6 +178,7 @@ export function ModeratorToolsView({
             trigger="Reinstate"
             title={`Reinstate @${user.username}?`}
             action="Reinstate"
+            name={toastName(user)}
             onConfirm={levers.reinstate}
           />
         )}
@@ -213,6 +232,7 @@ function ReasonDialog({
   action,
   destructive = false,
   fields,
+  name,
   onConfirm,
 }: {
   trigger: string;
@@ -222,21 +242,21 @@ function ReasonDialog({
   action: string;
   destructive?: boolean;
   fields?: ReactNode;
+  /** Who the toasts name. */
+  name: string;
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
   return (
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
+        // While its write is out the dialog holds open.
+        if (!next && busy) return;
         setOpen(next);
-        if (!next) {
-          setReason('');
-          setRefused(null);
-        }
+        if (!next) setReason('');
       }}
     >
       <AlertDialogTrigger
@@ -252,7 +272,6 @@ function ReasonDialog({
           {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
         </AlertDialogHeader>
         <AlertDialogBody>
-          {refused && <AlertDialogError>{refused}</AlertDialogError>}
           {fields}
           <AlertDialogReason
             label="Reason · audit log"
@@ -268,16 +287,17 @@ function ReasonDialog({
             loading={busy}
             onClick={async () => {
               setBusy(true);
-              setRefused(null);
-              try {
-                await onConfirm(reason.trim());
-                setOpen(false);
-                setReason('');
-              } catch (e) {
-                setRefused(e instanceof Error ? e.message : 'The server refused it.');
-              } finally {
-                setBusy(false);
-              }
+              const sent = await said(
+                () => onConfirm(reason.trim()),
+                (why) => ({ title: RECORD_WORDS.refusalOf(name), description: why }),
+              );
+              setBusy(false);
+              // Refused: said in its toast, the dialog open over what was typed.
+              if (!sent.landed) return;
+              // Nothing changed, so nothing was written: a receipt that says so, never a refusal.
+              if (changedOf(sent.value) === false) toast({ title: PERSON_WORDS.alreadySo(name) });
+              setOpen(false);
+              setReason('');
             }}
           >
             {action}
@@ -298,6 +318,7 @@ function SuspendDialog({ user, levers }: { user: ModeratedUser; levers: Moderato
       description="A temporary hold; the account reactivates by itself when it lapses."
       action="Suspend"
       destructive
+      name={toastName(user)}
       fields={
         <Field>
           <FieldLabel>Duration</FieldLabel>
@@ -329,6 +350,7 @@ function BountyLimitDialog({ user, levers }: { user: ModeratedUser; levers: Mode
       title={`Open-bounty limit for @${user.username}`}
       description="Blank restores the global cap. Zero stops bounties while leaving reports and hazards alone."
       action={limit === undefined ? 'Use the global cap' : 'Set limit'}
+      name={toastName(user)}
       fields={
         <Field>
           <FieldLabel>Limit</FieldLabel>

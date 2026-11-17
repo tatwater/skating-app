@@ -7,12 +7,13 @@ import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import type { ReadFailure } from '../../reads/consoleReads';
 import { stubLayout } from '../list/testLayout';
 import type { PersonAction } from './levers';
-import { PersonView, type PersonViewProps, profileOpens } from './PersonView';
+import { PersonView, type PersonViewProps } from './PersonView';
 import {
   HISTORY_CAPPED,
   HISTORY_PENDING,
   IDS,
   NOW,
+  no,
   ROB,
   ROB_DELETED,
   ROB_HISTORY,
@@ -765,6 +766,38 @@ describe('writes', () => {
     expect(actions(onAct)).toContainEqual({ kind: 'bountyLimit', limit: null });
   });
 
+  it('a bounty limit moves only the way the server allows; the other way says its answer', async () => {
+    const refused = 'This limit only goes up for now.';
+    // Their own limit is 1, the default 3: down to 0 is refused, back to the default is open.
+    const { onAct } = draw({ person: { ...ROB, can: { ...ROB.can, bountyLower: no(refused) } } });
+    await userEvent.click(within(lever('bounties')).getByRole('button', { name: 'Set limit' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /A limit of their own/ }));
+    const field = within(dialog).getByRole('textbox', { name: /Open bounties/ });
+    await userEvent.clear(field);
+    await userEvent.type(field, '0');
+    await userEvent.tab();
+    // Down is refused: no reason asked, nothing to send, and the read's answer said.
+    expect(within(dialog).getByRole('button', { name: /Set limit/ })).toBeDisabled();
+    expect(within(dialog).queryByRole('textbox', { name: /Reason/ })).toBeNull();
+    expect(dialog.querySelector('[data-slot="bounty-refused"]')).toHaveTextContent(refused);
+    // Up is open: sent with no reason.
+    await userEvent.click(within(dialog).getByRole('radio', { name: /The default/ }));
+    expect(dialog.querySelector('[data-slot="bounty-refused"]')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: /Set limit/ }));
+    expect(actions(onAct)).toContainEqual({ kind: 'bountyLimit', limit: null });
+  });
+
+  it('Set limit is drawn while either way is open, and not when neither is', () => {
+    draw({
+      person: {
+        ...ROB,
+        can: { ...ROB.can, bountyRaise: no('No.'), bountyLower: no('No.') },
+      },
+    });
+    expect(within(lever('bounties')).queryByRole('button', { name: 'Set limit' })).toBeNull();
+  });
+
   it('lowering a bounty limit asks why', async () => {
     const { onAct } = draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: SEASON });
     await userEvent.click(within(lever('bounties')).getByRole('button', { name: 'Set limit' }));
@@ -933,10 +966,22 @@ describe('accounts on their way out', () => {
     expect(within(slot('levers-account')).queryAllByRole('button')).toEqual([]);
   });
 
-  it('a profile opens only when public and not a tombstone', () => {
-    expect(profileOpens({ profileVisibility: 'public', status: 'active' })).toBe(true);
-    expect(profileOpens({ profileVisibility: 'private', status: 'active' })).toBe(false);
-    expect(profileOpens({ profileVisibility: 'public', status: 'deleting' })).toBe(false);
+  it('the profile link is the profile read’s own answer for this viewer', () => {
+    const at = (publicProfile: (typeof ROB)['publicProfile']) =>
+      draw({ person: { ...ROB, publicProfile } });
+    // Public, by the server's path.
+    at({ opens: true, private: false, path: '/u/someone' });
+    expect(slot('public-profile')).toHaveAttribute('href', '/u/someone');
+    expect(slot('public-profile')).toHaveTextContent('Public profile');
+    cleanup();
+    // Private: it opens to their name and picture only, and says so.
+    at({ opens: true, private: true, path: '/u/someone' });
+    expect(slot('public-profile')).toHaveTextContent('Private profile');
+    expect(slot('public-profile')).toHaveAttribute('data-private');
+    cleanup();
+    // Closed to this viewer (blocked, leaving, gone): no link, whatever its visibility says.
+    at({ opens: false, private: false, path: '/u/someone' });
+    expect(document.querySelector('[data-slot="public-profile"]')).toBeNull();
   });
 });
 

@@ -7,6 +7,7 @@ import {
   approachKindFor,
   approachPathWanted,
   bodyAccessKind,
+  canMakeOfficial,
   chooseAccessTarget,
   compassSideLabel,
   DRIVE_UP_MAX_M,
@@ -757,5 +758,14 @@ describe('subAreaDriveCoord (A09)', () => {
   test('falls back to the bay’s own representative point, then its centroid — never the parent', () => {
     expect(subAreaDriveCoord(bay, [])).toEqual(bay.representativePoint);
     expect(subAreaDriveCoord({ centroid: bay.centroid }, [])).toEqual(bay.centroid);
+  });
+});
+
+describe('canMakeOfficial — one rule for the write and every control that offers it', () => {
+  test('a stored launch not official yet can be; an official one or a live cluster cannot', () => {
+    expect(canMakeOfficial({ id: 'p1', source: 'osm' })).toBe(true);
+    expect(canMakeOfficial({ id: 'p2', source: 'derived' })).toBe(true);
+    expect(canMakeOfficial({ id: 'p3', source: 'official' })).toBe(false);
+    expect(canMakeOfficial({ source: 'derived' })).toBe(false);
   });
 });

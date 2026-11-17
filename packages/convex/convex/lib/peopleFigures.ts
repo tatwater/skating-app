@@ -21,7 +21,7 @@ import {
   OPEN_ENDED,
   type PeopleBackfill,
   personRowOf,
-  readPreparation,
+  readPending,
   type StoredCountKey,
 } from './peopleRows';
 import { ROW_MAX, requestBudget } from './readBudget';
@@ -48,7 +48,7 @@ export interface StoredCounts {
 export async function readStoredCounts(ctx: QueryCtx): Promise<StoredCounts> {
   const rows = await ctx.db.query('peopleCounts').take(64);
   const byKey = new Map(rows.map((r) => [r.key, r.count]));
-  const { pending } = await readPreparation(ctx);
+  const { pending } = await readPending(ctx);
   return {
     count: (key) => ({ count: Math.max(0, byKey.get(key) ?? 0), capped: false }),
     rowsReady: !pending.includes('rows'),

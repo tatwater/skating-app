@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isFailed, loaded, readState } from '@/components/admin/reads/consoleReads';
 import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { accessFrom, rulingFrom } from './access/accessModel';
-import { wintersOf } from './hazards/HazardsTab';
+import { patternsWaitingOf, wintersOf } from './hazards/HazardsTab';
 import { BODY_NOW as HAZARDS_NOW, THIS_WINTER_DAILY } from './hazards/hazardsFixtures';
 import { namesFromBody } from './names/namesModel';
 import { placesFrom } from './places/placesModel';
@@ -226,6 +226,19 @@ const ROWS: Row[] = [
     },
   },
   {
+    read: 'Hazards: the patterns waiting (`recurrence.waitingCountForBody`)',
+    answer: (state) => {
+      const read = state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : null;
+      const shown = patternsWaitingOf(readState<{ count: number; capped: boolean }>(read));
+      // A settled zero is a value ("none wait"), never folded into not recorded (below).
+      return {
+        failed: shown === 'error',
+        notRecorded: shown === 'none',
+        loading: shown === undefined,
+      };
+    },
+  },
+  {
     read: 'Standing: what keeps the body (`retentionForBody`)',
     answer: (state) => {
       const read = state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : null;
@@ -266,5 +279,16 @@ describe('a secondary read’s four answers are never folded', () => {
     expect(readState(null)).toEqual({ kind: 'none' });
     expect(readState({ recorded: false }, (v) => !v.recorded)).toEqual({ kind: 'none' });
     expect(readState(3)).toEqual({ kind: 'value', value: 3 });
+  });
+
+  it('a settled zero of patterns waiting is a value, and a count that stopped short keeps its floor', () => {
+    expect(patternsWaitingOf(readState({ count: 0, capped: false }))).toEqual({
+      count: 0,
+      capped: false,
+    });
+    expect(patternsWaitingOf(readState({ count: 1_000, capped: true }))).toEqual({
+      count: 1_000,
+      capped: true,
+    });
   });
 });

@@ -19,8 +19,8 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
-import { MAX_LANDMARK_NAME_LENGTH } from './landmarks';
 import { humanizeEnum, SIGHTING_LABELS } from './reportView';
+import { MAX_LANDMARK_NAME_LENGTH } from './textCaps';
 import {
   BAY_SECTORS,
   COMPASS_SECTORS,

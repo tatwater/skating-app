@@ -372,6 +372,7 @@ export const GettingThereFromReports: Story = {
                 {
                   coord: { lat: 43.61, lng: -72.12 },
                   source: 'derived',
+                  cluster: true,
                   reportCount: 3,
                   lastUsedAt: ACCESS_NOW - 3 * 86_400_000,
                 },

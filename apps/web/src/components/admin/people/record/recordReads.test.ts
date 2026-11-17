@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DELETED, page, STANDING } from './recordFixtures';
 import type { StandingRow } from './recordModel';
-import { joinRecordPages, reanchor } from './recordReads';
+import { joinRecordPages } from './recordReads';
 
 const failed = { failed: true as const, pending: false, retry: () => {} };
 const [a, b, c] = STANDING as [StandingRow, StandingRow, StandingRow];
@@ -42,18 +42,14 @@ describe('joining a list’s pages', () => {
   });
 });
 
-describe('re-anchoring the chain', () => {
-  it('leaves an agreeing chain alone, and waits on a page still on its way', () => {
-    expect(reanchor([null, 'c1'], ['c1', 'done'])).toBeNull();
-    expect(reanchor([null, 'c1'], [undefined, undefined])).toBeNull();
-    expect(reanchor([null], ['done'])).toBeNull();
-  });
-
-  it('cuts where a page’s end moved, and asks on from the new end', () => {
-    expect(reanchor([null, 'c1', 'c2'], ['c1x', 'c2', 'done'])).toEqual([null, 'c1x']);
-  });
-
-  it('cuts after a page that came back done', () => {
-    expect(reanchor([null, 'c1'], ['done', undefined])).toEqual([null]);
+describe('a page the server says must be split', () => {
+  it('draws its rows and nothing after them until the halves land', () => {
+    const split = {
+      ...page([a], { isDone: false, cursor: 'end' }),
+      pageStatus: 'SplitRequired',
+      splitCursor: 's',
+    };
+    const joined = joinRecordPages([split, page([c])]);
+    expect(joined).toMatchObject({ status: 'fetching', rows: [a] });
   });
 });
