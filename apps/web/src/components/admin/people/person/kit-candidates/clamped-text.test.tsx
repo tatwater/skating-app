@@ -100,6 +100,26 @@ describe('ClampedText (kit candidate)', () => {
     expect(document.querySelector('[data-slot="clamped-text"]')).toHaveFocus();
   });
 
+  it('asks again when a face loads and reflows it, and stops listening once it goes', () => {
+    const fonts = new EventTarget();
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts });
+    try {
+      const { unmount } = draw();
+      expect(screen.queryByRole('button')).toBeNull();
+      overflowing = true;
+      act(() => {
+        fonts.dispatchEvent(new Event('loadingdone'));
+      });
+      expect(screen.getByRole('button', { name: 'Show all' })).toBeInTheDocument();
+      unmount();
+      const asked = vi.mocked(clampMeasure.overflows).mock.calls.length;
+      fonts.dispatchEvent(new Event('loadingdone'));
+      expect(vi.mocked(clampMeasure.overflows).mock.calls.length).toBe(asked);
+    } finally {
+      Reflect.deleteProperty(document, 'fonts');
+    }
+  });
+
   it('asks again when the text changes', () => {
     const { rerender } = draw('Short');
     overflowing = true;
@@ -113,22 +133,33 @@ describe('ClampedText (kit candidate)', () => {
 });
 
 describe('the measure', () => {
-  const box = (o: { scroll: number; client: number; lineHeight?: string }) => {
+  /**
+   * A text `content` px tall whose box, under a clamp, is `clamped` px (jsdom lays nothing out):
+   * its box is the clamp's while one is on it, and its content's otherwise — as a browser's is.
+   */
+  const box = (o: { content: number; clamped: number; style?: string }) => {
     const el = document.createElement('span');
-    Object.defineProperty(el, 'scrollHeight', { value: o.scroll });
-    Object.defineProperty(el, 'clientHeight', { value: o.client });
-    el.style.lineHeight = o.lineHeight ?? '';
-    document.body.appendChild(el);
+    el.style.cssText = o.style ?? '';
+    Object.defineProperty(el, 'scrollHeight', { get: () => o.content });
+    Object.defineProperty(el, 'clientHeight', {
+      get: () => (el.style.webkitLineClamp === '' ? o.content : Math.min(o.clamped, o.content)),
+    });
     return el;
   };
+  const clamped =
+    'display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;';
 
   it('is cut while clamped content runs past the box', () => {
-    expect(clampOverflows(box({ scroll: 120, client: 80 }), 4)).toBe(true);
-    expect(clampOverflows(box({ scroll: 80, client: 80 }), 4)).toBe(false);
+    expect(clampOverflows(box({ content: 120, clamped: 80, style: clamped }), 4)).toBe(true);
+    expect(clampOverflows(box({ content: 80, clamped: 80, style: clamped }), 4)).toBe(false);
   });
 
-  it('would be cut, shown whole, when the text is taller than its lines', () => {
-    expect(clampOverflows(box({ scroll: 120, client: 120, lineHeight: '20px' }), 4)).toBe(true);
-    expect(clampOverflows(box({ scroll: 80, client: 80, lineHeight: '20px' }), 4)).toBe(false);
+  it('asks a text shown whole the same question, under the clamp, then takes the clamp off', () => {
+    const tall = box({ content: 120, clamped: 80, style: 'color: red;' });
+    expect(clampOverflows(tall, 4)).toBe(true);
+    expect(tall.style.cssText).toBe('color: red;');
+    const short = box({ content: 60, clamped: 80 });
+    expect(clampOverflows(short, 4)).toBe(false);
+    expect(short.style.cssText).toBe('');
   });
 });

@@ -26,7 +26,10 @@ const meta = {
     (Story, { parameters }) => (
       <div
         className="bg-bg p-(--space-3) text-row leading-list text-fg2"
-        style={{ width: parameters.column as string }}
+        style={{
+          width: parameters.column as string,
+          lineHeight: parameters.leading as string | undefined,
+        }}
       >
         {Story()}
       </div>
@@ -82,5 +85,22 @@ export const AtDetailWidth: Story = {
     const { line, height } = sizes(canvasElement);
     await expect(height).toBeLessThanOrEqual(line * 4 + 1);
     await expect(within(canvasElement).queryByRole('button')).toBeNull();
+  },
+};
+
+/**
+ * Where its line height is `normal` — no number of pixels to count lines by — the same words are
+ * still cut, still offered whole, and still collapse again from *Show less*.
+ */
+export const AtNormalLeading: Story = {
+  parameters: { leading: 'normal' },
+  play: async ({ canvasElement }) => {
+    await document.fonts.ready;
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Show all' })).toBeVisible());
+    await userEvent.click(canvas.getByRole('button', { name: 'Show all' }));
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Show less' })).toHaveFocus());
+    await userEvent.click(canvas.getByRole('button', { name: 'Show less' }));
+    await waitFor(() => expect(canvas.getByRole('button', { name: 'Show all' })).toHaveFocus());
   },
 };

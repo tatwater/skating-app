@@ -4414,13 +4414,15 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
   all*). The class is a visual bound decided from the text — the width isn't in the string, so any
   such bound is wrong at some width. The kit candidate `person/kit-candidates/clamped-text.tsx`
   clamps by rendered lines (CSS line clamp) and measures whether the element is cut
-  (`clampOverflows`: its content past its clamped box, or, shown whole, taller than its lines),
-  asked again when its box resizes, a face loads or the words change; *Show all* is a real button
-  (`aria-expanded`, `aria-controls`) drawn exactly while the words are cut, focus stays on it as it
-  expands and collapses and goes to the text if the button goes, and the words' own line breaks
-  hold in both states. Unit tests drive the measure through its one seam (`clampMeasure`); its
-  story proves it in Chromium with a 240-character paragraph cut at a 200-px column and whole at the
-  detail column. `boundedWords` is gone. **The sweep** — every place on the People pages, the record
+  (`clampOverflows`: its content past its clamped box — one question in both states, so shown
+  whole it is asked under the clamp, put on and off before paint, never predicted from a line
+  height, which can be `normal`), asked again when its box resizes, a face loads or the words
+  change; *Show all* is a real button (`aria-expanded`, `aria-controls`) drawn exactly while the
+  words are cut, focus stays on it as it expands and collapses and goes to the text if the button
+  goes, and the words' own line breaks hold in both states. Unit tests drive the measure through
+  its one seam (`clampMeasure`); its stories prove it in Chromium with a 215-character paragraph
+  cut at a 200-px column, whole at the detail column, and still collapsible under a `normal` line
+  height. `boundedWords` is gone. **The sweep** — every place on the People pages, the record
   sheet, History and Decisions that draws a person's words or a reason:
 
   | Where | How it is bounded | This fault? |

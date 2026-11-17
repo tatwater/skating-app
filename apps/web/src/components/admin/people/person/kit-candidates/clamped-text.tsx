@@ -30,20 +30,6 @@ import { cn } from '@/lib/utils';
  *   body is capped at its write).
  */
 
-/**
- * Whether `el`, clamped to `lines`, is cut: its content runs past its clamped box — or, shown
- * whole, its content is taller than `lines` of its line height (so a whole text can say it would be
- * cut, and keep its *Show less*).
- */
-export function clampOverflows(el: HTMLElement, lines: number): boolean {
-  if (el.scrollHeight > el.clientHeight + 1) return true;
-  const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight);
-  return Number.isFinite(lineHeight) && el.scrollHeight > lineHeight * lines + 1;
-}
-
-/** The one seam the measure goes through, so a test without layout can say what it would find. */
-export const clampMeasure = { overflows: clampOverflows };
-
 const clampStyle = (lines: number): CSSProperties => ({
   display: '-webkit-box',
   WebkitBoxOrient: 'vertical',
@@ -51,7 +37,26 @@ const clampStyle = (lines: number): CSSProperties => ({
   overflow: 'hidden',
 });
 
-type ClampedTextProps = Omit<ComponentProps<'span'>, 'children'> & {
+/**
+ * Whether `el`, clamped to `lines`, is cut: its content runs past its clamped box. One question in
+ * both states — shown whole, it is asked under the clamp, put on and taken off again before
+ * anything paints (so a whole text can say it would be cut, and keep its *Show less*), never
+ * predicted from a line height, which can be `normal` or differ from a line's box.
+ */
+export function clampOverflows(el: HTMLElement, lines: number): boolean {
+  const shown = el.style.cssText;
+  Object.assign(el.style, clampStyle(lines));
+  const cut = el.scrollHeight > el.clientHeight + 1;
+  if (el.style.cssText !== shown) el.style.cssText = shown;
+  return cut;
+}
+
+/** The one seam the measure goes through, so a test without layout can say what it would find. */
+export const clampMeasure = { overflows: clampOverflows };
+
+// Its own box's ref and focusability are what focus falls back to when the button goes: not a
+// caller's to replace.
+type ClampedTextProps = Omit<ComponentProps<'span'>, 'children' | 'ref' | 'tabIndex'> & {
   /** The words, as written. */
   children: ReactNode;
   /** Lines shown while collapsed. */
@@ -97,7 +102,8 @@ function ClampedText({
     if (el === null) return;
     const observer = new ResizeObserver(() => measure());
     observer.observe(el);
-    const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
+    // Absent under jsdom; a layout effect never runs without a document.
+    const fonts = document.fonts as FontFaceSet | undefined;
     fonts?.addEventListener?.('loadingdone', measure);
     return () => {
       observer.disconnect();
@@ -107,11 +113,11 @@ function ClampedText({
 
   return (
     <span
-      ref={box}
       data-slot="clamped-text"
+      {...props}
+      ref={box}
       tabIndex={-1}
       className={cn('block outline-none', className)}
-      {...props}
     >
       <span
         ref={text}
@@ -126,7 +132,7 @@ function ClampedText({
       {cut && (
         <Button
           ref={button}
-          variant="link"
+          variant="bare"
           size="xs"
           aria-expanded={whole}
           aria-controls={id}
