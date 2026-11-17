@@ -40,7 +40,14 @@ type Message = { type: 'ask' | 'held'; ask: string };
 
 function browserChannel(): UnsavedChannel | null {
   if (typeof BroadcastChannel === 'undefined') return null;
-  const channel = new BroadcastChannel(CHANNEL);
+  let channel: BroadcastChannel;
+  try {
+    channel = new BroadcastChannel(CHANNEL);
+  } catch {
+    // A browser can refuse the channel (where this site's storage is blocked): it can't ask its
+    // tabs, so it answers `unknown` — and the tab answering, mounted under every page, never throws.
+    return null;
+  }
   return {
     post: (m) => channel.postMessage(m),
     listen: (heard) => {
@@ -107,7 +114,7 @@ export function askOtherTabs(tab: string = THIS_TAB): Promise<'held' | 'none' | 
   const ask = `${tab}:${Math.random().toString(36).slice(2)}`;
   return new Promise((resolve) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const done = (answer: 'held' | 'none') => {
+    const done = (answer: 'held' | 'none' | 'unknown') => {
       clearTimeout(timer);
       stop();
       channel.close();
@@ -117,6 +124,11 @@ export function askOtherTabs(tab: string = THIS_TAB): Promise<'held' | 'none' | 
       if (isMessage(m) && m.type === 'held' && m.ask === ask) done('held');
     });
     timer = setTimeout(() => done('none'), waitMs);
-    channel.post({ type: 'ask', ask } satisfies Message);
+    try {
+      channel.post({ type: 'ask', ask } satisfies Message);
+    } catch {
+      // The ask never went out: no tab heard it, so silence would mean nothing.
+      done('unknown');
+    }
   });
 }

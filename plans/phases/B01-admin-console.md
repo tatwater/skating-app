@@ -3198,9 +3198,17 @@ carry an id and a word, never what was written. A browser without the channel an
 the guard warns. The warning is the guard's own dialog, without *Open the draft* (the work is in the
 other tab), which is not disturbed by the ask. Every sign-out with nothing open now waits the 300 ms.
 
+Where it falls short, kept as found: silence is read as "nothing" even from a tab that holds work
+but can't answer in time — one the browser has frozen in the background (tab freezing, the
+back/forward cache), or one whose page is busy past the wait — so that tab's edit still goes with the
+sign-out unasked. And the stored copy is read only when this tab has no sheet open: with an untouched
+sheet open here, a new report written in a tab since closed is discarded without asking (as before
+this build — the stored record is one slot, last writer's, so this tab's own next keystroke would
+overwrite it anyway).
+
 | What a sheet can hold | This tab | Storage | Another tab |
 |---|---|---|---|
-| A new report, written in | memory | stored (`persist`) | stored copy, and now the ask |
+| A new report, written in | memory | stored (`persist`) | stored copy (read when this tab has no sheet open), and now the ask |
 | An edit of a published report, written in | memory | **never** | **the ask** (was the gap) |
 | A send that failed, waiting for a retry or the resend on reconnect (`attempt`, `resendArmed`) | memory | stored with a new report; never with an edit | the ask |
 | A Post that went out and may be live (`postCreateSent`) | memory | stored | the ask |

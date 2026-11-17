@@ -98,6 +98,18 @@ describe('useGuardedSignOut', () => {
     expect(result.current.open).toBe(false);
   });
 
+  it('a second press while the other tabs are asked asks nothing more', async () => {
+    const make = vi.fn(NO_OTHER_TABS);
+    setUnsavedChannelForTests(make, 0);
+    const { result } = renderHook(() => useGuardedSignOut());
+    act(() => {
+      result.current.request();
+      result.current.request();
+    });
+    await waitFor(() => expect(m.signOut).toHaveBeenCalledTimes(1));
+    expect(make).toHaveBeenCalledTimes(1);
+  });
+
   it('asks first when the open sheet holds a draft, and signs out on the confirm', async () => {
     m.sheet = sheet();
     const { result } = renderHook(() => useGuardedSignOut());

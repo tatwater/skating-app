@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowRightFromBracket } from '@fortawesome/sharp-light-svg-icons';
 import { type PostDraft, type PostSheet, sheetLabel } from '@skating/core';
+import { useState } from 'react';
 
 import { SIGN_OUT_WORDS } from '@/lib/account';
 import { holdsUnsentWork } from '@/lib/unsavedElsewhere';
@@ -100,6 +101,12 @@ export function SignOutDialog({
   onOpenDraft,
   container,
 }: SignOutDialogProps) {
+  // What was asked stays drawn while the dialog fades out, so it doesn't change shape as it goes.
+  const [shown, setShown] = useState<SignOutRisk | null>(draft);
+  if (draft !== null && draft !== shown) setShown(draft);
+  const risk = draft ?? shown;
+  const elsewhere = risk !== null && 'elsewhere' in risk ? risk.elsewhere : null;
+  const local = risk !== null && !('elsewhere' in risk) ? risk : null;
   return (
     <Dialog open={draft !== null} onOpenChange={onOpenChange}>
       <DialogContent container={container} data-attr="sign-out-guard">
@@ -107,25 +114,27 @@ export function SignOutDialog({
           <DialogTitle>Sign out and discard your draft?</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          {draft !== null && 'elsewhere' in draft ? (
+          {elsewhere !== null && (
             <DialogDescription className="text-fg1 text-row">
-              {SIGN_OUT_WORDS.elsewhere[draft.elsewhere]}
+              {SIGN_OUT_WORDS.elsewhere[elsewhere]}
             </DialogDescription>
-          ) : (
-            draft !== null && (
-              <DialogDescription className="ph-no-capture text-fg1 text-row">
-                You have an unsent report on {draft.label}, started{' '}
-                {startedLabel(draft.openedAtMs, now ?? Date.now())}. It lives only in this browser,
-                so signing out discards it.
-              </DialogDescription>
-            )
+          )}
+          {local !== null && (
+            <DialogDescription className="ph-no-capture text-fg1 text-row">
+              You have an unsent report on {local.label}, started{' '}
+              {startedLabel(local.openedAtMs, now ?? Date.now())}. It lives only in this browser, so
+              signing out discards it.
+            </DialogDescription>
           )}
         </DialogBody>
         <DialogFooter
           note={
             // Work in another tab is opened there; this tab has nothing to open.
-            draft !== null && !('elsewhere' in draft) ? (
-              <Button onClick={() => onOpenDraft(draft)} data-attr="sign-out-guard-open-draft">
+            local !== null ? (
+              <Button
+                onClick={() => draft !== null && onOpenDraft(local)}
+                data-attr="sign-out-guard-open-draft"
+              >
                 Open the draft
               </Button>
             ) : undefined
