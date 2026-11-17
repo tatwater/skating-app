@@ -4458,6 +4458,11 @@ undone by* (followed by the names); *‹N› more*; *and*.
   `continueCursor`, as `people.listPage` does; then `recordReads` reads `pageChain` as the list does.
   Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.
 - What else B01-4b sent that the pages don't draw yet stays on *The People pages*' list above.
+- **The skater feed has the same fault** (`components/skater/cards/FeedCard.tsx`): *Read more* is
+  decided by 240 characters or four newlines while `line-clamp-4` cuts by rendered lines, so a short
+  body that wraps past four lines at phone width is clipped with no *Read more*, and a long one that
+  fits shows one that does nothing. For Phase B04's running list; `ClampedText` is the shape of the
+  fix once it is promoted.
 
 ### The Body console follow-up (B01-3e)
 
