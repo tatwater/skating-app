@@ -493,6 +493,19 @@ export interface AccessTarget {
   alerted: boolean;
 }
 
+/**
+ * **Whether a launch can be made official on its own row** (`putIns.promote`): a stored row — it has
+ * an id; a live cluster of report points has none to change — that isn't official already. One rule
+ * for the write and for every control that offers it (the console's Access tab, the old editor's
+ * Put-ins list), so a button is never drawn that the write refuses, nor missing where it accepts.
+ * The write also refuses a hidden or suppressed row, which no list draws.
+ */
+export function canMakeOfficial<
+  L extends { id?: string | undefined; source: 'derived' | 'osm' | 'official' },
+>(launch: L): launch is L & { id: string; source: 'derived' | 'osm' } {
+  return launch.id !== undefined && launch.source !== 'official';
+}
+
 /** Rank order for the put-in ladder — higher wins. Mirrors `PUTIN_SOURCES`, weakest first. */
 const PUTIN_RANK: Record<AccessPutIn['source'], number> = { derived: 0, osm: 1, official: 2 };
 

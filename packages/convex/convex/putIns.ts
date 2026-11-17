@@ -12,6 +12,7 @@
  */
 
 import {
+  canMakeOfficial,
   distanceToPolygonMeters,
   MAX_PUT_IN_NAME_LENGTH,
   OPERATOR_PUT_IN_SNAP_MAX_M,
@@ -344,12 +345,14 @@ export async function promotePutInImpl(
 ): Promise<{ putInId: Id<'putIns'>; actionId: Id<'moderationActions'>; undoNeedsReason: boolean }> {
   const { row, body } = await promotableRow(ctx, args.putInId);
   const refused = directionRefusal(row, 'promote', args.expected);
-  if (refused !== null || row.source === 'official') {
+  // The one rule every control that offers it reads (core's `canMakeOfficial`).
+  const launch = { id: row._id as string, source: row.source };
+  if (refused !== null || !canMakeOfficial(launch)) {
     throw new ConvexError(refused ?? 'That put-in is already official');
   }
   const name = putInName(args.name);
   const prev: PromotionPrev = {
-    source: row.source,
+    source: launch.source,
     name: row.name ?? null,
     createdByUserId: row.createdByUserId ?? null,
   };

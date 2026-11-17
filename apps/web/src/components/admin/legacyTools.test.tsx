@@ -87,9 +87,11 @@ describe('the old editor’s Put-ins card', () => {
   const LAUNCHES = [
     { id: 'p-osm', coord: { lat: 43.63, lng: -72.15 }, source: 'osm', name: 'Town Ramp' },
     { id: 'p-off', coord: { lat: 43.64, lng: -72.16 }, source: 'official', name: 'Shaker Beach' },
-    // A derived cluster has no row to make official.
-    { coord: { lat: 43.65, lng: -72.17 }, source: 'derived' },
-  ];
+    // A stored derived launch (a departed skater's, written down): a row, so it can be promoted.
+    { id: 'p-der', coord: { lat: 43.66, lng: -72.18 }, source: 'derived' },
+    // A live cluster of report points has no row to make official.
+    { cluster: true, coord: { lat: 43.65, lng: -72.17 }, source: 'derived' },
+  ] as const;
   const tool = (onResult = vi.fn()) => (
     <PutInTool
       waterBodyId={BODY}
@@ -114,11 +116,32 @@ describe('the old editor’s Put-ins card', () => {
     expect(onResult).toHaveBeenCalledWith({ tone: 'ok', text: 'Made official, on its own row.' });
   });
 
-  it('offers it only on a stored launch that isn’t official yet', () => {
+  it('offers it on every stored launch not official yet — a stored derived one too', async () => {
     render(tool());
-    expect(screen.getAllByRole('button', { name: 'Make official' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Make official' })).toHaveLength(2);
     const official = screen.getByText(/Shaker Beach/).closest('li') as HTMLElement;
     expect(within(official).queryByRole('button', { name: 'Make official' })).toBeNull();
+    const rows = screen.getAllByRole('listitem');
+    const stored = rows.find(
+      (r) =>
+        r.textContent?.startsWith('Unnamed launch — derived') &&
+        within(r).queryByRole('button', { name: 'Make official' }),
+    ) as HTMLElement;
+    await userEvent.click(within(stored).getByRole('button', { name: 'Make official' }));
+    await waitFor(() =>
+      expect(called('putIns:promote')).toHaveBeenCalledWith({ putInId: 'p-der' }),
+    );
+    expect(called('putIns:setOfficial')).not.toHaveBeenCalled();
+  });
+
+  it('a live cluster offers no button, and says why and what to do instead', () => {
+    render(tool());
+    const cluster = screen
+      .getByText('From reports, with no row: place an official point here to make it official')
+      .closest('li') as HTMLElement;
+    expect(within(cluster).queryByRole('button', { name: 'Make official' })).toBeNull();
+    // The place-a-point path stands, as before.
+    expect(screen.getByRole('button', { name: 'Place an official put-in' })).toBeInTheDocument();
   });
 
   it('one at a time: a second press while the first is out sends nothing more', async () => {
@@ -133,7 +156,7 @@ describe('the old editor’s Put-ins card', () => {
       ),
     );
     render(tool());
-    const button = screen.getByRole('button', { name: 'Make official' });
+    const button = screen.getAllByRole('button', { name: 'Make official' })[0] as HTMLElement;
     await userEvent.click(button);
     expect(button).toBeDisabled();
     await userEvent.click(button);

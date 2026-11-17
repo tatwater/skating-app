@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type LatLng, MAX_PUT_IN_NAME_LENGTH } from '@skating/core';
+import { canMakeOfficial, type LatLng, MAX_PUT_IN_NAME_LENGTH } from '@skating/core';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -41,8 +41,17 @@ export function PutInTool({
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** Each launch; `id` on a stored row (a derived cluster has none to make official). */
-  putIns: readonly { id?: string; coord: LatLng; source: string; name?: string }[];
+  /**
+   * Each launch, as `putIns.listForBody` sends it: a stored row with its `id`, or a live cluster of
+   * report points (`cluster: true`), which has no row to make official.
+   */
+  putIns: readonly {
+    id?: string;
+    cluster?: true;
+    coord: LatLng;
+    source: 'derived' | 'osm' | 'official';
+    name?: string;
+  }[];
   armed: boolean;
   onArm: (on: boolean) => void;
   point: LatLng | null;
@@ -110,12 +119,14 @@ export function PutInTool({
               <span className="truncate text-foreground-muted">
                 {p.name ?? 'Unnamed launch'} — {p.source}
               </span>
-              {p.id !== undefined && p.source !== 'official' ? (
+              {p.cluster === true ? (
+                <span className="text-foreground-muted text-xs">{LEGACY_WORDS.fromReports}</span>
+              ) : canMakeOfficial(p) ? (
                 <Button
                   variant="ghost"
                   size="xs"
                   disabled={promoting !== null}
-                  onClick={() => void makeOfficial(p.id as string)}
+                  onClick={() => void makeOfficial(p.id)}
                 >
                   {LEGACY_WORDS.makeOfficial}
                 </Button>

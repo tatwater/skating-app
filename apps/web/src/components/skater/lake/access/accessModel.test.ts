@@ -187,11 +187,12 @@ describe('derivedPutIns', () => {
         {
           coord: { lat: 3, lng: 4 },
           source: 'derived',
+          cluster: true,
           reportCount: 1,
           lastUsedAt: ACCESS_NOW - 3 * 86_400_000,
         },
-        { coord: { lat: 5, lng: 6 }, source: 'derived', reportCount: 4 },
-        { coord: { lat: 7, lng: 8 }, source: 'derived' },
+        { coord: { lat: 5, lng: 6 }, source: 'derived', cluster: true, reportCount: 4 },
+        { coord: { lat: 7, lng: 8 }, source: 'derived', id: 'stored' },
       ],
       'web',
       ACCESS_NOW,
@@ -202,7 +203,7 @@ describe('derivedPutIns', () => {
     expect(out[2]?.sub).toBe('From skaters’ reports');
     expect(out[0]?.directions).toMatchObject({ target: 'put_in' });
     expect(
-      derivedPutIns([{ coord: { lat: 1, lng: 2 }, source: 'derived' }], 'ios', 0)[0]?.directions
+      derivedPutIns([{ coord: { lat: 1, lng: 2 }, source: 'derived', cluster: true }], 'ios', 0)[0]?.directions
         .tip,
     ).toMatch(/Apple Maps/);
   });

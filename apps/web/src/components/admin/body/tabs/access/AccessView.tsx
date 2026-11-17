@@ -1,4 +1,4 @@
-import { AUDIT_REASON_MAX, type PublicAccessVerdict } from '@skating/core';
+import { AUDIT_REASON_MAX, canMakeOfficial, type PublicAccessVerdict } from '@skating/core';
 import { type ReactNode, useRef } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag } from '@/components/kit/badge';
@@ -385,7 +385,9 @@ function PutInItem({
           Make official
         </UnavailableButton>
       ) : (
-        onMakeOfficial && (
+        onMakeOfficial &&
+        // One rule with the write (`putIns.promote`) and the old editor's list.
+        canMakeOfficial(p) && (
           <Button size="xs" onClick={() => onMakeOfficial(p)}>
             Make official
           </Button>
