@@ -6,12 +6,15 @@
 import { getDocumentSize } from 'convex/values';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+  CannotAdvance,
   DOC_MAX,
   OverBudget,
   ReadBudget,
   ROW_MAX,
   sizePage,
   TX_BUDGET,
+  TX_CALLS,
+  TX_DOCS,
   traced,
 } from './readBudget';
 
@@ -169,5 +172,37 @@ describe('traced', () => {
       }),
     ).rejects.toBe(failure);
     expect(error.mock.calls[0]?.[1]).toBe(failure);
+  });
+});
+
+describe('ReadBudget.reserveFirst (B01-3p)', () => {
+  test('holds the first unit back from every axis, so later spending cannot take it', () => {
+    const reads = new ReadBudget(1_000);
+    reads.reserveFirst({ bytes: 400, reads: 2, docs: 300 });
+    expect(reads.bytes).toBe(600);
+    expect(reads.affordsCalls(TX_CALLS - 2, TX_DOCS - 300)).toBe(true);
+    expect(reads.affordsCalls(TX_CALLS - 1, 0)).toBe(false);
+    expect(reads.affordsCalls(0, TX_DOCS - 299)).toBe(false);
+  });
+
+  test('a budget that cannot hold it, on any axis, is CannotAdvance — an OverBudget — and holds nothing', () => {
+    for (const cost of [
+      { bytes: 1_001, reads: 1, docs: 1 },
+      { bytes: 1, reads: TX_CALLS + 1, docs: 1 },
+      { bytes: 1, reads: 1, docs: TX_DOCS + 1 },
+    ]) {
+      const reads = new ReadBudget(1_000);
+      expect(() => reads.reserveFirst(cost)).toThrow(CannotAdvance);
+      expect(() => reads.reserveFirst(cost)).toThrow(OverBudget);
+      expect(reads.bytes).toBe(1_000);
+      expect(reads.affordsCalls(TX_CALLS, TX_DOCS)).toBe(true);
+    }
+  });
+
+  test('a unit with no documents named counts one a read, as waves do', () => {
+    const reads = new ReadBudget();
+    reads.reserveFirst({ bytes: 0, reads: 3 });
+    expect(reads.affordsCalls(TX_CALLS - 3, TX_DOCS - 3)).toBe(true);
+    expect(reads.affordsCalls(TX_CALLS - 3, TX_DOCS - 2)).toBe(false);
   });
 });
