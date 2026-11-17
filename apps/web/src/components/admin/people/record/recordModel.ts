@@ -668,10 +668,12 @@ export function erasureWords(e: Erasure, author: string): string {
   }
 }
 
+/** The item's stored `moderationStatus`, when its document carries one (an alert's doesn't). */
+const storedStatus = (published: ItemRead['published']): unknown =>
+  (published as unknown as { moderationStatus?: unknown } | null)?.moderationStatus;
+
 /** Whether the item is up for skaters now, by its document. */
-const isUp = (published: ItemRead['published']): boolean =>
-  published !== null &&
-  (published as unknown as { moderationStatus?: unknown }).moderationStatus === 'visible';
+const isUp = (published: ItemRead['published']): boolean => storedStatus(published) === 'visible';
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -918,7 +920,7 @@ function nowWords(
   published: ItemRead['published'],
   after: LifeEvent['after'],
 ): string {
-  const status = (published as unknown as { moderationStatus?: unknown } | null)?.moderationStatus;
+  const status = storedStatus(published);
   if (kind === 'accessAlert' || typeof status !== 'string') {
     return after === 'up' ? W.upNow : W.stillDown.hidden;
   }

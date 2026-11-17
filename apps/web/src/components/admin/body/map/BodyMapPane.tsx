@@ -253,7 +253,13 @@ function ScenePoint({
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
     >
-      <PointFace mark={point.mark} fade={dim} highlight={lit || hovered} />
+      {/* A pin carrying its field is already at that field's fade, and a field never steps back for
+          another mark's plate: stepping it back too would draw it fainter than its field (D3). */}
+      <PointFace
+        mark={point.mark}
+        fade={dim && point.field === undefined}
+        highlight={lit || hovered}
+      />
     </div>
   );
 }

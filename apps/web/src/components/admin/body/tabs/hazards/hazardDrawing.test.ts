@@ -247,6 +247,37 @@ describe('drawingOf — the one rule', () => {
     expect(drawingOf({ _id: 'a', geometryKind: 'line', geometry: null })).toEqual({
       kind: 'nowhere',
     });
+    // A ring, or a polygon, that is not an array at all: the area is checked as it is handed back,
+    // so it is never drawn with the junk inside it — the outer ring's middle is pinned instead.
+    const square = [
+      [0, 0],
+      [2, 0],
+      [2, 2],
+      [0, 2],
+      [0, 0],
+    ];
+    expect(
+      drawingOf({
+        _id: 'a',
+        geometryKind: 'polygon',
+        geometry: { type: 'Polygon', coordinates: [square, 7] },
+      }),
+    ).toEqual({ kind: 'pin', at: [1, 1] });
+    expect(
+      drawingOf({
+        _id: 'a',
+        geometryKind: 'polygon',
+        geometry: { type: 'MultiPolygon', coordinates: [[square], 'x'] },
+      }),
+    ).toEqual({ kind: 'pin', at: [1, 1] });
+    // The same row asks once: the map, its list row and its glyph share one answer.
+    const row: Shaped = {
+      _id: 'a',
+      geometryKind: 'point_radius',
+      geometry: point,
+      radiusMeters: 40,
+    };
+    expect(drawingOf(row)).toBe(drawingOf(row));
   });
 });
 
@@ -351,7 +382,10 @@ describe('the map, the row and the glyph give one answer', () => {
     const drawn = { ...lost, radiusMeters: 40 };
     const [lostRow, drawnRow] = featureRows([lost, drawn]);
     expect(lostRow?.sub).toContain(SHAPE_WORDS.unknown);
+    // The radius that can't grow is no size to print: the row says a point, never "NaN m".
+    expect(lostRow?.sub.startsWith('Point · ')).toBe(true);
     expect(drawnRow?.sub).not.toContain(SHAPE_WORDS.unknown);
+    expect(drawnRow?.sub.startsWith('Point, 40 m · ')).toBe(true);
     expect(featureGlyphOf(lost)).toBeNull();
     expect(featureGlyphOf(drawn)).not.toBeNull();
   });

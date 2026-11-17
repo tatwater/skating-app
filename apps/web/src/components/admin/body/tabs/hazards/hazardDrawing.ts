@@ -53,15 +53,21 @@ export function isPlaceable(p: unknown): p is readonly [number, number, ...numbe
 const asRings = (v: unknown): unknown[][] =>
   Array.isArray(v) ? (v.filter(Array.isArray) as unknown[][]) : [];
 
-/** An area the map can draw: at least one outer ring of four positions, every position placeable. */
+/** Every element an array: a list the area check reads whole, never a filtered view of it. */
+const allArrays = (v: unknown): v is unknown[][] => Array.isArray(v) && v.every(Array.isArray);
+
+/**
+ * An area the map can draw: at least one outer ring of four positions, every position placeable. The
+ * area is handed back as stored, so it is checked as stored — a ring or polygon that is not an array
+ * at all fails it, rather than being skipped by the check and then drawn.
+ */
 function usableArea(g: unknown): Area | null {
   const a = g as { type?: unknown; coordinates?: unknown } | null | undefined;
   if (a?.type !== 'Polygon' && a?.type !== 'MultiPolygon') return null;
-  const polygons = a.type === 'Polygon' ? [a.coordinates] : asRings(a.coordinates);
-  if (polygons.length === 0) return null;
-  for (const poly of polygons) {
-    const rings = asRings(poly);
-    if (rings.length === 0 || (rings[0]?.length ?? 0) < 4) return null;
+  const polygons = a.type === 'Polygon' ? [a.coordinates] : a.coordinates;
+  if (!allArrays(polygons) || polygons.length === 0) return null;
+  for (const rings of polygons) {
+    if (!allArrays(rings) || rings.length === 0 || (rings[0]?.length ?? 0) < 4) return null;
     for (const ring of rings) if (!ring.every(isPlaceable)) return null;
   }
   return a as Area;
@@ -139,8 +145,23 @@ function ownPoint(g: unknown): LngLat | null {
     : null;
 }
 
+/**
+ * Each row's drawing, once per row object. The map, its list row and a feature's glyph each ask on
+ * every render (a minute's tick, a lit row), and growing a footprint is a buffer; a read's rows are
+ * never changed in place, so a row object always draws the same.
+ */
+const drawn = new WeakMap<Shaped, HazardDrawing>();
+
 /** The one rule: how a row with a stored shape is drawn on the console's map. */
 export function drawingOf(s: Shaped): HazardDrawing {
+  const known = drawn.get(s);
+  if (known !== undefined) return known;
+  const d = drawingAfresh(s);
+  drawn.set(s, d);
+  return d;
+}
+
+function drawingAfresh(s: Shaped): HazardDrawing {
   const area = usableArea(s.clippedFootprint) ?? grown(s);
   if (area !== null) {
     // Where a crossing's mark goes: its point, or the middle of its footprint's outer ring.

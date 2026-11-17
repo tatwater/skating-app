@@ -5952,6 +5952,20 @@ call 6*). Web and read only: no schema change, no write, nothing to backfill.
   - a property (seeds 1, 42, 20261115, then one random run) that a label says *Kept* exactly when
     the record does, whatever the decision's and the deletion's times;
   - the today station on each stored status.
+- **Left by the build's own review** (each a founder call or outside this build):
+  - *A moderator's retraction of an alert its author already retracted* is not a keep, so its
+    Standing row reads *retracted · retracted*: the decision's word beside the author's. Before,
+    the timing read it as *kept*. Telling the two apart is a wording call for the copy pass.
+  - *Today's station against the line into it.* The station reads the stored status, but the line
+    before it and the *out of sight* note still follow the item's own decisions. Nothing stored
+    says when a Post's decision took its Report down, so a Report restored from its own hide and
+    since down by its Post reads *Still hidden* after a line drawn as visible.
+  - *A comment under a hidden Report.* Its own status stays `visible` (the Report's hide hides its
+    thread without touching the comment), so its today station still reads *Visible to skaters*,
+    and the pane's *On … again* heading has the same gap. A fix needs the item read to return the
+    Report's status.
+  - *A lit stale pin.* Its corner brackets are drawn inside its fade, where a lit footprint's
+    outline is drawn at full strength. Its plate shows at full strength beside it.
 - **Left:** the roadmap's People record sheet bullet still says *Kept* is told by its timing. It sits
   next to a line PR #150 edits, so it is corrected in the next roadmap pass. This doc and the
   register are right.

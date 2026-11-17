@@ -160,7 +160,6 @@ export const hazardTypeLabel = (t: string) =>
   kindOf(t) === 'crossing'
     ? CROSSING_WORDS.label
     : (HAZARD_TYPE_LABELS[t as HazardType] ?? t.replace(/_/g, ' '));
-const typeLabel = hazardTypeLabel;
 
 /** A known feature type's name as the row and the map's pin say it. */
 export const featureTypeLabel = (t: string) =>
@@ -192,7 +191,7 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
     return {
       id: h._id,
       kind,
-      type: typeLabel(h.type),
+      type: hazardTypeLabel(h.type),
       state: h.provisional ? 'unconfirmed' : h.freshness,
       healing,
       place: h.subAreaName ?? null,
@@ -222,7 +221,7 @@ export function archivedRows(hazards: readonly HazardInput[]): ArchivedRow[] {
     .filter((h) => h.status === 'archived')
     .map((h) => ({
       id: h._id,
-      type: typeLabel(h.type),
+      type: hazardTypeLabel(h.type),
       place: h.subAreaName ?? null,
       lastSeen: dayMonth(h.lastConfirmedAt),
     }));
@@ -253,12 +252,15 @@ export type FeatureRow = {
   sub: string;
 };
 
+/** A stored size the row can say: a finite number of meters (a NaN radius is no size to print). */
+const sayable = (m: number | undefined): m is number => m !== undefined && Number.isFinite(m);
+
 function shapeWords(f: FeatureInput): string {
   if (f.geometryKind === 'point_radius') {
-    return f.radiusMeters === undefined ? 'Point' : `Point, ${Math.round(f.radiusMeters)} m`;
+    return sayable(f.radiusMeters) ? `Point, ${Math.round(f.radiusMeters)} m` : 'Point';
   }
   const kind = f.geometryKind === 'line' ? 'Line' : 'Area';
-  return f.bufferMeters === undefined ? kind : `${kind}, ${Math.round(f.bufferMeters)} m band`;
+  return sayable(f.bufferMeters) ? `${kind}, ${Math.round(f.bufferMeters)} m band` : kind;
 }
 
 export function featureRows(features: readonly FeatureInput[]): FeatureRow[] {

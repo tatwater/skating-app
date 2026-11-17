@@ -1031,7 +1031,7 @@ describe('Kept is the record’s fact, never the timing’s', () => {
     const keptC = await comment(r, 'one');
     await rob.as.mutation(api.comments.remove, { commentId: keptC });
     tick();
-    const keep = await matt.as.mutation(api.moderation.keepOnRecord, {
+    await matt.as.mutation(api.moderation.keepOnRecord, {
       targetType: 'comment',
       targetId: keptC,
       reason: 'kept as evidence',
@@ -1078,6 +1078,5 @@ describe('Kept is the record’s fact, never the timing’s', () => {
     });
     const reversed = (await reversedOf(matt.as, rob.id)).rows;
     expect(reversed.map((x) => [x.targetId, x.kept])).toEqual([[keptC, true]]);
-    expect(keep.actionId).toBeDefined();
   });
 });

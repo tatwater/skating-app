@@ -5,9 +5,11 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
+import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
 import { BodyMapKey } from './BodyMapMarks';
+import { mergeScenes } from './bodyScene';
 import type { MapPointMark } from './mapDescriptors';
 
 /**
@@ -114,6 +116,52 @@ describe('BodyMapPane', () => {
     await user.click(putIns);
     expect(putIn()).not.toBeNull();
     expect(document.querySelector('[data-slot="map-hover-plate"]')).toBeNull();
+  });
+
+  it('a pin at its field’s fade never steps back for another mark’s plate — no fainter than its field', () => {
+    const { minLng, maxLng, minLat, maxLat } = MASCOMA_BOUNDS;
+    const pins = hazardsMapScene(
+      {
+        season: 2025,
+        current: 2025,
+        hazards: [
+          {
+            _id: 'stale-pin',
+            type: 'thin_ice',
+            geometryKind: 'point_radius',
+            geometry: {
+              type: 'Point',
+              coordinates: [(minLng + maxLng) / 2, (minLat + maxLat) / 2],
+            },
+            radiusMeters: Number.NaN,
+            freshness: 'stale',
+            provisional: true,
+          },
+        ],
+        features: [],
+      },
+      null,
+    );
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={mergeScenes(MASCOMA_SCENE, pins)}
+        resetKey="pins"
+        width={W}
+        height={H}
+      />,
+    );
+    const pin = () =>
+      document.querySelector('[data-slot="body-map-point"][data-id="hazard:stale-pin"] svg');
+    expect(pin()).not.toBeNull();
+    fireEvent.pointerEnter(
+      document.querySelector('[data-slot="body-map-point"][data-mark="putIn"]') as HTMLElement,
+    );
+    // The other marks step back; the pin stays at exactly its field's fade.
+    expect(
+      document.querySelectorAll('[data-slot="body-map-point"] svg[data-fade]').length,
+    ).toBeGreaterThan(0);
+    expect(pin()?.hasAttribute('data-fade')).toBe(false);
   });
 });
 
