@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271 D277
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -827,6 +827,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - **A second admin app** — D37 stands
 
 #### Owed
+- Clerk's ban lock reconciled daily (B01-4k, D277): on dev, `convex dev --once`, then — before the next 10:20 UTC tick — one dry run (`convex run clerkReconcile:run '{"dryRun":true}'`), its checked counts read back against the People *Banned* lane and Clerk's banned users, before the cron's first real run; a non-zero repair count on Machinery means one of the two sync gaps happened → the plan's *B01-4k*
 - The record's rules closed as classes (B01-4h, D271): on dev, `convex dev --once` only (no schema change, no backfill); the web half — the record pane's Undo through each decision's `endActionId` and `undo`, not only a Reversed row handed to it — waits on #138 → the plan's *B01-4h*
 - The People rules (B01-4f) on dev: the rows backfill once, alone, to date each suspended or banned person's row by the write that set their terms (the after-merge procedure's step 6, quoted below); not run by the build → the plan's *B01-4f*
 - Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
