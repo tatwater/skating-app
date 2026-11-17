@@ -5170,6 +5170,8 @@ largest-and-chosen bodies' tiles, so their p50 is not the corpus-wide one.)
 - An exact intake count: a stored counter (schema).
 - The namesakes from a light row (schema): a boundary's name, full name and key without its polygon.
 - The sweep's items in other files.
+- `bodyGeo:seedAll`'s page time on dev, the third of the three reads (not read back above; not needed
+  for correctness).
 
 ### Every town page advances or is done, and the cover hydrates in waves (B01-3q)
 
@@ -5234,15 +5236,17 @@ more, so never another document's bytes — and the kept bodies, their order and
 ones, the flag, and the set of ids read, over ranked lists of kept, rejected and gone candidates and
 limits from 0; three pinned seeds and one random; an all-kept list is one round). Its callers read
 the same `byId` and `truncated`: the skater map's `listInViewport`, `viewportReadStats`,
-`listedBodiesNearCoord` (the coordinate resolver, and through it access points, GPS activities, hazards, imagery masks, bays and corpus requests), and
+`listedBodiesNearCoord` (the coordinate resolver, and through it the access-point imports, GPS
+activities, hazards, corpus requests, a proposed body's match candidates and the depth matches), and
 `bodyGeo.candidates`. The cell walk before it (`scanCells`, one read a cell, its share of the row
 budget decided by the cells before) is not changed: a concurrent walk is not the same walk when the
-row budget binds; owed. Expect `candidates`' rounds on a giant's tile to fall from one a candidate
+row budget binds; owed. A wave holds at most 64 reads (`HYDRATE_WAVE_MAX`), so the map's 1,000-body viewport reads in about 16 rounds rather than 1,000 reads in flight at once. The bay-label layer's twin (`subAreas.subAreasCoveringBox`) still hydrates one at a time: its vertex budget stops it mid-list, so `hydrateRanked` is not a drop-in there; owed. Expect `candidates`' rounds on a giant's tile to fall from one a candidate
 read to a few; its cell walk remains.
 
 **After merge, on dev.** `convex dev --once`, nothing more: no schema change, no backfill, and no
 answer changes (with the whole budget the page is the one #143 shipped). `bodyGeo:checkStored` on the
-largest bodies stays the right check and should read `same`.
+largest bodies stays the right check and should read `same`. Read back `bodyGeo:candidates` (p50,
+p99, peak) from that run against B01-3p's on the same 17 bodies (675 ms, 1,210 ms, 1,210 ms).
 
 ## Ruled out
 

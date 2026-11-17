@@ -28,8 +28,9 @@
  *     `takeCapped` gets wrong, and the difference between a D5 warning worth reading and one nobody
  *     trusts.
  *
- * Ranking and hydration stay with the caller, because those are the parts that differ: each cell
- * table has its own row shape and its own document table to hydrate from.
+ * The order of the second pass is shared too (`rankCandidates`, and `hydrateRanked` for its reads);
+ * what a candidate hydrates from and what admits it stay with the caller, because those are the
+ * parts that differ: each cell table has its own row shape and its own document table.
  */
 
 import {
@@ -201,13 +202,18 @@ export function rankCandidates<Ref extends string>(candidates: Map<Ref, number>)
     .map(([ref]) => ref);
 }
 
+/** The most reads one hydration wave has in flight (B01-3q). */
+export const HYDRATE_WAVE_MAX = 64;
+
 /**
  * **Ranked candidates hydrated in waves** (B01-3q) — the second pass's reads, together. In rank
  * order, keep each candidate `get` finds and `keep` admits until `limit` are kept; `truncated` when a
  * candidate was left over once they were. Each wave reads exactly as many as could still be kept
  * (`limit` less those kept so far), so every read is one the one-at-a-time loop would also have made
  * — never one more, never another document's bytes — and the kept ones and their order are its. A
- * wave is one round; the old loop was one round a candidate.
+ * wave is one round; the old loop was one round a candidate. A fractional `limit` keeps as many as
+ * the old loop did (its ceiling), and a `NaN` one reads a candidate a wave, never an empty wave that
+ * would spin forever.
  */
 export async function hydrateRanked<Ref, D>(
   ranked: readonly Ref[],
@@ -219,9 +225,15 @@ export async function hydrateRanked<Ref, D>(
   let next = 0;
   while (next < ranked.length) {
     if (kept.length >= limit) return { kept, truncated: true };
-    const wave = ranked.slice(next, next + (limit - kept.length));
+    // Past the check, `limit - kept.length` is positive, so its ceiling is at least one — except for
+    // `NaN`, which `|| 1` turns into a one-candidate wave (the old loop read every candidate).
+    // At most `HYDRATE_WAVE_MAX` a wave: a 1,000-body viewport reads in 16 rounds, not one of 1,000
+    // reads in flight at once, each a whole body held until its wave settles.
+    const room = Math.min(HYDRATE_WAVE_MAX, Math.ceil(limit - kept.length) || 1);
+    const wave = ranked.slice(next, next + room);
     next += wave.length;
-    for (const doc of await Promise.all(wave.map(get))) {
+    // One argument each: `map` would hand `get` the index too, and `db.get(table, id)` reads two.
+    for (const doc of await Promise.all(wave.map((ref) => get(ref)))) {
       if (doc !== null && keep(doc)) kept.push(doc);
     }
   }
