@@ -1043,8 +1043,16 @@ async function postMembersOf(ctx: QueryCtx, reads: ReadBudget, post: Doc<'posts'
  */
 export const item = query({
   args: { targetType: literals(VERDICT_TARGETS), targetId: v.string() },
-  handler: async (ctx, { targetType, targetId }) => {
-    const viewer = await requireCapability(ctx, 'content.read');
+  handler: async (ctx, args) => itemPane(ctx, await requireCapability(ctx, 'content.read'), args),
+});
+
+/** `item`'s pane, for a viewer already let in (the pane's cost test drives it on a counted context). */
+export async function itemPane(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { targetType, targetId }: { targetType: VerdictTargetType; targetId: string },
+) {
+  {
     const reads = sheetBudget(ctx);
     const pending = await recordPending(ctx, reads);
     const id = targetIdOf(ctx, targetType, targetId);
@@ -1095,6 +1103,22 @@ export const item = query({
       () => null,
     );
     const shown = takeUntilNull(rows);
+    // The undo of the write that ended the item's newest decision, for this viewer — where the pane
+    // offers one (B01-4h): only that decision's, and only while it is Reversed (ended, and nothing
+    // newer minted since). Every older decision's ending was overtaken by the write that made a newer
+    // one, so it has no undo to read. Main's engine, one row in view (`one`): its first step's calls
+    // and documents reserved here, as Reversed's rows reserve theirs; a refusal that reads (content's,
+    // what the row did to the record) is charged to the request's budget in the engine's waves.
+    const newestShown = shown[0];
+    const reversal =
+      newestShown !== undefined && isReversed(newestShown.d) && newestShown.ending !== null
+        ? newestShown.ending
+        : null;
+    let reversalUndo: UndoState | null = null;
+    if (reversal !== null) {
+      reads.reserveCalls(3, 18);
+      reversalUndo = (await undoStates(ctx, viewer, [reversal], 'one', 'read'))[0] ?? null;
+    }
     // The Report a comment or a Post is on; the erasure row of an item that is gone; a Post's
     // members, which decide its restore.
     const reportId = reportIdOf(targetType, target);
@@ -1182,6 +1206,14 @@ export const item = query({
         endedBy: names.person(ending?.actorId),
         endedHow: ending ? endedHowOf(ending) : null,
         endedReason: shownReason(ending),
+        /** The write that ended it — what its Undo undoes; `null` while it stands. */
+        endActionId: d.endedByActionId ?? null,
+        /**
+         * That write's undo for this viewer — on the item's newest decision while it is Reversed (the
+         * one the pane offers an Undo on); `null` on every other, whose ending a newer decision's write
+         * has overtaken, and on one that stands.
+         */
+        undo: ending !== null && ending === reversal ? reversalUndo : null,
       })),
       /** More decisions than the pane read (or the budget reached): these are the newest. */
       decisionsCapped: newest.length > ITEM_DECISIONS || shown.length < decisions.length,
@@ -1191,8 +1223,8 @@ export const item = query({
       ),
       pending,
     };
-  },
-});
+  }
+}
 
 /**
  * What the person withdrew themselves, of one kind, newest first, a page at a time — with when each is
