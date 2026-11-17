@@ -1,4 +1,4 @@
-import type { Season } from '@skating/core';
+import { AUDIT_REASON_MAX, type Season } from '@skating/core';
 import {
   type ComponentProps,
   type CSSProperties,
@@ -46,6 +46,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
 import { LoadingSection } from '../tabParts';
+import { NOT_RECORDED } from '../tabStates';
 import type { GlyphCell } from './featureGlyph';
 import { featureLit, hazardLit, winterLit } from './hazardsMap';
 import {
@@ -92,6 +93,12 @@ export type FeatureRowWithGlyph = FeatureRow & {
 /** A read as the view draws it: its value, `undefined` while on its way, or `'error'`. */
 export type Read<T> = T | undefined | 'error';
 
+/**
+ * The patterns waiting in the pre-ice pass: how many, and whether the count stopped short — or
+ * `'none'`, the read settled with nothing recorded.
+ */
+export type PatternsWaiting = { count: number; capped: boolean } | 'none';
+
 /** Whether the tab's failed reads are being tried again: every note in the tab holds as pending. */
 const RetryPending = createContext(false);
 
@@ -114,9 +121,12 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   features: Read<readonly FeatureRowWithGlyph[]>;
   /** Hazards on the lake each day: the season on screen, and last winter beside an empty one. */
   winters: Read<Winters>;
-  /** Patterns waiting in the pre-ice pass; `null` when the viewer can't read the queue. */
-  /** `recurrence.waitingCountForBody`: how many wait, and whether the count stopped short. */
-  patternsWaiting: Read<{ count: number; capped: boolean }> | null;
+  /**
+   * Patterns waiting in the pre-ice pass (`recurrence.waitingCountForBody`): how many, and whether
+   * the count stopped short; `'none'` when the read settled with nothing; `null` when the viewer
+   * can't read the queue.
+   */
+  patternsWaiting: Read<PatternsWaiting> | null;
   /** Run every failed read again. Absent: no *Try again*. */
   onRetry?: () => void;
   /** The failed reads were tried again; their fresh answers aren't in (the notes say so). */
@@ -273,13 +283,22 @@ export function HazardsTabView({
           )}
           {(listed || (quiet && isList(archived) && archived.length > 0)) && (
             <div className="flex flex-col">
+              {/* Outside the group, which is collapsed over a list: a failed read said only inside
+                  it was seen by no one, and the archive read as holding nothing. Mounted whenever
+                  the group is, so its words are announced as they come. (A quiet winter's note is
+                  its own, above; it draws the group only once the read holds rows.) */}
+              {listed && (
+                <TabRetryNote data-slot="archived-failed" onRetry={onRetry}>
+                  {archived === 'error' ? 'The archived hazards couldn’t be read' : null}
+                </TabRetryNote>
+              )}
               {/* Keyed on the state, so a winter that turns quiet opens its group afresh. */}
               <Collapsible key={listed ? 'listed' : 'quiet'} defaultOpen={!listed}>
                 <CollapsibleTrigger count={isList(archived) ? archived.length : undefined}>
                   {HAZARDS_WORDS.archivedGroup(wordsContext({ current, season }))}
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <ArchivedList rows={archived} onRetry={onRetry} />
+                  <ArchivedList rows={archived} />
                 </CollapsibleContent>
               </Collapsible>
               {listed && (
@@ -327,7 +346,9 @@ export function HazardsTabView({
             </TabRetryNote>
             {patternsWaiting === undefined ? (
               <LoadingSection lines={1} />
-            ) : patternsWaiting === 'error' ? null : (
+            ) : patternsWaiting === 'error' ? null : patternsWaiting === 'none' ? (
+              <p className="m-0 text-row leading-(--lead-list) text-fg3">{NOT_RECORDED}</p>
+            ) : (
               <p className="m-0 text-row leading-(--lead-list) text-fg1">
                 {HAZARDS_WORDS.patternsLine(
                   wordsContext({
@@ -714,23 +735,8 @@ function GoneSlots({ n, of }: { n: number; of: number }) {
   );
 }
 
-function ArchivedList(props: Parameters<typeof ArchivedListBody>[0]) {
-  return (
-    <>
-      <TabRetryNote data-slot="archived-failed" onRetry={props.onRetry}>
-        {props.rows === 'error' ? 'The archived hazards couldn’t be read' : null}
-      </TabRetryNote>
-      <ArchivedListBody {...props} />
-    </>
-  );
-}
-
-function ArchivedListBody({
-  rows,
-}: {
-  rows: Read<readonly ArchivedRow[]>;
-  onRetry: (() => void) | undefined;
-}) {
+/** The archived rows. A failed read is said outside the group (above), never only in it. */
+function ArchivedList({ rows }: { rows: Read<readonly ArchivedRow[]> }) {
   if (rows === undefined) return <LoadingSection lines={2} />;
   if (rows === 'error') return null;
   if (rows.length === 0) return null;
@@ -917,6 +923,8 @@ function DemoteDialog({
               again, so words typed then could never be recorded — the field takes none. */}
           <AlertDialogReason
             value={reason}
+            // The demotion's reason is its audit row's (D261).
+            maxLength={AUDIT_REASON_MAX}
             readOnly={busy}
             onChange={(e) => setReason(e.target.value)}
           />
