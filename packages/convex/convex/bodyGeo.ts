@@ -1211,9 +1211,11 @@ export const computeAll = internalAction({
 /**
  * Library rows one seeding page reads. Each marks a facts row, read and rewritten whole — up to twelve
  * neighbors' rings, ~16 KB — so a page of re-seeded bodies stays a few megabytes inside a mutation's
- * 16 MiB read and write budgets.
+ * 16 MiB read and write budgets. **100, not 250** (B01-3p): at 250 a page ran 1.1 s at p99 on dev, its
+ * facts rows read one after another; now a page is 100 and its rows are read together
+ * (`markGeoStale`). The chain marks the same bodies, in two and a half times the pages.
  */
-export const SEED_PAGE = 250;
+export const SEED_PAGE = 100;
 
 /** Mark every library body stale, a page at a time, chaining itself — the backfill's first step. */
 export const seedAll = internalMutation({

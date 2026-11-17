@@ -14,10 +14,11 @@ import { beforeAll, describe, expect, test } from 'vitest';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, QueryCtx } from './_generated/server';
-import { CANDIDATE_CELL_READS, COLUMN_ROWS, NamesakeReads } from './bodyGeo';
+import { CANDIDATE_CELL_READS, COLUMN_ROWS, NamesakeReads, SEED_PAGE } from './bodyGeo';
 import {
   coverTiles,
   geoFactsOf,
+  markGeoStale,
   outlineStamp,
   paddedBox,
   placesOf,
@@ -802,5 +803,44 @@ describe('checkStored', () => {
         waterBodyIds: Array.from({ length: 26 }, () => across as Id<'waterBodies'>),
       }),
     ).rejects.toThrow(/at most 25/);
+  });
+});
+
+// ── The seeding: smaller pages, read together ───────────────────────────────────────────────
+
+describe('seedAll and the stale mark', () => {
+  test('a mark reads its rows together and leaves each exactly as the one-at-a-time rule did', async () => {
+    const t = harness();
+    const ids = await seedPonds(
+      t,
+      Array.from(
+        { length: 5 },
+        (_, k): Pond => ({
+          at: [-72 + k * 0.01, 44.1],
+          r: [0.001, 0.001],
+          n: 12,
+          zoom: 12,
+          score: 1,
+        }),
+      ),
+    );
+    const [, unmarked, older, newer] = ids as Id<'waterBodies'>[];
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('bodyGeoFacts').collect()) await ctx.db.delete(row._id);
+      await ctx.db.insert('bodyGeoFacts', { waterBodyId: unmarked as Id<'waterBodies'> });
+      await ctx.db.insert('bodyGeoFacts', { waterBodyId: older as Id<'waterBodies'>, staleAt: 10 });
+      await ctx.db.insert('bodyGeoFacts', { waterBodyId: newer as Id<'waterBodies'>, staleAt: 99 });
+    });
+    await t.run((ctx) => markGeoStale(ctx, [...ids, older as Id<'waterBodies'>], 50));
+    const rows = await t.run((ctx) => ctx.db.query('bodyGeoFacts').collect());
+    const staleOf = new Map(rows.map((r) => [r.waterBodyId as string, r.staleAt]));
+    // One row each (a repeated id marks once); a later mark is never moved back.
+    expect(rows).toHaveLength(5);
+    expect(ids.map((id) => staleOf.get(id))).toEqual([50, 50, 50, 99, 50]);
+  });
+
+  test('a seeding page is a hundred bodies, and the chain still marks every one', () => {
+    // At 250 a page ran 1.1 s at p99 on dev, one facts read after another; the marks are the same.
+    expect(SEED_PAGE).toBe(100);
   });
 });

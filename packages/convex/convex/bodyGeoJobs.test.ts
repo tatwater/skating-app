@@ -314,6 +314,6 @@ describe('seedAll', () => {
     await t.finishAllScheduledFunctions(() => {});
     const rows = await t.run((ctx) => ctx.db.query('bodyGeoFacts').collect());
     expect(rows).toHaveLength(5);
-    expect(SEED_PAGE).toBe(250);
+    expect(SEED_PAGE).toBe(100);
   });
 });

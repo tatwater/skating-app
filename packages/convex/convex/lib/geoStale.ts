@@ -32,11 +32,19 @@ export async function markGeoStale(
   ids: Iterable<Id<'waterBodies'>>,
   now: number = Date.now(),
 ): Promise<void> {
-  for (const waterBodyId of new Set(ids)) {
-    const row = await ctx.db
-      .query('bodyGeoFacts')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .first();
+  // Every row read together (B01-3p: a seeding page of them one after another ran past a second),
+  // then each written as before, in order.
+  const unique = [...new Set(ids)];
+  const rows = await Promise.all(
+    unique.map((waterBodyId) =>
+      ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+        .first(),
+    ),
+  );
+  for (const [k, waterBodyId] of unique.entries()) {
+    const row = rows[k] ?? null;
     if (row === null) await ctx.db.insert('bodyGeoFacts', { waterBodyId, staleAt: now });
     else if (row.staleAt === undefined || row.staleAt < now) {
       await ctx.db.patch(row._id, { staleAt: now });
