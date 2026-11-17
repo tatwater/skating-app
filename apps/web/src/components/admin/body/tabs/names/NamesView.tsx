@@ -1,4 +1,8 @@
-import type { WaterBodyClass } from '@skating/core';
+import {
+  MAX_MODERATOR_ALIAS_CHARS,
+  MAX_PLACE_NAME_CHARS,
+  type WaterBodyClass,
+} from '@skating/core';
 import { type ReactNode, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag, TagRun } from '@/components/kit/badge';
@@ -131,6 +135,7 @@ export function NamesView({
             value={data.aliases}
             onValueChange={onAliasesChange}
             placeholder="Add a name skaters use"
+            maxLength={MAX_MODERATOR_ALIAS_CHARS}
           />
         ) : onAliasesChange ? (
           // The moderator's own list is on its way: the field holds its place, not the catalogs'.
@@ -141,6 +146,7 @@ export function NamesView({
               aria-label="Aliases"
               value={data.aliases}
               placeholder="Add a name skaters use"
+              maxLength={MAX_MODERATOR_ALIAS_CHARS}
               disabled
             />
           </UnavailableField>
@@ -281,6 +287,7 @@ function CommunityName({
             <Input
               aria-label="Community name"
               value={draft}
+              maxLength={MAX_PLACE_NAME_CHARS}
               placeholder="What skaters call it"
               onChange={(e) => setDraft(e.target.value)}
             />

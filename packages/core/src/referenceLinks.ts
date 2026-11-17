@@ -18,7 +18,7 @@
 
 import type { LatLng } from './geometry';
 import { isKnownStateCode } from './regions';
-import { MAX_URL_CHARS } from './textCaps';
+import { MAX_REFERENCE_LINK_LABEL, MAX_URL_CHARS } from './textCaps';
 
 /** A link the lake drawer can render. `id` is stable so a client can key or order on it. */
 export interface ReferenceLink {
@@ -255,8 +255,6 @@ export function communityUrl(body: ReferenceLinkBody): string | undefined {
   return body.name ? `${base}/search?q=${encodeURIComponent(body.name)}` : base;
 }
 
-/** How long an operator-entered label may be. Long enough for an association's real name. */
-export const MAX_REFERENCE_LINK_LABEL = 80;
 /** How many operator-entered links a body may carry. A06c §2.7 expects one or two, never a directory. */
 export const MAX_REFERENCE_LINKS = 8;
 

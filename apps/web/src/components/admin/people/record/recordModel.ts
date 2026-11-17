@@ -327,6 +327,11 @@ export type Restored = {
   actorId: string | null;
   /** The write's word: whether this viewer can undo it now, and whether that asks a reason. */
   undo: { needsReason: boolean } | null;
+  /**
+   * A Report restored with its Post (chosen in the Post's chooser): the Post. The same write made
+   * both rows — its Undo is the Post's restore's — and the row goes when the Post's does.
+   */
+  cameWith?: Target;
 };
 
 /** What can supersede a row kept for the sitting. */
@@ -342,13 +347,22 @@ export type RestoredEvent =
  * **The rows kept for the sitting, after `event`** — each keyed by the write that made it, dropped
  * the moment the server's answer supersedes it, and never brought back: the server lists the item
  * again (an undo — from its row or the toast — or a hide again, anyone's), or the open item's read
- * shows a decision standing on it or its last restore by another hand. An entry, once dropped, is
+ * shows a decision standing on it or its last restore by another hand; a Report restored with its
+ * Post goes, too, when the Post's row does (one write made both). An entry, once dropped, is
  * gone; a later restore by anyone is never drawn with this one's name, time or Undo. An answer that
  * supersedes nothing returns `kept` itself, so nothing redraws for it.
  */
 export function nextRestored(kept: readonly Restored[], event: RestoredEvent): readonly Restored[] {
   const keep = (stays: (r: Restored) => boolean) => {
-    const next = kept.filter(stays);
+    const first = kept.filter(stays);
+    // A Report kept with its Post goes when the Post's own row does: the server's answer that
+    // superseded the Post's restore (a hide again, an undo) superseded the write both rows stand for.
+    const gone = new Set(
+      kept.filter((r) => !first.includes(r)).map((r) => `${targetKey(r.row)}|${r.actionId}`),
+    );
+    const next = first.filter(
+      (r) => r.cameWith === undefined || !gone.has(`${targetKey(r.cameWith)}|${r.actionId}`),
+    );
     return next.length === kept.length ? kept : next;
   };
   switch (event.kind) {
@@ -1104,6 +1118,46 @@ export type RecordWrite =
   | { kind: 'hideAgain'; reason: string }
   | { kind: 'overturn'; reason?: string }
   | { kind: 'keep'; reason: string };
+
+/**
+ * **The pane's Undo on the write that ended the item's newest decision** (`contentRecord.item`'s
+ * `endActionId` and `undo`, which the server sends on that one decision only, while it is Reversed):
+ * offered exactly while the server says the undo is available; drawn off, with the server's why, when
+ * it ran out on a restore or an undo — an overturn has no undo to run out, so nothing is drawn; and
+ * nothing once it was undone or overtaken. Never offered from anything but the server's word.
+ */
+export type EndingUndo = {
+  actionId: string;
+  endedHow: 'restore' | 'undo' | 'overturn';
+  undo: { state: 'available'; needsReason: boolean } | { state: 'unavailable'; why: string };
+};
+
+export function endingUndoOf(item: ItemRead): EndingUndo | null {
+  for (const d of item.decisions) {
+    const undo = d.undo;
+    if (undo === undefined || d.endActionId === undefined) continue;
+    if (d.endedHow === null || d.endedHow === 'superseded') return null;
+    if (undo.state === 'available') return { actionId: d.endActionId, endedHow: d.endedHow, undo };
+    if (undo.state === 'unavailable' && d.endedHow !== 'overturn')
+      return { actionId: d.endActionId, endedHow: d.endedHow, undo };
+    return null;
+  }
+  return null;
+}
+
+/** What the undo dialog says is being undone: the ending write, as its own receipt or its words. */
+export function endingUndoWhat(
+  ending: EndingUndo,
+  item: ItemRead,
+  subject: RecordSubject,
+  now: number,
+): string {
+  const kind = item.targetType as RecordKind;
+  if (ending.endedHow === 'undo') return W.decisionUndone(KIND_WORDS[kind].one);
+  if (ending.endedHow === 'overturn') return W.decisionOverturned(KIND_WORDS[kind].one);
+  return receiptWords({ kind: 'restore' }, { kind, place: placeName(kind, item), subject }, {}, now)
+    .title;
+}
 
 /** What the undo toast says of a write, from the operator's side. */
 export function receiptWords(

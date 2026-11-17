@@ -30,6 +30,20 @@ import { type ReadBudget, ROW_MAX, type RowKind, type Share } from './readBudget
 /** Rows per page of a record list, at most — each page is also sized by what its rows can weigh. */
 export const RECORD_PAGE = 50;
 
+/**
+ * Rows a list page returns at most: {@link RECORD_PAGE}. Tests shrink it so a property can page
+ * through a handful of rows; every budget still reserves for {@link RECORD_PAGE}.
+ */
+export const RECORD_PAGE_ROWS = { n: RECORD_PAGE };
+
+/**
+ * Whether `p` lies within a page that ends at `end` — on or before it in the list's order; every
+ * position does when the page has no end.
+ */
+export function within(end: Position | null, p: Position): boolean {
+  return end === null || !before(end, p);
+}
+
 export type RecordContentDoc =
   | Doc<'reports'>
   | Doc<'posts'>

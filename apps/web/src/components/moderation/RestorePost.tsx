@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Button } from '@/components/kit/button';
 import { CheckboxGroup, CheckboxRow } from '@/components/kit/checkbox';
 import {
@@ -15,6 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/kit/dialog';
+import { PersonName } from '@/components/PersonName';
+import { personName } from '../admin/people/person/personModel';
 import { useSaidMutation } from '../admin/said';
 
 /** What `moderation.postRestoreChoices` returns for a Post that exists. */
@@ -42,15 +44,29 @@ function memberLabel(m: Member): string {
   return `${m.waterBodyName ?? 'A water body no longer listed'} · ${day(m.skateEndTime)}`;
 }
 
-/** "Removed by @mod on Jan 15, 2027 — doxxing" — why it is down. */
-function whyDown(m: Member): string {
+/**
+ * "Removed by Sarah Berman on Jan 15, 2027 — doxxing" — why it is down. Who did it is named by their
+ * real name (the handle only for an account with none), masked from analytics (`PersonName`).
+ */
+function whyDown(m: Member): ReactNode {
   if (m.standing === 'author_deleted') {
     return `Deleted by its author on ${day(m.down?.at ?? m.skateEndTime)}, so it can't come back with the post.`;
   }
   if (!m.down) return '';
   const verb = VERB[m.down.action] ?? 'Taken down';
-  const who = m.down.by ? ` by @${m.down.by.username}` : '';
-  return `${verb}${who} on ${day(m.down.at)} — ${m.down.reason}`;
+  const who = m.down.by === null ? null : personName(m.down.by);
+  return (
+    <>
+      {verb}
+      {who !== null && (
+        <>
+          {' by '}
+          <PersonName>{who}</PersonName>
+        </>
+      )}
+      {` on ${day(m.down.at)} — ${m.down.reason}`}
+    </>
+  );
 }
 
 /**

@@ -75,7 +75,13 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
 import { NOW, ROB, ROB_HISTORY, ROB_TREND, SARAH_STATS, SEASON } from './personFixtures';
-import { actionIdOf, changedOf, undoNeedsReasonOf, usePersonWrites } from './usePersonWrites';
+import {
+  actionIdOf,
+  changedOf,
+  undoableOf,
+  undoNeedsReasonOf,
+  usePersonWrites,
+} from './usePersonWrites';
 
 const ROB_ID = ROB.userId;
 
@@ -347,7 +353,16 @@ describe('the writes', () => {
     mocks.results.set('people:person', {
       ...ROB,
       role: 'moderator',
-      can: { ...ROB.can, restrict: { ok: false, why: 'Staff can’t be restricted.' } },
+      // The server's every give-back answers as its restriction does: staff can't be restricted.
+      can: {
+        ...ROB.can,
+        restrict: { ok: false, why: 'Staff can’t be restricted.' },
+        restore: {
+          reports: { ok: false, why: 'Staff can’t be restricted.' },
+          hazards: { ok: false, why: 'Staff can’t be restricted.' },
+          comments: { ok: false, why: 'Staff can’t be restricted.' },
+        },
+      },
     });
     view.rerender(<PersonPane userId={ROB_ID} />);
     expect(within(lever('comments')).queryByRole('button')).toBeNull();
@@ -664,6 +679,26 @@ describe('the write hook', () => {
     );
     expect(undoNeedsReasonOf({ undoNeedsReason: 'yes' })).toBeNull();
     expect(undoNeedsReasonOf(null)).toBeNull();
+  });
+
+  it('a write that changed something but can’t be undone now: its receipt, no Undo, nothing looked up', async () => {
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => ({ userId: ROB_ID, changed: true, undoable: false })),
+    );
+    expect(await hook()({ kind: 'lift' })).toBe(true);
+    const receipt = (
+      mocks.announce.mock.lastCall as unknown as [{ title?: string }] | undefined
+    )?.[0];
+    expect(receipt).toMatchObject({
+      target: { targetType: 'user', targetId: ROB_ID },
+      undoable: false,
+    });
+    expect(receipt).not.toHaveProperty('actionId');
+    expect(receipt?.title).not.toBe('Nothing changed — Rob Tremblay was already set that way');
+    expect(undoableOf({ undoable: true })).toBe(true);
+    expect(undoableOf({ undoable: 'no' })).toBeNull();
+    expect(undoableOf(null)).toBeNull();
   });
 
   it('a write that changed nothing says so — no Undo, nothing looked up', async () => {

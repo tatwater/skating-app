@@ -675,6 +675,8 @@ export const SEASON_EMPTY: StaffSeasonRead = {
 export const ROB_LEAVING: PersonRead = {
   ...personOf(),
   leavingUntil: at(11, 2, 12, 0),
+  // The profile read hides a leaving account.
+  publicProfile: { opens: false, private: false, path: '/u/rtremblay' },
   can: {
     ...CAN_ALL,
     suspend: no('Leaving'),
@@ -689,6 +691,7 @@ export const ROB_DELETED: PersonRead = {
   trustClass: null,
   deletedAt: at(10, 3),
   profileVisibility: 'private',
+  publicProfile: { opens: false, private: false, path: '/u/rtremblay' },
   can: canOf({
     restrict: no('This account is deleted, so there is nothing to restrict.'),
     flaggingOff: no('This account is deleted, so there is nothing to restrict.'),

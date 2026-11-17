@@ -1,6 +1,11 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowUpRightFromSquare } from '@fortawesome/sharp-regular-svg-icons';
-import { type ReferenceLinkBody, referenceLinkError } from '@skating/core';
+import {
+  MAX_REFERENCE_LINK_LABEL,
+  MAX_URL_CHARS,
+  type ReferenceLinkBody,
+  referenceLinkError,
+} from '@skating/core';
 import {
   type ComponentProps,
   type KeyboardEvent,
@@ -621,6 +626,7 @@ function LinkEditor({
         id={labelId}
         autoFocus={autoFocus}
         value={editing.label}
+        maxLength={MAX_REFERENCE_LINK_LABEL}
         placeholder="What the link is, as skaters read it"
         onChange={(e) => onChange({ ...editing, label: e.target.value, error: null })}
         onKeyDown={keys}
@@ -632,6 +638,7 @@ function LinkEditor({
       <Input
         id={urlId}
         value={editing.url}
+        maxLength={MAX_URL_CHARS}
         placeholder="https://"
         className="font-(family-name:--family-mono) text-mono-sm"
         onChange={(e) => onChange({ ...editing, url: e.target.value, error: null })}

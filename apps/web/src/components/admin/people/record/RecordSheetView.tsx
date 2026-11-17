@@ -18,6 +18,7 @@ import {
   type ChoicesRead,
   type DeletedRow,
   deletedRowView,
+  type EndingUndo,
   headCount,
   type ItemRead,
   type ItemView,
@@ -94,7 +95,8 @@ export type RecordSheetViewProps = {
   /** The write; resolves whether it landed (a refusal is a toast naming the person). */
   onAct: (target: Target, write: RecordWrite) => Promise<boolean>;
   onUndoRestored: (restored: Restored) => void;
-  onUndoEnd: (row: ReversedRow) => void;
+  /** Undo the write that ended the open item's newest decision (the server offered it). */
+  onUndoEnd: (ending: EndingUndo, item: ItemRead) => void;
   /** Force one column (a story's phone); measured otherwise. */
   narrow?: boolean;
   /** Key hints on the levers; a fine pointer's, by default. */
@@ -240,10 +242,6 @@ function SheetBodyView({
     [read, subject, now, timeZone],
   );
   const selectedKey = selected === null ? null : targetKey(selected);
-  const reversal =
-    tab === 'reversed' && selectedKey !== null
-      ? ((list.rows as ReversedRow[]).find((r) => targetKey(r) === selectedKey) ?? null)
-      : null;
 
   const press = (lever: Extract<Lever, { ok: true }>, v: ItemView) => {
     const target = v.target;
@@ -472,7 +470,6 @@ function SheetBodyView({
                 keys={keys}
                 busy={acting.busyOn(selected)}
                 note={acting.noteOn(selected)}
-                reversal={reversal}
                 onLever={press}
                 onUndoEnd={onUndoEnd}
               />

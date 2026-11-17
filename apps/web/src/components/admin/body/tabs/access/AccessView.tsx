@@ -1,4 +1,4 @@
-import type { PublicAccessVerdict } from '@skating/core';
+import { AUDIT_REASON_MAX, canMakeOfficial, type PublicAccessVerdict } from '@skating/core';
 import { type ReactNode, useRef } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag } from '@/components/kit/badge';
@@ -266,6 +266,8 @@ function RulingSection({
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"
       label="Reason · kept in History"
+      // The ruling's reason is its audit row's (D261).
+      maxLength={AUDIT_REASON_MAX}
       onConfirm={(reason) => onRule('none', reason)}
     />
   );
@@ -378,17 +380,21 @@ function PutInItem({
     ) : null;
   const actions = p.source !== 'official' && (onMakeOfficial || onHide) && (
     <span className="flex gap-(--space-1_5)">
-      {onMakeOfficial === UNAVAILABLE ? (
-        <UnavailableButton size="xs" what={TOOLS.official}>
-          Make official
-        </UnavailableButton>
-      ) : (
-        onMakeOfficial && (
-          <Button size="xs" onClick={() => onMakeOfficial(p)}>
+      {
+        // One rule with the write (`putIns.promote`) and the old editor's list, for the button
+        // drawn live and the one drawn unavailable alike.
+        !canMakeOfficial(p) ? null : onMakeOfficial === UNAVAILABLE ? (
+          <UnavailableButton size="xs" what={TOOLS.official}>
             Make official
-          </Button>
+          </UnavailableButton>
+        ) : (
+          onMakeOfficial && (
+            <Button size="xs" onClick={() => onMakeOfficial(p)}>
+              Make official
+            </Button>
+          )
         )
-      )}
+      }
       {onHide && (
         <ReasonAsk
           trigger={<Button size="xs">Hide</Button>}
@@ -396,6 +402,8 @@ function PutInItem({
           description="It comes off the map and out of the drawer, with every launch close by."
           confirm="Hide"
           label="Reason · kept in History"
+          // The hide's reason is its audit row's (D261).
+          maxLength={AUDIT_REASON_MAX}
           onConfirm={(reason) => onHide(p, reason)}
         />
       )}
