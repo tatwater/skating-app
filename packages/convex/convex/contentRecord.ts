@@ -263,6 +263,18 @@ function shownReason(row: Doc<'moderationActions'> | null): string | null {
     : row.reason;
 }
 
+/**
+ * Whether a decision was an explicit *Keep on the record* — its own audit row's word
+ * (`keptOnRecord`, written by the keep and by nothing else: `moderation.recordOnWithdrawn`,
+ * `accessAlerts.recordAlertVerdict`). An ordinary hide, removal or retraction that lands on content
+ * already withdrawn is `false`, though it is on withdrawn content too; `null` when the audit row can't
+ * be read (not recorded — never a guess from timing).
+ */
+function keptOf(decision: Doc<'moderationActions'> | null): boolean | null {
+  if (decision === null) return null;
+  return (decision.metadata as { keptOnRecord?: unknown } | undefined)?.keptOnRecord === true;
+}
+
 /** What every record row says of its item's place: the body, and what a comment or a Post is on. */
 function placeOf(
   load: Pick<VerdictLoad, 'target' | 'report'>,
@@ -445,6 +457,8 @@ export async function standingPage(
       reason: decision?.reason ?? null,
       byUserId: decision?.actorId ?? null,
       decidedBy: names.person(decision?.actorId),
+      /** An explicit Keep on the record (`keptOf`); `null` when its audit row can't be read. */
+      kept: keptOf(decision),
       content: target && !erasedComment ? contentOf(verdict.targetType, target) : null,
       authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
       ...placeOf(l, verdict.targetType, names),
@@ -526,6 +540,8 @@ export async function reversedPage(
       decidedAt: verdict.at,
       decidedBy: names.person(decision?.actorId),
       reason: decision?.reason ?? null,
+      /** An explicit Keep on the record (`keptOf`); `null` when its audit row can't be read. */
+      kept: keptOf(decision),
       endedAt: verdict.endedAt as number,
       endedBy: names.person(ending?.actorId),
       endedHow: ending ? endedHowOf(ending) : null,
@@ -1289,6 +1305,8 @@ export async function itemPane(
         standing: d.standing,
         decidedBy: names.person(decision?.actorId),
         reason: decision?.reason ?? null,
+        /** An explicit Keep on the record (`keptOf`); `null` when its audit row can't be read. */
+        kept: keptOf(decision),
         endedAt: d.endedAt ?? null,
         endedBy: names.person(ending?.actorId),
         endedHow: ending ? endedHowOf(ending) : null,

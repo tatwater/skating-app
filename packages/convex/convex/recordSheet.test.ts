@@ -1022,3 +1022,61 @@ describe('who may act', () => {
     void t;
   });
 });
+
+describe('Kept is the record’s fact, never the timing’s', () => {
+  test('a keep reads kept; a hide on content already deleted, or before it, does not; an unread audit row is not recorded', async () => {
+    const { t, rob, kate, matt, report, comment, set, tick } = await setup();
+    const r = await report(kate.id);
+    // Kept on the record: an explicit keep of a comment its author deleted.
+    const keptC = await comment(r, 'one');
+    await rob.as.mutation(api.comments.remove, { commentId: keptC });
+    tick();
+    await matt.as.mutation(api.moderation.keepOnRecord, {
+      targetType: 'comment',
+      targetId: keptC,
+      reason: 'kept as evidence',
+    });
+    tick();
+    // An ordinary hide that happens to land after the author's deletion: never a keep.
+    const hiddenAfter = await comment(r, 'two');
+    await rob.as.mutation(api.comments.remove, { commentId: hiddenAfter });
+    tick();
+    await set('comment', hiddenAfter, 'hidden', 'hidden after');
+    tick();
+    // A hide before the deletion.
+    const hiddenBefore = await comment(r, 'three');
+    await set('comment', hiddenBefore, 'hidden', 'hidden before');
+    tick();
+    await rob.as.mutation(api.comments.remove, { commentId: hiddenBefore });
+    tick();
+    // A decision whose audit row can't be read: not recorded, never a guess.
+    const unread = await comment(r, 'four');
+    const lost = await set('comment', unread, 'removed', 'removed');
+    await t.run((ctx) => ctx.db.delete(lost.actionId));
+
+    const standing = new Map(
+      (await standingOf(matt.as, rob.id)).rows.map((s) => [s.targetId, s.kept]),
+    );
+    expect(Object.fromEntries(standing)).toEqual({
+      [keptC]: true,
+      [hiddenAfter]: false,
+      [hiddenBefore]: false,
+      [unread]: null,
+    });
+    const pane = async (id: string) =>
+      (await matt.as.query(api.contentRecord.item, { targetType: 'comment', targetId: id }))
+        ?.decisions;
+    expect((await pane(keptC))?.map((d) => d.kept)).toEqual([true]);
+    expect((await pane(hiddenAfter))?.map((d) => d.kept)).toEqual([false]);
+    expect((await pane(unread))?.map((d) => d.kept)).toEqual([null]);
+
+    // Overturned, the keep is Reversed — and still says it was a keep.
+    tick();
+    await matt.as.mutation(api.moderation.overturnVerdict, {
+      targetType: 'comment',
+      targetId: keptC,
+    });
+    const reversed = (await reversedOf(matt.as, rob.id)).rows;
+    expect(reversed.map((x) => [x.targetId, x.kept])).toEqual([[keptC, true]]);
+  });
+});

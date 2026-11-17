@@ -1,5 +1,4 @@
-import { hazardFootprint } from '@skating/core';
-import { featureGlyph } from './featureGlyph';
+import { featureGlyphOf } from './featureGlyph';
 import type { FeatureRowWithGlyph } from './HazardsTabView';
 import type { HazardsMapData } from './hazardsMap';
 import {
@@ -24,6 +23,13 @@ export const SEASON = 2026;
 export const WATCH_OPENED = Date.UTC(2026, 9, 3);
 
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0).getTime();
+
+/** A hazard's stored shape as the read hands it: a point and its radius, on Mascoma. */
+const pinAt = (lng: number, lat: number, radiusMeters = 40) => ({
+  geometryKind: 'point_radius' as const,
+  geometry: { type: 'Point', coordinates: [lng, lat] },
+  radiusMeters,
+});
 
 export const MASCOMA_FEATURES: FeatureInput[] = [
   {
@@ -54,20 +60,7 @@ export const MASCOMA_FEATURES: FeatureInput[] = [
 ];
 
 export const MASCOMA_FEATURE_ROWS: FeatureRowWithGlyph[] = featureRows(MASCOMA_FEATURES).map(
-  (row, i) => {
-    const f = MASCOMA_FEATURES[i] as FeatureInput;
-    return {
-      ...row,
-      glyph: featureGlyph(
-        hazardFootprint({
-          geometryKind: f.geometryKind,
-          geometry: f.geometry as GeoJSON.Point,
-          ...(f.radiusMeters !== undefined ? { radiusMeters: f.radiusMeters } : {}),
-          ...(f.bufferMeters !== undefined ? { bufferMeters: f.bufferMeters } : {}),
-        }),
-      ),
-    };
-  },
+  (row, i) => ({ ...row, glyph: featureGlyphOf(MASCOMA_FEATURES[i] as FeatureInput) }),
 );
 
 /**
@@ -157,6 +150,7 @@ export const LAST_WINTER_DAILY_LEGACY: DailyHazards = dailyFrom(
 export const LAST_WINTER_LIST: HazardInput[] = LAST_WINTER.map((h, i) => ({
   _id: `h-last-${i}`,
   type: 'pressure_ridge',
+  ...pinAt(-72.16 + i * 0.001, 43.635),
   freshness: 'stale',
   provisional: false,
   confirmCount: 1,
@@ -185,6 +179,7 @@ export const FEB_NOW = new Date(2026, 1, 17, 12, 0).getTime();
 export const FEB_HAZARDS: HazardInput[] = [
   {
     _id: 'h-ridge',
+    ...pinAt(-72.1611, 43.6402),
     type: 'pressure_ridge',
     subAreaName: 'Black Point to Wood Island',
     freshness: 'fresh',
@@ -197,6 +192,7 @@ export const FEB_HAZARDS: HazardInput[] = [
   },
   {
     _id: 'h-crack',
+    ...pinAt(-72.1545, 43.6468),
     type: 'wet_crack',
     subAreaName: 'Across the north end',
     freshness: 'aging',
@@ -210,6 +206,7 @@ export const FEB_HAZARDS: HazardInput[] = [
   },
   {
     _id: 'h-thin',
+    ...pinAt(-72.1689, 43.6331),
     type: 'thin_ice',
     subAreaName: 'Off Lower Shaker Village',
     freshness: 'fresh',
@@ -222,6 +219,7 @@ export const FEB_HAZARDS: HazardInput[] = [
   },
   {
     _id: 'h-slush',
+    ...pinAt(-72.1757, 43.644),
     type: 'overflow_slush',
     subAreaName: 'Off Mascoma Lake Campground',
     freshness: 'stale',
@@ -234,6 +232,7 @@ export const FEB_HAZARDS: HazardInput[] = [
   },
   {
     _id: 'h-air',
+    ...pinAt(-72.1498, 43.6376),
     type: 'air_pockets',
     subAreaName: 'East of Relham Island',
     freshness: 'fresh',
@@ -248,6 +247,7 @@ export const FEB_HAZARDS: HazardInput[] = [
 export const FEB_ARCHIVED: HazardInput[] = [
   {
     _id: 'h-inlet',
+    ...pinAt(-72.1502, 43.6385),
     type: 'spring_current',
     subAreaName: 'Mascoma River inlet',
     freshness: 'stale',
@@ -260,6 +260,7 @@ export const FEB_ARCHIVED: HazardInput[] = [
   },
   {
     _id: 'h-launch',
+    ...pinAt(-72.1584, 43.6297),
     type: 'open_water',
     subAreaName: 'Off the Boat Launch',
     freshness: 'stale',

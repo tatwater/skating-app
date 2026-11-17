@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { dayX, lastReal } from '@/components/kit/day-strips';
 import { dayMonth } from '../../frame/bodyModel';
+import type { MapPoint } from '../../map/mapDescriptors';
 import { FIELD_LEVELS, featureGlyph } from './featureGlyph';
 import {
   BODY_NOW,
@@ -15,7 +16,13 @@ import {
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
-import { hazardLit, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
+import {
+  type HazardsMapData,
+  hazardLit,
+  hazardsMapScene,
+  seasonOfLit,
+  winterLit,
+} from './hazardsMap';
 import {
   AXIS_DAYS,
   ageWords,
@@ -28,6 +35,7 @@ import {
   drawnDay,
   featureRows,
   firstReports,
+  type HazardInput,
   hazardKind,
   hazardRows,
   kindOf,
@@ -45,7 +53,7 @@ import {
   wintersFrom,
   winterWindow,
 } from './hazardsModel';
-import { CROSSING_CLAIM, CROSSING_WORDS, LAKE_CLAIM } from './hazardsWords';
+import { CROSSING_CLAIM, CROSSING_WORDS, LAKE_CLAIM, SHAPE_WORDS } from './hazardsWords';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -974,7 +982,7 @@ describe('the map', () => {
     expect(hazardsMapScene(MASCOMA_MAP_DATA, 'bay:x').lit).toBeNull();
   });
 
-  it('a stored clip wins; a shape that can’t be grown draws nowhere, never somewhere wrong', () => {
+  it('a stored clip wins; a shape with no usable point draws nowhere, never somewhere wrong', () => {
     const clip: GeoJSON.Polygon = {
       type: 'Polygon',
       coordinates: [
@@ -1000,6 +1008,120 @@ describe('the map', () => {
     );
     expect(scene.items.map((i) => i.id)).toEqual(['feature:a']);
     expect((scene.items[0] as { geometry: unknown }).geometry).toBe(clip);
+  });
+
+  describe('a shape that can’t be drawn is a pin at about where it is, said as shape unknown', () => {
+    const at: [number, number] = [-72.1757, 43.644];
+    /** A point whose radius can't grow (`hazardFootprint` throws on NaN): the point still stands. */
+    const lost = {
+      geometryKind: 'point_radius' as const,
+      geometry: { type: 'Point', coordinates: at },
+      radiusMeters: Number.NaN,
+    };
+    const hazard = (over: Partial<HazardsMapData['hazards'][number]> = {}) => ({
+      _id: 'h-lost',
+      type: 'thin_ice',
+      ...lost,
+      freshness: 'stale' as const,
+      provisional: true,
+      ...over,
+    });
+    const sceneOf = (
+      hazards: HazardsMapData['hazards'],
+      features: HazardsMapData['features'] = [],
+    ) => hazardsMapScene({ season: 2025, current: 2025, hazards, features }, 'hazard:h-lost');
+
+    it('a danger: its own mark at its point, named, at the fade its field would have had, and lit by its row', () => {
+      const scene = sceneOf([hazard()]);
+      expect(scene.items).toEqual([
+        {
+          kind: 'point',
+          id: 'hazard:h-lost',
+          layer: 'hazards',
+          at,
+          mark: 'hazard',
+          name: HAZARD_TYPE_LABELS.thin_ice,
+          caption: SHAPE_WORDS.unknown,
+          field: { freshness: 'stale', tone: 'hazard', provisional: true },
+        },
+      ]);
+      expect(scene.lit).toBe('hazard:h-lost');
+    });
+
+    it('healing, still unsafe: the healing mark, never a lesser one', () => {
+      const [pin] = sceneOf([hazard({ healingState: 'healing_unsafe' })]).items;
+      expect(pin).toMatchObject({ mark: 'healing', field: { tone: 'healing' } });
+    });
+
+    it('a one-vertex line and an unclosed ring: the vertex, the ring’s middle', () => {
+      const line = hazard({
+        geometryKind: 'line',
+        geometry: { type: 'LineString', coordinates: [at] },
+        bufferMeters: 10,
+      });
+      const ring = hazard({
+        _id: 'h-ring',
+        geometryKind: 'polygon',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [2, 0],
+              [2, 2],
+            ],
+          ],
+        },
+        bufferMeters: 5,
+      });
+      const items = sceneOf([line, ring]).items as MapPoint[];
+      expect(items.map((i) => [i.id, i.at])).toEqual([
+        ['hazard:h-lost', at],
+        ['hazard:h-ring', [4 / 3, 2 / 3]],
+      ]);
+    });
+
+    it('a crossing keeps its own mark at its point — never a danger’s pin', () => {
+      const [mark] = sceneOf([hazard({ type: 'ridge_crossing' })]).items;
+      expect(mark).toMatchObject({
+        kind: 'point',
+        mark: 'passage',
+        at,
+        name: CROSSING_WORDS.label,
+      });
+      expect(mark).not.toHaveProperty('caption');
+    });
+
+    it('a known feature: the feature’s mark, at full strength', () => {
+      const [pin] = sceneOf([], [{ _id: 'f-lost', type: 'spring_current', ...lost }]).items;
+      expect(pin).toMatchObject({
+        kind: 'point',
+        id: 'feature:f-lost',
+        layer: 'features',
+        mark: 'feature',
+        caption: SHAPE_WORDS.unknown,
+        field: { freshness: 'known', tone: 'hazard', provisional: false },
+      });
+    });
+
+    it('no usable coordinate at all: nothing on the map, and its row says so', () => {
+      const none = hazard({ geometry: { type: 'Point', coordinates: [Number.NaN, 43.6] } });
+      expect(sceneOf([none]).items).toEqual([]);
+      const [row] = hazardRows([{ ...FEB_HAZARDS[0], ...none } as HazardInput], FEB_NOW);
+      expect(row?.sub).toContain(SHAPE_WORDS.nowhere);
+    });
+
+    it('the row says shape unknown where the map draws the pin, and nothing where it draws the shape', () => {
+      const base = FEB_HAZARDS[0] as HazardInput;
+      const [pinned, drawn, crossing] = hazardRows(
+        [{ ...base, ...lost }, base, { ...base, ...lost, _id: 'h-cross', type: 'ridge_crossing' }],
+        FEB_NOW,
+      );
+      expect(pinned?.sub).toContain(SHAPE_WORDS.unknown);
+      expect(drawn?.sub).not.toContain(SHAPE_WORDS.unknown);
+      // A crossing's mark is a point whatever its shape: nothing about it is missing on the map.
+      expect(crossing?.sub).not.toContain(SHAPE_WORDS.unknown);
+    });
   });
 });
 
@@ -1072,10 +1194,7 @@ describe('every hazard type maps to a deliberate mark and wording — none by de
     hazardRows(
       [
         {
-          _id: `h-${type}`,
-          type,
-          freshness: 'fresh',
-          provisional: false,
+          ...at(type),
           confirmCount: 2,
           goneCount: 0,
           lastConfirmedAt: 0,

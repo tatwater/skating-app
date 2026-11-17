@@ -13,7 +13,8 @@ import {
 } from '@skating/core';
 
 import { dayMonth, statusDate } from '../../frame/bodyModel';
-import { CROSSING_WORDS, HAZARDS_WORDS, wordsContext } from './hazardsWords';
+import { drawingOf, type HazardDrawing, type Shaped } from './hazardDrawing';
+import { CROSSING_WORDS, HAZARDS_WORDS, SHAPE_WORDS, wordsContext } from './hazardsWords';
 
 /**
  * Body › Hazards' arithmetic. Pure, with `now` passed in.
@@ -57,10 +58,11 @@ export function seasonChoices(current: Season): { bar: Season[]; earlier: Season
 // ── Rows ────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * What a hazard row reads from `hazards.listForBody` (its `HazardView`). **What the read returns
- * and the tab doesn't keep, and why**:
- * - the geometry, the footprint and the cluster's member ids: the map's (`hazardsMap` reads the
- *   same subscription);
+ * What a hazard row reads from `hazards.listForBody` (its `HazardView`). Its stored shape, so the row
+ * says what the map draws for it by the map's own rule (`drawingOf`): *shape unknown* beside a pin,
+ * *not on the map* where there is no usable point. **What the read returns and the tab doesn't keep,
+ * and why**:
+ * - the cluster's member ids: the map's (`hazardsMap` reads the same subscription);
  * - `reporterName`, `promotedFeatureType` and `placeLine`: never on the list path (only the
  *   single-hazard read resolves them), so nothing is dropped;
  * - `expired`: always false on the list (an expired crossing is left out by the read);
@@ -81,7 +83,7 @@ export type HazardInput = {
   /** When it was first reported: its season, and the day its first-report mark is drawn on. */
   firstReportedAt: number;
   status: string;
-};
+} & Omit<Shaped, '_id'>;
 
 // ── What each type is ───────────────────────────────────────────────────────────────────────
 
@@ -153,10 +155,27 @@ export type HazardRow = {
   goneOf: number;
 };
 
-const typeLabel = (t: string) =>
+/** A hazard type's name as the row and the map's pin say it. */
+export const hazardTypeLabel = (t: string) =>
   kindOf(t) === 'crossing'
     ? CROSSING_WORDS.label
     : (HAZARD_TYPE_LABELS[t as HazardType] ?? t.replace(/_/g, ' '));
+
+/** A known feature type's name as the row and the map's pin say it. */
+export const featureTypeLabel = (t: string) =>
+  BODY_FEATURE_TYPE_LABELS[t as BodyFeatureType] ?? t.replace(/_/g, ' ');
+
+/**
+ * What a row adds about its place on the map, by the map's own rule: *shape unknown* where the map
+ * draws a pin in place of its shape, *not on the map* where there is no usable point, and nothing
+ * where its shape is drawn. A crossing is a mark at a point whatever its shape, so a pin changes
+ * nothing about how it is drawn and adds no word.
+ */
+export function shapeNote(d: HazardDrawing, kind: HazardKind): string | null {
+  if (d.kind === 'nowhere') return SHAPE_WORDS.nowhere;
+  if (d.kind === 'pin' && kind !== 'crossing') return SHAPE_WORDS.unknown;
+  return null;
+}
 
 /**
  * The rows, freshest first (the server's order). **Every hazard keeps its row**, stale included:
@@ -168,10 +187,11 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
     // Only "healing, still unsafe" is amber; `none` and `disputed` are not a healing word.
     const healing = h.healingState === 'healing_unsafe';
     const kind = kindOf(h.type);
+    const onMap = shapeNote(drawingOf(h), kind);
     return {
       id: h._id,
       kind,
-      type: typeLabel(h.type),
+      type: hazardTypeLabel(h.type),
       state: h.provisional ? 'unconfirmed' : h.freshness,
       healing,
       place: h.subAreaName ?? null,
@@ -184,6 +204,7 @@ export function hazardRows(hazards: readonly HazardInput[], now: number): Hazard
         // The skaters' whole verdict, never a bare "healing": the word without "still unsafe"
         // reads as the hazard going away (D3), and a crossing's verdict is its own.
         ...(healing ? [`“${verdictLabel('healing_unsafe', h.type as HazardType)}”`] : []),
+        ...(onMap === null ? [] : [onMap]),
       ].join(' · '),
       age: ageWords(h.lastConfirmedAt, now),
       gone: Math.min(h.goneCount, DEFAULT_REMOVAL_THRESHOLD),
@@ -200,7 +221,7 @@ export function archivedRows(hazards: readonly HazardInput[]): ArchivedRow[] {
     .filter((h) => h.status === 'archived')
     .map((h) => ({
       id: h._id,
-      type: typeLabel(h.type),
+      type: hazardTypeLabel(h.type),
       place: h.subAreaName ?? null,
       lastSeen: dayMonth(h.lastConfirmedAt),
     }));
@@ -231,21 +252,28 @@ export type FeatureRow = {
   sub: string;
 };
 
+/** A stored size the row can say: a finite number of meters (a NaN radius is no size to print). */
+const sayable = (m: number | undefined): m is number => m !== undefined && Number.isFinite(m);
+
 function shapeWords(f: FeatureInput): string {
   if (f.geometryKind === 'point_radius') {
-    return f.radiusMeters === undefined ? 'Point' : `Point, ${Math.round(f.radiusMeters)} m`;
+    return sayable(f.radiusMeters) ? `Point, ${Math.round(f.radiusMeters)} m` : 'Point';
   }
   const kind = f.geometryKind === 'line' ? 'Line' : 'Area';
-  return f.bufferMeters === undefined ? kind : `${kind}, ${Math.round(f.bufferMeters)} m band`;
+  return sayable(f.bufferMeters) ? `${kind}, ${Math.round(f.bufferMeters)} m band` : kind;
 }
 
 export function featureRows(features: readonly FeatureInput[]): FeatureRow[] {
-  return features.map((f) => ({
-    id: f._id,
-    type: BODY_FEATURE_TYPE_LABELS[f.type as BodyFeatureType] ?? f.type.replace(/_/g, ' '),
-    place: f.subAreaName ?? f.note ?? null,
-    sub: `${shapeWords(f)} · ${f.promotedFromHazardId === undefined ? 'Drawn' : 'From a pin,'} ${statusDate(f.createdAt)}`,
-  }));
+  return features.map((f) => {
+    // A known feature is drawn exactly as a hazard is (Review 13), so its row says the same.
+    const onMap = shapeNote(drawingOf(f), 'danger');
+    return {
+      id: f._id,
+      type: featureTypeLabel(f.type),
+      place: f.subAreaName ?? f.note ?? null,
+      sub: `${shapeWords(f)} · ${f.promotedFromHazardId === undefined ? 'Drawn' : 'From a pin,'} ${statusDate(f.createdAt)}${onMap === null ? '' : ` · ${onMap}`}`,
+    };
+  });
 }
 
 // ── The winters, a bar per day ──────────────────────────────────────────────────────────────────

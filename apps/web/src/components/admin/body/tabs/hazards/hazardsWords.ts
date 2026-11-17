@@ -211,6 +211,18 @@ export const CROSSING_WORDS = {
 } as const;
 
 /**
+ * **A report whose shape the map can't draw** (`hazardDrawing`): the words say the *shape* is
+ * unknown, never the hazard — and a report with no usable point is said to be off the map, never
+ * gone (D3).
+ */
+export const SHAPE_WORDS = {
+  /** The pin's caption and the row's note: drawn as a pin at about where it was reported. */
+  unknown: 'Shape unknown',
+  /** The row's note when the stored geometry holds no usable point: nothing is drawn. */
+  nowhere: 'Not on the map',
+} as const;
+
+/**
  * The one place "gone" may appear: the votes people cast on one report, counted and attributed —
  * a hazard row's gone-vote squares, and their column.
  */

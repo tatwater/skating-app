@@ -6035,12 +6035,122 @@ old editor's *Make official*, *Made official, on its own row.* and *From reports
 an official point here to make it official* (`components/admin/legacyWords.ts`, new: the Legacy pages
 had no words file).
 
+### A hazard's shape unknown, and the record's Kept (B01-3t, B01-4l)
+
+Two register rows, each the founder's call of 2026-11-17: Bo26 (*founder call 4*) and Pe17 (*founder
+call 6*). Web and read only: no schema change, no write, nothing to backfill.
+
+**The pin (B01-3t, Bo26).**
+
+- **One rule.** `drawingOf` (`tabs/hazards/hazardDrawing.ts`) decides how a stored shape is drawn,
+  and every place that decided asks it. It answers one of three:
+  - *footprint*: the stored clip, or the shape grown. Every shape the server's gate admits
+    (`isValidHazardShape`) is always this.
+  - *pin*: the footprint can't be drawn, but the geometry holds a usable point. The pin goes at the
+    hazard's own point, or the middle of its outer rings' distinct corners, or of any position it
+    holds.
+  - *nowhere*: no finite, on-globe coordinate anywhere in the geometry.
+- **What used to decide, each on its own:**
+  - the map scene's `footprintOf` (hazards and known features);
+  - the crossing's `crossingAt`;
+  - the feature glyph, which grew its footprint a second way in `HazardsTab` and a third in the
+    fixtures, ignoring the stored clip.
+  - The list rows didn't decide at all. They now say what the map draws, by the same rule: *Shape
+    unknown* beside a pin, *Not on the map* for nowhere.
+- **The views.** The live and past winters draw from one read (`hazards.listForBody`, whose
+  `HazardView` already carries the stored geometry), so they share the rule. The archived group and
+  the strip draw no shape, so they have nothing to decide.
+- **Never a lesser hazard (D3):**
+  - The pin is the hazard's own mark: the warning, healing's amber for *healing, still unsafe*, or
+    the feature's.
+  - It takes exactly the fade its dot field would have had. `MapPoint` gains `field`, and the pane
+    fades the face by `fieldOpacity`, so a stale, unconfirmed pin is as faint as a stale,
+    unconfirmed field and no fainter.
+  - It is on the same layer, under the same switch, and it puts *Hazard* in the map key.
+  - Its plate names the type, with the caption *Shape unknown*: the words say the shape is unknown,
+    never the hazard.
+  - A crossing stays its own two-bar mark at its point whatever its shape, so a pin changes nothing
+    about it, and its row adds no word.
+  - A known feature's pin is at full strength, as its field is.
+- **What reaches it.** Every hazard writer today validates its shape (`hazards.ts`'s one insert,
+  `isValidHazardShape` first), so only a row stored before that gate, or a clip or geometry corrupted
+  since, can be undrawable. What breaks the grow, measured: a NaN radius, a one-vertex line, an
+  unclosed ring. Each now pins. A NaN point has no usable coordinate: nowhere.
+- **Open (a fork, not built):**
+  - What the map draws for a hazard whose geometry has no usable coordinate at all. Today its row
+    stands and says *Not on the map*. Other options: a mark at the body's interior point labeled as
+    place unknown, or a body-wide note on the map.
+  - The skater map drops an undrawable hazard (core's `hazardsToFeatureCollection` skips it). It is on
+    B04's running list; the founder's call was the console's.
+- **Tests:**
+  - the rule over stored geometry of every sort, the corrupt included (fast-check, seeds 20261117,
+    42 and 7, then one random run): only on-globe coordinates; never *nowhere* while a usable point
+    exists; a pin inside its points' box; every admitted shape drawn as its footprint;
+  - the scene, the row and the glyph giving one answer for every hazard of every type, the pin's
+    fade equal to its field's;
+  - the named cases (each breaking shape, the crossing, the feature, nowhere);
+  - a story (*Admin/Body/Map contract › Shape unknown*) drawing a stale, unconfirmed pin beside a
+    field of the same freshness, a healing pin and a feature's pin, with the lit pin's plate.
+
+**Kept from the record (B01-4l, Pe17).**
+
+- **The fix.**
+  - *Server:* `contentRecord`'s Standing rows, Reversed rows and pane decisions each return `kept`,
+    read from the decision's own audit row (`keptOf`: `metadata.keptOnRecord === true`; `null` when
+    that row can't be read). The reads already held that row for `decidedBy`, so this adds no read.
+  - *Web:* `isKept` replaces `keptAfter` everywhere it decided:
+    - the Standing chips and line;
+    - the pane's badges, by-lines and life;
+    - the deletion's *kept while the decision stands* and *Kept as evidence* notes.
+  - A Reversed row's line now says a keep was a keep. `false` and `null` read the decision's own
+    kind beside the *Deleted* or *Retracted* chip.
+- **The class sweep** (labels on the record sheet and the People lists drawn from timing where the
+  server stores the fact):
+  - *Fixed:* the life line's today station said *Visible to skaters* from the order of the item's
+    decisions. It now reads the stored `moderationStatus`. A Report restored from its own hide and
+    since down by its Post's decision read *Visible to skaters*. An access alert has no such status
+    (its `status` is the claim's life), so it keeps the order. Today no alert reaches that branch:
+    an alert with no standing decision and no retraction by its author has no ended decision.
+  - *Not the same kind, left:*
+    - the *If overturned* "at once" (`erasureOf`) reads the server's `eraseAtIfReleased` by the
+      server's own documented contract: a date past the 30 days is the moment of the read;
+    - the suspension's *lapsed* and *ran its course* (`statusNoteWords`, `peopleModel`) extend the
+      server's `lapsed` and `suspendedUntil` by the live minute, because a query doesn't re-run as
+      time passes. The fact is a time, and nothing stored disagrees with it;
+    - the life line's *down after the deletion* is the deletion's own effect;
+    - the person page's *Kept* trend plate counts reports left up, a server count.
+- **Tests:**
+  - convex-test: a keep, a hide after the deletion, a hide before it, and an unreadable audit row,
+    across Standing, the pane and Reversed (a keep overturned still says kept);
+  - the web views per case;
+  - a property (seeds 1, 42, 20261115, then one random run) that a label says *Kept* exactly when
+    the record does, whatever the decision's and the deletion's times;
+  - the today station on each stored status.
+- **Left by the build's own review** (each a founder call or outside this build):
+  - *A moderator's retraction of an alert its author already retracted* is not a keep, so its
+    Standing row reads *retracted · retracted*: the decision's word beside the author's. Before,
+    the timing read it as *kept*. Telling the two apart is a wording call for the copy pass.
+  - *Today's station against the line into it.* The station reads the stored status, but the line
+    before it and the *out of sight* note still follow the item's own decisions. Nothing stored
+    says when a Post's decision took its Report down, so a Report restored from its own hide and
+    since down by its Post reads *Still hidden* after a line drawn as visible.
+  - *A comment under a hidden Report.* Its own status stays `visible` (the Report's hide hides its
+    thread without touching the comment), so its today station still reads *Visible to skaters*,
+    and the pane's *On … again* heading has the same gap. A fix needs the item read to return the
+    Report's status.
+  - *A lit stale pin.* Its corner brackets are drawn inside its fade, where a lit footprint's
+    outline is drawn at full strength. Its plate shows at full strength beside it.
+- **Left:** the roadmap's People record sheet bullet still says *Kept* is told by its timing. It sits
+  next to a line PR #150 edits, so it is corrected in the next roadmap pass. This doc and the
+  register are right.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
 list started as a read-only audit at `442b5b5f` (2026-11-16). Each row was re-checked against the
-code at `ce449f19` (B01-3p, #143). In-flight rows were also checked against their PR's branch. A row
-is **open** only where the code confirms it. A function existing is not counted as the feature
+code at `ce449f19` (B01-3p, #143). In-flight rows were also checked against their PR's branch. The
+rows were checked again at `0219a25b` (2026-11-17), after #144, #145, #147, #148, #149 and #151
+merged; Bo26 and Pe17 close with B01-3t and B01-4l. A row is **open** only where the code confirms it. A function existing is not counted as the feature
 working: it must be wired to a page and tested. **Sizes are estimates**, tests included: S is under
 150 lines, M is 150–600, L is over 600.
 
@@ -6061,32 +6171,32 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 
 | # | Item | Where in the code | Status | Kind | Size | What it needs |
 |---|---|---|---|---|---|---|
-| Bo1 | The Body console has no phone-width layout. It doesn't stack under the console's one narrow-screen rule (`columnsFit`) the way the Bodies list, People and the record sheet do | `body/frame/BodyConsoleRoute.tsx` | in PR #144 (B01-3o) | missing planned | M | — |
+| Bo1 | The Body console has no phone-width layout. It doesn't stack under the console's one narrow-screen rule (`columnsFit`) the way the Bodies list, People and the record sheet do | `body/frame/BodyConsoleRoute.tsx` | done in #144 (B01-3o) | missing planned | M | — |
 | Bo2 | Shape's touching-bodies read is missing from the four-answers table: on its way, failed, nothing recorded, a value. A settled zero could read as "nothing" | `tabs/shape/ShapeTabRoute.tsx`, `secondaryReads.test.ts` | done in #141 (B01-3n) | correctness | S | — |
-| Bo3 | The same gap for Hazards' patterns-waiting count | `tabs/hazards/HazardsTab.tsx` | in PR #144 | correctness | S | — |
+| Bo3 | The same gap for Hazards' patterns-waiting count | `tabs/hazards/HazardsTab.tsx` | done in #144 | correctness | S | — |
 | Bo4 | No console control pins a body into a town. The server write `setModeratorTowns` and its reads exist, and no page calls them | `waterBodies.ts` `setModeratorTowns`; no web caller | blocked on a board | missing planned | M (web) + S (a read to pick towns) | The board below (*Pin a town*) |
 | Bo5 | Two towns of one state with one name and one kind read alike | `core/townLabels.ts` `namesakeTells` | the county label is done in #138 (B01-3m). A pair in the *same* county with the same kind would still read alike; blocked on data: TIGER holds no such pair that we know of, and dev hasn't been counted | polish | S | A count of such pairs on dev |
 | Bo6 | `bodyGeo:townCandidates` and `bodyGeo:candidates` peaked near 1.4 s on the largest outlines during a recompute | `bodyGeo.ts` | done in #143 (B01-3p). Measured: the 1 s limit counts JavaScript time, not database round trips, and no call failed. A page now reads one call per column, and a tile returns summaries | performance | — | — |
-| Bo7 | Follow-up to #143 (Greptile P2, open at merge): `townCandidatesPage` can spend its whole document budget on columns and end a page without moving its cursor. The body's attempt then fails with "town candidates made no progress" and keeps its previous answer | `bodyGeo.ts` `townCandidatesPage` | in progress: the follow-up to #143 (B01-3q), not yet open | correctness | S | — |
+| Bo7 | Follow-up to #143 (Greptile P2, open at merge): `townCandidatesPage` can spend its whole document budget on columns and end a page without moving its cursor. The body's attempt then fails with "town candidates made no progress" and keeps its previous answer | `bodyGeo.ts` `townCandidatesPage` | done in #147 (B01-3q: `ReadBudget.reserveFirst`, `CannotAdvance` on a first call too small) | correctness | S | — |
 | Bo8 | The namesake check read up to 8 boundary polygons per name on every recompute | `lib/bodyGeo.ts` | done in #143 (one read per name per run, shared). A light mirror table of boundary names would make the read small; open | performance | M (schema, backfill) | New table: state, name, full name, key (about 2,425 rows) |
 | Bo9 | The intake counts are capped at 50 per reason ("50+"; they were 200) since #143. An exact count needs a stored counter. The founder has been told and has not objected | `waterBodies.ts` `reviewQueueCounts` | open | correctness of a figure | M (schema, backfill) | A counter kept by every writer of `reviewReason`, on `bodyLibraryRows` and its count keys |
-| Bo10 | Reads that load whole documents one after another where a wave or a summary would do: `waterBodies.bodiesCoveringBox` hydration (the recompute's neighbor step and the skater map), `listDedupCandidates`, `searchSubAreas`, `bodyConsole.townLines`, `consoleExtras`' touching bodies, the Bays tab's provenance, `adminAreas.findContainingArea` | the named functions | open (B01-3p's sweep, outside that build's files) | performance | M | B01-3p's notes: waves over the ranked ids for `bodiesCoveringBox`, admitted in order; `Promise.all` keeps the order for the small ones. Each is its own fix; not designed beyond that |
+| Bo10 | Reads that load whole documents one after another where a wave or a summary would do: `waterBodies.bodiesCoveringBox` hydration (the recompute's neighbor step and the skater map), `listDedupCandidates`, `searchSubAreas`, `bodyConsole.townLines`, `consoleExtras`' touching bodies, the Bays tab's provenance, `adminAreas.findContainingArea` | the named functions | `bodiesCoveringBox`'s hydration done in #147 (in waves). The rest open (B01-3p's sweep, outside that build's files) | performance | M | B01-3p's notes: waves over the ranked ids for `bodiesCoveringBox`, admitted in order; `Promise.all` keeps the order for the small ones. Each is its own fix; not designed beyond that |
 | Bo11 | Unbounded per-body hazard reads: `hazards.listForBody` (and, with `includeArchived`, every pin a body ever had), `bodyFeatures.listForBody`, `clusterScopeFor`, auto-merge's siblings, a skater's pins on a body, a body merge's pins | `hazards.ts`, `bodyFeatures.ts`, `lib/hazardMerge.ts`, `waterBodies.ts` (B01-3n's table) | open; each needs a call. A skater list's array can't say "more" without breaking installed phones, and a cap on a consensus or merge path changes a verdict | performance / limit-safety | M–L | A decision per read: a new shape, or a bound with a conservative answer |
 | Bo12 | Every Hazards tab open reads the body's whole archived history | `HazardsTab.tsx` (`includeArchived: true`) | open. #144 held it and sized it at about 450–550 lines (two new queries, convex tests, a paged reader, a count line), left for a call | performance | M | A bounded, paged archive read, asked only when its group opens |
 | Bo13 | `dailyHazards` gave no "still active" fact per hazard, so the strip told archived from active only by the next day | `bodyConsole.ts` `dailyHazards` | done in #141 | correctness-or-safety | S | — |
 | Bo14 | *Opened recently* couldn't name an id that isn't in the library | `bodies.ts` `rowsByIds` | done in #141 | missing | S | — |
 | Bo15 | The skater recurrence read collected a body's active pins with no bound | `recurrence.ts` `listForBody` | done in #141 | performance | S | — |
 | Bo16 | The skater lake drawer's moderator card linked to the old editor | `skater/lake/ModeratorCard.tsx` | done in #141 | missing planned | S | — |
-| Bo17 | A removal's note never reached the server: the old editor's dialog asked for one and dropped it, and the Standing tab had no field | `StandingTab.tsx`, `admin.water.$id.tsx` | in PR #144 | missing | S | — |
-| Bo18 | The console's name and link fields set no length cap (the server refuses past its caps) | names, links and places tabs | in PR #144 (one definition in core's `textCaps`, held by a guard) | polish | S | — |
-| Bo19 | The old editor's *Make official* on an existing launch inserted a second row | `admin.water.$id.tsx` | in PR #144 (`putIns.promote`) | correctness (Legacy) | S | — |
-| Bo20 | A failed archive read over a list was said only inside the collapsed group | Hazards tab | in PR #144 | polish | S | — |
+| Bo17 | A removal's note never reached the server: the old editor's dialog asked for one and dropped it, and the Standing tab had no field | `StandingTab.tsx`, `admin.water.$id.tsx` | done in #144 | missing | S | — |
+| Bo18 | The console's name and link fields set no length cap (the server refuses past its caps) | names, links and places tabs | done in #144 (one definition in core's `textCaps`, held by a guard) | polish | S | — |
+| Bo19 | The old editor's *Make official* on an existing launch inserted a second row | `admin.water.$id.tsx` | done in #144 (`putIns.promote`) | correctness (Legacy) | S | — |
+| Bo20 | A failed archive read over a list was said only inside the collapsed group | Hazards tab | done in #144 | polish | S | — |
 | Bo21 | Merge into another body from the console | `ShapeTab.tsx:293` (Unavailable) | scheduled for B01, not tonight (founder call 2 below) | missing planned | L | See *Merge into, and lot editing and removal* below |
 | Bo22 | Lot editing and removal from the console; no server write removes a lot | `accessPoints.ts` (only `setOfficialParking`) | scheduled for B01, not tonight (founder call 2) | missing planned | L | The same block, and the board below |
 | Bo23 | Task modes: a body opened from a queue with its tool armed, where *Save* returns to the queue | §5.4; `routes/admin.body.$id.tsx` | the wave after the Inbox (founder call 3) | missing planned | L | The Inbox views first |
 | Bo24 | The map's editing tools. Places: drop, move or remove a landmark, draw one as a bay, place an emailed name or a proposal. Access: place a put-in or a lot, link a lot to a put-in, posted rules. Hazards: mark a hazard, draw or redraw a known feature. Shape: bays by chord, freehand or paste (today these send you to the old editor) | the tabs' "Not available yet" controls | the wave after the Inbox (founder call 3) | missing planned | L | A map edit mode on `BodyMap`. B01-3e describes it for a feature's shape: hand the geometry to the map, edit its vertices, take the edited geometry back, with an undo of a vertex move. The point tools (drop, place, link) need design |
 | Bo25 | Editing a known feature's shape (`bodyFeatures.updateShape` is built) | Hazards tab, Unavailable | the wave after the Inbox (founder call 3) | missing | M | The map edit mode |
-| Bo26 | A hazard whose footprint can't be drawn shows nowhere on the map while the list counts it | `body/map/` | decided (founder call 4); queued right after #144 merges (its map files) | correctness-or-safety | S–M | A pin at its reported point, labeled "Shape unknown". The point comes from its stored `geometry` (no separate point field); geometry with no usable coordinate needs design |
+| Bo26 | A hazard whose footprint can't be drawn shows nowhere on the map while the list counts it | `tabs/hazards/hazardDrawing.ts`, `hazardsMap.ts` | done in #152 (B01-3t): a pin at its reported point, "Shape unknown", by one rule for the map, the rows and the glyph. Geometry with no usable coordinate still needs design: its row says *Not on the map* | correctness-or-safety | S–M | The no-coordinate case: the founder's call (see *A hazard's shape unknown, and the record's Kept*) |
 | Bo27 | Imagery pass override controls (`imageryOverrides.set` is built) | `ImageryTab.tsx`, Unavailable | blocked on B04: neither app passes `passOverrides` to its timeline | missing | S | B04's PR that honors overrides on web and phone |
 | Bo28 | Filing a bathymetry survey | `WaterView.tsx`, Unavailable | blocked on the founder (call 7) | missing | M | His ruling on what a filing records |
 | Bo29 | Each catalog's own name claims (the Names ladder reads "not recorded") | BS9; `importCanonical` | blocked on the ETL: it must keep the claims, then each body's next campaign | missing (data) | L | ETL work |
@@ -6100,31 +6210,32 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Bo37 | Preview-map checks: the imagery raster sits under the hazard marks; a fresh crossing draws as the two-bar mark under the lit plate; the live MapLibre canvas was never driven | *What is verified about the map* | blocked on the founder looking at a real map (the automated browser can't load tiles) | ops | — | — |
 | Bo38 | The dry-run row label fix (B01-3k), on real data | run logger `dryRun` | the code is done; blocked on a dev dry run | ops | — | — |
 | Bo39 | Ownership and public-land data, so border calls come from data instead of by hand | B01-3g Owed | blocked on a data source | ops-or-data | L | A parcel or protected-area layer |
+| Bo40 | `bodyGeo:candidates` on the largest bodies after #147: none over 1 s, but 24 of 34 calls over 500 ms (p50 612 ms, peak 910 ms). What remains is the cell walk before hydration | `bodyGeo.ts` `candidates` | open (measured on dev 2026-11-17, below) | performance | M | The cell walk, as #147 did for hydration; not designed |
 
 #### The People rows
 
 | # | Item | Where in the code | Status | Kind | Size | What it needs |
 |---|---|---|---|---|---|---|
-| Pe1 | While a People backfill runs, every pass re-runs every People subscription and the Overview's People card (about 2,200 times on dev). Each pass patched the row every read's `pending` reads | `lib/peopleRuns.ts` `savePass`, `readPreparation` | in PR #145 (B01-4j: progress moves to its own table, `peopleJobProgress`) | performance | M (schema, widen-only) | — |
-| Pe2 | The record pane's decisions didn't carry the id of the write that ended them | `contentRecord.ts` `item` | server done in #140 (B01-4h); web (the pane's own Undo) in PR #145 | missing | S | — |
-| Pe3 | A person write that answers `{undoable: false}` still did the undo lookup | `person/usePersonWrites.ts` | in PR #145 | performance/polish | S | — |
+| Pe1 | While a People backfill runs, every pass re-runs every People subscription and the Overview's People card (about 2,200 times on dev). Each pass patched the row every read's `pending` reads | `lib/peopleRuns.ts` `savePass`, `readPreparation` | done in #145 (B01-4j: progress moves to its own table, `peopleJobProgress`) | performance | M (schema, widen-only) | — |
+| Pe2 | The record pane's decisions didn't carry the id of the write that ended them | `contentRecord.ts` `item` | server done in #140 (B01-4h); web (the pane's own Undo) done in #145 | missing | S | — |
+| Pe3 | A person write that answers `{undoable: false}` still did the undo lookup | `person/usePersonWrites.ts` | done in #145 | performance/polish | S | — |
 | Pe4 | The People list didn't pass `endCursor`, so a change in an earlier page dropped the deeper pages | `list/peopleReads.ts` | done in #142 (B01-4i) | correctness | S–M | — |
-| Pe5 | The record sheet's three lists take no `endCursor` | `contentRecord.ts` `personVerdicts`, `personReversed`, `personDeleted` | in PR #145 | correctness | M | — |
+| Pe5 | The record sheet's three lists take no `endCursor` | `contentRecord.ts` `personVerdicts`, `personReversed`, `personDeleted` | done in #145 | correctness | M | — |
 | Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. Its *Handle* links still go to the old flags and support lists: blocked on the Inbox | missing | S | — |
-| Pe7 | The lever facts the server sends: since when a right is off, ledger "since", the bounty season line, each lever's own `can`, the profile-opens link | `person/LeverBlock.tsx`, `PersonView.tsx` | in PR #145 | missing | M | — |
+| Pe7 | The lever facts the server sends: since when a right is off, ledger "since", the bounty season line, each lever's own `can`, the profile-opens link | `person/LeverBlock.tsx`, `PersonView.tsx` | done in #145 | missing | M | — |
 | Pe8 | The staff strip didn't name who undid a staffer's decisions | `person/personModel.ts` | done in #142 | missing | S | — |
-| Pe9 | A Post restored with chosen Reports: those Reports left Standing with no row for the sitting | `record/RecordSheet.tsx` | in PR #145 | polish | S | — |
+| Pe9 | A Post restored with chosen Reports: those Reports left Standing with no row for the sitting | `record/RecordSheet.tsx` | done in #145 | polish | S | — |
 | Pe10 | The undo engine's reads on Reversed, History and Decisions rows are counted by calls and documents, not weighed by size | `contentRecord.ts:430`, `people.ts` `ROW_SHAPE_*` | blocked on the founder's audit-metadata ruling (no decision yet) | performance / limit-safety | M | The ruling below (Pe11), then a per-row byte budget |
 | Pe11 | Cap the rest of the audit metadata: a lot's list of bodies, the suppression reason, the status reason copied into `prev`. Names and URLs were already capped in B01-3h | *Owed: audit metadata, writer by writer* (B01-4b) | blocked on the founder | performance (engine) | M | A yes or no on the proposal |
 | Pe12 | Undo after hiding already-hidden, undecided content said "Nothing changed" though a decision was recorded | `lib/undoHandlers.ts` | done in #140 (D271) | correctness | M | — |
 | Pe13 | The already-hidden refusal lived in the write, not in the record sheet's shared rule (`lib/recordRules`) | `lib/recordRules.ts` `takedownRefusal` | done in #140 | correctness | S–M | — |
-| Pe14 | The Clerk ban mirror's two rare gaps: a run that dies between an answer and its re-read; a request whose answer is lost but which Clerk applies after the retry that follows | `clerkAdmin.ts` `setBanned` | in progress tonight as B01-4k (a daily reconcile job), not yet open (founder call 5) | correctness / auth | M–L | — |
+| Pe14 | The Clerk ban mirror's two rare gaps: a run that dies between an answer and its re-read; a request whose answer is lost but which Clerk applies after the retry that follows | `clerkAdmin.ts` `setBanned` | done in #149 (B01-4k, D277: a daily reconcile job). Dry run on dev 2026-11-17; the first real run is due 2026-11-18 10:20 UTC, not yet confirmed | correctness / auth | M–L | — |
 | Pe15 | `clerkAdmin.deleteUser` had no tests and no request timeout | `clerkAdmin.ts` | done in #140 (one request path, 20 s) | test gap | S | — |
 | Pe16 | The Deleted count is a floor past a few heavy items. Erased comment shells keep `authorDeletedAt`, so they stay in the ranges the count reads, and a person with 30 or more always gets a floor. A small stored row per withdrawal is the proposed fix | `contentRecord.ts` `recordCounts`, `personDeleted` | scheduled (founder call 6); its design is open (below) | correctness of a figure | L | See *The three stored facts* below |
-| Pe17 | The sheet's *Kept* label is inferred from timing (a decision at or after the author's deletion), so an ordinary hide or removal on content already deleted also reads *Kept*. The server already stores the fact that tells them apart (`keptOnRecord` on the decision's audit row); no read returns it | `record/recordModel.ts` `keptAfter`; `moderation.ts` `recordOnWithdrawn`; `accessAlerts.ts` `recordAlertVerdict` | open; scheduled with the other two (founder call 6). It needs no schema change and no backfill | correctness of a label | S | See *The three stored facts* below |
+| Pe17 | The sheet's *Kept* label is inferred from timing (a decision at or after the author's deletion), so an ordinary hide or removal on content already deleted also reads *Kept*. The server already stores the fact that tells them apart (`keptOnRecord` on the decision's audit row); no read returns it | `record/recordModel.ts` `keptAfter`; `moderation.ts` `recordOnWithdrawn`; `accessAlerts.ts` `recordAlertVerdict` | done in #152 (B01-4l): `kept` from the decision's audit row on every row and pane decision; the web reads it (`isKept`). No schema change, no backfill | correctness of a label | S | See *The three stored facts* below |
 | Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page | blocked on the Inbox | polish | S | The Inbox's `can` per row |
-| Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | in PR #145 | polish | S | — |
-| Pe20 | `RestorePost` named people by `@username` (the rule is real names) | `moderation/RestorePost.tsx` | in PR #145. That it is a dialog where the boards draw a sheet stays open | polish | S | A board check |
+| Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | done in #145 | polish | S | — |
+| Pe20 | `RestorePost` named people by `@username` (the rule is real names) | `moderation/RestorePost.tsx` | done in #145. That it is a dialog where the boards draw a sheet stays open | polish | S | A board check |
 | Pe21 | Kit promotions: `SearchLane`, `LeverRow`, `RecordRow`, `LifeList`, `LabelRows` | the `kit-candidates/` directories | open. The record candidates' tests are done in #142 | kit | M | A kit pass (one writer promotes, §12.3) |
 | Pe22 | Superseded decisions under Reversed. The flip constant was removed untested; each item shows once, as its newest decision | `lib/contentVerdicts.ts` `isReversed` | blocked on the founder (not yet ruled) | polish | M | His call |
 | Pe23 | No photos and no *Restore all* on the person page | *Where the boards and the code differ* | blocked on the founder (not yet ruled) | missing planned | M | His call |
@@ -6145,6 +6256,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh5 | Every loader batch of an ETL import (`importRuns.progress`) re-runs the Overview's counts, its jobs card and the activity feed | `importRuns.ts` (#145's sweep) | open: Overview and Machinery files | performance | S–M | Needs design. #145's sweep names it; whether it takes Pe1's shape (progress apart from the row the reads watch) is that build's call |
 | Sh6 | Two `InsetCard`s for one idea: the skater one and the kit one | `skater/panels/InsetCard.tsx`, `kit/inset-card.tsx` | open | polish (kit) | M | A kit pass |
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
+| Sh8 | The verdicts backfill (`peopleJobs:backfillVerdicts`, walking `contentRecord.backfillVerdicts`) walks the whole moderation audit table 4 rows a pass (each row's worst case is sized at 1 MiB), so its length follows the audit log's size: 7,951 passes (about 5.5 minutes) on dev, which holds no moderated content | `contentRecord.ts` `backfillVerdicts`, its page table under §12.8 | open: look at the page sizing before it runs on a large log | performance (engine) | S–M | A page sized by the rows' real weight, or a narrower walk; not designed |
 
 #### The boards to make in Paper (founder call 1)
 
@@ -6429,8 +6541,9 @@ Questions:
 - Where the stored geometry has no usable coordinate at all, what to draw needs design. The list
   still counts the hazard.
 
-**Queued right after #144 merges** (the fix is in the Body console's map files, which #144 is
-changing).
+**Built in B01-3t**, after #144 merged: see *A hazard's shape unknown, and the record's Kept (B01-3t,
+B01-4l)*. A geometry with no usable coordinate is the open part: its row says *Not on the map*, and
+what the map draws for it is the founder's call.
 
 **Safety note (D3):** the pin must never read as a lesser hazard. It takes the same freshness fade
 as any hazard (decay is confidence, never safety). Nothing about the missing shape makes it
@@ -6454,8 +6567,10 @@ refuses a banned person. So the exposure is a banned person who can still sign i
 everywhere, or a lifted person kept out of sign-in. The retries and the operator's page are
 `clerkAdmin.ts` `setBanned` (`retryOrPage` since #140).
 
-**In progress tonight as B01-4k** (a daily reconcile job, Pe14). Which accounts it reads, and how
-it tracks the mirror's state, are that PR's to state; not yet open.
+**Done in #149** (B01-4k, D277: a daily reconcile job, Pe14). Which accounts it reads and how it
+tracks the mirror's state are in *B01-4k*. On dev (2026-11-17, at `9f850c86`), its dry run checked 0
+banned in Clerk against 0 expected and planned 0 repairs. The first real cron run is due 2026-11-18
+10:20 UTC. Nobody has confirmed it from the cron table: the CLI can't read that table.
 
 #### The three stored facts (founder call 6)
 
@@ -6502,6 +6617,7 @@ it tracks the mirror's state, are that PR's to state; not yet open.
 - **Size:** L.
 
 ***Kept* read from the record (Pe17).** *Corrected 2026-11-17 against the code; Greptile on #146.*
+**Done in B01-4l** as designed below; see *A hazard's shape unknown, and the record's Kept*.
 
 - **Every write that records a decision on content its author withdrew:**
   - `moderation.ts` `recordOnWithdrawn` is the one writer for content. It is reached two ways:
@@ -6603,6 +6719,24 @@ inventoried, not assumed.*
   - the dev inbox seed (§8 §2) waits;
   - the Inbox lanes, a record sheet with real decisions on dev, and a staffer's decisions strip with
     real rows are not seen against data.
+
+#### Dev rollouts of 2026-11-17 (dev at `9f850c86`)
+
+What the day's rollouts on dev measured, recorded by #152's build (which ran nothing on dev).
+
+- **The verdicts backfill** (`peopleJobs:backfillVerdicts`, the People procedure's fourth): 7,951
+  passes, about 5.5 minutes, on a dev that holds no moderated content. It walks the whole moderation
+  audit table in small pages (4 audit rows a pass, each row's worst case sized at 1 MiB), so its
+  length follows the audit log's size, not the moderated content's. Owed before it runs on a large
+  log: look at the page sizing (Sh8).
+- **`bodyGeo:candidates` after B01-3q** on the 17 largest bodies: 34 calls, p50 612 ms, peak 910
+  ms, none over 1 s. Before B01-3q they were p50 675 ms and peak 1,210 ms. 24 of the 34 are still
+  over 500 ms. What remains is the cell walk before hydration (Bo40).
+- **`bodyGeo:townCandidates`**: 42 calls, p50 25 ms, peak 68 ms.
+- **`bodyGeo:checkStored`**: `same` on 42 of the largest bodies.
+- **`clerkReconcile:run`** (B01-4k, D277), a dry run: 0 banned in Clerk, 0 expected, 0 repairs. The
+  first real cron run is due 2026-11-18 10:20 UTC. It was not confirmed from the cron table, which
+  the CLI can't read.
 
 #### Blocked, and where it went
 

@@ -143,6 +143,12 @@ export interface MapPoint extends MapItemBase {
   hoverKicker?: string;
   /** A last line on the plate, under the name ("Windy and Copernicus open here"). */
   caption?: string;
+  /**
+   * A hazard or known feature drawn as a pin because its shape can't be (Hazards): the field its
+   * footprint would have carried, so the pin fades exactly as that field would — **never lighter
+   * for the missing shape** (D3) — and a known feature's stays at full strength.
+   */
+  field?: MapHazardField;
 }
 
 export interface MapLabel extends MapItemBase {

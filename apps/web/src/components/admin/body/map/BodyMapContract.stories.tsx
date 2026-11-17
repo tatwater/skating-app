@@ -4,6 +4,7 @@ import { expect } from 'storybook/test';
 import { must } from '@/components/kit/storyKit';
 
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
+import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
 import { BodyMapStillView } from './BodyMap';
 import { mergeScenes } from './bodyScene';
 import type { BodyMapScene } from './mapDescriptors';
@@ -11,7 +12,8 @@ import type { BodyMapScene } from './mapDescriptors';
 /**
  * The map contract's later members, drawn over the still (the live map's tiles answer only a local
  * dev address): a hazard's dot field fresh and stale, a dimension line with its measure, an
- * approach, a proposal, a captioned plate on the lit point, and a tab's dock in the foot slot.
+ * approach, a proposal, a captioned plate on the lit point, a tab's dock in the foot slot, and a
+ * hazard whose shape can't be drawn, pinned.
  */
 const meta = {
   title: 'Admin/Body/Map contract',
@@ -103,6 +105,90 @@ const TAB: BodyMapScene = {
   ],
   lit: 'interior:point',
   layers: { hazards: true, samples: true },
+};
+
+/**
+ * Hazards whose shape can't be drawn, as the Hazards tab hands them (`hazardsMapScene`): a stale,
+ * unconfirmed one pinned beside a field of the same freshness, a healing one, and a known feature —
+ * each its own mark at its reported point, at the fade its field would have had, and the lit one's
+ * plate saying the shape is unknown.
+ */
+const lostRadius = (fx: number, fy: number) => ({
+  geometryKind: 'point_radius' as const,
+  geometry: { type: 'Point', coordinates: [...at(fx, fy)] },
+  radiusMeters: Number.NaN,
+});
+const SHAPE_UNKNOWN = hazardsMapScene(
+  {
+    season: 2025,
+    current: 2025,
+    hazards: [
+      {
+        _id: 'stale-field',
+        type: 'thin_ice',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [...at(0.4, 0.6)] },
+        radiusMeters: 120,
+        freshness: 'stale',
+        provisional: true,
+      },
+      {
+        _id: 'stale-pin',
+        type: 'thin_ice',
+        ...lostRadius(0.6, 0.6),
+        freshness: 'stale',
+        provisional: true,
+      },
+      {
+        _id: 'healing-pin',
+        type: 'wet_crack',
+        ...lostRadius(0.55, 0.35),
+        freshness: 'fresh',
+        provisional: false,
+        healingState: 'healing_unsafe',
+      },
+    ],
+    features: [{ _id: 'feature-pin', type: 'spring_current', ...lostRadius(0.3, 0.3) }],
+  },
+  'hazard:stale-pin',
+);
+
+export const ShapeUnknown: Story = {
+  args: {
+    bbox: MASCOMA_BOUNDS,
+    scene: mergeScenes(MASCOMA_SCENE, SHAPE_UNKNOWN),
+    resetKey: 'shape-unknown',
+    width: 656,
+    height: 830,
+  },
+  play: async ({ canvasElement }) => {
+    const pin = (id: string) =>
+      must(
+        canvasElement.querySelector<HTMLElement>(`[data-slot="body-map-point"][data-id="${id}"]`),
+      );
+    // Each is its own hazard's mark: the warning, the healing one, the feature's.
+    await expect(pin('hazard:stale-pin')).toHaveAttribute('data-mark', 'hazard');
+    await expect(pin('hazard:healing-pin')).toHaveAttribute('data-mark', 'healing');
+    await expect(pin('feature:feature-pin')).toHaveAttribute('data-mark', 'feature');
+    // Never a lesser hazard: the pin fades exactly as far as a field of the same freshness.
+    const dot = must(
+      canvasElement.querySelector('[data-slot="body-map-dot"][data-id="hazard:stale-field"]'),
+    );
+    await expect(Number(getComputedStyle(pin('hazard:stale-pin')).opacity)).toBeCloseTo(
+      Number(dot.getAttribute('fill-opacity')),
+    );
+    await expect(Number(getComputedStyle(pin('hazard:healing-pin')).opacity)).toBe(1);
+    await expect(Number(getComputedStyle(pin('feature:feature-pin')).opacity)).toBe(1);
+    // The lit pin's plate names the hazard and says its shape is unknown — never the hazard.
+    const plate = must(canvasElement.querySelector('[data-slot="map-hover-plate"]'));
+    await expect(plate).toHaveTextContent('Thin ice');
+    await expect(
+      must(canvasElement.querySelector('[data-slot="map-hover-plate-caption"]')),
+    ).toHaveTextContent('Shape unknown');
+    await expect(must(canvasElement.querySelector('[data-slot="map-key"]'))).toHaveTextContent(
+      'Hazard',
+    );
+  },
 };
 
 /** Everything the tabs asked of the map, drawn at once. */
