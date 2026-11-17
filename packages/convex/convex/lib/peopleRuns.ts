@@ -23,8 +23,15 @@
  *   its own transaction (the one profile insert refreshes its row, both flag writers stamp the subject,
  *   the one audit writer places the chain), which `packages/guards` holds.
  *
- * {@link readPreparation} is the only reading of the backfills' rows: the operator's check
- * (`peopleJobs.preparation`) and every People read's `pending` alike.
+ * - **A pass writes nothing a People read depends on** (B01-4j). What changes every pass — where the
+ *   next resumes, failures so far, the pass token, the heartbeat — is the job's row in
+ *   `peopleJobProgress`; `peopleJobRuns` holds what readers rest on (the run, whether it runs, `ready`)
+ *   and is written only when a run starts, ends or finds a gap. A People read's `pending`
+ *   ({@link readPending}) reads `peopleJobRuns` alone, so a backfill in flight re-runs none of them
+ *   pass by pass; only the operator's check ({@link readPreparation}) reads the progress too.
+ *
+ * {@link readPending} and {@link readPreparation} are the only readings of the backfills' rows, one
+ * rule for `ready` between them.
  */
 
 import { v } from 'convex/values';
@@ -141,6 +148,58 @@ async function runRow(ctx: QueryCtx, job: PeopleJob): Promise<Doc<'peopleJobRuns
     .first();
 }
 
+async function progressRow(
+  ctx: QueryCtx,
+  job: PeopleJob,
+): Promise<Doc<'peopleJobProgress'> | null> {
+  return ctx.db
+    .query('peopleJobProgress')
+    .withIndex('by_job', (q) => q.eq('job', job))
+    .first();
+}
+
+/** A run's progress: its pass token, where its next pass resumes, its failures, its heartbeat. */
+export interface RunProgress {
+  pass: number;
+  cursor: string | null;
+  failed: number;
+  updatedAt: number;
+}
+
+/**
+ * The current run's progress: its own `peopleJobProgress` row while it runs. Before its first pass
+ * records there — and for a run started before B01-4j, until its next pass — the run row's own values
+ * are its progress (those the run started with, or the old shape's last pass), so a run in flight
+ * when this deployed resumes at its cursor and token, neither lost nor taken twice. A progress row of
+ * another run is a past run's. Once the run has ended, the run row is the record (its failures and
+ * end time).
+ */
+function progressOf(
+  row: Doc<'peopleJobRuns'>,
+  progress: Doc<'peopleJobProgress'> | null,
+): RunProgress {
+  if (row.running && progress !== null && progress.run === row.run)
+    return {
+      pass: progress.pass,
+      cursor: progress.cursor,
+      failed: progress.failed,
+      updatedAt: progress.updatedAt,
+    };
+  return { pass: row.pass, cursor: row.cursor, failed: row.failed, updatedAt: row.updatedAt };
+}
+
+/** A job's run as its passes see it: the run row and its current progress, joined. */
+export type RunView = Doc<'peopleJobRuns'> & RunProgress;
+
+/**
+ * The job's run, its progress joined — for the passes and the operator's check (and tests). A People
+ * read never calls this: it would depend on every pass.
+ */
+export async function readRun(ctx: QueryCtx, job: PeopleJob): Promise<RunView | null> {
+  const [row, progress] = await Promise.all([runRow(ctx, job), progressRow(ctx, job)]);
+  return row === null ? null : { ...row, ...progressOf(row, progress) };
+}
+
 /**
  * Take the lease for a pass. With no `run`, start a new run: mint the next run number, make it current
  * (every older run is non-current from this transaction on), failures zero. With `run` and `pass`,
@@ -152,7 +211,7 @@ export async function takeLease(
   job: PeopleJob,
   args: { run?: number; pass?: number; alone?: boolean; cursor?: string | null },
 ): Promise<Lease | null> {
-  const row = await runRow(ctx, job);
+  const row = await readRun(ctx, job);
   if (args.run !== undefined) {
     if (!row || row.run !== args.run || !row.running || row.pass !== args.pass) return null;
     return { job, run: row.run, pass: row.pass, failed: row.failed, chains: row.chains };
@@ -167,7 +226,8 @@ export async function takeLease(
     pass: 0,
     updatedAt: Date.now(),
   };
-  // Only a backfill carries `ready`; a sweep's record never does (an old one's is cleared here).
+  // Only a backfill carries `ready`; a sweep's record never does (an old one's is cleared here). A
+  // past run's progress row stays until this run's first pass rewrites it: read as another run's.
   if (row) await ctx.db.patch(row._id, isBackfill(job) ? fields : { ...fields, ready: undefined });
   else
     await ctx.db.insert('peopleJobRuns', {
@@ -181,18 +241,26 @@ export async function takeLease(
 /**
  * Record a pass of the lease's run (taken in this transaction) — where the next resumes, failures so
  * far — and move the pass token on: the returned `{ run, pass }` is what the next pass must carry.
+ * It writes the job's progress row only — never the run row a People read depends on.
  */
 export async function savePass(
   ctx: MutationCtx,
   lease: Lease,
   state: { cursor: string | null; failed: number },
 ): Promise<{ run: number; pass: number }> {
-  const row = await runRow(ctx, lease.job);
-  if (row?.run !== lease.run || row.pass !== lease.pass)
+  const [row, progress] = await Promise.all([runRow(ctx, lease.job), progressRow(ctx, lease.job)]);
+  if (row?.run !== lease.run || !row.running || progressOf(row, progress).pass !== lease.pass)
     throw new Error(`peopleRuns: ${lease.job} run ${lease.run} lost its lease`);
-  const pass = row.pass + 1;
-  await ctx.db.patch(row._id, { ...state, pass, updatedAt: Date.now() });
-  return { run: lease.run, pass };
+  const next = {
+    run: lease.run,
+    pass: lease.pass + 1,
+    cursor: state.cursor,
+    failed: state.failed,
+    updatedAt: Date.now(),
+  };
+  if (progress) await ctx.db.replace(progress._id, { job: lease.job, ...next });
+  else await ctx.db.insert('peopleJobProgress', { job: lease.job, ...next });
+  return { run: lease.run, pass: next.pass };
 }
 
 /**
@@ -287,11 +355,7 @@ export interface BackfillState {
   updatedAt: number | null;
 }
 
-export interface Preparation {
-  /** Every backfill is ready. */
-  ready: boolean;
-  /** The backfills not ready, in the registry's order — what a read names in its `pending`. */
-  pending: PeopleBackfill[];
+export interface Preparation extends Pending {
   /**
    * The jobs to run again (`{"alone":true}`): not ready, not running (or stalled), and not about to be
    * started by an earlier backfill whose chain is still running.
@@ -300,16 +364,44 @@ export interface Preparation {
   backfills: BackfillState[];
 }
 
+/** What a People read rests on: whether every backfill is ready, and which aren't. */
+export interface Pending {
+  ready: boolean;
+  /** The backfills not ready, in the registry's order — what a read names in its `pending`. */
+  pending: PeopleBackfill[];
+}
+
+/** `ready` is a run row's conclusion alone — one rule for {@link readPending} and the check. */
+const pendingOf = (rows: readonly (Doc<'peopleJobRuns'> | null)[]): Pending => {
+  const pending = PEOPLE_BACKFILLS.filter((_, i) => rows[i]?.ready !== true).map((b) => b.backfill);
+  return { ready: pending.length === 0, pending };
+};
+
+const backfillRows = (ctx: QueryCtx) =>
+  Promise.all(PEOPLE_BACKFILLS.map(({ backfill }) => runRow(ctx, backfill)));
+
 /**
- * The backfills' state: a row per backfill, each read by its own index range — never the whole table,
- * so a People read (and a mutation that asks, like the ledger's editor check) doesn't depend on the
- * lapse jobs' rows, which a cron writes every fifteen minutes. The only reading there is.
+ * **What every People read's `pending` comes from** (and a mutation that asks, like the ledger's
+ * editor check): a run row per backfill, each by its own index range — never the progress table,
+ * which every pass writes, and never the whole table, whose lapse jobs' rows a cron writes every
+ * fifteen minutes. So a read subscribed to it re-runs when a backfill starts, concludes or finds a
+ * gap, and never pass by pass.
+ */
+export async function readPending(ctx: QueryCtx): Promise<Pending> {
+  return pendingOf(await backfillRows(ctx));
+}
+
+/**
+ * **The operator's check** (`peopleJobs.preparation`, internal): the backfills' state with each
+ * running run's progress — its cursor, failures and heartbeat, so `stalled` and `rerun` can be told.
+ * It depends on every pass; no People read may call it ({@link readPending} is theirs, and
+ * `packages/guards` holds that).
  */
 export async function readPreparation(
   ctx: QueryCtx,
   now: number = Date.now(),
 ): Promise<Preparation> {
-  const rows = await Promise.all(PEOPLE_BACKFILLS.map(({ backfill }) => runRow(ctx, backfill)));
+  const rows = await Promise.all(PEOPLE_BACKFILLS.map(({ backfill }) => readRun(ctx, backfill)));
   let chainRunning = false;
   const rerun: string[] = [];
   const backfills = PEOPLE_BACKFILLS.map(({ backfill, job }, i): BackfillState => {
@@ -331,6 +423,5 @@ export async function readPreparation(
       updatedAt: row?.updatedAt ?? null,
     };
   });
-  const pending = backfills.filter((b) => !b.ready).map((b) => b.backfill);
-  return { ready: pending.length === 0, pending, rerun, backfills };
+  return { ...pendingOf(rows), rerun, backfills };
 }

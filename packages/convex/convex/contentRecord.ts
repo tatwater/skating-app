@@ -29,7 +29,7 @@ import {
   LEASE_ARG,
   PEOPLE_BACKFILLS,
   type PeopleBackfill,
-  readPreparation,
+  readPending,
   VERDICTS_DONE,
 } from './lib/peopleRuns';
 import {
@@ -117,7 +117,7 @@ const sheetBudget = (ctx: QueryCtx) => requestBudget(ctx, CHARGED_QUERY_BUDGET);
  */
 async function recordPending(ctx: QueryCtx, reads: ReadBudget): Promise<PeopleBackfill[]> {
   reads.reserve('small', PEOPLE_BACKFILLS.length);
-  const { pending } = await readPreparation(ctx);
+  const { pending } = await readPending(ctx);
   return pending.filter((b) => b === 'verdicts');
 }
 

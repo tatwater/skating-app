@@ -4,8 +4,9 @@
  * job — the four backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
  * first (`takeLease`), so a pass of a superseded run does nothing; every backfill takes the same
  * arguments (`BACKFILL_ARGS`), concludes through `finishBackfill`, and names the next backfill in
- * `BACKFILL_JOB`. `peopleJobRuns` is read and written only by `lib/peopleRuns`, whose
- * `readPreparation` is the operator's check and every read's `pending`. Between runs, the writes
+ * `BACKFILL_JOB`. `peopleJobRuns` and `peopleJobProgress` are read and written only by
+ * `lib/peopleRuns`, whose `readPreparation` is the operator's check (the one reader of a pass's
+ * progress) and `readPending` every read's `pending`. Between runs, the writes
  * that create what a backfill fixes do its work themselves: the profile insert refreshes its row, a
  * flag is filed with its subject. The procedure's text is `AFTER_MERGE_PROCEDURE`, which
  * `packages/convex`'s `peopleBackfills.test.ts` performs literally; the phase doc and the roadmap must
@@ -81,10 +82,35 @@ test('the runs are read and written only by the registry module', () => {
   const elsewhere = sources(CONVEX)
     .filter((p) => p !== REGISTRY && !p.endsWith('schema.ts'))
     .filter((p) =>
-      /['"`]peopleJobRuns['"`]|['"`]ready:/.test(withoutComments(readFileSync(p, 'utf8'))),
+      /['"`]peopleJob(?:Runs|Progress)['"`]|['"`]ready:/.test(
+        withoutComments(readFileSync(p, 'utf8')),
+      ),
     )
     .map((p) => relative(CONVEX, p));
   expect(elsewhere).toEqual([]);
+});
+
+/**
+ * A pass writes a run's progress (`peopleJobProgress`), never the run row a People read rests on
+ * (B01-4j): only the operator's check and the passes may read the progress, so a backfill in flight
+ * re-runs no People subscription pass by pass. Every other reader asks `readPending`.
+ */
+test('only the operator’s check reads a run’s progress; every People read asks `readPending`', () => {
+  const callers = sources(CONVEX)
+    .filter((p) => p !== REGISTRY)
+    .filter((p) => /\b(?:readPreparation|readRun)\(/.test(withoutComments(readFileSync(p, 'utf8'))))
+    .map((p) => relative(CONVEX, p));
+  expect(callers).toEqual(['peopleJobs.ts']);
+  const jobs = withoutComments(readFileSync(JOBS, 'utf8'));
+  expect(jobs.match(/\breadPreparation\(/g)).toHaveLength(1);
+  expect(jobs).not.toMatch(/\breadRun\(/);
+  // In the registry, a pass's save writes only the progress row.
+  const save = /export async function savePass\([\s\S]*?\n\}/.exec(registrySource)?.[0] ?? '';
+  expect(save).toMatch(/'peopleJobProgress'/);
+  expect(save).not.toMatch(/db\.patch\(row\._id/);
+  expect(/export async function readPending\([\s\S]*?\n\}/.exec(registrySource)?.[0]).not.toMatch(
+    /readRun|progressRow/,
+  );
 });
 
 test('between runs, the writes that create what a backfill fixes do its work', () => {
