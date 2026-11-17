@@ -235,7 +235,11 @@ export function OpenAbout({
       )}
       {pending && <Note data-slot="open-pending">{WORDS.flagsPending}</Note>}
       {capped && <Note data-slot="open-capped">{WORDS.openCapped}</Note>}
-      {flagLabelsCapped && <Note data-slot="open-labels-capped">{WORDS.flagLabelsCapped}</Note>}
+      {/* Only when a flag drawn here is left unnamed for it: a flag on the person past the cap
+          names nothing more either way. */}
+      {flagLabelsCapped && flags.some((f) => f.targetType !== 'user' && flagLabel(f) === null) && (
+        <Note data-slot="open-labels-capped">{WORDS.flagLabelsCapped}</Note>
+      )}
     </Section>
   );
 }

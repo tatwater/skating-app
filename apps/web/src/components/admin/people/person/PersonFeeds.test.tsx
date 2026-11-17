@@ -84,6 +84,17 @@ describe('a flag', () => {
       WORDS.flagLabelsCapped,
     );
   });
+
+  it('says nothing of the cap when only a flag on the person went unlabeled: it names nothing more', () => {
+    const block = draw({
+      flags: [
+        flag({ targetLabel: 'Mascoma Lake' }),
+        flag({ flagId: 'f2' as never, targetType: 'user', targetId: ROB.userId }),
+      ],
+      flagLabelsCapped: true,
+    });
+    expect(block.querySelector('[data-slot="open-labels-capped"]')).toBeNull();
+  });
 });
 
 describe('an appeal', () => {
