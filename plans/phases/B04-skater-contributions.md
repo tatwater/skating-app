@@ -153,6 +153,13 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
   admin pages' header (`components/AppShell.tsx`) and the re-acknowledgment page (`routes/reack.tsx`)
   call `useSignOut` straight, so a written report (this tab's, or the stored one) is discarded without
   asking. *Not yet planned.*
+- **2026-11-17 · found by** the B01 "Shape unknown" pin (B01-3t) — the skater map drops a hazard whose
+  footprint can't be grown: `hazardsToFeatureCollection` (core's `hazardLayer.ts`, both apps) skips a
+  row `safeFootprint` returns nothing for, so a skater sees no mark where the console now draws a pin
+  at its reported point. Every stored shape passes `isValidHazardShape` at its writer today, so only a
+  row from before that gate could reach it; the console's rule (`tabs/hazards/hazardDrawing.ts`
+  `drawingOf`) could move to core for both. The founder's call (2026-11-17) was the console's; the
+  skater map's is his to make. *Not yet planned.*
 
 ---
 
