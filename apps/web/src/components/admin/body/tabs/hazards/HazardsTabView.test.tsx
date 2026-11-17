@@ -446,6 +446,8 @@ describe('HazardsTabView — the winters, a day at a time', () => {
         }));
         const read = dailyFrom(season, hazards, BODY_NOW, { capped });
         const winters = wintersFrom([read], BODY_NOW);
+        // A failed run's tab is never left mounted under the next: fast-check shrinks by re-running.
+        cleanup();
         // The tab at its lightest (a quiet past winter: the strip and its notes, no list, no
         // features), so each run renders what it checks and little else. The day-by-day
         // arithmetic is property-tested without rendering in `hazardsModel.test.ts`; this proves
@@ -513,19 +515,19 @@ describe('HazardsTabView — the winters, a day at a time', () => {
         if (entries.some((e) => !e.active)) {
           expect(container.querySelector('[data-slot="hazards-unknown-ends"]')).not.toBeNull();
         }
-        cleanup();
       },
     );
     // Each run renders the tab; the arithmetic's breadth — every boundary, both kinds of read — is
     // the model test's (`hazardsModel.test.ts`). Here the pinned cases, CI's seed replayed as it ran
-    // (1442103800, three runs: it found the last-day case), then one random run.
+    // (1442103800: its first draw found the last-day case), then one random run.
     const examples: [Array<{ day: number; hour: number; active: boolean }>, boolean][] = [
-      // The regression (CI, seed 1442103800, its counterexample day 364 at hour 0): an archived
-      // hazard first reported on the season's last day — marked, on the read's word. With it, the
-      // first day at midnight, and the last day's last hour beside one still active.
+      // The regression (CI, seed 1442103800, its counterexample day 364 at hour 0 — this winter's
+      // last): an archived hazard first reported on the season's last day — marked, on the read's
+      // word. With it, the first day at midnight, and the last day's last hour beside one still
+      // active.
       [
         [
-          { day: 364, hour: 0, active: false },
+          { day: days - 1, hour: 0, active: false },
           { day: 0, hour: 0, active: false },
           { day: days - 1, hour: 23, active: true },
         ],
@@ -541,7 +543,9 @@ describe('HazardsTabView — the winters, a day at a time', () => {
         true,
       ],
     ];
-    fc.assert(property, { seed: 1442103800, numRuns: 3, examples });
+    // fast-check counts `examples` toward `numRuns`: the examples, then exactly one draw from the
+    // seed — as CI ran it (two examples, `numRuns: 3`), however many examples are pinned here.
+    fc.assert(property, { seed: 1442103800, numRuns: examples.length + 1, examples });
     fc.assert(property, { numRuns: 1 });
   });
 

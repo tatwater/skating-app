@@ -774,7 +774,7 @@ describe('first-report marks — from the read’s own hazards', () => {
 
 describe('the strip’s safety rule: no recorded end never reads as ended, archived or gone (B01-3n)', () => {
   const ENDED_WORDS = /\b(end(ed|s)?|gone|archived|clear(ed)?|safe)\b/i;
-  /** The nth Sunday of a UTC month, as a day index into `season`'s window (n < 0 counts back). */
+  /** The nth Sunday (n from 1) of a UTC month, as a day index into `season`'s window. */
   const sundayIndex = (season: number, year: number, month: number, n: number) => {
     const first = Date.UTC(year, month, 1);
     const firstSunday = 1 + ((7 - new Date(first).getUTCDay()) % 7);
@@ -782,13 +782,12 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
   };
   /**
    * The edges a winter has, by construction rather than by luck (B01-3s): its first and last days,
-   * 29 February in a winter that has one, the days the clocks change (North America's, the first
-   * Sunday of November and the second of March — UTC days, as the strip's are), and the turn of the
-   * year.
+   * 29 February (1 March in a winter without one), the days the clocks change (North America's, the
+   * first Sunday of November and the second of March — UTC days, as the strip's are), and the turn
+   * of the year.
    */
   const edgesOf = (season: number) => {
     const { days } = winterWindow(season);
-    const leap = dayIndex(Date.UTC(season + 1, 1, 29), season);
     return [
       0,
       1,
@@ -798,8 +797,9 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
       sundayIndex(season, season + 1, 2, 2),
       dayIndex(Date.UTC(season, 11, 31), season) as number,
       dayIndex(Date.UTC(season + 1, 0, 1), season) as number,
-      // A winter without a 29 February has 1 March there instead: still an edge worth a pin.
-      ...(leap !== null && new Date(Date.UTC(season + 1, 1, 29)).getUTCMonth() === 1 ? [leap] : []),
+      // 29 February; a winter without one has 1 March there instead (`Date.UTC` rolls it over),
+      // the first of its days the axis's leap slot moves one along — still an edge worth a pin.
+      dayIndex(Date.UTC(season + 1, 1, 29), season) as number,
     ];
   };
   // A common winter and two that hold a 29 February.
@@ -814,7 +814,7 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
       kind: fc.constantFrom('active', 'unended', 'ended'),
     });
     // The clock: any instant in the winter and a little past it, biased to each edge day's first
-    // and last hour, the season's first instant and its very last.
+    // and last minute, the season's first instant and its very last.
     const now = fc.oneof(
       fc.constantFrom(
         start,
@@ -872,10 +872,10 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
   });
 
   it('holds over generated hazards and days, the edges pinned by the generators (pinned seeds, then one random)', () => {
-    for (const pinned of [20261116, 42, 9, 1442103800]) {
-      fc.assert(property, { seed: pinned, numRuns: 20 });
-    }
-    fc.assert(property, { numRuns: 20 });
+    // A seed replays only the arbitrary it was drawn from, so CI's (the rendered view's) has no
+    // place here: its case is pinned below by name.
+    for (const pinned of [20261116, 42, 9]) fc.assert(property, { seed: pinned, numRuns: 25 });
+    fc.assert(property, { numRuns: 25 });
   });
 
   it('every edge, as its own case: a hazard archived on it is marked there; one active, or a state unread on the last day, is a bar', () => {
@@ -886,17 +886,25 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
           const first = start + d * DAY + hour * HOUR;
           // Read at the season's very last instant: every edge day is behind it or on it.
           const now = start + days * DAY - 1;
-          const told = dailyFrom(season, [{ first, active: false }], now);
-          const marks = firstReports(told, now);
+          const read = (active: boolean, legacy = false) =>
+            dailyFrom(season, [{ first, active }], now, { legacy });
+          /** The edge day as the strip draws it, on the axis. */
+          const drawnOn = (r: ReturnType<typeof read>) => {
+            const line = (wintersFrom([r], now) as Winters).lines[0] as WinterLine;
+            const day = line.days[axisIndex(d, season)] ?? null;
+            return day === null ? null : drawnDay(day);
+          };
+          const marks = firstReports(read(false), now);
           expect(marks[d]).toBe(1);
           expect(marks.reduce((a, b) => a + b, 0)).toBe(1);
-          expect(firstReports(dailyFrom(season, [{ first, active: true }], now), now)[d]).toBe(0);
-          // The old read marks by the day after; on the season's last day there is none.
-          const legacy = firstReports(
-            dailyFrom(season, [{ first, active: false }], now, { legacy: true }),
-            now,
+          expect(drawnOn(read(false))).toEqual({ bars: 0, marks: 1 });
+          // One still active is a bar there, never a mark.
+          expect(drawnOn(read(true))).toEqual({ bars: 1, marks: 0 });
+          // The old read marks by the day after; on the season's last day there is none, so it is
+          // a bar there — on the lake that day, which is true.
+          expect(drawnOn(read(false, true))).toEqual(
+            d === days - 1 ? { bars: 1, marks: 0 } : { bars: 0, marks: 1 },
           );
-          expect(legacy[d]).toBe(d === days - 1 ? 0 : 1);
         }
       }
     }
