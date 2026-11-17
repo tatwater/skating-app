@@ -5151,6 +5151,62 @@ the count reads at most 306 rows.
 - The sweep's items in other files.
 - Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
 
+
+### Every town page advances or is done (B01-3q)
+
+**What the review found after #143 merged** (Greptile's note on its last head). A town candidates page
+read its columns in waves, then read each full column again cell by cell. The columns could spend the
+whole budget first — 109 full columns of 256 rows and one of 96 are exactly the 28,000 documents a
+transaction plans — and then the first cell's own read was refused, the page ended at its first cell,
+`next` named where it began, and the action failed the body (*town candidates made no progress*),
+leaving its last answer in place. Not reachable on dev's data (a real column holds a few dozen rows),
+but the code allowed it.
+
+**The invariant: every page advances its cursor or is done, for any budget that can hold one unit of
+its work; a budget that cannot is its own named failure.** It lives in one mechanism,
+`ReadBudget.reserveFirst` (`lib/readBudget.ts`): a paged read holds back the worst case of settling
+its first item — every read that item can need — before anything else spends; a budget that cannot
+hold it throws `CannotAdvance` (an `OverBudget`) on the first call, holding nothing. The town page
+(`settleTownPage`, its reads now passed in) holds its first column's read and that column's own read
+of the first cell, reads them alongside the other columns' first wave, and so settles its first cell
+on every page: `cut` is at least one, so `next` is a later cell than `from`, or the page is done. The
+action's `movedOn` check stays as the backstop. With the whole budget the page is unchanged: one call
+a column, the same ids in the same order.
+
+**What changed in `lib/readBudget.ts`** (additive): the class `CannotAdvance extends OverBudget`, and
+the method `reserveFirst(cost: WaveCost)` — it checks bytes, calls and documents (`docs` defaulting
+to one a read, as `waves` counts) and only then takes them, through the existing `reserveCalls`. Its
+own tests: held from every axis; refused on each axis alone, holding nothing; the docs default.
+
+**Tests** (`townPageProgress.test.ts`, without a database — the cell index is synthetic). Greptile's
+exact case, red before the fix (the page ended at its first cell); a budget one document or one call
+short of a unit is `CannotAdvance` on the first call, and exactly one unit settles the first cell;
+over generated fills (empty, light and heavy cells, full and short columns), page sizes, column sizes
+and budgets from one unit to many, every page moves strictly on, the pages' union is the old walk's
+answer in its order, the pages are at most the walk's cells (each settles at least one), and runs
+are counted that the budget cut short — three pinned seeds and one random; with the whole budget, the
+pages are exactly the walk divided by the page size.
+
+**The fixture, cheap.** #143 raised the worst-case fixture's hook timeout after CI under coverage
+spent past 10 s building it: most of that was the old walk's 2,448 reads, one after another, to get
+the expected answer. That answer is now computed from the areas themselves (each town in the cells
+its box covers at its own rung, a cell's towns in the order added), and the small-world property
+checks it against the database walk on every run. The fixture builds in about 0.7 s under coverage;
+the default timeout is back.
+
+**The sweep: every paged or chained read #143 touched.**
+- `townCandidates` — could stall (above); fixed.
+- `townPage`, `countyPage` — no cursor: the action hands each a fixed slice of at most eleven and moves by the slice. Cannot stall.
+- `candidates`, `candidateOutline` — no cursor: one query a tile of a fixed tile list, one a tested outline. Cannot stall.
+- `seedAll` (and `fanOut`, `repairMissing`) — Convex's `paginate` with no filter and no byte cap: a page that is not the last holds at least one row and its cursor is past it. Cannot stall.
+- `markGeoStale`, `reviewQueueCounts`, `checkStored` — not paged (a list in hand; six bounded reads; at most 25 ids). Cannot stall.
+- `computeDue` — its pass tries at least one body it has not (unchanged by #143); the run-wide namesake reads change what a body reads, not which body is next. Cannot stall.
+- `ReadBudget.waves` in these files — only the town page, whose second wave (the full columns' cells) was the follow-up its first could starve; now its first cell is held, and any later cell refused ends the page after the first.
+
+**After merge, on dev.** `convex dev --once`, nothing more: no schema change, no backfill, and no
+answer changes (with the whole budget the page is the one #143 shipped). `bodyGeo:checkStored` on the
+largest bodies stays the right check and should read `same`.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
