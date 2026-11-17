@@ -18,6 +18,7 @@ import {
 import { SkeletonText } from '@/components/kit/skeleton';
 
 import { type Loadable, readState } from '../../reads/consoleReads';
+import type { ActOutcome } from '../person/useActing';
 import { type ChoicesRead, chooserMembers } from './recordModel';
 import { RECORD_WORDS as W } from './recordWords';
 
@@ -27,7 +28,8 @@ import { RECORD_WORDS as W } from './recordWords';
  * them (`moderation.postRestoreChoices`) — what each is, why it is down — **nothing chosen** until
  * the moderator chooses; a Report its author deleted is shown, never choosable. The restore is one
  * write (`setModerationStatus` with `withReportIds`); while it is out the sheet holds (Esc and Cancel
- * wait), and a refusal stands over the choices in the server's words.
+ * wait). A refusal is a toast naming the person (D268); the sheet stays open with the choices kept,
+ * and a press that waited behind another change says the sheet's own note over them.
  */
 export type PostChooserProps = {
   open: boolean;
@@ -35,8 +37,8 @@ export type PostChooserProps = {
   choices: Loadable<ChoicesRead | null>;
   now: number;
   timeZone?: string;
-  /** The restore with the chosen Reports; resolves to the server's refusal, or `null`. */
-  onRestore: (withReportIds: string[]) => Promise<string | null>;
+  /** The restore with the chosen Reports; resolves what it came to (the sheet closes once it landed). */
+  onRestore: (withReportIds: string[]) => Promise<ActOutcome>;
   container?: HTMLElement | null;
 };
 
@@ -77,7 +79,8 @@ function ChooserBody({
 }) {
   const [chosen, setChosen] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // The sheet's own note, never a server's words: this press waited behind another change.
+  const [waited, setWaited] = useState(false);
   // The chooser's read, its four answers apart (`readState`).
   const state = readState(choices);
   const read = state.kind === 'value' ? state.value : null;
@@ -93,11 +96,12 @@ function ChooserBody({
     if (busy || !ready) return;
     setBusy(true);
     onBusy(true);
-    void onRestore(picked).then((refused) => {
+    setWaited(false);
+    void onRestore(picked).then((outcome) => {
       setBusy(false);
       onBusy(false);
-      if (refused === null) onDone();
-      else setRefusal(refused);
+      if (outcome === 'landed') onDone();
+      else if (outcome === 'waiting') setWaited(true);
     });
   };
 
@@ -132,7 +136,7 @@ function ChooserBody({
                 {state.value.prompt}
               </p>
             )}
-            {refusal !== null && <AlertDialogError>{refusal}</AlertDialogError>}
+            {waited && <AlertDialogError>{W.anotherOnItsWay}</AlertDialogError>}
             <Section title={W.itsReports} count={members.length} level={3}>
               <div className="flex flex-col">
                 {members.map((m) => (

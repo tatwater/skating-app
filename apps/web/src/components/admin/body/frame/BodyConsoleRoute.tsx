@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { listWords } from '@/lib/words';
 import { rememberOpened } from '../../bodies/openedRecently';
 import { useUndo } from '../../shell/undo';
-import { notSavedWhat, PICK_WHAT } from '../consoleWords';
+import { PICK_WHAT } from '../consoleWords';
 import { BodyMap } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
 import type { BodyMapScene } from '../map/mapDescriptors';
@@ -42,7 +42,7 @@ import {
   searchFor,
   validateBodySearch,
 } from './bodySearch';
-import { BodyBindingProvider, type BodyHold, sayNotSaved, sendFor } from './currentBody';
+import { BodyBindingProvider, type BodyHold, sendFor } from './currentBody';
 import { NotBuiltTab } from './NotBuiltTab';
 import {
   type BodyTabProps,
@@ -342,8 +342,7 @@ export function useBoostCommit(
     (value: number, hold: BodyHold) => {
       const rounded = Math.round(value * 10) / 10;
       // The one write path (`currentBody`): the boost runs to its end against this body; its
-      // receipt names the body; a refusal is a toast naming the body and what wasn't saved,
-      // whether the slider is still here or not.
+      // receipt names the body; a refusal is a toast naming the body and what wasn't saved.
       return sendFor(hold, {
         body: bodyId,
         write: () => set({ waterBodyId: bodyId as Id<'waterBodies'>, curatedBoost: rounded }),
@@ -354,18 +353,7 @@ export function useBoostCommit(
             subject,
           }),
         what: PICK_WHAT.boost,
-      }).then(
-        // `false`: refused off its console, and said there.
-        (landed) => landed,
-        // Refused here: said once, as every press-to-save control says one — what wasn't saved.
-        (e: unknown) => {
-          sayNotSaved(
-            hold,
-            notSavedWhat(PICK_WHAT.boost, e instanceof Error ? e.message : String(e)),
-          );
-          return false;
-        },
-      );
+      });
     },
     [announce, bodyId, set],
   );

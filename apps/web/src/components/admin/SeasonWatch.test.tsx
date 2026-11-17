@@ -1,5 +1,5 @@
 import { DEFAULT_SEASON_WATCH_SETTINGS, evaluateSeason } from '@skating/core';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { toForm } from '@/lib/seasonPreview';
@@ -12,6 +12,7 @@ import {
   WatchCard,
   type WatchRow,
 } from './SeasonWatch';
+import { Refused } from './said';
 
 const ROW: WatchRow = {
   season: 'winter-2026-27',
@@ -112,9 +113,9 @@ describe('ImageryPanel', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
-  it('offers Pause while running, and shows an action error', async () => {
+  it('offers Pause while running; refused, it prints nothing (the write’s toast says it)', async () => {
     const onPause = vi.fn(async () => {
-      throw new Error('[CONVEX M] Uncaught ConvexError: No watch is open for winter-2026-27.');
+      throw new Refused();
     });
     render(
       <ImageryPanel
@@ -125,7 +126,12 @@ describe('ImageryPanel', () => {
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Pause imagery' }));
-    expect(await screen.findByText('No watch is open for winter-2026-27.')).toBeInTheDocument();
+    await waitFor(() => expect(onPause).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pause imagery' })).toBeEnabled(),
+    );
+    expect(screen.queryByText(/No watch is open/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('offers Retry failed beside the failures, and shows a backoff', async () => {

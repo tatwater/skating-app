@@ -68,7 +68,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const dismiss = useMutation(api.corpusPlaceNames.dismiss);
   const approve = useMutation(api.corpusRequests.approve);
   const decline = useMutation(api.corpusRequests.decline);
-  const { act, actInDialog } = useTabAction(bodyId);
+  const { act } = useTabAction(bodyId);
   const { can } = useRole();
 
   const nameOf = (id: string) =>
@@ -112,8 +112,8 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       }
       onDismissName={
         can('corpus.placeNames')
-          ? (askId, reason, note, asker) =>
-              actInDialog(
+          ? (askId, reason, note) =>
+              act(
                 () =>
                   dismiss({
                     id: askId as Id<'corpusPlaceNames'>,
@@ -124,7 +124,6 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
                   title: `Dismissed “${askName(askId)}”`,
                   target: { targetType: 'corpusPlaceName', targetId: askId },
                 },
-                asker,
               )
           : undefined
       }
@@ -154,15 +153,11 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       }
       onDecline={
         can('inbox.request')
-          ? (askId, note, asker) =>
-              actInDialog(
-                () => decline({ requestId: askId as Id<'waterBodyRequests'>, note }),
-                {
-                  title: `Declined “${askName(askId)}”`,
-                  target: { targetType: 'waterBodyRequest', targetId: askId },
-                },
-                asker,
-              )
+          ? (askId, note) =>
+              act(() => decline({ requestId: askId as Id<'waterBodyRequests'>, note }), {
+                title: `Declined “${askName(askId)}”`,
+                target: { targetType: 'waterBodyRequest', targetId: askId },
+              })
           : undefined
       }
     />

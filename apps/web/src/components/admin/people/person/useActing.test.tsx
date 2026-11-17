@@ -50,45 +50,60 @@ describe('keepFocus', () => {
 });
 
 describe('useActing', () => {
-  it('a write that throws is said, never swallowed', async () => {
-    const onAct = vi.fn(async () => {
-      throw new Error('offline');
-    });
-    const { result } = renderHook(() => useActing(onAct));
-    let refused: string | null = null;
+  /** A refusal is its toast's (said by the write path, D268): the hook keeps no words of it. */
+  it.each([
+    ['refused', async () => false],
+    [
+      'a write path that threw',
+      async () => {
+        throw new Error('offline');
+      },
+    ],
+  ])('%s: the press hears only "refused", and nothing is kept to print', async (_, answer) => {
+    const { result } = renderHook(() => useActing(vi.fn(answer)));
+    let outcome: string | null = null;
     await act(async () => {
-      refused = await result.current.act('lift', { kind: 'lift' }, { region: null, inline: true });
+      outcome = await result.current.act('lift', { kind: 'lift' }, { region: null, inline: true });
     });
-    expect(refused).toBe('Something went wrong — check your connection and try again.');
-    expect(result.current.refusals).toEqual({
-      lift: 'Something went wrong — check your connection and try again.',
-    });
+    expect(outcome).toBe('refused');
+    expect(result.current.waits.size).toBe(0);
     expect(result.current.busy).toBeNull();
   });
 
-  it('a dialog’s refusal stays with the dialog, not the row', async () => {
-    const { result } = renderHook(() => useActing(async () => 'No'));
+  it('a landed write is "landed"', async () => {
+    const { result } = renderHook(() => useActing(async () => true));
+    let outcome: string | null = null;
     await act(async () => {
-      await result.current.act(
+      outcome = await result.current.act(
         'ban',
         { kind: 'ban', reason: 'x' },
         { region: null, inline: false },
       );
     });
-    expect(result.current.refusals).toEqual({});
+    expect(outcome).toBe('landed');
   });
 
-  it('a new try clears the last refusal', async () => {
-    let answer: string | null = 'No';
-    const { result } = renderHook(() => useActing(async () => answer));
+  it('a press while another change is out waits: the page’s own note, gone once that change settles', async () => {
+    let settle: (landed: boolean) => void = () => {};
+    const { result } = renderHook(() =>
+      useActing(() => new Promise<boolean>((resolve) => (settle = resolve))),
+    );
+    let first: Promise<unknown> = Promise.resolve();
+    let second: string | null = null;
     await act(async () => {
-      await result.current.act('lift', { kind: 'lift' }, { region: null, inline: true });
+      first = result.current.act('lift', { kind: 'lift' }, { region: null, inline: true });
+      second = await result.current.act(
+        'ban',
+        { kind: 'ban', reason: 'x' },
+        { region: null, inline: true },
+      );
     });
-    expect(result.current.refusals).toEqual({ lift: 'No' });
-    answer = null;
+    expect(second).toBe('waiting');
+    expect([...result.current.waits]).toEqual(['ban']);
     await act(async () => {
-      await result.current.act('lift', { kind: 'lift' }, { region: null, inline: true });
+      settle(true);
+      await first;
     });
-    expect(result.current.refusals).toEqual({});
+    expect(result.current.waits.size).toBe(0);
   });
 });

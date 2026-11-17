@@ -34,6 +34,11 @@ const { queryResults, useQuery } = vi.hoisted(() => {
   };
 });
 vi.mock('convex/react', () => ({ useMutation, useQuery }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 vi.mock('@skating/convex/api', () => ({
   api: {
     landmarks: {
@@ -487,7 +492,8 @@ describe('LandmarkTool', () => {
     expect(onReview.mock.lastCall?.[0]).not.toBe(first);
   });
 
-  it('keeps Same place open with the server’s reason when the landmark moved since you looked', async () => {
+  it('keeps Same place open when the landmark moved since you looked; the server’s reason is its toast', async () => {
+    toasts.length = 0;
     queryResults.openLandmarkRequestsForBody = {
       proposals: [
         {
@@ -515,11 +521,17 @@ describe('LandmarkTool', () => {
     refused.message = `[CONVEX M(corpusRequests:approve)] [Request ID: x] Server Error\nUncaught ConvexError: ${reason}\n  Called by client`;
     refusal.next = refused;
     fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
-    // The dialog stays open and says why in the server's own words — not the transport's.
+    // The dialog stays open; why is said once, in a toast in the server's own words — not the
+    // transport's — and never in the dialog or on the page's banner.
     const dialog = screen.getByRole('dialog');
-    expect(await within(dialog).findByText(reason)).toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent('[CONVEX');
-    expect(onResult).toHaveBeenCalledWith({ tone: 'error', text: reason });
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({ title: 'Not saved', description: reason }),
+      ]),
+    );
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(within(dialog).queryByText(reason)).toBeNull();
+    expect(onResult).not.toHaveBeenCalledWith(expect.objectContaining({ tone: 'error' }));
   });
 
   it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {
@@ -540,7 +552,8 @@ describe('LandmarkTool', () => {
     expect(screen.getByText(/More are waiting/)).toBeInTheDocument();
   });
 
-  it('reports a refused write in the server’s words', async () => {
+  it('a refused write is one toast in the server’s words, never the banner', async () => {
+    toasts.length = 0;
     const { ConvexError } = await import('convex/values');
     refusal.next = new ConvexError('"Apple Island" is already a landmark here');
     const { onResult } = renderTool({ point: { lat: 44.3, lng: -73.2 } });
@@ -549,11 +562,16 @@ describe('LandmarkTool', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
     await waitFor(() =>
-      expect(onResult).toHaveBeenCalledWith({
-        tone: 'error',
-        text: '"Apple Island" is already a landmark here',
-      }),
+      expect(toasts).toEqual([
+        {
+          title: 'Not saved',
+          description: '"Apple Island" is already a landmark here',
+          tone: 'bad',
+          timeout: 0,
+        },
+      ]),
     );
+    expect(onResult).not.toHaveBeenCalled();
   });
 
   it('answers a skater’s proposal by adding the landmark with the ask attached', async () => {

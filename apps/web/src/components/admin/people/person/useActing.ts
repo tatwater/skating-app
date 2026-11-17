@@ -1,72 +1,68 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { PersonAction } from './levers';
-import { WORDS } from './personWords';
 
 /**
- * The page's side of a write: which control is busy, the server's refusal in its place, and focus
- * kept where the operator was.
+ * What a press came to: landed; refused — said in its toast, naming the person (D268); or not sent,
+ * because another change is still on its way (`waiting`, the page's own note — never a server's).
+ */
+export type ActOutcome = 'landed' | 'refused' | 'waiting';
+
+/**
+ * The page's side of a write: which control is busy, the page's own note for a press that waited,
+ * and focus kept where the operator was.
  *
  * - **Optimistic nothing.** The page waits for the server; the reads move by themselves once the
  *   write lands (Convex is reactive), so nothing is refetched by hand.
+ * - **A refusal is a toast** naming the person, said by the write path wherever the moderator is
+ *   when it comes; nothing is printed in the lever's place, and a dialog stays open over its reason.
  * - **Busy keeps the control.** The pressed button stays mounted and focusable while it spins
  *   (`aria-disabled`, never unmounted) — the kit `Button`'s `loading`.
  * - **Focus stays in its region.** When the write settles, focus goes back to whatever held it
  *   before (the button, or a dialog's trigger); if that is gone, to the same lever's button, else to
  *   the block itself — never to the page.
  */
-export function useActing(onAct: (action: PersonAction) => Promise<string | null>) {
+export function useActing(onAct: (action: PersonAction) => Promise<boolean>) {
   const [busy, setBusy] = useState<string | null>(null);
-  const [refusals, setRefusals] = useState<Readonly<Record<string, string>>>({});
+  /** Controls told "another change is on its way": the page's note, gone when that change settles. */
+  const [waits, setWaits] = useState<ReadonlySet<string>>(new Set());
   const running = useRef<string | null>(null);
-  /** Controls told "another change is on its way": their note goes when that change settles. */
-  const held = useRef(new Set<string>());
 
   const act = useCallback(
     async (
       id: string,
       action: PersonAction,
       opts: { region: HTMLElement | null; inline: boolean },
-    ): Promise<string | null> => {
+    ): Promise<ActOutcome> => {
       if (running.current !== null) {
-        const wait = WORDS.anotherOnItsWay;
-        if (opts.inline) {
-          held.current.add(id);
-          setRefusals((r) => ({ ...r, [id]: wait }));
-        }
-        return wait;
+        if (opts.inline) setWaits((w) => new Set(w).add(id));
+        return 'waiting';
       }
       running.current = id;
       const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setBusy(id);
-      setRefusals(({ [id]: _gone, ...rest }) => rest);
-      let refused: string | null;
+      let landed: boolean;
       try {
-        refused = await onAct(action);
+        landed = await onAct(action);
       } catch {
-        refused = WORDS.somethingWrong;
+        // The write path says every refusal itself; a throw past it changed nothing.
+        landed = false;
       }
       running.current = null;
       setBusy(null);
-      const waited = [...held.current];
-      held.current.clear();
-      setRefusals((r) => {
-        const next = { ...r };
-        for (const w of waited) delete next[w];
-        if (refused !== null && opts.inline) next[id] = refused;
-        return next;
-      });
+      // Kept as it is when no press waited, so a settle draws nothing more than its own.
+      setWaits((w) => (w.size === 0 ? w : new Set()));
       // After the commit the settled state draws: put focus back inside the region — unless a
-      // dialog refused, which stays open with the refusal and keeps its own focus.
-      if (refused === null || opts.inline) {
+      // dialog was refused, which stays open and keeps its own focus.
+      if (landed || opts.inline) {
         requestAnimationFrame(() => keepFocus(opts.region, before, id));
       }
-      return refused;
+      return landed ? 'landed' : 'refused';
     },
     [onAct],
   );
 
-  return { busy, refusals, act };
+  return { busy, waits, act };
 }
 
 /** Focus back to `before` if it is still on the page; else the lever's button; else the block. */

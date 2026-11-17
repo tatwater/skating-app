@@ -1,11 +1,12 @@
 import { api } from '@skating/convex/api';
 import { searchQueryArg } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
 import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/said';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -34,10 +35,10 @@ function AdminWater() {
     api.waterBodies.searchByName,
     lookupArg === 'skip' ? 'skip' : { ...lookupArg, bodiesOnly: true },
   );
-  const approve = useMutation(api.waterBodies.approve);
-  const reject = useMutation(api.waterBodies.reject);
-  const merge = useMutation(api.waterBodies.merge);
-  const dismiss = useMutation(api.waterBodies.dismissDuplicates);
+  const approve = useSaidMutation(api.waterBodies.approve);
+  const reject = useSaidMutation(api.waterBodies.reject);
+  const merge = useSaidMutation(api.waterBodies.merge);
+  const dismiss = useSaidMutation(api.waterBodies.dismissDuplicates);
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,7 +141,8 @@ function AdminWater() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => approve({ waterBodyId: body._id })}
+                    // Refused: said in its toast (the net).
+                    onClick={() => void approve({ waterBodyId: body._id }).catch(() => {})}
                   >
                     Approve
                   </Button>
@@ -195,6 +197,8 @@ function AdminWater() {
               // schedules a re-stamp, and two of them racing onto the same survivor is not a thing
               // worth finding out about from a queue page.
               onMerge={async (survivorId, reason) => {
+                // A refused merge is said in its toast and stops the rest (the net rejects), so the
+                // Keep dialog stays open over its reason.
                 for (const loser of group.members) {
                   // A tombstone is already merged; the card never offers it either way.
                   if (loser._id === survivorId || loser.dedupStatus === 'merged') continue;

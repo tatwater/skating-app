@@ -54,9 +54,9 @@ const EVERY_LEVER = {
   data: MASCOMA_PLACES,
   canPlace: true,
   onFileAsSpelling: fn(),
-  onDismissName: fn(async () => null),
+  onDismissName: fn(async () => true),
   onSamePlace: fn(),
-  onDecline: fn(async () => null),
+  onDecline: fn(async () => true),
   onEditLandmark: fn(),
   onLitChange: fn(),
 };
@@ -162,12 +162,7 @@ export const DeclineAProposal: Story = {
     await expect(action).toBeDisabled();
     await userEvent.type(within(dialog).getByRole('textbox'), 'The dam is already on the map');
     await userEvent.click(action);
-    await expect(args.onDecline).toHaveBeenCalledWith(
-      'ask-flats',
-      'The dam is already on the map',
-      // The dialog's opening, for an answer that comes after it has gone.
-      expect.anything(),
-    );
+    await expect(args.onDecline).toHaveBeenCalledWith('ask-flats', 'The dam is already on the map');
     await waitFor(() => expect(document.querySelector('[data-slot="reason-ask"]')).toBeNull());
   },
 };

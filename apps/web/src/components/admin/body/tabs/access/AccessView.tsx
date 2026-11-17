@@ -13,7 +13,6 @@ import {
 } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
-import type { Asker } from '../latestPick';
 import { LIT_ROW, LoadingSection, litAttr, TabBody } from '../tabParts';
 import { CouldntRead, LoadingLine, NOT_RECORDED, ReadFailures } from '../tabStates';
 import { type AccessData, earlierWords, litId, type PutInRow } from './accessModel';
@@ -45,13 +44,11 @@ export type AccessViewProps = {
   lit?: string | null;
   /** The clock the ruling's days are counted to. */
   now: number;
-  /** Rule the body (or clear the ruling). Ruling no public access passes its reason. */
-  onRule?: (
-    verdict: PublicAccessVerdict | null,
-    reason?: string,
-    /** The reason dialog's opening that asked, for an answer that comes after it has gone. */
-    asker?: { here: () => boolean },
-  ) => Promise<string | null>;
+  /**
+   * Rule the body (or clear the ruling). Ruling no public access passes its reason. Resolves whether
+   * it landed: a refusal is a toast, and the reason dialog stays open over what was typed.
+   */
+  onRule?: (verdict: PublicAccessVerdict | null, reason?: string) => Promise<boolean>;
   /** The viewer may place put-ins and lots (`body.access`): the map tools' entry points are drawn. */
   canPlace?: boolean;
   /**
@@ -60,8 +57,8 @@ export type AccessViewProps = {
    * launch (without its parking or walk) rather than promoting it, so it is never called from here.
    */
   onMakeOfficial?: ((putIn: PutInRow) => void) | typeof UNAVAILABLE;
-  /** Hide a put-in, with the reason. Resolves the refusal, or `null`. */
-  onHide?: (putIn: PutInRow, reason: string, asker?: Asker) => Promise<string | null>;
+  /** Hide a put-in, with the reason. Resolves whether it landed (a refusal is a toast). */
+  onHide?: (putIn: PutInRow, reason: string) => Promise<boolean>;
 };
 
 const TOOLS = {
@@ -269,7 +266,7 @@ function RulingSection({
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"
       label="Reason · kept in History"
-      onConfirm={(reason, asker) => onRule('none', reason, asker)}
+      onConfirm={(reason) => onRule('none', reason)}
     />
   );
   return (
@@ -399,7 +396,7 @@ function PutInItem({
           description="It comes off the map and out of the drawer, with every launch close by."
           confirm="Hide"
           label="Reason · kept in History"
-          onConfirm={(reason, asker) => onHide(p, reason, asker)}
+          onConfirm={(reason) => onHide(p, reason)}
         />
       )}
     </span>

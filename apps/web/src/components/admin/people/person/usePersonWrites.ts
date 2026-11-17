@@ -3,16 +3,18 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback } from 'react';
 
-import { errorText } from '../../adminUi';
+import { said, sayRefusal } from '../../said';
 import { type Receipt, useUndo } from '../../shell/undo';
+import { RECORD_WORDS } from '../record/recordWords';
 import type { PersonAction } from './levers';
 import { WORDS } from './personWords';
 import { receiptFor } from './receipts';
 
 /**
  * **The page's one write path.** Each lever's action goes to its server write; on success the
- * shell's undo toast shows the receipt, and on refusal the server's own words come back to the
- * control that asked.
+ * shell's undo toast shows the receipt; a refusal is a toast naming the person, in the server's own
+ * words, wherever the moderator is when it comes (D268) — the control that asked learns only that it
+ * didn't land.
  *
  * - **Nothing optimistic**: it waits for the server, and the reads move on their own once the write
  *   lands.
@@ -42,59 +44,53 @@ export function usePersonWrites(
   const { announce } = useUndo();
 
   return useCallback(
-    async (action: PersonAction): Promise<string | null> => {
-      if (person === null) return WORDS.personFailed;
+    async (action: PersonAction): Promise<boolean> => {
+      if (person === null) {
+        // Nothing was sent: the page has no person to write to.
+        sayRefusal({ title: RECORD_WORDS.refusalOf(''), description: WORDS.personFailed });
+        return false;
+      }
       const userId = person.userId as Id<'profiles'>;
       // What the write answered: today the person's id (or nothing); once each write returns
       // `{ actionId }`, the receipt carries it (below) and the toast needs no lookup.
-      let answered: unknown;
-      try {
-        switch (action.kind) {
-          case 'right':
-            answered = await setPostingPermission({
-              userId,
-              permission: action.permission,
-              allowed: action.allowed,
-              ...(action.reason !== undefined && { reason: action.reason }),
-            });
-            break;
-          case 'bountyLimit':
-            answered = await setBountyPostLimit({
-              userId,
-              ...(action.limit !== null && { limit: action.limit }),
-              ...(action.reason !== undefined && { reason: action.reason }),
-            });
-            break;
-          case 'suspend':
-            answered = await suspendUser({
-              userId,
-              reason: action.reason,
-              suspendedUntil: action.until,
-            });
-            break;
-          case 'lift':
-            answered = await unbanUser({ userId });
-            break;
-          case 'ban':
-            answered = await banUser({ userId, reason: action.reason });
-            break;
-          case 'role': {
-            const reason = action.reason !== undefined ? { reason: action.reason } : {};
-            answered =
-              action.role === 'member'
-                ? await revokeRole({ userId, ...reason })
-                : await grantRole({ userId, role: action.role, ...reason });
-            break;
+      const sent = await said(
+        async (): Promise<unknown> => {
+          switch (action.kind) {
+            case 'right':
+              return setPostingPermission({
+                userId,
+                permission: action.permission,
+                allowed: action.allowed,
+                ...(action.reason !== undefined && { reason: action.reason }),
+              });
+            case 'bountyLimit':
+              return setBountyPostLimit({
+                userId,
+                ...(action.limit !== null && { limit: action.limit }),
+                ...(action.reason !== undefined && { reason: action.reason }),
+              });
+            case 'suspend':
+              return suspendUser({ userId, reason: action.reason, suspendedUntil: action.until });
+            case 'lift':
+              return unbanUser({ userId });
+            case 'ban':
+              return banUser({ userId, reason: action.reason });
+            case 'role': {
+              const reason = action.reason !== undefined ? { reason: action.reason } : {};
+              return action.role === 'member'
+                ? revokeRole({ userId, ...reason })
+                : grantRole({ userId, role: action.role, ...reason });
+            }
+            case 'ledger':
+              return action.grant
+                ? grantEditor({ userId })
+                : revokeEditor({ userId, reason: action.reason ?? '' });
           }
-          case 'ledger':
-            answered = action.grant
-              ? await grantEditor({ userId })
-              : await revokeEditor({ userId, reason: action.reason ?? '' });
-            break;
-        }
-      } catch (err) {
-        return errorText(err);
-      }
+        },
+        (why) => ({ title: RECORD_WORDS.refusalOf(person.displayName), description: why }),
+      );
+      if (!sent.landed) return false;
+      const answered = sent.value;
       // The write landed: say so now. The receipt follows on its own — the shell's toast shows once
       // its undo lookup returns (a moment), with Undo while the server offers one; a lookup that
       // fails leaves the receipt without Undo (History keeps the row). It never holds this result.
@@ -105,7 +101,7 @@ export function usePersonWrites(
           target: { targetType: 'user', targetId: userId },
           undoable: false,
         }).catch(() => {});
-        return null;
+        return true;
       }
       const actionId = actionIdOf(answered);
       const undoNeedsReason = undoNeedsReasonOf(answered);
@@ -116,7 +112,7 @@ export function usePersonWrites(
         ...(actionId !== null && undoNeedsReason !== null && { undoNeedsReason }),
       };
       void announce(receipt).catch(() => {});
-      return null;
+      return true;
     },
     [
       person,

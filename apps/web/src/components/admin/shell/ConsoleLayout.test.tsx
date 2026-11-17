@@ -7,7 +7,7 @@
 import { type Capability, canUse, seasonOf } from '@skating/core';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { type ReactNode, useContext } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   asked: [] as string[],
   beats: 0,
+  /** The pick store each drawing of the page found above it. */
+  stores: [] as unknown[],
+  pickStoreModule: null as unknown,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -30,7 +33,11 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
-  Outlet: () => <p>the page</p>,
+  Outlet: () => {
+    const { PickStoreContext } = mocks.pickStoreModule as typeof import('../body/tabs/latestPick');
+    mocks.stores.push(useContext(PickStoreContext));
+    return <p>the page</p>;
+  },
 }));
 vi.mock('../../../lib/useRole', () => ({
   useRole: () => ({
@@ -64,6 +71,7 @@ vi.mock('./ConsolePalette', () => ({
   ConsolePalette: ({ open }: { open: boolean }) => (open ? <p>palette open</p> : null),
 }));
 
+mocks.pickStoreModule = await import('../body/tabs/latestPick');
 const { ConsoleLayout } = await import('./ConsoleLayout');
 const { modKey } = await import('../../../lib/keys');
 
@@ -74,6 +82,7 @@ beforeEach(() => {
   ]);
   mocks.asked = [];
   mocks.beats = 0;
+  mocks.stores = [];
   mocks.pathname = '/admin';
   mocks.navigate = vi.fn();
   mocks.role = 'moderator';
@@ -82,6 +91,20 @@ beforeEach(() => {
 });
 
 const rail = () => screen.getByRole('navigation', { name: 'Modes' });
+
+describe('the queues’ owners outlive the splash', () => {
+  it('a role reload that shows the splash keeps the same pick store above the page', () => {
+    const { rerender } = render(<ConsoleLayout />);
+    mocks.loading = true;
+    rerender(<ConsoleLayout />);
+    expect(screen.getByText('splash')).toBeInTheDocument();
+    mocks.loading = false;
+    rerender(<ConsoleLayout />);
+    const found = mocks.stores.filter((s) => s !== null);
+    expect(found.length).toBeGreaterThan(1);
+    expect(new Set(found).size).toBe(1);
+  });
+});
 
 describe('the gate', () => {
   it('holds on the splash while the role resolves, guessing nothing', () => {

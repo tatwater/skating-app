@@ -18,6 +18,8 @@ import {
   countyKeyOfSubdivision,
   createReach,
   isUndefinedSubdivision,
+  type Namesake,
+  namesakeTells,
   REACH_PAD_DEG,
   townKindOf,
 } from '@skating/core';
@@ -37,8 +39,8 @@ import { nextAttemptState } from './lib/attempts';
 import {
   coverTiles,
   hasTownEntries,
-  kindsDiffer,
   markGeoStale,
+  namesakesOf,
   outlineStamp,
   PLACES_RULE,
   paddedBox,
@@ -215,16 +217,16 @@ export const townPage = internalQuery({
 export const SHARING_PAGE = 1;
 
 /**
- * Which of these town names its state's subdivisions share **with a kind of their own** (B01-3l) —
- * `kindsDiffer` on `by_level_state_name`. What decides whether a town's label shows its kind
- * ("Plattsburgh (city)"): only where a kind tells the namesakes apart.
+ * Each of these town names' subdivisions in its state, with their kinds (B01-3l, B01-3m) —
+ * `namesakesOf` on `by_level_state_name`. What decides what tells a town from them: its kind
+ * ("Plattsburgh (city)") where a kind does, its county ("Clinton (Clinton County)") where it can't.
  */
 export const townNamesShared = internalQuery({
   args: { towns: v.array(v.object({ state: v.string(), name: v.string() })) },
   handler: async (ctx, { towns }) => {
     if (towns.length > SHARING_PAGE) throw new ConvexError(`at most ${SHARING_PAGE} names a page`);
-    const out: boolean[] = [];
-    for (const { state, name } of towns) out.push(await kindsDiffer(ctx, state, name));
+    const out: Namesake[][] = [];
+    for (const { state, name } of towns) out.push(await namesakesOf(ctx, state, name));
     return out;
   },
 });
@@ -256,12 +258,19 @@ export type ReachedTown = {
   externalId: string;
   /** TIGER's full name ("Plattsburgh city"), when the boundary carries one (B01-3l). */
   fullName?: string;
-  /** Another loaded subdivision of the state shares the name: the label shows the kind. */
-  shared?: boolean;
+  /** The loaded subdivisions of its state sharing its name, with their kinds (itself among them). */
+  namesakes?: Namesake[];
 };
 
 /** A town entry as the facts store it: keyed by its boundary, its kind when its name is shared. */
-export type TownEntry = { name: string; state: string; id: Id<'adminAreas'>; kind?: string };
+export type TownEntry = {
+  name: string;
+  state: string;
+  id: Id<'adminAreas'>;
+  kind?: string;
+  /** Its county, where a namesake of its kind needs it to be told apart (B01-3m). */
+  inCounty?: string;
+};
 
 /**
  * **The places a body lies in, from the towns holding its shoreline** (D266, `@skating/core`'s
@@ -300,12 +309,16 @@ export function placesFrom(
     if (county !== undefined && !counties.includes(county)) counties.push(county);
     if (isUndefinedSubdivision(area.externalId)) continue;
     if (!townEntries.some((e) => e.id === area.id)) {
-      const kind = area.shared === true ? townKindOf(area.name, area.fullName) : undefined;
+      const own = townKindOf(area.name, area.fullName);
+      const tells = namesakeTells(area.id, own ?? '', area.namesakes ?? []);
+      const kind = tells.kind ? own : undefined;
+      const inCounty = tells.county ? county : undefined;
       townEntries.push({
         name: area.name,
         state: area.state,
         id: area.id,
         ...(kind !== undefined ? { kind } : {}),
+        ...(inCounty !== undefined ? { inCounty } : {}),
       });
     }
     if (!towns.includes(area.name)) {
@@ -383,17 +396,20 @@ async function computePlaces(
         .map((t) => [nameKey(t), { state: t.state, name: t.name }] as const),
     ).values(),
   ];
-  const sharedNames = new Set<string>();
+  const sharedNames = new Map<string, Namesake[]>();
   for (let k = 0; k < asks.length; k += SHARING_PAGE) {
     const page = asks.slice(k, k + SHARING_PAGE);
-    const shared: boolean[] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
+    const lists: Namesake[][] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
       towns: page,
     });
     page.forEach((t, i) => {
-      if (shared[i] === true) sharedNames.add(nameKey(t));
+      sharedNames.set(nameKey(t), lists[i] ?? []);
     });
   }
-  for (const t of reached) if (sharedNames.has(nameKey(t))) t.shared = true;
+  for (const t of reached) {
+    const namesakes = sharedNames.get(nameKey(t));
+    if (namesakes !== undefined) t.namesakes = namesakes;
+  }
   const keys = [
     ...new Set(
       reached
@@ -534,6 +550,8 @@ export const store = internalMutation({
           state: v.string(),
           id: v.id('adminAreas'),
           kind: v.optional(v.string()),
+          /** Its county, where a namesake of its kind needs it told apart (B01-3m). */
+          inCounty: v.optional(v.string()),
         }),
       ),
     ),

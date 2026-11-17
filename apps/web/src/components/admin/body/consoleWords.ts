@@ -7,13 +7,13 @@
 
 // ── A save's result (D265) ─────────────────────────────────────────────────────────────────────
 
-/** A save that didn't land, said off its console: its title names the body. */
+/** A save that didn't land, said in its toast (D268): its title names the body. */
 export const notSavedTitle = (subject: string | undefined): string =>
   subject === undefined ? 'Not saved' : `Not saved · ${subject}`;
 
 /**
- * What a press-to-save control's refusal names, said where no one who asked is still there ("Not
- * saved · Mascoma Lake" — "The ruling: …").
+ * What a press-to-save control's refusal names in its toast ("Not saved · Mascoma Lake" — "The
+ * ruling: …").
  */
 export const PICK_WHAT = {
   name: 'The displayed name',
@@ -25,7 +25,7 @@ export const PICK_WHAT = {
   satellite: 'The satellite link',
 } as const;
 
-/** A save off its console's toast: what it was, then the server's words. */
+/** A refused save's toast: what it was, then the server's words. */
 export const notSavedWhat = (what: string, said: string): string => `${what}: ${said}`;
 
 /** Refused: the subtree's own body is not the one the write names (a missed reset). */
@@ -33,7 +33,7 @@ export const OTHER_BODY = 'Not saved: this page now shows another body. Open it 
 
 // ── The whole-list queue gave up ──────────────────────────────────────────────────────────────
 
-/** What a links save's refusal names, said off its page ("The links: …"). */
+/** What a links save's refusal names in its toast ("The links: …"). */
 export const LINKS_WHAT = 'The links';
 
 /** A links change (an edit, a remove, an order) whose links another moderator changed meanwhile. */

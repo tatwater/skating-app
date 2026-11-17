@@ -7,7 +7,7 @@ import {
   seasonFloorDate,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import {
@@ -21,6 +21,7 @@ import {
   useAction,
   WatchCard,
 } from '../components/admin/SeasonWatch';
+import { useSaidMutation } from '../components/admin/said';
 import { type LakeHit, LakeSearchBox } from '../components/LakeSearch';
 import { Button } from '../components/ui/button';
 import {
@@ -86,15 +87,15 @@ function AdminSeasons() {
     | SeriesDoc[]
     | undefined;
   const activity = useQuery(api.imageryLive.activity, {});
-  const saveSettings = useMutation(api.seasonWatch.saveSettings);
-  const resetSeason = useMutation(api.seasonWatch.resetSeason);
-  const startImagery = useMutation(api.seasonWatch.startImagery);
-  const pauseImagery = useMutation(api.seasonWatch.pauseImagery);
-  const addFieldDate = useMutation(api.seasonWatch.addFieldDate);
-  const removeFieldDate = useMutation(api.seasonWatch.removeFieldDate);
-  const requestHistoryFill = useMutation(api.seasonWatch.requestHistoryFill);
-  const retryFailed = useMutation(api.imageryLive.retryFailed);
-  const tryAgainNow = useMutation(api.imageryLive.tryAgainNow);
+  const saveSettings = useSaidMutation(api.seasonWatch.saveSettings);
+  const resetSeason = useSaidMutation(api.seasonWatch.resetSeason);
+  const startImagery = useSaidMutation(api.seasonWatch.startImagery);
+  const pauseImagery = useSaidMutation(api.seasonWatch.pauseImagery);
+  const addFieldDate = useSaidMutation(api.seasonWatch.addFieldDate);
+  const removeFieldDate = useSaidMutation(api.seasonWatch.removeFieldDate);
+  const requestHistoryFill = useSaidMutation(api.seasonWatch.requestHistoryFill);
+  const retryFailed = useSaidMutation(api.imageryLive.retryFailed);
+  const tryAgainNow = useSaidMutation(api.imageryLive.tryAgainNow);
   const fill = useAction();
 
   const season = archiveSeasonAt(Date.now());
@@ -298,7 +299,6 @@ function AdminSeasons() {
         <p className="text-foreground-muted text-xs">
           {historyFillHint(overview.historyFill.seasons, overview.historyFill.spanMs)}
         </p>
-        {fill.error ? <p className="text-destructive text-sm">{fill.error}</p> : null}
         {resampling && previewed === undefined ? (
           <p className="text-foreground-muted text-xs">Re-drawing the sample for the edit…</p>
         ) : null}

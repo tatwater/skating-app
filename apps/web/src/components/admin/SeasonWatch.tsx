@@ -82,24 +82,24 @@ export function Section({
   );
 }
 
-/** Run an async action with a busy flag and an inline error — every button here does the same. */
+/**
+ * Run an async action with a busy flag — every button here does the same. Resolves whether it
+ * landed; a refusal is the write's toast (the Legacy net, D268), never said here.
+ */
 export function useAction() {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
-    setError(null);
     try {
       await action();
       return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^.*Uncaught ConvexError: /, '') : String(e));
+    } catch {
       return false;
     } finally {
       setBusy(false);
     }
   };
-  return { busy, error, run };
+  return { busy, run };
 }
 
 export interface NamedLow {
@@ -274,7 +274,7 @@ function ResetDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState('');
-  const { busy, error, run } = useAction();
+  const { busy, run } = useAction();
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
@@ -297,7 +297,6 @@ function ResetDialog({
           <Label htmlFor="reset-confirm">Type “reset” to confirm</Label>
           <Input id="reset-confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
@@ -358,7 +357,7 @@ export function ImageryPanel({
   onRetryFailed?: () => Promise<unknown>;
   onTryAgain?: () => Promise<unknown>;
 }) {
-  const { busy, error, run } = useAction();
+  const { busy, run } = useAction();
   const status = !row
     ? 'No watch is open, so there is nothing to look for yet.'
     : row.closesOn
@@ -386,7 +385,6 @@ export function ImageryPanel({
           )
         ) : null}
       </div>
-      {error ? <p className="text-destructive text-sm">{error}</p> : null}
       {activity?.backoffUntil && activity.backoffUntil > Date.now() ? (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-warning">
@@ -586,7 +584,7 @@ export function SettingsEditor({
   onDiscard: () => void;
 }) {
   const [note, setNote] = useState('');
-  const { busy, error, run } = useAction();
+  const { busy, run } = useAction();
   const errors = validateSeasonWatchSettings(edited);
   if (sentinels.length > MAX_ROSTER_SITES || pinned.length > MAX_ROSTER_SITES) {
     errors.push('At most ten sentinels and ten pinned sites.');
@@ -668,7 +666,6 @@ export function SettingsEditor({
           ))}
         </ul>
       ) : null}
-      {error ? <p className="text-destructive text-sm">{error}</p> : null}
       <div className="flex gap-2">
         <Button
           disabled={!dirty || errors.length > 0 || busy}
@@ -983,7 +980,7 @@ export function FieldDates({
   const [date, setDate] = useState('');
   const [place, setPlace] = useState('');
   const [note, setNote] = useState('');
-  const { busy, error, run } = useAction();
+  const { busy, run } = useAction();
   return (
     <div className="flex flex-col gap-3">
       {dates.length > 0 ? (
@@ -1092,7 +1089,6 @@ export function FieldDates({
           Add
         </Button>
       </div>
-      {error ? <p className="text-destructive text-sm">{error}</p> : null}
     </div>
   );
 }

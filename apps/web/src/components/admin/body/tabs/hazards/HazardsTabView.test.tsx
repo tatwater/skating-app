@@ -39,7 +39,7 @@ const base: HazardsTabViewProps = {
   winters: MASCOMA_WINTERS,
   patternsWaiting: { count: 2, capped: false },
   onOpenRecurrence: vi.fn(),
-  onDemote: vi.fn(async () => {}),
+  onDemote: vi.fn(async () => true),
   onRetry: vi.fn(),
   onMarkHazard: vi.fn<() => void>(),
   onAddFeature: vi.fn<() => void>(),
@@ -137,7 +137,7 @@ describe('HazardsTabView — the default board', () => {
   });
 
   it('demoting asks a reason first, and waits until there is one', async () => {
-    const onDemote = vi.fn(async () => {});
+    const onDemote = vi.fn(async () => true);
     render(<HazardsTabView {...base} onDemote={onDemote} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[1] as HTMLElement);
     const dialog = await screen.findByRole('alertdialog');
@@ -151,13 +151,8 @@ describe('HazardsTabView — the default board', () => {
   });
 
   it('a sent reason is held while its demotion is out — never typed into and then thrown away', async () => {
-    const answers: ((refusal?: Error) => void)[] = [];
-    const onDemote = vi.fn(
-      () =>
-        new Promise<void>((resolve, reject) =>
-          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal))),
-        ),
-    );
+    const answers: ((landed: boolean) => void)[] = [];
+    const onDemote = vi.fn(() => new Promise<boolean>((resolve) => answers.push(resolve)));
     render(<HazardsTabView {...base} onDemote={onDemote} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[1] as HTMLElement);
     const dialog = await screen.findByRole('alertdialog');
@@ -170,7 +165,7 @@ describe('HazardsTabView — the default board', () => {
     await userEvent.type(field, ' last spring');
     expect(field).toHaveValue('The bridge was replaced');
     // Refused: the field is the moderator's again, the reason whole.
-    await act(async () => answers.shift()?.(new Error('Not allowed')));
+    await act(async () => answers.shift()?.(false));
     expect(field).not.toHaveAttribute('readonly');
     await userEvent.type(field, ' last spring');
     expect(field).toHaveValue('The bridge was replaced last spring');
@@ -180,8 +175,8 @@ describe('HazardsTabView — the default board', () => {
     let land: () => void = () => {};
     const onDemote = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
-          land = resolve;
+        new Promise<boolean>((resolve) => {
+          land = () => resolve(true);
         }),
     );
     render(<HazardsTabView {...base} onDemote={onDemote} />);
@@ -200,7 +195,7 @@ describe('HazardsTabView — the default board', () => {
   });
 
   it('canceling a demotion closes the dialog and demotes nothing', async () => {
-    const onDemote = vi.fn(async () => {});
+    const onDemote = vi.fn(async () => true);
     render(<HazardsTabView {...base} onDemote={onDemote} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
     const dialog = await screen.findByRole('alertdialog');
@@ -209,17 +204,30 @@ describe('HazardsTabView — the default board', () => {
     expect(onDemote).not.toHaveBeenCalled();
   });
 
-  it('a refused demotion keeps the dialog and says why', async () => {
-    const onDemote = vi.fn(async () => {
-      throw new Error('Body feature not found');
-    });
+  /** A refusal is its toast's (D268): the dialog stays open over its reason, with nothing printed. */
+  it.each([
+    ['refused', async () => false],
+    [
+      'a sender that threw',
+      async () => {
+        throw new Error('x');
+      },
+    ],
+  ])('a demotion %s keeps the dialog and its reason, and prints nothing', async (_, answer) => {
+    const onDemote = vi.fn(answer);
     render(<HazardsTabView {...base} onDemote={onDemote} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Demote' })[0] as HTMLElement);
     const dialog = await screen.findByRole('alertdialog');
-    await userEvent.type(within(dialog).getByRole('textbox'), 'x');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Gone since the dam');
     await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Body feature not found');
+    await vi.waitFor(() => expect(onDemote).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(within(dialog).getByRole('textbox')).not.toHaveAttribute('readonly'),
+    );
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(within(dialog).getByRole('textbox')).toHaveValue('Gone since the dam');
+    expect(within(dialog).queryByRole('alert')).toBeNull();
   });
 
   it('a feature’s glyph lights it on the map', async () => {

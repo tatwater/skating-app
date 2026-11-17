@@ -1,11 +1,27 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import fc from 'fast-check';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** The toasts said: a change that no longer applies, or kept moving, is the queue's to say. */
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
+beforeEach(() => {
+  toasts.length = 0;
+});
+/** The one toast that says a change no longer applies — never printed in the tab. */
+const saidGone = () => {
+  expect(toasts).toEqual([expect.objectContaining({ description: LINKS_GONE, tone: 'bad' })]);
+  expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+};
+
 import { SortableRows } from '@/components/kit/sortable-rows';
+import { LINKS_GONE } from '../../consoleWords';
 import { ListWritersProvider } from '../listWriter';
 import { LinksTabView, type LinksTabViewProps } from './LinksTabView';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
@@ -294,6 +310,7 @@ describe('LinksTabView — over any run of opening, typing, Done, Cancel and reo
       // Each row's label, as the Done presses left it, in order.
       const expected = [ASSOC.label, DAM.label];
       const editor = () => screen.queryByRole('textbox', { name: /Label/ });
+      toasts.length = 0;
       const live = thisRun();
       for (const o of ops) {
         if (!live()) return;
@@ -566,16 +583,20 @@ describe('LinksTabView', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('a refused save says why', async () => {
-    const onSave = vi.fn(async () => {
-      throw new Error('A body carries at most 8 reference links');
-    });
+  it('a refused save prints nothing (its write path said it in a toast) and keeps the editor', async () => {
+    // `false`: refused, and said by the write path (`sendFor`, naming the body).
+    const onSave = vi.fn(async () => false);
     render(<LinksTabView {...base} onSave={onSave} />);
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
     // A change to send (Done on an unchanged link sends nothing).
     await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('at most 8');
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(toasts).toEqual([]);
+    expect(screen.getByPlaceholderText('What the link is, as skaters read it')).toHaveValue(
+      `${MASCOMA.referenceLinks?.[0]?.label}!`,
+    );
   });
 
   it('reorders from the keyboard and writes the new order once, on the drop', async () => {
@@ -1039,6 +1060,7 @@ describe('LinksTabView — over any run of adds (duplicates allowed), edits, rem
             );
           // The identity the open editor was opened with.
           let bound: string | null = null;
+          toasts.length = 0;
           const live = thisRun();
           for (const o of ops) {
             if (!live()) return;
@@ -1219,7 +1241,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     }
   };
 
-  it('Greptile’s case: A edited, another moderator replaces A with C — C is untouched, the edit is refused in words', async () => {
+  it('Greptile’s case: A edited, another moderator replaces A with C — C is untouched, the edit is refused in a toast', async () => {
     const user = userEvent.setup();
     const server = makeServer([ASSOC, DAM]);
     render(<Page server={server} />);
@@ -1232,7 +1254,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     act(() => server.other([C, DAM]));
     await answerAll(server);
     expect(server.state.links).toEqual([C, DAM]);
-    expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+    saidGone();
     // The editor is still there, holding what was typed and saying why — never bound to no row
     // with every Edit and Add hidden behind it.
     expect(screen.getByRole('textbox', { name: 'Label' })).toHaveValue('The Association');
@@ -1283,7 +1305,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
     const elsewhere = screen.getByRole('textbox', { name: 'Somewhere else' });
     await user.click(elsewhere);
     await answerAll(server);
-    expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+    saidGone();
     expect(screen.getByRole('textbox', { name: 'Label' })).toHaveValue(`${ASSOC.label} (lake)`);
     expect(elsewhere).toHaveFocus();
   });
@@ -1317,7 +1339,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
       }
       // The order was made for [A, B]; A is gone (C is a new link): refused in words, never
       // re-aimed to move C, and nothing more sent.
-      expect(screen.getByText(/your change no longer applies/)).toBeInTheDocument();
+      saidGone();
       expect(server.state.answers).toHaveLength(0);
       expect(server.state.links).toEqual([C, DAM]);
       const editC = within(
@@ -1384,6 +1406,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
         // Links another moderator put in and still means to keep.
         const theirs = new Set<string>();
         try {
+          toasts.length = 0;
           const live = thisRun();
           for (const o of ops) {
             if (!live()) return;
@@ -1393,7 +1416,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
               await act(async () => new Promise((r) => setTimeout(r, 0)));
               continue;
             }
-            if (screen.queryByText(/your change no longer applies/) !== null) refused = true;
+            if (toasts.some((t) => t.description === LINKS_GONE)) refused = true;
             if (!shown) {
               if (o.kind === 'answer') {
                 await act(async () => server.state.answers.shift()?.());
@@ -1455,7 +1478,7 @@ describe('LinksTabView — a retry after the list moved never lands on a link it
           await answerAll(server);
           // With only my own writes, a queued change of mine is never refused as gone unless a
           // remove of mine took its link first — whatever leaving and coming back did meanwhile.
-          if (screen.queryByText(/your change no longer applies/) !== null) refused = true;
+          if (toasts.some((t) => t.description === LINKS_GONE)) refused = true;
           if (onlyMine && !addressedAfterMyRemove) expect(refused).toBe(false);
           // Every link the server holds is one nobody touched, another moderator's, or one of my
           // edits of a link I addressed — never my words on a link I didn't address.
@@ -1599,7 +1622,7 @@ describe('LinksTabView — my edit keeps its id when its echo arrives with anoth
       DAM,
     ]);
     expect(server.links.map((l) => l.label)).toContain('Y1');
-    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+    expect(toasts).toEqual([]);
   });
 });
 
@@ -1669,7 +1692,7 @@ describe('LinksTabView — what a queued change names lives as long as the queue
     await answerAll();
     // The queued Remove landed on A — the link the edit made — and nothing was refused.
     expect(server.links).toEqual([DAM]);
-    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+    expect(toasts).toEqual([]);
   });
 
   it('come back before the edit’s echo: A’s row keeps its id, and a Remove pressed from it lands on A', async () => {
@@ -1687,6 +1710,6 @@ describe('LinksTabView — what a queued change names lives as long as the queue
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     await answerAll();
     expect(server.links).toEqual([DAM]);
-    expect(screen.queryByText(/your change no longer applies/)).toBeNull();
+    expect(toasts).toEqual([]);
   });
 });

@@ -79,8 +79,8 @@ export type PersonViewProps = {
   viewerId: string | null;
   /** The router's link for each target; a plain `<a>` when absent. */
   linkTo?: LinkTo;
-  /** Runs a write; resolves to the server's refusal, or `null` once it landed. */
-  onAct: (action: PersonAction) => Promise<string | null>;
+  /** Runs a write; resolves whether it landed (a refusal is a toast naming the person). */
+  onAct: (action: PersonAction) => Promise<boolean>;
   /** A History or Decisions row's Undo. */
   onUndo: (row: ActionRow) => void;
   /** Asks for more decisions, while the read says there are more. */

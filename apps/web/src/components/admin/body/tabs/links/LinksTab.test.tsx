@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -112,7 +112,7 @@ describe('LinksTab', () => {
     });
   });
 
-  it('a refusal reads in the server’s words', async () => {
+  it('a refusal is one toast in the server’s words, naming what failed — never printed in the tab', async () => {
     convex.results.set('waterBodies:get', { available: true, body: { _id: BODY, ...MASCOMA } });
     convex.mutations.set(
       'waterBodies:setReferenceLinks',
@@ -125,7 +125,15 @@ describe('LinksTab', () => {
     // A change to send (Done on an unchanged link sends nothing).
     await userEvent.type(screen.getByPlaceholderText('What the link is, as skaters read it'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('at most 8');
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'The links: A body carries at most 8 reference links',
+          tone: 'bad',
+        }),
+      ]),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(undo.announce).not.toHaveBeenCalled();
   });
 

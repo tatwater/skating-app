@@ -2984,9 +2984,98 @@ rollout stands and needs no re-run.
   before `prev` has no reason to restore: none on file, *not recorded* on the page. A redo is the same
   path; each dates the terms anew (undo then redo starts a fresh *since*, as the founder ruled).
 - **One normalizer at the write.** `lib/audit.checkedReason` trims, then holds to the cap; `typed`
-  and the ban and suspension writers compare and keep through it. A reason kept with spaces before this (only a
+  and the ban and suspension writers compare and keep through it. ~~A reason kept with spaces before this (only a
   raw call could send one) compares unequal to its trimmed repeat once, which writes one row and keeps
-  the trimmed reason from then on.
+  the trimmed reason from then on.~~ (Closed by B01-4h: comparisons read both sides normalized, so the
+  repeat writes nothing.)
+
+**B01-4h (2026-11-16): the record's rules, closed as classes** (D271; server only; PR #140). Six
+follow-ons to B01-4f and B01-4g, each found still true on main, each fixed as its class with a failing
+test first.
+
+- **An undo of a takedown that only moved the record.** Hiding what its Post's hide took down — hidden,
+  no decision of its own — puts a decision on the person's record, but its undo said *Nothing changed:
+  it was already hidden.* A row that left the item's status as it found it (and moved no member of a
+  Post) now undoes through the same writer, on the record alone: the decision comes off, the item stays
+  as it was, Reversed shows it once as undone, and the replay rebuilds it flag for flag
+  (`superseded` included; `verdictWriters` needed no new writer). Whether it is offered is read from the
+  verdict rows (`lib/undoHandlers.recordOnlyRefusal`, a refusal the engine reserves in its waves, 2
+  reads, ≤ 24 KiB): a decision put on that still stands, or one taken off and none put on (the undo's
+  redo, which asks a reason — a record-only row's undo alternates give-back and takeaway down its
+  chain). A repeat from before D270 (one decision replaced by another of its kind) or a row that moved
+  neither still has nothing to undo. A Report taken off its own decision this way is its Post's again,
+  as it was: the undo row records the Post's word it puts back (`backToCascade`), so the Post's
+  restore and its undo bring it back (`moderation.cascadeWordOf`; found by the review — without it the
+  Report stayed down for good with nothing on the record). A restore that ended a decision on content already up (a
+  history from before the record) says so (`RESTORE_ENDED_ONLY`, *Hide it again …*) instead of
+  claiming it predates undo: putting that decision back would stand a decision on content that is up,
+  which no write records. The class, as a table test (`undoRecordEffect.test.ts`):
+
+  | Verb, on | Content | Record | The undo |
+  | --- | --- | --- | --- |
+  | hide · up, undecided | up → hidden | mints | back up, decision off (no reason) |
+  | hide · down by its Post's hide, undecided | hidden → hidden | mints | stays hidden, decision off (no reason) — **new** |
+  | hide · a Post down because its Reports are | hidden → hidden | mints | stays hidden the same way (a member restored brings it back), decision off — **new** |
+  | hide · held by a hide of its own | — | refused (D270) | — |
+  | remove · down by its Post's removal, undecided | removed → removed | mints | stays removed, decision off — **new** |
+  | hide · removed, held by a removal | removed → hidden | supersedes | back to removed, the removal back (asks a reason) |
+  | hide · its author deleted it, undecided | as deleted | mints | refused: the overturn reverses it |
+  | keep on the record | as deleted | mints | refused: the overturn reverses it |
+  | overturn | as deleted | ends | none: record it again |
+  | restore · up, a decision standing (legacy) | up → up | ends | refused, *Hide it again …* — **new sentence** |
+  | the undo above, redone | as it was | mints again | asks a reason; its own undo takes it off again |
+  | pin · a live alert | pinned | none | released |
+  | pin · already pinned | — | refused (D270) | — |
+- **The takedown refusal is the rule's** (D267's one rule). *Hide again*'s answer was always yes while
+  `setModerationStatus` refused a hide of what a hide already held in its own code.
+  `lib/recordRules.takedownRefusal` now owns it — a takedown of what a decision of that kind holds
+  changes nothing unless it still moves the content (not yet at that status, or a Post with a Report
+  up) — over facts that carry the standing decision's kind (`heldAs`) and a Post's Reports up
+  (`membersUp`; the pane's member read supplies it, a list row says *Open it …*). The write builds the
+  facts once and refuses only through the rule (its restore too, the Post's plan asked before anything
+  is written). Restore and Hide again on an access alert say no write moves an alert's status (no lever
+  ever offered either). A property (`recordCan.test.ts`) drives histories over a Report, a Post and its
+  two Reports, a comment and a hazard, and probes every lever and a removal on every item, each write
+  run and rolled back: `can` says yes exactly when the write lands, in its sentence, and the pane's
+  lever is that answer; against main's rule it fails six of nine runs. (Alerts are held by the pure
+  property; the convex one seeds none.)
+- **Every audit reason is stored normalized.** Plain strings were stored untrimmed. The one writer now
+  trims every kind (`normalizeReason`: plain, typed, and a composed one after it is fitted), and holds a
+  plain string to the cap once its outer whitespace is off, as `checkedReason` already did. The
+  inventory of plain-string writers: fixed sentences of ours (`AUTHOR_DELETE_REASON`, `ERASE_REASON`'s,
+  defaults such as *Set put-in access*), and a person's typed reason passed through (`args.reason`,
+  `reason ?? default`) in the content, flag, body, landmark, sub-area, put-in, access, recurrence and
+  feature writers. A property proves the normalizer only ever takes off outer whitespace; a guard proves
+  every literal reason a writer passes (and every `*_REASON` constant) is already trimmed, so it is
+  stored unchanged. The one reader matching a composed reason by text (`bodyConsole`'s `Seeded ` /
+  `A07a campaign` prefixes) matches old rows still: the guard holds each prefix to a composed writer's
+  fixed start, which has no whitespace to lose. Comparisons read both sides normalized
+  (`sameReason`, in `sameStatusTerms` and `lib/statusTerms`' key), so a reason kept with spaces before
+  this matches its trimmed repeat — the repeat ban writes nothing, and that old row's undo is never
+  offered (the write it would run changes nothing). No backfill.
+- **A person's words reach a composed reason only checked.** `composedOf`'s fixed parts are typed
+  literal-or-`CheckedText` (the brand `checkedReason` returns), and `auditWriters.test.ts` holds every
+  composed template's and `composedOf`'s values named as a reason or a note (`reason`, `note`, `why`,
+  `…Reason`, `…Note`) to `checkedReason` where they are quoted, with four named exemptions (two enums,
+  a stored row's reason, the system's delisting cause); a deliberately wrong sample shows it failing. It
+  found two: a place name's dismissal note and a body removal's note (checked upstream, now where
+  quoted). **What it can't see:** a person's words renamed to something else before they are quoted.
+- **Clerk's delete takes the ban's path.** `clerkAdmin.deleteUser` had no timeout and no tests. Both
+  actions now send through one request (`clerkRequest`, held to `CLERK_TIMEOUT_MS`, 20 s) and one
+  failure path (`retryOrPage`: 30 s, 5 min, 30 min, then the operator's page with the manual fix). Tests:
+  success, 404 as success, 503/429/408 retried, a hung request timed out (the timeout's signal aborted by
+  the test), a spent budget and a permanent 4xx paging the operator; no test calls Clerk.
+- **The pane's decisions name the write that ended them** (server half; the web half follows #138).
+  `contentRecord.item`'s decisions carry `endActionId` (absent while standing), and the item's newest
+  decision, while Reversed, carries that write's undo for the viewer (`undo`, main's engine, one row in
+  view) — as History says it; every older decision has none (a newer decision's write overtook its
+  ending). Both fields optional, so the web's types stand as they are; no schema change. Cost: the undo's first step for one row (3 calls and 18 documents
+  reserved, as Reversed's rows reserve theirs; a content refusal's 2 reads charged in its wave); the
+  pane at its deepest — 52 decisions, the newest 50 read, the newest restored — makes 114 calls, against
+  3,500 planned.
+
+**Rollout, for the dev agent:** `convex dev --once`. Nothing else: no schema change, no index, no
+backfill (old rows are read normalized).
 
 ### The B01-2 server register (owed to the server agent)
 
@@ -4599,6 +4688,137 @@ town entry per boundary, above) as its own commits.
 - **Wording the mock did not supply** (standing until the founder reviews it): *Back to the list*
   on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
   strip's spoken value (the kit).
+
+### Late answers are never buried (B01-3m, D268)
+
+The founder's call of 2026-11-16: a server's refusal or error reaches the moderator wherever they are
+when it comes — and, asked again once the first footing had failed, **always a toast**. Every admin
+write the server refuses, that throws, or whose send fails is one toast naming its subject and what was
+not changed, in the server's own words, held until dismissed; it is never also printed in place
+(D268). A dialog refused stays open with what was typed; one that landed closes.
+
+- **One write helper** (`said`, `components/admin/said.ts`). It runs the write, says a refusal in its
+  toast (`sayRefusal`: the failure's tone, `timeout: 0`, no Undo) and answers its caller `{ landed:
+  false }` — never the words. `errorText`, the server's sentence out of a `ConvexError`, is private to
+  it. Every path is built on it: `sendFor` (the Body console, resolving `false` for a refusal and
+  passing on only a list that moved, for its queue), the pick store (`PickOutcome` is `{ landed }`,
+  its `why` typed `never`; a sender that throws is said by the store through the helper, in the page's
+  words), the list queues (their sends answer `false`), the People write paths (`usePersonWrites`,
+  `useRecordWrites`), Undo, and the Legacy net (`useSaidMutation`, which then throws a word-less
+  `Refused`, so a page's `try` still skips what follows and a reason dialog stays open).
+- **What a component hears.** The person page's `useActing` and the record sheet's `useRecordActing`
+  answer `'landed' | 'refused' | 'waiting'`; `AskDialog`, `PostChooser`, `ReasonAsk`, Hazards' demote
+  dialog, Undo's dialog, Standing's form and `ReasonDialog` close on a landing and otherwise stay as
+  they were. The pages' own notes stay in place because they never reached the server: "another
+  change is still on its way" (a press while another is out), the record sheet's "This changed while
+  it was open" (said only when no refusal of the dialog's own write was just said), the link editor's
+  own checks, a form's required reason.
+- **Gone:** the drawn place (`usePlace`, `drawn`), the dialog's asking place (`askFrom`,
+  `keepAsking`), the page's place (`PagePlace`, `refusalOnPage`), the hold's `here` and `holdFor`, the
+  pick store's asker and in-place control, `useRecordActing`'s `onLateRefusal`, the person page's
+  mounted guard, and every inline refusal line (the lever rows, the sheet's foot, the aliases and
+  links lines, the satellite link's line, the reason dialogs, the old editor's banner and restore gate).
+- **The toast.** Drawn over every overlay (`--z-toast` 20 → 60, above the scrim, a sheet and a viewer;
+  the kit's popups — menus, selects, popovers, tooltips — moved from the viewer's step to one above
+  the toast's, so a menu just opened is never drawn under a refusal waiting to be dismissed),
+  outside anything inert (Base UI leaves an `aria-live` region unhidden), reached by `F6` from inside a
+  dialog and tabbed through, announced once (Base UI's alert for a `high` toast), dismissed by its own
+  *Dismiss* — or Esc inside it, which the toast keeps to itself so the dialog under it stays open. The
+  dock still draws one plate at a time: several refusals wait behind the front one, inert, and each is
+  drawn once the one in front is dismissed; a receipt in front of a refusal times out and the refusal
+  comes back. No new bound: the limit on what is drawn is the dock's own.
+- **One dock at the app's root** (`AppToaster`), placed by surface, so the console's loading splash
+  and the skater app draw an answer; the skater surface draws its own toasts too
+  (`SKATER_SURFACE_TOASTS` stays `all`, the founder's call of 2026-11-16). With it on, the skater
+  app's own three toasts show (the map's location button): *Your location isn't available in this
+  browser.*, *You're outside the area Gli covers, so the map stayed put.*, *Couldn't get your
+  location.*
+- **The queues' owners outlive the splash.** The pick store, the list writers and Undo sit above the
+  console's splash, so a write out while the viewer's role reloads keeps its queue; leaving the
+  console takes them with it, and a write still out says its answer through its own write path, in the
+  root dock, on whatever page the viewer landed.
+- **The Legacy pages.** Every write is the net's (`always`; the old `inPlace` mode is gone). The two
+  Legacy dialogs that hold open while their write is out (`ReasonDialog`, ModeratorActions') still
+  do. The old editor's banner keeps only landed outcomes and its own checks (about thirty `catch`es,
+  each a line or two, mechanical), and lets the last one go when any refusal is said
+  (`useRefusalClears`, as the requests page and place names do), so it never reads "saved" for a
+  write that wasn't; its reason dialogs now let the net's `Refused` through, so they stay
+  open; the requests page, place names, seasons (`SeasonWatch`'s buttons), RestorePost, the posted-
+  access form and the dismiss dialog print nothing a server said. Support's buttons and the water
+  list's *Approve*, which have no `catch`, now catch the `Refused` (no unhandled rejection).
+- **The guard** (`packages/guards/src/adminWriters.test.ts`): a console file that reaches a mutation
+  directly is in an inventory naming its write path; no other file than the helper calls `errorText`,
+  reads an error's `message`, tells a `ConvexError` apart (but `listChanged`, which reads a moved
+  list's `code` and `current`), or draws a toast in the failure's tone; and the prediction machinery's
+  names stay gone.
+- **The table** (`components/admin/lateAnswers.test.tsx`): twenty-five write paths from the inventory
+  below × three answers (the server's refusal, a server error, a failed send) × six places (the same,
+  another tab, another body or person, another section, the splash, the skater app) — every pair of
+  dimensions in full: in every cell one toast, nothing printed, and a dialog or form still open with
+  what was typed where the operator stayed. A returned refusal (a sender answering `false`) is the
+  pick store's and list queues' model cell. Greptile's case (a Restore refused after the person was
+  promoted, the row's buttons gone) is its own test on the person page, red before this build.
+- **Namesakes of one kind** (the two Clintons): a subdivision's boundary key carries TIGER's GEOID,
+  whose first five digits are its county's, and the recompute already reads each loaded county's
+  name — so no new data was needed, only a widen-only field (`inCounty` on the facts' town entries
+  and pins). `namesakeTells` in core is the one rule: the kind where the namesakes carry more than
+  one, the county where another has its own kind ("Clinton (Clinton County), NY"). **After merge, on
+  dev:** `convex dev --once`, then `bodyGeo:seedAll` and `bodyGeo:computeAll` (the B01-3l timing,
+  about 32 minutes); no boundary re-load.
+
+**Every admin write, the toast it says, and what its dialog does on refusal:**
+
+| Write | The toast | Its dialog or form, refused |
+|---|---|---|
+| Names: *Display this*, the class (pick store) | "Not saved · ‹body›" — "The displayed name: …" / "The class: …" | no dialog; the control goes back to the server's value |
+| Names: aliases (list queue) | "The aliases: …"; a list that kept moving, "Another moderator kept changing these aliases…" | no dialog; the chips are the server's list |
+| Names: a community name (`act`) | "Named “…”: …" | no dialog |
+| Water: a depth source (pick store) | "The mean depth's source: …" / "The max depth's source: …" | no dialog; goes back |
+| Access: ruling buttons (pick store) | "The ruling: …" | no dialog; goes back |
+| Access: *Rule no public access* (pick store, its reason dialog) | "The ruling: …" | stays open over its reason |
+| Access: *Make official* / *Hide* (`act`) | "Made … official: …" / "Hid …: …" | *Hide*'s dialog stays open over its reason |
+| Places: landmark card and spellings (list queue) | "Saved · ‹name›: …"; spellings that kept moving, "Another moderator kept changing these spellings…" | no dialog; the field is the server's |
+| Places: *Dismiss*, *Decline* (their dialogs) / *Same place* (`act`) | "Dismissed “…”: …" / "Declined “…”: …" / "Answered “…” with the landmark already there: …" | the dialogs stay open over their note |
+| Links (list queue) | "The links: …"; a change that no longer applies or kept moving, its own sentence | the editor stays open with what was typed |
+| Imagery: satellite link (pick store) / pass override | "The satellite link: …" | no dialog; goes back. The override's dialog would stay open (no writer on the server yet) |
+| Hazards: demote | "The demotion: …" | its dialog stays open over its reason |
+| Standing: dormant, active, remove, restore | "Set dormant: …" / "Back on the active map: …" / "Removed from the map: …" / "Restored to the map: …" | the form keeps its note or reason |
+| The frame: map boost (pick store) | "The map boost: …" | the slider goes back to the record |
+| People: a person's levers | "Not changed · ‹person›" — the server's words | a lever's dialog stays open over its reason; a press behind another change says the page's own "Another change is still on its way" |
+| People: a lever's write that changed nothing | the receipt "Nothing changed — … was already set that way" (not a refusal) | closes, as a landed write's |
+| People: the record sheet's levers and the Post's chooser | "Not changed · ‹person›" | the dialog or chooser stays open; one the live answer closes says nothing more of a refusal just said |
+| Undo: from a toast or History (no reason) | "Not undone" — the server's words | — |
+| Undo: with a reason | "Not undone" | its dialog stays open over its reason; pressed after the console has gone, "Not undone" — "Undoing it needs a reason: undo it from History in the console" |
+| The shell: presence heartbeat | — no one asked | — |
+| The Bodies list, People list, Overview | no writes | — |
+| Legacy, every write (the net) | "Not saved" — the server's words | a reason dialog (`ReasonDialog`, ModeratorActions') stays open over its reason; a page's banner keeps only landed outcomes |
+
+**What this build found.**
+- **Three predictions, three defects.** The first footing said a refusal in place while the place that
+  asked was still there; each fix of Greptile's findings on #138 sharpened the prediction (a mounted
+  hook, then a drawn element) and the third finding was one the drawn element could not see: a row's
+  buttons gone under a new read, its block still drawn. The founder's call removes the prediction.
+- **A toast was drawn under every dialog.** `--z-toast` (20) sat below the scrim (40): a refusal said
+  while a reason dialog was open would have shown behind its scrim. Now 60.
+- **Esc in a toast closed the dialog under it** — the dialog listens on the document, and Base UI's
+  toast closes on a React handler that does not stop it. The toast now catches its own Esc.
+- **No toast could be dismissed by a button** — every one timed out. A toast that never times out
+  carries *Dismiss*.
+- **Base UI keeps a limited toast in its queue**, its timer running: a refusal behind a newer receipt
+  is drawn again once the receipt times out; nothing was lost, and no bound was needed.
+- **Copy owed to the founder's pass:** the missed-reset refusal ("Not saved: this page now shows
+  another body…") repeats "Not saved" under the toast's own title; a button's refusal (`act`) names
+  what it was by its receipt's past tense ("Not saved · Mascoma Lake" — "Hid Boat ramp: …", "Saved ·
+  The Gut: …"); a Legacy toast names only the server's words.
+- **ModeratorActions never closed on a landing** (found by the review): it relied on its content
+  unmounting, and in the skater panels it stays — a second press sent a second takedown. It closes
+  now, its reason cleared.
+
+**Left:** a Legacy toast names the server's words, not its subject — owed with each page's
+retirement; across a full remount of the console (leaving it), a write from each store can be out at
+once (the accepted limit, said in the model); a namesake pair in one county with one kind would still
+read the same (TIGER holds none we know of; not counted on dev); the founder's copy pass on the
+refusal words.
 
 ### The Bodies reads' last owed items (B01-3n)
 

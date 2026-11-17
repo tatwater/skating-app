@@ -8201,6 +8201,47 @@ number that guesses, is the same lie in the lists.
 
 **Related:** D3, D217, D226, D248, [`phase-B01`](./phases/B01-admin-console.md) §12.8.
 
+## D268 — A server's refusal is never buried by navigation: always a toast (B01)
+
+**2026-11-16, the founder:** server-side errors and refusals show as toasts, so they arrive wherever
+the moderator is when they come; an issue is never buried by navigation. **And, asked again the same
+day once the first footing had failed three times: "Always a toast."** The rule, for every admin
+write in the console and on the Legacy pages: a write the server refuses, that throws, or whose send
+fails produces exactly one toast, naming its subject and what was not changed ("Not saved · Mascoma
+Lake" — "The ruling: …", "Not changed · ‹person›", "Not undone", a Legacy page's "Not saved"), in the
+server's own words, that stays until it is dismissed. It is never also printed in place. A dialog
+whose write is refused stays open with what was typed, to correct and send again; one whose write
+landed closes; a dialog still disables its submit while its write is out. What stays in place is
+what never reached the server — a form's own checks (a required reason, a length cap) and the page's
+own notes ("another change is still on its way") — and the states of reads (loading, failed, nothing
+recorded, a value), which are not a write's answer.
+
+- **One write helper** (`said`, `components/admin/said.ts`) is the only code that reads a refusal's
+  words, and it puts them only in the toast; its caller learns *that* a write was refused (`{ landed:
+  false }`), never why, so no component has anything to print. `sendFor`, the pick store, the list
+  queues, the People write paths, Undo and the Legacy net (`useSaidMutation`, which then throws a
+  word-less `Refused`) all go through it. A guard (`packages/guards/src/adminWriters.test.ts`) holds
+  the console to it: a direct mutation must be in its inventory, and no other file reads an error's
+  message or draws a toast in the failure's tone.
+- **The toast is drawn over everything**, a modal's scrim included, outside anything inert, reached by
+  keyboard from inside a dialog (`F6`), announced once, dismissed by its own *Dismiss* (or Esc inside it,
+  which never closes the dialog under it); it carries no Undo. The dock draws one plate at a time, as
+  it always has: several refusals wait behind the front one and none is lost.
+- **One dock at the app's root** (`AppToaster`), placed by surface, so the console's loading splash
+  and the skater app draw an answer too; the skater surface draws its own toasts as well
+  (`SKATER_SURFACE_TOASTS` is `all`, the founder's call of 2026-11-16).
+- **The queues' owners outlive the splash** (the pick store, the list writers, Undo): ordering and "the
+  latest press wins" are a separate rule, kept.
+
+**Why:** a refusal said into a page that has gone is a write the moderator believes landed. The first
+footing (said in place while the place that asked is still there, else in a toast) had to *predict*
+whether the in-place words would be seen, and three predictions on #138 were three defects: a hook
+mounted while its component drew nothing; a "drawn place" ref standing in for it; and a row whose
+buttons a new read took away while its block stayed drawn, so a refusal was said into a row that
+showed none. Saying every answer in the one place that is always there needs no prediction.
+
+**Related:** D3, D226, D265, D267, [`phase-B01`](./phases/B01-admin-console.md) *B01-3m*.
+
 ## D269 — A moderator may not act on their own content (B01)
 
 **2026-11-16, the founder's call (asked in B01-4d).** No one decides on content they wrote: a hide, a
@@ -8259,3 +8300,25 @@ audit row's, never the person's — and, like its redo, dates the terms anew.
 giving two reasons for one ban, is the record lying.
 
 **Related:** D226, D257, D261, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.
+
+## D271 — An undo puts back a write's whole effect, the record's included; a reason is one text however it is spelled (B01)
+
+**2026-11-16, built in B01-4h.** A content write has two effects — on the item and on the person's
+record — and its undo puts back both. A takedown that left the item as it found it (a hide of what its
+Post's hide took down, with no decision of its own) still put a decision on the record, so its undo
+takes that decision off and leaves the item as it was; it is offered exactly when that write lands,
+read from the verdict rows, and its redo puts the decision back (a takeaway, so it asks a reason). A
+restore that ended a decision on content already up is not undone: no write stands a decision on
+content that is up, and the refusal says to hide it again. A takedown of what a decision of that kind
+already holds is refused by the record's one rule (D267), which the lever and the write both ask.
+
+Every audit reason — typed, composed or a plain string — is stored with its outer whitespace off, at the
+one writer, and every comparison of reasons reads both sides that way, so rows written before still
+match with no backfill. A person's words quoted inside a composed reason are checked where they are
+quoted (`checkedReason`): the type holds `composedOf`'s fixed words to that, and a guard holds the
+templates.
+
+**Why:** an undo that leaves the record changed, or says nothing changed when it did, is the record
+lying (D270); a reason that differs only by a space is the same reason.
+
+**Related:** D226, D261, D267, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4h*.

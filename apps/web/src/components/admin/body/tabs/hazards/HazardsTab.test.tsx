@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -34,6 +34,11 @@ const role = vi.hoisted(() => ({ caps: new Set<string>() }));
 vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => role.caps.has(c) }) }));
 const undo = vi.hoisted(() => ({ announce: vi.fn(async () => {}) }));
 vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
+const toasts = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: Record<string, unknown>) => toasts.push(t),
+}));
 const nav = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => nav.navigate }));
 
@@ -288,7 +293,8 @@ describe('HazardsTab', () => {
     });
   });
 
-  it('a refused demotion says why and announces nothing', async () => {
+  it('a refused demotion is one toast naming what failed; its dialog stays open, printing nothing', async () => {
+    toasts.length = 0;
     convex.mutations.set(
       'bodyFeatures:demote',
       vi.fn(async () => {
@@ -301,7 +307,18 @@ describe('HazardsTab', () => {
     await userEvent.type(within(dialog).getByRole('textbox'), 'x');
     await userEvent.click(within(dialog).getByRole('button', { name: /Demote/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: /again/ }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Body feature not found');
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'The demotion: Body feature not found',
+          tone: 'bad',
+          timeout: 0,
+        }),
+      ]),
+    );
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(within(dialog).getByRole('textbox')).toHaveValue('x');
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(undo.announce).not.toHaveBeenCalled();
   });
 

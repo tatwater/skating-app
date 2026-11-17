@@ -30,15 +30,16 @@ import {
   timingWindowLabel,
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AdminEmpty, AdminPageHeader, errorText, ToolCard } from '../components/admin/adminUi';
+import { AdminEmpty, AdminPageHeader, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useRefusalClears, useSaidMutation } from '../components/admin/said';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -91,7 +92,11 @@ function LakeEditor() {
 
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
+  // The editor's banner: a landed write's outcome, and the page's own checks. A server's refusal is
+  // never said here — it is the net's toast (D268), wherever the moderator is when it comes.
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  // A refusal said anywhere lets the last outcome go: it never reads as saved for one that wasn't.
+  useRefusalClears(() => setBanner(null));
   const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
@@ -375,7 +380,7 @@ function NameTool({
   };
   onResult: SetBanner;
 }) {
-  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName);
   const claims = body.nameClaims ?? [];
   const overridden = claims.some((c) => c.source === 'user');
   // One row per distinct name, carrying every publisher that asserted it — the dedupe is here rather
@@ -425,8 +430,8 @@ function NameTool({
                     try {
                       await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: value });
                       onResult({ tone: 'ok', text: `Now displaying "${value}".` });
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -450,8 +455,8 @@ function NameTool({
                 try {
                   await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
                   onResult({ tone: 'ok', text: 'Back to the catalog ranking.' });
-                } catch (err) {
-                  onResult({ tone: 'error', text: errorText(err) });
+                } catch {
+                  // Refused: said in its toast (the net, D268).
                 }
               }}
             >
@@ -473,7 +478,7 @@ function CommunityNameTool({
   body: { _id: string; name: string };
   onResult: SetBanner;
 }) {
-  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const setName = useSaidMutation(api.waterBodies.setWaterBodyName);
   const [draft, setDraft] = useState(body.name);
   const trimmed = draft.trim();
   const unchanged = trimmed === body.name;
@@ -498,8 +503,8 @@ function CommunityNameTool({
             try {
               await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: trimmed });
               onResult({ tone: 'ok', text: `Named "${trimmed}".` });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -520,8 +525,8 @@ function CommunityNameTool({
                   await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
                   setDraft('');
                   onResult({ tone: 'ok', text: 'Back to unnamed.' });
-                } catch (err) {
-                  onResult({ tone: 'error', text: errorText(err) });
+                } catch {
+                  // Refused: said in its toast (the net, D268).
                 }
               }}
             >
@@ -547,7 +552,7 @@ function ProminenceTool({
   body: { _id: string; surfaceAreaSqM?: number; curatedBoost?: number; minVisibleZoom?: number };
   onResult: SetBanner;
 }) {
-  const setCuratedBoost = useMutation(api.waterBodies.setCuratedBoost);
+  const setCuratedBoost = useSaidMutation(api.waterBodies.setCuratedBoost);
   const [boost, setBoost] = useState(String(body.curatedBoost ?? 0));
   const parsed = Number(boost);
   const preview = Number.isFinite(parsed)
@@ -579,8 +584,8 @@ function ProminenceTool({
                 curatedBoost: parsed,
               });
               onResult({ tone: 'ok', text: 'Prominence saved.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -629,8 +634,8 @@ interface DepthBody {
  * bathymetry chart in our region is in feet: that echo is the real units guard, not the 400 m ceiling.
  */
 function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner }) {
-  const setDepth = useMutation(api.waterBodies.setDepth);
-  const clearOverride = useMutation(api.waterBodies.clearDepthOverride);
+  const setDepth = useSaidMutation(api.waterBodies.setDepth);
+  const clearOverride = useSaidMutation(api.waterBodies.clearDepthOverride);
 
   // Only an `operator` value belongs in an editable box — see the note above.
   const operatorValue = (source: DepthSource | undefined, value: number | undefined) =>
@@ -704,8 +709,8 @@ function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner })
     try {
       await run();
       onResult({ tone: 'ok', text });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -889,15 +894,15 @@ function SubAreaTool({
   onPromotionTaken: () => void;
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.subAreas.create);
-  const createFromChord = useMutation(api.subAreas.createFromChord);
-  const updateChord = useMutation(api.subAreas.updateChord);
-  const redraw = useMutation(api.subAreas.redraw);
-  const rename = useMutation(api.subAreas.rename);
-  const remove = useMutation(api.subAreas.remove);
-  const restore = useMutation(api.subAreas.restore);
-  const approveRequest = useMutation(api.corpusRequests.approve);
-  const declineRequest = useMutation(api.corpusRequests.decline);
+  const create = useSaidMutation(api.subAreas.create);
+  const createFromChord = useSaidMutation(api.subAreas.createFromChord);
+  const updateChord = useSaidMutation(api.subAreas.updateChord);
+  const redraw = useSaidMutation(api.subAreas.redraw);
+  const rename = useSaidMutation(api.subAreas.rename);
+  const remove = useSaidMutation(api.subAreas.remove);
+  const restore = useSaidMutation(api.subAreas.restore);
+  const approveRequest = useSaidMutation(api.corpusRequests.approve);
+  const declineRequest = useSaidMutation(api.corpusRequests.decline);
   // Per-bay evidence beside the redraw control (A09): the mouth-line count and the depth's currency.
   const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
   // The lake's open bay asks (D201) — the queue the moderator works down.
@@ -1124,8 +1129,8 @@ function SubAreaTool({
         setAliases('');
       }
       disarmAll();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -1163,8 +1168,8 @@ function SubAreaTool({
       setDraft(null);
       setRedrawTarget(null);
       controlRef.current?.clear();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -1235,8 +1240,8 @@ function SubAreaTool({
                     try {
                       await rename({ subAreaId: bay._id as Id<'waterBodySubAreas'>, name: next });
                       onResult({ tone: 'ok', text: 'Renamed. Labels are being re-stamped.' });
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -1252,8 +1257,8 @@ function SubAreaTool({
                       } else {
                         await remove({ subAreaId: bay._id as Id<'waterBodySubAreas'> });
                       }
-                    } catch (err) {
-                      onResult({ tone: 'error', text: errorText(err) });
+                    } catch {
+                      // Refused: said in its toast (the net, D268).
                     }
                   }}
                 >
@@ -1385,18 +1390,14 @@ function SubAreaTool({
           try {
             await approveRequest({ requestId: row.requestId as Id<'waterBodyRequests'> });
             onResult({ tone: 'ok', text: `Approved — “${row.name}” answers the ask.` });
-          } catch (err) {
-            onResult({ tone: 'error', text: errorText(err) });
+          } catch {
+            // Refused: said in its toast (the net, D268).
           }
         }}
         onDecline={async (row, note) => {
-          try {
-            await declineRequest({ requestId: row.requestId as Id<'waterBodyRequests'>, note });
-            onResult({ tone: 'ok', text: `Declined — “${row.name}” stays a reference point.` });
-          } catch (err) {
-            onResult({ tone: 'error', text: errorText(err) });
-            throw err;
-          }
+          // Refused: the net says it in a toast and rejects, so the dialog stays open.
+          await declineRequest({ requestId: row.requestId as Id<'waterBodyRequests'>, note });
+          onResult({ tone: 'ok', text: `Declined — “${row.name}” stays a reference point.` });
         }}
       />
     </ToolCard>
@@ -1421,7 +1422,7 @@ function SamplePointTool({
   setSuggested: (points: LatLng[]) => void;
   onResult: SetBanner;
 }) {
-  const save = useMutation(api.waterBodies.setWeatherSamplePoints);
+  const save = useSaidMutation(api.waterBodies.setWeatherSamplePoints);
   const [spacing, setSpacing] = useState(String(DEFAULT_SAMPLE_SPACING_KM));
   const saved = body.weatherSamplePoints ?? [];
 
@@ -1474,8 +1475,8 @@ function SamplePointTool({
                 await save({ waterBodyId: body._id as Id<'waterBodies'>, points: suggested });
                 setSuggested([]);
                 onResult({ tone: 'ok', text: 'Sample points saved.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
+              } catch {
+                // Refused: said in its toast (the net, D268).
               }
             }}
           >
@@ -1494,8 +1495,8 @@ function SamplePointTool({
             try {
               await save({ waterBodyId: body._id as Id<'waterBodies'>, points: [] });
               onResult({ tone: 'ok', text: 'Cleared — back to the centroid default.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1514,8 +1515,9 @@ function SamplePointTool({
  * screen would be editing a lake that draws nowhere.
  */
 function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const restore = useMutation(api.waterBodies.restore);
-  const [error, setError] = useState<string | null>(null);
+  // A refusal is the net's toast (D268): a `reject`ed or `merge`d body lands there too, and the
+  // server's refusal says which — "not removed" is the honest answer for a body unlisted otherwise.
+  const restore = useSaidMutation(api.waterBodies.restore);
 
   return (
     <div className="flex flex-col items-start gap-3">
@@ -1523,18 +1525,14 @@ function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
         This body isn’t on the map (removed, rejected or merged). Restore it before editing — a
         sub-area drawn on an unlisted lake would have nowhere to render.
       </AdminEmpty>
-      {error ? <p className="text-danger text-sm">{error}</p> : null}
       <Button
         size="sm"
         variant="outline"
         onClick={async () => {
-          setError(null);
           try {
             await restore({ waterBodyId });
-          } catch (err) {
-            // A `reject`ed or `merge`d body lands here too, and the server's refusal says which —
-            // "not removed" is the honest answer for a body that is unlisted for another reason.
-            setError(errorText(err));
+          } catch {
+            // Refused: said in its toast.
           }
         }}
       >
@@ -1578,9 +1576,9 @@ const REMOVAL_REASON_LABELS: Record<string, string> = {
  * rather than refines, and nothing that refines should sit below it.
  */
 function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const remove = useMutation(api.waterBodies.remove);
-  const restore = useMutation(api.waterBodies.restore);
-  const setStanding = useMutation(api.standing.setStanding);
+  const remove = useSaidMutation(api.waterBodies.remove);
+  const restore = useSaidMutation(api.waterBodies.restore);
+  const setStanding = useSaidMutation(api.standing.setStanding);
   const [reason, setReason] = useState('landowner_request');
   const [note, setNote] = useState('');
   const standing = standingOf(body);
@@ -1611,8 +1609,8 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             try {
               await restore({ waterBodyId: body._id as Id<'waterBodies'> });
               onResult({ tone: 'ok', text: 'Restored — active again, and re-scored.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1636,8 +1634,8 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             try {
               await setStanding({ waterBodyId: body._id as Id<'waterBodies'>, standing: 'active' });
               onResult({ tone: 'ok', text: 'Back on the active map.' });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268).
             }
           }}
         >
@@ -1668,18 +1666,15 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
             onConfirm={async (auditReason) => {
-              try {
-                await setStanding({
-                  waterBodyId: body._id as Id<'waterBodies'>,
-                  standing: 'dormant',
-                  ...(note.trim() ? { note: note.trim() } : {}),
-                  ...(auditReason?.trim() ? { reason: auditReason.trim() } : {}),
-                });
-                setNote('');
-                onResult({ tone: 'ok', text: 'Set dormant.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
-              }
+              // Refused: the net says it in a toast and rejects, so the dialog stays open.
+              await setStanding({
+                waterBodyId: body._id as Id<'waterBodies'>,
+                standing: 'dormant',
+                ...(note.trim() ? { note: note.trim() } : {}),
+                ...(auditReason?.trim() ? { reason: auditReason.trim() } : {}),
+              });
+              setNote('');
+              onResult({ tone: 'ok', text: 'Set dormant.' });
             }}
           />
         </div>
@@ -1712,15 +1707,12 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
             onConfirm={async () => {
-              try {
-                await remove({
-                  waterBodyId: body._id as Id<'waterBodies'>,
-                  reason: reason as 'landowner_request',
-                });
-                onResult({ tone: 'ok', text: 'Taken off the map.' });
-              } catch (err) {
-                onResult({ tone: 'error', text: errorText(err) });
-              }
+              // Refused: the net says it in a toast and rejects, so the dialog stays open.
+              await remove({
+                waterBodyId: body._id as Id<'waterBodies'>,
+                reason: reason as 'landowner_request',
+              });
+              onResult({ tone: 'ok', text: 'Taken off the map.' });
             }}
           />
           <p className="text-foreground-muted text-xs">
@@ -1767,8 +1759,8 @@ function PutInTool({
   onClearPoint: () => void;
   onResult: SetBanner;
 }) {
-  const setOfficial = useMutation(api.putIns.setOfficial);
-  const hide = useMutation(api.putIns.hide);
+  const setOfficial = useSaidMutation(api.putIns.setOfficial);
+  const hide = useSaidMutation(api.putIns.hide);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -1788,8 +1780,8 @@ function PutInTool({
       onClearPoint();
       setName('');
       onResult({ tone: 'ok', text: 'Official put-in placed.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -1822,12 +1814,9 @@ function PutInTool({
                 confirmLabel="Hide"
                 confirmVariant="secondary"
                 onConfirm={async (reason) => {
-                  try {
-                    await hide({ waterBodyId, coord: p.coord, reason });
-                    onResult({ tone: 'ok', text: 'Put-in hidden.' });
-                  } catch (err) {
-                    onResult({ tone: 'error', text: errorText(err) });
-                  }
+                  // Refused: the net says it in a toast and rejects, so the dialog stays open.
+                  await hide({ waterBodyId, coord: p.coord, reason });
+                  onResult({ tone: 'ok', text: 'Put-in hidden.' });
                 }}
               />
             </li>
@@ -1912,8 +1901,8 @@ function AccessTool({
   onResult: SetBanner;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
-  const setParking = useMutation(api.accessPoints.setOfficialParking);
-  const setPutInAccess = useMutation(api.accessPoints.setPutInAccess);
+  const setParking = useSaidMutation(api.accessPoints.setOfficialParking);
+  const setPutInAccess = useSaidMutation(api.accessPoints.setPutInAccess);
 
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1944,8 +1933,8 @@ function AccessTool({
       onClearPoint();
       setName('');
       onResult({ tone: 'ok', text: 'Parking area saved at the operator rung.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -1962,9 +1951,9 @@ function AccessTool({
         ...(kind ? { approachKindOverride: kind as 'hike_in' } : {}),
       });
       onResult({ tone: 'ok', text: 'Access updated.' });
-    } catch (err) {
-      // The D144 refusal lands here verbatim — the server writes the operator-facing sentence.
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused — the D144 refusal among them, in the server's own sentence: said in its toast
+      // (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2124,8 +2113,8 @@ function BodyFeatureTool({
   mapRef: { current: maplibregl.Map | null };
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.bodyFeatures.create);
-  const demote = useMutation(api.bodyFeatures.demote);
+  const create = useSaidMutation(api.bodyFeatures.create);
+  const demote = useSaidMutation(api.bodyFeatures.demote);
   const [type, setType] = useState<BodyFeatureType>('spring_current');
   const [radius, setRadius] = useState(30);
   const [note, setNote] = useState('');
@@ -2194,8 +2183,8 @@ function BodyFeatureTool({
       setNote('');
       setArming(false);
       controlRef.current?.clear();
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     }
   };
 
@@ -2407,10 +2396,10 @@ function RecurrenceTool({
   onResult: SetBanner;
 }) {
   const clusters = useQuery(api.recurrence.listForBodyAdmin, { waterBodyId });
-  const promote = useMutation(api.recurrence.promoteFromRecurrence);
-  const suppress = useMutation(api.recurrence.suppress);
-  const unsuppress = useMutation(api.recurrence.unsuppress);
-  const recompute = useMutation(api.recurrence.recomputeForBody);
+  const promote = useSaidMutation(api.recurrence.promoteFromRecurrence);
+  const suppress = useSaidMutation(api.recurrence.suppress);
+  const unsuppress = useSaidMutation(api.recurrence.unsuppress);
+  const recompute = useSaidMutation(api.recurrence.recomputeForBody);
   const [busy, setBusy] = useState(false);
 
   const onRecompute = async () => {
@@ -2418,8 +2407,8 @@ function RecurrenceTool({
     try {
       await recompute({ waterBodyId });
       onResult({ tone: 'ok', text: 'Recomputed from this lake’s hazards.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2580,7 +2569,7 @@ function PromotionTool({
   onResult: (banner: { tone: 'ok' | 'error'; text: string }) => void;
 }) {
   const candidates = useQuery(api.hazards.listPromotionCandidates, { waterBodyId });
-  const promote = useMutation(api.bodyFeatures.promote);
+  const promote = useSaidMutation(api.bodyFeatures.promote);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const lastSeason = seasonOf(Date.now()) - 1;
@@ -2601,8 +2590,8 @@ function PromotionTool({
         reason: `Recurring ${candidate.type.replace(/_/g, ' ')} — promoted in the pre-season pass.`,
       });
       onResult({ tone: 'ok', text: 'Promoted to a permanent body feature.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusyId(null);
     }
@@ -2681,7 +2670,7 @@ function PromotionTool({
  * first and labeled with its consequence, since it is both the default and the undo.
  */
 function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setMode = useMutation(api.waterBodies.setSatelliteImagery);
+  const setMode = useSaidMutation(api.waterBodies.setSatelliteImagery);
   const [busy, setBusy] = useState(false);
   const mode: SatelliteImageryMode = body.satelliteImagery ?? 'auto';
 
@@ -2698,8 +2687,8 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
     try {
       await setMode({ waterBodyId: body._id, mode: next });
       onResult({ tone: 'ok', text: `Satellite link set to ${next}.` });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }
@@ -2760,7 +2749,7 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
  * thousands. That is the exception proving the rule, not a coverage gap.
  */
 function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
-  const setLinks = useMutation(api.waterBodies.setReferenceLinks);
+  const setLinks = useSaidMutation(api.waterBodies.setReferenceLinks);
   const [links, setLinks_] = useState<{ label: string; url: string }[]>(body.referenceLinks ?? []);
   const [busy, setBusy] = useState(false);
 
@@ -2773,8 +2762,8 @@ function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onRes
     try {
       await setLinks({ waterBodyId: body._id, links });
       onResult({ tone: 'ok', text: 'Reference links saved.' });
-    } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+    } catch {
+      // Refused: said in its toast (the net, D268).
     } finally {
       setBusy(false);
     }

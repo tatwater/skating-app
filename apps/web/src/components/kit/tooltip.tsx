@@ -103,8 +103,8 @@ function TooltipContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        // Above every layer, sheets and viewers included: a tip belongs to whatever it points at.
-        className="isolate z-[calc(var(--z-viewer)+1)]"
+        // Above every layer, sheets, viewers and toasts included: a tip belongs to whatever it points at.
+        className="isolate z-[calc(var(--z-toast)+1)]"
       >
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"

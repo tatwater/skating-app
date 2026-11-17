@@ -263,16 +263,27 @@ describe('the reason dialog', () => {
     await toastNamed('Undone');
   });
 
-  it('keeps the reason and says the server’s refusal over it', async () => {
+  it('refused: a toast that stays says it, and the dialog keeps the reason, printing nothing', async () => {
     server.run.mockRejectedValue(new ConvexError('That action has already been undone'));
     render(<Harness server={server} receipt={receipt} />);
     await userEvent.click(screen.getByRole('button', { name: 'History row' }));
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Asked by email');
     await userEvent.click(within(dialog).getByRole('button', { name: /^Undo/ }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Not undone. That action has already been undone',
-    );
+    // Drawn in the toast, and announced once (Base UI's alert for a failure, beside it).
+    const said = await screen.findAllByText('That action has already been undone');
+    const toast = said
+      .map((el) => el.closest<HTMLElement>('[data-slot="toast"]'))
+      .find((el) => el !== null) as HTMLElement;
+    expect(said.filter((el) => el.closest('[role="alert"]') !== null)).toHaveLength(1);
+    expect(toast).toHaveTextContent('Not undone');
+    // A refusal never times out, and never carries an Undo: its Dismiss closes it.
+    expect(toast.querySelector('[data-slot="toast-timebar"]')).toBeNull();
+    // (Hidden from assistive tech until focused, as Base UI keeps an announced toast: F6 reaches it.)
+    expect(toast.querySelector('[data-slot="toast-dismiss"]')).toHaveTextContent('Dismiss');
+    expect(toast.querySelector('[data-slot="toast-action"]')).toBeNull();
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(within(dialog).queryByText('That action has already been undone')).toBeNull();
     expect(within(dialog).getByRole('textbox')).toHaveValue('Asked by email');
   });
 
@@ -301,6 +312,60 @@ describe('the reason dialog', () => {
 });
 
 describe('useUndo', () => {
+  it('a reasoned undo refused after the console has gone (the viewer turned away): said in a toast, never in a gone dialog', async () => {
+    const manager = createToastManager();
+    const added = vi.spyOn(manager, 'add');
+    let refuse: () => void = () => {};
+    server.run.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          refuse = () => reject(new ConvexError('A later change stands on it.'));
+        }),
+    );
+    const view = render(
+      <UndoProvider server={server} manager={manager}>
+        <Act receipt={receipt} />
+      </UndoProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'History row' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Wrong report');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Undo' }));
+    view.unmount();
+    await act(async () => refuse());
+    await waitFor(() =>
+      expect(added).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not undone',
+          description: 'A later change stands on it.',
+        }),
+      ),
+    );
+    expect(added).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reasoned undo pressed after the console has gone (a receipt in the root dock) says it needs the console', async () => {
+    const manager = createToastManager();
+    const added = vi.spyOn(manager, 'add');
+    let undoLater: (() => void) | null = null;
+    function Keep() {
+      const { undo } = useUndo();
+      undoLater = () => undo({ actionId: 'a9', needsReason: true, what: 'Hid a report' });
+      return null;
+    }
+    const view = render(
+      <UndoProvider server={server} manager={manager}>
+        <Keep />
+      </UndoProvider>,
+    );
+    view.unmount();
+    act(() => undoLater?.());
+    expect(server.run).not.toHaveBeenCalled();
+    expect(added).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Not undone', type: 'bad' }),
+    );
+  });
+
   it('says what it needs outside the provider', () => {
     const Orphan = () => {
       useUndo();

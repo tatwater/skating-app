@@ -33,9 +33,10 @@ import { Kbd } from './kbd';
  *   runs out, and a toast with an action counts its seconds beside it. Both **pause while the
  *   toasts are hovered or focused, or the window is in the background** — exactly when Base UI
  *   holds the dismissal timer — so what the bar shows is what will happen.
- * - **One at a time**, docked at the rail's edge over the status bar, never over a decision; a newer
- *   toast takes the place of an older one (the older stays in History). A taller limit stacks them,
- *   each peeking above the one in front, and a hover fans them out.
+ * - **One at a time**, docked at the rail's edge over the status bar; a newer toast takes the place
+ *   of an older one (the older stays in History; a refusal waits behind it, drawn again once it
+ *   goes). A taller limit stacks them, each peeking above the one in front, and a hover fans them
+ *   out. The kit's popups sit one above the dock, so a menu just opened is never under a refusal.
  * - **Motion** rides the motion tokens: a toast slides up and fades in, and leaves the way it came
  *   (or the way it was swiped — left or down). Under reduced motion every move collapses to a fade,
  *   and the time bar ticks once a second instead of gliding.
@@ -47,6 +48,11 @@ import { Kbd } from './kbd';
  *   wins; a plain key (⏎, Esc) acts only when nothing has focus, since every control, list and
  *   dialog uses those. A key some handler already took (`defaultPrevented`) is left alone. Like
  *   every binding in the console, never J, K or a number key.
+ * - **A toast that never times out** (`timeout: 0` — a server's refusal) carries a *Dismiss* at its
+ *   right and stays until it is pressed (or the toast swiped, or Esc pressed inside it). It is drawn
+ *   over everything, a modal dialog's scrim included, and stays operable there: F6 reaches the dock
+ *   from inside a dialog (Base UI's), and Esc inside the toast closes the toast, never the dialog
+ *   under it. A failure is announced once, as it arrives (Base UI's alert for a `high` toast).
  * - **Safety (binding):** toast copy reports what an operator did ("Rate updated", "Photo hidden").
  *   It never says or implies that ice is safe, skateable or clear.
  */
@@ -218,6 +224,8 @@ type ToasterProps = {
   container?: HTMLElement | null;
   /** Components that call `useToastManager()` go inside. */
   children?: ReactNode;
+  /** Which queued toasts this dock draws (by their tone); all of them by default. */
+  draws?: (tone: ToastTone) => boolean;
 };
 
 /** Mounted once, near the app's root: the dock and every toast in it. */
@@ -229,6 +237,7 @@ function Toaster({
   contained = false,
   container,
   children,
+  draws,
 }: ToasterProps) {
   // The shown toasts' keys, by toast id. Which claim wins is read at the key press from the
   // toasts' current order (`stack`, front first) — never from when a claim was made: two toasts
@@ -281,7 +290,7 @@ function Toaster({
                 'bottom-gutter left-gutter w-[min(var(--size-sheet-sm),calc(100vw-2*var(--gap-gutter)))]',
             )}
           >
-            <ToastList timeout={timeout} stack={stack} />
+            <ToastList timeout={timeout} stack={stack} draws={draws} />
           </ToastPrimitive.Viewport>
         </ToastPrimitive.Portal>
       </ClaimKeyContext.Provider>
@@ -292,12 +301,24 @@ function Toaster({
 function ToastList({
   timeout,
   stack,
+  draws,
 }: {
   timeout: number;
   /** Where the Toaster's key listener reads the toasts' order: their ids, front (newest) first. */
   stack: RefObject<readonly string[]>;
+  draws?: ((tone: ToastTone) => boolean) | undefined;
 }) {
-  const { toasts } = ToastPrimitive.useToastManager();
+  const { toasts: queued, close } = ToastPrimitive.useToastManager();
+  const drawn = (t: (typeof queued)[number]) =>
+    draws === undefined || draws((t.type ?? 'default') as ToastTone);
+  const toasts = draws === undefined ? queued : queued.filter(drawn);
+  // A toast this dock doesn't draw is let go at once: left in the queue it would still hold a place
+  // under the limit and in the stack, hiding a drawn one behind it (a refusal under a newer one).
+  const release = useRef(close);
+  release.current = close;
+  useEffect(() => {
+    for (const t of queued) if (t.transitionStatus !== 'ending' && !drawn(t)) release.current(t.id);
+  });
   useLayoutEffect(() => {
     stack.current = toasts.map((t) => t.id);
   }, [toasts, stack]);
@@ -362,12 +383,32 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
     return () => claimKey(t.id, null);
   }, [key, shown, claimKey, t.id]);
 
+  // Esc inside the toast closes the toast alone: a modal dialog under it listens for Esc on the
+  // document, and would close too, its typed reason with it. Caught on the toast's own element, so
+  // the key never reaches the document's listeners (Base UI's own close among them, so it is run here).
+  const root = useRef<HTMLDivElement | null>(null);
+  const close = useRef(() => manager.close(t.id));
+  close.current = () => manager.close(t.id);
+  useEffect(() => {
+    const el = root.current;
+    /* v8 ignore next */
+    if (el === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.stopPropagation();
+      close.current();
+    };
+    el.addEventListener('keydown', onKeyDown);
+    return () => el.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <ToastPrimitive.Root
       toast={t}
       data-slot="toast"
       swipeDirection={['left', 'down']}
       className={cn(ROOT)}
+      ref={root}
       render={(props, state) => (
         <ExpandedContext.Provider value={state.expanded}>
           <div {...props} />
@@ -393,6 +434,13 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
             className="text-assist leading-list font-regular text-fg3 empty:hidden"
           />
         </span>
+        {action === undefined && !timed && (
+          <span data-slot="toast-actions" className="flex items-center gap-(--space-2)">
+            <ToastPrimitive.Close data-slot="toast-dismiss" render={<Button size="sm" />}>
+              Dismiss
+            </ToastPrimitive.Close>
+          </span>
+        )}
         {action !== undefined && (
           <span data-slot="toast-actions" className="flex items-center gap-(--space-2)">
             {timed && <Countdown key={t.updateKey} time={time} duration={timeout} />}

@@ -9,7 +9,7 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { SETTLE_ROUNDS } from './clerkAdmin';
+import { CLERK_TIMEOUT_MS, SETTLE_ROUNDS } from './clerkAdmin';
 import { NOTIFICATION_PREF_DEFAULTS } from './lib/enums';
 import schema from './schema';
 
@@ -372,5 +372,115 @@ describe('clerkAdmin.setBanned — over any interleaving (model)', () => {
     // Pinned seeds, so a failure replays; then one run on a fresh seed.
     for (const seed of [20261116, 8]) await fc.assert(run, { seed, numRuns: 6 });
     await fc.assert(run, { numRuns: 3 });
+  });
+});
+
+// ── Account deletion's last step: the Clerk user deleted ──────────────────────────────────────────
+
+describe('clerkAdmin.deleteUser', () => {
+  /** A fake Clerk answering every request with `status` (no real call leaves the test). */
+  function answering(status: number) {
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response('{}', { status }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  test('no-ops without CLERK_SECRET_KEY', async () => {
+    const t = convexTest(schema, modules);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await scheduled(t)).toHaveLength(0);
+  });
+
+  test('a success deletes the user and schedules nothing; the request carries the timeout', async () => {
+    const t = convexTest(schema, modules);
+    const fetchMock = answering(200);
+    await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toMatch(/\/users\/u_1$/);
+    expect(init?.method).toBe('DELETE');
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(await scheduled(t)).toHaveLength(0);
+  });
+
+  test('a 404 is success: the user is already gone, so no retry and no page', async () => {
+    const t = convexTest(schema, modules);
+    answering(404);
+    await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1' });
+    expect(await scheduled(t)).toHaveLength(0);
+  });
+
+  test.each([503, 429, 408])(
+    'a transient failure (%i) is retried on the schedule',
+    async (status) => {
+      const t = convexTest(schema, modules);
+      answering(status);
+      await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1', attempt: 1 });
+      const rows = await scheduled(t);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.name).toContain('clerkAdmin');
+      expect(rows[0]?.args[0]).toEqual({ clerkUserId: 'u_1', attempt: 2 });
+    },
+  );
+
+  test('a hung request times out at the shared limit, and is retried like any thrown fetch', async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+    // The timeout's signal, aborted by the test — no 20-second wait, and no real timer.
+    const hang = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => hang.signal);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new Error('The operation timed out')),
+            );
+            // Answer nothing: hung until the signal fires.
+            queueMicrotask(() => hang.abort());
+          }),
+      ),
+    );
+    try {
+      await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1' });
+      expect(timeout).toHaveBeenCalledWith(CLERK_TIMEOUT_MS);
+    } finally {
+      timeout.mockRestore();
+    }
+    const rows = await scheduled(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.args[0]).toEqual({ clerkUserId: 'u_1', attempt: 1 });
+  });
+
+  test('a spent retry budget pages the operator with the manual fix', async () => {
+    const t = convexTest(schema, modules);
+    answering(503);
+    // attempt 3 == the last slot in the retry schedule, so this run has no retries left.
+    await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1', attempt: 3 });
+    const rows = await scheduled(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toContain('operatorAlerts');
+    expect(rows[0]?.args[0]).toMatchObject({
+      subject: 'Clerk delete failed — manual fix needed',
+      deepLinkPath: '/admin/users',
+    });
+    expect(JSON.stringify(rows[0]?.args[0])).toMatch(/after 4 attempt\(s\)/);
+    expect(JSON.stringify(rows[0]?.args[0])).toMatch(/delete it in the Clerk dashboard/);
+  });
+
+  test('a permanent failure (another 4xx) pages the operator at once', async () => {
+    const t = convexTest(schema, modules);
+    answering(422);
+    await t.action(internal.clerkAdmin.deleteUser, { clerkUserId: 'u_1' });
+    const rows = await scheduled(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toContain('operatorAlerts');
   });
 });

@@ -7,13 +7,13 @@ import {
   type PostedDailyWindow,
   postedAccessError,
 } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { errorText } from './adminUi';
+import { useSaidMutation } from './said';
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
 
@@ -67,7 +67,7 @@ export function PostedAccessTool({
   onResult: (banner: Banner) => void;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId: body._id });
-  const setPostedAccess = useMutation(api.postedAccess.setPostedAccess);
+  const setPostedAccess = useSaidMutation(api.postedAccess.setPostedAccess);
   const [targetKey, setTargetKey] = useState<TargetKey>('body');
   const [busy, setBusy] = useState(false);
 
@@ -132,8 +132,8 @@ export function PostedAccessTool({
                 tone: 'ok',
                 text: rule ? `Posted rules saved for ${target.label}.` : 'Posted rules cleared.',
               });
-            } catch (err) {
-              onResult({ tone: 'error', text: errorText(err) });
+            } catch {
+              // Refused: said in its toast (the net, D268); the form keeps what was entered.
             } finally {
               setBusy(false);
             }

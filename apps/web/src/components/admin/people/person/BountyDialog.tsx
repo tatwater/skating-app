@@ -6,6 +6,7 @@ import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
 import { WORDS } from './personWords';
+import type { ActOutcome } from './useActing';
 
 /**
  * Set a person's bounty limit: the default, or a limit of their own (zero stops bounties outright and
@@ -22,7 +23,7 @@ export type BountyDialogProps = {
   current: number | null;
   /** The default every account has. */
   defaultLimit: number;
-  onConfirm: (args: { limit: number | null; reason: string }) => Promise<string | null>;
+  onConfirm: (args: { limit: number | null; reason: string }) => Promise<ActOutcome>;
 };
 
 /** Whether moving from `current` to `next` lowers the limit in force — and so asks why. */

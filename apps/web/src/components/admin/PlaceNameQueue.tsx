@@ -6,13 +6,14 @@ import {
   type CorpusNameStatus,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
 import { BodyPicker } from '../sheet/BodyPicker';
 import { Button, buttonVariants } from '../ui/button';
-import { AdminEmpty, AdminPageHeader, errorText, Table, Td, Th } from './adminUi';
+import { AdminEmpty, AdminPageHeader, Table, Td, Th } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
+import { useRefusalClears, useSaidMutation } from './said';
 
 const TABS: readonly { status: CorpusNameStatus; label: string }[] = [
   { status: 'open', label: 'Open' },
@@ -41,17 +42,20 @@ export function PlaceNameQueue() {
     status,
     ...(recurringOnly ? { minMessages: 2 } : {}),
   });
-  const setLake = useMutation(api.corpusPlaceNames.setLake);
-  const reopen = useMutation(api.corpusPlaceNames.reopen);
+  const setLake = useSaidMutation(api.corpusPlaceNames.setLake);
+  const reopen = useSaidMutation(api.corpusPlaceNames.reopen);
   const [picking, setPicking] = useState<Row | null>(null);
-  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  // A landed write's outcome. A refusal is the net's toast (D268), never said here.
+  const [message, setMessage] = useState<string | null>(null);
+  // A refusal said anywhere lets the last outcome go: it never reads as saved for one that wasn't.
+  useRefusalClears(() => setMessage(null));
 
   const act = async (write: () => Promise<unknown>, ok: string) => {
     try {
       await write();
-      setMessage({ tone: 'ok', text: ok });
-    } catch (err) {
-      setMessage({ tone: 'error', text: errorText(err) });
+      setMessage(ok);
+    } catch {
+      // Refused: said in its toast.
     }
   };
 
@@ -86,14 +90,10 @@ export function PlaceNameQueue() {
 
       {message ? (
         <p
-          role={message.tone === 'error' ? 'alert' : 'status'}
-          className={`rounded-md border px-3 py-2 text-sm ${
-            message.tone === 'ok'
-              ? 'border-border bg-surface-muted text-foreground'
-              : 'border-danger/40 bg-danger/10 text-danger'
-          }`}
+          role="status"
+          className="rounded-md border border-border bg-surface-muted px-3 py-2 text-foreground text-sm"
         >
-          {message.text}
+          {message}
         </p>
       ) : null}
 
@@ -172,7 +172,7 @@ export function PlaceNameQueue() {
                       <DismissPlaceNameDialog
                         id={row._id}
                         name={row.name}
-                        onDone={() => setMessage({ tone: 'ok', text: `Dismissed “${row.name}”.` })}
+                        onDone={() => setMessage(`Dismissed “${row.name}”.`)}
                         trigger={
                           <Button size="xs" variant="ghost">
                             Dismiss

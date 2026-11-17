@@ -321,7 +321,7 @@ const robPage = (
     decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
     now={PERSON_NOW}
     viewerId={null}
-    onAct={async () => null}
+    onAct={async () => true}
     onUndo={() => {}}
     className="h-full"
   />

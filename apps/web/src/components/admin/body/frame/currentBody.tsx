@@ -1,16 +1,7 @@
 import { ConvexError } from 'convex/values';
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
-import { toast } from '@/components/kit/toast';
-import { errorText } from '../../adminUi';
+import { type RefusalWords, said, sayRefusal } from '../../said';
 import { notSavedTitle, notSavedWhat, OTHER_BODY } from '../consoleWords';
 
 /**
@@ -22,18 +13,14 @@ import { notSavedTitle, notSavedWhat, OTHER_BODY } from '../consoleWords';
  *   it was composed for and runs to its end against *that* body wherever the page goes next — a tab
  *   switch, another body, an uncached body loading, out of the Bodies area. Whole-list saves queue
  *   above the consoles (`ListWritersProvider`), per body, so a queued one goes out too.
- * - **A result is said honestly.** A receipt always names its body ("Links saved · Mascoma Lake"),
- *   so its Undo is unambiguous on any page. A refusal is said in place while the console that sent
- *   it is on screen and the part that sent it is still mounted; once either has gone, it is a toast
- *   naming the body and what failed — never swallowed.
+ * - **A result is said honestly, and names its body.** A receipt always names its body ("Links
+ *   saved · Mascoma Lake"), so its Undo is unambiguous on any page; a refusal is always a toast
+ *   naming the body and what was not saved (D268), wherever the moderator is when it comes.
  * - **A missed reset still can't write.** A subtree holds the binding of the console it mounted
  *   under; a write that names another body than that one (a subtree that kept a draft across a body
  *   change) is refused, loudly.
- *
- * The binding is alive from its console's commit until that console goes away; it only decides
- * *where* a result is said, never *whether* a pressed save is sent.
  */
-type Binding = { readonly body: string; name: string | undefined; alive: boolean };
+type Binding = { readonly body: string; name: string | undefined };
 
 const BindingContext = createContext<Binding | null>(null);
 
@@ -43,60 +30,37 @@ export function BodyBindingProvider({
   children,
 }: {
   bodyId: string;
-  /** The body's name, for every result said off its console ("· Mascoma Lake"). */
+  /** The body's name, for every result ("· Mascoma Lake"). */
   name?: string | undefined;
   children: ReactNode;
 }) {
-  // A fresh binding for this console and this body, alive at commit (a navigation still rendering
-  // leaves the body on screen bound) and dead the moment the console goes. Held in state, not a
-  // memo (a cache React may drop); a new body replaces it during render.
-  const [binding, setBinding] = useState<Binding>(() => ({ body: bodyId, name, alive: false }));
-  if (binding.body !== bodyId) setBinding({ body: bodyId, name, alive: false });
+  // A fresh binding for this console and this body. Held in state, not a memo (a cache React may
+  // drop); a new body replaces it during render.
+  const [binding, setBinding] = useState<Binding>(() => ({ body: bodyId, name }));
+  if (binding.body !== bodyId) setBinding({ body: bodyId, name });
   // The name is the body's, and may land after the console does: kept current on the same
-  // binding, never a new one (that would leave every mounted consumer holding a dead binding) —
+  // binding, never a new one (that would leave every mounted consumer holding a stale binding) —
   // and only while it is the same body (never the last body's binding taking the next one's name).
   // A name once landed is kept while the same body's console reloads or fails (no name then): a
   // result said in that moment still names its body.
   else if (name !== undefined) binding.name = name;
-  useLayoutEffect(() => {
-    binding.alive = true;
-    return () => {
-      binding.alive = false;
-    };
-  }, [binding]);
   return <BindingContext.Provider value={binding}>{children}</BindingContext.Provider>;
 }
 
 /** What a write needs to know about where it was composed. */
 export type BodyHold = {
-  /** Is the console it was composed on still the one on screen? Decides where a result is said. */
-  here: () => boolean;
   /** The body that console is for; `null` outside a frame (a story, a test of one view). */
   body: string | null;
-  /** The body's name, for a result said anywhere else. */
+  /** The body's name, for every result. */
   subject: string | undefined;
 };
 
-/**
- * The binding current when the subtree mounted — never a later one. **Here** is the console alive
- * *and* the holder still mounted: a tab another tab replaced, a card closed, a dialog's page gone
- * can't say a result in place, so a refusal for it is said in a toast naming the body — never set
- * on a page no one can see.
- */
+/** The binding current when the subtree mounted — never a later one. */
 export function useBodyHold(): BodyHold {
   const current = useContext(BindingContext);
   const [held] = useState(current);
-  // Set at the commit that mounts or removes the holder (a layout effect), never later.
-  const mounted = useRef(false);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   return useMemo(
     () => ({
-      here: () => mounted.current && (held === null || held.alive),
       body: held?.body ?? null,
       get subject() {
         return held?.name;
@@ -116,28 +80,28 @@ export function listChanged(err: unknown): readonly unknown[] | null {
 }
 
 /**
- * A save that didn't land, said off its console: a toast naming the body ("Not saved · Mascoma
- * Lake") with what failed. The one wording every write path and queue uses.
+ * A save that didn't land: a toast naming the body ("Not saved · Mascoma Lake") with what failed,
+ * there until dismissed. The one wording every write path and queue uses.
  */
 export function sayNotSaved(hold: BodyHold, description: string): void {
-  toast({
-    title: notSavedTitle(hold.subject),
-    description,
-    tone: 'bad',
-  });
+  sayRefusal({ title: notSavedTitle(hold.subject), description });
+}
+
+/** A refusal's words for what was not saved ("Not saved · Mascoma Lake" — "The ruling: …"). */
+export function notSavedWords(hold: BodyHold, what: string): (why: string) => RefusalWords {
+  return (why) => ({ title: notSavedTitle(hold.subject), description: notSavedWhat(what, why) });
 }
 
 /**
  * **The one write path.** `body` is the body the write names; `what` says what it was ("The links",
- * "The ruling"), for a refusal said off the console. Sends unless the write names another body than
- * the console's own; a refusal is thrown (in the server's words) while `hold` is here (its console on
- * screen, its holder mounted) — for the caller to say in place — and otherwise put in a toast naming
- * the body; a list that moved
- * underneath is thrown as it came, for the queue to re-apply; the receipt follows a landed write
- * wherever the page is, naming its body, and its failure is never a refusal.
+ * "The ruling"), for its refusal. Sends unless the write names another body than the console's own;
+ * a refusal (the server's, a server error, a failed send) is a toast naming the body and what was
+ * not saved; a list that moved underneath is thrown as it came, for the queue to re-apply; the
+ * receipt follows a landed write wherever the page is, naming its body, and its failure is never a
+ * refusal.
  *
- * Resolves `true` when the write landed, `false` when it was refused off its console (already said
- * in the toast) — so a caller never takes a refused write for a landed one.
+ * Resolves `true` when the write landed and `false` when it was refused — said already, so the
+ * caller only keeps its dialog open or goes back to the record; it never has words to say.
  */
 export async function sendFor(
   hold: BodyHold,
@@ -153,16 +117,14 @@ export async function sendFor(
     what: string;
   },
 ): Promise<boolean> {
-  if (hold.body !== null && hold.body !== body) throw new Error(OTHER_BODY);
-  try {
-    await write();
-  } catch (err) {
-    if (listChanged(err) !== null) throw err;
-    const said = errorText(err);
-    if (hold.here()) throw new Error(said);
-    sayNotSaved(hold, notSavedWhat(what, said));
+  if (hold.body !== null && hold.body !== body) {
+    sayNotSaved(hold, OTHER_BODY);
     return false;
   }
+  const answer = await said(write, notSavedWords(hold, what), {
+    passOn: (err) => listChanged(err) !== null,
+  });
+  if (!answer.landed) return false;
   try {
     await receipt(hold.subject);
   } catch {

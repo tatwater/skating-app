@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -32,6 +32,11 @@ vi.mock('@/lib/useRole', () => ({
 }));
 const undo = vi.hoisted(() => ({ announce: vi.fn(async () => {}) }));
 vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
+const toasts = vi.hoisted(() => [] as { title: string; description?: string }[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: { title: string; description?: string }) => toasts.push(t),
+}));
 
 import type { Id } from '@skating/convex/dataModel';
 import { ConvexError } from 'convex/values';
@@ -49,6 +54,7 @@ beforeEach(() => {
   convex.results.clear();
   convex.mutations.clear();
   undo.announce.mockClear();
+  toasts.length = 0;
   role.caps = new Set(['body.standing', 'body.remove']);
 });
 
@@ -197,7 +203,7 @@ describe('StandingTab', () => {
     });
   });
 
-  it('a refusal reads in the server’s words and announces nothing', async () => {
+  it('a refusal is one toast in the server’s words, nothing in the form, and announces nothing', async () => {
     convex.results.set('waterBodies:get', body());
     convex.mutations.set(
       'standing:setStanding',
@@ -208,10 +214,44 @@ describe('StandingTab', () => {
     render(<StandingTab bodyId={BODY} />);
     await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
     await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Only an active body can be set dormant',
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'Set dormant: Only an active body can be set dormant',
+          tone: 'bad',
+        }),
+      ]),
     );
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The form stays, its submit the moderator's again, to send once more.
+    expect(screen.getByRole('button', { name: /Set dormant/ })).not.toHaveAttribute('aria-busy');
     expect(undo.announce).not.toHaveBeenCalled();
+  });
+
+  it('a refusal that comes after its form has gone (another standing picked) is the same toast', async () => {
+    convex.results.set('waterBodies:get', body());
+    let refuse: () => void = () => {};
+    convex.mutations.set(
+      'standing:setStanding',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('Only an active body can be set dormant'));
+          }),
+      ),
+    );
+    render(<StandingTab bodyId={BODY} />);
+    await userEvent.click(screen.getByRole('radio', { name: /^Dormant/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
+    // The moderator moves on to another standing: the dormant form isn't the one on screen.
+    await userEvent.click(screen.getByRole('radio', { name: /^Removed/ }));
+    await act(async () => refuse());
+    expect(toasts).toEqual([
+      expect.objectContaining({
+        description: 'Set dormant: Only an active body can be set dormant',
+      }),
+    ]);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('brings a hand-set dormancy back, and restores a removal', async () => {

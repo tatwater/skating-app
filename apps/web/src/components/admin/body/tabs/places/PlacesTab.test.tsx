@@ -161,7 +161,18 @@ describe('PlacesTab', () => {
     expect(mocks.calls).toEqual([
       ['corpusRequests:decline', { requestId: 'rq1', note: 'Already on the map' }],
     ]);
-    expect(await within(dialog).findByText('This request has been decided')).toBeTruthy();
+    // Refused: one toast naming what wasn't saved; the dialog stays open over its note, printing nothing.
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: expect.stringMatching(/^Declined “.*”: This request has been decided$/),
+          tone: 'bad',
+        }),
+      ]),
+    );
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(within(dialog).getByRole('textbox')).toHaveValue('Already on the map');
+    expect(within(dialog).queryByText('This request has been decided')).toBeNull();
     expect(mocks.announce).not.toHaveBeenCalled();
   });
 

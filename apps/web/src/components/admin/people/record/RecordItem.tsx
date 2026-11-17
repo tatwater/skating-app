@@ -50,7 +50,8 @@ export type RecordItemProps = {
   /** Key hints on the levers (a fine pointer). */
   keys: boolean;
   busy: RecordAction | null;
-  refusal: string | null;
+  /** The sheet's own note on this item (it changed under a dialog) — never a server's words. */
+  note: string | null;
   /** The Reversed row this item was opened from, for its restore's undo. */
   reversal: ReversedRow | null;
   onLever: (lever: Extract<Lever, { ok: true }>, view: ItemView) => void;
@@ -94,7 +95,7 @@ function ItemBody({
   narrow,
   keys,
   busy,
-  refusal,
+  note,
   reversal,
   onLever,
   onUndoEnd,
@@ -127,7 +128,7 @@ function ItemBody({
         data-slot="record-item-scroll"
         className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-gutter pt-(--space-4) pb-(--space-7)"
       >
-        <Verdict view={view} now={now} narrow={narrow} refusal={refusal} />
+        <Verdict view={view} now={now} narrow={narrow} note={note} />
         <PlateView view={view} />
         {view.life !== null && view.life.stations.length > 1 && (
           <Section title={W.life} level={3} data-slot="record-life">
@@ -179,12 +180,12 @@ const lifeLines = (ifLabel: string | null) => [
 function Verdict({
   view,
   narrow,
-  refusal,
+  note,
 }: {
   view: ItemView;
   now: number;
   narrow: boolean;
-  refusal: string | null;
+  note: string | null;
 }) {
   return (
     <Note data-slot="record-verdict" className="flex flex-col gap-(--space-2)">
@@ -211,9 +212,9 @@ function Verdict({
       {view.decisionsCapped && (
         <span className="text-assist leading-list text-fg3">{W.decisionsCapped}</span>
       )}
-      {refusal !== null && (
-        <span role="alert" data-slot="record-refusal" className="text-assist leading-list text-bad">
-          {refusal}
+      {note !== null && (
+        <span role="alert" data-slot="record-note" className="text-assist leading-list text-bad">
+          {note}
         </span>
       )}
     </Note>

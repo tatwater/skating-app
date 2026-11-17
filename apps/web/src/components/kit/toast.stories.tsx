@@ -152,6 +152,40 @@ export const WithUndo: Story = {
   },
 };
 
+/**
+ * A server's refusal: the failure's red stripe, the server's words under what was not changed, no
+ * Undo (nothing changed) and no time left — it stays until its *Dismiss* is pressed.
+ */
+export const Refusal: Story = {
+  render: () => (
+    <Frame
+      seed={[
+        {
+          title: 'Not saved · Mascoma Lake',
+          description: 'The ruling: Only an admin can rule a body’s access.',
+          tone: 'bad',
+          timeout: 0,
+        },
+      ]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const t = await waitFor(() => must(toastIn(canvasElement)));
+    await expect(t).toHaveTextContent('Not saved · Mascoma Lake');
+    await expect(getComputedStyle(slot(t, 'toast-stripe')).backgroundColor).toEqual(
+      sameColor(computedColor(t, 'var(--bad)')),
+    );
+    await expect(t.querySelector('[data-slot="toast-timebar"]')).toBeNull();
+    await expect(t.querySelector('[data-slot="toast-countdown"]')).toBeNull();
+    await expect(t.querySelector('[data-slot="toast-action"]')).toBeNull();
+    // Still there well past a receipt's window would have run in a story.
+    await sleep(300);
+    await expect(toastIn(canvasElement)).toBe(t);
+    await userEvent.click(slot(t, 'toast-dismiss'));
+    await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
+  },
+};
+
 const undoA = fn();
 const undoB = fn();
 
@@ -399,7 +433,8 @@ export const DockedAtTheRail: Story = {
       1,
     );
     await expect(getComputedStyle(dock).position).toBe('fixed');
-    await expect(getComputedStyle(dock).zIndex).toBe('20');
+    // Over every overlay — a modal's scrim, a sheet, a viewer: a refusal reaches an open dialog.
+    await expect(getComputedStyle(dock).zIndex).toBe('60');
   },
 };
 

@@ -1,9 +1,10 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faShieldHalved } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { useRole } from '@/lib/useRole';
+import { useSaidMutation } from './admin/said';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -41,9 +42,15 @@ export function ModeratorActions({
   label?: string;
 }) {
   const { canModerate } = useRole();
-  const setStatus = useMutation(api.moderation.setModerationStatus);
+  // A refusal is the net's toast (D268), wherever the moderator is — a viewer who lost the
+  // permission meanwhile, with this control gone, included.
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus);
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // The form's own check, never a server's words.
+  const [missing, setMissing] = useState(false);
+  // While a takedown is out the dialog holds open; refused, it stays open over the reason.
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // `canModerate`, not `isModerator`: a departing operator's takedown mutations are refused by
   // `requireContributorRole`, so showing the control would offer a button that throws.
@@ -51,19 +58,31 @@ export function ModeratorActions({
 
   const act = async (status: 'hidden' | 'removed') => {
     if (!reason.trim()) {
-      setError('A reason is required.');
+      setMissing(true);
       return;
     }
-    setError(null);
+    setMissing(false);
+    setBusy(true);
     try {
       await setStatus({ targetType, targetId, status, reason: reason.trim() });
+      // Landed: the dialog closes, its reason with it — never left armed for a second takedown.
+      setOpen(false);
+      setReason('');
     } catch {
-      setError('Could not apply the action. Please try again.');
+      // Refused: said in its toast.
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <Dialog>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && busy) return;
+        setOpen(next);
+      }}
+    >
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
         <FontAwesomeIcon icon={faShieldHalved} className="size-4" />
         {label}
@@ -84,13 +103,21 @@ export function ModeratorActions({
             placeholder="Why is this being taken down?"
           />
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        {missing ? <p className="text-destructive text-sm">A reason is required.</p> : null}
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-          <Button variant="secondary" onClick={() => act('hidden')} disabled={!reason.trim()}>
+          <DialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</DialogClose>
+          <Button
+            variant="secondary"
+            onClick={() => act('hidden')}
+            disabled={!reason.trim() || busy}
+          >
             Hide
           </Button>
-          <Button variant="destructive" onClick={() => act('removed')} disabled={!reason.trim()}>
+          <Button
+            variant="destructive"
+            onClick={() => act('removed')}
+            disabled={!reason.trim() || busy}
+          >
             Remove
           </Button>
         </DialogFooter>

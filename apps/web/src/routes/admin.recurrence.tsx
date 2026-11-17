@@ -2,10 +2,11 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { hazardTypeLabel, relativeWhen, timingWindowLabel } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { useSaidMutation } from '../components/admin/said';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -32,7 +33,7 @@ const QUEUE_PAGE_SIZE = 50;
 
 function AdminRecurrence() {
   const merges = useQuery(api.hazards.listRecentMerges, {});
-  const unmerge = useMutation(api.hazards.unmerge);
+  const unmerge = useSaidMutation(api.hazards.unmerge);
   const [minSeasons, setMinSeasons] = useState(1);
   // A suppression is reversible by design (§7.3), which means it has to be reversible *from a
   // surface*. Hidden by default because the queue's job is what still needs deciding — but one
@@ -49,8 +50,8 @@ function AdminRecurrence() {
     { minSeasons, includeSuppressed: showSuppressed },
     { initialNumItems: QUEUE_PAGE_SIZE },
   );
-  const suppress = useMutation(api.recurrence.suppress);
-  const unsuppress = useMutation(api.recurrence.unsuppress);
+  const suppress = useSaidMutation(api.recurrence.suppress);
+  const unsuppress = useSaidMutation(api.recurrence.unsuppress);
 
   return (
     <div className="flex flex-col gap-4">

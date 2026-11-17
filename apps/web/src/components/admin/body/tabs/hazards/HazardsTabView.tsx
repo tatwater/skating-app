@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +15,6 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogError,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogReason,
@@ -124,8 +122,11 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** The failed reads were tried again; their fresh answers aren't in (the notes say so). */
   retryPending?: boolean;
   onOpenRecurrence?: () => void;
-  /** Demote a known feature, with the reason taking it away asks for. Absent: not drawn. */
-  onDemote?: (id: string, reason: string) => Promise<void>;
+  /**
+   * Demote a known feature, with the reason taking it away asks for. Absent: not drawn. Resolves
+   * whether it landed: a refusal is a toast, and the dialog stays open over the reason.
+   */
+  onDemote?: (id: string, reason: string) => Promise<boolean>;
   /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
   onMarkHazard?: (() => void) | typeof UNAVAILABLE;
   /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
@@ -358,9 +359,7 @@ export function HazardsTabView({
           <DemoteDialog
             feature={demoting}
             onClose={() => setDemoting(null)}
-            onDemote={async (reason) => {
-              if (demoting !== null) await demote(demoting.id, reason);
-            }}
+            onDemote={async (reason) => (demoting === null ? true : demote(demoting.id, reason))}
           />
         )}
       </div>
@@ -883,12 +882,11 @@ function DemoteDialog({
 }: {
   feature: FeatureRowWithGlyph | null;
   onClose: () => void;
-  onDemote: (reason: string) => Promise<void>;
+  onDemote: (reason: string) => Promise<boolean>;
 }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // This opening (one feature asked about): a demote's answer acts only on the opening that sent it.
+  // This opening (one feature asked about): a demote's answer closes only the opening that sent it.
   const opening = useRef(0);
   const openFor = useRef<string | null>(null);
   if ((feature?.id ?? null) !== openFor.current) {
@@ -901,7 +899,6 @@ function DemoteDialog({
       onOpenChange={(open) => {
         if (!open && !busy) {
           setReason('');
-          setError(null);
           onClose();
         }
       }}
@@ -916,7 +913,6 @@ function DemoteDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogBody>
-          {error !== null && <AlertDialogError>{error}</AlertDialogError>}
           {/* A sent reason is held while its one-shot write is out: the demotion can't be sent
               again, so words typed then could never be recorded — the field takes none. */}
           <AlertDialogReason
@@ -932,19 +928,15 @@ function DemoteDialog({
             waiting={reason.trim().length === 0 || busy}
             onClick={() => {
               setBusy(true);
-              setError(null);
               const mine = opening.current;
+              // Refused: said in its toast, and the dialog stays open over the reason.
               void onDemote(reason.trim())
-                .then(() => {
-                  if (opening.current !== mine) return;
+                .then((landed) => {
+                  if (!landed || opening.current !== mine) return;
                   setReason('');
                   onClose();
                 })
-                .catch((err: unknown) => {
-                  if (opening.current === mine) {
-                    setError(err instanceof Error ? err.message : String(err));
-                  }
-                })
+                .catch(() => {})
                 .finally(() => setBusy(false));
             }}
           >

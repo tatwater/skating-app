@@ -1,9 +1,8 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
-import { errorText } from '@/components/admin/adminUi';
 import { Button } from '@/components/kit/button';
 import { CheckboxGroup, CheckboxRow } from '@/components/kit/checkbox';
 import {
@@ -16,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/kit/dialog';
+import { useSaidMutation } from '../admin/said';
 
 /** What `moderation.postRestoreChoices` returns for a Post that exists. */
 export type PostRestoreChoices = NonNullable<
@@ -60,7 +60,8 @@ function whyDown(m: Member): string {
  * why it is down — with **nothing pre-selected** (each takedown was a decision; bringing one back
  * is a conscious override), Reports their author deleted shown but not choosable, and the confirm
  * carrying the count. The server refuses an empty restore whatever this shows, so a race or another
- * client never leaves a Post up with nothing in it; its refusal is shown in its own words.
+ * client never leaves a Post up with nothing in it; its refusal is a toast in its own words (D268),
+ * and the chooser stays open with the choice as it was.
  *
  * The view is pure (stories and tests drive it with props); `RestorePost` wires it to the server.
  */
@@ -69,15 +70,15 @@ export function RestorePostView({
   onRestore,
 }: {
   choices: PostRestoreChoices;
-  /** Restore the Post, with these Reports when any are chosen. Resolves when the server answers. */
+  /**
+   * Restore the Post, with these Reports when any are chosen. Resolves when it landed; rejects when
+   * it was refused (said in its toast).
+   */
   onRestore: (reportIds: Id<'reports'>[]) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  // The server's refusal of the last attempt, verbatim; cleared by the next one, or by opening or
-  // closing the chooser, so a stale refusal never sits under a fresh choice.
-  const [error, setError] = useState<string | null>(null);
 
   const rows = choices.members.filter(
     (m) => m.standing === 'choose' || m.standing === 'author_deleted',
@@ -92,14 +93,12 @@ export function RestorePostView({
 
   const restore = async (ids: Id<'reports'>[]) => {
     setBusy(true);
-    setError(null);
     try {
       await onRestore(ids);
       setOpen(false);
       setChosen([]);
-    } catch (err) {
-      // Refused: say why in the server's words, and keep the choice as it was.
-      setError(errorText(err));
+    } catch {
+      // Refused: said in its toast; the choice stays as it was.
     } finally {
       setBusy(false);
     }
@@ -107,10 +106,7 @@ export function RestorePostView({
 
   const press = () => {
     if (choices.plainRestoreBringsBack) void restore([]);
-    else {
-      setError(null);
-      setOpen(true);
-    }
+    else setOpen(true);
   };
 
   return (
@@ -120,16 +116,10 @@ export function RestorePostView({
       <Button size="sm" onClick={press} disabled={busy || choices.postStatus === 'visible'}>
         Restore post
       </Button>
-      {error && !open ? (
-        <p role="alert" className="text-assist text-bad">
-          {error}
-        </p>
-      ) : null}
       <Dialog
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          setError(null);
           if (!next) setChosen([]);
         }}
       >
@@ -151,11 +141,6 @@ export function RestorePostView({
                 />
               ))}
             </CheckboxGroup>
-            {error ? (
-              <p role="alert" className="text-assist text-bad">
-                {error}
-              </p>
-            ) : null}
           </DialogBody>
           <DialogFooter>
             <DialogClose render={<Button size="sm" />}>
@@ -185,20 +170,22 @@ export function RestorePostView({
  */
 export function RestorePost({ postId, reason }: { postId: Id<'posts'>; reason: string }) {
   const choices = useQuery(api.moderation.postRestoreChoices, { postId });
-  const setStatus = useMutation(api.moderation.setModerationStatus);
+  const setStatus = useSaidMutation(api.moderation.setModerationStatus);
   if (!choices) return null;
   return (
-    <RestorePostView
-      choices={choices}
-      onRestore={async (reportIds) => {
-        await setStatus({
-          targetType: 'post',
-          targetId: postId,
-          status: 'visible',
-          reason,
-          ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
-        });
-      }}
-    />
+    <div className="contents">
+      <RestorePostView
+        choices={choices}
+        onRestore={async (reportIds) => {
+          await setStatus({
+            targetType: 'post',
+            targetId: postId,
+            status: 'visible',
+            reason,
+            ...(reportIds.length > 0 ? { withReportIds: reportIds } : {}),
+          });
+        }}
+      />
+    </div>
   );
 }
