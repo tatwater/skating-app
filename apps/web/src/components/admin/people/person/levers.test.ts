@@ -574,6 +574,8 @@ describe('can is the law (property)', () => {
 // ── The facts under the rows (B01-4j) ──────────────────────────────────────────────────────────
 
 describe('the facts the server sends, drawn under their rows', () => {
+  // Dates are the viewer's calendar day: one zone, so the suite reads the same anywhere.
+  const IN_NH = { now: NOW, timeZone: 'America/New_York' };
   const off = (over: Partial<PersonRead> = {}) =>
     personOf({
       rights: { ...ROB.rights, comments: false, flagging: false },
@@ -585,13 +587,13 @@ describe('the facts the server sends, drawn under their rows', () => {
     const dated = off({
       rightsSince: { reports: null, hazards: null, comments: at, flagging: null },
     });
-    expect(row(canDoRows(dated, AT), 'comments')?.second).toBe('Since 3 Oct');
-    expect(row(canDoRows(dated, AT), 'flagging')?.second).toBe('Since: not recorded yet');
-    expect(row(canDoRows(off({ rightsSinceCapped: true }), AT), 'comments')?.second).toBe(
+    expect(row(canDoRows(dated, IN_NH), 'comments')?.second).toBe('Since 3 Oct');
+    expect(row(canDoRows(dated, IN_NH), 'flagging')?.second).toBe('Since: not recorded yet');
+    expect(row(canDoRows(off({ rightsSinceCapped: true }), IN_NH), 'comments')?.second).toBe(
       'Since: not found in what this read covers',
     );
     // A right they have says nothing more.
-    expect(row(canDoRows(dated, AT), 'reports')?.second).toBeUndefined();
+    expect(row(canDoRows(dated, IN_NH), 'reports')?.second).toBeUndefined();
     // Another year writes its year.
     const old = off({
       rightsSince: {
@@ -601,12 +603,12 @@ describe('the facts the server sends, drawn under their rows', () => {
         flagging: null,
       },
     });
-    expect(row(canDoRows(old, AT), 'comments')?.second).toBe('Since 2 Feb 2025');
+    expect(row(canDoRows(old, IN_NH), 'comments')?.second).toBe('Since 2 Feb 2025');
   });
 
   it('ledger editing says since when a holder was given it — and nothing for one who holds none', () => {
     const page = (ledger: PersonRead['ledger']) =>
-      row(accountRows({ ...TEAGAN_PAGE, ledger }, { now: NOW, self: false }), 'ledger')?.second;
+      row(accountRows({ ...TEAGAN_PAGE, ledger }, { ...IN_NH, self: false }), 'ledger')?.second;
     expect(
       page({ editor: true, last: false, since: Date.UTC(2026, 9, 14, 12), sinceCapped: false }),
     ).toBe('Since 14 Oct');
