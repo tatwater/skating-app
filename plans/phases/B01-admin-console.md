@@ -5151,6 +5151,36 @@ the count reads at most 306 rows.
 - The sweep's items in other files.
 - Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
 
+### The strip's last day, pinned (B01-3s)
+
+A rendered property on the Hazards view (*a past winter marks each archived hazard once…*) failed
+twice on CI, on other people's PRs: once in a three-zone run, once in the `Etc/GMT+5` run with seed
+1442103800 and the counterexample `[{"day":364,"hour":0,"active":false}]`.
+
+- **A test bug, not the product's.** The seed fails in UTC as in `Etc/GMT+5`, the counterexample
+  in `Etc/GMT-14` too, and so does any archived hazard first reported on the season's last day at
+  any hour: the zone and the midnight were the seed's draw, not the cause. The test still held the old next-day
+  exception (one first reported on the season's last day is a bar, since no later day can say it
+  was archived). B01-3n made the shared fixture say each hazard's state by default, as the server
+  does, so the strip marks that hazard on the read's own word — which is the founder's rule (one
+  mark on the day first reported, for a hazard archived with no recorded end) and is right there:
+  the server stored the archive. The property draws at most 14 hazards over 365 days in three runs,
+  so it reached day 364 archived only now and then, which is why it flaked rather than failed.
+- **Nothing a moderator saw was wrong**, and the server and the web already agree on one day rule:
+  a UTC day, `floor((instant − the season's start) / one day)`, the season from core's
+  `seasonStartMs`/`seasonEndMs` — `dailyHazards`' `daysCovered` and the strip's `dayIndex` both. No
+  local date enters either, so no zone, clock change or leap year moves a day.
+- **Pinned so it cannot recur.** The rendered property replays CI's seed as it ran (three runs),
+  then one random run, with the counterexample, the first day at midnight and the last day's last
+  hour as pinned cases. The edge coverage lives in the unrendered model test: its safety property
+  now draws a common winter and two with a 29 February, its days aimed at the first and last two
+  days, 29 February, the two days the clocks change and the turn of the year, its hours at 0 and
+  23, its clock at each edge's first and last minute and the season's first and last instant, over
+  both kinds of read (pinned seeds including 1442103800, then one random); each edge is also a case
+  of its own, and the counterexample a named one. The other strip properties (the server's
+  `hazardDays`, the model's marks and its old-read rule) keep no last-day exception but the old
+  read's, which is its rule.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
