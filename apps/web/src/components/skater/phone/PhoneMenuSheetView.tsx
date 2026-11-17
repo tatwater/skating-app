@@ -10,13 +10,14 @@ import {
 import type { ThemePreference } from '@skating/design';
 import type { ReactNode } from 'react';
 
+import { ACCOUNT_WORDS, profileHref } from '@/lib/account';
 import { cn } from '@/lib/utils';
 
 import { Avatar } from '../../kit/avatar';
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '../../kit/drawer';
 import { type AvatarMenuPerson, MODERATION_HREF } from '../AvatarMenuView';
 import { navLinkProps } from '../chrome';
-import { ThemeMenu } from '../ThemeMenu';
+import { ThemePicker } from '../../kit/theme-picker';
 
 /**
  * The account sheet (board 9.5): the avatar menu as a bottom sheet on a phone. The same rows as the
@@ -58,7 +59,7 @@ export function PhoneMenuSheetView({
   container,
 }: PhoneMenuSheetViewProps) {
   const go = (href: string) => navLinkProps(href, onNavigate);
-  const profileHref = `/u/${encodeURIComponent(person.username)}`;
+  const profile = profileHref(person.username);
   const row = (href: string, icon: typeof faUser, label: ReactNode, attr: string) => (
     <a {...go(href)} data-attr={attr} className={ROW}>
       <FontAwesomeIcon icon={icon} aria-hidden="true" className={ICON} />
@@ -69,7 +70,7 @@ export function PhoneMenuSheetView({
     <Drawer open={open} onOpenChange={(next) => onOpenChange(next)}>
       <DrawerTrigger
         data-attr="avatar"
-        aria-label="Your account"
+        aria-label={ACCOUNT_WORDS.account}
         // Initials are a person's: never autocaptured (D240).
         className={cn(
           'ph-no-capture ml-(--space-1_5) inline-flex shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none',
@@ -89,7 +90,7 @@ export function PhoneMenuSheetView({
         data-slot="phone-menu-sheet"
         className="ph-no-capture bg-panel pb-(--space-6)"
       >
-        <DrawerTitle className="sr-only">Your account</DrawerTitle>
+        <DrawerTitle className="sr-only">{ACCOUNT_WORDS.account}</DrawerTitle>
         <div
           data-slot="phone-menu-who"
           className="mb-(--space-1_5) flex items-center gap-(--space-3) border-0 border-b border-solid border-line px-(--space-4) pt-(--space-1) pb-(--space-3_5)"
@@ -108,8 +109,8 @@ export function PhoneMenuSheetView({
             </span>
           </span>
         </div>
-        <nav aria-label="Your account" className="flex flex-col">
-          {row(profileHref, faUser, 'Your profile', 'phone-menu-profile')}
+        <nav aria-label={ACCOUNT_WORDS.account} className="flex flex-col">
+          {row(profile, faUser, ACCOUNT_WORDS.profile, 'phone-menu-profile')}
           {row('/settings', faGear, 'Settings', 'phone-menu-settings')}
           {row('/about', faCircleInfo, 'About Gli', 'phone-menu-about')}
           {isModerator && (
@@ -129,7 +130,7 @@ export function PhoneMenuSheetView({
                   aria-hidden="true"
                   className="ml-auto h-3 text-fg3"
                 />
-                <span className="sr-only">(opens in a new tab)</span>
+                <span className="sr-only">{ACCOUNT_WORDS.newTab}</span>
               </a>
             </>
           )}
@@ -140,10 +141,10 @@ export function PhoneMenuSheetView({
             aria-hidden="true"
             className="px-(--space-4) pt-(--space-2_5) pb-(--space-2) text-kick leading-none font-medium tracking-kick text-fg3 uppercase"
           >
-            Theme
+            {ACCOUNT_WORDS.theme}
           </span>
           <div className="px-(--space-4) pt-(--space-1) pb-(--space-3)">
-            <ThemeMenu
+            <ThemePicker
               value={theme}
               onValueChange={onThemeChange}
               className="[&_[data-slot=toggle-group-item]]:h-8.5"
@@ -153,7 +154,7 @@ export function PhoneMenuSheetView({
         <hr className={RULE} />
         <button type="button" data-attr="phone-menu-sign-out" onClick={onSignOut} className={ROW}>
           <FontAwesomeIcon icon={faArrowRightFromBracket} aria-hidden="true" className={ICON} />
-          Sign out
+          {ACCOUNT_WORDS.signOut}
         </button>
       </DrawerContent>
     </Drawer>
