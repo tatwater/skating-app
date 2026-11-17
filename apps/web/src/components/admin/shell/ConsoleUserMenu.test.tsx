@@ -32,6 +32,10 @@ const { said } = await import('../said');
 const { ConsoleUserMenu, draftHref } = await import('./ConsoleUserMenu');
 const { menuViewerOf } = await import('./ConsoleLayout');
 const { THEME_COOKIE } = await import('@/lib/theme');
+const { answerUnsavedAsks, NO_OTHER_TABS, setUnsavedChannelForTests } = await import(
+  '@/lib/unsavedElsewhere'
+);
+const { tabsHub } = await import('@/test/tabsHub');
 
 const VIEWER = { state: 'ready', id: 'p_robin', name: 'Robin Ashford' } as const;
 
@@ -51,8 +55,11 @@ beforeEach(() => {
   mocks.signOut.mockReset().mockResolvedValue(undefined);
   mocks.sheet = null;
   clearTheme();
+  // No other tab, and a wait short enough that a Sign out settles inside its own test.
+  setUnsavedChannelForTests(NO_OTHER_TABS, 0);
 });
 afterEach(() => {
+  setUnsavedChannelForTests(undefined);
   clearTheme();
   vi.restoreAllMocks();
 });
@@ -111,8 +118,63 @@ describe('Sign out', () => {
   it('signs straight out through Clerk when nothing would be lost', async () => {
     render(<Wired />);
     await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
-    expect(mocks.signOut).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  describe('with a report another tab holds unsent (an edit lives only in its tab)', () => {
+    const OTHER_TAB =
+      'A report open in another tab of this browser has changes that aren’t posted yet. Signing out discards them.';
+
+    it('asks first; Cancel leaves both tabs as they were; the confirm signs out', async () => {
+      const hub = tabsHub();
+      setUnsavedChannelForTests(hub.make, 0);
+      const holds = vi.fn(() => true);
+      const stop = answerUnsavedAsks(holds, 'the-other-tab');
+      render(<Wired />);
+      await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText(OTHER_TAB)).toBeInTheDocument();
+      // Nothing to open from here: the work is in the other tab.
+      expect(within(dialog).queryByRole('button', { name: 'Open the draft' })).toBeNull();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(mocks.signOut).not.toHaveBeenCalled();
+      // The other tab was only asked: its listener is still there, nothing else happened to it.
+      expect(holds).toHaveBeenCalledTimes(1);
+      expect(hub.open.size).toBe(1);
+
+      await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+      const again = await screen.findByRole('dialog');
+      await userEvent.click(within(again).getByRole('button', { name: 'Sign out' }));
+      expect(mocks.signOut).toHaveBeenCalledOnce();
+      stop();
+    });
+
+    it('warns, never stays silent, when this browser can’t ask its tabs', async () => {
+      setUnsavedChannelForTests(() => null, 0);
+      render(<Wired />);
+      await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        within(dialog).getByText(
+          'This browser can’t check its other tabs, so a report you’re writing in one of them may be discarded.',
+        ),
+      ).toBeInTheDocument();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+    });
+
+    it('goes straight out once the other tab has closed', async () => {
+      const hub = tabsHub();
+      setUnsavedChannelForTests(hub.make, 0);
+      answerUnsavedAsks(() => true, 'the-other-tab')();
+      render(<Wired />);
+      await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+      await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
   });
 
   it('asks first over a report still unsent, and opens it in the app in a new tab', async () => {
@@ -172,7 +234,7 @@ describe('Sign out', () => {
       screen.getAllByText('You’re still signed in. Check your connection and try again.').length,
     ).toBeGreaterThan(0);
     await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
-    expect(mocks.signOut).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledTimes(2));
   });
 
   it.each([
@@ -195,7 +257,7 @@ describe('Sign out', () => {
       );
       const { unmount } = render(<Wired />);
       await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
-      expect(mocks.signOut).toHaveBeenCalledOnce();
+      await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
       // Signed out, the gate takes the console away; the answer comes after.
       unmount();
       if (how === 'reject') settle?.reject(new ConvexError({ message: 'Not signed in.' }));

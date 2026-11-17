@@ -36,6 +36,7 @@ vi.mock('@/lib/sheetStore', () => ({
   }),
 }));
 
+import { NO_OTHER_TABS, setUnsavedChannelForTests } from '@/lib/unsavedElsewhere';
 import { resetGeocoderSession } from './geocoder';
 import { SettingsPage } from './SettingsPage';
 
@@ -102,6 +103,8 @@ beforeEach(() => {
   m.suggest.mockReset();
   m.suggest.mockResolvedValue({ status: 'ok', attribution: 'A', suggestions: [] });
   m.draft = false;
+  // Sign out asks the other tabs: none here, and an answer inside the test.
+  setUnsavedChannelForTests(NO_OTHER_TABS, 0);
   m.user = {
     primaryEmailAddress: { emailAddress: 'kate@donovan.net' },
     createEmailAddress: vi.fn(),
@@ -113,7 +116,10 @@ beforeEach(() => {
     connectedAt: new Date(2026, 11, 3).getTime(),
   });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  setUnsavedChannelForTests(undefined);
+  vi.useRealTimers();
+});
 
 describe('the frame', () => {
   it('lists the sections as links, marks the open one, and moves with the arrows', () => {
@@ -146,7 +152,7 @@ describe('the frame', () => {
   it('signs straight out with no draft', async () => {
     page('account');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Sign out' })));
-    expect(m.signOut).toHaveBeenCalled();
+    await waitFor(() => expect(m.signOut).toHaveBeenCalled());
   });
 
   it('asks before signing out over a draft, and can open the draft instead', async () => {
