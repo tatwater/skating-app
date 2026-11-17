@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271 D275
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -827,6 +827,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - **A second admin app** — D37 stands
 
 #### Owed
+- The Overview's season row and Each day's new rows (B01-2b, D275): *Overnight Lows at the Sentinels* on Home (moderators read it; one constant keeps it to admins); Each day gains bounties posted and fulfilled, contributors split returning and new, and the board's vantage line under Reports. After merge on dev: `convex dev --once`; `analyticsRollup:backfill '{"days":48}'` (every day from 1 October, for the two bounty rollups); then `seasonReach:start '{}'` (first-timers). Owed: the hazards row's confirmed split waits on a founder call on what "confirmed" counts (a pin's own confirmations or its cluster's, D80); places added waits on an index (landmarks can't be told from a load without one); weather calls and imagery go to the Machinery pages → the plan's *B01-2b*
 - The record's rules closed as classes (B01-4h, D271): on dev, `convex dev --once` only (no schema change, no backfill); the web half — the record pane's Undo through each decision's `endActionId` and `undo`, not only a Reversed row handed to it — waits on #138 → the plan's *B01-4h*
 - The People rules (B01-4f) on dev: the rows backfill once, alone, to date each suspended or banned person's row by the write that set their terms (the after-merge procedure's step 6, quoted below); not run by the build → the plan's *B01-4f*
 - Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React

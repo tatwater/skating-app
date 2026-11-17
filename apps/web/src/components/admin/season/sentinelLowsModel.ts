@@ -235,3 +235,34 @@ export function lowsState(value: Loadable<SentinelLowsRead | null>): LowsState {
     }
   }
 }
+
+/** Where a marked night's words go: right of its rule, or left of it, and on which line. */
+export type WordsPlace = { x: number; anchor: 'start' | 'end'; line: 0 | 1 };
+
+/**
+ * The two marked nights' words, kept inside the drawing and off each other: each sits right of its
+ * rule, or left of it where the right would run past the drawing's edge; a label that would still
+ * touch the one before it drops a line. `events` are each rule's x and its words' width. Pure, for
+ * the tests.
+ */
+export function placeEventWords(
+  events: ReadonlyArray<{ x: number; width: number }>,
+  right: number,
+  gap = 5,
+): WordsPlace[] {
+  const placed: Array<WordsPlace & { from: number; to: number }> = [];
+  for (const e of events) {
+    const after = e.x + gap + e.width <= right || e.x - gap - e.width < 0;
+    const from = after ? e.x + gap : e.x - gap - e.width;
+    const to = from + e.width;
+    const clash = placed.some((p) => p.line === 0 && from < p.to + gap && to > p.from - gap);
+    placed.push({
+      x: after ? e.x + gap : e.x - gap,
+      anchor: after ? 'start' : 'end',
+      line: clash ? 1 : 0,
+      from,
+      to,
+    });
+  }
+  return placed.map(({ x, anchor, line }) => ({ x, anchor, line }));
+}

@@ -21,7 +21,14 @@ import { Skeleton } from '@/components/kit/skeleton';
 import { spreadLabels } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
 
-import type { LowsEvent, LowsState, LowsTone, LowsView } from './sentinelLowsModel';
+import {
+  type LowsEvent,
+  type LowsState,
+  type LowsTone,
+  type LowsView,
+  placeEventWords,
+  type WordsPlace,
+} from './sentinelLowsModel';
 import {
   LOWS_FAILED,
   LOWS_LAND_HERE,
@@ -57,10 +64,14 @@ import {
 /** The board's plot height (158 px), and the room the event words take over it. */
 const CHART_HEIGHT = 'h-[9.875rem]';
 const EVENT_ROOM = 18;
+/** A second line of the marked nights' words. */
+const WORDS_LINE = 12;
 /** The room the end labels take right of the plot (the board's 126 px), wide. */
 const END_GUTTER = 120;
 /** The widths the chart needs to keep its end labels (the console's tokens). */
 const WIDE_TOKENS = ['--size-list', '--size-inspector'] as const;
+/** A marked night's words, per character: the mono kicker's advance and its tracking (10 px type). */
+const WORDS_CHAR_PX = 8.3;
 /** The narrowest cell that still writes its value (two mono digits and a hair either side). */
 const VALUE_CELL_PX = 18;
 
@@ -155,7 +166,13 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
       >
         <LineChart
           data={data}
-          margin={{ top: EVENT_ROOM, right: wide ? END_GUTTER : 8, bottom: 0, left: 0 }}
+          // Narrow, the marked nights' words may need a second line: the room is kept for it.
+          margin={{
+            top: wide ? EVENT_ROOM : EVENT_ROOM + WORDS_LINE,
+            right: wide ? END_GUTTER : 8,
+            bottom: 0,
+            left: 0,
+          }}
         >
           <ChartXAxis
             dataKey="night"
@@ -275,25 +292,33 @@ function LowsMarks({ view, endLabels }: { view: LowsView; endLabels: boolean }) 
     plot.y,
     plot.y + plot.height,
   );
+  const events = [
+    { key: 'opened', event: view.opened, ink: 'var(--fg2)', mark: 'var(--fg2)' },
+    { key: 'imagery', event: view.imagery, ink: 'var(--warn)', mark: 'var(--fg)' },
+  ].flatMap((e) => {
+    const at = e.event === null ? undefined : xAt(e.event.night);
+    return e.event === null || at === undefined ? [] : [{ ...e, event: e.event, at }];
+  });
+  // Each label's width from its characters: the mono kicker's advance and tracking, as drawn.
+  const places = placeEventWords(
+    events.map((e) => ({ x: e.at, width: e.event.words.length * WORDS_CHAR_PX })),
+    plot.x + plot.width + (endLabels ? END_GUTTER : 8),
+  );
   return (
     <g data-slot="lows-marks" className="font-(family-name:--family-mono) text-kick">
-      {[
-        { event: view.opened, ink: 'var(--fg2)', mark: 'var(--fg2)' },
-        { event: view.imagery, ink: 'var(--warn)', mark: 'var(--fg)' },
-      ].map(({ event, ink, mark }) =>
-        event === null ? null : (
-          <EventRule
-            key={event.night}
-            event={event}
-            at={xAt(event.night)}
-            top={plot.y - EVENT_ROOM + 2}
-            bottom={plot.y + plot.height}
-            ink={ink}
-            mark={mark}
-            yOf={(v) => y(v) as number}
-          />
-        ),
-      )}
+      {events.map(({ key, event, at, ink, mark }, k) => (
+        <EventRule
+          key={key}
+          event={event}
+          at={at}
+          place={places[k] as WordsPlace}
+          top={plot.y - (endLabels ? EVENT_ROOM : EVENT_ROOM + WORDS_LINE) + 2}
+          bottom={plot.y + plot.height}
+          ink={ink}
+          mark={mark}
+          yOf={(v) => y(v) as number}
+        />
+      ))}
       {endLabels &&
         drawn.map((d, k) => {
           const row = view.rows[d.i];
@@ -319,6 +344,7 @@ function LowsMarks({ view, endLabels }: { view: LowsView; endLabels: boolean }) 
 function EventRule({
   event,
   at,
+  place,
   top,
   bottom,
   ink,
@@ -326,20 +352,21 @@ function EventRule({
   yOf,
 }: {
   event: LowsEvent;
-  at: number | undefined;
+  at: number;
+  place: WordsPlace;
   top: number;
   bottom: number;
   ink: string;
   mark: string;
   yOf: (v: number) => number;
 }) {
-  if (at === undefined) return null;
   return (
     <g data-slot="lows-event">
       <line x1={at} x2={at} y1={top} y2={bottom} stroke="var(--line2)" strokeWidth={1} />
       <text
-        x={at + 5}
-        y={top + 8}
+        x={place.x}
+        y={top + 8 + place.line * WORDS_LINE}
+        textAnchor={place.anchor}
         className="tracking-kick uppercase"
         style={{ fill: ink }}
         data-slot="lows-event-words"

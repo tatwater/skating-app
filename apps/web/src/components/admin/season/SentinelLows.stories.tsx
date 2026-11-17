@@ -190,6 +190,20 @@ export const Phone: Story = {
         (row as HTMLElement).clientWidth,
       );
       expect(all(canvasElement, '[data-slot="lows-end-label"]')).toHaveLength(0);
+      // The marked nights' words stay inside the row and never overlap.
+      const box = (row as HTMLElement).getBoundingClientRect();
+      const words = all(canvasElement, '[data-slot="lows-event-words"]').map((w) =>
+        w.getBoundingClientRect(),
+      );
+      expect(words).toHaveLength(2);
+      for (const w of words) {
+        expect(w.left).toBeGreaterThanOrEqual(box.left - 0.5);
+        expect(w.right).toBeLessThanOrEqual(box.right + 0.5);
+      }
+      const [a, b] = words as [DOMRect, DOMRect];
+      const apart =
+        a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+      expect(apart).toBe(true);
       expect(all(canvasElement, '.recharts-line-curve')).toHaveLength(3);
       // The cells still speak their values.
       expect(all(canvasElement, '[role="gridcell"]')[0]).toHaveAttribute(

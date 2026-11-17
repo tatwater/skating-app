@@ -16,6 +16,7 @@ import {
   lowsState,
   lowsView,
   nightsOf,
+  placeEventWords,
   type SentinelLowsRead,
   tensAround,
   wholeF,
@@ -204,5 +205,41 @@ describe('a night keeps its date and its value in every reader’s zone, across 
   it('pinned seeds and one random', () => {
     for (const seed of [20261117, 8, 1101]) fc.assert(property, { seed, numRuns: 120 });
     fc.assert(property, { numRuns: 120 });
+  });
+});
+
+describe('the marked nights’ words stay inside the drawing and off each other', () => {
+  it('sit right of their rules on the board', () => {
+    expect(
+      placeEventWords(
+        [
+          { x: 212, width: 174 },
+          { x: 556, width: 166 },
+        ],
+        1112,
+      ),
+    ).toEqual([
+      { x: 217, anchor: 'start', line: 0 },
+      { x: 561, anchor: 'start', line: 0 },
+    ]);
+  });
+
+  it('turn left at the edge, and drop a line rather than touch', () => {
+    expect(
+      placeEventWords(
+        [
+          { x: 100, width: 174 },
+          { x: 220, width: 166 },
+        ],
+        368,
+      ),
+    ).toEqual([
+      { x: 105, anchor: 'start', line: 0 },
+      { x: 215, anchor: 'end', line: 1 },
+    ]);
+    // A label wider than either side keeps to the right rather than run off the left.
+    expect(placeEventWords([{ x: 10, width: 400 }], 300)).toEqual([
+      { x: 15, anchor: 'start', line: 0 },
+    ]);
   });
 });
