@@ -3672,8 +3672,8 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   nowhere on the map (core's rule: "nowhere rather than somewhere wrong"), while the list counts it,
   so the map can show fewer hazards than the list. Also owed: Imagery builds its freeze-up timeline
   three times (inspector, dock, map); the four tabs' write wrappers and clock hooks are copies of
-  `useTabAction`'s and each other's; a failed archived read over a list says so only inside the
-  collapsed group; every Hazards open reads the body's whole archived history (`includeArchived`);
+  `useTabAction`'s and each other's; ~~a failed archived read over a list says so only inside the
+  collapsed group~~ (B01-3o); every Hazards open reads the body's whole archived history (`includeArchived`);
   the Hazards, Imagery and Standing views' own notes are still drawn only in their failed branch —
   they hold as *Trying again…* through a retry, but mount with their words (so they aren't
   announced as reliably as a region mounted before them) and leave with the fresh answer, so focus
@@ -4447,9 +4447,9 @@ draws 34; the role menu's item takes two lines.
 - **The console's one narrow-screen rule** (`shell/columnsFit`): below the width where a mode's
   columns fit side by side (their size tokens summed), the open record takes the page with a way
   back, and with none open the list does; nothing scrolls sideways. People and the Bodies library
-  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); the Body
+  (B01-3k) have it, with one rule for where focus goes as panes hide (`usePaneFocus`); ~~the Body
   console lays out its own columns and breaks the same way at phone width — it adopts the rule in
-  its own pass (owed). The kit `AppShell`'s own stacking (below `lg`, for
+  its own pass (owed)~~ — the Body console has it too since B01-3o, one pane at a time. The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
 
 ### The People pages draw what the server sends (B01-4i)
@@ -4605,8 +4605,9 @@ Names' aliases can bind an edit to the wrong entry by its text.
   *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
   holds Water's two reads, Names' two and Places' provenance to it; B01-3k adds Access's two (who
   ruled, where each launch is), Shape's bay provenance, Hazards' day strips and Standing's
-  retention. **Owed:** ~~Shape's extras~~ (B01-3n) and Hazards' patterns-waiting count — their mapping is inline
-  in the tab's wiring, and a settled zero there is a value, not a nothing.
+  retention. **Owed:** ~~Shape's extras~~ (B01-3n) and ~~Hazards' patterns-waiting count~~
+  (B01-3o) — their mapping is inline in the tab's wiring, and a settled zero there is a value, not a
+  nothing.
 - **A rendered property stays under a second locally** (CI's coverage run is about ten times
   slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
   is a few short runs, and the arithmetic is fuzzed without rendering. Each test is its own: a
@@ -5150,6 +5151,185 @@ the count reads at most 306 rows.
 - The namesakes from a light row (schema): a boundary's name, full name and key without its polygon.
 - The sweep's items in other files.
 - Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
+
+### The Body console's owed web items (B01-3o)
+
+Six items the Body console's reviews left on the web side, each checked against main first, closed as
+a class with its failing test first. No server behavior changed and no decision was minted; four
+convex files take a constant from core instead of their own (below), so dev takes a
+`convex dev --once` and nothing else.
+
+- **The Body console under the one narrow rule.** The Bodies library, People and the record sheet
+  stacked by `columnsFit`; the console laid out its own grid and never stacked. It now reads the same
+  rule (`useColumnsFit`), over its own three columns' tokens — the left column, a lanes column's worth
+  of map, the inspector: the Bodies library's own sum, so both pages turn narrow at one width (956 px
+  of page; at the boards' 1440 nothing changes). Below it the page shows **one pane at a time**: the
+  body (the left column) first; the map and the tab are reached from a head of buttons on each pane —
+  *Show the map* and *Show the tabs* on the body, *Back to the body* and the other one on each of the
+  two — drawn as the Bodies library's *Back to the list* is. An ask opened from the body goes to its
+  tab, focus in the tab's panel, as at full width; an arrival with an item lit (a task, a deep link)
+  opens on the tab; another body opens on its front. Focus moves by the same hook as the other pages
+  (`usePaneFocus`), generalized rather than copied: it names the list's panes (`listPanes`, the
+  library's two unless said) and whichever detail pane is on screen, so a move from the map to the tab
+  is the same move as from the list. **Every pane stays mounted**, hidden, so a draft, an open dialog
+  or a write out in one survives going to another; the pick store and the list writers stay in the
+  admin shell, above the page. **The map is mounted the first time it is shown and kept**: created into
+  a pane with no size it would frame the body at a meaningless zoom (its load reads the container),
+  and a switch never re-creates it; a window narrowed under the columns keeps the map it made. ⇧⏎ is
+  still *Back to the list* (the Bodies library), from any pane. Checked in a real browser at 360 px
+  (`Admin/Body/Console` *Phone*, light too, and *Phone | Open an ask*): each pane takes the page's
+  width, nothing scrolls sideways, every control lies inside the page, and focus follows the pane;
+  every tab's own board at a phone's width (`Admin/Body/Phone width`, the inspector's token set to
+  360 px) the same — Names, Places, Access, Water, Hazards, Standing and Links. Imagery's board is its
+  dock over the map, which the console's story covers; Shape is the console story's own tab.
+  - **What the 360 px check found:** the day strips' screen-reader table (`DayStrips`) carried
+    `sr-only` on the table itself, and a table never shrinks to its 1 px, so its days' width (633 px
+    on Mascoma's winter) spilled into the pane's sideways overflow — at the inspector's width too,
+    invisible behind the panel's hidden scrollbar. It is now clipped in a box of its own; nothing
+    drawn changed.
+  - **The map key's row** scrolls sideways on a phone by the kit's own design (`MapKey`: "a phone's
+    width scrolls the row rather than wrapping it", its scrollbar hidden). Left as built — a founder
+    call if a phone board wants it wrapped — and excepted, by name, from the story's sideways check.
+  - **Layout choices made without a board** (the founder has not reviewed a phone board for the
+    console; each is the plainest stacking of what exists, nothing restyled): the body is the front
+    pane; the three panes are reached by buttons in a head row, not a tab bar; the map is a pane of
+    its own (its dock — Imagery's — goes with it), not a strip over the tab; the threshold is the
+    Bodies library's sum, with a lanes column standing for the map's least width; the panes drop the
+    side rules that divided the columns; ⇧⏎ keeps its one meaning; the map stays pannable — §6's "the
+    map is view-only below `lg`" is not built (it was never built at any width), and is a founder call
+    if it should be.
+- **Hazards' patterns waiting through `readState`.** Its mapping was inline in the tab's wiring, so a
+  settled nothing could not be told from a value. `patternsWaitingOf` now maps the read's four answers
+  — on its way, failed (the tab's note), settled with nothing (*Not recorded yet* in the Promotion
+  section), a count whose zero is a value ("No patterns on … wait in the pre-ice pass"). Its row is in
+  the four-answers table (`tabs/secondaryReads.test.ts`, with a settled zero held as a value), and
+  the Promotion section's drawing of each answer beside the tab (`hazards/patternsWaiting.test.tsx`).
+  Today the server never answers with nothing: a body it can't resolve reads `{ count: 0 }`, the same
+  as none waiting (`recurrence.waitingCountForBody`) — a server ask for whoever next touches it.
+- **A removal's note reaches the server.** The old editor's removal dialog asked for a note and
+  dropped it; the console's Standing tab could not take one, though `waterBodies.remove` accepts it
+  (checked there by `checkedReason`, written beside the fixed reason in History and the removed lane).
+  Both now send it, trimmed, only when typed. Standing's removal form gains *Note · optional*, held to
+  the audit cap (`AUDIT_REASON_MAX`, D261) where it is typed, read-only while its write is out and kept
+  when refused; its form starts its note afresh on each pick, so a dormant note typed and then left
+  never carries into the removal's (one form across the picks, never keyed by one: its
+  one-write-at-a-time guard outlives a pick moved while a write is out). The old editor's
+  `ReasonDialog` now caps every reason at the audit cap; a write with a stricter cap passes its own —
+  the two request declines (`corpusRequests.decline` refuses past `MAX_REQUEST_NOTE_LENGTH`) and the
+  place-name dismissal, whose note `corpusPlaceNames.dismiss` cuts silently to the same 280 (its copied
+  `280` now that constant), as the console's Places dismissal does. **The sweep** — every dialog and form in the console and the
+  Legacy pages whose text no write receives: the old editor's removal and the console's Standing were
+  the two; every other reason and note dialog passes what it collects (the Legacy flag, feature,
+  recurrence, requests, duplicate, landmark and place-name dialogs; the console's Access, Places,
+  Hazards and Undo reasons). Imagery's pass-override reason has no write behind it yet, its control
+  drawn *Not available yet*. The skater app's moderator tools were outside the sweep.
+- **Every console field takes the server's cap from the one definition.** Names' aliases and community
+  name, a landmark's name and other spellings, a link's label and address, and every reason box set
+  no `maxLength`, though the server refuses past its caps. The stricter caps a writer held were
+  defined beside it — a landmark's name in core's `landmarks.ts`, a link's label in
+  `referenceLinks.ts`, a request's note in `corpusRequests.ts`, and a moderator's alias and a standing
+  note inside the server (`waterBodies.ts`, `standing.ts`) — so a page could take them only as copied
+  numbers (Standing's note was one, `160`). Each is now defined once in `packages/core/src/textCaps.ts`
+  and imported by its writer — a launch's name too (`putIns.ts`'s `60`), which the old editor's
+  Put-ins name field takes; the kit's `ChipInput` gains `maxLength`, `ReasonAsk` requires the cap of
+  the write it feeds, and the audit log's cap stays `AUDIT_REASON_MAX`. The kit's input has no count,
+  so none is drawn (Standing's dormant note keeps the count it had). A guard
+  (`packages/guards/src/consoleTextCaps.test.ts`) holds every text field in the Body console, the
+  Bodies library and the shell to a cap imported from core and defined in `textCaps` (or the audit
+  cap), with the three fields no capped write receives named and why — Water's survey field (no write
+  yet), Imagery's override reason (no write yet), the Bodies search (the server cuts a long search,
+  never refuses it) — and no field capped by a number. People's pages are outside it (their owner's):
+  their reason dialog (`AskDialog`) sets no cap yet.
+- **The old editor's *Make official* promotes in place.** The old editor had no *Make official*: the one
+  way to make a mapped launch official was to place an official point on it, and `setOfficial`
+  inserted a second row beside the first. Each stored, unofficial launch in its Put-ins list now has
+  *Make official*, which calls `putIns.promote` as the console's Access tab does (no name sent: the
+  row keeps its own); placing stays for a point no row stands on. The server's in-place rule (one row
+  before and after, its point, lot and walk kept) was already tested (`bodyWrites.test.ts`); the page's
+  test shows the button reaching `promote`, never `setOfficial`, once per press. The Standing and
+  Put-ins cards moved out of the route file (`components/admin/RemovalTool.tsx`, `PutInTool.tsx`), as
+  `LandmarkTool` did, to be tested.
+- **A failed archive read is said outside its group** (the owed review leftover). Over a list of open
+  reports the archived group is collapsed, and a failed read was said only inside it. The note now
+  stands above the group, mounted whenever the group is.
+- **Owed — the archive read on open, sized and held** (the brief's stop: an item over ~300 lines). Every
+  open of Hazards still reads the body's whole history (`hazards.listForBody` with `includeArchived`,
+  a `.collect()` over the body's every hazard). No bounded or paged archived read exists, and none can
+  be made of the skater-facing `listForBody` without editing it. The build it needs: a bounded count
+  of the season's archived hazards for the quiet winter's headline and the group's count line (*N
+  archived*, or *at least N* past the bound — never fewer, never clear), and a paged read of the
+  archived rows the group runs only once opened (the body's archived rows on `by_water_body_status`,
+  newest first from the season's start), each a new query beside `listForBody`, with convex tests;
+  the tab reading the count instead of the whole list, the group's rows on the paginated hook under
+  the kit `ReadBoundary`, the count line saying what is known and what isn't loaded, and their tests —
+  about 450–550 lines with codegen. Until then the tab's reads and words stand as before.
+
+**The review round on #144 (Greptile, 4/5).**
+
+- **A hidden map kept the wrong view** (P1). Leaving the map's pane before its map loaded — or the
+  map re-created for another body while the pane was hidden — let the load fit the body into a zero
+  box, which `fitCamera` reads as one pixel of room; nothing fitted it again. The class: work that
+  measures an element, done while it is mounted but not laid out. **The rule** (`frameInRealBox`,
+  `map/bodyMapFraming.ts`, run on load and on every `resize` of the live map — MapLibre's own
+  observer fires one as the pane is shown): a zero box measures nothing and the fit stays owed; the
+  floor follows every real size; the camera is framed once per body, the first time it is drawn in a
+  real box. **Owed fit versus the operator's camera:** a fit is owed only for bounds never yet framed
+  in a real box; once paid, a hide and a show, a resize, a pan or a zoom never frame it again, and a
+  theme re-create keeps the view the shell restores. A map for other bounds loaded hidden takes the
+  camera (the shell re-creates each map at the last one's view, clamped to its own reach), so it
+  clears the earlier bounds' paid fit: coming back to them is owed a frame afresh. The traps held:
+  the container is still sized, never positioned; nothing waits on `idle`; the resize handler is
+  attached to the live map only (`liveMap()` is its effect's whole dependency), and asks once at
+  attach, for a box that became real between the load and the effect. Tests (failing first, through
+  one seam: the fake map's box): loaded hidden then shown — framed; another body loaded hidden — the
+  new body framed on show; a body left for another loaded hidden, then returned to — framed afresh
+  on show; a moved camera left and returned — not re-framed; a resize while hidden — the shown
+  size's floor. Over the real layout at 360 px (`Admin/Body/Console` *Phone | Map loads hidden*): a
+  stand-in map on the pane's own element, resized by the browser, loads while its pane is hidden —
+  nothing framed while the box is zero — and is framed for the pane's real size when shown.
+- **The sweep for the same shape** under the new stacking: the map's chrome (`BodyMapPane`'s
+  graticule keep-outs), the kit `Toolbar`'s fit, `LedStrip` and the day strips' marks (`TraceChart`),
+  `ListEnd` — each measures on a `ResizeObserver`, which fires as a hidden pane becomes real, so each
+  re-measures on show; the matrix chart, the sortable rows and Imagery's pass rail measure at the
+  moment of a pointer or a key, which a hidden pane can't receive; `columnsFit` measures the page,
+  which is never hidden; focus goes only to the pane on screen (`usePaneFocus`, the arrival, an ask's
+  panel), and the panel's keep-focus rescue is ended by the move to another pane; the lockup's fold
+  reads scroll events, and a hidden pane keeps its scroll in the browser — a story holds that the
+  body's column comes back where it was, folded (*Phone | Coming back keeps the place*); the
+  console's panes draw no virtualized list (the Bodies library's grid pauses its loading while
+  hidden, as before). Only the map's fit measured once and never again.
+- **Stored launches lacked the button** (P2). `putIns.listForBody` dropped the id from a stored
+  `derived` row (one written down for a departed skater's report), so the old editor's *Make
+  official* — offered only where an id came — skipped it, though `putIns.promote` accepts it. The
+  class: identity dropped by a read, so a write that needs it can't be offered. The read's kinds:
+  stored `official`, `osm` and persisted `derived` rows, each now with its id; and live clusters of
+  report points, which have no row and now say so by type (`cluster: true`; the server's
+  `PutInMarker` is a union of the two). One rule, core's `canMakeOfficial` (a stored row not
+  official), is read by `putIns.promote`, the console's Access tab and the old editor's list; a live
+  cluster's row says it has no row and that placing an official point is the way (its derived marker
+  gives way to an official one within the hide radius). The read is skater-facing: an id was already
+  on every other stored marker, the rows are launches (no person's data), and both fields are
+  optional additions no client keys on (the skater web's report-derived list keys by coordinate; the
+  phone's put-in reads were checked for `id` and `cluster` and read neither). **Against the Access
+  tab:** it lists the body's stored rows (`accessPoints.accessForBody`), never live clusters, so the
+  two offer *Make official* by the same rule on every stored launch each lists; the lists themselves
+  differ at the edges (`listForBody` folds a stored launch within the hide radius of an earlier
+  marker into it, and reads up to 1,000 rows against the Access read's 64), so the Access tab can
+  offer it on a launch the old editor folds away. The old editor alone lists clusters, as
+  report-derived spots with the note.
+- Also from the review's fixes before the round: the Places dismissal's note was cut to 280 by a
+  copied number (`corpusPlaceNames.dismiss`) while its field allowed 2,000 — the cut and both fields
+  now read `MAX_REQUEST_NOTE_LENGTH`; the Legacy declines pass their 280 cap to `ReasonDialog`; a
+  launch's name cap (60) moved to `textCaps` and caps the old editor's name field; the three
+  focusable panes wear the shell's inset focus ring; Standing's form clears its note on a pick change
+  instead of remounting (a remount dropped its one-write guard, and let a second write out).
+
+**Wording the mock did not supply** (standing until the founder's copy pass): *Back to the body*, *Show
+the map*, *Show the tabs* and the map pane's name *Map* (`body/consoleWords.ts`, `PANE_WORDS`); *Note ·
+optional*, *Why, in your own words*, *Kept in History beside the reason* (`REMOVAL_NOTE_WORDS`); the
+old editor's *Make official*, *Made official, on its own row.* and *From reports, with no row: place
+an official point here to make it official* (`components/admin/legacyWords.ts`, new: the Legacy pages
+had no words file).
 
 ## Ruled out
 

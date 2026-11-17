@@ -41,6 +41,8 @@ type ChipInputProps = {
   /** A search is in flight. */
   loading?: boolean;
   placeholder?: string;
+  /** The most one chip's text may hold — its server's cap; what is typed past it never enters. */
+  maxLength?: number;
   /** The create row's words for a query. */
   createLabel?: (text: string) => ReactNode;
   disabled?: boolean;
@@ -70,6 +72,7 @@ function ChipInput({
   onQueryChange,
   loading = false,
   placeholder = 'Add a name skaters use',
+  maxLength,
   createLabel = (text) => `Add “${text}”`,
   disabled = false,
   'aria-label': ariaLabel,
@@ -182,6 +185,7 @@ function ChipInput({
                 data-slot="chip-input-field"
                 aria-label={ariaLabel}
                 placeholder={chips.length === 0 ? placeholder : undefined}
+                maxLength={maxLength}
                 className={cn(
                   'h-badge min-w-[5em] flex-1 bg-transparent p-0 outline-none',
                   'text-body leading-none font-regular text-fg placeholder:text-fg3',

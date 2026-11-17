@@ -5,8 +5,9 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useFreezeUpFrame } from '@/components/useFreezeUpFrame';
 import { env } from '@/lib/env';
 import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
-import { type BBoxLike, fitCamera, type MapSurface, type Padding } from '@/lib/mapSurface';
+import type { BBoxLike, MapSurface, Padding } from '@/lib/mapSurface';
 import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
+import { frameInRealBox } from './bodyMapFraming';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
 import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from './glLayers';
@@ -28,14 +29,14 @@ import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from 
  * - **The camera is held to the body**: it opens framed on the body inside the chrome's room, may
  *   zoom out one step past that and in to the street, and pans only within the body's reach. A
  *   theme switch keeps the operator's own view; only a new body frames it again.
+ * - **Framed only in a real box** (`frameInRealBox`): on a narrow page the map's pane can be hidden
+ *   while it loads or is re-created, its container zero. The fit then waits — owed — and is paid on
+ *   the first resize into a real box (MapLibre's own observer fires it as the pane is shown), once
+ *   per body; the floor follows every real size. Run on load and on the live map's `resize`.
  */
 
 /** The room the chrome takes from the map when it frames the body: the rack, the dock, the key. */
 export const FIT_PADDING: Padding = { top: 30, right: 70, bottom: 90, left: 175 };
-
-/** How far out past the framing zoom the operator may go, and how close in. */
-const ZOOM_OUT_ROOM = 1.5;
-const MAX_ZOOM = 17;
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -83,7 +84,9 @@ export function useBodyMapCanvas({
   // The bounds the camera was last framed on. A theme switch re-creates the map with the operator's
   // own pan and zoom restored (`useMapCanvas`); only new bounds frame it again.
   const framedRef = useRef<string | null>(null);
-  const boundsKey = `${bbox.minLng},${bbox.minLat},${bbox.maxLng},${bbox.maxLat}`;
+  // The body framing reads, from a resize long after the render that set it.
+  const bboxRef = useRef(bbox);
+  bboxRef.current = bbox;
   const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
@@ -97,23 +100,25 @@ export function useBodyMapCanvas({
       map.addSource(LINE_SOURCE, { type: 'geojson', data: drawnRef.current.lines });
       map.addSource(DOT_SOURCE, { type: 'geojson', data: drawnRef.current.dots });
       for (const layer of glLayers(paletteRef.current)) map.addLayer(layer);
-      // Framed inside the chrome's room, then held there: one step and a half out, no further.
-      const canvas = map.getContainer();
-      const camera = fitCamera(bbox, canvas.clientWidth, canvas.clientHeight, FIT_PADDING);
-      // The ceiling first, then a floor never above it: MapLibre throws on a floor over the
-      // ceiling, and a pond small enough to frame past it would take the whole load down with it
-      // (the shell never marks the map live, so nothing is drawn over it).
-      map.setMaxZoom(MAX_ZOOM);
-      map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, camera.zoom - ZOOM_OUT_ROOM)));
-      if (framedRef.current !== boundsKey) {
-        map.jumpTo({
-          center: [camera.center.lng, camera.center.lat],
-          zoom: Math.min(MAX_ZOOM, camera.zoom),
-        });
-        framedRef.current = boundsKey;
-      }
+      // Framed inside the chrome's room, then held there: one step and a half out, no further —
+      // if its box is real; a hidden pane's fit waits for the resize below.
+      frameInRealBox(map, bboxRef.current, FIT_PADDING, framedRef);
     },
   });
+
+  // A fit owed by a load in a zero box is paid on the first resize into a real one, and the floor
+  // follows each real size. On the live map only; asked once at once, in case the box became real
+  // between the load and this effect.
+  useEffect(() => {
+    const map = liveMap();
+    if (!map) return;
+    const reframe = () => frameInRealBox(map, bboxRef.current, FIT_PADDING, framedRef);
+    reframe();
+    map.on('resize', reframe);
+    return () => {
+      map.off('resize', reframe);
+    };
+  }, [liveMap]);
 
   // The scene's data, on the live map only.
   useEffect(() => {

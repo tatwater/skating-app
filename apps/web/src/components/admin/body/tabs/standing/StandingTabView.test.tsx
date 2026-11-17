@@ -1,7 +1,7 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-
 import { laneFraction } from '@/components/kit/lane-timeline';
 import { StandingTabView, type StandingTabViewProps } from './StandingTabView';
 import {
@@ -145,8 +145,81 @@ describe('StandingTabView', () => {
     if (onRemove.mock.calls.length === 0) {
       await userEvent.click(screen.getByRole('button', { name: /again/ }));
     }
-    expect(onRemove).toHaveBeenCalledWith('unskateable');
+    expect(onRemove).toHaveBeenCalledWith('unskateable', '');
     expect(screen.getByRole('combobox', { name: 'Reason' })).toHaveAttribute('data-readonly');
+  });
+
+  it('a removal asks for a note too, held to the audit cap, and sends it trimmed beside the reason', async () => {
+    const onRemove = vi.fn(async () => true);
+    render(<StandingTabView {...base} onRemove={onRemove} />);
+    await userEvent.click(radio('Removed'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Landowner request' }));
+    const note = screen.getByRole('textbox', { name: 'Note · optional' });
+    // The server's own cap (D261), never a copy of its number.
+    expect(note).toHaveAttribute('maxLength', String(AUDIT_REASON_MAX));
+    await userEvent.type(note, '  The owner called on 3 Nov  ');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove from the map' }));
+    expect(onRemove).toHaveBeenCalledWith('landowner_request', 'The owner called on 3 Nov');
+  });
+
+  it('a note typed for one standing never carries into another’s form', async () => {
+    render(<StandingTabView {...base} />);
+    await userEvent.click(radio('Dormant'));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Note for skaters · optional' }),
+      'Dam work',
+    );
+    await userEvent.click(radio('Removed'));
+    expect(screen.getByRole('textbox', { name: 'Note · optional' })).toHaveValue('');
+    await userEvent.click(radio('Dormant'));
+    expect(screen.getByRole('textbox', { name: 'Note for skaters · optional' })).toHaveValue('');
+  });
+
+  it('a pick moved while a write is out sends nothing more until that write answers', async () => {
+    let land: () => void = () => {};
+    const onSetDormant = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          land = () => resolve(true);
+        }),
+    );
+    const onRemove = vi.fn(async () => true);
+    render(<StandingTabView {...base} onSetDormant={onSetDormant} onRemove={onRemove} />);
+    await userEvent.click(radio('Dormant'));
+    await userEvent.click(screen.getByRole('button', { name: /Set dormant/ }));
+    expect(onSetDormant).toHaveBeenCalledTimes(1);
+    // The pick moves to Removed while the dormant write is out: the form is the same one, still
+    // busy — its reason held, its note read-only — so no second write can start beside the first.
+    await userEvent.click(radio('Removed'));
+    expect(screen.getByRole('combobox', { name: 'Reason' })).toHaveAttribute('data-readonly');
+    expect(screen.getByRole('textbox', { name: 'Note · optional' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: 'Note · optional' })).toHaveValue('');
+    await act(async () => land());
+    expect(screen.getByRole('combobox', { name: 'Reason' })).not.toHaveAttribute('data-readonly');
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('a sent removal note is held while its write is out, and kept when it is refused', async () => {
+    let refuse: () => void = () => {};
+    const onRemove = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          refuse = () => resolve(false);
+        }),
+    );
+    render(<StandingTabView {...base} onRemove={onRemove} />);
+    await userEvent.click(radio('Removed'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Not skateable' }));
+    const note = screen.getByRole('textbox', { name: 'Note · optional' });
+    await userEvent.type(note, 'Drained');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove from the map' }));
+    expect(note).toHaveAttribute('readonly');
+    await act(async () => refuse());
+    expect(note).not.toHaveAttribute('readonly');
+    expect(note).toHaveValue('Drained');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('Remove from the map waits, armed, until a reason is chosen', async () => {

@@ -10,6 +10,7 @@ import {
   CORPUS_NAME_DISMISS_REASONS,
   CORPUS_NAME_STATUSES,
   landmarkNameKey,
+  MAX_REQUEST_NOTE_LENGTH,
   normalizeLandmarkNames,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -311,7 +312,7 @@ export const dismiss = mutation({
     const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
     // The note as the row keeps it — the audit line quotes the same words, never more than were stored.
-    const kept = note?.trim().slice(0, 280);
+    const kept = note?.trim().slice(0, MAX_REQUEST_NOTE_LENGTH);
     const now = Date.now();
     await ctx.db.patch(row._id, {
       status: 'dismissed',

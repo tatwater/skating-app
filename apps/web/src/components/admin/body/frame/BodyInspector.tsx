@@ -23,6 +23,8 @@ export interface BodyInspectorProps {
   panelRef?: Ref<HTMLDivElement>;
   /** The whole inspector, tab strip and panel: where the open tab's keys listen. */
   inspectorRef?: Ref<HTMLDivElement>;
+  /** The narrow page's way to the other panes, over the tab strip. */
+  nav?: ReactNode;
   className?: string;
 }
 
@@ -33,6 +35,7 @@ export function BodyInspector({
   children,
   panelRef,
   inspectorRef,
+  nav,
   className,
 }: BodyInspectorProps) {
   return (
@@ -41,12 +44,16 @@ export function BodyInspector({
       value={tab}
       onValueChange={(v) => onTabChange(v as BodyTabKey)}
       data-slot="body-inspector"
+      data-pane="inspector"
+      tabIndex={-1}
       aria-label="Inspector"
       className={cn(
-        'flex min-h-0 flex-col gap-0 border-0 border-l border-solid border-line',
+        'flex min-h-0 flex-col gap-0 border-0 border-l border-solid border-line outline-none',
+        'focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
         className,
       )}
     >
+      {nav}
       <div
         data-slot="body-tab-head"
         className="flex-none border-0 border-b border-solid border-line px-gutter pt-(--space-3_5) pb-(--space-4)"

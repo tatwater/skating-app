@@ -1,3 +1,4 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { type ReactNode, useState } from 'react';
 import { Button } from '../ui/button';
 import {
@@ -22,6 +23,9 @@ import { Textarea } from '../ui/textarea';
  * A refusal is never said here (D268): the write's net says it in a toast and `onConfirm` rejects,
  * so the dialog stays open over the kept reason, to correct and confirm again. Only the form's own
  * check — a reason left empty — is said in place.
+ *
+ * The reason is held to the audit log's cap (`AUDIT_REASON_MAX`, D261) where it is typed, since every
+ * write it feeds lands in an audit row; a write whose own cap is stricter passes it.
  */
 export function ReasonDialog({
   trigger,
@@ -30,6 +34,7 @@ export function ReasonDialog({
   confirmLabel,
   confirmVariant = 'destructive',
   reasonPlaceholder = 'Why?',
+  reasonMaxLength = AUDIT_REASON_MAX,
   requireReason = true,
   extraFields,
   onOpenChange,
@@ -42,6 +47,8 @@ export function ReasonDialog({
   confirmLabel: string;
   confirmVariant?: 'default' | 'destructive' | 'secondary' | 'outline';
   reasonPlaceholder?: string;
+  /** The most the reason may hold: the audit log's cap unless the write's own is stricter. */
+  reasonMaxLength?: number;
   requireReason?: boolean;
   extraFields?: ReactNode;
   /** Told when the dialog opens or closes — for a caller that freezes what it is about at open. */
@@ -105,6 +112,7 @@ export function ReasonDialog({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder={reasonPlaceholder}
+            maxLength={reasonMaxLength}
           />
         </div>
         {missing ? <p className="text-destructive text-sm">A reason is required.</p> : null}
