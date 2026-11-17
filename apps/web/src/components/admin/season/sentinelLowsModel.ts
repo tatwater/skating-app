@@ -14,7 +14,7 @@
  */
 
 import type { api } from '@skating/convex/api';
-import { addDaysIso, celsiusToFahrenheit } from '@skating/core';
+import { celsiusToFahrenheit, nightsBetween } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 
 import { dayLabel } from '@/components/admin/metrics/metricsModel';
@@ -80,13 +80,6 @@ export type LowsView = {
   labeled: number[];
 };
 
-/** The nights from `first` to `last`, inclusive — `addDaysIso`, the watch's own day step. */
-export function nightsOf(first: string, last: string): string[] {
-  const out: string[] = [];
-  for (let d = first; d <= last; d = addDaysIso(d, 1)) out.push(d);
-  return out;
-}
-
 /** The y ticks: a step of 10 °F from the one at or below the lowest value to the one at or above the highest. */
 export function tensAround(values: readonly number[]): number[] {
   if (values.length === 0) return [];
@@ -140,7 +133,7 @@ function eventOf(
 
 /** The row's view of a read that has lows. */
 export function lowsView(read: Valued): LowsView {
-  const nights = nightsOf(read.firstDate, read.lastDate);
+  const nights = nightsBetween(read.firstDate, read.lastDate);
   const rows: LowsRow[] = read.sentinels.map((s, i) => {
     const label = sentinelShortName(s.name);
     const values = nights.map((_, n) => {

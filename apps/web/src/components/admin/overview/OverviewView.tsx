@@ -127,10 +127,16 @@ export function OverviewView({
             value: 'home',
             label: 'Home',
             // With the sentinels' row Home runs taller than a 900 px screen, so it scrolls under
-            // the page head as Metrics does; the lower half keeps its board height inside.
+            // the page head as Metrics does; the lower half keeps its board height inside. The
+            // scrolled content is a column at least the viewport's height, so on a taller screen
+            // the lower half still runs to the foot.
             panel: (
               <div data-slot="home-scroll" className="flex min-h-0 flex-1 flex-col">
-                <ScrollArea className="min-h-0 flex-1" gutter={false}>
+                <ScrollArea
+                  className="min-h-0 flex-1"
+                  gutter={false}
+                  viewportClassName="*:flex *:min-h-full *:flex-col"
+                >
                   <OverviewHome
                     data={data}
                     now={now}

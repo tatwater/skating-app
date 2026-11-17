@@ -25,6 +25,7 @@ import {
   archiveSeasonLabel,
   callerNow,
   DEFAULT_SEASON_WATCH_SETTINGS,
+  nightsBetween,
   resolveSeason,
   SENTINEL_LOWS_CAPABILITY,
   type SeasonWatchSettings,
@@ -92,13 +93,6 @@ export type SentinelLows =
 /** The last night of a season's store: 30 June, as the history fill keeps it. */
 function seasonLastNight(label: string): string {
   return `${seasonStartYear(label) + 1}-06-30`;
-}
-
-/** The nights from `first` to `last`, both `YYYY-MM-DD`, in order (the watch's own `addDaysIso`). */
-export function nightsBetween(first: string, last: string): string[] {
-  const out: string[] = [];
-  for (let d = first; d <= last; d = addDaysIso(d, 1)) out.push(d);
-  return out;
 }
 
 /**

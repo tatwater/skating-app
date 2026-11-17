@@ -156,7 +156,10 @@ export function OverviewHome({
             now={now}
             live={live}
             onOpenTarget={onOpenTarget}
-            className="col-span-2 min-w-0"
+            // Sized by its row, never by its rows: inside Home's scroll area the row's height is
+            // its content's, and a feed counted in would grow the half to every row it holds
+            // rather than scroll inside it.
+            className="col-span-2 min-w-0 [contain:size]"
           />
         </div>
       </div>

@@ -12,7 +12,7 @@ import { useMemo } from 'react';
 import { seasonFromSummary } from '@/components/admin/season/seasonFacts';
 import { lowsState } from '@/components/admin/season/sentinelLowsModel';
 
-import { read, useConsoleReads } from '../reads/consoleReads';
+import { isFailed, read, useConsoleReads } from '../reads/consoleReads';
 
 import { minuteOf } from '../reads/readArgs';
 import { useHeldRead } from '../shell/presence';
@@ -89,11 +89,16 @@ export function useOverviewHome({
   // The sentinels' lows, through the console's read layer so a failure is its own answer. Asked only
   // of a viewer the read's capability admits (D275); for anyone else the row is left out.
   const canLows = can(SENTINEL_LOWS_CAPABILITY);
-  const { lows: lowsRead } = useConsoleReads({
+  const { lows: lowsAsked } = useConsoleReads({
     lows: canLows
       ? read(api.sentinelLows.forSeason, { season, now: metricDayStart(metricDay(now)) })
       : null,
   });
+  // Held through the day's turn as the season tiles are, and only for the season asked for — but
+  // never across a failure: a failed read is said at once, and its Try again loads afresh.
+  const lowsFailed = isFailed(lowsAsked);
+  const heldLows = useHeldRead(lowsFailed ? undefined : lowsAsked, !canLows || lowsFailed);
+  const lowsRead = lowsFailed ? lowsAsked : heldLows?.season === season ? heldLows : undefined;
   const actions = useQuery(api.moderation.listActions, canAudit ? { limit: FEED_LIMIT } : 'skip');
   const system = useQuery(api.console.systemFeed, canAudit ? { limit: FEED_LIMIT } : 'skip');
 

@@ -18,7 +18,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { rollupDay, rollupPulseDay } from './analyticsRollup';
+import { rollupBountiesDay, rollupDay, rollupPulseDay } from './analyticsRollup';
 import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
 import { refreshPersonRow } from './lib/peopleRows';
@@ -843,7 +843,7 @@ describe('the day pulse rollup', () => {
     // Fulfilled long ago, with no stamp (before fulfilledAt shipped): never counted as fulfilled.
     await seedBounty(t, ada.id, body, NOW - 40 * DAY, 'fulfilled');
     for (const date of [yesterday, TODAY]) {
-      await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date });
+      await t.mutation(internal.analyticsRollup.rollupBountiesDayJob, { date });
     }
     expect((await readSnapshot(t, 'bounties_posted', yesterday))?.scalar).toBe(2);
     expect((await readSnapshot(t, 'bounties_fulfilled', yesterday))?.scalar).toBe(0);
@@ -927,7 +927,10 @@ describe('the day pulse rollup', () => {
     test('a day with exactly the cap is whole', async () => {
       const t = harness();
       await atCap(t);
-      await t.run((ctx) => rollupPulseDay(ctx, TODAY, CAP));
+      await t.run(async (ctx) => {
+        await rollupPulseDay(ctx, TODAY, CAP);
+        await rollupBountiesDay(ctx, TODAY, CAP);
+      });
       for (const field of FIELDS) {
         expect((await readSnapshot(t, field, TODAY))?.scalar, field).toBe(2);
       }
@@ -940,7 +943,10 @@ describe('the day pulse rollup', () => {
         const fixture = await atCap(t);
         await onePast(t, field, fixture);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        await t.run((ctx) => rollupPulseDay(ctx, TODAY, CAP));
+        await t.run(async (ctx) => {
+          await rollupPulseDay(ctx, TODAY, CAP);
+          await rollupBountiesDay(ctx, TODAY, CAP);
+        });
         expect(warn).toHaveBeenCalledWith(expect.stringMatching(/scan cap/));
         warn.mockRestore();
 
@@ -954,6 +960,7 @@ describe('the day pulse rollup', () => {
 
         // A later run under a cap the day fits replaces the gap with the real number.
         await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date: TODAY });
+        await t.mutation(internal.analyticsRollup.rollupBountiesDayJob, { date: TODAY });
         const whole = await readSnapshot(t, field, TODAY);
         expect(whole?.scalar).toBe(3);
         expect(whole?.meta).not.toEqual({ capped: true });
@@ -1951,11 +1958,11 @@ describe('metrics.showingUp', () => {
     expect(b?.posted.every((n) => n === null)).toBe(true);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (let i = 43; i >= 1; i--) {
-      await t.run((ctx) => rollupPulseDay(ctx, metricDay(NOW - i * DAY)));
+      await t.run((ctx) => rollupBountiesDay(ctx, metricDay(NOW - i * DAY)));
     }
     // Today not yet: still no totals.
     expect((await bounties())?.totals).toBeNull();
-    await t.run((ctx) => rollupPulseDay(ctx, TODAY));
+    await t.run((ctx) => rollupBountiesDay(ctx, TODAY));
     b = await bounties();
     expect(b?.totals).toEqual({ posted: 2, fulfilled: 1 });
     expect(b?.posted.at(-4)).toBe(2);

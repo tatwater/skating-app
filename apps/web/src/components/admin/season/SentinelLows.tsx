@@ -155,6 +155,9 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
   const ticks = view.ticks;
   const minorTicks = view.nights.length <= 31;
   const cells = useCellWidth(view.nights.length);
+  // Whether the marked nights' words take two lines at this width (narrow, they always may): the
+  // room over the plot is kept for the second before the chart lays out.
+  const twoLines = !wide || wordsTakeTwoLines(view, cells.width);
   return (
     <div className="flex flex-col gap-(--space-3)">
       <ChartLegend items={legend} className="justify-end" />
@@ -168,7 +171,7 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
           data={data}
           // Narrow, the marked nights' words may need a second line: the room is kept for it.
           margin={{
-            top: wide ? EVENT_ROOM : EVENT_ROOM + WORDS_LINE,
+            top: twoLines ? EVENT_ROOM + WORDS_LINE : EVENT_ROOM,
             right: wide ? END_GUTTER : 8,
             bottom: 0,
             left: 0,
@@ -198,7 +201,11 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
               strokeWidth={r.tone === 'lead' ? 1.3 : 1}
             />
           ))}
-          <LowsMarks view={view} endLabels={wide} />
+          <LowsMarks
+            view={view}
+            endLabels={wide}
+            room={twoLines ? EVENT_ROOM + WORDS_LINE : EVENT_ROOM}
+          />
           <ChartTooltip labelFormatter={(night) => dayLabel(String(night))} />
         </LineChart>
       </ChartContainer>
@@ -215,6 +222,26 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
       <MatrixLegend />
     </div>
   );
+}
+
+/** The y axis' width as the kit draws it (two mono digits, a tick and its gap), for the estimate below. */
+const Y_AXIS_PX = 40;
+
+/**
+ * Whether the two marked nights' words would take two lines in a row `width` wide with its end
+ * labels: the rules' x estimated from the nights (the plot runs from the y axis to the end labels'
+ * gutter), the words placed as the chart places them. `false` until the row is measured.
+ */
+function wordsTakeTwoLines(view: LowsView, width: number): boolean {
+  const events = [view.opened, view.imagery].filter((e): e is LowsEvent => e !== null);
+  if (width === 0 || events.length < 2) return false;
+  const plot = width - Y_AXIS_PX - END_GUTTER;
+  const at = (i: number) =>
+    Y_AXIS_PX + (view.nights.length <= 1 ? 0 : (i / (view.nights.length - 1)) * plot);
+  return placeEventWords(
+    events.map((e) => ({ x: at(e.index), width: e.words.length * WORDS_CHAR_PX })),
+    width,
+  ).some((p) => p.line === 1);
 }
 
 /** Whether a matrix cell is wide enough to write its value: the matrix's width over its nights. */
@@ -234,7 +261,7 @@ function useCellWidth(nights: number) {
   // The matrix's kicker column (3.75 rem at least) and its gaps come out of the width; until it is
   // measured (and in a test page with no layout), a cell is taken to fit, as the board draws it.
   const cell = (width - 75) / Math.max(1, nights) - 4;
-  return { ref, fits: width === 0 || cell >= VALUE_CELL_PX };
+  return { ref, width, fits: width === 0 || cell >= VALUE_CELL_PX };
 }
 
 type NightTickProps = {
@@ -278,7 +305,16 @@ function NightTick({ x = 0, y = 0, payload, labeled }: NightTickProps) {
  * words at the top, a ⊗ on each sentinel the record named), and each line's end label right of the
  * plot, pushed apart so two never overlap.
  */
-function LowsMarks({ view, endLabels }: { view: LowsView; endLabels: boolean }) {
+function LowsMarks({
+  view,
+  endLabels,
+  room,
+}: {
+  view: LowsView;
+  endLabels: boolean;
+  /** The room over the plot the words have. */
+  room: number;
+}) {
   const plot = usePlotArea();
   const x = useXAxisScale();
   const y = useYAxisScale();
@@ -312,7 +348,7 @@ function LowsMarks({ view, endLabels }: { view: LowsView; endLabels: boolean }) 
           event={event}
           at={at}
           place={places[k] as WordsPlace}
-          top={plot.y - (endLabels ? EVENT_ROOM : EVENT_ROOM + WORDS_LINE) + 2}
+          top={plot.y - room + 2}
           bottom={plot.y + plot.height}
           ink={ink}
           mark={mark}

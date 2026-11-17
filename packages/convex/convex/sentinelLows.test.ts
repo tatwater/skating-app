@@ -4,6 +4,7 @@ import {
   dailyLowsFromHourly,
   expandLows,
   mergeLows,
+  nightsBetween,
 } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
@@ -11,7 +12,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { alignLows, lastStoredNight, nightsBetween } from './sentinelLows';
+import { alignLows, lastStoredNight } from './sentinelLows';
 
 const modules = import.meta.glob('./**/*.*s');
 

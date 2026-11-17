@@ -495,6 +495,32 @@ describe('useOverviewHome', () => {
     expect(document.querySelector('[data-slot="sentinel-lows"]')).toBeNull();
   });
 
+  it('holds the sentinels’ lows through the day’s turn, for the season asked for, never over a failure', () => {
+    const lows = getFunctionName(api.sentinelLows.forSeason);
+    convex.results.set(lows, { state: 'none', season: 2026, countsFrom: '2026-10-01', roster: 3 });
+    const { result, rerender } = renderHook(
+      (props: { season: number; now: number }) => useOverviewHome({ ...props, can: admin }),
+      { initialProps: { season: 2026, now: NOW } },
+    );
+    expect(result.current.lows).toEqual({ kind: 'none' });
+    // The next UTC day is a new read: until it lands, the row keeps what it drew.
+    convex.results.delete(lows);
+    rerender({ season: 2026, now: NOW + 86_400_000 });
+    expect(result.current.lows).toEqual({ kind: 'none' });
+    // Another season loads: never the last one's lows meanwhile.
+    rerender({ season: 2025, now: NOW + 86_400_000 });
+    expect(result.current.lows).toEqual({ kind: 'loading' });
+    // A failure is said at once, and lets go of what was held.
+    convex.results.set(lows, { state: 'none', season: 2025, countsFrom: '2025-10-01', roster: 3 });
+    rerender({ season: 2025, now: NOW + 86_400_000 });
+    convex.results.set(lows, new Error('the read failed'));
+    rerender({ season: 2025, now: NOW + 2 * 86_400_000 });
+    expect(result.current.lows).toMatchObject({ kind: 'failed' });
+    convex.results.delete(lows);
+    rerender({ season: 2025, now: NOW + 3 * 86_400_000 });
+    expect(result.current.lows).toEqual({ kind: 'loading' });
+  });
+
   it('adapts each read, the Corpus counts over the intake rows, and the feeds in time order', () => {
     convex.results.set(getFunctionName(api.console.overview), {
       inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5, medianOpenedAt: 6 },

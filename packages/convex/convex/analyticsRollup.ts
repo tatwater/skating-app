@@ -28,10 +28,10 @@
  */
 
 import {
-  BOUNTY_FULFILL_AFTER_EXPIRY_MS,
   bountiesOnDay,
   CONTRADICTION_COUNT_BUCKETS,
   countBy,
+  fulfilledExpiryRange,
   HOUR_BUCKETS,
   histogram,
   hoursBetween,
@@ -406,41 +406,6 @@ export async function rollupPulseDay(
     kinds === null ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
   );
 
-  // Bounties (B01-2b): posted on the day they were created, fulfilled on the day they were fulfilled
-  // (`bountyDays`). Posted is the day's range on `by_created_at`. A bounty is fulfilled only while it
-  // is open, and the sweep closes an open one within hours of `expiresAt`, so every bounty fulfilled
-  // on the day expires no earlier than `BOUNTY_FULFILL_AFTER_EXPIRY_MS` before it began: the
-  // fulfilled ones are that range of `by_status_expires`, then the day's stamps. Each read is the
-  // pulse's — a count whose read hits `cap` saves no number.
-  const posted = await wholeDay(
-    ctx.db
-      .query('bounties')
-      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
-    cap,
-    `bounties posted on ${date}`,
-  );
-  await writeMetricSnapshot(
-    ctx,
-    'bounties_posted',
-    date,
-    posted === null ? NOT_RECORDED : { scalar: bountiesOnDay(posted, from, to).posted },
-  );
-  const fulfilled = await wholeDay(
-    ctx.db
-      .query('bounties')
-      .withIndex('by_status_expires', (q) =>
-        q.eq('status', 'fulfilled').gte('expiresAt', from - BOUNTY_FULFILL_AFTER_EXPIRY_MS),
-      ),
-    cap,
-    `bounties fulfilled on ${date}`,
-  );
-  await writeMetricSnapshot(
-    ctx,
-    'bounties_fulfilled',
-    date,
-    fulfilled === null ? NOT_RECORDED : { scalar: bountiesOnDay(fulfilled, from, to).fulfilled },
-  );
-
   const contributors = await contributorsBetween(ctx, from, to, cap);
   if (contributors.capped) warnCapped(`contributors on ${date}`, cap);
   await writeMetricSnapshot(
@@ -465,6 +430,55 @@ export async function rollupPulseDay(
       signIns === null ? NOT_RECORDED : { scalar: signIns.length },
     );
   }
+}
+
+/**
+ * One UTC day of the bounties row (B01-2b): `bounties_posted` and `bounties_fulfilled`. Its own
+ * transaction (`rollupBountiesDayJob`, scheduled by the pulse day's job), so the pulse day's reads and
+ * these two stay well inside Convex's documents-scanned limit at their caps.
+ *
+ * Posted is the day's range on `by_created_at`. A bounty is fulfilled only while it is open, and the
+ * sweep closes an open one within hours of `expiresAt`, so every bounty fulfilled on the day expires in
+ * `fulfilledExpiryRange` (bounded both ends, so a past day's backfill never reads every bounty fulfilled
+ * since): that range of `by_status_expires`, then the day's stamps (`bountyDays`). A count whose read
+ * hits `cap` saves no number, as the pulse's do.
+ */
+export async function rollupBountiesDay(
+  ctx: MutationCtx,
+  date: string,
+  cap: number = DAY_SCAN_CAP,
+): Promise<void> {
+  const from = metricDayStart(date);
+  const to = from + DAY_MS;
+  const posted = await wholeDay(
+    ctx.db
+      .query('bounties')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `bounties posted on ${date}`,
+  );
+  await writeMetricSnapshot(
+    ctx,
+    'bounties_posted',
+    date,
+    posted === null ? NOT_RECORDED : { scalar: bountiesOnDay(posted, from, to).posted },
+  );
+  const expiring = fulfilledExpiryRange(from, to);
+  const fulfilled = await wholeDay(
+    ctx.db
+      .query('bounties')
+      .withIndex('by_status_expires', (q) =>
+        q.eq('status', 'fulfilled').gte('expiresAt', expiring.from).lt('expiresAt', expiring.to),
+      ),
+    cap,
+    `bounties fulfilled on ${date}`,
+  );
+  await writeMetricSnapshot(
+    ctx,
+    'bounties_fulfilled',
+    date,
+    fulfilled === null ? NOT_RECORDED : { scalar: bountiesOnDay(fulfilled, from, to).fulfilled },
+  );
 }
 
 /** A pulse field whose read hit its cap: no number, so the day reads *not recorded*, never a floor. */
@@ -765,10 +779,17 @@ export const rollupPulseDayJob = internalMutation({
   args: { date: v.string() },
   handler: async (ctx, { date }) => {
     await rollupPulseDay(ctx, date);
-    // The day's text lengths in a transaction of their own, by the same two callers (the tick, the
-    // backfill), so neither has to know about them.
+    // The day's text lengths and bounties in transactions of their own, by the same two callers (the
+    // tick, the backfill), so neither has to know about them.
     await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupTextLengthsDayJob, { date });
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupBountiesDayJob, { date });
   },
+});
+
+/** One UTC day of the bounties row (B01-2b), its own transaction. */
+export const rollupBountiesDayJob = internalMutation({
+  args: { date: v.string() },
+  handler: (ctx, { date }) => rollupBountiesDay(ctx, date),
 });
 
 /** How long `textLengthEvents` are kept: past the tick's yesterday, with a week for a backfill. */

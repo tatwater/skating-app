@@ -12,6 +12,8 @@
  * Days are metric days: `[from, to)` in UTC instants, as every `metricSnapshots` row.
  */
 
+import { DEFAULT_BOUNTY_LIFETIME_MS } from './reputationConfig';
+
 /** The fields a day's count reads. */
 export interface BountyMoments {
   status: string;
@@ -52,3 +54,16 @@ export function bountiesOnDay(
  * before the day began. Generous, so a sweep that missed a day or two still loses nothing.
  */
 export const BOUNTY_FULFILL_AFTER_EXPIRY_MS = 7 * 86_400_000;
+
+/**
+ * The `expiresAt` range that holds every bounty fulfilled in `[from, to)`: from
+ * {@link BOUNTY_FULFILL_AFTER_EXPIRY_MS} before the day began, to twice the lifetime after the day
+ * ended — a bounty is posted before it is fulfilled, so one fulfilled by `to` was posted before it and
+ * expires before `to` plus its lifetime (every bounty is posted with `DEFAULT_BOUNTY_LIFETIME_MS`;
+ * twice it, so a bounty posted under a longer lifetime than today's is still read). Bounded both ends,
+ * so a past day's read never takes in every bounty fulfilled since.
+ */
+export function fulfilledExpiryRange(from: number, to: number): { from: number; to: number } {
+  // Twice the lifetime: a bounty posted under a longer lifetime than today's is still in range.
+  return { from: from - BOUNTY_FULFILL_AFTER_EXPIRY_MS, to: to + 2 * DEFAULT_BOUNTY_LIFETIME_MS };
+}

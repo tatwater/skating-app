@@ -120,6 +120,29 @@ export const LongSeason: Story = {
   },
 };
 
+/** Two marked nights close together on a long season: the words take two lines, over the plot. */
+export const CloseNights: Story = {
+  args: { state: { kind: 'value', view: lowsView(LOWS_WINTER) } },
+  play: async ({ canvasElement }) => {
+    await steady(() => {
+      const words = all(canvasElement, '[data-slot="lows-event-words"]').map((w) =>
+        w.getBoundingClientRect(),
+      );
+      expect(words).toHaveLength(2);
+      const [a, b] = words as [DOMRect, DOMRect];
+      expect(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top).toBe(
+        true,
+      );
+      // Both lines sit over the plot: above the top y tick.
+      const ticks = all(canvasElement, '.recharts-yAxis .recharts-cartesian-axis-tick-line').map(
+        (t) => t.getBoundingClientRect().top,
+      );
+      const plotTop = Math.min(...ticks);
+      for (const w of words) expect(w.bottom).toBeLessThanOrEqual(plotTop + 1);
+    });
+  },
+};
+
 const frames: Array<[string, LowsState]> = [
   ['loading', { kind: 'loading' }],
   ['failed', { kind: 'failed', retry: () => {}, pending: false }],

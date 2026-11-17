@@ -4,6 +4,7 @@ import {
   dailyLowsFromHourly,
   expandLows,
   mergeLows,
+  nightsBetween,
 } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +16,6 @@ import {
   labeledNights,
   lowsState,
   lowsView,
-  nightsOf,
   placeEventWords,
   type SentinelLowsRead,
   tensAround,
@@ -184,7 +184,7 @@ describe('a night keeps its date and its value in every reader’s zone, across 
       imageryLine: null,
     });
     // The chart's nights are the watch's own days, in order.
-    expect(view.nights).toEqual(nightsOf(first, last));
+    expect(view.nights).toEqual(nightsBetween(first, last));
     expect(expandLows(stored).every((d) => view.nights.includes(d.date))).toBe(true);
     for (const night of nights) {
       const i = view.nights.indexOf(night.date);

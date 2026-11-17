@@ -32,10 +32,13 @@ vi.mock('convex/react', async () => {
   };
 });
 
+// Imported here, after the hoisted mocks, rather than inside the test: the module graph loads at
+// collection, never against the test's own timeout (inside it, the load alone ran close to 20 s).
+import { can } from '@skating/core';
+import { useOverviewHome } from '@/components/admin/overview/useOverviewHome';
+
 describe('the sentinels’ lows kept to admins', () => {
-  it('a moderator’s Home never asks, and its row is withheld', async () => {
-    const { can } = await import('@skating/core');
-    const { useOverviewHome } = await import('@/components/admin/overview/useOverviewHome');
+  it('a moderator’s Home never asks, and its row is withheld', () => {
     const moderator = (cap: Parameters<typeof can>[1]) => can('moderator', cap);
     const { result } = renderHook(() =>
       useOverviewHome({ season: 2026, now: Date.UTC(2026, 9, 13), can: moderator }),

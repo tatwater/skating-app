@@ -3154,8 +3154,14 @@ four cards and cost and audit — which reverses Review 3's "the sentinel lows l
   and per sentinel (ten at most) its merge chain — the cron's own eight-hop rule, so a merged sentinel
   is read under the body the watch stores it under — and its one stored series, each through one
   `ReadBudget` (12 MiB of 16, as the rows really weigh after reserving each worst case; at most about
-  a hundred calls). A sentinel the budget can't reach is `unread`, never empty. Gated on
-  `SENTINEL_LOWS_CAPABILITY` (D275).
+  a hundred calls). A sentinel the budget can't reach is `unread`, and one whose body is gone `gone`;
+  both draw as a row of gaps — no reading, never zero. Gated on `SENTINEL_LOWS_CAPABILITY` (D275).
+  The rows are the current roster's (the sites the store is filled for); the floor, the two lines and
+  the marks are the season record's. Left as built, for a ruling if they ever bite: a past season whose
+  record named a sentinel since dropped from the roster marks no row for it (its "of N" is still the
+  record's); the imagery line is drawn at the settings that opened the season, where a later settings
+  change may have decided the imagery night; and two roster sentinels merged into one body draw as two
+  identical rows (the cron reports such a pair rather than reading it).
 - **How nights are dated.** The read sends the watch's own calendar days, unchanged: the day each low
   was cut into when it was stored (`dailyLowsFromOpenMeteo`, in the site's own zone from unix time —
   never Open-Meteo's fixed-offset labels), stepped with the watch's `addDaysIso`, labeled by
@@ -3223,10 +3229,13 @@ other or stacked, a two-item key under the row's name — told apart by shape, n
   expired bounty is posted and never fulfilled, and nothing subtracts it; one fulfilled before
   `fulfilledAt` was stamped has no day and isn't counted. One rule (`bountyDays.ts`, fast-checked:
   each bounty posted once and fulfilled at most once, on its own day), two day rollups
-  (`bounties_posted`, `bounties_fulfilled`) beside the pulse's others — the fulfilled read is the
-  fulfilled bounties expiring no earlier than a week before the day (a bounty is fulfilled only while
-  open, and the 6-hourly sweep closes it within hours of expiring) — and the season's totals, "N
-  posted · M fulfilled", only when every day is recorded.
+  (`bounties_posted`, `bounties_fulfilled`) in a job of their own beside the pulse day's (so neither
+  transaction nears Convex's documents-scanned limit at its caps) — the fulfilled read is the fulfilled
+  bounties expiring no earlier than a week before the day (a bounty is fulfilled only while open, and
+  the 6-hourly sweep closes it within hours of expiring) and before twice the lifetime after it (it was
+  posted before it was fulfilled; `fulfilledExpiryRange`, so a past day's backfill never reads every
+  bounty fulfilled since; twice, so a bounty posted under a longer lifetime than today's is still read)
+  — and the season's totals, "N posted · M fulfilled", only when every day is recorded.
 - **Contributors**: stacked, returning solid under first-timers outlined; the bar's height is the day's
   contributors, as before. A first-timer is new on the day of their **first-ever** contribution — across
   every season, by the one rule (`firstContributionAt`, D253's kinds), on the metric day the strips

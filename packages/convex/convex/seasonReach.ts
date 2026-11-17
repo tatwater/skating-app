@@ -443,8 +443,13 @@ async function walkPage(
       const offset = cursor === null ? 0 : Number(cursor);
       const byDay = { ...(t.firstTimers ?? {}) };
       let newPeople = t.newPeople ?? 0;
-      for (const id of people.slice(offset, offset + FIRST_TIMER_PAGE)) {
-        const first = await firstContributionAt(ctx, id as Id<'profiles'>);
+      // The page's lookups together (each already reads its six kinds side by side), folded in order.
+      const firsts = await Promise.all(
+        people
+          .slice(offset, offset + FIRST_TIMER_PAGE)
+          .map((id) => firstContributionAt(ctx, id as Id<'profiles'>)),
+      );
+      for (const first of firsts) {
         if (first === 'unknown') w.capped.add('firstTimers');
         else if (first !== null && foldFirstTimer(byDay, first, span)) newPeople++;
       }

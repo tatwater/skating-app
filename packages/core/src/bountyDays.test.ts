@@ -1,7 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type BountyMoments, bountiesOnDay, fulfilledIn, postedIn } from './bountyDays';
+import {
+  BOUNTY_FULFILL_AFTER_EXPIRY_MS,
+  type BountyMoments,
+  bountiesOnDay,
+  fulfilledExpiryRange,
+  fulfilledIn,
+  postedIn,
+} from './bountyDays';
+import { DEFAULT_BOUNTY_LIFETIME_MS } from './reputationConfig';
 
 const DAY = 86_400_000;
 const START = Date.UTC(2026, 9, 1);
@@ -45,6 +53,37 @@ describe('a day’s bounties', () => {
   it('counts each bounty posted once and each fulfilled once, on their own days (pinned seeds and one random)', () => {
     for (const seed of [20261117, 6, 900]) fc.assert(property, { seed, numRuns: 200 });
     fc.assert(property, { numRuns: 200 });
+  });
+
+  it('the fulfilled read’s expiry range holds every bounty fulfilled that day, and no later one', () => {
+    // Posted with the one lifetime, fulfilled while open: any time from its posting until the sweep
+    // closes it, at most BOUNTY_FULFILL_AFTER_EXPIRY_MS past its expiry.
+    const fulfilledBounty = fc
+      .record({
+        createdAt: fc.integer({ min: START, max: START + 60 * DAY }),
+        after: fc.integer({
+          min: 0,
+          max: DEFAULT_BOUNTY_LIFETIME_MS + BOUNTY_FULFILL_AFTER_EXPIRY_MS - 1,
+        }),
+      })
+      .map(({ createdAt, after }) => ({
+        expiresAt: createdAt + DEFAULT_BOUNTY_LIFETIME_MS,
+        fulfilledAt: createdAt + after,
+      }));
+    const holds = fc.property(fulfilledBounty, ({ expiresAt, fulfilledAt }) => {
+      const from = START + Math.floor((fulfilledAt - START) / DAY) * DAY;
+      const range = fulfilledExpiryRange(from, from + DAY);
+      expect(expiresAt).toBeGreaterThanOrEqual(range.from);
+      expect(expiresAt).toBeLessThan(range.to);
+    });
+    for (const seed of [20261117, 6, 900]) fc.assert(holds, { seed, numRuns: 200 });
+    fc.assert(holds, { numRuns: 200 });
+    // Bounded above, with room for a lifetime once twice today's: a range of three lifetimes and a
+    // week, never every bounty fulfilled since the day.
+    const range = fulfilledExpiryRange(START, START + DAY);
+    expect(range.to - range.from).toBe(
+      DAY + 2 * DEFAULT_BOUNTY_LIFETIME_MS + BOUNTY_FULFILL_AFTER_EXPIRY_MS,
+    );
   });
 
   it('a day’s edges: from is in, to is out', () => {

@@ -362,8 +362,10 @@ export const showingUp = query({
       days.length === 0
         ? null
         : bountyPulse(
-            await scalarsOver(ctx, 'bounties_posted', days),
-            await scalarsOver(ctx, 'bounties_fulfilled', days),
+            ...(await Promise.all([
+              scalarsOver(ctx, 'bounties_posted', days),
+              scalarsOver(ctx, 'bounties_fulfilled', days),
+            ])),
           );
 
     return {
