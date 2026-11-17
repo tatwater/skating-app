@@ -175,7 +175,7 @@ describe('traced', () => {
   });
 });
 
-describe('ReadBudget.reserveFirst (B01-3p)', () => {
+describe('ReadBudget.reserveFirst (B01-3q)', () => {
   test('holds the first unit back from every axis, so later spending cannot take it', () => {
     const reads = new ReadBudget(1_000);
     reads.reserveFirst({ bytes: 400, reads: 2, docs: 300 });

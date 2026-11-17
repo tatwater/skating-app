@@ -134,7 +134,7 @@ export class OverBudget extends Error {}
 /**
  * Thrown when a paged read's budget cannot hold even the first unit of its work
  * ({@link ReadBudget.reserveFirst}): such a page could never move its cursor on, so it says so on the
- * first call rather than hand back where it started (B01-3p).
+ * first call rather than hand back where it started (B01-3q).
  */
 export class CannotAdvance extends OverBudget {}
 
@@ -306,9 +306,7 @@ export class ReadBudget {
       for (; next < items.length; next++) {
         const cost = costOf(items[next] as T);
         const docs = cost.docs ?? cost.reads;
-        if (cost.bytes > this.left || !this.affordsCalls(cost.reads, docs)) break;
-        this.left -= cost.bytes;
-        this.reserveCalls(cost.reads, docs);
+        if (!this.hold(cost, docs)) break;
         wave.push({ index: next, cost, docs });
       }
       if (wave.length === 0) {
@@ -427,7 +425,7 @@ export class ReadBudget {
   }
 
   /**
-   * **Hold back the first unit of a paged read's work** (B01-3p) — the worst case of settling its
+   * **Hold back the first unit of a paged read's work** (B01-3q) — the worst case of settling its
    * first item, every read that item can need — before anything else spends, so the page always
    * settles that item and its cursor always moves on: every page advances or is done. What is held
    * is the caller's to spend on that item alone (its reads are not charged again). A budget that
@@ -435,13 +433,20 @@ export class ReadBudget {
    */
   reserveFirst(cost: WaveCost): void {
     const docs = cost.docs ?? cost.reads;
-    if (cost.bytes > this.left || !this.affordsCalls(cost.reads, docs)) {
+    if (!this.hold(cost, docs)) {
       throw new CannotAdvance(
         `read budget: the first unit (${cost.reads} reads, ${docs} documents, ${cost.bytes} bytes) does not fit, so the page could never advance`,
       );
     }
+  }
+
+  /** Take `cost` (scanning `docs` documents) from every axis if it all fits now; whether it did. */
+  private hold(cost: WaveCost, docs: number): boolean {
+    if (cost.bytes > this.left || !this.affordsCalls(cost.reads, docs)) return false;
     this.left -= cost.bytes;
-    this.reserveCalls(cost.reads, docs);
+    this.callsLeft -= cost.reads;
+    this.docsLeft -= docs;
+    return true;
   }
 
   /** A patch or delete of a row already read: charged as a second touch of it. */

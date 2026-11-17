@@ -1,5 +1,5 @@
 /**
- * **Every town page advances or is done** (B01-3p, Greptile on #143). A page reads its columns in
+ * **Every town page advances or is done** (B01-3q, Greptile on #143). A page reads its columns in
  * waves and then reads its full columns again cell by cell; the columns could spend the whole budget
  * first, leaving nothing for the first cell's own read, so the page ended where it began and the
  * action failed the body with *made no progress*. The page now settles its first cell before anything
@@ -10,7 +10,7 @@
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import type { Id } from './_generated/dataModel';
-import { COLUMN_ROWS, settleTownPage, type TownCellReads } from './bodyGeo';
+import { COLUMN_ROWS, settleTownPage, type TownCellReads, type TownColumnRow } from './bodyGeo';
 import type { TownCell } from './lib/bodyGeo';
 import { CannotAdvance, ReadBudget, TX_BUDGET, TX_CALLS, TX_DOCS } from './lib/readBudget';
 
@@ -22,13 +22,11 @@ const walk = (w: World): TownCell[] =>
   w.cells.map((_, i) => ({ z: 13, i, x: i % w.width, y: Math.floor(i / w.width) }));
 
 /** The cell index's two reads over the world, in `by_cell` order (a cell's levels sort county, state, town). */
-function index(w: World): TownCellReads & { calls: number } {
+function index(w: World): TownCellReads {
   const at = (x: number, y: number) => w.cells[y * w.width + x];
-  const io = {
-    calls: 0,
-    column: async (c: { x: number; minY: number; maxY: number }, n: number) => {
-      io.calls++;
-      const rows: { y: number; level: string; adminAreaId: Id<'adminAreas'> }[] = [];
+  return {
+    column: async (c, n) => {
+      const rows: TownColumnRow[] = [];
       for (let y = c.minY; y <= c.maxY && rows.length < n; y++) {
         const cell = at(c.x, y);
         if (cell === undefined) continue;
@@ -40,14 +38,9 @@ function index(w: World): TownCellReads & { calls: number } {
       }
       return rows.slice(0, n);
     },
-    cell: async (c: TownCell, n: number) => {
-      io.calls++;
-      return (at(c.x, c.y)?.towns ?? [])
-        .slice(0, n)
-        .map((t) => ({ adminAreaId: t as Id<'adminAreas'> }));
-    },
+    cell: async (c, n) =>
+      (at(c.x, c.y)?.towns ?? []).slice(0, n).map((t) => ({ adminAreaId: t as Id<'adminAreas'> })),
   };
-  return io;
 }
 
 /** The old walk's answer: every cell's towns, in walk order. */
@@ -175,8 +168,7 @@ describe('a page always advances or is done', () => {
       if (out.ids.length > 0) reached.towns++;
       // The union of the pages is the old walk's answer, in its order.
       expect(out.ids).toEqual(reference(w));
-      // Each page settles at least one cell, and with room for a whole page no more pages are needed
-      // than a page's worth of cells divides the walk into.
+      // Each page settles at least one cell, so there are never more pages than cells.
       expect(out.pages).toBeLessThanOrEqual(w.cells.length);
     },
   );
@@ -207,5 +199,57 @@ describe('a page always advances or is done', () => {
       expect(out.pages).toBe(Math.ceil(w.cells.length / pageCells));
       expect(out.ids).toEqual(reference(w));
     }
+  });
+});
+
+describe('the first cell read beside the other columns', () => {
+  const w: World = { width: 3, cells: [full(0), full(1), full(2)] };
+  const later = <T>(value: T) => new Promise<T>((done) => setTimeout(() => done(value), 20));
+
+  test('a head read that fails fails the page, after the other columns have settled', async () => {
+    let settled = 0;
+    const io = index(w);
+    const failing: TownCellReads = {
+      column: async (c, n) => {
+        if (c.x === 0) throw new Error('head read failed');
+        const rows = await later(await io.column(c, n));
+        settled++;
+        return rows;
+      },
+      cell: io.cell,
+    };
+    await expect(settleTownPage(walk(w), null, COLUMN_ROWS, failing)).rejects.toThrow(
+      'head read failed',
+    );
+    expect(settled).toBe(2);
+  });
+
+  test('a column read that fails fails the page with no head read left running', async () => {
+    let headDone = false;
+    const io = index(w);
+    const failing: TownCellReads = {
+      column: async (c, n) => {
+        if (c.x !== 0) throw new Error('column read failed');
+        const rows = await later(await io.column(c, n));
+        headDone = true;
+        return rows;
+      },
+      cell: io.cell,
+    };
+    await expect(settleTownPage(walk(w), null, COLUMN_ROWS, failing)).rejects.toThrow(
+      'column read failed',
+    );
+    expect(headDone).toBe(true);
+  });
+
+  test('its reads count as the rounds they are', async () => {
+    // One short column: one round, as a single-column wave always was.
+    const one: World = { width: 1, cells: [{ towns: ['a'], others: 0 }] };
+    expect((await settleTownPage(walk(one), null, COLUMN_ROWS, index(one))).waves).toBe(1);
+    // A full head column: its column, then its first cell — two rounds beside the others' one — and
+    // then the other full columns' cells, one more.
+    const page = await settleTownPage(walk(w), null, COLUMN_ROWS, index(w));
+    expect(page.calls).toBe(3 + 3);
+    expect(page.waves).toBe(3);
   });
 });

@@ -244,12 +244,12 @@ export type TownPage = {
   waves: number;
 };
 
+/** A cell index row as a column read returns it: its row, its level, its boundary. */
+export type TownColumnRow = { y: number; level: string; adminAreaId: Id<'adminAreas'> };
+
 /** The two reads a page makes of the cell index: a column's rows (every level), a cell's town rows. */
 export interface TownCellReads {
-  column(
-    c: TownColumn,
-    n: number,
-  ): Promise<{ y: number; level: string; adminAreaId: Id<'adminAreas'> }[]>;
+  column(c: TownColumn, n: number): Promise<TownColumnRow[]>;
   cell(c: TownCell, n: number): Promise<{ adminAreaId: Id<'adminAreas'> }[]>;
 }
 
@@ -265,7 +265,6 @@ export async function settleTownPage(
   io: TownCellReads,
   reads: ReadBudget = new ReadBudget(),
 ): Promise<TownPage> {
-  const opts = { columnRows };
   // Each cell's town rows by its page index, as one cell read returns them.
   const townsOf = new Map<number, Id<'adminAreas'>[]>();
   // The first page index left unread when the budget ran out; the page ends there.
@@ -301,17 +300,14 @@ export async function settleTownPage(
 
   const columns = townColumnsOf(cells);
   const columnCost = {
-    bytes: opts.columnRows * ROW_MAX.areaCell,
+    bytes: columnRows * ROW_MAX.areaCell,
     reads: 1,
-    docs: opts.columnRows,
+    docs: columnRows,
   };
   const cellCost = { bytes: CELL_TAKE * ROW_MAX.areaCell, reads: 1, docs: CELL_TAKE };
   const full: TownColumn[] = [];
-  const settleColumn = (
-    c: TownColumn,
-    answer: readonly { y: number; level: string; adminAreaId: Id<'adminAreas'> }[],
-  ) => {
-    if (answer.length >= opts.columnRows) {
+  const settleColumn = (c: TownColumn, answer: readonly TownColumnRow[]) => {
+    if (answer.length >= columnRows) {
       // Full: it may hold more rows than it returned, so its cells are read one at a time.
       full.push(c);
       return;
@@ -333,6 +329,8 @@ export async function settleTownPage(
   // `CannotAdvance` here, on the first call. Read alongside the other columns' first wave.
   const head = columns[0];
   let first: Promise<void> = Promise.resolve();
+  // The head's reads one after another (its column, then perhaps its first cell), for `waves`.
+  let headRounds = 0;
   if (head !== undefined) {
     reads.reserveFirst({
       bytes: columnCost.bytes + cellCost.bytes,
@@ -340,9 +338,11 @@ export async function settleTownPage(
       docs: columnCost.docs + cellCost.docs,
     });
     first = (async () => {
-      settleColumn(head, await counted(() => io.column(head, opts.columnRows)));
+      headRounds = 1;
+      settleColumn(head, await counted(() => io.column(head, columnRows)));
       const own = head.first;
       if (!townsOf.has(own)) {
+        headRounds = 2;
         const towns = await counted(() => io.cell(cells[own] as TownCell, CELL_TAKE));
         townsOf.set(
           own,
@@ -352,10 +352,20 @@ export async function settleTownPage(
     })();
   }
   const rest = columns.slice(1);
-  const columnAnswers = await wave(rest, columnCost, async (c, share) =>
-    counted(() => share.take('areaCell', opts.columnRows, () => io.column(c, opts.columnRows))),
-  );
-  await first;
+  // Settled together, not raced: a head that fails while the other columns are in flight is not an
+  // unhandled rejection, and a column that fails leaves no head read running past the page. The
+  // head's failure first, as it would be were it the first item of the columns' wave.
+  const [headRead, columnRead] = await Promise.allSettled([
+    first,
+    wave(rest, columnCost, async (c, share) =>
+      counted(() => share.take('areaCell', columnRows, () => io.column(c, columnRows))),
+    ),
+  ]);
+  if (headRead.status === 'rejected') throw headRead.reason;
+  if (columnRead.status === 'rejected') throw columnRead.reason;
+  const columnAnswers = columnRead.value;
+  // The head read beside the columns' waves: the rounds before the cells' wave are the longer run.
+  waves = Math.max(waves, headRounds);
   for (const [k, answer] of columnAnswers.entries()) {
     const c = rest[k] as TownColumn;
     if (answer === OVERFLOW) cut = Math.min(cut, c.first);

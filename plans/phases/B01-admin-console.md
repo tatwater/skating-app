@@ -5151,7 +5151,6 @@ the count reads at most 306 rows.
 - The sweep's items in other files.
 - Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
 
-
 ### Every town page advances or is done (B01-3q)
 
 **What the review found after #143 merged** (Greptile's note on its last head). A town candidates page
@@ -5185,7 +5184,9 @@ over generated fills (empty, light and heavy cells, full and short columns), pag
 and budgets from one unit to many, every page moves strictly on, the pages' union is the old walk's
 answer in its order, the pages are at most the walk's cells (each settles at least one), and runs
 are counted that the budget cut short — three pinned seeds and one random; with the whole budget, the
-pages are exactly the walk divided by the page size.
+pages are exactly the walk divided by the page size. The first cell's reads and the other columns'
+wave are settled together (a head read that fails is never an unhandled rejection, and a column that
+fails leaves no head read running past the page), and `waves` counts the head's own rounds.
 
 **The fixture, cheap.** #143 raised the worst-case fixture's hook timeout after CI under coverage
 spent past 10 s building it: most of that was the old walk's 2,448 reads, one after another, to get
