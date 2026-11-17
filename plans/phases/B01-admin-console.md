@@ -3184,11 +3184,45 @@ and nothing reads *Sign out* or *Theme* anywhere in the file. So this is the pla
   mode — by the shared shell's design (its basemap style is built per flavor, inherited from the
   skater map) — at the operator's own view, and the console's layers are repainted once it loads.
 
+**Sign out and another tab's report (Greptile on #148).** The draft guard asked two places — this
+tab's sheet and the stored copy — whether a sign-out would discard unsent work, and unsent work can
+live in a third: another tab's memory. An edit of a published report is never stored (`persist`: a
+stale copy restored over a later save would undo it), and a sign-out ends every tab's session, whose
+sheet goes with the account (`bindSheetOwner`). Both menus share the guard, so the skater menu lost
+it the same way. The guard now asks the other tabs at that moment over a `BroadcastChannel`
+(`lib/unsavedElsewhere.ts`): each tab answers while it holds unsent work (`holdsUnsentWork`, the one
+rule for this tab and the others; the answer is mounted once per tab beside the owner binding), and
+silence for 300 ms is "nothing". Chosen over a stored dirty marker because nothing is stored, so
+nothing goes stale — a closed or crashed tab simply doesn't answer — and the ask and the answer
+carry an id and a word, never what was written. A browser without the channel answers `unknown`, and
+the guard warns. The warning is the guard's own dialog, without *Open the draft* (the work is in the
+other tab), which is not disturbed by the ask. Every sign-out with nothing open now waits the 300 ms.
+
+| What a sheet can hold | This tab | Storage | Another tab |
+|---|---|---|---|
+| A new report, written in | memory | stored (`persist`) | stored copy, and now the ask |
+| An edit of a published report, written in | memory | **never** | **the ask** (was the gap) |
+| A send that failed, waiting for a retry or the resend on reconnect (`attempt`, `resendArmed`) | memory | stored with a new report; never with an edit | the ask |
+| A Post that went out and may be live (`postCreateSent`) | memory | stored | the ask |
+| Photos on the sheet, or mid-upload in a send | the sheet is written in, so as above | blobs in IndexedDB, claimed by a new report's record | as the sheet |
+| A sheet opened and untouched | nothing to lose | — | — |
+
+**Found, not fixed (not this mechanism):** two sign-outs never ask at all — the Legacy pages' header
+(*Sign out* in the old `AppShell`) and the re-acknowledgment page (`routes/reack.tsx`) call
+`useSignOut` straight, discarding this tab's draft and the stored one without a word; both are shared
+seams. And a session that ends without anyone pressing Sign out (it expires, or the person signs out
+on another device) unbinds every tab: a new report survives in storage for the same person to find,
+but an unsent edit, and an edit's failed send, are dropped from memory with no warning — owed with
+the report sheet's cross-tab store (`plans/phases/B04-skater-contributions.md`, the running list).
+
 **Every string, for the founder's copy pass:** *Your account* (the trigger and the menu, to a
 reader); *Your page in People*; *Theme*; *System*, *Light*, *Dark*; *Sign out*; *Loading your
 profile*; *Your profile didn't load*; the toast *Not signed out* — *You're still signed in. Check
 your connection and try again.* The draft guard's dialog is the skater app's own (*Sign out and
-discard your draft?*, *Open the draft*, *Cancel*, *Sign out*).
+discard your draft?*, *Open the draft*, *Cancel*, *Sign out*), with two new descriptions shared by
+both menus: *A report open in another tab of this browser has changes that aren't posted yet.
+Signing out discards them.* and *This browser can't check its other tabs, so a report you're writing
+in one of them may be discarded.*
 
 **Found, not fixed here:**
 - **Back after sign-out can't leave the console's paths.** `AuthGate` sends a signed-out path to
