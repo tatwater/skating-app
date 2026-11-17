@@ -6,6 +6,7 @@ import {
   sqMetersToAcres,
   standingOf,
   standingReasonLabel,
+  townLabel,
   waterBodyClassLabel,
   waterBodyDisplayName,
 } from '@skating/core';
@@ -524,10 +525,9 @@ export interface Removal {
 /**
  * "Franklin, NH": a town with its own state, as the boundaries store it, the bare name when no state
  * is stored — never one inferred from the body's ("Franklin, VT" and "Franklin, NH" are two towns).
+ * Core's `townLabel`, the one copy of the rule (B01-3p), under the name the console's readers use.
  */
-export function townWithState(t: { name: string; state: string | null }): string {
-  return t.state === null ? t.name : `${t.name}, ${t.state}`;
-}
+export const townWithState: (t: { name: string; state: string | null }) => string = townLabel;
 
 /** A removal's listed reason, in words — the Standing tab's choices and every page that says it. */
 export const REMOVAL_REASON_WORDS: Record<RemovalReason, string> = {
