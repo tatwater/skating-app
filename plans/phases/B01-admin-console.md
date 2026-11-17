@@ -3193,7 +3193,7 @@ cap can cut an item the returned order says belongs.
 | `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
 | `recurrence.listForBodyAdmin` | **Fixed (B01-3d):** a body's patterns, highest priority first (`by_water_body_priority`, 1,000) | Highest priority first | No, after the fix: the cap keeps the top 1,000 (it read the first 1,000 stored, then sorted). The array says nothing past 1,000; `waitingCountForBody` is the figure that does |
 | `recurrence.waitingCountForBody` | A body's patterns (1,000, probing one past) | A count | No: `capped` (B01-3d) |
-| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. ~~**Owed:** its read of the body's active hazards is an unbounded `.collect()`~~ Bounded in B01-3n: this season's pins, 500, and past them every advisory stands down |
+| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. ~~**Owed:** its read of the body's active hazards is an unbounded `.collect()`~~ Bounded in B01-3n: the body's active pins created this season, newest first, 500, and past them every advisory stands down |
 | `recurrence.listQueue` | The cross-lake queue by season and priority, paged | Highest priority first | No: genuinely paginated, filters per page |
 | `recurrence.recomputeBody` | A body's stored patterns to match against (1,000) | Not presented | Matching only; unreachable in practice (a body holds tens) — a body past it would re-insert its unmatched patterns |
 | `bodyFeatures` demote, `hazardWithdrawal` | A body's patterns to find a promotion's or a pin's (1,000) | Not presented | The withdrawal says `unknown` past the bound; the demote's walk-back is bounded the same way |
@@ -4635,8 +4635,10 @@ No schema change, no new function, no backfill.
   exists plainly. A read from before the names is said as a body not listed, never as no body.
 - **The skater recurrence read is bounded.** `recurrence.listForBody` read every active pin the
   body ever had (`.collect()`) to decide which history advisories stand down beside a live pin
-  (§9.3 in A05c). It now reads this season's pins on the body by first report, at most 500 (one
-  more only to know); past them **every advisory stands down**: an advisory returned from a partial
+  (§9.3 in A05c). It now walks the body's active pins newest first, back to the season's start (a
+  pin is written at or after its first report, so every one first reported this season is seen) and
+  at most 500 (one more only to know) — archived pins never count; past them **every advisory
+  stands down**: an advisory returned from a partial
   read would claim no live pin sits in its footprint, which the read can't vouch for, and yielding
   is the rule's own conservative answer (it withholds a statement about past winters, never a
   hazard). The pins never come from this read — both apps draw them from `hazards.listForBody` — so

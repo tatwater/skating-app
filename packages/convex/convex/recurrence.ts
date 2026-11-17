@@ -27,7 +27,6 @@ import {
   RECURRENCE_MATCH_METERS,
   RECURRENCE_WINDOW_SEASONS,
   type Season,
-  seasonEndMs,
   seasonOf,
   seasonStartMs,
 } from '@skating/core';
@@ -442,8 +441,9 @@ export const enqueueBody = internalMutation({
 export { RECURRENCE_WINDOW_SEASONS };
 
 /**
- * The most of this season's pins on one body `listForBody` reads to decide which advisories yield.
- * Past it, every advisory stands down (B01-3n): none is claimed clear of a pin the read didn't see.
+ * The most of a body's active pins created this season that `listForBody` reads to decide which
+ * advisories yield. Past it, every advisory stands down (B01-3n): none is claimed clear of a pin the
+ * read didn't see.
  */
 export const LIVE_SIGHTINGS_READ = 500;
 
@@ -481,28 +481,35 @@ export const listForBody = query({
     // date, a reporter and a confirm loop, and is better than history in every respect — so the
     // advisory for that cluster stands down rather than competing with it.
     //
-    // **Bounded** (B01-3n): this season's pins on the body, by first report, at most
-    // `LIVE_SIGHTINGS_READ` (one more read only to know). Past it, an unread pin could sit inside any
-    // pattern's footprint, and an advisory returned would claim "no live pin here" from a partial
-    // read — so every advisory stands down, the yield rule's conservative answer. The pins
-    // themselves never come from this read: each app draws them from its own.
+    // **Bounded** (B01-3n): the body's active pins, newest first, read only back to the season's
+    // start and at most `LIVE_SIGHTINGS_READ` (one more only to know). A pin's record is written at
+    // or after its first report (its writers clamp `firstReportedAt` to the insert), so every pin
+    // first reported this season was created since the season began: the walk stops at the first
+    // one created before it, having seen them all. Archived pins never count toward the bound.
+    // Past it, an unread pin could sit inside any pattern's footprint, and an advisory returned would
+    // claim "no live pin here" from a partial read — so every advisory stands down, the yield rule's
+    // conservative answer. The pins themselves never come from this read: each app draws them from
+    // its own.
     const thisSeason = seasonOf(Date.now());
-    const seasonPins = await ctx.db
+    const seasonStart = seasonStartMs(thisSeason);
+    const live: Doc<'hazards'>[] = [];
+    let read = 0;
+    for await (const h of ctx.db
       .query('hazards')
-      .withIndex('by_water_body_first_reported', (q) =>
-        q
-          .eq('waterBodyId', body._id)
-          .gte('firstReportedAt', seasonStartMs(thisSeason))
-          .lt('firstReportedAt', seasonEndMs(thisSeason)),
+      .withIndex('by_water_body_status', (q) =>
+        q.eq('waterBodyId', body._id).eq('status', 'active'),
       )
-      .take(LIVE_SIGHTINGS_READ + 1);
-    if (seasonPins.length > LIVE_SIGHTINGS_READ) return [];
-    const live = seasonPins.filter(
-      (h) =>
-        h.status === 'active' &&
+      .order('desc')) {
+      if (h._creationTime < seasonStart) break;
+      if (++read > LIVE_SIGHTINGS_READ) return [];
+      if (
         h.moderationStatus === 'visible' &&
-        h.mergedIntoHazardId === undefined,
-    );
+        h.mergedIntoHazardId === undefined &&
+        seasonOf(h.firstReportedAt) === thisSeason
+      ) {
+        live.push(h);
+      }
+    }
 
     return rows
       .filter((row) => !hasLiveSighting(row, live))

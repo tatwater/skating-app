@@ -1327,16 +1327,18 @@ describe('listQueue’s filters, and the advisory yielding', () => {
     const author = await seedUser(t, 'author');
     const skater = await seedUser(t, 'skater');
     const waterBodyId = await seedBody(t);
+    // Past winters' pins, archived: history, and never counted toward this season's bound.
     for (const season of [CURRENT_SEASON - 3, CURRENT_SEASON - 2, CURRENT_SEASON - 1]) {
-      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10, status: 'archived' });
     }
     await runPass(t);
     await t.run(async (ctx) => {
       const row = await ctx.db.query('hazardRecurrence').first();
       if (row) await ctx.db.patch(row._id, { publiclyVisible: true });
     });
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
     // This season's pins, each a kilometer away — none would silence the pattern if read.
-    const pins = (n: number) =>
+    const pins = (n: number, status: 'active' | 'archived' = 'active') =>
       t.run(async (ctx) => {
         const at = inSeason(CURRENT_SEASON, 100);
         const lng = 0.5 + 1000 / 111_320;
@@ -1350,7 +1352,7 @@ describe('listQueue’s filters, and the advisory yielding', () => {
             bbox: { minLat: 0.4995, minLng: lng - 0.0004, maxLat: 0.5005, maxLng: lng + 0.0004 },
             createdByUserId: author.id,
             photoIds: [],
-            status: 'active',
+            status,
             moderationStatus: 'visible',
             firstReportedAt: at + i,
             lastConfirmedAt: at + i,
@@ -1360,6 +1362,9 @@ describe('listQueue’s filters, and the advisory yielding', () => {
           });
         }
       });
+    // Archived pins this season, however many, are not live and don't count toward the bound.
+    await pins(LIVE_SIGHTINGS_READ + 5, 'archived');
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
     // Exactly at the bound: every pin was read and compared, so the history speaks.
     await pins(LIVE_SIGHTINGS_READ);
     expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
