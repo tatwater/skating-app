@@ -107,6 +107,9 @@ export const ROW_MAX = {
   gateEvent: 2 * 1024,
   // A console presence row: a staffer's id and an instant.
   presence: 1024,
+  // A boundary's cell row (`adminAreaCells`): an id, three numbers and its level, which its one writer
+  // (`syncAdminAreaCells`) copies from the boundary's literal — about 120 bytes, so 1 KiB (B01-3p).
+  areaCell: 1024,
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 

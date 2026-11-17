@@ -30,15 +30,17 @@ import {
   distanceToPolygonMeters,
   isUndefinedSubdivision,
   type Namesake,
+  namesakeKindOf,
   namesakeTells,
   stateOfSubdivision,
   townKindOf,
+  townLabel,
   townName,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { WATER_BODY_LADDER } from './cellIndex';
+import { ADMIN_AREA_LADDER, WATER_BODY_LADDER } from './cellIndex';
 import { markGeoStale as markStale } from './geoStale';
 
 /** Two outlines this close count as touching (the stored outlines are simplified to ~5 m). */
@@ -210,6 +212,76 @@ export function coverTiles(box: Box): { tiles: Box[]; truncated: boolean } {
   return { tiles, truncated: false };
 }
 
+// ── The town candidates' read plan (B01-3p) ───────────────────────────────────────────────────
+
+/** A cell of a town candidates page: its rung, its place in the rung's row-major range, and where. */
+export interface TownCell {
+  z: number;
+  i: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * One `by_cell` range read: rung `z`'s column `x` from `minY` to `maxY` — every page cell in that
+ * column, one read in place of one a cell. `first` is the page index of its first cell, `cells` the
+ * page indices of all of them, in order.
+ */
+export interface TownColumn {
+  z: number;
+  x: number;
+  minY: number;
+  maxY: number;
+  first: number;
+  cells: number[];
+}
+
+/**
+ * **The cells one town candidates page covers** — every ladder rung's cells covering `box`, each
+ * rung row-major, from `from` (a rung and a cell's place in it) for at most `max` cells, with where
+ * the next page starts (`null` at the end). Pure: the same walk and the same cursor the page read one
+ * cell at a time before B01-3p, so pages start and end where they always did.
+ */
+export function townCellPage(
+  box: Box,
+  from: { z: number; i: number } | undefined,
+  max: number,
+): { cells: TownCell[]; next: { z: number; i: number } | null } {
+  const cells: TownCell[] = [];
+  for (let z = from?.z ?? ADMIN_AREA_LADDER.minZ; z <= ADMIN_AREA_LADDER.maxZ; z++) {
+    const range = cellRangeCovering(box, z);
+    const width = range.maxX - range.minX + 1;
+    for (let i = z === from?.z ? from.i : 0; i < range.count; i++) {
+      if (cells.length >= max) return { cells, next: { z, i } };
+      cells.push({ z, i, x: range.minX + (i % width), y: range.minY + Math.floor(i / width) });
+    }
+  }
+  return { cells, next: null };
+}
+
+/**
+ * The page's cells as column reads, in the order of each column's first cell. A page is a run of
+ * row-major cells, so the cells it holds in any one column are a contiguous run of rows — one index
+ * range reads them all.
+ */
+export function townColumnsOf(cells: readonly TownCell[]): TownColumn[] {
+  const byColumn = new Map<string, TownColumn>();
+  for (const [index, c] of cells.entries()) {
+    const key = `${c.z}/${c.x}`;
+    const column = byColumn.get(key);
+    if (column === undefined) {
+      byColumn.set(key, { z: c.z, x: c.x, minY: c.y, maxY: c.y, first: index, cells: [index] });
+    } else {
+      column.minY = Math.min(column.minY, c.y);
+      column.maxY = Math.max(column.maxY, c.y);
+      column.cells.push(index);
+    }
+  }
+  // A map keeps its keys in insertion order, and each column is inserted at its first cell, so the
+  // columns already run in the order of their first cells — the order `townCandidates`' waves need.
+  return [...byColumn.values()];
+}
+
 // ── Stale marks ──────────────────────────────────────────────────────────────────────────────
 
 export { markGeoStale } from './geoStale';
@@ -282,10 +354,13 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
 export const NAMESAKES_READ = 8;
 
 /**
- * The loaded subdivisions of `state` named `name`, each with its kind ('' for none) — what decides
- * what tells a town from them (`namesakeTells`, B01-3l and B01-3m): its kind where they carry more
- * than one, its county where another has its own kind (New York's two Clinton towns). Reads at most
- * {@link NAMESAKES_READ} boundaries (each its polygon) on `by_level_state_name`.
+ * The loaded subdivisions of `state` named `name`, each with its kind ('' for none, `null` before its
+ * full name has loaded: `namesakeKindOf`) — what decides what tells a town from them (`namesakeTells`,
+ * B01-3l, B01-3m, B01-3p): its kind where they carry more than one, its county where another has its
+ * own kind (New York's two Clinton towns), nothing while one is still loading. Reads at most
+ * {@link NAMESAKES_READ} boundaries on `by_level_state_name`. Each is read whole, polygon and all —
+ * Convex reads documents, never fields, and no lighter row holds a boundary's name (a light mirror
+ * would be a schema change; B01-3p) — so the recompute reads each name once per run, not per body.
  */
 export async function namesakesOf(ctx: QueryCtx, state: string, name: string): Promise<Namesake[]> {
   const rows = await ctx.db
@@ -294,7 +369,7 @@ export async function namesakesOf(ctx: QueryCtx, state: string, name: string): P
       q.eq('level', 'town').eq('state', state).eq('name', name),
     )
     .take(NAMESAKES_READ);
-  return rows.map((a) => ({ id: a._id as string, kind: townKindOf(a.name, a.fullName) ?? '' }));
+  return rows.map((a) => ({ id: a._id as string, kind: namesakeKindOf(a.name, a.fullName) }));
 }
 
 /**
@@ -425,8 +500,9 @@ export function townNamesOf(
   for (const { name, state } of rows) {
     statesOf.set(name, (statesOf.get(name) ?? new Set()).add(state));
   }
+  // `name` is already `townName`'s; the state goes on by the one label rule (`townLabel`).
   return rows.map(({ name, state }) =>
-    (statesOf.get(name)?.size ?? 0) > 1 && state !== null ? `${name}, ${state}` : name,
+    (statesOf.get(name)?.size ?? 0) > 1 ? townLabel({ name, state }) : name,
   );
 }
 
