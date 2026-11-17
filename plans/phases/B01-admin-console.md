@@ -5190,7 +5190,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Bo7 | Follow-up to #143 (Greptile P2, open at merge): `townCandidatesPage` can spend its whole document budget on columns and end a page without moving its cursor. The body's attempt then fails with "town candidates made no progress" and keeps its previous answer | `bodyGeo.ts` `townCandidatesPage` | in progress: the follow-up to #143 (B01-3q), not yet open | correctness | S | — |
 | Bo8 | The namesake check read up to 8 boundary polygons per name on every recompute | `lib/bodyGeo.ts` | done in #143 (one read per name per run, shared). A light mirror table of boundary names would make the read small; open | performance | M (schema, backfill) | New table: state, name, full name, key (about 2,425 rows) |
 | Bo9 | The intake counts are capped at 50 per reason ("50+"; they were 200) since #143. An exact count needs a stored counter. The founder has been told and has not objected | `waterBodies.ts` `reviewQueueCounts` | open | correctness of a figure | M (schema, backfill) | A counter kept by every writer of `reviewReason`, on `bodyLibraryRows` and its count keys |
-| Bo10 | Reads that load whole documents one after another where a wave or a summary would do: `waterBodies.bodiesCoveringBox` hydration (the recompute's neighbor step and the skater map), `listDedupCandidates`, `searchSubAreas`, `bodyConsole.townLines`, `consoleExtras`' touching bodies, the Bays tab's provenance, `adminAreas.findContainingArea` | the named functions | open (B01-3p's sweep, outside that build's files) | performance | M | `ReadBudget.waves` over the ranked ids, keeping the order |
+| Bo10 | Reads that load whole documents one after another where a wave or a summary would do: `waterBodies.bodiesCoveringBox` hydration (the recompute's neighbor step and the skater map), `listDedupCandidates`, `searchSubAreas`, `bodyConsole.townLines`, `consoleExtras`' touching bodies, the Bays tab's provenance, `adminAreas.findContainingArea` | the named functions | open (B01-3p's sweep, outside that build's files) | performance | M | B01-3p's notes: waves over the ranked ids for `bodiesCoveringBox`, admitted in order; `Promise.all` keeps the order for the small ones. Each is its own fix; not designed beyond that |
 | Bo11 | Unbounded per-body hazard reads: `hazards.listForBody` (and, with `includeArchived`, every pin a body ever had), `bodyFeatures.listForBody`, `clusterScopeFor`, auto-merge's siblings, a skater's pins on a body, a body merge's pins | `hazards.ts`, `bodyFeatures.ts`, `lib/hazardMerge.ts`, `waterBodies.ts` (B01-3n's table) | open; each needs a call. A skater list's array can't say "more" without breaking installed phones, and a cap on a consensus or merge path changes a verdict | performance / limit-safety | M–L | A decision per read: a new shape, or a bound with a conservative answer |
 | Bo12 | Every Hazards tab open reads the body's whole archived history | `HazardsTab.tsx` (`includeArchived: true`) | open. #144 held it and sized it at about 450–550 lines (two new queries, convex tests, a paged reader, a count line), left for a call | performance | M | A bounded, paged archive read, asked only when its group opens |
 | Bo13 | `dailyHazards` gave no "still active" fact per hazard, so the strip told archived from active only by the next day | `bodyConsole.ts` `dailyHazards` | done in #141 | correctness-or-safety | S | — |
@@ -5204,13 +5204,13 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Bo21 | Merge into another body from the console | `ShapeTab.tsx:293` (Unavailable) | scheduled for B01, not tonight (founder call 2 below) | missing planned | L | See *Merge into, and lot editing and removal* below |
 | Bo22 | Lot editing and removal from the console; no server write removes a lot | `accessPoints.ts` (only `setOfficialParking`) | scheduled for B01, not tonight (founder call 2) | missing planned | L | The same block, and the board below |
 | Bo23 | Task modes: a body opened from a queue with its tool armed, where *Save* returns to the queue | §5.4; `routes/admin.body.$id.tsx` | the wave after the Inbox (founder call 3) | missing planned | L | The Inbox views first |
-| Bo24 | The map's editing tools. Places: drop, move or remove a landmark, draw one as a bay, place an emailed name or a proposal. Access: place a put-in or a lot, link a lot to a put-in, posted rules. Hazards: mark a hazard, draw or redraw a known feature. Shape: bays by chord, freehand or paste (today these send you to the old editor) | the tabs' "Not available yet" controls | the wave after the Inbox (founder call 3) | missing planned | L | A map edit mode on `BodyMap` (hand geometry in, edit vertices, take it back, undo a vertex move) |
+| Bo24 | The map's editing tools. Places: drop, move or remove a landmark, draw one as a bay, place an emailed name or a proposal. Access: place a put-in or a lot, link a lot to a put-in, posted rules. Hazards: mark a hazard, draw or redraw a known feature. Shape: bays by chord, freehand or paste (today these send you to the old editor) | the tabs' "Not available yet" controls | the wave after the Inbox (founder call 3) | missing planned | L | A map edit mode on `BodyMap`. B01-3e describes it for a feature's shape: hand the geometry to the map, edit its vertices, take the edited geometry back, with an undo of a vertex move. The point tools (drop, place, link) need design |
 | Bo25 | Editing a known feature's shape (`bodyFeatures.updateShape` is built) | Hazards tab, Unavailable | the wave after the Inbox (founder call 3) | missing | M | The map edit mode |
-| Bo26 | A hazard whose footprint can't be drawn shows nowhere on the map while the list counts it | `body/map/` | decided (founder call 4); queued right after #144 merges (its map files) | correctness-or-safety | S–M | A pin at its reported point, labeled "Shape unknown" |
+| Bo26 | A hazard whose footprint can't be drawn shows nowhere on the map while the list counts it | `body/map/` | decided (founder call 4); queued right after #144 merges (its map files) | correctness-or-safety | S–M | A pin at its reported point, labeled "Shape unknown". The point comes from its stored `geometry` (no separate point field); geometry with no usable coordinate needs design |
 | Bo27 | Imagery pass override controls (`imageryOverrides.set` is built) | `ImageryTab.tsx`, Unavailable | blocked on B04: neither app passes `passOverrides` to its timeline | missing | S | B04's PR that honors overrides on web and phone |
 | Bo28 | Filing a bathymetry survey | `WaterView.tsx`, Unavailable | blocked on the founder (call 7) | missing | M | His ruling on what a filing records |
 | Bo29 | Each catalog's own name claims (the Names ladder reads "not recorded") | BS9; `importCanonical` | blocked on the ETL: it must keep the claims, then each body's next campaign | missing (data) | L | ETL work |
-| Bo30 | Staff reference links have no stored id, so another moderator's edit reads as a new link | `schema.ts` `referenceLinks: {label, url}` | open | correctness | M (schema) | An id per link, kept by `setReferenceLinks` and its undo |
+| Bo30 | Staff reference links have no stored id, so another moderator's edit reads as a new link | `schema.ts` `referenceLinks: {label, url}` | open | correctness | M (schema) | An id per link. Every writer of the list must keep it: `setReferenceLinks` and its undo, and a merge's union (`mergedModeratorLists`); needs an inventory |
 | Bo31 | A stored short list of a body's bay and landmark names | `lib/landmarkRows.ts`, `subAreas.ts` | scheduled (founder call 6) | performance/correctness | L | See *The three stored facts* below |
 | Bo32 | The Bodies library queue keeps its own copy of the parking rule rather than `lib/attempts` | `lib/bodyLibrary.ts:523` | open (switching changes behavior: the first `parkedAt` is kept, and there is no daily-retry stamp) | polish (engine) | M | — |
 | Bo33 | Count the dev rows written before the text caps that exceed one | B01-3h | blocked on a dev read (the dev agent's) | ops | S | — |
@@ -5240,8 +5240,8 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe13 | The already-hidden refusal lived in the write, not in the record sheet's shared rule (`lib/recordRules`) | `lib/recordRules.ts` `takedownRefusal` | done in #140 | correctness | S–M | — |
 | Pe14 | The Clerk ban mirror's two rare gaps: a run that dies between an answer and its re-read; a request whose answer is lost but which Clerk applies after the retry that follows | `clerkAdmin.ts` `setBanned` | in progress tonight as B01-4k (a daily reconcile job), not yet open (founder call 5) | correctness / auth | M–L | — |
 | Pe15 | `clerkAdmin.deleteUser` had no tests and no request timeout | `clerkAdmin.ts` | done in #140 (one request path, 20 s) | test gap | S | — |
-| Pe16 | A stored row per withdrawal, so the Deleted count is exact. Erased comment shells stay in the Deleted range, so a person with 30 or more always gets a floor | `contentRecord.ts` `recordCounts`, `personDeleted` | scheduled (founder call 6) | correctness of a figure | L | See *The three stored facts* below |
-| Pe17 | *Kept* is inferred from when a decision came, not a stored fact | `record/recordModel.ts` | scheduled (founder call 6) | correctness of a label | M | The same block |
+| Pe16 | The Deleted count is a floor past a few heavy items. Erased comment shells keep `authorDeletedAt`, so they stay in the ranges the count reads, and a person with 30 or more always gets a floor. A small stored row per withdrawal is the proposed fix | `contentRecord.ts` `recordCounts`, `personDeleted` | scheduled (founder call 6); its design is open (below) | correctness of a figure | L | See *The three stored facts* below |
+| Pe17 | The sheet's *Kept* label is inferred from timing (a decision at or after the author's deletion), so an ordinary hide or removal on content already deleted also reads *Kept*. The server already stores the fact that tells them apart (`keptOnRecord` on the decision's audit row); no read returns it | `record/recordModel.ts` `keptAfter`; `moderation.ts` `recordOnWithdrawn`; `accessAlerts.ts` `recordAlertVerdict` | open; scheduled with the other two (founder call 6). It needs no schema change and no backfill | correctness of a label | S | See *The three stored facts* below |
 | Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page | blocked on the Inbox | polish | S | The Inbox's `can` per row |
 | Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | in PR #145 | polish | S | — |
 | Pe20 | `RestorePost` named people by `@username` (the rule is real names) | `moderation/RestorePost.tsx` | in PR #145. That it is a dialog where the boards draw a sheet stays open | polish | S | A board check |
@@ -5262,7 +5262,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh2 | A writer quoting a person's words in a composed reason had to call `checkedReason` by convention | `packages/guards/src/auditWriters.test.ts` | done in #140. What the guard can't see: a person's words renamed before they are quoted | test gap | S | — |
 | Sh3 | Every refusal said where its place is gone | D268 | done in #138. A Legacy toast names only the server's words, not its subject: owed as each Legacy page is retired | polish | — | — |
 | Sh4 | The recurring-jobs health read doesn't report each job's last run | `recurringJobs.ts` `health` | open: the Machinery pages (§5.5's per-run record for every cron) | missing planned | S–M | Machinery's build |
-| Sh5 | Every loader batch of an ETL import (`importRuns.progress`) re-runs the Overview's counts, its jobs card and the activity feed | `importRuns.ts` (#145's sweep) | open: Overview and Machinery files | performance | S–M | The same fix as Pe1, for the import run row |
+| Sh5 | Every loader batch of an ETL import (`importRuns.progress`) re-runs the Overview's counts, its jobs card and the activity feed | `importRuns.ts` (#145's sweep) | open: Overview and Machinery files | performance | S–M | Needs design. #145's sweep names it; whether it takes Pe1's shape (progress apart from the row the reads watch) is that build's call |
 | Sh6 | Two `InsetCard`s for one idea: the skater one and the kit one | `skater/panels/InsetCard.tsx`, `kit/inset-card.tsx` | open | polish (kit) | M | A kit pass |
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
 
@@ -5323,11 +5323,16 @@ States the board must draw:
 
 Questions the board must answer:
 
-- How is a town found to pin? No read lists candidate towns today: the facts store only towns
-  that made the 25 m rule. The choices are a search over the loaded towns of the body's states, or
-  the towns whose boundary meets the body's box, with the shore length each holds (the rule's own
-  measure). Either is a new read — **server ask**. The pins' keys also aren't returned by `places`
-  (only name and state); the page would read them from the body.
+- How is a town found to pin? No public read lists candidate towns today. `adminAreas.ts`'s only
+  public query is `resolvePlace` (a point's place); the facts store only the towns the region rule
+  placed the body in (D266). The two options are:
+  - a search over the loaded towns of the body's states; or
+  - the towns whose boundary meets the body's box, with the shore length each holds (the rule's
+    own measure).
+
+  Either is a new read — **server ask, needs design**. The pins' keys aren't in `places` (only name
+  and state). The page can read them from `waterBodies.get`, which returns the whole body document,
+  `moderatorTownKeys` included.
 - How does a pinned town look beside a computed one in the Location list and on the Names map's
   town lines? How does a pin that added a state say so?
 - What does the reason dialog say on removal, given it can take a state off the map's filters?
@@ -5339,9 +5344,14 @@ Questions the board must answer:
 
 What the reads can filter by today:
 
-- **Nothing from any page.** `people.history({ userId, limit })` takes no filter.
+- **Nothing from any page.**
+- `people.history({ userId, limit })` takes no filter. It merges several sources, each read to its
+  own horizon: the audit rows on the person, the rows on each decision about their content
+  (standing and ended verdicts), and their flags' decisions. A filter would have to apply to every
+  source (`people.ts` `history`).
 - `bodyConsole.history` takes `action` (one verb) and `bodyOnly`, which only the tabs use
-  internally. Both return the newest N with `capped`, and no cursor.
+  internally (`bodyConsole.ts` `historyPage`).
+- Both return the newest N with `capped`, and no cursor.
 
 What the audit rows could support:
 
@@ -5376,7 +5386,10 @@ What `contentRecord.item` returns today:
 
 - the item's `targetType` and `targetId`;
 - its body (`waterBodyId`, `waterBodyName`);
-- for a comment, whose Report it is on (`reportAuthor`), **not the Report's id**;
+- the content's whole document as published (`published`; `null` once erased). So while the
+  content exists, a comment's `reportId`, a Report's `postId` and an alert's `putInId`,
+  `parkingAreaId` and `reportId` are already in hand. Erased content has none of them;
+- for a comment, whose Report it is on (`reportAuthor`);
 - for a Post, its Reports (the chooser's members);
 - no flag ids. Open flags count only as "holds" on the erasure clock.
 
@@ -5399,8 +5412,10 @@ Questions:
 
 - Does following a link close the sheet, or leave it open behind the console page? On a phone?
 - Is there an Inbox link per open flag, or one per item?
-- **Server asks:** a comment's Report id, a Report's Post id, and the item's open flag ids. Each is
-  one field on the item read.
+- **Server ask:** the item's open flag ids, for an Inbox link per flag. The other ids come from
+  `published` while the content exists. Whether erased content should still link anywhere but its
+  body needs design: its ids are gone with it, except what the decision's audit row kept.
+- There is no skater page for a Post: does a Post link to its first Report, or to none?
 
 **Lot editing and removal** (the Bodies page). Start from **5.4.4 Body | Access** and
 **5.4.4 Access | Link a Lot**. Add **5.4.4 Access | Edit a Lot** and **5.4.4 Access | Remove a
@@ -5415,19 +5430,27 @@ What `accessPoints.ts` can do today:
 - `setPutInAccess` links a put-in to a lot. Above `HIKE_IN_ASSERT_M` it refuses unless `hike_in`
   is asserted (D144).
 - Lots have a `status` of `visible` or `hidden` (moderator-suppressed), but **no write sets
-  `hidden`, and nothing removes a lot.**
+  `hidden`, and nothing removes a lot.** The only writes to `parkingAreas` are the two inserts
+  (`matchAndImportParking`, `setOfficialParking`) and their patches. At least one reader already
+  skips a lot that isn't `visible` (`accessPoints.ts` `loadParkingForBody`, a body's lot markers). Whether every
+  reader does needs checking.
+- The import finds a lot by its OSM id and patches its fields without touching its status
+  (`matchAndImportParking`). For an `official` lot it leaves the fields alone and still refreshes
+  the lot's links to bodies.
 - The audit verb `set_parking_area` has **no undo yet**. The undo policy says "Lot removal and
   edit are new in the Access tab; undo uses them".
 
-What removing a lot must do:
+What removing a lot touches (from the schema; the rules need design):
 
-- Each put-in linked to it loses its `parkingAreaId` and its walk (`approachMeters`,
-  `approachRouted`, `approachPath`), and its access kind is recomputed.
-- Its `parkingAreaBodies` links go.
-- An access alert pinned to the lot needs an answer.
-- Each body it served has its library row refreshed.
-- A re-import of the same OSM lot must not bring it back. The import keeps a row's status but
-  refreshes its links, so removal is likely `hidden` with its links kept out, not a delete.
+- the put-ins linked to it: `putIns.parkingAreaId`, and the walk stored with it (`approachMeters`,
+  `approachRouted`, `approachPath`), from which the access kind is computed;
+- its links to bodies (`parkingAreaBodies`, by `by_parking_area`);
+- access alerts on the lot (`accessAlerts.parkingAreaId`);
+- each body it served, whose library row a lot's audit row refreshes today.
+
+A re-import must not bring a removed OSM lot back. The import keeps a row's status but refreshes
+its links, so removal is probably a `hidden` status whose links the import leaves out, not a delete.
+That is a design proposal, not a fact of the code.
 
 States the board must draw:
 
@@ -5465,10 +5488,13 @@ Questions:
   - the console's merge flow: pick the survivor among the touching bodies or by search; preview
     what moves (counts per kind, the union's caps); a required reason; the receipt naming both
     bodies; History on both;
-  - the redirect from the loser's console to the survivor (the merged page exists);
-  - **undo:** `merge_waterbody`'s undo is "later, §4 Corpus" (unmerge from the change set). An
-    unmerge is its own work: re-point every moved row back, restore the loser, re-cell both, and
-    mark both for the geometry recompute;
+  - after the merge, the loser's console shows the existing merged page (*This body was merged into
+    X*, a link, no redirect); whether it should redirect needs design;
+  - **undo:** `merge_waterbody`'s undo is "later, §4 Corpus" (`lib/undoPolicy.ts`: unmerge from the
+    moved-row change set in `auditSnapshots`). No unmerge exists, and its design is open. At least it
+    must put back every moved row the change set lists and the loser itself, and re-mark both
+    bodies' derived facts (cells, geometry facts, library rows). Which of the merge's union of
+    lists it can take apart is unknown;
   - a merge-flow board starting from **5.4.1 Body | Shape**.
 - **Size:** L. The web flow is M; the unmerge is L on its own.
 
@@ -5478,11 +5504,14 @@ Questions:
   Legacy editor (`admin.water.$id.tsx`). There is no remove.
 - **What the console shows:** *Unavailable* on placing a lot, linking a lot, and posted rules.
 - **What must be built:**
-  - a remove write (`body.access`), a hide with a required reason, per the board above;
-  - its readers skipping hidden lots;
-  - the import not re-linking a hidden lot;
-  - the undo of `set_parking_area` (edit and remove), with the put-ins' walks restored from a
-    snapshot;
+  - a remove write (`body.access`), with a required reason (a takeaway, D226). Hide or delete, and
+    from one body or everywhere, need design (the board's questions);
+  - every lot reader skipping a removed lot (one already skips a lot that isn't `visible`; the rest
+    need checking);
+  - the import leaving a removed lot removed;
+  - the undo of `set_parking_area`, which has none for an edit today, and of the remove. Restoring
+    each put-in's walk exactly needs the replaced values kept (a snapshot, as a merge's change set
+    is); needs design;
   - a compare-and-set on the lot's body list (BS17's owed row);
   - the Access tab's edit card and remove dialog;
   - the boards above.
@@ -5509,12 +5538,24 @@ Questions:
 
 **Decided:** a pin at the hazard's reported point, labeled "Shape unknown".
 
+**What the code gives that pin:**
+
+- A hazard has no separate point field. `hazards.geometry` is what was drawn: a Point, a
+  LineString or a Polygon, with `radiusMeters` or `bufferMeters`.
+- The map draws nothing when `hazardFootprint` throws growing it (`tabs/hazards/hazardsMap.ts`).
+- So the pin's point comes from that stored geometry. Its own point, or a point of its coordinates,
+  as the crossing mark already takes "its point, or the middle of its footprint's outer ring"
+  (`crossingAt`).
+- Where the stored geometry has no usable coordinate at all, what to draw needs design. The list
+  still counts the hazard.
+
 **Queued right after #144 merges** (the fix is in the Body console's map files, which #144 is
 changing).
 
-**Safety note (D3):** the pin must never read as a lesser hazard. It is drawn as a hazard, not
-dimmer and not smaller in meaning than one with a footprint, and its words say the shape is
-unknown, never that the hazard is.
+**Safety note (D3):** the pin must never read as a lesser hazard. It takes the same freshness fade
+as any hazard (decay is confidence, never safety). Nothing about the missing shape makes it
+lighter, smaller in emphasis or lower in the map key. Its words say the shape is unknown, never
+the hazard. How it is drawn on the map needs design in the build.
 
 #### The Clerk ban mirror's two rare gaps (founder call 5)
 
@@ -5528,62 +5569,117 @@ applied until the next status write:
 2. a request whose answer is lost (a timeout included) but which Clerk applies after the retry
    that follows it.
 
-The Convex status gate is the boundary in both cases: a banned person is refused by every function.
-So the exposure is a banned person who can still sign in and is refused everywhere, or a lifted
-person kept out of sign-in.
+B01-4g states that the Convex status gate is the boundary in both cases: every Convex function
+refuses a banned person. So the exposure is a banned person who can still sign in and is refused
+everywhere, or a lifted person kept out of sign-in. The retries and the operator's page are
+`clerkAdmin.ts` `setBanned` (`retryOrPage` since #140).
 
-**In progress tonight as B01-4k:** a daily reconcile job over the accounts whose lock should be set
-or was recently changed (Pe14).
+**In progress tonight as B01-4k** (a daily reconcile job, Pe14). Which accounts it reads, and how
+it tracks the mirror's state, are that PR's to state; not yet open.
 
 #### The three stored facts (founder call 6)
 
 > "Schedule them. Let's record what's needed so we don't lose track, and we should get around to
 > them sooner than later."
 
-**Scheduled next after tonight's People PR (#145, which holds `schema.ts`).** Each one rolls out as
-widen → deploy → backfill → narrow.
+**Scheduled next after tonight's People PR (#145, which holds `schema.ts`).**
 
-**Exact Deleted counts (Pe16).**
+- Two of the three are schema changes, rolled out as widen → deploy → backfill → narrow: the exact
+  Deleted count and the names list.
+- Reading the code for the third showed it needs no schema: *Kept* is a read-and-web fix.
 
-- **Schema:** a small row per withdrawal: the subject, the kind, the item id, when withdrawn, and
-  its erasure clock. Indexed by subject and kind and by subject and time.
-- **Writers that must keep it:**
-  - the author-deletion stamp (`authorDeletions.ts`, `lib/authorDeletion.ts`);
-  - a comment's delete (`comments.ts`);
-  - a hazard's withdrawal (`hazardWithdrawal.ts`);
-  - an alert's retraction by its author (`accessAlerts.ts`);
-  - the clock's one writer (`lib/eraseClock.ts`);
-  - removed by the eraser (`erasure.ts`).
-- **A guard** like `verdictWriters` holds them.
+**Exact Deleted counts (Pe16).** *The design is open; this is what the code says it must cover.*
+
+- **Why the count is a floor today:**
+  - Convex counts nothing without reading it. `recordCounts` reads each kind's withdrawn rows by
+    `by_author_deleted` (and alerts by `by_author_retracted`), then checks each row for a standing
+    decision. A held item is Standing's, not Deleted's.
+  - An erased comment that had replies stays a shell. It keeps `authorDeletedAt`, so it stays in
+    that range and is passed over row by row (`contentRecord.ts`, *Known and left* in B01-4d).
+- **The proposal (B01-4d's):** a small row per withdrawal (ids and times), written by the
+  withdrawal's writers and removed by the eraser.
+- **What that alone does not settle:** the count must still leave out what a decision holds. Either
+  a row keeps the per-row check (exact as far as the budget reaches, in waves as today), or it
+  carries a `held` fact kept by the verdict writer (`lib/contentVerdicts`, already the one writer
+  and held by `verdictWriters`). Which one is a design call.
+- **Every withdrawal writer in the code today**, each of which would write the row:
+  - `moderation.ts`: a Report's author delete, and a Post's (which stamps the Post and its
+    Reports);
+  - `comments.ts` (a comment's delete);
+  - `hazardWithdrawal.ts`;
+  - `accessAlerts.ts` (an author's retraction, `retractedByUserId`);
+  - `authorDeletions.ts` (the D248 backfills that stamp `authorDeletedAt`).
+
+  A Post every Report of which was erased reads as withdrawn without a stamp
+  (`lib/eraseClock.withdrawnAtOf`), so its row would come from the eraser. The eraser
+  (`erasure.ts`) removes rows, both on a delete and where it leaves a comment's shell (`erasedAt`).
+  A guard in `packages/guards` would hold the list, as `verdictWriters` holds the verdict writers.
 - **Backfill:** from the four `by_author_deleted` ranges and `accessAlerts.by_author_retracted`,
-  as a fifth People backfill (`PEOPLE_BACKFILLS`), so reads say `pending` until it concludes.
-- **Unlocks:** `recordCounts`' Deleted is exact to 500, and `personDeleted` is one range. Erased
-  comment shells stop counting, which retires the "always a floor past 30 shells" case.
+  skipping erased shells. Probably as one more People backfill (`PEOPLE_BACKFILLS`), so reads say
+  `pending` until it concludes — needs design.
+- **Unlocks:** `personDeleted` reads one range of small rows, and shells stop counting. The count
+  is exact only with the hold question settled.
 - **Size:** L.
 
-**A stored "kept" fact (Pe17).**
+***Kept* read from the record (Pe17).** *Corrected 2026-11-17 against the code; Greptile on #146.*
 
-- **Schema:** `kept` on `contentVerdicts`, true when the decision came on or after the author's
-  deletion (the write already knows: `onAuthorDeleted` in its audit metadata).
-- **Writers:** the verdict writer (`lib/contentVerdicts`) and the replay
-  (`contentRecord.replayVerdictHistory`), held by `verdictWriters`.
-- **Backfill:** re-run the content-record replay (`peopleJobs:backfillVerdicts '{"alone":true}'`),
-  then narrow.
-- **Unlocks:** the sheet's *Kept* from the record, not from timing; a hide on content already
-  deleted stops reading *Kept* where History says hidden.
-- **Size:** M.
+- **Every write that records a decision on content its author withdrew:**
+  - `moderation.ts` `recordOnWithdrawn` is the one writer for content. It is reached two ways:
+    - an ordinary hide or removal (`setContentStatus`), which writes `onAuthorDeleted: true`;
+    - Keep on the record (`keepOnRecord`, since #134), which writes `onAuthorDeleted: true` and
+      also `keptOnRecord: true`.
+  - `accessAlerts.ts` `recordAlertVerdict` is the one writer for alerts. A moderator's retraction
+    of an alert its author already retracted writes `onAuthorWithdrawn: true`; Keep on the record
+    adds `keptOnRecord: true`.
+- **The writes that never record such a decision:**
+  - a restore is refused on author-deleted content;
+  - the undo of a content decision on deleted content is refused, because the overturn reverses it
+    (`lib/undoHandlers.ts`, from `onAuthorDeleted`). An alert retraction has no undo at all yet
+    (`lib/undoPolicy.ts`: later, §2 Inbox);
+  - #140's record-only undo and its `backToCascade` act on content still up or down, not withdrawn;
+  - an overturn only ends a decision;
+  - an alert's pin and release record no verdict.
+- **So the fact already exists.** `onAuthorDeleted` is true for both an ordinary hide and a keep,
+  so it can't tell them apart. **`keptOnRecord` can, and only an explicit keep sets it.**
+- **How the web decides today:** `record/recordModel.ts` `keptAfter` labels a Standing row *Kept*
+  whenever the decision came at or after the author's deletion. That is wrong for an ordinary hide
+  or removal on deleted content.
+- **What *Kept* means:** an explicit *Keep on the record* — a decision made because the author
+  deleted it. Never an ordinary hide, removal or moderator retraction that happens to land on
+  deleted content.
+- **The rule for new writes:** unchanged. `keptOnRecord` is already written by the keep and by
+  nothing else.
+- **Rows from before:** no row before #134 can be a keep, since the lever didn't exist. So no row
+  is ambiguous: no `keptOnRecord` means not a keep. No backfill.
+- **What the fix is:**
+  - **server:** each Standing row, each Reversed row and each pane decision returns `kept` from the
+    decision's own audit row (`metadata.keptOnRecord === true`). The read already has that row in
+    hand for `decidedBy`. A decision whose audit row can't be read returns `null` (not recorded).
+  - **web:** the label reads `kept` instead of the timing:
+    - `true` reads *Kept* (with the *Deleted* or *Retracted* chip);
+    - `false` reads the decision's own kind (*Hidden*, *Removed*, *Retracted*) beside the
+      *Deleted* or *Retracted* chip;
+    - `null` reads the decision's kind with no *Kept* claim.
+- **No schema change, no backfill.** Size S (about 100–150 lines with tests). It stays in the
+  founder's schedule beside the other two.
 
-**A stored short list of a body's bay and landmark names (Bo31).**
+**A stored short list of a body's bay and landmark names (Bo31).** *The writer list must be
+inventoried, not assumed.*
 
 - **Schema:** one row per body with each bay's and landmark's name and spellings, bounded.
-- **Writers:**
-  - landmarks: create, update, remove, restore, `importBatch`, `acceptCompleteLoad`, and a
-    merge's fold (`lib/landmarkRows.ts`);
-  - bays: create, rename, delist, restore, the seed and the campaign (`subAreas.ts`);
-  - a body merge.
+- **Writers:** every insert is in `landmarks.ts` (two) and `subAreas.ts` (one). Names and spellings
+  are also changed in place by:
+  - landmark edit, remove and restore, and the catalog loads (`importBatch`, `acceptCompleteLoad`);
+  - a merge's landmark fold (`lib/landmarkRows.ts`) and a body merge (`waterBodies.ts`);
+  - `corpusPlaceNames.fileAsSpelling` (adds a spelling);
+  - bay rename, delist and restore, the seed and the campaign (`subAreas.ts`);
+  - the undo handlers (`lib/undoHandlersBody.ts`).
+
+  That list is from reading, not proven complete. The build inventories it with a guard, as
+  `searchTextWriters.test.ts` does for a body's search text.
 - **Backfill:** one row per body from its landmarks and bays, paged.
-- **Unlocks:** a list page of History, and the toast, can check the landmark undo's full rule
-  (duplicate names, bay names) instead of spellings only. Today that rule runs only where one
+- **Unlocks:** a list page of History could check the landmark undo's full rule (duplicate names,
+  bay names) instead of spellings only. Today that rule runs only where one
   landmark is in view, because it reads up to 1,500 landmark rows and the bays' outlines.
 - **Size:** L.
 
