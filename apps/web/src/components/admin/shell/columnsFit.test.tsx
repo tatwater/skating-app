@@ -1,8 +1,8 @@
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { useRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { useColumnsFit } from './columnsFit';
+import { useColumnsFit, usePaneFocus } from './columnsFit';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -95,5 +95,60 @@ describe('useColumnsFit', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * Three panes, one at a time (the Body console's narrow rule): the list is `body`, and either of two
+ * panes may be the detail. Focus in a pane the rule just hid moves to the one now shown — from the
+ * list to a detail, from one detail to the other, and back to the list.
+ */
+function ThreePanes({ at }: { at: 'body' | 'map' | 'tab' }) {
+  const page = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLElement>(null);
+  const panes = usePaneFocus({
+    page,
+    shown: at === 'body' ? 'list' : 'detail',
+    open: true,
+    focusList: () => body.current?.focus(),
+    detailPane: at === 'map' ? 'map' : 'inspector',
+    listPanes: ['body'],
+  });
+  return (
+    <div ref={page} {...panes.pageProps}>
+      <section ref={body} data-pane="body" tabIndex={-1} hidden={at !== 'body'}>
+        <button type="button">In the body</button>
+      </section>
+      <div data-pane="map" tabIndex={-1} hidden={at !== 'map'}>
+        <button type="button">In the map</button>
+      </div>
+      <div data-pane="inspector" tabIndex={-1} hidden={at !== 'tab'}>
+        <button type="button">In the tab</button>
+      </div>
+    </div>
+  );
+}
+
+describe('usePaneFocus over three panes', () => {
+  const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
+
+  it('moves focus from a hidden pane to the one shown, detail to detail included', () => {
+    const { rerender } = render(<ThreePanes at="body" />);
+    act(() => screen.getByRole('button', { name: 'In the body' }).focus());
+    rerender(<ThreePanes at="map" />);
+    expect(pane('map')).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'In the map' }).focus());
+    rerender(<ThreePanes at="tab" />);
+    expect(pane('inspector')).toHaveFocus();
+    rerender(<ThreePanes at="body" />);
+    expect(pane('body')).toHaveFocus();
+  });
+
+  it('leaves focus that is in the pane still shown where it is', () => {
+    const { rerender } = render(<ThreePanes at="tab" />);
+    const inTab = screen.getByRole('button', { name: 'In the tab' });
+    act(() => inTab.focus());
+    rerender(<ThreePanes at="tab" />);
+    expect(inTab).toHaveFocus();
   });
 });

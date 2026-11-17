@@ -37,6 +37,7 @@ import {
   BACKFILL_ARGS,
   endRun,
   foundGap,
+  LEASE_READS,
   type Lease,
   PASS_SIZE,
   readPreparation,
@@ -711,7 +712,7 @@ export const backfillRows = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillRows', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'rows', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;
@@ -846,7 +847,7 @@ export const backfillFlagSubjects = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillFlagSubjects', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'flagSubjects', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;
@@ -900,7 +901,7 @@ export const backfillUndoChains = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillUndoChains', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'undoChains', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;
@@ -1039,8 +1040,10 @@ export const backfillVerdicts = internalMutation({
 /**
  * **The operator's check** (step 3 of `AFTER_MERGE_PROCEDURE`): every People backfill's state — ready,
  * running, stalled, its last recorded position and failures — the jobs to run again, and `ready` when
- * all of them are, each as its current run has it. It is `lib/peopleRuns.readPreparation`, the same reading every People read's
- * `pending` comes from, so the check and the pages can't disagree about what is finished. Internal:
+ * all of them are, each as its current run has it. It is `lib/peopleRuns.readPreparation`, whose
+ * `ready` and `pending` are the run rows' alone by the same rule as every People read's
+ * (`readPending`), so the check and the pages can't disagree about what is finished; only the check
+ * reads a running run's progress too. Internal:
  * callable only with the deployment's key (`convex run`).
  */
 export const preparation = internalQuery({

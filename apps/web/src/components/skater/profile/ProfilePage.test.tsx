@@ -1,10 +1,16 @@
 import type { PostCardData } from '@skating/core';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { convexReact, fakes, resetFakes } from '../testMocks';
 
 vi.mock('convex/react', () => convexReact);
+const toasts = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: toasts.toast,
+}));
 
 import { BOARD_NOON } from '@/test/boardNow';
 import { pinBoardClock } from '@/test/pinBoardClock';
@@ -425,11 +431,13 @@ describe('a moderator’s view', () => {
     });
   });
 
-  it('a refusal stays in the dialog with the reason kept', async () => {
-    mutation('moderation:unbanUser').mockRejectedValueOnce(new Error('Not allowed.'));
+  it('a refusal is one toast naming the person; the dialog stays open over its reason, printing nothing', async () => {
+    toasts.toast.mockClear();
+    mutation('moderation:unbanUser').mockRejectedValueOnce(new ConvexError('Not allowed.'));
     fakes.queries.set('profiles:getAdmin', {
       userId: 'p2',
       username: 'placasse',
+      displayName: 'Paul Lacasse',
       status: 'suspended',
       suspendedUntil: new Date(2027, 0, 19).getTime(),
       canPostReports: true,
@@ -447,9 +455,49 @@ describe('a moderator’s view', () => {
     await act(async () =>
       fireEvent.click(within(dialog).getByRole('button', { name: /^Reinstate/ })),
     );
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Not allowed.');
+    expect(toasts.toast).toHaveBeenCalledTimes(1);
+    expect(toasts.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Not changed · Paul Lacasse',
+        description: 'Not allowed.',
+        tone: 'bad',
+      }),
+    );
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(dialog).not.toHaveTextContent('Not allowed.');
     expect(within(dialog).getByRole('textbox')).toHaveValue('Appeal');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('a write that changed nothing says so as the person page does — a receipt, and the dialog closes', async () => {
+    toasts.toast.mockClear();
+    mutation('moderation:unbanUser').mockResolvedValueOnce({
+      userId: 'p2',
+      changed: false,
+      undoable: false,
+    });
+    fakes.queries.set('profiles:getAdmin', {
+      userId: 'p2',
+      username: 'placasse',
+      displayName: 'Paul Lacasse',
+      status: 'banned',
+      canPostReports: true,
+      canPostHazards: true,
+      canPostComments: true,
+    });
+    page();
+    const tools = screen.getByRole('region', { name: 'Moderator tools' });
+    fireEvent.click(within(tools).getByRole('button', { name: 'Reinstate' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Appeal' } });
+    await act(async () =>
+      fireEvent.click(within(dialog).getByRole('button', { name: /^Reinstate/ })),
+    );
+    expect(toasts.toast).toHaveBeenCalledTimes(1);
+    const receipt = toasts.toast.mock.lastCall?.[0] as { title: string; tone?: string };
+    expect(receipt.title).toBe('Nothing changed — Paul Lacasse was already set that way');
+    expect(receipt.tone).not.toBe('bad');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('sets a bounty limit, suspends and bans through the same dialog', async () => {

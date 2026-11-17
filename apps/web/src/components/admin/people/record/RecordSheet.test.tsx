@@ -52,12 +52,14 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { RecordSheet } from './RecordSheet';
 import {
+  CHOICES,
   COUNTS,
   DANA,
   DELETED,
   HIDDEN,
   ITEM_DELETED,
   ITEM_HIDDEN,
+  ITEM_POST,
   ITEM_RESTORED,
   ITEM_UNDO_GONE,
   ITEM_WITHDRAWN,
@@ -140,6 +142,7 @@ function draw(open = true) {
 }
 
 const sheet = () => screen.getByRole('dialog');
+const W_TABS = { deleted: 'Deleted', reversed: 'Reversed' } as const;
 const rowButton = (text: string) =>
   within(sheet())
     .getAllByRole('button')
@@ -147,6 +150,10 @@ const rowButton = (text: string) =>
       (b) => b.getAttribute('data-slot') === 'record-row-button' && b.textContent?.includes(text),
     ) as HTMLElement;
 const lever = () => sheet().querySelector<HTMLElement>('[data-slot="record-lever"]');
+const rowCount = () =>
+  within(sheet())
+    .getAllByRole('button')
+    .filter((b) => b.getAttribute('data-slot') === 'record-row-button').length;
 const mutation = (name: string) => mocks.mutations.get(name) as ReturnType<typeof vi.fn>;
 
 describe('the reads', () => {
@@ -203,6 +210,100 @@ describe('the reads', () => {
       }),
     );
   });
+
+  it('a page read past is pinned to where it ended, and its rows stand while the pinned read comes', async () => {
+    mocks.results.set(
+      'contentRecord:personVerdicts',
+      (a: { cursor: string | null; endCursor?: string }) =>
+        a.cursor === null
+          ? a.endCursor === undefined
+            ? page(STANDING.slice(0, 3), { isDone: false, cursor: 'p2' })
+            : undefined
+          : page(STANDING.slice(3)),
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    draw();
+    await waitFor(() =>
+      expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+        userId: SUBJECT.userId,
+        cursor: null,
+        endCursor: 'p2',
+      }),
+    );
+    // The pinned read is on its way: the first page's rows still stand, and the next page's after.
+    expect(rowCount()).toBe(STANDING.length);
+  });
+
+  // Every list the sheet can show — each tab, on its default (every kind merged) and narrowed to one
+  // kind — pins the page it read past with that list's own arguments.
+  it.each([
+    ...(['standing', 'deleted', 'reversed'] as const).flatMap((tab) =>
+      [null, 'comment' as const].map((kind) => ({ tab, kind })),
+    ),
+  ])(
+    '$tab, kind $kind: a page read past is pinned with the list’s own arguments',
+    async ({ tab, kind }) => {
+      const name = {
+        standing: 'contentRecord:personVerdicts',
+        deleted: 'contentRecord:personDeleted',
+        reversed: 'contentRecord:personReversed',
+      }[tab];
+      const rows = { standing: STANDING, deleted: DELETED, reversed: REVERSED }[tab] as unknown[];
+      mocks.results.set(name, (a: { cursor: string | null }) =>
+        a.cursor === null
+          ? page(rows.slice(0, 1), { isDone: false, cursor: 'p2' })
+          : page(rows.slice(1)),
+      );
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+      draw();
+      if (tab !== 'standing')
+        await userEvent.click(within(sheet()).getByRole('button', { name: W_TABS[tab] }));
+      if (kind !== null) {
+        await userEvent.click(within(sheet()).getByRole('button', { name: /Filter/ }));
+        await userEvent.click(await screen.findByRole('button', { name: /Comments/ }));
+      }
+      const own = { userId: SUBJECT.userId, ...(kind !== null && { targetType: kind }) };
+      await waitFor(() =>
+        expect(mocks.calls.get(name)).toContainEqual({ ...own, cursor: null, endCursor: 'p2' }),
+      );
+      expect(mocks.calls.get(name)).toContainEqual({ ...own, cursor: 'p2' });
+    },
+  );
+
+  it('a pinned page that outgrew a page is read as its two halves', async () => {
+    mocks.results.set(
+      'contentRecord:personVerdicts',
+      (a: { cursor: string | null; endCursor?: string }) => {
+        if (a.cursor === null && a.endCursor === undefined)
+          return page(STANDING.slice(0, 3), { isDone: false, cursor: 'p2' });
+        if (a.cursor === null && a.endCursor === 'p2')
+          return {
+            ...page(STANDING.slice(0, 2), { isDone: false, cursor: 'p2' }),
+            pageStatus: 'SplitRequired',
+            splitCursor: 's1',
+          };
+        if (a.cursor === null && a.endCursor === 's1')
+          return page(STANDING.slice(0, 2), { isDone: false, cursor: 's1' });
+        if (a.cursor === 's1') return page(STANDING.slice(2, 3), { isDone: false, cursor: 'p2' });
+        return page(STANDING.slice(3));
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    draw();
+    await waitFor(() =>
+      expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+        userId: SUBJECT.userId,
+        cursor: 's1',
+        endCursor: 'p2',
+      }),
+    );
+    expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+      userId: SUBJECT.userId,
+      cursor: null,
+      endCursor: 's1',
+    });
+    await waitFor(() => expect(rowCount()).toBe(STANDING.length));
+  });
 });
 
 describe('the writes', () => {
@@ -249,6 +350,74 @@ describe('the writes', () => {
       needsReason: true,
       what: 'The report is back on Mascoma Lake',
     });
+  });
+
+  it('a Post restored with chosen Reports keeps their rows beside its own, on the Post’s write', async () => {
+    const post = STANDING.find((r) => r.targetType === 'post') as (typeof STANDING)[number];
+    const member = {
+      ...(STANDING[0] as (typeof STANDING)[number]),
+      targetId: 'm1',
+      at: post.at - 1,
+      can: { restore: { ok: false, why: 'Open it' } },
+    } as unknown as (typeof STANDING)[number];
+    const listed = [...STANDING, member];
+    mocks.results.set('contentRecord:personVerdicts', page(listed));
+    mocks.results.set('moderation:postRestoreChoices', CHOICES);
+    ITEMS['post:post'] = ITEM_POST;
+    const view = draw();
+    await waitFor(() => expect(rowCount()).toBe(listed.length));
+    mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(async () => {
+      // The server lists neither the Post nor the Report that came back with it.
+      mocks.results.set(
+        'contentRecord:personVerdicts',
+        page(listed.filter((r) => r !== post && r !== member)),
+      );
+      return { targetId: 'post', actionId: 'p1', undoable: true, undoNeedsReason: true };
+    });
+
+    await userEvent.click(rowButton('Opening weekend on Mascoma'));
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    await userEvent.click(lever() as HTMLElement);
+    const chooser = await waitFor(() => {
+      const c = document.querySelector<HTMLElement>('[data-slot="post-chooser"]');
+      if (c === null) throw new Error('no chooser yet');
+      return c;
+    });
+    await userEvent.click(within(chooser).getAllByRole('checkbox')[0] as HTMLElement);
+    await userEvent.click(within(chooser).getByRole('button', { name: /Restore with 1 report/ }));
+    expect(mutation('moderation:setModerationStatus')).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'post', withReportIds: ['m1'] }),
+    );
+    // Both rows stay for the sitting, lit, though the server lists neither.
+    await waitFor(() =>
+      expect(sheet().querySelectorAll('[data-slot="record-row"][data-back]')).toHaveLength(2),
+    );
+    expect(rowCount()).toBe(listed.length);
+    // The Report's Undo is the Post's restore, and the dialog names the Post.
+    const kept = [...sheet().querySelectorAll<HTMLElement>('[data-slot="record-row"][data-back]')];
+    const reportRow = kept.find((r) => !r.textContent?.includes('Opening weekend')) as HTMLElement;
+    await userEvent.click(within(reportRow).getByRole('button', { name: 'Undo' }));
+    expect(mocks.undo).toHaveBeenLastCalledWith({
+      actionId: 'p1',
+      needsReason: true,
+      what: 'The post is back on Mascoma Lake',
+    });
+    // Hidden again — the server lists the Post again, its Report down under it with no decision of
+    // its own: the Report's kept row goes with the Post's.
+    mocks.results.set('contentRecord:personVerdicts', page(listed.filter((r) => r !== member)));
+    view.rerender(
+      <RecordSheet
+        open
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(sheet().querySelectorAll('[data-slot="record-row"][data-back]')).toHaveLength(0),
+    );
+    expect(rowCount()).toBe(listed.length - 1);
   });
 
   it('a kept row goes for good once the server lists the item again — never back for another hand', async () => {
@@ -500,13 +669,16 @@ describe('the writes', () => {
   });
 });
 
-describe('a reversal’s undo', () => {
-  it('runs the shell’s undo on the row that ended the decision', async () => {
-    mocks.results.set(
-      'contentRecord:personReversed',
-      page([{ ...REVERSED[0], undo: { state: 'available', needsReason: true } }]),
-    );
-    ITEMS['comment:xguess'] = ITEM_UNDO_GONE;
+describe('the undo of the write that ended the newest decision', () => {
+  it('runs the shell’s undo on the write the item’s own read names', async () => {
+    mocks.results.set('contentRecord:personReversed', page([REVERSED[0]]));
+    ITEMS['comment:xguess'] = {
+      ...ITEM_UNDO_GONE,
+      decisions: ITEM_UNDO_GONE.decisions.map((d) => ({
+        ...d,
+        undo: { state: 'available' as const, needsReason: true },
+      })),
+    };
     draw();
     await userEvent.click(within(sheet()).getByRole('button', { name: 'Reversed' }));
     await userEvent.click(await within(sheet()).findByRole('button', { name: 'Undo the restore' }));

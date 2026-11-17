@@ -158,8 +158,13 @@ function StandingReads({ bodyId: id }: BodyTabProps) {
           'Back on the active map',
         )
       }
-      onRemove={(reason: RemovalReason) =>
-        write(() => remove({ waterBodyId: bodyId, reason }), 'Removed from the map')
+      onRemove={(reason: RemovalReason, note: string) =>
+        write(
+          // The operator's note goes with the reason: the server checks it against the audit cap
+          // and writes it beside the reason in History and the removed lane.
+          () => remove({ waterBodyId: bodyId, reason, ...(note !== '' ? { note } : {}) }),
+          'Removed from the map',
+        )
       }
       onRestore={() => write(() => restore({ waterBodyId: bodyId }), 'Restored to the map')}
     />

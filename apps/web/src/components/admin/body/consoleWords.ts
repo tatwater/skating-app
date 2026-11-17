@@ -95,3 +95,25 @@ export function townLinesShortWords(
 
 /** A removed body whose record names no row for its leaving. */
 export const LEFT_NOT_SAID = 'The record doesn’t say when it left';
+
+/**
+ * Standing's removal form: the operator's own words beside the fixed reason. The server writes them
+ * into History and the removed lane; skaters read only the reason.
+ */
+export const REMOVAL_NOTE_WORDS = {
+  label: 'Note · optional',
+  placeholder: 'Why, in your own words',
+  assist: 'Kept in History beside the reason',
+} as const;
+
+/**
+ * The Body console on a narrow screen, one pane at a time: each pane's way to the other two. The
+ * body is the page's front; the map and the tab are reached from it and come back to it.
+ */
+export const PANE_WORDS = {
+  toBody: 'Back to the body',
+  toMap: 'Show the map',
+  toTab: 'Show the tabs',
+  /** The map pane's name for a reader (the body's is *The body*, the tab's *Inspector*). */
+  map: 'Map',
+} as const;

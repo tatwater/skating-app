@@ -81,6 +81,13 @@ export type BodyBoardProps = Partial<
   hoverId?: string | null;
   /** A tab's scene over the frame's. */
   tabScene?: BodyMapScene | null;
+  /**
+   * Drawn without the console's frame: the page alone at the given size (a phone's width, where
+   * the frame's own narrow layout is not this page's to test).
+   */
+  bare?: boolean;
+  /** The map pane's content in place of the still (a story's probe of the pane's box). */
+  map?: ReactNode;
   className?: string;
 };
 
@@ -137,6 +144,8 @@ export function BodyBoard({
   lit: initialLit = null,
   hoverId = null,
   tabScene = null,
+  bare = false,
+  map: mapOverride,
   className = 'h-[56.25rem] w-[90rem]',
 }: BodyBoardProps) {
   const identity = loading ? undefined : givenIdentity;
@@ -150,8 +159,9 @@ export function BodyBoard({
     { ...MASCOMA_SCENE, lit },
     tabScene ?? (tab === 'shape' ? shapeMapScene(null, lit) : null),
   );
+  const Frame = bare ? BareFrame : BoardShell;
   return (
-    <BoardShell className={className}>
+    <Frame className={className}>
       <BodyConsoleView
         identity={identity}
         completeness={completeness}
@@ -176,19 +186,21 @@ export function BodyBoard({
         onReturn={() => {}}
         status="Last campaign 12 Oct"
         map={
-          <Measured>
-            {(w, h) => (
-              <BodyMapStillView
-                bbox={MASCOMA_BOUNDS}
-                scene={scene}
-                resetKey={tab}
-                width={w}
-                height={h}
-                hoverId={hoverId}
-                foot={foot}
-              />
-            )}
-          </Measured>
+          mapOverride ?? (
+            <Measured>
+              {(w, h) => (
+                <BodyMapStillView
+                  bbox={MASCOMA_BOUNDS}
+                  scene={scene}
+                  resetKey={tab}
+                  width={w}
+                  height={h}
+                  hoverId={hoverId}
+                  foot={foot}
+                />
+              )}
+            </Measured>
+          )
         }
         tabPanel={
           tab === 'shape' ? (
@@ -210,6 +222,15 @@ export function BodyBoard({
           )
         }
       />
-    </BoardShell>
+    </Frame>
+  );
+}
+
+/** The page alone, at its size, on the surface's ground. */
+function BareFrame({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <div data-slot="bare-frame" className={`${className} bg-bg`}>
+      {children}
+    </div>
   );
 }

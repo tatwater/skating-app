@@ -34,6 +34,11 @@ export type ReasonAskProps = {
   placeholder?: string;
   /** Fields above the reason (a choice of why). */
   extra?: ReactNode;
+  /**
+   * The most the reason may hold: the cap its write's server field refuses past, from core's
+   * `textCaps` (or the audit log's, `AUDIT_REASON_MAX`) — never a copied number.
+   */
+  maxLength: number;
   /** Sends it. Resolves whether it landed: the dialog closes, or stays open over the reason. */
   onConfirm: (reason: string) => Promise<boolean>;
 };
@@ -47,6 +52,7 @@ export function ReasonAsk({
   optional = false,
   placeholder,
   extra,
+  maxLength,
   onConfirm,
 }: ReasonAskProps) {
   const [open, setOpen] = useState(false);
@@ -88,6 +94,7 @@ export function ReasonAsk({
           <AlertDialogReason
             label={label}
             placeholder={placeholder}
+            maxLength={maxLength}
             value={reason}
             readOnly={busy}
             onChange={(e) => setReason(e.target.value)}

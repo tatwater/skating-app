@@ -9,8 +9,8 @@ import { type FocusEvent, type RefObject, useLayoutEffect, useRef, useState } fr
  * from the element, so a surface's density moves it), never a breakpoint of its own. Until it is
  * measured, and on the server, the columns are assumed to fit — the board's layout renders first.
  *
- * Read by People and the Bodies library. The Body console lays out its own columns and adopts this
- * in its own pass (the phase doc's *Owed*).
+ * Read by People, the Bodies library and the Body console (whose narrow page shows one of three
+ * panes: the body, the map or the tab).
  */
 export function useColumnsFit(
   ref: RefObject<HTMLElement | null>,
@@ -41,6 +41,9 @@ export function useColumnsFit(
   return fits;
 }
 
+/** A master–detail page's list: the lanes and the list beside them. */
+const LIST_PANES = ['lanes', 'middle'] as const;
+
 /** Which panes a master–detail page has on screen: all, or — narrow — the list or the open record. */
 export type PanesShown = 'all' | 'list' | 'detail';
 
@@ -54,7 +57,9 @@ export type PanesShown = 'all' | 'list' | 'detail';
  *
  * Spread `pageProps` on the page; call `askBack()` before closing the record from its way back, so
  * focus lands on the list once it is drawn. The record's pane is `[data-pane="<detailPane>"]`, a
- * direct child of the page; the list's panes are `lanes` and `middle`.
+ * direct child of the page; the list's panes are `listPanes` (`lanes` and `middle` unless said). A
+ * page with more than one detail pane (the Body console's map and tab) names the one on screen, and
+ * focus moving from one to the other is the same move as from the list.
  */
 export function usePaneFocus({
   page,
@@ -62,13 +67,17 @@ export function usePaneFocus({
   open,
   focusList,
   detailPane,
+  listPanes = LIST_PANES,
 }: {
   page: RefObject<HTMLElement | null>;
   shown: PanesShown;
   /** A record is open. */
   open: boolean;
   focusList: () => void;
+  /** The detail pane on screen (or, with the list shown, the one that would be). */
   detailPane: string;
+  /** The panes that make up the list. */
+  listPanes?: readonly string[];
 }): {
   pageProps: {
     onFocus: (event: FocusEvent<HTMLElement>) => void;
@@ -92,9 +101,11 @@ export function usePaneFocus({
       if (!open && nowhere && from !== null && !from.isConnected) toList.current();
       return;
     }
+    // A pane is hidden when it isn't the one (or ones) on screen; what sits in no pane never is.
     const hidden = (el: Element | null) => {
       const pane = el?.closest<HTMLElement>('[data-pane]')?.dataset.pane;
-      return shown === 'detail' ? pane === 'lanes' || pane === 'middle' : pane === detailPane;
+      if (pane === undefined) return false;
+      return shown === 'detail' ? pane !== detailPane : !listPanes.includes(pane);
     };
     const lost = nowhere
       ? from !== null && (!from.isConnected || hidden(from))
@@ -105,7 +116,7 @@ export function usePaneFocus({
       page.current
         ?.querySelector<HTMLElement>(`:scope > [data-pane="${detailPane}"]`)
         ?.focus({ preventScroll: true });
-  }, [shown, open]);
+  }, [shown, open, detailPane]);
   return {
     pageProps: {
       onFocus: (event) => {

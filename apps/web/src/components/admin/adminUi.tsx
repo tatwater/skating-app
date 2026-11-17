@@ -96,6 +96,9 @@ export function Td({ children, className }: { children?: ReactNode; className?: 
   );
 }
 
+/** How a lake editor card says its result: the page's banner, or `null` to clear it. */
+export type SetBanner = (banner: { tone: 'ok' | 'error'; text: string } | null) => void;
+
 /** One lever on the lake editor: a titled card in the tool column. */
 export function ToolCard({ title, children }: { title: string; children: ReactNode }) {
   return (
