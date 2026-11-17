@@ -65,6 +65,8 @@ vi.mock('convex/react', async () => {
     useConvex: () => ({ query: vi.fn(), mutation: vi.fn() }),
   };
 });
+// The viewer's menu signs out through Clerk (its own tests drive that); here it only has to draw.
+vi.mock('@clerk/tanstack-react-start', () => ({ useAuth: () => ({ signOut: vi.fn() }) }));
 vi.mock('../../../lib/useConnection', () => ({ useConnection: () => ({ status: 'online' }) }));
 vi.mock('../../Splash', () => ({ Splash: () => <p>splash</p> }));
 vi.mock('./ConsolePalette', () => ({
@@ -222,12 +224,22 @@ describe('the rail', () => {
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/dashboard' });
   });
 
-  it('opens the app in a new tab and names the viewer at the foot', () => {
+  it('opens the app in a new tab, and the viewer’s menu at the foot goes to their own page', async () => {
+    mocks.results.set('profiles:current', { _id: 'p_quinn', displayName: 'Quinn Ellery' });
     render(<ConsoleLayout />);
     const app = screen.getByRole('link', { name: /App/ });
     expect(app).toHaveAttribute('href', '/');
     expect(app).toHaveAttribute('target', '_blank');
-    expect(screen.getByRole('img', { name: 'Teagan Atwater' })).toBeInTheDocument();
+    const foot = screen.getByRole('button', { name: 'Your account' });
+    expect(foot.closest('[data-slot="shell-rail-foot"]')).not.toBeNull();
+    await userEvent.click(foot);
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByText('Quinn Ellery')).toBeInTheDocument();
+    // The router's link, by the profile id the gate's read carries.
+    expect(within(menu).getByRole('menuitem', { name: 'Your page in People' })).toHaveAttribute(
+      'href',
+      '/admin/people/p_quinn',
+    );
   });
 });
 

@@ -46,7 +46,9 @@ import type { ConsoleMode, LegacyPage } from './consoleNav';
  *   **Legacy**: one item that opens a menu of the old pages still standing, so nothing the old
  *   console could do is out of reach while the new one fills in. The app item (a new tab) and the
  *   viewer sit at its foot. Every entry arrives already gated by the caller (D217); G then a
- *   mode's letter goes to it, G then L opens Legacy, G then A opens the app.
+ *   mode's letter goes to it, G then L opens Legacy, G then A opens the app. The viewer's circle
+ *   is their menu (`account`: their profile, the theme, Sign out), there at every width — the rail
+ *   never collapses, so a phone reaches it where a desktop does.
  * - **The top bar**: the season tape centered, the search trigger (it opens the palette, as ⌘K
  *   does from anywhere) and the colleagues' faces at its end — no faces when nobody else is on.
  * - **The status bar**: the page's own groups (a page states them with {@link ConsoleStatus}),
@@ -80,7 +82,12 @@ export type ConsoleShellProps = {
   linkFor?: (to: string) => ReactElement;
   /** Where the app item opens, in a new tab. */
   appHref?: string;
-  /** Who is signed in: the circle at the rail's foot. */
+  /** Who is signed in: their circle at the rail's foot, which opens their menu (`UserMenuView`). */
+  account?: ReactNode;
+  /**
+   * The viewer's circle alone, with no menu behind it — a board or a story that draws the frame
+   * still (the Body boards, the Overview's mounted story). `account` wins when both are given.
+   */
   viewer?: { name: string; src?: string };
   /** The season tape; none while it can't be drawn. */
   tape?: Omit<SeasonTapeProps, 'dimmed'>;
@@ -113,6 +120,7 @@ export function ConsoleShell({
   onLegacy,
   linkFor,
   appHref = '/',
+  account,
   viewer,
   tape,
   colleagues = [],
@@ -171,12 +179,13 @@ export function ConsoleShell({
               icon={<FontAwesomeIcon icon={faArrowUpRightFromSquare} />}
               href={appHref}
             />
-            {viewer !== undefined && (
-              <RailViewer
-                name={viewer.name}
-                {...(viewer.src !== undefined ? { src: viewer.src } : {})}
-              />
-            )}
+            {account ??
+              (viewer !== undefined && (
+                <RailViewer
+                  name={viewer.name}
+                  {...(viewer.src !== undefined ? { src: viewer.src } : {})}
+                />
+              ))}
           </>
         }
         topStart={<div ref={setTopSlot} data-slot="console-top-start" className="contents" />}

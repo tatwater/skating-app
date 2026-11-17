@@ -11,10 +11,12 @@ import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
 import { minuteOf } from '../reads/readArgs';
 import { ConsolePalette } from './ConsolePalette';
 import { ConsoleShell, type RailMode } from './ConsoleShell';
+import { ConsoleUserMenu } from './ConsoleUserMenu';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
 import { seasonTape } from './consoleTime';
 import { colleaguesFrom, useHeartbeat, useHeldRead, useMinuteNow } from './presence';
 import { UndoProvider, useUndoServer } from './undo';
+import type { MenuViewer } from './UserMenuView';
 
 /**
  * The console's layout (B01): the shell around every page the console has built, wired to the
@@ -29,6 +31,8 @@ import { UndoProvider, useUndoServer } from './undo';
  *   and gives back whatever was there when it unmounts.
  * - **The keys**: ⌘K and the search trigger open the palette; G then a letter goes to a mode, the
  *   Legacy menu or the app (the kit shell's go-mode).
+ * - **The viewer's menu** (`ConsoleUserMenu`) is the circle at the rail's foot: their profile, the
+ *   theme, Sign out.
  * - **Undo** is mounted here once, above the splash: `useUndo()` and History work on every page.
  *   Its toasts draw in the app's one dock at the root (`AppToaster`).
  * - **The season tape** draws the watch's record (`seasonWatch.tape`) — its marks and the day of the
@@ -102,16 +106,13 @@ export function ConsoleLayout() {
             legacy={legacy}
             onLegacy={(page) => void navigate({ to: page.to })}
             linkFor={(to) => <Link to={to} />}
-            {...(profile != null
-              ? {
-                  viewer: {
-                    name: profile.displayName,
-                    ...(profile.profileImageUrl !== undefined
-                      ? { src: profile.profileImageUrl }
-                      : {}),
-                  },
-                }
-              : {})}
+            account={
+              <ConsoleUserMenu
+                viewer={menuViewerOf(profile)}
+                canOpenOwnPage={can('people.read')}
+                linkFor={(to) => <Link to={to} />}
+              />
+            }
             {...(userId !== undefined ? { viewerId: userId } : {})}
             tape={tape}
             colleagues={colleagues}
@@ -133,6 +134,27 @@ export function ConsoleLayout() {
       </ListWritersProvider>
     </UndoProvider>
   );
+}
+
+/**
+ * The viewer as their menu draws them, from the profile the gate already reads. Past the gate it is
+ * always read (the splash holds while it loads, and no profile turns the viewer away), so the menu's
+ * loading and failed heads are for a read that changes under it — never a guess.
+ */
+export function menuViewerOf(
+  profile:
+    | { _id: string; displayName: string; profileImageUrl?: string | undefined }
+    | null
+    | undefined,
+): MenuViewer {
+  if (profile === undefined) return { state: 'loading' };
+  if (profile === null) return { state: 'failed' };
+  return {
+    state: 'ready',
+    id: profile._id,
+    name: profile.displayName,
+    ...(profile.profileImageUrl !== undefined && { src: profile.profileImageUrl }),
+  };
 }
 
 /**

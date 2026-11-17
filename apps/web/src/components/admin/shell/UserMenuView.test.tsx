@@ -1,6 +1,6 @@
 /**
- * The console's user menu, drawn from props: who is signed in, their own profile (a new tab), the
- * theme, and Sign out — in every state the viewer's profile can be in, and from the keyboard.
+ * The console's user menu, drawn from props: who is signed in, their own page in People, the theme,
+ * and Sign out — in every state the viewer's profile can be in, and from the keyboard.
  */
 
 import type { ThemePreference } from '@skating/design';
@@ -11,7 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { type MenuViewer, UserMenuView, type UserMenuViewProps } from './UserMenuView';
 
-const READY: MenuViewer = { state: 'ready', name: 'Robin Ashford', username: 'rashford' };
+const READY: MenuViewer = { state: 'ready', id: 'p_robin', name: 'Robin Ashford' };
 
 beforeAll(() => {
   // jsdom has no Web Animations; the skeleton's shimmer asks for one.
@@ -27,6 +27,7 @@ function Menu(props: Partial<UserMenuViewProps>) {
       theme={theme}
       onThemeChange={setTheme}
       onSignOut={() => {}}
+      canOpenOwnPage
       {...props}
     />
   );
@@ -77,24 +78,30 @@ describe('the menu', () => {
     const who = within(m).getByText('Robin Ashford');
     expect(who.closest('.ph-no-capture')).not.toBeNull();
     expect(m.textContent).not.toContain('@');
-    expect(m.textContent).not.toContain('rashford');
   });
 
-  it('opens the viewer’s own profile in the app, in a new tab', async () => {
+  it('opens the viewer’s own page in People, in this tab, by their profile id', async () => {
     render(<Menu />);
     const m = await open();
-    const profile = within(m).getByRole('menuitem', { name: /Your profile/ });
-    expect(profile).toHaveAttribute('href', '/u/rashford');
-    expect(profile).toHaveAttribute('target', '_blank');
-    expect(profile).toHaveAttribute('rel', expect.stringContaining('noopener'));
-    expect(profile).toHaveAccessibleName('Your profile (opens in a new tab)');
+    const page = within(m).getByRole('menuitem', { name: 'Your page in People' });
+    // The person route itself, never the list: a phone's stacked People opens on the person.
+    expect(page).toHaveAttribute('href', '/admin/people/p_robin');
+    expect(page).not.toHaveAttribute('target');
   });
 
-  it('can open the profile in this tab instead — one switch', async () => {
-    render(<Menu profileInNewTab={false} />);
-    const profile = within(await open()).getByRole('menuitem', { name: 'Your profile' });
-    expect(profile).toHaveAttribute('href', '/u/rashford');
-    expect(profile).not.toHaveAttribute('target');
+  it('goes through the router’s link when it is handed one', async () => {
+    const linkFor = vi.fn((to: string) => <a href={`#router${to}`} data-router="" />);
+    render(<Menu linkFor={linkFor} />);
+    const page = within(await open()).getByRole('menuitem', { name: 'Your page in People' });
+    expect(linkFor).toHaveBeenCalledWith('/admin/people/p_robin');
+    expect(page).toHaveAttribute('data-router');
+  });
+
+  it('has no row for their page when the viewer can’t read People', async () => {
+    render(<Menu canOpenOwnPage={false} />);
+    const m = await open();
+    expect(within(m).queryByRole('menuitem', { name: 'Your page in People' })).toBeNull();
+    expect(within(m).getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
   it('offers the three themes, the stored one pressed, and hands a choice back', async () => {
@@ -127,14 +134,14 @@ describe('while the profile loads, or when it can’t be read', () => {
   it.each([
     ['loading', 'Loading your profile'],
     ['failed', 'Your profile didn’t load'],
-  ] as const)('%s: says so, holds the profile row back, and still signs out', async (state, words) => {
+  ] as const)('%s: says so, holds their page’s row back, and still signs out', async (state, words) => {
     const onSignOut = vi.fn();
     render(<Menu viewer={{ state }} onSignOut={onSignOut} />);
     const m = await open();
     expect(within(m).getByText(words)).toBeInTheDocument();
-    const profile = within(m).getByRole('menuitem', { name: 'Your profile' });
-    expect(profile).toHaveAttribute('aria-disabled', 'true');
-    expect(profile).not.toHaveAttribute('href');
+    const page = within(m).getByRole('menuitem', { name: 'Your page in People' });
+    expect(page).toHaveAttribute('aria-disabled', 'true');
+    expect(page).not.toHaveAttribute('href');
     // The theme still works, and so does Sign out.
     expect(themes(m)).toBeInTheDocument();
     await userEvent.click(within(m).getByRole('menuitem', { name: 'Sign out' }));
@@ -152,11 +159,11 @@ describe('the keyboard', () => {
     await waitFor(() => expect(m).toContainElement(document.activeElement as HTMLElement));
     // Opened from the keyboard, the first row is lit; ↓ walks to the next (the theme is Tab's).
     const row = (name: string | RegExp) => within(m).getByRole('menuitem', { name });
-    await waitFor(() => expect(row(/Your profile/)).toHaveAttribute('data-highlighted'));
+    await waitFor(() => expect(row('Your page in People')).toHaveAttribute('data-highlighted'));
     await userEvent.keyboard('{ArrowDown}');
     await waitFor(() => expect(row('Sign out')).toHaveAttribute('data-highlighted'));
     await userEvent.keyboard('{ArrowUp}');
-    await waitFor(() => expect(row(/Your profile/)).toHaveAttribute('data-highlighted'));
+    await waitFor(() => expect(row('Your page in People')).toHaveAttribute('data-highlighted'));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(trigger()).toHaveFocus();

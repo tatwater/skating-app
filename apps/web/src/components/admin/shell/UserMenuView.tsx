@@ -1,10 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowRightFromBracket,
-  faArrowUpRightFromSquare,
-  faUser,
-} from '@fortawesome/sharp-light-svg-icons';
+import { faArrowRightFromBracket, faUser } from '@fortawesome/sharp-light-svg-icons';
 import type { ThemePreference } from '@skating/design';
+import type { ReactElement } from 'react';
 
 import { PersonName, personNameClass } from '@/components/PersonName';
 import { Avatar } from '@/components/kit/avatar';
@@ -19,7 +16,7 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { Skeleton, SkeletonText } from '@/components/kit/skeleton';
 import { ThemePicker } from '@/components/kit/theme-picker';
-import { ACCOUNT_WORDS, profileHref } from '@/lib/account';
+import { ACCOUNT_WORDS } from '@/lib/account';
 import { cn } from '@/lib/utils';
 
 import { USER_MENU_WORDS } from './shellWords';
@@ -34,8 +31,10 @@ import { USER_MENU_WORDS } from './shellWords';
  *   account"); the circle is hidden from a reader, and the initials are masked from analytics.
  *   While the profile loads it keeps the circle's box (a skeleton), so the rail never shifts.
  * - **The head** names the viewer by their real name (`PersonName`) — never the handle, no role.
- * - **Your profile** is the viewer's own skater-facing profile, the skater menu's row: a new tab by
- *   the console's rule (`profileInNewTab`). Held back (disabled) until the profile is read.
+ * - **Your page in People** is the viewer's own person page in the console (board 8.6), by their
+ *   profile id, in this tab: navigation inside the console, not a link out to the app. It lands on
+ *   the person route itself, so a phone's stacked People opens on the person, never the list. Held
+ *   back (disabled) until the profile is read; left out for a viewer who can't read People.
  * - **Theme** is the kit's picker over the shared preference — the same three choices, the same
  *   cookie, as the skater menu.
  * - **Sign out** is the last row, there in every state — a profile that never loads still lets the
@@ -49,15 +48,22 @@ import { USER_MENU_WORDS } from './shellWords';
 export type MenuViewer =
   | { state: 'loading' }
   | { state: 'failed' }
-  | { state: 'ready'; name: string; username: string; src?: string };
+  | { state: 'ready'; id: string; name: string; src?: string };
+
+/** The viewer's own person page in the console's People. */
+export function ownPageHref(id: string): string {
+  return `/admin/people/${encodeURIComponent(id)}`;
+}
 
 export interface UserMenuViewProps {
   viewer: MenuViewer;
   theme: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onSignOut: () => void;
-  /** Open the profile in a new tab (the console's rule for links into the app). */
-  profileInNewTab?: boolean;
+  /** The viewer may read People (`people.read`): without it, no row for their page. */
+  canOpenOwnPage: boolean;
+  /** The router's link for their page (`<Link to={to} />`); a plain anchor otherwise. */
+  linkFor?: (to: string) => ReactElement;
   /** Controlled open state; uncontrolled without it. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -72,7 +78,8 @@ export function UserMenuView({
   theme,
   onThemeChange,
   onSignOut,
-  profileInNewTab = true,
+  canOpenOwnPage,
+  linkFor,
   open,
   onOpenChange,
   container,
@@ -125,35 +132,25 @@ export function UserMenuView({
         className={cn('w-[15.5rem]', personNameClass)}
       >
         <MenuHead viewer={viewer} />
-        <DropdownMenuItem
-          icon={<FontAwesomeIcon icon={faUser} className={ICON} />}
-          {...(ready !== null
-            ? {
-                render: (
-                  <a
-                    href={profileHref(ready.username)}
-                    {...(profileInNewTab && { target: '_blank', rel: 'noopener noreferrer' })}
-                  />
-                ),
-              }
-            : { disabled: true })}
-          label={ACCOUNT_WORDS.profile}
-        >
-          {ready !== null && profileInNewTab ? (
-            <span className="flex items-center justify-between gap-(--space-3)">
-              {ACCOUNT_WORDS.profile}
-              <FontAwesomeIcon
-                icon={faArrowUpRightFromSquare}
-                aria-hidden="true"
-                className="h-[0.8em] text-fg3"
-              />
-              <span className="sr-only">{ACCOUNT_WORDS.newTab}</span>
-            </span>
-          ) : (
-            ACCOUNT_WORDS.profile
-          )}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {canOpenOwnPage && (
+          <>
+            <DropdownMenuItem
+              data-slot="user-menu-own-page"
+              icon={<FontAwesomeIcon icon={faUser} className={ICON} />}
+              {...(ready !== null
+                ? {
+                    render:
+                      linkFor?.(ownPageHref(ready.id)) ??
+                      // biome-ignore lint/a11y/useAnchorContent: the item renders its label into it
+                      <a href={ownPageHref(ready.id)} />,
+                  }
+                : { disabled: true })}
+            >
+              {USER_MENU_WORDS.ownPage}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuLabel>{ACCOUNT_WORDS.theme}</DropdownMenuLabel>
           <div className="col-span-full px-(--space-3) pt-(--space-1) pb-(--space-2)">
