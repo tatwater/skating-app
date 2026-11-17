@@ -20,6 +20,8 @@ const CONVEX = resolve(__dirname, '../../convex/convex');
 const INVENTORY: Record<string, string> = {
   'bodyGeo.ts:placesFrom:townEntries': 'builds the computed entries, one per boundary, with kinds',
   'bodyGeo.ts:store:townEntries': 'stores what placesFrom built',
+  'bodyGeo.ts:storedFacts:townEntries': 'reads: the stored entries, for checkStored to compare',
+  'bodyGeo.ts:CHECKED:townEntries': 'reads: a field checkStored compares, written nowhere',
   'lib/bodyGeo.ts:pinnedFactsFor:pinnedTowns': 'builds the pinned half, with kinds',
   'lib/bodyGeo.ts:withPinnedTowns:pinnedTowns': 'reads: merges the pinned half in, by boundary',
   'lib/bodyGeo.ts:withPinnedTowns:townEntries': 'reads: merges the pinned half in, by boundary',

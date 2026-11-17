@@ -5013,6 +5013,144 @@ Body console from here.*
 index or backfill. The web and the server can land in either order: the web reads a strip without
 `active` by the old rule and an unlisted id without a name as a body not listed.
 
+### The geometry facts' reads, bounded (B01-3p)
+
+Three Convex reads ran past a second on real data, and the town-name leftovers B01-3k owed sat beside
+them. Every answer a body gets is the same as before (proven, below), with one exception asked for:
+what a label says while a namesake's full name is still loading.
+
+**What was measured on dev** (24,953 bodies; 2,546 boundaries, 2,425 of them towns; NY, VT, NH, ME,
+MA). During a full town recompute (`bodyGeo:seedAll` then `bodyGeo:computeAll`, about 34 minutes,
+25,371 calls), `bodyGeo:townCandidates` peaked at 1,466 ms (three calls over 500 ms; median 44 ms,
+p99 89 ms) and `bodyGeo:candidates` at 1,345 ms; both finished without error. `waterBodies:
+reviewQueueCounts`, which the Overview's Corpus card and the intake page read, runs at 1.1–1.4 s on
+every load. A second full recompute on main (2026-11-16, 31 min 47 s; 20,327 bodies in the log
+stream, none failed or parked): `candidates` peak 1,113 ms, p99 377 ms, p50 249 ms, three calls over
+1 s; `townCandidates` peak 1,102 ms, p99 66 ms, p50 40 ms, one over 1 s; `seedAll` (a mutation, 100
+pages of 250) peak 1,337 ms, p99 1,120 ms, four pages over 1 s; `reviewQueueCounts` over 1 s again.
+
+**Is that the 1 s limit? No — the limit is JavaScript time, not the wait on the database.** Measured
+on a local anonymous backend (the same backend, run locally): a query spinning JavaScript for about a
+second fails with *Function execution timed out (maximum duration: 1s)*, and one spinning 850 ms
+draws the backend's warning that it *took a long time*; a query making 3,500 index reads one after another (12.6 s of wall time locally)
+and one reading 120 documents of about 95 KB each (11 MB, 1.3 s) both finish with no warning at all.
+So the 1.47 s was almost all round trips, and no recompute call failed for time. The same holds for
+every function here: `townCandidates`, `candidates`, `candidateOutline`, `townNamesShared`,
+`reviewQueueCounts` are queries and `seedAll` a mutation — each limited to a second of its own
+JavaScript — while `computeDue`, `computeAll` and `checkStored` are actions, which wait on those
+calls without that limit. A call "over 1 s" in the logs is wall time, round trips included; what it
+costs is that time, paid by the chain (and, for `reviewQueueCounts`, by the operator on every Overview
+load), and its JavaScript share is the one that would fail. The limits these
+reads could reach are the others: 4,096 calls, 16 MiB read, the size of a returned value — and the
+1.47 s is still a second of round trips the recompute pays on every big body.
+
+**A body whose call runs over** (any limit, or any other throw) is not silently left without towns:
+the action's `computeOne` throws, the run records one failed attempt by error class on the body's
+facts row (mirrored into `jobFailures` for Machinery), and the run goes on to the rest; each run tries
+a body once, so three runs failing in a row park it, and the daily retry walks parked bodies. Until a
+computation goes through, the row keeps what it had: the answer from its last success (marked stale,
+so it is owed a recompute), or, never computed, *not computed yet* on every reader.
+
+**`townCandidates`: one call a cell, one after another.** A page read the ladder's cells covering the
+body's padded box one at a time — up to 2,000 calls a page (`CANDIDATE_CELL_READS`), each a round
+trip: the 1.47 s is a full page. Lake Champlain's box covers 533 cells; the body that filled a page
+has a box past 2,000. **Now a page reads a column of cells a call** (`townColumnsOf`: a page is a
+run of row-major cells, so the cells it holds in any one column are a contiguous run of rows — one
+`by_cell` range), keeps the town rows, and reads the columns concurrently in `ReadBudget.waves` (a
+boundary cell row is planned at 1 KiB, `ROW_MAX.areaCell`; it weighs about 120 bytes). A column that
+fills its read (`COLUMN_ROWS`, 256 rows) is read again a cell at a time, exactly as before. The
+pages, the cursor and the ids are the same, in the same order: assembled in the old walk's order;
+were the budget ever to run out, the page ends at its first unread cell and `next` starts there.
+A cell over its 64-row cap still throws.
+
+**`candidates`: every outline shipped, twelve tested.** Each tile's query returned every candidate
+with its whole outline (up to 20,000 vertices, about 0.4 MB each), up to thirteen a tile and up to 32
+tiles, and the action held them all though only the twelve most prominent are ever tested. **Now a
+tile returns summaries** (box, prominence, stamp, kept ring, whether it tests whole) and the action
+reads the tested outlines alone once it has ranked them (`candidateOutline`, one document each,
+together, stamp-checked: a candidate gone or reshaped between the two reads fails the attempt rather
+than test one outline and record another's stamp). The tile's own reads are unchanged: its cover
+(`waterBodies.bodiesCoveringBox`, shared with the skater map) still reads each ranked candidate whole,
+one after another, until thirteen fit — owed, below. **So this moves the tail, not the median**:
+the 249 ms typical tile is that cover's cell walk and hydration (up to 341 cells and the ranked
+bodies, each a round trip), which ship nothing large; the change takes off the tiles that returned
+big outlines (the peaks) and the action's memory of every candidate's outline.
+
+**`reviewQueueCounts`: 1,206 whole bodies.** Convex counts nothing without reading it, and a queued row
+is a whole body, outline and all. The count read up to 201 a reason for six reasons, one reason after
+another. **Now it reads 51 a reason, all six at once** (`REVIEW_COUNT_CAP` 200 → 50; at most 306 rows,
+least prominent first), and a reason past the cap reads "50+" (`capped: true`), never a complete
+count. An exact count needs a stored counter kept by the writers of `reviewReason` (a field on
+`bodyLibraryRows` and its count keys: a schema change and a backfill), owed.
+
+**The town-name leftovers (B01-3k's owed list).**
+
+| Owed | What was true | What changed |
+|---|---|---|
+| The namesake check reads polygons | Each recompute read every reached town's namesakes, up to 8 whole boundaries a name, one query a name, for every body | Convex reads documents, never fields, and no lighter row holds a boundary's name, so the reads are still whole rows — but a run asks each name once and its bodies share the answer (`NamesakeReads`, keyed by the places-layer mark; a body marked stale after a held read started reads afresh, since a full-name load moves no mark). A light mirror (state, name, full name, key: about 2,425 rows of ~150 bytes, indexed by state and name) would make it light; a schema change, owed |
+| A namesake mid-load | A namesake without its full name carried the kind `''` and counted as a second kind: one Plattsburgh read "(city)", its namesake bare | Its kind is unknown (`null`, `namesakeKindOf`), and an unknown namesake — the town's own entry included — holds every tell back: the town reads by its name alone until the load finishes — never a kind or a county the loaded layer doesn't prove. A full name giving no kind (`''`) is known and still tells. The one change to any answer: only where a namesake lacks its full name |
+| `townLabel` three times | Core's `townLabel`, the web's `townWithState`, and `townNamesOf`'s inline "name, state" | The web's `townWithState` is core's `townLabel`; `townNamesOf` labels through it |
+| A paging array of one | `townNamesShared` took an array and refused more than one name (`SHARING_PAGE = 1`) | It takes one name: a second, at eight whole boundaries planned at 1 MiB each, would not fit the read budget's twelve |
+
+**Proof that nothing else moved** (`bodyGeoReads.test.ts`). The old algorithms are kept in the test as
+references. The towns: over generated boundaries (every level, from smaller than the finest cell to
+several rungs wide) and boxes, with small pages and small column reads so paging, the cell-by-cell
+fallback and both together are reached (counted, so a run of empty boxes can't pass), the pages' ids
+equal the old walk's in order — three pinned seeds and one random; and a fixture shaped like the
+worst case (a 2.6° by 1.3° box across New York and Vermont, 458 towns over 2,448 cells, two pages).
+The touching bodies: over generated clusters of ponds, every body's stored neighbors and cap equal the
+old step's, plus a crowd past the twelve and a giant tested by its samples. The cost guards: on the
+fixture each page's calls are its columns (130 and 60, against 2,000 and 448) in at most four waves;
+over the whole region's box every page plans under the calls limit even if every column fell back;
+the count reads at most 306 rows.
+
+**The new cost, the worst body.**
+
+| Read | Before | After |
+|---|---|---|
+| `townCandidates`, a full page | 2,000 calls one after another; 1.47 s on dev | One call a column — 130 for the fixture's 2,000-cell page, 30 for Lake Champlain's 533 cells — in a wave or a few. Locally, on the fixture, two runs each: its two pages took 6.6–8.1 s and 1.1–1.4 s before, 0.15–0.18 s and 0.04–0.08 s after (about 40 times less; dev's round trips are faster than local, so expect tens of milliseconds there) |
+| `candidates`, a tile | Up to 13 whole outlines returned (about 5 MB at the 20,000-vertex bound); the action held every tile's | Summaries only (about 1.5 KB each); the tile's reads unchanged; the action then reads at most 12 outlines, one document each |
+| `reviewQueueCounts` | Up to 1,206 whole bodies, six reads in turn; 1.1–1.4 s | At most 306, six reads at once; by rows read, about a quarter of the time or less — to be read back on dev |
+| Namesakes, a full recompute | One query a name a body | One a name a run (a run is four minutes) |
+| `seedAll`, a page | 250 facts rows one after another; 1.12 s p99, 1.34 s peak | 100, read together: by rows and round trips, well under half the time |
+
+**The sweep: reads in a loop bounded only by the data, or whole outlines where a summary would do**
+(the Bodies area; fixed here only in files this build owns):
+- `bodyGeo.seedAll` — a page of 250 library rows, each body's facts row read one after another (`markGeoStale`): 1.1 s at p99. Now 100 a page (`SEED_PAGE`), and `markGeoStale` reads its rows together for every caller; the same marks. Fixed.
+- `bodyGeo.store` — a stored answer's moved neighbors read one after another (at most 24 whole bodies): now together. Fixed.
+- `bodyGeo.townPage`, `countyPage` — at most 11 reads one after another: now together. Fixed.
+- `waterBodies.bodiesCoveringBox` — hydrates the ranked candidates one after another, each a whole body, including those whose box misses the query, until the limit fits (up to the 1,500-row budget); read by the skater map's `listInViewport` and by each `candidates` tile. The largest remaining cost of the recompute's neighbor step; waves over the ranked ids, admitted in order, would keep the answer. Not this build's file.
+- `waterBodies.listDedupCandidates` — up to 250 flagged bodies, each candidate read whole one after another; the dedup queue's page. Not this build's file.
+- `waterBodies.searchSubAreas` — each bay's parent read whole, one after another; a search's bays. Not this build's file.
+- `bodyConsole.townLines` — up to 48 outline rows one after another (40 for Lake Champlain; small rows). `consoleExtras`' touching bodies (12 library rows) and the Bays tab's provenance (one audit read a bay) likewise. A dozen to fifty round trips each; `Promise.all` keeps the order. Not this build's file.
+- `adminAreas.findContainingArea` — each candidate boundary read whole one after another, to test a point; a report's place at create. Not this build's file.
+- `bodyGeo.repairDrift` — each checked row's links read one after another (up to 32 small rows, 40 rows a tick), bounded by its byte reserve; not measured slow. Left.
+
+**After merge, on dev (for the dev agent).**
+1. `convex dev --once` from main. No schema change, no index, no backfill.
+2. **No recompute.** The answers are the same. To check that cheaply, on a handful of the largest
+   bodies — Lake Champlain, Lake Memphremagog, Seneca Lake, Cayuga Lake, Moosehead Lake, Lake
+   Winnipesaukee, Lake George, and the body with the widest box (the one whose page filled 2,000
+   cells) — run `bodyGeo:checkStored '{"waterBodyIds":[…]}'` (at most 25 ids; computes each in full
+   and compares with its stored row, writing nothing). Every one should read `same`; `behind` means
+   the row was owed a recompute anyway, and so does `stale: true` (a neighbor's outline or relation
+   moved since — a `differs` on such a row is that, not this build); `differs` on a row that is not
+   stale names the fields — stop there and report them. The
+   one expected difference: a body with a town whose namesake has no full name (labels now hold back);
+   count such towns first with a one-off read of `adminAreas` towns missing `fullName` (zero after
+   B01-3l's re-load, if every town came from TIGER).
+3. Read back: `bodyGeo:townCandidates` (peak, p99, calls over 500 ms), `bodyGeo:candidates` and
+   `bodyGeo:candidateOutline` (peak, p99), `bodyGeo:townNamesShared` (how many calls a run), and
+   `waterBodies:reviewQueueCounts` (its time on an Overview load), and `bodyGeo:seedAll` (each page; 250 pages now) — from the next `computeDue` runs, or
+   a `seedAll` + `computeAll` if a full run's numbers are wanted (not needed for correctness).
+
+**Owed.**
+- `bodiesCoveringBox`'s hydration in waves (above): the recompute's neighbor step and the skater map.
+- An exact intake count: a stored counter (schema).
+- The namesakes from a light row (schema): a boundary's name, full name and key without its polygon.
+- The sweep's items in other files.
+- Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
