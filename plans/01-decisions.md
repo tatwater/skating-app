@@ -8259,3 +8259,25 @@ audit row's, never the person's — and, like its redo, dates the terms anew.
 giving two reasons for one ban, is the record lying.
 
 **Related:** D226, D257, D261, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.
+
+## D271 — An undo puts back a write's whole effect, the record's included; a reason is one text however it is spelled (B01)
+
+**2026-11-16, built in B01-4h.** A content write has two effects — on the item and on the person's
+record — and its undo puts back both. A takedown that left the item as it found it (a hide of what its
+Post's hide took down, with no decision of its own) still put a decision on the record, so its undo
+takes that decision off and leaves the item as it was; it is offered exactly when that write lands,
+read from the verdict rows, and its redo puts the decision back (a takeaway, so it asks a reason). A
+restore that only ended a decision on content already up is not undone: no write stands a decision on
+content that is up, and the refusal says to hide it again. A takedown of what a decision of that kind
+already holds is refused by the record's one rule (D267), which the lever and the write both ask.
+
+Every audit reason — typed, composed or a plain string — is stored with its outer whitespace off, at the
+one writer, and every comparison of reasons reads both sides that way, so rows written before still
+match with no backfill. A person's words quoted inside a composed reason are checked where they are
+quoted (`checkedReason`): the type holds `composedOf`'s fixed words to that, and a guard holds the
+templates.
+
+**Why:** an undo that leaves the record changed, or says nothing changed when it did, is the record
+lying (D270); a reason that differs only by a space is the same reason.
+
+**Related:** D226, D261, D267, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4h*.
