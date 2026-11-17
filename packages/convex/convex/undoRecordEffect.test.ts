@@ -16,8 +16,9 @@ import { AUTHOR_DELETED_OVERTURN } from './lib/authorDeletion';
 import { recordVerdict } from './lib/contentVerdicts';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { TAKEDOWN_ALREADY } from './lib/recordRules';
-import { RESTORE_ENDED_ONLY } from './lib/undoHandlers';
+import { RESTORE_ENDED_ONLY, UNDO_HANDLERS } from './lib/undoHandlers';
 import { UNDO_POLICY } from './lib/undoPolicy';
+import { PREDATES } from './lib/undoTypes';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -247,7 +248,7 @@ interface Case {
   /** What the undo leaves: the item's status and the decisions standing on it. */
   after?: { content: Status; standing: string[] };
   /** Anything else the case holds, after the undo. */
-  then?: (w: W) => Promise<void>;
+  holds?: (w: W) => Promise<void>;
 }
 
 const CASES: Case[] = [
@@ -272,7 +273,7 @@ const CASES: Case[] = [
     undo: { needsReason: false },
     // The member's own decision comes off; it stays hidden by the Post's, which still stands.
     after: { content: 'hidden', standing: [] },
-    then: async (w) => {
+    holds: async (w) => {
       expect(await standingOn(w, 'post', w.p)).toEqual(['hidden']);
       // Undone, it is Reversed — once, as its newest decision — like any undone hide.
       const page = await w.mod.query(api.contentRecord.personReversed, { userId: w.rob });
@@ -292,7 +293,7 @@ const CASES: Case[] = [
     undo: { needsReason: false },
     after: { content: 'hidden', standing: [] },
     // Put back down the way it was: a member restored later brings the Post back with it.
-    then: async (w) => {
+    holds: async (w) => {
       await set(w, 'report', w.m0, 'visible');
       expect(await statusOf(w, w.p)).toBe('visible');
     },
@@ -438,12 +439,46 @@ describe('a content verb’s two effects, and what its undo restores', () => {
     });
     expect(await statusOf(w, on.targetId)).toBe(c.after?.content);
     expect(await standingOn(w, on.targetType, on.targetId)).toEqual(c.after?.standing);
-    await c.then?.(w);
+    await c.holds?.(w);
     await rebuildAgrees(w);
   });
 });
 
 describe('an undo that only moved the record', () => {
+  test.each([
+    ['its undo', 'undo'],
+    ['its restore', 'restore'],
+  ] as const)('a Report put back under its Post comes back with the Post — %s', async (_, how) => {
+    const w = await world();
+    await set(w, 'post', w.p, 'hidden');
+    const postHide = await newestOn(w, 'post', w.p);
+    // The member's own decision, taken off again: it is the Post's again, as it was.
+    await set(w, 'report', w.m0, 'hidden', 'its own call');
+    await w.mod.mutation(api.undo.run, { actionId: (await newestOn(w, 'report', w.m0))._id });
+    // …and a second round, a redo between: still the Post's.
+    await w.mod.mutation(api.undo.run, {
+      actionId: (await newestOn(w, 'report', w.m0))._id,
+      reason: 'it was right',
+    });
+    await w.mod.mutation(api.undo.run, { actionId: (await newestOn(w, 'report', w.m0))._id });
+    if (how === 'undo') await w.mod.mutation(api.undo.run, { actionId: postHide._id });
+    else await set(w, 'post', w.p, 'visible');
+    expect(await statusOf(w, w.p)).toBe('visible');
+    expect(await statusOf(w, w.m0)).toBe('visible');
+    expect(await statusOf(w, w.m1)).toBe('visible');
+    await rebuildAgrees(w);
+  });
+
+  test('a Report hidden on its own call again stays down when its Post comes back', async () => {
+    const w = await world();
+    await set(w, 'post', w.p, 'hidden');
+    const postHide = await newestOn(w, 'post', w.p);
+    await set(w, 'report', w.m0, 'hidden', 'its own call');
+    await w.mod.mutation(api.undo.run, { actionId: postHide._id });
+    expect(await statusOf(w, w.m0)).toBe('hidden');
+    expect(await standingOn(w, 'report', w.m0)).toEqual(['hidden']);
+  });
+
   test('its redo puts the decision back — a takeaway, so it asks a reason — and the chain goes on', async () => {
     const w = await world();
     await set(w, 'post', w.p, 'hidden');
@@ -519,6 +554,51 @@ describe('an undo that only moved the record', () => {
     await expect(w.mod.mutation(api.undo.run, { actionId: id })).rejects.toThrow(/already hidden/);
     // The first hide's decision still stands: the undo never reached it.
     expect(await standingOn(w, 'report', w.r)).toEqual(['hidden']);
+  });
+
+  test('a Post’s row from before it listed its members can’t say it moved none, so it is not undone', async () => {
+    const w = await world();
+    await set(w, 'post', w.p, 'hidden');
+    vi.setSystemTime(T0 + 1_000);
+    // A hide of the hidden Post written before `cascaded` was recorded: it may have taken a Report
+    // down (one restored on its own since), which an undo on the record alone would leave down.
+    const id = await w.t.run(async (ctx) => {
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.matt,
+        action: 'hide',
+        targetType: 'post',
+        targetId: w.p,
+        reason: 'again',
+        metadata: { priorStatus: 'hidden', newStatus: 'hidden' },
+        createdAt: T0 + 1_000,
+      });
+      await recordVerdict(ctx, {
+        subjectUserId: w.rob,
+        targetType: 'post',
+        targetId: w.p,
+        actionId,
+        kind: 'hidden',
+        at: T0 + 1_000,
+      });
+      return actionId;
+    });
+    const row = (await w.t.run((ctx) => ctx.db.get(id))) as Doc<'moderationActions'>;
+    expect(await undoStateOf(w, row)).toEqual({ state: 'unavailable', why: PREDATES });
+    await expect(w.mod.mutation(api.undo.run, { actionId: id })).rejects.toThrow(PREDATES);
+  });
+
+  test('History never queues a check for a row with nothing to check', async () => {
+    const w = await world();
+    // A hide that moved the content: its undo reads nothing, so it costs the page nothing.
+    await set(w, 'report', w.r, 'hidden');
+    const hide = await newestOn(w, 'report', w.r);
+    expect(UNDO_HANDLERS.hide?.refusalCost?.('list', hide)).toBeNull();
+    expect(await undoStateOf(w, hide)).toEqual({ state: 'available', needsReason: false });
+    // One that left the item as it found it reserves the record's two reads.
+    await set(w, 'post', w.p, 'hidden');
+    await set(w, 'report', w.m0, 'hidden', 'its own call');
+    const recordOnly = await newestOn(w, 'report', w.m0);
+    expect(UNDO_HANDLERS.hide?.refusalCost?.('list', recordOnly)).toMatchObject({ reads: 2 });
   });
 });
 

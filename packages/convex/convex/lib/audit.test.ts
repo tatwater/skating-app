@@ -209,5 +209,7 @@ describe('composedOf takes a person’s words only checked (the type holds it)',
     composedOf(['Hid it: ', typedByPerson], ['']);
     // @ts-expect-error — nor a literal joined to one at run time (`concat` returns a plain string).
     composedOf(['Hid it: '.concat(checkedReason(typedByPerson))], []);
+    // @ts-expect-error — nor a template with a hole (inferred `Hid it: ${string}`, not a plain string).
+    composedOf([`Hid it: ${typedByPerson}`], []);
   });
 });

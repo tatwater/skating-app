@@ -1,10 +1,10 @@
 /**
  * **The record pane's decisions carry the write that ended them, and its undo where the pane offers
  * one** (B01-4h; server half — the web half follows its toast work). Each decision says `endActionId`
- * (`null` while it stands); the item's newest decision, while Reversed, says that write's undo state
+ * (absent while it stands); the item's newest decision, while Reversed, says that write's undo state
  * for this viewer, exactly as History says it (`moderation.listActions`) — so the pane can offer the
  * Undo of a restore it opened from any list, not only from a Reversed row handed to it. Every older
- * decision's `undo` is `null`: a newer decision's write overtook its ending. And the pane at its
+ * decision's `undo` is absent: a newer decision's write overtook its ending. And the pane at its
  * deepest — more decisions than it reads, the newest restored — stays inside the request's budget.
  */
 import { convexTest } from 'convex-test';
@@ -149,13 +149,16 @@ describe('the pane’s decisions name the write that ended them', () => {
     expect(newest?.undo).toEqual(await historyUndo(w, second.actionId));
     expect(newest?.undo).toEqual({ state: 'available', needsReason: true });
     // Overtaken by the hide that made the newer decision: the id, no undo to read.
-    expect(older).toMatchObject({ endedHow: 'restore', endActionId: first.actionId, undo: null });
+    expect(older).toMatchObject({ endedHow: 'restore', endActionId: first.actionId });
+    expect(older?.undo).toBeUndefined();
     expect(await historyUndo(w, first.actionId)).toMatchObject({ state: 'overtaken' });
 
     // The pane's Undo is the restore's: run by the id it names, the decision stands again.
     await w.mod.mutation(api.undo.run, { actionId: second.actionId, reason: 'it was right' });
     const after = await pane(w);
-    expect(after?.decisions[0]).toMatchObject({ standing: true, endActionId: null, undo: null });
+    expect(after?.decisions[0]).toMatchObject({ standing: true });
+    expect(after?.decisions[0]?.endActionId).toBeUndefined();
+    expect(after?.decisions[0]?.undo).toBeUndefined();
   });
 
   test('for the author — a moderator too — the undo says why not, as History does', async () => {
@@ -173,7 +176,7 @@ describe('the pane’s decisions name the write that ended them', () => {
     await w.mod.mutation(api.undo.run, { actionId: hide.actionId });
     const decision = (await pane(w))?.decisions[0];
     expect(decision).toMatchObject({ endedHow: 'undo' });
-    expect(decision?.endActionId).not.toBeNull();
+    expect(decision?.endActionId).toBeDefined();
     expect(decision?.undo).toEqual(
       await historyUndo(w, decision?.endActionId as Id<'moderationActions'>),
     );
@@ -224,9 +227,7 @@ describe('the pane at its deepest stays inside its budget', () => {
     expect(out?.decisions).toHaveLength(50);
     expect(out?.decisionsCapped).toBe(true);
     expect(out?.decisions[0]?.undo).toEqual({ state: 'available', needsReason: true });
-    expect(out?.decisions.slice(1).every((d) => d.undo === null && d.endActionId !== null)).toBe(
-      true,
-    );
+    expect(out?.decisions.slice(1).every((d) => d.undo === undefined && d.endActionId)).toBe(true);
     // Two reads a decision (its row and its ending), the item, the undo's first step (3) and the rest
     // of the pane — far inside the transaction's calls.
     expect(calls).toBeLessThan(2 * 50 + 20);

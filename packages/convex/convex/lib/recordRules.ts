@@ -25,12 +25,11 @@ import { canUse, isLeaving } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE, authorDeletedAtOf } from './authorDeletion';
 import type { VerdictTargetType } from './contentVerdicts';
-
-/** What a verdict decided: a hide, a removal, an alert's retraction. */
-export type VerdictKind = 'hidden' | 'removed' | 'retracted';
-
 import { authorRetracted } from './eraseClock';
 import { authorOf, ownContentRefusal } from './ownContent';
+
+/** What a verdict decided: a hide, a removal, an alert's retraction (the schema's own literals). */
+export type VerdictKind = Doc<'contentVerdicts'>['kind'];
 
 /** Anything a moderator tries on an item the sweep erased. */
 export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';

@@ -39,9 +39,9 @@ import {
 import { recomputeBodySummary } from './lib/bodySummary';
 import {
   endVerdicts,
+  heldKindOn,
   recordUndoneVerdict,
   recordVerdict,
-  standingVerdictsOn,
   subjectOf,
   type VerdictTargetType,
 } from './lib/contentVerdicts';
@@ -366,6 +366,70 @@ function newestRowOn(ctx: QueryCtx, reportId: Id<'reports'>) {
 }
 
 /**
+ * **A Report's word from its Post** — the Post's verdict moved it, and nothing of the Report's own has
+ * stood since: the cascade row itself, or a record-only undo on the member that took its own decision
+ * off and so put it back under its Post as it was (`backToCascade`, B01-4h). The Post's restore and its
+ * undo bring back only a member whose last word this is; `null` for any other row.
+ */
+export interface CascadeWord {
+  postId: string;
+  /** When the Post's verdict moved it — its own row's time, which the Post's undo matches. */
+  at: number;
+  /** The cascade row itself, whose undo a chosen member's move records (`recordUndoneVerdict`). */
+  rowId: Id<'moderationActions'>;
+  chosen: boolean;
+}
+
+export function cascadeWordOf(row: Doc<'moderationActions'> | null): CascadeWord | null {
+  if (row === null) return null;
+  const meta = (row.metadata ?? {}) as {
+    cascadedFromPostId?: unknown;
+    chosen?: unknown;
+    backToCascade?: CascadeWord;
+  };
+  if (typeof meta.cascadedFromPostId === 'string') {
+    return {
+      postId: meta.cascadedFromPostId,
+      at: row.createdAt,
+      rowId: row._id,
+      chosen: meta.chosen === true,
+    };
+  }
+  return meta.backToCascade ?? null;
+}
+
+/**
+ * The word a record-only undo on a Report puts back (B01-4h): taking off the member's own decision —
+ * the undone row's chain put one on, and this undo puts none back — returns it to whatever word stood
+ * before that chain began, its Post's included. `null` when the undo puts the decision back (the
+ * member's own word again), or nothing of a Post's stood before.
+ */
+async function cascadeWordUnder(
+  ctx: MutationCtx,
+  undoneId: Id<'moderationActions'>,
+): Promise<CascadeWord | null> {
+  const putsBack = await ctx.db
+    .query('contentVerdicts')
+    .withIndex('by_ended_by', (q) => q.eq('endedByActionId', undoneId))
+    .first();
+  if (putsBack !== null) return null;
+  const undone = await ctx.db.get(undoneId);
+  const root = undone?.undoRoot !== undefined ? await ctx.db.get(undone.undoRoot) : undone;
+  if (!root) return null;
+  const before = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) =>
+      q
+        .eq('targetType', 'report')
+        .eq('targetId', root.targetId)
+        .lt('_creationTime', root._creationTime),
+    )
+    .order('desc')
+    .first();
+  return cascadeWordOf(before);
+}
+
+/**
  * Withdrawn by its author: stamped `authorDeletedAt` (D248), or — a deletion from before the stamp
  * that the backfill hasn't reached — removed with the author's own `author_delete` as the last word.
  * Never restorable through a Post's restore, nor at all since D248.
@@ -456,12 +520,13 @@ export async function planPostRestore(
     const last = await read.newest(report._id);
     // A member a moderator chose to bring back, then put back down by that restore's undo, is down
     // on its own decision again, though the row naming the Post is the last word on it.
+    const word = cascadeWordOf(last);
     const revivable =
       report.authorDeletedAt === undefined &&
       (report.moderationStatus === 'hidden' || reviveRemoved) &&
-      last?.metadata?.cascadedFromPostId === post._id &&
-      last.metadata.chosen !== true &&
-      last.action !== 'author_delete';
+      word?.postId === post._id &&
+      !word.chosen &&
+      last?.action !== 'author_delete';
     if (revivable) {
       plan.members.push({ report, last, standing: 'returns' });
       plan.revive.push(report);
@@ -614,9 +679,10 @@ export async function setContentStatus(
     // verdict on it would be a record of nothing. Author-deleted content never comes back (D248,
     // founder ruling 2026-11-13) — not by restore, not by a Post's choice, not by undo — and nothing
     // else moves it either: it stays as the deletion left it.
-    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
+    // An undo puts back what its row recorded and never asks either, so it reads neither.
+    const held = asUndo ? null : await heldKindOn(ctx, args.targetType, args.targetId);
     const membersUp =
-      args.targetType === 'post' && args.status !== 'visible'
+      !asUndo && args.targetType === 'post' && args.status !== 'visible'
         ? await membersUpOf(ctx, target as Doc<'posts'>)
         : undefined;
     const facts = recordFactsOf(
@@ -757,6 +823,16 @@ export async function setContentStatus(
       }
     }
 
+    // A record-only undo on a Report that takes its own decision off puts it back under its Post, as
+    // it was: the Post's restore and undo bring it back again (B01-4h).
+    const backToCascade =
+      asUndo &&
+      args.undoes !== undefined &&
+      args.targetType === 'report' &&
+      args.status !== 'visible' &&
+      priorStatus === args.status
+        ? await cascadeWordUnder(ctx, args.undoes)
+        : null;
     const actionId = await writeAudit(ctx, {
       actorId: actor._id,
       action: ACTION_FOR_STATUS[args.status],
@@ -772,6 +848,7 @@ export async function setContentStatus(
         subjectUserId: subjectOf(args.targetType, typedTarget),
         ...(args.targetType === 'post' ? { cascaded } : {}),
         ...(clearsDerivedFromReportId !== undefined ? { clearsDerivedFromReportId } : {}),
+        ...(backToCascade !== null ? { backToCascade } : {}),
         ...defaulted,
       },
       createdAt: now,
@@ -970,11 +1047,11 @@ export async function revertPostVerdict(
     if (!report || report.moderationStatus !== member.to) continue;
     // A member its author deleted stays where the deletion left it, whatever the Post's undo does.
     if (report.authorDeletedAt !== undefined) continue;
-    const last = await newestRowOn(ctx, report._id);
-    if (last?.metadata?.cascadedFromPostId !== post._id || last.createdAt !== row.createdAt) {
-      continue;
-    }
-    moves.push({ report, to: member.from, chosen: member.chosen === true, undoing: last._id });
+    // Still the Post's: its cascade row the last word — or a record-only undo that put it back under
+    // the Post (B01-4h) — from this verdict.
+    const word = cascadeWordOf(await newestRowOn(ctx, report._id));
+    if (word?.postId !== post._id || word.at !== row.createdAt) continue;
+    moves.push({ report, to: member.from, chosen: member.chosen === true, undoing: word.rowId });
   }
   // An undo back to visible must leave a Report showing (D186; founder call, 2026-11-13). It never
   // chooses which — that is Restore's — so it refuses and says where the choice lives.
@@ -1100,7 +1177,7 @@ export async function overturnVerdictImpl(
     // retracted (who retracted it, as `retract` reads it, so a verdict recorded on an alert retracted
     // before `retractedAt` existed is overturnable before the clocks backfill reaches it), or a Post
     // every Report of which they deleted — and a verdict standing on it.
-    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
+    const held = await heldKindOn(ctx, args.targetType, args.targetId);
     const post =
       args.targetType === 'post' && authorDeletedAtOf(target as Doc<'posts'>) === undefined
         ? { everyWithdrawn: await everyMemberWithdrawn(ctx, target as Doc<'posts'>) }
@@ -1181,7 +1258,7 @@ export async function keepOnRecordImpl(
     const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!targetId || !target) throw new ConvexError('Target not found');
-    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
+    const held = await heldKindOn(ctx, args.targetType, args.targetId);
     const doc = target as
       | Doc<'reports'>
       | Doc<'posts'>

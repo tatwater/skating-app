@@ -3003,7 +3003,10 @@ test first.
   reads, ≤ 24 KiB): a decision put on that still stands, or one taken off and none put on (the undo's
   redo, which asks a reason — a record-only row's undo alternates give-back and takeaway down its
   chain). A repeat from before D270 (one decision replaced by another of its kind) or a row that moved
-  neither still has nothing to undo. A restore that only ended a decision on content already up (a
+  neither still has nothing to undo. A Report taken off its own decision this way is its Post's again,
+  as it was: the undo row records the Post's word it puts back (`backToCascade`), so the Post's
+  restore and its undo bring it back (`moderation.cascadeWordOf`; found by the review — without it the
+  Report stayed down for good with nothing on the record). A restore that ended a decision on content already up (a
   history from before the record) says so (`RESTORE_ENDED_ONLY`, *Hide it again …*) instead of
   claiming it predates undo: putting that decision back would stand a decision on content that is up,
   which no write records. The class, as a table test (`undoRecordEffect.test.ts`):
@@ -3063,10 +3066,10 @@ test first.
   success, 404 as success, 503/429/408 retried, a hung request timed out (the timeout's signal aborted by
   the test), a spent budget and a permanent 4xx paging the operator; no test calls Clerk.
 - **The pane's decisions name the write that ended them** (server half; the web half follows #138).
-  `contentRecord.item`'s decisions carry `endActionId` (`null` while standing), and the item's newest
+  `contentRecord.item`'s decisions carry `endActionId` (absent while standing), and the item's newest
   decision, while Reversed, carries that write's undo for the viewer (`undo`, main's engine, one row in
-  view) — as History says it; every older decision's is `null` (a newer decision's write overtook its
-  ending). Additive, no schema change. Cost: the undo's first step for one row (3 calls and 18 documents
+  view) — as History says it; every older decision has none (a newer decision's write overtook its
+  ending). Both fields optional, so the web's types stand as they are; no schema change. Cost: the undo's first step for one row (3 calls and 18 documents
   reserved, as Reversed's rows reserve theirs; a content refusal's 2 reads charged in its wave); the
   pane at its deepest — 52 decisions, the newest 50 read, the newest restored — makes 114 calls, against
   3,500 planned.

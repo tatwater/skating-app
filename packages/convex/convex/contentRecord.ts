@@ -1085,7 +1085,9 @@ export async function itemPane(
     ].sort((a, b) => b.at - a.at || b._creationTime - a._creationTime);
     // Never anything on the record, and no item: nothing to show.
     if (target === null && decisions.length === 0) return null;
-    const standing = decisions.some((d) => d.standing);
+    // The kind of the one that stands (the writers keep at most one), `null` with none.
+    const held = decisions.find((d) => d.standing)?.kind ?? null;
+    const standing = held !== null;
     // Each decision's row and the row that ended it.
     const rows = await reads.waves(
       decisions,
@@ -1206,21 +1208,21 @@ export async function itemPane(
         endedBy: names.person(ending?.actorId),
         endedHow: ending ? endedHowOf(ending) : null,
         endedReason: shownReason(ending),
-        /** The write that ended it — what its Undo undoes; `null` while it stands. */
-        endActionId: d.endedByActionId ?? null,
+        // Both optional — added for the pane's Undo (B01-4h), absent where there is nothing to say.
+        /** The write that ended it — what its Undo undoes; absent while it stands. */
+        ...(d.endedByActionId !== undefined ? { endActionId: d.endedByActionId } : {}),
         /**
          * That write's undo for this viewer — on the item's newest decision while it is Reversed (the
-         * one the pane offers an Undo on); `null` on every other, whose ending a newer decision's write
+         * one the pane offers an Undo on); absent on every other, whose ending a newer decision's write
          * has overtaken, and on one that stands.
          */
-        undo: ending !== null && ending === reversal ? reversalUndo : null,
+        ...(ending !== null && ending === reversal && reversalUndo !== null
+          ? { undo: reversalUndo }
+          : {}),
       })),
       /** More decisions than the pane read (or the budget reached): these are the newest. */
       decisionsCapped: newest.length > ITEM_DECISIONS || shown.length < decisions.length,
-      can: recordLevers(
-        viewer,
-        recordFactsOf(targetType, target, decisions.find((d) => d.standing)?.kind ?? null, members),
-      ),
+      can: recordLevers(viewer, recordFactsOf(targetType, target, held, members)),
       pending,
     };
   }

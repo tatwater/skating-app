@@ -102,9 +102,12 @@ export type CheckedText = string & { readonly [CHECKED]: true };
 /**
  * One fixed part of a composed reason, as {@link composedOf} takes it (B01-4h): a literal of the
  * writer's own words, or a person's words checked ({@link CheckedText}) — never a plain `string`,
- * whose words could be anyone's and would be kept whole past the cap, untrimmed.
+ * whose words could be anyone's and would be kept whole past the cap, untrimmed, nor a template with
+ * a hole (`` `Hid ${note}` ``, which the `const` parameter infers as `` `Hid ${string}` ``). A pure
+ * literal is the one string type an empty object can't satisfy as a record's keys.
  */
-export type FixedWord<S> = S extends CheckedText ? S : string extends S ? never : S;
+// biome-ignore lint/complexity/noBannedTypes: `{}` is the probe — only a literal key set excludes it.
+export type FixedWord<S> = S extends CheckedText ? S : {} extends Record<S & string, 1> ? never : S;
 
 /**
  * A composed reason from its parts — for a writer whose fixed words aren't a template (a person's

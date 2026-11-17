@@ -8267,7 +8267,7 @@ record — and its undo puts back both. A takedown that left the item as it foun
 Post's hide took down, with no decision of its own) still put a decision on the record, so its undo
 takes that decision off and leaves the item as it was; it is offered exactly when that write lands,
 read from the verdict rows, and its redo puts the decision back (a takeaway, so it asks a reason). A
-restore that only ended a decision on content already up is not undone: no write stands a decision on
+restore that ended a decision on content already up is not undone: no write stands a decision on
 content that is up, and the refusal says to hide it again. A takedown of what a decision of that kind
 already holds is refused by the record's one rule (D267), which the lever and the write both ask.
 

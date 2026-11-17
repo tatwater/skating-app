@@ -171,27 +171,35 @@ async function recordOnlyRefusal(
  */
 const contentUndoTakedown: UndoHandler = {
   blocked: (row) => {
-    const { priorStatus } = meta(row);
+    const { priorStatus, newStatus } = meta(row);
     // A verdict recorded on content its author had already deleted is reversed by an overturn (D248).
     if (meta(row).onAuthorDeleted === true) return AUTHOR_DELETED_OVERTURN;
     if (priorStatus !== 'visible' && priorStatus !== 'hidden' && priorStatus !== 'removed') {
       return PREDATES;
     }
+    // A Post's row from before it listed the members it moved can't say it moved none: one that left
+    // the Post as it found it may still have taken a Report down, which a record-only undo (through
+    // `setContentStatus`, whose cascade revives nothing on the way down) would leave down.
+    if (row.targetType === 'post' && cascadeOf(row) === undefined && priorStatus === newStatus) {
+      return PREDATES;
+    }
     return contentBlocked(row);
   },
   undoTakesAway: contentUndoTakesAway,
-  refusalCost: () => RECORD_ONLY_COST,
+  // Only a row that left the item as it was reads the record; any other has nothing to check.
+  refusalCost: (_scope, row) => (leftContentAsItWas(row) ? RECORD_ONLY_COST : null),
   refusal: recordOnlyRefusal,
   run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
 
 /**
- * A restore that left the item up: it only ended a decision standing on content already up (a history
- * rebuilt from before the record). Putting that decision back would be a decision standing on content
+ * A restore that left the item up: it ended a decision standing on content already up (a history
+ * rebuilt from before the record) — and, on a Post, may have brought back Reports its Post had taken
+ * down. Putting that decision back would be a decision standing on content
  * that is up, which no write records — so the undo is refused, and says what puts one back.
  */
 export const RESTORE_ENDED_ONLY =
-  'This only took a decision off something that was already up. Hide it again to put a decision on the record.';
+  'This took a decision off something that was already up. Hide it again to put a decision on the record.';
 
 /** restore → the status it restored from (a Post's members, each to theirs). */
 const contentUndoRestore: UndoHandler = {
@@ -365,10 +373,7 @@ const TARGET_UNDO: Partial<Record<ModerationTargetType, TargetUndo>> = {
 
 function shared(verb: keyof TargetUndo): UndoHandler {
   const forRow = (row: Doc<'moderationActions'>) => TARGET_UNDO[row.targetType]?.[verb];
-  const checks = Object.values(TARGET_UNDO).flatMap((t) => {
-    const h = t?.[verb];
-    return h?.refusal !== undefined ? [h] : [];
-  });
+  const anyChecks = Object.values(TARGET_UNDO).some((t) => t?.[verb]?.refusal !== undefined);
   return {
     blocked: (row, viewer) => {
       const h = forRow(row);
@@ -377,14 +382,17 @@ function shared(verb: keyof TargetUndo): UndoHandler {
         : 'Undo for this kind of item is not built yet.';
     },
     undoTakesAway: (row) => forRow(row)?.undoTakesAway(row) ?? false,
-    // A kind's own check of the row as it stands (content's: what it did to the record), only where a
-    // kind has one, reserved at the dearest kind's worst.
-    ...(checks.length > 0
+    // A kind's own check of the row as it stands (content's: what it did to the record), at that
+    // kind's cost for that row — a row of a kind with no check (a body's removal) reserves nothing.
+    ...(anyChecks
       ? {
-          refusalCost: (scope: UndoScope) =>
-            checks
-              .map((h) => h.refusalCost?.(scope) ?? { bytes: ROW_MAX.waterBody, reads: 1 })
-              .reduce((most, c) => (c.bytes > most.bytes ? c : most)),
+          refusalCost: (scope: UndoScope, row: Doc<'moderationActions'>) => {
+            const h = forRow(row);
+            if (h?.refusal === undefined) return null;
+            return h.refusalCost
+              ? h.refusalCost(scope, row)
+              : { bytes: ROW_MAX.waterBody, reads: 1 };
+          },
           refusal: async (ctx, row, read) => (await forRow(row)?.refusal?.(ctx, row, read)) ?? null,
         }
       : {}),
