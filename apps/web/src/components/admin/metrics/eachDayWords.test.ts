@@ -33,4 +33,10 @@ describe('the bounties total', () => {
     expect(bountiesTotalWords(1200, 3)).toBe('1,200 posted · 3 fulfilled');
     expect(bountiesTotalSub(0)).toBe('Posted · 0 fulfilled');
   });
+
+  it('says a total not recorded as not recorded, never a zero', () => {
+    expect(bountiesTotalSub(null)).toBe('Posted · fulfilled not recorded yet');
+    expect(bountiesTotalWords(null, 1)).toBe('Posted not recorded yet · 1 fulfilled');
+    expect(bountiesTotalWords(2, null)).toBe('2 posted · fulfilled not recorded yet');
+  });
 });

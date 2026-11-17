@@ -35,28 +35,28 @@ describe('every combination of two series, drawn and said alike', () => {
       const b = second[i] ?? null;
 
       // Beside (bounties): each half is its own series' answer — exactly what the plate says.
-      const beside = splitDay(a, b, 'beside').parts;
+      const beside = splitDay(a, b, 'beside');
       expect(beside.map((p) => p.series)).toEqual(['first', 'second']);
       expect(answerOf(beside[0])).toBe(a);
       expect(answerOf(beside[1])).toBe(b);
 
       // Stacked (contributors: the whole, and new on top).
       const stack = splitDay(a, b, 'stack');
-      const unrecorded = stack.parts.some((p) => p.as === 'unrecorded');
+      const unrecorded = stack.some((p) => p.as === 'unrecorded');
       // A whole not recorded is said as not recorded; a recorded whole never is.
       expect(unrecorded).toBe(a === null);
       // Never drawn shorter than what is known.
-      expect(valueSum(stack.parts)).toBe(Math.max(a ?? 0, b ?? 0));
+      expect(valueSum(stack)).toBe(Math.max(a ?? 0, b ?? 0));
       // A known top part is drawn as itself whenever it is more than nothing.
       if (b !== null && b > 0) {
-        expect(stack.parts.filter((p) => p.series === 'second')).toEqual([
+        expect(stack.filter((p) => p.series === 'second')).toEqual([
           { series: 'second', as: 'value', value: b },
         ]);
       }
       // A recorded whole with its split not recorded is the whole, dashed — the plate's split row says
       // *Not recorded yet*, and no part of the bar claims a split.
       if (a !== null && a > 0 && b === null) {
-        expect(stack.parts).toEqual([{ series: 'first', as: 'unsplit', value: a }]);
+        expect(stack).toEqual([{ series: 'first', as: 'unsplit', value: a }]);
       }
     });
 
@@ -80,23 +80,19 @@ describe('every combination of two series, drawn and said alike', () => {
   });
 
   it('the stacked table’s rows, one by one', () => {
-    expect(splitDay(6, 2, 'stack').parts).toEqual([
+    expect(splitDay(6, 2, 'stack')).toEqual([
       { series: 'first', as: 'value', value: 4 },
       { series: 'second', as: 'value', value: 2 },
     ]);
-    expect(splitDay(6, null, 'stack').parts).toEqual([
-      { series: 'first', as: 'unsplit', value: 6 },
-    ]);
-    expect(splitDay(0, null, 'stack').parts).toEqual([{ series: 'first', as: 'zero' }]);
-    expect(splitDay(0, 2, 'stack')).toEqual({
-      parts: [{ series: 'second', as: 'value', value: 2 }],
-      height: 2,
-    });
-    expect(splitDay(null, 2, 'stack').parts).toEqual([
+    expect(splitDay(6, null, 'stack')).toEqual([{ series: 'first', as: 'unsplit', value: 6 }]);
+    expect(splitDay(0, null, 'stack')).toEqual([{ series: 'first', as: 'zero' }]);
+    expect(splitDay(0, 2, 'stack')).toEqual([{ series: 'second', as: 'value', value: 2 }]);
+    expect(splitDay(null, 2, 'stack')).toEqual([
       { series: 'second', as: 'value', value: 2 },
       { series: 'first', as: 'unrecorded' },
     ]);
-    expect(splitDay(null, 0, 'stack').parts).toEqual([{ series: 'first', as: 'unrecorded' }]);
-    expect(splitDay(2, 5, 'stack').height).toBe(5);
+    expect(splitDay(null, 0, 'stack')).toEqual([{ series: 'first', as: 'unrecorded' }]);
+    // A top part the whole didn't count draws whole: never shorter than what is known.
+    expect(splitDay(2, 5, 'stack')).toEqual([{ series: 'second', as: 'value', value: 5 }]);
   });
 });

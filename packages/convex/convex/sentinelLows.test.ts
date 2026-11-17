@@ -362,7 +362,7 @@ describe('sentinelRows over generated rosters and merges', () => {
   });
   const property = fc.property(world, ({ ids, lead, fired }) => {
     const lakeOf = (id: string): Lake => {
-      const l = lead[ids.indexOf(id)];
+      const l = lead[(ids as readonly string[]).indexOf(id)];
       return l === undefined
         ? 'unread'
         : l === null
@@ -380,7 +380,7 @@ describe('sentinelRows over generated rosters and merges', () => {
       .filter((l): l is string => typeof l === 'string' && l !== 'unread');
     expect(new Set(lakes).size).toBe(lakes.length);
     for (const id of named) {
-      const key = siteKey({ waterBodyId: id, name: `n-${id}` }, keyOf, rows);
+      const key = siteKey({ waterBodyId: id, name: `n-${id}` }, keyOf, candidates);
       const matching = rows.filter((r) => r.key === key);
       // Exactly one row, and it is the site's lake's (or, gone or unread, its own).
       expect(matching).toHaveLength(1);
@@ -396,9 +396,21 @@ describe('sentinelRows over generated rosters and merges', () => {
   });
 
   test('a site stored before ids is matched by name; a name no row has is no row', () => {
-    const { rows, keyOf } = sentinelRows([{ savedId: 'a', name: 'Kinsman Pond' }], () => 'lake-a');
-    expect(siteKey({ name: 'Kinsman Pond' }, keyOf, rows)).toBe('a');
-    expect(siteKey({ name: 'Elsewhere' }, keyOf, rows)).toBeNull();
+    const candidates = [{ savedId: 'a', name: 'Kinsman Pond' }];
+    const { keyOf } = sentinelRows(candidates, () => 'lake-a');
+    expect(siteKey({ name: 'Kinsman Pond' }, keyOf, candidates)).toBe('a');
+    expect(siteKey({ name: 'Elsewhere' }, keyOf, candidates)).toBeNull();
+  });
+
+  test('a site stored by name lands on the row its sentinel’s lake now is, though that row has another name', () => {
+    // Eagle merged into Clouds: one row, Clouds's — a name-only site naming Eagle marks it.
+    const candidates = [
+      { savedId: 'clouds', name: 'Upper Lake of the Clouds' },
+      { savedId: 'eagle', name: 'Eagle Lake' },
+    ];
+    const { rows, keyOf } = sentinelRows(candidates, () => 'lake-clouds');
+    expect(rows.map((r) => r.key)).toEqual(['clouds']);
+    expect(siteKey({ name: 'Eagle Lake' }, keyOf, candidates)).toBe('clouds');
   });
 });
 

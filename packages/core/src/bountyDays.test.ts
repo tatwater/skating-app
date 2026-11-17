@@ -8,6 +8,7 @@ import {
   fulfilledExpiryRange,
   fulfilledIn,
   postedIn,
+  wholeTotal,
 } from './bountyDays';
 import { DEFAULT_BOUNTY_LIFETIME_MS } from './reputationConfig';
 
@@ -90,5 +91,21 @@ describe('a day’s bounties', () => {
     const b = { status: 'fulfilled', createdAt: START, fulfilledAt: START + DAY };
     expect(bountiesOnDay([b], START, START + DAY)).toEqual({ posted: 1, fulfilled: 0 });
     expect(bountiesOnDay([b], START + DAY, START + 2 * DAY)).toEqual({ posted: 0, fulfilled: 1 });
+  });
+});
+
+describe('a series’ season total (`wholeTotal`)', () => {
+  it('is the days’ sum when every day is recorded, and `null` when any is not — never a zero for a gap', () => {
+    const day = fc.oneof(fc.constant(null), fc.nat(40));
+    const holds = fc.property(fc.array(day, { maxLength: 30 }), (days) => {
+      const total = wholeTotal(days);
+      if (days.includes(null)) expect(total).toBeNull();
+      else expect(total).toBe(days.reduce<number>((a, n) => a + (n ?? 0), 0));
+    });
+    for (const seed of [20261117, 150]) fc.assert(holds, { seed, numRuns: 200 });
+    fc.assert(holds, { numRuns: 200 });
+    expect(wholeTotal([])).toBe(0);
+    expect(wholeTotal([0, 0])).toBe(0);
+    expect(wholeTotal([3, null, 2])).toBeNull();
   });
 });

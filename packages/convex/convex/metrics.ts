@@ -279,10 +279,8 @@ function pulseFrom(
       continue;
     }
     if (key === 'accounts') {
-      const recorded = daily.accounts.every((n) => n !== null);
-      out[key] = recorded
-        ? { daily: daily.accounts, total: daily.accounts.reduce<number>((a, n) => a + (n ?? 0), 0) }
-        : null;
+      const total = wholeTotal(daily.accounts);
+      out[key] = total === null ? null : { daily: daily.accounts, total };
     } else if (key === 'signedIn' || key === 'contributors') {
       out[key] =
         reach !== null && uncapped(key)

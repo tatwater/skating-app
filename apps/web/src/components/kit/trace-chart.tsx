@@ -713,9 +713,10 @@ type SparkMark = 'solid' | 'outline';
 
 /**
  * A strip's second series. **`beside`**: each day's slot halves — `values` (the strip's) on the left
- * in `marks.first`, these on the right in `marks.second`; a `null` here is an empty half. **`stack`**:
- * the strip's `values` are each day's whole bar, these the part of it on top in `marks.second`, the
- * rest under it in `marks.first`; a `null` here (the split not recorded) draws the whole bar dashed.
+ * in `marks.first`, these on the right in `marks.second`; a `null` in either is that half's
+ * not-recorded hair. **`stack`**: the strip's `values` are each day's whole bar, these the part of it
+ * on top in `marks.second`, the rest under it in `marks.first`; a `null` here (the split not
+ * recorded) draws the whole bar dashed. What each day draws is `splitDay`.
  */
 type SparkbarSplit = {
   values: readonly (number | null)[];
@@ -755,45 +756,33 @@ function splitDay(
   first: number | null,
   second: number | null,
   layout: 'beside' | 'stack',
-): { parts: SplitPart[]; height: number | null } {
+): SplitPart[] {
   const own = (series: 'first' | 'second', v: number | null): SplitPart =>
     v === null
       ? { series, as: 'unrecorded' }
       : v === 0
         ? { series, as: 'zero' }
         : { series, as: 'value', value: v };
-  if (layout === 'beside') {
-    const known = [first, second].filter((v): v is number => v !== null);
-    return {
-      parts: [own('first', first), own('second', second)],
-      height: known.length === 0 ? null : Math.max(...known),
-    };
-  }
+  if (layout === 'beside') return [own('first', first), own('second', second)];
   if (first === null) {
     return second !== null && second > 0
-      ? {
-          parts: [
-            { series: 'second', as: 'value', value: second },
-            { series: 'first', as: 'unrecorded' },
-          ],
-          height: second,
-        }
-      : { parts: [{ series: 'first', as: 'unrecorded' }], height: null };
+      ? [
+          { series: 'second', as: 'value', value: second },
+          { series: 'first', as: 'unrecorded' },
+        ]
+      : [{ series: 'first', as: 'unrecorded' }];
   }
   if (second === null) {
     return first === 0
-      ? { parts: [{ series: 'first', as: 'zero' }], height: 0 }
-      : { parts: [{ series: 'first', as: 'unsplit', value: first }], height: first };
+      ? [{ series: 'first', as: 'zero' }]
+      : [{ series: 'first', as: 'unsplit', value: first }];
   }
-  if (first === 0 && second === 0) return { parts: [{ series: 'first', as: 'zero' }], height: 0 };
+  if (first === 0 && second === 0) return [{ series: 'first', as: 'zero' }];
   const rest = Math.max(0, first - second);
-  return {
-    parts: [
-      ...(rest > 0 ? [{ series: 'first' as const, as: 'value' as const, value: rest }] : []),
-      ...(second > 0 ? [{ series: 'second' as const, as: 'value' as const, value: second }] : []),
-    ],
-    height: Math.max(first, second),
-  };
+  return [
+    ...(rest > 0 ? [{ series: 'first' as const, as: 'value' as const, value: rest }] : []),
+    ...(second > 0 ? [{ series: 'second' as const, as: 'value' as const, value: second }] : []),
+  ];
 }
 
 /** The day a `SparkbarSet` is pointing at, for the strips inside it. */
@@ -828,14 +817,9 @@ function Sparkbars({
     >
       {bars.map((b, i) => {
         const hovered = active === i;
-        // A day nothing recorded keeps its place on the axis, and draws nothing.
         if (split !== undefined) {
-          const day = splitDay(
-            values[i] === null || values[i] === undefined
-              ? null
-              : typeof values[i] === 'number'
-                ? (values[i] as number)
-                : (values[i] as { value: number }).value,
+          const parts = splitDay(
+            b === null ? null : b.value,
             split.values[i] ?? null,
             split.layout,
           );
@@ -887,7 +871,7 @@ function Sparkbars({
             );
           };
           if (split.layout === 'beside') {
-            const [first, second] = day.parts as [SplitPart, SplitPart];
+            const [first, second] = parts as [SplitPart, SplitPart];
             return (
               <span
                 // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
@@ -916,13 +900,14 @@ function Sparkbars({
               data-slot="sparkbar"
               data-latest={latest ? '' : undefined}
               data-hovered={hovered ? '' : undefined}
-              data-split={day.parts.some((p) => p.as === 'unsplit') ? 'unrecorded' : undefined}
+              data-split={parts.some((p) => p.as === 'unsplit') ? 'unrecorded' : undefined}
               className="flex h-full min-w-0 flex-1 flex-col justify-end"
             >
-              {[...day.parts].reverse().map(draw)}
+              {[...parts].reverse().map(draw)}
             </span>
           );
         }
+        // A day nothing recorded keeps its place on the axis, and draws nothing.
         if (b === null) {
           return (
             <span

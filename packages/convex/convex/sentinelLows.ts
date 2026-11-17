@@ -51,11 +51,14 @@ const MERGE_HOPS = 8;
 
 /** One sentinel's row: its name, and its low (°C) for each night of the window; `null` is a gap. */
 export type SentinelSeries = {
-  /** The roster's id for it (stable across a merge of its body). */
+  /**
+   * Its one identity (`sentinelRows`): the first stored id that reached its lake — the roster's, or for
+   * a sentinel only the season record names, the record's (stable across a merge of its body).
+   */
   key: string;
   /** The body the watch stores its lows under — the roster's, or the body it was merged into. */
   bodyId: string | null;
-  /** The name the roster holds it by. */
+  /** The name that id was stored with (the roster's, or the record's). */
   name: string;
   /**
    * `read`: its stored lows (nights it has none for are `null`). `gone`: its body no longer resolves,
@@ -179,14 +182,19 @@ export function sentinelRows(
   return { rows, keyOf: (savedId) => rowOf.get(identity(savedId))?.key };
 }
 
-/** A marked night's stored site as its row's key: by its id, or, stored without one, by its name. */
+/**
+ * A marked night's stored site as its row's key: by its id, or, stored without one, by its name —
+ * matched against every stored id's name (not only each row's first), so a site naming a sentinel
+ * whose lake another row now holds still lands on that row.
+ */
 export function siteKey(
   site: { waterBodyId?: string; name: string },
   keyOf: (savedId: string) => string | undefined,
-  rows: ReadonlyArray<{ key: string; name: string }>,
+  candidates: readonly Candidate[],
 ): string | null {
   if (site.waterBodyId !== undefined) return keyOf(site.waterBodyId) ?? null;
-  return rows.find((r) => r.name === site.name)?.key ?? null;
+  const named = candidates.find((c) => c.name === site.name);
+  return named === undefined ? null : (keyOf(named.savedId) ?? null);
 }
 
 /** The roster's body, followed through merges as the cron does; `null` when the chain dead-ends. */
@@ -301,7 +309,7 @@ export async function readSentinelLows(
     // recorded yet.
     return newYorkDate(now) < countsFrom
       ? { state: 'before', season, countsFrom }
-      : { state: 'none', season, countsFrom, roster: rows.length };
+      : { state: 'none', season, countsFrom, roster: roster.length };
   }
 
   const inWindow = (night: string | undefined) =>
@@ -312,7 +320,7 @@ export async function readSentinelLows(
     sites: ReadonlyArray<{ waterBodyId?: Id<'waterBodies'>; name: string; lowC: number }>,
   ) =>
     sites.map((s) => ({
-      key: siteKey(s, keyOf, rows),
+      key: siteKey(s, keyOf, candidates),
       name: s.name,
       lowC: s.lowC,
     }));
@@ -336,7 +344,9 @@ export async function readSentinelLows(
         ? {
             on: record.opensOn,
             sites: sitesOf(opening),
-            of: record.sentinels?.length ?? rows.length,
+            // How many the watch watched that night, as the record counts it: never the rows drawn,
+            // which fold merged sentinels together and add the ones the roster has since dropped.
+            of: record.sentinels?.length ?? roster.length,
           }
         : null,
     imageryLine:

@@ -111,6 +111,10 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** A count as the strips say it ("1,200"); `null` or absent, not recorded. */
+const said = (n: number | null | undefined) =>
+  n === null || n === undefined ? null : n.toLocaleString('en-US');
+
 // ── Each day: the season's pulse ─────────────────────────────────────────────────────────────
 
 /**
@@ -123,8 +127,8 @@ const PULSE_FLOOR = 3;
  * One strip of daily bars per kind of activity, its season total beside it, all on one day axis —
  * the kit's `SparkbarSet` of `Sparkbars`: hovering anywhere over the strips, or stepping with ← →
  * once the set has focus, draws one hairline through every strip at that day and one plate with
- * each strip's value. A day nothing recorded is an empty slot on its strip, never a zero stub, and
- * the plate says *Not recorded yet* for it.
+ * each strip's value. A day nothing recorded is an empty slot on its strip — on a two-series strip,
+ * the not-recorded hair (`splitDay`) — never a zero stub, and the plate says *Not recorded yet* for it.
  */
 export function PulseStrips({
   days,
@@ -151,9 +155,6 @@ export function PulseStrips({
     begins === null && pulse.reports !== null && vantageRead !== null
       ? vantageLine(vantageRead)
       : null;
-  const said = (n: number | null | undefined) =>
-    n === null || n === undefined ? null : n.toLocaleString('en-US');
-
   // The grid's rows, in order: each strip, the Reports row's vantage line under it, the bounties.
   let next = 1;
   const rowOf = () => ({ gridRow: next++ });
@@ -378,7 +379,6 @@ function BountiesStrip({
   note: string;
 }) {
   const totals = bounties?.totals ?? null;
-  const said = (n: number | null) => (n === null ? null : n.toLocaleString('en-US'));
   return (
     <div className="contents" data-slot="pulse-strip" data-key="bounties">
       <RowName

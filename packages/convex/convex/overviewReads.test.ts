@@ -1979,7 +1979,6 @@ describe('metrics.showingUp', () => {
     expect(b?.fulfilled.at(-1)).toBe(1);
     expect(b?.posted.at(-1)).toBeNull();
     expect(b?.posted.at(-4)).toBe(2);
-    expect(b?.fulfilled.at(-1)).toBe(1);
   });
 
   test('this week: reports and their people, contributors and first-timers', async () => {

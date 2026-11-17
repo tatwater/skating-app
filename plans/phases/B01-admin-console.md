@@ -3151,10 +3151,11 @@ four cards and cost and audit — which reverses Review 3's "the sentinel lows l
   with their words ("Watch opened · 2 of 3", "Imagery line · 19 °F") and a ⊗ on each sentinel the record
   named; each line's end label ("Kinsman 37"). Under it the kit's temperature matrix and its scale.
 - **The read** (`sentinelLows.forSeason`, `{ season?, now? }`): the season record, the current settings,
-  and per sentinel (ten at most) its merge chain — the cron's own eight-hop rule, so a merged sentinel
-  is read under the body the watch stores it under — and its one stored series, each through one
-  `ReadBudget` (12 MiB of 16, as the rows really weigh after reserving each worst case; at most about
-  a hundred calls). A sentinel the budget can't reach is `unread`, and one whose body is gone `gone`;
+  the merge chain of each stored id that names a sentinel (the roster's, the record's copy of it and
+  its two nights' sites — ten at most each, so at most forty ids) — the cron's own eight-hop rule, so a
+  merged sentinel is read under the body the watch stores it under — and each sentinel's one stored
+  series, each through one `ReadBudget` (12 MiB of 16, as the rows really weigh after reserving each
+  worst case; at most about four hundred calls). A sentinel the budget can't reach is `unread`, and one whose body is gone `gone`;
   both draw as a row of gaps — no reading, never zero. Gated on `SENTINEL_LOWS_CAPABILITY` (D275).
   **One identity for a sentinel** (Greptile on #150, fixed as a class): the lake the watch stores its
   lows under now — the end of its merge chain, as the cron follows it. Every stored id that names a
@@ -3244,7 +3245,7 @@ other or stacked, a two-item key under the row's name — told apart by shape, n
   bounty fulfilled since; twice, so a bounty posted under a longer lifetime than today's is still read)
   — and the season's totals, "N posted · M fulfilled", only when every day is recorded.
 - **Contributors**: stacked, returning solid under first-timers outlined; the bar's height is the day's
-  contributors, as before. A first-timer is new on the day of their **first-ever** contribution — across
+  contributors, or its first-timers where they are more (`splitDay`). A first-timer is new on the day of their **first-ever** contribution — across
   every season, by the one rule (`firstContributionAt`, D253's kinds), on the metric day the strips
   count by. The season walk counts it, in a last stage over its contributors set (25 people a page,
   progress in the walk's arguments, never a document the reads subscribe to; each page a scheduled
@@ -3255,7 +3256,7 @@ other or stacked, a two-item key under the row's name — told apart by shape, n
   recorded yet* — never a zero split. The sub-line is the board's "2 new · 4 returning" (new: first-ever
   contribution in the season; returning: the rest of the season's distinct contributors). A first-
   timer's first contribution may be one the day strip doesn't count (a report a moderator has since
-  hidden); the stack clamps to the day's bar.
+  hidden); the stack then draws the first-timers whole — never shorter than what is known.
 - **Reports**: the vantage line under the row (`vantageLine`), each vantage in the app's one order.
 - **What a two-series day draws** (Greptile on #150, fixed as a class: one series' gap decided what was
   drawn for the other). One rule, `splitDay`, which the strip renders and a property checks against

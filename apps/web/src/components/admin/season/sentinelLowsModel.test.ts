@@ -295,7 +295,9 @@ describe('a marked night’s markers, by the one identity', () => {
     const marked = (v.opened?.marks ?? []).map((m) => m.row);
     // Each row the record named, with a low that night, is marked exactly once; no other row is.
     const expected = sentinels
-      .map((s, i) => (named.includes(s.key) && values[i] != null ? i : -1))
+      .map((s, i) =>
+        (named as ReadonlyArray<string | null>).includes(s.key) && values[i] != null ? i : -1,
+      )
       .filter((i) => i !== -1);
     expect(marked).toEqual(expected);
   });
