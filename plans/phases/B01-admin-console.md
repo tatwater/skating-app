@@ -5322,12 +5322,110 @@ the count reads at most 306 rows.
    `waterBodies:reviewQueueCounts` (its time on an Overview load), and `bodyGeo:seedAll` (each page; 250 pages now) — from the next `computeDue` runs, or
    a `seedAll` + `computeAll` if a full run's numbers are wanted (not needed for correctness).
 
+**Read back on dev** (2026-11-17, `ce449f19`; no schema or index change; 0 of 2,425 town boundaries
+lack `fullName`). `bodyGeo:checkStored` read `same` for all 17 bodies checked, none stale — Lake
+Champlain, Memphremagog, Seneca, Cayuga, Moosehead, Winnipesaukee, Lake George, Lac Saint-François
+(the widest box among the 40 largest), the two pinned bodies, a body in each Clinton, five small ponds
+— in one call of 32 s. From that run:
+
+| Function | Calls | p50 | p99 | Peak | Over 1 s | Before |
+|---|---|---|---|---|---|---|
+| `townCandidates` | 17 | 30 ms | 61 ms | 61 ms | 0 | peak 1,102 ms |
+| `candidates` | 34 | 675 ms | 1,210 ms | 1,210 ms | 5 | p50 249 ms (corpus-wide), peak 1,113 ms |
+| `candidateOutline` | 94 | 19 ms | 60 ms | 63 ms | 0 | new |
+| `townNamesShared` | 93 | 23 ms | 56 ms | 56 ms | 0 | — |
+| `reviewQueueCounts` | 7 | 77 ms | 269 ms | 269 ms | 0 | 1.1–1.4 s |
+
+The intake counts at the cap: bay-without-parent 14, class-dissent 18, and class-conflict,
+duplicate-candidate, name-conflict and same-source-duplicate each 50+. The cron's pass ran twice on
+the new code with nothing due, no error lines. `townCandidates` and `reviewQueueCounts` are fixed;
+`candidates` on the largest lakes is no better at its peak, as predicted — its cost is
+`bodiesCoveringBox`'s walk and hydration, taken up in B01-3q (below). (These 34 calls are the 17
+largest-and-chosen bodies' tiles, so their p50 is not the corpus-wide one.)
+
 **Owed.**
-- `bodiesCoveringBox`'s hydration in waves (above): the recompute's neighbor step and the skater map.
+- `bodiesCoveringBox`'s cell walk (`lib/cellScan`'s `scanCells`, one read a cell, its fair share of the row budget decided by what the cells before returned) — its hydration is B01-3q's.
 - An exact intake count: a stored counter (schema).
 - The namesakes from a light row (schema): a boundary's name, full name and key without its polygon.
 - The sweep's items in other files.
-- Dev's numbers after deploy: the three reads' times and `checkStored` on the named bodies.
+- `bodyGeo:seedAll`'s page time on dev, the third of the three reads (not read back above; not needed
+  for correctness).
+
+### Every town page advances or is done, and the cover hydrates in waves (B01-3q)
+
+**What the review found after #143 merged** (Greptile's note on its last head). A town candidates page
+read its columns in waves, then read each full column again cell by cell. The columns could spend the
+whole budget first — 109 full columns of 256 rows and one of 96 are exactly the 28,000 documents a
+transaction plans — and then the first cell's own read was refused, the page ended at its first cell,
+`next` named where it began, and the action failed the body (*town candidates made no progress*),
+leaving its last answer in place. Not reachable on dev's data (a real column holds a few dozen rows),
+but the code allowed it.
+
+**The invariant: every page advances its cursor or is done, for any budget that can hold one unit of
+its work; a budget that cannot is its own named failure.** It lives in one mechanism,
+`ReadBudget.reserveFirst` (`lib/readBudget.ts`): a paged read holds back the worst case of settling
+its first item — every read that item can need — before anything else spends; a budget that cannot
+hold it throws `CannotAdvance` (an `OverBudget`) on the first call, holding nothing. The town page
+(`settleTownPage`, its reads now passed in) holds its first column's read and that column's own read
+of the first cell, reads them alongside the other columns' first wave, and so settles its first cell
+on every page: `cut` is at least one, so `next` is a later cell than `from`, or the page is done. The
+action's `movedOn` check stays as the backstop. With the whole budget the page is unchanged: one call
+a column, the same ids in the same order.
+
+**What changed in `lib/readBudget.ts`** (additive): the class `CannotAdvance extends OverBudget`, and
+the method `reserveFirst(cost: WaveCost)` — it checks bytes, calls and documents (`docs` defaulting
+to one a read, as `waves` counts) and only then takes them, through the existing `reserveCalls`. Its
+own tests: held from every axis; refused on each axis alone, holding nothing; the docs default.
+
+**Tests** (`townPageProgress.test.ts`, without a database — the cell index is synthetic). Greptile's
+exact case, red before the fix (the page ended at its first cell); a budget one document or one call
+short of a unit is `CannotAdvance` on the first call, and exactly one unit settles the first cell;
+over generated fills (empty, light and heavy cells, full and short columns), page sizes, column sizes
+and budgets from one unit to many, every page moves strictly on, the pages' union is the old walk's
+answer in its order, the pages are at most the walk's cells (each settles at least one), and runs
+are counted that the budget cut short — three pinned seeds and one random; with the whole budget, the
+pages are exactly the walk divided by the page size. The first cell's reads and the other columns'
+wave are settled together (a head read that fails is never an unhandled rejection, and a column that
+fails leaves no head read running past the page), and `waves` counts the head's own rounds.
+
+**The fixture, cheap.** #143 raised the worst-case fixture's hook timeout after CI under coverage
+spent past 10 s building it: most of that was the old walk's 2,448 reads, one after another, to get
+the expected answer. That answer is now computed from the areas themselves (each town in the cells
+its box covers at its own rung, a cell's towns in the order added), and the small-world property
+checks it against the database walk on every run. The fixture builds in about 0.7 s under coverage;
+the default timeout is back.
+
+**The sweep: every paged or chained read #143 touched.**
+- `townCandidates` — could stall (above); fixed.
+- `townPage`, `countyPage` — no cursor: the action hands each a fixed slice of at most eleven and moves by the slice. Cannot stall.
+- `candidates`, `candidateOutline` — no cursor: one query a tile of a fixed tile list, one a tested outline. Cannot stall.
+- `seedAll` (and `fanOut`, `repairMissing`) — Convex's `paginate` with no filter and no byte cap: a page that is not the last holds at least one row and its cursor is past it. Cannot stall.
+- `markGeoStale`, `reviewQueueCounts`, `checkStored` — not paged (a list in hand; six bounded reads; at most 25 ids). Cannot stall.
+- `computeDue` — its pass tries at least one body it has not (unchanged by #143); the run-wide namesake reads change what a body reads, not which body is next. Cannot stall.
+- `hydrateRanked` (this build's) — the same class, found in review: a fractional or `NaN` limit made a wave of none, and the loop never moved; a wave now holds at least one candidate. Cannot stall.
+- `ReadBudget.waves` in these files — only the town page, whose second wave (the full columns' cells) was the follow-up its first could starve; now its first cell is held, and any later cell refused ends the page after the first.
+
+**`bodiesCoveringBox`'s hydration, in waves.** Dev's read-back of #143 left `candidates` the one read
+still past a second on the largest lakes (1,210 ms peak). Its tile's cover read each ranked candidate
+on its own, one after another, until thirteen fit — a whole body a round trip, rejected ones (a box
+that misses the tile) included. `lib/cellScan`'s `hydrateRanked` now reads a wave of exactly as many
+as could still be kept (the limit less those kept): every read is one the old loop made — never one
+more, so never another document's bytes — and the kept bodies, their order and `truncated` are its
+(a property against the old loop, kept as the reference in `cellScanHydrate.test.ts`: the kept
+ones, the flag, and the set of ids read, over ranked lists of kept, rejected and gone candidates and
+limits from 0; three pinned seeds and one random; an all-kept list is one round). Its callers read
+the same `byId` and `truncated`: the skater map's `listInViewport`, `viewportReadStats`,
+`listedBodiesNearCoord` (the coordinate resolver, and through it the access-point imports, GPS
+activities, hazards, corpus requests, a proposed body's match candidates and the depth matches), and
+`bodyGeo.candidates`. The cell walk before it (`scanCells`, one read a cell, its share of the row
+budget decided by the cells before) is not changed: a concurrent walk is not the same walk when the
+row budget binds; owed. A wave holds at most 64 reads (`HYDRATE_WAVE_MAX`), so the map's 1,000-body viewport reads in about 16 rounds rather than 1,000 reads in flight at once. The bay-label layer's twin (`subAreas.subAreasCoveringBox`) still hydrates one at a time: its vertex budget stops it mid-list, so `hydrateRanked` is not a drop-in there; owed. Expect `candidates`' rounds on a giant's tile to fall from one a candidate
+read to a few; its cell walk remains.
+
+**After merge, on dev.** `convex dev --once`, nothing more: no schema change, no backfill, and no
+answer changes (with the whole budget the page is the one #143 shipped). `bodyGeo:checkStored` on the
+largest bodies stays the right check and should read `same`. Read back `bodyGeo:candidates` (p50,
+p99, peak) from that run against B01-3p's on the same 17 bodies (675 ms, 1,210 ms, 1,210 ms).
 
 ### The Body console's owed web items (B01-3o)
 

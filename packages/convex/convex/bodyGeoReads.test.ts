@@ -6,7 +6,7 @@
  * as the reference: the same towns, in the same order, for any boundaries and any box.
  */
 
-import { bboxIntersects, cellRangeCovering } from '@skating/core';
+import { bboxIntersects, cellRangeCovering, cellsCovering, indexLevelFor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
@@ -56,8 +56,9 @@ const rectangle = (b: Box): Polygon => ({
 });
 
 /** Boundaries, indexed as the import indexes them, in one transaction. */
-async function seedAreas(t: T, areas: readonly Area[]): Promise<void> {
-  await t.run(async (ctx) => {
+async function seedAreas(t: T, areas: readonly Area[]): Promise<Id<'adminAreas'>[]> {
+  return t.run(async (ctx) => {
+    const ids: Id<'adminAreas'>[] = [];
     for (const [k, a] of areas.entries()) {
       const id = await ctx.db.insert('adminAreas', {
         name: a.name,
@@ -73,8 +74,39 @@ async function seedAreas(t: T, areas: readonly Area[]): Promise<void> {
         createdAt: 0,
       });
       await syncAdminAreaCells(ctx, id, { bbox: a.box, level: a.level });
+      ids.push(id);
     }
+    return ids;
   });
+}
+
+/**
+ * **The old walk over the index the areas make, without a database** — each town in the cells its
+ * box covers at its own rung (as `syncAdminAreaCells` indexes it), a cell's towns in the order they
+ * were added (as `by_cell` returns them), walked rung by rung, row-major. Checked against the
+ * database walk below, so the big fixture can be answered without 2,448 reads.
+ */
+function referenceOfAreas(areas: readonly Area[], ids: readonly Id<'adminAreas'>[], box: Box) {
+  const byCell = new Map<string, Id<'adminAreas'>[]>();
+  for (const [k, a] of areas.entries()) {
+    if (a.level !== 'town') continue;
+    for (const c of cellsCovering(a.box, indexLevelFor(a.box, ADMIN_AREA_LADDER))) {
+      const key = `${c.z}/${c.x}/${c.y}`;
+      byCell.set(key, [...(byCell.get(key) ?? []), ids[k] as Id<'adminAreas'>]);
+    }
+  }
+  const out = new Set<Id<'adminAreas'>>();
+  for (let z = ADMIN_AREA_LADDER.minZ; z <= ADMIN_AREA_LADDER.maxZ; z++) {
+    const range = cellRangeCovering(box, z);
+    const width = range.maxX - range.minX + 1;
+    for (let i = 0; i < range.count; i++) {
+      const key = `${z}/${range.minX + (i % width)}/${range.minY + Math.floor(i / width)}`;
+      const towns = byCell.get(key) ?? [];
+      if (towns.length > 64) throw new Error(`a town cell holds more than 64 rows (z ${z})`);
+      for (const id of towns) out.add(id);
+    }
+  }
+  return [...out];
 }
 
 /** **The old algorithm**, as it stood before B01-3p: every cell read on its own, one after another. */
@@ -231,8 +263,10 @@ describe('the same towns as before, for any boundaries', () => {
   const reached = { towns: 0, paged: 0, fellBack: 0 };
   const same = fc.asyncProperty(world, async ({ areas, box, pageCells, columnRows }) => {
     const t = harness();
-    await seedAreas(t, areas);
+    const seeded = await seedAreas(t, areas);
     const before = await t.run((ctx) => referenceTownIds(ctx, box));
+    // The fixture's reference without a database is the database walk's answer.
+    expect(referenceOfAreas(areas, seeded, box)).toEqual(before);
     const after = await pagedTownIds(t, box, {
       ...(pageCells !== undefined ? { pageCells } : {}),
       ...(columnRows !== undefined ? { columnRows } : {}),
@@ -336,11 +370,10 @@ describe('the worst real case: thousands of cells across two states', () => {
         box: { minLng: -73.44, maxLng: -71.46, minLat: 42.72, maxLat: 45.02 },
       },
     );
-    await seedAreas(t, areas);
-    before = await t.run((ctx) => referenceTownIds(ctx, box));
-    // Built once for the file: 478 boundaries and the old walk's 2,448 cell reads take about 2 s
-    // here and several times that on CI under coverage — past the 10 s hook default (CI, #143).
-  }, 120_000);
+    const started = performance.now();
+    before = referenceOfAreas(areas, await seedAreas(t, areas), box);
+    console.info(`worst-case fixture built in ${Math.round(performance.now() - started)} ms`);
+  });
 
   test('the same 458 towns, in the same order', async () => {
     const after = await pagedTownIds(t, box);

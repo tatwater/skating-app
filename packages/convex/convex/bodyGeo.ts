@@ -214,20 +214,57 @@ function seam(n: number | undefined, max: number): number {
   return n !== undefined && Number.isFinite(n) ? Math.min(max, Math.max(1, Math.floor(n))) : max;
 }
 
-/** One page of town candidates — {@link townCandidates}' work. */
+/** One page of town candidates — {@link townCandidates}' work: its cells planned, then settled. */
 async function townCandidatesPage(
   ctx: QueryCtx,
   box: Box,
   from: { z: number; i: number } | undefined,
   opts: { pageCells: number; columnRows: number },
-): Promise<{
+): Promise<TownPage> {
+  const { cells, next: planned } = townCellPage(box, from, opts.pageCells);
+  return settleTownPage(cells, planned, opts.columnRows, {
+    column: (c, n) =>
+      ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_cell', (q) => q.eq('z', c.z).eq('x', c.x).gte('y', c.minY).lte('y', c.maxY))
+        .take(n),
+    cell: ({ z, x, y }, n) =>
+      ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
+        .take(n),
+  });
+}
+
+/** A town candidates page's answer. */
+export type TownPage = {
   ids: Id<'adminAreas'>[];
   next: { z: number; i: number } | null;
   calls: number;
   waves: number;
-}> {
-  const { cells, next: planned } = townCellPage(box, from, opts.pageCells);
-  const reads = new ReadBudget();
+};
+
+/** A cell index row as a column read returns it: its row, its level, its boundary. */
+export type TownColumnRow = { y: number; level: string; adminAreaId: Id<'adminAreas'> };
+
+/** The two reads a page makes of the cell index: a column's rows (every level), a cell's town rows. */
+export interface TownCellReads {
+  column(c: TownColumn, n: number): Promise<TownColumnRow[]>;
+  cell(c: TownCell, n: number): Promise<{ adminAreaId: Id<'adminAreas'> }[]>;
+}
+
+/**
+ * **Settle a page's cells**: read them by column, a full column again by cell, and answer the ids in
+ * the cell walk's order with where the next page starts. The reads are `io`'s and the budget is
+ * `reads` (a fresh transaction's unless a test hands a smaller one).
+ */
+export async function settleTownPage(
+  cells: readonly TownCell[],
+  planned: { z: number; i: number } | null,
+  columnRows: number,
+  io: TownCellReads,
+  reads: ReadBudget = new ReadBudget(),
+): Promise<TownPage> {
   // Each cell's town rows by its page index, as one cell read returns them.
   const townsOf = new Map<number, Id<'adminAreas'>[]>();
   // The first page index left unread when the budget ran out; the page ends there.
@@ -263,34 +300,17 @@ async function townCandidatesPage(
 
   const columns = townColumnsOf(cells);
   const columnCost = {
-    bytes: opts.columnRows * ROW_MAX.areaCell,
+    bytes: columnRows * ROW_MAX.areaCell,
     reads: 1,
-    docs: opts.columnRows,
+    docs: columnRows,
   };
+  const cellCost = { bytes: CELL_TAKE * ROW_MAX.areaCell, reads: 1, docs: CELL_TAKE };
   const full: TownColumn[] = [];
-  const columnAnswers = await wave(columns, columnCost, async (c, share) => {
-    const rows = await counted(() =>
-      share.take('areaCell', opts.columnRows, () =>
-        ctx.db
-          .query('adminAreaCells')
-          .withIndex('by_cell', (q) =>
-            q.eq('z', c.z).eq('x', c.x).gte('y', c.minY).lte('y', c.maxY),
-          )
-          .take(opts.columnRows),
-      ),
-    );
-    return rows;
-  });
-  for (const [k, answer] of columnAnswers.entries()) {
-    const c = columns[k] as TownColumn;
-    if (answer === OVERFLOW) {
-      cut = Math.min(cut, c.first);
-      continue;
-    }
-    if (answer.length >= opts.columnRows) {
+  const settleColumn = (c: TownColumn, answer: readonly TownColumnRow[]) => {
+    if (answer.length >= columnRows) {
       // Full: it may hold more rows than it returned, so its cells are read one at a time.
       full.push(c);
-      continue;
+      return;
     }
     const byRow = new Map<number, Id<'adminAreas'>[]>();
     for (const row of answer) {
@@ -300,22 +320,66 @@ async function townCandidatesPage(
       else list.push(row.adminAreaId);
     }
     for (const index of c.cells) townsOf.set(index, byRow.get((cells[index] as TownCell).y) ?? []);
+  };
+
+  // **The first cell first** (Greptile on #143). Its column, and that column's own read of it if the
+  // column is full, are held back before the other columns can spend — else they could spend all of
+  // the budget, the first cell's read be refused, and the page end where it began. So every page
+  // settles its first cell and its cursor moves on; a budget too small for that throws
+  // `CannotAdvance` here, on the first call. Read alongside the other columns' first wave.
+  const head = columns[0];
+  let first: Promise<void> = Promise.resolve();
+  // The head's reads one after another (its column, then perhaps its first cell), for `waves`.
+  let headRounds = 0;
+  if (head !== undefined) {
+    reads.reserveFirst({
+      bytes: columnCost.bytes + cellCost.bytes,
+      reads: 2,
+      docs: columnCost.docs + cellCost.docs,
+    });
+    first = (async () => {
+      headRounds = 1;
+      settleColumn(head, await counted(() => io.column(head, columnRows)));
+      const own = head.first;
+      if (!townsOf.has(own)) {
+        headRounds = 2;
+        const towns = await counted(() => io.cell(cells[own] as TownCell, CELL_TAKE));
+        townsOf.set(
+          own,
+          towns.map((row) => row.adminAreaId),
+        );
+      }
+    })();
+  }
+  const rest = columns.slice(1);
+  // Settled together, not raced: a head that fails while the other columns are in flight is not an
+  // unhandled rejection, and a column that fails leaves no head read running past the page. The
+  // head's failure first, as it would be were it the first item of the columns' wave.
+  const [headRead, columnRead] = await Promise.allSettled([
+    first,
+    wave(rest, columnCost, async (c, share) =>
+      counted(() => share.take('areaCell', columnRows, () => io.column(c, columnRows))),
+    ),
+  ]);
+  if (headRead.status === 'rejected') throw headRead.reason;
+  if (columnRead.status === 'rejected') throw columnRead.reason;
+  const columnAnswers = columnRead.value;
+  // The head read beside the columns' waves: the rounds before the cells' wave are the longer run.
+  waves = Math.max(waves, headRounds);
+  for (const [k, answer] of columnAnswers.entries()) {
+    const c = rest[k] as TownColumn;
+    if (answer === OVERFLOW) cut = Math.min(cut, c.first);
+    else settleColumn(c, answer);
   }
 
+  // Every full column's cells but one already read (the first cell, on what was held for it).
   const lone = full
     .flatMap((c) => c.cells)
-    .filter((index) => index < cut)
+    .filter((index) => index < cut && !townsOf.has(index))
     .sort((a, b) => a - b);
-  const cellCost = { bytes: CELL_TAKE * ROW_MAX.areaCell, reads: 1, docs: CELL_TAKE };
   const cellAnswers = await wave(lone, cellCost, async (index, share) => {
-    const { z, x, y } = cells[index] as TownCell;
     return counted(() =>
-      share.take('areaCell', CELL_TAKE, () =>
-        ctx.db
-          .query('adminAreaCells')
-          .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
-          .take(CELL_TAKE),
-      ),
+      share.take('areaCell', CELL_TAKE, () => io.cell(cells[index] as TownCell, CELL_TAKE)),
     );
   });
   for (const [k, answer] of cellAnswers.entries()) {
