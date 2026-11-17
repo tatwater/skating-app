@@ -429,110 +429,124 @@ describe('HazardsTabView — the winters, a day at a time', () => {
     const season = SEASON - 1;
     const { start, days } = winterWindow(season);
     const DAY_MS = 86_400_000;
-    fc.assert(
-      fc.property(
-        fc.array(
-          fc.record({
-            day: fc.integer({ min: 0, max: days - 1 }),
-            hour: fc.integer({ min: 0, max: 23 }),
-            active: fc.boolean(),
-          }),
-          { maxLength: 14 },
-        ),
-        fc.boolean(),
-        (entries, capped) => {
-          const hazards = entries.map((e) => ({
-            first: start + e.day * DAY_MS + e.hour * 3_600_000,
-            active: e.active,
-          }));
-          const read = dailyFrom(season, hazards, BODY_NOW, { capped });
-          const winters = wintersFrom([read], BODY_NOW);
-          // The tab at its lightest (a quiet past winter: the strip and its notes, no list, no
-          // features), so each run renders what it checks and little else. The day-by-day
-          // arithmetic is property-tested without rendering in `hazardsModel.test.ts`; this proves
-          // the strip draws it.
-          const { container } = render(
-            <HazardsTabView
-              {...base}
-              season={season}
-              hazards={[]}
-              archived={[]}
-              features={[]}
-              patternsWaiting={null}
-              winters={winters ?? undefined}
-            />,
-          );
-          const line = winters?.lines[0];
-          if (line === undefined) throw new Error('no strip');
-          // One pass over the drawn days, not a query per day of the winter.
-          const byDay = new Map(
-            [...container.querySelectorAll<SVGGElement>('[data-slot="day-strip-day"]')].map(
-              (el) => [Number(el.dataset.day), el],
-            ),
-          );
-          const g = (i: number) => byDay.get(i) ?? null;
-          const marksOn = (el: SVGGElement | null) =>
-            [
-              ...(el?.querySelectorAll<SVGRectElement>('[data-slot="day-strip-mark"]') ?? []),
-            ].reduce((n, b) => n + Number(b.dataset.count ?? 1), 0);
-          // Each hazard with no recorded end: exactly one mark, on its first-report day.
-          const expected = new Map<number, number>();
-          for (const e of entries) {
-            // An active hazard is bars; one reported on the season's last day is a bar too.
-            if (e.active || e.day + 1 >= days) continue;
-            const at = axisIndex(e.day, season);
-            expected.set(at, (expected.get(at) ?? 0) + 1);
-          }
-          let drawn = 0;
-          line.days.forEach((d, i) => {
-            const el = g(i);
-            const marks = marksOn(el);
-            drawn += marks;
-            expect(marks).toBe(expected.get(i) ?? 0);
-            if (d === null) return;
-            // No day draws fewer known hazards than the server's count.
-            const known = Number(el?.dataset.known ?? 0) + marks;
-            expect(known).toBeGreaterThanOrEqual(d.count);
-            // A day with anything to say keeps its words, unknown included — never a tower.
-            if (d.count + d.unknown + d.reported > 0) {
-              const title = el?.querySelector('title')?.textContent ?? '';
-              expect(title).toBe(dayWords(d, capped));
-              if (d.unknown > 0) expect(title).toContain(`${d.unknown} unknown`);
-              if (d.reported > 0) expect(title).toContain('first reported this day');
-              expect(title).not.toMatch(/\bended\b/i);
-            }
-          });
-          expect(container.querySelectorAll('[data-slot="day-strip-unknown"]')).toHaveLength(0);
-          // The caption is there whenever a mark is, and only then.
-          expect(container.querySelector('[data-slot="day-strips-caption"]') !== null).toBe(
-            drawn > 0,
-          );
-          if (entries.some((e) => !e.active)) {
-            expect(container.querySelector('[data-slot="hazards-unknown-ends"]')).not.toBeNull();
-          }
-          cleanup();
-        },
+    const property = fc.property(
+      fc.array(
+        fc.record({
+          day: fc.integer({ min: 0, max: days - 1 }),
+          hour: fc.integer({ min: 0, max: 23 }),
+          active: fc.boolean(),
+        }),
+        { maxLength: 14 },
       ),
-      // Each run renders the tab; the arithmetic's breadth is the model test's.
-      {
-        // The day-by-day arithmetic is fuzzed without rendering (`hazardsModel.test.ts`); here a few
-        // renders, and two pinned: a capped winter, and two hazards first reported on one day.
-        numRuns: 3,
-        examples: [
-          [
-            Array.from({ length: 8 }, (_, i) => ({ day: 20 + i * 3, hour: 12, active: false })),
-            true,
-          ],
-          [
-            [
-              { day: 40, hour: 2, active: false },
-              { day: 40, hour: 22, active: false },
-            ],
-            false,
-          ],
-        ],
+      fc.boolean(),
+      (entries, capped) => {
+        const hazards = entries.map((e) => ({
+          first: start + e.day * DAY_MS + e.hour * 3_600_000,
+          active: e.active,
+        }));
+        const read = dailyFrom(season, hazards, BODY_NOW, { capped });
+        const winters = wintersFrom([read], BODY_NOW);
+        // A failed run's tab is never left mounted under the next: fast-check shrinks by re-running.
+        cleanup();
+        // The tab at its lightest (a quiet past winter: the strip and its notes, no list, no
+        // features), so each run renders what it checks and little else. The day-by-day
+        // arithmetic is property-tested without rendering in `hazardsModel.test.ts`; this proves
+        // the strip draws it.
+        const { container } = render(
+          <HazardsTabView
+            {...base}
+            season={season}
+            hazards={[]}
+            archived={[]}
+            features={[]}
+            patternsWaiting={null}
+            winters={winters ?? undefined}
+          />,
+        );
+        const line = winters?.lines[0];
+        if (line === undefined) throw new Error('no strip');
+        // One pass over the drawn days, not a query per day of the winter.
+        const byDay = new Map(
+          [...container.querySelectorAll<SVGGElement>('[data-slot="day-strip-day"]')].map((el) => [
+            Number(el.dataset.day),
+            el,
+          ]),
+        );
+        const g = (i: number) => byDay.get(i) ?? null;
+        const marksOn = (el: SVGGElement | null) =>
+          [...(el?.querySelectorAll<SVGRectElement>('[data-slot="day-strip-mark"]') ?? [])].reduce(
+            (n, b) => n + Number(b.dataset.count ?? 1),
+            0,
+          );
+        // Each hazard with no recorded end: exactly one mark, on its first-report day.
+        const expected = new Map<number, number>();
+        for (const e of entries) {
+          // An active hazard is bars. The read says each one's state (B01-3n), so an archived one
+          // is marked on the read's word — on the season's last day too, where the old next-day
+          // rule had no day after to read (the CI counterexample below).
+          if (e.active) continue;
+          const at = axisIndex(e.day, season);
+          expected.set(at, (expected.get(at) ?? 0) + 1);
+        }
+        let drawn = 0;
+        line.days.forEach((d, i) => {
+          const el = g(i);
+          const marks = marksOn(el);
+          drawn += marks;
+          expect(marks).toBe(expected.get(i) ?? 0);
+          if (d === null) return;
+          // No day draws fewer known hazards than the server's count.
+          const known = Number(el?.dataset.known ?? 0) + marks;
+          expect(known).toBeGreaterThanOrEqual(d.count);
+          // A day with anything to say keeps its words, unknown included — never a tower.
+          if (d.count + d.unknown + d.reported > 0) {
+            const title = el?.querySelector('title')?.textContent ?? '';
+            expect(title).toBe(dayWords(d, capped));
+            if (d.unknown > 0) expect(title).toContain(`${d.unknown} unknown`);
+            if (d.reported > 0) expect(title).toContain('first reported this day');
+            expect(title).not.toMatch(/\bended\b/i);
+          }
+        });
+        expect(container.querySelectorAll('[data-slot="day-strip-unknown"]')).toHaveLength(0);
+        // The caption is there whenever a mark is, and only then.
+        expect(container.querySelector('[data-slot="day-strips-caption"]') !== null).toBe(
+          drawn > 0,
+        );
+        if (entries.some((e) => !e.active)) {
+          expect(container.querySelector('[data-slot="hazards-unknown-ends"]')).not.toBeNull();
+        }
       },
     );
+    // Each run renders the tab; the arithmetic's breadth — every boundary, both kinds of read — is
+    // the model test's (`hazardsModel.test.ts`). Here the pinned cases, CI's seed replayed as it ran
+    // (1442103800: its first draw found the last-day case), then one random run.
+    const examples: [Array<{ day: number; hour: number; active: boolean }>, boolean][] = [
+      // The regression (CI, seed 1442103800, its counterexample day 364 at hour 0 — this winter's
+      // last): an archived hazard first reported on the season's last day — marked, on the read's
+      // word. With it, the first day at midnight, and the last day's last hour beside one still
+      // active.
+      [
+        [
+          { day: days - 1, hour: 0, active: false },
+          { day: 0, hour: 0, active: false },
+          { day: days - 1, hour: 23, active: true },
+        ],
+        false,
+      ],
+      // A capped winter, with two hazards first reported on one day.
+      [
+        [
+          ...Array.from({ length: 8 }, (_, i) => ({ day: 20 + i * 3, hour: 12, active: false })),
+          { day: 40, hour: 2, active: false },
+          { day: 40, hour: 22, active: false },
+        ],
+        true,
+      ],
+    ];
+    // fast-check counts `examples` toward `numRuns`: the examples, then exactly one draw from the
+    // seed — as CI ran it (two examples, `numRuns: 3`), however many examples are pinned here.
+    fc.assert(property, { seed: 1442103800, numRuns: examples.length + 1, examples });
+    fc.assert(property, { numRuns: 1 });
   });
 
   it('a mark’s bar and blocks keep the strip’s one step, never thinner than a mark can be seen', () => {
