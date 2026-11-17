@@ -11,7 +11,7 @@ import {
   FEB_HAZARDS,
   FEB_NOW,
   LAST_WINTER_DAILY,
-  LAST_WINTER_DAILY_TOLD,
+  LAST_WINTER_DAILY_LEGACY,
   MASCOMA_FEATURES,
   MASCOMA_MAP_DATA,
 } from './hazardsFixtures';
@@ -652,7 +652,7 @@ describe('first-report marks — from the read’s own hazards', () => {
     ];
     // The same marks whether the read says each hazard's state or the next day does.
     for (const told of [true, false]) {
-      const read = dailyFrom(season, hazards, Date.UTC(2026, 6, 1), { told });
+      const read = dailyFrom(season, hazards, Date.UTC(2026, 6, 1), { legacy: !told });
       const marks = firstReports(read, Date.UTC(2026, 6, 1));
       expect(marks).toHaveLength(days);
       expect(marks[3]).toBe(2);
@@ -663,7 +663,7 @@ describe('first-report marks — from the read’s own hazards', () => {
 
   it('an archived hazard first reported today is marked today, on the read’s own word', () => {
     const now = start + 40 * DAY + 10 * HOUR;
-    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now, { told: true });
+    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now);
     expect(firstReports(read, now).reduce((a, b) => a + b, 0)).toBe(1);
     const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
     expect(line.days[40]).toMatchObject({ count: 1, reported: 1 });
@@ -675,21 +675,21 @@ describe('first-report marks — from the read’s own hazards', () => {
 
   it('a hazard first reported today and still active is a bar, never a mark', () => {
     const now = start + 40 * DAY + 10 * HOUR;
-    const read = dailyFrom(season, [{ first: now - HOUR, active: true }], now, { told: true });
+    const read = dailyFrom(season, [{ first: now - HOUR, active: true }], now);
     const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
     expect(line.days[40]).toMatchObject({ count: 1, reported: 0 });
   });
 
   it('a read that doesn’t say a hazard’s state marks a hazard first reported today as a bar, until the day after says', () => {
     const now = start + 40 * DAY + 10 * HOUR;
-    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now);
+    const read = dailyFrom(season, [{ first: now - HOUR, active: false }], now, { legacy: true });
     expect(firstReports(read, now).reduce((a, b) => a + b, 0)).toBe(0);
     const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
     expect(line.days[40]).toMatchObject({ count: 1, reported: 0 });
   });
 
   it('every winter is marked from its own read — last winter beside this one too', () => {
-    for (const read of [LAST_WINTER_DAILY, LAST_WINTER_DAILY_TOLD]) {
+    for (const read of [LAST_WINTER_DAILY, LAST_WINTER_DAILY_LEGACY]) {
       const w = wintersFrom([read], BODY_NOW);
       const line = w?.lines[0] as WinterLine;
       const total = line.days.reduce((n, d) => n + (d === null ? 0 : drawnDay(d).marks), 0);
@@ -712,7 +712,7 @@ describe('first-report marks — from the read’s own hazards', () => {
             season,
             [{ first: at, active: false, ended: at + length * DAY }],
             Date.UTC(2026, 6, 1),
-            { told },
+            { legacy: !told },
           );
           const line = (wintersFrom([read], Date.UTC(2026, 6, 1)) as Winters)
             .lines[0] as WinterLine;
@@ -747,7 +747,7 @@ describe('first-report marks — from the read’s own hazards', () => {
               ...(e.kind === 'ended' ? { ended: e.first + 2 * DAY } : {}),
             })),
             now,
-            { told },
+            { legacy: !told },
           );
           const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
           const expected = Array.from({ length: line.days.length }, () => 0);
@@ -801,7 +801,7 @@ describe('the strip’s safety rule: no recorded end never reads as ended, archi
           ...(e.kind === 'ended' ? { ended: e.first + 2 * DAY } : {}),
         })),
         now,
-        { told },
+        { legacy: !told },
       );
       const line = (wintersFrom([read], now) as Winters).lines[0] as WinterLine;
       const today = Math.floor((now - start) / DAY);

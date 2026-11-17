@@ -578,51 +578,44 @@ describe('HazardsTabView — the winters, a day at a time', () => {
     ).toBeVisible();
   });
 
-  it('says every archived report is marked — but one reported today is counted without a mark yet', () => {
+  it('says every archived report is marked, today’s included, on the read’s word — and a read without it counts today’s without a mark yet', () => {
     const season = SEASON;
     const { start } = winterWindow(season);
     const now = start + 120 * 86_400_000 + 15 * 3_600_000;
-    const read = dailyFrom(
-      season,
-      [
-        { first: start + 4 * 86_400_000, active: false },
-        { first: now - 3_600_000, active: false },
-      ],
-      now,
-    );
-    const { container, unmount } = render(
-      <HazardsTabView
-        {...base}
-        hazards={FEB.hazards}
-        winters={wintersFrom([read], now) ?? undefined}
-      />,
-    );
-    const note = container.querySelector('[data-slot="hazards-unknown-ends"]');
-    expect(note?.textContent).toContain('2 archived reports have no recorded end');
-    expect(note?.textContent).toContain(
+    const hazards = [
+      { first: start + 4 * 86_400_000, active: false },
+      { first: now - 3_600_000, active: false },
+    ];
+    const noteOf = (read: ReturnType<typeof dailyFrom>, at: number) => {
+      const { container, unmount } = render(
+        <HazardsTabView
+          {...base}
+          hazards={FEB.hazards}
+          winters={wintersFrom([read], at) ?? undefined}
+        />,
+      );
+      const text = container.querySelector('[data-slot="hazards-unknown-ends"]')?.textContent;
+      unmount();
+      return text ?? '';
+    };
+    // The read says each hazard is archived (B01-3n): both are marked, the one reported today too.
+    const told = noteOf(dailyFrom(season, hazards, now), now);
+    expect(told).toContain('2 archived reports have no recorded end');
+    expect(told).toMatch(/Each is marked on the day it was first reported/);
+    // Never read as ended or gone: every day after counts them as unknown.
+    expect(told).toContain('may still have been on the lake');
+    expect(told).not.toMatch(/\b(ended|gone|clear)\b/i);
+    // A read from before the server said it: today's is counted without a mark until the day after.
+    const legacy = noteOf(dailyFrom(season, hazards, now, { legacy: true }), now);
+    expect(legacy).toContain('2 archived reports have no recorded end');
+    expect(legacy).toContain(
       '1 is marked on the day first reported, and the rest counted that day without a mark',
     );
-    unmount();
-    // Once both are a day behind, each is marked.
+    // Once both are a day behind, each is marked either way.
     const later = now + 86_400_000;
-    const both = dailyFrom(
-      season,
-      [
-        { first: start + 4 * 86_400_000, active: false },
-        { first: now - 3_600_000, active: false },
-      ],
-      later,
+    expect(noteOf(dailyFrom(season, hazards, later, { legacy: true }), later)).toMatch(
+      /Each is marked on the day it was first reported/,
     );
-    const again = render(
-      <HazardsTabView
-        {...base}
-        hazards={FEB.hazards}
-        winters={wintersFrom([both], later) ?? undefined}
-      />,
-    );
-    expect(
-      again.container.querySelector('[data-slot="hazards-unknown-ends"]')?.textContent,
-    ).toMatch(/Each is marked on the day it was first reported/);
   });
 });
 
