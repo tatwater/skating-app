@@ -4,10 +4,8 @@ import {
   type FocusEvent,
   type ReactElement,
   type ReactNode,
-  useId,
   useLayoutEffect,
   useRef,
-  useState,
 } from 'react';
 
 import { Button, buttonVariants } from '@/components/kit/button';
@@ -25,8 +23,9 @@ import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
 import { FACT_WORDS } from './factWords';
-import { boundedWords, rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
+import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
+import { ClampedText } from './kit-candidates/clamped-text';
 import {
   type ActionRow,
   type DecisionsRead,
@@ -101,41 +100,32 @@ export function GoLink({
 // ── Open about this person ───────────────────────────────────────────────────────────────────
 
 /**
- * What a person wrote, as their words — quoted, never reworded — bounded to its first few lines
- * (`boundedWords`): a cut ends on an ellipsis with *Show all* beside it, which shows every word.
- * The words are content and a support ticket's (PII, D37), so they are never autocaptured: masked
+ * What a person wrote, as their words — quoted, never reworded — clamped to four lines as they
+ * render (the kit candidate `ClampedText`, which measures whether they are cut and offers *Show
+ * all* exactly then). Every word is in the page: an appeal's body is capped at its write (5,000
+ * characters). The words are a support ticket's (PII, D37), so they are never autocaptured: masked
  * as a name is (`personNameClass`), while the press beside them is still counted.
  */
 function TheirWords({ text }: { text: string }) {
-  const [whole, setWhole] = useState(false);
-  const id = useId();
-  const words = boundedWords(text);
-  if (words === null) return null;
+  const words = text.trim();
+  if (words === '') return null;
   return (
-    <span
+    <ClampedText
       data-slot="their-words"
-      className="mt-(--space-0_5) block text-fg2 whitespace-pre-line [overflow-wrap:anywhere]"
+      lines={THEIR_WORDS_LINES}
+      showAll={FACT_WORDS.showAll}
+      showLess={FACT_WORDS.showLess}
+      className="mt-(--space-0_5) text-fg2"
     >
-      <span id={id} data-slot="their-words-text" className={personNameClass}>
-        “{whole || !words.cut ? words.whole : `${words.shown}…`}”
+      <span data-slot="their-words-text" className={personNameClass}>
+        “{words}”
       </span>
-      {words.cut && (
-        <>
-          {' '}
-          <Button
-            variant="link"
-            size="xs"
-            aria-expanded={whole}
-            aria-controls={id}
-            onClick={() => setWhole((w) => !w)}
-          >
-            {whole ? FACT_WORDS.showLess : FACT_WORDS.showAll}
-          </Button>
-        </>
-      )}
-    </span>
+    </ClampedText>
   );
 }
+
+/** Lines of a person's own words shown before *Show all*. */
+const THEIR_WORDS_LINES = 4;
 
 /** The body a flag is on, as the server named it — never for a flag on the person, whose page it is. */
 function flagLabel(flag: PersonRead['open']['flags'][number]): string | null {

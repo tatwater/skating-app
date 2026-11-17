@@ -1,21 +1,23 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { stubLayout } from '../list/testLayout';
 import { FACT_WORDS } from './factWords';
+import { clampMeasure } from './kit-candidates/clamped-text';
 import { defaultLinkTo, OpenAbout } from './PersonFeeds';
 import { NOW, ROB } from './personFixtures';
 import type { PersonRead } from './personModel';
 
 /**
  * *Open about this person* draws what the server sends of each open item: the body a flag is on
- * (its `targetLabel`), the words a person wrote in their appeal — as their words, quoted, bounded
- * to a few lines with the rest a press away — and, when the labels were read only in part, says so.
+ * (its `targetLabel`), the words a person wrote in their appeal — as their words, quoted, clamped
+ * to four rendered lines with the rest a press away — and, when the labels were read only in part, says so.
  * Its links still go where they went (the old lists), whatever the item.
  */
 
 beforeAll(stubLayout);
+afterEach(() => vi.restoreAllMocks());
 
 type Open = PersonRead['open'];
 type Flag = Open['flags'][number];
@@ -113,22 +115,29 @@ describe('an appeal', () => {
     expect(block.querySelector('[data-slot="their-words-text"]')).toHaveClass('ph-no-capture');
   });
 
-  it('bounds long words visually, says there is more, and shows them whole on a press', async () => {
-    const long = `${'The ice by the north launch had been cut for the derby. '.repeat(8)}End.`;
-    const block = draw({ appeals: [appeal({ body: long })] });
+  it('bounds them by the lines they take on screen, whatever their length in characters', async () => {
+    // A short appeal that wraps past four lines at a phone's width: cut, though short.
+    vi.spyOn(clampMeasure, 'overflows').mockReturnValue(true);
+    const short = 'The ice was cut.';
+    const block = draw({ appeals: [appeal({ body: short })] });
     const words = block.querySelector('[data-slot="their-words"]') as HTMLElement;
-    const quote = words.querySelector('[data-slot="their-words-text"]') as HTMLElement;
-    expect(quote.textContent?.endsWith('…”')).toBe(true);
-    expect(quote).not.toHaveTextContent('End.');
+    const text = words.querySelector('[data-slot="clamped-text-body"]') as HTMLElement;
+    expect(text.style.webkitLineClamp).toBe('4');
+    // Every word is in the page; the clamp is what bounds them.
+    expect(text).toHaveTextContent(`“${short}”`);
     const more = within(words).getByRole('button', { name: FACT_WORDS.showAll });
     expect(more).toHaveAttribute('aria-expanded', 'false');
-    expect(more).toHaveAttribute('aria-controls', quote.id);
     await userEvent.click(more);
-    expect(quote).toHaveTextContent(`“${long}”`);
-    const less = within(words).getByRole('button', { name: FACT_WORDS.showLess });
-    expect(less).toHaveAttribute('aria-expanded', 'true');
-    await userEvent.click(less);
-    expect(quote).not.toHaveTextContent('End.');
+    expect(text.style.webkitLineClamp).toBe('');
+    expect(within(words).getByRole('button', { name: FACT_WORDS.showLess })).toHaveFocus();
+  });
+
+  it('offers nothing more for long words that fit', () => {
+    vi.spyOn(clampMeasure, 'overflows').mockReturnValue(false);
+    const long = 'The ice by the north launch had been cut for the derby. '.repeat(8).trim();
+    const block = draw({ appeals: [appeal({ body: long })] });
+    expect(within(block).queryByRole('button')).toBeNull();
+    expect(block.querySelector('[data-slot="clamped-text-body"]')).toHaveTextContent(long);
   });
 
   it('draws nothing in quotes for an appeal with no words', () => {

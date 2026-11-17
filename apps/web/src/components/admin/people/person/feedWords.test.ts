@@ -1,19 +1,7 @@
 import type { Id } from '@skating/convex/dataModel';
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { assertSeeded } from '@/test/seeded';
-
-import {
-  boundedWords,
-  graphemesOf,
-  rowActor,
-  rowReason,
-  rowSentence,
-  THEIR_WORDS_CHARS,
-  THEIR_WORDS_LINES,
-  undoneWords,
-} from './feedWords';
+import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import type { PersonAction } from './levers';
 import { MATT, NOW, ROB_HISTORY, rowOf, SARAH, TEAGAN } from './personFixtures';
 import { receiptFor } from './receipts';
@@ -196,56 +184,5 @@ describe('the receipt', () => {
     ] as PersonAction[]) {
       expect(JSON.stringify(say(a))).not.toMatch(/\bYou\b|safe|skateable/i);
     }
-  });
-});
-
-describe('a person’s own words, bounded', () => {
-  it('keeps short words whole, and has nothing for blank ones', () => {
-    expect(boundedWords('  The ice was cut  ')).toEqual({
-      whole: 'The ice was cut',
-      shown: 'The ice was cut',
-      cut: false,
-    });
-    expect(boundedWords(' \n ')).toBeNull();
-  });
-
-  it('cuts at a word near the bound, and after the last line it keeps', () => {
-    const words = boundedWords('one two three four five', 12);
-    expect(words).toEqual({ whole: 'one two three four five', shown: 'one two', cut: true });
-    expect(boundedWords('a\nb\nc\nd\ne')?.shown).toBe('a\nb\nc\nd');
-    // One long word is cut inside it rather than shown as nothing.
-    expect(boundedWords('x'.repeat(20), 8)?.shown).toBe('x'.repeat(8));
-  });
-
-  it('counts and cuts characters as a reader sees them, never splitting an emoji or a flag', () => {
-    expect(boundedWords('ab👨‍👩‍👧cd', 3)?.shown).toBe('ab👨‍👩‍👧');
-    expect(boundedWords('🇨🇦🇨🇦🇨🇦🇨🇦', 2)?.shown).toBe('🇨🇦🇨🇦');
-    expect(graphemesOf('été')).toEqual(['é', 't', 'é']);
-  });
-
-  it('shows the start of what they wrote, never empty, within the bound, cut only when shorter', () => {
-    assertSeeded(
-      fc.property(
-        fc.array(fc.oneof(fc.string({ unit: 'grapheme', maxLength: 30 }), fc.constant('\n')), {
-          maxLength: 40,
-        }),
-        (parts) => {
-          const text = parts.join(' ');
-          const words = boundedWords(text);
-          if (text.trim() === '') {
-            expect(words).toBeNull();
-            return;
-          }
-          if (words === null) throw new Error('words expected');
-          expect(words.whole).toBe(text.trim());
-          expect(words.whole.startsWith(words.shown)).toBe(true);
-          expect(words.shown.trim()).not.toBe('');
-          expect(graphemesOf(words.shown).length).toBeLessThanOrEqual(THEIR_WORDS_CHARS);
-          expect(words.shown.split('\n').length).toBeLessThanOrEqual(THEIR_WORDS_LINES);
-          expect(words.cut).toBe(words.shown !== words.whole);
-        },
-      ),
-      { numRuns: 200 },
-    );
   });
 });
