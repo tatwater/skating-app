@@ -3193,7 +3193,7 @@ cap can cut an item the returned order says belongs.
 | `bodyLibrary.parked` | Parked entries, oldest parked first (50) | The same | No: `capped` |
 | `recurrence.listForBodyAdmin` | **Fixed (B01-3d):** a body's patterns, highest priority first (`by_water_body_priority`, 1,000) | Highest priority first | No, after the fix: the cap keeps the top 1,000 (it read the first 1,000 stored, then sorted). The array says nothing past 1,000; `waitingCountForBody` is the figure that does |
 | `recurrence.waitingCountForBody` | A body's patterns (1,000, probing one past) | A count | No: `capped` (B01-3d) |
-| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. **Owed:** its read of the body's active hazards is an unbounded `.collect()` |
+| `recurrence.listForBody` (skaters) | **Fixed (B01-3d):** a body's public patterns, highest priority first (`by_water_body_public_priority`, 1,000), then those a live sighting stands down | Highest priority first | No, after the fix. ~~**Owed:** its read of the body's active hazards is an unbounded `.collect()`~~ Bounded in B01-3n: this season's pins, 500, and past them every advisory stands down |
 | `recurrence.listQueue` | The cross-lake queue by season and priority, paged | Highest priority first | No: genuinely paginated, filters per page |
 | `recurrence.recomputeBody` | A body's stored patterns to match against (1,000) | Not presented | Matching only; unreachable in practice (a body holds tens) — a body past it would re-insert its unmatched patterns |
 | `bodyFeatures` demote, `hazardWithdrawal` | A body's patterns to find a promotion's or a pin's (1,000) | Not presented | The withdrawal says `unknown` past the bound; the demote's walk-back is bounded the same way |
@@ -3513,10 +3513,10 @@ Imagery/Hazards/Standing/Links), cherry-picked serially onto `b01-3` off the kit
   8. **Town lines for the Names map.**
   9. **The four writes**: `setAliases` and `setClass`, choosing a depth source and filing a
      survey, the pass override, and `updateShape`.
-  10. **An `active` flag on each of `dailyHazards`' hazards**: the read says whether an end is
+  10. ~~**An `active` flag on each of `dailyHazards`' hazards**: the read says whether an end is
       recorded, not whether a hazard is still up, so the strip tells an archived hazard from an
       active one by the next day's unknown part. A hazard first reported today is a bar until
-      tomorrow says which.
+      tomorrow says which.~~ Built in B01-3n (below).
 - **Where the mock and the code differ** (each a founder call; the code stands until ruled):
   the list's state tabs carry no counts (the board's do), completeness is out of ten (the boards'
   twelve), and the ask kicker is *Bay name · Inbox* (the board's raw `name_bay`); the frame's
@@ -4415,7 +4415,7 @@ Names' aliases can bind an edit to the wrong entry by its text.
   *Not recorded yet*); Names' town lines go through it too. A table test (`secondaryReads.test.ts`)
   holds Water's two reads, Names' two and Places' provenance to it; B01-3k adds Access's two (who
   ruled, where each launch is), Shape's bay provenance, Hazards' day strips and Standing's
-  retention. **Owed:** Shape's extras and Hazards' patterns-waiting count — their mapping is inline
+  retention. **Owed:** ~~Shape's extras~~ (B01-3n) and Hazards' patterns-waiting count — their mapping is inline
   in the tab's wiring, and a settled zero there is a value, not a nothing.
 - **A rendered property stays under a second locally** (CI's coverage run is about ten times
   slower and stops a test at 20 s): the sequences that found bugs are plain cases, the random run
@@ -4489,8 +4489,8 @@ Names' aliases can bind an edit to the wrong entry by its text.
   saved — try again.*; *Another moderator kept changing these spellings; yours weren't saved. Try
   again.*; *Aliases saved*, *Class set to {class}*, *Back to the catalogs' class*, *{Mean / Max}
   depth from {source}*; *1 reported crossing*.
-- **What the server still lacks:** names for an unlisted or unknown id in `rowsByIds`
-  (`entries[].name`, so the list can say *which* opened body isn't listed); **low priority** — the
+- **What the server still lacks:** ~~names for an unlisted or unknown id in `rowsByIds`
+  (`entries[].name`, so the list can say *which* opened body isn't listed)~~ (B01-3n); **low priority** — the
   borders between towns near a body (`townLines` with `{ faces: [town, town], path }` segments, so
   a shared border is one line; the doubled lines are accepted for now); per-catalog name claims unfolded (BS9's last part: the Names ladder still says
   *Other catalogs that gave the same spelling: not recorded*).
@@ -4599,6 +4599,94 @@ town entry per boundary, above) as its own commits.
 - **Wording the mock did not supply** (standing until the founder reviews it): *Back to the list*
   on the Bodies library (People's words; `bodies/listWords.ts`); *N not recorded yet* in a segment
   strip's spoken value (the kit).
+
+### The Bodies reads' last owed items (B01-3n)
+
+Five owed items in the Bodies part, each checked on main first (`442b5b5f`) and fixed as a class.
+No schema change, no new function, no backfill.
+
+- **A hazard's state on the day strip** (server request 10 above). `dailyHazards` said whether each
+  hazard's end was recorded, not whether it was still active, so the strip told an archived hazard
+  from an active one only by the next day's unknown part — one archived today was a bar until
+  tomorrow. Each listed hazard now carries `active`, its record's word: anything but a stored
+  `archived` reads as still on the lake (`stillOnLake` — a status the read doesn't know is never
+  gone), and a crossing is active only while live. The per-hazard rule moved into a pure
+  `hazardDays`, which the read applies to each. The strip's model (`firstReports`) marks a hazard
+  only on the read's own `active: false` with no recorded end, today's included; a read without
+  the fact (a web deploy ahead of the server's) keeps the next-day rule, which is also the server's
+  word, a day later. **Property-tested both sides** (pinned seeds and one random): on the server,
+  over generated hazards, statuses (one unreadable) and clocks, a hazard with no recorded end
+  counts on every day from its first report through today, as established or unknown — never
+  absent — `active: false` comes only from a stored archive, and an end only from a stored leaving;
+  on the web, over generated hazards, days and both kinds of read, in each of CI's three zones, no
+  day with a hazard whose end isn't recorded draws fewer than were there or says ended, gone or
+  clear, and a mark appears only on the read's word. **Left, in another PR's files:** the Hazards
+  view's test that pins the old read ("one reported today is counted without a mark yet",
+  `HazardsTabView.test.tsx`) and its stories still use the fixture's read without the fact, so the
+  fixture (`dailyFrom`) says `active` only when asked (`told`); flipping its default, and that
+  test, is owed once #138 lands.
+- **Opened recently names what it can't list.** `rowsByIds` gave `row: null` and nothing else for an
+  id with no library row. Such an entry now carries the body's `name` and `why`: `merged` (into a
+  `survivor` with no row, named — or `null` when the chain dead-ends or runs past the hop cap),
+  `removed` or `rejected` (a row not written yet), or `not_listed` (still in the library's queue).
+  Bounded and gated as before (12 ids, `body.read`, one row read per id, a body read only for an id
+  with no row); an id that is no body stays `unknown`, with no name to give. The list's end names
+  each ("Old Lake was merged into Lake Morey, which isn't listed yet") and says an id that no longer
+  exists plainly. A read from before the names is said as a body not listed, never as no body.
+- **The skater recurrence read is bounded.** `recurrence.listForBody` read every active pin the
+  body ever had (`.collect()`) to decide which history advisories stand down beside a live pin
+  (§9.3 in A05c). It now reads this season's pins on the body by first report, at most 500 (one
+  more only to know); past them **every advisory stands down**: an advisory returned from a partial
+  read would claim no live pin sits in its footprint, which the read can't vouch for, and yielding
+  is the rule's own conservative answer (it withholds a statement about past winters, never a
+  hazard). The pins never come from this read — both apps draw them from `hazards.listForBody` — so
+  no hazard is dropped, and nothing reads as fewer. The return stays an array, so the phone builds
+  in the field read it unchanged. **What skaters see past the bound:** the web's About tab and the
+  phone's lake detail both draw no *Ice history* section (each already draws none for an empty
+  answer — and the read returns empty for every body while the public switch is off); the hazards
+  themselves as before. Nothing owed to the phone (B04). Not done: a `more` the apps could say —
+  an array can't carry it, and a new shape would break the installed phones; worth a call if the
+  history ever needs to say it stood down.
+- **Shape's touching read has its row** in the four-answers table (`secondaryReads.test.ts`): the
+  route maps `consoleExtras` through `readState` into `shapeMergeOf` — on its way, no block yet;
+  failed, the failure in the block; not computed (`touchingNotComputed`), *isn't computed yet*; a
+  value, where a settled zero is no block, never *not computed*. Withheld (no `body.read`), it is
+  never asked. **Still owed:** Hazards' patterns-waiting count, whose mapping sits in
+  `HazardsTab.tsx` (another PR's file).
+- **The lake drawer's moderator card opens the Body console** (§5.4's last line), in a new tab, as
+  the admin links do. The card stays behind `canModerate`; the link is drawn only for an id the
+  console's route opens (a Convex id's shape) and a viewer with `body.read` (`consoleHrefFor`) —
+  otherwise no link at all, and the card says the console can't open the lake from here. Approve
+  and reject on a pending skater-drawn body stay on the card.
+
+**The unbounded reads sweep** (per-body hazard and recurrence reads in `packages/convex/convex`, on
+main). None is fixed here: each either feeds a skater list whose array can't say "more" without
+breaking the phones in the field, or a write or consensus path where a cap changes a verdict — none
+is the shape of the one fixed above.
+
+| Read | What it reads unbounded | Why not here |
+|---|---|---|
+| `hazards.listForBody` (`hazards.ts` ~575) | a body's active pins; with `includeArchived`, every pin it ever had | The skater map's hazards and the Hazards tab: a cap must say more, on both apps and the console (the console's every Hazards open reads `includeArchived`, already owed) |
+| `bodyFeatures.listForBody` (`bodyFeatures.ts` ~55) | a body's active known features | Skater-facing, the same array shape |
+| `clusterScopeFor` (`hazards.ts` ~466) | a body's active pins, the consensus scope | Pools gone votes: a cap changes a verdict |
+| Auto-merge's siblings (`lib/hazardMerge.ts` ~337) | a body's active pins | A write path deciding a merge |
+| A skater's pins on a body (`hazards.ts` ~1031) | by author and body, no time in the index | Needs an index with `firstReportedAt` (a schema change) |
+| A body merge (`waterBodies.ts` ~3620) | the loser's pins, with its reports and bounties | A one-off write; the merge's own budget |
+| Per pin, not per body | votes (`hazardConfirmations.ts` ~239, ~262, ~422; `hazards.ts` ~509) and the merged-into chain (`hazards.ts` ~1223; `lib/hazardMerge.ts` ~122, ~293) | Listed for completeness |
+
+**Wording the mock did not supply** (standing until the founder reviews it): in
+`bodies/listWords.ts` — *{name} was merged into {survivor}, which isn't listed yet*, *{name} was
+merged into a body that can't be found*, *{name} was removed and isn't listed yet*, *{name} was
+rejected and isn't listed yet*, *{name} isn't listed yet*, *1 opened body no longer exists* / *N
+opened bodies no longer exist* (replacing *N opened isn't in the library* and *N is no longer a
+body*), and *A body opened here* (a name the read didn't give); in `skater/lake/moderatorWords.ts`
+— *Names, shape, places, access, depth, hazards, standing and the links above are all edited in the
+Body console, with the audit trail.*, *Open in the Body console*, *This lake can't be opened in the
+Body console from here.*
+
+**After merge on dev:** `convex dev --once` — new fields on two reads, a bounded third; no schema,
+index or backfill. The web and the server can land in either order: the web reads a strip without
+`active` by the old rule and an unlisted id without a name as a body not listed.
 
 ## Ruled out
 
