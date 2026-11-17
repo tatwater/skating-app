@@ -678,7 +678,9 @@ describe('the write hook', () => {
       vi.fn(async () => ({ userId: ROB_ID, changed: true, undoable: false })),
     );
     expect(await hook()({ kind: 'lift' })).toBe(true);
-    const receipt = mocks.announce.mock.lastCall?.[0];
+    const receipt = (
+      mocks.announce.mock.lastCall as unknown as [{ title?: string }] | undefined
+    )?.[0];
     expect(receipt).toMatchObject({
       target: { targetType: 'user', targetId: ROB_ID },
       undoable: false,
