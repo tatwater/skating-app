@@ -3156,12 +3156,19 @@ four cards and cost and audit — which reverses Review 3's "the sentinel lows l
   `ReadBudget` (12 MiB of 16, as the rows really weigh after reserving each worst case; at most about
   a hundred calls). A sentinel the budget can't reach is `unread`, and one whose body is gone `gone`;
   both draw as a row of gaps — no reading, never zero. Gated on `SENTINEL_LOWS_CAPABILITY` (D275).
-  The rows are the current roster's (the sites the store is filled for); the floor, the two lines and
-  the marks are the season record's. Left as built, for a ruling if they ever bite: a past season whose
-  record named a sentinel since dropped from the roster marks no row for it (its "of N" is still the
-  record's); the imagery line is drawn at the settings that opened the season, where a later settings
-  change may have decided the imagery night; and two roster sentinels merged into one body draw as two
-  identical rows (the cron reports such a pair rather than reading it).
+  **One identity for a sentinel** (Greptile on #150, fixed as a class): the lake the watch stores its
+  lows under now — the end of its merge chain, as the cron follows it. Every stored id that names a
+  sentinel — the roster's, the season record's copy of it, and the sites its two nights stored (saved
+  when they happened, possibly since merged) — resolves to it once, on the server (`sentinelRows`),
+  before anything is compared; each row's `key` is the first stored id that reached its lake (stable
+  when the lake merges again), and each marked night names rows by that key, so the page compares
+  keys and nothing else. Two roster sentinels merged into one lake are one row (one lake, one series);
+  a sentinel the record names but the roster no longer does still gets its row (the record is the
+  fact); one whose lake is gone, or that the budget couldn't follow, is its own row of gaps. A site
+  stored before ids were is matched by name, once, on the server. Property-tested over generated
+  rosters, merges and records: every site the record names lands on exactly one row, its lake's. The
+  imagery line is drawn at the settings that opened the season, where a later settings change may have
+  decided the imagery night — left for a ruling if it ever bites.
 - **How nights are dated.** The read sends the watch's own calendar days, unchanged: the day each low
   was cut into when it was stored (`dailyLowsFromOpenMeteo`, in the site's own zone from unix time —
   never Open-Meteo's fixed-offset labels), stepped with the watch's `addDaysIso`, labeled by
@@ -3203,7 +3210,7 @@ building them."
 | Contributors · 6 · "2 new · 4 returning" | Each day › Contributors, "People" | count kept; new vs returning not | **built**: the row stacked (below), its sub-line "2 new · 4 returning" |
 | Bodies activated · "admitted · removed · demoted · restored" | — | no rollup | not moved — founder's call, 2026-11-17 |
 | Places added · "put-ins · lot · landmarks" | — | no rollup | not built: not easy — `bodyLandmarks` has no index that tells a hand-added landmark from a load's (only `by_water_body`), so counting the season's means an index (a schema change) or reading every row a 24,000-landmark load wrote |
-| Hazards · 3 · "confirmed · archived · merged" | Each day › Hazards | count kept; the split not | **waiting on a founder call** (below); archived and merged not wanted here (founder) |
+| Hazards · 3 · "confirmed · archived · merged" | Each day › Hazards | count kept; the split not | waiting on the founder's call on what *confirmed* counts; follow-up (below); archived and merged not wanted here (founder) |
 | Inbox · resolved · "open · median" | the flag and support charts | flags, tickets; not requests | not moved — founder's call, 2026-11-17 ("sort-of" shown by the charts) |
 | Bounties · "1 opened" · "0 fulfilled" | — | the bounties' rows | **built**: Each day's Bounties row |
 | Photos · 31 · "88 MB" | Each day › Photos | count kept | count present; size not moved — founder's call, 2026-11-17 |
@@ -3250,7 +3257,26 @@ other or stacked, a two-item key under the row's name — told apart by shape, n
   timer's first contribution may be one the day strip doesn't count (a report a moderator has since
   hidden); the stack clamps to the day's bar.
 - **Reports**: the vantage line under the row (`vantageLine`), each vantage in the app's one order.
-- **Hazards — waiting.** The founder asked for confirmed solid under the rest outlined. The app's
+- **What a two-series day draws** (Greptile on #150, fixed as a class: one series' gap decided what was
+  drawn for the other). One rule, `splitDay`, which the strip renders and a property checks against
+  the hover plate, the totals and their words over every combination of not recorded, zero and a
+  value. Beside, each half is its own answer: a value, a zero's stub, or not recorded — a dashed hair,
+  never a zero and never nothing. Stacked (the day's whole, and the part on top):
+
+  | Whole | Top part | Drawn |
+  |---|---|---|
+  | n | k | the rest (n − k) under k — as tall as n, or k if k is more: never shorter than known |
+  | n | not recorded | the whole n, dashed |
+  | 0 | 0 or not recorded | the zero stub |
+  | 0 | k > 0 | k |
+  | not recorded | k > 0 | k, with the not-recorded hair over it |
+  | not recorded | 0 or not recorded | the not-recorded hair |
+
+  The contributors' whole and its split come from different records (the day rollup, the walk), so
+  every row can happen. Each series' season total stands on its own days (`wholeTotal`): a posted day
+  the cap withheld withholds the posted total only, and its words say "Posted not recorded yet".
+- **Hazards — waiting on the founder's call on what *confirmed* counts; a follow-up PR.** The founder
+  asked for confirmed solid under the rest outlined. The app's
   *confirmed* is `!isProvisional(confirmCount, confirmThresholdFor(type))` read from the hazard's
   **cluster** (D80: confirmations on any pin in the cluster count), which the walk could only compute by
   reading each body's cluster scope — one of the unbounded per-body reads the B01-3n sweep listed. A

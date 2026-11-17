@@ -107,26 +107,27 @@ export function labeledNights(count: number): number[] {
   return out;
 }
 
-type Marked = { on: string; sites: ReadonlyArray<{ bodyId: string | null; name: string }> };
+type Marked = { on: string; sites: ReadonlyArray<{ key: string | null }> };
 
+/**
+ * A marked night's rule and its markers: one ⊗ on each row the record named — compared by the one
+ * identity the server resolved every stored id to (the row's `key`, `sentinelLows.sentinelRows`), so a
+ * sentinel whose lake merged since keeps its marker — and only where that row has a low that night.
+ */
 function eventOf(
   record: Marked | null,
   nights: readonly string[],
   rows: readonly LowsRow[],
-  bodyIds: ReadonlyArray<string | null>,
-  names: readonly string[],
   words: string,
 ): LowsEvent | null {
   if (record === null) return null;
   const index = nights.indexOf(record.on);
   if (index === -1) return null;
+  const named = new Set(record.sites.map((s) => s.key).filter((k): k is string => k !== null));
   const marks: LowsEvent['marks'] = [];
   rows.forEach((row, r) => {
-    const named = record.sites.some((s) =>
-      s.bodyId !== null ? s.bodyId === bodyIds[r] : s.name === names[r],
-    );
     const value = row.values[index];
-    if (named && value != null) marks.push({ row: r, value });
+    if (named.has(row.key) && value != null) marks.push({ row: r, value });
   });
   return { night: record.on, index, words, marks };
 }
@@ -167,8 +168,6 @@ export function lowsView(read: Valued): LowsView {
   });
   const watchF = wholeF(read.lines.watchC);
   const imageryF = wholeF(read.lines.imageryC);
-  const bodyIds = read.sentinels.map((s) => s.bodyId);
-  const names = read.sentinels.map((s) => s.name);
   const all = rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
   const coldest =
     read.imageryLine === null || read.imageryLine.sites.length === 0
@@ -189,11 +188,9 @@ export function lowsView(read: Valued): LowsView {
       read.opened,
       nights,
       rows,
-      bodyIds,
-      names,
       watchOpenedWords(read.opened?.sites.length ?? 0, read.opened?.of ?? 0),
     ),
-    imagery: eventOf(read.imageryLine, nights, rows, bodyIds, names, imageryNightWords(coldest)),
+    imagery: eventOf(read.imageryLine, nights, rows, imageryNightWords(coldest)),
     ticks: tensAround([...all, watchF, imageryF]),
     labeled: labeledNights(nights.length),
   };

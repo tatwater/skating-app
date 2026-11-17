@@ -36,15 +36,15 @@ export const LOWS_BOARD: Valued = {
     on: '2026-10-03',
     of: 3,
     sites: [
-      { bodyId: 'clouds', name: 'Upper Lake of the Clouds', lowC: fahrenheitToCelsius(27) },
-      { bodyId: 'eagle', name: 'Eagle Lake', lowC: fahrenheitToCelsius(30) },
+      { key: 'clouds', name: 'Upper Lake of the Clouds', lowC: fahrenheitToCelsius(27) },
+      { key: 'eagle', name: 'Eagle Lake', lowC: fahrenheitToCelsius(30) },
     ],
   } as Valued['opened'],
   imageryLine: {
     on: '2026-10-07',
     sites: [
-      { bodyId: 'clouds', name: 'Upper Lake of the Clouds', lowC: fahrenheitToCelsius(19) },
-      { bodyId: 'eagle', name: 'Eagle Lake', lowC: fahrenheitToCelsius(19) },
+      { key: 'clouds', name: 'Upper Lake of the Clouds', lowC: fahrenheitToCelsius(19) },
+      { key: 'eagle', name: 'Eagle Lake', lowC: fahrenheitToCelsius(19) },
     ],
   } as Valued['imageryLine'],
 };

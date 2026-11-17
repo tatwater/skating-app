@@ -12,7 +12,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { alignLows, lastStoredNight } from './sentinelLows';
+import { alignLows, type Lake, lastStoredNight, sentinelRows, siteKey } from './sentinelLows';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -200,8 +200,8 @@ describe('sentinelLows.forSeason', () => {
       on: '2026-10-03',
       of: 3,
       sites: [
-        { bodyId: clouds, name: 'Upper Lake of the Clouds', lowC: -2.8 },
-        { bodyId: eagle, name: 'Eagle Lake', lowC: 0 },
+        { key: clouds, name: 'Upper Lake of the Clouds', lowC: -2.8 },
+        { key: eagle, name: 'Eagle Lake', lowC: 0 },
       ],
     });
     expect(r.imageryLine?.on).toBe('2026-10-07');
@@ -261,6 +261,144 @@ describe('sentinelLows.forSeason', () => {
     expect(r.sentinels[1]).toMatchObject({ key: eagle, status: 'gone', lows: [null, null] });
     // No season record: neither night is marked.
     expect([r.opened, r.imageryLine]).toEqual([null, null]);
+  });
+});
+
+// ── One identity for a sentinel (Greptile on #150) ────────────────────────────────────────────
+
+/** A season record whose two nights name `fired` (the ids saved when they happened). */
+async function seedRecord(
+  t: T,
+  roster: ReadonlyArray<{ waterBodyId: Id<'waterBodies'>; name: string; state: string }>,
+  fired: ReadonlyArray<{ waterBodyId: Id<'waterBodies'>; name: string; lowC: number }>,
+  season = SEASON,
+) {
+  await t.run((ctx) =>
+    ctx.db.insert('imageryIngestSeasons', {
+      season,
+      opensOn: season === SEASON ? '2026-10-01' : '2025-10-01',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 28,
+      detectedAt: NOW,
+      settings: DEFAULT_SEASON_WATCH_SETTINGS,
+      sentinels: [...roster],
+      opening: { sentinels: [...fired], corpus: { frozen: 0, reporting: 25 } },
+      imageryNudgeOn: season === SEASON ? '2026-10-02' : '2025-10-02',
+      imageryNudgeSites: [...fired],
+    }),
+  );
+}
+
+describe('one identity for a sentinel', () => {
+  test('a sentinel’s lake merged after the watch opened keeps its marker on its own line', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { clouds, roster } = await seedRoster(t);
+    // The watch opened on Clouds's id; Clouds was merged into another body since.
+    await seedRecord(t, roster, [
+      { waterBodyId: clouds, name: 'Upper Lake of the Clouds', lowC: -1 },
+    ]);
+    const survivor = await seedBody(t, 'Lake of the Clouds', 44.27);
+    await t.run((ctx) => ctx.db.patch(clouds, { mergedIntoId: survivor }));
+    await seedSeries(t, survivor, '2026-10-01', [-1, -6.7]);
+    const r = await mod.query(api.sentinelLows.forSeason, { now: NOW });
+    if (r.state !== 'value') throw new Error(r.state);
+    const row = r.sentinels.find((s) => s.bodyId === survivor);
+    expect(row?.key).toBe(clouds);
+    expect(r.opened?.sites.map((s) => s.key)).toEqual([clouds]);
+    expect(r.imageryLine?.sites.map((s) => s.key)).toEqual([clouds]);
+  });
+
+  test('two roster sentinels merged into one lake are one row; a dropped one and a gone one keep theirs', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { clouds, eagle, kinsman, roster } = await seedRoster(t);
+    const dropped = await seedBody(t, 'Bog Pond', 44.3);
+    // The record watched Bog Pond too; the roster has since dropped it.
+    await seedRecord(
+      t,
+      [...roster, { waterBodyId: dropped, name: 'Bog Pond', state: 'NH' }],
+      [
+        { waterBodyId: dropped, name: 'Bog Pond', lowC: -2 },
+        { waterBodyId: eagle, name: 'Eagle Lake', lowC: -1 },
+      ],
+    );
+    // Eagle merged into Clouds; Kinsman's body is gone.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(eagle, { mergedIntoId: clouds });
+      await ctx.db.delete(kinsman);
+    });
+    await seedSeries(t, clouds, '2026-10-01', [-1, -2]);
+    await seedSeries(t, dropped, '2026-10-01', [-2, -3]);
+    const r = await mod.query(api.sentinelLows.forSeason, { now: NOW });
+    if (r.state !== 'value') throw new Error(r.state);
+    expect(r.sentinels.map((s) => [s.key, s.status])).toEqual([
+      [clouds, 'read'],
+      [kinsman, 'gone'],
+      [dropped, 'read'],
+    ]);
+    // Eagle fired: its marker goes on the row its lake now is (Clouds's); Bog Pond's on its own.
+    expect(r.opened?.sites.map((s) => s.key)).toEqual([dropped, clouds]);
+    expect(r.opened?.of).toBe(4);
+  });
+});
+
+/** Rosters, merges and event records, generated: every named site lands on exactly one row — its lake's. */
+describe('sentinelRows over generated rosters and merges', () => {
+  const world = fc.record({
+    ids: fc.uniqueArray(fc.constantFrom('a', 'b', 'c', 'd', 'e', 'f'), {
+      minLength: 1,
+      maxLength: 6,
+    }),
+    // Each id leads to a lake (another id's, its own), is gone, or unread.
+    lead: fc.array(fc.constantFrom('a', 'b', 'c', 'd', 'e', 'f', null, 'unread'), {
+      minLength: 6,
+      maxLength: 6,
+    }),
+    fired: fc.array(fc.nat(5), { maxLength: 6 }),
+  });
+  const property = fc.property(world, ({ ids, lead, fired }) => {
+    const lakeOf = (id: string): Lake => {
+      const l = lead[ids.indexOf(id)];
+      return l === undefined
+        ? 'unread'
+        : l === null
+          ? null
+          : l === 'unread'
+            ? 'unread'
+            : `lake-${l}`;
+    };
+    const named = fired.map((i) => ids[i % ids.length] as string);
+    const candidates = [...ids, ...named].map((id) => ({ savedId: id, name: `n-${id}` }));
+    const { rows, keyOf } = sentinelRows(candidates, lakeOf);
+    // One row per identity, never two for one lake.
+    const lakes = rows
+      .map((r) => r.lake)
+      .filter((l): l is string => typeof l === 'string' && l !== 'unread');
+    expect(new Set(lakes).size).toBe(lakes.length);
+    for (const id of named) {
+      const key = siteKey({ waterBodyId: id, name: `n-${id}` }, keyOf, rows);
+      const matching = rows.filter((r) => r.key === key);
+      // Exactly one row, and it is the site's lake's (or, gone or unread, its own).
+      expect(matching).toHaveLength(1);
+      const lake = lakeOf(id);
+      if (typeof lake === 'string' && lake !== 'unread') expect(matching[0]?.lake).toBe(lake);
+      else expect(matching[0]?.key).toBe(id);
+    }
+  });
+
+  test('every marker the record names lands once, on its sentinel’s line (pinned seeds and one random)', () => {
+    for (const seed of [20261117, 150, 127]) fc.assert(property, { seed, numRuns: 300 });
+    fc.assert(property, { numRuns: 300 });
+  });
+
+  test('a site stored before ids is matched by name; a name no row has is no row', () => {
+    const { rows, keyOf } = sentinelRows([{ savedId: 'a', name: 'Kinsman Pond' }], () => 'lake-a');
+    expect(siteKey({ name: 'Kinsman Pond' }, keyOf, rows)).toBe('a');
+    expect(siteKey({ name: 'Elsewhere' }, keyOf, rows)).toBeNull();
   });
 });
 

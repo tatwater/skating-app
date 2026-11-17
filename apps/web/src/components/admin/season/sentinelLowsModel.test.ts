@@ -243,3 +243,65 @@ describe('the marked nights’ words stay inside the drawing and off each other'
     ]);
   });
 });
+
+describe('a marked night’s markers, by the one identity', () => {
+  it('a sentinel whose lake merged since keeps its marker on its own line (Greptile on #150)', () => {
+    // The server resolved the saved id to the row's key; the row's lake is the survivor's.
+    const v = lowsView({
+      ...LOWS_BOARD,
+      sentinels: LOWS_BOARD.sentinels.map((s, i) =>
+        i === 0 ? { ...s, bodyId: 'survivor' as never } : s,
+      ) as typeof LOWS_BOARD.sentinels,
+    });
+    expect(v.opened?.marks).toEqual([
+      { row: 0, value: 27 },
+      { row: 1, value: 30 },
+    ]);
+  });
+
+  const world = fc.record({
+    rows: fc.integer({ min: 1, max: 5 }),
+    values: fc.array(fc.option(fc.integer({ min: 0, max: 40 }), { nil: null }), {
+      minLength: 5,
+      maxLength: 5,
+    }),
+    named: fc.array(
+      fc.option(fc.constantFrom('k0', 'k1', 'k2', 'k3', 'k4', 'gone'), { nil: null }),
+      {
+        maxLength: 8,
+      },
+    ),
+  });
+  const property = fc.property(world, ({ rows, values, named }) => {
+    const sentinels = Array.from({ length: rows }, (_, i) => ({
+      key: `k${i}`,
+      bodyId: `lake${i}`,
+      name: `Pond ${i}`,
+      status: 'read' as const,
+      lows: [values[i] ?? null],
+    }));
+    const v = lowsView({
+      ...LOWS_BOARD,
+      firstDate: '2026-10-01',
+      lastDate: '2026-10-01',
+      sentinels: sentinels as never,
+      opened: {
+        on: '2026-10-01',
+        of: rows,
+        sites: named.map((key) => ({ key, name: 'x', lowC: 0 })),
+      },
+      imageryLine: null,
+    });
+    const marked = (v.opened?.marks ?? []).map((m) => m.row);
+    // Each row the record named, with a low that night, is marked exactly once; no other row is.
+    const expected = sentinels
+      .map((s, i) => (named.includes(s.key) && values[i] != null ? i : -1))
+      .filter((i) => i !== -1);
+    expect(marked).toEqual(expected);
+  });
+
+  it('every marker the record names is drawn once, on its own line (pinned seeds and one random)', () => {
+    for (const seed of [20261117, 150, 127]) fc.assert(property, { seed, numRuns: 300 });
+    fc.assert(property, { numRuns: 300 });
+  });
+});

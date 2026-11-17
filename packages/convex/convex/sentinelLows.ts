@@ -14,10 +14,12 @@
  *
  * ## One bounded read
  *
- * At most: the season record, the current settings, and per sentinel (ten at most) its merge chain
- * (eight hops, the cron's `resolveSurvivor` rule) and its one stored series — each read through one
- * `ReadBudget` (12 MiB of Convex's 16, its calls under 4,096) as the rows really weigh, after
- * reserving each one's worst case. A sentinel the budget can't reach is `unread`, never empty.
+ * At most: the season record, the current settings, the merge chain (eight hops, the cron's
+ * `resolveSurvivor` rule) of each stored id that names a sentinel — the roster's (ten at most), the
+ * record's copy of it and its two nights' sites, a few dozen — and each sentinel's one stored series,
+ * all read through one `ReadBudget` (12 MiB of Convex's 16, its calls under 4,096) as the rows really
+ * weigh, after reserving each one's worst case. A sentinel the budget can't reach is `unread`, never
+ * empty. Every id resolves to one identity before anything is compared (`sentinelRows`).
  */
 
 import {
@@ -63,10 +65,13 @@ export type SentinelSeries = {
   lows: Array<number | null>;
 };
 
-/** A night the record marks, and the sentinels it names (their bodies' ids, and names). */
+/**
+ * A night the record marks, and the sentinels it names: each as its row's `key` (the one identity,
+ * `sentinelRows`), `null` for a site that names no row drawn.
+ */
 export type MarkedNight = {
   on: string;
-  sites: Array<{ bodyId: string | null; name: string; lowC: number }>;
+  sites: Array<{ key: string | null; name: string; lowC: number }>;
 };
 
 export type SentinelLows =
@@ -128,6 +133,62 @@ export function lastStoredNight(
   return found;
 }
 
+/** An id that names a sentinel, as stored (the roster's, the record's copy, a marked night's site). */
+export type Candidate = { savedId: string; name: string };
+
+/** Where an id leads: the lake now (its merge chain's end), `null` if gone, or `unread` (budget). */
+export type Lake = string | null | 'unread';
+
+/**
+ * **One identity for a sentinel** (Greptile on #150): the lake the watch stores its lows under now —
+ * the end of its merge chain, as the cron follows it. Every stored id that names a sentinel resolves
+ * to it once, here, before anything is compared, so the rows, their series, the two nights' markers
+ * and the end labels all agree on which sentinel is which.
+ *
+ * - One row per lake, in the candidates' order (the roster now first): its `key` is the first stored id
+ *   that reached it — stable when the lake merges again — and its name that id's. Two roster sentinels
+ *   merged into one lake are one row: one lake has one series.
+ * - A sentinel the record names but the roster no longer does (a past season, a roster since edited)
+ *   still gets its row: the record is the fact.
+ * - An id whose lake is gone, or that the budget couldn't follow, is its own row (`gone`, `unread`).
+ *
+ * `keyOf` answers, for any candidate's stored id, its row's key. Pure, for the tests.
+ */
+export function sentinelRows(
+  candidates: readonly Candidate[],
+  lakeOf: (savedId: string) => Lake,
+): {
+  rows: Array<{ key: string; name: string; lake: Lake }>;
+  keyOf: (savedId: string) => string | undefined;
+} {
+  const identity = (savedId: string) => {
+    const lake = lakeOf(savedId);
+    return typeof lake === 'string' && lake !== 'unread'
+      ? `lake:${lake}`
+      : `${lake === null ? 'gone' : 'unread'}:${savedId}`;
+  };
+  const rowOf = new Map<string, { key: string; name: string; lake: Lake }>();
+  const rows: Array<{ key: string; name: string; lake: Lake }> = [];
+  for (const c of candidates) {
+    const id = identity(c.savedId);
+    if (rowOf.has(id)) continue;
+    const row = { key: c.savedId, name: c.name, lake: lakeOf(c.savedId) };
+    rowOf.set(id, row);
+    rows.push(row);
+  }
+  return { rows, keyOf: (savedId) => rowOf.get(identity(savedId))?.key };
+}
+
+/** A marked night's stored site as its row's key: by its id, or, stored without one, by its name. */
+export function siteKey(
+  site: { waterBodyId?: string; name: string },
+  keyOf: (savedId: string) => string | undefined,
+  rows: ReadonlyArray<{ key: string; name: string }>,
+): string | null {
+  if (site.waterBodyId !== undefined) return keyOf(site.waterBodyId) ?? null;
+  return rows.find((r) => r.name === site.name)?.key ?? null;
+}
+
 /** The roster's body, followed through merges as the cron does; `null` when the chain dead-ends. */
 async function survivorOf(
   ctx: QueryCtx,
@@ -174,6 +235,27 @@ export async function readSentinelLows(
   const ceiling = seasonLastNight(label);
 
   const roster = latest?.sentinels ?? [];
+  const opening = record?.opening?.sentinels ?? [];
+  const imagerySites = record?.imageryNudgeSites ?? [];
+  // Every id that names a sentinel — the roster now, the record's copy of it, and the sites its two
+  // nights stored — is resolved through its merge chain once, to the lake the watch stores it under;
+  // that lake is the sentinel (`sentinelRows`).
+  const candidates: Candidate[] = [
+    ...roster,
+    ...(record?.sentinels ?? []),
+    ...opening.flatMap((s) => (s.waterBodyId === undefined ? [] : [s])),
+    ...imagerySites.flatMap((s) => (s.waterBodyId === undefined ? [] : [s])),
+  ].map((s) => ({ savedId: s.waterBodyId as string, name: s.name }));
+  const lakes = new Map<string, Lake>();
+  for (const c of candidates) {
+    if (lakes.has(c.savedId)) continue;
+    const body = await survivorOf(ctx, budget, c.savedId as Id<'waterBodies'>);
+    lakes.set(c.savedId, body === 'unread' ? 'unread' : body === null ? null : body._id);
+  }
+  const { rows, keyOf } = sentinelRows(candidates, (id) =>
+    lakes.has(id) ? (lakes.get(id) as Lake) : 'unread',
+  );
+
   const found: Array<{
     key: string;
     name: string;
@@ -181,38 +263,28 @@ export async function readSentinelLows(
     status: SentinelSeries['status'];
     series: Doc<'seasonWatchSeries'> | null;
   }> = [];
-  for (const site of roster) {
-    const body = await survivorOf(ctx, budget, site.waterBodyId);
-    if (body === 'unread') {
+  for (const row of rows) {
+    if (row.lake === 'unread' || row.lake === null) {
       found.push({
-        key: site.waterBodyId,
-        name: site.name,
+        key: row.key,
+        name: row.name,
         bodyId: null,
-        status: 'unread',
+        status: row.lake === null ? 'gone' : 'unread',
         series: null,
       });
       continue;
     }
-    if (body === null) {
-      found.push({
-        key: site.waterBodyId,
-        name: site.name,
-        bodyId: null,
-        status: 'gone',
-        series: null,
-      });
-      continue;
-    }
+    const lake = row.lake as Id<'waterBodies'>;
     const series = await budget.measured('seasonSeries', () =>
       ctx.db
         .query('seasonWatchSeries')
-        .withIndex('by_season_body', (q) => q.eq('season', label).eq('waterBodyId', body._id))
+        .withIndex('by_season_body', (q) => q.eq('season', label).eq('waterBodyId', lake))
         .unique(),
     );
     found.push({
-      key: site.waterBodyId,
-      name: site.name,
-      bodyId: body._id,
+      key: row.key,
+      name: row.name,
+      bodyId: lake,
       status: series === undefined ? 'unread' : 'read',
       series: series ?? null,
     });
@@ -229,14 +301,21 @@ export async function readSentinelLows(
     // recorded yet.
     return newYorkDate(now) < countsFrom
       ? { state: 'before', season, countsFrom }
-      : { state: 'none', season, countsFrom, roster: roster.length };
+      : { state: 'none', season, countsFrom, roster: rows.length };
   }
 
   const inWindow = (night: string | undefined) =>
     night !== undefined && night >= countsFrom && night <= lastDate;
+  // Each stored site, as its sentinel's row key: by its id through the same resolution, or — a site
+  // stored before ids were — by its name; `null` names no row drawn.
   const sitesOf = (
     sites: ReadonlyArray<{ waterBodyId?: Id<'waterBodies'>; name: string; lowC: number }>,
-  ) => sites.map((s) => ({ bodyId: s.waterBodyId ?? null, name: s.name, lowC: s.lowC }));
+  ) =>
+    sites.map((s) => ({
+      key: siteKey(s, keyOf, rows),
+      name: s.name,
+      lowC: s.lowC,
+    }));
 
   return {
     state: 'value',
@@ -256,13 +335,13 @@ export async function readSentinelLows(
       record !== null && record !== undefined && inWindow(record.opensOn)
         ? {
             on: record.opensOn,
-            sites: sitesOf(record.opening?.sentinels ?? []),
-            of: record.sentinels?.length ?? roster.length,
+            sites: sitesOf(opening),
+            of: record.sentinels?.length ?? rows.length,
           }
         : null,
     imageryLine:
       record?.imageryNudgeOn !== undefined && inWindow(record.imageryNudgeOn)
-        ? { on: record.imageryNudgeOn, sites: sitesOf(record.imageryNudgeSites ?? []) }
+        ? { on: record.imageryNudgeOn, sites: sitesOf(imagerySites) }
         : null,
   };
 }
