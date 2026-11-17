@@ -1,8 +1,8 @@
 import type { api } from '@skating/convex/api';
 import type { FunctionReturnType } from 'convex/server';
-import { type Loadable, mapLoadable } from '@/components/admin/reads/consoleReads';
+import { type Loadable, mapLoadable, type ReadState } from '@/components/admin/reads/consoleReads';
 import { acresFigure, dayMonth, firstName, ringsText } from '../../frame/bodyModel';
-import type { Neighbor, TouchingFacts } from '../../frame/touching';
+import { type Neighbor, neighborsOf, type TouchingFacts } from '../../frame/touching';
 import type { BodyMapScene } from '../../map/mapDescriptors';
 
 /**
@@ -222,6 +222,33 @@ export function shapeMerge(
     ),
     note: facts.touchingCapped ? CAPPED_SOME : null,
   };
+}
+
+/**
+ * The touching test hasn't run for this body: its settled nothing recorded (`readState`'s `none`).
+ * A test that ran and found none is a value — no block — never this.
+ */
+export function touchingNotComputed(facts: TouchingFacts): boolean {
+  return facts.geoComputedAt === null || facts.touchingBodyIds === null;
+}
+
+/**
+ * The Merge block from the touching read's four answers (B01-3n), never folded: on its way, no
+ * block yet (`undefined`); failed, the failure, said in the block with *Try again*; settled with
+ * nothing computed, the block saying *isn't computed yet*; a value, {@link shapeMerge} — where a
+ * settled zero (the test ran over everything near and found none) is no block.
+ */
+export function shapeMergeOf(read: ReadState<TouchingFacts>): Loadable<ShapeMerge | null> {
+  switch (read.kind) {
+    case 'loading':
+      return undefined;
+    case 'failed':
+      return read.failure;
+    case 'none':
+      return { touching: [], note: NOT_COMPUTED_YET };
+    case 'value':
+      return shapeMerge(read.value, neighborsOf(read.value));
+  }
 }
 
 /**
