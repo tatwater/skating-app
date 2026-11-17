@@ -1,6 +1,8 @@
 import {
+  AUDIT_REASON_MAX,
   type BodyStanding,
   describeStanding,
+  MAX_STANDING_NOTE_LENGTH,
   REMOVAL_REASONS,
   type RemovalReason,
   standingReasonLabel,
@@ -22,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/kit/select';
 import { cn } from '@/lib/utils';
+import { REMOVAL_NOTE_WORDS } from '../../consoleWords';
 import { REMOVAL_REASON_WORDS, statusDate } from '../../frame/bodyModel';
 import { LoadingSection } from '../tabParts';
 import { type RetentionFacts, retentionModel } from './standingModel';
@@ -62,12 +65,10 @@ export type StandingTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
   // what was typed or chosen, to send again.
   onSetDormant?: (note: string) => Promise<boolean>;
   onSetActive?: () => Promise<boolean>;
-  onRemove?: (reason: RemovalReason) => Promise<boolean>;
+  /** `note` is the operator's own words, trimmed; empty when none was typed. */
+  onRemove?: (reason: RemovalReason, note: string) => Promise<boolean>;
   onRestore?: () => Promise<boolean>;
 };
-
-/** A standing note's ceiling — the server's (`MAX_STANDING_NOTE_LENGTH`). */
-export const STANDING_NOTE_MAX = 160;
 
 /** "17 Sep 2026" — a status date carries its year (the frame's `statusDate`). */
 const sinceWords = (at: number): string => statusDate(at);
@@ -188,6 +189,8 @@ export function StandingTabView({
         )}
         {pick !== null && pick !== current && (
           <PickForm
+            // One form across the picks (never keyed by one): its one-write-at-a-time guard and its
+            // busy hold outlive a pick moved while a write is out. Its note is the pick's own.
             pick={pick}
             current={current}
             onSetDormant={onSetDormant}
@@ -278,6 +281,12 @@ function PickForm({
 }) {
   const noteId = useId();
   const [note, setNote] = useState('');
+  // A note typed for one standing never carries into another's: a new pick starts it empty.
+  const [notePick, setNotePick] = useState(pick);
+  if (notePick !== pick) {
+    setNotePick(pick);
+    setNote('');
+  }
   const [reason, setReason] = useState<RemovalReason | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -316,14 +325,14 @@ function PickForm({
             data-slot="standing-note-count"
             className="font-(family-name:--family-mono) text-kick leading-none text-fg3 tabular-nums"
           >
-            {note.length} / {STANDING_NOTE_MAX}
+            {note.length} / {MAX_STANDING_NOTE_LENGTH}
           </span>
         </span>
         <InputGroup>
           <Input
             id={noteId}
             value={note}
-            maxLength={STANDING_NOTE_MAX}
+            maxLength={MAX_STANDING_NOTE_LENGTH}
             placeholder="Drawn down for dam work until January"
             // A sent note is held while its write is out: words typed then could never be sent.
             readOnly={busy}
@@ -370,6 +379,25 @@ function PickForm({
             Skaters read “{describeStanding({ standing: 'removed', since: 0, reason })}”
           </span>
         )}
+        <label
+          htmlFor={noteId}
+          className="mt-(--space-2) text-kick leading-none font-semibold tracking-kick text-fg3 uppercase"
+        >
+          {REMOVAL_NOTE_WORDS.label}
+        </label>
+        <Input
+          id={noteId}
+          value={note}
+          // The audit log's cap (D261): the server holds the note to it and refuses past it.
+          maxLength={AUDIT_REASON_MAX}
+          placeholder={REMOVAL_NOTE_WORDS.placeholder}
+          // A sent note is held while its write is out: words typed then could never be sent.
+          readOnly={busy}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <span className="text-assist leading-(--lead-list) text-fg3">
+          {REMOVAL_NOTE_WORDS.assist}
+        </span>
         {/* Inert until there is a reason (Review 14 #10): armed, waiting. */}
         <Button
           variant="danger"
@@ -378,7 +406,7 @@ function PickForm({
           loading={busy}
           className="self-start"
           onClick={() => {
-            if (reason !== null) void run(() => onRemove(reason));
+            if (reason !== null) void run(() => onRemove(reason, note.trim()));
           }}
         >
           Remove from the map

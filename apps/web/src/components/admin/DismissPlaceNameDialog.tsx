@@ -4,6 +4,7 @@ import {
   CORPUS_NAME_DISMISS_LABELS,
   CORPUS_NAME_DISMISS_REASONS,
   type CorpusNameDismissReason,
+  MAX_REQUEST_NOTE_LENGTH,
 } from '@skating/core';
 import { type ReactElement, useState } from 'react';
 import { Label } from '../ui/label';
@@ -37,6 +38,8 @@ export function DismissPlaceNameDialog({
       confirmVariant="secondary"
       requireReason={false}
       reasonPlaceholder="A note, if the reason needs one (optional)"
+      // The row keeps the note to this cap (the server cuts it there): held to it where typed.
+      reasonMaxLength={MAX_REQUEST_NOTE_LENGTH}
       extraFields={
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`dismiss-reason-${id}`}>Why it is not a landmark</Label>

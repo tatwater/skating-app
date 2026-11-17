@@ -212,6 +212,50 @@ describe('putIns.listForBody', () => {
   });
 });
 
+/**
+ * **A stored launch carries its row's id; a live cluster says it is one** (B01-3o, Greptile's P2 on
+ * #144). The marker builder dropped the id from a stored `derived` row, so the old editor couldn't
+ * offer *Make official* on it though `putIns.promote` accepts it; and a cluster was told from a row
+ * only by a missing field.
+ */
+describe('which launches are stored rows', () => {
+  test('a stored derived launch carries its id, and is made official in place', async () => {
+    const t = convexTestWithGeo();
+    const body = await seedBody(t);
+    const row = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 0.5, lng: 0 },
+        source: 'derived' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const [marker] = await t.query(api.putIns.listForBody, { waterBodyId: body });
+    expect(marker).toMatchObject({ source: 'derived', id: row });
+    expect(marker).not.toHaveProperty('cluster');
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    await asMod.mutation(api.putIns.promote, { putInId: row });
+    const rows = await t.run((ctx) => ctx.db.query('putIns').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ _id: row, source: 'official', coord: { lat: 0.5, lng: 0 } });
+  });
+
+  test('a live cluster has no row: it says so, and carries no id', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    const [marker] = await t.query(api.putIns.listForBody, { waterBodyId: id });
+    expect(marker).toMatchObject({ source: 'derived', cluster: true });
+    expect(marker).not.toHaveProperty('id');
+  });
+});
+
 describe('putIns.setOfficial / hide (auth + audit)', () => {
   test('setOfficial requires a moderator and writes an audit row', async () => {
     const t = convexTestWithGeo();

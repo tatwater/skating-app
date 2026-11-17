@@ -276,10 +276,9 @@ function Board({
         r.undo !== null &&
         undo({ actionId: r.actionId, needsReason: r.undo.needsReason, what: 'The report is back' })
       }
-      onUndoEnd={(row) =>
-        row.endActionId !== null &&
-        row.undo?.state === 'available' &&
-        undo({ actionId: row.endActionId, needsReason: row.undo.needsReason })
+      onUndoEnd={(ending) =>
+        ending.undo.state === 'available' &&
+        undo({ actionId: ending.actionId, needsReason: ending.undo.needsReason })
       }
       {...(narrow !== undefined && { narrow })}
       {...(keys !== undefined && { keys })}

@@ -83,9 +83,6 @@ export type RequestKind = (typeof REQUEST_KINDS)[number];
 export const REQUEST_STATUSES = ['open', 'approved', 'declined', 'retracted'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
-/** A skater's note on a request — one sentence, rendered to a moderator. */
-export const MAX_REQUEST_NOTE_LENGTH = 280;
-
 /** The name a `name_bay` or `name_landmark` request carries — a place name, not a sentence. */
 export const MAX_REQUEST_NAME_LENGTH = 80;
 

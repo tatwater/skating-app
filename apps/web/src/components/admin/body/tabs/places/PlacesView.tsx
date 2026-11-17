@@ -3,6 +3,7 @@ import {
   CORPUS_NAME_DISMISS_REASONS,
   type CorpusNameDismissReason,
   type LandmarkKind,
+  MAX_REQUEST_NOTE_LENGTH,
 } from '@skating/core';
 import { useEffect, useRef, useState } from 'react';
 import { isFailed } from '@/components/admin/reads/consoleReads';
@@ -452,6 +453,9 @@ function AskActions({
               label="Note"
               optional
               placeholder="If the reason needs one"
+              // The row keeps the note to the request note's cap (`corpusPlaceNames.dismiss` cuts it
+              // there, silently), and its audit line quotes what was kept: held to it where typed.
+              maxLength={MAX_REQUEST_NOTE_LENGTH}
               extra={
                 <RadioGroup
                   aria-label="Why it isn’t a landmark"
@@ -486,6 +490,8 @@ function AskActions({
               description="The skaters who named it read your note."
               confirm="Decline"
               label="Note · the skaters read it"
+              // The decline's note is the request's own, under its own cap.
+              maxLength={MAX_REQUEST_NOTE_LENGTH}
               onConfirm={(note) => onDecline(ask.id, note)}
             />
           ),

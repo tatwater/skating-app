@@ -14,15 +14,19 @@ import { takeCappedResult } from './scan';
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
 const PUTIN_REPORT_SCAN_LIMIT = 200;
 
-/** A put-in marker as the map consumes it: a routable coord, its provenance, and (derived) its weight. */
-export interface PutInMarker {
+/**
+ * A put-in marker as the map consumes it: a routable coord, its provenance, and (derived) its weight.
+ * **A stored launch or a live cluster, by type**: a stored row — official, OSM, or a persisted
+ * derived one — carries its id; a cluster computed from report points each read has no row, and
+ * says so (`cluster: true`), never only by a missing id (B01-3o). Both fields are additive to what
+ * the installed phone builds read: they key nothing on either.
+ */
+export type PutInMarker = PutInMarkerFields &
+  ({ id: string; cluster?: undefined } | { cluster: true; id?: undefined });
+
+interface PutInMarkerFields {
   coord: LatLng;
   source: 'derived' | 'osm' | 'official';
-  /**
-   * The row's id, on markers that are rows. Absent on a `derived` cluster, which is computed from
-   * report points each read and has nothing stable to be identified by.
-   */
-  id?: string;
   /**
    * The walk from the lot to here, as a line to draw (A06e Workstream 0).
    *
@@ -215,7 +219,7 @@ export async function putInMarkersForBody(
     // `createdAt` is the honest answer for a stored row: it's when the marker was written down, and
     // for the legacy preservation rows that's the sweep that wrote them rather than the skate. It
     // overstates the age by less than it would understate it by claiming nothing.
-    markers.push({ coord: row.coord, source: 'derived', lastUsedAt: row.createdAt });
+    markers.push({ coord: row.coord, source: 'derived', id: row._id, lastUsedAt: row.createdAt });
   }
 
   // Then derived clusters, snapped to shore, dropping suppressed ones and any that coincide with an
@@ -227,6 +231,7 @@ export async function putInMarkersForBody(
     markers.push({
       coord,
       source: 'derived',
+      cluster: true,
       reportCount: cluster.reportCount,
       ...(cluster.lastUsedAt !== undefined ? { lastUsedAt: cluster.lastUsedAt } : {}),
     });

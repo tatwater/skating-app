@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useId, useRef, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
@@ -79,6 +79,10 @@ export interface BodyLeftColumnProps {
   timeZone?: string;
   /** A story's still of the folded state. */
   initiallyFolded?: boolean;
+  /** The pane itself (`data-pane="body"`): where focus lands when the narrow page comes back to it. */
+  paneRef?: Ref<HTMLElement>;
+  /** The narrow page's way to the other panes, over the lockup. */
+  nav?: ReactNode;
   className?: string;
 }
 
@@ -96,6 +100,8 @@ export function BodyLeftColumn({
   now,
   timeZone,
   initiallyFolded = false,
+  paneRef,
+  nav,
   className,
 }: BodyLeftColumnProps) {
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -103,10 +109,19 @@ export function BodyLeftColumn({
   const readyAsks = asks === undefined || isFailed(asks) ? undefined : asks;
   return (
     <section
+      ref={paneRef}
       aria-label="The body"
       data-slot="body-left"
-      className={cn('flex min-h-0 flex-col border-0 border-r border-solid border-line', className)}
+      data-pane="body"
+      tabIndex={-1}
+      className={cn(
+        'flex min-h-0 flex-col border-0 border-r border-solid border-line outline-none',
+        // Focus moved to the pane from the keys (the narrow page's switch) is seen, as the shell's is.
+        'focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
+        className,
+      )}
     >
+      {nav}
       <div className="flex-none px-gutter pt-(--space-4)">
         {identity === undefined ? (
           <Skeleton className="h-(--space-10) w-3/4" />

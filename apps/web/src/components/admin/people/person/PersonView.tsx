@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { isFailed, type Loadable, readState } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import type { RecordPresence } from '../record/recordModel';
+import { FACT_WORDS } from './factWords';
 import { SectionLevel } from './headingLevel';
 import { LeverBlock } from './LeverBlock';
 import { accountRows, canDoRows, type PersonAction } from './levers';
@@ -48,7 +49,9 @@ import { useActing } from './useActing';
  * pane. Props only: `PersonPane` runs the reads and the writes and hands their states here.
  *
  * - **The head**: the face, the name with the handle under it, the trust class, and *Public profile*
- *   (a new tab) when the profile can open. A status note under it for a suspension or a ban (who,
+ *   (a new tab) when the profile opens for this viewer — the profile read's own rule
+ *   (`publicProfile`: not deleted, not leaving, not blocked either way), *Private profile* when it
+ *   opens to their name and picture only. A status note under it for a suspension or a ban (who,
  *   when, why, when it lifts), or for an account on its way out.
  * - **The strips**: the skater's, then — on a staff page — the staffer's.
  * - **Two columns**: *Can do*, then what is open about them (only when something is), then on a staff
@@ -160,7 +163,7 @@ export function PersonView({
           <div data-slot="person-left" className="flex min-w-0 flex-col">
             <LeverBlock
               title="Can do"
-              rows={canDoRows(p)}
+              rows={canDoRows(p, { now, ...tz })}
               person={p}
               acting={acting}
               now={now}
@@ -174,6 +177,7 @@ export function PersonView({
               title="Account"
               rows={accountRows(p, {
                 now,
+                ...tz,
                 self,
                 // On its way adds nothing; failed is never drawn as nothing (`readState`).
                 presence: presenceOf(recordPresence),
@@ -231,11 +235,6 @@ export function PersonView({
 
 // ── The head ─────────────────────────────────────────────────────────────────────────────────
 
-/** Whether the profile can open in the app: public, and not a tombstone. */
-export function profileOpens(p: Pick<PersonRead, 'profileVisibility' | 'status'>): boolean {
-  return p.profileVisibility === 'public' && p.status !== 'deleted' && p.status !== 'deleting';
-}
-
 function PersonHead({ person }: { person: PersonRead }) {
   return (
     <header
@@ -256,22 +255,18 @@ function PersonHead({ person }: { person: PersonRead }) {
             {TRUST_WORDS[person.trustClass]}
           </Badge>
         )}
-        {profileOpens(person) && (
+        {/* Whether it opens is the profile read's own rule, for this viewer (`publicProfile`). */}
+        {person.publicProfile.opens && (
           <Button
             variant="link"
             size="xs"
             external
             data-slot="public-profile"
+            data-private={person.publicProfile.private ? '' : undefined}
             nativeButton={false}
-            render={
-              <a
-                href={`/u/${encodeURIComponent(person.username)}`}
-                target="_blank"
-                rel="noreferrer"
-              />
-            }
+            render={<a href={person.publicProfile.path} target="_blank" rel="noreferrer" />}
           >
-            Public profile
+            {person.publicProfile.private ? FACT_WORDS.privateProfile : 'Public profile'}
           </Button>
         )}
       </span>
