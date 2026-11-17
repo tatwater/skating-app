@@ -356,12 +356,13 @@ export type MostReportedRow = {
 
 /**
  * The bounties row (B01-2b): posted and fulfilled per season day (`null` a day not recorded), each on
- * the day it happened, and the season's two totals — `null` unless every day is recorded.
+ * the day it happened, and each series' season total — `null` unless every one of its days is
+ * recorded (`wholeTotal`), each by itself.
  */
 export type BountyPulse = {
   posted: Array<number | null>;
   fulfilled: Array<number | null>;
-  totals: { posted: number; fulfilled: number } | null;
+  totals: { posted: number | null; fulfilled: number | null };
 };
 
 export type ShowingUpData = {

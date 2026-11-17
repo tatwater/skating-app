@@ -33,13 +33,25 @@ export const BOUNTIES_FULFILLED = 'Fulfilled';
 export const BOUNTIES_POSTED_ROW = 'Bounties posted';
 export const BOUNTIES_FULFILLED_ROW = 'Bounties fulfilled';
 
-/** The season total's sub-line under the posted count (the board's "1 opened · 0 fulfilled", said as posted) — *not on the board* as such. */
-export const bountiesTotalSub = (fulfilled: number) =>
-  `Posted · ${fulfilled.toLocaleString('en-US')} fulfilled`;
+/**
+ * The season total's sub-line under the posted count (the board's "1 opened · 0 fulfilled", said as
+ * posted): "Posted · 1 fulfilled"; a fulfilled total not recorded says so — *not on the board*.
+ */
+export const bountiesTotalSub = (fulfilled: number | null) =>
+  fulfilled === null
+    ? 'Posted · fulfilled not recorded yet'
+    : `Posted · ${fulfilled.toLocaleString('en-US')} fulfilled`;
 
-/** The total said whole, for a reader: "3 posted · 1 fulfilled". */
-export const bountiesTotalWords = (posted: number, fulfilled: number) =>
-  `${posted.toLocaleString('en-US')} posted · ${fulfilled.toLocaleString('en-US')} fulfilled`;
+/**
+ * The total said whole, for a reader: "3 posted · 1 fulfilled"; a total not recorded says so
+ * ("Posted not recorded yet · 1 fulfilled") — never a zero.
+ */
+export const bountiesTotalWords = (posted: number | null, fulfilled: number | null) =>
+  `${posted === null ? 'Posted not recorded yet' : `${posted.toLocaleString('en-US')} posted`} · ${
+    fulfilled === null
+      ? 'fulfilled not recorded yet'
+      : `${fulfilled.toLocaleString('en-US')} fulfilled`
+  }`;
 
 /** What a strip of each vantage is called in the line, in the app's one order. */
 const VANTAGE_PHRASE = {

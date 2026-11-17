@@ -35,6 +35,7 @@ import {
   TEXT_LENGTH_CAPS,
   TEXT_LENGTH_KINDS,
   type TextLengthKind,
+  wholeTotal,
 } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -405,8 +406,9 @@ export function contributorSplit(
 
 /**
  * The *Each day* bounties row (B01-2b): posted and fulfilled per season day, each `null` on a day no
- * rollup recorded; the season's two totals are the days' sums, and `null` unless every day is
- * recorded — a total over part of the season is never shown as the season's.
+ * rollup recorded; each series' season total is its days' sum, and `null` unless every one of its days
+ * is recorded (`wholeTotal`) — each by itself, so a posted day the cap withheld never withholds the
+ * fulfilled total.
  */
 export function bountyPulse(
   posted: ReadonlyArray<number | null>,
@@ -414,16 +416,12 @@ export function bountyPulse(
 ): {
   posted: Array<number | null>;
   fulfilled: Array<number | null>;
-  totals: { posted: number; fulfilled: number } | null;
+  totals: { posted: number | null; fulfilled: number | null };
 } {
-  const whole = (days: ReadonlyArray<number | null>) =>
-    days.every((n) => n !== null) ? days.reduce<number>((a, n) => a + (n ?? 0), 0) : null;
-  const p = whole(posted);
-  const f = whole(fulfilled);
   return {
     posted: [...posted],
     fulfilled: [...fulfilled],
-    totals: p === null || f === null ? null : { posted: p, fulfilled: f },
+    totals: { posted: wholeTotal(posted), fulfilled: wholeTotal(fulfilled) },
   };
 }
 

@@ -67,3 +67,17 @@ export function fulfilledExpiryRange(from: number, to: number): { from: number; 
   // Twice the lifetime: a bounty posted under a longer lifetime than today's is still in range.
   return { from: from - BOUNTY_FULFILL_AFTER_EXPIRY_MS, to: to + 2 * DEFAULT_BOUNTY_LIFETIME_MS };
 }
+
+/**
+ * A series' season total from its days: their sum when every day is recorded, `null` when any isn't —
+ * a total over part of the season is never shown as the season's, and a day not recorded is never
+ * counted as zero. Each series of a row by itself: one series' gap never withholds the other's.
+ */
+export function wholeTotal(days: ReadonlyArray<number | null>): number | null {
+  let sum = 0;
+  for (const n of days) {
+    if (n === null) return null;
+    sum += n;
+  }
+  return sum;
+}

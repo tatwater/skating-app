@@ -792,7 +792,10 @@ export const TwoSeries: Story = {
       expect(posted.dataset.mark).toBe('outline');
       expect(getComputedStyle(posted).borderTopColor).toEqual(sameColor(ink));
       expect(days[0]?.querySelector('[data-slot="sparkbar-zero"]')).not.toBeNull();
-      expect(days[2]?.querySelector('[data-unrecorded]')?.childElementCount).toBe(0);
+      // Not recorded is its own mark — a dashed hair — never a zero, never nothing.
+      expect(
+        days[2]?.querySelector('[data-slot="sparkbar-second"]')?.getAttribute('data-mark'),
+      ).toBe('unrecorded');
       const fulfilled = must(days[3]?.querySelector<HTMLElement>('[data-slot="sparkbar-second"]'));
       expect(fulfilled.dataset.mark).toBe('solid');
       expect(getComputedStyle(fulfilled).backgroundColor).toEqual(sameColor(ink));

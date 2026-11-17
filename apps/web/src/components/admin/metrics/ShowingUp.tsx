@@ -378,6 +378,7 @@ function BountiesStrip({
   note: string;
 }) {
   const totals = bounties?.totals ?? null;
+  const said = (n: number | null) => (n === null ? null : n.toLocaleString('en-US'));
   return (
     <div className="contents" data-slot="pulse-strip" data-key="bounties">
       <RowName
@@ -407,7 +408,7 @@ function BountiesStrip({
       </StripBars>
       <StripTotal
         row={row}
-        figure={totals === null ? null : totals.posted.toLocaleString('en-US')}
+        figure={totals === null ? null : said(totals.posted)}
         sub={totals === null ? null : bountiesTotalSub(totals.fulfilled)}
         {...(totals !== null && { label: bountiesTotalWords(totals.posted, totals.fulfilled) })}
       />

@@ -1954,17 +1954,30 @@ describe('metrics.showingUp', () => {
     const bounties = async () => (await mod.as.query(api.metrics.showingUp, {})).showingUp.bounties;
     // Nothing rolled up: every day not recorded, no totals.
     let b = await bounties();
-    expect(b?.totals).toBeNull();
+    expect(b?.totals).toEqual({ posted: null, fulfilled: null });
     expect(b?.posted.every((n) => n === null)).toBe(true);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (let i = 43; i >= 1; i--) {
       await t.run((ctx) => rollupBountiesDay(ctx, metricDay(NOW - i * DAY)));
     }
     // Today not yet: still no totals.
-    expect((await bounties())?.totals).toBeNull();
+    expect((await bounties())?.totals).toEqual({ posted: null, fulfilled: null });
     await t.run((ctx) => rollupBountiesDay(ctx, TODAY));
     b = await bounties();
     expect(b?.totals).toEqual({ posted: 2, fulfilled: 1 });
+    // A posted day the cap withheld withholds the posted total only; the fulfilled total stands.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', 'bounties_posted').eq('date', TODAY))
+        .unique();
+      if (row !== null)
+        await ctx.db.replace(row._id, { ...row, scalar: undefined, meta: { capped: true } });
+    });
+    b = await bounties();
+    expect(b?.totals).toEqual({ posted: null, fulfilled: 1 });
+    expect(b?.fulfilled.at(-1)).toBe(1);
+    expect(b?.posted.at(-1)).toBeNull();
     expect(b?.posted.at(-4)).toBe(2);
     expect(b?.fulfilled.at(-1)).toBe(1);
   });
