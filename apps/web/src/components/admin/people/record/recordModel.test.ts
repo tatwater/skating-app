@@ -957,6 +957,36 @@ describe('a restore kept for the sitting never outlives the server’s answer', 
     expect(nextRestored(kept, { kind: 'item', item: ITEM_DELETED })).toEqual(kept);
   });
 
+  it('Reports restored with their Post keep their rows beside it, and go when the Post’s does', () => {
+    const post = { ...row, targetType: 'post' as const, targetId: 'post' };
+    const m1 = { ...row, targetType: 'report' as const, targetId: 'm1' };
+    const m2 = { ...row, targetType: 'report' as const, targetId: 'm2' };
+    const by = (r: typeof row, cameWith?: { targetType: 'post'; targetId: string }) => ({
+      ...mine('p1'),
+      row: r,
+      ...(cameWith !== undefined && { cameWith }),
+    });
+    const target = { targetType: 'post' as const, targetId: 'post' };
+    let kept: readonly Restored[] = [];
+    for (const r of [by(post), by(m1, target), by(m2, target)])
+      kept = nextRestored(kept, { kind: 'kept', restored: r });
+    // The server lists none of the three now: all three rows are the sitting's.
+    expect(shown(kept, [])).toHaveLength(3);
+    // One Report hidden again on its own: only its row goes; the server lists it.
+    kept = nextRestored(kept, { kind: 'listed', rows: [m1] });
+    expect(kept.map((r) => r.row.targetId)).toEqual(['post', 'm2']);
+    // The Post hidden again (its hide takes its Reports down without a decision of their own, so
+    // the server lists the Post only): the Report kept with it goes too.
+    kept = nextRestored(kept, { kind: 'listed', rows: [m1, post] });
+    expect(kept).toEqual([]);
+    // A Report whose Post kept no row of its own (the Post not on Standing) stands alone.
+    const alone = nextRestored([], { kind: 'kept', restored: by(m1, target) });
+    expect(nextRestored(alone, { kind: 'listed', rows: [] })).toBe(alone);
+    // Another write's Post row going doesn't take it.
+    const other = nextRestored(alone, { kind: 'kept', restored: { ...by(post), actionId: 'p0' } });
+    expect(nextRestored(other, { kind: 'listed', rows: [post] })).toEqual(alone);
+  });
+
   it('an answer that supersedes nothing hands back the same array, so nothing redraws', () => {
     const kept = nextRestored([], { kind: 'kept', restored: mine('a1') });
     expect(nextRestored(kept, { kind: 'listed', rows: null })).toBe(kept);

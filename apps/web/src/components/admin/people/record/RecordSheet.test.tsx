@@ -52,12 +52,14 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { RecordSheet } from './RecordSheet';
 import {
+  CHOICES,
   COUNTS,
   DANA,
   DELETED,
   HIDDEN,
   ITEM_DELETED,
   ITEM_HIDDEN,
+  ITEM_POST,
   ITEM_RESTORED,
   ITEM_UNDO_GONE,
   ITEM_WITHDRAWN,
@@ -311,6 +313,74 @@ describe('the writes', () => {
       needsReason: true,
       what: 'The report is back on Mascoma Lake',
     });
+  });
+
+  it('a Post restored with chosen Reports keeps their rows beside its own, on the Post’s write', async () => {
+    const post = STANDING.find((r) => r.targetType === 'post') as (typeof STANDING)[number];
+    const member = {
+      ...(STANDING[0] as (typeof STANDING)[number]),
+      targetId: 'm1',
+      at: post.at - 1,
+      can: { restore: { ok: false, why: 'Open it' } },
+    } as unknown as (typeof STANDING)[number];
+    const listed = [...STANDING, member];
+    mocks.results.set('contentRecord:personVerdicts', page(listed));
+    mocks.results.set('moderation:postRestoreChoices', CHOICES);
+    ITEMS['post:post'] = ITEM_POST;
+    const view = draw();
+    await waitFor(() => expect(rowCount()).toBe(listed.length));
+    mocks.mutations.get('moderation:setModerationStatus')?.mockImplementation(async () => {
+      // The server lists neither the Post nor the Report that came back with it.
+      mocks.results.set(
+        'contentRecord:personVerdicts',
+        page(listed.filter((r) => r !== post && r !== member)),
+      );
+      return { targetId: 'post', actionId: 'p1', undoable: true, undoNeedsReason: true };
+    });
+
+    await userEvent.click(rowButton('Opening weekend on Mascoma'));
+    await waitFor(() => expect(lever()).toHaveTextContent('Restore'));
+    await userEvent.click(lever() as HTMLElement);
+    const chooser = await waitFor(() => {
+      const c = document.querySelector<HTMLElement>('[data-slot="post-chooser"]');
+      if (c === null) throw new Error('no chooser yet');
+      return c;
+    });
+    await userEvent.click(within(chooser).getAllByRole('checkbox')[0] as HTMLElement);
+    await userEvent.click(within(chooser).getByRole('button', { name: /Restore with 1 report/ }));
+    expect(mutation('moderation:setModerationStatus')).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'post', withReportIds: ['m1'] }),
+    );
+    // Both rows stay for the sitting, lit, though the server lists neither.
+    await waitFor(() =>
+      expect(sheet().querySelectorAll('[data-slot="record-row"][data-back]')).toHaveLength(2),
+    );
+    expect(rowCount()).toBe(listed.length);
+    // The Report's Undo is the Post's restore, and the dialog names the Post.
+    const kept = [...sheet().querySelectorAll<HTMLElement>('[data-slot="record-row"][data-back]')];
+    const reportRow = kept.find((r) => !r.textContent?.includes('Opening weekend')) as HTMLElement;
+    await userEvent.click(within(reportRow).getByRole('button', { name: 'Undo' }));
+    expect(mocks.undo).toHaveBeenLastCalledWith({
+      actionId: 'p1',
+      needsReason: true,
+      what: 'The post is back on Mascoma Lake',
+    });
+    // Hidden again — the server lists the Post again, its Report down under it with no decision of
+    // its own: the Report's kept row goes with the Post's.
+    mocks.results.set('contentRecord:personVerdicts', page(listed.filter((r) => r !== member)));
+    view.rerender(
+      <RecordSheet
+        open
+        onOpenChange={() => {}}
+        subject={SUBJECT}
+        standing={HIDDEN}
+        pending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(sheet().querySelectorAll('[data-slot="record-row"][data-back]')).toHaveLength(0),
+    );
+    expect(rowCount()).toBe(listed.length - 1);
   });
 
   it('a kept row goes for good once the server lists the item again — never back for another hand', async () => {

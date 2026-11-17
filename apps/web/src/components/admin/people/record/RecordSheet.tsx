@@ -113,6 +113,7 @@ export function useSittingState() {
         result: RecordWriteResult,
         at: number,
         actorId: string | null,
+        cameWith?: Target,
       ) => {
         if (row === undefined) return;
         settle({
@@ -123,6 +124,7 @@ export function useSittingState() {
             actionId: result.actionId,
             actorId,
             undo: result.undoable ? { needsReason: result.undoNeedsReason } : null,
+            ...(cameWith !== undefined && { cameWith }),
           },
         });
       },
@@ -212,12 +214,18 @@ function SheetSitting({
     staying.current = open;
   }, [open]);
   const onRestored = useCallback(
-    (target: Target, result: RecordWriteResult) => {
-      if (!staying.current) return;
-      const key = targetKey(target);
-      const row =
-        tab === 'standing' ? (rows as StandingRow[]).find((r) => targetKey(r) === key) : undefined;
-      keepRestored(row, result, Date.now(), viewerId);
+    (target: Target, result: RecordWriteResult, withReportIds: readonly string[]) => {
+      if (!staying.current || tab !== 'standing') return;
+      const held = rows as StandingRow[];
+      const rowOf = (t: Target) => held.find((r) => targetKey(r) === targetKey(t));
+      const at = Date.now();
+      keepRestored(rowOf(target), result, at, viewerId);
+      // The Reports chosen to come back with a Post leave Standing too: each keeps its row for the
+      // sitting beside the Post's, on the same write.
+      for (const reportId of withReportIds) {
+        const member = rowOf({ targetType: 'report', targetId: reportId });
+        keepRestored(member, result, at, viewerId, target);
+      }
     },
     [tab, rows, keepRestored, viewerId],
   );
@@ -276,12 +284,25 @@ function SheetSitting({
       onAct={onAct}
       onUndoRestored={(r: Restored) => {
         if (r.undo === null) return;
+        // A Report kept with its Post undoes the Post's restore: the dialog names the Post's.
+        const post =
+          r.cameWith === undefined
+            ? undefined
+            : state.restored.find(
+                (k) =>
+                  k.actionId === r.actionId && targetKey(k.row) === targetKey(r.cameWith as Target),
+              );
+        const what = post ?? r;
         undo({
           actionId: r.actionId,
           needsReason: r.undo.needsReason,
           what: receiptWords(
             { kind: 'restore' },
-            { kind: r.row.targetType, place: placeName(r.row.targetType, r.row), subject },
+            {
+              kind: r.cameWith === undefined ? r.row.targetType : 'post',
+              place: placeName(what.row.targetType, what.row),
+              subject,
+            },
             {},
             now,
           ).title,
