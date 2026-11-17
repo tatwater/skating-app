@@ -147,6 +147,10 @@ const rowButton = (text: string) =>
       (b) => b.getAttribute('data-slot') === 'record-row-button' && b.textContent?.includes(text),
     ) as HTMLElement;
 const lever = () => sheet().querySelector<HTMLElement>('[data-slot="record-lever"]');
+const rowCount = () =>
+  within(sheet())
+    .getAllByRole('button')
+    .filter((b) => b.getAttribute('data-slot') === 'record-row-button').length;
 const mutation = (name: string) => mocks.mutations.get(name) as ReturnType<typeof vi.fn>;
 
 describe('the reads', () => {
@@ -202,6 +206,64 @@ describe('the reads', () => {
         cursor: 'p2',
       }),
     );
+  });
+
+  it('a page read past is pinned to where it ended, and its rows stand while the pinned read comes', async () => {
+    mocks.results.set(
+      'contentRecord:personVerdicts',
+      (a: { cursor: string | null; endCursor?: string }) =>
+        a.cursor === null
+          ? a.endCursor === undefined
+            ? page(STANDING.slice(0, 3), { isDone: false, cursor: 'p2' })
+            : undefined
+          : page(STANDING.slice(3)),
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    draw();
+    await waitFor(() =>
+      expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+        userId: SUBJECT.userId,
+        cursor: null,
+        endCursor: 'p2',
+      }),
+    );
+    // The pinned read is on its way: the first page's rows still stand, and the next page's after.
+    expect(rowCount()).toBe(STANDING.length);
+  });
+
+  it('a pinned page that outgrew a page is read as its two halves', async () => {
+    mocks.results.set(
+      'contentRecord:personVerdicts',
+      (a: { cursor: string | null; endCursor?: string }) => {
+        if (a.cursor === null && a.endCursor === undefined)
+          return page(STANDING.slice(0, 3), { isDone: false, cursor: 'p2' });
+        if (a.cursor === null && a.endCursor === 'p2')
+          return {
+            ...page(STANDING.slice(0, 2), { isDone: false, cursor: 'p2' }),
+            pageStatus: 'SplitRequired',
+            splitCursor: 's1',
+          };
+        if (a.cursor === null && a.endCursor === 's1')
+          return page(STANDING.slice(0, 2), { isDone: false, cursor: 's1' });
+        if (a.cursor === 's1') return page(STANDING.slice(2, 3), { isDone: false, cursor: 'p2' });
+        return page(STANDING.slice(3));
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    draw();
+    await waitFor(() =>
+      expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+        userId: SUBJECT.userId,
+        cursor: 's1',
+        endCursor: 'p2',
+      }),
+    );
+    expect(mocks.calls.get('contentRecord:personVerdicts')).toContainEqual({
+      userId: SUBJECT.userId,
+      cursor: null,
+      endCursor: 's1',
+    });
+    await waitFor(() => expect(rowCount()).toBe(STANDING.length));
   });
 });
 
