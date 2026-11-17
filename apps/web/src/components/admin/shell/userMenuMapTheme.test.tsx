@@ -181,14 +181,14 @@ const errors: unknown[] = [];
 
 /** Holds what a render or an effect threw, so the test can say "nothing" rather than crash. */
 class Catch extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch(error: unknown) {
+  override componentDidCatch(error: unknown) {
     errors.push(error);
   }
-  render() {
+  override render() {
     return this.state.failed ? <p>crashed</p> : this.props.children;
   }
 }
