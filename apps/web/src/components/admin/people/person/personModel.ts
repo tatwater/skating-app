@@ -4,6 +4,7 @@ import type { FunctionReturnType } from 'convex/server';
 
 import { plural, timeLeftInWords } from '@/lib/ages';
 import { floorText as countText } from '../answers';
+import { FACT_WORDS } from './factWords';
 import { WORDS } from './personWords';
 
 /**
@@ -54,12 +55,20 @@ export const NOT_RECORDED = WORDS.notRecorded;
 export type FactTone = 'default' | 'warn' | 'bad' | 'dim';
 export type FactState = 'value' | 'capped' | 'pending' | 'unrecorded' | 'empty';
 
-/** What a stat cell draws: its value (a dash for the three answers), unit, tone and sub-line. */
+/** A person a cell names: their name as the page says it, and their photo when there is one. */
+export type NamedPerson = { userId: string; name: string; src: string | null };
+
+/**
+ * What a stat cell draws: its value (a dash for the three answers), unit, tone and sub-line — and,
+ * when the sub-line names people, who (`named`: drawn after `sub` as circles and names, the rest
+ * counted).
+ */
 export type Fact = {
   value: string;
   unit?: string;
   tone: FactTone;
   sub?: string;
+  named?: { people: NamedPerson[]; more: number };
   state: FactState;
 };
 
@@ -361,23 +370,48 @@ export function trendLabel(trend: TrendRead): string {
 
 // ── The staff strip ──────────────────────────────────────────────────────────────────────────
 
-/** Decisions this week, and how many someone else later undid on net. */
+type Undone = StaffStatsRead['decisions']['undoneByOthers'];
+
+/**
+ * Who undid a staffer's decisions this week, most first, as the strip names them: the server's
+ * named few (staff, so by first name, the boards' rule), and how many more — a person whose row
+ * isn't written yet is counted with the rest, never drawn as a blank name.
+ */
+export function undoersOf(undone: Undone): { people: NamedPerson[]; more: number } {
+  const people: NamedPerson[] = [];
+  let more = undone.byMore;
+  for (const ref of undone.by) {
+    const name = personName(ref);
+    if (name === null) more++;
+    else people.push({ userId: ref.userId, name: firstName(name), src: ref.profileImageUrl });
+  }
+  return { people, more };
+}
+
+/**
+ * Decisions this week, and how many someone else later undid on net — naming who, when the read
+ * names anyone ("2 later undone by ‹Ada› and 1 more"), else in the plain words.
+ */
 export function decisionsFact(stats: StaffStatsRead): Fact {
   const undone = stats.decisions.undoneByOthers;
-  const sub =
-    stats.pending.length > 0
-      ? WORDS.undonePending
-      : undone.count === 0 && !undone.capped
-        ? WORDS.noneUndone
-        : undone.count === 1 && !undone.capped
-          ? WORDS.undoneByOne(countText(undone))
-          : WORDS.undoneByMany(countText(undone));
-  return {
+  const base = {
     value: countText(stats.decisions.thisWeek),
     unit: 'this week',
     tone: 'default',
-    sub,
     state: stats.decisions.thisWeek.capped ? 'capped' : 'value',
+  } as const;
+  if (stats.pending.length > 0) return { ...base, sub: WORDS.undonePending };
+  if (undone.count === 0 && !undone.capped) return { ...base, sub: WORDS.noneUndone };
+  const named = undoersOf(undone);
+  if (named.people.length > 0) {
+    return { ...base, sub: FACT_WORDS.undoneByNamed(countText(undone)), named };
+  }
+  return {
+    ...base,
+    sub:
+      undone.count === 1 && !undone.capped
+        ? WORDS.undoneByOne(countText(undone))
+        : WORDS.undoneByMany(countText(undone)),
   };
 }
 

@@ -36,4 +36,10 @@ describe('joining the pages', () => {
     });
     expect(joinPages([failed])).toMatchObject({ status: 'error', rows: [] });
   });
+
+  it('draws a page the server says must be split up to its rows, and nothing after it yet', () => {
+    const first = { ...page([KATE], { isDone: false }), pageStatus: 'SplitRequired' };
+    const joined = joinPages([first, page([ROB])]);
+    expect(joined).toMatchObject({ status: 'fetching', rows: [KATE], failed: false });
+  });
 });
