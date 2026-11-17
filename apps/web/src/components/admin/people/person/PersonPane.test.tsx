@@ -75,7 +75,13 @@ vi.mock('@/components/kit/toast', async (original) => ({
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
 import { NOW, ROB, ROB_HISTORY, ROB_TREND, SARAH_STATS, SEASON } from './personFixtures';
-import { actionIdOf, changedOf, undoNeedsReasonOf, usePersonWrites } from './usePersonWrites';
+import {
+  actionIdOf,
+  changedOf,
+  undoableOf,
+  undoNeedsReasonOf,
+  usePersonWrites,
+} from './usePersonWrites';
 
 const ROB_ID = ROB.userId;
 
@@ -664,6 +670,24 @@ describe('the write hook', () => {
     );
     expect(undoNeedsReasonOf({ undoNeedsReason: 'yes' })).toBeNull();
     expect(undoNeedsReasonOf(null)).toBeNull();
+  });
+
+  it('a write that changed something but can’t be undone now: its receipt, no Undo, nothing looked up', async () => {
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(async () => ({ userId: ROB_ID, changed: true, undoable: false })),
+    );
+    expect(await hook()({ kind: 'lift' })).toBe(true);
+    const receipt = mocks.announce.mock.lastCall?.[0];
+    expect(receipt).toMatchObject({
+      target: { targetType: 'user', targetId: ROB_ID },
+      undoable: false,
+    });
+    expect(receipt).not.toHaveProperty('actionId');
+    expect(receipt?.title).not.toBe('Nothing changed — Rob Tremblay was already set that way');
+    expect(undoableOf({ undoable: true })).toBe(true);
+    expect(undoableOf({ undoable: 'no' })).toBeNull();
+    expect(undoableOf(null)).toBeNull();
   });
 
   it('a write that changed nothing says so — no Undo, nothing looked up', async () => {
