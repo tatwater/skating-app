@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { useConvex } from 'convex/react';
 import {
   createContext,
@@ -291,6 +292,8 @@ export function UndoProvider({
             {/* A sent reason is held while the undo is out (it lands once, closing the dialog). */}
             <AlertDialogReason
               value={reason}
+              // An undo's reason is its audit row's (D261).
+              maxLength={AUDIT_REASON_MAX}
               readOnly={busy}
               onChange={(e) => setReason(e.target.value)}
             />

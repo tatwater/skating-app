@@ -111,6 +111,50 @@ export function must<T>(el: T | null | undefined): T {
 }
 
 /**
+ * Nothing on the page wider than its box: no sideways scroll anywhere in it — the page, its panes
+ * (`data-pane`), and every scroller inside them (a box that scrolls one way scrolls the other too, so
+ * their overflow stays inside them, out of the panes' measure). What isn't drawn is skipped, and so
+ * is a part that scrolls its own row sideways by design (`except`, by `data-slot`: the map key's
+ * row on a phone).
+ */
+export async function expectNoSidewaysScroll(
+  root: HTMLElement,
+  { except = [] }: { except?: readonly string[] } = {},
+): Promise<void> {
+  const boxes = [root, ...root.querySelectorAll<HTMLElement>('*')].filter((el) => {
+    if (except.includes(el.dataset.slot ?? '')) return false;
+    if (el === root || el.dataset.pane !== undefined) return true;
+    const { overflowX } = getComputedStyle(el);
+    return overflowX === 'auto' || overflowX === 'scroll';
+  });
+  for (const el of boxes) {
+    if (el.getClientRects().length === 0) continue;
+    await expect(el.scrollWidth, el.dataset.pane ?? el.dataset.slot ?? 'page').toBeLessThanOrEqual(
+      el.clientWidth + 1,
+    );
+  }
+}
+
+/**
+ * Every control drawn in `pane` lies inside `root`'s box from side to side — none clipped off the
+ * edge of a page that hides its sideways overflow, so none is out of reach.
+ */
+export async function expectControlsInside(root: HTMLElement, pane: HTMLElement): Promise<void> {
+  const box = root.getBoundingClientRect();
+  const controls = pane.querySelectorAll<HTMLElement>(
+    'button, a[href], input, textarea, select, [role="tab"], [role="slider"], [tabindex="0"]',
+  );
+  for (const el of controls) {
+    const r = el.getBoundingClientRect();
+    // Not drawn, or a primitive's visually hidden form input (a radio's, a checkbox's): no control.
+    if (r.width <= 1 || r.height <= 1 || el.closest('[aria-hidden="true"]') !== null) continue;
+    const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
+    await expect(r.left, name).toBeGreaterThanOrEqual(box.left - 1);
+    await expect(r.right, name).toBeLessThanOrEqual(box.right + 1);
+  }
+}
+
+/**
  * Loads the face `el` is set in — its own weight, size and lead family, which is the name the
  * app's copy of the face registers under — and fails unless a face loaded, so text measured next
  * is the face readers get. `fonts.ready` alone can resolve before a face is even requested, and

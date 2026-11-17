@@ -1,3 +1,4 @@
+import { MAX_REQUEST_NOTE_LENGTH } from '@skating/core';
 import { Button } from '../ui/button';
 import { ReasonDialog } from './ReasonDialog';
 
@@ -83,6 +84,8 @@ export function BayRequestQueue({
                 confirmVariant="secondary"
                 requireReason={true}
                 reasonPlaceholder="Skaters name it for directions, not as a destination — it will be a map label."
+                // The decline's note is the request's own, refused past its own cap.
+                reasonMaxLength={MAX_REQUEST_NOTE_LENGTH}
                 onConfirm={(note) => onDecline(row, note)}
               />
             </span>

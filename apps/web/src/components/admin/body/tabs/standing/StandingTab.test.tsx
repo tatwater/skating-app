@@ -293,6 +293,21 @@ describe('StandingTab', () => {
     });
   });
 
+  it('removes with the operator’s note beside the reason — the note the server writes to History', async () => {
+    convex.results.set('waterBodies:get', body());
+    render(<StandingTab bodyId={BODY} />);
+    await userEvent.click(screen.getByRole('radio', { name: /^Removed/ }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Reason' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Landowner request' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Note · optional' }), 'Owner asked');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove from the map' }));
+    expect(convex.mutations.get('waterBodies:remove')).toHaveBeenCalledWith({
+      waterBodyId: BODY,
+      reason: 'landowner_request',
+      note: 'Owner asked',
+    });
+  });
+
   it('a moderator is offered neither Removed nor its writes', () => {
     role.caps = new Set(['body.standing']);
     convex.results.set('waterBodies:get', body());

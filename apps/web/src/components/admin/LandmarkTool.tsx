@@ -6,6 +6,7 @@ import {
   type LandmarkKind,
   type LatLng,
   landmarkNameKey,
+  MAX_REQUEST_NOTE_LENGTH,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -593,6 +594,8 @@ export function LandmarkTool({
                     description="The skaters who named it read your note."
                     confirmLabel="Decline"
                     confirmVariant="secondary"
+                    // The decline's note is the request's own, refused past its own cap.
+                    reasonMaxLength={MAX_REQUEST_NOTE_LENGTH}
                     onConfirm={async (note) => {
                       // Rethrown: refused, the dialog stays open over its note.
                       await run(

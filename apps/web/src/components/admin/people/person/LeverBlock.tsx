@@ -310,6 +310,8 @@ export function LeverBlock({
           name={shownName(person)}
           current={person.rights.bountyLimit}
           defaultLimit={person.rights.defaultBountyLimit}
+          raise={person.can.bountyRaise}
+          lower={person.can.bountyLower}
           onConfirm={({ limit, reason }) =>
             run(shown.id, { kind: 'bountyLimit', limit, ...(reason !== '' && { reason }) }, false)
           }

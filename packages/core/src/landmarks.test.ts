@@ -24,12 +24,12 @@ import {
   landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
-  MAX_LANDMARK_NAME_LENGTH,
   MAX_LANDMARK_SOURCE_SHRINK,
   nextLandmarkSourceBar,
   normalizeLandmarkNames,
   subAreaForLandmark,
 } from './landmarks';
+import { MAX_LANDMARK_NAME_LENGTH } from './textCaps';
 
 describe('landmarkNameKey', () => {
   it('folds the spellings the corpus writes for one place', () => {

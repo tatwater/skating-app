@@ -10,7 +10,7 @@ import type { UserRole } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { personRowOf } from './peopleRows';
-import { readPreparation } from './peopleRuns';
+import { readPending } from './peopleRuns';
 import { DOC_MAX, ReadBudget, ROW_MAX } from './readBudget';
 import { chainRootId, isStandingChange } from './undoChains';
 
@@ -242,7 +242,7 @@ export async function stampTenure(ctx: MutationCtx, userId: Id<'profiles'>): Pro
     }
     return;
   }
-  const { pending } = await readPreparation(ctx);
+  const { pending } = await readPending(ctx);
   const read = await readTenure(
     ctx,
     new ReadBudget(STAMP_BUDGET),

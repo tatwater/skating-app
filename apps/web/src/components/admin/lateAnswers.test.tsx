@@ -42,6 +42,7 @@ vi.mock('@/lib/useRole', () => ({
 }));
 
 import { api } from '@skating/convex/api';
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { Button } from '@/components/kit/button';
 import { ModeratorActions } from '../ModeratorActions';
@@ -199,6 +200,7 @@ function AskThenAct({ what }: { what: string }) {
       trigger={<Button>Open</Button>}
       title="Why?"
       confirm="Send"
+      maxLength={AUDIT_REASON_MAX}
       onConfirm={() => act(() => mutate({} as never), { title: what, target })}
     />
   );
@@ -217,6 +219,7 @@ function AskThenPick({ what }: { what: string }) {
       trigger={<Button>Open</Button>}
       title="Why?"
       confirm="Send"
+      maxLength={AUDIT_REASON_MAX}
       onConfirm={async (reason) => (await rule.press('none', reason))?.landed ?? true}
     />
   );

@@ -30,6 +30,7 @@ import {
   type DormancyReason,
   INACTIVE_SEASONS,
   isActive,
+  MAX_STANDING_NOTE_LENGTH,
   RETENTION_REASONS,
   type RetentionReason,
   retentionReason,
@@ -75,9 +76,6 @@ import { literals } from './lib/validators';
 import { bodyAttachmentKind } from './waterBodies';
 
 // ── The moderator's hand ───────────────────────────────────────────────────────────────────────
-
-/** A moderator's note renders in the drawer, so it gets the same ceiling as an access note. */
-const MAX_STANDING_NOTE_LENGTH = 160;
 
 /**
  * Moderator: set a body dormant by hand, or bring one back.

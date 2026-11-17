@@ -491,6 +491,8 @@ export const ITEM_UNDO_GONE = item({
       endedAt: at(9, 28, 10, 12),
       endedBy: BEN,
       endedHow: 'restore',
+      endActionId: 'end-xguess' as Id<'moderationActions'>,
+      undo: { state: 'unavailable', why: 'Its author deleted this, so it stays as they left it.' },
     }),
   ],
   can: { keep: yes(true) },
