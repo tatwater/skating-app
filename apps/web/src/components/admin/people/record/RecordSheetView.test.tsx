@@ -88,10 +88,9 @@ function props(over: Partial<RecordSheetViewProps> = {}): RecordSheetViewProps {
     onChooser: () => {},
     choices: undefined,
     now: NOW,
-    onAct: async () => null,
+    onAct: async () => true,
     onUndoRestored: () => {},
     onUndoEnd: () => {},
-    onLateRefusal: () => {},
     narrow: false,
     keys: false,
     ...over,
@@ -174,9 +173,10 @@ describe('the lever is exactly the server’s', () => {
 });
 
 /** A write the test settles by hand. */
+/** A write the test answers: `true` landed; `false` refused (said in its toast by the write path). */
 function deferred() {
-  let settle: (refused: string | null) => void = () => {};
-  const promise = new Promise<string | null>((resolve) => {
+  let settle: (landed: boolean) => void = () => {};
+  const promise = new Promise<boolean>((resolve) => {
     settle = resolve;
   });
   return { promise, settle };
@@ -231,8 +231,8 @@ describe('a write that comes back after the operator moved on', () => {
    * Every way of leaving, once it has begun — the sheet closing (Close, Esc and the backdrop are
    * all its `open` going false: it slides out with its content still mounted), another item open
    * under the pane, another tab, the narrow layout's way back, the page itself going — for every
-   * write and both answers: a refusal goes to the toast (`onLateRefusal`); a landing writes
-   * nothing; nothing is drawn into what is leaving, and focus is not moved. A dialog whose write is
+   * write and both answers: a refusal is its write path's toast (D268), never said by the sheet; a
+   * landing writes nothing; nothing is drawn into what is leaving, and focus is not moved. A dialog whose write is
    * out is held through each (its write answers for itself, never into the closing dialog).
    */
   type Way = 'close' | 'item' | 'tab' | 'back' | 'page';
@@ -245,12 +245,10 @@ describe('a write that comes back after the operator moved on', () => {
           const user = userEvent.setup();
           const write = deferred();
           const onAct = vi.fn((_t: Target, _w: RecordWrite) => write.promise);
-          const onLateRefusal = vi.fn();
           const base = {
             selected: targetOf(c.item),
             item: c.item,
             onAct,
-            onLateRefusal,
             narrow: way === 'back',
           };
           const view = render(<RecordSheetView {...props(base)} />);
@@ -297,12 +295,12 @@ describe('a write that comes back after the operator moved on', () => {
           }
           const before = document.activeElement;
           await act(async () => {
-            write.settle(outcome === 'refused' ? 'Someone changed this since.' : null);
+            write.settle(outcome === 'landed');
             await write.promise;
             await new Promise((r) => requestAnimationFrame(() => r(null)));
           });
           // Nothing said into what is leaving: not in place, not in a dialog.
-          expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+          expect(document.querySelector('[data-slot="record-note"]')).toBeNull();
           expect(document.querySelector('[data-slot="alert-dialog-error"]')).toBeNull();
           // Focus is not moved by the write: where leaving left it (the next item, the page), or
           // where the sheet's own close or way back puts it — never onto a lever or into the pane
@@ -312,9 +310,8 @@ describe('a write that comes back after the operator moved on', () => {
           } else {
             expect(document.activeElement?.closest('[data-slot="record-pane"]') ?? null).toBeNull();
           }
-          if (outcome === 'refused')
-            expect(onLateRefusal).toHaveBeenCalledWith('Someone changed this since.');
-          else expect(onLateRefusal).not.toHaveBeenCalled();
+          // One write, whatever came of it: the toast is its write path's.
+          expect(onAct).toHaveBeenCalledTimes(1);
           // Another item open now: its own lever at rest.
           if (way === 'item') {
             expect(lever()).not.toHaveAttribute('aria-busy');
@@ -329,15 +326,14 @@ describe('a write that comes back after the operator moved on', () => {
     it(`the chooser's restore, ${outcome}, leaving by close: nothing said into the closing chooser`, async () => {
       const user = userEvent.setup();
       const write = deferred();
-      const onLateRefusal = vi.fn();
       const post = targetOf(ITEM_POST);
+      const onAct = vi.fn(() => write.promise);
       const base = {
         selected: post,
         item: ITEM_POST,
         chooser: post,
         choices: CHOICES,
-        onAct: vi.fn(() => write.promise),
-        onLateRefusal,
+        onAct,
       };
       const view = render(<RecordSheetView {...props(base)} />);
       const chooser = document.querySelector('[data-slot="post-chooser"]') as HTMLElement;
@@ -345,13 +341,11 @@ describe('a write that comes back after the operator moved on', () => {
       await user.click(within(chooser).getByRole('button', { name: /Restore with 1 report/ }));
       view.rerender(<RecordSheetView {...props({ ...base, open: false })} />);
       await act(async () => {
-        write.settle(outcome === 'refused' ? 'Someone changed this since.' : null);
+        write.settle(outcome === 'landed');
         await write.promise;
       });
       expect(document.querySelector('[data-slot="alert-dialog-error"]')).toBeNull();
-      if (outcome === 'refused')
-        expect(onLateRefusal).toHaveBeenCalledWith('Someone changed this since.');
-      else expect(onLateRefusal).not.toHaveBeenCalled();
+      expect(onAct).toHaveBeenCalledTimes(1);
     });
   }
 
@@ -364,7 +358,7 @@ describe('a write that comes back after the operator moved on', () => {
   });
 
   it('a lever pressed once leaving has begun starts no write', async () => {
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     const view = render(<RecordSheetView {...props({ keys: true, onAct })} />);
     const pane = document.querySelector('[data-slot="record-pane"]') as HTMLElement;
     view.rerender(<RecordSheetView {...props({ keys: true, onAct, open: false })} />);
@@ -375,22 +369,20 @@ describe('a write that comes back after the operator moved on', () => {
     expect(onAct).not.toHaveBeenCalled();
   });
 
-  it('one still open gets its refusal in place, and focus stays in the item', async () => {
+  it('one still open, refused: nothing said in its place (its toast says it), and focus stays in the item', async () => {
     const user = userEvent.setup();
     const write = deferred();
-    const onLateRefusal = vi.fn();
-    render(<RecordSheetView {...props({ onAct: () => write.promise, onLateRefusal })} />);
+    render(<RecordSheetView {...props({ onAct: () => write.promise })} />);
     await user.click(lever() as HTMLElement);
     expect(lever()).toHaveAttribute('aria-busy', 'true');
     await act(async () => {
-      write.settle('This is already up.');
+      write.settle(false);
       await write.promise;
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     });
-    expect(document.querySelector('[data-slot="record-refusal"]')).toHaveTextContent(
-      'This is already up.',
-    );
-    expect(onLateRefusal).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-slot="record-note"]')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(lever()).not.toHaveAttribute('aria-busy');
     expect(
       document.querySelector('[data-slot="record-pane"]')?.contains(document.activeElement),
     ).toBe(true);
@@ -405,12 +397,12 @@ describe('a write that comes back after the operator moved on', () => {
     await user.click(lever() as HTMLElement);
     expect(onAct).toHaveBeenCalledTimes(1);
     await act(async () => {
-      write.settle(null);
+      write.settle(true);
       await write.promise;
     });
   });
 
-  it('a write that throws is said as something went wrong', async () => {
+  it('a write path that throws prints nothing, and the lever is the moderator’s again', async () => {
     const user = userEvent.setup();
     render(
       <RecordSheetView
@@ -422,7 +414,8 @@ describe('a write that comes back after the operator moved on', () => {
       />,
     );
     await user.click(lever() as HTMLElement);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong. Try again.');
+    await waitFor(() => expect(lever()).not.toHaveAttribute('aria-busy'));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 
@@ -493,7 +486,7 @@ describe('the item’s answers', () => {
   });
 
   it('the lever’s key presses it on a fine pointer, never while typing', async () => {
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     render(<RecordSheetView {...props({ keys: true, onAct })} />);
     (document.querySelector('[data-slot="record-pane"]') as HTMLElement).focus();
     await userEvent.keyboard('x');
@@ -503,7 +496,7 @@ describe('the item’s answers', () => {
   });
 
   it('a key pressed in a popover over the sheet (the Filter) pulls no lever', async () => {
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     render(<RecordSheetView {...props({ keys: true, onAct })} />);
     await userEvent.click(screen.getByRole('button', { name: /Filter/ }));
     const option = await screen.findByRole('button', { name: /Reports/ });
@@ -651,9 +644,9 @@ describe('the Post’s chooser', () => {
     expect(chooser()).toHaveTextContent('Nothing on the record by that name');
   });
 
-  it('⌘⏎ restores with the reports chosen; a refusal stands over them, and Cancel closes', async () => {
+  it('⌘⏎ restores with the reports chosen; refused, it stays open over them, printing nothing, and Cancel closes', async () => {
     const user = userEvent.setup();
-    const onAct = vi.fn(async () => 'Something changed this since.');
+    const onAct = vi.fn(async () => false);
     const onChooser = vi.fn();
     render(<RecordSheetView {...chooserProps({ choices: CHOICES, onAct, onChooser })} />);
     const boxes = within(chooser() as HTMLElement).getAllByRole('checkbox');
@@ -666,16 +659,20 @@ describe('the Post’s chooser', () => {
     (boxes[0] as HTMLElement).focus();
     await user.keyboard('{Meta>}{Enter}{/Meta}');
     expect(onAct).toHaveBeenCalledWith(post, { kind: 'restore', withReportIds: ['m1'] });
-    expect(
-      await within(chooser() as HTMLElement).findByText('Something changed this since.'),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(chooser() as HTMLElement).getAllByRole('checkbox')[0]).not.toHaveAttribute(
+        'data-disabled',
+      ),
+    );
+    expect(within(chooser() as HTMLElement).getAllByRole('checkbox')[0]).toBeChecked();
+    expect(document.querySelector('[data-slot="alert-dialog-error"]')).toBeNull();
     await user.click(within(chooser() as HTMLElement).getByRole('button', { name: 'Cancel' }));
     expect(onChooser).toHaveBeenCalledWith(null);
   });
 
   it('a report that came up since it was chosen is neither counted nor sent', async () => {
     const user = userEvent.setup();
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     const view = render(<RecordSheetView {...chooserProps({ choices: CHOICES, onAct })} />);
     const boxes = within(chooser() as HTMLElement).getAllByRole('checkbox');
     await user.click(boxes[0] as HTMLElement);
@@ -701,7 +698,7 @@ describe('an open dialog follows the live answer', () => {
 
   it('the chooser: a report that came up while it was open lets the post restore with none chosen', async () => {
     const user = userEvent.setup();
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     const view = render(
       <RecordSheetView
         {...props({ selected: post, item: ITEM_POST, chooser: post, choices: CHOICES, onAct })}
@@ -860,7 +857,7 @@ describe('an open dialog follows the live answer', () => {
         if (outcome === 'closes') {
           await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
           const place = document.querySelector(
-            '[data-slot="record-refusal"], [data-slot="record-say"]',
+            '[data-slot="record-note"], [data-slot="record-say"]',
           );
           expect(place).toHaveTextContent(said as string);
           return;
@@ -894,14 +891,14 @@ describe('an open dialog follows the live answer', () => {
     );
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     await act(async () => {
-      write.settle(null);
+      write.settle(true);
       await write.promise;
     });
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+    expect(document.querySelector('[data-slot="record-note"]')).toBeNull();
   });
 
-  it('a refusal for a write the answer moved under closes it, the refusal said in its place', async () => {
+  it('a refusal for a write the answer moved under closes it, saying nothing more in its place', async () => {
     const user = userEvent.setup();
     const write = deferred();
     const target = targetOf(ITEM_DELETED);
@@ -924,26 +921,29 @@ describe('an open dialog follows the live answer', () => {
     );
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     await act(async () => {
-      write.settle('Someone kept this on the record.');
+      write.settle(false);
       await write.promise;
     });
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(document.querySelector('[data-slot="record-refusal"]')).toHaveTextContent(
-      'Someone kept this on the record.',
-    );
+    // Its refusal is its toast's: neither it nor "this changed" is said again in the item.
+    expect(document.querySelector('[data-slot="record-note"]')).toBeNull();
   });
 
   it('a refused dialog, cancelled, never lends its refusal to a later close', async () => {
     const user = userEvent.setup();
     const target = targetOf(ITEM_DELETED);
-    const onAct = vi.fn(async () => 'Not now.');
+    const onAct = vi.fn(async () => false);
     const view = render(
       <RecordSheetView {...props({ selected: target, item: ITEM_DELETED, onAct })} />,
     );
     await user.click(lever() as HTMLElement);
     let dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByRole('button', { name: /Overturn/ }));
-    expect(await within(dialog).findByText('Not now.')).toBeInTheDocument();
+    await waitFor(() => expect(onAct).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancel' })).not.toBeDisabled(),
+    );
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     // Opened again, and the answer moves under it: it says the change, not the old refusal.
@@ -959,7 +959,7 @@ describe('an open dialog follows the live answer', () => {
       />,
     );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(document.querySelector('[data-slot="record-refusal"]')).toHaveTextContent(
+    expect(document.querySelector('[data-slot="record-note"]')).toHaveTextContent(
       'This changed while it was open.',
     );
   });
@@ -968,7 +968,7 @@ describe('an open dialog follows the live answer', () => {
 
   it('the chooser’s landed restore holds nothing after it: Hide again on the post still follows', async () => {
     const user = userEvent.setup();
-    const onAct = vi.fn(async () => null);
+    const onAct = vi.fn(async () => true);
     const onChooser = vi.fn();
     const view = render(
       <RecordSheetView
@@ -1003,7 +1003,7 @@ describe('an open dialog follows the live answer', () => {
     const user = userEvent.setup();
     const write = deferred();
     const onAct = vi.fn((_: Target, w: RecordWrite) =>
-      w.kind === 'hideAgain' ? Promise.resolve(null) : write.promise,
+      w.kind === 'hideAgain' ? Promise.resolve(true) : write.promise,
     );
     const onChooser = vi.fn();
     const view = render(
@@ -1045,10 +1045,10 @@ describe('an open dialog follows the live answer', () => {
     );
     expect(onChooser).not.toHaveBeenCalled();
     await act(async () => {
-      write.settle(null);
+      write.settle(true);
       await write.promise;
     });
     expect(onChooser).toHaveBeenCalledWith(null);
-    expect(document.querySelector('[data-slot="record-refusal"]')).toBeNull();
+    expect(document.querySelector('[data-slot="record-note"]')).toBeNull();
   });
 });

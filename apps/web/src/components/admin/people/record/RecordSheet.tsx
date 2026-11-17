@@ -3,8 +3,6 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { toast } from '@/components/kit/toast';
-
 import { loaded, read, readState, useConsoleReadSet } from '../../reads/consoleReads';
 import { useMinuteNow } from '../../shell/presence';
 import { useUndo } from '../../shell/undo';
@@ -21,7 +19,6 @@ import {
   receiptWords,
   type StandingCount,
   type StandingRow,
-  subjectName,
   type Target,
   targetKey,
 } from './recordModel';
@@ -301,12 +298,6 @@ function SheetSitting({
             now,
           ).title,
         });
-      }}
-      onLateRefusal={(text) => {
-        // Said once, out of the way, naming the person — and never over another person's page
-        // (main's binding: this sheet's page still mounted).
-        if (!here()) return;
-        toast({ title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' });
       }}
     />
   );

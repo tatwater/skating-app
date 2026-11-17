@@ -6,11 +6,14 @@ import { Button } from '@/components/kit/button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ReasonAsk } from './ReasonAsk';
 
-/** The reason dialog: closes when the write lands, keeps the reason over a refusal — or a throw. */
+/**
+ * The reason dialog: closes when the write lands; refused (said in its toast, D268) or a sender that
+ * threw, it stays open over the kept reason and prints nothing of the server's.
+ */
 
 beforeAll(stubJsdomAnimations);
 
-function Ask({ onConfirm }: { onConfirm: (reason: string) => Promise<string | null> }) {
+function Ask({ onConfirm }: { onConfirm: (reason: string) => Promise<boolean> }) {
   return (
     <ReasonAsk
       trigger={<Button>Hide</Button>}
@@ -22,31 +25,41 @@ function Ask({ onConfirm }: { onConfirm: (reason: string) => Promise<string | nu
 }
 
 describe('ReasonAsk', () => {
-  it('says a sender that threw, keeps the reason, and lets it be sent again — never stuck waiting', async () => {
-    const onConfirm = vi
-      .fn<(reason: string) => Promise<string | null>>()
-      .mockRejectedValueOnce(new Error('Lost the connection'))
-      .mockResolvedValueOnce(null);
-    render(<Ask onConfirm={onConfirm} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
-    const dialog = await screen.findByRole('alertdialog');
-    await userEvent.type(within(dialog).getByRole('textbox'), 'A private dock');
-    await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
-    expect(await within(dialog).findByText(/Something went wrong/)).toBeTruthy();
-    expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
-    await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
-    expect(onConfirm).toHaveBeenLastCalledWith(
-      'A private dock',
-      expect.objectContaining({ here: expect.any(Function) }),
-    );
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-  });
+  it.each([
+    ['refused', (f: ReturnType<typeof vi.fn>) => f.mockResolvedValueOnce(false)],
+    [
+      'a sender that threw',
+      (f: ReturnType<typeof vi.fn>) => f.mockRejectedValueOnce(new Error('x')),
+    ],
+  ])(
+    '%s: keeps the reason, prints nothing, and lets it be sent again — never stuck waiting',
+    async (_, first) => {
+      const onConfirm = vi.fn<(reason: string) => Promise<boolean>>();
+      first(onConfirm as never);
+      onConfirm.mockResolvedValueOnce(true);
+      render(<Ask onConfirm={onConfirm} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.type(within(dialog).getByRole('textbox'), 'A private dock');
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+      await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(within(dialog).getByRole('textbox')).not.toHaveAttribute('readonly'),
+      );
+      expect(screen.getByRole('alertdialog')).toBeTruthy();
+      expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
+      expect(within(dialog).queryByRole('alert')).toBeNull();
+      await userEvent.click(within(dialog).getByRole('button', { name: /^Hide/ }));
+      expect(onConfirm).toHaveBeenLastCalledWith('A private dock');
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    },
+  );
 
   it('a send on its way can’t be dismissed, so a late answer never closes a dialog opened since', async () => {
-    let answer: (refused: string | null) => void = () => {};
+    let answer: (landed: boolean) => void = () => {};
     const onConfirm = vi.fn(
       () =>
-        new Promise<string | null>((resolve) => {
+        new Promise<boolean>((resolve) => {
           answer = resolve;
         }),
     );
@@ -62,7 +75,7 @@ describe('ReasonAsk', () => {
     expect(within(dialog).getByRole('textbox')).toHaveValue('A private dock');
     // Its own answer closes it; reopened, it starts clean. (No later opening can exist while a send
     // is on its way — the dialog won't close — so there is no late answer to hand a new opening.)
-    answer(null);
+    answer(true);
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
     const again = await screen.findByRole('alertdialog');
@@ -71,10 +84,10 @@ describe('ReasonAsk', () => {
   });
 
   it('a sent reason is held while it is out — never typed into and then thrown away', async () => {
-    let answer: (refused: string | null) => void = () => {};
+    let answer: (landed: boolean) => void = () => {};
     const onConfirm = vi.fn(
       () =>
-        new Promise<string | null>((resolve) => {
+        new Promise<boolean>((resolve) => {
           answer = resolve;
         }),
     );
@@ -88,7 +101,7 @@ describe('ReasonAsk', () => {
     await userEvent.type(field, ' since May');
     expect(field).toHaveValue('A private dock');
     // Refused: the field is the moderator's again, the reason whole.
-    await act(async () => answer('Not allowed'));
+    await act(async () => answer(false));
     expect(field).not.toHaveAttribute('readonly');
     await userEvent.type(field, ' since May');
     expect(field).toHaveValue('A private dock since May');

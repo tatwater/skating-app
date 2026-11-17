@@ -196,5 +196,4 @@ export const WORDS = {
 
   // ── The write path ──
   anotherOnItsWay: 'Another change is still on its way',
-  somethingWrong: 'Something went wrong — check your connection and try again.',
 } as const;

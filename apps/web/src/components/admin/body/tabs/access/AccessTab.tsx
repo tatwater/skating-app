@@ -13,7 +13,7 @@ import {
 import { useRole } from '@/lib/useRole';
 import { PICK_WHAT } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { type PickOutcome, useLatestPick } from '../latestPick';
+import { useLatestPick } from '../latestPick';
 import { useTickingNow } from '../tabParts';
 import { useTabAction } from '../useTabAction';
 import { AccessView } from './AccessView';
@@ -91,7 +91,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
   const promote = useMutation(api.putIns.promote);
-  const { act, actInDialog, attempt, sayRefused } = useTabAction(bodyId);
+  const { act, attempt, words } = useTabAction(bodyId);
   const now = useTickingNow(3_600_000);
 
   const target = { targetType: 'waterbody' as const, targetId: bodyId };
@@ -107,7 +107,7 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   // the record is drawn again once every press has been answered. Ruling
   // no public access is a press once its reason is confirmed; its dialog waits on its own answer.
   // One write for the buttons and the reason dialog, answering in the store's one shape: a refusal
-  // goes to the dialog that asked while it is open, else is said once by someone still there.
+  // is a toast naming the body, and the dialog that waited on it stays open over its reason.
   const send = (verdict: PublicAccessVerdict | null, reason: string | undefined) =>
     attempt(
       () => setPublicAccess({ waterBodyId, verdict, ...(reason ? { reason } : {}) }),
@@ -117,11 +117,8 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
   const rule = useLatestPick<PublicAccessVerdict | null, string>(
     `access-ruling:${bodyId}`,
     loaded?.ruling.verdict ?? null,
-    { send, say: sayRefused(PICK_WHAT.ruling) },
+    { send, words: words(PICK_WHAT.ruling) },
   );
-  /** The dialog's words for an outcome: `null` when landed or said elsewhere, else the refusal. */
-  const forDialog = (o: PickOutcome | undefined) =>
-    o === undefined || o.landed || o.said === true ? null : o.why;
   const shown = useMemo(() => {
     if (data === undefined || isFailed(data)) return data;
     const ruling = rulingWithPick(data.ruling, rule.shown, now);
@@ -138,20 +135,14 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       canPlace={can('body.access')}
       onRule={
         can('access.rule')
-          ? async (verdict, reason, asker) => {
-              const sent = rule.press(verdict, reason, asker);
-              if (sent !== null) return forDialog(await sent);
+          ? async (verdict, reason) => {
+              const sent = rule.press(verdict, reason);
+              // Replaced before it was sent (a newer press): it was never a write, and no refusal.
+              if (sent !== null) return (await sent)?.landed ?? true;
               // The verdict already shows (another moderator's ruling landed while the dialog was
               // open): a confirmed reason is still sent, never dropped as though it were saved.
-              if (reason === undefined) return null;
-              const outcome = await send(verdict, reason);
-              // Off the queue, so said here as the queue would: its dialog gone (the tab still
-              // here), the page says it once — never handed to a dialog no one can see.
-              if (!outcome.landed && outcome.said !== true && asker?.here() !== true) {
-                sayRefused(PICK_WHAT.ruling)(outcome.why);
-                return null;
-              }
-              return forDialog(outcome);
+              if (reason === undefined) return true;
+              return (await send(verdict, reason)).landed;
             }
           : undefined
       }
@@ -170,12 +161,11 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       }
       onHide={
         can('body.access')
-          ? (p, reason, asker) =>
-              actInDialog(
-                () => hide({ waterBodyId, coord: p.at, reason }),
-                { title: `Hid ${p.name}`, target },
-                asker,
-              )
+          ? (p, reason) =>
+              act(() => hide({ waterBodyId, coord: p.at, reason }), {
+                title: `Hid ${p.name}`,
+                target,
+              })
           : undefined
       }
     />

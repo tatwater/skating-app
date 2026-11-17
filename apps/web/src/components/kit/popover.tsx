@@ -64,7 +64,7 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         // Over sheets and viewers too: a popover belongs to whatever opened it.
-        className="isolate z-[calc(var(--z-viewer)+1)] outline-none"
+        className="isolate z-[calc(var(--z-toast)+1)] outline-none"
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"

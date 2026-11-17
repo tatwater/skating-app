@@ -91,12 +91,10 @@ export type RecordSheetViewProps = {
   choices: Loadable<ChoicesRead | null>;
   now: number;
   timeZone?: string;
-  /** The write; resolves to the server's refusal, or `null` once it landed. */
-  onAct: (target: Target, write: RecordWrite) => Promise<string | null>;
+  /** The write; resolves whether it landed (a refusal is a toast naming the person). */
+  onAct: (target: Target, write: RecordWrite) => Promise<boolean>;
   onUndoRestored: (restored: Restored) => void;
   onUndoEnd: (row: ReversedRow) => void;
-  /** A refusal that came back for an item no longer open, or once leaving had begun. */
-  onLateRefusal: (text: string) => void;
   /** Force one column (a story's phone); measured otherwise. */
   narrow?: boolean;
   /** Key hints on the levers; a fine pointer's, by default. */
@@ -162,7 +160,6 @@ function SheetBodyView({
   onAct,
   onUndoRestored,
   onUndoEnd,
-  onLateRefusal,
   narrow: forced,
   keys: keysProp,
 }: RecordSheetViewProps) {
@@ -182,7 +179,7 @@ function SheetBodyView({
   // The item's place is on screen and staying: the sheet open (not sliding closed), and its pane
   // drawn (on a narrow screen, not the list). False from the moment leaving starts.
   const present = sheetOpen && (!narrow || shown === 'item');
-  const acting = useRecordActing({ current: selected, present, onAct, onLateRefusal });
+  const acting = useRecordActing({ current: selected, present, onAct });
   const [ask, setAsk] = useState<Ask | null>(null);
   const [askOpen, setAskOpen] = useState(false);
 
@@ -270,11 +267,12 @@ function SheetBodyView({
   // ── An open dialog follows the live answer ──
   // Each render reads the item's `can` as the server answers it now. A dialog (or the chooser) whose
   // lever no longer stands — refused, another lever offered, nothing offered — closes: a refusal is
-  // the foot's, in the server's words; anything else is said in the item's place. Never while its
-  // own write is out: that write is what moves the answer, and it answers for itself. A hold and a
-  // kept refusal are each dialog's own (the Ask's or the chooser's, on one item), and end with it.
+  // the foot's, in the server's words (a read); a write of its own refused just before is its toast's
+  // (D268), said already; anything else is said in the item's place. Never while its own write is
+  // out: that write is what moves the answer, and it answers for itself. A hold and a kept refusal
+  // are each dialog's own (the Ask's or the chooser's, on one item), and end with it.
   const writing = useRef<Held | null>(null);
-  const lastRefusal = useRef<(Held & { text: string }) | null>(null);
+  const lastRefusal = useRef<Held | null>(null);
   // A refusal ends the hold: the dialog judges the live answer again, which may have moved while
   // its write was out (a ref alone would never run the check again).
   const [refusals, setRefusals] = useState(0);
@@ -297,12 +295,11 @@ function SheetBodyView({
     const key = targetKey(target);
     const kept = lastRefusal.current;
     lastRefusal.current = null;
-    // The foot says the server's why; an item no longer open is not spoken over.
+    // The foot says the server's why; an item no longer open is not spoken over; a refusal of the
+    // dialog's own write is in its toast already.
     if (live?.ok === false || selectedKey !== key) return;
-    acting.say(
-      target,
-      kept !== null && kept.by === by && kept.key === key ? kept.text : W.changedWhileOpen,
-    );
+    if (kept !== null && kept.by === by && kept.key === key) return;
+    acting.say(target, W.changedWhileOpen);
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the live answer, by value.
   useEffect(() => {
@@ -335,13 +332,13 @@ function SheetBodyView({
     const key = targetKey(target);
     writing.current = { by, key };
     lastRefusal.current = null;
-    const refused = await acting.run(target, write, { region: pane.current, inline: false });
-    if (refused !== null) {
+    const outcome = await acting.run(target, write, { region: pane.current, inline: false });
+    if (outcome !== 'landed') {
       if (holds(by, key)) writing.current = null;
-      lastRefusal.current = { by, key, text: refused };
+      if (outcome === 'refused') lastRefusal.current = { by, key };
       setRefusals((n) => n + 1);
     }
-    return refused;
+    return outcome;
   };
   const askView = askStands && view !== null ? view : ask?.view;
   const askReason = askStands && askLive?.ok === true ? askLive.needsReason : ask?.needsReason;
@@ -474,7 +471,7 @@ function SheetBodyView({
                 narrow={narrow}
                 keys={keys}
                 busy={acting.busyOn(selected)}
-                refusal={acting.refusalOn(selected)}
+                note={acting.noteOn(selected)}
                 reversal={reversal}
                 onLever={press}
                 onUndoEnd={onUndoEnd}
@@ -520,6 +517,7 @@ function SheetBodyView({
           reason={askReason === true ? true : 'optional'}
           reasonLabel={askReason === true ? W.reasonLabel : W.reasonOptionalLabel}
           {...(askReason !== true && { reasonPlaceholder: W.reasonOptionalPlaceholder })}
+          waitingNote={W.anotherOnItsWay}
           onConfirm={(reason) => {
             const write: RecordWrite =
               ask.action === 'overturn'
@@ -540,7 +538,7 @@ function SheetBodyView({
         {...(container != null && { container })}
         onRestore={(withReportIds) =>
           chooser === null
-            ? Promise.resolve(null)
+            ? Promise.resolve('landed' as const)
             : dialogWrite(
                 'chooser',
                 chooser,

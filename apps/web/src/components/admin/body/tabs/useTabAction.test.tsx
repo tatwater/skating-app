@@ -3,8 +3,9 @@ import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The tabs' write runner: a refusal in the server's words, a receipt once the write lands — and a
- * receipt that couldn't be shown never turns a landed write into a failure or a hung dialog.
+ * The tabs' write runner: a refusal in a toast naming the body (D268) wherever the console is, a
+ * receipt once the write lands — and a receipt that couldn't be shown never turns a landed write
+ * into a failure or a hung dialog.
  */
 
 const mocks = vi.hoisted(() => ({ announce: vi.fn(async (_r: unknown) => {}) }));
@@ -27,19 +28,25 @@ beforeEach(() => {
 });
 
 describe('useTabAction', () => {
-  it('announces a landed write, and says a refusal in the server’s words', async () => {
+  it('announces a landed write; a refusal is a toast, and the caller hears only false', async () => {
     const { result } = renderHook(() => useTabAction('wb1'));
     await expect(result.current.act(async () => {}, RECEIPT)).resolves.toBe(true);
     expect(mocks.announce).toHaveBeenCalledWith(expect.objectContaining(RECEIPT));
     await expect(
-      result.current.actInDialog(async () => {
+      result.current.act(async () => {
         throw new ConvexError('This request has been decided');
       }, RECEIPT),
-    ).resolves.toBe('This request has been decided');
+    ).resolves.toBe(false);
+    expect(toasts).toEqual([
+      expect.objectContaining({ description: 'Saved: This request has been decided', tone: 'bad' }),
+    ]);
     expect(mocks.announce).toHaveBeenCalledTimes(1);
   });
 
-  it('a write refused once its console has gone is said once, off it, and never reads as landed', async () => {
+  it.each([
+    ['mounted', false],
+    ['its console gone', true],
+  ])('a refusal, %s: the same one toast naming the body', async (_, gone) => {
     const { result, unmount } = renderHook(() => useTabAction('wb1'), {
       wrapper: ({ children }) => (
         <BodyBindingProvider bodyId="wb1" name="Mascoma Lake">
@@ -47,18 +54,34 @@ describe('useTabAction', () => {
         </BodyBindingProvider>
       ),
     });
-    const { act } = result.current;
-    unmount();
+    const { act, attempt } = result.current;
+    if (gone) unmount();
     await expect(
       act(async () => {
         throw new ConvexError('Water body not found');
       }, RECEIPT),
     ).resolves.toBe(false);
+    await expect(
+      attempt(
+        async () => {
+          throw new ConvexError('Water body not found');
+        },
+        RECEIPT,
+        'The class',
+      ),
+    ).resolves.toEqual({ landed: false });
     expect(toasts).toEqual([
       {
         title: 'Not saved · Mascoma Lake',
         description: 'Saved: Water body not found',
         tone: 'bad',
+        timeout: 0,
+      },
+      {
+        title: 'Not saved · Mascoma Lake',
+        description: 'The class: Water body not found',
+        tone: 'bad',
+        timeout: 0,
       },
     ]);
     expect(mocks.announce).not.toHaveBeenCalled();
@@ -69,7 +92,9 @@ describe('useTabAction', () => {
       throw new Error('the toast queue is gone');
     });
     const { result } = renderHook(() => useTabAction('wb1'));
-    await expect(result.current.actInDialog(async () => {}, RECEIPT)).resolves.toBeNull();
+    await expect(result.current.attempt(async () => {}, RECEIPT, 'x')).resolves.toEqual({
+      landed: true,
+    });
     await expect(result.current.act(async () => {}, RECEIPT)).resolves.toBe(true);
     expect(toasts).toEqual([]);
   });

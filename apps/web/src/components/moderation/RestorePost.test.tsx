@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ConvexError } from 'convex/values';
 import { describe, expect, test, vi } from 'vitest';
+import { Refused } from '../admin/said';
 import { RestorePostView } from './RestorePost';
 import { id, MIXED, NEEDS_A_CHOICE, NOTHING, PLAIN } from './restorePostFixtures';
 
@@ -53,17 +53,16 @@ describe('RestorePostView', () => {
     expect(onRestore).not.toHaveBeenCalled();
   });
 
-  test("a refusal from the server is shown in the server's words", async () => {
-    render(
-      <RestorePostView
-        choices={PLAIN}
-        onRestore={async () => {
-          throw new ConvexError(NEEDS_A_CHOICE);
-        }}
-      />,
-    );
+  test('a refusal is its write’s toast (the net): the view prints nothing, and its button is back', async () => {
+    const onRestore = vi.fn(async () => {
+      throw new Refused();
+    });
+    render(<RestorePostView choices={PLAIN} onRestore={onRestore} />);
     await userEvent.click(screen.getByRole('button', { name: 'Restore post' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(NEEDS_A_CHOICE);
+    await waitFor(() => expect(onRestore).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Restore post' })).toBeEnabled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(NEEDS_A_CHOICE)).toBeNull();
   });
 
   test('a ticked Report that leaves the list leaves the choice and the count', async () => {

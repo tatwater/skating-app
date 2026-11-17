@@ -42,7 +42,7 @@ beforeAll(stubLayout);
 const failure = (pending = false): ReadFailure => ({ failed: true, pending, retry: vi.fn() });
 
 function draw(over: Partial<PersonViewProps> = {}) {
-  const onAct = vi.fn<(a: PersonAction) => Promise<string | null>>(async () => null);
+  const onAct = vi.fn<(a: PersonAction) => Promise<boolean>>(async () => true);
   const onUndo = vi.fn();
   const props: PersonViewProps = {
     person: ROB,
@@ -77,6 +77,9 @@ const lever = (key: string) => {
   if (el === null) throw new Error(`no lever ${key}`);
   return el;
 };
+
+/** What each press asked for. */
+const actions = (fn: { mock: { calls: unknown[][] } }) => fn.mock.calls.map((c) => c[0]);
 
 describe('On the record', () => {
   it('Review opens the record sheet; the row shows when only the other lists hold anything', async () => {
@@ -311,7 +314,7 @@ describe('each read states itself', () => {
         decisions={{ rows: [], isDone: true, capped: false, continueCursor: '' }}
         now={NOW}
         viewerId={IDS.teagan}
-        onAct={async () => null}
+        onAct={async () => true}
         onUndo={() => {}}
       />,
     );
@@ -572,26 +575,31 @@ describe('staff pages', () => {
 
 describe('writes', () => {
   it('a give-back acts at once, keeps the button mounted while busy, and keeps focus in the block', async () => {
-    let resolve: (v: string | null) => void = () => {};
-    const onAct = vi.fn(() => new Promise<string | null>((r) => (resolve = r)));
+    let resolve: (landed: boolean) => void = () => {};
+    const onAct = vi.fn(() => new Promise<boolean>((r) => (resolve = r)));
     draw({ onAct });
     const restore = within(lever('comments')).getByRole('button', { name: 'Restore' });
     await userEvent.click(restore);
-    expect(onAct).toHaveBeenCalledWith({ kind: 'right', permission: 'comments', allowed: true });
+    expect(actions(onAct)).toContainEqual({ kind: 'right', permission: 'comments', allowed: true });
     expect(restore).toHaveAttribute('aria-busy', 'true');
     expect(restore).toHaveFocus();
-    await act(async () => resolve(null));
+    await act(async () => resolve(true));
     await waitFor(() => expect(restore).not.toHaveAttribute('aria-busy'));
     expect(slot('levers-can-do').contains(document.activeElement)).toBe(true);
   });
 
-  it('a refusal shows the server’s own words in place', async () => {
-    const onAct = vi.fn(async () => 'You cannot moderate your own account');
+  /** A refusal is the write path's toast (D268): the lever prints nothing, and keeps focus. */
+  it('a refusal prints nothing in place, and focus stays in the block', async () => {
+    const onAct = vi.fn(async () => false);
     draw({ onAct });
     await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
-    expect(await within(lever('suspension')).findByRole('alert')).toHaveTextContent(
-      'You cannot moderate your own account',
+    await waitFor(() => expect(onAct).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(within(lever('suspension')).getByRole('button', { name: 'Lift' })).not.toHaveAttribute(
+        'aria-busy',
+      ),
     );
+    expect(within(lever('suspension')).queryByRole('alert')).toBeNull();
     expect(slot('levers-account').contains(document.activeElement)).toBe(true);
   });
 
@@ -604,7 +612,7 @@ describe('writes', () => {
     expect(confirm).toBeDisabled();
     await userEvent.type(within(dialog).getByRole('textbox'), '  Spam  ');
     await userEvent.click(confirm);
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'right',
       permission: 'reports',
       allowed: false,
@@ -613,25 +621,30 @@ describe('writes', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it('a refused dialog keeps the reason and shows the server’s words', async () => {
-    const onAct = vi.fn(async () => 'Someone changed this since');
+  it('a refused dialog stays open over its reason, keeps focus, and prints nothing', async () => {
+    const onAct = vi.fn(async () => false);
     draw({ onAct });
     await userEvent.click(within(lever('flagging')).getByRole('button', { name: 'Switch off' }));
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Floods the queue');
     await userEvent.click(within(dialog).getByRole('button', { name: /Switch off/ }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Someone changed this since',
+    await waitFor(() => expect(onAct).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Switch off/ })).not.toHaveAttribute(
+        'aria-busy',
+      ),
     );
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(within(dialog).getByRole('textbox')).toHaveValue('Floods the queue');
     expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
-  it('a dialog holds while its write is on its way: Esc and Cancel wait, the refusal stands', async () => {
-    let settle: (refused: string | null) => void = () => {};
+  it('a dialog holds while its write is on its way: Esc and Cancel wait; refused, it stays', async () => {
+    let settle: (landed: boolean) => void = () => {};
     const onAct = vi.fn(
       () =>
-        new Promise<string | null>((resolve) => {
+        new Promise<boolean>((resolve) => {
           settle = resolve;
         }),
     );
@@ -643,10 +656,10 @@ describe('writes', () => {
     await userEvent.keyboard('{Escape}');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('alertdialog')).toBe(dialog);
-    act(() => settle('Someone changed this since'));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Someone changed this since',
-    );
+    await act(async () => settle(false));
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(within(dialog).getByRole('textbox')).toHaveValue('Spam');
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     // Settled, it closes again.
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
@@ -662,7 +675,7 @@ describe('writes', () => {
     expect(onAct).not.toHaveBeenCalled();
     expect(ban).toHaveTextContent('again');
     await userEvent.click(ban);
-    expect(onAct).toHaveBeenCalledWith({ kind: 'ban', reason: 'Threats' });
+    expect(actions(onAct)).toContainEqual({ kind: 'ban', reason: 'Threats' });
   });
 
   it('extend adds to the end already set, with a reason', async () => {
@@ -674,7 +687,7 @@ describe('writes', () => {
     await userEvent.type(within(dialog).getByRole('textbox'), 'Again');
     await userEvent.click(within(dialog).getByRole('button', { name: /Extend/ }));
     const until = new Date(2026, 9, 15, 19, 48).getTime() + 7 * 86_400_000;
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'suspend',
       until,
       reason: 'Again',
@@ -696,7 +709,7 @@ describe('writes', () => {
     expect(dialog).toHaveTextContent(/3 days\s*Lifts/);
     await userEvent.type(within(dialog).getByRole('textbox'), 'Settled');
     await userEvent.click(within(dialog).getByRole('button', { name: /Set an end/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'suspend',
       until: NOW + 3 * 86_400_000,
       reason: 'Settled',
@@ -716,7 +729,7 @@ describe('writes', () => {
     await userEvent.click(within(dialog).getByRole('radio', { name: /^1 week/ }));
     await userEvent.type(within(dialog).getByRole('textbox'), 'Again');
     await userEvent.click(within(dialog).getByRole('button', { name: /Extend/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'suspend',
       until: NOW + 7 * 86_400_000,
       reason: 'Again',
@@ -731,7 +744,7 @@ describe('writes', () => {
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Cooling off');
     await userEvent.click(within(dialog).getByRole('button', { name: /Suspend/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'suspend',
       until: NOW + 86_400_000,
       reason: 'Cooling off',
@@ -749,7 +762,7 @@ describe('writes', () => {
     await userEvent.click(within(dialog).getByRole('radio', { name: /The default/ }));
     expect(within(dialog).queryByRole('textbox', { name: /Reason/ })).toBeNull();
     await userEvent.click(within(dialog).getByRole('button', { name: /Set limit/ }));
-    expect(onAct).toHaveBeenCalledWith({ kind: 'bountyLimit', limit: null });
+    expect(actions(onAct)).toContainEqual({ kind: 'bountyLimit', limit: null });
   });
 
   it('lowering a bounty limit asks why', async () => {
@@ -763,7 +776,7 @@ describe('writes', () => {
     const reason = await within(dialog).findByRole('textbox', { name: /Reason/ });
     await userEvent.type(reason, 'Asks on lakes they just reported');
     await userEvent.click(within(dialog).getByRole('button', { name: /Set limit/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'bountyLimit',
       limit: 1,
       reason: 'Asks on lakes they just reported',
@@ -782,7 +795,7 @@ describe('writes', () => {
     expect(dialog).toHaveTextContent('ledger editing with it');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Stepping back');
     await userEvent.click(within(dialog).getByRole('button', { name: /Make moderator/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'role',
       role: 'moderator',
       reason: 'Stepping back',
@@ -794,7 +807,7 @@ describe('writes', () => {
     await userEvent.click(within(lever('role')).getByRole('button', { name: /Change role/ }));
     const menu = await screen.findByRole('menu');
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Make moderator/ }));
-    expect(onAct).toHaveBeenCalledWith({ kind: 'role', role: 'moderator' });
+    expect(actions(onAct)).toContainEqual({ kind: 'role', role: 'moderator' });
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
@@ -810,13 +823,13 @@ describe('writes', () => {
     expect(within(dialog).queryByRole('textbox')).toBeNull();
     expect(onAct).not.toHaveBeenCalled();
     await userEvent.click(within(dialog).getByRole('button', { name: /Make admin/ }));
-    expect(onAct).toHaveBeenCalledWith({ kind: 'role', role: 'admin' });
+    expect(actions(onAct)).toContainEqual({ kind: 'role', role: 'admin' });
   });
 
   it('a ledger grant acts at once', async () => {
     const { onAct } = draw({ person: SARAH_PAGE, staffStats: SARAH_STATS, staffSeason: SEASON });
     await userEvent.click(within(lever('ledger')).getByRole('button', { name: 'Grant' }));
-    expect(onAct).toHaveBeenCalledWith({ kind: 'ledger', grant: true });
+    expect(actions(onAct)).toContainEqual({ kind: 'ledger', grant: true });
   });
 
   it('a ledger revoke asks why', async () => {
@@ -826,7 +839,7 @@ describe('writes', () => {
     expect(dialog).toHaveTextContent('Revoke ledger editing?');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Leaving the books');
     await userEvent.click(within(dialog).getByRole('button', { name: /Revoke/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'ledger',
       grant: false,
       reason: 'Leaving the books',
@@ -834,8 +847,8 @@ describe('writes', () => {
   });
 
   it('a second press while a write is on its way is held back', async () => {
-    let resolve: (v: string | null) => void = () => {};
-    const onAct = vi.fn(() => new Promise<string | null>((r) => (resolve = r)));
+    let resolve: (landed: boolean) => void = () => {};
+    const onAct = vi.fn(() => new Promise<boolean>((r) => (resolve = r)));
     draw({ onAct });
     await userEvent.click(within(lever('comments')).getByRole('button', { name: 'Restore' }));
     await userEvent.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
@@ -843,7 +856,7 @@ describe('writes', () => {
     expect(await within(lever('suspension')).findByRole('alert')).toHaveTextContent(
       'Another change is still on its way',
     );
-    await act(async () => resolve(null));
+    await act(async () => resolve(true));
     // Once the first change settles, the note goes.
     await waitFor(() => expect(within(lever('suspension')).queryByRole('alert')).toBeNull());
   });
@@ -879,7 +892,7 @@ describe('dialogs and plates', () => {
     expect(dialog).toHaveTextContent('They lose what the admin role gives.');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Done for the season');
     await userEvent.click(within(dialog).getByRole('button', { name: /Make skater/ }));
-    expect(onAct).toHaveBeenCalledWith({
+    expect(actions(onAct)).toContainEqual({
       kind: 'role',
       role: 'member',
       reason: 'Done for the season',

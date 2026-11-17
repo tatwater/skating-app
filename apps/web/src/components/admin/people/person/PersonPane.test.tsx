@@ -1,4 +1,4 @@
-import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import type { ReactNode } from 'react';
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   results: new Map<string, unknown>(),
   calls: new Map<string, unknown>(),
   mutations: new Map<string, ReturnType<typeof vi.fn>>(),
+  toast: vi.fn(),
   denied: new Set<string>(),
   announce: vi.fn(async () => {}),
   undo: vi.fn(),
@@ -66,6 +67,10 @@ vi.mock('@/lib/useRole', () => ({
 vi.mock('../../shell/undo', () => ({
   useUndo: () => ({ announce: mocks.announce, undo: mocks.undo }),
 }));
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: mocks.toast,
+}));
 
 import { resetConsoleReads } from '../../reads/consoleReads';
 import { PersonPane } from './PersonPane';
@@ -101,6 +106,7 @@ beforeEach(() => {
   mocks.denied.clear();
   mocks.announce.mockClear();
   mocks.undo.mockClear();
+  mocks.toast.mockClear();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -259,7 +265,7 @@ describe('one person at a time', () => {
     expect(screen.getByRole('button', { name: 'Show more' })).toHaveFocus();
   });
 
-  it('a refusal, and the decisions asked for, stay with the person they were for', async () => {
+  it('a refusal is its toast, and the decisions asked for stay with the person they were for', async () => {
     answer({
       'people:person': { ...ROB, role: 'moderator' as const },
       'people:staffStats': SARAH_STATS,
@@ -280,9 +286,15 @@ describe('one person at a time', () => {
       return el;
     };
     await user.click(within(suspension()).getByRole('button', { name: 'Lift' }));
-    expect(await within(suspension()).findByRole('alert')).toHaveTextContent(
-      'Refused for this one',
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not changed · Rob Tremblay',
+          description: 'Refused for this one',
+        }),
+      ),
     );
+    expect(within(suspension()).queryByRole('alert')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Show more' }));
     const other = 'other'.padEnd(32, '0');
     rerender(<PersonPane userId={other} />);
@@ -315,7 +327,46 @@ describe('the writes', () => {
     });
   });
 
-  it('a refusal is the server’s own words, and no toast', async () => {
+  it('a Restore refused after another admin promoted the person — its row’s buttons gone — is one toast naming them', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:setPostingPermission',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('Staff can’t be restricted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('comments')).getByRole('button', { name: 'Restore' }));
+    // Another admin makes them a moderator while the Restore is out: the new read takes the row's
+    // buttons away, and the block that holds the row stays drawn.
+    mocks.results.set('people:person', {
+      ...ROB,
+      role: 'moderator',
+      can: { ...ROB.can, restrict: { ok: false, why: 'Staff can’t be restricted.' } },
+    });
+    view.rerender(<PersonPane userId={ROB_ID} />);
+    expect(within(lever('comments')).queryByRole('button')).toBeNull();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Not changed · Rob Tremblay',
+          description: 'Staff can’t be restricted.',
+        }),
+      ),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refusal is one toast in the server’s own words, naming the person — never printed in place', async () => {
     answer();
     mocks.mutations.set(
       'moderation:unbanUser',
@@ -328,11 +379,137 @@ describe('the writes', () => {
     render(<PersonPane userId={ROB_ID} />);
     const user = userEvent.setup({ advanceTimers: () => {} });
     await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
-    expect(await within(lever('suspension')).findByRole('alert')).toHaveTextContent(
-      'This account is being deleted, so its suspension or ban can’t be lifted.',
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This account is being deleted, so its suspension or ban can’t be lifted.',
+        tone: 'bad',
+        timeout: 0,
+      }),
     );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/This account is being deleted/)).toBeNull();
     expect(mocks.announce).not.toHaveBeenCalled();
   });
+
+  it('a refusal that comes after the person’s page has gone is said once, in a toast naming them', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('This account is being deleted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+    // The moderator goes on to another section before the server answers.
+    view.unmount();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Not changed · Rob Tremblay',
+        description: 'This account is being deleted.',
+        tone: 'bad',
+        timeout: 0,
+      }),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refusal that comes once the levers aren’t drawn — the page still mounted, its read failing — is a toast', async () => {
+    answer();
+    let refuse: () => void = () => {};
+    mocks.mutations.set(
+      'moderation:unbanUser',
+      vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            refuse = () => reject(new ConvexError('This account is being deleted.'));
+          }),
+      ),
+    );
+    const view = render(<PersonPane userId={ROB_ID} />);
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+    // The person read goes (no such account now): the page draws no levers, and stays mounted.
+    mocks.results.set('people:person', null);
+    view.rerender(<PersonPane userId={ROB_ID} />);
+    expect(document.querySelector('[data-lever="suspension"]')).toBeNull();
+    await act(async () => {
+      refuse();
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'This account is being deleted.' }),
+      ),
+    );
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['nothing changed', { landed: { userId: ROB_ID, changed: false } }],
+    [
+      'refused as their own content',
+      { refused: 'This is yours, so another moderator decides on it.' },
+    ],
+  ] as const)(
+    'an answer after the page has gone — %s — is said once, naming the person',
+    async (_, how) => {
+      answer();
+      let settle: () => void = () => {};
+      mocks.mutations.set(
+        'moderation:unbanUser',
+        vi.fn(
+          () =>
+            new Promise((resolve, reject) => {
+              settle = () =>
+                'refused' in how ? reject(new ConvexError(how.refused)) : resolve(how.landed);
+            }),
+        ),
+      );
+      const view = render(<PersonPane userId={ROB_ID} />);
+      const user = userEvent.setup({ advanceTimers: () => {} });
+      await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
+      view.unmount();
+      await act(async () => {
+        settle();
+        await Promise.resolve();
+      });
+      if ('refused' in how) {
+        // A refusal like any other: a toast, in the server's words, naming the person.
+        await waitFor(() =>
+          expect(mocks.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: 'Not changed · Rob Tremblay',
+              description: how.refused,
+            }),
+          ),
+        );
+        expect(mocks.toast).toHaveBeenCalledTimes(1);
+        expect(mocks.announce).not.toHaveBeenCalled();
+      } else {
+        // Said as a landed write is: its receipt, wherever the moderator has gone, with no Undo.
+        await waitFor(() =>
+          expect(mocks.announce).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: 'Nothing changed — Rob Tremblay was already set that way',
+              undoable: false,
+            }),
+          ),
+        );
+        expect(mocks.toast).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('each lever reaches its own write with its own arguments', async () => {
     answer();
@@ -437,7 +614,7 @@ describe('the write hook', () => {
     let lookup: () => void = () => {};
     mocks.announce.mockImplementationOnce(() => new Promise<void>((r) => (lookup = r)));
     const result = await hook()({ kind: 'lift' });
-    expect(result).toBeNull();
+    expect(result).toBe(true);
     expect(mocks.announce).toHaveBeenCalledTimes(1);
     lookup();
   });
@@ -446,7 +623,7 @@ describe('the write hook', () => {
     mocks.announce.mockImplementationOnce(async () => {
       throw new Error('lookup failed');
     });
-    expect(await hook()({ kind: 'lift' })).toBeNull();
+    expect(await hook()({ kind: 'lift' })).toBe(true);
   });
 
   it('carries the audit row a write answers with, when it does', async () => {
@@ -494,7 +671,7 @@ describe('the write hook', () => {
       'moderation:banUser',
       vi.fn(async () => ({ userId: ROB_ID, changed: false, undoable: false })),
     );
-    expect(await hook()({ kind: 'ban', reason: 'Spam' })).toBeNull();
+    expect(await hook()({ kind: 'ban', reason: 'Spam' })).toBe(true);
     expect(mocks.announce).toHaveBeenLastCalledWith({
       title: 'Nothing changed — Rob Tremblay was already set that way',
       target: { targetType: 'user', targetId: ROB_ID },
@@ -505,17 +682,28 @@ describe('the write hook', () => {
     expect(changedOf(null)).toBeNull();
   });
 
-  it('says so when there is no person to write to, and when the network fails', async () => {
+  it('says so in a toast when there is no person to write to, and when the network fails', async () => {
     const none = renderHook(() => usePersonWrites(null, NOW)).result.current;
-    expect(await none({ kind: 'lift' })).toBe('This person couldn’t be read');
+    expect(await none({ kind: 'lift' })).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Not changed',
+        description: 'This person couldn’t be read',
+      }),
+    );
     mocks.mutations.set(
       'moderation:unbanUser',
       vi.fn(async () => {
         throw new Error('offline');
       }),
     );
-    expect(await hook()({ kind: 'lift' })).toBe(
-      'Something went wrong — check your connection and try again.',
+    expect(await hook()({ kind: 'lift' })).toBe(false);
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Not changed · Rob Tremblay',
+        description: 'Something went wrong — check your connection and try again.',
+      }),
     );
+    expect(mocks.toast).toHaveBeenCalledTimes(2);
   });
 });

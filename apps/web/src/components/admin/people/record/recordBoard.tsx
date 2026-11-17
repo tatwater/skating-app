@@ -8,7 +8,7 @@
 import { ConvexError } from 'convex/values';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { createToastManager, Toaster, toast } from '@/components/kit/toast';
+import { createToastManager, Toaster } from '@/components/kit/toast';
 
 import type { ReadFailure } from '../../reads/consoleReads';
 import { UndoProvider, type UndoServer, useUndo } from '../../shell/undo';
@@ -28,12 +28,10 @@ import {
   type ReversedRow,
   type StandingCount,
   type StandingRow,
-  subjectName,
   type Target,
   targetKey,
 } from './recordModel';
 import type { RecordListState } from './recordReads';
-import { RECORD_WORDS as W } from './recordWords';
 import { type RecordServer, type RecordWriteResult, useRecordWrites } from './useRecordWrites';
 
 export type BoardList = {
@@ -247,6 +245,7 @@ function Board({
     comesBackOf,
     onRestored,
     now,
+    manager,
   });
 
   return (
@@ -281,12 +280,6 @@ function Board({
         row.endActionId !== null &&
         row.undo?.state === 'available' &&
         undo({ actionId: row.endActionId, needsReason: row.undo.needsReason })
-      }
-      onLateRefusal={(text) =>
-        toast(
-          { title: W.lateRefusalOf(subjectName(subject)), description: text, tone: 'bad' },
-          manager,
-        )
       }
       {...(narrow !== undefined && { narrow })}
       {...(keys !== undefined && { keys })}

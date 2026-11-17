@@ -15,6 +15,7 @@ import {
 } from '@/components/kit/alert-dialog';
 
 import { WORDS } from './personWords';
+import type { ActOutcome } from './useActing';
 
 /**
  * The person page's one dialog: the kit reason dialog, asked before a write that needs something
@@ -22,7 +23,9 @@ import { WORDS } from './personWords';
  *
  * - **The write waits for the server.** Its button spins while the write is on its way (it stays
  *   mounted, so focus stays on it); on success the dialog closes and focus goes back to the row's
- *   button (Base UI's return focus); on refusal the server's own words stand over the kept reason.
+ *   button (Base UI's return focus). On refusal the dialog stays open over the kept reason — the
+ *   server's words are a toast naming the person (D268), never printed here; a press that waited
+ *   behind another change says the page's own note (`waitingNote`).
  * - **A reason is asked only when `reason` is set** — a give-back passes `reason={false}` and the
  *   dialog asks nothing but the choice in its body; `'optional'` offers the field without
  *   requiring it (the record sheet's Overturn: a give-back that may take one).
@@ -46,10 +49,12 @@ export type AskDialogProps = {
   ready?: boolean;
   destructive?: boolean;
   /**
-   * Runs the write with the reason typed (`''` when none is asked); resolves to the server's
-   * refusal, or `null` when it landed.
+   * Runs the write with the reason typed (`''` when none is asked); resolves what it came to: the
+   * dialog closes once it landed, and stays open otherwise.
    */
-  onConfirm: (reason: string) => Promise<string | null>;
+  onConfirm: (reason: string) => Promise<ActOutcome>;
+  /** The page's note for a press that waited behind another change. */
+  waitingNote?: ReactNode;
 };
 
 export function AskDialog({
@@ -65,6 +70,7 @@ export function AskDialog({
   ready = true,
   destructive = false,
   onConfirm,
+  waitingNote = WORDS.anotherOnItsWay,
 }: AskDialogProps) {
   // Esc and Cancel wait while the write is on its way: closed under it, a refusal would land with
   // nowhere to stand (the shell's undo dialog holds the same way).
@@ -89,6 +95,7 @@ export function AskDialog({
           ready={ready}
           destructive={destructive}
           onConfirm={onConfirm}
+          waitingNote={waitingNote}
           onBusy={(b) => {
             busy.current = b;
           }}
@@ -112,6 +119,7 @@ function AskBody({
   ready,
   destructive,
   onConfirm,
+  waitingNote,
   onBusy,
   onDone,
   children,
@@ -122,7 +130,8 @@ function AskBody({
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // The page's own note, never a server's words: this press waited behind another change.
+  const [waited, setWaited] = useState(false);
   const trimmed = text.trim();
   const waiting = !ready || (reason === true && trimmed.length === 0);
   return (
@@ -132,7 +141,7 @@ function AskBody({
         <AlertDialogDescription>{description}</AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogBody>
-        {refusal !== null && <AlertDialogError>{refusal}</AlertDialogError>}
+        {waited && <AlertDialogError>{waitingNote}</AlertDialogError>}
         {children}
         {reason !== false && (
           <AlertDialogReason
@@ -153,11 +162,12 @@ function AskBody({
             if (busy) return;
             setBusy(true);
             onBusy(true);
-            void onConfirm(reason !== false ? trimmed : '').then((refused) => {
+            setWaited(false);
+            void onConfirm(reason !== false ? trimmed : '').then((outcome) => {
               setBusy(false);
               onBusy(false);
-              if (refused === null) onDone();
-              else setRefusal(refused);
+              if (outcome === 'landed') onDone();
+              else if (outcome === 'waiting') setWaited(true);
             });
           }}
         >

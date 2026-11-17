@@ -73,8 +73,6 @@ export type NamesViewProps = {
   onClassChange?: (cls: WaterBodyClass) => void;
   /** Put the import's class back over a moderator's (`setClass(null)`). */
   onClassClear?: () => void;
-  /** The server's refusal of the last aliases save, said under the field (`null` none). */
-  aliasesError?: string | null;
   /** The viewer could edit the aliases: with no `onAliasesChange` yet, the field says so. */
   canEditAliases?: boolean;
   /** The viewer could change the class: with no `onClassChange` yet, the control says so. */
@@ -91,7 +89,6 @@ export function NamesView({
   onAliasesChange,
   onClassChange,
   onClassClear,
-  aliasesError = null,
   canEditAliases = false,
   canEditClass = false,
 }: NamesViewProps) {
@@ -129,19 +126,12 @@ export function NamesView({
       >
         {/* A failed read of the moderator's list draws no field: the tab's failure note says so. */}
         {onAliasesChange && data.aliasesFailed ? null : onAliasesChange && data.aliasesEditable ? (
-          <>
-            <ChipInput
-              aria-label="Aliases"
-              value={data.aliases}
-              onValueChange={onAliasesChange}
-              placeholder="Add a name skaters use"
-            />
-            {aliasesError !== null && (
-              <p role="alert" data-slot="aliases-refused" className="m-0 text-assist text-bad">
-                {aliasesError}
-              </p>
-            )}
-          </>
+          <ChipInput
+            aria-label="Aliases"
+            value={data.aliases}
+            onValueChange={onAliasesChange}
+            placeholder="Add a name skaters use"
+          />
         ) : onAliasesChange ? (
           // The moderator's own list is on its way: the field holds its place, not the catalogs'.
           <LoadingLine width="10rem" />

@@ -23,7 +23,7 @@ const base: ImageryTabViewProps = {
   rows: MASCOMA_PASSES,
   lit: null,
   onLitChange: vi.fn(),
-  onOverride: vi.fn(async () => {}),
+  onOverride: vi.fn(async () => true),
   satellite: MASCOMA_SATELLITE,
   onSatelliteChange: vi.fn(async () => {}),
 };
@@ -53,7 +53,7 @@ describe('ImageryTabView', () => {
   });
 
   it('a hidden pass: the failing gate is the bright one, and the call flips to Show anyway', async () => {
-    const onOverride = vi.fn(async () => {});
+    const onOverride = vi.fn(async () => true);
     render(<ImageryTabView {...base} lit={granuleOf(10)} onOverride={onOverride} />);
     const c = within(card());
     expect(c.getByText('Hidden from skaters')).toBeVisible();
@@ -88,7 +88,7 @@ describe('ImageryTabView', () => {
   });
 
   it('hiding asks a reason first, and waits until there is one', async () => {
-    const onOverride = vi.fn(async () => {});
+    const onOverride = vi.fn(async () => true);
     render(<ImageryTabView {...base} onOverride={onOverride} />);
     await userEvent.click(within(card()).getByRole('button', { name: /Hide from skaters/ }));
     const dialog = await screen.findByRole('alertdialog');
@@ -104,8 +104,8 @@ describe('ImageryTabView', () => {
     let land: () => void = () => {};
     const onOverride = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
-          land = resolve;
+        new Promise<boolean>((resolve) => {
+          land = () => resolve(true);
         }),
     );
     render(<ImageryTabView {...base} onOverride={onOverride} />);
@@ -123,11 +123,11 @@ describe('ImageryTabView', () => {
   });
 
   it('a sent reason is held while its hide is out — never typed into and then thrown away', async () => {
-    let refuse: (why: Error) => void = () => {};
+    let refuse: () => void = () => {};
     const onOverride = vi.fn(
       () =>
-        new Promise<void>((_, reject) => {
-          refuse = reject;
+        new Promise<boolean>((resolve) => {
+          refuse = () => resolve(false);
         }),
     );
     render(<ImageryTabView {...base} onOverride={onOverride} />);
@@ -140,8 +140,10 @@ describe('ImageryTabView', () => {
     expect(field).toHaveAttribute('readonly');
     await userEvent.type(field, ' over the basin');
     expect(field).toHaveValue('Smoke');
-    await act(async () => refuse(new Error('Not allowed')));
+    await act(async () => refuse());
     expect(field).not.toHaveAttribute('readonly');
+    // Refused: its toast says it (the write path's); the dialog stays open and prints nothing.
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     await userEvent.type(field, ' over the basin');
     expect(field).toHaveValue('Smoke over the basin');
   });
@@ -258,11 +260,11 @@ describe('ImageryTabView', () => {
   });
 
   it('Auto → Never → Auto before the first answer ends on Auto: the latest press always wins', async () => {
-    const answers: ((refusal?: Error) => void)[] = [];
+    const answers: (() => void)[] = [];
     const onSatelliteChange = vi.fn(
       () =>
-        new Promise<void>((resolve, reject) => {
-          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal)));
+        new Promise<void>((resolve) => {
+          answers.push(resolve);
         }),
     );
     render(<ImageryTabView {...base} onSatelliteChange={onSatelliteChange} />);
@@ -279,29 +281,34 @@ describe('ImageryTabView', () => {
     pressed('Auto');
   });
 
-  it('a refused choice says which, under any choice made since, and the control takes the server back', async () => {
-    const answers: ((refusal?: Error) => void)[] = [];
+  it('a refused choice prints nothing, and the control takes the server back', async () => {
+    const answers: ((landed: boolean) => void)[] = [];
     const onSatelliteChange = vi.fn(
       () =>
-        new Promise<void>((resolve, reject) => {
-          answers.push((refusal) => (refusal === undefined ? resolve() : reject(refusal)));
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
         }),
     );
     render(<ImageryTabView {...base} onSatelliteChange={onSatelliteChange} />);
     await userEvent.click(screen.getByRole('button', { name: 'Never' }));
-    await act(async () => answers[0]?.(new Error('Not allowed')));
-    expect(screen.getByRole('alert')).toHaveTextContent('“Never” wasn’t saved: Not allowed');
+    // Refused, and said by its write path in a toast naming the body (`sendFor`): `false`.
+    await act(async () => answers[0]?.(false));
+    expect(screen.queryByRole('alert')).toBeNull();
     // The server still holds Auto: the control shows it.
     expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('a refused call says why', async () => {
-    const onOverride = vi.fn(async () => {
-      throw new Error('That pass is no longer in the archive');
-    });
+  it('a refused call prints nothing, and its button is the moderator’s again', async () => {
+    const onOverride = vi.fn(async () => false);
     render(<ImageryTabView {...base} lit={granuleOf(5)} onOverride={onOverride} />);
     await userEvent.click(within(card()).getByRole('button', { name: /Show to skaters anyway/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('no longer in the archive');
+    await waitFor(() => expect(onOverride).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(card()).getByRole('button', { name: /Show to skaters anyway/ }),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
+    );
   });
 });
 

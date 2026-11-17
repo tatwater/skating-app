@@ -391,7 +391,10 @@ export const SeeNotAct: Story = {
   },
 };
 
-/** 8.9 — Restoring: the press on its way keeps its place and its focus; a refusal comes back. */
+/**
+ * 8.9 — Restoring: the press on its way keeps its place and its focus; a refusal comes back as a
+ * toast naming the person, held until dismissed, and nothing of it is printed in the sheet.
+ */
 export const Restoring: Story = {
   args: {
     initialSelected: { targetType: 'report', targetId: 'r4oct' },
@@ -409,11 +412,15 @@ export const Restoring: Story = {
     await waitFor(() => expect(lever).toHaveAttribute('aria-busy', 'true'));
     await expect(lever).toHaveAccessibleName(/Restoring/);
     await expect(document.activeElement).toBe(lever);
-    // The server's own words come back under the decision.
+    // The server's own words come back in the toast, naming the person; the sheet prints none.
     await waitFor(() =>
-      expect(slot(canvasElement, 'record-refusal')).toHaveTextContent('This is already up.'),
+      expect(slot(canvasElement, 'toast')).toHaveTextContent(
+        'Not changed · Rob TremblayThis is already up.',
+      ),
     );
-    await expect(lever).not.toHaveAttribute('aria-busy');
+    await expect(slot(canvasElement, 'record-sheet')).not.toHaveTextContent('This is already up.');
+    await expect(slot(canvasElement, 'toast-dismiss')).toHaveTextContent('Dismiss');
+    await waitFor(() => expect(lever).not.toHaveAttribute('aria-busy'));
   },
 };
 

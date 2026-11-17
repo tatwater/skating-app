@@ -32,7 +32,7 @@ import type { useActing } from './useActing';
 /**
  * A titled block of lever rows — *Can do* or *Account* — with the dialogs its buttons open. What
  * each row draws and allows is decided in `levers.ts` from `can`; this only draws it and runs the
- * writes through `useActing` (busy in place, the refusal in place, focus kept in the block).
+ * writes through `useActing` (busy in place, a refusal in its toast, focus kept in the block).
  *
  * None of these buttons has a key of its own: role changes and discipline are pressed, never typed.
  */
@@ -195,9 +195,8 @@ export function LeverBlock({
     >
       <LeverList>
         {rows.map((row) => {
-          const refusal = row.buttons
-            .map((b) => acting.refusals[b.id])
-            .find((r): r is string => r !== undefined);
+          // The page's own note for a press that waited behind another change: never a server's words.
+          const waited = row.buttons.some((b) => acting.waits.has(b.id));
           const action =
             row.review === true ? (
               // *Review* opens the record sheet over the page — drawn only where it can.
@@ -212,12 +211,12 @@ export function LeverBlock({
               <span className="flex items-center gap-(--space-2)">{row.buttons.map(button)}</span>
             );
           const detail =
-            row.second !== undefined || refusal !== undefined ? (
+            row.second !== undefined || waited ? (
               <>
                 {row.second !== undefined && <span className="block">{row.second}</span>}
-                {refusal !== undefined && (
-                  <span role="alert" data-slot="lever-refusal" className="block text-bad">
-                    {refusal}
+                {waited && (
+                  <span role="alert" data-slot="lever-waited" className="block text-bad">
+                    {WORDS.anotherOnItsWay}
                   </span>
                 )}
               </>

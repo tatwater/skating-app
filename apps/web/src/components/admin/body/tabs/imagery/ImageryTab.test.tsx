@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubJsdomAnimations } from '../jsdomStubs';
@@ -28,6 +28,11 @@ const role = vi.hoisted(() => ({ caps: new Set<string>() }));
 vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => role.caps.has(c) }) }));
 const undo = vi.hoisted(() => ({ announce: vi.fn(async () => {}) }));
 vi.mock('@/components/admin/shell/undo', () => ({ useUndo: () => undo }));
+const toasts = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: Record<string, unknown>) => toasts.push(t),
+}));
 const archive = vi.hoisted(() => ({
   value: { timeline: null, loading: false, season: null, error: false, index: null } as Record<
     string,
@@ -131,7 +136,8 @@ describe('ImageryTab', () => {
     });
   });
 
-  it('a refused satellite write reads in the server’s words and announces nothing', async () => {
+  it('a refused satellite write is one toast naming what failed, prints nothing, and announces nothing', async () => {
+    toasts.length = 0;
     convex.results.set('waterBodies:get', { available: true, body: MASCOMA });
     convex.mutations.set(
       'waterBodies:setSatelliteImagery',
@@ -141,7 +147,20 @@ describe('ImageryTab', () => {
     );
     render(<ImageryTab bodyId={BODY} />);
     await userEvent.click(screen.getByRole('button', { name: 'Never' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Water body not found');
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'The satellite link: Water body not found',
+          tone: 'bad',
+          timeout: 0,
+        }),
+      ]),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The server still holds Auto: the control shows it.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true'),
+    );
     expect(undo.announce).not.toHaveBeenCalled();
   });
 

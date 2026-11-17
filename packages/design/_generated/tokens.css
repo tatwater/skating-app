@@ -199,11 +199,11 @@
   --z-actbar: 6;
   --z-icard: 8;
   --z-gobar: 9;
-  --z-toast: 20;
   --z-scrim: 40;
   --z-sheet: 41;
   --z-viewer-scrim: 50;
   --z-viewer: 51;
+  --z-toast: 60;
   --duration-instant: 80ms;
   --duration-fast: 120ms;
   --duration-base: 200ms;

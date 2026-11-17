@@ -15,9 +15,13 @@ import { Textarea } from '../ui/textarea';
 /**
  * A reusable "collect a reason, then confirm" dialog for audited operator actions (D37). Every
  * lifecycle/moderation mutation requires a non-empty reason for the `moderationActions` log; this
- * centralizes that flow — the trigger, the reason textarea, error surfacing, and close-on-success —
- * so each call site is one `onConfirm(reason)` callback. Optional `extraFields` render above the
- * reason (e.g. a suspension end-date), and `requireReason={false}` allows a bare confirm.
+ * centralizes that flow — the trigger, the reason textarea, close-on-success — so each call site is
+ * one `onConfirm(reason)` callback. Optional `extraFields` render above the reason (e.g. a suspension
+ * end-date), and `requireReason={false}` allows a bare confirm.
+ *
+ * A refusal is never said here (D268): the write's net says it in a toast and `onConfirm` rejects,
+ * so the dialog stays open over the kept reason, to correct and confirm again. Only the form's own
+ * check — a reason left empty — is said in place.
  */
 export function ReasonDialog({
   trigger,
@@ -44,6 +48,7 @@ export function ReasonDialog({
   onOpenChange?: (open: boolean) => void;
   /** Hold the confirm while what it would act on is no longer the caller's to act on. */
   confirmDisabled?: boolean;
+  /** The write. Rejects when it was refused (said in its toast): the dialog stays open. */
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
   const [open, setOpenState] = useState(false);
@@ -52,31 +57,40 @@ export function ReasonDialog({
     onOpenChange?.(next);
   };
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // The form's own check, never a server's words.
+  const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const blocked = requireReason && !reason.trim();
 
   const confirm = async () => {
     if (blocked) {
-      setError('A reason is required.');
+      setMissing(true);
       return;
     }
     setBusy(true);
-    setError(null);
+    setMissing(false);
     try {
       await onConfirm(reason.trim());
       setOpen(false);
       setReason('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+    } catch {
+      // Refused: said in its toast. The dialog stays open over the reason.
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      // Held open while its write is out (Esc and an outside press included, as Cancel already is):
+      // a refused write leaves it open over its reason, so it never closes under one.
+      onOpenChange={(next) => {
+        if (!next && busy) return;
+        setOpen(next);
+      }}
+    >
       <DialogTrigger render={trigger as React.ReactElement} />
       <DialogContent>
         <DialogHeader>
@@ -93,7 +107,7 @@ export function ReasonDialog({
             placeholder={reasonPlaceholder}
           />
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        {missing ? <p className="text-destructive text-sm">A reason is required.</p> : null}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel

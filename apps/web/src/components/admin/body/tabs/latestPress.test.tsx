@@ -496,10 +496,10 @@ describe('who hears a pick’s answer', () => {
 
 describe('Access: a reason’s dialog', () => {
   /**
-   * The dialog's answer is its own while it is open: a refusal shows over the kept reason. Once the
-   * dialog has gone — its tab away, back on a new mount, another body shown — the refusal is said
-   * once in a toast, never into a dialog that has gone. Its write in flight, or waiting behind a
-   * clear.
+   * **The same answer wherever the moderator is** (D268): a refusal is one toast naming the body
+   * and what was not saved — the dialog still open, its tab away, back on a new mount, another body
+   * shown. A dialog still open stays open over its kept reason, printing nothing. Its write in
+   * flight, or waiting behind a clear.
    */
   const DIALOG = (['in flight', 'waiting behind a clear'] as const).flatMap((entry) =>
     (['still open', 'tab away', 'tab returned', 'another body shown'] as const).map((where) => ({
@@ -537,13 +537,14 @@ describe('Access: a reason’s dialog', () => {
     await act(async () => refuse());
     await settle();
     rerender(<div>{shownAfter()}</div>);
+    expect(toasts).toEqual([expect.objectContaining({ description: 'The ruling: Not allowed' })]);
     if (where === 'still open') {
-      // Said over the kept reason, in the dialog that asked — and nowhere else.
-      expect(await screen.findByRole('alertdialog')).toHaveTextContent('Not allowed');
-      expect(toasts).toEqual([]);
+      // Still open over the kept reason, to send again — and it prints nothing of the server's.
+      const open = await screen.findByRole('alertdialog');
+      expect(within(open).getByRole('textbox')).toHaveValue('Posted all round');
+      expect(open).not.toHaveTextContent('Not allowed');
     } else {
       expect(screen.queryByRole('alertdialog')).toBeNull();
-      expect(toasts).toEqual([expect.objectContaining({ description: 'The ruling: Not allowed' })]);
     }
   });
 

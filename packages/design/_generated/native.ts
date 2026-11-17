@@ -686,11 +686,11 @@ export const nativeTokens = {
     actbar: 6,
     icard: 8,
     gobar: 9,
-    toast: 20,
     scrim: 40,
     sheet: 41,
     'viewer-scrim': 50,
     viewer: 51,
+    toast: 60,
   },
   duration: {
     instant: 80,

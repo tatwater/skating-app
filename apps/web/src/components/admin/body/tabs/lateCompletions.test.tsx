@@ -34,7 +34,7 @@ function Elsewhere({ children }: { children: ReactNode }) {
 
 const held = () => {
   const answers: (() => void)[] = [];
-  const write = () => new Promise<void>((r) => answers.push(r));
+  const write = () => new Promise<boolean>((r) => answers.push(() => r(true)));
   return { answers, write, land: () => act(async () => answers.shift()?.()) };
 };
 
@@ -49,7 +49,7 @@ const editOf = (label: string) =>
     { name: 'Edit' },
   );
 
-function LinksServer({ write }: { write: () => Promise<void> }) {
+function LinksServer({ write }: { write: () => Promise<boolean> }) {
   const [links, setLinks] = useState<readonly StaffLink[]>(MASCOMA.referenceLinks ?? []);
   return (
     <LinksTabView
@@ -67,7 +67,7 @@ function LinksServer({ write }: { write: () => Promise<void> }) {
 
 type Case = {
   name: string;
-  render: (write: () => Promise<void>) => ReactNode;
+  render: (write: () => Promise<boolean>) => ReactNode;
   /** Starts the write; `cancel` then leaves its editor (where it has one). */
   start: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
   cancel?: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
@@ -129,9 +129,9 @@ const CASES: Case[] = [
         canSetStanding
         canRemove
         onSetDormant={write}
-        onSetActive={vi.fn(async () => {})}
-        onRemove={vi.fn(async () => {})}
-        onRestore={vi.fn(async () => {})}
+        onSetActive={vi.fn(async () => true)}
+        onRemove={vi.fn(async () => true)}
+        onRestore={vi.fn(async () => true)}
       />
     ),
     start: async (user) => {
@@ -150,7 +150,7 @@ const CASES: Case[] = [
         rows={MASCOMA_PASSES}
         lit={null}
         onLitChange={() => {}}
-        onOverride={async () => {}}
+        onOverride={async () => true}
         satellite={MASCOMA_SATELLITE}
         onSatelliteChange={write}
       />

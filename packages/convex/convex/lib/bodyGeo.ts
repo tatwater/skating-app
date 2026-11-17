@@ -29,6 +29,8 @@ import {
   countyKeyOfSubdivision,
   distanceToPolygonMeters,
   isUndefinedSubdivision,
+  type Namesake,
+  namesakeTells,
   stateOfSubdivision,
   townKindOf,
   townName,
@@ -250,6 +252,7 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
         state: p.state,
         id: p.id,
         ...(p.kind !== undefined ? { kind: p.kind } : {}),
+        ...(p.inCounty !== undefined ? { inCounty: p.inCounty } : {}),
       });
     }
   }
@@ -279,21 +282,19 @@ function withPinnedTowns(geo: Doc<'bodyGeoFacts'>): Doc<'bodyGeoFacts'> {
 export const NAMESAKES_READ = 8;
 
 /**
- * Whether the loaded subdivisions of `state` named `name` carry more than one kind (B01-3l) — the one
- * rule for when a town's label shows its kind. Two of one kind (New York's two Clinton towns) gain
- * nothing from it: each is its own entry and both read "Clinton, NY" — where B01-3d folded them into
- * one (the county would tell them apart; owed). Plattsburgh city and town do. Reads at most
+ * The loaded subdivisions of `state` named `name`, each with its kind ('' for none) — what decides
+ * what tells a town from them (`namesakeTells`, B01-3l and B01-3m): its kind where they carry more
+ * than one, its county where another has its own kind (New York's two Clinton towns). Reads at most
  * {@link NAMESAKES_READ} boundaries (each its polygon) on `by_level_state_name`.
  */
-export async function kindsDiffer(ctx: QueryCtx, state: string, name: string): Promise<boolean> {
-  const namesakes = await ctx.db
+export async function namesakesOf(ctx: QueryCtx, state: string, name: string): Promise<Namesake[]> {
+  const rows = await ctx.db
     .query('adminAreas')
     .withIndex('by_level_state_name', (q) =>
       q.eq('level', 'town').eq('state', state).eq('name', name),
     )
     .take(NAMESAKES_READ);
-  const kinds = new Set(namesakes.map((a) => townKindOf(a.name, a.fullName) ?? ''));
-  return namesakes.length > 1 && kinds.size > 1;
+  return rows.map((a) => ({ id: a._id as string, kind: townKindOf(a.name, a.fullName) ?? '' }));
 }
 
 /**
@@ -314,7 +315,7 @@ export async function pinnedFactsFor(
   const pinnedTowns: NonNullable<Doc<'bodyGeoFacts'>['pinnedTowns']> = [];
   const pinnedMissing: string[] = [];
   const countyNames = new Map<string, string | null>();
-  const sharedNames = new Map<string, boolean>();
+  const sharedNames = new Map<string, Namesake[]>();
   for (const key of keys) {
     const town = await ctx.db
       .query('adminAreas')
@@ -338,14 +339,17 @@ export async function pinnedFactsFor(
     // read only when its full name gives a kind (none: nothing to show), and once per name.
     const candidate = townKindOf(town.name, town.fullName);
     let kind: string | undefined;
+    let inCounty: string | undefined;
     if (candidate !== undefined) {
       const nameKey = JSON.stringify([town.state, town.name]);
-      let shared = sharedNames.get(nameKey);
-      if (shared === undefined) {
-        shared = await kindsDiffer(ctx, town.state, town.name);
-        sharedNames.set(nameKey, shared);
+      let namesakes = sharedNames.get(nameKey);
+      if (namesakes === undefined) {
+        namesakes = await namesakesOf(ctx, town.state, town.name);
+        sharedNames.set(nameKey, namesakes);
       }
-      if (shared) kind = candidate;
+      const tells = namesakeTells(town._id, candidate, namesakes);
+      if (tells.kind) kind = candidate;
+      if (tells.county && county !== null) inCounty = county;
     }
     pinnedTowns.push({
       key,
@@ -354,6 +358,7 @@ export async function pinnedFactsFor(
       id: town._id,
       ...(county !== null ? { county } : {}),
       ...(kind !== undefined ? { kind } : {}),
+      ...(inCounty !== undefined ? { inCounty } : {}),
     });
   }
   return { pinnedTowns, pinnedMissing };

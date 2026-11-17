@@ -24,10 +24,10 @@ const meta = {
     rows: MASCOMA_PASSES,
     lit: null,
     onLitChange: fn(),
-    onOverride: fn(async () => {}) as ImageryTabViewProps['onOverride'],
+    onOverride: fn(async () => true) as ImageryTabViewProps['onOverride'],
     onRetry: fn(),
     satellite: MASCOMA_SATELLITE,
-    onSatelliteChange: fn(async () => {}),
+    onSatelliteChange: fn(async () => true),
   },
   render: (args) => <Board {...args} />,
 } satisfies Meta<typeof ImageryTabView>;

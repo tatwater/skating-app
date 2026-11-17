@@ -1,4 +1,3 @@
-import { ConvexError } from 'convex/values';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '../ui/card';
@@ -95,15 +94,6 @@ export function Td({ children, className }: { children?: ReactNode; className?: 
       {children}
     </td>
   );
-}
-
-/** Turn a thrown ConvexError into the operator-facing line the server wrote. */
-export function errorText(err: unknown): string {
-  if (err instanceof ConvexError) {
-    const data = err.data as { message?: string } | string;
-    return typeof data === 'string' ? data : (data?.message ?? 'That write was rejected.');
-  }
-  return 'Something went wrong — check your connection and try again.';
 }
 
 /** One lever on the lake editor: a titled card in the tool column. */

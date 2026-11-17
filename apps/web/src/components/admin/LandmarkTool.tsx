@@ -7,7 +7,7 @@ import {
   type LatLng,
   landmarkNameKey,
 } from '@skating/core';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
 import type { ReviewPoints, ReviewShow } from '../../lib/reviewMarkers';
@@ -15,11 +15,12 @@ import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../../
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { errorText, ToolCard } from './adminUi';
+import { ToolCard } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
 import { ReviewClosedNotice } from './ReviewClosedNotice';
+import { useSaidMutation } from './said';
 import { useReviewWatch } from './useReviewWatch';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
@@ -116,18 +117,18 @@ export function LandmarkTool({
   onReview: (review: ReviewPoints | null) => void;
   onResult: SetBanner;
 }) {
-  const create = useMutation(api.landmarks.create);
-  const update = useMutation(api.landmarks.update);
-  const remove = useMutation(api.landmarks.remove);
-  const restore = useMutation(api.landmarks.restore);
-  const approveRequest = useMutation(api.corpusRequests.approve);
-  const declineRequest = useMutation(api.corpusRequests.decline);
+  const create = useSaidMutation(api.landmarks.create);
+  const update = useSaidMutation(api.landmarks.update);
+  const remove = useSaidMutation(api.landmarks.remove);
+  const restore = useSaidMutation(api.landmarks.restore);
+  const approveRequest = useSaidMutation(api.corpusRequests.approve);
+  const declineRequest = useSaidMutation(api.corpusRequests.decline);
   // What skaters have named on this lake that no map has (D202's proposal lane).
   const proposalQueue = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
   const proposals = proposalQueue?.proposals;
   // What the community's emails name on this lake that no landmark took (the Place names queue).
   const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId })?.names;
-  const fileAsSpelling = useMutation(api.corpusPlaceNames.fileAsSpelling);
+  const fileAsSpelling = useSaidMutation(api.corpusPlaceNames.fileAsSpelling);
 
   const [filter, setFilter] = useState('');
   const [showRemoved, setShowRemoved] = useState(false);
@@ -190,9 +191,8 @@ export function LandmarkTool({
   };
 
   /**
-   * A write, held (`busy`) while in flight, its outcome on the banner. `rethrow` hands a refusal on to
-   * a dialog that stays open to show it — as the server's own sentence, since the dialog shows an
-   * error's `message` and a ConvexError's is the transport's.
+   * A write, held (`busy`) while in flight; landed, its outcome on the banner. A refusal is the net's
+   * toast (D268); `rethrow` hands it on to a dialog, which stays open over what was typed.
    */
   const run = async (
     write: () => Promise<unknown>,
@@ -205,9 +205,7 @@ export function LandmarkTool({
       onResult({ tone: 'ok', text: ok });
       return true;
     } catch (err) {
-      const text = errorText(err);
-      onResult({ tone: 'error', text });
-      if (rethrow) throw new Error(text);
+      if (rethrow) throw err;
       return false;
     } finally {
       setBusy(false);
@@ -376,7 +374,10 @@ export function LandmarkTool({
                       confirmLabel="Remove"
                       confirmVariant="secondary"
                       onConfirm={async (reason) => {
-                        await run(() => remove({ landmarkId: l._id, reason }), 'Removed.');
+                        // Rethrown: refused, the dialog stays open over its reason.
+                        await run(() => remove({ landmarkId: l._id, reason }), 'Removed.', {
+                          rethrow: true,
+                        });
                       }}
                     />
                   </>
@@ -593,9 +594,11 @@ export function LandmarkTool({
                     confirmLabel="Decline"
                     confirmVariant="secondary"
                     onConfirm={async (note) => {
+                      // Rethrown: refused, the dialog stays open over its note.
                       await run(
                         () => declineRequest({ requestId: p.requestId, note }),
                         'Declined.',
+                        { rethrow: true },
                       );
                     }}
                   />

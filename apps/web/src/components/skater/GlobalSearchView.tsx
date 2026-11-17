@@ -114,7 +114,7 @@ export function GlobalSearchView({
             anchor={anchorRef}
             align="center"
             sideOffset={12}
-            className="isolate z-[calc(var(--z-viewer)+1)] outline-none"
+            className="isolate z-[calc(var(--z-toast)+1)] outline-none"
           >
             <Autocomplete.Popup
               data-slot="global-search-plate"

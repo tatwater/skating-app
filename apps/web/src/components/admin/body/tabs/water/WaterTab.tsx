@@ -13,7 +13,7 @@ import {
 import { useRole } from '@/lib/useRole';
 import { PICK_WHAT, RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { type PickOutcome, useLatestPick } from '../latestPick';
+import { LANDED, type PickOutcome, useLatestPick } from '../latestPick';
 import { useTabAction } from '../useTabAction';
 import { WaterView } from './WaterView';
 import {
@@ -77,7 +77,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const { can } = useRole();
   const canEdit = can('body.water');
   const choose = useMutation(api.waterBodies.chooseDepthSource);
-  const { attempt, sayRefused } = useTabAction(bodyId);
+  const { attempt, words } = useTabAction(bodyId);
   const state = data !== undefined && !isFailed(data) ? data.state : null;
   const depth = data !== undefined && !isFailed(data) ? data.depth : null;
   // **The latest press wins** (`useLatestPick`): each measure's source shows the latest one chosen
@@ -87,7 +87,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
   const choose1 = (measure: 'mean' | 'max') => ({
     send: async (source: DepthSource | null): Promise<PickOutcome> =>
       source === null
-        ? { landed: true }
+        ? LANDED
         : attempt(
             () => choose({ waterBodyId: bodyId as Id<'waterBodies'>, measure, source }),
             {
@@ -96,7 +96,7 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
             },
             PICK_WHAT[measure],
           ),
-    say: sayRefused(PICK_WHAT[measure]),
+    words: words(PICK_WHAT[measure]),
   });
   const mean = useLatestPick<DepthSource | null>(
     `water-depth-mean:${bodyId}`,

@@ -167,8 +167,8 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
             onMarkHazard: UNAVAILABLE,
             onAddFeature: UNAVAILABLE,
             onEditShape: UNAVAILABLE,
-            onDemote: async (featureId: string, reason: string) => {
-              await sendFor(hold, {
+            onDemote: (featureId: string, reason: string) =>
+              sendFor(hold, {
                 body: waterBodyId,
                 write: () => demote({ bodyFeatureId: featureId as Id<'bodyFeatures'>, reason }),
                 receipt: (subject) =>
@@ -178,8 +178,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
                     subject,
                   }),
                 what: 'The demotion',
-              });
-            },
+              }),
           }
         : {})}
       lit={lit}
