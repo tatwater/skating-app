@@ -5264,11 +5264,66 @@ convex files take a constant from core instead of their own (below), so dev take
   the kit `ReadBoundary`, the count line saying what is known and what isn't loaded, and their tests —
   about 450–550 lines with codegen. Until then the tab's reads and words stand as before.
 
+**The review round on #144 (Greptile, 4/5).**
+
+- **A hidden map kept the wrong view** (P1). Leaving the map's pane before its map loaded — or the
+  map re-created for another body while the pane was hidden — let the load fit the body into a zero
+  box, which `fitCamera` reads as one pixel of room; nothing fitted it again. The class: work that
+  measures an element, done while it is mounted but not laid out. **The rule** (`frameInRealBox`,
+  `map/bodyMapFraming.ts`, run on load and on every `resize` of the live map — MapLibre's own
+  observer fires one as the pane is shown): a zero box measures nothing and the fit stays owed; the
+  floor follows every real size; the camera is framed once per body, the first time it is drawn in a
+  real box. **Owed fit versus the operator's camera:** a fit is owed only for bounds never yet framed
+  in a real box; once paid, a hide and a show, a resize, a pan or a zoom never frame it again, and a
+  theme re-create keeps the view the shell restores. The traps held: the container is still sized,
+  never positioned; nothing waits on `idle`; the resize handler is attached to the live map only
+  (`liveMap()` is its effect's whole dependency), and asks once at attach, for a box that became real
+  between the load and the effect. Tests (failing first, through one seam: the fake map's box):
+  loaded hidden then shown — framed; another body loaded hidden — the new body framed on show; a moved
+  camera left and returned — not re-framed; a resize while hidden — the shown size's floor. Over the
+  real layout at 360 px (`Admin/Body/Console` *Phone | Map loads hidden*): a stand-in map on the
+  pane's own element, resized by the browser, loads while its pane is hidden — nothing framed while
+  the box is zero — and is framed for the pane's real size when shown.
+- **The sweep for the same shape** under the new stacking: the map's chrome (`BodyMapPane`'s
+  graticule keep-outs), the kit `Toolbar`'s fit, `LedStrip` and the day strips' marks (`TraceChart`),
+  `ListEnd` — each measures on a `ResizeObserver`, which fires as a hidden pane becomes real, so each
+  re-measures on show; the matrix chart, the sortable rows and Imagery's pass rail measure at the
+  moment of a pointer or a key, which a hidden pane can't receive; `columnsFit` measures the page,
+  which is never hidden; focus goes only to the pane on screen (`usePaneFocus`, the arrival, an ask's
+  panel), and the panel's keep-focus rescue is ended by the move to another pane; the lockup's fold
+  reads scroll events, and a hidden pane keeps its scroll in the browser — a story holds that the
+  body's column comes back where it was, folded (*Phone | Coming back keeps the place*); the
+  console's panes draw no virtualized list (the Bodies library's grid pauses its loading while
+  hidden, as before). Only the map's fit measured once and never again.
+- **Stored launches lacked the button** (P2). `putIns.listForBody` dropped the id from a stored
+  `derived` row (one written down for a departed skater's report), so the old editor's *Make
+  official* — offered only where an id came — skipped it, though `putIns.promote` accepts it. The
+  class: identity dropped by a read, so a write that needs it can't be offered. The read's kinds:
+  stored `official`, `osm` and persisted `derived` rows, each now with its id; and live clusters of
+  report points, which have no row and now say so by type (`cluster: true`; the server's
+  `PutInMarker` is a union of the two). One rule, core's `canMakeOfficial` (a stored row not
+  official), is read by `putIns.promote`, the console's Access tab and the old editor's list; a live
+  cluster's row says it has no row and that placing an official point is the way (its derived marker
+  gives way to an official one within the hide radius). The read is skater-facing: an id was already
+  on every other stored marker, the rows are launches (no person's data), and both fields are
+  optional additions no client keys on (the skater web's report-derived list keys by coordinate; the
+  phone's put-in reads were checked for `id` and `cluster` and read neither). **Against the Access
+  tab:** it lists the body's stored rows (`accessPoints.accessForBody`), never live clusters, so the
+  two now offer *Make official* on exactly the same launches; the old editor alone lists clusters, as
+  report-derived spots with the note.
+- Also from the review's fixes before the round: the Places dismissal's note was cut to 280 by a
+  copied number (`corpusPlaceNames.dismiss`) while its field allowed 2,000 — the cut and both fields
+  now read `MAX_REQUEST_NOTE_LENGTH`; the Legacy declines pass their 280 cap to `ReasonDialog`; a
+  launch's name cap (60) moved to `textCaps` and caps the old editor's name field; the three
+  focusable panes wear the shell's inset focus ring; Standing's form clears its note on a pick change
+  instead of remounting (a remount dropped its one-write guard, and let a second write out).
+
 **Wording the mock did not supply** (standing until the founder's copy pass): *Back to the body*, *Show
 the map*, *Show the tabs* and the map pane's name *Map* (`body/consoleWords.ts`, `PANE_WORDS`); *Note ·
 optional*, *Why, in your own words*, *Kept in History beside the reason* (`REMOVAL_NOTE_WORDS`); the
-old editor's *Make official* and *Made official, on its own row.* (`components/admin/legacyWords.ts`,
-new: the Legacy pages had no words file).
+old editor's *Make official*, *Made official, on its own row.* and *From reports, with no row: place
+an official point here to make it official* (`components/admin/legacyWords.ts`, new: the Legacy pages
+had no words file).
 
 ## Ruled out
 
