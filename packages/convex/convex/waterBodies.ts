@@ -5264,11 +5264,17 @@ const REVIEW_QUEUE_PAGE = 40;
  *
  * **A cap, stated rather than hidden.** An exact total means reading every queued row *with its
  * polygon* on every page load, which is the shape of read-cap failure this codebase keeps meeting.
- * `200+` is as useful to a moderator as `2,010` and costs a bounded read — but it is reported as
+ * `50+` is as useful to a moderator as `2,010` and costs a bounded read — but it is reported as
  * `capped: true` rather than as a number that quietly stops growing, because a count that silently
  * plateaus reads as progress.
+ *
+ * **50, not the console's 200** (B01-3p). Convex counts nothing without reading it, and a queued row
+ * is a whole body: at 200 the six reasons read 1,206 bodies, one reason after another — 1.1–1.4 s on
+ * dev, on the Overview's every load. At 50 they read at most 306, all six at once. A count past the
+ * cap is the queue's floor, and says so ("50+"). An exact count is a stored counter kept by the
+ * writers of `reviewReason` (a schema change, owed).
  */
-const REVIEW_COUNT_CAP = 200;
+export const REVIEW_COUNT_CAP = 50;
 
 /**
  * The review queue — **2,010 rows that were stored and shown to nobody** (A07a).
@@ -5318,19 +5324,26 @@ export const listReviewQueue = query({
  * How much is left, per reason — **capped, and honest about being capped**.
  *
  * Split from the list because the two answer different questions and want different budgets: the
- * list pages 40 rows, this touches up to `REVIEW_COUNT_CAP` per reason so a moderator can see where
- * the work is without loading it.
+ * list pages 40 rows, this touches up to `REVIEW_COUNT_CAP` + 1 per reason (B01-3p: 50, every reason
+ * at once) so a moderator can see where the work is without loading it.
  */
 export const reviewQueueCounts = query({
   args: {},
   handler: async (ctx) => {
     await requireCapability(ctx, 'corpus.read');
     const counts: Record<string, { count: number; capped: boolean; advisory: boolean }> = {};
-    for (const reason of REVIEW_REASONS) {
-      const rows = await ctx.db
-        .query('waterBodies')
-        .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
-        .take(REVIEW_COUNT_CAP + 1);
+    // Every reason at once (B01-3p): six reads in one round, not six after another. Least prominent
+    // first (the index's ascending score), so the rows read are the small ponds, not the big lakes.
+    const read = await Promise.all(
+      REVIEW_REASONS.map((reason) =>
+        ctx.db
+          .query('waterBodies')
+          .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
+          .take(REVIEW_COUNT_CAP + 1),
+      ),
+    );
+    for (const [k, reason] of REVIEW_REASONS.entries()) {
+      const rows = read[k] ?? [];
       counts[reason] = {
         count: Math.min(rows.length, REVIEW_COUNT_CAP),
         capped: rows.length > REVIEW_COUNT_CAP,
