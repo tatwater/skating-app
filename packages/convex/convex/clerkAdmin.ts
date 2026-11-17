@@ -22,6 +22,7 @@
 
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
+import type { Doc } from './_generated/dataModel';
 import { type ActionCtx, internalAction, internalQuery } from './_generated/server';
 
 const CLERK_API_BASE = 'https://api.clerk.com/v1';
@@ -47,20 +48,24 @@ function isRetryableStatus(status: number): boolean {
   return status >= 500 || status === 408 || status === 429;
 }
 
-/** One Clerk request's answer: applied, or why not and whether another try could help. */
-type ClerkAnswer =
-  | { ok: true; status: number }
+/**
+ * One Clerk request's answer: applied (a read's parsed body with it), or why not and whether another
+ * try could help.
+ */
+export type ClerkAnswer =
+  | { ok: true; status: number; body?: unknown }
   | { ok: false; failure: string; retryable: boolean };
 
 /**
  * **One request to Clerk**, every caller's: held to {@link CLERK_TIMEOUT_MS}, so a hung request is a
  * thrown fetch (retried) rather than a run Convex's action limit kills silently; `accept` says which
- * statuses count as done besides a 2xx (a delete's 404).
+ * statuses count as done besides a 2xx (a delete's 404). A `GET` (the reconcile's reads, B01-4k)
+ * answers with its parsed JSON body, read under the same timeout.
  */
-async function clerkRequest(
+export async function clerkRequest(
   key: string,
   path: string,
-  method: 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'DELETE',
   accept: (status: number) => boolean = () => false,
 ): Promise<ClerkAnswer> {
   try {
@@ -69,14 +74,18 @@ async function clerkRequest(
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(CLERK_TIMEOUT_MS),
     });
-    if (res.ok || accept(res.status)) return { ok: true, status: res.status };
+    if (res.ok || accept(res.status)) {
+      if (method !== 'GET') return { ok: true, status: res.status };
+      return { ok: true, status: res.status, body: await res.json() };
+    }
     return {
       ok: false,
       failure: `${res.status} ${res.statusText}`,
       retryable: isRetryableStatus(res.status),
     };
   } catch (err) {
-    // A thrown fetch is a network/DNS blip or a timeout — always worth another try.
+    // A thrown fetch is a network/DNS blip or a timeout (or a read's body cut off) — always worth
+    // another try.
     return {
       ok: false,
       failure: err instanceof Error ? err.message : String(err),
@@ -89,21 +98,23 @@ async function clerkRequest(
  * **A Clerk failure's next step**, every caller's: the retry schedule ({@link RETRY_DELAYS_MS}) while
  * it is transient and the budget lasts — `retry` schedules the next run with `attempt + 1` — and
  * otherwise the operator, paged with the manual fix (D38). Never a silent stop, and never a throw.
+ * Says which it did.
  */
-async function retryOrPage(
+export async function retryOrPage(
   ctx: ActionCtx,
   {
     what,
-    clerkUserId,
+    subject,
     attempt,
     failure,
     retryable,
     retry,
     fix,
   }: {
-    /** The verb, as the log and the page name it: `ban`, `unban`, `delete`. */
+    /** The verb, as the log and the page name it: `ban`, `unban`, `delete`, `reconcile`. */
     what: string;
-    clerkUserId: string;
+    /** What it was for, as the log and the page name it: the Clerk user id, or the job. */
+    subject: string;
     attempt: number;
     failure: string;
     retryable: boolean;
@@ -111,25 +122,24 @@ async function retryOrPage(
     /** What the operator is told to do, after the last error. */
     fix: string;
   },
-): Promise<void> {
+): Promise<'retried' | 'paged'> {
   const delayMs = RETRY_DELAYS_MS[attempt]; // undefined ⇒ the retry budget is spent
   if (retryable && delayMs !== undefined) {
     console.warn(
-      `Clerk ${what} for ${clerkUserId} failed (${failure}); retry ${attempt + 1}/${RETRY_DELAYS_MS.length}`,
+      `Clerk ${what} for ${subject} failed (${failure}); retry ${attempt + 1}/${RETRY_DELAYS_MS.length}`,
     );
     await retry(delayMs, attempt + 1);
-    return;
+    return 'retried';
   }
   // Out of retries (or a permanent error): Convex and Clerk now disagree and only a human can fix it.
-  console.error(
-    `Clerk ${what} for ${clerkUserId} gave up after ${attempt + 1} attempt(s): ${failure}`,
-  );
+  console.error(`Clerk ${what} for ${subject} gave up after ${attempt + 1} attempt(s): ${failure}`);
   await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
     subject: `Clerk ${what} failed — manual fix needed`,
-    heading: `Clerk ${what} failed for ${clerkUserId}`,
+    heading: `Clerk ${what} failed for ${subject}`,
     lines: [`Last error: ${failure} (after ${attempt + 1} attempt(s)).`, fix],
     deepLinkPath: '/admin/users',
   });
+  return 'paged';
 }
 
 /**
@@ -143,8 +153,14 @@ export const setBanned = internalAction({
     banned: v.boolean(),
     /** Retry counter — 0 (absent) on the first, scheduler-driven attempt. */
     attempt: v.optional(v.number()),
+    /**
+     * A repair the daily reconcile asked for (`clerkReconcile`, B01-4k), carried by its retries: with
+     * no profile to read, the run stops instead of sending the scheduled value — the reconcile leaves
+     * a Clerk user with no profile alone.
+     */
+    repair: v.optional(v.boolean()),
   },
-  handler: async (ctx, { clerkUserId, banned: scheduled, attempt = 0 }) => {
+  handler: async (ctx, { clerkUserId, banned: scheduled, attempt = 0, repair }) => {
     const key = process.env.CLERK_SECRET_KEY;
     if (!key) {
       console.warn(
@@ -155,9 +171,11 @@ export const setBanned = internalAction({
     // What Convex says, read before each send and again after each answer. With no profile to read,
     // the wish stands where it was — the scheduled value at first. A person being deleted, or
     // deleted, is no one's to lock: account deletion deletes the Clerk user itself, so the run stops
-    // (never a ban sent to a deleted Clerk user, nor a page about one).
+    // (never a ban sent to a deleted Clerk user, nor a page about one). A repair with no profile
+    // stops the same way: the reconcile asked about someone Convex has no word on.
     const wanted = async (fallback: boolean) => {
       const read = await ctx.runQuery(internal.clerkAdmin.lockWanted, { clerkUserId });
+      if (read === null && repair) return 'gone';
       return read === 'gone' ? read : (read ?? fallback);
     };
 
@@ -181,7 +199,8 @@ export const setBanned = internalAction({
      * budget, to the operator — never a silent stop. The gaps: an action that dies between an answer
      * and its read (Convex runs an action at most once), and a request whose answer is lost (a timeout
      * included) but which Clerk applies after the retry that follows it, leave the last applied value
-     * standing until the next status write; only a reconcile over every account would close them.
+     * standing until the next status write — or until the daily reconcile (`clerkReconcile`, B01-4k)
+     * finds it and asks for a run of this action, which, being just another run, converges the same way.
      */
     const first = await wanted(scheduled);
     if (first === 'gone') return;
@@ -209,7 +228,7 @@ export const setBanned = internalAction({
     }
     await retryOrPage(ctx, {
       what: banned ? 'ban' : 'unban',
-      clerkUserId,
+      subject: clerkUserId,
       attempt,
       failure,
       retryable,
@@ -218,6 +237,7 @@ export const setBanned = internalAction({
           clerkUserId,
           banned,
           attempt: next,
+          ...(repair ? { repair } : {}),
         }),
       fix: banned
         ? 'Convex has the account BANNED, but Clerk may still issue sign-in sessions. Ban the user in the Clerk dashboard to close the gap. (Every Convex function still rejects them.)'
@@ -233,16 +253,24 @@ export const setBanned = internalAction({
  */
 export const lockWanted = internalQuery({
   args: { clerkUserId: v.string() },
-  handler: async (ctx, { clerkUserId }): Promise<boolean | 'gone' | null> => {
-    const profile = await ctx.db
-      .query('profiles')
-      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
-      .first();
-    if (!profile) return null;
-    if (profile.status === 'deleting' || profile.status === 'deleted') return 'gone';
-    return profile.status === 'banned';
-  },
+  handler: async (ctx, { clerkUserId }): Promise<LockWish> =>
+    lockWish(
+      await ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
+        .first(),
+    ),
 });
+
+/** What Clerk's lock should be for one person: see {@link lockWanted}. */
+export type LockWish = boolean | 'gone' | null;
+
+/** The rule {@link lockWanted} and the reconcile both read a profile by. */
+export function lockWish(profile: Pick<Doc<'profiles'>, 'status'> | null): LockWish {
+  if (!profile) return null;
+  if (profile.status === 'deleting' || profile.status === 'deleted') return 'gone';
+  return profile.status === 'banned';
+}
 
 /**
  * Delete a Clerk user — the last step of account deletion (D33/D62), fired once the Convex tombstone
@@ -279,7 +307,7 @@ export const deleteUser = internalAction({
     if (answer.ok) return;
     await retryOrPage(ctx, {
       what: 'delete',
-      clerkUserId,
+      subject: clerkUserId,
       attempt,
       failure: answer.failure,
       retryable: answer.retryable,

@@ -2935,7 +2935,7 @@ rollout stands and needs no re-run.
   boundary). After a lift, a Clerk still locked keeps an active person out of sign-in. A suspension
   never locks Clerk; one that replaces a ban unlocks it. A failed sync retries three times
   (`clerkAdmin.setBanned`: 30 s, 5 min, 30 min), then pages the operator to fix it in the Clerk
-  dashboard; there is no `jobFailures` row and no reconcile job. No screen offers Ban on a banned
+  dashboard; ~~there is no `jobFailures` row and no reconcile job~~ (B01-4k adds both). No screen offers Ban on a banned
   person or Lift on an active one, so pressing again was never an operator's repair — only a raw call
   or a double submit reached it. What #137 dropped was that resend; it is back for a ban, a
   suspension and a lift whose terms stand (no audit row, no undo). **The syncs converge** (Greptile
@@ -2952,10 +2952,12 @@ rollout stands and needs no re-run.
   random status changes, answer orders and transient failures; named tests cover a permanent failure
   whose wish moved and a wish that keeps moving past every round). A person being deleted, or
   deleted, stops the run — account deletion deletes their Clerk user itself — so no ban is sent to a
-  deleted Clerk user and no page is mailed about one. **Left:** a run that dies between an answer and
+  deleted Clerk user and no page is mailed about one. **Left:** ~~a run that dies between an answer and
   its read, and a request whose answer is lost (a timeout included) but which Clerk applies later
   than the retry that follows it, leave the last applied value until the next status write; a
-  reconcile over every account (the mirror's state tracked) would close both.
+  reconcile over every account (the mirror's state tracked) would close both.~~ (Closed by B01-4k: a
+  daily reconcile, with no mirror state stored, finds either within a day and repairs it through
+  `setBanned`.)
 - **The sweep for the same shape** — outbound writes that mirror a Convex value and can be sent by
   more than one action for the same subject: `clerkAdmin.setBanned` (fixed above);
   `clerkAdmin.deleteUser` (account deletion's last step — one-way, a 404 is success, so any order
@@ -3078,6 +3080,110 @@ test first.
 
 **Rollout, for the dev agent:** `convex dev --once`. Nothing else: no schema change, no index, no
 backfill (old rows are read normalized).
+
+**B01-4k (2026-11-17): Clerk's ban lock, reconciled daily** (D277; server only). The two gaps
+*B01-4g* left in the Clerk mirror, closed by a job rather than by stored mirror state.
+
+- **The gaps.** (1) A `setBanned` run that dies between Clerk's answer and its re-read (Convex runs
+  an action at most once): when an earlier request lands after a later one and its run dies, Clerk
+  keeps the older value. (2) A request whose answer is lost (a timeout included) but which Clerk
+  applies after the retry that followed it: the retry sends what Convex wants, then the old request
+  lands. Either way nothing noticed until that person's next status change, and the harmful direction
+  is a lifted person still locked out of sign-in, unalerted. Both are reproduced as tests (Clerk ends
+  out of step, nothing is scheduled) before one pass closes them, in both directions.
+- **What the job checks** (`clerkReconcile.run`, the cron *reconcile clerk ban locks*, daily at 10:20
+  UTC), with no schema change, the harmful direction first: (a) every user Clerk says is banned
+  (`GET /v1/users?banned=true&limit=100&created_at_before=…` — `GetUserList` in Clerk's Backend API
+  spec, the same in every published version) must be banned in Convex, read by `lockWanted`'s rule
+  (`lockWish`): active or suspended is unlocked; being deleted or deleted is left alone (account
+  deletion deletes the Clerk user); no profile is left alone; (b) every profile Convex says is banned
+  (`profiles.by_status`, a page of 100 by cursor, at most 8 MiB as they weigh) must be locked in Clerk
+  — each page's users are read in one request by id (`GET /v1/users?user_id=…&limit=100`; `limit`
+  defaults to 10, so it is always sent). A banned profile with no Clerk user is counted and left
+  alone. A suspension never locks, and a ban is never unlocked: the repair is `setBanned`'s, which
+  sends only what Convex says.
+- **Clerk's list is paged by creation time, not by its `starting_after` cursor.** That cursor names
+  the previous page's last user, and the spec doesn't say what it answers once that user no longer
+  matches `banned=true` — which this job makes likely, since a page's last user may be the one it just
+  unlocked (or someone deleted during a back-off). Each next page asks instead for users created at or
+  before the last one's millisecond (`created_at_before`, documented as strict, in ms, under the
+  default newest-first order) and skips the ids already read at that millisecond, so a tie across a
+  page boundary is read once. More than a page of locked users created in one millisecond can't be
+  walked past: the run stops and pages the operator rather than loop (tested, with the boundary user
+  unlocked between pages, a tie cut by a page, and a page-sized tie).
+- **One sender.** A repair asks for a `setBanned` run (`repair: true`, carried by its retries; with no
+  profile the run stops rather than sending its argument), so there is no second way to call Clerk.
+  The reads share `setBanned`'s request (`clerkRequest`, now with `GET`, the 20 s timeout) and its
+  failure path (`retryOrPage`): a 429, 5xx, 408 or thrown fetch retries the step from the same cursor
+  at 30 s, 5 min, 30 min, then pages the operator; a step that gave up is a `jobFailures` row
+  (`Unfinished`) until a run finishes.
+- **Bounded and polite.** Five Clerk reads a step, then the step continues itself 2 s later; repairs
+  spaced 500 ms apart across the run, each batch from the slot after the last one's and never a slot
+  in the past (at most two syncs a second, however late a batch is found — after a retry's back-off
+  too); at most 400 reads (20,000 accounts a side) and 200 repairs a run, past which the rest are
+  counted (`Capped`, `OverRepairCap`), mailed and left for the next run; the run's own row is keyed
+  `!run`, ahead of every repair's key, so Machinery's capped read always counts it. Clerk allows 1,000 requests per 10 s on production and 100 on development,
+  `GET`s included; the job's worst case is about 25 reads and 20 syncs (each at most three
+  requests) per 10 s. Requests a pass
+  sends: one `GET` per Convex page that has anyone on it, one per 100 users Clerk locks, plus a retry
+  per failure — and at most `SETTLE_ROUNDS` (3) `POST`s per repair. Idempotent: a second pass over
+  the same state repairs nothing (the model test checks it).
+- **Why it cannot fight a sync in flight.** The reconcile reads Clerk and Convex at different moments,
+  so either read can be stale — Convex's page from before a lift, or Clerk's lock from before a sync
+  lands. But it only nominates: the repair is a `setBanned` run, which reads Convex before it sends
+  and after every answer, and `setBanned`'s convergence argument holds for any number of overlapping
+  runs (*B01-4g*), so one more run is one more of them. A stale nomination at worst sends the value
+  Convex holds now — one redundant, idempotent request — never the value the reconcile read. Tests:
+  Convex read banned, then lifted while the pass's Clerk read is out — answered in either order, the
+  repair sends an unlock, never a lock; Clerk read locked against an active person, then banned while
+  the repair is queued — the repair sends a ban, never an unlock, whichever request lands first.
+- **Reported, counts only.** Each run ends with one log line of its tally (checked on each side,
+  repairs each way, no Clerk user, no profile, being deleted, over the cap, Clerk reads); each repair
+  is a `jobFailures` row (`clerkMirror`, `LockRepaired` / `UnlockRepaired`, keyed by the run and a
+  sequence number, never a person) counted on the Machinery health read for a week; a run that
+  repaired anything mails the operator one summary with the counts (the convention: `jobFailures` for
+  Machinery's counts, `operatorAlerts.send` for what a person should know — an email per repair would
+  be too loud, a run with a repair means a gap actually happened). No log line, row or mail names a
+  person.
+- **Not an audit event** (D270): a repair changes no one's terms, so it writes no audit row and offers
+  no undo; the model test counts `moderationActions` at zero.
+- **Dry run** (`{"dryRun": true}`): every read, no repair asked for, no row, no summary mail — a read
+  that fails past its retries still pages the operator.
+- **The first gap at its source — not closed there.** A verifier scheduled ahead of each sync (it
+  must be scheduled before the request, since the run it guards may die after) would have to read
+  Clerk, so every status write would cost a second action and a Clerk read; it could not prove it
+  never double-sends (a verifier finding Clerk behind while the sync's own retry ladder, up to ~35
+  minutes, or a newer write's sync is still in flight sends again — idempotent, but a send); and it
+  would not close the second gap, whose late request can land after any verifier. The daily
+  reconcile covers both with one bounded pass.
+- **What stays uncovered.** A gap lasts until the next run (up to a day: a lifted person may be locked
+  out of sign-in that long, then is unlocked and the operator mailed). A Clerk user with no profile is
+  never touched, nor anyone being deleted or deleted (account deletion's `deleteUser` owns their Clerk
+  user and pages on its own failure). A lock set by hand in Clerk's dashboard on someone Convex has
+  active is lifted by the next run — Convex is the authority, so a ban belongs in the console. A run
+  killed by a Convex failure stops with its side and counts in the log (no id), counted `Unfinished`,
+  and the next day's tick starts afresh. A run's checked counts live in its log line and its mail,
+  not a table — a durable per-run record waits on §5's heartbeat (D218). A sync still in its retry
+  ladder when the run reads (a status changed in the half hour before) is counted as a repair, and
+  the mail says so; the repair is one more idempotent request. Two runs at once (a manual run during the cron's) double-count
+  repairs and send redundant, idempotent requests. Past 20,000 locked Clerk users the list's tail is
+  never reached (each run starts from the newest).
+
+**Rollout, for the dev agent.** (1) `convex dev --once` — the module, the cron and `clerkMirror` in
+`jobFailures.job` (an enum widened, no index, no backfill). (2) Right after the deploy — before the
+next 10:20 UTC tick — `convex run clerkReconcile:run '{"dryRun":true}'` and read back its tally:
+`convexChecked` should be the People *Banned* lane's count, `clerkChecked` the users the Clerk
+dashboard shows banned; `lockRepairs` / `unlockRepairs` are what a real run would repair (expected 0 on
+dev). With `state: "continued"` (more than five pages) the final tally is the log line *Clerk ban-lock
+reconcile (dry run) done* (`convex logs`). (3) Only then let the cron run: if the counts look wrong
+(the checked counts far from the lane and the dashboard, or repairs in the dozens), stop and tell the
+founder before the tick. A real run can only send what Convex says, so this is a check of the reads,
+not a safety interlock. **A non-zero repair count** (Machinery's *reconcile clerk ban locks* row, the
+mail) means one of the two gaps happened — or someone locked a person by hand in Clerk's dashboard —
+and the repair has already been asked for: nothing to do unless it recurs; if it does, look for
+`Clerk ban … failed` / `unban … failed` lines in the logs (the sync itself is failing). `Unfinished`
+means Clerk could not be read (check `CLERK_SECRET_KEY` and Clerk's status); `Capped` or
+`OverRepairCap` means more than a run's limit — read the logs before the next run.
 
 ### The B01-2 server register (owed to the server agent)
 

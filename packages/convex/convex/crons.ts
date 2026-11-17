@@ -403,6 +403,18 @@ crons.daily(
 );
 /** The People rows' drift repair: the oldest-refreshed rows re-derived from their profiles. */
 crons.interval('repair people rows drift', { minutes: 10 }, internal.peopleJobs.repairDrift, {});
+/**
+ * Clerk's sign-in lock checked against Convex's status (B01-4k, D277): every profile banned in Convex
+ * must be locked in Clerk, every Clerk user locked must be banned in Convex, and a mismatch is repaired
+ * through `clerkAdmin.setBanned`. Daily is enough for the two rare gaps it closes; its repairs are
+ * counted on Machinery (`clerkMirror`) and mailed to the operator in one summary.
+ */
+crons.daily(
+  'reconcile clerk ban locks',
+  { hourUTC: 10, minuteUTC: 20 },
+  internal.clerkReconcile.run,
+  {},
+);
 
 // ── B01-3b: the geometry facts ──────────────────────────────────────────────────────────────────
 
