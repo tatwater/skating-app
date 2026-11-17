@@ -6,7 +6,13 @@ import { wintersOf } from './hazards/HazardsTab';
 import { BODY_NOW as HAZARDS_NOW, THIS_WINTER_DAILY } from './hazards/hazardsFixtures';
 import { namesFromBody } from './names/namesModel';
 import { placesFrom } from './places/placesModel';
-import { BAY_NOT_RECORDED, shapeBays } from './shape/shapeModel';
+import {
+  BAY_NOT_RECORDED,
+  NOT_COMPUTED_YET,
+  shapeBays,
+  shapeMergeOf,
+  touchingNotComputed,
+} from './shape/shapeModel';
 import { retentionOf } from './standing/StandingTab';
 import { waterFrom } from './water/waterModel';
 
@@ -177,6 +183,28 @@ const ROWS: Row[] = [
         failed: isFailed(read) && bay?.sub === null,
         notRecorded: bay?.sub === BAY_NOT_RECORDED,
         loading: read === undefined && bay?.sub === null,
+      };
+    },
+  },
+  {
+    read: 'Shape: the bodies that touch it (`consoleExtras`)',
+    answer: (state) => {
+      const read =
+        state === 'failed'
+          ? FAILED_READ
+          : state === 'loading'
+            ? undefined
+            : { touchingBodyIds: null, touching: null, touchingCapped: false, geoComputedAt: null };
+      const merge = shapeMergeOf(readState(read as never, touchingNotComputed));
+      return {
+        failed: isFailed(merge),
+        // Settled, but the touching test hasn't run: *isn't computed yet*, drawn in the block.
+        notRecorded:
+          merge !== undefined &&
+          merge !== null &&
+          !isFailed(merge) &&
+          merge.note === NOT_COMPUTED_YET,
+        loading: merge === undefined,
       };
     },
   },

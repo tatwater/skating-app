@@ -523,10 +523,12 @@ describe('About (1.9, 1.14)', () => {
     expect(screen.getByText(/3 people have reported no public access here/)).toBeInTheDocument();
   });
 
-  it('gives a moderator the ruling and the tools', async () => {
+  it('gives a moderator the ruling and the tools — the lake’s Body console, in a new tab', async () => {
+    // A Convex id's shape: the console opens only such an id.
+    const LAKE_ID = 'k17mascomalakeaaaaaaaaaaaaaaaaa';
     answer({
       'profiles:current': { _id: 'me', role: 'moderator' },
-      'waterBodies:get': lake({ source: 'user', reviewStatus: 'pending' }),
+      'waterBodies:get': lake({ source: 'user', reviewStatus: 'pending', _id: LAKE_ID }),
       'waterBodies:pendingAccessReportCount': 1,
     });
     const rule = vi.fn().mockResolvedValue(null);
@@ -538,28 +540,38 @@ describe('About (1.9, 1.14)', () => {
     await act(async () => {
       fireEvent.click(within(ruling).getByRole('button', { name: 'Mark no public access' }));
     });
-    expect(rule).toHaveBeenCalledWith({ waterBodyId: 'mascoma', verdict: 'none' });
+    expect(rule).toHaveBeenCalledWith({ waterBodyId: LAKE_ID, verdict: 'none' });
     await act(async () => {
       fireEvent.click(within(ruling).getByRole('button', { name: 'Clear' }));
     });
-    expect(rule).toHaveBeenLastCalledWith({ waterBodyId: 'mascoma', verdict: null });
+    expect(rule).toHaveBeenLastCalledWith({ waterBodyId: LAKE_ID, verdict: null });
 
     const tools = screen.getByRole('region', { name: 'Moderator tools' });
-    const edit = within(tools).getByRole('link', { name: /Edit this lake/ });
-    expect(edit).toHaveAttribute('href', '/admin/water/mascoma');
+    const edit = within(tools).getByRole('link', { name: /Open in the Body console/ });
+    expect(edit).toHaveAttribute('href', `/admin/body/${LAKE_ID}`);
+    expect(within(tools).queryByRole('link', { name: /Edit this lake/ })).toBeNull();
     expect(edit).toHaveAttribute('target', '_blank');
     await act(async () => {
       fireEvent.click(within(tools).getByRole('button', { name: 'Approve this lake' }));
     });
     expect(fakes.mutations.get('waterBodies:approve')).toHaveBeenCalledWith({
-      waterBodyId: 'mascoma',
+      waterBodyId: LAKE_ID,
     });
     await act(async () => {
       fireEvent.click(within(tools).getByRole('button', { name: 'Reject' }));
     });
     expect(fakes.mutations.get('waterBodies:reject')).toHaveBeenCalledWith({
-      waterBodyId: 'mascoma',
+      waterBodyId: LAKE_ID,
     });
+  });
+
+  it('gives no dead link for a lake the console can’t open, and says so', () => {
+    answer({ 'profiles:current': { _id: 'me', role: 'moderator' } });
+    // The fixture's id isn't a Convex id's shape: the console's route would read it as no body.
+    renderLake({ tab: 'about' });
+    const tools = screen.getByRole('region', { name: 'Moderator tools' });
+    expect(within(tools).queryByRole('link')).toBeNull();
+    expect(tools).toHaveTextContent('This lake can’t be opened in the Body console from here.');
   });
 
   it('says so when a ruling fails', async () => {

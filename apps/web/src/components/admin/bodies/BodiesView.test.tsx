@@ -828,11 +828,34 @@ describe('the list’s place', () => {
 });
 
 describe('Opened recently’s ids the library didn’t list', () => {
-  it('says each kind in its count, and nothing when there is none', () => {
+  it('names each body with why it isn’t listed, counts the rest, and says nothing when there is none', () => {
     expect(notListedWords(undefined)).toBeNull();
-    expect(notListedWords({ unlisted: 0, unknown: 0, dropped: 0 })).toBeNull();
-    expect(notListedWords({ unlisted: 2, unknown: 3, dropped: 1 })).toBe(
-      '2 opened aren’t in the library · 3 are no longer a body · 1 older not read',
+    expect(notListedWords({ bodies: [], unknown: 0, dropped: 0 })).toBeNull();
+    expect(
+      notListedWords({
+        bodies: [
+          { name: 'Old Lake', why: 'merged', survivor: 'Lake Survivor' },
+          { name: 'Orphan Pond', why: 'merged', survivor: null },
+          { name: 'Taken Pond', why: 'removed', survivor: null },
+          { name: 'Not A Pond', why: 'rejected', survivor: null },
+          { name: 'Lake Morey', why: 'not_listed', survivor: null },
+        ],
+        unknown: 3,
+        dropped: 1,
+      }),
+    ).toBe(
+      [
+        'Old Lake was merged into Lake Survivor, which isn’t listed yet',
+        'Orphan Pond was merged into a body that can’t be found',
+        'Taken Pond was removed and isn’t listed yet',
+        'Not A Pond was rejected and isn’t listed yet',
+        'Lake Morey isn’t listed yet',
+        '3 opened bodies no longer exist',
+        '1 older not read',
+      ].join(' · '),
+    );
+    expect(notListedWords({ bodies: [], unknown: 1, dropped: 0 })).toBe(
+      '1 opened body no longer exists',
     );
   });
 });

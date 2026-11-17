@@ -7,13 +7,19 @@ import {
   loaded,
   mapLoadable,
   read,
+  readState,
   useConsoleReads,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
-import { neighborsOf } from '../../frame/touching';
 import { ShapeTabView } from './ShapeTab';
-import { shapeBays, shapeMapScene, shapeMerge, shapeOutline } from './shapeModel';
+import {
+  shapeBays,
+  shapeMapScene,
+  shapeMergeOf,
+  shapeOutline,
+  touchingNotComputed,
+} from './shapeModel';
 
 /**
  * The Shape tab, wired: the body (`waterBodies.get`), its bays (`subAreas.listForBody`, with when
@@ -56,7 +62,9 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
       )}
       bays={mapLoadable(r.subAreas, (rows) => shapeBays(rows, made))}
       baysMadeFailed={isFailed(r.made) ? r.made : null}
-      merge={mapLoadable(r.extras, (facts) => shapeMerge(facts, neighborsOf(facts)))}
+      // Through the four answers: a settled zero is no block, never *not computed*; a failure is
+      // said. Withheld, it is never asked — no block, and no claim that nothing touches it.
+      merge={canRead ? shapeMergeOf(readState(r.extras, touchingNotComputed)) : undefined}
       // A neighbor opens with the same way back as this body: to the list the operator came from.
       bodyLink={(id) => (
         <Link to="/admin/body/$id" params={{ id }} search={from === undefined ? {} : { from }} />

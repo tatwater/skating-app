@@ -514,6 +514,104 @@ export function daysCovered(from: number, to: number, window: { start: number; e
 }
 
 /**
+ * **Still on the lake, by its record**: anything but a recorded archive. Only `archived` — the
+ * community's vote or a merge, stored — says a hazard stopped being active; a status this read
+ * doesn't know reads as still there, never as gone (D3: the conservative answer shows more hazard).
+ */
+export function stillOnLake(status: string): boolean {
+  return status !== 'archived';
+}
+
+/** The fields of a hazard the day-by-day read weighs. */
+export type HazardForDays = Pick<
+  Doc<'hazards'>,
+  'type' | 'status' | 'firstReportedAt' | 'lastConfirmedAt' | 'leftLakeAt'
+>;
+
+/** How one hazard counts on a season's days: its listed facts, and each day it counts on. */
+export type HazardDays = {
+  firstReportedDay: number;
+  /** The day it left the lake is stored (or, for a crossing, its expiry has passed). */
+  endRecorded: boolean;
+  endDay: number | null;
+  /**
+   * **Still active now, by its record** (B01-3n): for a hazard, its status is anything but a recorded
+   * archive ({@link stillOnLake}); for a crossing, live (active and not yet expired). `false` is a
+   * stored fact, never an inference from a day's counts.
+   */
+  active: boolean;
+  passage: boolean;
+  /** Each day it counts on, and as what: established, unknown (may have been), or a live crossing. */
+  days: { at: number; as: 'count' | 'unknown' | 'crossings' }[];
+  /** An archived hazard with no recorded end — one of `unknownEnds`. */
+  unknownEnd: boolean;
+};
+
+/**
+ * **One hazard on a season's days** — the rule `dailyHazards` applies to each, pure so it can be
+ * property-tested. `lastDay` is the end of the caller's UTC day (never past the season).
+ *
+ * - A hazard still active counts as established every day from its first report through today.
+ * - One whose end is recorded (`leftLakeAt` on an archived pin) counts through the day it left.
+ * - One archived with no recorded end counts its first day, and **every day after is unknown** —
+ *   never absent, never clear.
+ * - A reported crossing is never a hazard (D64): it counts only as a live crossing, from its first
+ *   report until its expiry or its recorded leaving.
+ */
+export function hazardDays(
+  h: HazardForDays,
+  window: { start: number; end: number },
+  lastDay: number,
+  now: number,
+): HazardDays {
+  const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
+  if (isPassageMarker(h.type)) {
+    // A passage marker says someone got across a ridge there. It never enters a day's hazard count
+    // or its unknowns; it is counted on its own, for the days it was live — from its first report
+    // until its expiry (the last confirmation plus `PASSAGE_EXPIRY_H`, applied at read for skaters)
+    // or its recorded leaving, whichever came first, never past the caller's day. A count of
+    // crossings is only that: no day reads safer for one.
+    const ends = Math.min(
+      h.lastConfirmedAt + hoursToMs(PASSAGE_EXPIRY_H),
+      h.leftLakeAt ?? Number.POSITIVE_INFINITY,
+    );
+    const ended = ends <= now;
+    const endDay = ended ? Math.floor(ends / DAY_MS) * DAY_MS : null;
+    const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
+    return {
+      firstReportedDay: firstDay,
+      endRecorded: ended,
+      endDay,
+      active: stillOnLake(h.status) && !ended,
+      passage: true,
+      days: daysCovered(h.firstReportedAt, through, window).map((at) => ({
+        at,
+        as: 'crossings' as const,
+      })),
+      unknownEnd: false,
+    };
+  }
+  const active = stillOnLake(h.status);
+  // A recorded end counts through its day; a pin still active is on the lake today, whatever any
+  // stamp says (an unmerge clears the merge's stamp, but an active pin never reads one).
+  const endDay =
+    !active && h.leftLakeAt !== undefined ? Math.floor(h.leftLakeAt / DAY_MS) * DAY_MS : null;
+  const through = active || endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
+  return {
+    firstReportedDay: firstDay,
+    endRecorded: endDay !== null,
+    endDay,
+    active,
+    passage: false,
+    days: daysCovered(h.firstReportedAt, through, window).map((at) => ({
+      at,
+      as: active || endDay !== null || at === firstDay ? ('count' as const) : ('unknown' as const),
+    })),
+    unknownEnd: !active && endDay === null,
+  };
+}
+
+/**
  * **How many hazards were on the lake each day of a season**, and when the season's watch opened.
  * Each day says two things:
  *
@@ -524,8 +622,10 @@ export function daysCovered(from: number, to: number, window: { start: number; e
  *   recorded): each day after the first report is unknown, never counted as clear.
  *
  * Days run through the end of the caller's UTC day (never past it, never past the season). `hazards`
- * lists each counted hazard's first-report day and whether its end is recorded (with its end day),
- * so the tab can mark first reports without another read, and each one's `type` (`passage: true` for a
+ * lists each counted hazard's first-report day, whether its end is recorded (with its end day) and
+ * whether it is still active by its record (`active`, B01-3n — so the strip marks an archived hazard
+ * on its first-report day from the stored fact, not from the next day's unknown part), so the tab
+ * can mark first reports without another read, and each one's `type` (`passage: true` for a
  * reported crossing). **A reported crossing is not counted as a hazard** (D64: it is a passage marker,
  * a report that someone crossed there): each day's `crossings` counts the crossings live that day,
  * from first report until expiry or recorded leaving. A crossing never makes a day read safer or
@@ -565,60 +665,16 @@ export const dailyHazards = query({
       days.set(day, d);
     };
     let unknownEnds = 0;
-    const listed: {
+    const listed: ({
       hazardId: Id<'hazards'>;
-      firstReportedDay: number;
-      endRecorded: boolean;
-      endDay: number | null;
       type: Doc<'hazards'>['type'];
-      passage: boolean;
-    }[] = [];
+    } & Omit<HazardDays, 'days' | 'unknownEnd'>)[] = [];
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
-      const firstDay = Math.floor(h.firstReportedAt / DAY_MS) * DAY_MS;
-      // **A reported crossing is not a hazard** (D64): a passage marker says someone got across a
-      // ridge there. It never enters a day's hazard count or its unknowns; it is counted on its own,
-      // for the days it was live — from its first report until its expiry (the last confirmation plus
-      // `PASSAGE_EXPIRY_H`, applied at read for skaters) or its recorded leaving, whichever came first,
-      // never past the caller's day. A count of crossings is only that: no day reads safer for one.
-      if (isPassageMarker(h.type)) {
-        const ends = Math.min(
-          h.lastConfirmedAt + hoursToMs(PASSAGE_EXPIRY_H),
-          h.leftLakeAt ?? Number.POSITIVE_INFINITY,
-        );
-        const ended = ends <= now;
-        const endDay = ended ? Math.floor(ends / DAY_MS) * DAY_MS : null;
-        listed.push({
-          hazardId: h._id,
-          firstReportedDay: firstDay,
-          endRecorded: ended,
-          endDay,
-          type: h.type,
-          passage: true,
-        });
-        const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
-        for (const day of daysCovered(h.firstReportedAt, through, window)) bump(day, 'crossings');
-        continue;
-      }
-      const active = h.status === 'active';
-      // A recorded end counts through its day; a pin still active is on the lake today, whatever any
-      // stamp says (an unmerge clears the merge's stamp, but an active pin never reads one).
-      const endDay =
-        !active && h.leftLakeAt !== undefined ? Math.floor(h.leftLakeAt / DAY_MS) * DAY_MS : null;
-      if (!active && endDay === null) unknownEnds++;
-      listed.push({
-        hazardId: h._id,
-        firstReportedDay: firstDay,
-        endRecorded: endDay !== null,
-        endDay,
-        type: h.type,
-        passage: false,
-      });
-      const through = endDay === null ? lastDay : Math.min(endDay + DAY_MS, lastDay);
-      for (const day of daysCovered(h.firstReportedAt, active ? lastDay : through, window)) {
-        const established = active || endDay !== null || day === firstDay;
-        bump(day, established ? 'count' : 'unknown');
-      }
+      const { days: on, unknownEnd, ...facts } = hazardDays(h, window, lastDay, now);
+      if (unknownEnd) unknownEnds++;
+      listed.push({ hazardId: h._id, type: h.type, ...facts });
+      for (const day of on) bump(day.at, day.as);
     }
     const record = await ctx.db
       .query('imageryIngestSeasons')

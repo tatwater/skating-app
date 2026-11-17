@@ -95,14 +95,16 @@ const UTC_DAY = 86_400_000;
  * A season's day-by-day read, built the way `bodyConsole.dailyHazards` builds it: the window is the
  * season (1 July on), counted through the whole of the caller's UTC day. An active hazard counts
  * from its first report through today; an archived one with a recorded end (`ended`) through its
- * end's day; an archived one with none counts on its first day and is unknown after. Stories and
- * tests only.
+ * end's day; an archived one with none counts on its first day and is unknown after. Each listed
+ * hazard says whether it is still active, as the server does since B01-3n; with `legacy`, the read
+ * is one from before the server said it (the state unknown), which the strip still reads by the
+ * next-day rule. Stories and tests only.
  */
 export function dailyFrom(
   season: number,
   hazards: readonly { first: number; active: boolean; ended?: number }[],
   now: number,
-  extra: Partial<Pick<DailyHazards, 'capped' | 'watchOpensOn'>> = {},
+  extra: Partial<Pick<DailyHazards, 'capped' | 'watchOpensOn'>> & { legacy?: boolean } = {},
 ): DailyHazards {
   const { start, days } = winterWindow(season);
   const last = Math.min(Math.floor(now / UTC_DAY) * UTC_DAY + UTC_DAY, start + days * UTC_DAY);
@@ -126,6 +128,7 @@ export function dailyFrom(
     hazards: hazards.map((h) => ({
       firstReportedDay: Math.floor(h.first / UTC_DAY) * UTC_DAY,
       endRecorded: !h.active && h.ended !== undefined,
+      ...(extra.legacy === true ? {} : { active: h.active }),
     })),
     capped: extra.capped ?? false,
     watchOpensOn: extra.watchOpensOn ?? null,
@@ -140,6 +143,14 @@ export const LAST_WINTER_DAILY: DailyHazards = dailyFrom(
   SEASON - 1,
   LAST_WINTER.map((h) => ({ first: lastWinterFirst(h), active: h.active })),
   BODY_NOW,
+);
+
+/** Last winter's read as a server from before B01-3n gave it: no hazard's state said. */
+export const LAST_WINTER_DAILY_LEGACY: DailyHazards = dailyFrom(
+  SEASON - 1,
+  LAST_WINTER.map((h) => ({ first: lastWinterFirst(h), active: h.active })),
+  BODY_NOW,
+  { legacy: true },
 );
 
 /** Last winter's hazards as `hazards.listForBody` hands them with archived (the archived group). */

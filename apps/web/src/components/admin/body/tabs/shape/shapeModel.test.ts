@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ReadFailure } from '@/components/admin/reads/consoleReads';
+import { type ReadFailure, readState } from '@/components/admin/reads/consoleReads';
 import { MASCOMA_BAY_PROVENANCE, MASCOMA_SUB_AREAS, on } from '../../frame/bodyFixtures';
 import { MASCOMA_POLYGON } from '../../frame/mascomaFixtures';
 import {
@@ -11,7 +11,9 @@ import {
   shapeBays,
   shapeMapScene,
   shapeMerge,
+  shapeMergeOf,
   shapeOutline,
+  touchingNotComputed,
   vertexCount,
 } from './shapeModel';
 
@@ -200,6 +202,45 @@ describe('merge', () => {
     expect(shapeMerge(facts, undefined)?.touching).toBeUndefined();
     const failed = shapeMerge(facts, failure);
     expect(failed?.touching).toBe(failure);
+  });
+});
+
+describe('the touching read’s four answers (B01-3n)', () => {
+  const failure: ReadFailure = { failed: true, pending: false, retry: () => {} };
+  const of = (value: unknown) => shapeMergeOf(readState(value as never, touchingNotComputed));
+
+  it('on its way: no block yet; failed: the failure, never none or not computed', () => {
+    expect(of(undefined)).toBeUndefined();
+    expect(of(failure)).toBe(failure);
+  });
+
+  it('a settled zero is a value — no block — never *not computed yet*', () => {
+    expect(
+      of({ touchingBodyIds: [], touching: [], touchingCapped: false, geoComputedAt: 1 }),
+    ).toBeNull();
+  });
+
+  it('not computed is the nothing recorded, said in the block', () => {
+    for (const facts of [
+      { touchingBodyIds: null, touching: null, touchingCapped: false, geoComputedAt: null },
+      { touchingBodyIds: [], touching: [], touchingCapped: false, geoComputedAt: null },
+      { touchingBodyIds: null, touching: null, touchingCapped: false, geoComputedAt: 1 },
+    ]) {
+      expect(of(facts)).toEqual({ touching: [], note: NOT_COMPUTED_YET });
+    }
+  });
+
+  it('a value names its neighbors from the read itself', () => {
+    const merge = of({
+      touchingBodyIds: ['k1'],
+      touching: [{ waterBodyId: 'k1', name: 'Crystal Lake', ring: [[0, 0]] }],
+      touchingCapped: false,
+      geoComputedAt: 1,
+    });
+    expect(merge).toEqual({
+      touching: [{ lit: 'neighbor:k1', id: 'k1', name: 'Crystal Lake' }],
+      note: null,
+    });
   });
 });
 

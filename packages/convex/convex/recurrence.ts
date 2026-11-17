@@ -28,6 +28,7 @@ import {
   RECURRENCE_WINDOW_SEASONS,
   type Season,
   seasonOf,
+  seasonStartMs,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -440,6 +441,13 @@ export const enqueueBody = internalMutation({
 export { RECURRENCE_WINDOW_SEASONS };
 
 /**
+ * The most of a body's active pins created this season that `listForBody` reads to decide which
+ * advisories yield. Past it, every advisory stands down (B01-3n): none is claimed clear of a pin the
+ * read didn't see.
+ */
+export const LIVE_SIGHTINGS_READ = 500;
+
+/**
  * What a skater may see about a lake's history (D78) — **nothing at all until the flag flips.**
  *
  * The bar is applied at the index rather than after the read, which is the difference between
@@ -472,20 +480,36 @@ export const listForBody = query({
     // **Live information wins** (§9.3). A pin reported this season inside a cluster's footprint has a
     // date, a reporter and a confirm loop, and is better than history in every respect — so the
     // advisory for that cluster stands down rather than competing with it.
+    //
+    // **Bounded** (B01-3n): the body's active pins, newest first, read only back to the season's
+    // start and at most `LIVE_SIGHTINGS_READ` (one more only to know). A pin's record is written at
+    // or after its first report (its writers clamp `firstReportedAt` to the insert), so every pin
+    // first reported this season was created since the season began: the walk stops at the first
+    // one created before it, having seen them all. Archived pins never count toward the bound.
+    // Past it, an unread pin could sit inside any pattern's footprint, and an advisory returned would
+    // claim "no live pin here" from a partial read — so every advisory stands down, the yield rule's
+    // conservative answer. The pins themselves never come from this read: each app draws them from
+    // its own.
     const thisSeason = seasonOf(Date.now());
-    const live = (
-      await ctx.db
-        .query('hazards')
-        .withIndex('by_water_body_status', (q) =>
-          q.eq('waterBodyId', body._id).eq('status', 'active'),
-        )
-        .collect()
-    ).filter(
-      (h) =>
+    const seasonStart = seasonStartMs(thisSeason);
+    const live: Doc<'hazards'>[] = [];
+    let read = 0;
+    for await (const h of ctx.db
+      .query('hazards')
+      .withIndex('by_water_body_status', (q) =>
+        q.eq('waterBodyId', body._id).eq('status', 'active'),
+      )
+      .order('desc')) {
+      if (h._creationTime < seasonStart) break;
+      if (++read > LIVE_SIGHTINGS_READ) return [];
+      if (
         h.moderationStatus === 'visible' &&
         h.mergedIntoHazardId === undefined &&
-        seasonOf(h.firstReportedAt) === thisSeason,
-    );
+        seasonOf(h.firstReportedAt) === thisSeason
+      ) {
+        live.push(h);
+      }
+    }
 
     return rows
       .filter((row) => !hasLiveSighting(row, live))

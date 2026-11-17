@@ -30,6 +30,7 @@ import {
   type LibraryFacetSelection,
   type LibraryListLane,
   landmarkAsksAreSamePlace,
+  libraryStandingOf,
   matchedAlias,
   type OBSERVED_FROM,
   REQUEST_KINDS,
@@ -397,6 +398,9 @@ export const searchOtherStandings = query({
 /** The most ids one `rowsByIds` call reads — *Opened recently* holds 12. */
 export const ROWS_BY_IDS_MAX = 12;
 
+/** Why an id with no library row of its own isn't listed (B01-3n). */
+export type NotListedWhy = 'merged' | 'removed' | 'rejected' | 'not_listed';
+
 /** What became of one requested id. */
 export type RowByIdEntry = {
   /** The id as asked (trimmed). */
@@ -409,6 +413,15 @@ export type RowByIdEntry = {
   status: 'ok' | 'merged' | 'unlisted' | 'unknown';
   row: LibraryRowView | null;
   survivorId?: Id<'waterBodies'>;
+  /** An `unlisted` id: the body's stored name, so the list can say which body it was. */
+  name?: string;
+  /**
+   * An `unlisted` id: why it has no row — `merged` into another body (`survivor`, which has no row
+   * either; `null` when the merge chain dead-ends), `removed` or `rejected` (its row not written
+   * yet), or `not_listed` (in the library's queue, not written yet).
+   */
+  why?: NotListedWhy;
+  survivor?: { id: Id<'waterBodies'>; name: string } | null;
 };
 
 /**
@@ -416,7 +429,9 @@ export type RowByIdEntry = {
  * de-duplicated in the order given, then held to {@link ROWS_BY_IDS_MAX} (`dropped` counts the rest,
  * duplicates included); every id kept comes back in order with what became of it, never silently
  * left out. A row is one indexed read; only an id with no row reads its body (to follow a merge from
- * its pointer, hop-capped as every body read is).
+ * its pointer, hop-capped as every body read is) — and names it, with why it isn't listed (B01-3n):
+ * merged into a survivor with no row (named), removed or rejected, or not written yet. An id that is
+ * no body at all is `unknown`, with no name to give.
  */
 export const rowsByIds = query({
   args: { ids: v.array(v.string()), now: v.optional(v.number()) },
@@ -448,16 +463,29 @@ export const rowsByIds = query({
         continue;
       }
       if (body.dedupStatus !== 'merged') {
-        entries.push({ requested, status: 'unlisted', row: null });
+        // Named, with why: a standing that lists it, once its row is written, or not at all.
+        const standing = libraryStandingOf(body);
+        const why: NotListedWhy =
+          standing === 'removed' || standing === 'rejected' ? standing : 'not_listed';
+        entries.push({ requested, status: 'unlisted', row: null, name: body.name, why });
         continue;
       }
       // Walked on from the pointer already in hand: the body, with its outline, is read once.
-      const survivor =
+      const found =
         body.mergedIntoId === undefined ? null : await resolveSurvivor(ctx, body.mergedIntoId);
+      // A chain past the hop cap ends on a body still merged: no survivor to name.
+      const survivor = found === null || found.mergedIntoId !== undefined ? null : found;
       const row = survivor === null ? null : await rowOf(survivor._id);
       entries.push(
         row === null
-          ? { requested, status: 'unlisted', row: null }
+          ? {
+              requested,
+              status: 'unlisted',
+              row: null,
+              name: body.name,
+              why: 'merged',
+              survivor: survivor === null ? null : { id: survivor._id, name: survivor.name },
+            }
           : {
               requested,
               status: 'merged',

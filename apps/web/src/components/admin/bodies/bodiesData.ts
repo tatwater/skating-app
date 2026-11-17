@@ -1,4 +1,6 @@
+import type { api } from '@skating/convex/api';
 import type { DepthSource } from '@skating/core';
+import type { FunctionReturnType } from 'convex/server';
 import type { Removal } from '../body/frame/bodyModel';
 import type { Count } from '../overview/overviewModel';
 import type { BodyColumnId, BodyRow, Completeness } from './bodiesModel';
@@ -84,11 +86,24 @@ export interface BodiesListData {
   /** The state tabs, in order (All is always first and is not here). */
   states: readonly string[];
   /**
-   * Opened recently's ids the library didn't list: `unlisted` — a body with no library row;
-   * `unknown` — no such body; `dropped` — past what one read takes. Said at the list's end.
+   * Opened recently's ids the library didn't list: `bodies` — each body with no library row, by
+   * name, with why; `unknown` — ids that are no body (any more); `dropped` — past what one read
+   * takes. Said at the list's end.
    */
-  notListed?: { unlisted: number; unknown: number; dropped: number };
+  notListed?: NotListed;
 }
+
+/** Why a body opened here has no row in the library — `bodies.rowsByIds`' own `why`, never a copy. */
+export type NotListedWhy = NonNullable<
+  FunctionReturnType<typeof api.bodies.rowsByIds>['entries'][number]['why']
+>;
+
+/** Opened recently's ids the library didn't list, said at the list's end. */
+export type NotListed = {
+  bodies: readonly { name: string; why: NotListedWhy; survivor: string | null }[];
+  unknown: number;
+  dropped: number;
+};
 
 export const UNREAD_LIST: BodiesListData = {
   status: 'unread',

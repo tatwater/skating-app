@@ -3,7 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { MAX_BODY_ATTEMPTS, RECURRENCE_LEASE_MS } from './recurrence';
+import { LIVE_SIGHTINGS_READ, MAX_BODY_ATTEMPTS, RECURRENCE_LEASE_MS } from './recurrence';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1316,6 +1316,61 @@ describe('listQueue’s filters, and the advisory yielding', () => {
     const stored = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
     expect(stored?.memberHazardIds).not.toContain(fresh); // the point: not a member, and still yields
     expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(0);
+  });
+
+  test('past the live-sighting bound, every advisory stands down — never one claimed clear of pins it didn’t read (B01-3n)', async () => {
+    // The read of this season's pins is bounded. Past the bound, an unread pin could sit inside any
+    // pattern's footprint, so returning an advisory would say "no live pin here" from a partial read.
+    // Yielding is the conservative answer (§9.3's rule): the history says nothing beside pins it
+    // could not compare itself to, and every pin is still drawn by its own read.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const skater = await seedUser(t, 'skater');
+    const waterBodyId = await seedBody(t);
+    // Past winters' pins, archived: history, and never counted toward this season's bound.
+    for (const season of [CURRENT_SEASON - 3, CURRENT_SEASON - 2, CURRENT_SEASON - 1]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10, status: 'archived' });
+    }
+    await runPass(t);
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query('hazardRecurrence').first();
+      if (row) await ctx.db.patch(row._id, { publiclyVisible: true });
+    });
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
+    // This season's pins, each a kilometer away — none would silence the pattern if read.
+    const pins = (n: number, status: 'active' | 'archived' = 'active') =>
+      t.run(async (ctx) => {
+        const at = inSeason(CURRENT_SEASON, 100);
+        const lng = 0.5 + 1000 / 111_320;
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert('hazards', {
+            waterBodyId,
+            type: 'pressure_ridge',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [lng, 0.5] },
+            radiusMeters: 30,
+            bbox: { minLat: 0.4995, minLng: lng - 0.0004, maxLat: 0.5005, maxLng: lng + 0.0004 },
+            createdByUserId: author.id,
+            photoIds: [],
+            status,
+            moderationStatus: 'visible',
+            firstReportedAt: at + i,
+            lastConfirmedAt: at + i,
+            confirmCount: 0,
+            goneCount: 0,
+            createdAt: at + i,
+          });
+        }
+      });
+    // Archived pins this season, however many, are not live and don't count toward the bound.
+    await pins(LIVE_SIGHTINGS_READ + 5, 'archived');
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
+    // Exactly at the bound: every pin was read and compared, so the history speaks.
+    await pins(LIVE_SIGHTINGS_READ);
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
+    // One past it: the read can't vouch for the pins it didn't read, and stands every advisory down.
+    await pins(1);
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toEqual([]);
   });
 
   test('a pin far away, or of another family, does not silence the history', async () => {
