@@ -635,7 +635,7 @@ export async function deletedPage(
     .filter((c) => limit === null || !before(limit, c.key))
     .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
   // A pinned page's rows are those up to its end; it is whole only if every range is known that far
-  // (the fence's contract, above; `recordEndCursor.test.ts` mutation-checks it).
+  // (the fence's contract, above; `recordEndCursor.test.ts` goes red if `known` ignores it).
   const inRange = candidates.filter((c) => within(end.at, c.key));
   const known = end.at === null || limit === null || !before(limit, end.at);
   const considered = inRange.slice(0, RECORD_PAGE_ROWS.n);

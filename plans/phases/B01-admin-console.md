@@ -4670,24 +4670,34 @@ each fixed as its class with a failing test first (2026-11-16). No decision mint
 
 - **The record lists' model runs over what the web sends** (Greptile on #145, P2: the Deleted model
   always narrowed to comments, so the merged default tab — and its fence, `known` — never ran). The
-  class: a model that pins a parameter the page varies. The property now generates the scope — the
-  default tab (no `targetType`) or each kind — for all three lists, over Reports, Posts and comments,
-  with times from a small set so kinds tie. Whether *merged* is its own path: **Standing and
-  Reversed** read one index range either way (`by_subject_standing` / `…_reversed`, or the `…_type`
-  index narrowed) — merged is a different index, not a merge, its order the key then the newer row;
-  **Deleted** merges five ranges (`DELETED_KINDS`, a few heavy rows a page) by withdrawal time, then
-  the kind's place, then the newer row, and only it has a fence. The fence's contract is written
-  beside the code: a row is placed only once every kind that could sort ahead of it is known up to
-  it, so a pinned page is whole only when the fence is at or past its end. Merged Deleted adds
-  Greptile's case (a full Report range ending before a pinned end: the page splits, every row stays
-  in order), an explicit tie across kinds (Report, Post, comment; the newer first within a kind), and
-  a property over mixes where a full range ends before another kind's rows. **Mutation check:**
-  `known` forced true turned Greptile's case and every merged run red, and the generated-scope
-  property too. No bug surfaced in the merged path. **The web side:** the People list's stitching
-  tests ran one lane and one search, and the record sheet's pinning tests the default tab only; both
-  now run every list the pages can show (every lane, a search over a lane; each tab merged and
-  narrowed), each later read holding the list's own arguments. `pageChain`'s model is lane-agnostic
-  by design — the server's two paging modes (a split point, or none) are what it varies.
+  class: a model that pins a parameter the page varies. The property now runs every scope — the
+  default tab (no `targetType`) or one kind — on every seed, for all three lists, over all five
+  kinds the filter sends (Reports, Posts, comments, hazards, access alerts — an alert withdrawn by its
+  own author's retraction, its own index), with times from a small set so kinds tie. The scope is enumerated, not drawn: drawn
+  over five runs, seed 7 never drew the merged list, and a narrowed run held a row or two of its
+  kind — one page, nothing to pin. Narrowed, most rows are the scope's kind. The comment and alert
+  ranges shrink with the page (`DELETED_TAKE` / `DELETED_ALONE`, a page's worth), so a full comment range
+  fences a page too. Whether *merged* is its own path: **Standing and Reversed** read one index
+  range either way (`by_subject_standing` / `…_reversed`, or the `…_type` index narrowed) — merged
+  is a different index, not a merge, its order the key then the newer row; **Deleted** merges five
+  ranges (`DELETED_KINDS`, a few heavy rows a page) by withdrawal time, then the kind's place, then
+  the newer row, and only it has a fence. The fence's contract is written beside the code: a row is
+  placed only once every kind that could sort ahead of it is known up to it, so a pinned page is
+  whole only when the fence is at or past its end. Merged Deleted adds Greptile's case (a full
+  Report range ending before a pinned end: the page splits, every row stays in order), an explicit
+  tie across kinds (Report, Post, comment; the newer first within a kind), and a property over mixes
+  where a full range ends before another kind's rows — each run ending with two Reports or hazards
+  landing at the top of the pinned first page, so its heavy range fills ahead of the page's end;
+  Greptile's case holds its page to fewer rows
+  than a page, so the split is the fence's, not its size. **Mutation check:** `known` forced true
+  turns Greptile's case, the comment page that grew past a page, and the mixes property on every
+  seed red (pinned and random); the per-scope property catches it on some seeds, not all (it needs a
+  heavy row added inside a held page, which the mixes property forces). No bug surfaced in the merged path. **The web side:** the People list's
+  stitching tests ran one lane and one search, and the record sheet's pinning tests the default tab
+  only; both now run every list the pages can show (every lane, a search over a lane; each tab
+  merged and narrowed), each later read holding the list's own arguments, and the pinned, asked-on
+  and split reads each asserted made. `pageChain`'s model is lane-agnostic by design — the server's
+  two paging modes (a split point, or none) are what it varies.
 
 **Words this pass added** (for the founder's copy pass): in `person/factWords.ts` — *Since ‹date›*;
 *Since: not recorded yet*; *Since: not found in what this read covers*; *This season: ‹N asks›, ‹N› over

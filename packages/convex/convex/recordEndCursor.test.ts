@@ -10,15 +10,19 @@
  * against random changes anywhere in the list while deeper pages are held. After each change the
  * chain is settled and its rows must be the list's own from its start — none twice, none lost, in
  * order — and `isDone` only when nothing follows. Pages are shrunk to three rows (`RECORD_PAGE_ROWS`)
- * so a handful of rows spans several. Pinned seeds plus one random seed, logged.
+ * so a handful of rows spans several, and the Deleted list's comment ranges — a page's worth — with
+ * them, so a full comment range fences the page as a full Report range does. Pinned seeds plus one
+ * random seed, logged.
  */
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { DELETED_ALONE } from './contentRecord';
+import { ERASABLE } from './lib/eraseClock';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
-import { RECORD_PAGE, RECORD_PAGE_ROWS } from './lib/recordReads';
+import { DELETED_TAKE, RECORD_PAGE, RECORD_PAGE_ROWS } from './lib/recordReads';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -29,9 +33,17 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(T0);
   RECORD_PAGE_ROWS.n = ROWS;
+  DELETED_TAKE.comment = ROWS;
+  DELETED_ALONE.comment = ROWS;
+  DELETED_TAKE.accessAlert = ROWS;
+  DELETED_ALONE.accessAlert = ROWS;
 });
 afterEach(() => {
   RECORD_PAGE_ROWS.n = RECORD_PAGE;
+  DELETED_TAKE.comment = RECORD_PAGE;
+  DELETED_ALONE.comment = RECORD_PAGE;
+  DELETED_TAKE.accessAlert = RECORD_PAGE;
+  DELETED_ALONE.accessAlert = RECORD_PAGE;
   vi.useRealTimers();
 });
 
@@ -116,60 +128,91 @@ async function world() {
 }
 type W = Awaited<ReturnType<typeof world>>;
 type List = 'personVerdicts' | 'personReversed' | 'personDeleted';
-/** The kinds the model makes: the Deleted list's three cheapest, in its tie-break order. */
-type Kind = 'report' | 'post' | 'comment';
-const KINDS: readonly Kind[] = ['report', 'post', 'comment'];
+/**
+ * The kinds the model makes: all five the web's filter can send, in the merged Deleted list's
+ * tie-break order (`DELETED_KINDS`) — Reports and hazards taken a couple a page, Posts one, comments
+ * and access alerts a page's worth (shrunk to a page here, so every range can fill).
+ */
+type Kind = 'report' | 'post' | 'comment' | 'hazard' | 'accessAlert';
+const KINDS: readonly Kind[] = ['report', 'post', 'comment', 'hazard', 'accessAlert'];
 /** What the web sends: one kind (the filter), or none — the default tab, every kind merged. */
 type Scope = Kind | null;
 const SCOPES: readonly Scope[] = [null, ...KINDS];
 /** The merged Deleted list's tie-break between kinds at one withdrawal time (`DELETED_KINDS`). */
-const KIND_ORDER: Record<Kind, number> = { report: 0, post: 1, comment: 2 };
+const KIND_ORDER: Record<Kind, number> = {
+  report: 0,
+  post: 1,
+  comment: 2,
+  hazard: 3,
+  accessAlert: 4,
+};
 
 /** One of rob's things: hidden under a decision (standing or ended), or withdrawn by him. */
 async function item(w: W, list: List, kind: Kind, at: number): Promise<string> {
   return w.t.run(async (ctx) => {
     const deleted = list === 'personDeleted';
-    const withdrawn = deleted ? { authorDeletedAt: at, eraseAt: at + 30 * 86_400_000 } : {};
-    const status = deleted ? ('visible' as const) : ('hidden' as const);
-    const id =
-      kind === 'comment'
-        ? await ctx.db.insert('comments', {
-            reportId: w.on,
-            authorId: w.rob,
-            body: 'b',
-            moderationStatus: status,
-            source: 'native' as const,
-            createdAt: at - 1,
-            ...withdrawn,
-          } as never)
-        : kind === 'report'
-          ? await ctx.db.insert('reports', {
-              authorId: w.rob,
-              waterBodyId: w.waterBodyId,
-              point: { lat: 0.5, lng: 0.5 },
-              skateEndTime: at,
-              reportTime: at,
-              source: 'native' as const,
-              iceTypes: [],
-              surfaceTags: [],
-              photoIds: [],
-              moderationStatus: status,
-              hazardIdsCreated: [],
-              createdAt: at - 1,
-              updatedAt: at - 1,
-              ...withdrawn,
-            } as never)
-          : await ctx.db.insert('posts', {
-              authorId: w.rob,
-              reportIds: [],
-              photoIds: [],
-              moderationStatus: status,
-              latestSkateEndTime: at,
-              createdAt: at - 1,
-              updatedAt: at - 1,
-              ...withdrawn,
-            } as never);
-    if (deleted) return id as string;
+    const own: Record<Kind, Record<string, unknown>> = {
+      comment: { reportId: w.on, body: 'b', source: 'native' },
+      report: {
+        waterBodyId: w.waterBodyId,
+        point: { lat: 0.5, lng: 0.5 },
+        skateEndTime: at,
+        reportTime: at,
+        source: 'native',
+        iceTypes: [],
+        surfaceTags: [],
+        photoIds: [],
+        hazardIdsCreated: [],
+        updatedAt: at - 1,
+      },
+      // A member, so a hidden Post is a Post, never one emptied (which reads as withdrawn).
+      post: { reportIds: [w.on], photoIds: [], latestSkateEndTime: at, updatedAt: at - 1 },
+      hazard: {
+        waterBodyId: w.waterBodyId,
+        type: 'open_water',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+        radiusMeters: 20,
+        bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
+        photoIds: [],
+        status: 'active',
+        firstReportedAt: at - 1,
+        lastConfirmedAt: at - 1,
+        confirmCount: 0,
+        goneCount: 0,
+      },
+      accessAlert: {
+        targetType: 'put_in',
+        waterBodyId: w.waterBodyId,
+        reason: 'not_plowed',
+        kind: 'blocker',
+        season: 2026,
+        confirmCount: 0,
+        denyCount: 0,
+      },
+    };
+    const byAuthor =
+      kind === 'hazard' || kind === 'accessAlert'
+        ? { createdByUserId: w.rob }
+        : { authorId: w.rob };
+    // Withdrawn: deleted by its author — an alert retracted by its own author.
+    const withdrawn = !deleted
+      ? {}
+      : kind === 'accessAlert'
+        ? { retractedAt: at, retractedByUserId: w.rob, eraseAt: at + 30 * 86_400_000 }
+        : { authorDeletedAt: at, eraseAt: at + 30 * 86_400_000 };
+    const status =
+      kind === 'accessAlert'
+        ? { status: deleted ? 'retracted' : 'active' }
+        : { moderationStatus: deleted ? 'visible' : 'hidden' };
+    const id: string = await ctx.db.insert(ERASABLE[kind], {
+      ...own[kind],
+      ...byAuthor,
+      ...status,
+      createdAt: at - 1,
+      ...withdrawn,
+    } as never);
+    if (deleted) return id;
     const actionId = await ctx.db.insert('moderationActions', {
       actorId: w.mod,
       action: 'hide',
@@ -202,7 +245,7 @@ async function item(w: W, list: List, kind: Kind, at: number): Promise<string> {
       superseded: false,
       ...(endedBy ? { endedAt: at + 1, endedByActionId: endedBy } : {}),
     });
-    return id as string;
+    return id;
   });
 }
 
@@ -210,7 +253,7 @@ async function item(w: W, list: List, kind: Kind, at: number): Promise<string> {
 async function remove(w: W, list: List, id: string) {
   await w.t.run(async (ctx) => {
     if (list === 'personDeleted') {
-      await ctx.db.delete(id as Id<'comments'>);
+      await ctx.db.delete(id as Id<(typeof ERASABLE)[Kind]>);
       return;
     }
     const verdicts = await ctx.db.query('contentVerdicts').collect();
@@ -230,15 +273,24 @@ async function truth(w: W, list: List, scope: Scope): Promise<string[]> {
       const kept = (kind: Kind) => scope === null || scope === kind;
       for (const kind of KINDS) {
         if (!kept(kind)) continue;
-        const table = kind === 'report' ? 'reports' : kind === 'post' ? 'posts' : 'comments';
-        for (const d of (await ctx.db.query(table).collect()) as Array<{
+        for (const d of (await ctx.db.query(ERASABLE[kind]).collect()) as Array<{
           _id: string;
           _creationTime: number;
-          authorId: string;
+          authorId?: string;
+          createdByUserId?: string;
           authorDeletedAt?: number;
+          retractedAt?: number;
+          retractedByUserId?: string;
         }>) {
-          if (d.authorId !== w.rob || d.authorDeletedAt === undefined) continue;
-          rows.push({ id: d._id, kind, at: d.authorDeletedAt, ct: d._creationTime });
+          const author = d.authorId ?? d.createdByUserId;
+          const at =
+            kind === 'accessAlert'
+              ? d.retractedByUserId === author
+                ? d.retractedAt
+                : undefined
+              : d.authorDeletedAt;
+          if (author !== w.rob || at === undefined) continue;
+          rows.push({ id: d._id, kind, at, ct: d._creationTime });
         }
       }
       rows.sort((a, b) => b.at - a.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.ct - a.ct);
@@ -355,14 +407,21 @@ type Op =
 /** Times from a small set, so rows of different kinds tie on the key as often as not. */
 const atArb = fc.nat(12);
 const kindArb = fc.constantFrom(...KINDS);
-const opArb: fc.Arbitrary<Op> = fc.oneof(
-  {
-    weight: 3,
-    arbitrary: fc.record({ kind: fc.constant('add' as const), what: kindArb, at: atArb }),
-  },
-  { weight: 2, arbitrary: fc.record({ kind: fc.constant('remove' as const), pick: fc.nat(99) }) },
-  { weight: 3, arbitrary: fc.constant<Op>({ kind: 'more' }) },
-);
+/**
+ * The kinds a run makes: every kind on the default tab; narrowed, mostly the scope's own — so its list
+ * spans several pages — and now and then another kind's, which must stay out of it.
+ */
+const kindsFor = (scope: Scope): fc.Arbitrary<Kind> =>
+  scope === null
+    ? kindArb
+    : fc.oneof({ weight: 3, arbitrary: fc.constant(scope) }, { weight: 1, arbitrary: kindArb });
+const opsOf = (what: fc.Arbitrary<Kind>): fc.Arbitrary<Op> =>
+  fc.oneof(
+    { weight: 3, arbitrary: fc.record({ kind: fc.constant('add' as const), what, at: atArb }) },
+    { weight: 2, arbitrary: fc.record({ kind: fc.constant('remove' as const), pick: fc.nat(99) }) },
+    { weight: 3, arbitrary: fc.constant<Op>({ kind: 'more' }) },
+  );
+const opArb = opsOf(kindArb);
 const at = (n: number) => T0 - 10_000 + n * 10;
 
 async function drive(list: List, scope: Scope, seeded: { what: Kind; at: number }[], ops: Op[]) {
@@ -398,17 +457,22 @@ const SEEDS = [20261116, 7, Math.floor(Math.random() * 2 ** 31)];
 describe.each(['personVerdicts', 'personReversed', 'personDeleted'] as const)(
   '%s: a page read past holds its rows',
   (list) => {
-    test.each(SEEDS)(
-      'changes anywhere while deeper pages are held, every kind or one: none twice, none lost, in order (seed %i)',
-      async (seed) => {
-        console.log(`recordEndCursor ${list} seed ${seed}`);
+    // The parameter the web sends — the default tab (every kind) or one kind — each run on every
+    // seed, never left to a draw: a seed whose few runs never drew the merged list would not run it.
+    test.each(
+      SEEDS.flatMap((seed) =>
+        SCOPES.map((scope) => ({ seed, scope, label: scope ?? 'every kind' })),
+      ),
+    )(
+      'changes anywhere while deeper pages are held, $label: none twice, none lost, in order (seed $seed)',
+      async ({ seed, scope, label }) => {
+        console.log(`recordEndCursor ${list} ${label} seed ${seed}`);
+        const what = kindsFor(scope);
         await fc.assert(
           fc.asyncProperty(
-            // The parameter the web sends, generated: the default tab (every kind) or one kind.
-            fc.constantFrom(...SCOPES),
-            fc.array(fc.record({ what: kindArb, at: atArb }), { minLength: 4, maxLength: 9 }),
-            fc.array(opArb, { maxLength: 8 }),
-            (scope, seeded, ops) => drive(list, scope, seeded, ops).then(() => undefined),
+            fc.array(fc.record({ what, at: atArb }), { minLength: 4, maxLength: 9 }),
+            fc.array(opsOf(what), { maxLength: 8 }),
+            (seeded, ops) => drive(list, scope, seeded, ops).then(() => undefined),
           ),
           { seed, numRuns: 5 },
         );
@@ -494,6 +558,10 @@ describe('personDeleted, every kind merged (the default tab)', () => {
     const pinned = await readLink(w, 'personDeleted', null, { cursor: null, end });
     expect(pinned.pageStatus).toBe('SplitRequired');
     expect(pinned.continueCursor).toBe(end);
+    // Fewer rows than a page: the fence split it, not its size (were a page to ask more Reports,
+    // this would be a page grown past its rows, and the case would test nothing of the fence).
+    expect(pinned.page).toHaveLength(DELETED_TAKE.report);
+    expect(DELETED_TAKE.report).toBeLessThan(ROWS);
     expect(pinned.page.map((r) => r.targetId)).toEqual(
       (await truth(w, 'personDeleted', null)).slice(0, pinned.page.length),
     );
@@ -544,13 +612,30 @@ describe('personDeleted, every kind merged (the default tab)', () => {
           // Reports and Posts fill their few-a-page ranges; comments rarely do.
           fc.array(
             fc.record({
-              what: fc.constantFrom<Kind>('report', 'report', 'post', 'comment'),
+              what: fc.constantFrom<Kind>(
+                'report',
+                'report',
+                'post',
+                'comment',
+                'hazard',
+                'accessAlert',
+              ),
               at: atArb,
             }),
             { minLength: 5, maxLength: 10 },
           ),
           fc.array(opArb, { minLength: 2, maxLength: 8 }),
-          (seeded, ops) => drive('personDeleted', null, seeded, ops).then(() => undefined),
+          // A heavy kind landing at the top of the first page once it is pinned: its range fills
+          // ahead of the page's end — the fence before the end, every run, whatever the mix.
+          fc.constantFrom<Kind>('report', 'hazard'),
+          (seeded, ops, heavy) =>
+            drive('personDeleted', null, seeded, [
+              { kind: 'more' },
+              ...ops,
+              { kind: 'add', what: heavy, at: 13 },
+              { kind: 'add', what: heavy, at: 13 },
+              { kind: 'more' },
+            ]).then(() => undefined),
         ),
         { seed, numRuns: 6 },
       );

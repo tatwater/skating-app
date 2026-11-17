@@ -431,7 +431,21 @@ describe('a chain kept stitched', () => {
       rerender(<PeopleListRoute />);
       expectAll();
       const calls = pageCalls();
-      expect(calls.some((a) => a.endCursor !== undefined)).toBe(true);
+      // Each read the title names was made — else the loop below has nothing of it to check.
+      expect(
+        calls.some((a) => a.cursor === null && a.endCursor !== undefined),
+        'pinned',
+      ).toBe(true);
+      expect(
+        calls.some((a) => a.cursor !== null),
+        'asked on',
+      ).toBe(true);
+      // A keyed lane's split half (a search splits by reading its page again unbounded).
+      if (q === undefined)
+        expect(
+          calls.some((a) => a.cursor !== null && a.endCursor !== undefined),
+          'split',
+        ).toBe(true);
       for (const a of calls) {
         expect(a.lane).toBe(lane);
         expect(a.search).toBe(q);
