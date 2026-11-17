@@ -111,7 +111,11 @@ export const BOARD_PULSE: Record<PulseKey, PulseSeries | null> = {
   accounts: series([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0]),
   // People are distinct across the season, not the sum of the days.
   signedIn: series([4, 3, 8, 6, 4, 9, 11, 7, 5, 10, 8, 4, 6, 5], undefined, 24),
-  contributors: series([3, 3, 4, 4, 4, 5, 6, 6, 6, 6, 5, 6, 6, 6], undefined, 11),
+  contributors: {
+    ...series([3, 3, 4, 4, 4, 5, 6, 6, 6, 6, 5, 6, 6, 6], undefined, 11),
+    // First-timers each day; today the walk hasn't reached yet (a dashed bar, not a zero).
+    split: { daily: [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null], newPeople: 2 },
+  },
 };
 
 /** 10 AM in New Hampshire on a board day. */
@@ -125,6 +129,12 @@ export const BOARD_SHOWING_UP: ShowingUpData = {
     contributors: { people: 6, firstTime: 2 },
   },
   pulse: BOARD_PULSE,
+  // The board's Statistics: one bounty posted, none fulfilled — here one fulfilled a week on.
+  bounties: {
+    posted: [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    fulfilled: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    totals: { posted: 2, fulfilled: 1 },
+  },
   vantage: { on_ice: 2, shore: 11, secondhand: 1, unstated: 0 },
   mostReported: [
     {
@@ -266,6 +276,7 @@ export const QUIET_SHOWING_UP: ShowingUpData = {
     signedIn: series([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2], undefined, 2),
     contributors: series(zeros(14)),
   },
+  bounties: { posted: zeros(14), fulfilled: zeros(14), totals: { posted: 0, fulfilled: 0 } },
   vantage: { on_ice: 0, shore: 0, secondhand: 0, unstated: 0 },
   mostReported: [],
 };

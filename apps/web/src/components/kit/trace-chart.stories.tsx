@@ -744,3 +744,74 @@ export const FourUp: Story = {
     await expect(tokens.MODES).toContain(themeOf(must(quads[1])).mode);
   },
 };
+
+/**
+ * **Two series a day** (B01-2b), told apart by shape: beside (bounties: posted outlined, fulfilled
+ * solid) and stacked (contributors: returning solid, first-timers outlined on top). The outline is
+ * the strip's own ink at full strength, never dimmer than a fill; a stacked day whose split isn't
+ * recorded is its whole bar, dashed — never a split it doesn't know.
+ */
+export const TwoSeries: Story = {
+  render: () => (
+    <div className="flex w-[16rem] flex-col gap-(--space-4)">
+      <Sparkbars
+        data-testid="beside"
+        className="h-(--space-8)"
+        aria-label="Bounties posted and fulfilled, each day"
+        tone="muted"
+        values={[2, 0, 1, 3]}
+        split={{
+          values: [0, 1, null, 2],
+          layout: 'beside',
+          marks: { first: 'outline', second: 'solid' },
+        }}
+      />
+      <Sparkbars
+        data-testid="stack"
+        className="h-(--space-8)"
+        aria-label="Contributors, each day"
+        tone="muted"
+        values={[4, 4, 0, 4]}
+        split={{
+          values: [1, 0, 0, null],
+          layout: 'stack',
+          marks: { first: 'solid', second: 'outline' },
+        }}
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const beside = must(canvasElement.querySelector<HTMLElement>('[data-testid="beside"]'));
+    const stack = must(canvasElement.querySelector<HTMLElement>('[data-testid="stack"]'));
+    const ink = computedColor(canvasElement, 'var(--fg2)');
+    await waitFor(() => {
+      // Beside: day 1 posted 2 (outlined) and fulfilled 0 (a stub); day 3, fulfilled not recorded.
+      const days = [...beside.querySelectorAll<HTMLElement>(':scope > [data-slot="sparkbar"]')];
+      expect(days).toHaveLength(4);
+      const posted = must(days[0]?.querySelector<HTMLElement>('[data-slot="sparkbar-first"]'));
+      expect(posted.dataset.mark).toBe('outline');
+      expect(getComputedStyle(posted).borderTopColor).toEqual(sameColor(ink));
+      expect(days[0]?.querySelector('[data-slot="sparkbar-zero"]')).not.toBeNull();
+      expect(days[2]?.querySelector('[data-unrecorded]')?.childElementCount).toBe(0);
+      const fulfilled = must(days[3]?.querySelector<HTMLElement>('[data-slot="sparkbar-second"]'));
+      expect(fulfilled.dataset.mark).toBe('solid');
+      expect(getComputedStyle(fulfilled).backgroundColor).toEqual(sameColor(ink));
+    });
+    await waitFor(() => {
+      const days = [...stack.querySelectorAll<HTMLElement>(':scope > [data-slot="sparkbar"]')];
+      // Day 1: one first-timer outlined on three returning, the whole as tall as a 4 drawn alone.
+      const top = must(days[0]?.querySelector<HTMLElement>('[data-slot="sparkbar-second"]'));
+      const rest = must(days[0]?.querySelector<HTMLElement>('[data-slot="sparkbar-first"]'));
+      expect(top.dataset.mark).toBe('outline');
+      expect(rest.dataset.mark).toBe('solid');
+      const whole = must(days[1]?.querySelector<HTMLElement>('[data-slot="sparkbar-first"]'));
+      const sum = top.getBoundingClientRect().height + rest.getBoundingClientRect().height;
+      expect(Math.abs(sum - whole.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
+      // A split not recorded: the whole bar, dashed — no part drawn as a zero.
+      expect(days[3]?.dataset.split).toBe('unrecorded');
+      const dashed = must(days[3]?.querySelector<HTMLElement>('[data-slot="sparkbar-first"]'));
+      expect(dashed.dataset.mark).toBe('dashed');
+      expect(getComputedStyle(dashed).borderTopStyle).toBe('dashed');
+    });
+  },
+};

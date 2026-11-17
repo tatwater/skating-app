@@ -32,6 +32,7 @@
 
 import {
   contributionStands,
+  metricDay,
   POSITIVE_REACTION_KINDS,
   positiveReactionOf,
   resolveSeason,
@@ -45,12 +46,36 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { firstContributionAt } from './lib/contributions';
 import { latestMetricIn } from './lib/metricReads';
 import { writeMetricSnapshot } from './lib/metrics';
 import { isCountedComment } from './lib/pulse';
 
 /** Rows read per transaction. Comments, kudos and photos each read their report too. */
 const PAGE = 300;
+
+/**
+ * Contributors whose first contribution one page looks up: each is six short reads of their first
+ * rows (`firstContributionAt`, at most `FIRST_PROBE` rows a kind), so a page reads a few hundred.
+ */
+export const FIRST_TIMER_PAGE = 25;
+
+/**
+ * **A first-timer's day** (B01-2b): a contributor is new on the day their first-ever contribution
+ * fell — first ever, across every season, by the one rule (`firstContributionAt`, D253's kinds), on
+ * the metric day (UTC) the day strips count by. Folded into `byDay` (and `newPeople`) only when that
+ * day is in the season's window; an earlier first is a returning contributor. Pure, for the tests.
+ */
+export function foldFirstTimer(
+  byDay: Record<string, number>,
+  first: number,
+  window: { firstDay: string; lastDay: string },
+): boolean {
+  const day = metricDay(first);
+  if (day < window.firstDay || day > window.lastDay) return false;
+  byDay[day] = (byDay[day] ?? 0) + 1;
+  return true;
+}
 
 /**
  * The most ids the whole tally carries — every set, every state's and every body's people together.
@@ -85,6 +110,7 @@ export const STAGES = [
   'putIns',
   'requests',
   'signIns',
+  'firstTimers',
 ] as const;
 type Stage = (typeof STAGES)[number];
 
@@ -115,6 +141,13 @@ export type Tally = {
   capped: string[];
   /** The season's sign-in rows were erased by retention (D254): signed-in can't be counted now. */
   signInsGone?: boolean;
+  /**
+   * The season's first-timers (B01-2b): how many contributors' first-ever contribution fell on each
+   * day of it, and how many in all. Counted last, over the contributors set; `'firstTimers'` in
+   * `capped` when anyone's first contribution can't be told.
+   */
+  firstTimers?: Record<string, number>;
+  newPeople?: number;
 };
 
 export function emptyTally(): Tally {
@@ -399,6 +432,29 @@ async function walkPage(
       }
       return { tally: w.pack(), isDone: page.isDone, continueCursor: page.continueCursor };
     }
+    case 'firstTimers': {
+      // The contributors set is whole once every kind of contribution has been walked; a set that
+      // ran past its cap can't say who is new.
+      if (w.capped.has('contributors')) {
+        w.capped.add('firstTimers');
+        return { tally: w.pack(), isDone: true, continueCursor: cursor ?? '' };
+      }
+      const people = t.sets.contributors;
+      const offset = cursor === null ? 0 : Number(cursor);
+      const byDay = { ...(t.firstTimers ?? {}) };
+      let newPeople = t.newPeople ?? 0;
+      for (const id of people.slice(offset, offset + FIRST_TIMER_PAGE)) {
+        const first = await firstContributionAt(ctx, id as Id<'profiles'>);
+        if (first === 'unknown') w.capped.add('firstTimers');
+        else if (first !== null && foldFirstTimer(byDay, first, span)) newPeople++;
+      }
+      const next = offset + FIRST_TIMER_PAGE;
+      return {
+        tally: { ...w.pack(), firstTimers: byDay, newPeople },
+        isDone: next >= people.length,
+        continueCursor: String(next),
+      };
+    }
     case 'signIns': {
       // A season older than the sign-in record keeps (D254) has had its rows erased: what is left
       // can't be counted. The final write keeps what an earlier walk recorded, or says not recorded.
@@ -484,6 +540,11 @@ export function reachMeta(season: Season, through: string, t: Tally) {
       ]),
     ),
     kinds: [...POSITIVE_REACTION_KINDS],
+    // Each day's new contributors and the season's, through `through`; `null` when the walk couldn't
+    // tell who is new (a capped set, a first contribution it can't date).
+    firstTimers: t.capped.includes('firstTimers')
+      ? null
+      : { byDay: t.firstTimers ?? {}, newPeople: t.newPeople ?? 0 },
     capped: t.capped,
   };
 }

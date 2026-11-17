@@ -1,5 +1,7 @@
 import { HOUR_BUCKETS, OBSERVED_FROM, type ObservedFrom } from '@skating/core';
 
+import { contributorsSplitSub } from './eachDayWords';
+
 /**
  * Overview › Metrics: the shapes the tab is drawn from, and the arithmetic between a read's rows and
  * what a board says. Nothing here reads the clock — every age takes `now` — and nothing here reads
@@ -261,6 +263,11 @@ export type PulseSeries = {
   total: number;
   /** What the total is spread over, for the strips that say so. */
   over?: number;
+  /**
+   * Contributors only (B01-2b): each day's first-timers — whose first-ever contribution fell that
+   * day — `null` on a day not told yet; and how many of the season's were new (`null`: not told).
+   */
+  split?: { daily: Array<number | null>; newPeople: number | null };
 };
 
 /** The pulse's strips, in the board's order. A strip whose series is `null` is not recorded at all. */
@@ -305,8 +312,13 @@ export function pulseSub(key: PulseKey, series: PulseSeries): string {
       return `On ${plural(over, 'body', 'bodies')}`;
     case 'accounts':
       return 'This season';
-    case 'signedIn':
     case 'contributors':
+      // The board's "2 new · 4 returning", once the walk has told who is new.
+      if (series.split !== undefined && series.split.newPeople !== null) {
+        return contributorsSplitSub(series.split.newPeople, series.total);
+      }
+      return series.total === 1 ? 'Person' : 'People';
+    case 'signedIn':
       return series.total === 1 ? 'Person' : 'People';
   }
 }
@@ -342,6 +354,16 @@ export type MostReportedRow = {
   lastReportAt: number;
 };
 
+/**
+ * The bounties row (B01-2b): posted and fulfilled per season day (`null` a day not recorded), each on
+ * the day it happened, and the season's two totals — `null` unless every day is recorded.
+ */
+export type BountyPulse = {
+  posted: Array<number | null>;
+  fulfilled: Array<number | null>;
+  totals: { posted: number; fulfilled: number } | null;
+};
+
 export type ShowingUpData = {
   /** The top stats: the last seven days. A `null` stat isn't recorded yet. */
   week: {
@@ -352,6 +374,8 @@ export type ShowingUpData = {
     contributors: { people: number; firstTime: number | null } | null;
   };
   pulse: Record<PulseKey, PulseSeries | null>;
+  /** `null` before the season's window opens (no days to read). */
+  bounties: BountyPulse | null;
   /** `null` until a read rolls the season's vantage up. */
   vantage: VantageCounts | null;
   /** `null` until a read ranks the season's bodies. */
@@ -434,6 +458,7 @@ export function metricsNotRecorded(
         PulseKey,
         PulseSeries | null
       >,
+      bounties: null,
       vantage: null,
       mostReported: null,
     },

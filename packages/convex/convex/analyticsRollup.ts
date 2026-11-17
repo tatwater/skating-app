@@ -28,6 +28,8 @@
  */
 
 import {
+  BOUNTY_FULFILL_AFTER_EXPIRY_MS,
+  bountiesOnDay,
   CONTRADICTION_COUNT_BUCKETS,
   countBy,
   HOUR_BUCKETS,
@@ -402,6 +404,41 @@ export async function rollupPulseDay(
     'positive_reactions',
     date,
     kinds === null ? NOT_RECORDED : { scalar: kinds.length, meta: countBy(kinds) },
+  );
+
+  // Bounties (B01-2b): posted on the day they were created, fulfilled on the day they were fulfilled
+  // (`bountyDays`). Posted is the day's range on `by_created_at`. A bounty is fulfilled only while it
+  // is open, and the sweep closes an open one within hours of `expiresAt`, so every bounty fulfilled
+  // on the day expires no earlier than `BOUNTY_FULFILL_AFTER_EXPIRY_MS` before it began: the
+  // fulfilled ones are that range of `by_status_expires`, then the day's stamps. Each read is the
+  // pulse's — a count whose read hits `cap` saves no number.
+  const posted = await wholeDay(
+    ctx.db
+      .query('bounties')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to)),
+    cap,
+    `bounties posted on ${date}`,
+  );
+  await writeMetricSnapshot(
+    ctx,
+    'bounties_posted',
+    date,
+    posted === null ? NOT_RECORDED : { scalar: bountiesOnDay(posted, from, to).posted },
+  );
+  const fulfilled = await wholeDay(
+    ctx.db
+      .query('bounties')
+      .withIndex('by_status_expires', (q) =>
+        q.eq('status', 'fulfilled').gte('expiresAt', from - BOUNTY_FULFILL_AFTER_EXPIRY_MS),
+      ),
+    cap,
+    `bounties fulfilled on ${date}`,
+  );
+  await writeMetricSnapshot(
+    ctx,
+    'bounties_fulfilled',
+    date,
+    fulfilled === null ? NOT_RECORDED : { scalar: bountiesOnDay(fulfilled, from, to).fulfilled },
   );
 
   const contributors = await contributorsBetween(ctx, from, to, cap);

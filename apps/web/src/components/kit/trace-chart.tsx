@@ -39,6 +39,13 @@ import { cn } from '@/lib/utils';
  * - **`Sparkbars`** — a short run of daily counts (`.trend`, `.spark`): bottom-aligned bars, the
  *   latest lit, a zero a one-hair stub, a day nothing recorded an empty slot; a red part at a bar's
  *   foot (the safety lane), and an optional amber threshold rule.
+ *   A strip may carry **two series** a day (`split`), told apart by shape, never color: each drawn
+ *   **solid** or **outlined** (outlined in the strip's own full-strength ink, never dimmer), either
+ *   **beside** each other (the day's slot halves) or **stacked** (the second on top of the rest of
+ *   the day's bar). Metrics' *Each day*: bounties posted (outlined) beside fulfilled (solid);
+ *   contributors returning (solid) under first-timers (outlined); hazards confirmed (solid) under the
+ *   rest (outlined). A stacked day whose split isn't recorded draws its whole bar dashed — never a
+ *   split it doesn't know.
  * - **`SparkbarSet`** — a stack of `Sparkbars` on one day axis read together (Metrics' *Each day*):
  *   hovering any strip, or stepping with ← → once the set has focus, draws **one** hairline through
  *   every strip at that day and **one** plate with each strip's value — never a plate per strip.
@@ -678,6 +685,8 @@ const NOT_RECORDED = 'Not recorded yet';
 type SparkbarTone = 'faint' | 'muted';
 
 const SPARK_INK: Record<SparkbarTone, string> = { faint: 'bg-fg3', muted: 'bg-fg2' };
+/** An outlined part's edge: the same ink as a filled one, at full strength. */
+const SPARK_BORDER: Record<SparkbarTone, string> = { faint: 'border-fg3', muted: 'border-fg2' };
 
 type SparkbarsProps = Omit<ComponentProps<'div'>, 'children'> & {
   /**
@@ -693,8 +702,25 @@ type SparkbarsProps = Omit<ComponentProps<'div'>, 'children'> & {
   rule?: number;
   /** The bars' resting ink. Default `faint`. */
   tone?: SparkbarTone;
+  /** Two series a day (see `SparkbarSplit`). Absent: one bar a day, as ever. */
+  split?: SparkbarSplit;
   /** What the bars count, for a reader ("Open flags, the last 14 days"). */
   'aria-label': string;
+};
+
+/** How a series' part of a bar is drawn: filled, or outlined in the same ink. */
+type SparkMark = 'solid' | 'outline';
+
+/**
+ * A strip's second series. **`beside`**: each day's slot halves — `values` (the strip's) on the left
+ * in `marks.first`, these on the right in `marks.second`; a `null` here is an empty half. **`stack`**:
+ * the strip's `values` are each day's whole bar, these the part of it on top in `marks.second`, the
+ * rest under it in `marks.first`; a `null` here (the split not recorded) draws the whole bar dashed.
+ */
+type SparkbarSplit = {
+  values: readonly (number | null)[];
+  layout: 'beside' | 'stack';
+  marks: { first: SparkMark; second: SparkMark };
 };
 
 /** The day a `SparkbarSet` is pointing at, for the strips inside it. */
@@ -706,6 +732,7 @@ function Sparkbars({
   lightLatest = false,
   rule,
   tone = 'faint',
+  split,
   className,
   ...props
 }: SparkbarsProps) {
@@ -714,7 +741,10 @@ function Sparkbars({
     v === null ? null : typeof v === 'number' ? { value: v, bad: 0 } : { bad: 0, ...v },
   );
   const recorded = bars.filter((b): b is { value: number; bad: number } => b !== null);
-  const top = Math.max(max ?? 0, ...recorded.map((b) => b.value), rule ?? 0, 1);
+  // Beside, the second series is on the same scale; stacked, it is part of the bar already counted.
+  const seconds =
+    split?.layout === 'beside' ? split.values.filter((v): v is number => v !== null) : [];
+  const top = Math.max(max ?? 0, ...recorded.map((b) => b.value), ...seconds, rule ?? 0, 1);
   const pct = (v: number) => `${(100 * v) / top}%`;
   return (
     <div
@@ -740,6 +770,82 @@ function Sparkbars({
           );
         }
         const latest = lightLatest && i === bars.length - 1;
+        if (split !== undefined) {
+          const second = split.values[i] ?? null;
+          const lit = latest || hovered;
+          const part = (value: number, mark: SparkMark, slot: string, dashed = false) =>
+            value === 0 ? (
+              <span
+                data-slot="sparkbar-zero"
+                className={cn('block h-(--stroke-hair)', hovered ? 'bg-fg2' : 'bg-line')}
+              />
+            ) : (
+              <span
+                data-slot={slot}
+                data-mark={dashed ? 'dashed' : mark}
+                className={cn(
+                  'block',
+                  mark === 'solid' && !dashed
+                    ? lit
+                      ? 'bg-fg'
+                      : SPARK_INK[tone]
+                    : cn(
+                        'border-(length:--stroke-hair)',
+                        dashed ? 'border-dashed' : 'border-solid',
+                        lit ? 'border-fg' : SPARK_BORDER[tone],
+                      ),
+                )}
+                style={{ height: pct(value) }}
+              />
+            );
+          if (split.layout === 'beside') {
+            return (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
+                key={i}
+                aria-hidden="true"
+                data-slot="sparkbar"
+                data-latest={latest ? '' : undefined}
+                data-hovered={hovered ? '' : undefined}
+                className="flex h-full min-w-0 flex-1 items-end gap-px"
+              >
+                <span className="flex h-full min-w-0 flex-1 flex-col justify-end">
+                  {part(b.value, split.marks.first, 'sparkbar-first')}
+                </span>
+                <span
+                  data-unrecorded={second === null ? '' : undefined}
+                  className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                >
+                  {second !== null && part(second, split.marks.second, 'sparkbar-second')}
+                </span>
+              </span>
+            );
+          }
+          // Stacked: the second on top of the rest; a split not recorded is the whole bar, dashed.
+          const upper = second === null ? 0 : Math.min(second, b.value);
+          return (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
+              key={i}
+              aria-hidden="true"
+              data-slot="sparkbar"
+              data-latest={latest ? '' : undefined}
+              data-hovered={hovered ? '' : undefined}
+              data-split={second === null ? 'unrecorded' : undefined}
+              className="flex h-full min-w-0 flex-1 flex-col justify-end"
+            >
+              {second === null || b.value === 0 ? (
+                part(b.value, split.marks.first, 'sparkbar-first', second === null)
+              ) : (
+                <>
+                  {upper > 0 && part(upper, split.marks.second, 'sparkbar-second')}
+                  {b.value - upper > 0 &&
+                    part(b.value - upper, split.marks.first, 'sparkbar-first')}
+                </>
+              )}
+            </span>
+          );
+        }
         return (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
@@ -1039,9 +1145,11 @@ export {
   SparkbarSet,
   type SparkbarSetProps,
   type SparkbarSetRow,
+  type SparkbarSplit,
   Sparkbars,
   type SparkbarsProps,
   type SparkbarTone,
+  type SparkMark,
   StageBar,
   type StageBarProps,
   type StageState,

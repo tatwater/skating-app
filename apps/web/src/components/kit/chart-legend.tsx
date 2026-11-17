@@ -20,8 +20,8 @@ type LegendItem = {
   label: ReactNode;
   /** The series' paint, as a CSS color (a token: `var(--bad)`). */
   ink: string;
-  /** `bar` (default) draws a square, `line` a hairline. */
-  mark?: 'bar' | 'line';
+  /** `bar` (default) draws a square, `outline` a hollow one (a second count beside a bar), `line` a hairline. */
+  mark?: 'bar' | 'outline' | 'line';
   /** A line's pattern: solid (default), or dashed as a threshold rule is drawn. */
   pattern?: 'solid' | 'dashed';
 };
@@ -60,9 +60,15 @@ function ChartLegend({ items, className, ...props }: ChartLegendProps) {
                     'h-0 w-(--space-4) border-t-(length:--stroke-hair)',
                     item.pattern === 'dashed' ? 'border-dashed' : 'border-solid',
                   )
-                : 'size-(--space-2)',
+                : item.mark === 'outline'
+                  ? 'size-(--space-2) border border-solid'
+                  : 'size-(--space-2)',
             )}
-            style={item.mark === 'line' ? { borderColor: item.ink } : { background: item.ink }}
+            style={
+              item.mark === 'line' || item.mark === 'outline'
+                ? { borderColor: item.ink }
+                : { background: item.ink }
+            }
           />
           {item.label}
         </li>

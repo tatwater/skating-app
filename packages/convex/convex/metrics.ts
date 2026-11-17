@@ -96,6 +96,10 @@ async function seasonRow<T extends { season: number }>(
 /** What `season_reach` stores (`seasonReach.reachMeta`). */
 type Reach = {
   season: number;
+  /** The last day the walk covered. */
+  through?: string;
+  /** Each day's new contributors and the season's (B01-2b); `null` when not told, absent before. */
+  firstTimers?: { byDay: Record<string, number>; newPeople: number } | null;
   counts: { reports: number; comments: number; kudos: number; photos: number; hazards: number };
   over: { reports: number; comments: number; kudos: number; photos: number; hazards: number };
   people: { signedIn: number; contributors: number };
@@ -222,7 +226,16 @@ const PULSE_KEYS = [
   'contributors',
 ] as const;
 type PulseKey = (typeof PULSE_KEYS)[number];
-type PulseSeries = { daily: Array<number | null>; total: number; over?: number };
+type PulseSeries = {
+  daily: Array<number | null>;
+  total: number;
+  over?: number;
+  /**
+   * Contributors only (B01-2b): each day's first-timers — whose first-ever contribution fell that
+   * day — `null` on a day the walk hasn't told; and how many of the season's were new.
+   */
+  split?: { daily: Array<number | null>; newPeople: number | null };
+};
 
 /** Each strip's daily rollup. */
 const PULSE_METRIC = {
@@ -271,7 +284,13 @@ function pulseFrom(
         : null;
     } else if (key === 'signedIn' || key === 'contributors') {
       out[key] =
-        reach !== null && uncapped(key) ? { daily: daily[key], total: reach.people[key] } : null;
+        reach !== null && uncapped(key)
+          ? {
+              daily: daily[key],
+              total: reach.people[key],
+              ...(key === 'contributors' && { split: contributorSplit(reach, days) }),
+            }
+          : null;
     } else {
       out[key] =
         reach !== null && uncapped(OVER_SET[key])
@@ -339,6 +358,14 @@ export const showingUp = query({
             unstated: reach.vantage.unstated ?? 0,
           };
 
+    const bounties =
+      days.length === 0
+        ? null
+        : bountyPulse(
+            await scalarsOver(ctx, 'bounties_posted', days),
+            await scalarsOver(ctx, 'bounties_fulfilled', days),
+          );
+
     return {
       season,
       opensOn,
@@ -346,12 +373,57 @@ export const showingUp = query({
       showingUp: {
         week: { reports, accounts, signedIn, contributors },
         pulse: pulseFrom(daily, reach, days),
+        bounties,
         vantage,
         mostReported: days.length === 0 ? null : await mostReportedRows(ctx, season, days),
       },
     };
   },
 });
+
+/**
+ * The contributors row's split (B01-2b): each day's first-timers from the season's walk, through the
+ * last day it covered — a later day, or a walk that couldn't tell who is new, is `null`, never a zero
+ * — and how many of the season's contributors were new.
+ */
+export function contributorSplit(
+  reach: Pick<Reach, 'through' | 'firstTimers'>,
+  days: readonly string[],
+): { daily: Array<number | null>; newPeople: number | null } {
+  const told = reach.firstTimers;
+  const through = reach.through;
+  if (told === undefined || told === null || through === undefined) {
+    return { daily: days.map(() => null), newPeople: null };
+  }
+  return {
+    daily: days.map((d) => (d <= through ? (told.byDay[d] ?? 0) : null)),
+    newPeople: told.newPeople,
+  };
+}
+
+/**
+ * The *Each day* bounties row (B01-2b): posted and fulfilled per season day, each `null` on a day no
+ * rollup recorded; the season's two totals are the days' sums, and `null` unless every day is
+ * recorded — a total over part of the season is never shown as the season's.
+ */
+export function bountyPulse(
+  posted: ReadonlyArray<number | null>,
+  fulfilled: ReadonlyArray<number | null>,
+): {
+  posted: Array<number | null>;
+  fulfilled: Array<number | null>;
+  totals: { posted: number; fulfilled: number } | null;
+} {
+  const whole = (days: ReadonlyArray<number | null>) =>
+    days.every((n) => n !== null) ? days.reduce<number>((a, n) => a + (n ?? 0), 0) : null;
+  const p = whole(posted);
+  const f = whole(fulfilled);
+  return {
+    posted: [...posted],
+    fulfilled: [...fulfilled],
+    totals: p === null || f === null ? null : { posted: p, fulfilled: f },
+  };
+}
 
 /**
  * *Signed in* this week, and *on two days or more* of it. `null` unless the sign-in record covers

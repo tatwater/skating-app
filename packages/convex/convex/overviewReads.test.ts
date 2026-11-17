@@ -14,6 +14,7 @@
  */
 import { metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -22,8 +23,17 @@ import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
 import { refreshPersonRow } from './lib/peopleRows';
 import { cardRows, type JobRow } from './machinery';
+import { contributorSplit } from './metrics';
 import schema from './schema';
-import { BODY_CAP, emptyTally, mostReported, SET_ID_CAP, unpack } from './seasonReach';
+import {
+  BODY_CAP,
+  emptyTally,
+  FIRST_TIMER_PAGE,
+  foldFirstTimer,
+  mostReported,
+  SET_ID_CAP,
+  unpack,
+} from './seasonReach';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -765,6 +775,30 @@ describe('console.systemFeed — what the machines did', () => {
 
 // ── The day pulse ───────────────────────────────────────────────────────────────────────────────
 
+/** A bounty posted at `createdAt` in `status`; a fulfilled one stamped at `fulfilledAt`. */
+async function seedBounty(
+  t: T,
+  requester: Id<'profiles'>,
+  body: Id<'waterBodies'>,
+  createdAt: number,
+  status: 'open' | 'fulfilled' | 'canceled' | 'expired' = 'open',
+  fulfilledAt?: number,
+) {
+  return await t.run((ctx) =>
+    ctx.db.insert('bounties', {
+      requesterId: requester,
+      waterBodyId: body,
+      windowHours: 24,
+      status,
+      rewardPoints: 5,
+      fulfillingReportIds: [],
+      ...(fulfilledAt !== undefined ? { fulfilledAt } : {}),
+      createdAt,
+      expiresAt: createdAt + 30 * DAY,
+    }),
+  );
+}
+
 describe('the day pulse rollup', () => {
   test('counts visible comments, attached photos, kudos and contributors for the day', async () => {
     const t = harness();
@@ -797,6 +831,26 @@ describe('the day pulse rollup', () => {
     expect((await readSnapshot(t, 'daily_contributors', TODAY))?.scalar).toBe(2);
   });
 
+  test('a bounty is posted on the day it was made and fulfilled on the day it was fulfilled', async () => {
+    const t = harness();
+    const ada = await seedUser(t, 'ada');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const yesterday = '2026-11-12';
+    // Posted yesterday, fulfilled today; posted yesterday, then canceled; posted today, expired.
+    await seedBounty(t, ada.id, body, NOW - DAY, 'fulfilled', NOW - HOUR);
+    await seedBounty(t, ada.id, body, NOW - DAY, 'canceled');
+    await seedBounty(t, ada.id, body, NOW - HOUR, 'expired');
+    // Fulfilled long ago, with no stamp (before fulfilledAt shipped): never counted as fulfilled.
+    await seedBounty(t, ada.id, body, NOW - 40 * DAY, 'fulfilled');
+    for (const date of [yesterday, TODAY]) {
+      await t.mutation(internal.analyticsRollup.rollupPulseDayJob, { date });
+    }
+    expect((await readSnapshot(t, 'bounties_posted', yesterday))?.scalar).toBe(2);
+    expect((await readSnapshot(t, 'bounties_fulfilled', yesterday))?.scalar).toBe(0);
+    expect((await readSnapshot(t, 'bounties_posted', TODAY))?.scalar).toBe(1);
+    expect((await readSnapshot(t, 'bounties_fulfilled', TODAY))?.scalar).toBe(1);
+  });
+
   test('sign-ins are written only from the day their record began', async () => {
     const t = harness();
     const ada = await seedUser(t, 'ada');
@@ -820,6 +874,8 @@ describe('the day pulse rollup', () => {
       'positive_reactions',
       'daily_contributors',
       'signed_in',
+      'bounties_posted',
+      'bounties_fulfilled',
     ] as const;
     type Field = (typeof FIELDS)[number];
 
@@ -838,6 +894,8 @@ describe('the day pulse rollup', () => {
         await t.run((ctx) =>
           ctx.db.insert('signInDays', { userId: who.id, day: TODAY, firstAt: NOW - HOUR }),
         );
+        // Posted today and fulfilled today: two of each.
+        await seedBounty(t, who.id, body, NOW - 2 * HOUR, 'fulfilled', NOW - HOUR);
       }
       return { ada, bo, body, report };
     }
@@ -858,6 +916,11 @@ describe('the day pulse rollup', () => {
           return void (await t.run((ctx) =>
             ctx.db.insert('signInDays', { userId: cy.id, day: TODAY, firstAt: NOW - HOUR }),
           ));
+        case 'bounties_posted':
+          return void (await seedBounty(t, cy.id, f.body, NOW - HOUR));
+        case 'bounties_fulfilled':
+          // Posted ten days ago: only the fulfilled read sees it today.
+          return void (await seedBounty(t, cy.id, f.body, NOW - 10 * DAY, 'fulfilled', NOW - HOUR));
       }
     }
 
@@ -1329,6 +1392,101 @@ describe('contributions — one rule for every contributors figure', () => {
   });
 });
 
+// ── First-timers (B01-2b) ───────────────────────────────────────────────────────────────────────
+
+describe('the season’s first-timers, from the walk', () => {
+  test('a contributor is new on the day of their first-ever contribution; an earlier one returns', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await seedBody(t, 'Mascoma Lake');
+    const ada = await seedUser(t, 'ada');
+    const bo = await seedUser(t, 'bo');
+    // Ada first contributed last winter: returning. Bo's first ever is three days ago: new then.
+    await seedReport(t, ada.id, body, Date.UTC(2026, 1, 2));
+    await seedReport(t, ada.id, body, NOW - 3 * DAY);
+    await seedReport(t, bo.id, body, NOW - 3 * DAY);
+    await seedReport(t, bo.id, body, NOW - DAY);
+    // More contributors than one page looks up, so the stage runs across pages.
+    for (let i = 0; i < FIRST_TIMER_PAGE; i++) {
+      const p = await seedUser(t, `p${i}`);
+      await seedReport(t, p.id, body, Date.UTC(2026, 9, 2));
+    }
+    await walkReach(t);
+    const meta = (await readSnapshot(t, 'season_reach', TODAY))?.meta as {
+      firstTimers: { byDay: Record<string, number>; newPeople: number };
+    };
+    expect(meta.firstTimers).toEqual({
+      byDay: { '2026-10-02': FIRST_TIMER_PAGE, [metricDay(NOW - 3 * DAY)]: 1 },
+      newPeople: FIRST_TIMER_PAGE + 1,
+    });
+    const split = (await mod.as.query(api.metrics.showingUp, {})).showingUp.pulse.contributors
+      ?.split;
+    expect(split?.newPeople).toBe(FIRST_TIMER_PAGE + 1);
+    expect(split?.daily.at(-4)).toBe(1);
+    // A day with contributors and no first-timer is a measured zero; it isn't left out.
+    expect(split?.daily.at(-2)).toBe(0);
+  });
+
+  test('a capped contributors set can’t say who is new: not recorded, never a zero', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await snapshot(t, 'season_reach', TODAY, {
+      meta: {
+        season: 2026,
+        through: TODAY,
+        counts: { reports: 1, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        over: { reports: 1, comments: 0, kudos: 0, photos: 0, hazards: 0 },
+        people: { signedIn: 1, contributors: 1 },
+        vantage: {},
+        states: {},
+        firstTimers: null,
+        capped: ['firstTimers'],
+      },
+    });
+    const split = (await mod.as.query(api.metrics.showingUp, {})).showingUp.pulse.contributors
+      ?.split;
+    expect(split?.newPeople).toBeNull();
+    expect(split?.daily.every((d) => d === null)).toBe(true);
+  });
+
+  test('days after the walk’s last are not recorded; a walk from before first-timers says none', () => {
+    const days = ['2026-10-01', '2026-10-02', '2026-10-03'];
+    expect(
+      contributorSplit({ through: '2026-10-02', firstTimers: { byDay: {}, newPeople: 0 } }, days),
+    ).toEqual({ daily: [0, 0, null], newPeople: 0 });
+    expect(contributorSplit({ through: '2026-10-02' }, days)).toEqual({
+      daily: [null, null, null],
+      newPeople: null,
+    });
+  });
+
+  // A first contribution lands on its UTC metric day — the day the strips count by — whatever the
+  // instant's local date in any zone, across both DST changes; inside the window it counts once.
+  const property = fc.property(
+    fc.array(fc.integer({ min: Date.UTC(2026, 8, 1), max: Date.UTC(2027, 3, 1) }), {
+      maxLength: 50,
+    }),
+    (firsts) => {
+      const window = { firstDay: '2026-10-01', lastDay: '2027-03-15' };
+      const byDay: Record<string, number> = {};
+      let fresh = 0;
+      for (const at of firsts) if (foldFirstTimer(byDay, at, window)) fresh++;
+      const inside = firsts.filter((at) => {
+        const day = new Date(at).toISOString().slice(0, 10);
+        return day >= window.firstDay && day <= window.lastDay;
+      });
+      expect(fresh).toBe(inside.length);
+      expect(Object.values(byDay).reduce((a, n) => a + n, 0)).toBe(inside.length);
+      for (const at of inside)
+        expect(byDay[new Date(at).toISOString().slice(0, 10)]).toBeGreaterThan(0);
+    },
+  );
+  test('each first lands on its own metric day, once (pinned seeds and one random)', () => {
+    for (const seed of [20261117, 3, 1108]) fc.assert(property, { seed, numRuns: 200 });
+    fc.assert(property, { numRuns: 200 });
+  });
+});
+
 // ── The sign-in record's retention (D254) ───────────────────────────────────────────────────────
 
 describe('pruneSignInDays — the current season and one past', () => {
@@ -1779,6 +1937,31 @@ describe('metrics.keepingUp', () => {
 // ── Metrics: Showing up ─────────────────────────────────────────────────────────────────────────
 
 describe('metrics.showingUp', () => {
+  test('bounties each day: a season total only once every day is recorded, never a short one', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ada = await seedUser(t, 'ada');
+    const body = await seedBody(t, 'Mascoma Lake');
+    await seedBounty(t, ada.id, body, NOW - 3 * DAY, 'fulfilled', NOW - HOUR);
+    await seedBounty(t, ada.id, body, NOW - 3 * DAY, 'expired');
+    const bounties = async () => (await mod.as.query(api.metrics.showingUp, {})).showingUp.bounties;
+    // Nothing rolled up: every day not recorded, no totals.
+    let b = await bounties();
+    expect(b?.totals).toBeNull();
+    expect(b?.posted.every((n) => n === null)).toBe(true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 43; i >= 1; i--) {
+      await t.run((ctx) => rollupPulseDay(ctx, metricDay(NOW - i * DAY)));
+    }
+    // Today not yet: still no totals.
+    expect((await bounties())?.totals).toBeNull();
+    await t.run((ctx) => rollupPulseDay(ctx, TODAY));
+    b = await bounties();
+    expect(b?.totals).toEqual({ posted: 2, fulfilled: 1 });
+    expect(b?.posted.at(-4)).toBe(2);
+    expect(b?.fulfilled.at(-1)).toBe(1);
+  });
+
   test('this week: reports and their people, contributors and first-timers', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
