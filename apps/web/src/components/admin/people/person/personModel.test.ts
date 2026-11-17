@@ -41,6 +41,7 @@ import {
   trendBars,
   trendLabel,
   trustPointsFact,
+  undoersOf,
   utcDayWords,
   weekBars,
   weeksTotal,
@@ -108,7 +109,24 @@ describe('the three answers', () => {
 
   it('every strip fact says something for any read (property)', () => {
     const stats = fc.record({
-      decisions: fc.record({ thisWeek: countArb, undoneByOthers: countArb }),
+      decisions: fc.record({
+        thisWeek: countArb,
+        undoneByOthers: fc.record({
+          count: fc.nat({ max: 5000 }),
+          capped: fc.boolean(),
+          by: fc.array(
+            fc.record({
+              userId: fc.constantFrom('u1', 'u2', 'u3'),
+              displayName: fc.option(fc.constantFrom('Ada Quill', ' '), { nil: null }),
+              username: fc.option(fc.constantFrom('ada', ''), { nil: null }),
+              profileImageUrl: fc.constant(null),
+              count: fc.nat({ max: 9 }),
+            }),
+            { maxLength: 3 },
+          ),
+          byMore: fc.nat({ max: 4 }),
+        }),
+      }),
       timeToDecide: fc.record({
         medianMs: fc.option(fc.nat({ max: 30 * DAY }), { nil: null }),
         decided: fc.nat({ max: 50 }),
@@ -329,6 +347,71 @@ describe('the staff strip', () => {
     ).toBe('None undone by others');
     expect(decisionsFact(STATS_PENDING).sub).toBe('Undone by others · still being prepared');
     expect(decisionsFact(STATS_CAPPED)).toMatchObject({ value: '2,000+', state: 'capped' });
+  });
+
+  const undoer = (userId: string, displayName: string | null, username: string | null) => ({
+    userId: userId as never,
+    displayName,
+    username,
+    profileImageUrl: null,
+    count: 1,
+  });
+  const undoneBy = (
+    count: number,
+    by: ReturnType<typeof undoer>[],
+    byMore: number,
+    capped = false,
+  ) => ({
+    ...SARAH_STATS,
+    decisions: { ...SARAH_STATS.decisions, undoneByOthers: { count, capped, by, byMore } },
+  });
+
+  it('names who undid them, by first name, the rest counted', () => {
+    const one = undoneBy(2, [undoer('u1', 'Ada Quill', 'ada')], 0);
+    expect(decisionsFact(one)).toMatchObject({
+      sub: '2 later undone by',
+      named: { people: [{ userId: 'u1', name: 'Ada', src: null }], more: 0 },
+    });
+    const many = undoneBy(
+      9,
+      [
+        undoer('u1', 'Ada Quill', 'ada'),
+        undoer('u2', null, 'bo_l'),
+        undoer('u3', 'Cy Marsh', 'cy'),
+      ],
+      2,
+      true,
+    );
+    const fact = decisionsFact(many);
+    expect(fact.sub).toBe('9+ later undone by');
+    expect(fact.named?.people.map((p) => p.name)).toEqual(['Ada', 'bo_l', 'Cy']);
+    expect(fact.named?.more).toBe(2);
+  });
+
+  it('counts a person whose row isn’t written yet with the rest, never as a blank name', () => {
+    expect(
+      undoersOf(
+        undoneBy(3, [undoer('u1', null, null), undoer('u2', 'Ada Quill', 'ada')], 1).decisions
+          .undoneByOthers,
+      ),
+    ).toEqual({
+      people: [{ userId: 'u2', name: 'Ada', src: null }],
+      more: 2,
+    });
+    // Nobody the read could name: the plain words, as before.
+    const unnamed = decisionsFact(undoneBy(3, [undoer('u1', '  ', '')], 2));
+    expect(unnamed.sub).toBe('3 later undone by others');
+    expect(unnamed.named).toBeUndefined();
+  });
+
+  it('names no one while the chains are still being prepared, or when nothing was undone', () => {
+    expect(
+      decisionsFact({
+        ...undoneBy(2, [undoer('u1', 'Ada Quill', 'ada')], 0),
+        pending: ['undoChains'],
+      }).named,
+    ).toBeUndefined();
+    expect(decisionsFact(undoneBy(0, [], 0)).named).toBeUndefined();
   });
 
   it('time to decide in minutes, hours or days; capped and unrecorded said', () => {

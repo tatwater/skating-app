@@ -14,6 +14,7 @@ import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonRow } from '@/components/kit/skeleton';
+import { personNameClass } from '@/components/PersonName';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 import { FLAG_WORDS } from '../../bodies/askWords';
@@ -21,8 +22,10 @@ import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
+import { FACT_WORDS } from './factWords';
 import { rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
+import { ClampedText } from './kit-candidates/clamped-text';
 import {
   type ActionRow,
   type DecisionsRead,
@@ -97,9 +100,44 @@ export function GoLink({
 // ── Open about this person ───────────────────────────────────────────────────────────────────
 
 /**
+ * What a person wrote, as their words — quoted, never reworded — clamped to four lines as they
+ * render (the kit candidate `ClampedText`, which measures whether they are cut and offers *Show
+ * all* exactly then). Every word is in the page: an appeal's body is capped at its write (5,000
+ * characters). The words are a support ticket's (PII, D37), so they are never autocaptured: masked
+ * as a name is (`personNameClass`), while the press beside them is still counted.
+ */
+function TheirWords({ text }: { text: string }) {
+  const words = text.trim();
+  if (words === '') return null;
+  return (
+    <ClampedText
+      data-slot="their-words"
+      lines={THEIR_WORDS_LINES}
+      showAll={FACT_WORDS.showAll}
+      showLess={FACT_WORDS.showLess}
+      className="mt-(--space-0_5) text-fg2"
+    >
+      <span data-slot="their-words-text" className={personNameClass}>
+        “{words}”
+      </span>
+    </ClampedText>
+  );
+}
+
+/** Lines of a person's own words shown before *Show all*. */
+const THEIR_WORDS_LINES = 4;
+
+/** The body a flag is on, as the server named it — never for a flag on the person, whose page it is. */
+function flagLabel(flag: PersonRead['open']['flags'][number]): string | null {
+  if (flag.targetType === 'user') return null;
+  const label = flag.targetLabel?.trim() ?? '';
+  return label === '' ? null : label;
+}
+
+/**
  * Open flags on them or their content, and appeals for a viewer the read gives them to — drawn only
  * when something is open (or while flags on their content are still being prepared, which may hide
- * some).
+ * some). A flag names the body it is on; an appeal shows what the person wrote.
  */
 export function OpenAbout({
   person,
@@ -111,7 +149,7 @@ export function OpenAbout({
   linkTo: LinkTo;
 }) {
   const level = useSectionLevel();
-  const { flags, appeals, flagsCapped, appealsCapped } = person.open;
+  const { flags, appeals, flagsCapped, appealsCapped, flagLabelsCapped } = person.open;
   const pending = person.pending.includes('flagSubjects');
   const count = flags.length + (appeals?.length ?? 0);
   const capped = flagsCapped || appealsCapped;
@@ -141,22 +179,31 @@ export function OpenAbout({
     >
       {count > 0 && (
         <GridList columns={FEED_COLUMNS} data-variant="history">
-          {flags.map((f) => (
-            <HistoryRow
-              key={f.flagId}
-              data-slot="open-flag"
-              when={<Tag>Inbox</Tag>}
-              who={ageInWords(f.createdAt, now)}
-              action={
-                <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
-                  Handle
-                </GoLink>
-              }
-            >
-              <b className="font-medium text-fg">{FLAG_WORDS[f.reason]} flag</b> on{' '}
-              {WORDS.flagOn[f.targetType] ?? WORDS.flagOnUnknown}
-            </HistoryRow>
-          ))}
+          {flags.map((f) => {
+            const label = flagLabel(f);
+            return (
+              <HistoryRow
+                key={f.flagId}
+                data-slot="open-flag"
+                when={<Tag>Inbox</Tag>}
+                who={ageInWords(f.createdAt, now)}
+                action={
+                  <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
+                    Handle
+                  </GoLink>
+                }
+              >
+                <b className="font-medium text-fg">{FLAG_WORDS[f.reason]} flag</b> on{' '}
+                {WORDS.flagOn[f.targetType] ?? WORDS.flagOnUnknown}
+                {label !== null && (
+                  <>
+                    {' · '}
+                    <span data-slot="open-flag-label">{label}</span>
+                  </>
+                )}
+              </HistoryRow>
+            );
+          })}
           {(appeals ?? []).map((a) => (
             <HistoryRow
               key={a.ticketId}
@@ -171,12 +218,19 @@ export function OpenAbout({
             >
               <b className="font-medium text-fg">Appeal</b> ·{' '}
               {a.status === 'open' ? WORDS.appealWaiting : a.status.replace(/_/g, ' ')}
+              {/* What they wrote is support's to read (D37): the read sends it only to a viewer who may. */}
+              <TheirWords text={a.body} />
             </HistoryRow>
           ))}
         </GridList>
       )}
       {pending && <Note data-slot="open-pending">{WORDS.flagsPending}</Note>}
       {capped && <Note data-slot="open-capped">{WORDS.openCapped}</Note>}
+      {/* Only when a flag drawn here is left unnamed for it: a flag on the person past the cap
+          names nothing more either way. */}
+      {flagLabelsCapped && flags.some((f) => f.targetType !== 'user' && flagLabel(f) === null) && (
+        <Note data-slot="open-labels-capped">{FACT_WORDS.flagLabelsCapped}</Note>
+      )}
     </Section>
   );
 }
