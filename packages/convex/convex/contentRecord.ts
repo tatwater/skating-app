@@ -613,8 +613,14 @@ export async function deletedPage(
   const ranges = await Promise.all(
     kinds.map((kind, i) => deletedRange(ctx, reads, kind, userId, after, asks[i] as number)),
   );
-  // Every row up to the first place a full range might still hold one before it: the earliest, in
-  // the merged order, of the full ranges' last rows.
+  // **The merged order** (the default tab, every kind): newest withdrawal first, then the kind's
+  // place in `DELETED_KINDS` (a tie between kinds), then the newer row (`before`, `deletedKey`).
+  // **The fence's contract:** a row is placed on a page only when every kind that could sort ahead
+  // of it is known up to it. A range that came back short is known to its end; a full one only to
+  // its last row, past which it may hold more. So the fence is the earliest, in the merged order, of
+  // the full ranges' last rows; no row past it is a candidate, and a pinned page is whole (`known`)
+  // only when the fence is at or past its end — else it splits after the rows it could place.
+  // Narrowed to one kind there is one range, and the same rule is that range's own end.
   let fence: Position | null = null;
   ranges.forEach((rows, i) => {
     const last = rows[rows.length - 1];
@@ -628,7 +634,8 @@ export async function deletedPage(
     .map((c) => ({ ...c, key: deletedKey(c.kind, c.doc) }))
     .filter((c) => limit === null || !before(limit, c.key))
     .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
-  // A pinned page's rows are those up to its end; it is whole only if every range is known that far.
+  // A pinned page's rows are those up to its end; it is whole only if every range is known that far
+  // (the fence's contract, above; `recordEndCursor.test.ts` mutation-checks it).
   const inRange = candidates.filter((c) => within(end.at, c.key));
   const known = end.at === null || limit === null || !before(limit, end.at);
   const considered = inRange.slice(0, RECORD_PAGE_ROWS.n);

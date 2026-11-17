@@ -110,30 +110,70 @@ async function world() {
       createdAt: T0,
       updatedAt: T0,
     });
-    return { rob, mod, on };
+    return { rob, mod, on, waterBodyId };
   });
   return { t, ...ids, viewer: t.withIdentity({ subject: 'mod' }) };
 }
 type W = Awaited<ReturnType<typeof world>>;
 type List = 'personVerdicts' | 'personReversed' | 'personDeleted';
+/** The kinds the model makes: the Deleted list's three cheapest, in its tie-break order. */
+type Kind = 'report' | 'post' | 'comment';
+const KINDS: readonly Kind[] = ['report', 'post', 'comment'];
+/** What the web sends: one kind (the filter), or none — the default tab, every kind merged. */
+type Scope = Kind | null;
+const SCOPES: readonly Scope[] = [null, ...KINDS];
+/** The merged Deleted list's tie-break between kinds at one withdrawal time (`DELETED_KINDS`). */
+const KIND_ORDER: Record<Kind, number> = { report: 0, post: 1, comment: 2 };
 
-/** A comment of rob's: hidden under a decision (standing or ended), or deleted by him. */
-async function comment(w: W, list: List, at: number): Promise<string> {
+/** One of rob's things: hidden under a decision (standing or ended), or withdrawn by him. */
+async function item(w: W, list: List, kind: Kind, at: number): Promise<string> {
   return w.t.run(async (ctx) => {
-    const id = await ctx.db.insert('comments', {
-      reportId: w.on,
-      authorId: w.rob,
-      body: 'b',
-      moderationStatus: list === 'personDeleted' ? ('visible' as const) : ('hidden' as const),
-      source: 'native' as const,
-      createdAt: at - 1,
-      ...(list === 'personDeleted' ? { authorDeletedAt: at, eraseAt: at + 30 * 86_400_000 } : {}),
-    } as never);
-    if (list === 'personDeleted') return id;
+    const deleted = list === 'personDeleted';
+    const withdrawn = deleted ? { authorDeletedAt: at, eraseAt: at + 30 * 86_400_000 } : {};
+    const status = deleted ? ('visible' as const) : ('hidden' as const);
+    const id =
+      kind === 'comment'
+        ? await ctx.db.insert('comments', {
+            reportId: w.on,
+            authorId: w.rob,
+            body: 'b',
+            moderationStatus: status,
+            source: 'native' as const,
+            createdAt: at - 1,
+            ...withdrawn,
+          } as never)
+        : kind === 'report'
+          ? await ctx.db.insert('reports', {
+              authorId: w.rob,
+              waterBodyId: w.waterBodyId,
+              point: { lat: 0.5, lng: 0.5 },
+              skateEndTime: at,
+              reportTime: at,
+              source: 'native' as const,
+              iceTypes: [],
+              surfaceTags: [],
+              photoIds: [],
+              moderationStatus: status,
+              hazardIdsCreated: [],
+              createdAt: at - 1,
+              updatedAt: at - 1,
+              ...withdrawn,
+            } as never)
+          : await ctx.db.insert('posts', {
+              authorId: w.rob,
+              reportIds: [],
+              photoIds: [],
+              moderationStatus: status,
+              latestSkateEndTime: at,
+              createdAt: at - 1,
+              updatedAt: at - 1,
+              ...withdrawn,
+            } as never);
+    if (deleted) return id as string;
     const actionId = await ctx.db.insert('moderationActions', {
       actorId: w.mod,
       action: 'hide',
-      targetType: 'comment',
+      targetType: kind,
       targetId: id,
       reason: 'hidden',
       metadata: { priorStatus: 'visible', newStatus: 'hidden' },
@@ -144,7 +184,7 @@ async function comment(w: W, list: List, at: number): Promise<string> {
       ? await ctx.db.insert('moderationActions', {
           actorId: w.mod,
           action: 'restore',
-          targetType: 'comment',
+          targetType: kind,
           targetId: id,
           reason: 'Restored',
           metadata: { priorStatus: 'hidden', newStatus: 'visible', reasonDefaulted: true },
@@ -153,7 +193,7 @@ async function comment(w: W, list: List, at: number): Promise<string> {
       : undefined;
     await ctx.db.insert('contentVerdicts', {
       subjectUserId: w.rob,
-      targetType: 'comment',
+      targetType: kind,
       targetId: id,
       actionId,
       kind: 'hidden',
@@ -162,11 +202,11 @@ async function comment(w: W, list: List, at: number): Promise<string> {
       superseded: false,
       ...(endedBy ? { endedAt: at + 1, endedByActionId: endedBy } : {}),
     });
-    return id;
+    return id as string;
   });
 }
 
-/** Take a row out of its list: its verdict gone (Standing, Reversed), or the comment erased away. */
+/** Take a row out of its list: its verdict gone (Standing, Reversed), or the thing erased away. */
 async function remove(w: W, list: List, id: string) {
   await w.t.run(async (ctx) => {
     if (list === 'personDeleted') {
@@ -178,22 +218,36 @@ async function remove(w: W, list: List, id: string) {
   });
 }
 
-/** The list as the server holds it, in its order: what a whole chain must show. */
-async function truth(w: W, list: List): Promise<string[]> {
+/**
+ * The list as the server holds it, in its order: what a whole chain must show. Standing and
+ * Reversed: newest decision (or ending) first, then the newer row — one index, every kind in it.
+ * Deleted, merged: newest withdrawal first, then the kind's place (`KIND_ORDER`), then the newer row.
+ */
+async function truth(w: W, list: List, scope: Scope): Promise<string[]> {
   return w.t.run(async (ctx) => {
     if (list === 'personDeleted') {
-      const rows = (await ctx.db.query('comments').collect()).filter(
-        (c: Doc<'comments'>) => c.authorDeletedAt !== undefined,
-      );
-      rows.sort(
-        (a, b) =>
-          (b.authorDeletedAt as number) - (a.authorDeletedAt as number) ||
-          b._creationTime - a._creationTime,
-      );
-      return rows.map((r) => r._id as string);
+      const rows: { id: string; kind: Kind; at: number; ct: number }[] = [];
+      const kept = (kind: Kind) => scope === null || scope === kind;
+      for (const kind of KINDS) {
+        if (!kept(kind)) continue;
+        const table = kind === 'report' ? 'reports' : kind === 'post' ? 'posts' : 'comments';
+        for (const d of (await ctx.db.query(table).collect()) as Array<{
+          _id: string;
+          _creationTime: number;
+          authorId: string;
+          authorDeletedAt?: number;
+        }>) {
+          if (d.authorId !== w.rob || d.authorDeletedAt === undefined) continue;
+          rows.push({ id: d._id, kind, at: d.authorDeletedAt, ct: d._creationTime });
+        }
+      }
+      rows.sort((a, b) => b.at - a.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.ct - a.ct);
+      return rows.map((r) => r.id);
     }
-    const rows = (await ctx.db.query('contentVerdicts').collect()).filter((v) =>
-      list === 'personVerdicts' ? v.standing : !v.superseded && (v.endedAt ?? 0) > 0,
+    const rows = (await ctx.db.query('contentVerdicts').collect()).filter(
+      (v) =>
+        (scope === null || v.targetType === scope) &&
+        (list === 'personVerdicts' ? v.standing : !v.superseded && (v.endedAt ?? 0) > 0),
     );
     const key = (v: Doc<'contentVerdicts'>) =>
       list === 'personVerdicts' ? v.at : (v.endedAt ?? 0);
@@ -248,20 +302,20 @@ function extendChain(chain: Link[], last: Answer): Link[] {
   ];
 }
 
-async function readLink(w: W, list: List, link: Link): Promise<Answer> {
+async function readLink(w: W, list: List, scope: Scope, link: Link): Promise<Answer> {
   return (await w.viewer.query(api.contentRecord[list], {
     userId: w.rob,
-    ...(list === 'personDeleted' ? { targetType: 'comment' as const } : {}),
+    ...(scope !== null ? { targetType: scope } : {}),
     cursor: link.cursor,
     ...(link.end !== null ? { endCursor: link.end } : {}),
   })) as Answer;
 }
 
 /** Read every page until the chain holds still, as the client's effects do. */
-async function settle(w: W, list: List, chain: Link[]) {
-  for (let i = 0; i < 40; i++) {
+async function settle(w: W, list: List, scope: Scope, chain: Link[]) {
+  for (let i = 0; i < 60; i++) {
     const answers: Answer[] = [];
-    for (const link of chain) answers.push(await readLink(w, list, link));
+    for (const link of chain) answers.push(await readLink(w, list, scope, link));
     const next = settleChain(chain, answers);
     if (next === null) return { chain, answers };
     chain = next;
@@ -269,24 +323,12 @@ async function settle(w: W, list: List, chain: Link[]) {
   throw new Error('the chain never held still');
 }
 
-type Op = { kind: 'add'; at: number } | { kind: 'remove'; pick: number } | { kind: 'more' };
-
-const opArb: fc.Arbitrary<Op> = fc.oneof(
-  { weight: 3, arbitrary: fc.record({ kind: fc.constant('add' as const), at: fc.nat(40) }) },
-  { weight: 2, arbitrary: fc.record({ kind: fc.constant('remove' as const), pick: fc.nat(99) }) },
-  { weight: 3, arbitrary: fc.constant<Op>({ kind: 'more' }) },
-);
-
-async function drive(list: List, seeded: number[], ops: Op[]) {
-  vi.setSystemTime(T0);
-  const w = await world();
-  for (const at of seeded) await comment(w, list, T0 - 10_000 + at * 10);
-  let chain: Link[] = [{ cursor: null, end: null }];
-  let state = await settle(w, list, chain);
+/** What the model checks after every step: the invariants, against the server's own list. */
+function checker(w: W, list: List, scope: Scope) {
   let shown: string[] = [];
-  const check = async () => {
+  return async (state: { chain: Link[]; answers: Answer[] }) => {
     const rows = state.answers.flatMap((a) => a.page.map((r) => r.targetId));
-    const all = await truth(w, list);
+    const all = await truth(w, list, scope);
     // A row a held page showed stays shown while the list still holds it.
     const still = new Set(all);
     for (const id of shown)
@@ -297,94 +339,221 @@ async function drive(list: List, seeded: number[], ops: Op[]) {
     );
     for (const a of state.answers) expect(a.page.length).toBeLessThanOrEqual(ROWS);
     expect(new Set(rows).size, 'no row twice').toBe(rows.length);
-    // The chain shows the list from its start, in order, none missing.
+    // The chain shows the list from its start, in order across kinds, none missing — so no row is
+    // placed before a row of another kind that sorts ahead of it.
     expect(rows, 'the list from its start').toEqual(all.slice(0, rows.length));
     const last = state.answers.at(-1) as Answer;
-    if (last.isDone) expect(rows, 'done only when nothing follows').toEqual(all);
+    if (last.isDone) expect(rows, 'done only when every kind is read to its end').toEqual(all);
   };
-  await check();
+}
+
+type Op =
+  | { kind: 'add'; what: Kind; at: number }
+  | { kind: 'remove'; pick: number }
+  | { kind: 'more' };
+
+/** Times from a small set, so rows of different kinds tie on the key as often as not. */
+const atArb = fc.nat(12);
+const kindArb = fc.constantFrom(...KINDS);
+const opArb: fc.Arbitrary<Op> = fc.oneof(
+  {
+    weight: 3,
+    arbitrary: fc.record({ kind: fc.constant('add' as const), what: kindArb, at: atArb }),
+  },
+  { weight: 2, arbitrary: fc.record({ kind: fc.constant('remove' as const), pick: fc.nat(99) }) },
+  { weight: 3, arbitrary: fc.constant<Op>({ kind: 'more' }) },
+);
+const at = (n: number) => T0 - 10_000 + n * 10;
+
+async function drive(list: List, scope: Scope, seeded: { what: Kind; at: number }[], ops: Op[]) {
+  vi.setSystemTime(T0);
+  const w = await world();
+  for (const s of seeded) await item(w, list, s.what, at(s.at));
+  const check = checker(w, list, scope);
+  let state = await settle(w, list, scope, [{ cursor: null, end: null }]);
+  await check(state);
   for (const op of ops) {
-    if (op.kind === 'add') await comment(w, list, T0 - 10_000 + op.at * 10 + 3);
+    if (op.kind === 'add') await item(w, list, op.what, at(op.at));
     if (op.kind === 'remove') {
-      const all = await truth(w, list);
+      const all = await truth(w, list, scope);
       const id = all[op.pick % Math.max(1, all.length)];
       if (id !== undefined) await remove(w, list, id);
     }
-    chain = state.chain;
+    let chain = state.chain;
     if (op.kind === 'more') chain = extendChain(chain, state.answers.at(-1) as Answer);
-    state = await settle(w, list, chain);
-    await check();
+    state = await settle(w, list, scope, chain);
+    await check(state);
   }
   // Asked on to the end, the chain holds the whole list.
   for (let i = 0; i < 40 && !(state.answers.at(-1) as Answer).isDone; i++) {
-    state = await settle(w, list, extendChain(state.chain, state.answers.at(-1) as Answer));
-    await check();
+    state = await settle(w, list, scope, extendChain(state.chain, state.answers.at(-1) as Answer));
+    await check(state);
   }
   expect((state.answers.at(-1) as Answer).isDone).toBe(true);
   return state;
 }
 
+const SEEDS = [20261116, 7, Math.floor(Math.random() * 2 ** 31)];
+
 describe.each(['personVerdicts', 'personReversed', 'personDeleted'] as const)(
   '%s: a page read past holds its rows',
   (list) => {
-    test.each([20261116, 7, Math.floor(Math.random() * 2 ** 31)])(
-      'changes anywhere while deeper pages are held: none twice, none lost, in order (seed %i)',
+    test.each(SEEDS)(
+      'changes anywhere while deeper pages are held, every kind or one: none twice, none lost, in order (seed %i)',
       async (seed) => {
         console.log(`recordEndCursor ${list} seed ${seed}`);
         await fc.assert(
           fc.asyncProperty(
-            fc.array(fc.nat(40), { minLength: 4, maxLength: 9 }),
+            // The parameter the web sends, generated: the default tab (every kind) or one kind.
+            fc.constantFrom(...SCOPES),
+            fc.array(fc.record({ what: kindArb, at: atArb }), { minLength: 4, maxLength: 9 }),
             fc.array(opArb, { maxLength: 8 }),
-            (seeded, ops) => drive(list, seeded, ops).then(() => undefined),
+            (scope, seeded, ops) => drive(list, scope, seeded, ops).then(() => undefined),
           ),
-          { seed, numRuns: 4 },
+          { seed, numRuns: 5 },
         );
       },
     );
 
     test('a pinned page that grew past a page splits after the rows it returned', async () => {
       const w = await world();
-      for (let i = 0; i < 4; i++) await comment(w, list, T0 - 10_000 + i * 100);
-      const first = await readLink(w, list, { cursor: null, end: null });
+      for (let i = 0; i < 4; i++) await item(w, list, 'comment', at(i * 10));
+      const first = await readLink(w, list, null, { cursor: null, end: null });
       expect(first.page).toHaveLength(ROWS);
       // Two rows land inside the first page's range.
-      await comment(w, list, T0 - 10_000 + 250);
-      await comment(w, list, T0 - 10_000 + 150);
-      const pinned = await readLink(w, list, { cursor: null, end: first.continueCursor });
+      await item(w, list, 'comment', at(25));
+      await item(w, list, 'comment', at(15));
+      const pinned = await readLink(w, list, null, { cursor: null, end: first.continueCursor });
       expect(pinned).toMatchObject({
         isDone: false,
         pageStatus: 'SplitRequired',
         continueCursor: first.continueCursor,
       });
       expect(pinned.page).toHaveLength(ROWS);
-      const at = (await truth(w, list)).slice(0, ROWS);
-      expect(pinned.page.map((r) => r.targetId)).toEqual(at);
+      expect(pinned.page.map((r) => r.targetId)).toEqual(
+        (await truth(w, list, null)).slice(0, ROWS),
+      );
       // The halves: the rows it returned, then the rest of its range, which keeps its end.
-      const tail = await readLink(w, list, {
+      const tail = await readLink(w, list, null, {
         cursor: pinned.splitCursor as string,
         end: first.continueCursor,
       });
       expect(tail.pageStatus).toBeUndefined();
       expect(tail.continueCursor).toBe(first.continueCursor);
-      expect(tail.page.map((r) => r.targetId)).toEqual((await truth(w, list)).slice(ROWS, 5));
+      expect(tail.page.map((r) => r.targetId)).toEqual((await truth(w, list, null)).slice(ROWS, 5));
     });
 
     test('a pinned page whose rows all left keeps its end, and is done only when nothing follows', async () => {
       const w = await world();
-      const ids: string[] = [];
-      for (let i = 0; i < 4; i++) ids.push(await comment(w, list, T0 - 10_000 + i * 100));
-      const first = await readLink(w, list, { cursor: null, end: null });
+      for (let i = 0; i < 4; i++) await item(w, list, 'comment', at(i * 10));
+      const first = await readLink(w, list, null, { cursor: null, end: null });
       for (const r of first.page) await remove(w, list, r.targetId);
-      const pinned = await readLink(w, list, { cursor: null, end: first.continueCursor });
+      const pinned = await readLink(w, list, null, { cursor: null, end: first.continueCursor });
       expect(pinned).toMatchObject({
         page: [],
         isDone: false,
         continueCursor: first.continueCursor,
       });
-      const last = (await truth(w, list))[0] as string;
+      const last = (await truth(w, list, null))[0] as string;
       await remove(w, list, last);
-      const empty = await readLink(w, list, { cursor: null, end: first.continueCursor });
+      const empty = await readLink(w, list, null, { cursor: null, end: first.continueCursor });
       expect(empty).toMatchObject({ page: [], isDone: true, continueCursor: first.continueCursor });
     });
   },
 );
+
+// ── The merged Deleted list: several kinds' ranges, one order ──
+
+describe('personDeleted, every kind merged (the default tab)', () => {
+  test('Greptile’s case: a full Report range ends before the pinned end — the page splits, and every row stays, in order', async () => {
+    const w = await world();
+    // Reports at 100 and 90 (a page asks two: the range is full), comments between and after.
+    await item(w, 'personDeleted', 'report', at(100));
+    await item(w, 'personDeleted', 'comment', at(95));
+    await item(w, 'personDeleted', 'report', at(90));
+    await item(w, 'personDeleted', 'comment', at(85));
+    await item(w, 'personDeleted', 'comment', at(75));
+    const check = checker(w, 'personDeleted', null);
+    let state = await settle(w, 'personDeleted', null, [{ cursor: null, end: null }]);
+    expect(state.answers[0]?.page.map((r) => r.targetId)).toEqual(
+      (await truth(w, 'personDeleted', null)).slice(0, ROWS),
+    );
+    // Read past: the first page is pinned to the second Report.
+    state = await settle(
+      w,
+      'personDeleted',
+      null,
+      extendChain(state.chain, state.answers[0] as Answer),
+    );
+    await check(state);
+    const end = state.chain[0]?.end as string;
+    // Two Reports land inside the pinned page: its Report range is full and now ends at the
+    // second of them, before the page's end — what lies past it can't be placed yet.
+    await item(w, 'personDeleted', 'report', at(99));
+    await item(w, 'personDeleted', 'report', at(98));
+    const pinned = await readLink(w, 'personDeleted', null, { cursor: null, end });
+    expect(pinned.pageStatus).toBe('SplitRequired');
+    expect(pinned.continueCursor).toBe(end);
+    expect(pinned.page.map((r) => r.targetId)).toEqual(
+      (await truth(w, 'personDeleted', null)).slice(0, pinned.page.length),
+    );
+    // Settled, the chain holds every row in the merged order; asked on, every row once.
+    state = await settle(w, 'personDeleted', null, state.chain);
+    await check(state);
+    for (let i = 0; i < 20 && !(state.answers.at(-1) as Answer).isDone; i++) {
+      state = await settle(
+        w,
+        'personDeleted',
+        null,
+        extendChain(state.chain, state.answers.at(-1) as Answer),
+      );
+      await check(state);
+    }
+    expect(state.answers.flatMap((a) => a.page.map((r) => r.targetId))).toEqual(
+      await truth(w, 'personDeleted', null),
+    );
+  });
+
+  test('ties across kinds: one withdrawal time reads Report, Post, comment, and the newer first within a kind', async () => {
+    const w = await world();
+    const c1 = await item(w, 'personDeleted', 'comment', at(50));
+    const p1 = await item(w, 'personDeleted', 'post', at(50));
+    const r1 = await item(w, 'personDeleted', 'report', at(50));
+    const r2 = await item(w, 'personDeleted', 'report', at(50));
+    const c2 = await item(w, 'personDeleted', 'comment', at(50));
+    const want = [r2, r1, p1, c2, c1];
+    expect(await truth(w, 'personDeleted', null)).toEqual(want);
+    let state = await settle(w, 'personDeleted', null, [{ cursor: null, end: null }]);
+    for (let i = 0; i < 20 && !(state.answers.at(-1) as Answer).isDone; i++) {
+      state = await settle(
+        w,
+        'personDeleted',
+        null,
+        extendChain(state.chain, state.answers.at(-1) as Answer),
+      );
+    }
+    expect(state.answers.flatMap((a) => a.page.map((r) => r.targetId))).toEqual(want);
+  });
+
+  test.each(SEEDS)(
+    'mixes where a full range ends before another kind’s rows, pinned pages split and held (seed %i)',
+    async (seed) => {
+      console.log(`recordEndCursor merged Deleted seed ${seed}`);
+      await fc.assert(
+        fc.asyncProperty(
+          // Reports and Posts fill their few-a-page ranges; comments rarely do.
+          fc.array(
+            fc.record({
+              what: fc.constantFrom<Kind>('report', 'report', 'post', 'comment'),
+              at: atArb,
+            }),
+            { minLength: 5, maxLength: 10 },
+          ),
+          fc.array(opArb, { minLength: 2, maxLength: 8 }),
+          (seeded, ops) => drive('personDeleted', null, seeded, ops).then(() => undefined),
+        ),
+        { seed, numRuns: 6 },
+      );
+    },
+  );
+});
