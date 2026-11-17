@@ -219,9 +219,12 @@ function SheetSitting({
       const held = rows as StandingRow[];
       const rowOf = (t: Target) => held.find((r) => targetKey(r) === targetKey(t));
       const at = Date.now();
-      keepRestored(rowOf(target), result, at, viewerId);
+      const own = rowOf(target);
+      keepRestored(own, result, at, viewerId);
       // The Reports chosen to come back with a Post leave Standing too: each keeps its row for the
-      // sitting beside the Post's, on the same write.
+      // sitting beside the Post's, on the same write — only beside it, since a Report's row goes when
+      // the Post's does and its Undo is named from the Post's.
+      if (own === undefined) return;
       for (const reportId of withReportIds) {
         const member = rowOf({ targetType: 'report', targetId: reportId });
         keepRestored(member, result, at, viewerId, target);

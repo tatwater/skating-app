@@ -27,6 +27,7 @@ import {
   chainedLease,
   handOn,
   LEASE_ARG,
+  LEASE_READS,
   PEOPLE_BACKFILLS,
   type PeopleBackfill,
   readPending,
@@ -1454,8 +1455,8 @@ export const backfillVerdicts = internalMutation({
     traced('contentRecord.backfillVerdicts', args, async () => {
       const { cursor, skip = 0, pageSize, clocks } = args;
       const reads = new ReadBudget();
-      // The run's lease, its row read and written once each.
-      reads.reserve('small', 2);
+      // The run's lease: taken and handed on, its run row and progress read each time.
+      reads.reserve('small', LEASE_READS);
       const lease = await chainedLease(ctx, 'verdicts', args.lease);
       if (lease === null) return { replaying: null, more: false, superseded: true };
       const size = Math.min(Math.max(pageSize ?? BACKFILL_PAGE, 1), BACKFILL_PAGE);
@@ -1585,9 +1586,9 @@ export const replayVerdictHistory = internalMutation({
       let subjectUserId = args.subjectUserId;
       let unnamed = 0;
       const reads = new ReadBudget();
-      // The run's lease: its row read here, again to hand it on, and once more when the pass found a
-      // gap (`foundGap`).
-      reads.reserve('small', 3);
+      // The run's lease: its run row and progress read here and again to hand it on, and the run row
+      // once more when the pass found a gap (`foundGap`).
+      reads.reserve('small', LEASE_READS);
       const lease = await chainedLease(ctx, 'verdicts', args.lease);
       if (lease === null) return { written: 0, more: false, superseded: true };
       // A row's work beside its read, in the write pass: the row keyed by it, the one it ends and the

@@ -580,7 +580,7 @@ describe('the facts the server sends, drawn under their rows', () => {
       ...over,
     });
 
-  it('a right that is off says since when — a date, not recorded, or older than one read covers', () => {
+  it('a right that is off says since when — a date, not recorded, or not found in the read', () => {
     const at = Date.UTC(2026, 9, 3, 12);
     const dated = off({
       rightsSince: { reports: null, hazards: null, comments: at, flagging: null },
@@ -588,7 +588,7 @@ describe('the facts the server sends, drawn under their rows', () => {
     expect(row(canDoRows(dated, AT), 'comments')?.second).toBe('Since 3 Oct');
     expect(row(canDoRows(dated, AT), 'flagging')?.second).toBe('Since: not recorded yet');
     expect(row(canDoRows(off({ rightsSinceCapped: true }), AT), 'comments')?.second).toBe(
-      'Since: older than what one read covers',
+      'Since: not found in what this read covers',
     );
     // A right they have says nothing more.
     expect(row(canDoRows(dated, AT), 'reports')?.second).toBeUndefined();
@@ -614,7 +614,7 @@ describe('the facts the server sends, drawn under their rows', () => {
       'Since: not recorded yet',
     );
     expect(page({ editor: true, last: false, since: null, sinceCapped: true })).toBe(
-      'Since: older than what one read covers',
+      'Since: not found in what this read covers',
     );
     expect(page({ editor: false, last: false, since: null, sinceCapped: false })).toBeUndefined();
   });

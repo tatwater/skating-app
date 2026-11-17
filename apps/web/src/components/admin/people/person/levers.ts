@@ -28,8 +28,8 @@ import { WORDS } from './personWords';
  *
  * The facts under a row are the read's own: since when a right is off (`rightsSince`) and ledger
  * editing held (`ledger.since`), and this season's bounty asks (`bountySeason`) — each a date or a
- * count, *not recorded yet* for `null`, *older than what one read covers* for a read that stopped
- * short.
+ * count, *not recorded yet* for `null`, *not found in what this read covers* for a read that
+ * stopped short or couldn't be afforded.
  *
  * Rows hold facts and say what may be done; a row with nothing to say and nothing to do is left out
  * (a page about yourself shows its facts, and no levers on yourself).
@@ -134,7 +134,7 @@ function sinceWords(
   timeZone: string | undefined,
 ): string {
   if (at !== null) return F.since(dateWords(at, now, timeZone));
-  return capped ? F.sinceTooOld : F.sinceUnrecorded;
+  return capped ? F.sinceUnread : F.sinceUnrecorded;
 }
 
 /** This season's bounty asks, as the Bounties row's sub-line. */

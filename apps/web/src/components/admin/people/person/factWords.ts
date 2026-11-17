@@ -27,8 +27,11 @@ export const FACT_WORDS = {
   /** Under a right that is off, and under ledger editing: when it began. */
   since: (date: string) => `Since ${date}`,
   sinceUnrecorded: 'Since: not recorded yet',
-  /** It began before the rows one read walks back (`rightsSinceCapped`, `ledger.sinceCapped`). */
-  sinceTooOld: 'Since: older than what one read covers',
+  /**
+   * The read stopped before it found the start, or its budget couldn't afford it at all
+   * (`rightsSinceCapped`, `ledger.sinceCapped`): it can't be said — never "old", never "not recorded".
+   */
+  sinceUnread: 'Since: not found in what this read covers',
   /** Under the bounty limit: this season's asks, from the create gate's record. */
   seasonAsks: (asks: string, over: string, recent: string) =>
     `This season: ${asks}, ${over} over the limit, ${recent} turned away for a recent report`,

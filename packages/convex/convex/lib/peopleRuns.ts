@@ -132,6 +132,13 @@ export const BACKFILL_STALL_MS = 10 * 60_000;
 
 // ── The lease ──────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The small documents a pass's lease reads at its dearest, for its budget to reserve: taken
+ * ({@link takeLease}: the run row and its progress), a gap recorded ({@link foundGap}: the run row),
+ * handed on ({@link savePass}: both again). A pass that ends instead ({@link endRun}) reads less.
+ */
+export const LEASE_READS = 5;
+
 /** A pass's hold on its job: the current run and pass token, its failures so far, whether it chains. */
 export interface Lease {
   job: PeopleJob;
@@ -197,8 +204,16 @@ export type RunView = Doc<'peopleJobRuns'> & RunProgress;
  */
 export async function readRun(ctx: QueryCtx, job: PeopleJob): Promise<RunView | null> {
   const [row, progress] = await Promise.all([runRow(ctx, job), progressRow(ctx, job)]);
-  return row === null ? null : { ...row, ...progressOf(row, progress) };
+  return row === null ? null : joinRun(row, progress);
 }
+
+const joinRun = (
+  row: Doc<'peopleJobRuns'>,
+  progress: Doc<'peopleJobProgress'> | null,
+): RunView => ({
+  ...row,
+  ...progressOf(row, progress),
+});
 
 /**
  * Take the lease for a pass. With no `run`, start a new run: mint the next run number, make it current
@@ -211,13 +226,16 @@ export async function takeLease(
   job: PeopleJob,
   args: { run?: number; pass?: number; alone?: boolean; cursor?: string | null },
 ): Promise<Lease | null> {
-  const row = await readRun(ctx, job);
+  const [stored, progress] = await Promise.all([runRow(ctx, job), progressRow(ctx, job)]);
+  const row = stored === null ? null : joinRun(stored, progress);
   if (args.run !== undefined) {
     if (!row || row.run !== args.run || !row.running || row.pass !== args.pass) return null;
     return { job, run: row.run, pass: row.pass, failed: row.failed, chains: row.chains };
   }
   const fields = {
-    run: (row?.run ?? 0) + 1,
+    // Past any progress row too: one that outlived its run row (a row cleared by hand) must read as
+    // another run's, never as this one's, or its spent token would hold this run's first pass.
+    run: Math.max(row?.run ?? 0, progress?.run ?? 0) + 1,
     running: true,
     cursor: null,
     failed: 0,

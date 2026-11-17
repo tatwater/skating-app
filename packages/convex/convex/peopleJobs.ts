@@ -37,6 +37,7 @@ import {
   BACKFILL_ARGS,
   endRun,
   foundGap,
+  LEASE_READS,
   type Lease,
   PASS_SIZE,
   readPreparation,
@@ -711,7 +712,7 @@ export const backfillRows = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillRows', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'rows', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;
@@ -846,7 +847,7 @@ export const backfillFlagSubjects = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillFlagSubjects', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'flagSubjects', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;
@@ -900,7 +901,7 @@ export const backfillUndoChains = internalMutation({
   handler: (ctx, args) =>
     traced('peopleJobs.backfillUndoChains', args, async () => {
       const reads = new ReadBudget();
-      reads.reserve('small', 4);
+      reads.reserve('small', LEASE_READS);
       const lease = await takeLease(ctx, 'undoChains', args);
       if (lease === null) return SUPERSEDED;
       let failed = lease.failed;

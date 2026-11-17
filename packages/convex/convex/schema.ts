@@ -138,6 +138,17 @@ import {
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
 
+/** A People chained job (`lib/peopleRuns.PEOPLE_JOBS`): its run row and its progress row alike. */
+const peopleJob = v.union(
+  v.literal('rows'),
+  v.literal('flagSubjects'),
+  v.literal('undoChains'),
+  // The content record (B01-4d): the verdict replay and the erasure clocks after it.
+  v.literal('verdicts'),
+  v.literal('lapseSweep'),
+  v.literal('lapseRetry'),
+);
+
 export default defineSchema({
   profiles: defineTable({
     clerkUserId: v.string(), // ties this profile to its Clerk auth user (identity.subject)
@@ -520,15 +531,7 @@ export default defineSchema({
    * is its row in `peopleJobProgress`, so a backfill in flight re-runs no People read (B01-4j).
    */
   peopleJobRuns: defineTable({
-    job: v.union(
-      v.literal('rows'),
-      v.literal('flagSubjects'),
-      v.literal('undoChains'),
-      // The content record (B01-4d): the verdict replay and the erasure clocks after it.
-      v.literal('verdicts'),
-      v.literal('lapseSweep'),
-      v.literal('lapseRetry'),
-    ),
+    job: peopleJob,
     /** The current run's number: the only run whose passes may write. */
     run: v.number(),
     /**
@@ -572,14 +575,7 @@ export default defineSchema({
    * run's, and is read as absent.
    */
   peopleJobProgress: defineTable({
-    job: v.union(
-      v.literal('rows'),
-      v.literal('flagSubjects'),
-      v.literal('undoChains'),
-      v.literal('verdicts'),
-      v.literal('lapseSweep'),
-      v.literal('lapseRetry'),
-    ),
+    job: peopleJob,
     /** The run this progress belongs to. */
     run: v.number(),
     /** The pass token the run's next pass must carry. */

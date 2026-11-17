@@ -212,7 +212,6 @@ export const RECORD_WORDS = {
     overturn: 'Overturning',
     keep: 'Keeping',
   } as const,
-  undoTheRestore: 'Undo the restore',
   /** The pane's Undo on the write that ended its newest decision, by how it ended. */
   undoTheEnd: {
     restore: 'Undo the restore',

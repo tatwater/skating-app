@@ -7,6 +7,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
+import { shownName } from '../../admin/people/person/personModel';
 import { WORDS as PERSON_WORDS } from '../../admin/people/person/personWords';
 import { changedOf } from '../../admin/people/person/usePersonWrites';
 import { RECORD_WORDS } from '../../admin/people/record/recordWords';
@@ -77,9 +78,9 @@ export function statusLabel(user: Pick<ModeratedUser, 'status' | 'suspendedUntil
   return { value: 'Active' };
 }
 
-/** Who a toast names: their name, as the console's person page names them, else their handle. */
+/** Who a toast names: by the console's person page's own rule (`shownName`). */
 export const toastName = (user: Pick<ModeratedUser, 'displayName' | 'username'>): string =>
-  user.displayName?.trim() || `@${user.username}`;
+  shownName({ displayName: user.displayName ?? null, username: user.username });
 
 /**
  * The moderator's tools on someone's page (6.8, D37): the same levers as the console, over the same

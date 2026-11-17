@@ -4636,7 +4636,8 @@ each fixed as its class with a failing test first (2026-11-16). No decision mint
   instance).
 - **The person page draws the lever facts the server sends:** since when each right now off was
   turned off (`rightsSince`) and since when ledger editing has been held (`ledger.since`) — a date, *not
-  recorded yet*, or *older than what one read covers* for `rightsSinceCapped` / `ledger.sinceCapped`;
+  recorded yet*, or *not found in what this read covers* for `rightsSinceCapped` / `ledger.sinceCapped`
+  (the read stopped short, or the budget couldn't afford it — so never "old");
   this season's bounty asks under the limit (`bountySeason`, floors as "500+", *not recorded yet* when
   the season began before the gate's record); the head's link by the profile read's own answer for
   this viewer (`publicProfile.opens`, its `path`; *Private profile* when it opens to name and picture
@@ -4645,7 +4646,7 @@ each fixed as its class with a failing test first (2026-11-16). No decision mint
   switched on (`can.flaggingOn`), the bounty limit (*Set limit* drawn while `bountyRaise` or
   `bountyLower` is open; its dialog sends only a way that is, asks a reason exactly when that answer
   does, and shows a refused way's answer). These facts are the person read's own, so their answers
-  are three (a value, not recorded, older than a read covers) — loading and failure are the page's.
+  are three (a value, not recorded, not found in the read) — loading and failure are the page's.
   The *can is the law* property now draws every entry independently.
 - **A Post restored with chosen Reports**: those Reports left Standing with no row for the rest of
   the sitting. Now each Report the write restored with its Post (the chooser's `withReportIds`) keeps
@@ -4668,7 +4669,7 @@ each fixed as its class with a failing test first (2026-11-16). No decision mint
   Inbox.
 
 **Words this pass added** (for the founder's copy pass): in `person/factWords.ts` — *Since ‹date›*;
-*Since: not recorded yet*; *Since: older than what one read covers*; *This season: ‹N asks›, ‹N› over
+*Since: not recorded yet*; *Since: not found in what this read covers*; *This season: ‹N asks›, ‹N› over
 the limit, ‹N› turned away for a recent report*; *‹N› ask* / *‹N› asks*; *No bounty asks this
 season*; *This season’s asks: not recorded yet*; *Private profile*. In `record/recordWords.ts` — *Put
 the decision back*; *Undo the overturn*; *The decision on this ‹kind› was undone*; *The decision on

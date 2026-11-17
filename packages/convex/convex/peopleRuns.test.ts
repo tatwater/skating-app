@@ -21,12 +21,17 @@ import * as flagSubjectLib from './lib/flagSubject';
 import * as peopleRows from './lib/peopleRows';
 import {
   BACKFILL_STALL_MS,
+  endRun,
+  foundGap,
+  LEASE_READS,
   PASS_SIZE,
   PEOPLE_BACKFILLS,
   type PeopleJob,
   type RunView,
   readPending,
   readRun,
+  savePass,
+  takeLease,
 } from './lib/peopleRuns';
 import schema from './schema';
 
@@ -679,6 +684,41 @@ function recording(ctx: QueryCtx): { ctx: QueryCtx; tables: Set<string>; gets: n
   };
 }
 
+/** Count the documents a mutation context's reads fetch (each `first`, `unique` and `get`). */
+function recordingReads(ctx: MutationCtx) {
+  let n = 0;
+  const wrapQuery = (q: unknown): unknown =>
+    new Proxy(q as object, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          const out = (value as (...a: unknown[]) => unknown).apply(target, args);
+          if (key === 'first' || key === 'unique') n += 1;
+          return out instanceof Promise ? out : wrapQuery(out);
+        };
+      },
+    });
+  const db = new Proxy(ctx.db, {
+    get(target, key, receiver) {
+      if (key === 'query') return (table: string) => wrapQuery(target.query(table as never));
+      if (key === 'get')
+        return (...args: unknown[]) => {
+          n += 1;
+          return (target.get as (...a: unknown[]) => unknown)(...args);
+        };
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  return {
+    ctx: { ...ctx, db } as MutationCtx,
+    reads: () => n,
+    reset: () => {
+      n = 0;
+    },
+  };
+}
+
 /** The documents a People read's `pending` depends on: each backfill's run row, as stored. */
 async function pendingDocs(t: T): Promise<string[]> {
   return t.run(async (ctx) => {
@@ -792,6 +832,55 @@ describe('a backfill in flight re-runs no People read pass by pass', () => {
     const rows = await t.run((ctx) => ctx.db.query('peopleRows').collect());
     expect(rows.map((r) => r.userId).sort()).toEqual([ids[1], ids[2]].sort());
     expect(await runRow(t, 'rows')).toMatchObject({ run: 1, running: false, ready: true });
+  });
+
+  test('a pass’s lease reads no more than its budget reserves (`LEASE_READS`)', async () => {
+    const t = convexTest(schema, modules);
+    const reads = await t.run(async (ctx) => {
+      const counted = recordingReads(ctx as unknown as MutationCtx);
+      // The dearest pass: a run continued, a gap recorded, handed on.
+      const start = await takeLease(ctx as unknown as MutationCtx, 'rows', { alone: true });
+      if (start === null) throw new Error('no lease');
+      await endRun(ctx as unknown as MutationCtx, start, 0);
+      const begun = await takeLease(ctx as unknown as MutationCtx, 'rows', { alone: true });
+      if (begun === null) throw new Error('no lease');
+      const first = await savePass(ctx as unknown as MutationCtx, begun, {
+        cursor: 'a',
+        failed: 0,
+      });
+      counted.reset();
+      const lease = await takeLease(counted.ctx, 'rows', first);
+      if (lease === null) throw new Error('no lease');
+      await foundGap(counted.ctx, lease);
+      await savePass(counted.ctx, lease, { cursor: 'b', failed: 0 });
+      return counted.reads();
+    });
+    expect(reads).toBeLessThanOrEqual(LEASE_READS);
+    expect(reads).toBeGreaterThan(0);
+  });
+
+  test('a progress row that outlived its run row is another run’s: a new run mints past it', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) await ctx.db.insert('profiles', profile(`s${i}`));
+      // A run row cleared by hand, its run's progress left behind, its token long spent.
+      await ctx.db.insert('peopleJobProgress', {
+        job: 'rows',
+        run: 1,
+        pass: 7,
+        cursor: null,
+        failed: 2,
+        updatedAt: T0,
+      });
+    });
+    await t.mutation(internal.peopleJobs.backfillRows, { alone: true });
+    expect(await runRow(t, 'rows')).toMatchObject({ run: 2, pass: 1, failed: 0, running: true });
+    for (;;) {
+      const pass = (await pendingPasses(t, SPECS[0] as Spec))[0];
+      if (!pass) break;
+      await runPass(t, SPECS[0] as Spec, pass);
+    }
+    expect(await runRow(t, 'rows')).toMatchObject({ run: 2, running: false, ready: true });
   });
 
   test('a stalled run is still told stalled, by its progress’s heartbeat', async () => {
