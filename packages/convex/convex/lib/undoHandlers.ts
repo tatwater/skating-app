@@ -32,6 +32,7 @@ import {
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
 import { type PersonWrite, type StatusTerms, sameStatusTerms } from './peopleCan';
+import { ROW_MAX, type WaveCost } from './readBudget';
 import { termsSetBy } from './statusTerms';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
@@ -43,6 +44,8 @@ import {
   type TargetUndo,
   type UndoCall,
   type UndoHandler,
+  type UndoRead,
+  type UndoScope,
 } from './undoTypes';
 
 // ── Content: reports, posts, comments, hazards ────────────────────────────────────────────────────
@@ -90,8 +93,20 @@ const takeContentBackTo =
   };
 
 /**
+ * A row that left the item's status as it was (and, on a Post, moved none of its members): whatever it
+ * did, it did to the person's record alone (B01-4h).
+ */
+function leftContentAsItWas(row: Doc<'moderationActions'>): boolean {
+  const { priorStatus, newStatus } = meta(row);
+  return priorStatus === newStatus && (cascadeOf(row) ?? []).length === 0;
+}
+
+/**
  * Does undoing this row put anything — the item, or a member of a Post — back further down? Then it
- * takes something away, and asks why (D226's reason rule): one rule for hide, remove and restore.
+ * takes something away, and asks why (D226's reason rule): one rule for hide, remove and restore. A
+ * row that only moved the record alternates down its undo chain: a takedown that put a decision on it
+ * (depth 0, or a redo at an even depth) is undone by taking it off — a give-back — and the undo that
+ * took it off (an odd depth) is undone by putting it back, which takes something away.
  */
 function contentUndoTakesAway(row: Doc<'moderationActions'>): boolean {
   const { priorStatus, newStatus } = meta(row) as {
@@ -99,36 +114,90 @@ function contentUndoTakesAway(row: Doc<'moderationActions'>): boolean {
     newStatus: ContentStatus;
   };
   if (STATUS_SEVERITY[priorStatus] > STATUS_SEVERITY[newStatus]) return true;
-  return (cascadeOf(row) ?? []).some((m) => STATUS_SEVERITY[m.from] > STATUS_SEVERITY[m.to]);
+  if ((cascadeOf(row) ?? []).some((m) => STATUS_SEVERITY[m.from] > STATUS_SEVERITY[m.to])) {
+    return true;
+  }
+  return row.action !== 'restore' && leftContentAsItWas(row) && (row.undoDepth ?? 0) % 2 === 1;
+}
+
+/** What {@link recordOnlyRefusal} reads at worst: the verdict a row minted and the one it ended. */
+const RECORD_ONLY_COST: WaveCost = { bytes: 3 * ROW_MAX.verdict, reads: 2, docs: 3 };
+
+/**
+ * **Why the undo of a row that only moved the record would change nothing, or `null`** (B01-4h). The
+ * row left the item as it found it — a hide of what its Post's hide took down, with no decision of its
+ * own on it, or that hide's undo — so its undo is the record's alone, run through the same writer
+ * (`setContentStatus` as an undo: `recordUndoneVerdict`), and it lands exactly when:
+ * - the row put a decision on the record that still stands, and ended none — the undo takes it off;
+ * - or the row ended a decision and put none on — the undo puts it back (`recordUndoneVerdict` mints
+ *   again what the undone row ended).
+ * A row that did both (a repeat from before D270: one decision replaced by another of its kind) or
+ * neither changed nothing the undo could put back. Read from the verdict rows, never guessed from the
+ * audit row, so History, the toast and the record pane offer it only where the write lands.
+ */
+async function recordOnlyRefusal(
+  ctx: Parameters<NonNullable<UndoHandler['refusal']>>[0],
+  row: Doc<'moderationActions'>,
+  read: UndoRead,
+): Promise<string | null> {
+  if (!leftContentAsItWas(row)) return null;
+  const [minted, ended] = await Promise.all([
+    read.take('verdict', 2, () =>
+      ctx.db
+        .query('contentVerdicts')
+        .withIndex('by_action', (q) => q.eq('actionId', row._id))
+        .take(2),
+    ),
+    read.take('verdict', 1, () =>
+      ctx.db
+        .query('contentVerdicts')
+        .withIndex('by_ended_by', (q) => q.eq('endedByActionId', row._id))
+        .take(1),
+    ),
+  ]);
+  const putOn = minted.length > 0;
+  const tookOff = ended.length > 0;
+  if (putOn && !tookOff && minted.some((v) => v.standing)) return null;
+  if (tookOff && !putOn) return null;
+  return `Nothing changed: it was already ${meta(row).priorStatus}.`;
 }
 
 /**
  * hide / remove → the status it took the item down from, as the row recorded it. Not "visible"
  * regardless: removing an item a moderator had already hidden, then undoing the removal, must leave
- * it hidden, never publish it. A takedown that changed nothing — not the item, and on a Post none of
- * its members — has nothing to undo, and a row without the prior status can't say what to put back.
+ * it hidden, never publish it. A takedown that left the item as it was moved the record alone, and its
+ * undo moves the record back ({@link recordOnlyRefusal}); a row without the prior status can't say
+ * what to put back.
  */
 const contentUndoTakedown: UndoHandler = {
   blocked: (row) => {
-    const { priorStatus, newStatus } = meta(row);
+    const { priorStatus } = meta(row);
     // A verdict recorded on content its author had already deleted is reversed by an overturn (D248).
     if (meta(row).onAuthorDeleted === true) return AUTHOR_DELETED_OVERTURN;
     if (priorStatus !== 'visible' && priorStatus !== 'hidden' && priorStatus !== 'removed') {
       return PREDATES;
     }
-    if (priorStatus === newStatus && (cascadeOf(row) ?? []).length === 0) {
-      return `Nothing changed: it was already ${priorStatus}.`;
-    }
     return contentBlocked(row);
   },
   undoTakesAway: contentUndoTakesAway,
+  refusalCost: () => RECORD_ONLY_COST,
+  refusal: recordOnlyRefusal,
   run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
 };
+
+/**
+ * A restore that left the item up: it only ended a decision standing on content already up (a history
+ * rebuilt from before the record). Putting that decision back would be a decision standing on content
+ * that is up, which no write records — so the undo is refused, and says what puts one back.
+ */
+export const RESTORE_ENDED_ONLY =
+  'This only took a decision off something that was already up. Hide it again to put a decision on the record.';
 
 /** restore → the status it restored from (a Post's members, each to theirs). */
 const contentUndoRestore: UndoHandler = {
   blocked: (row) => {
     const prior = meta(row).priorStatus;
+    if (prior === 'visible' && meta(row).newStatus === 'visible') return RESTORE_ENDED_ONLY;
     if (prior !== 'hidden' && prior !== 'removed') return PREDATES;
     return contentBlocked(row);
   },
@@ -296,6 +365,10 @@ const TARGET_UNDO: Partial<Record<ModerationTargetType, TargetUndo>> = {
 
 function shared(verb: keyof TargetUndo): UndoHandler {
   const forRow = (row: Doc<'moderationActions'>) => TARGET_UNDO[row.targetType]?.[verb];
+  const checks = Object.values(TARGET_UNDO).flatMap((t) => {
+    const h = t?.[verb];
+    return h?.refusal !== undefined ? [h] : [];
+  });
   return {
     blocked: (row, viewer) => {
       const h = forRow(row);
@@ -304,6 +377,17 @@ function shared(verb: keyof TargetUndo): UndoHandler {
         : 'Undo for this kind of item is not built yet.';
     },
     undoTakesAway: (row) => forRow(row)?.undoTakesAway(row) ?? false,
+    // A kind's own check of the row as it stands (content's: what it did to the record), only where a
+    // kind has one, reserved at the dearest kind's worst.
+    ...(checks.length > 0
+      ? {
+          refusalCost: (scope: UndoScope) =>
+            checks
+              .map((h) => h.refusalCost?.(scope) ?? { bytes: ROW_MAX.waterBody, reads: 1 })
+              .reduce((most, c) => (c.bytes > most.bytes ? c : most)),
+          refusal: async (ctx, row, read) => (await forRow(row)?.refusal?.(ctx, row, read)) ?? null,
+        }
+      : {}),
     run: async (call) => {
       const h = forRow(call.row);
       if (!h) throw new Error(`no undo for ${verb} on ${call.row.targetType}`);
