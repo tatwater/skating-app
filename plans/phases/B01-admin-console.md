@@ -4333,19 +4333,19 @@ draws 34; the role menu's item takes two lines.
 
 **Owed:**
 - A web pass on the server follow-up (B01-4b), which supplies what was owed to it here:
-  `people.listPage` taking an `endCursor` (until the page passes it, a change in an earlier page
-  drops the deeper pages while they re-read); staff rows' `lastSeenInConsoleAt`, `roleSince` and
-  `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket time; `{ actionId,
-  undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the bounty season line;
-  explicit `can` entries for every lever; a profile-opens flag; flag target labels and appeal text;
-  who undid a row — and the capped answers beside them the page doesn't draw yet
-  (`decisions.capped`, `open.flagLabelsCapped`, `ledger.sinceCapped`, `rightsSinceCapped`, and a
-  staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a capped date there still reads
-  as not recorded. The merge filled the fixtures with the new fields and made the list row's staff
-  overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`; the status note's who-and-when
-  line tells a start past the read (`statusNote.atCapped`) from one not recorded.
+  ~~`people.listPage` taking an `endCursor`~~ (B01-4i, below); staff rows' `lastSeenInConsoleAt`,
+  `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
+  time; `{ actionId, undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the
+  bounty season line; explicit `can` entries for every lever; a profile-opens flag; ~~flag target
+  labels and appeal text~~; ~~who undid a row~~ (both B01-4i) — and the capped answers beside them
+  the page doesn't draw yet (`decisions.capped`, ~~`open.flagLabelsCapped`~~, `ledger.sinceCapped`,
+  `rightsSinceCapped`, and a staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a
+  capped date there still reads as not recorded. The merge filled the fixtures with the new fields
+  and made the list row's staff overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`;
+  the status note's who-and-when line tells a start past the read (`statusNote.atCapped`) from one
+  not recorded.
 - The record sheet's kit candidates (`RecordRow`, `LifeList`, `LabelRows`) await a kit pass with the
-  others.
+  others — ~~their tests~~ (B01-4i); the promotion still waits.
 - The kit promotions (`SearchLane`, `LeverRow`) await a kit pass.
 - One `useClockFor` and one `ID_SHAPE` across Bodies and People — each duplicated in the Bodies
   directory, which the open Body console PRs are changing.
@@ -4362,6 +4362,69 @@ draws 34; the role menu's item takes two lines.
   console lays out its own columns and breaks the same way at phone width — it adopts the rule in
   its own pass (owed). The kit `AppShell`'s own stacking (below `lg`, for
   pages that pass it panes) measures the same way and should read the same rule.
+
+### The People pages draw what the server sends (B01-4i)
+
+A web pass over three facts the People server has sent since B01-4b and the pages didn't draw, and
+the record sheet's kit candidates' tests (2026-11-16; web only, no server change).
+
+- **The list's pages stay stitched** (`list/pageChain.ts`, pure). `people.listPage` took an
+  `endCursor` and the list never passed it: each page was a subscription read unbounded, so a person
+  joining or leaving an earlier page moved its end and the chain was cut there and read again from
+  the new end — the deeper pages dropped while they re-read. Now, as Convex's own reactive pagination
+  does, a page is pinned when the next is asked for: it is read as exactly `(cursor, end]`, its end
+  the `continueCursor` it gave, which the server then keeps whatever joins or leaves it; only the last
+  page is unbounded. A pinned page that grew past the server's 200 (`pageStatus: 'SplitRequired'`)
+  is split at its `splitCursor` into two pinned pages; a search gives no split point, so that page is
+  read again unbounded and the chain goes on from its new end (the deeper pages are asked again — a
+  search re-reads, it can't lose or repeat a row). While a page is being pinned its rows stand from
+  its last answer, which covered exactly that range (else every *Show more* would blink the page
+  above it out); a page to split draws its rows and nothing after them until the halves land. A
+  page read past that comes back done ends the chain; one whose end doesn't meet the next page's
+  start still re-anchors the pages after it (a server that didn't hold the end). A model property
+  (`pageChain.test.ts`, against `listPageFake.ts`, the server's paging with a small cap) drives
+  random joins, leaves and pages asked for, keyed and searched: no page overlaps another, the rows
+  are the server's list from its start with none missing, *done* only when the server's last page
+  is, and on a keyed lane every row a page read past covered still shows. The route test runs the
+  same against the mocked hook with reads first asked after a change held on their way.
+- **The paged People reads, inventoried.** The list (`people.listPage`: every lane, the queue and
+  Staff lanes read whole and keyed, the search) — fixed here. History (`people.history`) and
+  Decisions (`people.decisions`) are one read each, by `limit` (Decisions doubles it on *Show more*,
+  to 100) — no chain, so nothing to stitch. The record sheet's three lists (`contentRecord`
+  `personVerdicts`, `personReversed`, `personDeleted`, `record/recordReads.ts`) are a chain of
+  position cursors with the same re-anchoring, and **their server takes no `endCursor`**: stitching
+  them needs one (owed to the server agent, below). The Post chooser and the sheet's counts, item
+  and presence are single reads.
+- ***Open about this person* draws its facts.** A flag names the body it is on after what it is on
+  (*Spam flag on a report · Mascoma Lake*, `open.flags[].targetLabel`); a flag on the person names
+  nothing more — the label is their own name, already the page's head. When some flags went
+  unlabeled past what one read names (`open.flagLabelsCapped`), a note says so. An appeal shows what
+  the person wrote (`appeals[].body`, an admin's to read) as their words, quoted and never reworded,
+  bounded to four lines or 280 characters cut at a word (`feedWords.boundedWords`, a property over
+  any text); a cut ends on an ellipsis with *Show all* beside it (`aria-expanded`), which shows every
+  word. Long unbroken text wraps rather than scroll the pane sideways at phone width. The *Handle*
+  links still go to the old flags and support lists (the Inbox is on hold).
+- **The staff strip names who undid a staffer's decisions** (`staffStats.decisions.undoneByOthers.by`
+  and `byMore`): *5 later undone by ‹Ada›, ‹Bo› and 1 more*, each in the kit's `PersonLockup` (a
+  circle, the name masked from analytics) by first name, as the page names staff everywhere else; a
+  person whose row isn't written yet is counted in the *more*, never drawn blank; with no one the read
+  could name, the plain words stand. While the undo chains are being prepared, or nothing was undone,
+  the words are as they were. The cell's four answers — on its way, failed, no strip (`null`, not on
+  staff), named — are held apart in `PersonStrips.test.tsx`.
+- **The record sheet's kit candidates have tests** (`RecordRow`, `LifeList`, `LabelRows`, each fully
+  covered, beside the stories they had). Not promoted: the promotion moves imports in files #138 is
+  changing.
+
+**Words this pass added** (in `person/personWords.ts`, for the founder's copy pass): *Some flags here
+don’t say which body they’re on: more than one read names*; *Show all*; *Show less*; *‹N› later
+undone by* (followed by the names); *‹N› more*; *and*.
+
+**Owed:**
+- **`endCursor` on the record sheet's three lists** (`contentRecord.personVerdicts`, `personReversed`,
+  `personDeleted`) — the server agent's: each reads `(cursor, endCursor]` and keeps the end as its
+  `continueCursor`, as `people.listPage` does; then `recordReads` reads `pageChain` as the list does.
+  Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.
+- What else B01-4b sent that the pages don't draw yet stays on *The People pages*' list above.
 
 ### The Body console follow-up (B01-3e)
 
