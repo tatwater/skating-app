@@ -7,14 +7,16 @@ import type { PublicAccessVerdict } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 
+import { ID_SHAPE } from '@/components/admin/reads/readArgs';
 import { Button, buttonVariants } from '@/components/kit/button';
 import { useRole } from '@/lib/useRole';
+import { CONSOLE_HOLDS, CONSOLE_UNAVAILABLE, OPEN_IN_CONSOLE } from './moderatorWords';
 
 /**
  * What a moderator also sees on a lake (board 1.14): the console's register at a skater's size — a
  * dashed hairline card with a shield, never a pill. Two of them on About: the access ruling (under
- * Public access) and the tools (at the tab's end, the lake editor in a new tab, plus approve and
- * reject on a pending user-drawn body). **Capability-gated** like the old `ModeratorActions`:
+ * Public access) and the tools (at the tab's end, the lake's Body console in a new tab, plus approve
+ * and reject on a pending user-drawn body). **Capability-gated** like the old `ModeratorActions`:
  * `canModerate`, not `isModerator`, so a departing operator isn't offered a write the server
  * refuses. Every Convex function hard-gates on the role regardless.
  */
@@ -125,15 +127,19 @@ export function AccessRulingCard({
   );
 }
 
-/** The tools card: the lake editor, and the review of a pending user-drawn body. */
+/**
+ * The tools card: the lake's Body console, and the review of a pending user-drawn body. `consoleHref`
+ * is `null` when the console can't open this lake for this account — no link then, never a dead
+ * one: the card says so instead.
+ */
 export function ModeratorToolsView({
-  editorHref,
+  consoleHref,
   pendingReview,
   busy,
   onApprove,
   onReject,
 }: {
-  editorHref: string;
+  consoleHref: string | null;
   pendingReview: boolean;
   busy: boolean;
   onApprove: () => void;
@@ -142,25 +148,26 @@ export function ModeratorToolsView({
   return (
     <ModeratorFrame title="Moderator tools">
       <p className="m-0 text-assist text-fg2 [text-wrap:pretty]">
-        Depth, shape, names, bays, put-ins, posted rules, and the links above are all edited in the
-        lake editor, with the audit trail.
+        {consoleHref === null ? CONSOLE_UNAVAILABLE : CONSOLE_HOLDS}
       </p>
-      <div className="flex flex-wrap gap-(--space-2)">
-        <a
-          href={editorHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-attr="mod-edit-lake"
-          className={buttonVariants({ variant: 'link', size: 'sm' })}
-        >
-          Edit this lake
-          <FontAwesomeIcon
-            icon={faArrowUpRightFromSquare}
-            aria-hidden="true"
-            className="h-[0.9em]"
-          />
-          <span className="sr-only">(opens in a new tab)</span>
-        </a>
+      <div className="flex flex-wrap gap-(--space-2) empty:hidden">
+        {consoleHref !== null && (
+          <a
+            href={consoleHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-attr="mod-edit-lake"
+            className={buttonVariants({ variant: 'link', size: 'sm' })}
+          >
+            {OPEN_IN_CONSOLE}
+            <FontAwesomeIcon
+              icon={faArrowUpRightFromSquare}
+              aria-hidden="true"
+              className="h-[0.9em]"
+            />
+            <span className="sr-only">(opens in a new tab)</span>
+          </a>
+        )}
         {pendingReview && (
           <>
             <Button size="sm" disabled={busy} data-attr="mod-approve" onClick={onApprove}>
@@ -176,12 +183,20 @@ export function ModeratorToolsView({
   );
 }
 
+/**
+ * The Body console for a lake, or `null` when it can't open it for this viewer: the console's reads
+ * are `body.read`'s, and its route takes only an id of a Convex id's shape.
+ */
+export function consoleHrefFor(bodyId: string, canReadBody: boolean): string | null {
+  return canReadBody && ID_SHAPE.test(bodyId) ? `/admin/body/${bodyId}` : null;
+}
+
 export function ModeratorTools({
   body,
 }: {
   body: { _id: string; source: string; reviewStatus?: 'pending' | 'approved' | 'rejected' };
 }) {
-  const { canModerate } = useRole();
+  const { canModerate, can } = useRole();
   const approve = useMutation(api.waterBodies.approve);
   const reject = useMutation(api.waterBodies.reject);
   const [busy, setBusy] = useState(false);
@@ -195,7 +210,7 @@ export function ModeratorTools({
   };
   return (
     <ModeratorToolsView
-      editorHref={`/admin/water/${body._id}`}
+      consoleHref={consoleHrefFor(body._id, can('body.read'))}
       pendingReview={body.source === 'user' && body.reviewStatus === 'pending'}
       busy={busy}
       onApprove={() => run(() => approve({ waterBodyId }))}

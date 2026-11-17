@@ -14,7 +14,7 @@ import { HazardListView } from './HazardList';
 import { LakeRow } from './LakeRow';
 import { StandingNoticeView } from './LakeStates';
 import { ONLY_OLDER_MARKERS } from './lakeModel';
-import { AccessRulingCardView } from './ModeratorCard';
+import { AccessRulingCardView, consoleHrefFor } from './ModeratorCard';
 import { ReportsListView } from './ReportsTab';
 
 const now = Date.now();
@@ -270,5 +270,17 @@ describe('an action’s focus (§1.8)', () => {
   it('leaves the focus alone when it isn’t asked to take it', () => {
     render(<ActionPane act="hazard" backTo="Explore" onBack={() => {}} autoFocus={false} />);
     expect(screen.getByRole('button', { name: 'Back to Explore' })).not.toHaveFocus();
+  });
+});
+
+describe('the moderator tools card’s way to the Body console (B01-3n)', () => {
+  const ID = 'k17mascomalakeaaaaaaaaaaaaaaaaa';
+  it('links the lake’s own console, and only one the console can open for this viewer', () => {
+    expect(consoleHrefFor(ID, true)).toBe(`/admin/body/${ID}`);
+    // Without the console's read capability, or for an id the console's route reads as no body:
+    // no link at all, never a dead one.
+    expect(consoleHrefFor(ID, false)).toBeNull();
+    expect(consoleHrefFor('mascoma', true)).toBeNull();
+    expect(consoleHrefFor('', true)).toBeNull();
   });
 });

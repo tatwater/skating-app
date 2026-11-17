@@ -555,7 +555,7 @@ export const AboutModerator: Story = {
               ]}
             />
             <ModeratorToolsView
-              editorHref="/admin/water/mascoma"
+              consoleHref="/admin/body/k17mascomalakeaaaaaaaaaaaaaaaaa"
               pendingReview={false}
               busy={false}
               onApprove={fn()}
@@ -571,9 +571,15 @@ export const AboutModerator: Story = {
     const q = within(quad);
     await expect(q.getByRole('tab', { name: 'About' })).toHaveAttribute('aria-selected', 'true');
     // App links leave in a new tab; the moderator cards are dashed hairlines, square.
-    for (const a of q.getAllByRole('link', { name: /Association|Nordic|Edit this lake/ })) {
+    for (const a of q.getAllByRole('link', {
+      name: /Association|Nordic|Open in the Body console/,
+    })) {
       await expect(a).toHaveAttribute('target', '_blank');
     }
+    // The tools card leads to the lake's Body console, never the old editor.
+    await expect(
+      q.getByRole('link', { name: /Open in the Body console/ }).getAttribute('href'),
+    ).toMatch(/^\/admin\/body\//);
     const card = q.getByRole('region', { name: 'Moderator tools' });
     await expect(getComputedStyle(card).borderTopStyle).toBe('dashed');
     await expect(getComputedStyle(card).borderTopLeftRadius).toBe('0px');
