@@ -5224,6 +5224,7 @@ the default timeout is back.
 - `seedAll` (and `fanOut`, `repairMissing`) — Convex's `paginate` with no filter and no byte cap: a page that is not the last holds at least one row and its cursor is past it. Cannot stall.
 - `markGeoStale`, `reviewQueueCounts`, `checkStored` — not paged (a list in hand; six bounded reads; at most 25 ids). Cannot stall.
 - `computeDue` — its pass tries at least one body it has not (unchanged by #143); the run-wide namesake reads change what a body reads, not which body is next. Cannot stall.
+- `hydrateRanked` (this build's) — the same class, found in review: a fractional or `NaN` limit made a wave of none, and the loop never moved; a wave now holds at least one candidate. Cannot stall.
 - `ReadBudget.waves` in these files — only the town page, whose second wave (the full columns' cells) was the follow-up its first could starve; now its first cell is held, and any later cell refused ends the page after the first.
 
 **`bodiesCoveringBox`'s hydration, in waves.** Dev's read-back of #143 left `candidates` the one read
