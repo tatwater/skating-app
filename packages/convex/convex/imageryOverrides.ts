@@ -136,8 +136,8 @@ export async function setOverrideImpl(
           ? composed`Showed the ${granuleId} pass to skaters anyway`
           : // The person's reason is held to the cap as typed and kept whole; the pass id is shortened.
             composedOf(
-              ['Hid the ', ' pass from skaters: '.concat(checkedReason(reason))],
-              [granuleId],
+              ['Hid the ', ' pass from skaters: ', checkedReason(reason)],
+              [granuleId, ''],
             )),
     metadata: {
       season,

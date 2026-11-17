@@ -26,7 +26,7 @@ import { seesLedgerGrants } from './ledgerEditors';
 import { ownContentRefusal } from './ownContent';
 import { type PersonWrite, refusalFor, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
-import { ROW_MAX, requestBudget } from './readBudget';
+import { ROW_MAX, requestBudget, type WaveCost } from './readBudget';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, type UndoRule, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
@@ -168,17 +168,28 @@ export async function undoStates(
     ),
   );
   const out = new Array<UndoState>(rows.length);
-  const pending: { index: number; row: Doc<'moderationActions'>; handler: UndoHandler }[] = [];
+  const pending: {
+    index: number;
+    row: Doc<'moderationActions'>;
+    handler: UndoHandler;
+    cost: WaveCost;
+  }[] = [];
   first.forEach((state, index) => {
     const row = rows[index] as Doc<'moderationActions'>;
     if ('handler' in state) {
-      if (state.handler.refusal) pending.push({ index, row, handler: state.handler });
+      // A row whose check reads nothing (`refusalCost` says `null`) is decided here, never queued.
+      const cost = state.handler.refusal
+        ? state.handler.refusalCost
+          ? state.handler.refusalCost(scope, row)
+          : { bytes: ROW_MAX.waterBody, reads: 1 }
+        : null;
+      if (cost !== null) pending.push({ index, row, handler: state.handler, cost });
       else out[index] = { state: 'available', needsReason: undoNeedsReason(row) };
     } else out[index] = state;
   });
   const checked = await requestBudget(ctx).waves(
     pending,
-    ({ handler }) => handler.refusalCost?.(scope) ?? { bytes: ROW_MAX.waterBody, reads: 1 },
+    ({ cost }) => cost,
     async ({ row, handler }, share): Promise<UndoState> => {
       const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope))) ?? null;
       return why

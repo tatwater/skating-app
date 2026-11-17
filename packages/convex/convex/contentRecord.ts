@@ -210,7 +210,10 @@ interface ListArgs {
 
 /** The levers on an item as a list row sees it (its members unread: `lib/recordRules`). */
 function rowLevers(viewer: RecordViewer, load: VerdictLoad, standing: boolean): RecordLevers {
-  return recordLevers(viewer, recordFactsOf(load.verdict.targetType, load.target, standing));
+  return recordLevers(
+    viewer,
+    recordFactsOf(load.verdict.targetType, load.target, standing ? load.verdict.kind : null),
+  );
 }
 
 /**
@@ -627,7 +630,7 @@ export async function deletedPage(
     eraseAt: c.doc.eraseAt ?? null,
     content: contentOf(c.kind, c.doc),
     ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
-    can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
+    can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, null)),
   }));
   return pageOf(
     page,
@@ -1025,6 +1028,8 @@ async function postMembersOf(ctx: QueryCtx, reads: ReadBudget, post: Doc<'posts'
   return {
     everyWithdrawn: known.every((m) => m.report === null || m.report.authorDeletedAt !== undefined),
     plan: { visibleAfter: plan.visibleAfter, choosable: plan.choosable },
+    // Its Reports up now — what a takedown of the Post would still move (`takedownRefusal`).
+    up: known.filter((m) => m.report?.moderationStatus === 'visible').length,
   };
 }
 
@@ -1038,8 +1043,16 @@ async function postMembersOf(ctx: QueryCtx, reads: ReadBudget, post: Doc<'posts'
  */
 export const item = query({
   args: { targetType: literals(VERDICT_TARGETS), targetId: v.string() },
-  handler: async (ctx, { targetType, targetId }) => {
-    const viewer = await requireCapability(ctx, 'content.read');
+  handler: async (ctx, args) => itemPane(ctx, await requireCapability(ctx, 'content.read'), args),
+});
+
+/** `item`'s pane, for a viewer already let in (the pane's cost test drives it on a counted context). */
+export async function itemPane(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  { targetType, targetId }: { targetType: VerdictTargetType; targetId: string },
+) {
+  {
     const reads = sheetBudget(ctx);
     const pending = await recordPending(ctx, reads);
     const id = targetIdOf(ctx, targetType, targetId);
@@ -1072,7 +1085,9 @@ export const item = query({
     ].sort((a, b) => b.at - a.at || b._creationTime - a._creationTime);
     // Never anything on the record, and no item: nothing to show.
     if (target === null && decisions.length === 0) return null;
-    const standing = decisions.some((d) => d.standing);
+    // The kind of the one that stands (the writers keep at most one), `null` with none.
+    const held = decisions.find((d) => d.standing)?.kind ?? null;
+    const standing = held !== null;
     // Each decision's row and the row that ended it.
     const rows = await reads.waves(
       decisions,
@@ -1090,6 +1105,22 @@ export const item = query({
       () => null,
     );
     const shown = takeUntilNull(rows);
+    // The undo of the write that ended the item's newest decision, for this viewer — where the pane
+    // offers one (B01-4h): only that decision's, and only while it is Reversed (ended, and nothing
+    // newer minted since). Every older decision's ending was overtaken by the write that made a newer
+    // one, so it has no undo to read. Main's engine, one row in view (`one`): its first step's calls
+    // and documents reserved here, as Reversed's rows reserve theirs; a refusal that reads (content's,
+    // what the row did to the record) is charged to the request's budget in the engine's waves.
+    const newestShown = shown[0];
+    const reversal =
+      newestShown !== undefined && isReversed(newestShown.d) && newestShown.ending !== null
+        ? newestShown.ending
+        : null;
+    let reversalUndo: UndoState | null = null;
+    if (reversal !== null) {
+      reads.reserveCalls(3, 18);
+      reversalUndo = (await undoStates(ctx, viewer, [reversal], 'one', 'read'))[0] ?? null;
+    }
     // The Report a comment or a Post is on; the erasure row of an item that is gone; a Post's
     // members, which decide its restore.
     const reportId = reportIdOf(targetType, target);
@@ -1177,14 +1208,25 @@ export const item = query({
         endedBy: names.person(ending?.actorId),
         endedHow: ending ? endedHowOf(ending) : null,
         endedReason: shownReason(ending),
+        // Both optional — added for the pane's Undo (B01-4h), absent where there is nothing to say.
+        /** The write that ended it — what its Undo undoes; absent while it stands. */
+        ...(d.endedByActionId !== undefined ? { endActionId: d.endedByActionId } : {}),
+        /**
+         * That write's undo for this viewer — on the item's newest decision while it is Reversed (the
+         * one the pane offers an Undo on); absent on every other, whose ending a newer decision's write
+         * has overtaken, and on one that stands.
+         */
+        ...(ending !== null && ending === reversal && reversalUndo !== null
+          ? { undo: reversalUndo }
+          : {}),
       })),
       /** More decisions than the pane read (or the budget reached): these are the newest. */
       decisionsCapped: newest.length > ITEM_DECISIONS || shown.length < decisions.length,
-      can: recordLevers(viewer, recordFactsOf(targetType, target, standing, members)),
+      can: recordLevers(viewer, recordFactsOf(targetType, target, held, members)),
       pending,
     };
-  },
-});
+  }
+}
 
 /**
  * What the person withdrew themselves, of one kind, newest first, a page at a time — with when each is

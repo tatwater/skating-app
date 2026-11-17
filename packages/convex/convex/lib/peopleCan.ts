@@ -20,6 +20,7 @@ import { canUse, isLeaving, ROLE_RANK } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { sameReason } from './audit';
 import {
   isLastLedgerEditor,
   LAST_EDITOR_MESSAGE,
@@ -262,11 +263,15 @@ export function statusTermsOf(
   };
 }
 
-/** Whether two sets of terms are the same — a status write between them changes nothing. */
+/**
+ * Whether two sets of terms are the same — a status write between them changes nothing. Reasons are
+ * compared normalized (`lib/audit.sameReason`, B01-4h): one kept with outer whitespace before the
+ * one normalizer matches its trimmed repeat, so neither the write nor its undo calls that a change.
+ */
 export function sameStatusTerms(a: StatusTerms, b: StatusTerms): boolean {
   return (
     a.status === b.status &&
-    a.statusReason === b.statusReason &&
+    sameReason(a.statusReason, b.statusReason) &&
     a.suspendedUntil === b.suspendedUntil
   );
 }

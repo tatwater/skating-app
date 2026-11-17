@@ -102,6 +102,24 @@ export function standingVerdictsOn(
 }
 
 /**
+ * The kind of the decision standing on one item, or `null` with none — what the record's rule reads
+ * as `heldAs` (`lib/recordRules`). One row: the writers keep at most one standing on an item.
+ */
+export async function heldKindOn(
+  ctx: QueryCtx,
+  targetType: VerdictTargetType,
+  targetId: string,
+): Promise<Doc<'contentVerdicts'>['kind'] | null> {
+  const standing = await ctx.db
+    .query('contentVerdicts')
+    .withIndex('by_target_standing', (q) =>
+      q.eq('targetType', targetType).eq('targetId', targetId).eq('standing', true),
+    )
+    .first();
+  return standing?.kind ?? null;
+}
+
+/**
  * End **every** standing verdict on an item, without touching its clock (the callers below do). Read
  * a page at a time until none is left — each one ended leaves the range, so this ends — never "the
  * first few": a verdict a reversal missed would stay on the person's record. `superseded`: ended by a

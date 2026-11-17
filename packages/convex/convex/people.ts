@@ -1089,7 +1089,7 @@ export const person = query({
         /** Who set them, and through what — the write `at` dates, whose reason this is. */
         by: await personRef(ctx, set.row?.actorId),
         via: set.row?.via ?? null,
-        /** The reason on file — the list row's too; that write's own when it was found. */
+        /** The reason on file — the list row's too; that write's own, or an undo's restored one. */
         reason: target.statusReason ?? null,
         suspendedUntil: target.status === 'suspended' ? (target.suspendedUntil ?? null) : null,
         // The gate's own rule.

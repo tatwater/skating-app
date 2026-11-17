@@ -15,7 +15,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
-import { type AuditReasonOrText, composed, writeAudit } from './lib/audit';
+import { type AuditReasonOrText, checkedReason, composed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
@@ -321,13 +321,15 @@ export const dismiss = mutation({
       decidedAt: now,
       updatedAt: now,
     });
-    const noted = kept ? ` — ${kept}` : '';
+    // The person's note, checked where it is quoted (trimmed, held to the cap — it already fits).
     await audit(
       ctx,
       actor._id,
       'remove',
       row,
-      composed`Dismissed "${row.name}": ${reason}${noted}`,
+      kept
+        ? composed`Dismissed "${row.name}": ${reason} — ${checkedReason(kept)}`
+        : composed`Dismissed "${row.name}": ${reason}`,
       { reason },
     );
   },

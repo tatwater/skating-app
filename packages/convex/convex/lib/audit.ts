@@ -72,7 +72,7 @@ export type AuditReasonOrText = AuditReason | string;
 
 /** A reason as written, refused past the cap with its plain message (D261). */
 export function typed(text: string): TypedReason {
-  return { typed: checkedReason(text) } as TypedReason;
+  return { typed: checkedReason(text) } as unknown as TypedReason;
 }
 
 /**
@@ -81,24 +81,78 @@ export function typed(text: string): TypedReason {
  * (D261's cap is for what a person types; a composed reason never makes its own write fail).
  */
 export function composed(fixed: TemplateStringsArray, ...values: unknown[]): ComposedReason {
-  return composedOf(
+  // A template's fixed parts are its own literals; what it quotes is held by the guard
+  // (`auditWriters.test.ts`: a person's words through `checkedReason`).
+  return partsOf(
     [...fixed],
     values.map((v) => String(v)),
   );
 }
 
+/** Made only by {@link checkedReason}: a brand a writer can't spell on a plain string. */
+declare const CHECKED: unique symbol;
+
+/**
+ * **A person's words as {@link checkedReason} kept them** — trimmed, held to the cap (D261). Still a
+ * string wherever one is read; the brand says the check ran, which {@link composedOf} asks of any
+ * fixed part that is not the writer's own literal.
+ */
+export type CheckedText = string & { readonly [CHECKED]: true };
+
+/**
+ * One fixed part of a composed reason, as {@link composedOf} takes it (B01-4h): a literal of the
+ * writer's own words, or a person's words checked ({@link CheckedText}) — never a plain `string`,
+ * whose words could be anyone's and would be kept whole past the cap, untrimmed, nor a template with
+ * a hole (`` `Hid ${note}` ``, which the `const` parameter infers as `` `Hid ${string}` ``). A pure
+ * literal is the one string type an empty object can't satisfy as a record's keys.
+ */
+// biome-ignore lint/complexity/noBannedTypes: `{}` is the probe — only a literal key set excludes it.
+export type FixedWord<S> = S extends CheckedText ? S : {} extends Record<S & string, 1> ? never : S;
+
 /**
  * A composed reason from its parts — for a writer whose fixed words aren't a template (a person's
- * checked words kept whole, a system line shortened around them).
+ * checked words kept whole, a system line shortened around them). Each fixed part is a literal or a
+ * `checkedReason(…)` (the type holds it); the values are shortened to fit, as a template's are.
  */
-export function composedOf(fixed: readonly string[], values: readonly string[]): ComposedReason {
+export function composedOf<const F extends readonly string[]>(
+  fixed: F & { readonly [K in keyof F]: FixedWord<F[K]> },
+  values: readonly string[],
+): ComposedReason {
+  return partsOf(fixed, values);
+}
+
+function partsOf(fixed: readonly string[], values: readonly string[]): ComposedReason {
   return { composed: true, fixed, values } as unknown as ComposedReason;
 }
 
-/** A person's typed reason, refused past the cap (D261) — for a writer that quotes it in a composed one. */
-export function checkedReason(typed: string): string {
-  if (typed.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
-  return typed;
+/**
+ * **The one normalizer** (B01-4h): a reason with its outer whitespace taken off, and nothing else
+ * changed. {@link writeAudit} stores every reason through it — plain, typed or composed — so a
+ * "nothing changed" comparison and the stored text never differ by a leading or trailing space.
+ */
+export function normalizeReason(text: string): string {
+  return text.trim();
+}
+
+/**
+ * **Whether two reasons are the same reason** — normalized on both sides, so a reason kept with outer
+ * whitespace before {@link normalizeReason} was the writer's (only a raw call could send one) still
+ * matches its trimmed repeat, with no backfill. `null` (none recorded) equals only `null`.
+ */
+export function sameReason(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return normalizeReason(a) === normalizeReason(b);
+}
+
+/**
+ * **A person's typed reason, as the write keeps it** — {@link normalizeReason} (a trailing space is
+ * never a change, D270), then refused past the cap (D261). Every typed reason goes through it
+ * (`typed`, and a writer that quotes one in a composed reason or compares it with the one on file).
+ */
+export function checkedReason(typed: string): CheckedText {
+  const text = normalizeReason(typed);
+  if (text.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
+  return text as CheckedText;
 }
 
 /** A composed reason as text, its values trimmed — the longest first — until it fits the cap. */
@@ -155,8 +209,12 @@ export async function writeAudit(
   // The one place a reason enters the log (D261). What a person typed is refused past the cap, the
   // whole write with it; a reason the system composed is shortened to fit — its names trimmed, its
   // fixed words kept — so no job or lever ever fails on a name it quoted.
-  const reason =
-    typeof given === 'string' ? given : 'typed' in given ? given.typed : fitComposed(given);
+  // Every kind normalized here, the one place (B01-4h): a plain string held to the cap once its outer
+  // whitespace is off, as a typed one is; a composed one trimmed after it is fitted (trimming only
+  // shortens it, so it still fits).
+  const reason = normalizeReason(
+    typeof given === 'string' ? given : 'typed' in given ? given.typed : fitComposed(given),
+  );
   if (reason.length > AUDIT_REASON_MAX) throw new ConvexError(AUDIT_REASON_TOO_LONG);
   const row = { ...rest, reason };
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);

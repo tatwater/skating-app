@@ -233,16 +233,34 @@ describe('undo: content (D226)', () => {
     const author = await seedUser(t, 'a');
     const mod = await seedUser(t, 'mod', 'moderator');
     const reportId = await seedReport(t, author.id);
-    for (const reason of ['unsafe claim', 'still unsafe']) {
-      await mod.as.mutation(api.moderation.setModerationStatus, {
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'hidden',
+      reason: 'unsafe claim',
+    });
+    // The same hide again changes nothing, so it is refused and writes nothing (D270)…
+    await expect(
+      mod.as.mutation(api.moderation.setModerationStatus, {
         targetType: 'report',
         targetId: reportId,
         status: 'hidden',
-        reason,
-      });
-    }
-    const second = await newestOn(t, 'report', reportId);
-    await expect(mod.as.mutation(api.undo.run, { actionId: second._id })).rejects.toThrow(
+        reason: 'still unsafe',
+      }),
+    ).rejects.toThrow(/already hidden/i);
+    // …and one recorded before that rule has nothing to undo.
+    const second = await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'hide',
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'still unsafe',
+        metadata: { priorStatus: 'hidden', newStatus: 'hidden' },
+        createdAt: Date.now() + 1,
+      }),
+    );
+    await expect(mod.as.mutation(api.undo.run, { actionId: second })).rejects.toThrow(
       /already hidden/i,
     );
     expect(await statusOf(t, reportId)).toBe('hidden');
