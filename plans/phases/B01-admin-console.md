@@ -4401,13 +4401,38 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
   (*Spam flag on a report · Mascoma Lake*, `open.flags[].targetLabel`); a flag on the person names
   nothing more — the label is their own name, already the page's head. When some flags went
   unlabeled past what one read names (`open.flagLabelsCapped`), a note says so — only when a flag
-  on content is the one left unnamed (a flag on the person past the cap names nothing more anyway). An appeal shows what
-  the person wrote (`appeals[].body`, an admin's to read) as their words, quoted and never reworded,
-  bounded to four lines or 280 characters cut at a word (`feedWords.boundedWords`, a property over
-  any text; characters counted as a reader sees them, so a cut never splits an emoji or an accent),
-  and masked from analytics as a name is; a cut ends on an ellipsis with *Show all* beside it (`aria-expanded`), which shows every
-  word. Long unbroken text wraps rather than scroll the pane sideways at phone width. The *Handle*
-  links still go to the old flags and support lists (the Inbox is on hold).
+  on content is the one left unnamed (a flag on the person past the cap names nothing more anyway).
+  An appeal shows what the person wrote (`appeals[].body`, an admin's to read) as their words, quoted
+  and never reworded, masked from analytics as a name is, clamped to four lines as they render
+  (`ClampedText`, below), with *Show all* exactly when they are cut. Every word is in the page: the
+  body is capped at its write (`support.create`, 5,000 characters), the one bound on what reaches
+  the DOM. Long unbroken text wraps rather than scroll the pane sideways at phone width. The
+  *Handle* links still go to the old flags and support lists (the Inbox is on hold).
+- **A person's words are bounded by the lines they take, never by the string** (Greptile on #142,
+  P2: the first build cut an appeal at 280 characters or four newlines, so a short paragraph
+  wrapped far past four lines at a phone's column and, not cut by the count, offered no *Show
+  all*). The class is a visual bound decided from the text — the width isn't in the string, so any
+  such bound is wrong at some width. The kit candidate `person/kit-candidates/clamped-text.tsx`
+  clamps by rendered lines (CSS line clamp) and measures whether the element is cut
+  (`clampOverflows`: its content past its clamped box, or, shown whole, taller than its lines),
+  asked again when its box resizes, a face loads or the words change; *Show all* is a real button
+  (`aria-expanded`, `aria-controls`) drawn exactly while the words are cut, focus stays on it as it
+  expands and collapses and goes to the text if the button goes, and the words' own line breaks
+  hold in both states. Unit tests drive the measure through its one seam (`clampMeasure`); its
+  story proves it in Chromium with a 240-character paragraph cut at a 200-px column and whole at the
+  detail column. `boundedWords` is gone. **The sweep** — every place on the People pages, the record
+  sheet, History and Decisions that draws a person's words or a reason:
+
+  | Where | How it is bounded | This fault? |
+  | --- | --- | --- |
+  | *Open about*'s appeal (`PersonFeeds.tsx`) | was 280 characters / four newlines; now `ClampedText` | fixed |
+  | History and Decisions rows' reason (`PersonFeeds.tsx` `FeedRows`) | not shortened: drawn whole, inline after the sentence (≤ 2,000 at the write since D261; older rows uncapped) | no |
+  | The status note's reason (`PersonView.tsx`, #138's) | drawn whole | no — not touched |
+  | A list row's reason on file (`list/PeopleList.tsx`) | drawn whole, wrapping | no |
+  | A record row's words and lines (`record/kit-candidates/record-row.tsx`) | one rendered line each (CSS `truncate`, the browser's ellipsis); the open item's pane shows them whole | no — a rendered bound, by design |
+  | The record item pane's words, reason and life (`record/RecordItem.tsx`, #138's) | drawn whole | no — not touched |
+  | A lever row's status and detail (`person/kit-candidates/lever-row.tsx`) | one rendered line (`truncate`); the console's own words, not a person's | no |
+
 - **The staff strip names who undid a staffer's decisions** (`staffStats.decisions.undoneByOthers.by`
   and `byMore`): *5 later undone by ‹Ada›, ‹Bo› and 1 more*, each in the kit's `PersonLockup` (a
   circle, the name masked from analytics) by first name, as the page names staff everywhere else; a
