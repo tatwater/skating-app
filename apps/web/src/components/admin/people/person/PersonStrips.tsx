@@ -7,6 +7,7 @@ import { SparkbarSet, Sparkbars } from '@/components/kit/trace-chart';
 import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { useColumnsFit } from '../../shell/columnsFit';
+import { FACT_WORDS } from './factWords';
 import {
   contradictionsFact,
   countText,
@@ -75,10 +76,10 @@ function People({ people, more }: NonNullable<Fact['named']>) {
     key: p.userId,
     node: <PersonLockup size="sm" name={p.name} src={p.src} className="align-middle" />,
   }));
-  if (more > 0) items.push({ key: 'more', node: WORDS.andMore(more) });
+  if (more > 0) items.push({ key: 'more', node: FACT_WORDS.andMore(more) });
   return items.map((item, i) => (
     <Fragment key={item.key}>
-      {i === 0 ? null : i === items.length - 1 ? ` ${WORDS.and} ` : ', '}
+      {i === 0 ? null : i === items.length - 1 ? ` ${FACT_WORDS.and} ` : ', '}
       {item.node}
     </Fragment>
   ));

@@ -4421,7 +4421,7 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
   covered, beside the stories they had). Not promoted: the promotion moves imports in files #138 is
   changing.
 
-**Words this pass added** (in `person/personWords.ts`, for the founder's copy pass): *Some flags here
+**Words this pass added** (in `person/factWords.ts`, beside `personWords.ts` — which another open PR is changing — for the founder's copy pass): *Some flags here
 don’t say which body they’re on: more than one read names*; *Show all*; *Show less*; *‹N› later
 undone by* (followed by the names); *‹N› more*; *and*.
 

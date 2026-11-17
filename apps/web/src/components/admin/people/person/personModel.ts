@@ -4,6 +4,7 @@ import type { FunctionReturnType } from 'convex/server';
 
 import { plural, timeLeftInWords } from '@/lib/ages';
 import { floorText as countText } from '../answers';
+import { FACT_WORDS } from './factWords';
 import { WORDS } from './personWords';
 
 /**
@@ -403,7 +404,7 @@ export function decisionsFact(stats: StaffStatsRead): Fact {
   if (undone.count === 0 && !undone.capped) return { ...base, sub: WORDS.noneUndone };
   const named = undoersOf(undone);
   if (named.people.length > 0) {
-    return { ...base, sub: WORDS.undoneByNamed(countText(undone)), named };
+    return { ...base, sub: FACT_WORDS.undoneByNamed(countText(undone)), named };
   }
   return {
     ...base,

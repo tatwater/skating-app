@@ -24,6 +24,7 @@ import { isFailed, type Loadable } from '../../reads/consoleReads';
 import { ReadNote } from '../../reads/ReadNote';
 import { historyWhen } from '../../shell/consoleTime';
 import { settledEmpty } from '../answers';
+import { FACT_WORDS } from './factWords';
 import { boundedWords, rowActor, rowReason, rowSentence, undoneWords } from './feedWords';
 import { useSectionLevel } from './headingLevel';
 import {
@@ -128,7 +129,7 @@ function TheirWords({ text }: { text: string }) {
             aria-controls={id}
             onClick={() => setWhole((w) => !w)}
           >
-            {whole ? WORDS.showLess : WORDS.showAll}
+            {whole ? FACT_WORDS.showLess : FACT_WORDS.showAll}
           </Button>
         </>
       )}
@@ -238,7 +239,7 @@ export function OpenAbout({
       {/* Only when a flag drawn here is left unnamed for it: a flag on the person past the cap
           names nothing more either way. */}
       {flagLabelsCapped && flags.some((f) => f.targetType !== 'user' && flagLabel(f) === null) && (
-        <Note data-slot="open-labels-capped">{WORDS.flagLabelsCapped}</Note>
+        <Note data-slot="open-labels-capped">{FACT_WORDS.flagLabelsCapped}</Note>
       )}
     </Section>
   );

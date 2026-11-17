@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { stubLayout } from '../list/testLayout';
+import { FACT_WORDS } from './factWords';
 import { defaultLinkTo, OpenAbout } from './PersonFeeds';
 import { NOW, ROB } from './personFixtures';
 import type { PersonRead } from './personModel';
-import { WORDS } from './personWords';
 
 /**
  * *Open about this person* draws what the server sends of each open item: the body a flag is on
@@ -81,7 +81,7 @@ describe('a flag', () => {
       flagLabelsCapped: true,
     });
     expect(block.querySelector('[data-slot="open-labels-capped"]')).toHaveTextContent(
-      WORDS.flagLabelsCapped,
+      FACT_WORDS.flagLabelsCapped,
     );
   });
 
@@ -120,12 +120,12 @@ describe('an appeal', () => {
     const quote = words.querySelector('[data-slot="their-words-text"]') as HTMLElement;
     expect(quote.textContent?.endsWith('…”')).toBe(true);
     expect(quote).not.toHaveTextContent('End.');
-    const more = within(words).getByRole('button', { name: WORDS.showAll });
+    const more = within(words).getByRole('button', { name: FACT_WORDS.showAll });
     expect(more).toHaveAttribute('aria-expanded', 'false');
     expect(more).toHaveAttribute('aria-controls', quote.id);
     await userEvent.click(more);
     expect(quote).toHaveTextContent(`“${long}”`);
-    const less = within(words).getByRole('button', { name: WORDS.showLess });
+    const less = within(words).getByRole('button', { name: FACT_WORDS.showLess });
     expect(less).toHaveAttribute('aria-expanded', 'true');
     await userEvent.click(less);
     expect(quote).not.toHaveTextContent('End.');

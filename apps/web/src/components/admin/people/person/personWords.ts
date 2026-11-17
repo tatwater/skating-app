@@ -45,11 +45,6 @@ export const WORDS = {
   noneUndone: 'None undone by others',
   undoneByOne: (n: string) => `${n} later undone by someone else`,
   undoneByMany: (n: string) => `${n} later undone by others`,
-  /** Followed by who: "2 later undone by ‹Ada›, ‹Bo› and 1 more". */
-  undoneByNamed: (n: string) => `${n} later undone by`,
-  /** The last of a list of people: those the read counted but didn't name. */
-  andMore: (n: number) => `${n} more`,
-  and: 'and',
   undonePending: 'Undone by others · still being prepared',
   medianTooMany: 'Too many decided this week to time',
   noneDecided: 'No filed items decided this week',
@@ -134,11 +129,6 @@ export const WORDS = {
   flagsPending: 'Flags on their content are still being prepared',
   recordUncounted: 'More than one read covers',
   openCapped: 'More may be open than one read covers',
-  /** Some open flags carry no body's name: past what one read names (`open.flagLabelsCapped`). */
-  flagLabelsCapped: 'Some flags here don’t say which body they’re on: more than one read names',
-  /** A person's own words bounded to a few lines: the press that shows them all, and back. */
-  showAll: 'Show all',
-  showLess: 'Show less',
   verdictsPending: 'Decisions on flags about their content are still being prepared',
   accountCreated: 'Account created',
   system: 'System',
