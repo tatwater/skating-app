@@ -16,6 +16,7 @@ import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonRow } from '@/components/kit/skeleton';
+import { personNameClass } from '@/components/PersonName';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 import { FLAG_WORDS } from '../../bodies/askWords';
@@ -101,6 +102,8 @@ export function GoLink({
 /**
  * What a person wrote, as their words — quoted, never reworded — bounded to its first few lines
  * (`boundedWords`): a cut ends on an ellipsis with *Show all* beside it, which shows every word.
+ * The words are content and a support ticket's (PII, D37), so they are never autocaptured: masked
+ * as a name is (`personNameClass`), while the press beside them is still counted.
  */
 function TheirWords({ text }: { text: string }) {
   const [whole, setWhole] = useState(false);
@@ -112,7 +115,7 @@ function TheirWords({ text }: { text: string }) {
       data-slot="their-words"
       className="mt-(--space-0_5) block text-fg2 whitespace-pre-line [overflow-wrap:anywhere]"
     >
-      <span id={id} data-slot="their-words-text">
+      <span id={id} data-slot="their-words-text" className={personNameClass}>
         “{whole || !words.cut ? words.whole : `${words.shown}…`}”
       </span>
       {words.cut && (

@@ -396,6 +396,24 @@ describe('a chain kept stitched', () => {
     expect(pageCalls()).toContainEqual(expect.objectContaining({ cursor: split, endCursor: end }));
   });
 
+  it('draws a page being split from the answer that asked for it while its halves come', () => {
+    serve({ cap: PEOPLE_PAGE_SIZE, split: true });
+    const { rerender } = mount();
+    expectAll();
+    // The halves are reads the list hasn't made before: on their way until `late` is lifted.
+    late = true;
+    for (const n of [1, 2, 3]) put(person(n));
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    // The split page's rows stand — the start of its range — and nothing after them yet.
+    expect(names()).toEqual(rows.slice(0, PEOPLE_PAGE_SIZE).map((r) => r.displayName));
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-busy', 'true');
+    late = false;
+    rerender(<PeopleListRoute />);
+    rerender(<PeopleListRoute />);
+    expectAll();
+  });
+
   it('reads a search’s page to split again unbounded, and goes on from where it now ends', () => {
     mocks.search = { q: 'skater' };
     serve({ cap: PEOPLE_PAGE_SIZE, split: false });

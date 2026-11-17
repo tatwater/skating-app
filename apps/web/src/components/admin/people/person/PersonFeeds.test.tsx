@@ -97,6 +97,11 @@ describe('an appeal', () => {
     expect(within(row as HTMLElement).queryByRole('button')).toBeNull();
   });
 
+  it('keeps what they wrote out of analytics, as a name is', () => {
+    const block = draw({ appeals: [appeal()] });
+    expect(block.querySelector('[data-slot="their-words-text"]')).toHaveClass('ph-no-capture');
+  });
+
   it('bounds long words visually, says there is more, and shows them whole on a press', async () => {
     const long = `${'The ice by the north launch had been cut for the derby. '.repeat(8)}End.`;
     const block = draw({ appeals: [appeal({ body: long })] });

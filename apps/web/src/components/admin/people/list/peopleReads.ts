@@ -186,7 +186,10 @@ export function usePeoplePages(args: PagesArgs | null): PagesState {
 /**
  * Each page's answer, with a page just pinned drawn from its last answer while its pinned read is
  * on its way: that answer covered exactly `(cursor, end]` — its end is the one pinned — so its rows
- * stand rather than blink out each time the list asks on. Held per list, by where a page starts.
+ * stand rather than blink out each time the list asks on. A page being split stands the same way
+ * for its first half, `(cursor, split]`: the answer that asked for the split holds the start of its
+ * range, so its rows stand — and nothing after them — until the half lands (`firstHalfOf`). Held
+ * per list, by where a page starts.
  */
 function useStandIns(
   key: string,
@@ -208,18 +211,36 @@ function useStandIns(
       return page;
     }
     const before = byStart.get(start);
-    const standsIn =
-      page === undefined &&
-      link.end !== null &&
-      before !== undefined &&
-      !mustSplit(before) &&
-      before.continueCursor === link.end;
-    return standsIn ? before : page;
+    if (page !== undefined || link.end === null || before === undefined) return page;
+    if (!mustSplit(before)) return before.continueCursor === link.end ? before : page;
+    return before.splitCursor === link.end ? firstHalfOf(before) : page;
   });
   // Only the pages the chain still holds are kept.
   const starts = new Set(links.map((l) => JSON.stringify(l.cursor)));
   for (const start of byStart.keys()) if (!starts.has(start)) byStart.delete(start);
   return out;
+}
+
+/** Each split answer's first half, made once, so the list drawn from it keeps its identity. */
+const halves = new WeakMap<PeoplePage, PeoplePage>();
+
+/**
+ * A page the server said must be split, standing in for its first half: the same rows, ending where
+ * the half ends — not to be split again, and not the list's end. Any of its rows past the split
+ * point (Convex may split inside the rows it read) are the next page's too, drawn once.
+ */
+function firstHalfOf(page: PeoplePage): PeoplePage {
+  const made = halves.get(page);
+  if (made !== undefined) return made;
+  const half: PeoplePage = {
+    ...page,
+    isDone: false,
+    continueCursor: page.splitCursor as string,
+    pageStatus: undefined,
+    splitCursor: undefined,
+  };
+  halves.set(page, half);
+  return half;
 }
 
 type Joined = {

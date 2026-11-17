@@ -53,9 +53,9 @@ describe('RecordRow (kit candidate)', () => {
   });
 
   it('lights a chip that is lit, and draws no chips or age it wasn’t given', () => {
-    draw({ chips: [{ label: 'Restored · Ana', lit: true }] });
+    const { unmount } = draw({ chips: [{ label: 'Restored · Ana', lit: true }] });
     expect(slot('badge')).toHaveAttribute('data-tone', 'lit');
-    document.body.innerHTML = '';
+    unmount();
     draw({ chips: [] });
     expect(slot('record-row-chips')).toBeNull();
     expect(slot('record-row-meta')).toBeNull();

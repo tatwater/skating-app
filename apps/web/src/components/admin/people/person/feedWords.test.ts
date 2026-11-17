@@ -6,6 +6,7 @@ import { assertSeeded } from '@/test/seeded';
 
 import {
   boundedWords,
+  graphemesOf,
   rowActor,
   rowReason,
   rowSentence,
@@ -216,6 +217,12 @@ describe('a person’s own words, bounded', () => {
     expect(boundedWords('x'.repeat(20), 8)?.shown).toBe('x'.repeat(8));
   });
 
+  it('counts and cuts characters as a reader sees them, never splitting an emoji or a flag', () => {
+    expect(boundedWords('ab👨‍👩‍👧cd', 3)?.shown).toBe('ab👨‍👩‍👧');
+    expect(boundedWords('🇨🇦🇨🇦🇨🇦🇨🇦', 2)?.shown).toBe('🇨🇦🇨🇦');
+    expect(graphemesOf('été')).toEqual(['é', 't', 'é']);
+  });
+
   it('shows the start of what they wrote, never empty, within the bound, cut only when shorter', () => {
     assertSeeded(
       fc.property(
@@ -233,7 +240,7 @@ describe('a person’s own words, bounded', () => {
           expect(words.whole).toBe(text.trim());
           expect(words.whole.startsWith(words.shown)).toBe(true);
           expect(words.shown.trim()).not.toBe('');
-          expect(Array.from(words.shown).length).toBeLessThanOrEqual(THEIR_WORDS_CHARS);
+          expect(graphemesOf(words.shown).length).toBeLessThanOrEqual(THEIR_WORDS_CHARS);
           expect(words.shown.split('\n').length).toBeLessThanOrEqual(THEIR_WORDS_LINES);
           expect(words.cut).toBe(words.shown !== words.whole);
         },

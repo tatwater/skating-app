@@ -122,16 +122,26 @@ export function undoneWords(row: ActionRow, rows: readonly ActionRow[]): string 
   return name === null ? WORDS.undone : `${WORDS.undone} · ${firstName(name)}`;
 }
 
-/** What a person wrote is shown to at most this many characters, and this many lines, at first. */
+/**
+ * What a person wrote is shown to at most this many characters (as a reader counts them: each
+ * emoji, flag or accented letter one), and this many lines, at first.
+ */
 export const THEIR_WORDS_CHARS = 280;
 export const THEIR_WORDS_LINES = 4;
+
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** A text's characters as a reader counts them — never an emoji or an accent split in two. */
+export function graphemesOf(text: string): string[] {
+  return Array.from(GRAPHEMES.segment(text), (s) => s.segment);
+}
 
 /**
  * A person's own words (an appeal), bounded for a feed row: `whole` is what they wrote, trimmed;
  * `shown` its start — its first few lines, cut at a word near the bound (inside one only when the
- * first word is longer than half of it) — and `cut` when that is not all of it. `null` when they
- * wrote nothing. The words are theirs, never reworded; the row says there is more and shows it all
- * on a press.
+ * word the bound falls in started in its first half) — and `cut` when that is not all of it. `null`
+ * when they wrote nothing. The words are theirs, never reworded — a cut never splits a character
+ * (`graphemesOf`); the row says there is more and shows it all on a press.
  */
 export function boundedWords(
   text: string,
@@ -142,11 +152,12 @@ export function boundedWords(
   if (whole === '') return null;
   const byLine = whole.split('\n');
   let shown = byLine.length > lines ? byLine.slice(0, lines).join('\n') : whole;
-  const points = Array.from(shown);
-  if (points.length > chars) {
-    const start = points.slice(0, chars).join('');
+  const characters = graphemesOf(shown);
+  if (characters.length > chars) {
+    const start = characters.slice(0, chars).join('');
+    // Both sides in the string's own units, so a run of emoji moves the halfway point with it.
     const space = start.search(/\s\S*$/u);
-    shown = space > chars / 2 ? start.slice(0, space) : start;
+    shown = space > start.length / 2 ? start.slice(0, space) : start;
   }
   shown = shown.trimEnd();
   return { whole, shown, cut: shown !== whole };
