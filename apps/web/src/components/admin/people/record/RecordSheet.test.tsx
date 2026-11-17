@@ -562,13 +562,16 @@ describe('the writes', () => {
   });
 });
 
-describe('a reversal’s undo', () => {
-  it('runs the shell’s undo on the row that ended the decision', async () => {
-    mocks.results.set(
-      'contentRecord:personReversed',
-      page([{ ...REVERSED[0], undo: { state: 'available', needsReason: true } }]),
-    );
-    ITEMS['comment:xguess'] = ITEM_UNDO_GONE;
+describe('the undo of the write that ended the newest decision', () => {
+  it('runs the shell’s undo on the write the item’s own read names', async () => {
+    mocks.results.set('contentRecord:personReversed', page([REVERSED[0]]));
+    ITEMS['comment:xguess'] = {
+      ...ITEM_UNDO_GONE,
+      decisions: ITEM_UNDO_GONE.decisions.map((d) => ({
+        ...d,
+        undo: { state: 'available' as const, needsReason: true },
+      })),
+    };
     draw();
     await userEvent.click(within(sheet()).getByRole('button', { name: 'Reversed' }));
     await userEvent.click(await within(sheet()).findByRole('button', { name: 'Undo the restore' }));

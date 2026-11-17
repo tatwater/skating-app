@@ -9,13 +9,15 @@ import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
 import { RecordSheetView } from './RecordSheetView';
 import {
+  type EndingUndo,
+  endingUndoWhat,
+  type ItemRead,
   nextRestored,
   placeName,
   type RecordSubject,
   type RecordTab,
   type Restored,
   type RestoredEvent,
-  type ReversedRow,
   receiptWords,
   type StandingCount,
   type StandingRow,
@@ -285,18 +287,13 @@ function SheetSitting({
           ).title,
         });
       }}
-      onUndoEnd={(row: ReversedRow) => {
-        if (row.endActionId === null || row.undo?.state !== 'available') return;
+      onUndoEnd={(ending: EndingUndo, read: ItemRead) => {
+        if (ending.undo.state !== 'available') return;
         undo({
-          actionId: row.endActionId,
-          needsReason: row.undo.needsReason,
-          // What happened, as every undo path says it: the restore's own receipt.
-          what: receiptWords(
-            { kind: 'restore' },
-            { kind: row.targetType, place: placeName(row.targetType, row), subject },
-            {},
-            now,
-          ).title,
+          actionId: ending.actionId,
+          needsReason: ending.undo.needsReason,
+          // What happened, as every undo path says it: a restore's own receipt, or the ending's words.
+          what: endingUndoWhat(ending, read, subject, now),
         });
       }}
     />

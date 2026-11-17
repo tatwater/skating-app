@@ -1105,6 +1105,46 @@ export type RecordWrite =
   | { kind: 'overturn'; reason?: string }
   | { kind: 'keep'; reason: string };
 
+/**
+ * **The pane's Undo on the write that ended the item's newest decision** (`contentRecord.item`'s
+ * `endActionId` and `undo`, which the server sends on that one decision only, while it is Reversed):
+ * offered exactly while the server says the undo is available; drawn off, with the server's why, when
+ * it ran out on a restore or an undo — an overturn has no undo to run out, so nothing is drawn; and
+ * nothing once it was undone or overtaken. Never offered from anything but the server's word.
+ */
+export type EndingUndo = {
+  actionId: string;
+  endedHow: 'restore' | 'undo' | 'overturn';
+  undo: { state: 'available'; needsReason: boolean } | { state: 'unavailable'; why: string };
+};
+
+export function endingUndoOf(item: ItemRead): EndingUndo | null {
+  for (const d of item.decisions) {
+    const undo = d.undo;
+    if (undo === undefined || d.endActionId === undefined) continue;
+    if (d.endedHow === null || d.endedHow === 'superseded') return null;
+    if (undo.state === 'available') return { actionId: d.endActionId, endedHow: d.endedHow, undo };
+    if (undo.state === 'unavailable' && d.endedHow !== 'overturn')
+      return { actionId: d.endActionId, endedHow: d.endedHow, undo };
+    return null;
+  }
+  return null;
+}
+
+/** What the undo dialog says is being undone: the ending write, as its own receipt or its words. */
+export function endingUndoWhat(
+  ending: EndingUndo,
+  item: ItemRead,
+  subject: RecordSubject,
+  now: number,
+): string {
+  const kind = item.targetType as RecordKind;
+  if (ending.endedHow === 'undo') return W.decisionUndone(KIND_WORDS[kind].one);
+  if (ending.endedHow === 'overturn') return W.decisionOverturned(KIND_WORDS[kind].one);
+  return receiptWords({ kind: 'restore' }, { kind, place: placeName(kind, item), subject }, {}, now)
+    .title;
+}
+
 /** What the undo toast says of a write, from the operator's side. */
 export function receiptWords(
   write: RecordWrite,

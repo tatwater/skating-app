@@ -213,6 +213,16 @@ export const RECORD_WORDS = {
     keep: 'Keeping',
   } as const,
   undoTheRestore: 'Undo the restore',
+  /** The pane's Undo on the write that ended its newest decision, by how it ended. */
+  undoTheEnd: {
+    restore: 'Undo the restore',
+    undo: 'Put the decision back',
+    overturn: 'Undo the overturn',
+  } as const,
+  /** What the undo dialog says is being undone, for an ending that was itself an undo. */
+  decisionUndone: (kind: string) => `The decision on this ${kind} was undone`,
+  /** What the undo dialog says is being undone, for an overturn. */
+  decisionOverturned: (kind: string) => `The decision on this ${kind} was overturned`,
   cantUndo: 'Can’t undo',
   somethingWrong: 'Something went wrong. Try again.',
   anotherOnItsWay: 'A change to this is already on its way.',

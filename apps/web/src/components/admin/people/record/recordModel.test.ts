@@ -31,9 +31,12 @@ import {
   ACTION_ORDER,
   chooserMembers,
   deletedRowView,
+  endingUndoOf,
+  endingUndoWhat,
   erasureOf,
   erasureWords,
   headCount,
+  type ItemRead,
   itemView,
   kindOptions,
   kindsLine,
@@ -1049,6 +1052,69 @@ describe('a restore kept for the sitting never outlives the server’s answer', 
         return true;
       }),
       { numRuns: 200 },
+    );
+  });
+});
+
+describe('the undo of the write that ended the newest decision (`endingUndoOf`)', () => {
+  type D = ItemRead['decisions'][number];
+  const undoArb: fc.Arbitrary<NonNullable<D['undo']>> = fc.oneof(
+    fc.record({ state: fc.constant('available' as const), needsReason: fc.boolean() }),
+    fc.record({ state: fc.constant('unavailable' as const), why: fc.constant('No.') }),
+    fc.record({ state: fc.constant('undone' as const), byActionId: fc.constant('u' as never) }),
+    fc.record({ state: fc.constant('overtaken' as const), byActionId: fc.constant('o' as never) }),
+  );
+  const decisionArb: fc.Arbitrary<D> = fc
+    .record({
+      endedHow: fc.constantFrom(null, 'restore', 'undo', 'overturn', 'superseded') as fc.Arbitrary<
+        D['endedHow']
+      >,
+      endActionId: fc.option(fc.constantFrom('e1', 'e2'), { nil: undefined }),
+      undo: fc.option(undoArb, { nil: undefined }),
+    })
+    .map((o) => ({
+      ...(ITEM_UNDO_GONE.decisions[0] as D),
+      endedHow: o.endedHow,
+      endActionId: o.endActionId as D['endActionId'],
+      undo: o.undo,
+    }));
+
+  it('offers exactly what the server says, on the one decision it says it on', () => {
+    assertSeeded(
+      fc.property(fc.array(decisionArb, { maxLength: 4 }), (decisions) => {
+        const item = { ...ITEM_UNDO_GONE, decisions } as ItemRead;
+        const got = endingUndoOf(item);
+        const told = decisions.find((d) => d.undo !== undefined && d.endActionId !== undefined);
+        if (got === null) {
+          // Never withheld while the server offers it on an ending it names.
+          expect(
+            told?.undo?.state === 'available' &&
+              told.endedHow !== null &&
+              told.endedHow !== 'superseded',
+          ).toBe(false);
+          return;
+        }
+        expect(told).toBeDefined();
+        expect(got.actionId).toBe(told?.endActionId);
+        expect(got.undo).toEqual(told?.undo);
+        // Pressable only while available; drawn off only for a restore's or an undo's that ran out.
+        if (got.undo.state === 'unavailable') expect(got.endedHow).not.toBe('overturn');
+        expect(['available', 'unavailable']).toContain(got.undo.state);
+      }),
+    );
+  });
+
+  it('the dialog says what is being undone', () => {
+    const item = ITEM_UNDO_GONE;
+    const undo = { state: 'available' as const, needsReason: true };
+    expect(endingUndoWhat({ actionId: 'e', endedHow: 'restore', undo }, item, SUBJECT, NOW)).toBe(
+      'The comment is back on Jamie Moreau’s report',
+    );
+    expect(endingUndoWhat({ actionId: 'e', endedHow: 'undo', undo }, item, SUBJECT, NOW)).toBe(
+      'The decision on this comment was undone',
+    );
+    expect(endingUndoWhat({ actionId: 'e', endedHow: 'overturn', undo }, item, SUBJECT, NOW)).toBe(
+      'The decision on this comment was overturned',
     );
   });
 });
