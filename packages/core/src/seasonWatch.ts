@@ -269,6 +269,17 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /**
+ * The nights from `first` to `last`, both `YYYY-MM-DD` and both included, in order — stepped with
+ * `addDaysIso`, the watch's own day step, so they are labels, never instants. Empty when `last` is
+ * before `first`.
+ */
+export function nightsBetween(first: string, last: string): string[] {
+  const out: string[] = [];
+  for (let d = first; d <= last; d = addDaysIso(d, 1)) out.push(d);
+  return out;
+}
+
+/**
  * Fold freshly fetched nights into what is stored. A fetched night **replaces** a stored one: the
  * forecast endpoint's past days are revised as observations arrive, and the latest is the best.
  * Nights never fetched again are kept, which is the point of storing them at all.

@@ -11,15 +11,17 @@ import {
 import type { DayKey } from '@/components/admin/metrics/metricsModel';
 import type { MetricsReads } from '@/components/admin/metrics/useOverviewMetrics';
 import { must } from '@/components/kit/storyKit';
-
+import { LOWS_BOARD } from '../season/sentinelLowsFixtures';
+import { lowsView } from '../season/sentinelLowsModel';
 import { ConsoleShell } from '../shell/ConsoleShell';
 import { CONSOLE_MODES, LEGACY_PAGES } from '../shell/consoleNav';
 import { seasonTape, type TapeFacts } from '../shell/consoleTime';
 import { OverviewView } from './OverviewView';
-import { HOME, LAST_CHECKED_LIVE, NOW } from './overviewFixtures';
+import type { FeedRow } from './overviewData';
+import { FEED, HOME, LAST_CHECKED_LIVE, NOW } from './overviewFixtures';
 import type { OverviewTabValue } from './overviewSearch';
 import { OverviewLamp } from './overviewStatus';
-import type { HomeReads } from './useOverviewHome';
+import { FEED_LIMIT, type HomeReads } from './useOverviewHome';
 
 /**
  * The Overview as the app mounts it at `/admin`: the real console shell around the real page,
@@ -98,20 +100,34 @@ function metricsReads(now: number): MetricsReads {
   } as MetricsReads;
 }
 
+/** A feed as long as Home asks for (`FEED_LIMIT`): the board's rows, repeated. */
+const FULL_FEED: FeedRow[] = Array.from({ length: FEED_LIMIT }, (_, i) => ({
+  ...(FEED[i % FEED.length] as FeedRow),
+  id: `full-${i}`,
+}));
+
 function Mounted({
   initialTab,
   fourUp,
   now = NOW,
+  full = false,
+  tall = false,
 }: {
   initialTab: OverviewTabValue;
   fourUp?: boolean;
+  /** A screen twice the board's height (1,800 px). */
+  tall?: boolean;
   /** The page's clock; the season is the one it falls in. */
   now?: number;
+  /** Home with everything it can draw: the sentinels' row and a full feed. */
+  full?: boolean;
 }) {
   const [tab, setTab] = useState<OverviewTabValue>(initialTab);
   return (
     <ConsoleShell
-      className={fourUp ? 'h-[56.25rem] w-[90rem]' : 'h-screen w-screen'}
+      className={
+        fourUp ? 'h-[56.25rem] w-[90rem]' : tall ? 'h-[112.5rem] w-[90rem]' : 'h-screen w-screen'
+      }
       modes={CONSOLE_MODES.map((m) => ({ ...m, current: m.id === 'overview' }))}
       legacy={LEGACY_PAGES}
       onLegacy={() => {}}
@@ -139,7 +155,11 @@ function Mounted({
         season={seasonOf(now)}
         tab={tab}
         onTabChange={setTab}
-        reads={READS}
+        reads={
+          full
+            ? { ...READS, feed: FULL_FEED, lows: { kind: 'value', view: lowsView(LOWS_BOARD) } }
+            : READS
+        }
         metrics={metricsReads(now)}
         now={now}
         live={{ state: 'live', lastCheckedAt: LAST_CHECKED_LIVE }}
@@ -192,6 +212,53 @@ export const Metrics: Story = {
       must(page.getByText(label, { selector: '[data-slot="stat-label"]' }).parentElement);
     await expect(tile('Open flags')).toHaveTextContent('3');
     await expect(page.getByText('Coverage by state')).toBeVisible();
+  },
+};
+
+/**
+ * Home on a 900 px screen with the sentinels' row and a full feed: Home scrolls under the page head,
+ * and the cost and audit half keeps its board height (430 px) with the feed scrolling inside it — a
+ * feed never grows the half to every row it holds.
+ */
+export const HomeScrolls: Story = {
+  name: 'Home scrolls on a short screen, the feed inside its half',
+  args: { fourUp: true, full: true },
+  play: async ({ canvasElement }) => {
+    const home = must(
+      canvasElement.querySelector<HTMLElement>(
+        '[data-slot="home-scroll"] [data-slot="scroll-area-viewport"]',
+      ),
+    );
+    const feed = must(
+      canvasElement.querySelector<HTMLElement>(
+        '[data-slot="audit-feed"] [data-slot="scroll-area-viewport"]',
+      ),
+    );
+    await waitFor(() => expect(home.scrollHeight).toBeGreaterThan(home.clientHeight));
+    await expect(feed.scrollHeight).toBeGreaterThan(feed.clientHeight);
+    const lower = slot(canvasElement, 'overview-lower').getBoundingClientRect();
+    await expect(Math.round(lower.height)).toBe(430);
+  },
+};
+
+/** Home on a tall screen: the cost and audit half runs to the foot, the feed still inside it. */
+export const HomeTall: Story = {
+  name: 'Home on a tall screen, its lower half to the foot',
+  args: { full: true, tall: true },
+  play: async ({ canvasElement }) => {
+    const home = must(
+      canvasElement.querySelector<HTMLElement>(
+        '[data-slot="home-scroll"] [data-slot="scroll-area-viewport"]',
+      ),
+    );
+    const feed = must(
+      canvasElement.querySelector<HTMLElement>(
+        '[data-slot="audit-feed"] [data-slot="scroll-area-viewport"]',
+      ),
+    );
+    await waitFor(() => expect(feed.scrollHeight).toBeGreaterThan(feed.clientHeight));
+    const lower = slot(canvasElement, 'overview-lower').getBoundingClientRect();
+    await expect(Math.round(lower.bottom)).toBe(Math.round(home.getBoundingClientRect().bottom));
   },
 };
 

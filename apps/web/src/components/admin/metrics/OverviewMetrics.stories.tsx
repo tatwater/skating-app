@@ -107,16 +107,32 @@ export const Board: Story = {
     const values = [...plate.querySelectorAll('[data-slot="sparkbar-set-value"]')].map(
       (v) => v.textContent,
     );
-    await expect(values).toEqual(['3', '2', '9', '6', '1', '0', '11', '6']);
+    // …then the day's new contributors and its bounties, posted and fulfilled (B01-2b).
+    await expect(values).toEqual(['3', '2', '9', '6', '1', '0', '11', '6', '0', '0', '0']);
+
+    // The Reports row's vantage line, and the bounties' season totals, posted then fulfilled.
+    await expect(canvasElement.querySelector('[data-slot="pulse-vantage"]')).toHaveTextContent(
+      '2 on the ice · 11 from shore · 1 secondhand',
+    );
+    const bounties = must(
+      canvasElement.querySelector<HTMLElement>('[data-key="bounties"] [data-slot="pulse-total"]'),
+    );
+    await expect(bounties.querySelector('[data-slot="pulse-total-said"]')).toHaveTextContent(
+      '2 posted · 1 fulfilled',
+    );
+    // Contributors say who was new: the board's "new · returning".
+    await expect(
+      canvasElement.querySelector('[data-key="contributors"] [data-slot="pulse-total"]'),
+    ).toHaveTextContent('2 new · 9 returning');
 
     // One hairline runs through every strip.
     const hair = must(
       canvasElement.querySelector('[data-slot="sparkbar-set-hairline"]'),
     ).getBoundingClientRect();
-    await expect(canvasElement.querySelectorAll('[data-slot="pulse-bars"]')).toHaveLength(8);
+    await expect(canvasElement.querySelectorAll('[data-slot="pulse-bars"]')).toHaveLength(9);
     // The set draws its hairline over the strips themselves, to the last one's foot.
     const strips = [...canvasElement.querySelectorAll('[data-slot="sparkbars"]')];
-    await expect(strips).toHaveLength(8);
+    await expect(strips).toHaveLength(9);
     await expect(hair.top).toBeLessThanOrEqual(must(strips[0]).getBoundingClientRect().top);
     await expect(hair.bottom).toBeGreaterThanOrEqual(
       must(strips.at(-1)).getBoundingClientRect().bottom - 0.5,

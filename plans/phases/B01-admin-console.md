@@ -999,7 +999,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once). **Added 2026-11-15:** D266 (a body is in a town when 25 m of its shoreline is; states and region follow; one rule for the merge, the import and the facts). **Added 2026-11-15:** D267 (the record sheet's levers and lists: one rule, each item once).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once). **Added 2026-11-15:** D266 (a body is in a town when 25 m of its shoreline is; states and region follow; one rule for the merge, the import and the facts). **Added 2026-11-15:** D267 (the record sheet's levers and lists: one rule, each item once). **Added 2026-11-17:** D275 (moderators read the sentinels' overnight lows; one named capability decides it).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -3216,6 +3216,180 @@ the two undo fixes the executor's final review of #108 found (U1, U2). Nothing h
 | H4 | Suspend and ban refuse the last ledger holder — D227's *never no holder* holds through discipline as well as demotion (the governor's ruling, D252) | People, D227 | 🟢 B01-1c (the rule in B01-3) |
 | U1 | A Post's restore records the auto-hidden state in its `prev` snapshot, and its undo puts it back — today undoing a moderator's restore of an auto-hidden Post (all its Reports hidden) loses that record, and restoring one of its Reports afterwards no longer brings the Post back. The true-inverse rule of the landmark-restore fix (founder-ratified 2026-11-13): a restore records what it clears | Undo (D226), Post moderation | 🟢 B01-1c |
 | U2 | History's *undone by* link on a Post can point at a Report's row instead of the Post's own undo row (`lib/undo.ts`). Nothing reads the link yet; a pre-wiring fix before the History panel does | Undo's History panel | 🟢 B01-1c |
+
+### The Overview's season row and Each day's new rows (B01-2b, D275)
+
+The founder's two asks of 2026-11-16, from the Seasons board (*7.1 Seasons | Winter 2026–27*, in
+*Gli · Admin console · Review 5*): build its *Overnight Lows at the Sentinels* row into Home, between the
+four cards and cost and audit — which reverses Review 3's "the sentinel lows leave the Overview"
+(§6) — and make every statistic in its *Statistics* section representable on Metrics. His calls of
+2026-11-17 cut the second ask down (below).
+
+**Home: Overnight Lows at the Sentinels.** What the board's row shows, and how it is built:
+
+- **The row.** The section slug, its rule ending in "°F · 1–12 Oct" (the nights drawn: the season's
+  floor, 1 October by default, to the last night stored). A line a sentinel in the board's inks
+  (white, `g6`, `g5`) named by the board's short names (*Clouds*, *Eagle*, *Kinsman*, from
+  `sentinelWords.ts`; any other sentinel by its full name); the watch's freezing line dashed faint and
+  the imagery line dashed amber, both at the settings that decided the season, named in the legend
+  ("the watch · 32 °F", "imagery · 20 °F"); the record's two marked nights as a rule the plot's height
+  with their words ("Watch opened · 2 of 3", "Imagery line · 19 °F") and a ⊗ on each sentinel the record
+  named; each line's end label ("Kinsman 37"). Under it the kit's temperature matrix and its scale.
+- **The read** (`sentinelLows.forSeason`, `{ season?, now? }`): the season record, the current settings,
+  the merge chain of each stored id that names a sentinel (the roster's, the record's copy of it and
+  its two nights' sites — ten at most each, so at most forty ids) — the cron's own eight-hop rule, so a
+  merged sentinel is read under the body the watch stores it under — and each sentinel's one stored
+  series, each through one `ReadBudget` (12 MiB of 16, as the rows really weigh after reserving each
+  worst case; at most about four hundred calls). A sentinel the budget can't reach is `unread`, and one whose body is gone `gone`;
+  both draw as a row of gaps — no reading, never zero. Gated on `SENTINEL_LOWS_CAPABILITY` (D275).
+  **One identity for a sentinel** (Greptile on #150, fixed as a class): the lake the watch stores its
+  lows under now — the end of its merge chain, as the cron follows it. Every stored id that names a
+  sentinel — the roster's, the season record's copy of it, and the sites its two nights stored (saved
+  when they happened, possibly since merged) — resolves to it once, on the server (`sentinelRows`),
+  before anything is compared; each row's `key` is the first stored id that reached its lake (stable
+  when the lake merges again), and each marked night names rows by that key, so the page compares
+  keys and nothing else. Two roster sentinels merged into one lake are one row (one lake, one series);
+  a sentinel the record names but the roster no longer does still gets its row (the record is the
+  fact); one whose lake is gone, or that the budget couldn't follow, is its own row of gaps. A site
+  stored before ids were is matched by name, once, on the server. Property-tested over generated
+  rosters, merges and records: every site the record names lands on exactly one row, its lake's. The
+  imagery line is drawn at the settings that opened the season, where a later settings change may have
+  decided the imagery night — left for a ruling if it ever bites.
+- **How nights are dated.** The read sends the watch's own calendar days, unchanged: the day each low
+  was cut into when it was stored (`dailyLowsFromOpenMeteo`, in the site's own zone from unix time —
+  never Open-Meteo's fixed-offset labels), stepped with the watch's `addDaysIso`, labeled by
+  `dayLabel`, which reads the string in UTC. Nothing makes a `Date` in the reader's zone, so a night
+  reads the same date everywhere. Property-tested (pinned seeds and one random, on both sides): hourly
+  readings around both 2026 DST changes go through the watch's cut and store, and every night lands on
+  its own date with its own value — on the web, in each of CI's three zones — and every other date is a
+  gap; the chart's nights are the watch's consecutive days. The window ends at the last night stored,
+  read from the rows (tonight's low is never stored), so no clock decides it.
+- **Four answers**, each in the row's one box (the page doesn't move as it lands): on its way (the
+  frame, shimmering); failed ("The sentinels' overnight lows couldn't be read", with Try again);
+  nothing recorded — before the floor *Record begins 1 Oct*, after it *Not recorded yet*, under "The
+  sentinels' overnight lows land here"; and the lows. A night with no stored low is a break in its
+  line and an empty cell (`no reading` to a reader), never zero; a sentinel whose last low is an
+  earlier night says which ("Eagle 30 · 9 Oct"). The marked nights come only from the record's stored
+  facts (`opensOn` and its sentinels; `imageryNudgeOn` and its sites), never from the lows.
+- **Readable.** The chart names what it draws; the matrix is an ARIA grid whose every cell says its
+  sentinel, night and value, and writes the value when it fits. Under the console's narrow rule
+  (`useColumnsFit`, the list and inspector widths) the end labels go and the names move left; at 360 px
+  nothing scrolls sideways.
+- **Home scrolls** under the page head now, as Metrics does: with the row it runs past a 900 px screen.
+  The cost and audit half keeps at least its board height, the feed scrolling inside it.
+- **Where it differs from the board:** the legend is the kit's mono caps (the board sets it in sentence
+  case); the chart has the kit's hover hairline and plate, and the matrix the kit's hover plate; the
+  plot keeps the board's left and bottom hairlines but no minor ticks past a month of nights; an end
+  label names its night when it isn't the last; the rows' names sit right of the matrix only while the
+  row is wide.
+
+**Metrics: what the board's Statistics hold, and what moved.** The founder, 2026-11-17: "I'm actually
+okay with dropping some of these stats, now that I look at them… Let's forget the grid and go with what
+I broke down in #1. I think basically we aren't moving that stats section over after all" — and, of
+weather and imagery, "I'd rather just show that data in the Machinery pages when we get around to
+building them."
+
+| The board's statistic | On Metrics before | Server | Now |
+|---|---|---|---|
+| Reports · 14 · "in 11 posts" | Each day › Reports, "In N posts" | `season_reach` | present, matching |
+| Reports' "All from shore · none on the ice yet" | Reports by vantage, as counts | `season_reach.vantage` | **built**: the line under Each day's Reports row — the board's sentence when every report is from shore, "yet" kept (the founder's call) |
+| Contributors · 6 · "2 new · 4 returning" | Each day › Contributors, "People" | count kept; new vs returning not | **built**: the row stacked (below), its sub-line "2 new · 4 returning" |
+| Bodies activated · "admitted · removed · demoted · restored" | — | no rollup | not moved — founder's call, 2026-11-17 |
+| Places added · "put-ins · lot · landmarks" | — | no rollup | not built: not easy — `bodyLandmarks` has no index that tells a hand-added landmark from a load's (only `by_water_body`), so counting the season's means an index (a schema change) or reading every row a 24,000-landmark load wrote |
+| Hazards · 3 · "confirmed · archived · merged" | Each day › Hazards | count kept; the split not | waiting on the founder's call on what *confirmed* counts; follow-up (below); archived and merged not wanted here (founder) |
+| Inbox · resolved · "open · median" | the flag and support charts | flags, tickets; not requests | not moved — founder's call, 2026-11-17 ("sort-of" shown by the charts) |
+| Bounties · "1 opened" · "0 fulfilled" | — | the bounties' rows | **built**: Each day's Bounties row |
+| Photos · 31 · "88 MB" | Each day › Photos | count kept | count present; size not moved — founder's call, 2026-11-17 |
+| Weather calls · "weighted" · "~N per day since the watch opened · free" | — | `externalApiCalls` | not moved — to be shown in the Machinery pages when they are built (founder, 2026-11-17) |
+| Imagery · "landed" · "queued since · empty · failed" | — | `imageryCounts`; per-day outcomes only as granule rows | not moved — to be shown in the Machinery pages when they are built (founder, 2026-11-17) |
+| Notifications · "to skaters · staff emails" | — | no rollup; imagery alert emails unrecorded | not moved — founder's call, 2026-11-17 |
+| Cost · "$" · "of it invoiced" | Home's cost (not recorded) | no ledger tables (S2) | not moved — founder's call, 2026-11-17 (Home has it) |
+
+**Where the board and §10 disagree:** §10's contributors are distinct people and new *accounts*; the
+board's are new vs returning *contributors*. §10's places count sub-areas and features too, split by
+operator and import; the board's doesn't. §10's inbox throughput is flags filed and resolved, requests
+decided and tickets resolved; the board's is resolved, open and a median. §10 counts notifications
+pushed and emailed; the board, to skaters and staff. §10 meters every provider; the board, weather.
+
+**Built on Each day** — one strip capability for all of them (the kit's `Sparkbars` `split`): two series
+a day, each solid or outlined (outlined in the row's own full-strength ink, never dimmer), beside each
+other or stacked, a two-item key under the row's name — told apart by shape, never color.
+
+- **Bounties**: posted outlined, fulfilled solid, side by side (a bounty fulfilled today was mostly
+  posted another day, so stacked would say something untrue). Posted counts every bounty on the day it
+  was created, whatever became of it; fulfilled counts a bounty on the day its requester's helpful
+  thumb fulfilled it (`status: 'fulfilled'`, its `fulfilledAt`), whenever it was posted. A canceled or
+  expired bounty is posted and never fulfilled, and nothing subtracts it; one fulfilled before
+  `fulfilledAt` was stamped has no day and isn't counted. One rule (`bountyDays.ts`, fast-checked:
+  each bounty posted once and fulfilled at most once, on its own day), two day rollups
+  (`bounties_posted`, `bounties_fulfilled`) in a job of their own beside the pulse day's (so neither
+  transaction nears Convex's documents-scanned limit at its caps) — the fulfilled read is the fulfilled
+  bounties expiring no earlier than a week before the day (a bounty is fulfilled only while open, and
+  the 6-hourly sweep closes it within hours of expiring) and before twice the lifetime after it (it was
+  posted before it was fulfilled; `fulfilledExpiryRange`, so a past day's backfill never reads every
+  bounty fulfilled since; twice, so a bounty posted under a longer lifetime than today's is still read)
+  — and the season's totals, "N posted · M fulfilled", only when every day is recorded.
+- **Contributors**: stacked, returning solid under first-timers outlined; the bar's height is the day's
+  contributors, or its first-timers where they are more (`splitDay`). A first-timer is new on the day of their **first-ever** contribution — across
+  every season, by the one rule (`firstContributionAt`, D253's kinds), on the metric day the strips
+  count by. The season walk counts it, in a last stage over its contributors set (25 people a page,
+  progress in the walk's arguments, never a document the reads subscribe to; each page a scheduled
+  mutation, which Convex retries until it lands, so an interrupted walk resumes from its last page; the
+  figures are written once at the end, so a re-walk replaces them): each day's first-timers
+  and the season's new people, into `season_reach.meta.firstTimers`. A day after the walk's last, or a
+  walk that couldn't date someone's first, has no split: its bar is dashed and the plate says *Not
+  recorded yet* — never a zero split. The sub-line is the board's "2 new · 4 returning" (new: first-ever
+  contribution in the season; returning: the rest of the season's distinct contributors). A first-
+  timer's first contribution may be one the day strip doesn't count (a report a moderator has since
+  hidden); the stack then draws the first-timers whole — never shorter than what is known.
+- **Reports**: the vantage line under the row (`vantageLine`), each vantage in the app's one order.
+- **What a two-series day draws** (Greptile on #150, fixed as a class: one series' gap decided what was
+  drawn for the other). One rule, `splitDay`, which the strip renders and a property checks against
+  the hover plate, the totals and their words over every combination of not recorded, zero and a
+  value. Beside, each half is its own answer: a value, a zero's stub, or not recorded — a dashed hair,
+  never a zero and never nothing. Stacked (the day's whole, and the part on top):
+
+  | Whole | Top part | Drawn |
+  |---|---|---|
+  | n | k | the rest (n − k) under k — as tall as n, or k if k is more: never shorter than known |
+  | n | not recorded | the whole n, dashed |
+  | 0 | 0 or not recorded | the zero stub |
+  | 0 | k > 0 | k |
+  | not recorded | k > 0 | k, with the not-recorded hair over it |
+  | not recorded | 0 or not recorded | the not-recorded hair |
+
+  The contributors' whole and its split come from different records (the day rollup, the walk), so
+  every row can happen. Each series' season total stands on its own days (`wholeTotal`): a posted day
+  the cap withheld withholds the posted total only, and its words say "Posted not recorded yet".
+- **Hazards — waiting on the founder's call on what *confirmed* counts; a follow-up PR.** The founder
+  asked for confirmed solid under the rest outlined. The app's
+  *confirmed* is `!isProvisional(confirmCount, confirmThresholdFor(type))` read from the hazard's
+  **cluster** (D80: confirmations on any pin in the cluster count), which the walk could only compute by
+  reading each body's cluster scope — one of the unbounded per-body reads the B01-3n sweep listed. A
+  pin's own `confirmCount` alone is bounded but means less (a pin confirmed only through a neighbor
+  would read as unconfirmed). Which the row counts is the founder's call; it is not built.
+
+**Strings this PR wrote** (the founder's copy pass; the board's are verbatim and not repeated): on Home —
+"Watch opened" (opened with no sentinel), "Imagery line" (no site stored), an end label's " · 10 Oct",
+"The sentinels' overnight lows land here", "The sentinels' overnight lows couldn't be read", and the
+reader's names "Overnight lows at the sentinels, 1–12 Oct, °F" and "Overnight lows by sentinel and night,
+1–12 Oct". On Metrics — "Posted", "Fulfilled", "Returning", "New", the plate's "Bounties posted",
+"Bounties fulfilled" and "New contributors", the total's "Posted · 1 fulfilled" (said "3 posted · 1
+fulfilled"), the vantage line's other forms ("2 on the ice · 11 from shore · 1 secondhand", "3 from shore
+· 1 secondhand · none on the ice yet", "All on the ice", "All secondhand · none on the ice yet", "1 on the
+ice · 2 not stated", "2 not stated · none on the ice yet"), and the strip's "Bounties posted and bounties
+fulfilled, each day".
+
+**After merge, on dev:** (1) `convex dev --once` — a new query module, two metric keys, a walk stage; no
+schema change, no index. (2) `pnpm --filter @skating/convex exec convex run analyticsRollup:backfill
+'{"days":48}'` — 48 on 17 November, one more for each day after, so every day from 1 October gets its
+bounty rows (the backfill replays the day rollups, idempotently). (3) `convex run seasonReach:start '{}'`
+— or wait for the 6-hourly rollup — for the first-timers. (4) Read back as a moderator
+(`convex run --identity …`): `sentinelLows:forSeason '{}'` is `state: 'value'` with the three sentinels,
+`opened.on` 3 October with two sites of three (the Ice watch tile's "Opened by 2 of 3 sentinels") and
+the imagery night the record holds; `metrics:showingUp '{}'` has `bounties.totals` and
+`pulse.contributors.split.newPeople` not `null`. The board's numbers are a mock's; the record is what
+they are checked against.
 
 ### Kit extensions owed (B01-2)
 

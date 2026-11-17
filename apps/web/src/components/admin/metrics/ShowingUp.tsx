@@ -1,12 +1,25 @@
 import { createColumnHelper, metaHelper, tableFeatures, useTable } from '@tanstack/react-table';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 
+import { ChartLegend, type LegendItem } from '@/components/kit/chart-legend';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { DataTable, type TableColumnMeta } from '@/components/kit/table';
 import { SparkbarSet, Sparkbars } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
-
+import {
+  BOUNTIES_FULFILLED,
+  BOUNTIES_FULFILLED_ROW,
+  BOUNTIES_LABEL,
+  BOUNTIES_POSTED,
+  BOUNTIES_POSTED_ROW,
+  bountiesTotalSub,
+  bountiesTotalWords,
+  CONTRIBUTORS_NEW,
+  CONTRIBUTORS_RETURNING,
+  NEW_CONTRIBUTORS_ROW,
+  vantageLine,
+} from './eachDayWords';
 import {
   type DayKey,
   dayLabel,
@@ -98,6 +111,10 @@ export function ShowingUpStats({ week }: { week: ShowingUpData['week'] }) {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** A count as the strips say it ("1,200"); `null` or absent, not recorded. */
+const said = (n: number | null | undefined) =>
+  n === null || n === undefined ? null : n.toLocaleString('en-US');
+
 // ── Each day: the season's pulse ─────────────────────────────────────────────────────────────
 
 /**
@@ -106,22 +123,26 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 const PULSE_FLOOR = 3;
 
-const stripCount = PULSE_KEYS.length;
-
 /**
  * One strip of daily bars per kind of activity, its season total beside it, all on one day axis —
  * the kit's `SparkbarSet` of `Sparkbars`: hovering anywhere over the strips, or stepping with ← →
  * once the set has focus, draws one hairline through every strip at that day and one plate with
- * each strip's value. A day nothing recorded is an empty slot on its strip, never a zero stub, and
- * the plate says *Not recorded yet* for it.
+ * each strip's value. A day nothing recorded is an empty slot on its strip — on a two-series strip,
+ * the not-recorded hair (`splitDay`) — never a zero stub, and the plate says *Not recorded yet* for it.
  */
 export function PulseStrips({
   days,
   pulse,
+  bounties: bountyRead = null,
+  vantage: vantageRead = null,
   defaultActive = null,
 }: {
   days: readonly DayKey[];
   pulse: ShowingUpData['pulse'];
+  /** The bounties row: posted and fulfilled each day (B01-2b). */
+  bounties?: ShowingUpData['bounties'];
+  /** The season's vantage, said as a line under the Reports row. */
+  vantage?: VantageCounts | null;
   /** A day to show hovered from the start (a board's drawn hover state). */
   defaultActive?: number | null;
 }) {
@@ -129,84 +150,100 @@ export function PulseStrips({
   const ticks = pulseTicks(days);
   // Before the window opens, every strip says when its record begins.
   const seriesOf = (key: PulseKey) => (begins === null ? pulse[key] : null);
+  const bounties = begins === null ? bountyRead : null;
+  const reportsLine =
+    begins === null && pulse.reports !== null && vantageRead !== null
+      ? vantageLine(vantageRead)
+      : null;
+  // The grid's rows, in order: each strip, the Reports row's vantage line under it, the bounties.
+  let next = 1;
+  const rowOf = () => ({ gridRow: next++ });
 
   return (
     <SparkbarSet
       aria-label="Each day"
       length={days.length}
       title={(i) => dayTitle(days[i] as DayKey)}
-      rows={(i) =>
-        PULSE_KEYS.map((key) => {
-          const value = seriesOf(key)?.daily[i] ?? null;
-          return {
-            label: PULSE_LABELS[key],
-            value: value === null ? null : value.toLocaleString('en-US'),
-          };
-        })
-      }
+      rows={(i) => [
+        ...PULSE_KEYS.flatMap((key) => {
+          const series = seriesOf(key);
+          const row = { label: PULSE_LABELS[key], value: said(series?.daily[i]) };
+          return key === 'contributors' && series?.split !== undefined
+            ? [row, { label: NEW_CONTRIBUTORS_ROW, value: said(series.split.daily[i]) }]
+            : [row];
+        }),
+        { label: BOUNTIES_POSTED_ROW, value: said(bounties?.posted[i]) },
+        { label: BOUNTIES_FULFILLED_ROW, value: said(bounties?.fulfilled[i]) },
+      ]}
       defaultActive={defaultActive}
       className={cn(
         'grid items-end gap-x-(--space-3_5) gap-y-[0.5625rem]',
         'grid-cols-[6.875rem_minmax(0,1fr)_4rem]',
       )}
     >
-      {PULSE_KEYS.map((key, r) => {
+      {PULSE_KEYS.map((key) => {
         const series = seriesOf(key);
-        const row = { gridRow: r + 1 };
+        const row = rowOf();
+        const split = key === 'contributors' ? series?.split : undefined;
         return (
           <div key={key} className="contents" data-slot="pulse-strip" data-key={key}>
-            <span className={cn(KICK, 'pb-[0.125rem]')} style={{ ...row, gridColumn: 1 }}>
-              {PULSE_LABELS[key]}
-            </span>
-            <div
-              data-slot="pulse-bars"
-              data-recorded={series === null ? 'false' : 'true'}
-              className="h-[1.875rem] min-w-0 border-0 border-b-(length:--stroke-hair) border-solid border-line2"
-              style={{ ...row, gridColumn: 2 }}
-            >
-              {series === null ? (
-                <span
-                  data-slot="pulse-note"
-                  className="flex h-full items-end pb-(--space-1) text-assist leading-none text-fg3"
-                >
-                  {begins ?? NOT_RECORDED}
-                </span>
-              ) : (
+            {split === undefined ? (
+              <span className={cn(KICK, 'pb-[0.125rem]')} style={{ ...row, gridColumn: 1 }}>
+                {PULSE_LABELS[key]}
+              </span>
+            ) : (
+              <RowName
+                row={row}
+                name={PULSE_LABELS[key]}
+                legend={[
+                  { label: CONTRIBUTORS_RETURNING, ink: 'var(--fg2)' },
+                  { label: CONTRIBUTORS_NEW, ink: 'var(--fg2)', mark: 'outline' },
+                ]}
+              />
+            )}
+            <StripBars row={row} recorded={series !== null} note={begins ?? NOT_RECORDED}>
+              {series !== null && (
                 <Sparkbars
                   aria-label={`${PULSE_LABELS[key]}, each day`}
                   tone="muted"
                   lightLatest
                   max={PULSE_FLOOR}
                   values={series.daily}
+                  // Contributors: returning solid, first-timers outlined on top (B01-2b).
+                  {...(split !== undefined && {
+                    split: {
+                      values: split.daily,
+                      layout: 'stack' as const,
+                      marks: { first: 'solid' as const, second: 'outline' as const },
+                    },
+                  })}
                   // The season's days on one strip: the bars' gap is a hairline and a half.
                   className="h-full gap-[1.5px]"
                 />
               )}
-            </div>
-            <span
-              data-slot="pulse-total"
-              className="flex flex-col items-end gap-[0.1875rem] text-right"
-              style={{ ...row, gridColumn: 3 }}
-            >
-              <span
-                className={cn(
-                  'font-(family-name:--family-mono) text-[0.9375rem] leading-none font-medium tracking-value tabular-nums',
-                  series === null ? 'text-fg3' : 'text-fg',
-                )}
+            </StripBars>
+            <StripTotal
+              row={row}
+              figure={series === null ? null : series.total.toLocaleString('en-US')}
+              sub={series === null ? null : pulseSub(key, series)}
+            />
+            {key === 'reports' && reportsLine !== null && (
+              <small
+                data-slot="pulse-vantage"
+                className="text-kick leading-[1.3] text-fg3"
+                style={{ ...rowOf(), gridColumn: '2 / 4' }}
               >
-                {series === null ? '—' : series.total.toLocaleString('en-US')}
-              </span>
-              {series !== null && (
-                <small className="text-kick leading-[1.3] text-fg3">{pulseSub(key, series)}</small>
-              )}
-            </span>
+                {reportsLine}
+              </small>
+            )}
           </div>
         );
       })}
+      <BountiesStrip row={rowOf()} bounties={bounties} note={begins ?? NOT_RECORDED} />
       <div
         data-slot="pulse-axis"
         className="-mt-1 flex justify-between"
-        style={{ gridRow: stripCount + 1, gridColumn: 2 }}
+        style={{ ...rowOf(), gridColumn: 2 }}
       >
         {ticks.map((day) => (
           <span
@@ -218,6 +255,164 @@ export function PulseStrips({
         ))}
       </div>
     </SparkbarSet>
+  );
+}
+
+type GridRow = { gridRow: number };
+
+/**
+ * A two-series row's name with its key under it: which mark is which, so the two read apart by
+ * shape — outlined and solid in the same ink — never by color.
+ */
+function RowName({
+  row,
+  name,
+  legend,
+}: {
+  row: GridRow;
+  name: string;
+  legend: readonly LegendItem[];
+}) {
+  return (
+    <span className="flex flex-col gap-(--space-1_5)" style={{ ...row, gridColumn: 1 }}>
+      <span className={cn(KICK, 'pb-[0.125rem]')}>{name}</span>
+      <ChartLegend
+        data-slot="pulse-legend"
+        className="gap-x-(--space-2_5) gap-y-(--space-1)"
+        items={legend}
+      />
+    </span>
+  );
+}
+
+/** A strip's bars, over its hairline — or, with nothing recorded, the note in their place. */
+function StripBars({
+  row,
+  recorded,
+  note,
+  children,
+}: {
+  row: GridRow;
+  recorded: boolean;
+  note: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-slot="pulse-bars"
+      data-recorded={recorded ? 'true' : 'false'}
+      className="h-[1.875rem] min-w-0 border-0 border-b-(length:--stroke-hair) border-solid border-line2"
+      style={{ ...row, gridColumn: 2 }}
+    >
+      {recorded ? (
+        children
+      ) : (
+        <span
+          data-slot="pulse-note"
+          className="flex h-full items-end pb-(--space-1) text-assist leading-none text-fg3"
+        >
+          {note}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** A strip's season total, and what it is spread over; a dash with nothing recorded. */
+function StripTotal({
+  row,
+  figure,
+  sub,
+  label,
+}: {
+  row: GridRow;
+  figure: string | null;
+  sub: string | null;
+  /** The total said whole, for a reader, where the figure and its sub-line don't read as one. */
+  label?: string;
+}) {
+  return (
+    <span
+      data-slot="pulse-total"
+      className="flex flex-col items-end gap-[0.1875rem] text-right"
+      style={{ ...row, gridColumn: 3 }}
+    >
+      {label !== undefined && (
+        <span data-slot="pulse-total-said" className="sr-only">
+          {label}
+        </span>
+      )}
+      <span
+        aria-hidden={label !== undefined ? true : undefined}
+        className={cn(
+          'font-(family-name:--family-mono) text-[0.9375rem] leading-none font-medium tracking-value tabular-nums',
+          figure === null ? 'text-fg3' : 'text-fg',
+        )}
+      >
+        {figure ?? '—'}
+      </span>
+      {sub !== null && (
+        <small
+          aria-hidden={label !== undefined ? true : undefined}
+          className="text-kick leading-[1.3] text-fg3"
+        >
+          {sub}
+        </small>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The bounties row (B01-2b, the founder's look): each day, the bounties posted as an outlined bar and
+ * those fulfilled as a solid one beside it — side by side, never stacked, since a bounty fulfilled
+ * today was mostly posted another day — with their key under the row's name, and the season's totals,
+ * posted then fulfilled.
+ */
+function BountiesStrip({
+  row,
+  bounties,
+  note,
+}: {
+  row: GridRow;
+  bounties: ShowingUpData['bounties'];
+  note: string;
+}) {
+  const totals = bounties?.totals ?? null;
+  return (
+    <div className="contents" data-slot="pulse-strip" data-key="bounties">
+      <RowName
+        row={row}
+        name={BOUNTIES_LABEL}
+        legend={[
+          { label: BOUNTIES_POSTED, ink: 'var(--fg2)', mark: 'outline' },
+          { label: BOUNTIES_FULFILLED, ink: 'var(--fg2)' },
+        ]}
+      />
+      <StripBars row={row} recorded={bounties !== null} note={note}>
+        {bounties !== null && (
+          <Sparkbars
+            aria-label={`${BOUNTIES_POSTED_ROW} and ${BOUNTIES_FULFILLED_ROW.toLowerCase()}, each day`}
+            tone="muted"
+            lightLatest
+            max={PULSE_FLOOR}
+            values={bounties.posted}
+            split={{
+              values: bounties.fulfilled,
+              layout: 'beside',
+              marks: { first: 'outline', second: 'solid' },
+            }}
+            className="h-full gap-[1.5px]"
+          />
+        )}
+      </StripBars>
+      <StripTotal
+        row={row}
+        figure={totals === null ? null : said(totals.posted)}
+        sub={totals === null ? null : bountiesTotalSub(totals.fulfilled)}
+        {...(totals !== null && { label: bountiesTotalWords(totals.posted, totals.fulfilled) })}
+      />
+    </div>
   );
 }
 
@@ -390,7 +585,13 @@ export function ShowingUp({
       <ColumnHead>Showing up</ColumnHead>
       <ShowingUpStats week={data.week} />
       <Section title="Each day">
-        <PulseStrips days={days} pulse={data.pulse} defaultActive={pulseActive ?? null} />
+        <PulseStrips
+          days={days}
+          pulse={data.pulse}
+          bounties={data.bounties}
+          vantage={data.vantage}
+          defaultActive={pulseActive ?? null}
+        />
       </Section>
       <Section title="Reports by vantage" end={<SpanTag>This season</SpanTag>}>
         <VantageSplit counts={data.vantage} />

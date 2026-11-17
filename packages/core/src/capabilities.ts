@@ -173,7 +173,7 @@ export const CAPABILITIES = {
   'season.read': read('admin', 'The season watch, its settings and the replay (A06i, D213).'),
   'season.summary': read(
     'moderator',
-    "The season's state at a glance — the watch, winter region-wide, imagery, the first skate — for the shell's tape and the Overview. No settings and no stored series: of the sites, only the sentinels that opened the watch and their lows that night.",
+    "The season's state at a glance — the watch, winter region-wide, imagery, the first skate — for the shell's tape and the Overview; and the sentinels' overnight lows this season, night by night, with the two lines the Overview draws over them (the watch's freezing line and the imagery line) (D275). No other settings and no other stored series: of the ordinary sites, nothing.",
   ),
   'season.settings': write(
     'admin',
@@ -200,6 +200,14 @@ export type ReadCapability = {
 
 /** Capabilities a mutation may name. */
 export type WriteCapability = Exclude<Capability, ReadCapability>;
+
+/**
+ * **Who reads the sentinels' overnight lows** (D275) — the one name the server's read and the
+ * Overview's Home both ask. Moderators, through `season.summary`: public weather at three named
+ * sites. Should the founder keep them to admins, this line becomes `'season.read'` and nothing else
+ * moves — the server refuses a moderator, the Home tab never asks, and the row is simply absent.
+ */
+export const SENTINEL_LOWS_CAPABILITY: ReadCapability = 'season.summary';
 
 /** The per-person grant `capability` needs on top of its role, if any (D227). */
 export function grantFor(capability: Capability): Grant | undefined {

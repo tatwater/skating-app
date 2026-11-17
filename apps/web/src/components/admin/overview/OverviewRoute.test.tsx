@@ -21,6 +21,13 @@ vi.mock('convex/react', async () => {
   return {
     useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) =>
       args === 'skip' ? undefined : mocks.results.get(getFunctionName(ref)),
+    useQueries: (queries: Record<string, { query: Parameters<typeof getFunctionName>[0] }>) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([name, q]) => [
+          name,
+          mocks.results.get(getFunctionName(q.query)),
+        ]),
+      ),
   };
 });
 vi.mock('@tanstack/react-router', () => ({

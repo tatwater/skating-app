@@ -8323,6 +8323,26 @@ lying (D270); a reason that differs only by a space is the same reason.
 
 **Related:** D226, D261, D267, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4h*.
 
+## D275 — Moderators read the sentinels' overnight lows; one named capability decides it (B01)
+
+**2026-11-17, built in B01-2b.** The Overview's Home draws the Seasons board's *Overnight Lows at the
+Sentinels* row (the founder, 2026-11-16), and moderators read it: `season.summary` widens from the
+season's state at a glance to include each sentinel's overnight low this season, night by night, and
+the two lines the row draws over them — the watch's freezing line and the imagery line. No other
+setting and no other stored series reaches a moderator; of the ordinary sites, nothing. The founder:
+"Totally fine."
+
+The read (`sentinelLows.forSeason`) and the Home tab both ask one named constant,
+`SENTINEL_LOWS_CAPABILITY` (`@skating/core`), so keeping the row to admins is one line —
+`'season.read'` — and nothing else moves: the server refuses a moderator, the page never asks, and the
+row is absent, as the Machinery card is. A test of each side flips it.
+
+**Why:** the lows are public weather at three named summit ponds, with no person in them; the row sits
+on the page every staffer opens. What stays admin is what tunes the watch — its settings, the sample,
+the replay.
+
+**Related:** D3, D212, D213, D217, [`phase-B01`](./phases/B01-admin-console.md) *B01-2b*.
+
 ## D277 — Clerk's ban lock is reconciled daily against Convex, and repaired only through the sync (B01)
 
 **2026-11-17, built in B01-4k.** Once a day a job checks the two sets that could be out of step —

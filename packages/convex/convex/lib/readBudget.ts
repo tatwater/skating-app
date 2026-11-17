@@ -110,6 +110,11 @@ export const ROW_MAX = {
   // A boundary's cell row (`adminAreaCells`): an id, three numbers and its level, which its one writer
   // (`syncAdminAreaCells`) copies from the boundary's literal — about 120 bytes, so 1 KiB (B01-3p).
   areaCell: 1024,
+  // The season watch (A06i): a season's record (its email queue and the names it copies, uncapped), a
+  // settings version (roster names and a note, uncapped) and a site's stored lows (its name, uncapped).
+  seasonRecord: DOC_MAX,
+  watchSettings: DOC_MAX,
+  seasonSeries: DOC_MAX,
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 

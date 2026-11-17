@@ -16,6 +16,7 @@ import {
   formatLow,
   IMAGERY_NUDGE_F,
   mergeLows,
+  nightsBetween,
   type SeasonWatchSettings,
   seasonFloorDate,
   seasonStartYear,
@@ -384,6 +385,22 @@ describe('compact lows', () => {
   it('counts days between labels', () => {
     expect(daysBetween('2026-10-03', '2026-10-19')).toBe(16);
     expect(daysBetween('2027-03-10', '2027-03-15')).toBe(5);
+  });
+
+  it('lists the nights between labels, both ends in, across a month, a year and both DST changes', () => {
+    expect(nightsBetween('2026-10-30', '2026-11-02')).toEqual([
+      '2026-10-30',
+      '2026-10-31',
+      '2026-11-01',
+      '2026-11-02',
+    ]);
+    expect(nightsBetween('2026-12-31', '2027-01-01')).toEqual(['2026-12-31', '2027-01-01']);
+    expect(nightsBetween('2027-03-14', '2027-03-14')).toEqual(['2027-03-14']);
+    expect(nightsBetween('2027-03-15', '2027-03-14')).toEqual([]);
+    // As many as the days between, plus one; each the day after the one before.
+    expect(nightsBetween('2026-10-01', '2027-06-30')).toHaveLength(
+      daysBetween('2026-10-01', '2027-06-30') + 1,
+    );
   });
 });
 

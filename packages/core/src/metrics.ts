@@ -438,6 +438,25 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'meta',
   },
+  /**
+   * Bounties, each on the day it happened (B01-2b): `bounties_posted` counts every bounty created this
+   * day, whatever became of it; `bounties_fulfilled` every bounty whose requester's helpful thumb
+   * fulfilled it this day, whenever it was posted. One rule for each (`bountyDays.ts`).
+   */
+  bounties_posted: {
+    label: 'Bounties posted',
+    description:
+      'Bounties posted this day, whatever became of them — a bounty later fulfilled, canceled or expired still counts on the day it was posted.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
+  bounties_fulfilled: {
+    label: 'Bounties fulfilled',
+    description:
+      'Bounties fulfilled this day (their requester thumbed a fulfilling report helpful), whenever they were posted. Canceled and expired bounties are never fulfilled; a bounty fulfilled before its time was stamped is not counted.',
+    kind: 'rollup',
+    shape: 'scalar',
+  },
   // Point-in-time: stamped on the day they were measured and overwritten by the next tick.
   accounts_total: {
     label: 'Accounts',
