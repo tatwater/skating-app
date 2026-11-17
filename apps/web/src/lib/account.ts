@@ -18,3 +18,15 @@ export const ACCOUNT_WORDS = {
 export function profileHref(username: string): string {
   return `/u/${encodeURIComponent(username)}`;
 }
+
+/**
+ * Sign out's question when the work it would discard is in another tab of this browser — said in
+ * the draft guard's dialog, under its own title.
+ */
+export const SIGN_OUT_WORDS = {
+  elsewhere: {
+    held: 'A report open in another tab of this browser has changes that aren’t posted yet. Signing out discards them.',
+    unknown:
+      'This browser can’t check its other tabs, so a report you’re writing in one of them may be discarded.',
+  },
+} as const;

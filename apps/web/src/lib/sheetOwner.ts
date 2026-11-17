@@ -6,7 +6,8 @@
 
 import { useAuth } from '@clerk/tanstack-react-start';
 import { useCallback, useEffect } from 'react';
-import { bindSheetOwner, forgetSheet } from './sheetStore';
+import { bindSheetOwner, forgetSheet, getSheet, getSheetAttempt } from './sheetStore';
+import { answerUnsavedAsks, holdsUnsentWork } from './unsavedElsewhere';
 
 /**
  * Bind the sheet to the signed-in Clerk user — `null` when signed out. Mounted once, in `AuthGate`,
@@ -19,6 +20,8 @@ export function useSheetOwnerBinding(): void {
     if (!isLoaded) return;
     bindSheetOwner(isSignedIn ? (userId ?? null) : null);
   }, [isLoaded, isSignedIn, userId]);
+  // Another tab signing out asks whether this one holds unsent work; it answers, nothing more.
+  useEffect(() => answerUnsavedAsks(() => holdsUnsentWork(getSheet(), getSheetAttempt())), []);
 }
 
 /**

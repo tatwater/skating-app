@@ -1,10 +1,16 @@
 import type { PostDraft, PostSheet } from '@skating/core';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { useSignOut } from '@/lib/sheetOwner';
 import { readStoredSheet, useSheet, useSheetAttempt } from '@/lib/sheetStore';
+import { askOtherTabs } from '@/lib/unsavedElsewhere';
 
-import { type SignOutDialogProps, type UnsentDraft, unsentDraft } from './SignOutGuard';
+import {
+  type SignOutDialogProps,
+  type SignOutRisk,
+  type UnsentDraft,
+  unsentDraft,
+} from './SignOutGuard';
 
 /**
  * The open sheet if this page holds one, else the stored copy a reload left for this account —
@@ -17,8 +23,10 @@ function currentDraft(sheet: PostSheet | null, attempt: PostDraft | null): Unsen
 }
 
 /**
- * Sign out, asking first when a draft would go with it. `request` signs straight out when there's
- * nothing to lose; otherwise it opens the confirm, whose props are `dialog`. `onFailed` hears that
+ * Sign out, asking first when a draft would go with it — this tab's, the stored one, or another
+ * tab's (`askOtherTabs`: an edit of a published report lives only in its tab's memory, and the
+ * session ending takes it there too). `request` signs out once nothing would be lost — after the
+ * other tabs' bounded wait — and otherwise opens the confirm, whose props are `dialog`. `onFailed` hears that
  * Clerk didn't answer (the console says so in a toast; the skater app passes nothing, as before).
  */
 export function useGuardedSignOut({ onFailed }: { onFailed?: () => void } = {}): {
@@ -29,7 +37,9 @@ export function useGuardedSignOut({ onFailed }: { onFailed?: () => void } = {}):
   const signOut = useSignOut();
   const sheet = useSheet();
   const attempt = useSheetAttempt();
-  const [draft, setDraft] = useState<UnsentDraft | null>(null);
+  const [draft, setDraft] = useState<SignOutRisk | null>(null);
+  /** An ask of the other tabs is out: a second press waits for it, never asks twice. */
+  const asking = useRef(false);
   const [busy, setBusy] = useState(false);
 
   const out = useCallback(async () => {
@@ -46,8 +56,17 @@ export function useGuardedSignOut({ onFailed }: { onFailed?: () => void } = {}):
 
   const request = useCallback(() => {
     const found = currentDraft(sheet, attempt);
-    if (found === null) void out();
-    else setDraft(found);
+    if (found !== null) {
+      setDraft(found);
+      return;
+    }
+    if (asking.current) return;
+    asking.current = true;
+    void askOtherTabs().then((answer) => {
+      asking.current = false;
+      if (answer === 'none') void out();
+      else setDraft({ elsewhere: answer });
+    });
   }, [sheet, attempt, out]);
 
   return {
