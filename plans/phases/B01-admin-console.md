@@ -2413,10 +2413,10 @@ lane counts people. Both were left as they were (the brief: the Overview's numbe
 a ruling changes a rule).
 
 **Owed to the record sheet's PR** (ruling 1): the verdict and withdrawal lists' mock round and any
-read solely for them; overturn on the sheet. **Owed to the web builders:** `RestorePost.tsx` names
-the person by `@username` in its "why down" line (the rule is real names) and is a Dialog where the
-boards draw a sheet. **Deferred:** the decisions' target names (S5), and bounty asks this season on
-the Bounties lever.
+read solely for them; overturn on the sheet. **Owed to the web builders:** ~~`RestorePost.tsx` names
+the person by `@username` in its "why down" line (the rule is real names)~~ (B01-4j) and is a Dialog
+where the boards draw a sheet. **Deferred:** the decisions' target names (S5), and ~~bounty asks this
+season on the Bounties lever~~ (drawn since B01-4j).
 
 **B01-4b (2026-11-15): the People server's follow-up** (stacked on #115; the list and person pages'
 requests, and the founder's rulings of the same day — D261, and the Overview's figures as the lanes').
@@ -2861,8 +2861,8 @@ time — the reads narrow by one), the open item beside, master–detail under t
 - **Known and left:** *Kept* is told by when a decision came (on or after the author's deletion),
   not by a fact the server states — a hide on content already deleted reads *Kept* too, where
   History says hidden; a stored `keptOnRecord` on the row would settle it. A Post restored with
-  chosen Reports keeps its own row for the sitting; the Reports that came back with it leave
-  Standing without one.
+  chosen Reports keeps its own row for the sitting; ~~the Reports that came back with it leave
+  Standing without one~~ (each keeps its row beside the Post's since B01-4j).
 
 **After merge, on dev:** the People procedure above. Where its backfills already ran before this
 deployed, the check names `peopleJobs:backfillVerdicts` in `rerun` (step 4 runs it alone); until it
@@ -3065,7 +3065,8 @@ test first.
   failure path (`retryOrPage`: 30 s, 5 min, 30 min, then the operator's page with the manual fix). Tests:
   success, 404 as success, 503/429/408 retried, a hung request timed out (the timeout's signal aborted by
   the test), a spent budget and a permanent 4xx paging the operator; no test calls Clerk.
-- **The pane's decisions name the write that ended them** (server half; the web half follows #138).
+- **The pane's decisions name the write that ended them** (server half; the web half landed in
+  B01-4j).
   `contentRecord.item`'s decisions carry `endActionId` (absent while standing), and the item's newest
   decision, while Reversed, carries that write's undo for the viewer (`undo`, main's engine, one row in
   view) — as History says it; every older decision has none (a newer decision's write overtook its
@@ -4424,11 +4425,12 @@ draws 34; the role menu's item takes two lines.
 - A web pass on the server follow-up (B01-4b), which supplies what was owed to it here:
   ~~`people.listPage` taking an `endCursor`~~ (B01-4i, below); staff rows' `lastSeenInConsoleAt`,
   `roleSince` and `decisionsThisWeek`; each Flagged and Appeals row's oldest open flag or ticket
-  time; `{ actionId, undoNeedsReason }` from every People write; `ledger.since`; `rightsSince`; the
-  bounty season line; explicit `can` entries for every lever; a profile-opens flag; ~~flag target
-  labels and appeal text~~; ~~who undid a row~~ (both B01-4i) — and the capped answers beside them
-  the page doesn't draw yet (`decisions.capped`, ~~`open.flagLabelsCapped`~~, `ledger.sinceCapped`,
-  `rightsSinceCapped`, and a staff row's `staff.lastSeenCapped` and `staff.roleSinceCapped`), so a
+  time; `{ actionId, undoNeedsReason }` from every People write; ~~`ledger.since`; `rightsSince`; the
+  bounty season line; explicit `can` entries for every lever; a profile-opens flag~~ (B01-4j); ~~flag
+  target labels and appeal text~~; ~~who undid a row~~ (both B01-4i) — and the capped answers beside
+  them the page doesn't draw yet (`decisions.capped`, ~~`open.flagLabelsCapped`~~,
+  ~~`ledger.sinceCapped`, `rightsSinceCapped`~~ (B01-4j), and a staff row's `staff.lastSeenCapped`
+  and `staff.roleSinceCapped`), so a
   capped date there still reads as not recorded. The merge filled the fixtures with the new fields
   and made the list row's staff overlay take `null`; `lanesFor` now reads core's `peopleLanesFor`;
   the status note's who-and-when line tells a start past the read (`statusNote.atCapped`) from one
@@ -4542,16 +4544,187 @@ don’t say which body they’re on: more than one read names*; *Show all*; *Sho
 undone by* (followed by the names); *‹N› more*; *and*.
 
 **Owed:**
-- **`endCursor` on the record sheet's three lists** (`contentRecord.personVerdicts`, `personReversed`,
+- ~~**`endCursor` on the record sheet's three lists** (`contentRecord.personVerdicts`, `personReversed`,
   `personDeleted`) — the server agent's: each reads `(cursor, endCursor]` and keeps the end as its
   `continueCursor`, as `people.listPage` does; then `recordReads` reads `pageChain` as the list does.
-  Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.
+  Until then a decision landing in an earlier page of a sheet's list re-reads the pages after it.~~
+  (B01-4j, below.)
 - What else B01-4b sent that the pages don't draw yet stays on *The People pages*' list above.
 - **The skater feed has the same fault** (`components/skater/cards/FeedCard.tsx`): *Read more* is
   decided by 240 characters or four newlines while `line-clamp-4` cuts by rendered lines, so a short
   body that wraps past four lines at phone width is clipped with no *Read more*, and a long one that
   fits shows one that does nothing. For Phase B04's running list; `ClampedText` is the shape of the
   fix once it is promoted.
+
+### The People part's owed items (B01-4j)
+
+The People part's remaining owed items, server and web, each found still true on main (`4b7d6ffa`),
+each fixed as its class with a failing test first (2026-11-16). No decision minted.
+
+- **A People backfill in flight re-ran every People read on every pass** (measured on dev: about
+  2,200 re-runs during one backfill, the Overview's People card among them). Every People read's
+  `pending` read the backfills' run rows (`peopleJobRuns`), and every pass patched its job's row —
+  cursor, failures, pass token, heartbeat — so each pass invalidated every subscriber. Now what
+  changes every pass is a new table, **`peopleJobProgress`** (one row per job: `run`, `pass`,
+  `cursor`, `failed`, `updatedAt`), and `peopleJobRuns` is written only when a run starts, ends or
+  finds a gap (the conclusion readers rest on: the run, whether it runs, `ready`). The reading is two:
+  `readPending` (the run rows alone — every People read, the Overview card and the ledger's editor
+  check) and `readPreparation` (the operator's check, joining each running run's progress for
+  `stalled`, `rerun` and the cursor); one rule for `ready` in both. **A new table, not new optional
+  fields:** Convex re-runs a subscription when any document it read changes, whichever field, so the
+  progress needs a document of its own; a table of its own keeps it out of the readers' `by_job`
+  ranges too (two rows per job in one index range would have put it back in). Widen-only: the run
+  row's fields stay, holding the run as it started or ended. **A run in flight at the deploy carries
+  across:** its progress is on its run row (the old shape) until its next pass, which takes the lease
+  from there (`progressOf`: the progress row only when it is this run's and the run is running) and
+  writes the progress row from then on — no cursor lost, the same token, so a duplicate of that pass
+  finds it spent. Tests (`peopleRuns.test.ts`): a recording database proxy holds `readPending`'s read
+  set to the run rows; over a whole chain of four backfills (seventeen-plus passes) each run row goes
+  absent → started → concluded and nothing between (red against main's `savePass`); a run in the old
+  shape resumes at its cursor and token, its duplicate pass a no-op, the walked profile not walked
+  again; a stalled run is still told by its progress's heartbeat. The two-runs property covers both
+  tables. `packages/guards`' `peopleBackfills.test.ts` holds both tables to `lib/peopleRuns` and
+  `readPreparation` to the operator's check alone, and `savePass` to the progress row.
+- **The class — per-tick progress in a document a hot read depends on**, swept across
+  `packages/convex/convex`:
+
+  | Job | What it writes per tick | Hot reads of that document | Here |
+  | --- | --- | --- | --- |
+  | The People backfills, the lapse sweep and its retry (`lib/peopleRuns`) | cursor, failures, token, heartbeat | every People read's `pending`, the Overview's People card | **fixed** (the sweep's rows were already outside the readers' ranges) |
+  | ETL imports (`importRuns.progress`) | the run's counts, stages and failures, a call per loader batch | `console.overview`'s Bodies counts (the newest `corpus_merge` / `canonical_water` run, for its start), `console.systemFeed` (the newest `limit` runs), `machinery.overviewJobs` (the newest ten), `bodyConsole` (a campaign's run, for its start) — beside Machinery's own run pages, which do show progress | **same shape, not fixed** (`importRuns.ts`, `console.ts`, `machinery.ts`, `bodyConsole.ts` are not this build's): every loader batch re-runs the Overview's counts and jobs card and the activity feed while an import runs |
+  | The imagery poll (`imageryLive.setWindowTo`) | the season row's `imageryWindowTo`, once a poll | the season readers (`seasonWatch`, `console.systemFeed`, `bodyConsole`, Machinery) | same shape, four times a day: left |
+  | The imagery pump (`lib/imageryPump`) | its lease row at a beat's start and end | `machinery.overviewJobs` (`runStartedAt`) | per run, not per pass, and the card shows the run: not the shape |
+  | Weather archive walks (`weatherCellSyncs`) | the run row at its start and its last page only | `lib/standing` | already the right shape |
+  | The walks' saved places (`jobPositions`), the recurring jobs' failures (`jobFailures`) | a position a pass; a failure when one happens | positions: internal reads only; failures: `recurringJobs.health`, which shows them | not the shape |
+  | The Bodies library drain, the imagery counts, the season series, the metric rollups | the rows and counts the pages show | the pages that show them | the data itself, not progress |
+
+  Related but not progress: a staffer's console heartbeat (`consolePresence`, once a minute while a
+  console page is open) re-runs the Staff lane, whose *last seen* it is; left. And during a rows or
+  flag-subject backfill the lanes still re-run as the backfill writes the rows and stamps they read
+  (`peopleRows`, `peopleCounts`, `contentFlags`) — the data changing, though a lane draws no count
+  while `pending`; skipping those reads while pending is possible, not built.
+- **The record sheet's three lists take `endCursor`** (`contentRecord.personVerdicts`,
+  `personReversed`, `personDeleted`, one `LIST_ARGS`), as `people.listPage` does: once a page has been
+  read past it reads exactly `(cursor, endCursor]` — the rows its existing read already fetched,
+  filtered to its end (`within`), so no new read and no new budget — and keeps that end as its
+  `continueCursor` even when its rows have all left. A range grown past what one page returns, or cut
+  by the budget, answers `pageStatus: 'SplitRequired'` with a `splitCursor` after the last row it
+  returned; the merged Deleted list is whole only when every kind's range is known to its end (its
+  fence at or past it), else it splits the same way. `isDone` stays true only when nothing follows
+  (a pinned page reads one row past its end, as before). Page rows have a test seam
+  (`RECORD_PAGE_ROWS`; every budget still reserves for `RECORD_PAGE`). A model property
+  (`recordEndCursor.test.ts`, each list, pinned seeds plus one random): the web's chain rule restated
+  against random adds and removals anywhere while deeper pages are held — no row twice, the list
+  from its start in order, every row a held page showed still shown while the list holds it, done
+  only when nothing follows; red without the end (deeper pages cut and re-asked).
+- **The record sheet's lists stitch their pages as the People list does.** The chain is one hook,
+  `list/useChainedPages` (the People list's, moved: its stand-ins for a page being pinned or split
+  included), over the pure `list/pageChain`; `useRecordList` reads it, and its own re-anchoring
+  (`reanchor`) is gone. `joinRecordPages` stops at a page to split, as `joinPages` does. Sheet tests:
+  a page read past is asked again with its `endCursor` and its rows stand meanwhile; a pinned page
+  that outgrew a page is read as its two halves.
+- **The record pane offers Undo on the write that ended its newest decision**, from the item's own
+  read (`contentRecord.item`'s `endActionId` and `undo`, the server's B01-4h fields), whichever list
+  it was opened from — no longer only from the Reversed row it was opened from (`endingUndoOf`):
+  offered while the server says available; drawn off with the server's why when a restore's or an
+  undo's ran out (8.9); nothing for an overturn's no, or once undone or overtaken. Its label says how
+  the decision ended; its dialog says what is being undone. A refusal is Undo's own toast (`said`).
+  A property holds the offer to exactly the server's word.
+- **A person write answering `{ undoable: false }` still did the undo lookup** (`usePersonWrites`
+  handled only `changed: false`). Now its receipt carries `undoable: false`: no Undo, no lookup. The
+  record writes already read it (`useRecordWrites`); the Bodies writes never answer `undoable` (no
+  instance).
+- **The person page draws the lever facts the server sends:** since when each right now off was
+  turned off (`rightsSince`) and since when ledger editing has been held (`ledger.since`) — a date, *not
+  recorded yet*, or *not found in what this read covers* for `rightsSinceCapped` / `ledger.sinceCapped`
+  (the read stopped short, or the budget couldn't afford it — so never "old");
+  this season's bounty asks under the limit (`bountySeason`, floors as "500+", *not recorded yet* when
+  the season began before the gate's record); the head's link by the profile read's own answer for
+  this viewer (`publicProfile.opens`, its `path`; *Private profile* when it opens to name and picture
+  only — a blocked, leaving or deleted account draws none, where the page had decided from visibility
+  and status); and every lever by its own `can`: each right given back (`can.restore`), flagging
+  switched on (`can.flaggingOn`), the bounty limit (*Set limit* drawn while `bountyRaise` or
+  `bountyLower` is open; its dialog sends only a way that is, asks a reason exactly when that answer
+  does, and shows a refused way's answer). These facts are the person read's own, so their answers
+  are three (a value, not recorded, not found in the read) — loading and failure are the page's.
+  The *can is the law* property now draws every entry independently.
+- **A Post restored with chosen Reports**: those Reports left Standing with no row for the rest of
+  the sitting. Now each Report the write restored with its Post (the chooser's `withReportIds`) keeps
+  its row beside the Post's, on the Post's write (`Restored.cameWith`): its Undo is the Post's
+  restore, its dialog names the Post. Each goes when the server lists it again, and with the Post's
+  own row when that goes (a hide again of the Post takes its Reports down with no decision of their
+  own, so the server lists only the Post). Model and sheet tests.
+- **A profile's moderator tools say *Nothing changed***. The brief named `ModeratorActions.tsx`, which
+  only takes content down — those writes are refused, never `changed: false` (D270). The tools that
+  do person writes are `skater/profile/ModeratorTools.tsx` (the levers on a person's profile), which
+  closed on a no-op as if it changed something — and printed the server's refusal inside its dialog
+  (D268's class, outside the writers guard's walk). Now every lever goes through `said`: a refusal is
+  one toast naming the person (*Not changed · ‹name›*), the dialog open over its reason and printing
+  nothing; a no-op is the person page's receipt from the same words entry (`WORDS.alreadySo`). The
+  guard (`adminWriters.test.ts`) now walks the file. **Found, not this build's:**
+  `skater/lake/ModeratorCard.tsx` prints its own sentence for a refused ruling in place and swallows a
+  refused approve or reject without a word (`.catch(() => {})`) — D268's class on the skater surface.
+- **`RestorePost` names who took a Report down by their real name** (the handle only for an account
+  with none), masked from analytics (`PersonName`). Its dialog-versus-sheet shape is left for the
+  Inbox.
+
+- **The record lists' model runs over what the web sends** (Greptile on #145, P2: the Deleted model
+  always narrowed to comments, so the merged default tab — and its fence, `known` — never ran). The
+  class: a model that pins a parameter the page varies. The property now runs every scope — the
+  default tab (no `targetType`) or one kind — on every seed, for all three lists, over all five
+  kinds the filter sends (Reports, Posts, comments, hazards, access alerts — an alert withdrawn by its
+  own author's retraction, its own index), with times from a small set so kinds tie. The scope is enumerated, not drawn: drawn
+  over five runs, seed 7 never drew the merged list, and a narrowed run held a row or two of its
+  kind — one page, nothing to pin. Narrowed, most rows are the scope's kind. The comment and alert
+  ranges shrink with the page (`DELETED_TAKE` / `DELETED_ALONE`, a page's worth), so a full comment range
+  fences a page too. Whether *merged* is its own path: **Standing and Reversed** read one index
+  range either way (`by_subject_standing` / `…_reversed`, or the `…_type` index narrowed) — merged
+  is a different index, not a merge, its order the key then the newer row; **Deleted** merges five
+  ranges (`DELETED_KINDS`, a few heavy rows a page) by withdrawal time, then the kind's place, then
+  the newer row, and only it has a fence. The fence's contract is written beside the code: a row is
+  placed only once every kind that could sort ahead of it is known up to it, so a pinned page is
+  whole only when the fence is at or past its end. Merged Deleted adds Greptile's case (a full
+  Report range ending before a pinned end: the page splits, every row stays in order), an explicit
+  tie across kinds (Report, Post, comment; the newer first within a kind), and a property over mixes
+  where a full range ends before another kind's rows — each run ending with two Reports or hazards
+  landing at the top of the pinned first page, so its heavy range fills ahead of the page's end;
+  Greptile's case holds its page to fewer rows
+  than a page, so the split is the fence's, not its size. **Mutation check:** `known` forced true
+  turns Greptile's case, the comment page that grew past a page, and the mixes property on every
+  seed red (pinned and random); the per-scope property catches it on some seeds, not all (it needs a
+  heavy row added inside a held page, which the mixes property forces). No bug surfaced in the merged path. **The web side:** the People list's
+  stitching tests ran one lane and one search, and the record sheet's pinning tests the default tab
+  only; both now run every list the pages can show (every lane, a search over a lane; each tab
+  merged and narrowed), each later read holding the list's own arguments, and the pinned, asked-on
+  and split reads each asserted made. `pageChain`'s model is lane-agnostic by design — the server's
+  two paging modes (a split point, or none) are what it varies.
+
+**Words this pass added** (for the founder's copy pass): in `person/factWords.ts` — *Since ‹date›*;
+*Since: not recorded yet*; *Since: not found in what this read covers*; *This season: ‹N asks›, ‹N› over
+the limit, ‹N› turned away for a recent report*; *‹N› ask* / *‹N› asks*; *No bounty asks this
+season*; *This season’s asks: not recorded yet*; *Private profile*. In `record/recordWords.ts` — *Put
+the decision back*; *Undo the overturn*; *The decision on this ‹kind› was undone*; *The decision on
+this ‹kind› was overturned*. The profile tools reuse *Not changed · ‹name›* and *Nothing changed —
+‹name› was already set that way*.
+
+**Rollout, for the dev agent:**
+1. `convex dev --once` from main (the new table `peopleJobProgress`; widen-only; no index on an
+   optional field; nothing to backfill).
+2. **A People backfill in flight** when it deploys needs nothing: its next pass resumes from the
+   cursor and token on its run row and records its progress in the new table from then on;
+   `peopleJobs:preparation` reports it as before (a run that read as stalled still does).
+3. **To verify the fix on dev:** open the console's Overview in one tab and the People list
+   (Everyone) in another, then `convex run peopleJobs:backfillVerdicts '{"alone":true}'` and, once
+   `peopleJobs:preparation '{}'` says it is not running, count the executions of `console:overview`
+   and `people:listPage` in `convex logs` (or the dashboard's logs) for the window it ran. Expected:
+   a handful each (its start and its end), where before every pass re-ran both. Pick the verdicts or
+   undo-chains backfill: the rows and flag-subject backfills write the rows and flag stamps the
+   lanes read, so those re-run the lanes as the data changes. Count from the function's executions,
+   not raw log lines (a write-conflict retry logs a line of its own).
+
+**Left:** the importRuns progress re-running the Overview while an import runs (table above);
+`skater/lake/ModeratorCard.tsx`'s refusals; what of B01-4b's facts *The People pages*' list above
+still names (this pass took only the lever facts).
 
 ### The Body console follow-up (B01-3e)
 

@@ -19,8 +19,16 @@ import { expect, test } from 'vitest';
 
 const WEB = resolve(__dirname, '../../../apps/web/src');
 
-/** The console's tree: its components, its routes, and the moderator controls it shares. */
-const ROOTS = ['components/admin', 'components/moderation', 'components/ModeratorActions.tsx'];
+/**
+ * The console's tree: its components, its routes, and the moderator controls it shares — the
+ * takedown on the skater panels and a profile's moderator tools (B01-4j).
+ */
+const ROOTS = [
+  'components/admin',
+  'components/moderation',
+  'components/ModeratorActions.tsx',
+  'components/skater/profile/ModeratorTools.tsx',
+];
 const ROUTES = /^routes\/admin[.\w$-]*\.tsx$/;
 
 /** Every file allowed to reach a mutation directly, and the path that says its refusals. */
@@ -40,6 +48,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/shell/ConsoleLayout.tsx':
     'the presence heartbeat: no one asked, nothing to say',
   'components/admin/shell/undo.tsx': 'said: "Not undone"',
+  'components/skater/profile/ModeratorTools.tsx':
+    'said, naming the person; a write that changed nothing, the person page’s receipt',
 };
 
 function files(path: string): string[] {

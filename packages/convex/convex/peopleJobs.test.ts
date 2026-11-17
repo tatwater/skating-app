@@ -10,7 +10,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { MAX_ATTEMPTS } from './lib/attempts';
 import * as audit from './lib/audit';
-import { type PeopleBackfill, readPreparation, refreshPersonRow } from './lib/peopleRows';
+import { type PeopleBackfill, readPending, refreshPersonRow } from './lib/peopleRows';
 import { LAPSED_REASON } from './peopleJobs';
 import schema from './schema';
 
@@ -74,7 +74,7 @@ const get = (t: T, id: Id<'profiles'>) => t.run((ctx) => ctx.db.get(id));
 const drain = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers, 10_000);
 
 async function isReady(t: T, backfill: PeopleBackfill) {
-  const { pending } = await t.run((ctx) => readPreparation(ctx));
+  const { pending } = await t.run((ctx) => readPending(ctx));
   return !pending.includes(backfill);
 }
 async function sweep(t: T) {

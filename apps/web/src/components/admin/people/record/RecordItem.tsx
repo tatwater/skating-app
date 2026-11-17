@@ -20,13 +20,14 @@ import { LifeList } from './kit-candidates/life-list';
 import {
   ACTION_KEY,
   type ByLine,
+  type EndingUndo,
+  endingUndoOf,
   type ItemRead,
   type ItemView,
   itemView,
   type Lever,
   type RecordAction,
   type RecordSubject,
-  type ReversedRow,
   titleText,
 } from './recordModel';
 import { RECORD_WORDS as W } from './recordWords';
@@ -35,8 +36,10 @@ import { RECORD_WORDS as W } from './recordWords';
  * **The item pane** (8.7–8.9): one thing on the record, read once (`contentRecord.item`) — its
  * decision (the badges, the reason it stands on, who did what and when), its words as they were
  * published or that they were erased, its life, what the lever would do, and the foot: the one lever
- * the server offers this viewer, or the server's sentence for why not. Nothing is drawn to press
- * that the server would refuse — save an undo that ran out, which says why (8.9).
+ * the server offers this viewer, or the server's sentence for why not — and the Undo of the write that
+ * ended its newest decision, as the item's own read states it (`endingUndoOf`), whichever list it was
+ * opened from. Nothing is drawn to press that the server would refuse — save an undo that ran out,
+ * which says why (8.9).
  */
 export type RecordItemProps = {
   item: Loadable<ItemRead | null>;
@@ -52,10 +55,9 @@ export type RecordItemProps = {
   busy: RecordAction | null;
   /** The sheet's own note on this item (it changed under a dialog) — never a server's words. */
   note: string | null;
-  /** The Reversed row this item was opened from, for its restore's undo. */
-  reversal: ReversedRow | null;
   onLever: (lever: Extract<Lever, { ok: true }>, view: ItemView) => void;
-  onUndoEnd: (row: ReversedRow) => void;
+  /** Undo the write that ended the item's newest decision (offered only while available). */
+  onUndoEnd: (ending: EndingUndo, item: ItemRead) => void;
 };
 
 export function RecordItem(props: RecordItemProps) {
@@ -96,19 +98,15 @@ function ItemBody({
   keys,
   busy,
   note,
-  reversal,
   onLever,
   onUndoEnd,
   view: given,
 }: RecordItemProps & { read: ItemRead }) {
   const view = given ?? itemView(read, subject, now, timeZone);
   const lever = view.lever;
-  // A Reversed restore's undo, as the server states it for this viewer: offered while available,
-  // drawn off with why once it ran out; gone once undone or overtaken.
-  const undo =
-    reversal !== null && reversal.endedHow === 'restore' && reversal.undo !== null
-      ? reversal.undo
-      : null;
+  // The undo of the write that ended the newest decision, as the server states it for this viewer:
+  // offered while available, drawn off with why once it ran out; gone once undone or overtaken.
+  const ending = endingUndoOf(read);
   return (
     <section
       data-slot="record-item"
@@ -162,9 +160,9 @@ function ItemBody({
         lever={lever}
         keys={keys && !narrow}
         busy={busy}
-        undo={undo}
+        ending={ending}
         onLever={(l) => onLever(l, view)}
-        onUndo={reversal === null ? undefined : () => onUndoEnd(reversal)}
+        onUndo={() => ending !== null && onUndoEnd(ending, read)}
       />
     </section>
   );
@@ -294,22 +292,24 @@ function PlateView({ view }: { view: ItemView }) {
   );
 }
 
-/** The foot: the one lever, the server's sentence for why not, or a reversal's undo. */
+/** The foot: the one lever, the server's sentence for why not, and the ending write's undo. */
 function Foot({
   lever,
   keys,
   busy,
-  undo,
+  ending,
   onLever,
   onUndo,
 }: {
   lever: Lever | null;
   keys: boolean;
   busy: RecordAction | null;
-  undo: ReversedRow['undo'];
+  ending: EndingUndo | null;
   onLever: (lever: Extract<Lever, { ok: true }>) => void;
-  onUndo: (() => void) | undefined;
+  onUndo: () => void;
 }) {
+  const undo = ending?.undo ?? null;
+  const undoWord = ending === null ? '' : W.undoTheEnd[ending.endedHow];
   const parts: ReactNode[] = [];
   if (lever !== null && !lever.ok) {
     parts.push(
@@ -324,7 +324,7 @@ function Foot({
         <TooltipTrigger
           render={
             <Button size="sm" data-slot="record-undo-end" disabled focusableWhenDisabled>
-              {W.undoTheRestore}
+              {undoWord}
             </Button>
           }
         />
@@ -333,10 +333,10 @@ function Foot({
         </TooltipContent>
       </Tooltip>,
     );
-  } else if (undo?.state === 'available' && onUndo !== undefined) {
+  } else if (undo?.state === 'available') {
     parts.push(
       <Button key="undo" size="sm" data-slot="record-undo-end" onClick={onUndo}>
-        {W.undoTheRestore}
+        {undoWord}
       </Button>,
     );
   }

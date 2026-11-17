@@ -73,7 +73,7 @@ import {
   readStoredCounts,
   readWaitingAppeals,
 } from './lib/peopleFigures';
-import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPreparation } from './lib/peopleRows';
+import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPending } from './lib/peopleRows';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -135,10 +135,10 @@ function profileIdOf(ctx: QueryCtx, raw: string): Id<'profiles'> | null {
   return ctx.db.normalizeId('profiles', raw.trim());
 }
 
-/** The backfills' state (`lib/peopleRows.readPreparation`, the one reading), its rows charged ahead. */
+/** What the backfills leave pending (`lib/peopleRuns.readPending`, never a pass's progress), its rows charged ahead. */
 function preparationOf(budget: ReadBudget, ctx: QueryCtx) {
   budget.reserve('small', 4);
-  return readPreparation(ctx);
+  return readPending(ctx);
 }
 
 /** The lanes a viewer gets: every lane but Appeals open, which needs support's PII read (D37). */

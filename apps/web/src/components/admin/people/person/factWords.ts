@@ -1,6 +1,8 @@
 /**
  * **Words for the facts the People server sends that the person page draws since B01-4i** — the
- * body an open flag is on, an appeal's own words, who undid a staffer's decisions. Kept beside
+ * body an open flag is on, an appeal's own words, who undid a staffer's decisions; and since B01-4j
+ * the levers' facts (since when a right is off and ledger editing held, this season's bounty asks,
+ * a profile that opens private). Kept beside
  * `personWords` (the page's other coined words) for the founder to read together; none of them is
  * a board's.
  *
@@ -20,4 +22,24 @@ export const FACT_WORDS = {
   /** The last of a list of people: those the read counted but didn't name. */
   andMore: (n: number) => `${n} more`,
   and: 'and',
+
+  // ── The levers' facts (B01-4j) ──
+  /** Under a right that is off, and under ledger editing: when it began. */
+  since: (date: string) => `Since ${date}`,
+  sinceUnrecorded: 'Since: not recorded yet',
+  /**
+   * The read stopped before it found the start, or its budget couldn't afford it at all
+   * (`rightsSinceCapped`, `ledger.sinceCapped`): it can't be said — never "old", never "not recorded".
+   */
+  sinceUnread: 'Since: not found in what this read covers',
+  /** Under the bounty limit: this season's asks, from the create gate's record. */
+  seasonAsks: (asks: string, over: string, recent: string) =>
+    `This season: ${asks}, ${over} over the limit, ${recent} turned away for a recent report`,
+  /** A count of asks: "1 ask", "4 asks", "500+ asks". */
+  asks: (n: string, one: boolean) => `${n} ${one ? 'ask' : 'asks'}`,
+  noSeasonAsks: 'No bounty asks this season',
+  /** The season began before the gate's 180-day record: not the whole season, so nothing shown as it. */
+  seasonAsksUnrecorded: 'This season’s asks: not recorded yet',
+  /** The head's link when the profile opens to their name and picture only. */
+  privateProfile: 'Private profile',
 } as const;
