@@ -452,28 +452,32 @@ function DayStrips({
           {readout}
         </p>
       )}
-      <table id={tableId} className="sr-only" aria-label={`${name} by day`}>
-        <thead>
-          <tr>
-            <th scope="col">Day</th>
-            {strips.map((s) => (
-              <th key={s.key} scope="col">
-                {s.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {tableDays.map((i) => (
-            <tr key={i}>
-              <th scope="row">{dayLabel(i)}</th>
+      {/* Visually hidden in a box of its own: a table never shrinks to the 1 px `sr-only` sets, so on
+          the table itself its days' width spilled into the pane's sideways overflow. */}
+      <div data-slot="day-strips-table" className="sr-only">
+        <table id={tableId} aria-label={`${name} by day`}>
+          <thead>
+            <tr>
+              <th scope="col">Day</th>
               {strips.map((s) => (
-                <td key={s.key}>{dayReadout(s, i)}</td>
+                <th key={s.key} scope="col">
+                  {s.label}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {tableDays.map((i) => (
+              <tr key={i}>
+                <th scope="row">{dayLabel(i)}</th>
+                {strips.map((s) => (
+                  <td key={s.key}>{dayReadout(s, i)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {marked && caption !== undefined && (
         <p
           data-slot="day-strips-caption"

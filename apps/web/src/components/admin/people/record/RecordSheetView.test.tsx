@@ -592,37 +592,71 @@ describe('the list', () => {
   });
 });
 
-describe('a reversal’s undo', () => {
-  const reversed = (undo: (typeof REVERSED)[number]['undo']) =>
-    ({ ...REVERSED[0], undo }) as (typeof REVERSED)[number];
-  const at = (row: (typeof REVERSED)[number]) =>
+describe('the undo of the write that ended the newest decision', () => {
+  type Undo = NonNullable<ItemRead['decisions'][number]['undo']>;
+  const ending = (undo: Undo | undefined, endedHow: 'restore' | 'undo' | 'overturn' = 'restore') =>
+    ({
+      ...ITEM_UNDO_GONE,
+      decisions: ITEM_UNDO_GONE.decisions.map((d) => ({
+        ...d,
+        endedHow,
+        ...(undo === undefined ? { undo: undefined } : { undo }),
+      })),
+    }) as ItemRead;
+  // Opened from any list: the item's own read says it, not the row it was opened from.
+  const at = (item: ItemRead, tab: 'reversed' | 'deleted' = 'reversed') =>
     props({
-      tab: 'reversed',
-      list: { ...LIST, rows: [row] } as unknown as RecordSheetViewProps['list'],
+      tab,
+      list: { ...LIST, rows: [REVERSED[0]] } as unknown as RecordSheetViewProps['list'],
       selected: { targetType: 'comment', targetId: 'xguess' },
-      item: ITEM_UNDO_GONE,
+      item,
     });
+  const undoButton = () => document.querySelector<HTMLElement>('[data-slot="record-undo-end"]');
 
-  it('offered while the server says available', async () => {
-    const onUndoEnd = vi.fn();
-    const row = reversed({ state: 'available', needsReason: true });
-    render(<RecordSheetView {...at(row)} onUndoEnd={onUndoEnd} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Undo the restore' }));
-    expect(onUndoEnd).toHaveBeenCalledWith(row);
+  it('offered while the server says available, from any list, and pressed with the item', async () => {
+    for (const tab of ['reversed', 'deleted'] as const) {
+      const onUndoEnd = vi.fn();
+      const item = ending({ state: 'available', needsReason: true });
+      const view = render(<RecordSheetView {...at(item, tab)} onUndoEnd={onUndoEnd} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Undo the restore' }));
+      expect(onUndoEnd).toHaveBeenCalledWith(
+        {
+          actionId: 'end-xguess',
+          endedHow: 'restore',
+          undo: { state: 'available', needsReason: true },
+        },
+        item,
+      );
+      view.unmount();
+    }
   });
 
-  it('drawn off once it ran out; gone once undone', () => {
+  it('named by how the decision ended', () => {
     const view = render(
-      <RecordSheetView {...at(reversed({ state: 'unavailable', why: 'No.' }))} />,
+      <RecordSheetView {...at(ending({ state: 'available', needsReason: true }, 'undo'))} />,
     );
+    expect(undoButton()).toHaveTextContent('Put the decision back');
+    view.rerender(
+      <RecordSheetView {...at(ending({ state: 'available', needsReason: false }, 'overturn'))} />,
+    );
+    expect(undoButton()).toHaveTextContent('Undo the overturn');
+  });
+
+  it('drawn off once it ran out; nothing once undone or overtaken, for an overturn’s no, or with no word', () => {
+    const view = render(<RecordSheetView {...at(ending({ state: 'unavailable', why: 'No.' }))} />);
     expect(screen.getByRole('button', { name: 'Undo the restore' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    view.rerender(
-      <RecordSheetView {...at(reversed({ state: 'undone', byActionId: 'x' as never }))} />,
-    );
-    expect(screen.queryByRole('button', { name: 'Undo the restore' })).toBeNull();
+    for (const item of [
+      ending({ state: 'undone', byActionId: 'x' as never }),
+      ending({ state: 'overtaken', byActionId: 'x' as never }),
+      ending({ state: 'unavailable', why: 'No.' }, 'overturn'),
+      ending(undefined),
+    ]) {
+      view.rerender(<RecordSheetView {...at(item)} />);
+      expect(undoButton()).toBeNull();
+    }
   });
 });
 

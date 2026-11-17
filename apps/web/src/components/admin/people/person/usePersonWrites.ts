@@ -18,11 +18,12 @@ import { receiptFor } from './receipts';
  *
  * - **Nothing optimistic**: it waits for the server, and the reads move on their own once the write
  *   lands.
- * - **The toast's Undo is the shell's**: the receipt names its target (`user`, the person). Today's
- *   writes return the person's id, not the audit row's, so the shell asks the server for the
- *   caller's own newest action on it (`undo.latestOwn`), offering Undo — ⌘Z, its countdown — only
- *   while the server would accept it; a write that answers `{ actionId, undoNeedsReason }` (the
- *   server follow-up) is taken at its word. History offers the same row's Undo after.
+ * - **The toast's Undo is the shell's**: the receipt names its target (`user`, the person). A write
+ *   that answers `{ actionId, undoNeedsReason }` is taken at its word; one that answers
+ *   `undoable: false` (or `changed: false`) offers no Undo and looks nothing up; an answer that says
+ *   neither has the shell ask the server for the caller's own newest action on it
+ *   (`undo.latestOwn`), offering Undo — ⌘Z, its countdown — only while the server would accept it.
+ *   History offers the same row's Undo after.
  */
 export function usePersonWrites(
   person: {
@@ -103,6 +104,16 @@ export function usePersonWrites(
         }).catch(() => {});
         return true;
       }
+      // The write said it can't be undone now (a lift of a suspension that had already run out):
+      // its receipt, with no Undo and no lookup — the lookup could only find what it said.
+      if (undoableOf(answered) === false) {
+        void announce({
+          ...receiptFor(action, person, now),
+          target: { targetType: 'user', targetId: userId },
+          undoable: false,
+        }).catch(() => {});
+        return true;
+      }
       const actionId = actionIdOf(answered);
       const undoNeedsReason = undoNeedsReasonOf(answered);
       const receipt: Receipt = {
@@ -149,6 +160,16 @@ export function undoNeedsReasonOf(answered: unknown): boolean | null {
   if (typeof answered !== 'object' || answered === null) return null;
   const needs = (answered as { undoNeedsReason?: unknown }).undoNeedsReason;
   return typeof needs === 'boolean' ? needs : null;
+}
+
+/**
+ * Whether the caller can undo the write now, when it says (`undoable`): `false` when it can't (then
+ * no Undo is offered and nothing looked up); `null` when the answer doesn't say — the toast asks.
+ */
+export function undoableOf(answered: unknown): boolean | null {
+  if (typeof answered !== 'object' || answered === null) return null;
+  const undoable = (answered as { undoable?: unknown }).undoable;
+  return typeof undoable === 'boolean' ? undoable : null;
 }
 
 /**

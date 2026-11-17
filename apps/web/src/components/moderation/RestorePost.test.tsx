@@ -27,9 +27,15 @@ describe('RestorePostView', () => {
     for (const c of checks) expect(c).not.toBeChecked();
     // What each is and why it is down, the author's withdrawal shown but not choosable.
     expect(box.getByText('Lake Fairlee · Jan 13, 2027')).toBeInTheDocument();
-    expect(
-      box.getByText(/Removed by @sarah on Jan 15, 2027 — Photo shows a license plate/),
-    ).toBeInTheDocument();
+    // Who took it down by their real name, masked from analytics as every name is — never a handle.
+    const why = box
+      .getAllByText(/Removed by/)
+      .find((e) => e.textContent?.includes('Photo shows a license plate')) as HTMLElement;
+    expect(why).toHaveTextContent(
+      'Removed by Sarah Berman on Jan 15, 2027 — Photo shows a license plate',
+    );
+    expect(why).not.toHaveTextContent('@sarah');
+    expect(within(why).getByText('Sarah Berman')).toHaveClass('ph-no-capture');
     expect(box.getByText(/Deleted by its author on Jan 13, 2027/)).toBeInTheDocument();
     expect(checks[2]).toHaveAttribute('aria-disabled', 'true');
 

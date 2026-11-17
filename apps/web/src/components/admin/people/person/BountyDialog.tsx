@@ -5,14 +5,16 @@ import { NumberField } from '@/components/kit/number-field';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 
 import { AskDialog } from './AskDialog';
+import type { Can } from './personModel';
 import { WORDS } from './personWords';
 import type { ActOutcome } from './useActing';
 
 /**
  * Set a person's bounty limit: the default, or a limit of their own (zero stops bounties outright and
- * leaves everything else as it is). A reason is asked only when the limit in force goes down —
- * raising it, or putting it back to the default from below, takes nothing away (the server's own
- * rule, which the page is told to apply from the value chosen).
+ * leaves everything else as it is). Which way a choice moves the limit in force decides which of the
+ * server's two answers holds (`can.bountyLower` when it goes down, `can.bountyRaise` otherwise —
+ * raising it, or putting it back to the default from below): a choice that way can be sent only when
+ * that answer is open, and asks a reason exactly when it says so (lowering takes something away).
  */
 
 export type BountyDialogProps = {
@@ -23,6 +25,13 @@ export type BountyDialogProps = {
   current: number | null;
   /** The default every account has. */
   defaultLimit: number;
+  /**
+   * The server's answer for each way the limit can move (`can.bountyRaise`, `can.bountyLower`): a
+   * choice the server would refuse can't be sent, and the reason is asked exactly when its answer
+   * says so.
+   */
+  raise: Can;
+  lower: Can;
   onConfirm: (args: { limit: number | null; reason: string }) => Promise<ActOutcome>;
 };
 
@@ -37,6 +46,8 @@ export function BountyDialog({
   name,
   current,
   defaultLimit,
+  raise,
+  lower,
   onConfirm,
 }: BountyDialogProps) {
   const [mode, setMode] = useState<'default' | 'own'>(current === null ? 'default' : 'own');
@@ -44,6 +55,8 @@ export function BountyDialog({
   const next = mode === 'default' ? null : value;
   const valid = mode === 'default' || (value !== null && Number.isInteger(value) && value >= 0);
   const unchanged = valid && next === current;
+  // The way this choice moves the limit in force, and the server's answer for it.
+  const way = valid && !unchanged ? (lowersLimit(current, next) ? lower : raise) : null;
   return (
     <AskDialog
       open={open}
@@ -51,8 +64,8 @@ export function BountyDialog({
       title={WORDS.bountyTitle(name)}
       description={WORDS.bountyBody}
       confirm="Set limit"
-      reason={valid && lowersLimit(current, next)}
-      ready={valid && !unchanged}
+      reason={way?.ok === true && way.needsReason}
+      ready={way?.ok === true}
       onConfirm={(reason) => onConfirm({ limit: next, reason })}
     >
       <RadioGroup
@@ -74,6 +87,12 @@ export function BountyDialog({
           onValueChange={(v) => setValue(v)}
           data-slot="bounty-limit"
         />
+      )}
+      {/* The read's answer for a way the server won't move it — never a write's refusal. */}
+      {way !== null && !way.ok && (
+        <p data-slot="bounty-refused" className="m-0 text-assist leading-list text-fg2">
+          {way.why}
+        </p>
       )}
     </AskDialog>
   );

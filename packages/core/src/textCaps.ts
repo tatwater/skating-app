@@ -16,6 +16,33 @@ export const MAX_PLACE_NAME_CHARS = 200;
 /** A link's URL — the length browsers and servers reliably carry. */
 export const MAX_URL_CHARS = 2_048;
 
+// The stricter caps a writer holds, each defined once here so a page that takes the text caps its
+// field with the very number the server refuses past (B01-3o), never a copy of it.
+
+/** A landmark's name and each of its other spellings — a place name, not a sentence. */
+export const MAX_LANDMARK_NAME_LENGTH = 80;
+
+/** A body's reference link's label. Long enough for an association's real name. */
+export const MAX_REFERENCE_LINK_LABEL = 80;
+
+/** One alias a moderator adds to a body. */
+export const MAX_MODERATOR_ALIAS_CHARS = 120;
+
+/**
+ * A skater's note on a request, a moderator's note declining one, and a moderator's note dismissing
+ * a corpus name (kept to this many characters on its row) — one sentence.
+ */
+export const MAX_REQUEST_NOTE_LENGTH = 280;
+
+/** A launch's name — a label on a map pin, not a description. */
+export const MAX_PUT_IN_NAME_LENGTH = 60;
+
+/**
+ * A moderator's note on a dormant body: it renders in the drawer, so it gets the same ceiling as an
+ * access note.
+ */
+export const MAX_STANDING_NOTE_LENGTH = 160;
+
 /**
  * A catalog's machine id for a row (`node/123`, `way/…`, a GNIS or NHD key, `osm:relation/…`) —
  * every format ingested is under 40 characters; this is three times that.

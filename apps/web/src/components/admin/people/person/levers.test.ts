@@ -10,6 +10,7 @@ import {
   type LeverButton,
   type LeverRow,
   roleItems,
+  seasonAsksWords,
 } from './levers';
 import {
   IDS,
@@ -27,6 +28,8 @@ import {
 } from './personFixtures';
 import type { Can, PersonCan, PersonRead } from './personModel';
 
+const AT = { now: NOW };
+
 const labels = (rows: readonly LeverRow[], key: string) =>
   (rows.find((r) => r.key === key)?.buttons ?? []).map((b) => b.label);
 const row = (rows: readonly LeverRow[], key: string) => rows.find((r) => r.key === key);
@@ -36,7 +39,7 @@ const pressable = (b: LeverButton) => !('refused' in b);
 
 describe('Can do', () => {
   it('draws board 8.1: Comments restricted with Restore, a limit below the default in amber', () => {
-    const rows = canDoRows(ROB);
+    const rows = canDoRows(ROB, AT);
     expect(rows.map((r) => [r.label, r.status, r.tone])).toEqual([
       ['Reports', 'Allowed', 'ok'],
       ['Hazards', 'Allowed', 'ok'],
@@ -51,7 +54,7 @@ describe('Can do', () => {
   });
 
   it('a give-back acts at once; a take-away asks why', () => {
-    const rows = canDoRows(ROB);
+    const rows = canDoRows(ROB, AT);
     const restore = row(rows, 'comments')?.buttons[0];
     expect(restore && 'opens' in restore && restore.opens).toEqual({
       kind: 'now',
@@ -73,6 +76,7 @@ describe('Can do', () => {
       personOf({
         rights: { ...ROB.rights, flagging: false, flagsFiled: { count: 100, capped: true } },
       }),
+      AT,
     );
     expect(row(off, 'flagging')).toMatchObject({
       status: 'Switched off · 100+ filed',
@@ -86,20 +90,20 @@ describe('Can do', () => {
   });
 
   it('the default bounty limit and a limit at or over it read quiet-white', () => {
-    expect(row(canDoRows(SARAH_PAGE), 'bounties')).toMatchObject({
+    expect(row(canDoRows(SARAH_PAGE, AT), 'bounties')).toMatchObject({
       status: 'Limit 3 · the default',
       tone: 'ok',
     });
-    const over = canDoRows(personOf({ rights: { ...ROB.rights, bountyLimit: 5 } }));
+    const over = canDoRows(personOf({ rights: { ...ROB.rights, bountyLimit: 5 } }), AT);
     expect(row(over, 'bounties')).toMatchObject({ status: 'Limit 5 (default 3)', tone: 'ok' });
   });
 
   it('staff can always flag: no Switch off on a staffer', () => {
-    expect(labels(canDoRows(SARAH_PAGE), 'flagging')).toEqual([]);
+    expect(labels(canDoRows(SARAH_PAGE, AT), 'flagging')).toEqual([]);
   });
 
   it('your own page draws the facts and no levers', () => {
-    expect(allButtons(canDoRows(TEAGAN_PAGE))).toEqual([]);
+    expect(allButtons(canDoRows(TEAGAN_PAGE, AT))).toEqual([]);
   });
 });
 
@@ -213,7 +217,7 @@ describe('Account', () => {
     const rows = accountRows(SARAH_BY_MODERATOR, { now: NOW, self: false });
     expect(rows.map((r) => r.key)).toEqual(['role']);
     expect(allButtons(rows)).toEqual([]);
-    expect(allButtons(canDoRows(SARAH_BY_MODERATOR))).toEqual([]);
+    expect(allButtons(canDoRows(SARAH_BY_MODERATOR, AT))).toEqual([]);
   });
 
   it('a banned account: Lift on the Ban row; Suspend replaces it', () => {
@@ -351,7 +355,7 @@ describe('Account', () => {
 
   it('a deleted account offers nothing the server would refuse', () => {
     const rows = [
-      ...canDoRows(ROB_DELETED),
+      ...canDoRows(ROB_DELETED, AT),
       ...accountRows(ROB_DELETED, { now: NOW, self: false }),
     ];
     expect(allButtons(rows)).toEqual([]);
@@ -434,6 +438,13 @@ const personArb = fc
       grant: canArb,
       revoke: canArb,
       extend: fc.option(canArb, { nil: undefined }),
+      // Each give-back and each way the bounty limit moves, answered on its own.
+      restoreReports: canArb,
+      restoreHazards: canArb,
+      restoreComments: canArb,
+      flaggingOn: canArb,
+      bountyRaise: canArb,
+      bountyLower: canArb,
     }),
     open: fc.boolean(),
   })
@@ -474,11 +485,14 @@ const personArb = fc
           lift: x.can.lift,
           role: x.can.role,
           ledger: x.ledgerShown ? { grant: x.can.grant, revoke: x.can.revoke } : null,
-          restore: { reports: x.can.restrict, hazards: x.can.restrict, comments: x.can.restrict },
-          // Switching flagging back on is a give-back: `restrict`'s rule, not `flaggingOff`'s.
-          flaggingOn: x.can.restrict,
-          bountyRaise: x.can.restrict,
-          bountyLower: x.can.restrict,
+          restore: {
+            reports: x.can.restoreReports,
+            hazards: x.can.restoreHazards,
+            comments: x.can.restoreComments,
+          },
+          flaggingOn: x.can.flaggingOn,
+          bountyRaise: x.can.bountyRaise,
+          bountyLower: x.can.bountyLower,
           // The server follow-up's explicit answer, or none (a server without it).
           ...(x.can.extend !== undefined && { extend: x.can.extend }),
         } as PersonRead['can'],
@@ -489,9 +503,11 @@ const personArb = fc
 function expected(p: PersonRead): string[] {
   const ids: string[] = [];
   const { can, rights } = p;
-  if (can.restrict.ok)
-    ids.push('reports-restrict', 'hazards-restrict', 'comments-restrict', 'bounties-set');
-  if (rights.flagging ? can.flaggingOff.ok : can.restrict.ok) ids.push('flagging-switch');
+  // Each right by its own entry: *Restrict* while it is on, *Restore* (its give-back) while off.
+  for (const r of ['reports', 'hazards', 'comments'] as const)
+    if (rights[r] ? can.restrict.ok : can.restore[r].ok) ids.push(`${r}-restrict`);
+  if (can.bountyRaise.ok || can.bountyLower.ok) ids.push('bounties-set');
+  if (rights.flagging ? can.flaggingOff.ok : can.flaggingOn.ok) ids.push('flagging-switch');
   if ((['admin', 'moderator', 'member'] as const).some((r) => r !== p.role && can.role[r].ok))
     ids.push('role-menu');
   if (p.ledger !== null && can.ledger !== null) {
@@ -510,7 +526,7 @@ describe('can is the law (property)', () => {
   it('no control is drawn that can forbids, and none it allows is missing', () => {
     assertSeeded(
       fc.property(personArb, fc.boolean(), (p, self) => {
-        const rows = [...canDoRows(p), ...accountRows(p, { now: NOW, self })];
+        const rows = [...canDoRows(p, AT), ...accountRows(p, { now: NOW, self })];
         const drawn = allButtons(rows)
           .filter(pressable)
           .map((b) => b.id)
@@ -552,5 +568,81 @@ describe('can is the law (property)', () => {
       label: 'Revoke',
       refused: { title: 'Give it to another admin first' },
     });
+  });
+});
+
+// ── The facts under the rows (B01-4j) ──────────────────────────────────────────────────────────
+
+describe('the facts the server sends, drawn under their rows', () => {
+  // Dates are the viewer's calendar day: one zone, so the suite reads the same anywhere.
+  const IN_NH = { now: NOW, timeZone: 'America/New_York' };
+  const off = (over: Partial<PersonRead> = {}) =>
+    personOf({
+      rights: { ...ROB.rights, comments: false, flagging: false },
+      ...over,
+    });
+
+  it('a right that is off says since when — a date, not recorded, or not found in the read', () => {
+    const at = Date.UTC(2026, 9, 3, 12);
+    const dated = off({
+      rightsSince: { reports: null, hazards: null, comments: at, flagging: null },
+    });
+    expect(row(canDoRows(dated, IN_NH), 'comments')?.second).toBe('Since 3 Oct');
+    expect(row(canDoRows(dated, IN_NH), 'flagging')?.second).toBe('Since: not recorded yet');
+    expect(row(canDoRows(off({ rightsSinceCapped: true }), IN_NH), 'comments')?.second).toBe(
+      'Since: not found in what this read covers',
+    );
+    // A right they have says nothing more.
+    expect(row(canDoRows(dated, IN_NH), 'reports')?.second).toBeUndefined();
+    // Another year writes its year.
+    const old = off({
+      rightsSince: {
+        reports: null,
+        hazards: null,
+        comments: Date.UTC(2025, 1, 2, 12),
+        flagging: null,
+      },
+    });
+    expect(row(canDoRows(old, IN_NH), 'comments')?.second).toBe('Since 2 Feb 2025');
+  });
+
+  it('ledger editing says since when a holder was given it — and nothing for one who holds none', () => {
+    const page = (ledger: PersonRead['ledger']) =>
+      row(accountRows({ ...TEAGAN_PAGE, ledger }, { ...IN_NH, self: false }), 'ledger')?.second;
+    expect(
+      page({ editor: true, last: false, since: Date.UTC(2026, 9, 14, 12), sinceCapped: false }),
+    ).toBe('Since 14 Oct');
+    expect(page({ editor: true, last: false, since: null, sinceCapped: false })).toBe(
+      'Since: not recorded yet',
+    );
+    expect(page({ editor: true, last: false, since: null, sinceCapped: true })).toBe(
+      'Since: not found in what this read covers',
+    );
+    expect(page({ editor: false, last: false, since: null, sinceCapped: false })).toBeUndefined();
+  });
+
+  it('the bounty limit says this season’s asks: counts, floors, none, or not recorded', () => {
+    const c = (count: number, capped = false) => ({ count, capped });
+    const season = (asks: number, over: number, recent: number, capped = false) => ({
+      since: NOW - 86_400_000,
+      asks: c(asks, capped),
+      overLimit: c(over, capped),
+      hadRecentReport: c(recent, capped),
+    });
+    expect(seasonAsksWords(null)).toBe('This season’s asks: not recorded yet');
+    expect(seasonAsksWords(season(0, 0, 0))).toBe('No bounty asks this season');
+    expect(seasonAsksWords(season(1, 0, 1))).toBe(
+      'This season: 1 ask, 0 over the limit, 1 turned away for a recent report',
+    );
+    expect(seasonAsksWords(season(4, 2, 1))).toBe(
+      'This season: 4 asks, 2 over the limit, 1 turned away for a recent report',
+    );
+    // A read stopped at its cap: every figure a floor, a zero included.
+    expect(seasonAsksWords(season(0, 0, 0, true))).toBe(
+      'This season: 0+ asks, 0+ over the limit, 0+ turned away for a recent report',
+    );
+    expect(
+      row(canDoRows(personOf({ bountySeason: season(4, 2, 1) }), AT), 'bounties')?.second,
+    ).toBe('This season: 4 asks, 2 over the limit, 1 turned away for a recent report');
   });
 });

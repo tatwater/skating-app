@@ -8,7 +8,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   isFailed,
   type Loadable,
+  type ReadState,
   read,
+  readState,
   useConsoleReadSet,
 } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
@@ -20,7 +22,12 @@ import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody } from '../tabParts';
 import { featureGlyph } from './featureGlyph';
-import { type FeatureRowWithGlyph, HazardsTabView, type Read } from './HazardsTabView';
+import {
+  type FeatureRowWithGlyph,
+  HazardsTabView,
+  type PatternsWaiting,
+  type Read,
+} from './HazardsTabView';
 import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
 import {
   archivedRows,
@@ -158,7 +165,7 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       archived={readOf(withArchived, archivedRows)}
       features={featureView}
       winters={winters}
-      patternsWaiting={can('body.read') ? readOf(waiting, (w) => w) : null}
+      patternsWaiting={can('body.read') ? patternsWaitingOf(readState(waiting)) : null}
       onRetry={retry}
       retryPending={pending}
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}
@@ -185,6 +192,26 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       onLitChange={setLit}
     />
   );
+}
+
+/**
+ * The patterns waiting as the view draws them, each of the read's four answers as itself: on its
+ * way, failed (the tab's note), settled with nothing (*Not recorded yet*) — and a count, whose zero
+ * is a value ("no patterns wait"), never folded into *not recorded*.
+ */
+export function patternsWaitingOf(
+  state: ReadState<{ count: number; capped: boolean }>,
+): Read<PatternsWaiting> {
+  switch (state.kind) {
+    case 'loading':
+      return undefined;
+    case 'failed':
+      return 'error';
+    case 'none':
+      return 'none';
+    case 'value':
+      return state.value;
+  }
 }
 
 /** A read as the view takes it: mapped when it landed, `'error'` when it failed. */

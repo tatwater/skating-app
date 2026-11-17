@@ -82,8 +82,11 @@ export function useRecordWrites({
    * receipt never shows over another person's page (the shell's rule).
    */
   here?: () => boolean;
-  /** A restore landed: keep its row in Standing for the sitting. */
-  onRestored: (target: Target, result: RecordWriteResult) => void;
+  /**
+   * A restore landed: keep its row in Standing for the sitting — and, for a Post restored with
+   * chosen Reports, theirs (`withReportIds`, what the write restored with it).
+   */
+  onRestored: (target: Target, result: RecordWriteResult, withReportIds: readonly string[]) => void;
   now: number;
   /** The toast queue a refusal is said in: the app's, unless a story draws its own. */
   manager?: ToastManager;
@@ -155,7 +158,8 @@ export function useRecordWrites({
         },
         here,
       ).catch(() => {});
-      if (write.kind === 'restore' && 'undoable' in answered) onRestored(target, answered);
+      if (write.kind === 'restore' && 'undoable' in answered)
+        onRestored(target, answered, write.withReportIds ?? []);
       return true;
     },
     [server, announce, subject, placeOf, comesBackOf, onRestored, now, here, manager],

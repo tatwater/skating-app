@@ -50,9 +50,9 @@ export type StoredCountKey = (typeof STORED_COUNT_KEYS)[number];
 // and tests that already import from here.
 export {
   markReady,
+  type Pending,
   type PeopleBackfill,
-  type Preparation,
-  readPreparation,
+  readPending,
 } from './peopleRuns';
 
 /**

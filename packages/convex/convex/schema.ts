@@ -138,6 +138,17 @@ import {
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
 
+/** A People chained job (`lib/peopleRuns.PEOPLE_JOBS`): its run row and its progress row alike. */
+const peopleJob = v.union(
+  v.literal('rows'),
+  v.literal('flagSubjects'),
+  v.literal('undoChains'),
+  // The content record (B01-4d): the verdict replay and the erasure clocks after it.
+  v.literal('verdicts'),
+  v.literal('lapseSweep'),
+  v.literal('lapseRetry'),
+);
+
 export default defineSchema({
   profiles: defineTable({
     clerkUserId: v.string(), // ties this profile to its Clerk auth user (identity.subject)
@@ -515,18 +526,12 @@ export default defineSchema({
    * current run. Starting a job mints the next `run` and makes it current; a pass of any other run
    * does nothing. For a backfill, `ready` is the conclusion of the last run to reach the end of its
    * range, and the one source of what is finished: `peopleJobs.preparation` (the operator's check)
-   * and every read's `pending` are computed from these rows.
+   * and every read's `pending` are computed from these rows. **Written only when a run starts or
+   * ends** (or a run finds a gap, which takes back `ready`), never by a pass: a running run's progress
+   * is its row in `peopleJobProgress`, so a backfill in flight re-runs no People read (B01-4j).
    */
   peopleJobRuns: defineTable({
-    job: v.union(
-      v.literal('rows'),
-      v.literal('flagSubjects'),
-      v.literal('undoChains'),
-      // The content record (B01-4d): the verdict replay and the erasure clocks after it.
-      v.literal('verdicts'),
-      v.literal('lapseSweep'),
-      v.literal('lapseRetry'),
-    ),
+    job: peopleJob,
     /** The current run's number: the only run whose passes may write. */
     run: v.number(),
     /**
@@ -536,9 +541,12 @@ export default defineSchema({
     ready: v.optional(v.boolean()),
     /** The current run has a pass scheduled or under way. */
     running: v.boolean(),
-    /** Where the current run's next pass resumes (`null`: the start, or the run ended). */
+    /**
+     * Where the run's first pass resumes (`null`: the start, or the run ended). A running run's
+     * progress is `peopleJobProgress`'s; a run started before B01-4j keeps it here until its next pass.
+     */
     cursor: v.union(v.string(), v.null()),
-    /** The current run's failures (the last run's, once it ended). */
+    /** The run's failures as it started (0) or ended — while it runs, `peopleJobProgress`'s. */
     failed: v.number(),
     /** The current run starts the backfills after it when it ends (not an `alone` run). */
     chains: v.boolean(),
@@ -548,10 +556,35 @@ export default defineSchema({
      */
     partial: v.optional(v.boolean()),
     /**
-     * The current run's pass token: the next scheduled pass must carry it, and each pass moves it on,
-     * so a run is one chain — a pass's arguments replayed by hand find the token gone and do nothing.
+     * The run's pass token as it started (0) — while it runs, `peopleJobProgress`'s (a run started
+     * before B01-4j keeps it here until its next pass). The next scheduled pass must carry the token,
+     * and each pass moves it on, so a run is one chain — a pass's arguments replayed by hand find the
+     * token gone and do nothing.
      */
     pass: v.number(),
+    /** When the run started or ended. */
+    updatedAt: v.number(),
+  }).index('by_job', ['job']),
+
+  /**
+   * **A People chained job's progress** (B01-4j, `lib/peopleRuns` the only reader and writer): one row
+   * per job, rewritten by every pass of its current run — where the next pass resumes, the failures so
+   * far, the pass token, the heartbeat. Kept apart from `peopleJobRuns` so a pass writes nothing a
+   * People read depends on: only the operator's check (`peopleJobs.preparation`, for `stalled` and the
+   * cursor) and the passes themselves read it. A row whose `run` isn't the job's current run is a past
+   * run's, and is read as absent.
+   */
+  peopleJobProgress: defineTable({
+    job: peopleJob,
+    /** The run this progress belongs to. */
+    run: v.number(),
+    /** The pass token the run's next pass must carry. */
+    pass: v.number(),
+    /** Where the run's next pass resumes. */
+    cursor: v.union(v.string(), v.null()),
+    /** The run's failures so far. */
+    failed: v.number(),
+    /** When a pass last recorded — `stalled` is ten minutes without one. */
     updatedAt: v.number(),
   }).index('by_job', ['job']),
 
