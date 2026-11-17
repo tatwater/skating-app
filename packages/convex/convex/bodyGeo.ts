@@ -886,39 +886,39 @@ type Candidate = {
   stamp: string;
 };
 
+/** A body's facts as computed, before they are stored — what `store` takes, less the body's id. */
+type Computed = {
+  stamp: string;
+  staleAt: number | null;
+  areasAt: number;
+  neighbors: {
+    waterBodyId: Id<'waterBodies'>;
+    name: string;
+    ring: [number, number][];
+    stamp: string;
+  }[];
+  neighborsCapped: boolean;
+} & ReturnType<typeof placesFrom>;
+
 /**
- * Compute one body's facts in the action, start to finish. Throws on a failure the caller records.
- * `names` is the run's namesake reads, shared by its bodies.
+ * **Compute one body's facts in the action**, without storing them — `null` for a body gone or merged.
+ * Throws on a failure the caller records. `names` is the run's namesake reads, shared by its bodies.
  */
-async function computeOne(
+async function computeFacts(
   ctx: ActionCtx,
   waterBodyId: Id<'waterBodies'>,
   names: NamesakeReads,
-): Promise<void> {
+): Promise<Computed | null> {
   const input = await ctx.runQuery(internal.bodyGeo.inputs, { waterBodyId });
-  if (input === null) {
-    // Gone or merged: the store drops its facts.
-    await ctx.runMutation(internal.bodyGeo.store, {
-      waterBodyId,
-      stamp: '',
-      staleAt: null,
-      neighbors: [],
-      neighborsCapped: false,
-      towns: [],
-      counties: [],
-      states: [],
-      areasAt: 0,
-    });
-    return;
-  }
+  if (input === null) return null;
   const geom = input.polygon as unknown as Geom;
   const padded = paddedBox(input.bbox);
   const { tiles, truncated: tilesTruncated } = coverTiles(padded);
   const seen = new Map<Id<'waterBodies'>, Candidate>();
   let coverTruncated = tilesTruncated;
   async function runTile(box: Box): Promise<{ truncated: boolean; bodies: Candidate[] }> {
-    // The body and the candidates already held still count against the tile's limit, but their
-    // outlines are not read back again: a giant is a candidate in every one of its tiles.
+    // The body and the candidates already held still count against the tile's limit, but are not
+    // summarized again: a giant is a candidate in every one of its tiles.
     return ctx.runQuery(internal.bodyGeo.candidates, {
       box,
       skip: [waterBodyId, ...seen.keys()],
@@ -956,16 +956,149 @@ async function computeOne(
     })
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
   const places = await computePlaces(ctx, geom, input.bbox, names, input.areasAt);
-  await ctx.runMutation(internal.bodyGeo.store, {
-    waterBodyId,
+  return {
     stamp: input.stamp,
     staleAt: input.staleAt,
+    areasAt: input.areasAt,
     neighbors,
     neighborsCapped: coverTruncated || ranked.length > TOUCH_CANDIDATES,
     ...places,
-    areasAt: input.areasAt,
-  });
+  };
 }
+
+/** Compute one body's facts and store them. Throws on a failure the caller records. */
+async function computeOne(
+  ctx: ActionCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: NamesakeReads,
+): Promise<void> {
+  const facts = await computeFacts(ctx, waterBodyId, names);
+  await ctx.runMutation(
+    internal.bodyGeo.store,
+    facts === null
+      ? // Gone or merged: the store drops its facts.
+        {
+          waterBodyId,
+          stamp: '',
+          staleAt: null,
+          neighbors: [],
+          neighborsCapped: false,
+          towns: [],
+          counties: [],
+          states: [],
+          areasAt: 0,
+        }
+      : { waterBodyId, ...facts },
+  );
+}
+
+// ── The check: is a stored answer the one the code gives now? ───────────────────────────────────
+
+/** The fields a check compares — every one the store writes from the computation. */
+const CHECKED = [
+  'neighbors',
+  'neighborsCapped',
+  'towns',
+  'townStates',
+  'townIds',
+  'townEntries',
+  'counties',
+  'states',
+] as const;
+/** Bodies one check takes — a named handful, each computed in full. */
+export const CHECK_MAX = 25;
+
+/** A body's stored facts as the check compares them, or `null` with none computed. */
+export const storedFacts = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const row = await ctx.db
+      .query('bodyGeoFacts')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .first();
+    if (row === null || row.computedAt === undefined) return null;
+    return {
+      stamp: row.stamp ?? null,
+      areasAt: row.areasAt ?? null,
+      placesRule: row.placesRule ?? null,
+      stale: row.staleAt !== undefined,
+      neighbors: row.neighbors ?? [],
+      neighborsCapped: row.neighborsCapped ?? false,
+      towns: row.towns ?? [],
+      townStates: row.townStates ?? [],
+      townIds: row.townIds ?? [],
+      townEntries: row.townEntries ?? [],
+      counties: row.counties ?? [],
+      states: row.states ?? [],
+    };
+  },
+});
+
+/** A value written out with its object keys sorted — the same value, whatever order it was built in. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_, v) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
+/**
+ * **Whether each named body's stored facts are what the code computes now** (B01-3p) — computed in
+ * full, compared field by field, and **nothing written**. The rollout check after a change meant to
+ * leave every answer as it was: `same` for each, or the fields that differ. `behind` when the stored
+ * answer was computed for another outline, places layer or rule (it is owed a recompute anyway);
+ * `stale` says the row is marked for one. At most {@link CHECK_MAX} bodies a call.
+ */
+export const checkStored = internalAction({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (
+    ctx,
+    { waterBodyIds },
+  ): Promise<
+    {
+      waterBodyId: Id<'waterBodies'>;
+      status: 'same' | 'differs' | 'behind' | 'not computed' | 'gone';
+      stale: boolean;
+      differs: string[];
+    }[]
+  > => {
+    if (waterBodyIds.length > CHECK_MAX) {
+      throw new ConvexError(`at most ${CHECK_MAX} bodies a check`);
+    }
+    const names = new NamesakeReads();
+    const out = [];
+    for (const waterBodyId of waterBodyIds) {
+      const stored = await ctx.runQuery(internal.bodyGeo.storedFacts, { waterBodyId });
+      const fresh = await computeFacts(ctx, waterBodyId, names);
+      const stale = stored?.stale ?? false;
+      if (fresh === null) {
+        out.push({ waterBodyId, status: 'gone' as const, stale, differs: [] });
+        continue;
+      }
+      if (stored === null) {
+        out.push({ waterBodyId, status: 'not computed' as const, stale, differs: [] });
+        continue;
+      }
+      const differs = CHECKED.filter((f) => canonical(stored[f]) !== canonical(fresh[f]));
+      const behind =
+        stored.stamp !== fresh.stamp ||
+        stored.areasAt !== fresh.areasAt ||
+        stored.placesRule !== PLACES_RULE;
+      out.push({
+        waterBodyId,
+        status: behind
+          ? ('behind' as const)
+          : differs.length === 0
+            ? ('same' as const)
+            : ('differs' as const),
+        stale,
+        differs: [...differs],
+      });
+    }
+    return out;
+  },
+});
 
 /** An error's class for the attempts record — its kind only, never its message. */
 export function errorClassOf(err: unknown): string {

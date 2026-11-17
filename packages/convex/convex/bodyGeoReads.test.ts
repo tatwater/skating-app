@@ -691,3 +691,88 @@ describe('a run asks each town name once', () => {
     expect(names.reads).toBe(3);
   });
 });
+
+// ── The rollout's check: the stored answers are the ones computed now ─────────────────────────
+
+describe('checkStored', () => {
+  test('says same for every stored answer, names a field that differs, and writes nothing', async () => {
+    const t = harness();
+    await seedAreas(t, [
+      {
+        name: 'West',
+        level: 'town',
+        state: 'VT',
+        box: { minLng: -72.1, maxLng: -72.0, minLat: 44.1, maxLat: 44.2 },
+      },
+      {
+        name: 'East',
+        level: 'town',
+        state: 'VT',
+        box: { minLng: -72.0, maxLng: -71.9, minLat: 44.1, maxLat: 44.2 },
+      },
+    ]);
+    const [across, beside, unknown] = await seedPonds(t, [
+      { at: [-72, 44.15], r: [0.004, 0.002], n: 32, zoom: 12, score: 4 },
+      { at: [-72, 44.1525], r: [0.001, 0.0005], n: 16, zoom: 13, score: 1 },
+      { at: [-71.95, 44.18], r: [0.001, 0.0005], n: 16, zoom: 13, score: 1 },
+    ]);
+    // The third is never computed.
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', unknown as Id<'waterBodies'>))
+        .first();
+      if (row) await ctx.db.delete(row._id);
+    });
+    // Two runs: each body's first answer marks the other, whose relation moved, for one more.
+    await t.action(internal.bodyGeo.computeDue, {});
+    await t.action(internal.bodyGeo.computeDue, {});
+    const ids = [across, beside, unknown] as Id<'waterBodies'>[];
+    const rowOf = (id: Id<'waterBodies'>) =>
+      t.run((ctx) =>
+        ctx.db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .first(),
+      );
+    const before = await rowOf(across as Id<'waterBodies'>);
+    expect(before?.townEntries).toHaveLength(2);
+    expect(before?.neighbors?.map((n) => n.waterBodyId)).toEqual([beside]);
+    expect(await t.action(internal.bodyGeo.checkStored, { waterBodyIds: ids })).toEqual([
+      { waterBodyId: across, status: 'same', stale: false, differs: [] },
+      { waterBodyId: beside, status: 'same', stale: false, differs: [] },
+      { waterBodyId: unknown, status: 'not computed', stale: false, differs: [] },
+    ]);
+    // Nothing written.
+    expect(await rowOf(across as Id<'waterBodies'>)).toEqual(before);
+    // A stored answer that is not the code's: named by field.
+    await t.run((ctx) => ctx.db.patch(before?._id as Id<'bodyGeoFacts'>, { counties: ['Other'] }));
+    expect(
+      await t.action(internal.bodyGeo.checkStored, { waterBodyIds: [across as Id<'waterBodies'>] }),
+    ).toEqual([{ waterBodyId: across, status: 'differs', stale: false, differs: ['counties'] }]);
+    // Computed for another outline: behind, whatever it holds.
+    await t.run((ctx) =>
+      ctx.db.patch(before?._id as Id<'bodyGeoFacts'>, { stamp: 'another outline' }),
+    );
+    expect(
+      (
+        await t.action(internal.bodyGeo.checkStored, {
+          waterBodyIds: [across as Id<'waterBodies'>],
+        })
+      )[0]?.status,
+    ).toBe('behind');
+    await t.run((ctx) => ctx.db.delete(beside as Id<'waterBodies'>));
+    expect(
+      (
+        await t.action(internal.bodyGeo.checkStored, {
+          waterBodyIds: [beside as Id<'waterBodies'>],
+        })
+      )[0]?.status,
+    ).toBe('gone');
+    await expect(
+      t.action(internal.bodyGeo.checkStored, {
+        waterBodyIds: Array.from({ length: 26 }, () => across as Id<'waterBodies'>),
+      }),
+    ).rejects.toThrow(/at most 25/);
+  });
+});
