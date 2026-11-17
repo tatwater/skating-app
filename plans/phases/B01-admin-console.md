@@ -4668,6 +4668,27 @@ each fixed as its class with a failing test first (2026-11-16). No decision mint
   with none), masked from analytics (`PersonName`). Its dialog-versus-sheet shape is left for the
   Inbox.
 
+- **The record lists' model runs over what the web sends** (Greptile on #145, P2: the Deleted model
+  always narrowed to comments, so the merged default tab — and its fence, `known` — never ran). The
+  class: a model that pins a parameter the page varies. The property now generates the scope — the
+  default tab (no `targetType`) or each kind — for all three lists, over Reports, Posts and comments,
+  with times from a small set so kinds tie. Whether *merged* is its own path: **Standing and
+  Reversed** read one index range either way (`by_subject_standing` / `…_reversed`, or the `…_type`
+  index narrowed) — merged is a different index, not a merge, its order the key then the newer row;
+  **Deleted** merges five ranges (`DELETED_KINDS`, a few heavy rows a page) by withdrawal time, then
+  the kind's place, then the newer row, and only it has a fence. The fence's contract is written
+  beside the code: a row is placed only once every kind that could sort ahead of it is known up to
+  it, so a pinned page is whole only when the fence is at or past its end. Merged Deleted adds
+  Greptile's case (a full Report range ending before a pinned end: the page splits, every row stays
+  in order), an explicit tie across kinds (Report, Post, comment; the newer first within a kind), and
+  a property over mixes where a full range ends before another kind's rows. **Mutation check:**
+  `known` forced true turned Greptile's case and every merged run red, and the generated-scope
+  property too. No bug surfaced in the merged path. **The web side:** the People list's stitching
+  tests ran one lane and one search, and the record sheet's pinning tests the default tab only; both
+  now run every list the pages can show (every lane, a search over a lane; each tab merged and
+  narrowed), each later read holding the list's own arguments. `pageChain`'s model is lane-agnostic
+  by design — the server's two paging modes (a split point, or none) are what it varies.
+
 **Words this pass added** (for the founder's copy pass): in `person/factWords.ts` — *Since ‹date›*;
 *Since: not recorded yet*; *Since: not found in what this read covers*; *This season: ‹N asks›, ‹N› over
 the limit, ‹N› turned away for a recent report*; *‹N› ask* / *‹N› asks*; *No bounty asks this
