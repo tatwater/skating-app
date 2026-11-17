@@ -66,10 +66,12 @@ export interface UndoHandler {
     read: UndoRead,
   ) => Promise<string | null>;
   /**
-   * What `refusal` reads at worst, through `read`, where it is asked — reserved before it runs
-   * (B01-3h, `ReadBudget.waves`). Absent: one row of a document's weight.
+   * What `refusal` reads at worst for this row, through `read`, where it is asked — reserved before
+   * it runs (B01-3h, `ReadBudget.waves`). Absent: one row of a document's weight. `null`: this row has
+   * nothing to check (its `refusal` would answer `null` without a read), so it reserves nothing and
+   * never waits on a wave or reads "check elsewhere".
    */
-  refusalCost?: (scope: UndoScope) => WaveCost;
+  refusalCost?: (scope: UndoScope, row: Doc<'moderationActions'>) => WaveCost | null;
   run: (call: UndoCall) => Promise<void>;
 }
 

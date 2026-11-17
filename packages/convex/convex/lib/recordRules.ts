@@ -28,6 +28,9 @@ import type { VerdictTargetType } from './contentVerdicts';
 import { authorRetracted } from './eraseClock';
 import { authorOf, ownContentRefusal } from './ownContent';
 
+/** What a verdict decided: a hide, a removal, an alert's retraction (the schema's own literals). */
+export type VerdictKind = Doc<'contentVerdicts'>['kind'];
+
 /** Anything a moderator tries on an item the sweep erased. */
 export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';
 /** An overturn on content still its author's: Restore is the way back. */
@@ -47,6 +50,12 @@ export const TAKEDOWN_ALREADY = {
   hidden: 'This is already hidden.',
   removed: 'This is already removed.',
 } as const;
+/**
+ * Restore or Hide again on an access alert: no write moves an alert's moderation status — it is pinned,
+ * released or retracted (`accessAlerts`), and a decision on one is overturned or kept.
+ */
+export const ALERT_HAS_NO_STATUS =
+  'An access alert is pinned, released or retracted, not hidden or restored.';
 /** A keep on content a decision already holds: nothing would change. */
 export const KEEP_ALREADY_HELD = 'A decision already keeps this on their record.';
 /** A forward restore that would bring the Post back with none of its Reports (founder, 2026-11-13). */
@@ -106,8 +115,18 @@ export interface RecordFacts {
   status: Doc<'reports'>['moderationStatus'] | null;
   /** A moderator's verdict stands on it. */
   standing: boolean;
+  /**
+   * The kind of the verdict standing on it — `null` with none (`standing` says the same). A takedown
+   * of the kind already held may change nothing ({@link takedownRefusal}).
+   */
+  heldAs: VerdictKind | null;
   /** A Post's restore plan, when its members were read; absent otherwise. */
   post?: PostRestoreFacts;
+  /**
+   * A Post's Reports up now, when its members were read; absent otherwise. A takedown of a Post with
+   * one up still takes that one down, so it is a change even where a decision of its kind holds.
+   */
+  membersUp?: number;
   /** Who wrote it (a hazard's or alert's filer); `null` when gone. A moderator never decides their own (D269). */
   authorId: Id<'profiles'> | null;
 }
@@ -140,6 +159,7 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
   if (facts.gone || (facts.erased && action !== 'overturn')) return ERASED_ALREADY;
   switch (action) {
     case 'restore': {
+      if (facts.targetType === 'accessAlert') return ALERT_HAS_NO_STATUS;
       if (facts.authorDeleted) return AUTHOR_DELETED_RESTORE;
       // Up already: nothing to change — unless a decision still stands on it (a history rebuilt from
       // before the record), which the restore ends.
@@ -150,7 +170,7 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
       return facts.post.choosable === 0 ? POST_UNRESTORABLE : POST_RESTORE_NEEDS_A_CHOICE;
     }
     case 'hideAgain':
-      return null;
+      return takedownRefusal(facts, 'hidden');
     case 'overturn':
       if (facts.withdrawn === 'unknown') return RECORD_CHECK_ON_ITEM;
       if (!facts.withdrawn) return OVERTURN_NOT_DELETED;
@@ -159,6 +179,29 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
       if (!facts.authorDeleted) return KEEP_NOT_DELETED;
       return facts.standing ? KEEP_ALREADY_HELD : null;
   }
+}
+
+/**
+ * **Why a hide or a removal of the item would be refused, or `null`** (B01-4h) — Hide again's answer
+ * (`hidden`) and the write's own (`moderation.setModerationStatus`, both kinds), one function: a
+ * takedown of what a decision of that kind already holds changes nothing, so it writes nothing (D270,
+ * as D267's restore of what is up) — unless it still moves the content: the item is not yet at that
+ * status, or it is a Post with a Report still up (taken down with it). On content its author deleted
+ * the decision is all a takedown writes (the content stays as the deletion left it), so one already
+ * held is refused whatever the status. A Post whose members weren't read answers
+ * {@link RECORD_CHECK_ON_ITEM} where they would decide. An alert has no status to take down.
+ */
+export function takedownRefusal(facts: RecordFacts, status: 'hidden' | 'removed'): string | null {
+  if (facts.gone || facts.erased) return ERASED_ALREADY;
+  if (facts.targetType === 'accessAlert') return ALERT_HAS_NO_STATUS;
+  if (facts.heldAs !== status) return null;
+  if (facts.authorDeleted) return TAKEDOWN_ALREADY[status];
+  if (facts.status !== status) return null;
+  if (facts.targetType === 'post') {
+    if (facts.membersUp === undefined) return RECORD_CHECK_ON_ITEM;
+    if (facts.membersUp > 0) return null;
+  }
+  return TAKEDOWN_ALREADY[status];
 }
 
 /** The viewer as the rule reads them: their role, their grant, whether they are on their way out. */
@@ -230,16 +273,18 @@ export function recordLevers(viewer: RecordViewer, facts: RecordFacts): RecordLe
 type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
 
 /**
- * The facts of an item from its document (or `null`, gone) and whether a verdict stands on it. A Post
- * its author didn't delete is `withdrawn: 'unknown'` unless `members` says whether every one of its
- * Reports was withdrawn (and `post` carries its restore plan).
+ * The facts of an item from its document (or `null`, gone) and the kind of the verdict standing on it
+ * (`null`: none). A Post its author didn't delete is `withdrawn: 'unknown'` unless `members` says
+ * whether every one of its Reports was withdrawn; `post` carries its restore plan and `membersUp`
+ * how many of its Reports are up, where they were read.
  */
 export function recordFactsOf(
   targetType: VerdictTargetType,
   doc: ContentDoc | Doc<'accessAlerts'> | null,
-  standing: boolean,
-  members?: { everyWithdrawn: boolean; plan?: PostRestoreFacts },
+  heldAs: VerdictKind | null,
+  members?: { everyWithdrawn?: boolean; plan?: PostRestoreFacts; up?: number },
 ): RecordFacts {
+  const standing = heldAs !== null;
   if (doc === null) {
     return {
       targetType,
@@ -249,6 +294,7 @@ export function recordFactsOf(
       withdrawn: false,
       status: null,
       standing,
+      heldAs,
       authorId: null,
     };
   }
@@ -261,6 +307,7 @@ export function recordFactsOf(
       withdrawn: retracted,
       status: null,
       standing,
+      heldAs,
       authorId: authorOf(doc),
     };
   }
@@ -268,7 +315,7 @@ export function recordFactsOf(
   const erased = targetType === 'comment' && (content as Doc<'comments'>).erasedAt !== undefined;
   const stamped = authorDeletedAtOf(content) !== undefined;
   const withdrawn =
-    stamped || targetType !== 'post' ? stamped : members ? members.everyWithdrawn : 'unknown';
+    stamped || targetType !== 'post' ? stamped : (members?.everyWithdrawn ?? 'unknown');
   return {
     targetType,
     erased,
@@ -276,7 +323,9 @@ export function recordFactsOf(
     withdrawn,
     status: content.moderationStatus,
     standing,
+    heldAs,
     authorId: authorOf(content),
     ...(members?.plan !== undefined && targetType === 'post' ? { post: members.plan } : {}),
+    ...(members?.up !== undefined && targetType === 'post' ? { membersUp: members.up } : {}),
   };
 }

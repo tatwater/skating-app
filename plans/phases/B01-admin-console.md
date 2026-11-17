@@ -2984,9 +2984,98 @@ rollout stands and needs no re-run.
   before `prev` has no reason to restore: none on file, *not recorded* on the page. A redo is the same
   path; each dates the terms anew (undo then redo starts a fresh *since*, as the founder ruled).
 - **One normalizer at the write.** `lib/audit.checkedReason` trims, then holds to the cap; `typed`
-  and the ban and suspension writers compare and keep through it. A reason kept with spaces before this (only a
+  and the ban and suspension writers compare and keep through it. ~~A reason kept with spaces before this (only a
   raw call could send one) compares unequal to its trimmed repeat once, which writes one row and keeps
-  the trimmed reason from then on.
+  the trimmed reason from then on.~~ (Closed by B01-4h: comparisons read both sides normalized, so the
+  repeat writes nothing.)
+
+**B01-4h (2026-11-16): the record's rules, closed as classes** (D271; server only; PR #140). Six
+follow-ons to B01-4f and B01-4g, each found still true on main, each fixed as its class with a failing
+test first.
+
+- **An undo of a takedown that only moved the record.** Hiding what its Post's hide took down — hidden,
+  no decision of its own — puts a decision on the person's record, but its undo said *Nothing changed:
+  it was already hidden.* A row that left the item's status as it found it (and moved no member of a
+  Post) now undoes through the same writer, on the record alone: the decision comes off, the item stays
+  as it was, Reversed shows it once as undone, and the replay rebuilds it flag for flag
+  (`superseded` included; `verdictWriters` needed no new writer). Whether it is offered is read from the
+  verdict rows (`lib/undoHandlers.recordOnlyRefusal`, a refusal the engine reserves in its waves, 2
+  reads, ≤ 24 KiB): a decision put on that still stands, or one taken off and none put on (the undo's
+  redo, which asks a reason — a record-only row's undo alternates give-back and takeaway down its
+  chain). A repeat from before D270 (one decision replaced by another of its kind) or a row that moved
+  neither still has nothing to undo. A Report taken off its own decision this way is its Post's again,
+  as it was: the undo row records the Post's word it puts back (`backToCascade`), so the Post's
+  restore and its undo bring it back (`moderation.cascadeWordOf`; found by the review — without it the
+  Report stayed down for good with nothing on the record). A restore that ended a decision on content already up (a
+  history from before the record) says so (`RESTORE_ENDED_ONLY`, *Hide it again …*) instead of
+  claiming it predates undo: putting that decision back would stand a decision on content that is up,
+  which no write records. The class, as a table test (`undoRecordEffect.test.ts`):
+
+  | Verb, on | Content | Record | The undo |
+  | --- | --- | --- | --- |
+  | hide · up, undecided | up → hidden | mints | back up, decision off (no reason) |
+  | hide · down by its Post's hide, undecided | hidden → hidden | mints | stays hidden, decision off (no reason) — **new** |
+  | hide · a Post down because its Reports are | hidden → hidden | mints | stays hidden the same way (a member restored brings it back), decision off — **new** |
+  | hide · held by a hide of its own | — | refused (D270) | — |
+  | remove · down by its Post's removal, undecided | removed → removed | mints | stays removed, decision off — **new** |
+  | hide · removed, held by a removal | removed → hidden | supersedes | back to removed, the removal back (asks a reason) |
+  | hide · its author deleted it, undecided | as deleted | mints | refused: the overturn reverses it |
+  | keep on the record | as deleted | mints | refused: the overturn reverses it |
+  | overturn | as deleted | ends | none: record it again |
+  | restore · up, a decision standing (legacy) | up → up | ends | refused, *Hide it again …* — **new sentence** |
+  | the undo above, redone | as it was | mints again | asks a reason; its own undo takes it off again |
+  | pin · a live alert | pinned | none | released |
+  | pin · already pinned | — | refused (D270) | — |
+- **The takedown refusal is the rule's** (D267's one rule). *Hide again*'s answer was always yes while
+  `setModerationStatus` refused a hide of what a hide already held in its own code.
+  `lib/recordRules.takedownRefusal` now owns it — a takedown of what a decision of that kind holds
+  changes nothing unless it still moves the content (not yet at that status, or a Post with a Report
+  up) — over facts that carry the standing decision's kind (`heldAs`) and a Post's Reports up
+  (`membersUp`; the pane's member read supplies it, a list row says *Open it …*). The write builds the
+  facts once and refuses only through the rule (its restore too, the Post's plan asked before anything
+  is written). Restore and Hide again on an access alert say no write moves an alert's status (no lever
+  ever offered either). A property (`recordCan.test.ts`) drives histories over a Report, a Post and its
+  two Reports, a comment and a hazard, and probes every lever and a removal on every item, each write
+  run and rolled back: `can` says yes exactly when the write lands, in its sentence, and the pane's
+  lever is that answer; against main's rule it fails six of nine runs. (Alerts are held by the pure
+  property; the convex one seeds none.)
+- **Every audit reason is stored normalized.** Plain strings were stored untrimmed. The one writer now
+  trims every kind (`normalizeReason`: plain, typed, and a composed one after it is fitted), and holds a
+  plain string to the cap once its outer whitespace is off, as `checkedReason` already did. The
+  inventory of plain-string writers: fixed sentences of ours (`AUTHOR_DELETE_REASON`, `ERASE_REASON`'s,
+  defaults such as *Set put-in access*), and a person's typed reason passed through (`args.reason`,
+  `reason ?? default`) in the content, flag, body, landmark, sub-area, put-in, access, recurrence and
+  feature writers. A property proves the normalizer only ever takes off outer whitespace; a guard proves
+  every literal reason a writer passes (and every `*_REASON` constant) is already trimmed, so it is
+  stored unchanged. The one reader matching a composed reason by text (`bodyConsole`'s `Seeded ` /
+  `A07a campaign` prefixes) matches old rows still: the guard holds each prefix to a composed writer's
+  fixed start, which has no whitespace to lose. Comparisons read both sides normalized
+  (`sameReason`, in `sameStatusTerms` and `lib/statusTerms`' key), so a reason kept with spaces before
+  this matches its trimmed repeat — the repeat ban writes nothing, and that old row's undo is never
+  offered (the write it would run changes nothing). No backfill.
+- **A person's words reach a composed reason only checked.** `composedOf`'s fixed parts are typed
+  literal-or-`CheckedText` (the brand `checkedReason` returns), and `auditWriters.test.ts` holds every
+  composed template's and `composedOf`'s values named as a reason or a note (`reason`, `note`, `why`,
+  `…Reason`, `…Note`) to `checkedReason` where they are quoted, with four named exemptions (two enums,
+  a stored row's reason, the system's delisting cause); a deliberately wrong sample shows it failing. It
+  found two: a place name's dismissal note and a body removal's note (checked upstream, now where
+  quoted). **What it can't see:** a person's words renamed to something else before they are quoted.
+- **Clerk's delete takes the ban's path.** `clerkAdmin.deleteUser` had no timeout and no tests. Both
+  actions now send through one request (`clerkRequest`, held to `CLERK_TIMEOUT_MS`, 20 s) and one
+  failure path (`retryOrPage`: 30 s, 5 min, 30 min, then the operator's page with the manual fix). Tests:
+  success, 404 as success, 503/429/408 retried, a hung request timed out (the timeout's signal aborted by
+  the test), a spent budget and a permanent 4xx paging the operator; no test calls Clerk.
+- **The pane's decisions name the write that ended them** (server half; the web half follows #138).
+  `contentRecord.item`'s decisions carry `endActionId` (absent while standing), and the item's newest
+  decision, while Reversed, carries that write's undo for the viewer (`undo`, main's engine, one row in
+  view) — as History says it; every older decision has none (a newer decision's write overtook its
+  ending). Both fields optional, so the web's types stand as they are; no schema change. Cost: the undo's first step for one row (3 calls and 18 documents
+  reserved, as Reversed's rows reserve theirs; a content refusal's 2 reads charged in its wave); the
+  pane at its deepest — 52 decisions, the newest 50 read, the newest restored — makes 114 calls, against
+  3,500 planned.
+
+**Rollout, for the dev agent:** `convex dev --once`. Nothing else: no schema change, no index, no
+backfill (old rows are read normalized).
 
 ### The B01-2 server register (owed to the server agent)
 
