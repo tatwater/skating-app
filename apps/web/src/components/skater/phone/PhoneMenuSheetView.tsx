@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils';
 
 import { Avatar } from '../../kit/avatar';
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '../../kit/drawer';
+import { ThemePicker } from '../../kit/theme-picker';
 import { type AvatarMenuPerson, MODERATION_HREF } from '../AvatarMenuView';
 import { navLinkProps } from '../chrome';
-import { ThemePicker } from '../../kit/theme-picker';
 
 /**
  * The account sheet (board 9.5): the avatar menu as a bottom sheet on a phone. The same rows as the

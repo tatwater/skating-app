@@ -84,9 +84,7 @@ export const Closed: Story = {
       }
       const tops = faces.map((f) => f.getBoundingClientRect().top);
       await expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(0.5);
-      await expect(
-        within(q).getAllByRole('button', { name: 'Your account' }).length,
-      ).toBe(3);
+      await expect(within(q).getAllByRole('button', { name: /^Your account/ }).length).toBe(3);
     }
   },
 };
@@ -112,13 +110,18 @@ export const Open: Story = {
       await expect(
         getComputedStyle(must(m().querySelector<HTMLElement>('[data-slot="avatar"]'))).borderRadius,
       ).not.toBe('0px');
-      await expect(getComputedStyle(within(m()).getByText('Robin Ashford')).color).toEqual(sameColor(computedColor(m(), 'var(--fg)')));
+      await expect(getComputedStyle(within(m()).getByText('Robin Ashford')).color).toEqual(
+        sameColor(computedColor(m(), 'var(--fg)')),
+      );
       await expect(m().textContent).not.toContain('@');
       await expect(
         within(m()).getByRole('menuitem', { name: 'Your page in People' }),
       ).toHaveAttribute('href', '/admin/people/p_robin');
       await expect(
-        within(must(m().querySelector<HTMLElement>('[data-slot="theme-menu"]'))).getByRole('button', { name: q.dataset.mode === 'dark' ? 'Dark' : 'Light' }),
+        within(must(m().querySelector<HTMLElement>('[data-slot="theme-picker"]'))).getByRole(
+          'button',
+          { name: q.dataset.mode === 'dark' ? 'Dark' : 'Light' },
+        ),
       ).toHaveAttribute('aria-pressed', 'true');
       await expect(within(m()).getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
       // Opened beside the rail, at its edge, never over it.
@@ -185,7 +188,7 @@ export const Keyboard: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    const trigger = within(canvasElement).getByRole('button', { name: 'Your account' });
+    const trigger = within(canvasElement).getByRole('button', { name: /^Your account/ });
     await userEvent.tab();
     await expect(trigger).toHaveFocus();
     await userEvent.keyboard('{Enter}');
@@ -196,7 +199,9 @@ export const Keyboard: Story = {
     );
     await userEvent.keyboard('{ArrowDown}');
     await waitFor(() =>
-      expect(within(must(plate(document))).getByRole('menuitem', { name: 'Sign out' })).toHaveFocus(),
+      expect(
+        within(must(plate(document))).getByRole('menuitem', { name: 'Sign out' }),
+      ).toHaveFocus(),
     );
     await userEvent.keyboard('{ArrowUp}');
     await userEvent.tab();
@@ -253,7 +258,7 @@ export const PhoneWidth: Story = {
   },
   play: async ({ canvasElement }) => {
     const foot = must(canvasElement.querySelector<HTMLElement>('[data-slot="shell-rail-foot"]'));
-    await userEvent.click(within(foot).getByRole('button', { name: 'Your account' }));
+    await userEvent.click(within(foot).getByRole('button', { name: /^Your account/ }));
     await waitFor(() => expect(getComputedStyle(must(plate(document))).opacity).toBe('1'));
     const frame = must(canvasElement.querySelector<HTMLElement>('[data-slot="app-shell"]'));
     const box = must(plate(document)).getBoundingClientRect();

@@ -2,8 +2,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowRightFromBracket, faUser } from '@fortawesome/sharp-light-svg-icons';
 import type { ThemePreference } from '@skating/design';
 import type { ReactElement } from 'react';
-
-import { PersonName, personNameClass } from '@/components/PersonName';
 import { Avatar } from '@/components/kit/avatar';
 import {
   DropdownMenu,
@@ -16,6 +14,7 @@ import {
 } from '@/components/kit/dropdown-menu';
 import { Skeleton, SkeletonText } from '@/components/kit/skeleton';
 import { ThemePicker } from '@/components/kit/theme-picker';
+import { PersonName, personNameClass } from '@/components/PersonName';
 import { ACCOUNT_WORDS } from '@/lib/account';
 import { cn } from '@/lib/utils';
 
@@ -27,9 +26,10 @@ import { USER_MENU_WORDS } from './shellWords';
  * viewer's circle at the rail's foot, under the App item, and this is the plainest kit menu there.
  *
  * - **The trigger is the circle** the boards draw (26 px, the viewer tone), the whole rail wide so
- *   the menu opens at the rail's edge, as Legacy's does. It is named for what it opens ("Your
- *   account"); the circle is hidden from a reader, and the initials are masked from analytics.
- *   While the profile loads it keeps the circle's box (a skeleton), so the rail never shifts.
+ *   the menu opens at the rail's edge, as Legacy's does. A reader hears what it opens, then who
+ *   ("Your account, Robin Ashford"); the circle is hidden from them, and the initials and name are
+ *   masked from analytics. While the profile loads it keeps the circle's box (a skeleton), so the
+ *   rail never shifts; a profile that can't be read is the empty circle, still.
  * - **The head** names the viewer by their real name (`PersonName`) — never the handle, no role.
  * - **Your page in People** is the viewer's own person page in the console (board 8.6), by their
  *   profile id, in this tab: navigation inside the console, not a link out to the app. It lands on
@@ -94,7 +94,6 @@ export function UserMenuView({
     >
       <DropdownMenuTrigger
         data-slot="user-menu-trigger"
-        aria-label={ACCOUNT_WORDS.account}
         aria-busy={viewer.state === 'loading' ? true : undefined}
         className={cn(
           // The rail's width, the circle's height: the menu opens at the rail's edge.
@@ -116,12 +115,29 @@ export function UserMenuView({
               'group-data-popup-open:border-fg',
             )}
           />
-        ) : (
+        ) : viewer.state === 'loading' ? (
           <Skeleton
             data-slot="user-menu-face"
             className="size-avatar-lg rounded-full group-focus-visible:shadow-focus"
           />
+        ) : (
+          // Unreadable: the viewer's empty circle, still — a shimmer would say it is still coming.
+          <span
+            data-slot="user-menu-face"
+            aria-hidden="true"
+            className="size-avatar-lg rounded-full border border-solid border-fg3 bg-raise group-focus-visible:shadow-focus"
+          />
         )}
+        {/* Named for what it opens, then who: the circle is hidden, so a reader hears the name here. */}
+        <span className="sr-only">
+          {ACCOUNT_WORDS.account}
+          {ready !== null && (
+            <>
+              {', '}
+              <PersonName>{ready.name}</PersonName>
+            </>
+          )}
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         container={container}
@@ -139,10 +155,10 @@ export function UserMenuView({
               icon={<FontAwesomeIcon icon={faUser} className={ICON} />}
               {...(ready !== null
                 ? {
-                    render:
-                      linkFor?.(ownPageHref(ready.id)) ??
+                    render: linkFor?.(ownPageHref(ready.id)) ?? (
                       // biome-ignore lint/a11y/useAnchorContent: the item renders its label into it
-                      <a href={ownPageHref(ready.id)} />,
+                      <a href={ownPageHref(ready.id)} />
+                    ),
                   }
                 : { disabled: true })}
             >

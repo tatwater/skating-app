@@ -26,7 +26,8 @@ vi.mock('../theme-provider', () => ({
   useTheme: () => ({ theme: theme.value, setTheme: theme.setTheme, resolvedTheme: 'dark' }),
 }));
 
-import { AvatarMenu, useThemeChoice } from './AvatarMenu';
+import { useThemeChoice } from '../useThemeChoice';
+import { AvatarMenu } from './AvatarMenu';
 
 beforeEach(() => {
   resetFakes();

@@ -22,8 +22,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../kit/dropdown-menu';
-import { navLinkProps } from './chrome';
 import { ThemePicker } from '../kit/theme-picker';
+import { navLinkProps } from './chrome';
 
 /**
  * The avatar's menu (board 3.24), props only: who you are, then everything that isn't a

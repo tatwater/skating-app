@@ -17,7 +17,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-function Picker({ initial, onValueChange }: { initial: ThemePreference; onValueChange?: (v: ThemePreference) => void }) {
+function Picker({
+  initial,
+  onValueChange,
+}: {
+  initial: ThemePreference;
+  onValueChange?: (v: ThemePreference) => void;
+}) {
   const [value, setValue] = useState(initial);
   return (
     <div className="w-[13rem]">
@@ -37,9 +43,11 @@ export const Default: Story = {
   render: (args) => <Picker initial={args.value} onValueChange={args.onValueChange} />,
   play: async ({ canvasElement, args }) => {
     const group = within(canvasElement).getByRole('group', { name: 'Theme' });
-    await expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(
-      THEME_CHOICES.map((c) => c.label),
-    );
+    await expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(THEME_CHOICES.map((c) => c.label));
     const system = within(group).getByRole('button', { name: 'System' });
     await expect(system).toHaveAttribute('aria-pressed', 'true');
     await expect(getComputedStyle(system).backgroundColor).toEqual(

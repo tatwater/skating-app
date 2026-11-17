@@ -2,7 +2,7 @@
  * The account menu's words and its one link, shared by both surfaces' menus — the skater app's
  * avatar menu and phone sheet, and the console's menu at the rail's foot — so a label the founder
  * changes changes everywhere it is shown. Surface-neutral on purpose: the console reads these
- * without importing any skater code.
+ * without importing the skater menus (it shares only their sign-out guard).
  */
 export const ACCOUNT_WORDS = {
   /** The menu, and the control that opens it, to a reader. */

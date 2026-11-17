@@ -11,4 +11,9 @@ export const USER_MENU_WORDS = {
   loading: 'Loading your profile',
   /** The menu's head when the viewer's profile could not be read. Sign out still works. */
   failed: 'Your profile didn’t load',
+  /** Sign out didn't go through (Clerk didn't answer): a toast; the viewer is still signed in. */
+  signOutFailed: {
+    title: 'Not signed out',
+    description: 'You’re still signed in. Check your connection and try again.',
+  },
 } as const;

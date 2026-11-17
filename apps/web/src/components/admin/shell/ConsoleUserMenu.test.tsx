@@ -27,7 +27,7 @@ vi.mock('@/lib/sheetStore', () => ({
 }));
 
 const { ThemeProvider } = await import('@/components/theme-provider');
-const { createToastManager } = await import('@/components/kit/toast');
+const { createToastManager, Toaster } = await import('@/components/kit/toast');
 const { said } = await import('../said');
 const { ConsoleUserMenu, draftHref } = await import('./ConsoleUserMenu');
 const { menuViewerOf } = await import('./ConsoleLayout');
@@ -66,12 +66,12 @@ function Wired() {
 }
 
 async function openMenu() {
-  await userEvent.click(screen.getByRole('button', { name: 'Your account' }));
+  await userEvent.click(screen.getByRole('button', { name: /^Your account/ }));
   return screen.findByRole('menu');
 }
 
 const segment = (m: HTMLElement, name: string) => {
-  const picker = m.querySelector<HTMLElement>('[data-slot="theme-menu"]');
+  const picker = m.querySelector<HTMLElement>('[data-slot="theme-picker"]');
   if (picker === null) throw new Error('no theme picker');
   return within(picker).getByRole('button', { name });
 };
@@ -157,10 +157,20 @@ describe('Sign out', () => {
     expect(mocks.signOut).toHaveBeenCalledOnce();
   });
 
-  it('leaves nothing stuck when Clerk doesn’t answer: still signed in, and it can be pressed again', async () => {
+  it('says so when Clerk doesn’t answer — still signed in — and leaves Sign out to press again', async () => {
     mocks.signOut.mockRejectedValueOnce(new Error('offline'));
-    render(<Wired />);
+    render(
+      <>
+        <Wired />
+        <Toaster />
+      </>,
+    );
     await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+    // Drawn, and announced (the live region repeats it).
+    expect((await screen.findAllByText('Not signed out')).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('You’re still signed in. Check your connection and try again.').length,
+    ).toBeGreaterThan(0);
     await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
     expect(mocks.signOut).toHaveBeenCalledTimes(2);
   });
@@ -168,40 +178,43 @@ describe('Sign out', () => {
   it.each([
     ['refused', 'reject'],
     ['landed', 'resolve'],
-  ] as const)('with a write still on its way (%s): nothing throws or sticks, and only a refusal is a toast, in the root dock', async (_label, how) => {
-    const manager = createToastManager();
-    const add = vi.spyOn(manager, 'add');
-    let settle: { resolve: (v: null) => void; reject: (e: unknown) => void } | undefined;
-    const write = new Promise<null>((resolve, reject) => {
-      settle = { resolve, reject };
-    });
-    // A console write out at the moment the viewer signs out, through the one write helper.
-    const answer = said(
-      () => write,
-      (why) => ({ title: 'Not saved · Mascoma Lake', description: why }),
-      { manager },
-    );
-    const { unmount } = render(<Wired />);
-    await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
-    expect(mocks.signOut).toHaveBeenCalledOnce();
-    // Signed out, the gate takes the console away; the answer comes after.
-    unmount();
-    if (how === 'reject') settle?.reject(new ConvexError({ message: 'Not signed in.' }));
-    else settle?.resolve(null);
-    const said_ = await answer;
-    if (how === 'reject') {
-      expect(said_).toEqual({ landed: false });
-      expect(add).toHaveBeenCalledOnce();
-      expect(add.mock.calls[0]?.[0]).toMatchObject({
-        title: 'Not saved · Mascoma Lake',
-        description: 'Not signed in.',
-        timeout: 0,
+  ] as const)(
+    'with a write still on its way (%s): nothing throws or sticks, and only a refusal is a toast, in the root dock',
+    async (_label, how) => {
+      const manager = createToastManager();
+      const add = vi.spyOn(manager, 'add');
+      let settle: { resolve: (v: null) => void; reject: (e: unknown) => void } | undefined;
+      const write = new Promise<null>((resolve, reject) => {
+        settle = { resolve, reject };
       });
-    } else {
-      expect(said_).toEqual({ landed: true, value: null });
-      expect(add).not.toHaveBeenCalled();
-    }
-  });
+      // A console write out at the moment the viewer signs out, through the one write helper.
+      const answer = said(
+        () => write,
+        (why) => ({ title: 'Not saved · Mascoma Lake', description: why }),
+        { manager },
+      );
+      const { unmount } = render(<Wired />);
+      await userEvent.click(within(await openMenu()).getByRole('menuitem', { name: 'Sign out' }));
+      expect(mocks.signOut).toHaveBeenCalledOnce();
+      // Signed out, the gate takes the console away; the answer comes after.
+      unmount();
+      if (how === 'reject') settle?.reject(new ConvexError({ message: 'Not signed in.' }));
+      else settle?.resolve(null);
+      const said_ = await answer;
+      if (how === 'reject') {
+        expect(said_).toEqual({ landed: false });
+        expect(add).toHaveBeenCalledOnce();
+        expect(add.mock.calls[0]?.[0]).toMatchObject({
+          title: 'Not saved · Mascoma Lake',
+          description: 'Not signed in.',
+          timeout: 0,
+        });
+      } else {
+        expect(said_).toEqual({ landed: true, value: null });
+        expect(add).not.toHaveBeenCalled();
+      }
+    },
+  );
 });
 
 describe('the helpers', () => {

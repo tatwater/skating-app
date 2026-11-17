@@ -18,9 +18,10 @@ function currentDraft(sheet: PostSheet | null, attempt: PostDraft | null): Unsen
 
 /**
  * Sign out, asking first when a draft would go with it. `request` signs straight out when there's
- * nothing to lose; otherwise it opens the confirm, whose props are `dialog`.
+ * nothing to lose; otherwise it opens the confirm, whose props are `dialog`. `onFailed` hears that
+ * Clerk didn't answer (the console says so in a toast; the skater app passes nothing, as before).
  */
-export function useGuardedSignOut(): {
+export function useGuardedSignOut({ onFailed }: { onFailed?: () => void } = {}): {
   request: () => void;
   open: boolean;
   dialog: Omit<SignOutDialogProps, 'onOpenDraft'>;
@@ -37,10 +38,11 @@ export function useGuardedSignOut(): {
       await signOut();
     } catch {
       // Clerk didn't answer: still signed in, the draft still here; the button can be pressed again.
+      onFailed?.();
     } finally {
       setBusy(false);
     }
-  }, [signOut]);
+  }, [signOut, onFailed]);
 
   const request = useCallback(() => {
     const found = currentDraft(sheet, attempt);

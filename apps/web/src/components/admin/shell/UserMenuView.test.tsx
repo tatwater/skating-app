@@ -33,11 +33,11 @@ function Menu(props: Partial<UserMenuViewProps>) {
   );
 }
 
-const trigger = () => screen.getByRole('button', { name: 'Your account' });
+const trigger = () => screen.getByRole('button', { name: /^Your account/ });
 const menu = () => screen.getByRole('menu');
 /** The theme's segments (the menu's Theme group holds them, under the same name). */
 const themes = (m: HTMLElement) => {
-  const el = m.querySelector<HTMLElement>('[data-slot="theme-menu"]');
+  const el = m.querySelector<HTMLElement>('[data-slot="theme-picker"]');
   if (el === null) throw new Error('no theme picker');
   return el;
 };
@@ -52,6 +52,9 @@ describe('the trigger', () => {
     render(<Menu />);
     const t = trigger();
     expect(t).toHaveAttribute('aria-haspopup', 'menu');
+    // A reader hears what it opens, then who — the name masked like every person's.
+    expect(t).toHaveAccessibleName('Your account, Robin Ashford');
+    expect(within(t).getByText('Robin Ashford').closest('.ph-no-capture')).not.toBeNull();
     expect(t).toHaveClass('ph-no-capture');
     // The circle: initials, hidden from a reader (the button is named), never the handle.
     const face = within(t).getByText('RA');
@@ -64,6 +67,13 @@ describe('the trigger', () => {
     const loading = trigger().querySelector('[data-slot="user-menu-face"]');
     expect(loading).toHaveClass('size-avatar-lg', 'rounded-full');
     expect(trigger()).toHaveAttribute('aria-busy', 'true');
+    expect(trigger()).toHaveAccessibleName('Your account');
+    // Unreadable is the empty circle, still: no shimmer saying it's on its way.
+    rerender(<Menu viewer={{ state: 'failed' }} />);
+    const failed = trigger().querySelector('[data-slot="user-menu-face"]');
+    expect(failed).toHaveClass('size-avatar-lg', 'rounded-full');
+    expect(trigger().querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(trigger()).not.toHaveAttribute('aria-busy');
     rerender(<Menu viewer={READY} />);
     const ready = trigger().querySelector('[data-slot="user-menu-face"]');
     expect(ready).toHaveClass('size-avatar-lg', 'rounded-full');
@@ -90,7 +100,10 @@ describe('the menu', () => {
   });
 
   it('goes through the router’s link when it is handed one', async () => {
-    const linkFor = vi.fn((to: string) => <a href={`#router${to}`} data-router="" />);
+    const linkFor = vi.fn((to: string) => (
+      // biome-ignore lint/a11y/useAnchorContent: the item renders its label into it
+      <a href={`#router${to}`} data-router="" />
+    ));
     render(<Menu linkFor={linkFor} />);
     const page = within(await open()).getByRole('menuitem', { name: 'Your page in People' });
     expect(linkFor).toHaveBeenCalledWith('/admin/people/p_robin');
@@ -134,19 +147,22 @@ describe('while the profile loads, or when it can’t be read', () => {
   it.each([
     ['loading', 'Loading your profile'],
     ['failed', 'Your profile didn’t load'],
-  ] as const)('%s: says so, holds their page’s row back, and still signs out', async (state, words) => {
-    const onSignOut = vi.fn();
-    render(<Menu viewer={{ state }} onSignOut={onSignOut} />);
-    const m = await open();
-    expect(within(m).getByText(words)).toBeInTheDocument();
-    const page = within(m).getByRole('menuitem', { name: 'Your page in People' });
-    expect(page).toHaveAttribute('aria-disabled', 'true');
-    expect(page).not.toHaveAttribute('href');
-    // The theme still works, and so does Sign out.
-    expect(themes(m)).toBeInTheDocument();
-    await userEvent.click(within(m).getByRole('menuitem', { name: 'Sign out' }));
-    expect(onSignOut).toHaveBeenCalledOnce();
-  });
+  ] as const)(
+    '%s: says so, holds their page’s row back, and still signs out',
+    async (state, words) => {
+      const onSignOut = vi.fn();
+      render(<Menu viewer={{ state }} onSignOut={onSignOut} />);
+      const m = await open();
+      expect(within(m).getByText(words)).toBeInTheDocument();
+      const page = within(m).getByRole('menuitem', { name: 'Your page in People' });
+      expect(page).toHaveAttribute('aria-disabled', 'true');
+      expect(page).not.toHaveAttribute('href');
+      // The theme still works, and so does Sign out.
+      expect(themes(m)).toBeInTheDocument();
+      await userEvent.click(within(m).getByRole('menuitem', { name: 'Sign out' }));
+      expect(onSignOut).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe('the keyboard', () => {

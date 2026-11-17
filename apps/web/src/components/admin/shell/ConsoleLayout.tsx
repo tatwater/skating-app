@@ -15,8 +15,8 @@ import { ConsoleUserMenu } from './ConsoleUserMenu';
 import { CONSOLE_MODES, LEGACY_PAGES, modeAt } from './consoleNav';
 import { seasonTape } from './consoleTime';
 import { colleaguesFrom, useHeartbeat, useHeldRead, useMinuteNow } from './presence';
-import { UndoProvider, useUndoServer } from './undo';
 import type { MenuViewer } from './UserMenuView';
+import { UndoProvider, useUndoServer } from './undo';
 
 /**
  * The console's layout (B01): the shell around every page the console has built, wired to the
@@ -105,12 +105,12 @@ export function ConsoleLayout() {
             modes={modes}
             legacy={legacy}
             onLegacy={(page) => void navigate({ to: page.to })}
-            linkFor={(to) => <Link to={to} />}
+            linkFor={routerLink}
             account={
               <ConsoleUserMenu
                 viewer={menuViewerOf(profile)}
                 canOpenOwnPage={can('people.read')}
-                linkFor={(to) => <Link to={to} />}
+                linkFor={routerLink}
               />
             }
             {...(userId !== undefined ? { viewerId: userId } : {})}
@@ -135,6 +135,9 @@ export function ConsoleLayout() {
     </UndoProvider>
   );
 }
+
+/** The router's link for a path the rail or the viewer's menu opens. */
+const routerLink = (to: string) => <Link to={to} />;
 
 /**
  * The viewer as their menu draws them, from the profile the gate already reads. Past the gate it is

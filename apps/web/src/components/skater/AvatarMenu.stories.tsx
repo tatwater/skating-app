@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '../kit/storyKit';
+import { ThemePicker } from '../kit/theme-picker';
 import { AvatarMenuView } from './AvatarMenuView';
 import { KATE, SkaterPair } from './storySupport';
-import { ThemePicker } from '../kit/theme-picker';
 
 /** The avatar's menu (3.24) and its theme row. */
 const meta = {

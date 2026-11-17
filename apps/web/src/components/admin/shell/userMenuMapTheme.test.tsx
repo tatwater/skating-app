@@ -69,7 +69,12 @@ class FakeMap {
     return this.zoom;
   }
   getBounds() {
-    return { getSouth: () => 43.6, getWest: () => -72.2, getNorth: () => 43.7, getEast: () => -72.1 };
+    return {
+      getSouth: () => 43.6,
+      getWest: () => -72.2,
+      getNorth: () => 43.7,
+      getEast: () => -72.1,
+    };
   }
   getContainer() {
     return { clientWidth: 656, clientHeight: 830 } as HTMLElement;
@@ -234,7 +239,10 @@ describe('a theme switch from the menu with the Body map mounted', () => {
   it('neither crashes nor remounts the page, and repaints the new map once it can take it', async () => {
     render(
       <ThemeProvider>
-        <ConsoleUserMenu viewer={{ state: 'ready', id: 'p1', name: 'Robin Ashford' }} canOpenOwnPage />
+        <ConsoleUserMenu
+          viewer={{ state: 'ready', id: 'p1', name: 'Robin Ashford' }}
+          canOpenOwnPage
+        />
         <Catch>
           <BodyMap />
         </Catch>
@@ -254,9 +262,9 @@ describe('a theme switch from the menu with the Body map mounted', () => {
       for (const fn of first.handlers.get('moveend') ?? []) fn();
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Your account' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Your account/ }));
     const picker = (await screen.findByRole('menu')).querySelector<HTMLElement>(
-      '[data-slot="theme-menu"]',
+      '[data-slot="theme-picker"]',
     );
     if (picker === null) throw new Error('no theme picker');
     await userEvent.click(within(picker).getByRole('button', { name: 'Dark' }));

@@ -10,9 +10,6 @@ import { useChromeOverlay } from './chrome';
 import { SignOutDialog } from './settings/SignOutGuard';
 import { useGuardedSignOut } from './settings/useGuardedSignOut';
 
-/** The theme choice, shared with the console's menu (`components/useThemeChoice`). */
-export { useThemeChoice };
-
 /**
  * Everything the account menu does, whichever skin draws it — the desktop avatar menu (board 3.24)
  * or the phone's sheet (board 9.5): the person, the role, the theme, the avatar overlay, and Sign

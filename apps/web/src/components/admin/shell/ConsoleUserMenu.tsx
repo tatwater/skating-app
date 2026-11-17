@@ -1,10 +1,16 @@
 import type { ReactElement } from 'react';
-
-import { useThemeChoice } from '@/components/useThemeChoice';
 import { SignOutDialog, type UnsentDraft } from '@/components/skater/settings/SignOutGuard';
 import { useGuardedSignOut } from '@/components/skater/settings/useGuardedSignOut';
+import { useThemeChoice } from '@/components/useThemeChoice';
 
+import { sayRefusal } from '../said';
+import { USER_MENU_WORDS } from './shellWords';
 import { type MenuViewer, UserMenuView } from './UserMenuView';
+
+/** Sign out didn't go through: said, as every refusal in the console is, in a toast. */
+function sayNotSignedOut(): void {
+  sayRefusal(USER_MENU_WORDS.signOutFailed);
+}
 
 /** Where "Open the draft" takes the viewer: the app, its report sheet open on the draft. */
 export function draftHref(draft: Pick<UnsentDraft, 'post'>): string {
@@ -20,7 +26,8 @@ export function draftHref(draft: Pick<UnsentDraft, 'post'>): string {
  *
  * Where Sign out lands is Clerk's and the gate's, as in the app: Clerk ends the session, the
  * console's role read empties, and `AuthGate` holds every path — `/admin` ones included — on the
- * splash and sends it to `/sign-in`, so Back never draws a console page again.
+ * splash and sends it to `/sign-in`, so Back never draws a console page again. When Clerk doesn't
+ * answer, nothing changed — still signed in — and a toast says so; Sign out can be pressed again.
  */
 export function ConsoleUserMenu({
   viewer,
@@ -34,7 +41,7 @@ export function ConsoleUserMenu({
   linkFor?: (to: string) => ReactElement;
 }) {
   const { theme, onThemeChange } = useThemeChoice();
-  const guard = useGuardedSignOut();
+  const guard = useGuardedSignOut({ onFailed: sayNotSignedOut });
   return (
     <>
       <UserMenuView

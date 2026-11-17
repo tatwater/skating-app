@@ -30,17 +30,14 @@ beforeEach(() => {
 });
 
 describe('signed out, Back into the console', () => {
-  it.each([
-    '/admin',
-    '/admin/bodies',
-    '/admin/body/b1',
-    '/admin/people/p1',
-    '/admin/flags',
-  ])('draws nothing of %s and sends it to sign in', (path) => {
-    mocks.pathname = path;
-    render(<AuthGate>console page</AuthGate>);
-    expect(screen.queryByText('console page')).toBeNull();
-    expect(screen.getByText('splash')).toBeInTheDocument();
-    expect(mocks.push).toHaveBeenCalledWith('/sign-in');
-  });
+  it.each(['/admin', '/admin/bodies', '/admin/body/b1', '/admin/people/p1', '/admin/flags'])(
+    'draws nothing of %s and sends it to sign in',
+    (path) => {
+      mocks.pathname = path;
+      render(<AuthGate>console page</AuthGate>);
+      expect(screen.queryByText('console page')).toBeNull();
+      expect(screen.getByText('splash')).toBeInTheDocument();
+      expect(mocks.push).toHaveBeenCalledWith('/sign-in');
+    },
+  );
 });

@@ -32,7 +32,7 @@ export function ThemePicker({ value, onValueChange, className }: ThemePickerProp
   return (
     <ToggleGroup
       aria-label={ACCOUNT_WORDS.theme}
-      data-slot="theme-menu"
+      data-slot="theme-picker"
       value={value}
       onValueChange={(next) => {
         if (isThemePreference(next)) onValueChange(next);

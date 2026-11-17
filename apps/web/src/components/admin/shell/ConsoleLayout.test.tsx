@@ -230,7 +230,7 @@ describe('the rail', () => {
     const app = screen.getByRole('link', { name: /App/ });
     expect(app).toHaveAttribute('href', '/');
     expect(app).toHaveAttribute('target', '_blank');
-    const foot = screen.getByRole('button', { name: 'Your account' });
+    const foot = screen.getByRole('button', { name: /^Your account/ });
     expect(foot.closest('[data-slot="shell-rail-foot"]')).not.toBeNull();
     await userEvent.click(foot);
     const menu = await screen.findByRole('menu');
