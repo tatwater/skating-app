@@ -8342,3 +8342,22 @@ on the page every staffer opens. What stays admin is what tunes the watch — it
 the replay.
 
 **Related:** D3, D212, D213, D217, [`phase-B01`](./phases/B01-admin-console.md) *B01-2b*.
+
+## D277 — Clerk's ban lock is reconciled daily against Convex, and repaired only through the sync (B01)
+
+**2026-11-17, built in B01-4k.** Once a day a job checks the two sets that could be out of step —
+every profile Convex has banned must be locked in Clerk, every user Clerk has locked must be banned
+in Convex — with no mirror state stored: Clerk's side (the harmful direction, first) is paged by its
+own banned filter and creation time, Convex's by its status index. A mismatch is repaired by asking for a run of `clerkAdmin.setBanned`, the one
+sender, which reads Convex before it sends and after every answer, so a reconcile that read a stale
+value can never undo a newer change; it never locks someone active or suspended, never unlocks someone
+banned, and leaves alone anyone being deleted and any Clerk user with no profile. A repair changes no
+one's terms, so it writes no audit row and offers no undo (D270). Each run's counts are its log line;
+each repair is counted on Machinery for a week and a run that repaired anything mails the operator
+once — counts only, never a person. A dry run reads both sides and sends nothing.
+
+**Why:** a sync that dies after Clerk answers, or a lost answer Clerk applies after its retry, leaves
+a lifted person locked out of sign-in with no alert; a verifier per sync would cost a Clerk read per
+status write and still miss the second case, while one bounded daily pass finds both within a day.
+
+**Related:** D37, D38, D258, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4k*.

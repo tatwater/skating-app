@@ -116,7 +116,7 @@ import { markGeoStale, outlineStamp, refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
-import { rankCandidates, scanCells } from './lib/cellScan';
+import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import {
   CANONICAL_SOURCES,
@@ -6556,19 +6556,20 @@ export async function bodiesCoveringBox(
 
   // Pass 2 — hydrate in global prominence order, so the render budget spends itself on the biggest
   // lakes in the box rather than on whichever cell the walk opened first.
-  let truncated = scan.truncated;
-  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-  for (const waterBodyId of rankCandidates(scan.candidates)) {
-    if (byId.size >= limit) {
-      truncated = true;
-      break;
-    }
-    const body = await ctx.db.get(waterBodyId);
+  // In waves (B01-3q, `hydrateRanked`): exactly the reads, the kept bodies and their order of the
+  // one-at-a-time loop before it, a round a wave rather than a round a candidate.
+  const hydrated = await hydrateRanked(
+    rankCandidates(scan.candidates),
+    limit,
+    (waterBodyId) => ctx.db.get(waterBodyId),
     // `isListed` is defense-in-depth — an unlisted body has no cell rows to be found through in the
     // first place, which is what makes the listing filter free here.
-    if (!body || !bboxIntersects(body.bbox, box) || !isListed(body)) continue;
-    byId.set(body._id, body);
-  }
+    (body) => bboxIntersects(body.bbox, box) && isListed(body),
+  );
+  const truncated = scan.truncated || hydrated.truncated;
+  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>(
+    hydrated.kept.map((body) => [body._id, body]),
+  );
 
   return { byId, truncated, rowsRead: scan.rowsRead, cellsScanned: scan.cellsScanned };
 }

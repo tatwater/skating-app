@@ -26,6 +26,7 @@ import type * as bodyGeo from "../bodyGeo.js";
 import type * as bodyLibrary from "../bodyLibrary.js";
 import type * as bounties from "../bounties.js";
 import type * as clerkAdmin from "../clerkAdmin.js";
+import type * as clerkReconcile from "../clerkReconcile.js";
 import type * as comments from "../comments.js";
 import type * as conditions from "../conditions.js";
 import type * as console from "../console.js";
@@ -215,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   bodyLibrary: typeof bodyLibrary;
   bounties: typeof bounties;
   clerkAdmin: typeof clerkAdmin;
+  clerkReconcile: typeof clerkReconcile;
   comments: typeof comments;
   conditions: typeof conditions;
   console: typeof console;
