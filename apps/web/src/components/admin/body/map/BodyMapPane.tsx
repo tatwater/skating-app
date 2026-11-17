@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { BodyMapKey, PointFace } from './BodyMapMarks';
 import { LINE_STYLES, LIT_STYLE, tokenVar } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
+import { fieldOpacity } from './hazardField';
 import type { BodyMapLayer, MapLabel, MapPoint } from './mapDescriptors';
 
 /**
@@ -244,7 +245,11 @@ function ScenePoint({
       data-lit={lit ? '' : undefined}
       // A mark answers a hover with its plate; the inspector's list is how a keyboard reaches it.
       className="pointer-events-auto absolute top-0 left-0"
-      style={{ transform: `translate(${at.x - HALF}px, ${at.y - HALF}px)` }}
+      style={{
+        transform: `translate(${at.x - HALF}px, ${at.y - HALF}px)`,
+        // A hazard's pin fades as its dot field would (`fieldOpacity`): confidence, never safety.
+        ...(point.field === undefined ? {} : { opacity: fieldOpacity(point.field) }),
+      }}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
     >

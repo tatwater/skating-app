@@ -246,6 +246,9 @@ const CROSSING = hazardRows(
     {
       _id: 'h-cross',
       type: 'ridge_crossing',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-72.1612, 43.6421] },
+      radiusMeters: 15,
       subAreaName: 'Black Point to Wood Island',
       freshness: 'fresh',
       provisional: false,

@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type HazardShape, hazardFootprint, type Season, seasonOf } from '@skating/core';
+import { type Season, seasonOf } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -21,7 +21,7 @@ import { useRole } from '@/lib/useRole';
 import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LoadingSection, TabBody } from '../tabParts';
-import { featureGlyph } from './featureGlyph';
+import { featureGlyphOf } from './featureGlyph';
 import {
   type FeatureRowWithGlyph,
   HazardsTabView,
@@ -236,26 +236,10 @@ export function wintersOf(
   return wintersFrom(lastWinter === null ? [d] : [d, lastWinter as DailyHazards], now) ?? undefined;
 }
 
-/** Each feature's row with its glyph, drawn from its own footprint. */
+/** Each feature's row with its glyph, by the map's own rule (`featureGlyphOf`). */
 function withGlyphs(features: readonly FeatureInput[]): FeatureRowWithGlyph[] {
   const rows = featureRows(features);
-  return rows.map((row, i) => {
-    const f = features[i] as FeatureInput;
-    let glyph: FeatureRowWithGlyph['glyph'] = null;
-    try {
-      glyph = featureGlyph(
-        hazardFootprint({
-          geometryKind: f.geometryKind,
-          geometry: f.geometry as HazardShape['geometry'],
-          ...(f.radiusMeters !== undefined ? { radiusMeters: f.radiusMeters } : {}),
-          ...(f.bufferMeters !== undefined ? { bufferMeters: f.bufferMeters } : {}),
-        }),
-      );
-    } catch {
-      // A shape that can't be grown draws no glyph; its row still says what and where.
-    }
-    return { ...row, glyph };
-  });
+  return rows.map((row, i) => ({ ...row, glyph: featureGlyphOf(features[i] as FeatureInput) }));
 }
 
 /**

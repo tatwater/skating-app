@@ -4,6 +4,8 @@
  * hazard row has its clock. Pure.
  */
 
+import { drawingOf, type Shaped } from './hazardDrawing';
+
 type Area = GeoJSON.Polygon | GeoJSON.MultiPolygon;
 
 /** The glyph's grid: at most this many cells across its longer side. */
@@ -90,4 +92,13 @@ export function featureGlyph(area: Area): { cols: number; rows: number; cells: G
     return { col, row, level };
   });
   return { cols, rows, cells };
+}
+
+/**
+ * A feature row's glyph, by the map's own rule (`drawingOf`): its footprint's cells where the map
+ * draws its shape, and none where the map can only pin it (its row says *shape unknown*).
+ */
+export function featureGlyphOf(f: Shaped): ReturnType<typeof featureGlyph> | null {
+  const d = drawingOf(f);
+  return d.kind === 'footprint' ? featureGlyph(d.area) : null;
 }
