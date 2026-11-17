@@ -48,6 +48,7 @@ import {
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_EXTERNAL_ID_CHARS,
+  MAX_MODERATOR_ALIAS_CHARS,
   MAX_MODERATOR_ALIASES,
   MAX_MODERATOR_TOWNS,
   MAX_PLAUSIBLE_DEPTH_M,
@@ -4264,9 +4265,8 @@ export async function setCuratedBoostImpl(
 
 // ── A moderator's aliases and class (B01-3d) ───────────────────────────────────────────────────
 
-/** The most aliases a moderator adds to a body, and the longest one. */
-export const MAX_MODERATOR_ALIAS_CHARS = 120;
-export { MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS };
+/** The most aliases a moderator adds to a body, and the longest one (core's `textCaps`). */
+export { MAX_MODERATOR_ALIAS_CHARS, MAX_MODERATOR_ALIASES, MAX_MODERATOR_TOWNS };
 
 /**
  * A moderator's aliases, normalized once at the edge: each trimmed (inner whitespace collapsed), the

@@ -11,7 +11,12 @@
  * `setOfficial` and `hide` had no caller at all, which is exactly how nobody noticed.
  */
 
-import { distanceToPolygonMeters, OPERATOR_PUT_IN_SNAP_MAX_M, snapToEdge } from '@skating/core';
+import {
+  distanceToPolygonMeters,
+  MAX_PUT_IN_NAME_LENGTH,
+  OPERATOR_PUT_IN_SNAP_MAX_M,
+  snapToEdge,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
@@ -39,8 +44,9 @@ import { resolveSubAreaForPutIn } from './subAreas';
 // module cycle); re-exported here because this is where readers of put-ins look for it.
 export { isSuppressed };
 
-/** A label on a map pin, not a description — "Town Beach", not a paragraph about the town beach. */
-const MAX_PUT_IN_NAME_LENGTH = 60;
+// A launch's name is a label on a map pin, not a description — "Town Beach", not a paragraph about
+// the town beach: `MAX_PUT_IN_NAME_LENGTH`, defined once in core's `textCaps` so the old editor's
+// field takes the same number (B01-3o).
 
 /**
  * The put-in markers for a water body (decision #7): admin `official` markers first (priority), then

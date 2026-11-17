@@ -25,6 +25,7 @@ import {
 } from './geometry';
 import { outerRingsOnly } from './imageryMask';
 import type { SubAreaCandidate } from './subArea';
+import { MAX_LANDMARK_NAME_LENGTH } from './textCaps';
 
 /**
  * What kind of place a landmark is. The kind decides the label's weight and, in the ETL, how close
@@ -80,9 +81,6 @@ export const LANDMARK_KIND_LABELS: Record<LandmarkKind, string> = {
  */
 export const LANDMARK_SOURCES = ['osm', 'gnis', 'corpus', 'moderator', 'proposal'] as const;
 export type LandmarkSource = (typeof LANDMARK_SOURCES)[number];
-
-/** A landmark's name — a place name, not a sentence. The same bound a bay request's name carries. */
-export const MAX_LANDMARK_NAME_LENGTH = 80;
 
 /** How many aliases one landmark keeps. The corpus's worst case is five spellings of one bay. */
 export const MAX_LANDMARK_ALIASES = 12;
