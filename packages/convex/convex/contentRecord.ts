@@ -59,6 +59,7 @@ import {
   newPageCache,
   type Position,
   RECORD_PAGE,
+  RECORD_PAGE_ROWS,
   type RecordContentDoc,
   readNames,
   readReports,
@@ -68,6 +69,7 @@ import {
   targetIdOf,
   type VerdictLoad,
   withdrawnAt,
+  within,
 } from './lib/recordReads';
 import {
   type RecordLevers,
@@ -201,12 +203,31 @@ async function verdictRange(
   return rows;
 }
 
-/** A record list's arguments: whose record, one kind or all, and where the last page ended. */
+/**
+ * A record list's arguments: whose record, one kind or all, where the last page ended, and — once the
+ * page has been read past — where this page ended then (`endCursor`).
+ */
 interface ListArgs {
   userId: Id<'profiles'>;
   targetType?: VerdictTargetType;
   cursor?: string | null;
+  endCursor?: string | null;
 }
+
+/**
+ * A record list's page arguments, every list alike. `endCursor` is where the page ended when it was
+ * first read (its `continueCursor`): the page then reads exactly `(cursor, endCursor]` and keeps that
+ * end as its `continueCursor`, so a change to an earlier page never drops or repeats a row on a later
+ * one — Convex's own reactive pagination, as `people.listPage` reads it. A range that has grown past
+ * what one page returns answers `pageStatus: 'SplitRequired'` with a `splitCursor` after the rows it
+ * did return, and the client reads `(cursor, splitCursor]` and `(splitCursor, endCursor]`.
+ */
+const LIST_ARGS = {
+  userId: v.id('profiles'),
+  targetType: v.optional(literals(VERDICT_TARGETS)),
+  cursor: v.optional(v.union(v.string(), v.null())),
+  endCursor: v.optional(v.union(v.string(), v.null())),
+};
 
 /** The levers on an item as a list row sees it (its members unread: `lib/recordRules`). */
 function rowLevers(viewer: RecordViewer, load: VerdictLoad, standing: boolean): RecordLevers {
@@ -312,19 +333,59 @@ async function shapeVerdictPage(
   return { rows, names: namesOf(cache), cut: rows.length < verdicts.length };
 }
 
-/** A page's answer: its rows, whether more follow, the cursor after its last row, and `pending`. */
+/**
+ * A page's answer: its rows, whether more follow, the cursor after its last row, and `pending`. A
+ * page given an end (`endCursor`) keeps it as its `continueCursor` when it returned every row up to
+ * it (`whole`); one that didn't says `SplitRequired`, split after its last row — or, with no row to
+ * split after, with no `splitCursor`, and the client reads the range again unbounded.
+ */
 function pageOf<R>(
   page: R[],
   keys: Position[],
-  { more, after, pending }: { more: boolean; after: Position | null; pending: PeopleBackfill[] },
+  {
+    more,
+    after,
+    pending,
+    endCursor,
+    whole,
+  }: {
+    more: boolean;
+    after: Position | null;
+    pending: PeopleBackfill[];
+    endCursor: string | null;
+    whole: boolean;
+  },
 ) {
   const last = keys[keys.length - 1];
+  if (endCursor !== null && !whole) {
+    return {
+      page,
+      isDone: false,
+      continueCursor: endCursor,
+      ...(last ? { splitCursor: encodePosition(last) } : {}),
+      pageStatus: 'SplitRequired' as const,
+      pending,
+    };
+  }
   return {
     page,
     isDone: !more,
-    continueCursor: last ? encodePosition(last) : after ? encodePosition(after) : '',
+    continueCursor:
+      endCursor !== null
+        ? endCursor
+        : last
+          ? encodePosition(last)
+          : after
+            ? encodePosition(after)
+            : '',
     pending,
   };
+}
+
+/** The end a page was pinned to: `null` when it has none (the chain's last page). */
+function endOf(endCursor: string | null | undefined): { raw: string | null; at: Position | null } {
+  const at = decodePosition(endCursor);
+  return { raw: at === null ? null : (endCursor as string), at };
 }
 
 /**
@@ -339,14 +400,10 @@ function pageOf<R>(
  * only.
  */
 export const personVerdicts = query({
-  args: {
-    userId: v.id('profiles'),
-    targetType: v.optional(literals(VERDICT_TARGETS)),
-    cursor: v.optional(v.union(v.string(), v.null())),
-  },
-  handler: async (ctx, { userId, targetType, cursor }) => {
+  args: LIST_ARGS,
+  handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    return standingPage(ctx, viewer, { userId, targetType, cursor });
+    return standingPage(ctx, viewer, args);
   },
 });
 
@@ -354,11 +411,12 @@ export const personVerdicts = query({
 export async function standingPage(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
-  { userId, targetType, cursor }: ListArgs,
+  { userId, targetType, cursor, endCursor }: ListArgs,
 ) {
   const reads = sheetBudget(ctx);
   const pending = await recordPending(ctx, reads);
   const after = decodePosition(cursor);
+  const end = endOf(endCursor);
   const found = await verdictRange(
     ctx,
     reads,
@@ -366,9 +424,10 @@ export async function standingPage(
     userId,
     targetType,
     after,
-    RECORD_PAGE + 1,
+    RECORD_PAGE_ROWS.n + 1,
   );
-  const verdicts = found.slice(0, RECORD_PAGE);
+  const inRange = found.filter((v) => within(end.at, { key: v.at, ct: v._creationTime }));
+  const verdicts = inRange.slice(0, RECORD_PAGE_ROWS.n);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
   const page = rows.map((l) => {
     const { verdict, decision, target } = l;
@@ -394,7 +453,13 @@ export async function standingPage(
   return pageOf(
     page,
     rows.map((l) => ({ key: l.verdict.at, ct: l.verdict._creationTime })),
-    { more: cut || found.length > RECORD_PAGE, after, pending },
+    {
+      more: cut || found.length > rows.length,
+      after,
+      pending,
+      endCursor: end.raw,
+      whole: !cut && inRange.length === verdicts.length,
+    },
   );
 }
 
@@ -408,14 +473,10 @@ export async function standingPage(
  * not the end, `isDone` is; `pending` names the verdict backfill until it has run. Staff only.
  */
 export const personReversed = query({
-  args: {
-    userId: v.id('profiles'),
-    targetType: v.optional(literals(VERDICT_TARGETS)),
-    cursor: v.optional(v.union(v.string(), v.null())),
-  },
-  handler: async (ctx, { userId, targetType, cursor }) => {
+  args: LIST_ARGS,
+  handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    return reversedPage(ctx, viewer, { userId, targetType, cursor });
+    return reversedPage(ctx, viewer, args);
   },
 });
 
@@ -423,11 +484,12 @@ export const personReversed = query({
 export async function reversedPage(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
-  { userId, targetType, cursor }: ListArgs,
+  { userId, targetType, cursor, endCursor }: ListArgs,
 ) {
   const reads = sheetBudget(ctx);
   const pending = await recordPending(ctx, reads);
   const after = decodePosition(cursor);
+  const end = endOf(endCursor);
   // The undo engine's first step for each row (main's, `undoStates`): its calls and documents
   // counted ahead — the undoing row (up to 16 tagged), the target's newest, the author stamp.
   reads.reserveCalls(3 * RECORD_PAGE, 18 * RECORD_PAGE);
@@ -438,9 +500,12 @@ export async function reversedPage(
     userId,
     targetType,
     after,
-    RECORD_PAGE + 1,
+    RECORD_PAGE_ROWS.n + 1,
   );
-  const verdicts = found.slice(0, RECORD_PAGE);
+  const inRange = found.filter((v) =>
+    within(end.at, { key: v.endedAt as number, ct: v._creationTime }),
+  );
+  const verdicts = inRange.slice(0, RECORD_PAGE_ROWS.n);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, true);
   const endings = rows.flatMap((l) => (l.ending ? [l.ending] : []));
   // List rows: the `list` scope (a page never runs a refusal only a single view can afford), read by
@@ -481,7 +546,13 @@ export async function reversedPage(
   return pageOf(
     page,
     rows.map((l) => ({ key: l.verdict.endedAt as number, ct: l.verdict._creationTime })),
-    { more: cut || found.length > RECORD_PAGE, after, pending },
+    {
+      more: cut || found.length > rows.length,
+      after,
+      pending,
+      endCursor: end.raw,
+      whole: !cut && inRange.length === verdicts.length,
+    },
   );
 }
 
@@ -516,14 +587,10 @@ export const DELETED_ALONE: Record<VerdictTargetType, number> = {
  * range is still known, and a short page is not the end: `isDone` is. Staff only.
  */
 export const personDeleted = query({
-  args: {
-    userId: v.id('profiles'),
-    targetType: v.optional(literals(VERDICT_TARGETS)),
-    cursor: v.optional(v.union(v.string(), v.null())),
-  },
-  handler: async (ctx, { userId, targetType, cursor }) => {
+  args: LIST_ARGS,
+  handler: async (ctx, args) => {
     const viewer = await requireCapability(ctx, 'people.read');
-    return deletedPage(ctx, viewer, { userId, targetType, cursor });
+    return deletedPage(ctx, viewer, args);
   },
 });
 
@@ -531,11 +598,12 @@ export const personDeleted = query({
 export async function deletedPage(
   ctx: QueryCtx,
   viewer: Doc<'profiles'>,
-  { userId, targetType, cursor }: ListArgs,
+  { userId, targetType, cursor, endCursor }: ListArgs,
 ) {
   const reads = sheetBudget(ctx);
   const pending = await recordPending(ctx, reads);
   const after = decodePosition(cursor);
+  const end = endOf(endCursor);
   const kinds: readonly VerdictTargetType[] =
     targetType === undefined ? DELETED_KINDS : [targetType];
   const asks = kinds.map((kind) =>
@@ -559,7 +627,10 @@ export async function deletedPage(
     .map((c) => ({ ...c, key: deletedKey(c.kind, c.doc) }))
     .filter((c) => limit === null || !before(limit, c.key))
     .sort((a, b) => (before(a.key, b.key) ? -1 : before(b.key, a.key) ? 1 : 0));
-  const considered = candidates.slice(0, RECORD_PAGE);
+  // A pinned page's rows are those up to its end; it is whole only if every range is known that far.
+  const inRange = candidates.filter((c) => within(end.at, c.key));
+  const known = end.at === null || limit === null || !before(limit, end.at);
+  const considered = inRange.slice(0, RECORD_PAGE_ROWS.n);
   // Each row: whether a decision holds it (then it is Standing's, not here); the Report a comment or
   // a Post names its body through, once a page; then the names — the first row whole before the rest.
   // A row the list leaves out (held, an erased comment's placeholder) moves the cursor on and needs
@@ -635,7 +706,13 @@ export async function deletedPage(
   return pageOf(
     page,
     whole.map((c) => c.key),
-    { more: whole.length < candidates.length || limit !== null, after, pending },
+    {
+      more: whole.length < candidates.length || limit !== null,
+      after,
+      pending,
+      endCursor: end.raw,
+      whole: known && whole.length === inRange.length,
+    },
   );
 }
 
