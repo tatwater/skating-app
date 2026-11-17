@@ -1,6 +1,7 @@
-import { useRef } from 'react';
+import { Fragment, type ReactNode, useRef } from 'react';
 
 import { ChartLegend } from '@/components/kit/chart-legend';
+import { PersonLockup } from '@/components/kit/person-lockup';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { SparkbarSet, Sparkbars } from '@/components/kit/trace-chart';
 import { isFailed, type Loadable } from '../../reads/consoleReads';
@@ -44,6 +45,14 @@ function FactTile({ label, fact, slot }: { label: string; fact: Fact | undefined
   if (fact === undefined) {
     return <StatTile data-fact={slot} label={label} value="00" sub={WORDS.loading} loading />;
   }
+  const sub =
+    fact.named === undefined ? (
+      fact.sub
+    ) : (
+      <>
+        {fact.sub} <People {...fact.named} />
+      </>
+    );
   return (
     <StatTile
       data-fact={slot}
@@ -52,9 +61,27 @@ function FactTile({ label, fact, slot }: { label: string; fact: Fact | undefined
       value={fact.value}
       {...(fact.unit !== undefined && { unit: fact.unit })}
       tone={fact.tone}
-      {...(fact.sub !== undefined && { sub: fact.sub })}
+      {...(sub !== undefined && { sub })}
     />
   );
+}
+
+/**
+ * People a sub-line names, each a circle and their name (the kit's lockup, masked from
+ * analytics), the rest counted: "‹Ada›, ‹Bo› and 1 more".
+ */
+function People({ people, more }: NonNullable<Fact['named']>) {
+  const items: Array<{ key: string; node: ReactNode }> = people.map((p) => ({
+    key: p.userId,
+    node: <PersonLockup size="sm" name={p.name} src={p.src} className="align-middle" />,
+  }));
+  if (more > 0) items.push({ key: 'more', node: WORDS.andMore(more) });
+  return items.map((item, i) => (
+    <Fragment key={item.key}>
+      {i === 0 ? null : i === items.length - 1 ? ` ${WORDS.and} ` : ', '}
+      {item.node}
+    </Fragment>
+  ));
 }
 
 /**

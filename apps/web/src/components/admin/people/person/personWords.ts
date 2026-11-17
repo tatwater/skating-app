@@ -45,6 +45,11 @@ export const WORDS = {
   noneUndone: 'None undone by others',
   undoneByOne: (n: string) => `${n} later undone by someone else`,
   undoneByMany: (n: string) => `${n} later undone by others`,
+  /** Followed by who: "2 later undone by ‹Ada›, ‹Bo› and 1 more". */
+  undoneByNamed: (n: string) => `${n} later undone by`,
+  /** The last of a list of people: those the read counted but didn't name. */
+  andMore: (n: number) => `${n} more`,
+  and: 'and',
   undonePending: 'Undone by others · still being prepared',
   medianTooMany: 'Too many decided this week to time',
   noneDecided: 'No filed items decided this week',
