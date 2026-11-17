@@ -214,20 +214,58 @@ function seam(n: number | undefined, max: number): number {
   return n !== undefined && Number.isFinite(n) ? Math.min(max, Math.max(1, Math.floor(n))) : max;
 }
 
-/** One page of town candidates — {@link townCandidates}' work. */
+/** One page of town candidates — {@link townCandidates}' work: its cells planned, then settled. */
 async function townCandidatesPage(
   ctx: QueryCtx,
   box: Box,
   from: { z: number; i: number } | undefined,
   opts: { pageCells: number; columnRows: number },
-): Promise<{
+): Promise<TownPage> {
+  const { cells, next: planned } = townCellPage(box, from, opts.pageCells);
+  return settleTownPage(cells, planned, opts.columnRows, {
+    column: (c, n) =>
+      ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_cell', (q) => q.eq('z', c.z).eq('x', c.x).gte('y', c.minY).lte('y', c.maxY))
+        .take(n),
+    cell: ({ z, x, y }, n) =>
+      ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
+        .take(n),
+  });
+}
+
+/** A town candidates page's answer. */
+export type TownPage = {
   ids: Id<'adminAreas'>[];
   next: { z: number; i: number } | null;
   calls: number;
   waves: number;
-}> {
-  const { cells, next: planned } = townCellPage(box, from, opts.pageCells);
-  const reads = new ReadBudget();
+};
+
+/** The two reads a page makes of the cell index: a column's rows (every level), a cell's town rows. */
+export interface TownCellReads {
+  column(
+    c: TownColumn,
+    n: number,
+  ): Promise<{ y: number; level: string; adminAreaId: Id<'adminAreas'> }[]>;
+  cell(c: TownCell, n: number): Promise<{ adminAreaId: Id<'adminAreas'> }[]>;
+}
+
+/**
+ * **Settle a page's cells**: read them by column, a full column again by cell, and answer the ids in
+ * the cell walk's order with where the next page starts. The reads are `io`'s and the budget is
+ * `reads` (a fresh transaction's unless a test hands a smaller one).
+ */
+export async function settleTownPage(
+  cells: readonly TownCell[],
+  planned: { z: number; i: number } | null,
+  columnRows: number,
+  io: TownCellReads,
+  reads: ReadBudget = new ReadBudget(),
+): Promise<TownPage> {
+  const opts = { columnRows };
   // Each cell's town rows by its page index, as one cell read returns them.
   const townsOf = new Map<number, Id<'adminAreas'>[]>();
   // The first page index left unread when the budget ran out; the page ends there.
@@ -269,17 +307,9 @@ async function townCandidatesPage(
   };
   const full: TownColumn[] = [];
   const columnAnswers = await wave(columns, columnCost, async (c, share) => {
-    const rows = await counted(() =>
-      share.take('areaCell', opts.columnRows, () =>
-        ctx.db
-          .query('adminAreaCells')
-          .withIndex('by_cell', (q) =>
-            q.eq('z', c.z).eq('x', c.x).gte('y', c.minY).lte('y', c.maxY),
-          )
-          .take(opts.columnRows),
-      ),
+    return counted(() =>
+      share.take('areaCell', opts.columnRows, () => io.column(c, opts.columnRows)),
     );
-    return rows;
   });
   for (const [k, answer] of columnAnswers.entries()) {
     const c = columns[k] as TownColumn;
@@ -308,14 +338,8 @@ async function townCandidatesPage(
     .sort((a, b) => a - b);
   const cellCost = { bytes: CELL_TAKE * ROW_MAX.areaCell, reads: 1, docs: CELL_TAKE };
   const cellAnswers = await wave(lone, cellCost, async (index, share) => {
-    const { z, x, y } = cells[index] as TownCell;
     return counted(() =>
-      share.take('areaCell', CELL_TAKE, () =>
-        ctx.db
-          .query('adminAreaCells')
-          .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
-          .take(CELL_TAKE),
-      ),
+      share.take('areaCell', CELL_TAKE, () => io.cell(cells[index] as TownCell, CELL_TAKE)),
     );
   });
   for (const [k, answer] of cellAnswers.entries()) {
