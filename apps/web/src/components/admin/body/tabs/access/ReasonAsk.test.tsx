@@ -1,7 +1,7 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-
 import { Button } from '@/components/kit/button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ReasonAsk } from './ReasonAsk';
@@ -19,12 +19,23 @@ function Ask({ onConfirm }: { onConfirm: (reason: string) => Promise<boolean> })
       trigger={<Button>Hide</Button>}
       title="Hide the launch"
       confirm="Hide"
+      maxLength={AUDIT_REASON_MAX}
       onConfirm={onConfirm}
     />
   );
 }
 
 describe('ReasonAsk', () => {
+  it('holds the reason to the cap it is given — its write’s, from the shared definition', async () => {
+    render(<Ask onConfirm={vi.fn(async () => true)} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('textbox')).toHaveAttribute(
+      'maxLength',
+      String(AUDIT_REASON_MAX),
+    );
+  });
+
   it.each([
     ['refused', (f: ReturnType<typeof vi.fn>) => f.mockResolvedValueOnce(false)],
     [

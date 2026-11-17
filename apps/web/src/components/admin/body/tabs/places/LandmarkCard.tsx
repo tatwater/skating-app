@@ -3,6 +3,7 @@ import {
   LANDMARK_KINDS,
   type LandmarkKind,
   landmarkNameKey,
+  MAX_LANDMARK_NAME_LENGTH,
 } from '@skating/core';
 import { type ReactNode, useRef, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
@@ -192,6 +193,7 @@ export function LandmarkCard({
                   <Input
                     aria-label="Name"
                     value={name}
+                    maxLength={MAX_LANDMARK_NAME_LENGTH}
                     onChange={(e) => setName(e.target.value)}
                     onBlur={saveName}
                     onKeyDown={(e) => {
@@ -210,6 +212,7 @@ export function LandmarkCard({
                   aria-label="Other spellings"
                   value={l.aliases}
                   placeholder="Add a spelling skaters use"
+                  maxLength={MAX_LANDMARK_NAME_LENGTH}
                   onValueChange={editAliases}
                 />
               ) : (

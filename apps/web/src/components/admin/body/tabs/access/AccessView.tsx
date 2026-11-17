@@ -1,4 +1,4 @@
-import type { PublicAccessVerdict } from '@skating/core';
+import { AUDIT_REASON_MAX, type PublicAccessVerdict } from '@skating/core';
 import { type ReactNode, useRef } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { Badge, Tag } from '@/components/kit/badge';
@@ -266,6 +266,8 @@ function RulingSection({
       description="The body dims on the map and drops out of every push. Skaters read the ruling and its date."
       confirm="Rule no public access"
       label="Reason · kept in History"
+      // The ruling's reason is its audit row's (D261).
+      maxLength={AUDIT_REASON_MAX}
       onConfirm={(reason) => onRule('none', reason)}
     />
   );
@@ -396,6 +398,8 @@ function PutInItem({
           description="It comes off the map and out of the drawer, with every launch close by."
           confirm="Hide"
           label="Reason · kept in History"
+          // The hide's reason is its audit row's (D261).
+          maxLength={AUDIT_REASON_MAX}
           onConfirm={(reason) => onHide(p, reason)}
         />
       )}

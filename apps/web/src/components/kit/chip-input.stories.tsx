@@ -134,6 +134,23 @@ export const CreateFromText: Story = {
 };
 
 /**
+ * A field held to its server's cap: what is typed past `maxLength` never enters, so the create row
+ * never offers a chip the server would refuse.
+ */
+export const Capped: Story = {
+  args: { onValueChange: fn() },
+  render: (args) => <Aliases onValueChange={args.onValueChange} maxLength={8} />,
+  play: async ({ canvasElement, args }) => {
+    const input = field(canvasElement);
+    await expect(input).toHaveAttribute('maxlength', '8');
+    await userEvent.type(input, 'Shaker Lake');
+    await expect(input).toHaveValue('Shaker L');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(args.onValueChange).toHaveBeenCalledWith([...ALIASES, 'Shaker L']));
+  },
+};
+
+/**
  * Suggestions from the caller: the create row leads, then what the server knows (less what's
  * already a chip); ↓ reaches a suggestion and ⏎ adds it. A query that is exactly a suggestion
  * offers no create row.
