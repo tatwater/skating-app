@@ -9,14 +9,14 @@
  * which Clerk applies after the retry that followed it. Either leaves Clerk on a stale value; the
  * harmful direction is a person whose ban was lifted still locked out of sign-in, with no alert.
  *
- * **What it checks, with no mirror state stored** (no schema change):
+ * **What it checks, with no mirror state stored** (no schema change), the harmful direction first:
  *
- * 1. Every profile Convex says is banned (`profiles.by_status`, paged with a cursor, by weight) must
+ * 1. Every Clerk user Clerk says is banned (Clerk's own list, filtered, newest first, paged by
+ *    creation time) must be banned in Convex: one whose profile says active or suspended is unlocked;
+ *    one being deleted, or deleted, is left alone (account deletion deletes their Clerk user); a Clerk
+ *    user with no profile is left alone. Each is counted.
+ * 2. Every profile Convex says is banned (`profiles.by_status`, paged with a cursor, by weight) must
  *    be locked in Clerk: each page's Clerk users are read in one request by id.
- * 2. Every Clerk user Clerk says is banned (Clerk's own list, filtered and paged with its cursor) must
- *    be banned in Convex: one whose profile says active or suspended is unlocked; one being deleted,
- *    or deleted, is left alone (account deletion deletes their Clerk user); a Clerk user with no
- *    profile is left alone. Each is counted.
  *
  * **A repair is never a second way to call Clerk.** It asks for a run of `setBanned` (`repair: true`),
  * the one sender with the one retry path, and that run reads what Convex wants before it sends and
@@ -34,20 +34,22 @@
  * counts; each lock it repaired is a `jobFailures` row (`clerkMirror`, `LockRepaired` /
  * `UnlockRepaired`, keyed by the run and a sequence number), which the Machinery health read counts,
  * for a week; a run that repaired anything mails the operator one summary (a repair means one of the
- * two gaps actually happened). A run that could not finish is a row keyed `run` until one does.
+ * two gaps happened — or a sync was still in its retry ladder when the run read). A run that could not finish is a row keyed {@link RUN_KEY} until one
+ * does.
  *
  * **Bounded and polite.** Clerk's Backend API allows 1,000 requests per 10 s on a production instance
  * and 100 on a development one, `GET`s included, per secret key, and answers past it with a 429
  * (https://clerk.com/docs/guides/how-clerk-works/system-limits). A step makes at most
  * {@link READS_PER_STEP} sequential reads, each held to the shared 20 s timeout, and continues itself
- * {@link STEP_GAP_MS} later; repairs are spaced {@link REPAIR_SPACING_MS} apart from the run's start;
- * a run reads at most {@link MAX_READS_PER_RUN} pages and repairs at most {@link MAX_REPAIRS_PER_RUN}.
- * A failed read (a 429 included) takes `setBanned`'s own path — the 30 s, 5 min, 30 min schedule, each
- * retry resuming from the same cursor, then the operator. Idempotent: a second pass over the same
- * state repairs nothing.
+ * {@link STEP_GAP_MS} later; repairs are spaced {@link REPAIR_SPACING_MS} apart across the whole run,
+ * each batch from the slot after the last one's (never a slot in the past, so a batch found late — after
+ * a retry's back-off — is spaced too, not sent at once); a run reads at most {@link MAX_READS_PER_RUN}
+ * pages and repairs at most {@link MAX_REPAIRS_PER_RUN}. A failed read (a 429 included) takes
+ * `setBanned`'s own path — the 30 s, 5 min, 30 min schedule, each retry resuming from the same cursor,
+ * then the operator. Idempotent: a second pass over the same state repairs nothing.
  *
- * **Dry run** (`dryRun: true`): every read, no repair asked for and no row or mail written — its
- * counts say what it would repair.
+ * **Dry run** (`dryRun: true`): every read, no repair asked for and no row or summary written — its
+ * counts say what it would repair. A read that fails past its retries still pages the operator.
  */
 
 import { v } from 'convex/values';
@@ -79,12 +81,16 @@ export const STEP_GAP_MS = 2_000;
 export const MAX_READS_PER_RUN = 400;
 /** Repairs one run asks for, at most; past it the rest are counted and left for the next run. */
 export const MAX_REPAIRS_PER_RUN = 200;
-/** The gap between repairs, from the run's start: at most two `setBanned` runs a second. */
+/** The gap between one repair and the next, across the run: at most two `setBanned` runs a second. */
 export const REPAIR_SPACING_MS = 500;
 /** How long a repair stays counted on the Machinery read. */
 export const REPAIR_RETENTION_MS = 7 * DAY;
-/** The `jobFailures` key of a run that could not finish (never a person). */
-export const RUN_KEY = 'run';
+/**
+ * The `jobFailures` key of a run that could not finish (never a person). It sorts before every
+ * repair's key (`<runId>.<seq>`, digits): the Machinery read counts a job's first `HEALTH_CAP` rows by
+ * key, and an over-cap run alone writes that many repairs — a key after them would never be counted.
+ */
+export const RUN_KEY = '!run';
 /** Rows of a week ago one run forgets, at most (a backlog clears over the next runs). */
 const FORGET_CAP = 500;
 
@@ -134,18 +140,33 @@ export interface RunOutcome {
   tally: Tally;
 }
 
-/** The Clerk users one read answered with: their id and whether Clerk locks them. */
+/**
+ * The Clerk users one read answered with: their id, whether Clerk locks them and when they were created
+ * (`null` when the entry doesn't say) — and how many entries the page held, read or not (what says
+ * whether it was the last).
+ */
 type UsersAnswer =
-  | { ok: true; users: { id: string; banned: boolean }[] }
+  | {
+      ok: true;
+      users: { id: string; banned: boolean; createdAt: number | null }[];
+      listed: number;
+    }
   | Exclude<ClerkAnswer, { ok: true }>;
 
 /**
  * One read of Clerk's users (`GET /v1/users`, operationId `GetUserList` in Clerk's Backend API spec,
  * https://github.com/clerk/openapi-specs `bapi/2026-08-20.yml`, the same in every published version
- * back to 2021-02-05): `user_id` (repeated, up to 100) or `banned=true`; `limit`; `starting_after`, the
- * id of the last user of the previous page — the cursor, which needs the default `created_at` order
- * and every other parameter the same, and ends when a page returns fewer than `limit`. The answer is
- * an array of User objects; only `id` and `banned` are read.
+ * back to 2021-02-05): `user_id` (repeated, up to 100) or `banned=true`; `limit` (1–500, default 10);
+ * `created_at_before` (users created strictly before it, in Unix ms), under the default order, newest
+ * first (`-created_at`). The answer is an array of User objects; only `id`, `banned` and `created_at`
+ * (Unix ms) are read.
+ *
+ * **Why not Clerk's `starting_after` cursor.** It names the last user of the previous page, and the
+ * spec doesn't say what it answers when that user no longer matches `banned=true` — which this run
+ * makes likely: the page's last user may be the very one it just unlocked, and a user may be deleted
+ * during a retry's back-off. Paging by creation time is defined whatever happened to any one user:
+ * each page asks for what was created at or before the last one's millisecond, and skips the ids
+ * already read at that millisecond (`seen`), so ties across a page boundary are read once each.
  */
 async function readUsers(key: string, query: string): Promise<UsersAnswer> {
   const answer = await clerkRequest(key, `/users?${query}`, 'GET');
@@ -155,16 +176,24 @@ async function readUsers(key: string, query: string): Promise<UsersAnswer> {
   }
   const users = answer.body.flatMap((u: unknown) => {
     if (typeof u !== 'object' || u === null) return [];
-    const { id, banned } = u as { id?: unknown; banned?: unknown };
-    return typeof id === 'string' ? [{ id, banned: banned === true }] : [];
+    const { id, banned, created_at } = u as {
+      id?: unknown;
+      banned?: unknown;
+      created_at?: unknown;
+    };
+    if (typeof id !== 'string') return [];
+    const createdAt =
+      typeof created_at === 'number' && Number.isFinite(created_at) ? created_at : null;
+    return [{ id, banned: banned === true, createdAt }];
   });
-  return { ok: true, users };
+  return { ok: true, users, listed: answer.body.length };
 }
 
 /**
  * **One step of the daily reconcile** — the cron's tick starts a run (`{}`); each step continues it.
  * Never throws on a Clerk failure (the retry schedule, then the operator); a Convex failure stops the
- * chain with its position in the log, and the next day's tick starts afresh.
+ * chain with its side and counts in the log and the run counted under {@link RUN_KEY}, and the next
+ * day's tick starts afresh.
  */
 export const run = internalAction({
   args: {
@@ -172,11 +201,19 @@ export const run = internalAction({
     /** The run's start — set by its first step, carried by the rest. */
     runId: v.optional(v.number()),
     side: v.optional(literals(SIDES)),
-    /** The side's cursor: a Convex page cursor, or the last Clerk user id read. */
+    /** The Convex side's page cursor. */
     cursor: v.optional(v.union(v.string(), v.null())),
+    /**
+     * The Clerk side's place: the `created_at_before` of its next page (absent: the newest), and the
+     * ids already read at the millisecond just under it.
+     */
+    before: v.optional(v.number()),
+    seen: v.optional(v.array(v.string())),
     /** Retry counter of the read that failed — 0 (absent) otherwise. */
     attempt: v.optional(v.number()),
     tally: v.optional(tallyValidator),
+    /** The earliest the run's next repair may run — its start at first, carried by the rest. */
+    repairAt: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<RunOutcome> => {
     const dryRun = args.dryRun === true;
@@ -189,11 +226,21 @@ export const run = internalAction({
       return { dryRun, state: 'skipped', tally };
     }
     const runId = args.runId ?? Date.now();
-    let side: Side = args.side ?? 'convex';
+    let side: Side = args.side ?? 'clerk';
     let cursor = args.cursor ?? null;
+    let before = args.before;
+    let seen = args.seen ?? [];
+    /** Where the run is, for a retry or the next step. */
+    const place = () => ({
+      side,
+      cursor,
+      ...(before !== undefined ? { before } : {}),
+      ...(seen.length > 0 ? { seen } : {}),
+    });
     let attempt = args.attempt ?? 0;
+    let repairAt = args.repairAt ?? runId;
 
-    /** Out-of-step locks, asked of `setBanned` (spaced from the run's start) or, dry, only counted. */
+    /** Out-of-step locks, asked of `setBanned` (spaced one after another) or, dry, only counted. */
     const nominate = async (clerkUserIds: string[], banned: boolean) => {
       if (clerkUserIds.length === 0) return;
       const asked = tally.lockRepairs + tally.unlockRepairs;
@@ -201,9 +248,10 @@ export const run = internalAction({
       tally.overCap += clerkUserIds.length - take.length;
       if (take.length === 0) return;
       if (!dryRun) {
-        await ctx.runMutation(internal.clerkReconcile.repair, {
+        repairAt = await ctx.runMutation(internal.clerkReconcile.repair, {
           runId,
           seq: asked,
+          from: repairAt,
           items: take.map((clerkUserId) => ({ clerkUserId, banned })),
         });
       }
@@ -213,6 +261,7 @@ export const run = internalAction({
 
     /** A read that failed: `setBanned`'s path — retried from this same position, then the operator. */
     const fail = async (answer: Exclude<ClerkAnswer, { ok: true }>): Promise<RunOutcome> => {
+      const asked = dryRun ? 0 : tally.lockRepairs + tally.unlockRepairs;
       const next = await retryOrPage(ctx, {
         what: 'reconcile',
         subject: 'the daily ban-lock check',
@@ -223,12 +272,16 @@ export const run = internalAction({
           ctx.scheduler.runAfter(delayMs, internal.clerkReconcile.run, {
             dryRun,
             runId,
-            side,
-            cursor,
+            ...place(),
             attempt: nextAttempt,
             tally,
+            repairAt,
           }),
-        fix: 'The daily check of Clerk sign-in locks against Convex stopped before it finished. Its failure changed nothing, and it runs again tomorrow. If it keeps failing, check that CLERK_SECRET_KEY is valid and that Clerk is up.',
+        fix: `The daily check of Clerk sign-in locks against Convex stopped before it finished. ${
+          asked > 0
+            ? `The ${asked} repair(s) it had already asked for still run through the usual sync, and it runs again tomorrow.`
+            : 'Its failure changed nothing, and it runs again tomorrow.'
+        } If it keeps failing, check that CLERK_SECRET_KEY is valid and that Clerk is up.`,
       });
       if (next === 'paged' && !dryRun) {
         await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {});
@@ -245,73 +298,114 @@ export const run = internalAction({
       return { dryRun, state, tally };
     };
 
-    let reads = 0;
-    let convexPages = 0;
-    while (reads < READS_PER_STEP && convexPages < CONVEX_PAGES_PER_STEP) {
-      if (tally.clerkReads >= MAX_READS_PER_RUN) return await finish('capped');
-      if (side === 'convex') {
-        convexPages++;
-        const page = await ctx.runQuery(internal.clerkReconcile.bannedPage, { cursor });
-        if (page.clerkUserIds.length > 0) {
+    const step = async (): Promise<RunOutcome> => {
+      let reads = 0;
+      let convexPages = 0;
+      while (reads < READS_PER_STEP && convexPages < CONVEX_PAGES_PER_STEP) {
+        if (tally.clerkReads >= MAX_READS_PER_RUN) return await finish('capped');
+        if (side === 'convex') {
+          convexPages++;
+          const page = await ctx.runQuery(internal.clerkReconcile.bannedPage, { cursor });
+          if (page.clerkUserIds.length > 0) {
+            reads++;
+            tally.clerkReads++;
+            const query = [
+              ...page.clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
+              `limit=${CLERK_PAGE}`,
+            ].join('&');
+            const answer = await readUsers(key, query);
+            if (!answer.ok) return await fail(answer);
+            attempt = 0;
+            const locked = new Map(answer.users.map((u) => [u.id, u.banned]));
+            const toLock: string[] = [];
+            for (const id of page.clerkUserIds) {
+              tally.convexChecked++;
+              const isLocked = locked.get(id);
+              if (isLocked === undefined) tally.notInClerk++;
+              else if (!isLocked) toLock.push(id);
+            }
+            await nominate(toLock, true);
+          }
+          if (page.isDone) return await finish('done');
+          cursor = page.continueCursor;
+        } else {
           reads++;
           tally.clerkReads++;
-          const query = [
-            ...page.clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
-            `limit=${CLERK_PAGE}`,
-          ].join('&');
-          const answer = await readUsers(key, query);
+          const upTo = before === undefined ? '' : `&created_at_before=${before}`;
+          const answer = await readUsers(key, `banned=true&limit=${CLERK_PAGE}${upTo}`);
           if (!answer.ok) return await fail(answer);
           attempt = 0;
-          const locked = new Map(answer.users.map((u) => [u.id, u.banned]));
-          const toLock: string[] = [];
-          for (const id of page.clerkUserIds) {
-            tally.convexChecked++;
-            const isLocked = locked.get(id);
-            if (isLocked === undefined) tally.notInClerk++;
-            else if (!isLocked) toLock.push(id);
+          // What this page adds: not read already at the boundary, and — Clerk's filter, read again
+          // from each user — still locked (one Clerk no longer locks needs nothing).
+          const already = new Set(seen);
+          const ids = answer.users.filter((u) => u.banned && !already.has(u.id)).map((u) => u.id);
+          const wishes = await wishesFor(ids, (remaining) =>
+            ctx.runQuery(internal.clerkReconcile.lockWishes, { clerkUserIds: remaining }),
+          );
+          const toUnlock: string[] = [];
+          ids.forEach((id, i) => {
+            tally.clerkChecked++;
+            const wish = wishes[i];
+            if (wish === null) tally.noProfile++;
+            else if (wish === 'gone') tally.beingDeleted++;
+            else if (wish === false) toUnlock.push(id);
+          });
+          await nominate(toUnlock, false);
+          // The last page is the one Clerk answered short — counted by what it listed, read or not;
+          // then the Convex side.
+          if (answer.listed < CLERK_PAGE) {
+            side = 'convex';
+            cursor = null;
+            before = undefined;
+            seen = [];
+            continue;
           }
-          await nominate(toLock, true);
+          const edge = answer.users.at(-1)?.createdAt ?? null;
+          if (edge === null) {
+            return await fail({
+              ok: false,
+              failure: 'a full page whose last user has no creation time',
+              retryable: false,
+            });
+          }
+          // The next page: created at or before this page's last millisecond, skipping who was read
+          // there. A full page that adds no one is more than a page of users created in one
+          // millisecond — the list can't be walked past it.
+          if (answer.users.every((u) => already.has(u.id))) {
+            return await fail({
+              ok: false,
+              failure: `more than ${CLERK_PAGE} locked users share one creation time`,
+              retryable: false,
+            });
+          }
+          const atEdge = answer.users.filter((u) => u.createdAt === edge).map((u) => u.id);
+          seen = before === edge + 1 ? [...new Set([...seen, ...atEdge])] : atEdge;
+          before = edge + 1;
         }
-        if (page.isDone) {
-          side = 'clerk';
-          cursor = null;
-        } else {
-          cursor = page.continueCursor;
-        }
-      } else {
-        reads++;
-        tally.clerkReads++;
-        const after = cursor === null ? '' : `&starting_after=${encodeURIComponent(cursor)}`;
-        const answer = await readUsers(key, `banned=true&limit=${CLERK_PAGE}${after}`);
-        if (!answer.ok) return await fail(answer);
-        attempt = 0;
-        // Clerk's filter, read again from each user: one it no longer locks needs nothing.
-        const ids = answer.users.filter((u) => u.banned).map((u) => u.id);
-        const wishes = await wishesFor(ids, (remaining) =>
-          ctx.runQuery(internal.clerkReconcile.lockWishes, { clerkUserIds: remaining }),
-        );
-        const toUnlock: string[] = [];
-        ids.forEach((id, i) => {
-          tally.clerkChecked++;
-          const wish = wishes[i];
-          if (wish === null) tally.noProfile++;
-          else if (wish === 'gone') tally.beingDeleted++;
-          else if (wish === false) toUnlock.push(id);
-        });
-        await nominate(toUnlock, false);
-        const last = answer.users.at(-1);
-        if (answer.users.length < CLERK_PAGE || last === undefined) return await finish('done');
-        cursor = last.id;
       }
+      await ctx.scheduler.runAfter(STEP_GAP_MS, internal.clerkReconcile.run, {
+        dryRun,
+        runId,
+        ...place(),
+        tally,
+        repairAt,
+      });
+      return { dryRun, state: 'continued', tally };
+    };
+
+    try {
+      return await step();
+    } catch (err) {
+      // A Convex failure (a Clerk one never throws): the chain stops here and tomorrow's tick starts
+      // afresh — never silently: its side and counts in the log (no id), the run counted unfinished.
+      console.error(
+        `Clerk ban-lock reconcile${dryRun ? ' (dry run)' : ''} stopped on the ${side} side by a Convex failure: ${JSON.stringify(tally)}`,
+      );
+      if (!dryRun) {
+        await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {}).catch(() => undefined);
+      }
+      throw err;
     }
-    await ctx.scheduler.runAfter(STEP_GAP_MS, internal.clerkReconcile.run, {
-      dryRun,
-      runId,
-      side,
-      cursor,
-      tally,
-    });
-    return { dryRun, state: 'continued', tally };
   },
 });
 
@@ -379,21 +473,25 @@ export const lockWishes = internalQuery({
 });
 
 /**
- * Repairs, asked of the one sender: a `setBanned` run each (`repair: true`), spaced from the run's start,
- * and a `jobFailures` row each — keyed by the run and its sequence number, never the person — in the
- * same transaction, so a row is counted exactly when a repair was asked for.
+ * Repairs, asked of the one sender: a `setBanned` run each (`repair: true`), spaced
+ * {@link REPAIR_SPACING_MS} apart from `from` (the slot after the run's last repair) or now, whichever
+ * is later — never a slot in the past, so a batch found late in a run is not sent at once — and a
+ * `jobFailures` row each, keyed by the run and its sequence number, never the person, in the same
+ * transaction, so a row is counted exactly when a repair was asked for. Returns the next free slot.
  */
 export const repair = internalMutation({
   args: {
     runId: v.number(),
     seq: v.number(),
+    from: v.number(),
     items: v.array(v.object({ clerkUserId: v.string(), banned: v.boolean() })),
   },
-  handler: async (ctx, { runId, seq, items }) => {
+  handler: async (ctx, { runId, seq, from, items }): Promise<number> => {
     const now = Date.now();
+    const start = Math.max(now, from);
     for (const [i, { clerkUserId, banned }] of items.entries()) {
-      const at = runId + (seq + i) * REPAIR_SPACING_MS;
-      await ctx.scheduler.runAfter(Math.max(0, at - now), internal.clerkAdmin.setBanned, {
+      // At its slot, not after a delay: the slots stay exact whatever the clock reads at each call.
+      await ctx.scheduler.runAt(start + i * REPAIR_SPACING_MS, internal.clerkAdmin.setBanned, {
         clerkUserId,
         banned,
         repair: true,
@@ -407,10 +505,14 @@ export const repair = internalMutation({
         { park: false },
       );
     }
+    return start + items.length * REPAIR_SPACING_MS;
   },
 });
 
-/** A run that gave up on Clerk: counted under {@link RUN_KEY} until a run finishes. */
+/**
+ * A run that gave up — on Clerk, or on a Convex failure: counted under {@link RUN_KEY} until a run
+ * finishes.
+ */
 export const recordUnfinished = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -437,13 +539,18 @@ export const finishRun = internalMutation({
     await forgetFailuresBefore(ctx, 'clerkMirror', now - REPAIR_RETENTION_MS, FORGET_CAP);
 
     const repaired = tally.lockRepairs + tally.unlockRepairs;
-    if (repaired === 0 && tally.overCap === 0 && state === 'done') return;
+    const outOfStep = repaired > 0 || tally.overCap > 0;
+    if (!outOfStep && state === 'done') return;
     const lines = [
       `Unlocked ${tally.unlockRepairs}: active or suspended in Convex, but Clerk was blocking their sign-in.`,
       `Locked ${tally.lockRepairs}: banned in Convex, but Clerk was not blocking new sign-ins (every Convex function was already refusing them).`,
       `Checked ${tally.convexChecked} banned in Convex and ${tally.clerkChecked} locked in Clerk.`,
-      'A repair means a sync was lost — a run that stopped after Clerk answered, or a late answer Clerk applied after its retry. Each repair runs through the usual sync, which retries and emails you if Clerk refuses. Nothing to do unless this keeps happening.',
     ];
+    if (repaired > 0) {
+      lines.push(
+        'A repair means a sync was lost — a run that stopped after Clerk answered, or a late answer Clerk applied after its retry — or was still retrying when the check ran (a status changed in the half hour before it). Each repair runs through the usual sync, which retries and emails you if Clerk refuses. Nothing to do unless this keeps happening.',
+      );
+    }
     if (tally.overCap > 0) {
       lines.push(
         `${tally.overCap} more were out of step past this run's limit of ${MAX_REPAIRS_PER_RUN} repairs; tomorrow's run takes them. That many suggests the sync itself is failing — check the logs for Clerk errors.`,
@@ -455,8 +562,13 @@ export const finishRun = internalMutation({
       );
     }
     await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
-      subject: `Clerk sign-in locks: ${repaired} repaired`,
-      heading: 'The daily check found Clerk out of step with Convex',
+      // A run that only hit its read limit found no one out of step: it says so, not that it did.
+      subject: outOfStep
+        ? `Clerk sign-in locks: ${repaired} repaired`
+        : 'Clerk sign-in locks: the daily check stopped at its limit',
+      heading: outOfStep
+        ? 'The daily check found Clerk out of step with Convex'
+        : 'The daily check of Clerk sign-in locks stopped before it had checked everyone',
       lines,
       deepLinkPath: '/admin/people',
     });

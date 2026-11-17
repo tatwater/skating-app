@@ -8327,8 +8327,8 @@ lying (D270); a reason that differs only by a space is the same reason.
 
 **2026-11-17, built in B01-4k.** Once a day a job checks the two sets that could be out of step —
 every profile Convex has banned must be locked in Clerk, every user Clerk has locked must be banned
-in Convex — with no mirror state stored: Convex's side is paged by its status index, Clerk's by its own
-banned filter and cursor. A mismatch is repaired by asking for a run of `clerkAdmin.setBanned`, the one
+in Convex — with no mirror state stored: Clerk's side (the harmful direction, first) is paged by its
+own banned filter and creation time, Convex's by its status index. A mismatch is repaired by asking for a run of `clerkAdmin.setBanned`, the one
 sender, which reads Convex before it sends and after every answer, so a reconcile that read a stale
 value can never undo a newer change; it never locks someone active or suspended, never unlocks someone
 banned, and leaves alone anyone being deleted and any Clerk user with no profile. A repair changes no

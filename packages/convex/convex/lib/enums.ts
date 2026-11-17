@@ -707,8 +707,9 @@ export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
  *   never parked); `expiredExports` — an expired bundle whose blob would not delete (keyed by id).
  * - `clerkMirror` — the daily Clerk ban-lock reconcile (B01-4k, D277): one row per lock it found
  *   out of step and repaired (`LockRepaired` / `UnlockRepaired`, keyed by the run and a sequence
- *   number — never a person), kept a week; and one row keyed `run` while its last run could not
- *   finish (`Unfinished`, `Capped`, `OverRepairCap`). Never parked.
+ *   number — never a person), kept a week; and one row keyed `!run` (before every repair's key, so the
+ *   Machinery read's capped count always sees it) while its last run could not finish (`Unfinished`,
+ *   `Capped`, `OverRepairCap`). Never parked.
  */
 export const FAILING_JOBS = [
   'orphanPhotos',
