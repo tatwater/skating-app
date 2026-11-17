@@ -200,3 +200,30 @@ export function rankCandidates<Ref extends string>(candidates: Map<Ref, number>)
     )
     .map(([ref]) => ref);
 }
+
+/**
+ * **Ranked candidates hydrated in waves** (B01-3q) — the second pass's reads, together. In rank
+ * order, keep each candidate `get` finds and `keep` admits until `limit` are kept; `truncated` when a
+ * candidate was left over once they were. Each wave reads exactly as many as could still be kept
+ * (`limit` less those kept so far), so every read is one the one-at-a-time loop would also have made
+ * — never one more, never another document's bytes — and the kept ones and their order are its. A
+ * wave is one round; the old loop was one round a candidate.
+ */
+export async function hydrateRanked<Ref, D>(
+  ranked: readonly Ref[],
+  limit: number,
+  get: (ref: Ref) => Promise<D | null>,
+  keep: (doc: D) => boolean,
+): Promise<{ kept: D[]; truncated: boolean }> {
+  const kept: D[] = [];
+  let next = 0;
+  while (next < ranked.length) {
+    if (kept.length >= limit) return { kept, truncated: true };
+    const wave = ranked.slice(next, next + (limit - kept.length));
+    next += wave.length;
+    for (const doc of await Promise.all(wave.map(get))) {
+      if (doc !== null && keep(doc)) kept.push(doc);
+    }
+  }
+  return { kept, truncated: false };
+}
