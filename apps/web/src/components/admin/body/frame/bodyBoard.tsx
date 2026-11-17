@@ -81,6 +81,11 @@ export type BodyBoardProps = Partial<
   hoverId?: string | null;
   /** A tab's scene over the frame's. */
   tabScene?: BodyMapScene | null;
+  /**
+   * Drawn without the console's frame: the page alone at the given size (a phone's width, where
+   * the frame's own narrow layout is not this page's to test).
+   */
+  bare?: boolean;
   className?: string;
 };
 
@@ -137,6 +142,7 @@ export function BodyBoard({
   lit: initialLit = null,
   hoverId = null,
   tabScene = null,
+  bare = false,
   className = 'h-[56.25rem] w-[90rem]',
 }: BodyBoardProps) {
   const identity = loading ? undefined : givenIdentity;
@@ -150,8 +156,9 @@ export function BodyBoard({
     { ...MASCOMA_SCENE, lit },
     tabScene ?? (tab === 'shape' ? shapeMapScene(null, lit) : null),
   );
+  const Frame = bare ? BareFrame : BoardShell;
   return (
-    <BoardShell className={className}>
+    <Frame className={className}>
       <BodyConsoleView
         identity={identity}
         completeness={completeness}
@@ -210,6 +217,15 @@ export function BodyBoard({
           )
         }
       />
-    </BoardShell>
+    </Frame>
+  );
+}
+
+/** The page alone, at its size, on the surface's ground. */
+function BareFrame({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <div data-slot="bare-frame" className={`${className} bg-bg`}>
+      {children}
+    </div>
   );
 }

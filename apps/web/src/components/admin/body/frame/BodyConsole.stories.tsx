@@ -3,7 +3,12 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { RetryNote } from '@/components/kit/retry-note';
-import { faceLoaded, must } from '@/components/kit/storyKit';
+import {
+  expectControlsInside,
+  expectNoSidewaysScroll,
+  faceLoaded,
+  must,
+} from '@/components/kit/storyKit';
 import { BodyBoard } from './bodyBoard';
 import { CAPPED_HISTORY, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
@@ -292,5 +297,83 @@ export const ExtrasLoading: Story = {
     await expect(slot(canvasElement, 'body-complete')).toHaveAttribute('aria-busy', 'true');
     await expect(page.getByText('Towns')).toBeVisible();
     await expect(page.queryByText('Enfield, NH')).toBeNull();
+  },
+};
+
+/**
+ * A phone (360 px), with no board drawn for it yet: the console's narrow rule makes the page one pane
+ * at a time — the body first, then the tabs or the map from its head, and back. Each pane takes the
+ * page's width, nothing scrolls sideways, every control in it is inside the page, and focus moves
+ * with the pane. Read afresh after every wait: nothing here holds a node across one.
+ */
+export const Phone: Story = {
+  args: { bare: true, className: 'h-[52.75rem] w-[22.5rem]' },
+  play: async ({ canvasElement }) => {
+    const page = () => slot(canvasElement, 'body-console');
+    const pane = (name: string) =>
+      must(page().querySelector<HTMLElement>(`:scope > [data-pane="${name}"]`));
+    const drawn = () =>
+      ['body', 'map', 'inspector'].filter((n) => getComputedStyle(pane(n)).display !== 'none');
+    const press = async (from: string, name: string) =>
+      userEvent.click(within(pane(from)).getByRole('button', { name }));
+    const whole = async (name: string) => {
+      await expect(pane(name).getBoundingClientRect().width).toBeGreaterThanOrEqual(
+        page().getBoundingClientRect().width - 1,
+      );
+      // The map key's row scrolls sideways on a phone by the kit's own design (never wraps).
+      await expectNoSidewaysScroll(page(), { except: ['map-key'] });
+      await expectControlsInside(page(), pane(name));
+    };
+
+    await waitFor(() => expect(page()).toHaveAttribute('data-narrow'));
+    await faceLoaded(slot(canvasElement, 'record-lockup-name'));
+    await expect(drawn()).toEqual(['body']);
+    await whole('body');
+
+    await press('body', 'Show the tabs');
+    await waitFor(() => expect(drawn()).toEqual(['inspector']));
+    await waitFor(() => expect(pane('inspector')).toHaveFocus());
+    await expect(within(pane('inspector')).getAllByRole('tab')).toHaveLength(9);
+    await whole('inspector');
+
+    await press('inspector', 'Show the map');
+    await waitFor(() => expect(drawn()).toEqual(['map']));
+    await waitFor(() => expect(pane('map')).toHaveFocus());
+    // The still is drawn at the pane's size once shown: the map has room, not a sliver.
+    await waitFor(() =>
+      expect(must(pane('map').querySelector('[data-slot="map-key"]'))).toBeVisible(),
+    );
+    await whole('map');
+
+    await press('map', 'Back to the body');
+    await waitFor(() => expect(drawn()).toEqual(['body']));
+    await waitFor(() => expect(pane('body')).toHaveFocus());
+  },
+};
+
+/** The phone in the light map. */
+export const PhoneLight: Story = {
+  ...Phone,
+  name: 'Phone · Light',
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/**
+ * An ask opened on a phone: its tab takes the page, the ask lit, focus in the tab's panel — as at
+ * the boards' width, with the body handing over the page.
+ */
+export const PhoneOpenAnAsk: Story = {
+  name: 'Phone | Open an ask',
+  args: { bare: true, className: 'h-[52.75rem] w-[22.5rem]' },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await waitFor(() => expect(slot(canvasElement, 'body-console')).toHaveAttribute('data-narrow'));
+    page.getByRole('listbox', { name: 'Asked of this body' }).focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    await waitFor(() =>
+      expect(page.getByRole('tab', { name: /Places/ })).toHaveAttribute('aria-selected', 'true'),
+    );
+    await waitFor(() => expect(slot(canvasElement, 'body-tab-panel')).toHaveFocus());
+    await expect(getComputedStyle(slot(canvasElement, 'body-left')).display).toBe('none');
   },
 };
