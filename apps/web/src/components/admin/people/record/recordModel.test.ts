@@ -605,6 +605,7 @@ describe('the item', () => {
             standing: true,
             decidedBy: null,
             reason: 'Third false gate claim this month',
+            kept: true,
             endedAt: null,
             endedBy: null,
             endedHow: null,
@@ -1146,5 +1147,131 @@ describe('the undo of the write that ended the newest decision (`endingUndoOf`)'
     expect(endingUndoWhat({ actionId: 'e', endedHow: 'overturn', undo }, item, SUBJECT, NOW)).toBe(
       'The decision on this comment was overturned',
     );
+  });
+});
+
+describe('Kept is the record’s word, never the timing’s', () => {
+  /** A comment its author deleted on 25 Sep, then hidden in an ordinary hide on 26 Sep. */
+  const hiddenAfter = {
+    ...row(4),
+    at: at(9, 26, 9, 0),
+    authorDeletedAt: at(9, 25, 8, 2),
+  };
+
+  it('Standing: an ordinary hide after the deletion reads hidden and deleted; only a keep reads kept', () => {
+    const chips = (r: typeof hiddenAfter) => standingRowView(r, NOW).chips.map((c) => c.label);
+    expect(chips({ ...hiddenAfter, kept: false })).toEqual(['comment', 'hidden', 'deleted']);
+    expect(lines(standingRowView({ ...hiddenAfter, kept: false }, NOW))[0]).toContain(
+      'hidden 26 Sep',
+    );
+    expect(chips({ ...hiddenAfter, kept: true })).toEqual(['comment', 'deleted', 'kept']);
+    // Not recorded: the decision's own kind, and no Kept claim.
+    expect(chips({ ...hiddenAfter, kept: null })).toEqual(['comment', 'hidden', 'deleted']);
+  });
+
+  it('the pane: an ordinary hide after the deletion is a hide — badge, by-line and life', () => {
+    const pane = (kept: boolean | null) =>
+      itemView(
+        {
+          ...ITEM_DELETED,
+          decisions: [
+            {
+              ...(ITEM_DELETED.decisions[0] as ItemRead['decisions'][number]),
+              at: at(9, 26, 9, 0),
+              kept,
+            },
+          ],
+        },
+        SUBJECT,
+        NOW,
+      );
+    const hide = pane(false);
+    expect(hide.badges.map((b) => b.label)).toEqual(['Hidden', 'Deleted by Rob']);
+    expect(hide.byLines.map((b) => b.did)).toEqual([
+      'Deleted it Fri 25 Sep 08:02',
+      'Hid it Sat 26 Sep 09:00',
+    ]);
+    // The decision holds what the author deleted: kept while it stands, as evidence.
+    expect(hide.byLines[0]?.note).toBe(RECORD_WORDS.keptWhileStands);
+    expect(hide.life?.stations.map((s) => s.title)).toContain('Hidden');
+    expect(hide.life?.stations.find((s) => s.title === 'Deleted by Rob')?.sub).toBe(
+      RECORD_WORDS.keptAsEvidence,
+    );
+    const keep = pane(true);
+    expect(keep.badges.map((b) => b.label)).toEqual(['Deleted by Rob', 'Kept']);
+    expect(keep.byLines.map((b) => b.did)).toContain('Kept it Sat 26 Sep 09:00');
+    expect(pane(null).badges.map((b) => b.label)).toEqual(['Hidden', 'Deleted by Rob']);
+  });
+
+  it('Reversed: a keep that was overturned still says it was a keep', () => {
+    const r = REVERSED[0] as (typeof REVERSED)[number];
+    expect(lines(reversedRowView({ ...r, kept: true }, NOW))[0]).toContain('kept 26 Sep');
+    expect(lines(reversedRowView({ ...r, kept: false }, NOW))[0]).toContain('hidden 26 Sep');
+    expect(lines(reversedRowView({ ...r, kept: null }, NOW))[0]).toContain('hidden 26 Sep');
+  });
+
+  it('whatever the timing, the label says kept exactly when the record does (pinned seeds, then one random)', () => {
+    const instant = fc.integer({ min: at(9, 1), max: at(10, 13) });
+    assertSeeded(
+      fc.property(
+        instant,
+        fc.option(instant, { nil: null }),
+        fc.constantFrom(true, false, null),
+        (decidedAt, deletedAt, kept) => {
+          const v = standingRowView(
+            { ...row(4), at: decidedAt, authorDeletedAt: deletedAt, kept },
+            NOW,
+          );
+          expect(v.chips.some((c) => c.label === RECORD_WORDS.keptChip)).toBe(kept === true);
+          const pane = itemView(
+            {
+              ...ITEM_DELETED,
+              authorDeletedAt: deletedAt,
+              decisions: [
+                {
+                  ...(ITEM_DELETED.decisions[0] as ItemRead['decisions'][number]),
+                  at: decidedAt,
+                  kept,
+                },
+              ],
+            },
+            SUBJECT,
+            NOW,
+          );
+          expect(pane.badges.some((b) => b.label === RECORD_WORDS.badge.kept)).toBe(kept === true);
+          expect(pane.byLines.some((b) => b.did.startsWith(RECORD_WORDS.did.kept))).toBe(
+            kept === true,
+          );
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+describe('today’s station reads the item’s stored status, never the order of its decisions', () => {
+  /** Restored on 1 Oct: the decisions alone would say it has been up since. */
+  const restoredLongAgo = (moderationStatus: string) =>
+    itemView(
+      {
+        ...ITEM_RESTORED,
+        published: {
+          ...(ITEM_RESTORED.published as object),
+          moderationStatus,
+        } as unknown as ItemRead['published'],
+        decisions: ITEM_RESTORED.decisions.map((d) => ({
+          ...d,
+          at: at(9, 28, 9, 0),
+          endedAt: at(10, 1, 9, 0),
+        })),
+      },
+      SUBJECT,
+      NOW,
+    ).life?.stations.at(-1)?.title;
+
+  it('up: visible to skaters; down by something else since (its Post’s decision): still down', () => {
+    expect(restoredLongAgo('visible')).toBe(RECORD_WORDS.upNow);
+    expect(restoredLongAgo('hidden')).toBe(RECORD_WORDS.stillDown.hidden);
+    expect(restoredLongAgo('removed')).toBe(RECORD_WORDS.stillDown.removed);
   });
 });

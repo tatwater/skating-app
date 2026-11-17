@@ -223,9 +223,13 @@ export type RowView = {
 const reasonLine = (reason: string | null): Line =>
   reason === null ? { text: W.reasonUnrecorded } : { text: `${W.reason}: `, quote: reason };
 
-/** Whether a decision was taken on something already deleted — kept as evidence. */
-const keptAfter = (at: number, authorDeletedAt: number | null): boolean =>
-  authorDeletedAt !== null && at >= authorDeletedAt;
+/**
+ * **Whether a decision was an explicit Keep on the record** — the record's own word (`kept`, read
+ * from the decision's audit row), never inferred from timing: an ordinary hide, removal or
+ * retraction that happens to land after the author's deletion is that decision, beside the
+ * *Deleted* or *Retracted* chip. `null` (its audit row couldn't be read) makes no Kept claim.
+ */
+const isKept = (d: { kept: boolean | null }): boolean => d.kept === true;
 
 /** The author's own withdrawal, as a chip: an alert's is a retraction. */
 const withdrawnChip = (kind: RecordKind): string =>
@@ -233,7 +237,7 @@ const withdrawnChip = (kind: RecordKind): string =>
 
 export function standingRowView(row: StandingRow, now: number, tz?: string): RowView {
   const kind = row.targetType;
-  const kept = keptAfter(row.at, row.authorDeletedAt);
+  const kept = isKept(row);
   const states = kept
     ? [withdrawnChip(kind), W.keptChip]
     : [W.verdict[row.kind], ...(row.authorDeletedAt !== null ? [withdrawnChip(kind)] : [])];
@@ -298,7 +302,7 @@ export function reversedRowView(row: ReversedRow, now: number, tz?: string): Row
       {
         text: [
           ...whereParts(kind, row),
-          `${W.verdict[row.kind]} ${dateWords(row.decidedAt, now, tz)}`,
+          `${isKept(row) ? W.keptChip : W.verdict[row.kind]} ${dateWords(row.decidedAt, now, tz)}`,
           ...(ended === null ? [] : [`${ended} ${dateWords(row.endedAt, now, tz)}`]),
         ].join(' · '),
       },
@@ -701,7 +705,7 @@ export function itemView(
   const standing = decisions.find((d) => d.standing) ?? null;
   const newest = decisions[0] ?? null;
   const deletedAt = item.authorDeletedAt;
-  const kept = standing !== null && keptAfter(standing.at, deletedAt);
+  const kept = standing !== null && isKept(standing);
   const author = firstOf(subject);
   const withdrawnBadge: BadgeView = {
     label: kind === 'accessAlert' ? W.badge.retractedBy(author) : W.badge.deletedBy(author),
@@ -728,11 +732,10 @@ export function itemView(
   const headline = standing ?? (ended === 'overturn' ? newest : null);
   const byLines: ByLine[] = [];
   for (const d of decisions) {
-    const isKept = keptAfter(d.at, deletedAt);
     byLines.push({
       at: d.at,
       who: d.decidedBy,
-      did: `${isKept ? W.did.kept : W.did[d.kind]} ${momentWords(d.at, now, tz)}`,
+      did: `${isKept(d) ? W.did.kept : W.did[d.kind]} ${momentWords(d.at, now, tz)}`,
       reason: d === headline ? null : d.reason,
       note: null,
     });
@@ -903,6 +906,26 @@ type Counted = { count: number; capped: boolean };
 const countedWords = (c: Counted, one: string, many: string): string =>
   `${floorText(c)} ${c.count === 1 && !c.capped ? one : many}`;
 
+/**
+ * Today's state of an item nothing holds and its author kept: **the item's stored status**
+ * (`moderationStatus`), never the order of its decisions — a Report whose own hide was restored can
+ * be down since by its Post's decision, which none of its own decisions say. An access alert has no
+ * such status (its `status` is the claim's life, not a decision's), so it keeps the order of its
+ * decisions.
+ */
+function nowWords(
+  kind: RecordKind,
+  published: ItemRead['published'],
+  after: LifeEvent['after'],
+): string {
+  const status = (published as unknown as { moderationStatus?: unknown } | null)?.moderationStatus;
+  if (kind === 'accessAlert' || typeof status !== 'string') {
+    return after === 'up' ? W.upNow : W.stillDown.hidden;
+  }
+  if (status === 'visible') return W.upNow;
+  return status === 'removed' ? W.stillDown.removed : W.stillDown.hidden;
+}
+
 /** One event in an item's life, and the state it left the item in. */
 type LifeEvent = {
   at: number;
@@ -954,10 +977,9 @@ function lifeOf(args: {
     after: 'up',
   });
   for (const d of [...args.decisions].sort((a, b) => a.at - b.at)) {
-    const isKept = keptAfter(d.at, deletedAt);
     events.push({
       at: d.at,
-      title: isKept ? W.badge.kept : W.badge[d.kind],
+      title: isKept(d) ? W.badge.kept : W.badge[d.kind],
       ...(nameOf(d.decidedBy) !== null ? { sub: W.byWhom(firstOf(d.decidedBy)) } : {}),
       mark: 'hollow',
       after: 'down',
@@ -981,7 +1003,7 @@ function lifeOf(args: {
     events.push({
       at: deletedAt,
       title: kind === 'accessAlert' ? W.badge.retractedBy(author) : W.badge.deletedBy(author),
-      ...(standing !== null && !keptAfter(standing.at, deletedAt) ? { sub: W.keptAsEvidence } : {}),
+      ...(standing !== null && !isKept(standing) ? { sub: W.keptAsEvidence } : {}),
       mark: 'warn',
       after: 'down',
     });
@@ -1030,9 +1052,7 @@ function lifeOf(args: {
             : W.stillDown[standing.kind]
           : deletedAt !== null
             ? W.deletedNow
-            : last.after === 'up'
-              ? W.upNow
-              : W.stillDown.hidden,
+            : nowWords(kind, item.published, last.after),
       ...(last.after === 'down' && downSince !== undefined
         ? { sub: W.outOfSightFor(spanWords(now - downSince.at)) }
         : {}),
