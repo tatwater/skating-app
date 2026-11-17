@@ -51,7 +51,7 @@ vi.mock('@/lib/useRole', () => ({
 }));
 
 import { api } from '@skating/convex/api';
-import { PEOPLE_PAGE_SIZE } from '@skating/core';
+import { PEOPLE_LANES, PEOPLE_PAGE_SIZE } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 
 import { resetConsoleReads } from '../../reads/consoleReads';
@@ -413,6 +413,31 @@ describe('a chain kept stitched', () => {
     rerender(<PeopleListRoute />);
     expectAll();
   });
+
+  // Every list the page can show — each lane (Appeals open with support's read) and a search typed
+  // over one — pins, splits and asks on with its own lane and search on every read: the chain is the
+  // same for all, so what could differ is the arguments its later reads carry.
+  it.each([
+    ...PEOPLE_LANES.map((lane) => ({ lane, q: undefined as string | undefined })),
+    { lane: 'staff' as const, q: 'skater' },
+  ])(
+    'lane $lane, search $q: every read of the chain is the list’s own, pinned, split and asked on',
+    ({ lane, q }) => {
+      mocks.search = { lane, ...(q !== undefined && { q }) };
+      serve({ cap: PEOPLE_PAGE_SIZE, split: q === undefined });
+      const { rerender } = mount();
+      for (const n of [1, 2, 3]) put(person(n));
+      rerender(<PeopleListRoute />);
+      rerender(<PeopleListRoute />);
+      expectAll();
+      const calls = pageCalls();
+      expect(calls.some((a) => a.endCursor !== undefined)).toBe(true);
+      for (const a of calls) {
+        expect(a.lane).toBe(lane);
+        expect(a.search).toBe(q);
+      }
+    },
+  );
 
   it('reads a search’s page to split again unbounded, and goes on from where it now ends', () => {
     mocks.search = { q: 'skater' };

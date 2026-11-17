@@ -142,6 +142,7 @@ function draw(open = true) {
 }
 
 const sheet = () => screen.getByRole('dialog');
+const W_TABS = { deleted: 'Deleted', reversed: 'Reversed' } as const;
 const rowButton = (text: string) =>
   within(sheet())
     .getAllByRole('button')
@@ -232,6 +233,42 @@ describe('the reads', () => {
     // The pinned read is on its way: the first page's rows still stand, and the next page's after.
     expect(rowCount()).toBe(STANDING.length);
   });
+
+  // Every list the sheet can show — each tab, on its default (every kind merged) and narrowed to one
+  // kind — pins the page it read past with that list's own arguments.
+  it.each([
+    ...(['standing', 'deleted', 'reversed'] as const).flatMap((tab) =>
+      [null, 'comment' as const].map((kind) => ({ tab, kind })),
+    ),
+  ])(
+    '$tab, kind $kind: a page read past is pinned with the list’s own arguments',
+    async ({ tab, kind }) => {
+      const name = {
+        standing: 'contentRecord:personVerdicts',
+        deleted: 'contentRecord:personDeleted',
+        reversed: 'contentRecord:personReversed',
+      }[tab];
+      const rows = { standing: STANDING, deleted: DELETED, reversed: REVERSED }[tab] as unknown[];
+      mocks.results.set(name, (a: { cursor: string | null }) =>
+        a.cursor === null
+          ? page(rows.slice(0, 1), { isDone: false, cursor: 'p2' })
+          : page(rows.slice(1)),
+      );
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+      draw();
+      if (tab !== 'standing')
+        await userEvent.click(within(sheet()).getByRole('button', { name: W_TABS[tab] }));
+      if (kind !== null) {
+        await userEvent.click(within(sheet()).getByRole('button', { name: /Filter/ }));
+        await userEvent.click(await screen.findByRole('button', { name: /Comments/ }));
+      }
+      const own = { userId: SUBJECT.userId, ...(kind !== null && { targetType: kind }) };
+      await waitFor(() =>
+        expect(mocks.calls.get(name)).toContainEqual({ ...own, cursor: null, endCursor: 'p2' }),
+      );
+      expect(mocks.calls.get(name)).toContainEqual({ ...own, cursor: 'p2' });
+    },
+  );
 
   it('a pinned page that outgrew a page is read as its two halves', async () => {
     mocks.results.set(
