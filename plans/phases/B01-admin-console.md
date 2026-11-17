@@ -5024,14 +5024,23 @@ MA). During a full town recompute (`bodyGeo:seedAll` then `bodyGeo:computeAll`, 
 25,371 calls), `bodyGeo:townCandidates` peaked at 1,466 ms (three calls over 500 ms; median 44 ms,
 p99 89 ms) and `bodyGeo:candidates` at 1,345 ms; both finished without error. `waterBodies:
 reviewQueueCounts`, which the Overview's Corpus card and the intake page read, runs at 1.1–1.4 s on
-every load.
+every load. A second full recompute on main (2026-11-16, 31 min 47 s; 20,327 bodies in the log
+stream, none failed or parked): `candidates` peak 1,113 ms, p99 377 ms, p50 249 ms, three calls over
+1 s; `townCandidates` peak 1,102 ms, p99 66 ms, p50 40 ms, one over 1 s; `seedAll` (a mutation, 100
+pages of 250) peak 1,337 ms, p99 1,120 ms, four pages over 1 s; `reviewQueueCounts` over 1 s again.
 
 **Is that the 1 s limit? No — the limit is JavaScript time, not the wait on the database.** Measured
 on a local anonymous backend (the same backend, run locally): a query spinning JavaScript for about a
 second fails with *Function execution timed out (maximum duration: 1s)*, and one spinning 850 ms
 draws the backend's warning that it *took a long time*; a query making 3,500 index reads one after another (12.6 s of wall time locally)
 and one reading 120 documents of about 95 KB each (11 MB, 1.3 s) both finish with no warning at all.
-So the 1.47 s was almost all round trips, and no recompute call failed for time. The limits these
+So the 1.47 s was almost all round trips, and no recompute call failed for time. The same holds for
+every function here: `townCandidates`, `candidates`, `candidateOutline`, `townNamesShared`,
+`reviewQueueCounts` are queries and `seedAll` a mutation — each limited to a second of its own
+JavaScript — while `computeDue`, `computeAll` and `checkStored` are actions, which wait on those
+calls without that limit. A call "over 1 s" in the logs is wall time, round trips included; what it
+costs is that time, paid by the chain (and, for `reviewQueueCounts`, by the operator on every Overview
+load), and its JavaScript share is the one that would fail. The limits these
 reads could reach are the others: 4,096 calls, 16 MiB read, the size of a returned value — and the
 1.47 s is still a second of round trips the recompute pays on every big body.
 
@@ -5062,7 +5071,10 @@ reads the tested outlines alone once it has ranked them (`candidateOutline`, one
 together, stamp-checked: a candidate gone or reshaped between the two reads fails the attempt rather
 than test one outline and record another's stamp). The tile's own reads are unchanged: its cover
 (`waterBodies.bodiesCoveringBox`, shared with the skater map) still reads each ranked candidate whole,
-one after another, until thirteen fit — owed, below.
+one after another, until thirteen fit — owed, below. **So this moves the tail, not the median**:
+the 249 ms typical tile is that cover's cell walk and hydration (up to 341 cells and the ranked
+bodies, each a round trip), which ship nothing large; the change takes off the tiles that returned
+big outlines (the peaks) and the action's memory of every candidate's outline.
 
 **`reviewQueueCounts`: 1,206 whole bodies.** Convex counts nothing without reading it, and a queued row
 is a whole body, outline and all. The count read up to 201 a reason for six reasons, one reason after
@@ -5100,9 +5112,11 @@ the count reads at most 306 rows.
 | `candidates`, a tile | Up to 13 whole outlines returned (about 5 MB at the 20,000-vertex bound); the action held every tile's | Summaries only (about 1.5 KB each); the tile's reads unchanged; the action then reads at most 12 outlines, one document each |
 | `reviewQueueCounts` | Up to 1,206 whole bodies, six reads in turn; 1.1–1.4 s | At most 306, six reads at once; by rows read, about a quarter of the time or less — to be read back on dev |
 | Namesakes, a full recompute | One query a name a body | One a name a run (a run is four minutes) |
+| `seedAll`, a page | 250 facts rows one after another; 1.12 s p99, 1.34 s peak | 100, read together: by rows and round trips, well under half the time |
 
 **The sweep: reads in a loop bounded only by the data, or whole outlines where a summary would do**
 (the Bodies area; fixed here only in files this build owns):
+- `bodyGeo.seedAll` — a page of 250 library rows, each body's facts row read one after another (`markGeoStale`): 1.1 s at p99. Now 100 a page (`SEED_PAGE`), and `markGeoStale` reads its rows together for every caller; the same marks. Fixed.
 - `bodyGeo.store` — a stored answer's moved neighbors read one after another (at most 24 whole bodies): now together. Fixed.
 - `bodyGeo.townPage`, `countyPage` — at most 11 reads one after another: now together. Fixed.
 - `waterBodies.bodiesCoveringBox` — hydrates the ranked candidates one after another, each a whole body, including those whose box misses the query, until the limit fits (up to the 1,500-row budget); read by the skater map's `listInViewport` and by each `candidates` tile. The largest remaining cost of the recompute's neighbor step; waves over the ranked ids, admitted in order, would keep the answer. Not this build's file.
@@ -5127,7 +5141,7 @@ the count reads at most 306 rows.
    B01-3l's re-load, if every town came from TIGER).
 3. Read back: `bodyGeo:townCandidates` (peak, p99, calls over 500 ms), `bodyGeo:candidates` and
    `bodyGeo:candidateOutline` (peak, p99), `bodyGeo:townNamesShared` (how many calls a run), and
-   `waterBodies:reviewQueueCounts` (its time on an Overview load) — from the next `computeDue` runs, or
+   `waterBodies:reviewQueueCounts` (its time on an Overview load), and `bodyGeo:seedAll` (each page; 250 pages now) — from the next `computeDue` runs, or
    a `seedAll` + `computeAll` if a full run's numbers are wanted (not needed for correctness).
 
 **Owed.**
