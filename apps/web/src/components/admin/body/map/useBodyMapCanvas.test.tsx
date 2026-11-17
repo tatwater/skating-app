@@ -80,11 +80,20 @@ class FakeMap {
     const l = this.layers.get(id);
     if (l) l.paint[prop] = value;
   }
+  /** The container's box: zero while its pane is hidden. */
+  box = { clientWidth: 656, clientHeight: 830 };
   getContainer() {
-    return { clientWidth: 656, clientHeight: 830 } as HTMLElement;
+    return this.box as HTMLElement;
   }
+  jumps = 0;
   jumpTo({ zoom }: { zoom: number }) {
+    this.jumps++;
     this.zoom = Math.min(this.maxZoom, Math.max(this.minZoom, zoom));
+  }
+  /** The pane shown or hidden, or resized: MapLibre resizes and says so. */
+  resizeTo(clientWidth: number, clientHeight: number) {
+    this.box = { clientWidth, clientHeight };
+    for (const fn of this.handlers.get('resize') ?? []) fn();
   }
   // MapLibre's own rules: a floor over the ceiling, or a ceiling under the floor, throws.
   setMinZoom(z: number) {
@@ -302,5 +311,85 @@ describe('useBodyMapCanvas', () => {
     other.loaded = true;
     shell.onLoad?.(other);
     expect(other.zoom).toBeCloseTo(framed, 6);
+  });
+
+  describe('framing only in a real box (a hidden pane measures zero)', () => {
+    /** Loaded (and gone live) while its container measures `w × h`. */
+    const loadAt = (w: number, h: number, bbox = MASCOMA_BOUNDS) => {
+      const map = shell.map as FakeMap;
+      map.box = { clientWidth: w, clientHeight: h };
+      const view = render(<Harness mode="dark" bbox={bbox} />);
+      map.loaded = true;
+      shell.onLoad?.(map);
+      shell.live = true;
+      view.rerender(<Harness mode="dark" bbox={bbox} />);
+      return { map, view };
+    };
+    /** The zoom the body frames at in a real box of this size, read off a map loaded visible. */
+    const framedAt = (w: number, h: number, bbox = MASCOMA_BOUNDS) => {
+      const saved = shell.map;
+      shell.map = new FakeMap();
+      const { map, view } = loadAt(w, h, bbox);
+      view.unmount();
+      shell.map = saved;
+      shell.live = false;
+      return map.zoom;
+    };
+
+    it('a load in a hidden pane frames nothing, and the body is framed when it is shown', () => {
+      const expected = framedAt(360, 600);
+      const { map } = loadAt(0, 0);
+      expect(map.jumps).toBe(0);
+      expect(map.minZoom).toBe(0);
+      map.resizeTo(360, 600);
+      expect(map.zoom).toBeCloseTo(expected, 6);
+      expect(map.minZoom).toBeCloseTo(expected - 1.5, 6);
+    });
+
+    it('another body loaded while hidden is framed on show — the new body, not the old', () => {
+      const moved = {
+        minLng: MASCOMA_BOUNDS.minLng + 0.5,
+        minLat: MASCOMA_BOUNDS.minLat,
+        maxLng: MASCOMA_BOUNDS.maxLng + 0.02,
+        maxLat: MASCOMA_BOUNDS.maxLat + 0.01,
+      };
+      const expected = framedAt(360, 600, moved);
+      const { map, view } = loadAt(360, 600);
+      // Hidden, then another body: the shell re-creates the map in the hidden pane.
+      map.resizeTo(0, 0);
+      const next = new FakeMap();
+      next.box = { clientWidth: 0, clientHeight: 0 };
+      shell.map = next;
+      shell.live = false;
+      view.rerender(<Harness mode="dark" bbox={moved} />);
+      next.loaded = true;
+      shell.onLoad?.(next);
+      shell.live = true;
+      view.rerender(<Harness mode="dark" bbox={moved} />);
+      expect(next.jumps).toBe(0);
+      next.resizeTo(360, 600);
+      expect(next.zoom).toBeCloseTo(expected, 6);
+    });
+
+    it('a camera the operator moved is theirs: leaving and coming back never frames it again', () => {
+      const { map } = loadAt(360, 600);
+      expect(map.jumps).toBe(1);
+      map.zoom = 14.25;
+      map.resizeTo(0, 0);
+      map.resizeTo(360, 600);
+      expect(map.jumps).toBe(1);
+      expect(map.zoom).toBe(14.25);
+    });
+
+    it('a resize while hidden gives the shown map the floor of its new size', () => {
+      const { map } = loadAt(0, 0);
+      map.resizeTo(0, 0);
+      const expected = framedAt(390, 700);
+      map.resizeTo(390, 700);
+      expect(map.zoom).toBeCloseTo(expected, 6);
+      expect(map.minZoom).toBeCloseTo(expected - 1.5, 6);
+      // Framed once, at the size it was shown at.
+      expect(map.jumps).toBe(1);
+    });
   });
 });

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useEffect, useRef, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { computedColor, sameColor } from '@/components/kit/measure';
@@ -9,8 +10,11 @@ import {
   faceLoaded,
   must,
 } from '@/components/kit/storyKit';
+import { fitCamera } from '@/lib/mapSurface';
+import { frameInRealBox } from '../map/bodyMapFraming';
+import { FIT_PADDING } from '../map/useBodyMapCanvas';
 import { BodyBoard } from './bodyBoard';
-import { CAPPED_HISTORY, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
+import { CAPPED_HISTORY, MASCOMA_BOUNDS, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
 
 /**
@@ -375,5 +379,106 @@ export const PhoneOpenAnAsk: Story = {
     );
     await waitFor(() => expect(slot(canvasElement, 'body-tab-panel')).toHaveFocus());
     await expect(getComputedStyle(slot(canvasElement, 'body-left')).display).toBe('none');
+  },
+};
+
+/** The probe's controls, for the play: its map's load, which the story fires when it chooses. */
+const PROBE = { load: () => {} };
+
+/**
+ * The map's framing over the pane's real box: a stand-in map whose container is the pane's own
+ * element and whose resizes are the browser's (`ResizeObserver`, as MapLibre's), framed by the
+ * console's one rule (`frameInRealBox`). Its zoom is written where the play can read it.
+ */
+function FramingProbe() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [zoom, setZoom] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current as HTMLDivElement;
+    const framed = { current: null as string | null };
+    const map = {
+      getContainer: () => el,
+      setMinZoom: () => {},
+      setMaxZoom: () => {},
+      jumpTo: ({ zoom: z }: { zoom: number }) => setZoom(z),
+    };
+    let loaded = false;
+    const observer = new ResizeObserver(() => {
+      if (loaded) frameInRealBox(map, MASCOMA_BOUNDS, FIT_PADDING, framed);
+    });
+    observer.observe(el);
+    PROBE.load = () => {
+      loaded = true;
+      frameInRealBox(map, MASCOMA_BOUNDS, FIT_PADDING, framed);
+    };
+    return () => observer.disconnect();
+  }, []);
+  return <div ref={ref} data-slot="framing-probe" data-zoom={zoom ?? ''} className="size-full" />;
+}
+
+/**
+ * Greptile's P1 on #144, over the real layout: the map's pane is left before its map loads, so the
+ * load lands in a hidden pane — a box the browser measures zero. Nothing is framed then; shown
+ * again, the body is framed for the pane's real size, once.
+ */
+export const PhoneMapLoadsHidden: Story = {
+  name: 'Phone | Map loads hidden',
+  args: { bare: true, className: 'h-[52.75rem] w-[22.5rem]', map: <FramingProbe /> },
+  play: async ({ canvasElement }) => {
+    const page = () => slot(canvasElement, 'body-console');
+    const pane = (name: string) =>
+      must(page().querySelector<HTMLElement>(`:scope > [data-pane="${name}"]`));
+    const probe = () => slot(canvasElement, 'framing-probe');
+    await waitFor(() => expect(page()).toHaveAttribute('data-narrow'));
+    await userEvent.click(within(pane('body')).getByRole('button', { name: 'Show the map' }));
+    await waitFor(() => expect(probe().clientWidth).toBeGreaterThan(0));
+    await userEvent.click(within(pane('map')).getByRole('button', { name: 'Back to the body' }));
+    await waitFor(() => expect(probe().clientWidth).toBe(0));
+    PROBE.load();
+    await expect(probe().dataset.zoom).toBe('');
+    await userEvent.click(within(pane('body')).getByRole('button', { name: 'Show the map' }));
+    await waitFor(() => expect(probe().dataset.zoom).not.toBe(''));
+    const expected = fitCamera(
+      MASCOMA_BOUNDS,
+      probe().clientWidth,
+      probe().clientHeight,
+      FIT_PADDING,
+    ).zoom;
+    await expect(Number(probe().dataset.zoom)).toBeCloseTo(Math.min(17, expected), 6);
+    // Framed for a real pane, not one pixel of room: past the zoom a 1 px box would give.
+    await expect(Number(probe().dataset.zoom)).toBeGreaterThan(
+      fitCamera(MASCOMA_BOUNDS, 1, 1, FIT_PADDING).zoom + 5,
+    );
+  },
+};
+
+/**
+ * Going to another pane and back keeps each pane's place: a hidden box loses its scroll in the
+ * browser, so the body's column (and its folded lockup) and the tab's panel come back where the
+ * operator left them — a switch is not a tab change, which opens a tab at its top.
+ */
+export const PhoneKeepsThePlace: Story = {
+  name: 'Phone | Coming back keeps the place',
+  args: { bare: true, className: 'h-[52.75rem] w-[22.5rem]' },
+  play: async ({ canvasElement }) => {
+    const page = () => slot(canvasElement, 'body-console');
+    const pane = (name: string) =>
+      must(page().querySelector<HTMLElement>(`:scope > [data-pane="${name}"]`));
+    const scroller = () => slot(canvasElement, 'body-left-scroll');
+    await waitFor(() => expect(page()).toHaveAttribute('data-narrow'));
+    await faceLoaded(slot(canvasElement, 'record-lockup-name'));
+    scroller().scrollTop = 400;
+    scroller().dispatchEvent(new Event('scroll'));
+    await waitFor(() =>
+      expect(slot(canvasElement, 'record-lockup')).toHaveAttribute('data-folded'),
+    );
+    const left = scroller().scrollTop;
+    await expect(left).toBeGreaterThan(0);
+    await userEvent.click(within(pane('body')).getByRole('button', { name: 'Show the tabs' }));
+    await waitFor(() => expect(getComputedStyle(pane('inspector')).display).not.toBe('none'));
+    await userEvent.click(within(pane('inspector')).getByRole('button', { name: 'Back to the body' }));
+    await waitFor(() => expect(getComputedStyle(pane('body')).display).not.toBe('none'));
+    await waitFor(() => expect(scroller().scrollTop).toBeCloseTo(left, 0));
+    await expect(slot(canvasElement, 'record-lockup')).toHaveAttribute('data-folded');
   },
 };

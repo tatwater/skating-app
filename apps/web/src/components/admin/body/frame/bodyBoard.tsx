@@ -86,6 +86,8 @@ export type BodyBoardProps = Partial<
    * the frame's own narrow layout is not this page's to test).
    */
   bare?: boolean;
+  /** The map pane's content in place of the still (a story's probe of the pane's box). */
+  map?: ReactNode;
   className?: string;
 };
 
@@ -143,6 +145,7 @@ export function BodyBoard({
   hoverId = null,
   tabScene = null,
   bare = false,
+  map: mapOverride,
   className = 'h-[56.25rem] w-[90rem]',
 }: BodyBoardProps) {
   const identity = loading ? undefined : givenIdentity;
@@ -183,19 +186,21 @@ export function BodyBoard({
         onReturn={() => {}}
         status="Last campaign 12 Oct"
         map={
-          <Measured>
-            {(w, h) => (
-              <BodyMapStillView
-                bbox={MASCOMA_BOUNDS}
-                scene={scene}
-                resetKey={tab}
-                width={w}
-                height={h}
-                hoverId={hoverId}
-                foot={foot}
-              />
-            )}
-          </Measured>
+          mapOverride ?? (
+            <Measured>
+              {(w, h) => (
+                <BodyMapStillView
+                  bbox={MASCOMA_BOUNDS}
+                  scene={scene}
+                  resetKey={tab}
+                  width={w}
+                  height={h}
+                  hoverId={hoverId}
+                  foot={foot}
+                />
+              )}
+            </Measured>
+          )
         }
         tabPanel={
           tab === 'shape' ? (
