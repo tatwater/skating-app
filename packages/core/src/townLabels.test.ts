@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { namesakeTells, townKindOf, townLabel, townName } from './townLabels';
+import { namesakeKindOf, namesakeTells, townKindOf, townLabel, townName } from './townLabels';
 
 describe('town labels (B01-3l)', () => {
   it('the kind is TIGER’s full name past the name — read, never guessed', () => {
@@ -85,5 +85,81 @@ describe('namesakes of one kind are told apart by their county (B01-3m)', () => 
     const seed = Date.now() % 2_147_483_647;
     console.info(`town label namesakes: seed ${seed}`);
     fc.assert(property, { seed, numRuns: 200 });
+  });
+});
+
+describe('mid-load: a namesake whose full name has not loaded yet (B01-3p)', () => {
+  it('a namesake’s kind: unknown without a full name, none when the full name gives none', () => {
+    expect(namesakeKindOf('Plattsburgh', undefined)).toBeNull();
+    expect(namesakeKindOf('Plattsburgh', 'Plattsburgh')).toBe('');
+    expect(namesakeKindOf('Plattsburgh', 'Plattsburgh city')).toBe('city');
+  });
+
+  it('its kind is unknown, never a kind of its own: the town reads by its name alone', () => {
+    // The city has loaded its full name; the town of the same name has not. Before, the town's
+    // blank counted as a second kind, so the city read "(city)" while the town read bare.
+    const midLoad = [
+      { id: 'c', kind: 'city' },
+      { id: 't', kind: null },
+    ];
+    expect(namesakeTells('c', 'city', midLoad)).toEqual({ kind: false, county: false });
+    // A full name that gives no kind ('') is known: it still tells.
+    expect(
+      namesakeTells('c', 'city', [
+        { id: 'c', kind: 'city' },
+        { id: 't', kind: '' },
+      ]),
+    ).toEqual({ kind: true, county: false });
+  });
+
+  it('any namesake still loading holds every tell back, so no label claims what is not known', () => {
+    const three = [
+      { id: 'a', kind: 'city' },
+      { id: 'b', kind: 'town' },
+      { id: 'c', kind: null },
+    ];
+    for (const own of ['a', 'b']) {
+      expect(namesakeTells(own, own === 'a' ? 'city' : 'town', three)).toEqual({
+        kind: false,
+        county: false,
+      });
+    }
+    // Once it loads, the rule reads as before.
+    expect(
+      namesakeTells('a', 'city', [
+        { id: 'a', kind: 'city' },
+        { id: 'b', kind: 'town' },
+        { id: 'c', kind: 'city' },
+      ]),
+    ).toEqual({ kind: true, county: true });
+  });
+
+  /** Whatever is loaded, a tell shown is one the loaded namesakes prove: never a wrong kind. */
+  const loading = fc.array(
+    fc.record({
+      kind: fc.constantFrom('town', 'city', 'village', '', null),
+    }),
+    { minLength: 1, maxLength: 8 },
+  );
+  const sound = fc.property(loading, (set) => {
+    const all = set.map((n, i) => ({ id: String(i), ...n }));
+    for (const n of all) {
+      if (n.kind === null) continue;
+      const tells = namesakeTells(n.id, n.kind, all);
+      const others = all.filter((o) => o.id !== n.id);
+      if (tells.kind || tells.county) expect(others.every((o) => o.kind !== null)).toBe(true);
+      if (tells.kind) expect(others.some((o) => o.kind !== n.kind)).toBe(true);
+      if (tells.county) expect(others.some((o) => o.kind === n.kind)).toBe(true);
+    }
+  });
+
+  it.each([5, 77, 2027])('a tell is only ever one the loaded namesakes prove (seed %i)', (seed) => {
+    fc.assert(sound, { seed, numRuns: 300 });
+  });
+
+  it('a tell is only ever one the loaded namesakes prove (a random seed, logged)', () => {
+    const seed = Date.now() % 2_147_483_647;
+    console.info(`town label mid-load: seed ${seed}`);
+    fc.assert(sound, { seed, numRuns: 300 });
   });
 });

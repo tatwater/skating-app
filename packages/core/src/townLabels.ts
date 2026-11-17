@@ -20,10 +20,13 @@ export interface TownLabelInput {
   readonly inCounty?: string | undefined;
 }
 
-/** A subdivision sharing a town's name in its state: its boundary, and its kind ('' for none). */
+/**
+ * A subdivision sharing a town's name in its state: its boundary, and its kind — '' when its full
+ * name gives none, `null` when it carries no full name yet (mid-load, B01-3p): not known.
+ */
 export interface Namesake {
   readonly id: string;
-  readonly kind: string;
+  readonly kind: string | null;
 }
 
 /**
@@ -31,6 +34,10 @@ export interface Namesake {
  * subdivision of its name in its state, nothing. Its kind shows where the namesakes carry more than
  * one kind; its county shows where another namesake has its own kind — the kind alone can't tell
  * them apart. Both, where both are needed ("Plattsburgh (city, Clinton County)").
+ *
+ * **A namesake whose kind is not known yet holds every tell back** (B01-3p): mid-load, before its
+ * full name arrives, it is neither another kind nor this one, so the town reads by its name alone —
+ * never a kind or a county the loaded layer does not prove. Its next recompute tells it.
  */
 export function namesakeTells(
   id: string,
@@ -38,9 +45,16 @@ export function namesakeTells(
   namesakes: readonly Namesake[],
 ): { kind: boolean; county: boolean } {
   const others = namesakes.filter((n) => n.id !== id);
-  if (others.length === 0) return { kind: false, county: false };
+  if (others.length === 0 || others.some((n) => n.kind === null)) {
+    return { kind: false, county: false };
+  }
   const kinds = new Set([kind, ...others.map((n) => n.kind)]);
   return { kind: kinds.size > 1, county: others.some((n) => n.kind === kind) };
+}
+
+/** A boundary's kind as a namesake carries it: `null` without a full name, '' with one giving none. */
+export function namesakeKindOf(name: string, fullName: string | undefined): string | null {
+  return fullName === undefined ? null : (townKindOf(name, fullName) ?? '');
 }
 
 /**
