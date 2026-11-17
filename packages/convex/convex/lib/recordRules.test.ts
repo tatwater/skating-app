@@ -10,6 +10,7 @@ import type { Id } from '../_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE } from './authorDeletion';
 import { OWN_CONTENT_REFUSAL } from './ownContent';
 import {
+  ALERT_HAS_NO_STATUS,
   ERASED_ALREADY,
   KEEP_ALREADY_HELD,
   KEEP_NOT_DELETED,
@@ -29,6 +30,8 @@ import {
   recordFactsOf,
   recordLevers,
   recordRefusal,
+  TAKEDOWN_ALREADY,
+  takedownRefusal,
 } from './recordRules';
 
 const KINDS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
@@ -45,6 +48,8 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
     membersWithdrawn: fc.constantFrom<boolean | 'unknown'>(true, false, 'unknown'),
     status: fc.constantFrom('visible' as const, 'hidden' as const, 'removed' as const),
     standing: fc.boolean(),
+    kind: fc.constantFrom('hidden' as const, 'removed' as const, 'retracted' as const),
+    membersUp: fc.option(fc.nat({ max: 2 }), { nil: undefined }),
     post: fc.option(
       fc.record({ visibleAfter: fc.nat({ max: 3 }), choosable: fc.nat({ max: 3 }) }),
       { nil: undefined },
@@ -52,8 +57,10 @@ const factsArb: fc.Arbitrary<RecordFacts> = fc
     // Theirs, someone else's, or no one's (gone): a moderator never decides their own (D269).
     authorId: fc.constantFrom<Id<'profiles'> | null>(ME, OTHER, null),
   })
-  .map(({ membersWithdrawn, post, gone, ...f }) => ({
+  .map(({ membersWithdrawn, post, gone, kind, membersUp, ...f }) => ({
     ...f,
+    heldAs: f.standing ? kind : null,
+    ...(f.targetType === 'post' && membersUp !== undefined ? { membersUp } : {}),
     // Gone is erased too; an erased shell (a comment's placeholder) is not gone.
     ...(gone && f.erased ? { gone: true } : {}),
     status: f.targetType === 'accessAlert' ? null : f.status,
@@ -123,6 +130,7 @@ describe('lib/recordRules', () => {
       withdrawn: false,
       status: 'hidden',
       standing: true,
+      heldAs: 'hidden',
       authorId: OTHER,
     };
     expect(recordRefusal({ ...base, erased: true }, 'restore')).toBe(ERASED_ALREADY);
@@ -162,6 +170,39 @@ describe('lib/recordRules', () => {
     );
   });
 
+  test('a takedown of what a decision of its kind holds changes nothing — unless it still moves the content', () => {
+    const held: RecordFacts = {
+      targetType: 'report',
+      erased: false,
+      authorDeleted: false,
+      withdrawn: false,
+      status: 'hidden',
+      standing: true,
+      heldAs: 'hidden',
+      authorId: OTHER,
+    };
+    expect(takedownRefusal(held, 'hidden')).toBe(TAKEDOWN_ALREADY.hidden);
+    expect(recordRefusal(held, 'hideAgain')).toBe(TAKEDOWN_ALREADY.hidden);
+    // Another kind holds it, or none: the decision is new.
+    expect(takedownRefusal(held, 'removed')).toBe(null);
+    expect(takedownRefusal({ ...held, standing: false, heldAs: null }, 'hidden')).toBe(null);
+    // Held, but not at that status yet: the content moves.
+    expect(takedownRefusal({ ...held, status: 'visible' }, 'hidden')).toBe(null);
+    // Its author deleted it: the decision is all a takedown writes, whatever the status.
+    const deleted = { ...held, authorDeleted: true, withdrawn: true, status: 'removed' } as const;
+    expect(takedownRefusal(deleted, 'hidden')).toBe(TAKEDOWN_ALREADY.hidden);
+    // A Post: a Report still up is taken down with it; unread, the item decides.
+    const post: RecordFacts = { ...held, targetType: 'post', withdrawn: 'unknown' };
+    expect(takedownRefusal(post, 'hidden')).toBe(RECORD_CHECK_ON_ITEM);
+    expect(takedownRefusal({ ...post, membersUp: 1 }, 'hidden')).toBe(null);
+    expect(takedownRefusal({ ...post, membersUp: 0 }, 'hidden')).toBe(TAKEDOWN_ALREADY.hidden);
+    // Erased, or an alert: nothing to take down.
+    expect(takedownRefusal({ ...held, erased: true }, 'hidden')).toBe(ERASED_ALREADY);
+    const alert: RecordFacts = { ...held, targetType: 'accessAlert', status: null };
+    expect(takedownRefusal(alert, 'hidden')).toBe(ALERT_HAS_NO_STATUS);
+    expect(recordRefusal(alert, 'restore')).toBe(ALERT_HAS_NO_STATUS);
+  });
+
   test('a standing Post that is up: Restore ends its decision — checked on the item, exact in the pane', () => {
     const viewer: RecordViewer = { _id: ME, role: 'moderator', canEditLedger: false };
     const up: RecordFacts = {
@@ -171,6 +212,7 @@ describe('lib/recordRules', () => {
       withdrawn: 'unknown',
       status: 'visible',
       standing: true,
+      heldAs: 'hidden',
       authorId: OTHER,
     };
     // A list row, its members unread, sends the moderator to the item (as for a Post that is down).
@@ -190,6 +232,7 @@ describe('lib/recordRules', () => {
       withdrawn: false,
       status: null,
       standing: true,
+      heldAs: 'retracted',
       authorId: OTHER,
     };
     expect(recordLevers(viewer, alert)).toEqual({});
@@ -200,7 +243,7 @@ describe('lib/recordRules', () => {
   });
 
   test('the facts of a document: gone is erased; a Post its author didn’t delete waits on its members', () => {
-    expect(recordFactsOf('report', null, true)).toMatchObject({ erased: true, standing: true });
+    expect(recordFactsOf('report', null, 'hidden')).toMatchObject({ erased: true, standing: true });
     const post = {
       _id: 'p',
       _creationTime: 0,
@@ -212,9 +255,9 @@ describe('lib/recordRules', () => {
       createdAt: 0,
       updatedAt: 0,
     } as never;
-    expect(recordFactsOf('post', post, true)).toMatchObject({ withdrawn: 'unknown' });
+    expect(recordFactsOf('post', post, 'hidden')).toMatchObject({ withdrawn: 'unknown' });
     expect(
-      recordFactsOf('post', post, true, {
+      recordFactsOf('post', post, 'hidden', {
         everyWithdrawn: true,
         plan: { visibleAfter: 0, choosable: 0 },
       }),
@@ -225,7 +268,7 @@ describe('lib/recordRules', () => {
       retractedByUserId: 'a',
       status: 'retracted',
     } as never;
-    expect(recordFactsOf('accessAlert', alert, false)).toMatchObject({
+    expect(recordFactsOf('accessAlert', alert, null)).toMatchObject({
       authorDeleted: true,
       withdrawn: true,
       status: null,
@@ -236,6 +279,6 @@ describe('lib/recordRules', () => {
       erasedAt: 2,
       moderationStatus: 'removed',
     } as never;
-    expect(recordFactsOf('comment', comment, false)).toMatchObject({ erased: true });
+    expect(recordFactsOf('comment', comment, null)).toMatchObject({ erased: true });
   });
 });

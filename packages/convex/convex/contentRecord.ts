@@ -210,7 +210,10 @@ interface ListArgs {
 
 /** The levers on an item as a list row sees it (its members unread: `lib/recordRules`). */
 function rowLevers(viewer: RecordViewer, load: VerdictLoad, standing: boolean): RecordLevers {
-  return recordLevers(viewer, recordFactsOf(load.verdict.targetType, load.target, standing));
+  return recordLevers(
+    viewer,
+    recordFactsOf(load.verdict.targetType, load.target, standing ? load.verdict.kind : null),
+  );
 }
 
 /**
@@ -627,7 +630,7 @@ export async function deletedPage(
     eraseAt: c.doc.eraseAt ?? null,
     content: contentOf(c.kind, c.doc),
     ...placeOf({ target: c.doc, report: c.report }, c.kind, names),
-    can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, false)),
+    can: recordLevers(viewer, recordFactsOf(c.kind, c.doc, null)),
   }));
   return pageOf(
     page,
@@ -1025,6 +1028,8 @@ async function postMembersOf(ctx: QueryCtx, reads: ReadBudget, post: Doc<'posts'
   return {
     everyWithdrawn: known.every((m) => m.report === null || m.report.authorDeletedAt !== undefined),
     plan: { visibleAfter: plan.visibleAfter, choosable: plan.choosable },
+    // Its Reports up now — what a takedown of the Post would still move (`takedownRefusal`).
+    up: known.filter((m) => m.report?.moderationStatus === 'visible').length,
   };
 }
 
@@ -1180,7 +1185,10 @@ export const item = query({
       })),
       /** More decisions than the pane read (or the budget reached): these are the newest. */
       decisionsCapped: newest.length > ITEM_DECISIONS || shown.length < decisions.length,
-      can: recordLevers(viewer, recordFactsOf(targetType, target, standing, members)),
+      can: recordLevers(
+        viewer,
+        recordFactsOf(targetType, target, decisions.find((d) => d.standing)?.kind ?? null, members),
+      ),
       pending,
     };
   },

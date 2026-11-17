@@ -73,7 +73,7 @@ import {
   recordActorRefusal,
   recordFactsOf,
   recordRefusal,
-  TAKEDOWN_ALREADY,
+  takedownRefusal,
   UNDO_LEAVES_POST_EMPTY,
 } from './lib/recordRules';
 import { clearFailure } from './lib/recurringWork';
@@ -542,22 +542,13 @@ export const setModerationStatus = mutation({
 
 export type ContentTargetType = keyof typeof MODERATION_TABLE;
 
-/** Whether a standing decision of `kind` already holds the item (the writers keep at most one). */
-async function heldAs(
-  ctx: MutationCtx,
-  targetType: VerdictTargetType,
-  targetId: string,
-  kind: 'hidden' | 'removed',
-): Promise<boolean> {
-  return (await standingVerdictsOn(ctx, targetType, targetId)).some((v) => v.kind === kind);
-}
-
-/** Whether any of a Post's Reports is up — a takedown of the Post would take it down too. */
-async function anyMemberUp(ctx: MutationCtx, post: Doc<'posts'>): Promise<boolean> {
+/** How many of a Post's Reports are up — a takedown of the Post takes those down too. */
+async function membersUpOf(ctx: MutationCtx, post: Doc<'posts'>): Promise<number> {
+  let up = 0;
   for (const id of post.reportIds) {
-    if ((await ctx.db.get(id))?.moderationStatus === 'visible') return true;
+    if ((await ctx.db.get(id))?.moderationStatus === 'visible') up++;
   }
-  return false;
+  return up;
 }
 
 /**
@@ -617,29 +608,39 @@ export async function setContentStatus(
     ) {
       throw new ConvexError('Reports can only be chosen when restoring a post');
     }
-    // The record's one rule (`lib/recordRules`), over the item as read here: erased is gone (D248) —
-    // nothing is left to judge, and a verdict on it would be a record of nothing — and author-deleted
-    // content never comes back (D248, founder ruling 2026-11-13) — not by restore, not by a Post's
-    // choice, not by undo — and nothing else moves it either: it stays as the deletion left it. The
-    // standing verdict is not read: neither refusal here rests on it.
-    const facts = recordFactsOf(args.targetType, typedTarget, false);
+    // The record's one rule (`lib/recordRules`), over the item as read here — the decision standing on
+    // it (the writers keep at most one) and, for a Post's takedown, how many of its Reports are up —
+    // all read before anything is written. Erased is gone (D248): nothing is left to judge, and a
+    // verdict on it would be a record of nothing. Author-deleted content never comes back (D248,
+    // founder ruling 2026-11-13) — not by restore, not by a Post's choice, not by undo — and nothing
+    // else moves it either: it stays as the deletion left it.
+    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
+    const membersUp =
+      args.targetType === 'post' && args.status !== 'visible'
+        ? await membersUpOf(ctx, target as Doc<'posts'>)
+        : undefined;
+    const facts = recordFactsOf(
+      args.targetType,
+      typedTarget,
+      held,
+      membersUp !== undefined ? { up: membersUp } : undefined,
+    );
     // Never on their own content (D269) — a forward write or an undo: the lever's one rule.
     const own = recordActorRefusal(actor, facts);
     if (own !== null) throw new ConvexError(own);
     if (facts.erased) throw new ConvexError(ERASED_ALREADY);
     if (facts.authorDeleted) {
       if (asUndo) throw new ConvexError(authorDeletedRefusal(args.status, true));
-      if (args.status === 'visible') {
-        throw new ConvexError(recordRefusal(facts, 'restore') as string);
-      }
-      // A moderator's hide or remove on content its author already deleted (a flag that arrives
-      // after the delete) is still their decision, and goes on the person's record as evidence
-      // (D248) — the content stays exactly as the deletion left it, and the verdict holds it back
-      // from erasure until a moderator overturns it. One of that kind already holding it: nothing
-      // would change, so nothing is written (D270).
-      if (await heldAs(ctx, args.targetType, args.targetId, args.status)) {
-        throw new ConvexError(TAKEDOWN_ALREADY[args.status]);
-      }
+      // A restore is refused (D248); a hide or remove on content its author already deleted (a flag
+      // that arrives after the delete) is still the moderator's decision, and goes on the person's
+      // record as evidence — the content stays exactly as the deletion left it, and the verdict holds
+      // it back from erasure until a moderator overturns it — unless one of that kind already holds
+      // it, when nothing would change (D270). One rule answers all three, as the sheet's levers do.
+      const why =
+        args.status === 'visible'
+          ? recordRefusal(facts, 'restore')
+          : takedownRefusal(facts, args.status);
+      if (why !== null || args.status === 'visible') throw new ConvexError(why as string);
       const actionId = await recordOnWithdrawn(ctx, actor, {
         targetType: args.targetType,
         target: typedTarget,
@@ -650,31 +651,32 @@ export async function setContentStatus(
       return { targetId, actionId };
     }
 
-    // A restore of what is already up changes nothing, so it writes nothing (a Post given a choice
-    // says why its own way, below).
-    if (
-      !asUndo &&
-      args.status === 'visible' &&
-      priorStatus === 'visible' &&
-      !args.withReportIds?.length
-    ) {
-      // Unless a decision still stands on it, which the restore ends (the rule reads it).
-      const standing = (await standingVerdictsOn(ctx, args.targetType, args.targetId)).length > 0;
-      // A Post that is up shows a Report (D186), as its plan below would find.
-      const shown = args.targetType === 'post' ? { post: { visibleAfter: 1, choosable: 0 } } : {};
-      const why = recordRefusal({ ...facts, standing, ...shown }, 'restore');
+    // A forward write asks the rule (an undo puts back what its row recorded, and refuses its own
+    // way): a takedown of what a decision of that kind already holds changes nothing, so it writes
+    // nothing (D270); a restore of what is up changes nothing unless a decision still stands on it,
+    // which the restore ends; a Post's restore that would show none of its Reports needs a choice.
+    let forwardPlan: PostRestorePlan | undefined;
+    if (!asUndo) {
+      if (args.status === 'visible' && args.targetType === 'post') {
+        // A choice is for a Post coming back. On one that is up already, the chosen Reports would be
+        // restored as the Post's, by a row whose undo has nothing to put the Post back to.
+        if (args.withReportIds?.length && priorStatus === 'visible') {
+          throw new ConvexError('This post is already up. Restore its reports one at a time.');
+        }
+        // Decided before anything is written: a Post is never stored visible with none of its
+        // Reports visible (D186; founder call, 2026-11-13).
+        forwardPlan = await planPostRestore(ctx, target as Doc<'posts'>, {
+          ...(args.withReportIds !== undefined ? { chosen: args.withReportIds } : {}),
+        });
+      }
+      const why =
+        args.status === 'visible'
+          ? recordRefusal(
+              forwardPlan !== undefined ? { ...facts, post: forwardPlan } : facts,
+              'restore',
+            )
+          : takedownRefusal(facts, args.status);
       if (why !== null) throw new ConvexError(why);
-    }
-    // A hide or removal of what a decision of that kind already holds changes nothing — the item, its
-    // record, and on a Post none of its Reports are up to take down — so it writes nothing (D270).
-    if (
-      !asUndo &&
-      args.status !== 'visible' &&
-      priorStatus === args.status &&
-      (await heldAs(ctx, args.targetType, args.targetId, args.status)) &&
-      !(args.targetType === 'post' && (await anyMemberUp(ctx, target as Doc<'posts'>)))
-    ) {
-      throw new ConvexError(TAKEDOWN_ALREADY[args.status]);
     }
     // A restore's default reason is marked on every row it writes — the members it brings back and a
     // Post it derives back up — as on its own, so History and the record sheet leave each one out.
@@ -714,25 +716,12 @@ export async function setContentStatus(
           cascaded.push(await moveMember(ctx, post._id, report, args.status, audit));
         }
       } else {
-        // A choice is for a Post coming back. On one that is up already, the chosen Reports would be
-        // restored as the Post's, by a row whose undo has nothing to put the Post back to.
-        if (args.withReportIds?.length && post.moderationStatus === 'visible') {
-          throw new ConvexError('This post is already up. Restore its reports one at a time.');
-        }
-        // Decided before anything is written: a Post is never stored visible with none of its
-        // Reports visible (D186; founder call, 2026-11-13).
-        const plan = await planPostRestore(ctx, post, {
-          reviveRemoved: args.reviveRemoved === true,
-          ...(args.withReportIds !== undefined ? { chosen: args.withReportIds } : {}),
-        });
-        if (plan.visibleAfter === 0) {
-          // An undo never chooses; a forward restore refuses by the record's rule, over the plan.
-          throw new ConvexError(
-            asUndo
-              ? UNDO_LEAVES_POST_EMPTY
-              : (recordRefusal({ ...facts, post: plan }, 'restore') as string),
-          );
-        }
+        // The forward restore's plan, the rule already asked of it; an undo plans its own (it may
+        // revive what an old removal took down) and never chooses, so an empty one is refused.
+        const plan =
+          forwardPlan ??
+          (await planPostRestore(ctx, post, { reviveRemoved: args.reviveRemoved === true }));
+        if (plan.visibleAfter === 0) throw new ConvexError(UNDO_LEAVES_POST_EMPTY);
         await ctx.db.patch(post._id, { moderationStatus: 'visible' });
         for (const report of plan.revive) {
           cascaded.push(await moveMember(ctx, post._id, report, 'visible', audit));
@@ -1078,16 +1067,30 @@ export const overturnVerdict = mutation({
     /** Optional: a give-back takes a reason only if there is one to give (the record sheet's dialog). */
     reason: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ targetId: string; actionId: Id<'moderationActions'>; eraseAt: number | null }> => {
+  handler: async (ctx, args): Promise<OverturnResult> => {
     // An alert's verdict is the alert lever's, as its retraction and pin are. Each gate is spelled
     // as a literal so the D217 guard (`capabilityGates.test.ts`) reads both.
     const actor =
       args.targetType === 'accessAlert'
         ? await requireCapability(ctx, 'access.alert')
         : await requireCapability(ctx, 'content.moderate');
+    return overturnVerdictImpl(ctx, actor, args);
+  },
+});
+
+type OverturnResult = {
+  targetId: string;
+  actionId: Id<'moderationActions'>;
+  eraseAt: number | null;
+};
+
+/** {@link overturnVerdict}'s body, for a caller already let in (the record's model tests probe it). */
+export async function overturnVerdictImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { targetType: VerdictTargetType; targetId: string; reason?: string },
+): Promise<OverturnResult> {
+  {
     const given = args.reason?.trim() ?? '';
     const reason = given.length > 0 ? typed(given) : null;
     const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
@@ -1097,7 +1100,7 @@ export const overturnVerdict = mutation({
     // retracted (who retracted it, as `retract` reads it, so a verdict recorded on an alert retracted
     // before `retractedAt` existed is overturnable before the clocks backfill reaches it), or a Post
     // every Report of which they deleted — and a verdict standing on it.
-    const standing = (await standingVerdictsOn(ctx, args.targetType, args.targetId)).length > 0;
+    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
     const post =
       args.targetType === 'post' && authorDeletedAtOf(target as Doc<'posts'>) === undefined
         ? { everyWithdrawn: await everyMemberWithdrawn(ctx, target as Doc<'posts'>) }
@@ -1110,7 +1113,7 @@ export const overturnVerdict = mutation({
         | Doc<'comments'>
         | Doc<'hazards'>
         | Doc<'accessAlerts'>,
-      standing,
+      held,
       post,
     );
     // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
@@ -1132,8 +1135,8 @@ export const overturnVerdict = mutation({
     // `null` while something else still holds it (an open flag) or its erasure is parked.
     const after = await ctx.db.get(targetId);
     return { targetId, actionId, eraseAt: after?.eraseAt ?? null };
-  },
-});
+  }
+}
 
 /** Each kind as an audit reason names it. */
 const KIND_WORD: Record<VerdictTargetType, string> = {
@@ -1162,19 +1165,30 @@ export const keepOnRecord = mutation({
       args.targetType === 'accessAlert'
         ? await requireCapability(ctx, 'access.alert')
         : await requireCapability(ctx, 'content.moderate');
+    return keepOnRecordImpl(ctx, actor, args);
+  },
+});
+
+/** {@link keepOnRecord}'s body, for a caller already let in (the record's model tests probe it). */
+export async function keepOnRecordImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { targetType: VerdictTargetType; targetId: string; reason: string },
+): Promise<RecordWriteResult> {
+  {
     const { reason } = reasonFor(args.reason, true, '');
     const kept = typed(reason);
     const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!targetId || !target) throw new ConvexError('Target not found');
-    const standing = (await standingVerdictsOn(ctx, args.targetType, args.targetId)).length > 0;
+    const held = (await standingVerdictsOn(ctx, args.targetType, args.targetId))[0]?.kind ?? null;
     const doc = target as
       | Doc<'reports'>
       | Doc<'posts'>
       | Doc<'comments'>
       | Doc<'hazards'>
       | Doc<'accessAlerts'>;
-    const keepFacts = recordFactsOf(args.targetType, doc, standing);
+    const keepFacts = recordFactsOf(args.targetType, doc, held);
     // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
     const why = recordActorRefusal(actor, keepFacts) ?? recordRefusal(keepFacts, 'keep');
     if (why !== null) throw new ConvexError(why);
@@ -1193,8 +1207,8 @@ export const keepOnRecord = mutation({
             keep: true,
           });
     return recordWriteResult(ctx, actor, targetId, actionId);
-  },
-});
+  }
+}
 
 /**
  * Resolve a content flag (D32/D37). `requireCapability('inbox.flag')`; sets the flag terminal status
