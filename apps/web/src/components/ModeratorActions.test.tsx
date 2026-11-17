@@ -4,14 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   refuse: (() => {}) as (e: Error) => void,
+  land: () => {},
   canModerate: true,
   toasts: [] as { title: string; description?: string }[],
 }));
 vi.mock('convex/react', () => ({
   useQuery: () => undefined,
   useMutation: () => () =>
-    new Promise((_, reject) => {
+    new Promise((resolve, reject) => {
       mocks.refuse = reject;
+      mocks.land = () => resolve(null);
     }),
 }));
 vi.mock('@/lib/useRole', () => ({ useRole: () => ({ canModerate: mocks.canModerate }) }));
@@ -55,6 +57,19 @@ describe('ModeratorActions', () => {
     expect(screen.queryByText('Already hidden')).toBeNull();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('landed, it closes, its reason with it — never left armed for a second takedown', async () => {
+    render(<ModeratorActions targetType="comment" targetId="c1" />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Moderate' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Reason' }), 'Spam');
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
+    await act(async () => mocks.land());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mocks.toasts).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Moderate' }));
+    expect(await screen.findByRole('textbox', { name: 'Reason' })).toHaveValue('');
   });
 
   it('the permission lost while its takedown is out: no dialog is drawn, so the refusal is a toast, once', async () => {

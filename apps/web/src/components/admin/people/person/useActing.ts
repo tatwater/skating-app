@@ -50,7 +50,8 @@ export function useActing(onAct: (action: PersonAction) => Promise<boolean>) {
       }
       running.current = null;
       setBusy(null);
-      setWaits(new Set());
+      // Kept as it is when no press waited, so a settle draws nothing more than its own.
+      setWaits((w) => (w.size === 0 ? w : new Set()));
       // After the commit the settled state draws: put focus back inside the region — unless a
       // dialog was refused, which stays open and keeps its own focus.
       if (landed || opts.inline) {

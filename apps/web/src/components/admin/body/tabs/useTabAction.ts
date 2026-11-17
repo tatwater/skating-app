@@ -39,15 +39,12 @@ export function useTabAction(bodyId: string): {
       }),
     [announce, hold, bodyId],
   );
-  const act = useCallback(
-    (write: () => Promise<unknown>, receipt: Receipt) => run(write, receipt),
-    [run],
-  );
   const attempt = useCallback(
     async (write: () => Promise<unknown>, receipt: Receipt, what: string): Promise<PickOutcome> =>
       (await run(write, receipt, what)) ? LANDED : REFUSED,
     [run],
   );
   const words = useCallback((what: string) => notSavedWords(hold, what), [hold]);
-  return useMemo(() => ({ act, attempt, words }), [act, attempt, words]);
+  // `act` is the runner itself, its refusal named by the receipt's title.
+  return useMemo(() => ({ act: run, attempt, words }), [run, attempt, words]);
 }

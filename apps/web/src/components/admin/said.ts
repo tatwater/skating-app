@@ -1,7 +1,7 @@
 import { useMutation } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import { ConvexError } from 'convex/values';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { type ToastManager, toast } from '@/components/kit/toast';
 
@@ -54,6 +54,27 @@ export function sayRefusal(
   };
   if (manager === undefined) toast(options);
   else toast(options, manager);
+  for (const heard of refused) heard();
+}
+
+/** Who hears that a refusal was said (a Legacy page's banner, which then lets its last outcome go). */
+const refused = new Set<() => void>();
+
+/**
+ * **A refusal lets a page's last outcome go.** A Legacy page whose banner says a landed write's
+ * outcome ("Prominence saved.") clears it when any refusal is said, so the banner never reads as
+ * saved for a write that wasn't — the refusal itself is the toast's, never the banner's.
+ */
+export function useRefusalClears(clear: () => void): void {
+  const latest = useRef(clear);
+  latest.current = clear;
+  useEffect(() => {
+    const heard = () => latest.current();
+    refused.add(heard);
+    return () => {
+      refused.delete(heard);
+    };
+  }, []);
 }
 
 /**

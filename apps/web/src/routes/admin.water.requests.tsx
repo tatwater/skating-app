@@ -15,7 +15,7 @@ import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleD
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
-import { useSaidMutation } from '../components/admin/said';
+import { useRefusalClears, useSaidMutation } from '../components/admin/said';
 import { useReviewWatch } from '../components/admin/useReviewWatch';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -53,6 +53,8 @@ function RequestQueue() {
   // A landed write's outcome. A refusal is the net's toast (D268), never said here; a dialog that
   // was refused stays open over its note.
   const [banner, setBanner] = useState<string | null>(null);
+  // A refusal said anywhere lets the last outcome go: it never reads as saved for one that wasn't.
+  useRefusalClears(() => setBanner(null));
   /**
    * The row on the map, frozen at the click (`pickReview`). A colleague deciding what it is about says
    * so over the map and locks its rows (`useReviewWatch`) until the moderator goes *Back to queue* —

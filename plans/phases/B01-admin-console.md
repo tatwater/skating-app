@@ -4564,7 +4564,9 @@ not changed, in the server's own words, held until dismissed; it is never also p
   pick store's asker and in-place control, `useRecordActing`'s `onLateRefusal`, the person page's
   mounted guard, and every inline refusal line (the lever rows, the sheet's foot, the aliases and
   links lines, the satellite link's line, the reason dialogs, the old editor's banner and restore gate).
-- **The toast.** Drawn over every overlay (`--z-toast` 20 → 60, above the scrim, a sheet and a viewer),
+- **The toast.** Drawn over every overlay (`--z-toast` 20 → 60, above the scrim, a sheet and a viewer;
+  the kit's popups — menus, selects, popovers, tooltips — moved from the viewer's step to one above
+  the toast's, so a menu just opened is never drawn under a refusal waiting to be dismissed),
   outside anything inert (Base UI leaves an `aria-live` region unhidden), reached by `F6` from inside a
   dialog and tabbed through, announced once (Base UI's alert for a `high` toast), dismissed by its own
   *Dismiss* — or Esc inside it, which the toast keeps to itself so the dialog under it stays open. The
@@ -4584,7 +4586,9 @@ not changed, in the server's own words, held until dismissed; it is never also p
 - **The Legacy pages.** Every write is the net's (`always`; the old `inPlace` mode is gone). The two
   Legacy dialogs that hold open while their write is out (`ReasonDialog`, ModeratorActions') still
   do. The old editor's banner keeps only landed outcomes and its own checks (about thirty `catch`es,
-  each a line or two, mechanical); its reason dialogs now let the net's `Refused` through, so they stay
+  each a line or two, mechanical), and lets the last one go when any refusal is said
+  (`useRefusalClears`, as the requests page and place names do), so it never reads "saved" for a
+  write that wasn't; its reason dialogs now let the net's `Refused` through, so they stay
   open; the requests page, place names, seasons (`SeasonWatch`'s buttons), RestorePost, the posted-
   access form and the dismiss dialog print nothing a server said. Support's buttons and the water
   list's *Approve*, which have no `catch`, now catch the `Refused` (no unhandled rejection).
@@ -4649,8 +4653,12 @@ not changed, in the server's own words, held until dismissed; it is never also p
 - **Base UI keeps a limited toast in its queue**, its timer running: a refusal behind a newer receipt
   is drawn again once the receipt times out; nothing was lost, and no bound was needed.
 - **Copy owed to the founder's pass:** the missed-reset refusal ("Not saved: this page now shows
-  another body…") repeats "Not saved" under the toast's own title; a Legacy toast names only the
-  server's words.
+  another body…") repeats "Not saved" under the toast's own title; a button's refusal (`act`) names
+  what it was by its receipt's past tense ("Not saved · Mascoma Lake" — "Hid Boat ramp: …", "Saved ·
+  The Gut: …"); a Legacy toast names only the server's words.
+- **ModeratorActions never closed on a landing** (found by the review): it relied on its content
+  unmounting, and in the skater panels it stays — a second press sent a second takedown. It closes
+  now, its reason cleared.
 
 **Left:** a Legacy toast names the server's words, not its subject — owed with each page's
 retirement; across a full remount of the console (leaving it), a write from each store can be out at

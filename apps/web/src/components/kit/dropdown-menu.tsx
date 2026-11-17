@@ -67,7 +67,7 @@ function DropdownMenuContent({
         align={align}
         alignOffset={alignOffset}
         // Over sheets and viewers too: a menu belongs to whatever opened it.
-        className="isolate z-[calc(var(--z-viewer)+1)] outline-none"
+        className="isolate z-[calc(var(--z-toast)+1)] outline-none"
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"

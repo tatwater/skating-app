@@ -12,6 +12,7 @@ import {
   AlertDialogReason,
   AlertDialogTitle,
 } from './alert-dialog';
+import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { createToastManager, Toaster, type ToastManager, toast } from './toast';
 
 /**
@@ -144,6 +145,30 @@ describe('a refusal toast over a modal dialog', () => {
     await user.click(theToast()?.querySelector('[data-slot="toast-dismiss"]') as HTMLElement);
     await waitFor(() => expect(theToast()).toBeNull());
     expect(theDialog()).not.toBeNull();
+  });
+});
+
+describe('a popup opened under a refusal', () => {
+  it('draws above the toast: a menu the operator just opened is never covered by one that waits', async () => {
+    const manager = createToastManager();
+    const user = userEvent.setup();
+    render(
+      <Toaster manager={manager}>
+        <Popover>
+          <PopoverTrigger>Open</PopoverTrigger>
+          <PopoverContent>The choices</PopoverContent>
+        </Popover>
+      </Toaster>,
+    );
+    refuse(manager, 'Not saved · Mascoma Lake');
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    const popup = await screen.findByText('The choices');
+    // The popup's positioner sits one above the toast's layer; the dock is on the toast's own.
+    const positioner = popup.closest('[class*="z-["]') as HTMLElement;
+    expect(positioner.className).toContain('z-[calc(var(--z-toast)+1)]');
+    expect(document.querySelector('[data-slot="toast-viewport"]')?.className).toContain(
+      'z-(--z-toast)',
+    );
   });
 });
 

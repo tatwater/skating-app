@@ -53,23 +53,35 @@ function files(path: string): string[] {
 const SOURCE = /\.tsx?$/;
 const NOT_CODE = /\.(test|stories)\.tsx?$|Fixtures\.ts$|[/\\]kit-candidates[/\\]/;
 
+/** The walk, and each file's text, read once for every lint below. */
+let walked: { files: string[]; text: Map<string, string> } | null = null;
+
 /** The console's source files and its Legacy routes, with floors that the walk looked at both. */
 function consoleSources(): string[] {
-  const routes = readdirSync(join(WEB, 'routes'))
-    .map((f) => `routes/${f}`)
-    .filter((f) => ROUTES.test(f));
-  const all = [...ROOTS.flatMap(files), ...routes].filter(
-    (f) => SOURCE.test(f) && !NOT_CODE.test(f),
-  );
-  expect(all.length).toBeGreaterThan(150);
-  expect(routes.length).toBeGreaterThan(10);
-  return all;
+  if (walked === null) {
+    const routes = readdirSync(join(WEB, 'routes'))
+      .map((f) => `routes/${f}`)
+      .filter((f) => ROUTES.test(f));
+    const all = [...ROOTS.flatMap(files), ...routes].filter(
+      (f) => SOURCE.test(f) && !NOT_CODE.test(f),
+    );
+    expect(all.length).toBeGreaterThan(150);
+    expect(routes.length).toBeGreaterThan(10);
+    walked = { files: all, text: new Map(all.map((f) => [f, readFileSync(join(WEB, f), 'utf8')])) };
+  }
+  return walked.files;
+}
+
+/** A console file's text, from the one walk. */
+function textOf(f: string): string {
+  consoleSources();
+  return walked?.text.get(f) ?? readFileSync(join(WEB, f), 'utf8');
 }
 
 test('a console file reaches a mutation directly only through a write path that says its refusals', () => {
   const all = consoleSources();
   const direct = all.filter((f) => {
-    const text = readFileSync(join(WEB, f), 'utf8');
+    const text = textOf(f);
     const hook = /\buseMutation\b/.test(text) && /from 'convex\/react'/.test(text);
     const client = /\.mutation\(\s*api\./.test(text);
     return hook || client;
@@ -79,9 +91,7 @@ test('a console file reaches a mutation directly only through a write path that 
 
 /** The console's source files that contain `pattern`, besides `allowed`. */
 function holding(pattern: RegExp, allowed: readonly string[]): string[] {
-  return consoleSources().filter(
-    (f) => !allowed.includes(f) && pattern.test(readFileSync(join(WEB, f), 'utf8')),
-  );
+  return consoleSources().filter((f) => !allowed.includes(f) && pattern.test(textOf(f)));
 }
 
 /**

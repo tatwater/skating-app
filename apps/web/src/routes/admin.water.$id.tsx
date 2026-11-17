@@ -39,7 +39,7 @@ import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { useSaidMutation } from '../components/admin/said';
+import { useRefusalClears, useSaidMutation } from '../components/admin/said';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -95,6 +95,8 @@ function LakeEditor() {
   // The editor's banner: a landed write's outcome, and the page's own checks. A server's refusal is
   // never said here — it is the net's toast (D268), wherever the moderator is when it comes.
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  // A refusal said anywhere lets the last outcome go: it never reads as saved for one that wasn't.
+  useRefusalClears(() => setBanner(null));
   const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
@@ -1950,8 +1952,8 @@ function AccessTool({
       });
       onResult({ tone: 'ok', text: 'Access updated.' });
     } catch {
-      // The D144 refusal lands here verbatim — the server writes the operator-facing sentence.
-      // Refused: said in its toast (the net, D268).
+      // Refused — the D144 refusal among them, in the server's own sentence: said in its toast
+      // (the net, D268).
     } finally {
       setBusy(false);
     }

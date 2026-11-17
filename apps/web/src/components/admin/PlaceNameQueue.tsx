@@ -13,7 +13,7 @@ import { BodyPicker } from '../sheet/BodyPicker';
 import { Button, buttonVariants } from '../ui/button';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
-import { useSaidMutation } from './said';
+import { useRefusalClears, useSaidMutation } from './said';
 
 const TABS: readonly { status: CorpusNameStatus; label: string }[] = [
   { status: 'open', label: 'Open' },
@@ -47,6 +47,8 @@ export function PlaceNameQueue() {
   const [picking, setPicking] = useState<Row | null>(null);
   // A landed write's outcome. A refusal is the net's toast (D268), never said here.
   const [message, setMessage] = useState<string | null>(null);
+  // A refusal said anywhere lets the last outcome go: it never reads as saved for one that wasn't.
+  useRefusalClears(() => setMessage(null));
 
   const act = async (write: () => Promise<unknown>, ok: string) => {
     try {

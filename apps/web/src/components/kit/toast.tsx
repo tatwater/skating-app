@@ -33,9 +33,10 @@ import { Kbd } from './kbd';
  *   runs out, and a toast with an action counts its seconds beside it. Both **pause while the
  *   toasts are hovered or focused, or the window is in the background** — exactly when Base UI
  *   holds the dismissal timer — so what the bar shows is what will happen.
- * - **One at a time**, docked at the rail's edge over the status bar, never over a decision; a newer
- *   toast takes the place of an older one (the older stays in History). A taller limit stacks them,
- *   each peeking above the one in front, and a hover fans them out.
+ * - **One at a time**, docked at the rail's edge over the status bar; a newer toast takes the place
+ *   of an older one (the older stays in History; a refusal waits behind it, drawn again once it
+ *   goes). A taller limit stacks them, each peeking above the one in front, and a hover fans them
+ *   out. The kit's popups sit one above the dock, so a menu just opened is never under a refusal.
  * - **Motion** rides the motion tokens: a toast slides up and fades in, and leaves the way it came
  *   (or the way it was swiped — left or down). Under reduced motion every move collapses to a fade,
  *   and the time bar ticks once a second instead of gliding.

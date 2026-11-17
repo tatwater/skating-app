@@ -139,7 +139,9 @@ export function NamesTab({ bodyId, lit = null }: BodyTabProps) {
         // The one throw `sendFor` passes on: the list moved underneath, for the queue to re-apply.
         const current = listChanged(err);
         if (current !== null) return { current: current as string[] };
-        throw err;
+        // Anything else is never taken as saved, and never an unhandled rejection under
+        // `void pushAliases(…)` — as the links and spellings queues answer it.
+        return false;
       }
     },
     sameList,

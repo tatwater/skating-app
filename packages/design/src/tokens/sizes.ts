@@ -361,9 +361,11 @@ export const opacity = {
 } as const;
 
 /**
- * Stacking order; meaningful and consistent, kept from the audit. A toast sits over everything,
+ * Stacking order; meaningful and consistent, kept from the audit. A toast sits over every surface,
  * a modal's scrim and a viewer included: a server's refusal reaches the operator wherever they are,
- * an open dialog too (D268).
+ * an open dialog too (D268). The kit's popups (a menu, a select, a popover, a tooltip) sit one above
+ * the toast (`calc(var(--z-toast) + 1)`): one the operator just opened is never drawn under a
+ * refusal that waits to be dismissed.
  */
 export const zIndex = {
   raised: 1,

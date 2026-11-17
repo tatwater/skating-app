@@ -202,16 +202,16 @@ export function UndoProvider({
 
   const announce = useCallback(
     async (
-      { title: said, description, target, actionId, undoNeedsReason, undoable, subject }: Receipt,
+      { title: done, description, target, actionId, undoNeedsReason, undoable, subject }: Receipt,
       here?: () => boolean,
     ) => {
       // A receipt that may show over another page names its subject ("Links saved · Mascoma Lake").
       const title =
         subject === undefined ? (
-          said
+          done
         ) : (
           <>
-            {said} · {subject}
+            {done} · {subject}
           </>
         );
       let offered: { actionId: string; undo: { needsReason?: boolean } } | null = null;

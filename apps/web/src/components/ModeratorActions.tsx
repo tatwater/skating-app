@@ -65,6 +65,9 @@ export function ModeratorActions({
     setBusy(true);
     try {
       await setStatus({ targetType, targetId, status, reason: reason.trim() });
+      // Landed: the dialog closes, its reason with it — never left armed for a second takedown.
+      setOpen(false);
+      setReason('');
     } catch {
       // Refused: said in its toast.
     } finally {

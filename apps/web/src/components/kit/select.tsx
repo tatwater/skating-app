@@ -128,7 +128,7 @@ function SelectContent({
         alignOffset={alignOffset}
         alignItemWithTrigger={false}
         // Over sheets and viewers too: the list belongs to the field that opened it.
-        className="isolate z-[calc(var(--z-viewer)+1)] outline-none"
+        className="isolate z-[calc(var(--z-toast)+1)] outline-none"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"

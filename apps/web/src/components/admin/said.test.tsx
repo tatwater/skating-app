@@ -18,7 +18,7 @@ vi.mock('@/components/kit/toast', async (original) => ({
 }));
 
 import { api } from '@skating/convex/api';
-import { NOT_SAVED, Refused, said, sayRefusal, useSaidMutation } from './said';
+import { NOT_SAVED, Refused, said, sayRefusal, useRefusalClears, useSaidMutation } from './said';
 
 beforeEach(() => {
   mocks.answer = null;
@@ -111,5 +111,17 @@ describe('the Legacy pages’ net (`useSaidMutation`)', () => {
     await act(async () => mocks.answer?.());
     await expect(sent).resolves.toBe('ok');
     expect(mocks.toasts).toEqual([]);
+  });
+});
+
+describe('a refusal lets a Legacy page’s last outcome go (`useRefusalClears`)', () => {
+  it('clears while the page is mounted, and never after', () => {
+    const clear = vi.fn();
+    const { unmount } = renderHook(() => useRefusalClears(clear));
+    sayRefusal({ title: 'Not saved', description: 'Not allowed' });
+    expect(clear).toHaveBeenCalledTimes(1);
+    unmount();
+    sayRefusal({ title: 'Not saved', description: 'Not allowed' });
+    expect(clear).toHaveBeenCalledTimes(1);
   });
 });
