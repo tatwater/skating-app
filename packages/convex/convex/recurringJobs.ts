@@ -23,6 +23,7 @@
  * | repair body geometry drift | a facts row | `jobFailures` | never parked: the row goes to the back and the body is marked for recompute |
  * | find bodies missing geometry | a library row | `jobFailures` | never parked: the weekly walk is the retry |
  * | reset lapsed suspensions | a person | on the profile, mirrored | out of the due range; retried daily (`peopleJobs.retryLapsedDaily`) |
+ * | reconcile clerk ban locks | a lock it repaired, or the run | `jobFailures` | never parked: a repair is counted for a week; an unfinished run until one finishes |
  */
 
 import { v } from 'convex/values';
@@ -406,4 +407,5 @@ const CRON_OF: Record<FailingJob, string> = {
   geoDrift: 'repair body geometry drift',
   geoMissing: 'find bodies missing geometry',
   lapses: 'reset lapsed suspensions',
+  clerkMirror: 'reconcile clerk ban locks',
 };
