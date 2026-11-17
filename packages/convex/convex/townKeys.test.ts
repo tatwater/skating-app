@@ -186,10 +186,11 @@ describe('the loaded layer decides when a name is shared', () => {
         { ...area('tiger/36065', 'Oneida County'), level: 'county' as const },
       ],
     });
-    const [namesakes] = await t.query(internal.bodyGeo.townNamesShared, {
-      towns: [{ state: 'NY', name: 'Clinton' }],
+    const namesakes = await t.query(internal.bodyGeo.townNamesShared, {
+      state: 'NY',
+      name: 'Clinton',
     });
-    expect(namesakes?.map((n) => n.kind)).toEqual(['town', 'town']);
+    expect(namesakes.map((n) => n.kind)).toEqual(['town', 'town']);
     const pins = await t.run((ctx) =>
       pinnedFactsFor(ctx, ['tiger/3601916353', 'tiger/3606516551']),
     );
@@ -246,10 +247,8 @@ describe('the loaded layer decides when a name is shared', () => {
       'Plattsburgh (city), NY',
       'Plattsburgh (town), NY',
     ]);
-    const ask = (state: string, name: string) =>
-      t.query(internal.bodyGeo.townNamesShared, { towns: [{ state, name }] });
     const kinds = async (state: string, name: string) =>
-      (await ask(state, name))[0]?.map((n) => n.kind).sort();
+      (await t.query(internal.bodyGeo.townNamesShared, { state, name })).map((n) => n.kind).sort();
     expect(await kinds('NY', 'Plattsburgh')).toEqual(['city', 'town']);
     expect(await kinds('NY', 'Peru')).toHaveLength(1);
     expect(await kinds('VT', 'Plattsburgh')).toEqual([]);
@@ -324,6 +323,83 @@ describe('the loaded layer decides when a name is shared', () => {
       'Plattsburgh (city)',
       'Plattsburgh (town)',
     ]);
+  });
+
+  test('mid-load, a namesake without its full name holds the kind back: both read by name (B01-3p)', async () => {
+    const t = convexTest(schema, modules);
+    const rect = (x0: number, x1: number) => ({
+      ...area('', ''),
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [x0, 44.6],
+            [x1, 44.6],
+            [x1, 44.7],
+            [x0, 44.7],
+            [x0, 44.6],
+          ],
+        ],
+      },
+      bbox: { minLat: 44.6, minLng: x0, maxLat: 44.7, maxLng: x1 },
+      centroid: { lat: 44.65, lng: (x0 + x1) / 2 },
+    });
+    // The city's full name has loaded; the town's has not.
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        {
+          ...rect(-73.5, -73.45),
+          externalId: 'tiger/3601958420',
+          name: 'Plattsburgh',
+          fullName: 'Plattsburgh city',
+        },
+        { ...rect(-73.45, -73.4), externalId: 'tiger/3601958431', name: 'Plattsburgh' },
+      ],
+    });
+    const kinds = await t.query(internal.bodyGeo.townNamesShared, {
+      state: 'NY',
+      name: 'Plattsburgh',
+    });
+    expect(kinds.map((n) => n.kind).sort()).toEqual(['city', null]);
+    const pins = await t.run((ctx) =>
+      pinnedFactsFor(ctx, ['tiger/3601958420', 'tiger/3601958431']),
+    );
+    expect(pins.pinnedTowns.map((p) => townLabel(p))).toEqual([
+      'Plattsburgh, NY',
+      'Plattsburgh, NY',
+    ]);
+    const ring: number[][] = [];
+    for (let i = 0; i < 32; i++) {
+      const a = (2 * Math.PI * i) / 32;
+      ring.push([-73.45 + 0.005 * Math.cos(a), 44.65 + 0.003 * Math.sin(a)]);
+    }
+    ring.push(ring[0] as number[]);
+    const bbox = { minLng: -73.455, maxLng: -73.445, minLat: 44.647, maxLat: 44.653 };
+    const id = await t.run(async (ctx) => {
+      const body = await ctx.db.insert('waterBodies', {
+        name: 'Across',
+        searchText: 'Across',
+        type: 'lakePond',
+        source: 'osm',
+        polygon: { type: 'Polygon', coordinates: [ring] },
+        bbox,
+        centroid: { lat: 44.65, lng: -73.45 },
+        states: ['NY'],
+        dedupStatus: 'clean',
+        createdAt: 0,
+        minVisibleZoom: 8,
+        displayScore: 1,
+      });
+      await syncWaterBodyCells(ctx, body, { bbox, minVisibleZoom: 8, listed: true });
+      await rebuildBodyLibrary(ctx, body);
+      await markGeoStale(ctx, [body]);
+      return body;
+    });
+    await t.action(internal.bodyGeo.computeDue, {});
+    const geo = await t.run((ctx) => geoFactsOf(ctx, id));
+    // Two entries, one per boundary; neither claims a kind the layer does not prove yet.
+    expect(geo?.townEntries).toHaveLength(2);
+    expect(townNamesOf(placesOf(geo))).toEqual(['Plattsburgh', 'Plattsburgh']);
   });
 
   test('the recompute stores the county that tells two towns of one name and kind apart', async () => {

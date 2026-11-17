@@ -14,7 +14,6 @@
 
 import {
   bboxIntersects,
-  cellRangeCovering,
   countyKeyOfSubdivision,
   createReach,
   isUndefinedSubdivision,
@@ -47,11 +46,15 @@ import {
   pinnedFactsFor,
   simplifiedRing,
   TOUCH_CANDIDATES,
+  type TownCell,
+  type TownColumn,
   touches,
+  townCellPage,
+  townColumnsOf,
   vertexCount,
 } from './lib/bodyGeo';
-import { ADMIN_AREA_LADDER } from './lib/cellIndex';
 import type { FailingJob } from './lib/enums';
+import { ReadBudget, ROW_MAX, type Share, type WaveCost } from './lib/readBudget';
 import {
   clearFailure,
   mirrorFailure,
@@ -102,10 +105,15 @@ export const inputs = internalQuery({
 
 /**
  * One tile's candidates: the most prominent listed bodies whose cells cover it (the map's cover,
- * whole at every rung because the tile fits), each with its outline — or, past
- * {@link WHOLE_MAX_VERTICES}, without it — and whether the cover stopped short. `skip` names bodies
- * the caller already holds (the body itself, and the candidates earlier tiles returned): they still
- * count against the tile's limit, but their outlines are not shipped again.
+ * whole at every rung because the tile fits), each as a summary — its box, prominence, stamp, kept
+ * ring, and whether its outline is small enough to test whole ({@link WHOLE_MAX_VERTICES}) — and
+ * whether the cover stopped short. `skip` names bodies the caller already holds (the body itself, and
+ * the candidates earlier tiles returned): they still count against the tile's limit, but are not
+ * summarized again.
+ *
+ * **No outline is shipped** (B01-3p). Before, every candidate of every tile came back with its whole
+ * outline (up to 20,000 vertices each) though only the twelve most prominent are ever tested; the
+ * action now reads just those twelve, by {@link candidateOutline}, once it has ranked them.
  */
 export const candidates = internalQuery({
   args: { box: boxV, skip: v.optional(v.array(v.id('waterBodies'))) },
@@ -118,14 +126,12 @@ export const candidates = internalQuery({
         .filter((b) => !known.has(b._id))
         .map((b) => {
           const geom = b.polygon as unknown as Geom;
-          const whole = vertexCount(geom) <= WHOLE_MAX_VERTICES;
           return {
             id: b._id,
             name: b.name,
             prominence: b.displayScore ?? 0,
             bbox: b.bbox,
-            whole,
-            polygon: whole ? b.polygon : null,
+            whole: vertexCount(geom) <= WHOLE_MAX_VERTICES,
             ring: simplifiedRing(geom),
             stamp: outlineStamp(b),
           };
@@ -134,8 +140,34 @@ export const candidates = internalQuery({
   },
 });
 
-/** Cell reads one candidates page makes at most — well inside a query's 4,096 calls. */
+/**
+ * **A tested candidate's whole outline** (B01-3p) — read once the action has ranked the candidates,
+ * for the few it tests whole: one body, one document. `null` when the body is gone or its outline is
+ * no longer the one its summary was cut from (its stamp moved between the two reads): the action then
+ * fails this attempt rather than test one outline and record another's stamp, and the next run
+ * computes the body again.
+ */
+export const candidateOutline = internalQuery({
+  args: { waterBodyId: v.id('waterBodies'), stamp: v.string() },
+  handler: async (ctx, { waterBodyId, stamp }) => {
+    const body = await ctx.db.get(waterBodyId);
+    if (body === null || outlineStamp(body) !== stamp) return null;
+    return body.polygon;
+  },
+});
+
+/**
+ * Cells one town candidates page covers at most. Read a column at a time since B01-3p, so a page of
+ * this many cells makes one call a column it meets (a few dozen to a few hundred), not one a cell.
+ */
 export const CANDIDATE_CELL_READS = 2_000;
+/**
+ * Cell rows (every level) one column read takes. A column that fills it is read again a cell at a
+ * time, exactly as before B01-3p, so no cap ever cuts a column short.
+ */
+export const COLUMN_ROWS = 256;
+/** A cell read's rows: one past {@link AREA_CELL_CAP}, to know a cell holds more. */
+const CELL_TAKE = AREA_CELL_CAP + 1;
 /**
  * Town boundaries one page reads. A boundary's polygon is uncapped, so each is charged at a whole
  * document (1 MiB): the read budget's twelve MiB (`lib/readBudget`, `TX_BUDGET`) holds eleven. The
@@ -153,39 +185,178 @@ const cursorV = v.object({ z: v.number(), i: v.number() });
  * {@link CANDIDATE_CELL_READS} cells, with where to go on (`next: null` at the end). A town is indexed
  * by its bounding box, so every town whose box meets the body's padded box is a candidate. A cell holding
  * more rows than {@link AREA_CELL_CAP} throws rather than answer short.
+ *
+ * **Read by column, in waves** (B01-3p). Until B01-3p the page read its cells one after another, one
+ * call each — up to 2,000 round trips, the 1.47 s measured on dev. Now each column of the page's cells
+ * is one `by_cell` range (`townColumnsOf`) — every level's rows, of which the town rows are kept — and
+ * the columns are read concurrently in {@link ReadBudget.waves}. A column that fills
+ * {@link COLUMN_ROWS} is read again cell by cell, as before. The ids come back in the order the cell
+ * walk always gave them, so the page is the same page. Should the budget run out (never on real
+ * data), the page ends at its first unread cell and `next` starts there. `calls` and `waves` are what
+ * the page spent, for the cost tests. `pageCells` and `columnRows` are test seams.
  */
 export const townCandidates = internalQuery({
-  args: { box: boxV, from: v.optional(cursorV) },
-  handler: async (ctx, { box, from }) => {
-    const ids = new Set<Id<'adminAreas'>>();
-    let reads = 0;
-    for (let z = from?.z ?? ADMIN_AREA_LADDER.minZ; z <= ADMIN_AREA_LADDER.maxZ; z++) {
-      const range = cellRangeCovering(box, z);
-      const width = range.maxX - range.minX + 1;
-      for (let i = z === from?.z ? from.i : 0; i < range.count; i++) {
-        if (reads >= CANDIDATE_CELL_READS) return { ids: [...ids], next: { z, i } };
-        const x = range.minX + (i % width);
-        const y = range.minY + Math.floor(i / width);
-        const rows = await ctx.db
+  args: {
+    box: boxV,
+    from: v.optional(cursorV),
+    pageCells: v.optional(v.number()),
+    columnRows: v.optional(v.number()),
+  },
+  handler: async (ctx, { box, from, pageCells, columnRows }) =>
+    townCandidatesPage(ctx, box, from, {
+      pageCells: seam(pageCells, CANDIDATE_CELL_READS),
+      columnRows: seam(columnRows, COLUMN_ROWS),
+    }),
+});
+
+/** A test seam's value: a whole number from 1 to `max`, else `max`. */
+function seam(n: number | undefined, max: number): number {
+  return n !== undefined && Number.isFinite(n) ? Math.min(max, Math.max(1, Math.floor(n))) : max;
+}
+
+/** One page of town candidates — {@link townCandidates}' work. */
+async function townCandidatesPage(
+  ctx: QueryCtx,
+  box: Box,
+  from: { z: number; i: number } | undefined,
+  opts: { pageCells: number; columnRows: number },
+): Promise<{
+  ids: Id<'adminAreas'>[];
+  next: { z: number; i: number } | null;
+  calls: number;
+  waves: number;
+}> {
+  const { cells, next: planned } = townCellPage(box, from, opts.pageCells);
+  const reads = new ReadBudget();
+  // Each cell's town rows by its page index, as one cell read returns them.
+  const townsOf = new Map<number, Id<'adminAreas'>[]>();
+  // The first page index left unread when the budget ran out; the page ends there.
+  let cut = cells.length;
+  let calls = 0;
+  let waves = 0;
+  const counted = <R>(run: () => Promise<R>): Promise<R> => {
+    calls++;
+    return run();
+  };
+  // Every item of a wave starts before any settles, and the next wave waits for them all: an item
+  // started with none in flight opens a wave.
+  let inFlight = 0;
+  const wave = <T, R>(
+    items: readonly T[],
+    cost: WaveCost,
+    run: (item: T, share: Share) => Promise<R>,
+  ): Promise<(R | typeof OVERFLOW)[]> =>
+    reads.waves<T, R | typeof OVERFLOW>(
+      items,
+      () => cost,
+      async (item, share) => {
+        if (inFlight === 0) waves++;
+        inFlight++;
+        try {
+          return await run(item, share);
+        } finally {
+          inFlight--;
+        }
+      },
+      () => OVERFLOW,
+    );
+
+  const columns = townColumnsOf(cells);
+  const columnCost = {
+    bytes: opts.columnRows * ROW_MAX.areaCell,
+    reads: 1,
+    docs: opts.columnRows,
+  };
+  const full: TownColumn[] = [];
+  const columnAnswers = await wave(columns, columnCost, async (c, share) => {
+    const rows = await counted(() =>
+      share.take('areaCell', opts.columnRows, () =>
+        ctx.db
+          .query('adminAreaCells')
+          .withIndex('by_cell', (q) =>
+            q.eq('z', c.z).eq('x', c.x).gte('y', c.minY).lte('y', c.maxY),
+          )
+          .take(opts.columnRows),
+      ),
+    );
+    return rows;
+  });
+  for (const [k, answer] of columnAnswers.entries()) {
+    const c = columns[k] as TownColumn;
+    if (answer === OVERFLOW) {
+      cut = Math.min(cut, c.first);
+      continue;
+    }
+    if (answer.length >= opts.columnRows) {
+      // Full: it may hold more rows than it returned, so its cells are read one at a time.
+      full.push(c);
+      continue;
+    }
+    const byRow = new Map<number, Id<'adminAreas'>[]>();
+    for (const row of answer) {
+      if (row.level !== 'town') continue;
+      const list = byRow.get(row.y);
+      if (list === undefined) byRow.set(row.y, [row.adminAreaId]);
+      else list.push(row.adminAreaId);
+    }
+    for (const index of c.cells) townsOf.set(index, byRow.get((cells[index] as TownCell).y) ?? []);
+  }
+
+  const lone = full
+    .flatMap((c) => c.cells)
+    .filter((index) => index < cut)
+    .sort((a, b) => a - b);
+  const cellCost = { bytes: CELL_TAKE * ROW_MAX.areaCell, reads: 1, docs: CELL_TAKE };
+  const cellAnswers = await wave(lone, cellCost, async (index, share) => {
+    const { z, x, y } = cells[index] as TownCell;
+    return counted(() =>
+      share.take('areaCell', CELL_TAKE, () =>
+        ctx.db
           .query('adminAreaCells')
           .withIndex('by_cell', (q) => q.eq('z', z).eq('x', x).eq('y', y).eq('level', 'town'))
-          .take(AREA_CELL_CAP + 1);
-        reads++;
-        if (rows.length > AREA_CELL_CAP) {
-          throw new ConvexError(`a town cell holds more than ${AREA_CELL_CAP} rows (z ${z})`);
-        }
-        for (const row of rows) ids.add(row.adminAreaId);
-      }
+          .take(CELL_TAKE),
+      ),
+    );
+  });
+  for (const [k, answer] of cellAnswers.entries()) {
+    const index = lone[k] as number;
+    if (answer === OVERFLOW) cut = Math.min(cut, index);
+    else
+      townsOf.set(
+        index,
+        answer.map((row) => row.adminAreaId),
+      );
+  }
+
+  // The ids in the cell walk's order, and a cell over its cap throws where the walk would have.
+  const ids = new Set<Id<'adminAreas'>>();
+  for (let index = 0; index < cut; index++) {
+    const towns = townsOf.get(index) ?? [];
+    if (towns.length > AREA_CELL_CAP) {
+      const { z } = cells[index] as TownCell;
+      throw new ConvexError(`a town cell holds more than ${AREA_CELL_CAP} rows (z ${z})`);
     }
-    return { ids: [...ids], next: null };
-  },
-});
+    for (const id of towns) ids.add(id);
+  }
+  const stop = cells[cut];
+  return {
+    ids: [...ids],
+    next: stop === undefined ? planned : { z: stop.z, i: stop.i },
+    calls,
+    waves,
+  };
+}
+
+/** What {@link ReadBudget.waves} answers for an item the budget could not reach. */
+const OVERFLOW = Symbol('overflow');
 
 /** One page of candidate towns, whole — at most {@link TOWN_PAGE}; a row gone or not a town is left out. */
 export const townPage = internalQuery({
   args: { ids: v.array(v.id('adminAreas')) },
   handler: async (ctx, { ids }) => {
     if (ids.length > TOWN_PAGE) throw new ConvexError(`at most ${TOWN_PAGE} towns a page`);
+    // Read together (B01-3p), kept in the order asked.
+    const rows = await Promise.all(ids.map((id) => ctx.db.get(id)));
     const out: {
       id: Id<'adminAreas'>;
       name: string;
@@ -194,8 +365,7 @@ export const townPage = internalQuery({
       fullName?: string;
       polygon: unknown;
     }[] = [];
-    for (const id of ids) {
-      const a = await ctx.db.get(id);
+    for (const a of rows) {
       if (a === null || a.level !== 'town') continue;
       out.push({
         id: a._id,
@@ -211,24 +381,16 @@ export const townPage = internalQuery({
 });
 
 /**
- * Town names one sharing page asks about — each reads at most {@link NAMESAKES_READ} boundaries, so a
- * page is one name: charged as a town page, inside its eleven documents.
- */
-export const SHARING_PAGE = 1;
-
-/**
- * Each of these town names' subdivisions in its state, with their kinds (B01-3l, B01-3m) —
- * `namesakesOf` on `by_level_state_name`. What decides what tells a town from them: its kind
- * ("Plattsburgh (city)") where a kind does, its county ("Clinton (Clinton County)") where it can't.
+ * A town name's subdivisions in its state, with their kinds (B01-3l, B01-3m, B01-3p) — `namesakesOf`
+ * on `by_level_state_name`. What decides what tells a town from them: its kind ("Plattsburgh
+ * (city)") where a kind does, its county ("Clinton (Clinton County)") where it can't. One name a
+ * query: each reads up to {@link NAMESAKES_READ} whole boundaries, each charged at a whole document,
+ * so a second name would not fit the read budget's twelve (the one-name array before B01-3p was
+ * this, in a list's clothes).
  */
 export const townNamesShared = internalQuery({
-  args: { towns: v.array(v.object({ state: v.string(), name: v.string() })) },
-  handler: async (ctx, { towns }) => {
-    if (towns.length > SHARING_PAGE) throw new ConvexError(`at most ${SHARING_PAGE} names a page`);
-    const out: Namesake[][] = [];
-    for (const { state, name } of towns) out.push(await namesakesOf(ctx, state, name));
-    return out;
-  },
+  args: { state: v.string(), name: v.string() },
+  handler: async (ctx, { state, name }): Promise<Namesake[]> => namesakesOf(ctx, state, name),
 });
 
 /** Counties by their boundary key (`tiger/<GEOID>`) — at most {@link COUNTY_PAGE}; one not loaded is left out. */
@@ -236,13 +398,19 @@ export const countyPage = internalQuery({
   args: { keys: v.array(v.string()) },
   handler: async (ctx, { keys }) => {
     if (keys.length > COUNTY_PAGE) throw new ConvexError(`at most ${COUNTY_PAGE} counties a page`);
+    // Read together (B01-3p), kept in the order asked.
+    const rows = await Promise.all(
+      keys.map((key) =>
+        ctx.db
+          .query('adminAreas')
+          .withIndex('by_external_id', (q) => q.eq('externalId', key))
+          .first(),
+      ),
+    );
     const out: { key: string; name: string }[] = [];
-    for (const key of keys) {
-      const row = await ctx.db
-        .query('adminAreas')
-        .withIndex('by_external_id', (q) => q.eq('externalId', key))
-        .first();
-      if (row !== null && row.level === 'county') out.push({ key, name: row.name });
+    for (const [k, row] of rows.entries()) {
+      if (row !== null && row.level === 'county')
+        out.push({ key: keys[k] as string, name: row.name });
     }
     return out;
   },
@@ -339,6 +507,46 @@ export function movedOn(
 }
 
 /**
+ * **A run's namesake reads, each name once** (B01-3p). A recompute asked `townNamesShared` for every
+ * name of every body it computed, so a town on the shore of thirty ponds was read thirty times, eight
+ * boundary polygons a time at most. One run (`computeDue`) now asks each name once and its bodies
+ * share the answer — in flight too, so two bodies computed together wait on one read. Keyed by the
+ * places-layer mark the body's inputs were read under (`areasAt`): a load that moves the layer moves
+ * the mark, so a body computed after it reads afresh. A re-load that only adds full names moves no
+ * mark, and its follow-up, `seedAll`, may mark bodies a run already in flight then takes — so a held
+ * read is shared only with a body marked stale before that read started (`markedAt`, the body's
+ * `staleAt`); a body marked since reads afresh, and the fresh read is held from then on. A read that
+ * fails is forgotten, so the next body asks again.
+ */
+export class NamesakeReads {
+  private readonly held = new Map<string, { since: number; read: Promise<Namesake[]> }>();
+  /** Reads made, for the tests. */
+  reads = 0;
+
+  of(
+    ctx: ActionCtx,
+    areasAt: number,
+    state: string,
+    name: string,
+    markedAt: number | null = null,
+  ): Promise<Namesake[]> {
+    const key = JSON.stringify([areasAt, state, name]);
+    const held = this.held.get(key);
+    if (held !== undefined && (markedAt === null || held.since >= markedAt)) return held.read;
+    this.reads++;
+    const entry = {
+      since: Date.now(),
+      read: ctx.runQuery(internal.bodyGeo.townNamesShared, { state, name }),
+    };
+    this.held.set(key, entry);
+    entry.read.catch(() => {
+      if (this.held.get(key) === entry) this.held.delete(key);
+    });
+    return entry.read;
+  }
+}
+
+/**
  * **Which loaded towns hold this body's shoreline**, read and tested a page at a time: the candidates
  * by cell (paged, each page must move on), the towns {@link TOWN_PAGE} at a time into one run of the
  * rule, then the counties of the towns it placed the body in. Nothing here holds more than one page of town
@@ -348,6 +556,9 @@ async function computePlaces(
   ctx: ActionCtx,
   geom: Geom,
   bbox: Box,
+  names: NamesakeReads,
+  areasAt: number,
+  staleAt: number | null,
 ): Promise<ReturnType<typeof placesFrom>> {
   const box = {
     minLat: bbox.minLat - REACH_PAD_DEG,
@@ -382,9 +593,10 @@ async function computePlaces(
     for (const { polygon: _, ...town } of rows) byId.set(town.id, town);
   }
   const reached = run.result().ids.map((id) => byId.get(id) as ReachedTown);
-  // Whether each reached town's name is shared in its state (B01-3l): a page of names at a time, each
-  // asked once, and only of a listed town whose full name gives a kind — with none there is nothing
-  // to show, so its two boundary reads would be wasted (every town, before the full names load).
+  // Whether each reached town's name is shared in its state (B01-3l): each name asked once, and only
+  // of a listed town whose full name gives a kind — with none there is nothing to show, so its
+  // boundary reads would be wasted (every town, before the full names load). The run's names are
+  // shared across its bodies (`names`, B01-3p): a town on the shore of thirty ponds is read once.
   const nameKey = (t: { state: string; name: string }) => JSON.stringify([t.state, t.name]);
   const asks = [
     ...new Map(
@@ -396,16 +608,10 @@ async function computePlaces(
         .map((t) => [nameKey(t), { state: t.state, name: t.name }] as const),
     ).values(),
   ];
-  const sharedNames = new Map<string, Namesake[]>();
-  for (let k = 0; k < asks.length; k += SHARING_PAGE) {
-    const page = asks.slice(k, k + SHARING_PAGE);
-    const lists: Namesake[][] = await ctx.runQuery(internal.bodyGeo.townNamesShared, {
-      towns: page,
-    });
-    page.forEach((t, i) => {
-      sharedNames.set(nameKey(t), lists[i] ?? []);
-    });
-  }
+  const lists = await Promise.all(
+    asks.map((t) => names.of(ctx, areasAt, t.state, t.name, staleAt)),
+  );
+  const sharedNames = new Map(asks.map((t, i) => [nameKey(t), lists[i] as Namesake[]]));
   for (const t of reached) {
     const namesakes = sharedNames.get(nameKey(t));
     if (namesakes !== undefined) t.namesakes = namesakes;
@@ -629,11 +835,12 @@ export const store = internalMutation({
     }
     // A neighbor whose relation moved is recomputed — unless it is gone or merged away, which has
     // no facts to keep (marking it would leave a stale row no computation clears).
-    const live: Id<'waterBodies'>[] = [];
-    for (const id of moved as Id<'waterBodies'>[]) {
-      const other = await ctx.db.get(id);
-      if (other && other.dedupStatus !== 'merged') live.push(id);
-    }
+    // Read together (B01-3p): at most 24, each a whole body, and the order kept.
+    const others = await Promise.all((moved as Id<'waterBodies'>[]).map((id) => ctx.db.get(id)));
+    const live = (moved as Id<'waterBodies'>[]).filter((_, k) => {
+      const other = others[k];
+      return other !== null && other !== undefined && other.dedupStatus !== 'merged';
+    });
     await markGeoStale(ctx, live, now);
     return { stored: true };
   },
@@ -689,37 +896,43 @@ type Candidate = {
   prominence: number;
   bbox: Box;
   whole: boolean;
-  polygon: unknown;
   ring: [number, number][];
   stamp: string;
 };
 
-/** Compute one body's facts in the action, start to finish. Throws on a failure the caller records. */
-async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promise<void> {
+/** A body's facts as computed, before they are stored — what `store` takes, less the body's id. */
+type Computed = {
+  stamp: string;
+  staleAt: number | null;
+  areasAt: number;
+  neighbors: {
+    waterBodyId: Id<'waterBodies'>;
+    name: string;
+    ring: [number, number][];
+    stamp: string;
+  }[];
+  neighborsCapped: boolean;
+} & ReturnType<typeof placesFrom>;
+
+/**
+ * **Compute one body's facts in the action**, without storing them — `null` for a body gone or merged.
+ * Throws on a failure the caller records. `names` is the run's namesake reads, shared by its bodies.
+ */
+async function computeFacts(
+  ctx: ActionCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: NamesakeReads,
+): Promise<Computed | null> {
   const input = await ctx.runQuery(internal.bodyGeo.inputs, { waterBodyId });
-  if (input === null) {
-    // Gone or merged: the store drops its facts.
-    await ctx.runMutation(internal.bodyGeo.store, {
-      waterBodyId,
-      stamp: '',
-      staleAt: null,
-      neighbors: [],
-      neighborsCapped: false,
-      towns: [],
-      counties: [],
-      states: [],
-      areasAt: 0,
-    });
-    return;
-  }
+  if (input === null) return null;
   const geom = input.polygon as unknown as Geom;
   const padded = paddedBox(input.bbox);
   const { tiles, truncated: tilesTruncated } = coverTiles(padded);
   const seen = new Map<Id<'waterBodies'>, Candidate>();
   let coverTruncated = tilesTruncated;
   async function runTile(box: Box): Promise<{ truncated: boolean; bodies: Candidate[] }> {
-    // The body and the candidates already held still count against the tile's limit, but their
-    // outlines are not read back again: a giant is a candidate in every one of its tiles.
+    // The body and the candidates already held still count against the tile's limit, but are not
+    // summarized again: a giant is a candidate in every one of its tiles.
     return ctx.runQuery(internal.bodyGeo.candidates, {
       box,
       skip: [waterBodyId, ...seen.keys()],
@@ -734,22 +947,176 @@ async function computeOne(ctx: ActionCtx, waterBodyId: Id<'waterBodies'>): Promi
     .filter((b) => bboxIntersects(b.bbox, padded))
     .sort((a, b) => b.prominence - a.prominence);
   const tested = ranked.slice(0, TOUCH_CANDIDATES);
+  // Only the tested ones small enough to test whole are read whole, one document each, together.
+  const outlines = await Promise.all(
+    tested.map((b) =>
+      b.whole
+        ? ctx.runQuery(internal.bodyGeo.candidateOutline, { waterBodyId: b.id, stamp: b.stamp })
+        : Promise.resolve(null),
+    ),
+  );
   const neighbors = tested
-    .filter((b) =>
-      touches(geom, (b.polygon ?? { type: 'Polygon', coordinates: [b.ring] }) as Geom, b.whole),
-    )
+    .filter((b, k) => {
+      const outline = outlines[k];
+      if (b.whole && (outline === null || outline === undefined)) {
+        // Gone, or reshaped since its summary: this attempt fails; the next run computes it again.
+        throw new Error('a candidate moved while its neighbors were computed');
+      }
+      return touches(
+        geom,
+        (outline ?? { type: 'Polygon', coordinates: [b.ring] }) as unknown as Geom,
+        b.whole,
+      );
+    })
     .map((b) => ({ waterBodyId: b.id, name: b.name, ring: b.ring, stamp: b.stamp }));
-  const places = await computePlaces(ctx, geom, input.bbox);
-  await ctx.runMutation(internal.bodyGeo.store, {
-    waterBodyId,
+  const places = await computePlaces(ctx, geom, input.bbox, names, input.areasAt, input.staleAt);
+  return {
     stamp: input.stamp,
     staleAt: input.staleAt,
+    areasAt: input.areasAt,
     neighbors,
     neighborsCapped: coverTruncated || ranked.length > TOUCH_CANDIDATES,
     ...places,
-    areasAt: input.areasAt,
-  });
+  };
 }
+
+/** Compute one body's facts and store them. Throws on a failure the caller records. */
+async function computeOne(
+  ctx: ActionCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: NamesakeReads,
+): Promise<void> {
+  const facts = await computeFacts(ctx, waterBodyId, names);
+  await ctx.runMutation(
+    internal.bodyGeo.store,
+    facts === null
+      ? // Gone or merged: the store drops its facts.
+        {
+          waterBodyId,
+          stamp: '',
+          staleAt: null,
+          neighbors: [],
+          neighborsCapped: false,
+          towns: [],
+          counties: [],
+          states: [],
+          areasAt: 0,
+        }
+      : { waterBodyId, ...facts },
+  );
+}
+
+// ── The check: is a stored answer the one the code gives now? ───────────────────────────────────
+
+/** The fields a check compares — every one the store writes from the computation. */
+const CHECKED = [
+  'neighbors',
+  'neighborsCapped',
+  'towns',
+  'townStates',
+  'townIds',
+  'townEntries',
+  'counties',
+  'states',
+] as const;
+/** Bodies one check takes — a named handful, each computed in full. */
+export const CHECK_MAX = 25;
+
+/** A body's stored facts as the check compares them, or `null` with none computed. */
+export const storedFacts = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const row = await ctx.db
+      .query('bodyGeoFacts')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .first();
+    if (row === null || row.computedAt === undefined) return null;
+    return {
+      stamp: row.stamp ?? null,
+      areasAt: row.areasAt ?? null,
+      placesRule: row.placesRule ?? null,
+      stale: row.staleAt !== undefined,
+      neighbors: row.neighbors ?? [],
+      neighborsCapped: row.neighborsCapped ?? false,
+      towns: row.towns ?? [],
+      townStates: row.townStates ?? [],
+      townIds: row.townIds ?? [],
+      townEntries: row.townEntries ?? [],
+      counties: row.counties ?? [],
+      states: row.states ?? [],
+    };
+  },
+});
+
+/** A value written out with its object keys sorted — the same value, whatever order it was built in. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_, v) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
+/**
+ * **Whether each named body's stored facts are what the code computes now** (B01-3p) — computed in
+ * full, compared field by field, and **nothing written**. The rollout check after a change meant to
+ * leave every answer as it was: `same` for each, or the fields that differ. `behind` when the stored
+ * answer was computed for another outline, places layer or rule (it is owed a recompute anyway);
+ * `stale` says the row is marked for one — a neighbor's outline or relation moved since — so a
+ * `differs` on a stale row may be that move, not the code. At most {@link CHECK_MAX} bodies a call.
+ */
+export const checkStored = internalAction({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (
+    ctx,
+    { waterBodyIds },
+  ): Promise<
+    {
+      waterBodyId: Id<'waterBodies'>;
+      status: 'same' | 'differs' | 'behind' | 'not computed' | 'gone';
+      stale: boolean;
+      differs: string[];
+    }[]
+  > => {
+    if (waterBodyIds.length > CHECK_MAX) {
+      throw new ConvexError(`at most ${CHECK_MAX} bodies a check`);
+    }
+    const names = new NamesakeReads();
+    const out = [];
+    for (const waterBodyId of waterBodyIds) {
+      // Independent reads: the stored row and the fresh computation, together.
+      const [stored, fresh] = await Promise.all([
+        ctx.runQuery(internal.bodyGeo.storedFacts, { waterBodyId }),
+        computeFacts(ctx, waterBodyId, names),
+      ]);
+      const stale = stored?.stale ?? false;
+      if (fresh === null) {
+        out.push({ waterBodyId, status: 'gone' as const, stale, differs: [] });
+        continue;
+      }
+      if (stored === null) {
+        out.push({ waterBodyId, status: 'not computed' as const, stale, differs: [] });
+        continue;
+      }
+      const differs = CHECKED.filter((f) => canonical(stored[f]) !== canonical(fresh[f]));
+      const behind =
+        stored.stamp !== fresh.stamp ||
+        stored.areasAt !== fresh.areasAt ||
+        stored.placesRule !== PLACES_RULE;
+      out.push({
+        waterBodyId,
+        status: behind
+          ? ('behind' as const)
+          : differs.length === 0
+            ? ('same' as const)
+            : ('differs' as const),
+        stale,
+        differs: [...differs],
+      });
+    }
+    return out;
+  },
+});
 
 /** An error's class for the attempts record — its kind only, never its message. */
 export function errorClassOf(err: unknown): string {
@@ -774,6 +1141,8 @@ const RUN_MS = 4 * 60_000;
  * least one body it hasn't, so a run always ends. With `chain`, a run past its time hands on to a
  * fresh one until none is due.
  *
+ * `namesRead` is how many town names the run asked the layer about, each once (B01-3p).
+ *
  * `done` is `false` when the run stopped with bodies still due: its time ran out, its batch filled
  * (without `chain`, and never for the daily retry, which walks every parked body while its time
  * lasts), or every due body it can see ({@link DUE_WINDOW}) already failed in this run — the next run
@@ -784,11 +1153,12 @@ export const computeDue = internalAction({
   handler: async (
     ctx,
     { parked = false, chain = false },
-  ): Promise<{ computed: number; failed: number; done: boolean }> => {
+  ): Promise<{ computed: number; failed: number; done: boolean; namesRead: number }> => {
     const started = Date.now();
     let computed = 0;
     let failed = 0;
     const tried = new Set<string>();
+    const names = new NamesakeReads();
     for (;;) {
       const ask = Math.min(DUE_WINDOW, RUN_BATCH + tried.size);
       const seen: Id<'waterBodies'>[] = await ctx.runQuery(internal.bodyGeo.due, {
@@ -796,11 +1166,13 @@ export const computeDue = internalAction({
         parked,
       });
       const ids = seen.filter((id) => !tried.has(id)).slice(0, RUN_BATCH);
-      if (ids.length === 0) return { computed, failed, done: seen.length < ask };
+      if (ids.length === 0) {
+        return { computed, failed, done: seen.length < ask, namesRead: names.reads };
+      }
       for (let i = 0; i < ids.length; i += CONCURRENCY) {
         const slice = ids.slice(i, i + CONCURRENCY);
         for (const id of slice) tried.add(id);
-        const results = await Promise.allSettled(slice.map((id) => computeOne(ctx, id)));
+        const results = await Promise.allSettled(slice.map((id) => computeOne(ctx, id, names)));
         for (const [j, r] of results.entries()) {
           if (r.status === 'fulfilled') {
             computed++;
@@ -816,12 +1188,12 @@ export const computeDue = internalAction({
       }
       if (Date.now() - started > RUN_MS) {
         if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { parked, chain });
-        return { computed, failed, done: false };
+        return { computed, failed, done: false, namesRead: names.reads };
       }
       // The cron's run stops at a batch; the daily retry walks every parked body while its time lasts
       // (one it fails is re-stamped to the back, so each pass's due list starts with untried ones).
       if (!chain && !parked && computed + failed >= RUN_BATCH) {
-        return { computed, failed, done: false };
+        return { computed, failed, done: false, namesRead: names.reads };
       }
     }
   },
@@ -839,9 +1211,11 @@ export const computeAll = internalAction({
 /**
  * Library rows one seeding page reads. Each marks a facts row, read and rewritten whole — up to twelve
  * neighbors' rings, ~16 KB — so a page of re-seeded bodies stays a few megabytes inside a mutation's
- * 16 MiB read and write budgets.
+ * 16 MiB read and write budgets. **100, not 250** (B01-3p): at 250 a page ran 1.1 s at p99 on dev, its
+ * facts rows read one after another; now a page is 100 and its rows are read together
+ * (`markGeoStale`). The chain marks the same bodies, in two and a half times the pages.
  */
-export const SEED_PAGE = 250;
+export const SEED_PAGE = 100;
 
 /** Mark every library body stale, a page at a time, chaining itself — the backfill's first step. */
 export const seedAll = internalMutation({
