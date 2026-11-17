@@ -4386,7 +4386,9 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
   random joins, leaves and pages asked for, keyed and searched: no page overlaps another, the rows
   are the server's list from its start with none missing, *done* only when the server's last page
   is, and on a keyed lane every row a page read past covered still shows. The route test runs the
-  same against the mocked hook with reads first asked after a change held on their way.
+  same against the mocked hook with reads first asked after a change held on their way. A
+  pinned page costs one more read of that page each time the list asks on (its range read again,
+  bounded); the server reserves a bounded page's 200 light rows.
 - **The paged People reads, inventoried.** The list (`people.listPage`: every lane, the queue and
   Staff lanes read whole and keyed, the search) — fixed here. History (`people.history`) and
   Decisions (`people.decisions`) are one read each, by `limit` (Decisions doubles it on *Show more*,
@@ -4398,10 +4400,12 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
 - ***Open about this person* draws its facts.** A flag names the body it is on after what it is on
   (*Spam flag on a report · Mascoma Lake*, `open.flags[].targetLabel`); a flag on the person names
   nothing more — the label is their own name, already the page's head. When some flags went
-  unlabeled past what one read names (`open.flagLabelsCapped`), a note says so. An appeal shows what
+  unlabeled past what one read names (`open.flagLabelsCapped`), a note says so — only when a flag
+  on content is the one left unnamed (a flag on the person past the cap names nothing more anyway). An appeal shows what
   the person wrote (`appeals[].body`, an admin's to read) as their words, quoted and never reworded,
   bounded to four lines or 280 characters cut at a word (`feedWords.boundedWords`, a property over
-  any text); a cut ends on an ellipsis with *Show all* beside it (`aria-expanded`), which shows every
+  any text; characters counted as a reader sees them, so a cut never splits an emoji or an accent),
+  and masked from analytics as a name is; a cut ends on an ellipsis with *Show all* beside it (`aria-expanded`), which shows every
   word. Long unbroken text wraps rather than scroll the pane sideways at phone width. The *Handle*
   links still go to the old flags and support lists (the Inbox is on hold).
 - **The staff strip names who undid a staffer's decisions** (`staffStats.decisions.undoneByOthers.by`
@@ -4410,7 +4414,9 @@ the record sheet's kit candidates' tests (2026-11-16; web only, no server change
   person whose row isn't written yet is counted in the *more*, never drawn blank; with no one the read
   could name, the plain words stand. While the undo chains are being prepared, or nothing was undone,
   the words are as they were. The cell's four answers — on its way, failed, no strip (`null`, not on
-  staff), named — are held apart in `PersonStrips.test.tsx`.
+  staff), named — are held apart in `PersonStrips.test.tsx`; a story (`PersonStrips.stories.tsx`)
+  measures every circle under its cell's value and inside its cell, at the detail column and at
+  phone width.
 - **The record sheet's kit candidates have tests** (`RecordRow`, `LifeList`, `LabelRows`, each fully
   covered, beside the stories they had). Not promoted: the promotion moves imports in files #138 is
   changing.
