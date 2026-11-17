@@ -5122,7 +5122,7 @@ the count reads at most 306 rows.
 - `waterBodies.bodiesCoveringBox` — hydrates the ranked candidates one after another, each a whole body, including those whose box misses the query, until the limit fits (up to the 1,500-row budget); read by the skater map's `listInViewport` and by each `candidates` tile. The largest remaining cost of the recompute's neighbor step; waves over the ranked ids, admitted in order, would keep the answer. Not this build's file.
 - `waterBodies.listDedupCandidates` — up to 250 flagged bodies, each candidate read whole one after another; the dedup queue's page. Not this build's file.
 - `waterBodies.searchSubAreas` — each bay's parent read whole, one after another; a search's bays. Not this build's file.
-- `bodyConsole.townLines` — up to 48 outline rows one after another (40 for Lake Champlain; small rows). `consoleExtras`' touching bodies (12 library rows) and the Bays tab's provenance (one audit read a bay) likewise. A dozen to fifty round trips each; `Promise.all` keeps the order. PR #141's file.
+- `bodyConsole.townLines` — up to 48 outline rows one after another (40 for Lake Champlain; small rows). `consoleExtras`' touching bodies (12 library rows) and the Bays tab's provenance (one audit read a bay) likewise. A dozen to fifty round trips each; `Promise.all` keeps the order. Not this build's file.
 - `adminAreas.findContainingArea` — each candidate boundary read whole one after another, to test a point; a report's place at create. Not this build's file.
 - `bodyGeo.repairDrift` — each checked row's links read one after another (up to 32 small rows, 40 rows a tick), bounded by its byte reserve; not measured slow. Left.
 
