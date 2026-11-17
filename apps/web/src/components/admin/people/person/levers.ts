@@ -5,8 +5,10 @@ import {
   recordRowShows,
   standingWords,
 } from '../record/recordModel';
+import { FACT_WORDS as F } from './factWords';
 import {
   countText,
+  dateWords,
   type PersonCan,
   type PersonRead,
   ROLE_WORDS,
@@ -17,12 +19,17 @@ import { WORDS } from './personWords';
 
 /**
  * The page's levers, from the person read — pure. **`can` is the law**: a control the server would
- * refuse is never drawn as available, and nothing here decides a permission of its own. Where
- * `can` has no entry of its own for a write, the entry the server computes by the same rule is
- * read (`lib/peopleCan.writeRefusal`): every posting right given back, flagging switched back on and
- * the bounty limit are refused exactly when *Restrict* is (`can.restrict`), and a give-back never
- * asks a reason. The one control drawn though refused is the board's: the last ledger editor's
- * *Step down* / *Revoke*, disabled, with why.
+ * refuse is never drawn as available, and nothing here decides a permission of its own. Every
+ * lever reads its own entry (`lib/peopleCan.writeRefusal` on the server): a right given back
+ * (`can.restore`), flagging switched back on (`can.flaggingOn`), the bounty limit raised or lowered
+ * (`can.bountyRaise`, `can.bountyLower` — *Set limit* is drawn while either is open, and its dialog
+ * allows only the way that is). The one control drawn though refused is the board's: the last
+ * ledger editor's *Step down* / *Revoke*, disabled, with why.
+ *
+ * The facts under a row are the read's own: since when a right is off (`rightsSince`) and ledger
+ * editing held (`ledger.since`), and this season's bounty asks (`bountySeason`) — each a date or a
+ * count, *not recorded yet* for `null`, *older than what one read covers* for a read that stopped
+ * short.
  *
  * Rows hold facts and say what may be done; a row with nothing to say and nothing to do is left out
  * (a page about yourself shows its facts, and no levers on yourself).
@@ -119,42 +126,66 @@ const LAST_EDITOR = {
   body: 'The ledger always keeps an editor.',
 };
 
+/** A start as a row's sub-line: its date, not recorded, or older than one read covers. */
+function sinceWords(
+  at: number | null,
+  capped: boolean,
+  now: number,
+  timeZone: string | undefined,
+): string {
+  if (at !== null) return F.since(dateWords(at, now, timeZone));
+  return capped ? F.sinceTooOld : F.sinceUnrecorded;
+}
+
+/** This season's bounty asks, as the Bounties row's sub-line. */
+export function seasonAsksWords(season: PersonRead['bountySeason']): string {
+  if (season === null) return F.seasonAsksUnrecorded;
+  const { asks, overLimit, hadRecentReport } = season;
+  if (asks.count === 0 && !asks.capped) return F.noSeasonAsks;
+  return F.seasonAsks(
+    F.asks(countText(asks), asks.count === 1 && !asks.capped),
+    countText(overLimit),
+    countText(hadRecentReport),
+  );
+}
+
 /** "Can do": the posting rights, the bounty limit and flagging. */
-export function canDoRows(p: PersonRead): LeverRow[] {
+export function canDoRows(p: PersonRead, opts: { now: number; timeZone?: string }): LeverRow[] {
   const { rights, can } = p;
   const name = shownName(p);
+  const offSince = (right: Permission) =>
+    sinceWords(p.rightsSince[right], p.rightsSinceCapped, opts.now, opts.timeZone);
   const rows: LeverRow[] = (['reports', 'hazards', 'comments'] as const).map((permission) => {
     const w = RIGHT_WORDS[permission];
     const allowed = rights[permission];
     const buttons: LeverButton[] = [];
-    if (can.restrict.ok) {
-      buttons.push(
-        allowed
-          ? {
-              id: `${permission}-restrict`,
-              label: 'Restrict',
-              opens: {
-                kind: 'reason',
-                ask: {
-                  title: WORDS.restrictTitle(w.label.toLowerCase()),
-                  description: WORDS.restrictBody(name, w.verb),
-                  confirm: 'Restrict',
-                  action: (reason) => ({ kind: 'right', permission, allowed: false, reason }),
-                },
-              },
-            }
-          : {
-              id: `${permission}-restrict`,
-              label: 'Restore',
-              opens: { kind: 'now', action: { kind: 'right', permission, allowed: true } },
-            },
-      );
+    if (allowed && can.restrict.ok) {
+      buttons.push({
+        id: `${permission}-restrict`,
+        label: 'Restrict',
+        opens: {
+          kind: 'reason',
+          ask: {
+            title: WORDS.restrictTitle(w.label.toLowerCase()),
+            description: WORDS.restrictBody(name, w.verb),
+            confirm: 'Restrict',
+            action: (reason) => ({ kind: 'right', permission, allowed: false, reason }),
+          },
+        },
+      });
+    } else if (!allowed && can.restore[permission].ok) {
+      buttons.push({
+        id: `${permission}-restrict`,
+        label: 'Restore',
+        opens: { kind: 'now', action: { kind: 'right', permission, allowed: true } },
+      });
     }
     return {
       key: permission,
       label: w.label,
       status: allowed ? 'Allowed' : WORDS.restricted,
       tone: allowed ? 'ok' : 'bad',
+      ...(!allowed && { second: offSince(permission) }),
       buttons,
     };
   });
@@ -169,9 +200,11 @@ export function canDoRows(p: PersonRead): LeverRow[] {
         ? `Limit ${rights.defaultBountyLimit} · the default`
         : `Limit ${limit} (default ${rights.defaultBountyLimit})`,
     tone: below ? 'warn' : 'ok',
-    buttons: can.restrict.ok
-      ? [{ id: 'bounties-set', label: 'Set limit', opens: { kind: 'bounty' } }]
-      : [],
+    second: seasonAsksWords(p.bountySeason),
+    buttons:
+      can.bountyRaise.ok || can.bountyLower.ok
+        ? [{ id: 'bounties-set', label: 'Set limit', opens: { kind: 'bounty' } }]
+        : [],
   });
 
   const filed = `${countText(rights.flagsFiled)} filed`;
@@ -190,7 +223,7 @@ export function canDoRows(p: PersonRead): LeverRow[] {
         },
       },
     });
-  } else if (!rights.flagging && can.restrict.ok) {
+  } else if (!rights.flagging && can.flaggingOn.ok) {
     flagButtons.push({
       id: 'flagging-switch',
       label: WORDS.switchOn,
@@ -202,6 +235,7 @@ export function canDoRows(p: PersonRead): LeverRow[] {
     label: 'Flagging',
     status: rights.flagging ? `Allowed · ${filed}` : WORDS.switchedOff(filed),
     tone: rights.flagging ? 'ok' : 'bad',
+    ...(!rights.flagging && { second: offSince('flagging') }),
     buttons: flagButtons,
   });
   return rows;
@@ -229,6 +263,7 @@ export function accountRows(
   p: PersonRead,
   opts: {
     now: number;
+    timeZone?: string;
     self: boolean;
     /**
      * Whether the record's other two lists hold anything (`contentRecord.recordPresence`): `null`
@@ -253,7 +288,7 @@ export function accountRows(
   });
 
   if (p.ledger !== null && can.ledger !== null) {
-    const { editor, last } = p.ledger;
+    const { editor, last, since, sinceCapped } = p.ledger;
     const word = opts.self ? 'Step down' : 'Revoke';
     let buttons: LeverButton[] = [];
     if (!editor && can.ledger.grant.ok) {
@@ -288,6 +323,7 @@ export function accountRows(
       label: 'Ledger editing',
       status: editor ? (last ? 'On · the only editor' : 'On') : 'Off',
       tone: editor ? 'ok' : 'quiet',
+      ...(editor && { second: sinceWords(since, sinceCapped, opts.now, opts.timeZone) }),
       buttons,
     });
   }

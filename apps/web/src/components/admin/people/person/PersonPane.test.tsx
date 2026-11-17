@@ -353,7 +353,16 @@ describe('the writes', () => {
     mocks.results.set('people:person', {
       ...ROB,
       role: 'moderator',
-      can: { ...ROB.can, restrict: { ok: false, why: 'Staff can’t be restricted.' } },
+      // The server's every give-back answers as its restriction does: staff can't be restricted.
+      can: {
+        ...ROB.can,
+        restrict: { ok: false, why: 'Staff can’t be restricted.' },
+        restore: {
+          reports: { ok: false, why: 'Staff can’t be restricted.' },
+          hazards: { ok: false, why: 'Staff can’t be restricted.' },
+          comments: { ok: false, why: 'Staff can’t be restricted.' },
+        },
+      },
     });
     view.rerender(<PersonPane userId={ROB_ID} />);
     expect(within(lever('comments')).queryByRole('button')).toBeNull();
