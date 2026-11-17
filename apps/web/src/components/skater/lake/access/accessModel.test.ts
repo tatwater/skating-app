@@ -203,8 +203,8 @@ describe('derivedPutIns', () => {
     expect(out[2]?.sub).toBe('From skaters’ reports');
     expect(out[0]?.directions).toMatchObject({ target: 'put_in' });
     expect(
-      derivedPutIns([{ coord: { lat: 1, lng: 2 }, source: 'derived', cluster: true }], 'ios', 0)[0]?.directions
-        .tip,
+      derivedPutIns([{ coord: { lat: 1, lng: 2 }, source: 'derived', cluster: true }], 'ios', 0)[0]
+        ?.directions.tip,
     ).toMatch(/Apple Maps/);
   });
 });

@@ -5275,15 +5275,18 @@ convex files take a constant from core instead of their own (below), so dev take
   floor follows every real size; the camera is framed once per body, the first time it is drawn in a
   real box. **Owed fit versus the operator's camera:** a fit is owed only for bounds never yet framed
   in a real box; once paid, a hide and a show, a resize, a pan or a zoom never frame it again, and a
-  theme re-create keeps the view the shell restores. The traps held: the container is still sized,
-  never positioned; nothing waits on `idle`; the resize handler is attached to the live map only
-  (`liveMap()` is its effect's whole dependency), and asks once at attach, for a box that became real
-  between the load and the effect. Tests (failing first, through one seam: the fake map's box):
-  loaded hidden then shown — framed; another body loaded hidden — the new body framed on show; a moved
-  camera left and returned — not re-framed; a resize while hidden — the shown size's floor. Over the
-  real layout at 360 px (`Admin/Body/Console` *Phone | Map loads hidden*): a stand-in map on the
-  pane's own element, resized by the browser, loads while its pane is hidden — nothing framed while
-  the box is zero — and is framed for the pane's real size when shown.
+  theme re-create keeps the view the shell restores. A map for other bounds loaded hidden takes the
+  camera (the shell re-creates each map at the last one's view, clamped to its own reach), so it
+  clears the earlier bounds' paid fit: coming back to them is owed a frame afresh. The traps held:
+  the container is still sized, never positioned; nothing waits on `idle`; the resize handler is
+  attached to the live map only (`liveMap()` is its effect's whole dependency), and asks once at
+  attach, for a box that became real between the load and the effect. Tests (failing first, through
+  one seam: the fake map's box): loaded hidden then shown — framed; another body loaded hidden — the
+  new body framed on show; a body left for another loaded hidden, then returned to — framed afresh
+  on show; a moved camera left and returned — not re-framed; a resize while hidden — the shown
+  size's floor. Over the real layout at 360 px (`Admin/Body/Console` *Phone | Map loads hidden*): a
+  stand-in map on the pane's own element, resized by the browser, loads while its pane is hidden —
+  nothing framed while the box is zero — and is framed for the pane's real size when shown.
 - **The sweep for the same shape** under the new stacking: the map's chrome (`BodyMapPane`'s
   graticule keep-outs), the kit `Toolbar`'s fit, `LedStrip` and the day strips' marks (`TraceChart`),
   `ListEnd` — each measures on a `ResizeObserver`, which fires as a hidden pane becomes real, so each
@@ -5309,7 +5312,10 @@ convex files take a constant from core instead of their own (below), so dev take
   optional additions no client keys on (the skater web's report-derived list keys by coordinate; the
   phone's put-in reads were checked for `id` and `cluster` and read neither). **Against the Access
   tab:** it lists the body's stored rows (`accessPoints.accessForBody`), never live clusters, so the
-  two now offer *Make official* on exactly the same launches; the old editor alone lists clusters, as
+  two offer *Make official* by the same rule on every stored launch each lists; the lists themselves
+  differ at the edges (`listForBody` folds a stored launch within the hide radius of an earlier
+  marker into it, and reads up to 1,000 rows against the Access read's 64), so the Access tab can
+  offer it on a launch the old editor folds away. The old editor alone lists clusters, as
   report-derived spots with the note.
 - Also from the review's fixes before the round: the Places dismissal's note was cut to 280 by a
   copied number (`corpusPlaceNames.dismiss`) while its field allowed 2,000 — the cut and both fields

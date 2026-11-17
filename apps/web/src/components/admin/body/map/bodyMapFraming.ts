@@ -47,14 +47,20 @@ export function frameInRealBox(
   padding: Padding,
   framed: { current: string | null },
 ): 'owed' | 'framed' | 'floor' {
+  const key = boundsKeyOf(bbox);
   const box = map.getContainer();
-  if (!(box.clientWidth > 0 && box.clientHeight > 0)) return 'owed';
+  if (!(box.clientWidth > 0 && box.clientHeight > 0)) {
+    // A map for other bounds than the ones last framed now holds the camera (the shell re-creates
+    // each map at the view the last one left, clamped to its own reach): coming back to those
+    // bounds later is owed a frame afresh, not "framed already" on a camera that is the other's.
+    if (framed.current !== key) framed.current = null;
+    return 'owed';
+  }
   const camera = fitCamera(bbox, box.clientWidth, box.clientHeight, padding);
   // The ceiling first, then a floor never above it: MapLibre throws on a floor over the ceiling,
   // and a pond small enough to frame past it would take the whole load down with it.
   map.setMaxZoom(MAX_ZOOM);
   map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, camera.zoom - ZOOM_OUT_ROOM)));
-  const key = boundsKeyOf(bbox);
   if (framed.current === key) return 'floor';
   map.jumpTo({
     center: [camera.center.lng, camera.center.lat],

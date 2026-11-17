@@ -346,7 +346,7 @@ export async function promotePutInImpl(
   const { row, body } = await promotableRow(ctx, args.putInId);
   const refused = directionRefusal(row, 'promote', args.expected);
   // The one rule every control that offers it reads (core's `canMakeOfficial`).
-  const launch = { id: row._id as string, source: row.source };
+  const launch = { id: row._id, source: row.source };
   if (refused !== null || !canMakeOfficial(launch)) {
     throw new ConvexError(refused ?? 'That put-in is already official');
   }

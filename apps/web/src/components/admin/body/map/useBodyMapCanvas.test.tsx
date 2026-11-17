@@ -327,12 +327,12 @@ describe('useBodyMapCanvas', () => {
     };
     /** The zoom the body frames at in a real box of this size, read off a map loaded visible. */
     const framedAt = (w: number, h: number, bbox = MASCOMA_BOUNDS) => {
-      const saved = shell.map;
+      // The shell as it was, put back whole: a probe never leaves the harness under test unready.
+      const saved = { map: shell.map, live: shell.live, onLoad: shell.onLoad };
       shell.map = new FakeMap();
       const { map, view } = loadAt(w, h, bbox);
       view.unmount();
-      shell.map = saved;
-      shell.live = false;
+      Object.assign(shell, saved);
       return map.zoom;
     };
 
@@ -369,6 +369,44 @@ describe('useBodyMapCanvas', () => {
       expect(next.jumps).toBe(0);
       next.resizeTo(360, 600);
       expect(next.zoom).toBeCloseTo(expected, 6);
+    });
+
+    it('a body left for another loaded hidden is framed afresh on its return', () => {
+      const moved = {
+        minLng: MASCOMA_BOUNDS.minLng + 0.5,
+        minLat: MASCOMA_BOUNDS.minLat,
+        maxLng: MASCOMA_BOUNDS.maxLng + 0.02,
+        maxLat: MASCOMA_BOUNDS.maxLat + 0.01,
+      };
+      const expected = framedAt(360, 600);
+      const { map, view } = loadAt(360, 600);
+      expect(map.jumps).toBe(1);
+      // Hidden, then another body: its map takes the camera in the hidden pane, never framed.
+      map.resizeTo(0, 0);
+      const other = new FakeMap();
+      other.box = { clientWidth: 0, clientHeight: 0 };
+      shell.map = other;
+      shell.live = false;
+      view.rerender(<Harness mode="dark" bbox={moved} />);
+      other.loaded = true;
+      shell.onLoad?.(other);
+      shell.live = true;
+      view.rerender(<Harness mode="dark" bbox={moved} />);
+      // Back to the first body, still hidden: the shell re-creates its map at the other's camera.
+      const back = new FakeMap();
+      back.box = { clientWidth: 0, clientHeight: 0 };
+      back.zoom = 16;
+      shell.map = back;
+      shell.live = false;
+      view.rerender(<Harness mode="dark" />);
+      back.loaded = true;
+      shell.onLoad?.(back);
+      shell.live = true;
+      view.rerender(<Harness mode="dark" />);
+      expect(back.jumps).toBe(0);
+      back.resizeTo(360, 600);
+      expect(back.jumps).toBe(1);
+      expect(back.zoom).toBeCloseTo(expected, 6);
     });
 
     it('a camera the operator moved is theirs: leaving and coming back never frames it again', () => {

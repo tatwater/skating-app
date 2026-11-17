@@ -380,19 +380,21 @@ function PutInItem({
     ) : null;
   const actions = p.source !== 'official' && (onMakeOfficial || onHide) && (
     <span className="flex gap-(--space-1_5)">
-      {onMakeOfficial === UNAVAILABLE ? (
-        <UnavailableButton size="xs" what={TOOLS.official}>
-          Make official
-        </UnavailableButton>
-      ) : (
-        onMakeOfficial &&
-        // One rule with the write (`putIns.promote`) and the old editor's list.
-        canMakeOfficial(p) && (
-          <Button size="xs" onClick={() => onMakeOfficial(p)}>
+      {
+        // One rule with the write (`putIns.promote`) and the old editor's list, for the button
+        // drawn live and the one drawn unavailable alike.
+        !canMakeOfficial(p) ? null : onMakeOfficial === UNAVAILABLE ? (
+          <UnavailableButton size="xs" what={TOOLS.official}>
             Make official
-          </Button>
+          </UnavailableButton>
+        ) : (
+          onMakeOfficial && (
+            <Button size="xs" onClick={() => onMakeOfficial(p)}>
+              Make official
+            </Button>
+          )
         )
-      )}
+      }
       {onHide && (
         <ReasonAsk
           trigger={<Button size="xs">Hide</Button>}
