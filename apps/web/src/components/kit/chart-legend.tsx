@@ -22,6 +22,8 @@ type LegendItem = {
   ink: string;
   /** `bar` (default) draws a square, `line` a hairline. */
   mark?: 'bar' | 'line';
+  /** A line's pattern: solid (default), or dashed as a threshold rule is drawn. */
+  pattern?: 'solid' | 'dashed';
 };
 
 type ChartLegendProps = Omit<ComponentProps<'ul'>, 'children'> & {
@@ -50,10 +52,14 @@ function ChartLegend({ items, className, ...props }: ChartLegendProps) {
             aria-hidden="true"
             data-slot="chart-legend-swatch"
             data-mark={item.mark ?? 'bar'}
+            data-pattern={item.mark === 'line' ? (item.pattern ?? 'solid') : undefined}
             className={cn(
               'inline-block shrink-0',
               item.mark === 'line'
-                ? 'h-0 w-(--space-4) border-t-(length:--stroke-hair) border-solid'
+                ? cn(
+                    'h-0 w-(--space-4) border-t-(length:--stroke-hair)',
+                    item.pattern === 'dashed' ? 'border-dashed' : 'border-solid',
+                  )
                 : 'size-(--space-2)',
             )}
             style={item.mark === 'line' ? { borderColor: item.ink } : { background: item.ink }}

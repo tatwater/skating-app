@@ -7,12 +7,14 @@ import {
   type SeasonPending,
   WinterTile,
 } from '@/components/admin/season/SeasonTiles';
+import { SentinelLows } from '@/components/admin/season/SentinelLows';
 import type {
   FirstSkate,
   IceWatch,
   ImageryState,
   RegionWinter,
 } from '@/components/admin/season/seasonFacts';
+import type { LowsState } from '@/components/admin/season/sentinelLowsModel';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 
@@ -32,8 +34,9 @@ import { type LinkTo, OverviewLinkProvider } from './overviewLinks';
 
 /**
  * The Overview's Home tab: what needs a person. The season's stat strip, the four count cards
- * (Inbox by lane, Corpus by task, Machinery, People), then cost beside the audit feed — the lower
- * half runs to the foot of the page, the feed scrolling inside it.
+ * (Inbox by lane, Corpus by task, Machinery, People), the sentinels' overnight lows (the Seasons
+ * board's row, B01-2b), then cost beside the audit feed — the lower half runs to the foot of the
+ * page, at least its board height, the feed scrolling inside it.
  *
  * Props, not Convex: the route (or `useOverviewHome`) reads and passes each block its view model,
  * and a block still loading is `undefined` and holds its place. Links go through `linkTo`, so the
@@ -57,6 +60,12 @@ export interface OverviewHomeData {
   /** `'withheld'` from a viewer who can't read Machinery (admin only): the card is left out. */
   machinery?: MachineryCardData | null | undefined | 'withheld';
   people?: PeopleCardData | undefined;
+  /**
+   * The sentinels' overnight lows (`sentinelLows.forSeason`) in its four answers; `'withheld'` from
+   * a viewer the read's capability leaves out (D275's one line) — the row is then simply absent.
+   * Absent (a story or test that doesn't draw it) leaves it out too.
+   */
+  lows?: LowsState | 'withheld' | undefined;
   feed?: readonly FeedRow[] | undefined;
 }
 
@@ -126,7 +135,14 @@ export function OverviewHome({
           <PeopleCard data={data.people} />
         </div>
 
-        <div data-slot="overview-lower" className={cn(COLUMNS, 'min-h-0 flex-1')}>
+        {data.lows !== undefined && data.lows !== 'withheld' && (
+          // Between the four cards and the cost and audit row (the founder, 2026-11-16).
+          <SentinelLows state={data.lows} />
+        )}
+
+        {/* At least the board's height: with the sentinel row above it Home scrolls under the page
+            head, and the feed keeps room to scroll inside. */}
+        <div data-slot="overview-lower" className={cn(COLUMNS, 'min-h-[26.875rem] flex-1')}>
           {/* The board's 26 px between the services and the months. */}
           <div className="col-span-2 flex min-h-0 min-w-0 flex-col gap-[1.625rem]">
             <CostSection data={data.cost} />

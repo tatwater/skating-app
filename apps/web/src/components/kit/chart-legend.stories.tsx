@@ -71,6 +71,26 @@ export const Legend: Story = {
   },
 };
 
+/** A threshold rule's swatch is dashed, as the rule is drawn; a series' stays solid. */
+export const Thresholds: Story = {
+  args: {
+    items: [
+      { label: 'Clouds', ink: 'var(--fg)', mark: 'line' },
+      { label: 'the watch · 32 °F', ink: 'var(--fg3)', mark: 'line', pattern: 'dashed' },
+      { label: 'imagery · 20 °F', ink: 'var(--warn)', mark: 'line', pattern: 'dashed' },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const [series, watch, imagery] = parts(canvasElement, 'chart-legend-swatch').map(must);
+    await expect(getComputedStyle(must(series)).borderTopStyle).toBe('solid');
+    await expect(getComputedStyle(must(watch)).borderTopStyle).toBe('dashed');
+    await expect(getComputedStyle(must(imagery)).borderTopStyle).toBe('dashed');
+    await expect(getComputedStyle(must(imagery)).borderTopColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--warn)')),
+    );
+  },
+};
+
 /** At the end of a section's rule, where Metrics wears it. */
 export const OnARule: Story = {
   render: (args) => (

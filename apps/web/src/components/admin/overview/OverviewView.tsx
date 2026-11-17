@@ -126,20 +126,26 @@ export function OverviewView({
           {
             value: 'home',
             label: 'Home',
+            // With the sentinels' row Home runs taller than a 900 px screen, so it scrolls under
+            // the page head as Metrics does; the lower half keeps its board height inside.
             panel: (
-              <OverviewHome
-                data={data}
-                now={now}
-                {...(linkTo !== undefined && { linkTo })}
-                {...(onOpenTarget !== undefined && { onOpenTarget })}
-                live={
-                  <LiveMark
-                    state={live.state}
-                    lastCheckedAt={live.lastCheckedAt}
-                    {...(onRefresh !== undefined && { onRefresh })}
+              <div data-slot="home-scroll" className="flex min-h-0 flex-1 flex-col">
+                <ScrollArea className="min-h-0 flex-1" gutter={false}>
+                  <OverviewHome
+                    data={data}
+                    now={now}
+                    {...(linkTo !== undefined && { linkTo })}
+                    {...(onOpenTarget !== undefined && { onOpenTarget })}
+                    live={
+                      <LiveMark
+                        state={live.state}
+                        lastCheckedAt={live.lastCheckedAt}
+                        {...(onRefresh !== undefined && { onRefresh })}
+                      />
+                    }
                   />
-                }
-              />
+                </ScrollArea>
+              </div>
             ),
           },
           {

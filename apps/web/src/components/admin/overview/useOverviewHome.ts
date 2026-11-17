@@ -1,9 +1,18 @@
 import { api } from '@skating/convex/api';
-import { type Capability, metricDay, metricDayStart, seasonOf } from '@skating/core';
+import {
+  type Capability,
+  metricDay,
+  metricDayStart,
+  SENTINEL_LOWS_CAPABILITY,
+  seasonOf,
+} from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 
 import { seasonFromSummary } from '@/components/admin/season/seasonFacts';
+import { lowsState } from '@/components/admin/season/sentinelLowsModel';
+
+import { read, useConsoleReads } from '../reads/consoleReads';
 
 import { minuteOf } from '../reads/readArgs';
 import { useHeldRead } from '../shell/presence';
@@ -28,7 +37,8 @@ export type HomeReads = Omit<OverviewHomeData, 'cost'>;
 /**
  * Home's reads: the Inbox and People counts (`console.overview`), the Corpus tasks
  * (`waterBodies.reviewQueueCounts` and `console.corpusCounts`), Machinery
- * (`machinery.overviewJobs`), the season's four (`seasonWatch.homeSummary`) and the audit trail —
+ * (`machinery.overviewJobs`), the season's four (`seasonWatch.homeSummary`), the sentinels' lows
+ * (`sentinelLows.forSeason`, through the console's read layer: four answers) and the audit trail —
  * people's actions (`moderation.listActions`) and the machine's (`console.systemFeed`) in time
  * order.
  *
@@ -76,6 +86,14 @@ export function useOverviewHome({
     !canSeason,
   );
   const summary = heldSummary?.season === season ? heldSummary : undefined;
+  // The sentinels' lows, through the console's read layer so a failure is its own answer. Asked only
+  // of a viewer the read's capability admits (D275); for anyone else the row is left out.
+  const canLows = can(SENTINEL_LOWS_CAPABILITY);
+  const { lows: lowsRead } = useConsoleReads({
+    lows: canLows
+      ? read(api.sentinelLows.forSeason, { season, now: metricDayStart(metricDay(now)) })
+      : null,
+  });
   const actions = useQuery(api.moderation.listActions, canAudit ? { limit: FEED_LIMIT } : 'skip');
   const system = useQuery(api.console.systemFeed, canAudit ? { limit: FEED_LIMIT } : 'skip');
 
@@ -118,7 +136,20 @@ export function useOverviewHome({
       winter: tile(facts?.winter),
       imagery: tile(facts?.imagery),
       firstSkate: tile(facts?.firstSkate),
+      lows: canLows ? lowsState(lowsRead) : 'withheld',
       feed,
     };
-  }, [overview, reviewCounts, corpusCounts, jobs, summary, feed, canMachinery, canSeason, past]);
+  }, [
+    overview,
+    reviewCounts,
+    corpusCounts,
+    jobs,
+    summary,
+    feed,
+    canMachinery,
+    canSeason,
+    past,
+    canLows,
+    lowsRead,
+  ]);
 }
