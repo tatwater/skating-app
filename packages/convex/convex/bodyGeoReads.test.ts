@@ -338,7 +338,9 @@ describe('the worst real case: thousands of cells across two states', () => {
     );
     await seedAreas(t, areas);
     before = await t.run((ctx) => referenceTownIds(ctx, box));
-  });
+    // Built once for the file: 478 boundaries and the old walk's 2,448 cell reads take about 2 s
+    // here and several times that on CI under coverage — past the 10 s hook default (CI, #143).
+  }, 120_000);
 
   test('the same 458 towns, in the same order', async () => {
     const after = await pagedTownIds(t, box);
