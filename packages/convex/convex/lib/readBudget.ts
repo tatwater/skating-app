@@ -107,6 +107,17 @@ export const ROW_MAX = {
   gateEvent: 2 * 1024,
   // A console presence row: a staffer's id and an instant.
   presence: 1024,
+  // The season watch (A06i): a season's record (its email queue and the names it copies, uncapped), a
+  // settings version (roster names and a note, uncapped) and a site's stored lows (its name, uncapped).
+  seasonRecord: DOC_MAX,
+  watchSettings: DOC_MAX,
+  seasonSeries: DOC_MAX,
+  // A day's metered calls to one provider: the provider's name (a code literal), a day and two counts.
+  apiCallDay: 1024,
+  // One counter, imagery's per-season totals: a season label and five counts.
+  imageryCounts: 1024,
+  // A rollup row: a metric key, a day, numbers, and a small labeled record (`meta`).
+  metricSnapshot: 64 * 1024,
 } as const;
 export type RowKind = keyof typeof ROW_MAX;
 

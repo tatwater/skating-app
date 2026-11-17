@@ -176,6 +176,7 @@ import type * as reputation from "../reputation.js";
 import type * as search from "../search.js";
 import type * as seasonReach from "../seasonReach.js";
 import type * as seasonWatch from "../seasonWatch.js";
+import type * as sentinelLows from "../sentinelLows.js";
 import type * as standing from "../standing.js";
 import type * as storageHygiene from "../storageHygiene.js";
 import type * as strava from "../strava.js";
@@ -364,6 +365,7 @@ declare const fullApi: ApiFromModules<{
   search: typeof search;
   seasonReach: typeof seasonReach;
   seasonWatch: typeof seasonWatch;
+  sentinelLows: typeof sentinelLows;
   standing: typeof standing;
   storageHygiene: typeof storageHygiene;
   strava: typeof strava;
