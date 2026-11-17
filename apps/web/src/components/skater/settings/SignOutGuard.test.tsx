@@ -1,6 +1,6 @@
 import type { PostDraft, PostSheet } from '@skating/core';
-import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
   signOut: vi.fn(async () => undefined),
@@ -15,8 +15,9 @@ vi.mock('@/lib/sheetStore', () => ({
   readStoredSheet: () => m.stored,
 }));
 
+import { NO_OTHER_TABS, setUnsavedChannelForTests } from '@/lib/unsavedElsewhere';
 import { BOARD_NOON } from '@/test/boardNow';
-import { SignOutDialog, startedLabel, unsentDraft } from './SignOutGuard';
+import { SignOutDialog, startedLabel, type UnsentDraft, unsentDraft } from './SignOutGuard';
 import { useGuardedSignOut } from './useGuardedSignOut';
 
 const NOON = BOARD_NOON;
@@ -52,7 +53,10 @@ beforeEach(() => {
   m.sheet = null;
   m.attempt = null;
   m.stored = null;
+  // Sign out asks the other tabs: none here, and an answer inside the test.
+  setUnsavedChannelForTests(NO_OTHER_TABS, 0);
 });
+afterEach(() => setUnsavedChannelForTests(undefined));
 
 describe('unsentDraft', () => {
   it('is nothing without a sheet, or with an untouched one and no attempt', () => {
@@ -90,8 +94,20 @@ describe('useGuardedSignOut', () => {
   it('signs straight out when nothing would be lost', async () => {
     const { result } = renderHook(() => useGuardedSignOut());
     await act(async () => result.current.request());
-    expect(m.signOut).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(m.signOut).toHaveBeenCalledTimes(1));
     expect(result.current.open).toBe(false);
+  });
+
+  it('a second press while the other tabs are asked asks nothing more', async () => {
+    const make = vi.fn(NO_OTHER_TABS);
+    setUnsavedChannelForTests(make, 0);
+    const { result } = renderHook(() => useGuardedSignOut());
+    act(() => {
+      result.current.request();
+      result.current.request();
+    });
+    await waitFor(() => expect(m.signOut).toHaveBeenCalledTimes(1));
+    expect(make).toHaveBeenCalledTimes(1);
   });
 
   it('asks first when the open sheet holds a draft, and signs out on the confirm', async () => {
@@ -100,7 +116,7 @@ describe('useGuardedSignOut', () => {
     act(() => result.current.request());
     expect(m.signOut).not.toHaveBeenCalled();
     expect(result.current.open).toBe(true);
-    expect(result.current.dialog.draft?.label).toBe('Mascoma Lake');
+    expect((result.current.dialog.draft as UnsentDraft | null)?.label).toBe('Mascoma Lake');
     await act(async () => result.current.dialog.onSignOut());
     expect(m.signOut).toHaveBeenCalledTimes(1);
   });
@@ -120,7 +136,7 @@ describe('useGuardedSignOut', () => {
     m.stored = { sheet: sheet({ dirty: false }), attempt: null, resendArmed: false };
     const { result } = renderHook(() => useGuardedSignOut());
     await act(async () => result.current.request());
-    expect(m.signOut).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(m.signOut).toHaveBeenCalledTimes(1));
   });
 
   it('a failed sign-out still clears the busy state', async () => {

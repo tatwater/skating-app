@@ -26,7 +26,14 @@ vi.mock('../theme-provider', () => ({
   useTheme: () => ({ theme: theme.value, setTheme: theme.setTheme, resolvedTheme: 'dark' }),
 }));
 
-import { AvatarMenu, useThemeChoice } from './AvatarMenu';
+import {
+  answerUnsavedAsks,
+  NO_OTHER_TABS,
+  setUnsavedChannelForTests,
+} from '@/lib/unsavedElsewhere';
+import { tabsHub } from '@/test/tabsHub';
+import { useThemeChoice } from '../useThemeChoice';
+import { AvatarMenu } from './AvatarMenu';
 
 beforeEach(() => {
   resetFakes();
@@ -34,6 +41,8 @@ beforeEach(() => {
   theme.setTheme.mockClear();
   signOut.mockClear();
   sheet.value = null;
+  // Sign out asks the other tabs: none here, and an answer inside the test.
+  setUnsavedChannelForTests(NO_OTHER_TABS, 0);
   useChromeStore.setState({ overlay: null });
   fakes.queries.set('profiles:current', {
     _id: 'p1',
@@ -42,7 +51,10 @@ beforeEach(() => {
     role: 'member',
   });
 });
-afterEach(() => useChromeStore.setState({ overlay: null }));
+afterEach(() => {
+  setUnsavedChannelForTests(undefined);
+  useChromeStore.setState({ overlay: null });
+});
 
 describe('useThemeChoice', () => {
   it('writes the theme and records a real change, never a re-press', () => {
@@ -80,13 +92,33 @@ describe('AvatarMenu', () => {
     expect(item).toHaveAttribute('target', '_blank');
   });
 
-  it('switches the theme from the menu and signs out', () => {
+  it('switches the theme from the menu and signs out', async () => {
     act(() => useChromeStore.getState().setOverlay('avatar'));
     render(<AvatarMenu />);
     fireEvent.click(screen.getByRole('button', { name: 'Light' }));
     expect(theme.setTheme).toHaveBeenCalledWith('light');
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
-    expect(signOut).toHaveBeenCalledOnce();
+    await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+  });
+
+  it('asks before signing out over a report another tab holds unsent, and Cancel keeps it', async () => {
+    const hub = tabsHub();
+    setUnsavedChannelForTests(hub.make, 0);
+    const stop = answerUnsavedAsks(() => true, 'the-other-tab');
+    act(() => useChromeStore.getState().setOverlay('avatar'));
+    render(<AvatarMenu />);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+    expect(
+      await screen.findByText(
+        'A report open in another tab of this browser has changes that aren’t posted yet. Signing out discards them.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open the draft' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Sign out and discard your draft?')).toBeNull());
+    expect(signOut).not.toHaveBeenCalled();
+    expect(hub.open.size).toBe(1);
+    stop();
   });
 
   it('asks before signing out over a written sheet, and can reopen it over this page', async () => {

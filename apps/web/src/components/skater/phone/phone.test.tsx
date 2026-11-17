@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useChromeStore } from '@/stores/chromeStore';
@@ -26,6 +26,7 @@ vi.mock('../../theme-provider', () => ({
   useTheme: () => ({ theme: 'system', setTheme: vi.fn(), resolvedTheme: 'dark' }),
 }));
 
+import { NO_OTHER_TABS, setUnsavedChannelForTests } from '@/lib/unsavedElsewhere';
 import { PHONE_QUERY, useIsPhone } from '@/lib/usePhoneLayout';
 import { GlobalSearch } from '../GlobalSearch';
 import { LatestFrame } from '../latest/LatestFrame';
@@ -55,6 +56,8 @@ beforeEach(() => {
   phone.matches = false;
   phone.listeners.clear();
   sheet.value = null;
+  // Sign out asks the other tabs: none here, and an answer inside the test.
+  setUnsavedChannelForTests(NO_OTHER_TABS, 0);
   stubMedia();
   useChromeStore.setState({ overlay: null, phoneDrawerSnap: 'half', latestPhonePane: 'feed' });
   fakes.queries.set('profiles:current', {
@@ -65,6 +68,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  setUnsavedChannelForTests(undefined);
   window.matchMedia = original;
 });
 
@@ -163,7 +167,7 @@ describe('PhoneMenuSheet', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     });
     expect(useChromeStore.getState().overlay).toBeNull();
-    expect(signOut).toHaveBeenCalled();
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
   });
 
   it('with a draft to lose, asks first, and "Open the draft" reopens it over this page', async () => {

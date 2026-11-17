@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '../kit/storyKit';
+import { ThemePicker } from '../kit/theme-picker';
 import { AvatarMenuView } from './AvatarMenuView';
 import { KATE, SkaterPair } from './storySupport';
-import { ThemeMenu } from './ThemeMenu';
 
 /** The avatar's menu (3.24) and its theme row. */
 const meta = {
@@ -146,7 +146,7 @@ function ThemeRow({ initial }: { initial: ThemePreference }) {
   const [value, setValue] = useState(initial);
   return (
     <div className="w-[13.5rem] p-(--space-4)">
-      <ThemeMenu value={value} onValueChange={setValue} />
+      <ThemePicker value={value} onValueChange={setValue} />
     </div>
   );
 }

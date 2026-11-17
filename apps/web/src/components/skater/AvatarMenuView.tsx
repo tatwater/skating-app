@@ -9,6 +9,7 @@ import {
 } from '@fortawesome/sharp-light-svg-icons';
 import type { ThemePreference } from '@skating/design';
 
+import { ACCOUNT_WORDS, profileHref } from '@/lib/account';
 import { cn } from '@/lib/utils';
 
 import { Avatar } from '../kit/avatar';
@@ -21,8 +22,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../kit/dropdown-menu';
+import { ThemePicker } from '../kit/theme-picker';
 import { navLinkProps } from './chrome';
-import { ThemeMenu } from './ThemeMenu';
 
 /**
  * The avatar's menu (board 3.24), props only: who you are, then everything that isn't a
@@ -68,12 +69,12 @@ export function AvatarMenuView({
 }: AvatarMenuViewProps) {
   // Enter on a row and a plain press both arrive as a click; a modified press opens a tab.
   const go = (href: string) => navLinkProps(href, onNavigate);
-  const profileHref = `/u/${encodeURIComponent(person.username)}`;
+  const profile = profileHref(person.username);
   return (
     <DropdownMenu open={open} onOpenChange={(next) => onOpenChange(next)} modal={false}>
       <DropdownMenuTrigger
         data-attr="avatar"
-        aria-label="Your account"
+        aria-label={ACCOUNT_WORDS.account}
         // Initials are a person's: never autocaptured (D240).
         className={cn(
           'ph-no-capture ml-(--space-1_5) inline-flex shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none',
@@ -115,9 +116,9 @@ export function AvatarMenuView({
         </div>
         <DropdownMenuItem
           icon={<FontAwesomeIcon icon={faUser} className={ICON} />}
-          render={<a {...go(profileHref)} />}
+          render={<a {...go(profile)} />}
         >
-          Your profile
+          {ACCOUNT_WORDS.profile}
         </DropdownMenuItem>
         <DropdownMenuItem
           icon={<FontAwesomeIcon icon={faGear} className={ICON} />}
@@ -146,16 +147,16 @@ export function AvatarMenuView({
                   aria-hidden="true"
                   className="h-[0.8em] text-fg3"
                 />
-                <span className="sr-only">(opens in a new tab)</span>
+                <span className="sr-only">{ACCOUNT_WORDS.newTab}</span>
               </span>
             </DropdownMenuItem>
           </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Theme</DropdownMenuLabel>
+          <DropdownMenuLabel>{ACCOUNT_WORDS.theme}</DropdownMenuLabel>
           <div className="col-span-full px-(--space-4) pt-(--space-1_5) pb-(--space-2_5)">
-            <ThemeMenu value={theme} onValueChange={onThemeChange} />
+            <ThemePicker value={theme} onValueChange={onThemeChange} />
           </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -163,7 +164,7 @@ export function AvatarMenuView({
           icon={<FontAwesomeIcon icon={faArrowRightFromBracket} className={ICON} />}
           onClick={onSignOut}
         >
-          Sign out
+          {ACCOUNT_WORDS.signOut}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

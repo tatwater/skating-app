@@ -143,6 +143,16 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
 - **2026-11-15 · found by** the B01 Bodies writes (B01-3d) — a moderator's imagery pass override (a
   satellite pass shown or hidden) must be honored by the web and phone timelines; neither passes it
   yet. Its own PR, soon. *Not yet planned.*
+- **2026-11-17 · found by** the B01 viewer's menu (B01-2c, Greptile on #148) — a session that ends
+  without anyone pressing Sign out (it expires, or the person signs out on another device) unbinds
+  every tab's report sheet (`bindSheetOwner(null)`): a new report survives in storage for the same
+  person, but an unsent edit of a published report — never stored, by design — and an edit's failed
+  send are dropped from memory without a word. Sign out itself now asks the other tabs first; this
+  path has no moment to ask. *Not yet planned* — it belongs with the report sheet's cross-tab store.
+- **2026-11-17 · found by** the same build — two sign-outs skip the draft guard entirely: the old
+  admin pages' header (`components/AppShell.tsx`) and the re-acknowledgment page (`routes/reack.tsx`)
+  call `useSignOut` straight, so a written report (this tab's, or the stored one) is discarded without
+  asking. *Not yet planned.*
 
 ---
 
