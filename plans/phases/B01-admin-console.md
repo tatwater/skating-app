@@ -5063,12 +5063,11 @@ convex files take a constant from core instead of their own (below), so dev take
 - **Hazards' patterns waiting through `readState`.** Its mapping was inline in the tab's wiring, so a
   settled nothing could not be told from a value. `patternsWaitingOf` now maps the read's four answers
   — on its way, failed (the tab's note), settled with nothing (*Not recorded yet* in the Promotion
-  section), a count whose zero is a value ("No patterns on … wait in the pre-ice pass"). PR #141 holds
-  the four-answers table (`tabs/secondaryReads.test.ts`), so the row's test sits beside the tab
-  (`hazards/patternsWaiting.test.tsx`) in the table's shape; **it should move into the table** once
-  that file is free. Today the server never answers with nothing: a body it can't resolve reads
-  `{ count: 0 }`, the same as none waiting (`recurrence.waitingCountForBody`, a #141 file — a server
-  ask for whoever next touches it).
+  section), a count whose zero is a value ("No patterns on … wait in the pre-ice pass"). Its row is in
+  the four-answers table (`tabs/secondaryReads.test.ts`, with a settled zero held as a value), and
+  the Promotion section's drawing of each answer beside the tab (`hazards/patternsWaiting.test.tsx`).
+  Today the server never answers with nothing: a body it can't resolve reads `{ count: 0 }`, the same
+  as none waiting (`recurrence.waitingCountForBody`) — a server ask for whoever next touches it.
 - **A removal's note reaches the server.** The old editor's removal dialog asked for a note and
   dropped it; the console's Standing tab could not take one, though `waterBodies.remove` accepts it
   (checked there by `checkedReason`, written beside the fixed reason in History and the removed lane).

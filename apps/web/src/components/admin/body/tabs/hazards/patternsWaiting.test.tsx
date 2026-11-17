@@ -1,55 +1,14 @@
 import { render, screen, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { isFailed, type Loadable, readState } from '@/components/admin/reads/consoleReads';
-import { FAILED_READ } from '@/components/admin/reads/readFailureFixtures';
 import { stubJsdomAnimations } from '../jsdomStubs';
-import { patternsWaitingOf } from './HazardsTab';
 import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import { MASCOMA_FEATURE_ROWS, MASCOMA_WINTERS, SEASON, WATCH_OPENED } from './hazardsFixtures';
 
 /**
- * **Hazards' patterns-waiting count keeps its four answers apart** (B01-3o): on its way, failed (the
- * tab's note), settled with nothing (*Not recorded yet*), and a value — a settled zero is a value,
- * "no patterns waiting", never folded into *not recorded*. Written in the shape of the four-answers
- * table (`tabs/secondaryReads.test.ts`), which this row joins once that file is free to edit.
+ * **The Promotion section draws the patterns-waiting count's answers as themselves** (B01-3o): a
+ * settled nothing as *Not recorded yet*, a settled zero as none waiting. The read's four answers are
+ * held by the four-answers table (`tabs/secondaryReads.test.ts`).
  */
-
-type Count = { count: number; capped: boolean };
-type Answer = { failed: boolean; notRecorded: boolean; loading: boolean };
-
-const answer = (state: 'failed' | 'loading' | 'none'): Answer => {
-  const read: Loadable<Count | null> =
-    state === 'failed' ? FAILED_READ : state === 'loading' ? undefined : null;
-  const shown = patternsWaitingOf(readState<Count>(read));
-  return {
-    failed: shown === 'error',
-    notRecorded: shown === 'none',
-    loading: shown === undefined,
-  };
-};
-
-describe('Hazards: the patterns waiting (`recurrence.waitingCountForBody`)', () => {
-  it.each([
-    ['failed', { failed: true, notRecorded: false, loading: false }],
-    ['loading', { failed: false, notRecorded: false, loading: true }],
-    ['none', { failed: false, notRecorded: true, loading: false }],
-  ] as const)('%s is said as itself', (state, expected) => {
-    expect(answer(state)).toEqual(expected);
-  });
-
-  it('a settled zero is a value — none waiting — never not recorded', () => {
-    expect(patternsWaitingOf(readState({ count: 0, capped: false }))).toEqual({
-      count: 0,
-      capped: false,
-    });
-  });
-
-  it('a count that stopped short keeps its floor', () => {
-    const shown = patternsWaitingOf(readState({ count: 1_000, capped: true }));
-    expect(shown).toEqual({ count: 1_000, capped: true });
-    expect(isFailed(shown)).toBe(false);
-  });
-});
 
 const base: HazardsTabViewProps = {
   season: SEASON,
