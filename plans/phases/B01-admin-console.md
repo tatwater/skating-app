@@ -4941,11 +4941,13 @@ No schema change, no new function, no backfill.
   absent — `active: false` comes only from a stored archive, and an end only from a stored leaving;
   on the web, over generated hazards, days and both kinds of read, in each of CI's three zones, no
   day with a hazard whose end isn't recorded draws fewer than were there or says ended, gone or
-  clear, and a mark appears only on the read's word. **Left, in another PR's files:** the Hazards
+  clear, and a mark appears only on the read's word. ~~**Left, in another PR's files:** the Hazards
   view's test that pins the old read ("one reported today is counted without a mark yet",
   `HazardsTabView.test.tsx`) and its stories still use the fixture's read without the fact, so the
   fixture (`dailyFrom`) says `active` only when asked (`told`); flipping its default, and that
-  test, is owed once #138 lands.
+  test, is owed once #138 lands.~~ Done after #138 merged: the fixture says each hazard's state by
+  default (the old read is `legacy`), and that test reads both — every archived report marked
+  today on the read's word, the old read's note kept.
 - **Opened recently names what it can't list.** `rowsByIds` gave `row: null` and nothing else for an
   id with no library row. Such an entry now carries the body's `name` and `why`: `merged` (into a
   `survivor` with no row, named — or `null` when the chain dead-ends or runs past the hop cap),
