@@ -1,5 +1,10 @@
 import type { api } from '@skating/convex/api';
-import { currentSeason, type LibraryListLane, seasonRecordOpensMs } from '@skating/core';
+import {
+  currentSeason,
+  type LibraryListLane,
+  seasonRecordOpensMs,
+  waterBodyDisplayName,
+} from '@skating/core';
 import type { PaginationStatus } from 'convex/react';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
@@ -258,10 +263,11 @@ export function listFromOpened(read: Loadable<RowsByIds> | null): BodiesListData
     if (entry.status === 'unlisted') {
       // Named, with why (B01-3n). A read from before the server named it is still said: as a body
       // not listed, with no name to give — counted among those that are no body is never right.
+      // A body stored with no name reads as the app names one everywhere ("Unnamed water").
       bodies.push({
-        name: entry.name ?? UNNAMED_OPENED,
+        name: entry.name === undefined ? UNNAMED_OPENED : waterBodyDisplayName(entry.name),
         why: entry.why ?? 'not_listed',
-        survivor: entry.survivor?.name ?? null,
+        survivor: entry.survivor ? waterBodyDisplayName(entry.survivor.name) : null,
       });
     } else if (entry.status === 'unknown') unknown += 1;
     else if (entry.row !== null && !seen.has(entry.row.id)) {

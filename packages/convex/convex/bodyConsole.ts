@@ -665,28 +665,15 @@ export const dailyHazards = query({
       days.set(day, d);
     };
     let unknownEnds = 0;
-    const listed: {
+    const listed: ({
       hazardId: Id<'hazards'>;
-      firstReportedDay: number;
-      endRecorded: boolean;
-      endDay: number | null;
-      active: boolean;
       type: Doc<'hazards'>['type'];
-      passage: boolean;
-    }[] = [];
+    } & Omit<HazardDays, 'days' | 'unknownEnd'>)[] = [];
     for (const h of hazards.slice(0, DAILY_HAZARD_CAP)) {
       if (h.moderationStatus !== 'visible' || h.mergedIntoHazardId !== undefined) continue;
       const { days: on, unknownEnd, ...facts } = hazardDays(h, window, lastDay, now);
       if (unknownEnd) unknownEnds++;
-      listed.push({
-        hazardId: h._id,
-        firstReportedDay: facts.firstReportedDay,
-        endRecorded: facts.endRecorded,
-        endDay: facts.endDay,
-        active: facts.active,
-        type: h.type,
-        passage: facts.passage,
-      });
+      listed.push({ hazardId: h._id, type: h.type, ...facts });
       for (const day of on) bump(day.at, day.as);
     }
     const record = await ctx.db

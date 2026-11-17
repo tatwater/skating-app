@@ -12,12 +12,14 @@ import {
   libraryLaneOf,
   listArgsOf,
   listFrom,
+  listFromOpened,
   listStatusOf,
   type OtherStandings,
   othersFrom,
   type PreviewFacts,
   polygonsOf,
   previewFrom,
+  type RowsByIds,
   rowFromLibrary,
   seasonCount,
   servesFrom,
@@ -74,6 +76,32 @@ const summary = (over: Partial<ListSummary> = {}): ListSummary =>
     },
     ...over,
   }) as ListSummary;
+
+describe('Opened recently’s ids the library didn’t list', () => {
+  it('names a body stored with no name as the app does everywhere, never a blank', () => {
+    const read = {
+      entries: [
+        { requested: 'a', status: 'unlisted', row: null, name: '', why: 'not_listed' },
+        {
+          requested: 'b',
+          status: 'unlisted',
+          row: null,
+          name: 'Old Lake',
+          why: 'merged',
+          survivor: { id: 'c', name: '  ' },
+        },
+        // A read from before the server named them: said as a body not listed, never as no body.
+        { requested: 'd', status: 'unlisted', row: null },
+      ],
+      dropped: 0,
+    } as unknown as RowsByIds;
+    expect(listFromOpened(read).notListed?.bodies).toEqual([
+      { name: 'Unnamed water', why: 'not_listed', survivor: null },
+      { name: 'Old Lake', why: 'merged', survivor: 'Unnamed water' },
+      { name: 'A body opened here', why: 'not_listed', survivor: null },
+    ]);
+  });
+});
 
 describe('the list read’s arguments', () => {
   it('ask the server for the lane, the tab, the search, the facets and the order', () => {

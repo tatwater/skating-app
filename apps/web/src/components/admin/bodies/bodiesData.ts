@@ -1,4 +1,6 @@
+import type { api } from '@skating/convex/api';
 import type { DepthSource } from '@skating/core';
+import type { FunctionReturnType } from 'convex/server';
 import type { Removal } from '../body/frame/bodyModel';
 import type { Count } from '../overview/overviewModel';
 import type { BodyColumnId, BodyRow, Completeness } from './bodiesModel';
@@ -91,8 +93,10 @@ export interface BodiesListData {
   notListed?: NotListed;
 }
 
-/** Why a body opened here has no row in the library (`bodies.rowsByIds`' `why`). */
-export type NotListedWhy = 'merged' | 'removed' | 'rejected' | 'not_listed';
+/** Why a body opened here has no row in the library — `bodies.rowsByIds`' own `why`, never a copy. */
+export type NotListedWhy = NonNullable<
+  FunctionReturnType<typeof api.bodies.rowsByIds>['entries'][number]['why']
+>;
 
 /** Opened recently's ids the library didn't list, said at the list's end. */
 export type NotListed = {
