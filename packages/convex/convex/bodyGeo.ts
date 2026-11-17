@@ -821,11 +821,12 @@ export const store = internalMutation({
     }
     // A neighbor whose relation moved is recomputed — unless it is gone or merged away, which has
     // no facts to keep (marking it would leave a stale row no computation clears).
-    const live: Id<'waterBodies'>[] = [];
-    for (const id of moved as Id<'waterBodies'>[]) {
-      const other = await ctx.db.get(id);
-      if (other && other.dedupStatus !== 'merged') live.push(id);
-    }
+    // Read together (B01-3p): at most 24, each a whole body, and the order kept.
+    const others = await Promise.all((moved as Id<'waterBodies'>[]).map((id) => ctx.db.get(id)));
+    const live = (moved as Id<'waterBodies'>[]).filter((_, k) => {
+      const other = others[k];
+      return other !== null && other !== undefined && other.dedupStatus !== 'merged';
+    });
     await markGeoStale(ctx, live, now);
     return { stored: true };
   },
