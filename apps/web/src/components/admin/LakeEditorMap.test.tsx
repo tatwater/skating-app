@@ -63,18 +63,17 @@ class FakeMap {
 }
 
 vi.mock('maplibre-gl', () => ({
-  default: {
-    Map: FakeMap,
-    addProtocol: vi.fn(),
-    removeProtocol: vi.fn(),
-    AttributionControl: class {
-      name = 'attribution';
-      // The real control builds `options` in its constructor; setExtraAttribution writes into it.
-      options: Record<string, unknown> = {};
-    },
-    NavigationControl: class {
-      name = 'navigation';
-    },
+  Map: FakeMap,
+  addProtocol: vi.fn(),
+  removeProtocol: vi.fn(),
+  setWorkerUrl: vi.fn(),
+  AttributionControl: class {
+    name = 'attribution';
+    // The real control builds `options` in its constructor; setExtraAttribution writes into it.
+    options: Record<string, unknown> = {};
+  },
+  NavigationControl: class {
+    name = 'navigation';
   },
 }));
 vi.mock('pmtiles', () => ({ Protocol: class {} }));

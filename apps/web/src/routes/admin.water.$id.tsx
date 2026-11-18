@@ -28,7 +28,7 @@ import {
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';

@@ -1,5 +1,5 @@
 import type { LatLng } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { lazy, type ReactNode, Suspense } from 'react';
 import { MapPane } from '@/components/kit/map-controls';
 import { useTheme } from '@/components/theme-provider';

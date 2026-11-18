@@ -174,16 +174,15 @@ class FakeMap {
 }
 
 vi.mock('maplibre-gl', () => ({
-  default: {
-    Map: FakeMap,
-    addProtocol: vi.fn(),
-    removeProtocol: vi.fn(),
-    // `options` is where the folded credits control keeps the contours' credit.
-    AttributionControl: class {
-      options: Record<string, unknown> = {};
-    },
-    NavigationControl: class {},
+  Map: FakeMap,
+  addProtocol: vi.fn(),
+  removeProtocol: vi.fn(),
+  setWorkerUrl: vi.fn(),
+  // `options` is where the folded credits control keeps the contours' credit.
+  AttributionControl: class {
+    options: Record<string, unknown> = {};
   },
+  NavigationControl: class {},
 }));
 vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));

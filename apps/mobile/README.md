@@ -8,8 +8,9 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 
 ## Stack
 
-- **Expo SDK 57** (new architecture), **Expo Router** tab navigation (D28), EAS
+- **Expo SDK 58** / **React Native 0.88** (new architecture), **Expo Router** tab navigation (D28), EAS
   dev-client workflow with Continuous Native Generation — no committed `ios/`/`android/`.
+  SDK upgrades change the native runtime: make a fresh build before testing or shipping updates.
 - **Tamagui** for UI, projecting `@skating/design` tokens (D7) — see `tamagui.config.ts`.
 - **`@maplibre/maplibre-react-native`** map (Phase 02a §6): reads the same Protomaps `.pmtiles`
   basemap as web via the native `pmtiles://` scheme (no Mapbox token), and reuses the web basemap
@@ -138,8 +139,18 @@ Developer** enrollment — both are on the Phase 00 lead-time list.
 ```bash
 pnpm --filter @skating/mobile test          # Vitest (logic) + coverage
 pnpm --filter @skating/mobile check-types   # tsc --noEmit
-npx expo-doctor                             # project health
 ```
+
+Run Expo Doctor from the **app directory**, not through a filtered `dlx` at the workspace root.
+At the root it can inspect the workspace's dev dependencies and hit the root's npm guard in its
+`npm explain` checks instead of checking the app.
+
+```bash
+cd apps/mobile
+pnpm dlx expo-doctor@1.21.8 --verbose
+```
+
+Expo Doctor checks project health; it doesn't replace type-checking or a native EAS preview build.
 
 ## Offline draft queue (Phase 02a §6.2, D30)
 

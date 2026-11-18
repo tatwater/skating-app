@@ -4,18 +4,25 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "node": "24.22.3",
+      "pnpm": "12.21.0"
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "environment": "development",
       "channel": "development"
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "environment": "preview",
       "channel": "preview"
     },
     "production": {
+      "extends": "base",
       "environment": "production",
       "channel": "production",
       "autoIncrement": true

@@ -18,11 +18,15 @@
  */
 
 import type { BBox } from '@skating/core';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { Protocol } from 'pmtiles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FoldedAttributionControl } from './mapAttribution';
 import { boundsToViewport, buildMapStyle, type MapFlavor, zoomForViewport } from './waterMap';
+
+// MapLibre v6 needs Vite to bundle and serve the worker separately from the map.
+if (typeof window !== 'undefined') maplibregl.setWorkerUrl(mapWorkerUrl);
 
 export interface MapCanvasOptions {
   pmtilesUrl: string;

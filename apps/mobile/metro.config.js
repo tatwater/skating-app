@@ -1,4 +1,4 @@
-// Monorepo-aware Metro config (D39). Even with pnpm's hoisted linker (root .npmrc),
+// Monorepo-aware Metro config (D39). Even with pnpm's hoisted linker (pnpm-workspace.yaml),
 // Metro must watch the workspace root and know both node_modules roots so it resolves
 // hoisted deps and the local `@skating/*` workspace packages.
 const { getDefaultConfig } = require('expo/metro-config');

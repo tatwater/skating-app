@@ -250,7 +250,7 @@ export default function NewsfeedScreen() {
             <YStack padding="$3" alignItems="center">
               <Spinner color="$primary" />
             </YStack>
-          ) : null
+          ) : undefined
         }
       />
 

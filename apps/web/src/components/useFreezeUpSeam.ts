@@ -21,7 +21,7 @@
 
 import { seamFeature } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect } from 'react';
 import { insertBeforeLayerId } from './useImageryReveal';
 

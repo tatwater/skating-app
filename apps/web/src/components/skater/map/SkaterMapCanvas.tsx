@@ -1,6 +1,6 @@
 import { isRegionOffscreen } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapModeBar } from '@/components/kit/map-controls';

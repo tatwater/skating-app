@@ -1,4 +1,4 @@
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -142,7 +142,8 @@ export function useBodyMapCanvas({
     for (const layer of glLayers(palette)) {
       if (!map.getLayer(layer.id) || !('paint' in layer) || !layer.paint) continue;
       for (const [prop, value] of Object.entries(layer.paint)) {
-        map.setPaintProperty(layer.id, prop, value);
+        // Object.entries widens the keys of the typed paint spec to string.
+        map.setPaintProperty(layer.id, prop as Parameters<typeof map.setPaintProperty>[1], value);
       }
     }
   }, [palette, liveMap]);

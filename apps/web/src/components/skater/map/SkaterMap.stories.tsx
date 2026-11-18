@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { type BandFeatureProperties, lakeBands } from '@/lib/depthBands';
@@ -567,7 +567,9 @@ function creditsMap(credits: readonly string[]) {
       credits.forEach((attribution, i) => {
         tileManagers[`s${i}`] = { used: true, getSource: () => ({ attribution }) };
       });
-      for (const fn of handlers.get('sourcedata') ?? []) fn({ sourceDataType: 'metadata' });
+      for (const fn of handlers.get('sourcedata') ?? []) {
+        fn({ type: 'sourcedata', dataType: 'source', sourceDataType: 'metadata' });
+      }
     },
   };
   return stub;

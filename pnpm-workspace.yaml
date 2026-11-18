@@ -2,3 +2,33 @@ packages:
   - "apps/*"
   - "packages/*"
   - "scripts/*"
+
+# Expo/Metro uses a flat layout (D8/D39). Keep declaring every direct dependency:
+# hoisting can otherwise make undeclared imports work.
+nodeLinker: hoisted
+
+# Verify new resolutions and existing lockfile entries, including in CI.
+# For an urgent fix, review and exempt only the exact package@version.
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+trustLockfile: false
+blockExoticSubdeps: true
+
+# These hooks were already skipped on pnpm 10. Keep them off, and fail the
+# install when a new hook needs review instead of silently accepting it.
+strictDepBuilds: true
+allowBuilds:
+  "@clerk/shared": false
+  "@sentry/cli": false
+  browser-tabs-lock: false
+  bufferutil: false
+  core-js: false
+  esbuild: false
+  utf-8-validate: false
+
+overrides:
+  react: "19.3.0"
+  react-dom: "19.3.0"
+  # Temporary until RN's devtools resolves the patched version without an override.
+  "react-devtools-core>shell-quote@<1.11.0": "1.11.0"

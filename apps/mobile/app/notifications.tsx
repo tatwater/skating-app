@@ -124,7 +124,7 @@ export default function NotificationsScreen() {
           <Paragraph color="$foregroundMuted" fontSize={12} paddingHorizontal="$4" paddingTop="$3">
             Offline — showing what was here last time.
           </Paragraph>
-        ) : null
+        ) : undefined
       }
       ListEmptyComponent={
         !live && offline ? (
@@ -160,7 +160,7 @@ export default function NotificationsScreen() {
           <YStack padding="$4" alignItems="center">
             <Spinner />
           </YStack>
-        ) : null
+        ) : undefined
       }
     />
   );

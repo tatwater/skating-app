@@ -9,7 +9,7 @@
  * carry sources, the UI-string lookup, and a canvas container to measure.
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 import { FoldedAttributionControl } from './mapAttribution';
 
@@ -49,11 +49,11 @@ class StubMap {
   /** A source finishes loading its metadata — what makes the control re-read the credits. */
   addSource(id: string, attribution?: string) {
     this.style.tileManagers[id] = source(attribution);
-    this.fire('sourcedata', { type: 'sourcedata', sourceDataType: 'metadata' });
+    this.fire('sourcedata', { type: 'sourcedata', dataType: 'source', sourceDataType: 'metadata' });
   }
   removeSource(id: string) {
     delete this.style.tileManagers[id];
-    this.fire('sourcedata', { type: 'sourcedata', sourceDataType: 'metadata' });
+    this.fire('sourcedata', { type: 'sourcedata', dataType: 'source', sourceDataType: 'metadata' });
   }
 }
 

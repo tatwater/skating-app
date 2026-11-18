@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && pnpm install",
+  "installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && corepack pnpm install --frozen-lockfile",
+  "buildCommand": "corepack pnpm run build",
   "rewrites": [
     {
       "source": "/rink/static/:path*",

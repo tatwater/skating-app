@@ -149,15 +149,14 @@ class FakeMap {
 }
 
 vi.mock('maplibre-gl', () => ({
-  default: {
-    Map: FakeMap,
-    addProtocol: () => {},
-    removeProtocol: () => {},
-    AttributionControl: class {
-      options: Record<string, unknown> = {};
-    },
-    NavigationControl: class {},
+  Map: FakeMap,
+  addProtocol: () => {},
+  removeProtocol: () => {},
+  setWorkerUrl: vi.fn(),
+  AttributionControl: class {
+    options: Record<string, unknown> = {};
   },
+  NavigationControl: class {},
 }));
 vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));

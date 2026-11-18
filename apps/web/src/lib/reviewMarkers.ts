@@ -1,5 +1,5 @@
 import type { LatLng } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useMemo } from 'react';
 
 /**

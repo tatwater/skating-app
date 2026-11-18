@@ -1,5 +1,5 @@
 import type { HazardDraft as HazardShapeDraft, HazardType, LatLng } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { hazardDraftToFeatureCollection } from '@/lib/hazardMap';

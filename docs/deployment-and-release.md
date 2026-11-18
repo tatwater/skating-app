@@ -128,8 +128,9 @@ If you install a build and see an Expo UI with Home / Updates / Settings tabs in
 it's a `development` build with no Metro server — not a broken build. Rebuild with `preview`.
 
 ```sh
-pnpm exec eas build --profile preview --platform android --no-wait
-pnpm exec eas build:view <id> --json          # poll; rejects --non-interactive
+cd apps/mobile
+pnpm run preview:android                    # checks the local Firebase file before queuing
+eas build:view <id> --json                   # check status; rejects --non-interactive
 ```
 
 Free-tier queue time is ~20 min before a ~20 min compile. The finished build's page has an
@@ -162,16 +163,20 @@ EAS computes the fingerprint locally *and* on the builder and hard-fails at
 
 1. **`google-services.json` present on one side only.** It's gitignored; locally it sits at
    `apps/mobile/google-services.json`, on EAS it arrives as the *file* env var
-   `GOOGLE_SERVICES_JSON`. Keep it in both places (in **every** EAS environment you build from)
-   or neither. Worktrees each need their own copy — it isn't tracked, so it doesn't follow a
-   checkout.
+   `GOOGLE_SERVICES_JSON`. For Android preview, use the same file contents in both places. Put
+   the file in the current worktree or set `GOOGLE_SERVICES_JSON` in your shell or
+   `apps/mobile/.env.local` to point at an existing copy.
+   EAS doesn't download the file secret to the submitting machine. `pnpm run preview:android`
+   checks that a local file exists before upload, but only EAS can confirm that the contents match.
+   Keep the file out of Git and keep fingerprint validation enabled.
 2. **A dependency that hashes differently on the builder** despite matching byte-for-byte
    (`@react-native-masked-view/masked-view`, 2026-08-26). Waived in `apps/mobile/.fingerprintignore`,
    which documents the cost.
 
-Diagnose without spending a build: `eas fingerprint:compare --build-id <id> --json` and diff
-`sources` by `filePath`. `--clear-cache` does not help — the fingerprint is computed after the
-cache restores.
+Start with the `Configure expo-updates` log. An added `expoConfigExternalFile` from EAS file
+storage points to a missing local file; a generated `android` entry with `hash: null` doesn't
+affect the fingerprint. If both fingerprints are available, use
+`eas fingerprint:compare --build-id <id> --json`. `--clear-cache` won't fix a missing local file.
 
 ### Environment variables live in three places, and nothing reconciles them
 
