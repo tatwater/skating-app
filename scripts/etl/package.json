@@ -36,8 +36,9 @@
   },
   "dependencies": {
     "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*",
     "@turf/simplify": "^7.4.0",
-    "@skating/run-log": "workspace:*"
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

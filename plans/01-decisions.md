@@ -8379,3 +8379,16 @@ per fetch batch. Pin the alpha SDK to the script; don't enable automatic request
 events, and keep RunLogger as the operator record for archive writes and interruption.
 
 **Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).
+
+## D280 — Use Effect for the ORS approach request, not the route cache
+
+**2026-11-18.** The manual access transform uses Effect to schedule the existing three
+20-second retries on `429`. A router per run owns the three-`403` quota breaker. The CLI still
+paces legs serially, owns its on-disk cache, and only replaces a cached routed leg with another
+routed leg. A transient straight-line fallback must never become a cached answer.
+
+**Why:** the rate-limit wait and the decision to cache a result need separate tests. Timing and
+response classification can be exercised without spending the shared directions quota or running
+the corpus transform.
+
+**Related:** D87, D278, [`access ETL`](../scripts/etl/README.md).
