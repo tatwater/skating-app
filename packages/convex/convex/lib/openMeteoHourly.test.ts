@@ -21,7 +21,11 @@ const answer = (url: string) => {
   return new Response(JSON.stringify(lats.map(() => hourlyRow('2026-10-01', [1]))));
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('fetchHourlyRows', () => {
   test('sizes each request by site-days, and retries an answer cut off once', async () => {
@@ -134,6 +138,58 @@ describe('fetchHourlyRows', () => {
     expect(out.failed).toBe(9);
     expect(out.rows.every((r) => r === undefined)).toBe(true);
     expect(out.lastError).toMatch(/out of time after 0 s/);
+  });
+
+  test.each([1, 2])('skips attempt %i if metering exhausts the budget', async (n) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const fetchImpl = vi
+      .fn(async (url: string) => answer(url))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    const meter = vi.fn(async () => {
+      if (meter.mock.calls.length === n) vi.setSystemTime(Date.now() + 5_000);
+    });
+
+    const out = await fetchHourlyRows(
+      'https://x.test',
+      new URLSearchParams(),
+      [{ lat: 44, lng: -71 }],
+      1,
+      meter,
+      5_000,
+    );
+
+    expect(meter).toHaveBeenCalledTimes(n);
+    expect(fetchImpl).toHaveBeenCalledTimes(n - 1);
+    expect(out).toEqual({
+      failed: 1,
+      requests: 1,
+      rows: [undefined],
+      lastError: 'Open-Meteo: out of time after 5 s',
+    });
+  });
+
+  test('caps the fetch timeout at the time remaining after metering', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => answer(url)),
+    );
+
+    const out = await fetchHourlyRows(
+      'https://x.test',
+      new URLSearchParams(),
+      [{ lat: 44, lng: -71 }],
+      1,
+      async () => {
+        vi.setSystemTime(Date.now() + 3_000);
+      },
+      5_000,
+    );
+
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(2_000);
+    expect(out).toMatchObject({ failed: 0, requests: 1, lastError: null });
   });
 
   test('an answer missing a requested site is a failed request, retried once', async () => {

@@ -122,13 +122,11 @@ export async function fetchHourlyRows(
     query.set('latitude', chunk.sites.map((s) => s.lat.toFixed(4)).join(','));
     query.set('longitude', chunk.sites.map((s) => s.lng.toFixed(4)).join(','));
     for (let n = 1; ; n++) {
-      const left = deadline - Date.now();
-      if (left <= 0) {
-        failed++;
-        lastError = `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`;
-        return;
-      }
+      if (Date.now() >= deadline) break;
       await meter(chunk.sites.length);
+      // The metering write shares the action budget and can use up the remaining time.
+      const left = deadline - Date.now();
+      if (left <= 0) break;
       try {
         const json = await attempt(`${url}?${query.toString()}`, Math.min(FETCH_TIMEOUT_MS, left));
         // One coordinate answers with an object, several with an array.
@@ -156,6 +154,8 @@ export async function fetchHourlyRows(
         return;
       }
     }
+    failed++;
+    lastError = `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`;
   };
 
   for (let i = 0; i < chunks.length; i += FETCHES_AT_ONCE) {
