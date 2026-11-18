@@ -164,7 +164,8 @@ EAS computes the fingerprint locally *and* on the builder and hard-fails at
 1. **`google-services.json` present on one side only.** It's gitignored; locally it sits at
    `apps/mobile/google-services.json`, on EAS it arrives as the *file* env var
    `GOOGLE_SERVICES_JSON`. For Android preview, use the same file contents in both places. Put
-   the file in the current worktree or point the local `GOOGLE_SERVICES_JSON` at an existing copy.
+   the file in the current worktree or set `GOOGLE_SERVICES_JSON` in your shell or
+   `apps/mobile/.env.local` to point at an existing copy.
    EAS doesn't download the file secret to the submitting machine. `pnpm run preview:android`
    checks that a local file exists before upload, but only EAS can confirm that the contents match.
    Keep the file out of Git and keep fingerprint validation enabled.

@@ -358,6 +358,9 @@ importers:
       '@babel/core':
         specifier: ^7.29.7
         version: 7.29.7(supports-color@8.1.1)
+      '@expo/env':
+        specifier: 2.6.0
+        version: 2.6.0(supports-color@8.1.1)
       '@react-native/metro-config':
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)
