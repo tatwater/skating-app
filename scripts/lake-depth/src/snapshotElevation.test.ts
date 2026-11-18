@@ -8,7 +8,12 @@ import process from 'node:process';
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from 'vitest';
 
-test('checkpoints, flushes a Sentry span on Ctrl-C, and resumes only missing points', async () => {
+// Include cold tsx/SDK startup while Turbo runs other workspaces in parallel on CI.
+// The deadline is only a hang guard; SIGINT still waits for the actual checkpoint.
+const CHILD_TIMEOUT_MS = 60_000;
+const TEST_TIMEOUT_MS = 2 * CHILD_TIMEOUT_MS + 15_000;
+
+async function checkInterruptAndResume() {
   const dir = await mkdtemp(join(tmpdir(), 'elevation-test-'));
   const envelopes: string[] = [];
   const collector = createServer(async (req, res) => {
@@ -93,7 +98,7 @@ printf '"fixture-run"\\n'
           stdio: ['ignore', 'ignore', 'pipe'],
         },
       );
-      const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
+      const timer = setTimeout(() => child.kill('SIGKILL'), CHILD_TIMEOUT_MS);
       let stderr = '';
       let stopped = false;
       child.stderr.on('data', (chunk) => {
@@ -104,7 +109,13 @@ printf '"fixture-run"\\n'
         }
       });
       try {
-        const [code] = await once(child, 'close');
+        const [code, signal] = await once(child, 'close');
+        if (signal) {
+          const stage = interrupt ? 'interrupt' : 'resume';
+          const reason =
+            signal === 'SIGKILL' ? `exceeded the ${CHILD_TIMEOUT_MS}ms deadline` : `got ${signal}`;
+          throw new Error(`Elevation ${stage} subprocess ${reason}.\n${stderr}`);
+        }
         return { code, stderr };
       } finally {
         clearTimeout(timer);
@@ -172,4 +183,10 @@ printf '"fixture-run"\\n'
     collector.close();
     await rm(dir, { recursive: true, force: true });
   }
-}, 40_000);
+}
+
+test(
+  'checkpoints, sends a Sentry span on Ctrl-C, and resumes missing points',
+  checkInterruptAndResume,
+  TEST_TIMEOUT_MS,
+);
