@@ -17,19 +17,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
 
       # The `@fortawesome` scope resolves from FontAwesome's private registry (see
       # `.npmrc`), so the install — not just the Pro packages — needs the token.
-      # It is appended to the runner's `~/.npmrc` rather than referenced from the
-      # committed one as `${VAR}`: pnpm discards an entire .npmrc it cannot expand,
-      # which would take the scope mapping down with it. Repo secret:
+      # Append it to the runner's `~/.npmrc`, not the committed file. Repo secret:
       # FONTAWESOME_NPM_AUTH_TOKEN. Note that fork PRs cannot read repo secrets.
       - name: Authenticate to the FontAwesome registry
         env:

@@ -12,7 +12,7 @@ import {
   updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useCallback, useMemo, useState } from 'react';
 import { updateSheet } from '@/lib/sheetStore';
 import { useCoarsePointer } from '@/lib/useCoarsePointer';

@@ -1,4 +1,4 @@
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { type MapSpecSlot, useSkaterMapStore } from '@/stores/skaterMapStore';
 import type { MapSpec } from './mapSpec';

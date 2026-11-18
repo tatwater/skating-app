@@ -6,7 +6,7 @@ import {
   type SubAreaMouth,
   shapeSignature,
 } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';

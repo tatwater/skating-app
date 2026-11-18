@@ -1,5 +1,5 @@
 import { isPassageMarker, type LatLng } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/kit/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/kit/dialog';

@@ -41,17 +41,8 @@ builder, the Vercel builder — as:
 
 ### ⚠ Why not `${FONTAWESOME_NPM_AUTH_TOKEN}` in the committed `.npmrc`?
 
-Because it fails in the worst possible way. It reads like the obvious design, and FontAwesome's own
-docs suggest a variant of it, but: **when pnpm cannot expand an env var in an `.npmrc`, it discards
-the entire file**, not just the offending line. Verified in this repo — with the variable unset,
-`pnpm config list` stops reporting `@fortawesome:registry` *and* `node-linker=hoisted`.
-
-So an unset variable would not degrade to "no token". It would silently take the scope mapping with
-it, the `@fortawesome` scope would fall back to registry.npmjs.org, and you would get a 404 on a Pro
-package that looks like a typo rather than an auth problem — while `node-linker=hoisted` quietly
-disappeared and broke Metro's resolver in the same breath.
-
-Appending to `~/.npmrc` involves no expansion, so there is nothing to fail.
+pnpm restricts credential expansion in repository-controlled config. Keep the scope routing in the
+committed `.npmrc` and the token in the user-level `~/.npmrc`, scoped to `npm.fontawesome.com`.
 
 ### 1. Local development — `~/.npmrc`
 
@@ -129,7 +120,7 @@ Vercel deploys the web app, and its build container starts with an empty `~/.npm
 written by an **install command override** in `apps/web/vercel.json` (the project's root directory):
 
 ```json
-"installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && pnpm install"
+"installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && corepack pnpm install --frozen-lockfile"
 ```
 
 It lives in `vercel.json` rather than in the dashboard's Install Command box so the wiring is
@@ -154,6 +145,5 @@ pnpm install                  # should complete with no 401 and no env warning
 pnpm why @fortawesome/pro-solid-svg-icons
 ```
 
-A `401 Unauthorized` from `npm.fontawesome.com` means the token isn't reaching pnpm; a
-`Failed to replace env in config` warning is the expected, harmless signal that you're on route 1
-(`~/.npmrc`) rather than route 2 (env var).
+A `401 Unauthorized` from `npm.fontawesome.com` means the token is missing, invalid, or isn't
+reaching pnpm.

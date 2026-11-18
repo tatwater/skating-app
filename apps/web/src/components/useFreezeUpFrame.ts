@@ -46,7 +46,7 @@
 
 import type { IndexedFrame } from '@skating/core';
 import { archiveUrl, copernicusCredit } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { env } from '../lib/env';
 import { FREEZE_UP_SEAM_LAYER_ID } from './useFreezeUpSeam';

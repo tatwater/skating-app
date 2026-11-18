@@ -38,7 +38,7 @@
  * so the fold above and the theme (all CSS, `styles/app.css`) see nothing new.
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 
 /** The credit as text: `customAttribution` is HTML, and a tile's agency label is data. */
 const asHtmlText = (text: string) =>

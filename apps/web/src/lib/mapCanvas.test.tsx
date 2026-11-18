@@ -87,16 +87,15 @@ const addProtocol = vi.fn();
 const removeProtocol = vi.fn();
 
 vi.mock('maplibre-gl', () => ({
-  default: {
-    Map: FakeMap,
-    addProtocol: (...args: unknown[]) => addProtocol(...args),
-    removeProtocol: (...args: unknown[]) => removeProtocol(...args),
-    // `options` is the one part of MapLibre's control the shell's extra credit is written to.
-    AttributionControl: class {
-      options: Record<string, unknown> = {};
-    },
-    NavigationControl: class {},
+  Map: FakeMap,
+  addProtocol: (...args: unknown[]) => addProtocol(...args),
+  removeProtocol: (...args: unknown[]) => removeProtocol(...args),
+  setWorkerUrl: vi.fn(),
+  // `options` is the one part of MapLibre's control the shell's extra credit is written to.
+  AttributionControl: class {
+    options: Record<string, unknown> = {};
   },
+  NavigationControl: class {},
 }));
 vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));

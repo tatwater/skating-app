@@ -53,6 +53,11 @@ A change that erodes that principle won't be merged, however well-built.
 The repo is a **Turborepo + pnpm** monorepo ([D39](./plans/01-decisions.md)). Use `pnpm`
 throughout — the root `devEngines` blocks npm, and `npx` fails with an unhelpful error.
 
+Use the Node release in [`.node-version`](./.node-version) and the pnpm version pinned in
+[`package.json`](./package.json). If your old pnpm can't switch to the native v12 executable,
+[install pnpm 12](https://pnpm.io/installation) directly or run `corepack pnpm` in place of `pnpm`
+if you already have Corepack.
+
 ```bash
 pnpm install          # install workspace deps (needs the FontAwesome token — see below)
 pnpm lint             # Biome — lint + format check
@@ -67,6 +72,10 @@ pnpm format           # Biome --write
 > `~/.npmrc`) is in [docs/fontawesome-pro.md](./docs/fontawesome-pro.md). If this is blocking you
 > from contributing, please open an issue — it's a trade we made for the app's own design work, not
 > a decision we're attached to.
+
+Dependency updates must pass the [workspace supply-chain policy](./pnpm-workspace.yaml), even in
+frozen CI installs. Review the lockfile diff, allow a dependency's build script only if needed,
+and keep any emergency cooldown exception limited to the exact version being reviewed.
 
 ### Running the apps
 

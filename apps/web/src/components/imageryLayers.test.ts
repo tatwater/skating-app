@@ -1,5 +1,5 @@
 import { expression } from '@maplibre/maplibre-gl-style-spec';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 import { waterOutlineColor } from '../lib/waterMap';
 import {

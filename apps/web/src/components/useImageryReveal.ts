@@ -50,7 +50,7 @@ import {
   tilesBounds,
   toMercatorBox,
 } from '@skating/core';
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { BANDS_LAYER_ID } from '../lib/depthBands';
 import { isTileResident, loadTile } from '../lib/imageryCache';

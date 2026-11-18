@@ -22,7 +22,7 @@
  * if this import ever fails, and the way an operator loads a shape traced somewhere else.
  */
 
-import type maplibregl from 'maplibre-gl';
+import type * as maplibregl from 'maplibre-gl';
 
 /** The subset of terra-draw this app touches, so the dynamic import needs no `any` at call sites. */
 export interface PolygonDrawControl {
