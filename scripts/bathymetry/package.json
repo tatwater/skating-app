@@ -26,6 +26,7 @@
     "snapshot-midas": "tsx src/snapshotMidas.ts"
   },
   "dependencies": {
+    "@skating/archive-io": "workspace:*",
     "@skating/core": "workspace:*",
     "@skating/run-log": "workspace:*"
   },
