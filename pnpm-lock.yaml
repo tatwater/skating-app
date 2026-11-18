@@ -776,6 +776,9 @@ importers:
       '@skating/run-log':
         specifier: workspace:*
         version: link:../run-log
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
     devDependencies:
       '@types/node':
         specifier: ^24.19.0
