@@ -8,6 +8,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
+    "preview:android": "if [ ! -f \"${GOOGLE_SERVICES_JSON:-./google-services.json}\" ] && [ ! -f ./google-services.json ]; then printf '%s\\n' 'Android preview needs a local google-services.json matching the EAS preview file. See docs/deployment-and-release.md.' >&2; exit 1; fi; exec eas build --profile preview --platform android --no-wait",
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
