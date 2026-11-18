@@ -791,7 +791,8 @@ describe('history', () => {
   });
 
   test('a site the archive did not answer for is not stored; one it answered, even empty, is whole', async () => {
-    vi.useFakeTimers();
+    // Pin the season, not the scheduler: retry yields to the event loop before the next attempt.
+    vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
     const t = convexTest(schema, modules);
     const [a, b] = await seedLakes(t, 2);

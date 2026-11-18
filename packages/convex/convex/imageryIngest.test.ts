@@ -442,7 +442,8 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
   });
 
   test('an Open-Meteo failure throws, and still lets a queued email go', async () => {
-    vi.useFakeTimers();
+    // Pin the season, not the scheduler: retry yields to the event loop before the next attempt.
+    vi.useFakeTimers({ toFake: ['Date'] });
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t, 1);

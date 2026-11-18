@@ -17,6 +17,7 @@
  */
 
 import type { OpenMeteoHourlyRow } from '@skating/core';
+import { Clock, Effect } from 'effect';
 
 import { internal } from '../_generated/api';
 import type { ActionCtx } from '../_generated/server';
@@ -78,88 +79,112 @@ class FetchFailure extends Error {
   }
 }
 
-async function attempt(
+async function requestRows(
   url: string,
-  timeoutMs: number,
-): Promise<OpenMeteoHourlyRow | OpenMeteoHourlyRow[]> {
+  siteCount: number,
+  signal: AbortSignal,
+): Promise<OpenMeteoHourlyRow[]> {
   let res: Response;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    res = await fetch(url, { signal });
   } catch (error) {
     throw new FetchFailure(`Open-Meteo did not answer: ${String(error)}`, true);
   }
   if (!res.ok) {
     throw new FetchFailure(`Open-Meteo ${res.status} ${res.statusText}`, res.status >= 500);
   }
+  let json: OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
   try {
-    return (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
+    json = (await res.json()) as typeof json;
   } catch (error) {
     throw new FetchFailure(`Open-Meteo's answer did not arrive whole: ${String(error)}`, true);
   }
+  // One coordinate answers with an object. A short answer would otherwise silently remove lakes
+  // from the tick's sample, so reject the whole chunk before keeping any of its rows.
+  const answered = (Array.isArray(json) ? json : [json]).slice(0, siteCount);
+  const whole = answered.filter((row) => Array.isArray(row?.hourly?.time)).length;
+  if (whole < siteCount) {
+    throw new FetchFailure(`Open-Meteo answered for ${whole} of ${siteCount} sites`, true);
+  }
+  return answered;
 }
 
 /** Each site's Open-Meteo hourly row for `days` days of `params`, a few sites a request. */
-export async function fetchHourlyRows(
+export function fetchHourlyRows(
+  ...args: Parameters<typeof hourlyRowsEffect>
+): Promise<HourlyFetch> {
+  return Effect.runPromise(hourlyRowsEffect(...args));
+}
+
+/** Testable with a virtual clock; only actions should run this program. */
+export function hourlyRowsEffect(
   url: string,
   params: URLSearchParams,
   sites: readonly { lat: number; lng: number }[],
   days: number,
   meter: Meter,
   budgetMs: number = FETCH_BUDGET_MS,
-): Promise<HourlyFetch> {
-  const deadline = Date.now() + budgetMs;
-  const size = Math.max(1, Math.floor(SITE_DAYS_PER_FETCH / days));
-  const chunks: { start: number; sites: (typeof sites)[number][] }[] = [];
-  for (let i = 0; i < sites.length; i += size) {
-    chunks.push({ start: i, sites: sites.slice(i, i + size) });
-  }
-  const rows: (OpenMeteoHourlyRow | undefined)[] = new Array(sites.length).fill(undefined);
-  let failed = 0;
-  let lastError: string | null = null;
-
-  const one = async (chunk: (typeof chunks)[number]) => {
-    const query = new URLSearchParams(params);
-    query.set('latitude', chunk.sites.map((s) => s.lat.toFixed(4)).join(','));
-    query.set('longitude', chunk.sites.map((s) => s.lng.toFixed(4)).join(','));
-    for (let n = 1; ; n++) {
-      const left = deadline - Date.now();
-      if (left <= 0) {
-        failed++;
-        lastError = `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`;
-        return;
-      }
-      await meter(chunk.sites.length);
-      try {
-        const json = await attempt(`${url}?${query.toString()}`, Math.min(FETCH_TIMEOUT_MS, left));
-        // One coordinate answers with an object, several with an array.
-        const answered = Array.isArray(json) ? json : [json];
-        // ⚠ **Every site asked for, or the answer is not one.** A short answer would leave sites
-        // undefined without counting a failure, and the tick would decide on fewer lakes than its
-        // sample — the very thing its all-or-nothing rule refuses (Greptile, PR #85).
-        const whole = chunk.sites.filter((_, j) => Array.isArray(answered[j]?.hourly?.time)).length;
-        if (whole < chunk.sites.length) {
-          throw new FetchFailure(
-            `Open-Meteo answered for ${whole} of ${chunk.sites.length} sites`,
-            true,
-          );
-        }
-        chunk.sites.forEach((_, j) => {
-          rows[chunk.start + j] = answered[j];
-        });
-        return;
-      } catch (error) {
-        const failure =
-          error instanceof FetchFailure ? error : new FetchFailure(String(error), false);
-        if (failure.retryable && n < 2) continue;
-        failed++;
-        lastError = failure.message;
-        return;
-      }
+): Effect.Effect<HourlyFetch> {
+  return Effect.gen(function* () {
+    const deadline = (yield* Clock.currentTimeMillis) + budgetMs;
+    const outOfTime = new FetchFailure(
+      `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`,
+      false,
+    );
+    const size = Math.max(1, Math.floor(SITE_DAYS_PER_FETCH / days));
+    const chunks: { start: number; sites: (typeof sites)[number][] }[] = [];
+    for (let i = 0; i < sites.length; i += size) {
+      chunks.push({ start: i, sites: sites.slice(i, i + size) });
     }
-  };
+    const rows: HourlyFetch['rows'] = new Array(sites.length).fill(undefined);
+    let failed = 0;
+    let lastError: string | null = null;
 
-  for (let i = 0; i < chunks.length; i += FETCHES_AT_ONCE) {
-    await Promise.all(chunks.slice(i, i + FETCHES_AT_ONCE).map(one));
-  }
-  return { rows, failed, requests: chunks.length, lastError };
+    const one = ({ start, sites }: (typeof chunks)[number]) => {
+      const query = new URLSearchParams(params);
+      query.set('latitude', sites.map((s) => s.lat.toFixed(4)).join(','));
+      query.set('longitude', sites.map((s) => s.lng.toFixed(4)).join(','));
+      const attempt = Effect.gen(function* () {
+        if ((yield* Clock.currentTimeMillis) >= deadline) return yield* Effect.fail(outOfTime);
+        yield* Effect.promise(() => meter(sites.length));
+        // The meter cannot be canceled safely, and a slow write must not start a late fetch.
+        const left = deadline - (yield* Clock.currentTimeMillis);
+        if (left <= 0) return yield* Effect.fail(outOfTime);
+        return yield* Effect.tryPromise({
+          try: (signal) => requestRows(`${url}?${query.toString()}`, sites.length, signal),
+          catch: (error) =>
+            error instanceof FetchFailure ? error : new FetchFailure(String(error), false),
+        }).pipe(
+          Effect.timeoutOrElse({
+            duration: Math.min(FETCH_TIMEOUT_MS, left),
+            orElse: () => Effect.fail(new FetchFailure('Open-Meteo did not answer in time', true)),
+          }),
+        );
+      });
+
+      return attempt.pipe(
+        Effect.retry({ times: 1, while: (error) => error.retryable }),
+        Effect.match({
+          onSuccess: (answer) => {
+            answer.forEach((row, j) => {
+              rows[start + j] = row;
+            });
+          },
+          onFailure: (error) => {
+            failed++;
+            lastError = error.message;
+          },
+        }),
+      );
+    };
+
+    // Keep the existing waves: retrying requests continue to occupy their slot.
+    for (let i = 0; i < chunks.length; i += FETCHES_AT_ONCE) {
+      yield* Effect.forEach(chunks.slice(i, i + FETCHES_AT_ONCE), one, {
+        concurrency: FETCHES_AT_ONCE,
+        discard: true,
+      });
+    }
+    return { rows, failed, requests: chunks.length, lastError };
+  });
 }

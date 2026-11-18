@@ -8379,3 +8379,18 @@ per fetch batch. Pin the alpha SDK to the script; don't enable automatic request
 events, and keep RunLogger as the operator record for archive writes and interruption.
 
 **Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).
+
+## D282 — Gate Effect in the Open-Meteo action on the runtime tradeoff
+
+**2026-11-18, prototype.** Try Effect inside the hourly fetch only. Keep the existing Convex
+action, request waves and metering, failure classification, and partial result type. The daily tick
+still requires its complete sample and the history fill still keeps what arrived. Recheck the
+budget after metering so a slow meter write cannot start a late provider request.
+
+**Go/no-go:** virtual time makes the deadline test deterministic, and retry, timeout, and
+interruption work in a throwaway Convex V8 action. A minified bundle of the isolated fetch
+boundary grew by roughly 91 KB before compression (32 KB compressed), not a hosted cold-start
+measurement. Do not make this a backend default or land the prototype on that evidence alone;
+compare hosted dev behavior first if we want to proceed.
+
+**Related:** D158, D278, [`weather-since`](../docs/weather-since.md).

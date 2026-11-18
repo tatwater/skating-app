@@ -1,5 +1,7 @@
+import { Deferred, Effect, Fiber } from 'effect';
+import { TestClock } from 'effect/testing';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchHourlyRows } from './openMeteoHourly';
+import { fetchHourlyRows, hourlyRowsEffect } from './openMeteoHourly';
 
 /** One site's hourly row: 24 UTC hours a day from `start`, each at that day's low. */
 function hourlyRow(start: string, lows: number[]) {
@@ -110,30 +112,67 @@ describe('fetchHourlyRows', () => {
   });
 
   test('a stalled API runs out the budget, not the action: no attempt starts past it', async () => {
-    // Every answer stalls until its timeout — at most what is left of the budget.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        (_url: string, init?: RequestInit) =>
-          new Promise<Response>((_, reject) => {
-            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
-          }),
-      ),
+    const aborted = vi.fn();
+    const fetchImpl = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            aborted();
+            reject(init.signal?.reason);
+          });
+        }),
     );
+    vi.stubGlobal('fetch', fetchImpl);
     const sites = Array.from({ length: 9 }, (_, i) => ({ lat: 44 + i, lng: -71.65 }));
-    const started = Date.now();
-    const out = await fetchHourlyRows(
-      'https://x.test',
-      new URLSearchParams(),
-      sites,
-      303, // nine requests: three waves of three
-      async () => {},
-      200,
+    const meter = vi.fn(async () => {});
+    const out = await Effect.runPromise(
+      Effect.gen(function* () {
+        const run = yield* Effect.forkChild(
+          hourlyRowsEffect('https://x.test', new URLSearchParams(), sites, 303, meter, 200),
+        );
+        yield* TestClock.adjust(199);
+        expect(fetchImpl).toHaveBeenCalledTimes(3);
+        expect(aborted).not.toHaveBeenCalled();
+        yield* TestClock.adjust(1);
+        return yield* Fiber.join(run);
+      }).pipe(Effect.provide(TestClock.layer())),
     );
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(aborted).toHaveBeenCalledTimes(3);
+    expect(meter).toHaveBeenCalledTimes(3);
     expect(out.failed).toBe(9);
     expect(out.rows.every((r) => r === undefined)).toBe(true);
     expect(out.lastError).toMatch(/out of time after 0 s/);
+  });
+
+  test('a slow meter cannot start a provider request after the budget expires', async () => {
+    const fetchImpl = vi.fn();
+    vi.stubGlobal('fetch', fetchImpl);
+    const out = await Effect.runPromise(
+      Effect.gen(function* () {
+        const meter = yield* Deferred.make<void>();
+        const started = yield* Deferred.make<void>();
+        const run = yield* Effect.forkChild(
+          hourlyRowsEffect(
+            'https://x.test',
+            new URLSearchParams(),
+            [{ lat: 44, lng: -71 }],
+            1,
+            () =>
+              Effect.runPromise(
+                Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(meter))),
+              ),
+            500,
+          ),
+        );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust(500);
+        yield* Deferred.succeed(meter, undefined);
+        return yield* Fiber.join(run);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ failed: 1, rows: [undefined] });
   });
 
   test('an answer missing a requested site is a failed request, retried once', async () => {
