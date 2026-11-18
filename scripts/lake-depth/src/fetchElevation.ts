@@ -13,10 +13,13 @@ const ATTEMPT_TIMEOUT_MS = 45_000;
 const RETRIES = 3;
 const BACKOFF_MS = 1_500;
 
-function fetchPoint({ lat, lng }: ElevationPoint, fetchImpl: typeof fetch) {
+function fetchPoint({ lat, lng }: ElevationPoint, fetchImpl: typeof fetch, onRetry: () => void) {
+  let attempted = false;
   const attempt = Effect.gen(function* () {
     // Keep the fetch and the body read in one deadline, and pass through the signal so
     // a timeout (or stopping the batch) actually aborts the request.
+    if (attempted) onRetry();
+    attempted = true;
     const body = yield* Effect.tryPromise({
       try: async (signal): Promise<unknown> => {
         const response = await fetchImpl(epqsUrl(lat, lng), { signal });
@@ -60,11 +63,14 @@ export function fetchElevationPoints(
   concurrency: number,
   onPoint: (result: PointResult) => void,
   fetchImpl: typeof fetch = fetch,
+  onRetry: () => void = () => {},
 ) {
   return Effect.forEach(
     points,
     (point) =>
-      fetchPoint(point, fetchImpl).pipe(Effect.tap((result) => Effect.sync(() => onPoint(result)))),
+      fetchPoint(point, fetchImpl, onRetry).pipe(
+        Effect.tap((result) => Effect.sync(() => onPoint(result))),
+      ),
     { concurrency, discard: true },
   );
 }

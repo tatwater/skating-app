@@ -19,6 +19,7 @@ export default defineConfig({
         'src/**/*.test.ts',
         'src/cli.ts',
         'src/corroborateAlsc.ts', // read-only census joining the ALSC archive to the merge artifacts
+        'src/elevationTelemetry.ts', // exercised by the CLI subprocess and a local Sentry collector
         'src/load.ts',
         'src/loadElevation.ts', // reads the archive + writes; the rules are in elevationArchive/epqs
         'src/probeIdentify.ts', // read-only census; argv + concurrency, rules are in demIdentify

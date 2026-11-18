@@ -34,7 +34,6 @@ import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
-import { Effect } from 'effect';
 import {
   type ElevationArchiveEntry,
   type ElevationArchiveManifest,
@@ -42,13 +41,12 @@ import {
   missingKeys,
   resolutionBands,
 } from './elevationArchive';
+import { flushElevationTelemetry, runElevationFetch } from './elevationTelemetry';
 import { coordinateKey, EPQS_URL } from './epqs';
-import { type ElevationPoint, fetchElevationPoints } from './fetchElevation';
+import type { ElevationPoint } from './fetchElevation';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCHIVE_DIR = resolve(HERE, '../.raw-elevation');
-const READINGS = `${ARCHIVE_DIR}/readings.ndjson`;
-const MANIFEST = `${ARCHIVE_DIR}/manifest.json`;
 
 /**
  * Requests in flight. **Eight, measured** — see `epqs.ts`: latency is ~4 s, so throughput is
@@ -108,17 +106,25 @@ function pointsFromConvex(importFloorOnly: boolean): ElevationPoint[] {
   return out;
 }
 
-function readArchive(): ElevationArchiveEntry[] {
-  if (!existsSync(READINGS)) return [];
-  return readFileSync(READINGS, 'utf8')
+function readArchive(archiveDir: string): ElevationArchiveEntry[] {
+  const readings = resolve(archiveDir, 'readings.ndjson');
+  if (!existsSync(readings)) return [];
+  return readFileSync(readings, 'utf8')
     .split('\n')
     .filter((l) => l.trim().length > 0)
     .map((l) => JSON.parse(l) as ElevationArchiveEntry);
 }
 
-function writeArchive(entries: readonly ElevationArchiveEntry[], refusals: Record<string, number>) {
-  mkdirSync(ARCHIVE_DIR, { recursive: true });
-  writeFileSync(READINGS, `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`);
+function writeArchive(
+  archiveDir: string,
+  entries: readonly ElevationArchiveEntry[],
+  refusals: Record<string, number>,
+) {
+  mkdirSync(archiveDir, { recursive: true });
+  writeFileSync(
+    resolve(archiveDir, 'readings.ndjson'),
+    `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`,
+  );
   const manifest: ElevationArchiveManifest = {
     archive: 'usgs-3dep-epqs',
     sourceUrl: EPQS_URL,
@@ -129,7 +135,7 @@ function writeArchive(entries: readonly ElevationArchiveEntry[], refusals: Recor
     resolutionsM: resolutionBands(entries),
     refusals,
   };
-  writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(resolve(archiveDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 async function main(): Promise<void> {
@@ -139,6 +145,11 @@ async function main(): Promise<void> {
   const refresh = args.includes('--refresh');
   const importFloorOnly = args.includes('--import-floor');
   const limit = Number(args.find((a) => a.startsWith('--limit='))?.slice('--limit='.length));
+  const archiveOption = args
+    .find((a) => a.startsWith('--archive-dir='))
+    ?.slice('--archive-dir='.length);
+  const archiveDir = resolve(archiveOption ?? ARCHIVE_DIR);
+  if (archiveOption === '') throw new Error('--archive-dir must specify a directory');
   const concurrency = Number(
     args.find((a) => a.startsWith('--concurrency='))?.slice('--concurrency='.length) ??
       DEFAULT_CONCURRENCY,
@@ -157,7 +168,7 @@ async function main(): Promise<void> {
   }
 
   const points = from ? await pointsFromArtifact(resolve(from)) : pointsFromConvex(importFloorOnly);
-  const existing = refresh ? [] : readArchive();
+  const existing = refresh ? [] : readArchive(archiveDir);
   const archived = new Set(existing.map((e) => e.key));
   let todo = missingKeys(points, archived, coordinateKey);
   process.stderr.write(
@@ -171,7 +182,7 @@ async function main(): Promise<void> {
   if (todo.length === 0) {
     process.stderr.write('[3dep] archive already answers every point — nothing to do.\n');
     // Still rewrite the manifest: a run that found nothing to do should leave a current census.
-    if (existing.length > 0) writeArchive(existing, {});
+    if (existing.length > 0) writeArchive(archiveDir, existing, {});
     return;
   }
 
@@ -195,11 +206,38 @@ async function main(): Promise<void> {
           "coordinate and is shared with the product's own weather crons (D101).",
         sourceUrl: EPQS_URL,
       },
-      { name: 'archive', detail: `.raw-elevation/readings.ndjson`, output: ARCHIVE_DIR },
+      { name: 'archive', detail: 'readings.ndjson', output: archiveDir },
     ],
   });
   logger.start();
 
+  const dsn = process.env.SCRIPT_SENTRY_DSN;
+  try {
+    await runBatch({ todo, existing, refresh, concurrency, archiveDir, logger, dsn });
+  } finally {
+    if (dsn && !(await flushElevationTelemetry().catch(() => false))) {
+      process.stderr.write('[3dep] Sentry did not flush within its time budget.\n');
+    }
+  }
+}
+
+async function runBatch({
+  todo,
+  existing,
+  refresh,
+  concurrency,
+  archiveDir,
+  logger,
+  dsn,
+}: {
+  todo: readonly ElevationPoint[];
+  existing: readonly ElevationArchiveEntry[];
+  refresh: boolean;
+  concurrency: number;
+  archiveDir: string;
+  logger: RunLogger;
+  dsn: string | undefined;
+}) {
   const fetched: ElevationArchiveEntry[] = [];
   const refusals: Record<string, number> = {};
   let done = 0;
@@ -207,7 +245,7 @@ async function main(): Promise<void> {
   const checkpoint = () => {
     // Don't replace an existing archive with an empty refresh that hasn't fetched any readings.
     if (!refresh || fetched.length > 0)
-      writeArchive(mergeArchiveEntries(existing, fetched), refusals);
+      writeArchive(archiveDir, mergeArchiveEntries(existing, fetched), refusals);
   };
   const controller = new AbortController();
   const stop = (signal: NodeJS.Signals) => controller.abort(signal);
@@ -215,8 +253,10 @@ async function main(): Promise<void> {
   process.on('SIGTERM', stop);
 
   try {
-    await Effect.runPromise(
-      fetchElevationPoints(todo, concurrency, (result) => {
+    await runElevationFetch(
+      todo,
+      concurrency,
+      (result) => {
         if (result.ok) fetched.push(result.entry);
         else refusals[result.reason] = (refusals[result.reason] ?? 0) + 1;
         done++;
@@ -231,8 +271,9 @@ async function main(): Promise<void> {
           logger.count('fetched', fetched.length);
           logger.flush();
         }
-      }),
-      { signal: controller.signal },
+      },
+      controller.signal,
+      dsn,
     );
   } catch (err) {
     // The batch has stopped, so no late fetch can enter this checkpoint.
@@ -255,8 +296,19 @@ async function main(): Promise<void> {
     process.off('SIGTERM', stop);
   }
 
+  finishBatch(archiveDir, existing, fetched, refusals, todo.length, logger);
+}
+
+function finishBatch(
+  archiveDir: string,
+  existing: readonly ElevationArchiveEntry[],
+  fetched: readonly ElevationArchiveEntry[],
+  refusals: Record<string, number>,
+  eligible: number,
+  logger: RunLogger,
+) {
   const all = mergeArchiveEntries(existing, fetched);
-  writeArchive(all, refusals);
+  writeArchive(archiveDir, all, refusals);
   const bands = resolutionBands(all);
   process.stderr.write(
     `[3dep] archived ${fetched.length.toLocaleString()} new · ${all.length.toLocaleString()} total\n` +
@@ -270,13 +322,15 @@ async function main(): Promise<void> {
   for (const [reason, n] of Object.entries(refusals)) logger.count(`refused.${reason}`, n);
   logger.coverage({
     unit: 'points',
-    eligible: todo.length,
+    eligible,
     covered: fetched.length,
     omissions: Object.entries(refusals).map(([reason, count]) => ({ reason, count })),
   });
   logger.succeed([
-    `${all.length.toLocaleString()} points archived at ${ARCHIVE_DIR}`,
-    'mirror with scripts/lake-depth/mirror-elevation-r2.sh push',
+    `${all.length.toLocaleString()} points archived at ${archiveDir}`,
+    ...(archiveDir === ARCHIVE_DIR
+      ? ['mirror with scripts/lake-depth/mirror-elevation-r2.sh push']
+      : []),
   ]);
 }
 
@@ -286,5 +340,5 @@ main().catch((err: unknown) => {
       '[3dep] Re-running is safe and resumes: the archive is checkpointed and already-archived\n' +
       '       points are never re-fetched.\n',
   );
-  process.exit(1);
+  process.exitCode = 1;
 });

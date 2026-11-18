@@ -8374,4 +8374,8 @@ readings. A hard kill still relies on the last checkpoint.
 retry, deadlines, cancellation, and partial progress together, outside a shipped runtime. Keep the
 trial only if those behaviors are easier to review and test than the worker loop it replaces.
 
+**Observability:** opt in with `SCRIPT_SENTRY_DSN` for one aggregate, coordinate-free Sentry trace
+per fetch batch. Pin the alpha SDK to the script; don't enable automatic request tracing or error
+events, and keep RunLogger as the operator record for archive writes and interruption.
+
 **Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).

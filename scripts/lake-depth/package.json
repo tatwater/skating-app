@@ -21,6 +21,7 @@
     "sweep-elevations": "tsx src/sweepElevations.ts"
   },
   "dependencies": {
+    "@sentry/effect": "11.14.0",
     "@skating/core": "workspace:*",
     "@skating/run-log": "workspace:*",
     "effect": "4.1.4"
