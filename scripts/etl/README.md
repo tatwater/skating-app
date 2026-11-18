@@ -200,6 +200,9 @@ pnpm --filter @skating/etl measure-3dhp --dry-run      # print it, write nothing
 scripts/etl/mirror-3dhp-r2.sh push
 ```
 
+The source ZIP is staged and checked against the release's expected byte count before replacing a
+saved download (D281). Ctrl-C during transfer stops it without overwriting a previous archive.
+
 ### Why this one archives a derivative
 
 **It is the single break from the byte-faithful rule in this repo, and the reason is scale.** 3DHP has
@@ -657,6 +660,9 @@ endpoint that had already said no**. Fallbacks from a 403/429 are deliberately *
 later run resumes; only real routes and genuine `404`s ("no path", a stable answer) are archived.
 Quotas are **per-endpoint**, so this cannot starve Phase 04's isochrones. Dashboard:
 <https://account.heigit.org>.
+
+The Effect request boundary (D280) keeps the serial pace and the three 20-second retries for
+`429`. The per-run `403` breaker and the on-disk cache stay separate from the retry schedule.
 
 **2. Pass `marginMeters` to `listedBodiesNearCoord`, always.** The first parking load spent
 **104.95 GB of Convex database I/O — 1.1 MB per lot — and disabled the deployment.** The candidate box

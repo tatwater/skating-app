@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { WIND_ARCHIVE_MIN_FETCH_M } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { Effect } from 'effect';
 import {
   type ArchivedResponse,
   type CellManifest,
@@ -45,15 +46,8 @@ import {
   WTK_LICENSE,
   WTK_MEASURED_LATENCY_MS,
 } from './archive';
-import {
-  fetchCellYear,
-  gridKey,
-  pointForGridKey,
-  sleep,
-  WTK_REQUEST_DELAY_MS,
-  WTK_YEARS,
-  wtkUrl,
-} from './wtk';
+import { gridKey, pointForGridKey, sleep, WTK_REQUEST_DELAY_MS, WTK_YEARS, wtkUrl } from './wtk';
+import { fetchCellYear } from './wtkFetch';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = resolve(HERE, '../.raw');
@@ -255,7 +249,9 @@ async function main(): Promise<void> {
     for (const [index, { gridKey: key, year }] of wanted.entries()) {
       const point = pointForGridKey(key);
       try {
-        const csv = await fetchCellYear(point, year, apiKey as string, email as string);
+        const csv = await Effect.runPromise(
+          fetchCellYear(point, year, apiKey as string, email as string),
+        );
         const raw = Buffer.from(csv, 'utf8');
         const gz = gzipSync(raw, { level: 9 });
         mkdirSync(join(RAW_DIR, key), { recursive: true });

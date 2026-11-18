@@ -8361,3 +8361,63 @@ a lifted person locked out of sign-in with no alert; a verifier per sync would c
 status write and still miss the second case, while one bounded daily pass finds both within a day.
 
 **Related:** D37, D38, D258, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4k*.
+
+## D278 — Trial Effect v4 in the manual 3DEP snapshot only
+
+**2026-11-18, trial.** `snapshot-elevation` composes the existing per-attempt deadline, retry
+schedule, and point concurrency with Effect. Keep the CLI, archive, RunLogger, and downstream
+consumers as they are; no Effect types cross into core, Convex, or either app. Periodic disk
+checkpoints still own resume, and a graceful stop aborts outstanding work and saves completed
+readings. A hard kill still relies on the last checkpoint.
+
+**Why:** a small plain-async helper would be enough for retry alone. This batch lets us evaluate
+retry, deadlines, cancellation, and partial progress together, outside a shipped runtime. Keep the
+trial only if those behaviors are easier to review and test than the worker loop it replaces.
+
+**Observability:** opt in with `SCRIPT_SENTRY_DSN` for one aggregate, coordinate-free Sentry trace
+per fetch batch. Pin the alpha SDK to the script; don't enable automatic request tracing or error
+events, and keep RunLogger as the operator record for archive writes and interruption.
+
+**Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).
+
+## D279 — Trial an Effect schedule for WIND Toolkit retries
+
+**2026-11-18, trial.** After D278, use Effect for one more fetch boundary: the manual wind
+snapshot's cell-year request. Keep the four-attempt normal budget, the eight-attempt budget once
+a 429 occurs, and both forms of `Retry-After` with the existing four-minute cap. HTTP refusals
+other than 429 and 5xx still stop immediately, as do failed reads of an otherwise successful CSV
+response. The CLI still owns serial pacing, RunLogger, and checkpoints. Keep Effect out of
+`derive`, the archive, the apps, and Convex; this trial doesn't add Sentry to wind.
+
+**Why:** this is a more demanding test of Effect than a fixed backoff. The budget depends on prior
+responses, while the next wait depends on the current one. Compare whether that policy is easier
+to read alongside deterministic tests of delays and mixed failures before adopting it elsewhere.
+
+**Related:** D134, D278, [`wind-climate`](../scripts/wind-climate/README.md).
+
+## D280 — Use Effect for the ORS approach request, not the route cache
+
+**2026-11-18.** The manual access transform uses Effect to schedule the existing three
+20-second retries on `429`. A router per run owns the three-`403` quota breaker. The CLI still
+paces legs serially, owns its on-disk cache, and only replaces a cached routed leg with another
+routed leg. A transient straight-line fallback must never become a cached answer.
+
+**Why:** the rate-limit wait and the decision to cache a result need separate tests. Timing and
+response classification can be exercised without spending the shared directions quota or running
+the corpus transform.
+
+**Related:** D87, D278, [`access ETL`](../scripts/etl/README.md).
+
+## D281 — Stage direct archive downloads before replacing the saved file
+
+**2026-11-18.** Direct bathymetry file transfers and the USGS 3DHP source ZIP share a scoped
+download. Node streams and hashes the bytes; Effect owns abort and staging cleanup. Verify 3DHP
+against its registry size; for other direct downloads, check the declared length when it describes
+the saved bytes. Only then rename the staged file into place. Interrupted or failed transfers leave
+the previous file and manifest intact. ArcGIS pages, the 3DHP clip step, and automatic retries are
+out of scope. A hard kill can leave staging on disk but does not publish it.
+
+**Why:** both lanes were streaming directly into the final path. A failed refresh could replace
+valid bytes with a prefix while the old manifest still said the archive was complete.
+
+**Related:** D278, [`bathymetry`](../scripts/bathymetry/README.md), [`water ETL`](../scripts/etl/README.md).

@@ -18,7 +18,6 @@
 
 import { createHash } from 'node:crypto';
 import {
-  createWriteStream,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -29,6 +28,7 @@ import {
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { downloadArchiveForCli } from '@skating/archive-io';
 import type { RawFileRecord, RawManifest } from './types';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -188,34 +188,12 @@ export async function downloadToRaw(
   file: RawFileRecord;
   http: { lastModified?: string; etag?: string; contentLength?: number };
 }> {
-  const dir = ensureRawDir(key);
-  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!response.ok || !response.body) {
-    throw new Error(`download failed (${response.status} ${response.statusText}): ${url}`);
-  }
-
-  const hash = createHash('sha256');
-  let bytes = 0;
-  const out = createWriteStream(join(dir, filename));
-  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-    const buf = Buffer.from(chunk);
-    hash.update(buf);
-    bytes += buf.byteLength;
-    if (!out.write(buf)) await new Promise<void>((resolve) => out.once('drain', () => resolve()));
-  }
-  await new Promise<void>((resolve, reject) => {
-    out.end((err?: Error | null) => (err ? reject(err) : resolve()));
+  const { bytes, sha256, http } = await downloadArchiveForCli({
+    url,
+    destination: join(ensureRawDir(key), filename),
+    userAgent: USER_AGENT,
   });
-
-  const contentLength = Number(response.headers.get('content-length') ?? Number.NaN);
-  return {
-    file: { name: filename, bytes, sha256: hash.digest('hex') },
-    http: {
-      lastModified: response.headers.get('last-modified') ?? undefined,
-      etag: response.headers.get('etag') ?? undefined,
-      contentLength: Number.isFinite(contentLength) ? contentLength : undefined,
-    },
-  };
+  return { file: { name: filename, bytes, sha256 }, http };
 }
 
 /**

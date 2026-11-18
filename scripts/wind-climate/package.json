@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@skating/core": "workspace:*",
-    "@skating/run-log": "workspace:*"
+    "@skating/run-log": "workspace:*",
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
