@@ -39,19 +39,28 @@ async function transfer(
   const size = expectedBytes ?? (encoding && encoding !== 'identity' ? undefined : length);
   const hash = createHash('sha256');
   let bytes = 0;
-  await pipeline(
-    response.body,
-    async function* (chunks: AsyncIterable<Uint8Array>) {
-      for await (const chunk of chunks) {
-        bytes += chunk.byteLength;
-        hash.update(chunk);
-        onBytes?.(bytes);
-        yield chunk;
-      }
-    },
-    createWriteStream(path),
-    { signal },
-  );
+  const out = createWriteStream(path);
+  const closed = new Promise<void>((resolve) => out.once('close', resolve));
+  try {
+    await pipeline(
+      response.body,
+      async function* (chunks: AsyncIterable<Uint8Array>) {
+        for await (const chunk of chunks) {
+          bytes += chunk.byteLength;
+          hash.update(chunk);
+          onBytes?.(bytes);
+          yield chunk;
+        }
+      },
+      out,
+      { signal },
+    );
+  } finally {
+    // A body can fail before the filesystem finishes opening the writer. Wait for close before
+    // the scope removes staging so that a late open cannot race with cleanup.
+    out.destroy();
+    await closed;
+  }
   if (size !== undefined && bytes !== size) {
     throw new Error(`download size mismatch: got ${bytes} bytes, expected ${size}`);
   }
