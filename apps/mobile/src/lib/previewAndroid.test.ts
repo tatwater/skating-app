@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -23,7 +23,8 @@ afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 function preview(env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [script, '--non-interactive'], {
     cwd,
-    env: { NODE_ENV: 'production', PATH: [cwd, process.env.PATH].join(delimiter), ...env },
+    // Only the stub EAS should be callable, never the developer's installed CLI.
+    env: { NODE_ENV: 'production', PATH: cwd, ...env },
     encoding: 'utf8',
   });
 }
