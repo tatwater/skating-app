@@ -37,6 +37,19 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > is the form to use after a load and it is incremental: on an unchanged corpus it makes zero
 > requests, so there is no reason to skip it. The A07a runbook was missing this line until 2026-08-26.
 >
+> **Effect trial (D278):** This command alone uses Effect for its fetch batch. Each point still has
+> a 45-second deadline per attempt and at most three retries (1.5, 3, and 6 seconds apart); a
+> no-data answer isn't retried. The archive is checkpointed every 250 settled points. Ctrl-C or
+> SIGTERM cancels requests and saves completed readings; rerun without `--refresh` to pick up
+> missing points. A hard kill can only rely on the last checkpoint.
+>
+> **Scratch runs and Sentry:** use `--archive-dir=/absolute/path` to write outside `.raw-elevation/`.
+> Export `SCRIPT_SENTRY_DSN` in the shell to opt in to one span per fetch batch in the
+> `manual-scripts` Sentry environment. Search Traces for `3dep.snapshot.fetch`: the span has the
+> batch duration, point and concurrency counts, fetched/refused/retry counts, and outcome. It
+> doesn't send coordinates, URLs, archive paths, or error events. Without a DSN the SDK isn't
+> loaded. The Convex run log is unchanged and still records the checkpoint and final status.
+>
 > **`load-elevation` now reads that archive and the Open-Meteo module is deleted** (A07a-3). Run
 > `load-elevation --compare` **first**: D101 asks for the datum comparison against the 5,692 rows
 > already stamped `dem_glo90` *before* re-stamping, because a swap that silently moves a datum moves

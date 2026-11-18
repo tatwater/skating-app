@@ -21,8 +21,10 @@
     "sweep-elevations": "tsx src/sweepElevations.ts"
   },
   "dependencies": {
+    "@sentry/effect": "11.14.0",
     "@skating/core": "workspace:*",
-    "@skating/run-log": "workspace:*"
+    "@skating/run-log": "workspace:*",
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

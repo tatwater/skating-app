@@ -8361,3 +8361,21 @@ a lifted person locked out of sign-in with no alert; a verifier per sync would c
 status write and still miss the second case, while one bounded daily pass finds both within a day.
 
 **Related:** D37, D38, D258, D270, [`phase-B01`](./phases/B01-admin-console.md) *B01-4k*.
+
+## D278 — Trial Effect v4 in the manual 3DEP snapshot only
+
+**2026-11-18, trial.** `snapshot-elevation` composes the existing per-attempt deadline, retry
+schedule, and point concurrency with Effect. Keep the CLI, archive, RunLogger, and downstream
+consumers as they are; no Effect types cross into core, Convex, or either app. Periodic disk
+checkpoints still own resume, and a graceful stop aborts outstanding work and saves completed
+readings. A hard kill still relies on the last checkpoint.
+
+**Why:** a small plain-async helper would be enough for retry alone. This batch lets us evaluate
+retry, deadlines, cancellation, and partial progress together, outside a shipped runtime. Keep the
+trial only if those behaviors are easier to review and test than the worker loop it replaces.
+
+**Observability:** opt in with `SCRIPT_SENTRY_DSN` for one aggregate, coordinate-free Sentry trace
+per fetch batch. Pin the alpha SDK to the script; don't enable automatic request tracing or error
+events, and keep RunLogger as the operator record for archive writes and interruption.
+
+**Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).
