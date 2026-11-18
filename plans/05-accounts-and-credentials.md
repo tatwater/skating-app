@@ -147,6 +147,7 @@ backend, so it needs no deployment credential.
 | `~/.npmrc` | the FontAwesome token |
 | `packages/convex/.env.local` | `CONVEX_DEPLOYMENT` (which deployment the CLI targets); `CONVEX_DEPLOY_KEY` for loaders that run as admin and for `convex deploy` |
 | `scripts/wind-climate/.env` | `WIND_TOOLKIT_API_KEY`, `WIND_TOOLKIT_EMAIL` |
+| `scripts/lake-depth/.env.local` → operator's shell | `SCRIPT_SENTRY_DSN` — optional public ingest DSN for `gli-data-scripts`; export it before running `snapshot-elevation` (D278). Not read by Convex, Vercel, or CI. |
 | `scripts/basemap/RCLONE_SETUP.md` + each `mirror-r2.sh`'s rclone remote | R2 API tokens (Object Read & Write, scoped per bucket) |
 | Fly app `skating-imagery`, staged secrets | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (empty — anonymous), `FLY_API_TOKEN` local for `flyctl` |
 | Imagery / pipeline knobs (not secrets, read from env) | `STAC_URL`, `STAC_COLLECTION`, `STAC_COLLECTION_S1`, `THALWEG_RATIO`, `NODE_TLS_REJECT_UNAUTHORIZED` (the ALSC scraper's expired certificate, one run, archived) |

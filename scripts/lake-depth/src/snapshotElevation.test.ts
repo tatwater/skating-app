@@ -31,6 +31,8 @@ test('checkpoints, flushes a Sentry span on Ctrl-C, and resumes only missing poi
     const bodies = join(dir, 'bodies.ndjson');
     const archive = join(dir, 'archive');
     const preload = join(dir, 'usgs.mjs');
+    const stallRemaining = join(dir, 'stall-remaining');
+    await writeFile(stallRemaining, '');
     await writeFile(
       bodies,
       Array.from({ length: 260 }, (_, i) =>
@@ -39,8 +41,9 @@ test('checkpoints, flushes a Sentry span on Ctrl-C, and resumes only missing poi
     );
     await writeFile(
       preload,
-      `import { appendFileSync } from 'node:fs';
+      `import { appendFileSync, existsSync } from 'node:fs';
 const requests = ${JSON.stringify(requests)};
+const stallRemaining = ${JSON.stringify(stallRemaining)};
 let first = true;
 globalThis.fetch = async (url, { signal }) => {
   const index = Math.round((Number(new URL(url).searchParams.get('y')) - 40) * 10_000);
@@ -49,7 +52,7 @@ globalThis.fetch = async (url, { signal }) => {
     first = false;
     return new Response('busy', { status: 503 });
   }
-  if (index >= 250 && process.env.FIXTURE_INTERRUPT === 'yes') {
+  if (index >= 250 && existsSync(stallRemaining)) {
     return new Promise((_, reject) => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true });
     });
@@ -62,7 +65,7 @@ globalThis.fetch = async (url, { signal }) => {
       join(dir, 'pnpm'),
       `#!/bin/sh
 [ "$2" = "@skating/convex" ] && [ "$5" = run ] || exit 1
-printf '%s\\n' "$7" >> "$FIXTURE_RUN_LOG"
+printf '%s\\n' "$7" >> "\${0%/*}/run-log.ndjson"
 printf '"fixture-run"\\n'
 `,
       { mode: 0o755 },
@@ -81,13 +84,11 @@ printf '"fixture-run"\\n'
           `--archive-dir=${archive}`,
         ],
         {
+          // No inherited deployment keys, proxy settings, or telemetry configuration.
           env: {
-            ...process.env,
-            PATH: `${dir}:${process.env.PATH}`,
+            PATH: dir,
             CONVEX_DEPLOYMENT: 'dev:fixture',
             SCRIPT_SENTRY_DSN: dsn,
-            FIXTURE_RUN_LOG: runLog,
-            FIXTURE_INTERRUPT: interrupt ? 'yes' : 'no',
           },
           stdio: ['ignore', 'ignore', 'pipe'],
         },
@@ -128,6 +129,7 @@ printf '"fixture-run"\\n'
       }),
     );
 
+    await rm(stallRemaining);
     await writeFile(requests, '');
     const resumed = await run(false);
     expect(resumed.code, resumed.stderr).toBe(0);
