@@ -20,8 +20,8 @@ const googleServicesFile = [process.env.GOOGLE_SERVICES_JSON, './google-services
 
 /**
  * Dynamic Expo config (D8). Barebones Phase 00 shell — Continuous Native Generation
- * (no committed `ios/`/`android/`, see root .gitignore), new architecture (default
- * in SDK 57), EAS dev-client workflow (native map/auth modules need a dev build).
+ * (no committed `ios/`/`android/`, see root .gitignore), new architecture, and
+ * EAS dev-client workflow (native map/auth modules need a dev build).
  *
  * `owner` + `extra.eas.projectId` are set below (dynamic config can't be auto-written
  * by EAS, so they're maintained by hand) — see README.

@@ -305,13 +305,13 @@ export default function PhotoLibraryScreen() {
           }}
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
-            loading ? null : (
+            loading ? undefined : (
               <Paragraph color="$foregroundMuted" padding="$4">
                 {scope === 'skate' ? 'No photos from those hours.' : 'No photos from that day.'}
               </Paragraph>
             )
           }
-          ListFooterComponent={loading ? <Spinner margin="$4" color="$primary" /> : null}
+          ListFooterComponent={loading ? <Spinner margin="$4" color="$primary" /> : undefined}
         />
         {failed ? (
           <Paragraph color="$danger" paddingHorizontal="$3">

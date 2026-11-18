@@ -19,7 +19,12 @@ import {
 } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type NativeScrollEvent, type NativeSyntheticEvent, ScrollView } from 'react-native';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  ScrollView,
+  type ScrollViewInstance,
+} from 'react-native';
 import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
 import { GLYPH_ICON } from './weatherGlyphs';
@@ -139,8 +144,8 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   // `FontAwesomeIcon` draws SVG and knows nothing of theme tokens, so the tint is resolved once.
   const ink = theme.foreground?.val ?? undefined;
   const inkMuted = theme.foregroundMuted?.val ?? undefined;
-  const hoursRef = useRef<ScrollView>(null);
-  const daysRef = useRef<ScrollView>(null);
+  const hoursRef = useRef<ScrollViewInstance>(null);
+  const daysRef = useRef<ScrollViewInstance>(null);
   const [selectedDate, setSelectedDate] = useState<string>(plan.days[0]?.localDate ?? '');
   const settlingUntil = useRef(0);
   // The date a tap selected, so the follow effect below can tell a tapped card (already on screen —

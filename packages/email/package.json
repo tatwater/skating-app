@@ -17,12 +17,12 @@
   "dependencies": {
     "@react-email/render": "^2.1.0",
     "@skating/design": "workspace:*",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-email": "^6.11.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.3.0",
     "@vitest/coverage-v8": "^5.0.2",
     "vitest": "^5.0.2"
   }

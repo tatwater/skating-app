@@ -1,8 +1,7 @@
 /**
  * Photos shared to Gli from another app (A10-8 §8.7) — the file glue. A share hands over bare files,
  * so the capture time and the GPS fix are read here, on device, from the file's own EXIF (core's
- * `readJpegExif`), before the pipeline's re-encode strips everything (D31). Untested native glue;
- * the reader and where the photos land are core's, and are.
+ * `readJpegExif`), before the pipeline's re-encode strips everything (D31).
  */
 
 import { JPEG_EXIF_HEAD_BYTES, readJpegExif } from '@skating/core';
@@ -37,7 +36,8 @@ export async function readSharedPhotos(files: readonly ShareIntentFile[]): Promi
       try {
         const handle = new File(uri).open();
         try {
-          exif = readJpegExif(handle.readBytes(Math.min(handle.size ?? 0, JPEG_EXIF_HEAD_BYTES)));
+          const head = await handle.readBytes(Math.min(handle.size ?? 0, JPEG_EXIF_HEAD_BYTES));
+          exif = readJpegExif(head);
         } finally {
           handle.close();
         }

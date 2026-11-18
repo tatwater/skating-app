@@ -25,7 +25,7 @@ import { useQuery } from 'convex/react';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Dimensions, ScrollView } from 'react-native';
+import { Alert, Dimensions, ScrollView, type ScrollViewInstance } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 import {
   DRAFT_SYNCING_MESSAGE,
@@ -97,7 +97,7 @@ function SheetBody({
     { kind: 'add' } | { kind: 'set'; reportId: string } | null
   >(null);
   const [activeId, setActiveId] = useState<string>(post.reports[0]?.id ?? '');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [wordsHeight, setWordsHeight] = useState(0);
   const editing = post.mode.kind === 'edit';
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
