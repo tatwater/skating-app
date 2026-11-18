@@ -24,8 +24,8 @@
  * incremental top-up after a campaign wants. Both produce the same coordinate keys, so the archive
  * does not care which filled it.
  *
- * All decisions live in `./epqs` and `./elevationArchive`, both tested; this is argv, concurrency,
- * retry and file I/O, and is excluded from coverage.
+ * Parsing, archive rules, and the fetch batch are tested in `./epqs`, `./elevationArchive`, and
+ * `./fetchElevation`. This file is the CLI and archive I/O.
  */
 
 import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -34,6 +34,7 @@ import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { Effect } from 'effect';
 import {
   type ElevationArchiveEntry,
   type ElevationArchiveManifest,
@@ -41,7 +42,8 @@ import {
   missingKeys,
   resolutionBands,
 } from './elevationArchive';
-import { coordinateKey, EPQS_URL, type EpqsRefusal, epqsUrl, parseEpqsResponse } from './epqs';
+import { coordinateKey, EPQS_URL } from './epqs';
+import { type ElevationPoint, fetchElevationPoints } from './fetchElevation';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCHIVE_DIR = resolve(HERE, '../.raw-elevation');
@@ -58,30 +60,19 @@ const MANIFEST = `${ARCHIVE_DIR}/manifest.json`;
  */
 const DEFAULT_CONCURRENCY = 8;
 
-/** Attempts per point before it is counted as a failure rather than retried. */
-const MAX_ATTEMPTS = 4;
-/** Base backoff. A point that fails is one point, not the run — the whole pass must not die on it. */
-const BACKOFF_MS = 1_500;
 /** How often to checkpoint the archive to disk, in readings. A four-hour run must survive a kill. */
 const CHECKPOINT_EVERY = 250;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-interface Point {
-  lat: number;
-  lng: number;
-}
-
 /** Read `{ interiorPoint | representativePoint | centroid }` out of a merge artifact. */
-async function pointsFromArtifact(path: string): Promise<Point[]> {
-  const out: Point[] = [];
+async function pointsFromArtifact(path: string): Promise<ElevationPoint[]> {
+  const out: ElevationPoint[] = [];
   const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line.trim()) continue;
     const body = JSON.parse(line) as {
-      interiorPoint?: Point;
-      representativePoint?: Point;
-      centroid?: Point;
+      interiorPoint?: ElevationPoint;
+      representativePoint?: ElevationPoint;
+      centroid?: ElevationPoint;
     };
     // **`interiorPoint` first, and this ordering is load-bearing.** `representativePoint` is Turf
     // `pointOnFeature` and lands ON the shoreline, so a DEM read there returns the height of the
@@ -95,8 +86,8 @@ async function pointsFromArtifact(path: string): Promise<Point[]> {
 }
 
 /** Walk the stored corpus for points, for an incremental top-up after a campaign. */
-function pointsFromConvex(importFloorOnly: boolean): Point[] {
-  const out: Point[] = [];
+function pointsFromConvex(importFloorOnly: boolean): ElevationPoint[] {
+  const out: ElevationPoint[] = [];
   let cursor: string | undefined;
   for (;;) {
     const page = convexRun<{
@@ -141,47 +132,6 @@ function writeArchive(entries: readonly ElevationArchiveEntry[], refusals: Recor
   writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-async function fetchPoint(
-  lat: number,
-  lng: number,
-): Promise<{ ok: true; entry: ElevationArchiveEntry } | { ok: false; reason: EpqsRefusal }> {
-  let lastReason: EpqsRefusal = 'unparseable';
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) await sleep(BACKOFF_MS * 2 ** (attempt - 1));
-    let body: unknown;
-    try {
-      const res = await fetch(epqsUrl(lat, lng), { signal: AbortSignal.timeout(45_000) });
-      if (!res.ok) continue;
-      const text = await res.text();
-      try {
-        body = JSON.parse(text);
-      } catch {
-        body = text;
-      }
-    } catch {
-      continue; // network / timeout — worth another go
-    }
-    const outcome = parseEpqsResponse(body, lat);
-    if (outcome.ok) {
-      return {
-        ok: true,
-        entry: {
-          key: coordinateKey(lat, lng),
-          lat,
-          lng,
-          fetchedAt: new Date().toISOString(),
-          ...outcome.reading,
-        },
-      };
-    }
-    // **`implausible` is an ANSWER, not a failure.** EPQS said "no data here" and retrying asks
-    // the same raster the same question. Only a mangled response is worth another attempt.
-    if (outcome.reason === 'implausible') return { ok: false, reason: 'implausible' };
-    lastReason = outcome.reason;
-  }
-  return { ok: false, reason: lastReason };
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const from = args.find((a) => a.startsWith('--from='))?.slice('--from='.length);
@@ -189,9 +139,13 @@ async function main(): Promise<void> {
   const refresh = args.includes('--refresh');
   const importFloorOnly = args.includes('--import-floor');
   const limit = Number(args.find((a) => a.startsWith('--limit='))?.slice('--limit='.length));
-  const concurrency =
-    Number(args.find((a) => a.startsWith('--concurrency='))?.slice('--concurrency='.length)) ||
-    DEFAULT_CONCURRENCY;
+  const concurrency = Number(
+    args.find((a) => a.startsWith('--concurrency='))?.slice('--concurrency='.length) ??
+      DEFAULT_CONCURRENCY,
+  );
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new Error('--concurrency must be a positive integer');
+  }
 
   if (!from && !fromConvex) {
     process.stderr.write(
@@ -248,42 +202,57 @@ async function main(): Promise<void> {
 
   const fetched: ElevationArchiveEntry[] = [];
   const refusals: Record<string, number> = {};
-  let cursor = 0;
   let done = 0;
   const started = Date.now();
-  const checkpoint = () => writeArchive(mergeArchiveEntries(existing, fetched), refusals);
+  const checkpoint = () => {
+    // Don't replace an existing archive with an empty refresh that hasn't fetched any readings.
+    if (!refresh || fetched.length > 0)
+      writeArchive(mergeArchiveEntries(existing, fetched), refusals);
+  };
+  const controller = new AbortController();
+  const stop = (signal: NodeJS.Signals) => controller.abort(signal);
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
 
   try {
-    await Promise.all(
-      Array.from({ length: concurrency }, async () => {
-        for (;;) {
-          const i = cursor++;
-          const point = todo[i];
-          if (!point) return;
-          const result = await fetchPoint(point.lat, point.lng);
-          if (result.ok) fetched.push(result.entry);
-          else refusals[result.reason] = (refusals[result.reason] ?? 0) + 1;
-          done++;
-          if (done % CHECKPOINT_EVERY === 0) {
-            // **Checkpointed, because four hours is long enough to be interrupted.** Everything
-            // fetched so far survives, and a re-run picks up from the archive rather than from zero.
-            checkpoint();
-            const rate = done / ((Date.now() - started) / 1000);
-            const leftH = (todo.length - done) / rate / 3600;
-            process.stderr.write(
-              `[3dep] ${done.toLocaleString()}/${todo.length.toLocaleString()} · ` +
-                `${rate.toFixed(2)}/s · ~${leftH.toFixed(1)} h left\n`,
-            );
-            logger.count('fetched', fetched.length);
-            logger.flush();
-          }
+    await Effect.runPromise(
+      fetchElevationPoints(todo, concurrency, (result) => {
+        if (result.ok) fetched.push(result.entry);
+        else refusals[result.reason] = (refusals[result.reason] ?? 0) + 1;
+        done++;
+        if (done % CHECKPOINT_EVERY === 0) {
+          checkpoint();
+          const rate = done / ((Date.now() - started) / 1000);
+          const leftH = (todo.length - done) / rate / 3600;
+          process.stderr.write(
+            `[3dep] ${done.toLocaleString()}/${todo.length.toLocaleString()} · ` +
+              `${rate.toFixed(2)}/s · ~${leftH.toFixed(1)} h left\n`,
+          );
+          logger.count('fetched', fetched.length);
+          logger.flush();
         }
       }),
+      { signal: controller.signal },
     );
   } catch (err) {
+    // The batch has stopped, so no late fetch can enter this checkpoint.
     checkpoint();
+    if (controller.signal.aborted) {
+      const signal = controller.signal.reason;
+      const next =
+        refresh && fetched.length === 0 ? 'Retry with --refresh.' : 'Resume without --refresh.';
+      const message = `Stopped by ${signal}; ${fetched.length} new readings saved. ${next}`;
+      process.stderr.write(`[3dep] ${message}\n`);
+      logger.count('fetched', fetched.length);
+      logger.failed(new Error(message));
+      process.exitCode = signal === 'SIGINT' ? 130 : 143;
+      return;
+    }
     logger.failed(err);
     throw err;
+  } finally {
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
   }
 
   const all = mergeArchiveEntries(existing, fetched);

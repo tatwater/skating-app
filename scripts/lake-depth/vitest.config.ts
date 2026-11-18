@@ -26,7 +26,7 @@ export default defineConfig({
         'src/snapshotAlsc.ts', // serial fetch + file I/O; the parser is in alsc.ts and covered
         'src/snapshotCslap.ts', // one query + file I/O; the parser is in cslap.ts and covered
         'src/snapshotNhBands.ts', // paged query + file I/O; the rules are in nhBands.ts and covered
-        'src/snapshotElevation.ts', // argv + concurrency + file I/O; the rules are in epqs/elevationArchive
+        'src/snapshotElevation.ts', // argv + archive I/O; covered logic lives in epqs/elevationArchive/fetchElevation
         'src/types.ts',
       ],
       thresholds: {

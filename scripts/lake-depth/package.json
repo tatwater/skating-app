@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "@skating/core": "workspace:*",
-    "@skating/run-log": "workspace:*"
+    "@skating/run-log": "workspace:*",
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
