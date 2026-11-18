@@ -8407,3 +8407,17 @@ response classification can be exercised without spending the shared directions 
 the corpus transform.
 
 **Related:** D87, D278, [`access ETL`](../scripts/etl/README.md).
+
+## D281 — Stage direct archive downloads before replacing the saved file
+
+**2026-11-18.** Direct bathymetry file transfers and the USGS 3DHP source ZIP share a scoped
+download. Node streams and hashes the bytes; Effect owns abort and staging cleanup. Verify 3DHP
+against its registry size; for other direct downloads, check the declared length when it describes
+the saved bytes. Only then rename the staged file into place. Interrupted or failed transfers leave
+the previous file and manifest intact. ArcGIS pages, the 3DHP clip step, and automatic retries are
+out of scope. A hard kill can leave staging on disk but does not publish it.
+
+**Why:** both lanes were streaming directly into the final path. A failed refresh could replace
+valid bytes with a prefix while the old manifest still said the archive was complete.
+
+**Related:** D278, [`bathymetry`](../scripts/bathymetry/README.md), [`water ETL`](../scripts/etl/README.md).

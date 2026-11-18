@@ -18,6 +18,7 @@
 
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
+import { ArchiveTransferInterrupted } from '@skating/archive-io';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   countUrl,
@@ -238,6 +239,10 @@ async function main(): Promise<void> {
       // One agency's service being down is not a reason to skip the other four — each source is an
       // independent archive, and a partial snapshot run is normal rather than exceptional.
       log(`✗ ${source.key} failed: ${(err as Error).message}`);
+      if (err instanceof ArchiveTransferInterrupted) {
+        process.exitCode = err.exitCode;
+        return;
+      }
       continue;
     }
 

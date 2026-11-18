@@ -186,6 +186,9 @@ pnpm --filter @skating/bathymetry snapshot --refresh           # re-pull, overwr
 gzipped, one file per page, zero-padded so a directory listing sorts into fetch order. A snapshot that
 comes up short of the reported count warns loudly rather than reporting success.
 
+Direct file sources (not ArcGIS pages) stream into a staging directory before replacing the
+archived file (D281). A failed or interrupted transfer leaves the previous snapshot intact.
+
 Then mirror it: `scripts/bathymetry/mirror-r2.sh push`.
 
 ## 3. Sweep — size the density gate against the real distribution

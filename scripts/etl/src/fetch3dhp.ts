@@ -23,7 +23,6 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   createReadStream,
-  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -34,6 +33,7 @@ import {
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { ArchiveTransferInterrupted, downloadArchiveForCli } from '@skating/archive-io';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   buildThreeDhpClipManifest,
@@ -69,11 +69,11 @@ async function download(refresh: boolean): Promise<ThreeDhpSourceManifest> {
   // `--keep-source` is the exception. Only re-download when the bytes are actually needed.
   if (existsSync(manifestPath) && !refresh) {
     const existing = JSON.parse(readFileSync(manifestPath, 'utf8')) as ThreeDhpSourceManifest;
-    if (existsSync(zipPath)) {
+    if (statSync(zipPath, { throwIfNoEntry: false })?.size === release.expectedBytes) {
       log(`source already on disk (${release.fiscalYear}); pass --refresh to re-fetch`);
       return existing;
     }
-    log(`source manifest present but payload deleted (that is normal) — re-downloading`);
+    log('source manifest present but payload missing or incomplete — re-downloading');
   }
 
   // **Adopt a payload that is already here.** The inverse of the case above: complete bytes, no
@@ -99,42 +99,28 @@ async function download(refresh: boolean): Promise<ThreeDhpSourceManifest> {
   log(
     `downloading ${release.fiscalYear} CONUS geodatabase (~${expectedGb} GB) — this is the slow part`,
   );
-  const response = await fetch(release.url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!response.ok || !response.body) {
-    throw new Error(`download failed (${response.status} ${response.statusText})`);
-  }
-
-  const sha = createHash('sha256');
-  let bytes = 0;
   let lastLogged = 0;
-  const out = createWriteStream(zipPath);
-  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-    const buf = Buffer.from(chunk);
-    sha.update(buf);
-    bytes += buf.byteLength;
-    if (!out.write(buf)) await new Promise<void>((r) => out.once('drain', () => r()));
-    if (bytes - lastLogged > 1_000_000_000) {
-      lastLogged = bytes;
-      log(`  ${(bytes / 1_000_000_000).toFixed(1)} / ${expectedGb} GB…`);
-    }
-  }
-  await new Promise<void>((resolve, reject) => {
-    out.end((err?: Error | null) => (err ? reject(err) : resolve()));
+  const { bytes, sha256, http } = await downloadArchiveForCli({
+    url: release.url,
+    destination: zipPath,
+    userAgent: USER_AGENT,
+    expectedBytes: release.expectedBytes,
+    onBytes: (received) => {
+      if (received - lastLogged > 1_000_000_000) {
+        lastLogged = received;
+        log(`  ${(received / 1_000_000_000).toFixed(1)} / ${expectedGb} GB…`);
+      }
+    },
   });
 
   const manifest = buildThreeDhpSourceManifest({
     release,
     fetchedAt: new Date().toISOString(),
     bytes,
-    sha256: sha.digest('hex'),
-    lastModified: response.headers.get('last-modified') ?? undefined,
+    sha256,
+    lastModified: http.lastModified,
   });
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  if (!manifest.bytesVerified) {
-    throw new Error(
-      `SHORT READ — got ${bytes} bytes, expected ${release.expectedBytes}. Re-run with --refresh.`,
-    );
-  }
   log(
     `  ✓ ${(bytes / 1_000_000_000).toFixed(1)} GB · bytes ok · sha256 ${manifest.sha256.slice(0, 16)}…`,
   );
@@ -262,5 +248,5 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(`[3dhp] archive failed: ${(error as Error).message}\n`);
-  process.exit(1);
+  process.exitCode = error instanceof ArchiveTransferInterrupted ? error.exitCode : 1;
 });
