@@ -200,6 +200,9 @@ pnpm --filter @skating/etl measure-3dhp --dry-run      # print it, write nothing
 scripts/etl/mirror-3dhp-r2.sh push
 ```
 
+The source ZIP is staged and checked against the release's expected byte count before replacing a
+saved download (D281). Ctrl-C during transfer stops it without overwriting a previous archive.
+
 ### Why this one archives a derivative
 
 **It is the single break from the byte-faithful rule in this repo, and the reason is scale.** 3DHP has
