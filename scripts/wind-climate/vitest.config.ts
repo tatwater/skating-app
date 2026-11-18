@@ -11,8 +11,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      // `wtk.ts` and `archive.ts` are the tested logic; `snapshot.ts` and `derive.ts` are argv,
-      // network and file glue. Mirrors the water ETL, admin-areas and lake-depth configs.
+      // `wtk.ts`, `wtkFetch.ts`, and `archive.ts` are tested. `snapshot.ts` and `derive.ts` wire them
+      // to argv, Convex, and disk. Mirrors the water ETL, admin-areas and lake-depth configs.
       //
       // **Thresholds raised to match every other package** (A07a-3). They sat at 80/75 while the rest
       // of the repo ran at 90/85, which is not a decision anybody took — it is where they landed
