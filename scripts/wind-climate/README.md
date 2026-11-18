@@ -87,7 +87,7 @@ Both are required — the API wants an active email on **every request**, not on
 ### 1. Dry run — always do this first
 
 ```bash
-pnpm --filter @skating/wind-climate load --dry-run
+pnpm --filter @skating/wind-climate snapshot --dry-run
 ```
 
 **Costs zero API requests.** It walks the corpus, folds the qualifying bodies onto the WIND Toolkit's
@@ -109,22 +109,30 @@ spend requests on a number nothing will ever render.
 ### 2. The real run
 
 ```bash
-pnpm --filter @skating/wind-climate load
+pnpm --filter @skating/wind-climate snapshot
+pnpm --filter @skating/wind-climate derive
 ```
 
-Fetches five winters (2010–2014) per cell, accumulates Dec–Mar hours into 16 sectors, normalizes to
-frequencies, and writes one rose per body.
+`snapshot` archives five years (2010–2014) per cell under `.raw/`. `derive` reads that archive,
+accumulates Dec–Mar hours into 16 sectors, normalizes to frequencies, and writes each body's rose
+to Convex without calling the WIND Toolkit.
 
-**It is resumable, and that is not incidental.** The server-side query skips bodies that already
-carry a rose, so an interrupted run *continues* rather than restarting a multi-hour pass — and
-re-running it afterwards is a cheap no-op. If it dies, just run it again.
+**Resume by rerunning `snapshot` without `--refresh`.** It skips cell-years already on disk rather
+than restarting the multi-hour pass.
 
-| Flag | Effect |
-| --- | --- |
-| `--dry-run` | Report the plan, spend nothing, write nothing |
-| `--limit=N` | Stop after N grid cells — for a first taste against real lakes |
-| `--refresh` | Re-read bodies that already have a rose (for the day the dataset changes; not the normal path) |
-| `--prod` | Required to target anything that is not a dev deployment |
+**Effect trial (D279):** only the cell-year fetch uses Effect. The CLI still fetches serially and
+paces the next cell-year separately from retry backoff. A network error or 5xx gets four total
+attempts unless that cell-year has seen a 429, which raises the total budget to eight. On a 429,
+honor `Retry-After` (seconds or HTTP-date), up to four minutes; otherwise use the usual backoff.
+Permanent HTTP refusals and failed CSV body reads aren't retried. Wind keeps its existing RunLogger
+reporting; the elevation Sentry setup isn't enabled for wind.
+
+| Command | Flag | Effect |
+| --- | --- | --- |
+| `snapshot` | `--dry-run` | Report the plan, spend nothing, write nothing |
+| `snapshot` | `--limit=N` | Limit the run to N cell-years, not N lakes or cells |
+| `snapshot` | `--refresh` | Re-fetch existing cell-years instead of resuming |
+| `derive` | `--prod` | Required to target anything that is not a dev deployment |
 
 ---
 

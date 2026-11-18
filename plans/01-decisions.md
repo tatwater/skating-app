@@ -8380,6 +8380,21 @@ events, and keep RunLogger as the operator record for archive writes and interru
 
 **Related:** D101, D104, D127, [`lake-depth`](../scripts/lake-depth/README.md).
 
+## D279 — Trial an Effect schedule for WIND Toolkit retries
+
+**2026-11-18, trial.** After D278, use Effect for one more fetch boundary: the manual wind
+snapshot's cell-year request. Keep the four-attempt normal budget, the eight-attempt budget once
+a 429 occurs, and both forms of `Retry-After` with the existing four-minute cap. HTTP refusals
+other than 429 and 5xx still stop immediately, as do failed reads of an otherwise successful CSV
+response. The CLI still owns serial pacing, RunLogger, and checkpoints. Keep Effect out of
+`derive`, the archive, the apps, and Convex; this trial doesn't add Sentry to wind.
+
+**Why:** this is a more demanding test of Effect than a fixed backoff. The budget depends on prior
+responses, while the next wait depends on the current one. Compare whether that policy is easier
+to read alongside deterministic tests of delays and mixed failures before adopting it elsewhere.
+
+**Related:** D134, D278, [`wind-climate`](../scripts/wind-climate/README.md).
+
 ## D281 — Stage direct archive downloads before replacing the saved file
 
 **2026-11-18.** Direct bathymetry file transfers and the USGS 3DHP source ZIP share a scoped
