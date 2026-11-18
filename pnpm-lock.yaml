@@ -670,6 +670,9 @@ importers:
       '@turf/simplify':
         specifier: ^7.4.0
         version: 7.4.0
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
     devDependencies:
       '@types/geojson':
         specifier: ^7946.0.16

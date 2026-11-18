@@ -661,6 +661,9 @@ later run resumes; only real routes and genuine `404`s ("no path", a stable answ
 Quotas are **per-endpoint**, so this cannot starve Phase 04's isochrones. Dashboard:
 <https://account.heigit.org>.
 
+The Effect request boundary (D280) keeps the serial pace and the three 20-second retries for
+`429`. The per-run `403` breaker and the on-disk cache stay separate from the retry schedule.
+
 **2. Pass `marginMeters` to `listedBodiesNearCoord`, always.** The first parking load spent
 **104.95 GB of Convex database I/O — 1.1 MB per lot — and disabled the deployment.** The candidate box
 defaulted to ~1,113 m for every caller; the parking gate tests 250 m (**20×** the area) and the put-in
