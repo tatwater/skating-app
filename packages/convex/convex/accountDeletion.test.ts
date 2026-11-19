@@ -40,14 +40,14 @@ const modules = import.meta.glob('./**/*.*s');
  * so without this `finishAllScheduledFunctions` drains nothing and every assertion reads a row the
  * job never reached, failing as a plausible-looking "the deletion didn't happen".
  */
-function harness() {
+function harness(now = T0) {
   vi.useFakeTimers();
   // **Pinned, not merely faked** (D62 amendment). Content now has a lifetime — anything more than 30
   // days past its skate is erased the moment its author asks to be deleted — so a fixture dated
   // `T0` against a real wall clock silently becomes "six months old" and gets purged by tests that
   // meant to assert it survives. Pinning `now` to `T0` makes every fixture fresh by default and makes
   // aging an explicit act: `T0 - LONG_AGO`.
-  vi.setSystemTime(T0);
+  vi.setSystemTime(now);
   return convexTest(schema, modules);
 }
 
@@ -74,18 +74,14 @@ const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
 const LONG_AGO = 60 * 24 * 3600_000;
 
 /**
- * Post a report `LONG_AGO` — by moving the clock there for the write, not by back-dating the
- * argument: the freshness window (D199, A10-2) refuses an end time more than a week old at
- * `posts.create`, exactly as it would refuse a skater's, so an aged fixture is a report that was
- * fresh when it was posted.
+ * Write an aged fixture on a harness started at `T0 - LONG_AGO`, then advance to `T0`.
+ * The report must be fresh when posted (D199), and newer convex-test won't rewind after a commit.
  */
 async function postedLongAgo<R>(write: () => Promise<R>): Promise<R> {
-  vi.setSystemTime(T0 - LONG_AGO);
-  try {
-    return await write();
-  } finally {
-    vi.setSystemTime(T0);
-  }
+  expect(Date.now()).toBe(T0 - LONG_AGO);
+  const result = await write();
+  vi.setSystemTime(T0);
+  return result;
 }
 
 /** What `seedUser` hands back: the profile id plus a client bound to that identity. */
@@ -255,7 +251,7 @@ describe('the grace window', () => {
    * survives, the words don't, and canceling brings back neither.
    */
   test('aged words are redacted at the request, and canceling does not bring them back', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     const old = await postedLongAgo(() =>
@@ -296,7 +292,7 @@ describe('the grace window', () => {
    * carries.
    */
   test('redaction reaches the notes nested inside thickness readings, and spares the readings', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     const reportId = await postedLongAgo(() =>
@@ -324,7 +320,7 @@ describe('the grace window', () => {
   });
 
   test('redaction reaches a located chip’s note and the Post’s title and prose, and spares the where (A10)', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     const { postId, reportIds } = await postedLongAgo(() =>
@@ -366,7 +362,7 @@ describe('the grace window', () => {
   });
 
   test('a member redacted on its own clock leaves the search field, and the fresher member stays (B03 §11)', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     // One Post: an aged member and one still inside the window, so the Post itself isn't redacted yet.
@@ -396,20 +392,23 @@ describe('the grace window', () => {
   });
 
   test('the edit history goes with the words: an aged revision is erased, a fresh one waits (A10-3)', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    const { postId } = await postedLongAgo(() =>
-      user.as.mutation(api.posts.create, {
+    const { postId } = await postedLongAgo(async () => {
+      const result = await user.as.mutation(api.posts.create, {
         title: 'Morey',
         body: 'First words.',
         reports: [{ ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 - LONG_AGO }],
-      }),
-    );
+      });
+      await user.as.mutation(api.posts.update, {
+        postId: result.postId,
+        title: 'Morey, edited',
+        body: 'First words.',
+      });
+      return result;
+    });
     // An edit made long ago, and one made just now (each sends both words — an omitted one clears).
-    await postedLongAgo(() =>
-      user.as.mutation(api.posts.update, { postId, title: 'Morey, edited', body: 'First words.' }),
-    );
     await user.as.mutation(api.posts.update, {
       postId,
       title: 'Morey, edited twice',
@@ -476,7 +475,7 @@ describe('the grace window', () => {
    * how a three-winters-old access point avoids reading as current (D3).
    */
   test("a departed skater's put-in survives, dated by the skate that revealed it", async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     await postedLongAgo(() =>
@@ -505,7 +504,7 @@ describe('the grace window', () => {
   });
 
   test('a withheld put-in stays withheld — leaving is not the moment to publish it', async () => {
-    const t = harness();
+    const t = harness(T0 - LONG_AGO);
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
     await postedLongAgo(() =>
