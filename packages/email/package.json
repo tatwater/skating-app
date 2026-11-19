@@ -15,15 +15,15 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@react-email/render": "^2.1.0",
+    "@react-email/render": "^2.3.1",
     "@skating/design": "workspace:*",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-email": "^6.11.0"
+    "react-email": "^6.11.16"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
-    "@vitest/coverage-v8": "^5.0.2",
-    "vitest": "^5.0.2"
+    "@vitest/coverage-v8": "^5.1.0",
+    "vitest": "^5.1.0"
   }
 }

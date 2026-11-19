@@ -14,9 +14,9 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^5.0.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "fast-check": "^4.10.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "@turf/area": "^7.4.0",

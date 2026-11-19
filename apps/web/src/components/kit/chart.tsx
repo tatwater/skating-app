@@ -191,6 +191,7 @@ function ChartXAxis(props: ComponentProps<typeof XAxis>) {
     <XAxis
       axisLine={false}
       tickLine
+      tick={{ fill: 'var(--chart-tick)' }}
       tickSize={TICK}
       tickMargin={TICK_GAP}
       minTickGap={TICK_GAP * 2}
@@ -205,6 +206,7 @@ function ChartYAxis(props: ComponentProps<typeof YAxis>) {
     <YAxis
       axisLine={false}
       tickLine
+      tick={{ fill: 'var(--chart-tick)' }}
       tickSize={TICK}
       tickMargin={TICK_GAP}
       width="auto"
