@@ -184,8 +184,9 @@ describe('every creation path marks a body’s facts', () => {
     });
     const body = (await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0];
     expect((await facts(t, body?._id as Id<'waterBodies'>))?.staleAt).toEqual(expect.any(Number));
+    vi.setSystemTime(NOW + 1_000);
     await drain(t);
-    expect((await facts(t, body?._id as Id<'waterBodies'>))?.computedAt).toBe(NOW);
+    expect((await facts(t, body?._id as Id<'waterBodies'>))?.computedAt).toBe(NOW + 1_000);
   });
 
   test('a re-import marks a body only when its outline moved — not for an interior point alone (D266)', async () => {
@@ -448,8 +449,9 @@ describe('the drift repair', () => {
     vi.setSystemTime(NOW + 1_000);
     expect(await t.mutation(internal.bodyGeo.repairDrift, {})).toMatchObject({ marked: 1 });
     expect((await facts(t, a))?.staleAt).toBe(NOW + 1_000);
+    vi.setSystemTime(NOW + 2_000);
     await drain(t);
-    expect((await facts(t, a))?.checkedAt).toBe(NOW + 1_000);
+    expect((await facts(t, a))?.checkedAt).toBe(NOW + 2_000);
   });
 
   test('a held copy of a parked neighbor is judged against that neighbor’s outline', async () => {

@@ -130,7 +130,7 @@ async function flushAllDue(t: ReturnType<typeof harness>) {
 async function seedReport(
   actor: Actor,
   waterBodyId: Id<'waterBodies'>,
-  skateEndTime = Date.now(),
+  skateEndTime: number,
 ): Promise<Id<'reports'>> {
   return actor.as.mutation(api.reports.create, {
     ...OBSERVED,
@@ -138,6 +138,13 @@ async function seedReport(
     skateEndTime,
     iceTypes: ['black_ice'],
   }) as Promise<Id<'reports'>>;
+}
+
+/** The first eligible skate end is when the bounty opens, using its transaction timestamp. */
+async function answeringSkateTime(t: ReturnType<typeof harness>, bountyId: Id<'bounties'>) {
+  const bounty = await t.run((ctx) => ctx.db.get(bountyId));
+  if (!bounty) throw new Error('Expected the bounty to exist');
+  return bounty.createdAt;
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -777,7 +784,7 @@ describe('bounties fulfillment', () => {
     const waterBodyId = await seedBody(t);
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
 
-    const reportId = await seedReport(author, waterBodyId);
+    const reportId = await seedReport(author, waterBodyId, await answeringSkateTime(t, bountyId));
     // Auto-attached.
     expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toContain(reportId);
 
@@ -807,14 +814,15 @@ describe('bounties fulfillment', () => {
     const second = await seedUser(t, 'second');
     const waterBodyId = await seedBody(t);
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    const skatedAt = await answeringSkateTime(t, bountyId);
 
-    const reportId = await seedReport(author, waterBodyId);
+    const reportId = await seedReport(author, waterBodyId, skatedAt);
     // The author's own post-submit line: one open bounty answered.
     expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(1);
     // …and only the author gets that number.
     expect(await second.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(0);
 
-    const secondReportId = await seedReport(second, waterBodyId);
+    const secondReportId = await seedReport(second, waterBodyId, skatedAt);
     const notes = await flushAllDue(t);
     const answered = notes.filter((n) => n.type === 'bounty_answered');
     expect(answered).toHaveLength(1); // two reports inside one window coalesce
@@ -844,7 +852,7 @@ describe('bounties fulfillment', () => {
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
-    const reportId = await seedReport(author, waterBodyId);
+    const reportId = await seedReport(author, waterBodyId, await answeringSkateTime(t, bountyId));
 
     // First: the requester thumbs the report helpful from the FEED — no `bountyId`, so it doesn't fulfill.
     await requester.as.mutation(api.ratings.rate, {
@@ -885,7 +893,7 @@ describe('bounties fulfillment', () => {
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
-    const reportId = await seedReport(author, waterBodyId);
+    const reportId = await seedReport(author, waterBodyId, await answeringSkateTime(t, bountyId));
 
     await requester.as.mutation(api.ratings.rate, {
       targetType: 'report',
@@ -1074,7 +1082,7 @@ describe('bounties.getDetail', () => {
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
-    const reportId = await seedReport(author, waterBodyId); // auto-attaches
+    const reportId = await seedReport(author, waterBodyId, await answeringSkateTime(t, bountyId));
 
     const asRequester = await requester.as.query(api.bounties.getDetail, { bountyId });
     expect(asRequester?.isRequester).toBe(true);

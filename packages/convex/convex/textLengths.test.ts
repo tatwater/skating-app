@@ -165,9 +165,9 @@ describe('the day fold', () => {
   test('after a quiet week the prune leaves no event, and a quiet day is still a measured zero', async () => {
     const t = harness();
     const then = NOW - (TEXT_LENGTH_EVENT_KEEP_DAYS + 2) * DAY;
+    vi.setSystemTime(then);
     await record(t, 'flag_note', [5], then);
     // That day was folded while its event was kept; then a week passed with nothing written.
-    vi.setSystemTime(then);
     await t.mutation(internal.analyticsRollup.rollupTextLengthsDayJob, { date: metricDay(then) });
     vi.setSystemTime(NOW);
     await t.mutation(internal.analyticsRollup.pruneTextLengthEvents, {});

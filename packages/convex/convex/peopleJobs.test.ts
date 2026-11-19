@@ -411,6 +411,7 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
       const row = await ctx.db.query('peopleRows').first();
       if (row) await ctx.db.patch(row._id, { refreshedAt: T0 - 2 * DAY });
     });
+    vi.setSystemTime(T0 + 1_000);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const lib = await import('./lib/peopleRows');
     vi.spyOn(lib, 'refreshPersonRow').mockRejectedValueOnce(new Error('poison'));
@@ -418,7 +419,9 @@ describe('the rows: backfill, drift repair, a tombstone put back', () => {
       repaired: 0,
       failed: 1,
     });
-    expect((await t.run((ctx) => ctx.db.query('peopleRows').first()))?.refreshedAt).toBe(T0);
+    expect((await t.run((ctx) => ctx.db.query('peopleRows').first()))?.refreshedAt).toBe(
+      T0 + 1_000,
+    );
   });
 
   test('the flag-subject backfill stamps every older flag over heavy targets, then marks ready', async () => {

@@ -598,6 +598,7 @@ describe('bundle reclamation (PR #29 review)', () => {
       ctx.storage.store(new Blob(['{"whole":"account"}'], { type: 'application/json' })),
     );
 
+    vi.setSystemTime(Date.now() + 1_000);
     await t.run((ctx) =>
       retainOrphanedBundle(ctx, { userId: user.id, storageId: stranded, error: 'storage said no' }),
     );
@@ -631,6 +632,7 @@ describe('bundle reclamation (PR #29 review)', () => {
       ctx.storage.store(new Blob(['{"a":1}'], { type: 'application/json' })),
     );
 
+    vi.setSystemTime(Date.now() + 1_000);
     await t.mutation(internal.dataExport.finishExport, {
       exportId,
       userId: user.id,

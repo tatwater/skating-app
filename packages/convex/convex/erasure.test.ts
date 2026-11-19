@@ -298,8 +298,10 @@ describe('the clock', () => {
     const { t, author, waterBodyId } = await setup();
     const reportId = (await seedPost(t, author.id, waterBodyId, 1)).reportIds[0] as Id<'reports'>;
     const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'hi' });
+    advance(1_000);
+    const deletedAt = Date.now();
     await author.as.mutation(api.comments.remove, { commentId });
-    expect((await get(t, commentId))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
+    expect((await get(t, commentId))?.eraseAt).toBe(deletedAt + WITHDRAWN_ERASE_MS);
     advance(WITHDRAWN_ERASE_MS - 1000);
     await sweep(t);
     expect(await get(t, commentId)).not.toBeNull();
@@ -323,6 +325,7 @@ describe('the clock', () => {
     advance(45 * DAY);
     await sweep(t);
     expect(await get(t, commentId)).not.toBeNull(); // evidence kept
+    advance(1_000);
     const overturnedAt = Date.now();
     await mod.as.mutation(api.moderation.overturnVerdict, {
       targetType: 'comment',
@@ -343,6 +346,8 @@ describe('the clock', () => {
       targetId: commentId,
       reason: 'harassment',
     });
+    advance(1_000);
+    const deletedAt = Date.now();
     await author.as.mutation(api.comments.remove, { commentId });
     expect((await get(t, commentId))?.eraseAt).toBeUndefined();
     advance(3 * DAY);
@@ -351,7 +356,7 @@ describe('the clock', () => {
       resolution: 'dismissed',
       reason: 'not harassment',
     });
-    expect((await get(t, commentId))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
+    expect((await get(t, commentId))?.eraseAt).toBe(deletedAt + WITHDRAWN_ERASE_MS);
   });
 
   test('the sweep re-reads the hold, and leaves a held row it finds in its range', async () => {
@@ -948,10 +953,12 @@ describe('the clocks backfill', () => {
         createdAt: T0,
       });
     });
+    advance(1_000);
+    const backfillAt = Date.now();
     await t.mutation(internal.erasure.backfillClocks, { pageSize: 1 });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     // Its 30 days ran out before the clock existed: due now, not 30 days from the backfill.
-    expect((await get(t, plain))?.eraseAt).toBe(T0);
+    expect((await get(t, plain))?.eraseAt).toBe(backfillAt);
     expect((await get(t, flagged))?.eraseAt).toBeUndefined();
     expect((await get(t, up))?.eraseAt).toBeUndefined();
   });
@@ -991,6 +998,9 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     expect((await get(t, reportId))?.eraseAt).toBeLessThanOrEqual(Date.now());
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await get(t, reportId)).toBeNull();
+    // The last Report's continuation starts its Post's clock after this run's cutoff.
+    expect(await get(t, postId)).not.toBeNull();
+    await nextRun(t);
     expect(await get(t, postId)).toBeNull();
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(bundle.contentRevisions).toEqual([]);
@@ -1235,9 +1245,11 @@ describe('what was withdrawn before the clock existed', () => {
     }
     // The Post waits for its Report; the old alert's 30 days start at the backfill.
     expect((await get(t, postId))?.eraseAt).toBeUndefined();
+    const retractedAt = (await get(t, ids.alertId))?.retractedAt as number;
+    expect(retractedAt).toBeGreaterThanOrEqual(backfillAt);
+    expect(retractedAt).toBeLessThan(backfillAt + 1_000);
     expect(await get(t, ids.alertId)).toMatchObject({
-      retractedAt: backfillAt,
-      eraseAt: backfillAt + WITHDRAWN_ERASE_MS,
+      eraseAt: retractedAt + WITHDRAWN_ERASE_MS,
     });
     expect((await get(t, ids.theirs))?.retractedAt).toBeUndefined();
     expect((await get(t, ids.theirs))?.eraseAt).toBeUndefined();
@@ -1326,6 +1338,8 @@ describe('a pass is sized by what its rows can weigh', () => {
     // Part-way, the Report is whole and still due.
     expect(await get(t, reportId)).not.toBeNull();
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await get(t, reportId)).toBeNull();
+    await nextRun(t);
     expect(await revisionsLeft()).toBe(0);
     expect(await get(t, reportId)).toBeNull();
     expect(await get(t, postId)).toBeNull();
@@ -1913,6 +1927,7 @@ describe('a verdict outlives its content (D248)', () => {
     await author.as.mutation(api.hazardWithdrawal.withdraw, { hazardId });
     advance(31 * DAY);
     await sweep(t);
+    await nextRun(t);
     for (const id of [commentId, reportId, whole.postId, hazardId, alertId]) {
       expect(await get(t, id)).toBeNull();
     }

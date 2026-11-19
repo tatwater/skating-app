@@ -364,6 +364,8 @@ describe('a person first given a row by a status write', () => {
         createdAt: T0 - 30 * DAY,
       }),
     );
+    const bannedAt = T0 + 1_000;
+    vi.setSystemTime(bannedAt);
     await as(t, 'adm').mutation(api.moderation.banUser, { userId: id, reason: 'spam' });
     const page = await as(t, 'adm').query(api.people.person, { userId: id });
     const row = await t.run((ctx) =>
@@ -372,8 +374,8 @@ describe('a person first given a row by a status write', () => {
         .withIndex('by_user', (q) => q.eq('userId', id))
         .first(),
     );
-    expect(page?.statusNote?.at).toBe(T0);
-    expect(row?.statusSince).toBe(T0);
+    expect(page?.statusNote?.at).toBe(bannedAt);
+    expect(row?.statusSince).toBe(bannedAt);
   });
 });
 

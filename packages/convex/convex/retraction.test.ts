@@ -148,10 +148,16 @@ describe('a request to a moderator', () => {
   test('is retracted by its asker while open, leaves the queue, and no moderator decides it after', async () => {
     const { t, skater, mod, waterBodyId } = await setup();
     const requestId = await seedRequest(t, skater.id, waterBodyId);
+    const retractedAt = T0 + 1_000;
+    vi.setSystemTime(retractedAt);
     await skater.as.mutation(api.corpusRequests.retract, { requestId });
+    vi.setSystemTime(retractedAt + 1_000);
     await skater.as.mutation(api.corpusRequests.retract, { requestId }); // twice is once
-    expect(await get(t, requestId)).toMatchObject({ status: 'retracted', retractedAt: T0 });
-    expect(await get(t, requestId)).toMatchObject({ eraseAt: T0 + WITHDRAWN_ERASE_MS });
+    expect(await get(t, requestId)).toMatchObject({
+      status: 'retracted',
+      retractedAt,
+      eraseAt: retractedAt + WITHDRAWN_ERASE_MS,
+    });
     const queue = await mod.as.query(api.corpusRequests.listQueue, {});
     expect(JSON.stringify(queue)).not.toContain(requestId);
     expect(await t.query(api.corpusRequests.openCountsForBody, { waterBodyId })).toEqual({});
@@ -197,8 +203,10 @@ describe('a flag', () => {
       note: 'posted no trespassing',
     });
     expect(await skater.as.query(api.contentFlags.myAccessFlags, {})).toEqual([waterBodyId]);
+    const retractedAt = T0 + 1_000;
+    vi.setSystemTime(retractedAt);
     await skater.as.mutation(api.contentFlags.retract, { flagId });
-    expect(await get(t, flagId)).toMatchObject({ status: 'retracted', retractedAt: T0 });
+    expect(await get(t, flagId)).toMatchObject({ status: 'retracted', retractedAt });
     expect(await skater.as.query(api.contentFlags.myAccessFlags, {})).toEqual([]);
     const lanes = await mod.as.query(api.moderation.listFlags, {});
     expect(lanes.accessReports).toEqual([]);
@@ -230,11 +238,13 @@ describe('a flag', () => {
       targetId: commentId,
       reason: 'harassment',
     });
+    const deletedAt = retractedAt + 1_000;
+    vi.setSystemTime(deletedAt);
     await other.as.mutation(api.comments.remove, { commentId });
     expect((await get(t, commentId))?.eraseAt).toBeUndefined();
     await t.run((ctx) => ctx.db.patch(held, { status: 'reviewing' }));
     await skater.as.mutation(api.contentFlags.retract, { flagId: held });
-    expect((await get(t, commentId))?.eraseAt).toBe(T0 + WITHDRAWN_ERASE_MS);
+    expect((await get(t, commentId))?.eraseAt).toBe(deletedAt + WITHDRAWN_ERASE_MS);
   });
 
   test("is refused once decided, when it is someone else's, and when the system filed or shares it", async () => {
@@ -615,13 +625,16 @@ describe('an access alert', () => {
 
   test('retracted by its author, it reads as before, starts its clock, and no moderator pins it back', async () => {
     const { t, skater, mod, waterBodyId, alertId } = await alertSetup();
+    const retractedAt = T0 + 1_000;
+    vi.setSystemTime(retractedAt);
     await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
+    vi.setSystemTime(retractedAt + 1_000);
     await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId }); // no-op
     expect(await get(t, alertId)).toMatchObject({
       status: 'retracted',
       retractedByUserId: skater.id,
-      retractedAt: T0,
-      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      retractedAt,
+      eraseAt: retractedAt + WITHDRAWN_ERASE_MS,
     });
     expect(await t.query(api.accessAlerts.listForBody, { waterBodyId })).toEqual([]);
     await expect(
@@ -653,6 +666,8 @@ describe('an access alert', () => {
       accessAlertId: alertId,
       verdict: 'still_blocked',
     });
+    const retractedAt = T0 + 1_000;
+    vi.setSystemTime(retractedAt);
     await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
     await mod.as.mutation(api.accessAlerts.retract, {
       accessAlertId: alertId,
@@ -669,7 +684,7 @@ describe('an access alert', () => {
         targetId: alertId,
         kind: 'retracted',
         reason: 'third bogus closure from this account',
-        authorDeletedAt: T0,
+        authorDeletedAt: retractedAt,
       }),
     ]);
     expect(record.deleted.map((d) => d.targetId)).toEqual([alertId]);
@@ -691,13 +706,15 @@ describe('an access alert', () => {
     vi.setSystemTime(T0 + 45 * DAY);
     await t.mutation(internal.erasure.eraseDue, {});
     expect(await get(t, alertId)).not.toBeNull();
+    const overturnedAt = T0 + 45 * DAY + 1_000;
+    vi.setSystemTime(overturnedAt);
     await mod.as.mutation(api.moderation.overturnVerdict, {
       targetType: 'accessAlert',
       targetId: alertId,
       reason: 'it was one mistake, not a pattern',
     });
     // Its 30 days ran out while held: due from the overturn.
-    expect((await get(t, alertId))?.eraseAt).toBe(T0 + 45 * DAY);
+    expect((await get(t, alertId))?.eraseAt).toBe(overturnedAt);
     await t.mutation(internal.erasure.eraseDue, {});
     expect(await get(t, alertId)).toBeNull();
     // The author's own vote went with it; the other skater's stays theirs.
@@ -760,6 +777,8 @@ describe('an access alert', () => {
       reason: 'gate_locked',
     });
     await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: theirs, reason: 'bogus' });
+    const retractedAt = T0 + 1_000;
+    vi.setSystemTime(retractedAt);
     await skater.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId });
     // The lake page's button sends no reason: a stale click on a claim its author just withdrew is
     // not a verdict on them, and the clock runs on.
@@ -767,7 +786,7 @@ describe('an access alert', () => {
     await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: '   ' });
     expect(await get(t, alertId)).toMatchObject({
       retractedByUserId: skater.id,
-      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      eraseAt: retractedAt + WITHDRAWN_ERASE_MS,
     });
     expect(await t.run((ctx) => ctx.db.query('contentVerdicts').collect())).toEqual([]);
     const record = await readRecord(mod.as, skater.id);

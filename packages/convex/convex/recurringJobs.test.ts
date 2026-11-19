@@ -255,6 +255,8 @@ describe('flush notification queue, under failure', () => {
     const bodyId = await seedBody(t, 'osm/stale');
     const user = await seedUser(t, 'late');
     const row = await queueFavorite(t, user.id, bodyId);
+    const firstDueAt = (await t.run((ctx) => ctx.db.get(row)))?.flushAfter;
+    vi.setSystemTime(T0 + 1_000);
     const poison = new Set([row as string]);
     const real = notificationQueue.isStaleQueueRow;
     vi.spyOn(notificationQueue, 'isStaleQueueRow').mockImplementation((r, now) => {
@@ -267,7 +269,7 @@ describe('flush notification queue, under failure', () => {
     }
     const parked = await t.run((ctx) => ctx.db.get(row));
     expect(parked?.parkedAt).toBeDefined();
-    expect(parked?.firstDueAt).toBeLessThan(T0);
+    expect(parked?.firstDueAt).toBe(firstDueAt);
     poison.clear();
     vi.setSystemTime(T0 + NOTIFICATION_FRESH_MS + MINUTE);
     expect(await t.mutation(internal.notifications.retryParkedNotifications, {})).toMatchObject({
@@ -589,17 +591,23 @@ describe('the retries and passes at their edges', () => {
       });
     });
     poisonItems(new Set([skater.id as string, bodyId as string]));
+    const retryAt = T0 + 1_000;
+    vi.setSystemTime(retryAt);
     expect(await t.mutation(internal.recurringJobs.retryParkedDaily, {})).toEqual({
       freed: 0,
       failed: 2,
       more: false,
     });
     const row = await t.run((ctx) => ctx.db.get(activity));
-    expect(row).toMatchObject({ promptAttempts: 4, promptParkedAt: T0, promptRetriedAt: T0 });
+    expect(row).toMatchObject({
+      promptAttempts: 4,
+      promptParkedAt: retryAt,
+      promptRetriedAt: retryAt,
+    });
     const card = await t.run((ctx) => ctx.db.query('bodySummaryRefreshes').first());
-    expect(card).toMatchObject({ attempts: 4, parkedAt: T0, retriedAt: T0 });
+    expect(card).toMatchObject({ attempts: 4, parkedAt: retryAt, retriedAt: retryAt });
     // Once a run: tried again in the same run's continuation, it is past the cutoff.
-    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, { cutoff: T0 })).toEqual({
+    expect(await t.mutation(internal.recurringJobs.retryParkedDaily, { cutoff: retryAt })).toEqual({
       freed: 0,
       failed: 0,
       more: false,
@@ -1166,6 +1174,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
     const { t, actorNotice, reportNotice, seedLegacy } = await freshnessSetup();
     // A pre-rule actor row an hour old, and a row of the rule's own that fell due a minute ago.
     const legacyRow = await seedLegacy({ k: 'actor', u: 0, x: 0, ageMs: HOUR, dueInMs: -1 });
+    const legacyCreatedAt = (await t.run((ctx) => ctx.db.get(legacyRow)))?.createdAt;
     await reportNotice(1, 0);
     vi.setSystemTime(Date.now() + DEBOUNCE + MINUTE);
     const now = Date.now();
@@ -1187,7 +1196,7 @@ describe('the freshness rule holds at enqueue and at flush, by construction', ()
       expect(rows.find((r) => r._id === was._id)).toEqual(was);
     }
     // The pre-rule row's stamped clock is its `createdAt`, an hour before the setup's clock.
-    expect(rows.find((r) => r._id === legacyRow)?.firstDueAt).toBe(T0 - HOUR);
+    expect(rows.find((r) => r._id === legacyRow)?.firstDueAt).toBe(legacyCreatedAt);
     for (const r of rows.filter((r) => !failed.some((f) => f._id === r._id))) {
       expect(r.firstDueAt).toBeGreaterThan(now);
     }

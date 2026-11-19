@@ -487,6 +487,7 @@ describe('runRollup — support queue depth', () => {
 
   test('re-running overwrites, and the day backfill never rewrites a closed day', async () => {
     const t = harness();
+    vi.setSystemTime(at(13, 9));
     await seedTicket(t, 'bug', at(13, 9));
     vi.setSystemTime(at(14, 12));
     await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});

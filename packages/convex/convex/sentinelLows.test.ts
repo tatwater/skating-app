@@ -214,17 +214,17 @@ describe('sentinelLows.forSeason', () => {
   });
 
   test('before the floor nothing has been measured; after it, an empty store is not recorded', async () => {
+    const sept = Date.parse('2026-09-20T16:00:00Z');
+    vi.useFakeTimers({ now: sept, toFake: ['Date'] });
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');
     await seedRoster(t);
-    const sept = Date.parse('2026-09-20T16:00:00Z');
-    vi.useFakeTimers({ now: sept, toFake: ['Date'] });
     expect(await mod.query(api.sentinelLows.forSeason, { now: sept })).toEqual({
       state: 'before',
       season: 2026,
       countsFrom: '2026-10-01',
     });
-    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     expect(await mod.query(api.sentinelLows.forSeason, { now: NOW })).toEqual({
       state: 'none',
       season: 2026,

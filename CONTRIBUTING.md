@@ -109,7 +109,6 @@ components. The remaining recommended lint checks still run.
 | `@maplibre/maplibre-gl-style-spec` (mobile) | Native MapLibre `11.5.1` depends on `26.4.4` exactly. Web uses a newer style spec; aligning mobile to it broke type-checking. |
 | `@babel/core` (mobile) | The Tamagui 2 compiler plugin requires Babel 7. Revisit Babel 8 with the mobile compiler migration. |
 | `tamagui`, `@tamagui/config` | [Tamagui 3](https://tamagui.dev/docs/guides/how-to-upgrade) removes the v2 token and conditional-style syntax the app uses. Migrate the UI separately and verify native screens on a device. |
-| `convex-test` | `0.0.62` is the last release before tests gained a transaction clock that can't rewind past a commit. Migrate fixtures that rewind time in an existing harness before updating to `0.0.63` or later. |
 
 ### Running the apps
 
@@ -184,6 +183,12 @@ when that's the call. `packages/core` and `packages/convex` enforce a 90% line f
 
 Heavy `convex-test` and property tests should carry an explicit timeout: CI is several times slower
 than a laptop and vitest's 5 s default flakes.
+
+For time-sensitive Convex tests, set the clock before the first fixture write and move it forward.
+The transaction clock won't rewind past a commit and may move ahead of Vitest's frozen clock.
+Advance the clock between setup and a write whose exact timestamp is under test. For jobs that
+span transactions, assert against the recorded times or the bounds of the run rather than assuming
+every write in the job shares the same timestamp.
 
 ## Commit / PR expectations
 
