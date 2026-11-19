@@ -73,9 +73,25 @@ pnpm format           # Biome --write
 > from contributing, please open an issue — it's a trade we made for the app's own design work, not
 > a decision we're attached to.
 
-Dependency updates must pass the [workspace supply-chain policy](./pnpm-workspace.yaml), even in
-frozen CI installs. Review the lockfile diff, allow a dependency's build script only if needed,
-and keep any emergency cooldown exception limited to the exact version being reviewed.
+### Dependency maintenance
+
+Review `pnpm outdated -r` and `pnpm audit` weekly. Treat the day as a review slot, not a deadline
+to upgrade. Triage advisories promptly, and prefer releases that are at least three days old for
+routine upgrades. The [workspace policy](./pnpm-workspace.yaml) enforces a 24-hour minimum even in
+frozen CI installs. For an urgent fix, document any exception and scope it to the exact version.
+
+- Group packages that must move together. Keep major, authentication, and native upgrades
+  separate from routine patches. Skim release notes for patches; read the migration guide for
+  changes that can affect build settings, APIs we use, or device behavior.
+- Review the manifest and lockfile diffs, especially new packages, registry sources, peer
+  changes, and install hooks. Run a frozen install, lint, type checks, tests, and the affected
+  build. Compare the audit before and after.
+- Keep native versions aligned with the installed Expo SDK. From `apps/mobile`, use
+  `pnpm exec expo install --check` to check them. A newer registry version isn't a reason to
+  override the SDK recommendation. Validate deliberate native changes with a fresh Android
+  preview and a device smoke test.
+- An updater can collect candidates and prepare a PR in isolation, but it should not auto-merge
+  or deploy, or have production credentials.
 
 ### Running the apps
 
