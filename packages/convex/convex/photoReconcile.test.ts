@@ -478,6 +478,8 @@ describe('expireDepartedPhotos escalates a capped account instead of retrying it
     const loose = await seedPhoto(t, uploader, 'loose', lastSeason());
     await seedCappingHazard(t, uploader, await seedBody(t));
 
+    const claimedAt = T0 + 1_000;
+    vi.setSystemTime(claimedAt);
     const result = await t.mutation(internal.storageHygiene.expireDepartedPhotos, {
       userId: uploader,
       // One hazard against a cap of 1 is the cheapest way to reach a `null`, which otherwise needs
@@ -492,7 +494,7 @@ describe('expireDepartedPhotos escalates a capped account instead of retrying it
     // **Claimed, not completed.** The account is leased but NOT marked: the work hasn't happened yet,
     // and saying it has is what turns a failed job into permanent retention.
     const claimed = await t.run((ctx) => ctx.db.get(uploader));
-    expect(claimed?.photoReconcileStartedAt).toBe(T0);
+    expect(claimed?.photoReconcileStartedAt).toBe(claimedAt);
     expect(claimed?.photosExpiredForSeason).toBeUndefined();
 
     // The handoff finishes the job the fast path couldn't, and only then is it marked.

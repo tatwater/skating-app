@@ -974,6 +974,7 @@ describe('sub-area bounty targeting', () => {
       waterBodyId: body,
       subAreaId: bay,
     });
+    vi.advanceTimersByTime(1_000);
 
     // Far end of the lake — real ice, wrong ask.
     await author.as.mutation(api.reports.create, {
@@ -1001,6 +1002,7 @@ describe('sub-area bounty targeting', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId: body });
+    vi.advanceTimersByTime(1_000);
 
     const anywhere = await author.as.mutation(api.reports.create, {
       ...OBSERVED,
@@ -2008,6 +2010,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
       subAreaId: west,
     });
     const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
+    vi.advanceTimersByTime(1_000);
     const spanning = await author.as.mutation(api.reports.create, {
       ...OBSERVED,
       waterBodyId: body,

@@ -1178,7 +1178,8 @@ describe('buildIndex', () => {
     // the retry is what reads it, in half an hour.
     expect(await due()).toBeNull();
     const firstRetry = (await runState(t, 'index'))?.retryAt as number;
-    expect(firstRetry - Date.now()).toBe(30 * 60_000);
+    // The lease and completion commit separately even when the test's wall clock is frozen.
+    expect(firstRetry - Date.now()).toBe(30 * 60_000 + 1);
     expect(JSON.stringify((await scheduled(t, 'broadcastToStaff'))[0]?.args[0])).toContain(
       'again in 30 minutes',
     );
@@ -1194,7 +1195,7 @@ describe('buildIndex', () => {
     expect(await due()).not.toBeNull();
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
-    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
+    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000 + 1);
     // The page shows the wait, and Try again now makes it due at once.
     await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });
@@ -1202,6 +1203,11 @@ describe('buildIndex', () => {
       Date.now(),
     );
     await admin.mutation(api.imageryLive.tryAgainNow, {});
+    // Move the wall clock to the mutation's timestamp without firing its scheduled build.
+    const retryNow = (await runState(t, 'index'))?.retryAt as number;
+    expect(retryNow).toBeGreaterThanOrEqual(Date.now());
+    expect(retryNow).toBeLessThan(Date.now() + 1_000);
+    vi.setSystemTime(retryNow);
     expect(await due()).toBe(2);
     // The manifest is fixed: the retry reads it, and the wait is gone.
     w.manifests.set(bad, manifest(a, '2026-10-05T15:30:00Z'));
@@ -1243,7 +1249,7 @@ describe('buildIndex', () => {
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
-    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
+    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000 + 1);
   });
 
   test('the unreadable retry waits half an hour, doubling to a six-hour ceiling', () => {

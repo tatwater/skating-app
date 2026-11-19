@@ -8,7 +8,7 @@
 
 import { ACCESS_ALERT_TTL_MS, seasonEndMs, seasonOf } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { ALERT_ALREADY_PINNED, ALERT_NOT_PINNED } from './accessAlerts';
@@ -238,22 +238,29 @@ describe('accessAlerts.create', () => {
 
 describe('accessAlerts.vote', () => {
   test('a confirmation resets the clock from the observation', async () => {
-    const { t, putInId, author } = await setup();
-    const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
-    const before = await t.run((ctx) => ctx.db.get(id));
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 10, 15, 12) });
+    try {
+      const { t, putInId, author } = await setup();
+      const voter = await seedUser(t, 'voter-1');
+      const createdAt = Date.now() + 1_000;
+      vi.setSystemTime(createdAt);
+      const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+      const before = await t.run((ctx) => ctx.db.get(id));
+      const observedAt = createdAt + 60_000;
+      vi.setSystemTime(observedAt + 60_000); // arrived after the observation
+      await voter.as.mutation(api.accessAlerts.vote, {
+        accessAlertId: id,
+        verdict: 'still_blocked',
+        observedAt,
+      });
 
-    const voter = await seedUser(t, 'voter-1');
-    const observedAt = Date.now();
-    await voter.as.mutation(api.accessAlerts.vote, {
-      accessAlertId: id,
-      verdict: 'still_blocked',
-      observedAt,
-    });
-
-    const after = await t.run((ctx) => ctx.db.get(id));
-    expect(after?.confirmCount).toBe(1);
-    expect(after?.lastConfirmedAt).toBe(observedAt);
-    expect(after?.expiresAt).toBeGreaterThanOrEqual(before?.expiresAt ?? 0);
+      const after = await t.run((ctx) => ctx.db.get(id));
+      expect(after?.confirmCount).toBe(1);
+      expect(after?.lastConfirmedAt).toBe(observedAt);
+      expect(after?.expiresAt).toBe((before?.expiresAt ?? 0) + 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('two denials resolve it; one does not', async () => {

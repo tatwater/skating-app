@@ -293,9 +293,11 @@ describe('kept current at the writes', () => {
     const id = await seedBody(t, { name: 'Long Pond' });
     await seedBody(t, { name: 'Other' });
     await backfill(t);
+    const changedAt = NOW + 1_000;
+    vi.setSystemTime(changedAt);
     await as.mutation(api.standing.setStanding, { waterBodyId: id, standing: 'dormant' });
     const [row] = (await rowsOf(t, id)).filter((r) => r.scope === '*');
-    expect(row).toMatchObject({ lane: 'moderator', standing: 'moderator', changedAt: NOW });
+    expect(row).toMatchObject({ lane: 'moderator', standing: 'moderator', changedAt });
     const summary = await as.query(api.bodies.listSummary, { lane: 'active' });
     expect(summary.laneCounts.active).toEqual({ count: 1, capped: false });
     expect(summary.laneCounts.moderator).toEqual({ count: 1, capped: false });
@@ -1254,6 +1256,8 @@ describe('a body whose refresh throws', () => {
     const bad = await poison(t, 'Bad');
     const good = [await seedBody(t, { name: 'Good A' }), await seedBody(t, { name: 'Good B' })];
     await t.run((ctx) => queueLibraryRefresh(ctx, [bad, ...good], NOW - DAY));
+    const drainedAt = NOW + 1_000;
+    vi.setSystemTime(drainedAt);
     expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toEqual({
       refreshed: 2,
       failed: 1,
@@ -1265,7 +1269,7 @@ describe('a body whose refresh throws', () => {
       attempts: 1,
       // The class the nested call caught, carried across it — not the plain `Error` it arrives as.
       lastErrorClass: 'TypeError',
-      queuedAt: NOW,
+      queuedAt: drainedAt,
     });
     expect((await queueRow(t, bad))?.parkedAt).toBeUndefined();
     await expectCountsAreTheTally(t);
@@ -1326,10 +1330,12 @@ describe('a body whose refresh throws', () => {
     const t = harness();
     const bad = await poison(t, 'Stubborn');
     await t.run((ctx) => queueLibraryRefresh(ctx, [bad]));
+    const parkedAt = NOW + MAX_REFRESH_ATTEMPTS * 1_000;
     for (let i = 0; i < MAX_REFRESH_ATTEMPTS; i++) {
+      vi.setSystemTime(NOW + (i + 1) * 1_000);
       expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toMatchObject({ failed: 1 });
     }
-    expect((await queueRow(t, bad))?.parkedAt).toBe(NOW);
+    expect((await queueRow(t, bad))?.parkedAt).toBe(parkedAt);
     expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toEqual({
       refreshed: 0,
       failed: 0,
@@ -1351,7 +1357,7 @@ describe('a body whose refresh throws', () => {
           name: 'Stubborn',
           attempts: MAX_REFRESH_ATTEMPTS,
           lastErrorClass: 'TypeError',
-          parkedAt: NOW,
+          parkedAt,
         },
       ],
     });
@@ -1459,12 +1465,14 @@ describe('a body whose refresh throws', () => {
     const t = harness();
     const { as } = await seedUser(t);
     const bad = await poison(t, 'Unrowed');
+    const changedAt = NOW + 1_000;
+    vi.setSystemTime(changedAt);
     await as.mutation(api.standing.setStanding, { waterBodyId: bad, standing: 'dormant' });
     expect(await rowsOf(t, bad)).toHaveLength(0);
-    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1, changedAt: NOW });
+    expect(await queueRow(t, bad)).toMatchObject({ attempts: 1, changedAt });
     await t.run((ctx) => ctx.db.patch(bad, { polygon: square(0.01) }));
     expect(await t.mutation(internal.bodyLibrary.drainQueue, {})).toMatchObject({ refreshed: 1 });
-    expect((await rowsOf(t, bad))[0]).toMatchObject({ changedAt: NOW, lane: 'moderator' });
+    expect((await rowsOf(t, bad))[0]).toMatchObject({ changedAt, lane: 'moderator' });
   });
 
   test('an audited write past the inline cap releases a parked body to the queue', async () => {
@@ -1497,6 +1505,8 @@ describe('a body whose refresh throws', () => {
     const t = harness();
     const mod = await seedUser(t);
     const held = await seedBody(t, { name: 'Held Inline' });
+    const queuedAt = NOW + 1_000;
+    vi.setSystemTime(queuedAt);
     await t.run(async (ctx) => {
       await ctx.db.insert('bodyLibraryQueue', {
         waterBodyId: held,
@@ -1511,7 +1521,7 @@ describe('a body whose refresh throws', () => {
         createdAt: NOW,
       });
     });
-    expect(await queueRow(t, held)).toMatchObject({ attempts: 0, queuedAt: NOW, changedAt: NOW });
+    expect(await queueRow(t, held)).toMatchObject({ attempts: 0, queuedAt, changedAt: NOW });
     expect((await queueRow(t, held))?.parkedAt).toBeUndefined();
   });
 
@@ -1644,9 +1654,11 @@ describe('Changed is never lost', () => {
         createdAt: NOW - 90 * DAY,
       }),
     );
+    const queuedAt = NOW + 1_000;
+    vi.setSystemTime(queuedAt);
     await t.mutation(internal.bodyLibrary.backfillChangedAt, {});
     expect(await queueEntry(t, rowless)).toMatchObject({
-      queuedAt: NOW,
+      queuedAt,
       changedAt: NOW - 90 * DAY,
     });
     // The oldest-first drain takes the body that was already waiting first.
@@ -1663,9 +1675,12 @@ describe('Changed is never lost', () => {
     });
     await seedReport(t, id, NOW - DAY);
     await t.run((ctx) => queueLibraryRefresh(ctx, [id], NOW, { changedAt: NOW - 2 * DAY }));
-    for (let i = 0; i < MAX_REFRESH_ATTEMPTS; i++)
+    const parkedAt = NOW + MAX_REFRESH_ATTEMPTS * 1_000;
+    for (let i = 0; i < MAX_REFRESH_ATTEMPTS; i++) {
+      vi.setSystemTime(NOW + (i + 1) * 1_000);
       await t.mutation(internal.bodyLibrary.drainQueue, {});
-    expect(await queueEntry(t, id)).toMatchObject({ parkedAt: NOW, changedAt: NOW - 2 * DAY });
+    }
+    expect(await queueEntry(t, id)).toMatchObject({ parkedAt, changedAt: NOW - 2 * DAY });
     await t.mutation(internal.bodyLibrary.retryParked, {});
     expect(await queueEntry(t, id)).toMatchObject({ attempts: 0, changedAt: NOW - 2 * DAY });
     await t.run((ctx) => ctx.db.patch(id, { polygon: square(0.01) }));

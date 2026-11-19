@@ -208,21 +208,22 @@ describe('corroboration', () => {
   }, 15000);
 
   test('an out-of-window prior does not corroborate', async () => {
-    const t = harness();
-    const a = await seedUser(t, 'a');
-    const b = await seedUser(t, 'b');
-    const waterBodyId = await seedBody(t);
-    // 8 days ago, past the 7-day window — posted *then*, with the clock moved back for the write,
-    // because the freshness window (D199, A10-2) refuses a back-dated end time at `posts.create`.
-    const now = Date.now();
+    const now = Date.UTC(2026, 0, 15, 12);
     vi.useFakeTimers();
     vi.setSystemTime(now - 8 * 24 * 60 * 60 * 1000);
-    await seedReport(t, a, waterBodyId, { iceTypes: ['black_ice'] });
-    vi.setSystemTime(now);
-    await seedReport(t, b, waterBodyId, { iceTypes: ['black_ice'] });
-    vi.useRealTimers();
-
-    expect(await eventCount(t, b.id, 'report_corroborated')).toBe(0);
+    try {
+      const t = harness();
+      const a = await seedUser(t, 'a');
+      const b = await seedUser(t, 'b');
+      const waterBodyId = await seedBody(t);
+      // Post while the observation is fresh, then advance past the 7-day window.
+      await seedReport(t, a, waterBodyId, { iceTypes: ['black_ice'] });
+      vi.setSystemTime(now);
+      await seedReport(t, b, waterBodyId, { iceTypes: ['black_ice'] });
+      expect(await eventCount(t, b.id, 'report_corroborated')).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
