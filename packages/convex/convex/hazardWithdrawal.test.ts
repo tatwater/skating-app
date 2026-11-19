@@ -125,14 +125,17 @@ afterEach(() => vi.useRealTimers());
 describe('withdrawing a hazard', () => {
   test('with no votes: the pin is gone as if never posted — not healed, not archived', async () => {
     const { t, waterBodyId, hazardId, withdraw } = await setup();
+    const withdrawnAt = T0 + 1_000;
+    vi.setSystemTime(withdrawnAt);
     await withdraw();
+    vi.setSystemTime(withdrawnAt + 1_000);
     await withdraw(); // twice is once
     const hazard = await t.run((ctx) => ctx.db.get(hazardId));
     expect(hazard).toMatchObject({
       moderationStatus: 'removed',
       status: 'active', // the lifecycle is untouched: nothing says it healed
-      authorDeletedAt: T0,
-      eraseAt: T0 + WITHDRAWN_ERASE_MS,
+      authorDeletedAt: withdrawnAt,
+      eraseAt: withdrawnAt + WITHDRAWN_ERASE_MS,
     });
     expect(hazard?.healingState).toBeUndefined();
     expect(await t.query(api.hazards.get, { hazardId })).toBeNull();
@@ -157,8 +160,10 @@ describe('withdrawing a hazard', () => {
     await vote(other.id, 'fully_healed');
     await vote(mod.id, 'never_existed');
     await vote(author.id, 'still_there');
+    const withdrawnAt = T0 + 1_000;
+    vi.setSystemTime(withdrawnAt);
     await withdraw();
-    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.authorDeletedAt).toBe(T0);
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.authorDeletedAt).toBe(withdrawnAt);
   });
 
   test('only by its author; and not once a moderator made it a feature, or merge joined it', async () => {

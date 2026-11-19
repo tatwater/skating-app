@@ -271,13 +271,12 @@ describe('a partial poll failure must not surface a stale copy (Greptile P1, 202
    * first thing a red run teaches anyone is to re-run it.
    */
   test('a body spanning two states sees the freshest copy of one warning', async () => {
-    const t = convexTest(schema, modules);
-    // Champlain: the real reason this matters — the corpus's most prominent body spans VT and NY.
-    const waterBodyId = await seedBody(t, ['NY', 'VT']);
-
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     try {
+      const t = convexTest(schema, modules);
+      // Champlain: the corpus's most prominent body spans VT and NY.
+      const waterBodyId = await seedBody(t, ['NY', 'VT']);
       // Poll 1: both states answer, one warning, Moderate.
       vi.stubGlobal(
         'fetch',

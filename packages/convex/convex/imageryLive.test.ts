@@ -1084,6 +1084,17 @@ describe('buildIndex', () => {
     ...extra,
   });
 
+  async function expectIndexRetryAfter(t: T, delayMs: number) {
+    const retryAt = (await runState(t, 'index'))?.retryAt;
+    if (retryAt === undefined) throw new Error('Expected an index retry to be scheduled');
+    // The build commits several transactions at the same frozen wall time. Allow sub-second
+    // transaction-clock drift without accepting a retry before the configured delay.
+    const offset = retryAt - Date.now() - delayMs;
+    expect(offset).toBeGreaterThanOrEqual(0);
+    expect(offset).toBeLessThan(1_000);
+    return retryAt;
+  }
+
   test('reads only new manifests, drops vanished ones, writes the index and turns latest over', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
@@ -1177,8 +1188,7 @@ describe('buildIndex', () => {
     // The last cut has landed and imagery is paused: nothing will mark the index dirty again —
     // the retry is what reads it, in half an hour.
     expect(await due()).toBeNull();
-    const firstRetry = (await runState(t, 'index'))?.retryAt as number;
-    expect(firstRetry - Date.now()).toBe(30 * 60_000);
+    const firstRetry = await expectIndexRetryAfter(t, 30 * 60_000);
     expect(JSON.stringify((await scheduled(t, 'broadcastToStaff'))[0]?.args[0])).toContain(
       'again in 30 minutes',
     );
@@ -1194,7 +1204,7 @@ describe('buildIndex', () => {
     expect(await due()).not.toBeNull();
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
-    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
+    await expectIndexRetryAfter(t, 60 * 60_000);
     // The page shows the wait, and Try again now makes it due at once.
     await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });
@@ -1202,6 +1212,11 @@ describe('buildIndex', () => {
       Date.now(),
     );
     await admin.mutation(api.imageryLive.tryAgainNow, {});
+    // Move the wall clock to the mutation's timestamp without firing its scheduled build.
+    const retryNow = (await runState(t, 'index'))?.retryAt as number;
+    expect(retryNow).toBeGreaterThanOrEqual(Date.now());
+    expect(retryNow).toBeLessThan(Date.now() + 1_000);
+    vi.setSystemTime(retryNow);
     expect(await due()).toBe(2);
     // The manifest is fixed: the retry reads it, and the wait is gone.
     w.manifests.set(bad, manifest(a, '2026-10-05T15:30:00Z'));
@@ -1243,7 +1258,7 @@ describe('buildIndex', () => {
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
-    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
+    await expectIndexRetryAfter(t, 60 * 60_000);
   });
 
   test('the unreadable retry waits half an hour, doubling to a six-hour ceiling', () => {

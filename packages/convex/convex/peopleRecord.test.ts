@@ -165,7 +165,7 @@ describe('people.history', () => {
       'set_posting_permission',
     ]);
     expect(h?.capped).toBe(false);
-    expect(h?.createdAt).toBe(T0 - 400 * DAY);
+    expect(h?.createdAt).toBe((await t.run((ctx) => ctx.db.get(rob)))?.createdAt);
     expect(h?.rows[1]?.actor?.username).toBe('sarah');
     expect(h?.rows.every((r) => typeof r.id === 'string' && r.undo !== undefined)).toBe(true);
     // A short read says it is capped, and keeps only what is newer than what it couldn't read.
@@ -208,11 +208,13 @@ describe('people.staffStats and people.decisions', () => {
     await seed(t, 'filer');
     const skater = await seed(t, 'skater');
     // Made a moderator: the grant row is "staff since".
-    await as(t, 'adm').mutation(api.admin.grantRole, { userId: matt, role: 'moderator' });
+    vi.advanceTimersByTime(1_000);
     const sinceAt = Date.now();
+    await as(t, 'adm').mutation(api.admin.grantRole, { userId: matt, role: 'moderator' });
     vi.advanceTimersByTime(DAY);
     // A flag filed an hour before Matt dismisses it.
     const r1 = await report(t, skater, bodyId);
+    vi.advanceTimersByTime(1_000);
     const flagId = await as(t, 'filer').mutation(api.contentFlags.flag, {
       targetType: 'report',
       targetId: r1,

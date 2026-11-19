@@ -28,7 +28,7 @@
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
     "@vitest/coverage-v8": "^5.1.0",
-    "convex-test": "0.0.62",
+    "convex-test": "0.0.72",
     "fast-check": "^4.10.2",
     "vitest": "^5.1.0"
   }

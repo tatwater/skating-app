@@ -675,10 +675,10 @@ describe('every chain reaches its end on its dearest page', () => {
 
     for (const id of healed) expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
     for (const id of failing) {
-      expect(await t.run((ctx) => ctx.db.get(id as Id<'reports'>))).toMatchObject({
-        eraseParkedAt: runAt,
-        eraseRetriedAt: runAt,
-      });
+      const row = await t.run((ctx) => ctx.db.get(id as Id<'reports'>));
+      expect(row?.eraseParkedAt).toBe(row?.eraseRetriedAt);
+      expect(row?.eraseRetriedAt).toBeGreaterThanOrEqual(runAt);
+      expect(row?.eraseRetriedAt).toBeLessThan(runAt + 1_000);
     }
     // Each piece tried exactly once in the run, whichever pass reached it.
     for (const id of reportIds) {

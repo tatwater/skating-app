@@ -485,6 +485,7 @@ describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', ()
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'clerk_author');
     const bodyId = await seedBody(t);
+    vi.advanceTimersByTime(1_000);
     const now = Date.now();
     const week = 7 * 24 * 3_600_000;
     const post = (skateEndTime: number) =>
@@ -1633,34 +1634,31 @@ describe('the skater filter on Latest (B03 §11, board 4.8)', () => {
   describe('the season it serves', () => {
     const LAST_WINTER = T0 - 365 * 24 * 3_600_000;
 
-    /** A Post this skater wrote last winter: the clock moves for the write, as D199 asks. */
-    async function postedLastWinter(
-      who: Awaited<ReturnType<typeof seedUser>>,
-      waterBodyId: Id<'waterBodies'>,
-    ) {
+    async function winterFixture(handle: string) {
+      const t = convexTest(schema, modules);
       const now = Date.now();
       vi.setSystemTime(LAST_WINTER + 60_000);
+      const who = await seedUser(t, handle);
+      const waterBodyId = await seedBody(t);
       const { postId } = await who.as.mutation(api.posts.create, {
         reports: [{ ...FRESH, waterBodyId, skateEndTime: LAST_WINTER }],
       });
       vi.setSystemTime(now);
-      return postId;
+      return { t, who, waterBodyId, postId };
     }
 
     test('falls back to the newest season this skater posted in, and says so', async () => {
-      const t = convexTest(schema, modules);
-      const { waterBodyId } = await twoSkaters(t);
-      const cal = await seedUser(t, 'cal');
-      const postId = await postedLastWinter(cal, waterBodyId);
+      const { t, postId } = await winterFixture('cal');
       const feed = await t.query(api.posts.listFeed, { ...FIRST, skater: 'cal' });
       expect(ids(feed)).toEqual([postId]);
       expect(feed.isPastSeason).toBe(true);
     });
 
     test('an explicit season is still honored', async () => {
-      const t = convexTest(schema, modules);
-      const { adas, ada, waterBodyId } = await twoSkaters(t);
-      const old = await postedLastWinter(ada, waterBodyId);
+      const { t, who: ada, waterBodyId, postId: old } = await winterFixture('ada');
+      const { postId: adas } = await ada.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId, skateEndTime: T0 }],
+      });
       const current = await t.query(api.posts.listFeed, { ...FIRST, skater: 'ada' });
       expect(ids(current)).toEqual([adas]);
       const browsed = await t.query(api.posts.listFeed, {

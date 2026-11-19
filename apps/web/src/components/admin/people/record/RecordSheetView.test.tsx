@@ -222,7 +222,7 @@ const CASES: Case[] = [
 /** Another item, open by the time the write comes back: its own Restore, at rest. */
 const OTHER: ItemRead = {
   ...ITEM_HIDDEN,
-  targetId: 'other',
+  targetId: 'rbasin',
   can: { restore: { ok: true, needsReason: false } },
 };
 
@@ -265,6 +265,16 @@ describe('a write that comes back after the operator moved on', () => {
           if (c.write !== 'restore') {
             await user.keyboard('{Escape}');
             expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+          }
+          // Inline Restore leaves the sheet controls available. Navigate with the actual control
+          // before applying the controlled prop change. Rerendering alone removes the focused
+          // lever and can trigger the sheet's focus fallback, independent of the pending write.
+          if (c.write === 'restore' && (way === 'item' || way === 'tab')) {
+            const control = screen.getByRole('button', {
+              name: way === 'item' ? /Duplicate of his 17 Mar report/ : 'Reversed',
+            });
+            await user.click(control);
+            expect(control).toHaveFocus();
           }
           // Leaving starts.
           switch (way) {

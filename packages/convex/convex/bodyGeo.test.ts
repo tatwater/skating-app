@@ -399,7 +399,9 @@ describe('computed at the write, read without geometry', () => {
     const bad = await seedBody(t, 'Broken', [-72, 44], [0.01, 0.01]);
     const good = await seedBody(t, 'Fine', [-71, 43], [0.01, 0.01]);
     await stale(t, [bad, good]);
+    const parkedAt = NOW + 3_000;
     for (let i = 0; i < 3; i++) {
+      vi.setSystemTime(NOW + (i + 1) * 1_000);
       await t.mutation(internal.bodyGeo.recordFailure, {
         waterBodyId: bad,
         errorClass: 'TypeError',
@@ -409,18 +411,22 @@ describe('computed at the write, read without geometry', () => {
     expect(await facts(t, bad)).toMatchObject({
       attempts: 3,
       errorClass: 'TypeError',
-      parkedAt: NOW,
+      parkedAt,
     });
     // The run passes the parked body by and computes the rest.
+    const computedAt = parkedAt + 1_000;
+    vi.setSystemTime(computedAt);
     expect(await compute(t)).toMatchObject({ computed: 1, failed: 0, done: true });
-    expect((await facts(t, good))?.computedAt).toBe(NOW);
+    expect((await facts(t, good))?.computedAt).toBe(computedAt);
     expect((await facts(t, bad))?.computedAt).toBeUndefined();
     // The daily retry takes it; a success clears its record.
+    const retriedAt = computedAt + 86_400_000;
+    vi.setSystemTime(retriedAt);
     expect(await t.action(internal.bodyGeo.computeDue, { parked: true })).toMatchObject({
       computed: 1,
     });
     const after = await facts(t, bad);
-    expect(after).toMatchObject({ computedAt: NOW });
+    expect(after).toMatchObject({ computedAt: retriedAt });
     expect(after?.parkedAt).toBeUndefined();
     expect(after?.attempts).toBeUndefined();
   });
@@ -439,9 +445,11 @@ describe('computed at the write, read without geometry', () => {
       await markGeoStale(ctx, [b]);
     });
     // One run: B's facts go, A is marked stale by it and recomputed in the same run without B.
+    vi.setSystemTime(NOW + 1_000);
     expect(await compute(t)).toMatchObject({ failed: 0, done: true });
     expect(await facts(t, b)).toBeNull();
-    expect(await facts(t, a)).toMatchObject({ neighbors: [], computedAt: NOW });
+    expect(await facts(t, a)).toMatchObject({ neighbors: [] });
+    expect((await facts(t, a))?.computedAt).toBeGreaterThanOrEqual(NOW + 1_000);
     expect((await facts(t, a))?.staleAt).toBeUndefined();
   });
 
@@ -451,8 +459,9 @@ describe('computed at the write, read without geometry', () => {
       await seedBody(t, 'One', [-72, 44], [0.01, 0.01]),
       await seedBody(t, 'Two', [-71, 43], [0.01, 0.01]),
     ];
+    vi.setSystemTime(NOW + 1_000);
     expect(await t.mutation(internal.bodyGeo.seedAll, {})).toEqual({ marked: 2, isDone: true });
-    for (const id of ids) expect((await facts(t, id))?.staleAt).toBe(NOW);
+    for (const id of ids) expect((await facts(t, id))?.staleAt).toBe(NOW + 1_000);
   });
 
   test('places are computed and stored, and read back by the console', async () => {
@@ -467,11 +476,12 @@ describe('computed at the write, read without geometry', () => {
       townsComputedAt: null,
     });
     await stale(t, [id]);
+    vi.setSystemTime(NOW + 1_000);
     await compute(t);
     expect(await as.query(api.bodies.preview, { waterBodyId: id })).toMatchObject({
       town: 'Enfield',
       moreTowns: [],
-      townsComputedAt: NOW,
+      townsComputedAt: NOW + 1_000,
     });
     expect(await as.query(api.bodyConsole.places, { waterBodyId: id })).toEqual({
       towns: ['Enfield'],
@@ -480,7 +490,7 @@ describe('computed at the write, read without geometry', () => {
       states: ['NH'],
       pinned: [],
       pinnedMissing: [],
-      computedAt: NOW,
+      computedAt: NOW + 1_000,
     });
     expect((await facts(t, id))?.placesRule).toBe(PLACES_RULE);
     // Each town's state reaches the preview and the frame too (B01-3c).
@@ -496,7 +506,7 @@ describe('computed at the write, read without geometry', () => {
     expect(await as.query(api.bodyConsole.townLines, { waterBodyId: id })).toEqual({
       towns: [{ name: 'Enfield', state: 'NH', ring: null }],
       capped: false,
-      computedAt: NOW,
+      computedAt: NOW + 1_000,
     });
     expect(await t.mutation(internal.adminAreas.backfillOutlines, {})).toMatchObject({
       written: 2,
@@ -518,11 +528,14 @@ describe('computed at the write, read without geometry', () => {
     const grazing = await seedBody(t, 'Grazing', [-72.005 + 0.000005, 44.05], [0.005, 0.002]);
     const nowhere = await seedBody(t, 'Nowhere', [-70, 44], [0.005, 0.005]);
     await stale(t, [across, grazing, nowhere]);
+    vi.setSystemTime(NOW + 1_000);
     await compute(t);
     const placesOfBody = (id: Id<'waterBodies'>) =>
       as.query(api.bodyConsole.places, { waterBodyId: id });
-    expect((await placesOfBody(across))?.towns.sort()).toEqual(['East', 'West']);
-    expect((await placesOfBody(across))?.states).toEqual(['NH', 'VT']);
+    const acrossPlaces = await placesOfBody(across);
+    expect(acrossPlaces?.towns.sort()).toEqual(['East', 'West']);
+    expect(acrossPlaces?.states).toEqual(['NH', 'VT']);
+    expect(acrossPlaces?.computedAt).toBe(NOW + 1_000);
     expect(await placesOfBody(grazing)).toMatchObject({ towns: ['West'], states: ['VT'] });
     expect(await placesOfBody(nowhere)).toEqual({
       towns: [],
@@ -531,7 +544,7 @@ describe('computed at the write, read without geometry', () => {
       states: [],
       pinned: [],
       pinnedMissing: [],
-      computedAt: NOW,
+      computedAt: acrossPlaces?.computedAt,
     });
   });
 

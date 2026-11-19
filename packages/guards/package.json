@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@skating/core": "workspace:*",
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.6",
     "vitest": "^5.1.0"
   }
 }

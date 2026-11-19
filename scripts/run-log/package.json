@@ -19,7 +19,7 @@
     "@skating/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.1.0",
     "tsx": "^4.23.15",
     "vitest": "^5.1.0"

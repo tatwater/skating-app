@@ -123,6 +123,7 @@ describe('the page and the list row agree on when the terms were set, and why', 
 
 describe('the rows backfill stamps a row written before the rule', () => {
   test('a repeat ban with a new reason, written as before: the row is dated by it after the backfill', async () => {
+    vi.setSystemTime(T0 - 4 * DAY);
     const t = await setup();
     const adm = await seed(t, 'adm', { role: 'admin' });
     const id = await seed(t, 'them');
@@ -172,6 +173,7 @@ describe('the rows backfill stamps a row written before the rule', () => {
 
 describe('an undo of a terms change puts the prior terms back — the reason included', () => {
   test('ban "a", ban "b", undo: banned "a" again, on the page and the row; the undo row keeps its own reason; redo brings "b" back', async () => {
+    vi.setSystemTime(T0 - 4 * DAY);
     const t = await setup();
     await seed(t, 'adm', { role: 'admin' });
     const id = await seed(t, 'them');
@@ -182,27 +184,35 @@ describe('an undo of a terms change puts the prior terms back — the reason inc
     const second = (await a.mutation(api.moderation.banUser, { userId: id, reason: 'b' })) as {
       actionId: Id<'moderationActions'>;
     };
+    const reversalOf = (actionId: Id<'moderationActions'>) =>
+      t.run((ctx) =>
+        ctx.db
+          .query('moderationActions')
+          .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
+          .first(),
+      );
     vi.setSystemTime(T0 - DAY);
     await a.mutation(api.undo.run, { actionId: second.actionId, reason: 'oops' });
     let both = await bothAnswers(t, id);
-    expect(both.note).toMatchObject({ reason: 'a', at: T0 - DAY });
-    expect(both.row).toMatchObject({ statusReason: 'a', statusSince: T0 - DAY });
-    const undoRow = await t.run((ctx) =>
-      ctx.db
-        .query('moderationActions')
-        .withIndex('by_undoes', (q) => q.eq('undoesActionId', second.actionId))
-        .first(),
-    );
-    expect(undoRow?.reason).toBe('oops');
+    const undoRow = await reversalOf(second.actionId);
+    if (!undoRow) throw new Error('Expected the undo audit row to exist');
+    expect(undoRow.reason).toBe('oops');
+    expect(undoRow.createdAt).toBeGreaterThanOrEqual(T0 - DAY);
+    expect(undoRow.createdAt).toBeLessThan(T0 - DAY + 1_000);
+    expect(both.note).toMatchObject({ reason: 'a', at: undoRow.createdAt });
+    expect(both.row).toMatchObject({ statusReason: 'a', statusSince: undoRow.createdAt });
     // Redo: the undo undone puts "b" back, dated anew.
     vi.setSystemTime(T0);
     await a.mutation(api.undo.run, {
-      actionId: undoRow?._id as Id<'moderationActions'>,
+      actionId: undoRow._id,
       reason: 'redo',
     });
     both = await bothAnswers(t, id);
-    expect(both.note).toMatchObject({ reason: 'b', at: T0 });
-    expect(both.row).toMatchObject({ statusReason: 'b', statusSince: T0 });
+    const redoRow = await reversalOf(undoRow._id);
+    expect(redoRow?.createdAt).toBeGreaterThanOrEqual(T0);
+    expect(redoRow?.createdAt).toBeLessThan(T0 + 1_000);
+    expect(both.note).toMatchObject({ reason: 'b', at: redoRow?.createdAt });
+    expect(both.row).toMatchObject({ statusReason: 'b', statusSince: redoRow?.createdAt });
   });
 
   test.each([
@@ -211,6 +221,7 @@ describe('an undo of a terms change puts the prior terms back — the reason inc
   ] as const)(
     'terms with no reason on file come back with none — a %s, never the undo’s reason',
     async (verb, over) => {
+      vi.setSystemTime(T0 - 2 * DAY);
       const t = await setup();
       await seed(t, 'adm', { role: 'admin' });
       // Terms set before reasons were kept: the status, and no reason on file.

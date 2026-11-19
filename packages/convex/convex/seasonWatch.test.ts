@@ -714,7 +714,7 @@ describe('history', () => {
       .sort((a, b) => a - b);
     expect((first[1] as number) - (first[0] as number)).toBe(75 * 60_000);
     // Two saves during it queue nothing and do not stretch its hold — one re-plan, at its end.
-    const busyUntil = Date.now() + 21 * 75 * 60_000 + 60 * 60_000;
+    const busyUntil = (first.at(-1) as number) + 60 * 60_000;
     for (let save = 0; save < 2; save++) {
       expect(await t.mutation(internal.seasonWatch.scheduleHistoryFill, {})).toEqual({
         requests: 0,

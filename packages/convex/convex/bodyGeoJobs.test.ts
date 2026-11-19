@@ -137,6 +137,7 @@ describe('computeDue', () => {
     const good = await seedBody(t, 'Good', -72);
     await t.run((ctx) => markGeoStale(ctx, [bad, good]));
     hooks.throwWestOf = -100;
+    vi.setSystemTime(NOW + 1_000);
     // Tried once in the run, never again in it: one attempt, and the run ends.
     expect(await t.action(internal.bodyGeo.computeDue, {})).toMatchObject({
       computed: 1,
@@ -144,11 +145,13 @@ describe('computeDue', () => {
       done: true,
     });
     expect(await facts(t, bad)).toMatchObject({ attempts: 1, errorClass: 'TypeError' });
-    expect((await facts(t, good))?.computedAt).toBe(NOW);
+    expect((await facts(t, good))?.computedAt).toBeGreaterThanOrEqual(NOW + 1_000);
     // Two more runs park it; the daily retry tries it once and leaves it parked, re-stamped.
+    vi.setSystemTime(NOW + 2_000);
     await t.action(internal.bodyGeo.computeDue, {});
+    vi.setSystemTime(NOW + 3_000);
     await t.action(internal.bodyGeo.computeDue, {});
-    expect(await facts(t, bad)).toMatchObject({ attempts: 3, parkedAt: NOW });
+    expect(await facts(t, bad)).toMatchObject({ attempts: 3, parkedAt: NOW + 3_000 });
     expect(await t.action(internal.bodyGeo.computeDue, {})).toMatchObject({ failed: 0 });
     vi.setSystemTime(NOW + 86_400_000);
     expect(await t.action(internal.bodyGeo.computeDue, { parked: true })).toMatchObject({
@@ -194,7 +197,10 @@ describe('computeDue', () => {
       done: true,
     });
     for (const id of ids) {
-      expect(await facts(t, id)).toMatchObject({ attempts: 4, retriedAt: NOW + 86_400_000 });
+      const row = await facts(t, id);
+      expect(row).toMatchObject({ attempts: 4, parkedAt: row?.retriedAt });
+      expect(row?.retriedAt).toBeGreaterThanOrEqual(NOW + 86_400_000);
+      expect(row?.retriedAt).toBeLessThan(NOW + 86_401_000);
     }
   });
 

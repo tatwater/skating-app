@@ -1901,18 +1901,19 @@ describe('metrics.keepingUp', () => {
   });
 
   test('a past season is drawn whole; before 1 October the window is empty', async () => {
+    vi.setSystemTime(Date.UTC(2026, 7, 1));
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
-    const past = await mod.as.query(api.metrics.keepingUp, { season: 2025 });
-    expect(past.days).toHaveLength(273);
-    expect(past.days.at(-1)).toBe('2026-06-30');
-    vi.setSystemTime(Date.UTC(2026, 7, 1));
     const pre = await mod.as.query(api.metrics.keepingUp, {});
     expect(pre.season).toBe(2026);
     expect(pre.days).toEqual([]);
     expect(pre.keepingUp.resolveSeason).toBeNull();
     // A season nobody can name reads the season now falls in.
     expect((await mod.as.query(api.metrics.keepingUp, { season: 1.5 })).season).toBe(2026);
+    vi.setSystemTime(NOW);
+    const past = await mod.as.query(api.metrics.keepingUp, { season: 2025 });
+    expect(past.days).toHaveLength(273);
+    expect(past.days.at(-1)).toBe('2026-06-30');
   });
 
   test('reads the window of the page’s day — within a few minutes of the server’s clock', async () => {

@@ -758,6 +758,7 @@ describe('can', () => {
 
 describe('people.person: when, the public profile, labels and appeals', () => {
   test('rights since, ledger since, the public profile, flag labels, appeal text for admins', async () => {
+    vi.setSystemTime(T0 - 3 * DAY);
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
     const adm = await seed(t, 'adm', { role: 'admin', canEditLedger: true });
@@ -844,13 +845,15 @@ describe('people.person: when, the public profile, labels and appeals', () => {
       (await as(t, 'mod').query(api.people.person, { userId: skater }))?.open.appeals,
     ).toBeNull();
     // The ledger's grant time, holders only.
+    const two = await seed(t, 'two', { role: 'admin' });
+    const grantedAt = T0 + 1_000;
+    vi.setSystemTime(grantedAt);
     await as(t, 'adm').mutation(api.ledger.grantEditor, {
-      userId: await seed(t, 'two', { role: 'admin' }),
+      userId: two,
     });
-    const two = (await t.run((ctx) => ctx.db.query('profiles').collect())).find(
-      (p) => p.username === 'two',
-    )?._id as Id<'profiles'>;
-    expect((await as(t, 'adm').query(api.people.person, { userId: two }))?.ledger?.since).toBe(T0);
+    expect((await as(t, 'adm').query(api.people.person, { userId: two }))?.ledger?.since).toBe(
+      grantedAt,
+    );
     // A deleted account's profile doesn't open.
     const gone = await seed(t, 'gone', { status: 'deleted', deletedAt: T0 });
     expect(
@@ -1156,6 +1159,7 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
   });
 
   test('a repeat that changed nothing moves no date; a repeat ban with a new reason sets the terms — date, who and reason, on the page and the list row alike', async () => {
+    vi.setSystemTime(T0 - 4 * DAY);
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
     await seed(t, 'mod2', { role: 'moderator' });
@@ -1169,6 +1173,8 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
       });
     vi.setSystemTime(T0 - 3 * DAY);
     await restrict('mod');
+    const firstBanAt = T0 - 3 * DAY + 1_000;
+    vi.setSystemTime(firstBanAt);
     await as(t, 'mod').mutation(api.moderation.banUser, { userId: skater, reason: 'first' });
     vi.setSystemTime(T0 - 2 * DAY);
     // The same restriction and the same ban again change nothing, so write nothing (D270).
@@ -1180,9 +1186,9 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
     };
     let p = await as(t, 'mod').query(api.people.person, { userId: skater });
     expect(p?.rightsSince.comments).toBe(T0 - 3 * DAY);
-    expect(p?.statusNote).toMatchObject({ action: 'ban', at: T0 - 3 * DAY, reason: 'first' });
+    expect(p?.statusNote).toMatchObject({ action: 'ban', at: firstBanAt, reason: 'first' });
     expect(p?.statusNote?.by?.username).toBe('mod');
-    expect(await listRow()).toMatchObject({ statusSince: T0 - 3 * DAY, statusReason: 'first' });
+    expect(await listRow()).toMatchObject({ statusSince: firstBanAt, statusReason: 'first' });
     // A repeat ban with a new reason is a real change: its date, who and reason — on both.
     vi.setSystemTime(T0 - DAY);
     await as(t, 'mod2').mutation(api.moderation.banUser, { userId: skater, reason: 'again' });
@@ -1200,6 +1206,7 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
   });
 
   test('a suspension’s new window sets new terms; a walk through rows that changed nothing, past its reach, says can’t say', async () => {
+    vi.setSystemTime(T0 - 21 * DAY);
     const t = await setup();
     const mod = await seed(t, 'mod', { role: 'moderator' });
     const skater = await seed(t, 'skater');
@@ -1249,6 +1256,7 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
   });
 
   test('a suspension after one that had run out (before the sweep reset it) begins a new one', async () => {
+    vi.setSystemTime(T0 - 21 * DAY);
     const t = await setup();
     await seed(t, 'mod', { role: 'moderator' });
     await seed(t, 'mod2', { role: 'moderator' });
@@ -1273,6 +1281,7 @@ describe('a “since” is the start of the current unbroken state (lib/stateSin
   });
 
   test('the walk is held to its weight: heavy repeats past one document say can’t say, before the row count', async () => {
+    vi.setSystemTime(T0 - 11 * DAY);
     const t = await setup();
     const mod = await seed(t, 'mod', { role: 'moderator' });
     const skater = await seed(t, 'skater');
@@ -1376,6 +1385,7 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
     const adm = await seed(t, 'adm', { role: 'admin' });
     const mod = await seed(t, 'mod', { role: 'moderator' });
     const skater = await seed(t, 'skater');
+    vi.setSystemTime(T0 + 1_000);
     await as(t, 'adm').mutation(api.admin.grantRole, { userId: skater, role: 'moderator' });
     await as(t, 'adm').mutation(api.moderation.suspendUser, {
       userId: await seed(t, 's2'),
@@ -1395,7 +1405,7 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
     expect(byId.get(skater)?.roleSince).toBe(stats?.roleSince?.at);
     // Seeded straight into the table, never stamped: it can't say yet — capped, not "not recorded".
     expect(byId.get(mod)).toMatchObject({ roleSince: null, roleSinceCapped: true });
-    expect(byId.get(skater)?.roleSince).toBe(T0);
+    expect(byId.get(skater)?.roleSince).toBe(T0 + 1_000);
     const admStats = await as(t, 'adm').query(api.people.staffStats, { userId: adm });
     expect(byId.get(adm)?.decisionsThisWeek).toEqual(admStats?.decisions.thisWeek);
     expect(byId.get(adm)?.decisionsThisWeek.count).toBe(2);
@@ -1405,9 +1415,11 @@ describe('people.listPage: keys, ends, ages and the Staff lane', () => {
   });
 
   test('a role undone twice: the row’s stamp and the strip agree on the original date', async () => {
+    vi.setSystemTime(T0 - 1_000);
     const t = await setup();
     await seed(t, 'adm', { role: 'admin' });
     const skater = await seed(t, 'skater');
+    vi.setSystemTime(T0);
     const grant = undoable(
       await as(t, 'adm').mutation(api.admin.grantRole, {
         userId: skater,
