@@ -730,12 +730,12 @@ export function HazardCapture() {
           top={72}
           left={16}
           right={16}
-          backgroundColor="$success"
-          borderRadius="$4"
-          padding="$3"
+          backgroundColor="success"
+          borderRadius="4"
+          padding="3"
           zIndex={40}
         >
-          <Text color="$successForeground">{toast}</Text>
+          <Text color="successForeground">{toast}</Text>
         </YStack>
       ) : null}
 
@@ -753,10 +753,10 @@ export function HazardCapture() {
           bottom={132}
           right={16}
           zIndex={30}
-          size="$6"
+          size="hazard"
+          backgroundColor="danger"
+          color="dangerForeground"
           circular
-          backgroundColor="$danger"
-          color="$dangerForeground"
           onPress={() => setPicking(true)}
           accessibilityLabel="Flag a hazard"
         >
@@ -767,23 +767,23 @@ export function HazardCapture() {
       <Modal visible={picking} animationType="slide" transparent onRequestClose={reset}>
         <YStack flex={1} justifyContent="flex-end" backgroundColor="rgba(0,0,0,0.35)">
           <YStack
-            backgroundColor="$surface"
-            borderTopLeftRadius="$6"
-            borderTopRightRadius="$6"
-            padding="$4"
-            gap="$3"
+            backgroundColor="surface"
+            borderTopLeftRadius="6"
+            borderTopRightRadius="6"
+            padding="4"
+            gap="3"
             maxHeight="80%"
           >
-            <H4 color="$foreground">What did you see?</H4>
+            <H4 color="foreground">What did you see?</H4>
             <ScrollView>
-              <YStack gap="$2.5">
+              <YStack gap="2-5">
                 {/* The three types that are ~80% of real reports get big one-tap tiles (research §6). */}
                 {HAZARD_TYPE_PRESETS.map((preset) => (
                   <Button
                     key={preset}
-                    size="$6"
-                    backgroundColor="$danger"
-                    color="$dangerForeground"
+                    size="hazard"
+                    backgroundColor="danger"
+                    color="dangerForeground"
                     onPress={() => chooseType(preset)}
                   >
                     {HAZARD_TYPE_LABELS[preset]}
@@ -792,9 +792,9 @@ export function HazardCapture() {
                 {/* A crossing is the one *positive* marker — where you got across. It reads green so
                     it can't be mistaken for one more danger tile (research §4). */}
                 <Button
-                  size="$6"
-                  backgroundColor="$success"
-                  color="$successForeground"
+                  size="hazard"
+                  backgroundColor="success"
+                  color="successForeground"
                   onPress={() => chooseType('ridge_crossing')}
                 >
                   {HAZARD_TYPE_LABELS.ridge_crossing}
@@ -803,18 +803,18 @@ export function HazardCapture() {
                   otherTypes
                     .filter((t) => t !== 'ridge_crossing')
                     .map((other) => (
-                      <Button key={other} size="$5" onPress={() => chooseType(other)}>
+                      <Button key={other} size="xl" onPress={() => chooseType(other)}>
                         {HAZARD_TYPE_LABELS[other]}
                       </Button>
                     ))
                 ) : (
-                  <Button size="$5" chromeless onPress={() => setShowAllTypes(true)}>
+                  <Button size="xl" variant="quiet" onPress={() => setShowAllTypes(true)}>
                     More…
                   </Button>
                 )}
               </YStack>
             </ScrollView>
-            <Button chromeless onPress={reset}>
+            <Button variant="quiet" onPress={reset}>
               Cancel
             </Button>
           </YStack>
@@ -830,17 +830,17 @@ export function HazardCapture() {
           left={0}
           right={0}
           zIndex={35}
-          backgroundColor="$surface"
+          backgroundColor="surface"
           borderTopWidth={1}
-          borderTopColor="$border"
-          padding="$3"
-          gap="$2"
+          borderTopColor="border"
+          padding="3"
+          gap="2"
         >
           <XStack justifyContent="space-between" alignItems="center">
-            <Text color="$foreground" fontWeight="700">
+            <Text color="foreground" fontWeight="700">
               {HAZARD_TYPE_LABELS[hazardDraftType]}
             </Text>
-            <Button size="$2" chromeless onPress={reset}>
+            <Button size="sm" variant="quiet" onPress={reset}>
               Cancel
             </Button>
           </XStack>
@@ -849,23 +849,23 @@ export function HazardCapture() {
               valid pin to a line silently disables Done otherwise, which on the ice reads as the app
               being broken. */}
           {locating ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               Finding you… you can tap the map to drop the pin yourself if you already know where it
               is.
             </Paragraph>
           ) : shoreError ? (
-            <Paragraph color="$danger" fontSize={13} accessibilityRole="alert">
+            <Paragraph color="danger" fontSize={13} accessibilityRole="alert">
               {shoreError}
             </Paragraph>
           ) : snapping && hazardShoreTaps.length < 2 ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               {hazardShoreTaps.length === 0
                 ? 'Tap one end of the affected shore.'
                 : 'Now tap the other end.'}{' '}
               The band follows the lake’s own shoreline between them.
             </Paragraph>
           ) : snapped ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               Following {Math.round(shoreArcLength ?? 0)} m of shoreline. The extra margin is the
               usual one for this type — an estimate, not a survey. The part that falls on land is
               trimmed off.
@@ -873,22 +873,22 @@ export function HazardCapture() {
           ) : banding ? (
             // Two taps in, nothing back yet — the cache read and derive are synchronous, so this is
             // the frame between them. Never "N corners": nobody tapped those.
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               Picking a stretch of shore…
             </Paragraph>
           ) : isArea && !postable ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               {placements} {placements === 1 ? 'corner' : 'corners'} — tap Draw and add
               {placements >= 2 ? ' another' : ' more'}; an area needs at least three that don’t
               cross over each other.
             </Paragraph>
           ) : isLine && !postable ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               {placements} {placements === 1 ? 'point' : 'points'} — tap Trace and add at least one
               more, or go back to Just a spot.
             </Paragraph>
           ) : hazardDropMode ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               {isLine
                 ? `Tap the map along the hazard. ${placements} ${placements === 1 ? 'point' : 'points'}.`
                 : isArea
@@ -896,7 +896,7 @@ export function HazardCapture() {
                   : 'Tap the map where the hazard is.'}
             </Paragraph>
           ) : (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               Dropped where you are. If you spotted it ahead, tap Move and put it where you saw it —
               don’t skate onto it to mark it.
             </Paragraph>
@@ -905,9 +905,9 @@ export function HazardCapture() {
           {/* One stepper, two meanings, never both on screen (A05b Decision 3): on a snapped band it
               tunes the band half-width and the ring re-derives; otherwise it steps the draft's own
               size. Steppers, not a slider — sliders are miserable with gloves on. */}
-          <XStack gap="$2" alignItems="center" flexWrap="wrap">
+          <XStack gap="2" alignItems="center" flexWrap="wrap">
             <Button
-              size="$5"
+              size="xl"
               accessibilityLabel={isLine || banding ? 'Narrower' : 'Smaller'}
               onPress={() =>
                 banding
@@ -917,7 +917,7 @@ export function HazardCapture() {
             >
               −
             </Button>
-            <Text color="$foreground" fontSize={13} flex={1}>
+            <Text color="foreground" fontSize={13} flex={1}>
               {/* `banding` before the primitive: a refused snap can leave the draft a circle, and the
                   number under the stepper has to be the one the stepper is moving. */}
               {/* Both numbers, because the half-width isn't the whole footprint: `hazardFootprint`
@@ -932,7 +932,7 @@ export function HazardCapture() {
                     : `about ${hazardDraft.bufferMeters} m of give around the edge`}
             </Text>
             <Button
-              size="$5"
+              size="xl"
               accessibilityLabel={isLine || banding ? 'Wider' : 'Bigger'}
               onPress={() =>
                 banding
@@ -949,16 +949,16 @@ export function HazardCapture() {
               the highest-value thing one skater leaves the next. Encouraged, plural, and entirely
               skippable: the pin is already valid without one. */}
           {nearby.length > 0 ? (
-            <YStack gap="$1.5">
+            <YStack gap="1-5">
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={10}
                 letterSpacing={1}
                 textTransform="uppercase"
               >
                 From your post, near this pin
               </Text>
-              <XStack gap="$2" flexWrap="wrap">
+              <XStack gap="2" flexWrap="wrap">
                 {nearby.map((photo) => (
                   <Pressable
                     key={photo.id}
@@ -976,7 +976,7 @@ export function HazardCapture() {
                         borderColor: primaryColor,
                       }}
                     />
-                    <Text color="$primary" fontSize={10} fontWeight="700" textAlign="center">
+                    <Text color="primary" fontSize={10} fontWeight="700" textAlign="center">
                       + Add
                     </Text>
                   </Pressable>
@@ -985,14 +985,14 @@ export function HazardCapture() {
             </YStack>
           ) : null}
           {photos.length > 0 ? (
-            <XStack gap="$2" flexWrap="wrap">
+            <XStack gap="2" flexWrap="wrap">
               {photos.map((photo) => (
-                <YStack key={photo.id} gap="$1" alignItems="center">
+                <YStack key={photo.id} gap="1" alignItems="center">
                   <Image
                     source={{ uri: photo.thumbUri }}
                     style={{ width: 56, height: 56, borderRadius: 6 }}
                   />
-                  <Button size="$1" chromeless onPress={() => removePhoto(photo.id)}>
+                  <Button size="xs" variant="quiet" onPress={() => removePhoto(photo.id)}>
                     Remove
                   </Button>
                 </YStack>
@@ -1000,12 +1000,12 @@ export function HazardCapture() {
             </XStack>
           ) : null}
 
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             {/* A snapped band is re-picked, never hand-adjusted: tap-to-place has no vertex
                 dragging (that's terra-draw, and terra-draw can't run here), so "adjust" would mean
                 re-tapping the whole ring. Re-picking two ends is the cheap, honest version. */}
             <Button
-              size="$4"
+              size="lg"
               onPress={() => {
                 // `banding`, not "banded": after a *refused* snap the taps are still armed, so leaving
                 // them would feed the next tap in as a third shore pick instead of a fresh first one.
@@ -1019,11 +1019,11 @@ export function HazardCapture() {
             >
               {banding ? 'Re-pick' : isLine ? 'Trace' : isArea ? 'Draw' : 'Move'}
             </Button>
-            <Button size="$4" disabled={addingPhotos} onPress={addPhotos}>
+            <Button size="lg" disabled={addingPhotos} onPress={addPhotos}>
               {addingPhotos ? 'Adding…' : photos.length > 0 ? '📷 Add another' : '📷 Photo'}
             </Button>
             {(isLine || (isArea && !banding)) && placements > 0 ? (
-              <Button size="$4" onPress={() => setHazardDraft(undoDraftPlacement(hazardDraft))}>
+              <Button size="lg" onPress={() => setHazardDraft(undoDraftPlacement(hazardDraft))}>
                 {isLine ? 'Undo point' : 'Undo corner'}
               </Button>
             ) : null}
@@ -1031,7 +1031,7 @@ export function HazardCapture() {
                 small pond where the band you mean is most of the perimeter (Decision 4). Offered
                 through a refusal too — it and the − stepper are two of the three ways out of one. */}
             {banding ? (
-              <Button size="$4" onPress={() => setShoreOtherWay((other) => !other)}>
+              <Button size="lg" onPress={() => setShoreOtherWay((other) => !other)}>
                 Other way
               </Button>
             ) : null}
@@ -1040,11 +1040,11 @@ export function HazardCapture() {
           {/* Changing primitive is opt-in and always reversible; the pin stays valid throughout.
               An area is the advanced one (D51) and no type starts as one, which on the ice also
               protects the two-tap guarantee — three taps and a close is not a mitten-fumble away. */}
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             {!isArea ? (
               <Button
-                size="$3"
-                chromeless
+                size="md"
+                variant="quiet"
                 onPress={() =>
                   setHazardDraft(
                     switchDraftKind(hazardDraft, isLine ? 'point_radius' : 'line', hazardDraftType),
@@ -1055,8 +1055,8 @@ export function HazardCapture() {
               </Button>
             ) : (
               <Button
-                size="$3"
-                chromeless
+                size="md"
+                variant="quiet"
                 onPress={() => {
                   setHazardShoreTaps(null);
                   setShoreError(null);
@@ -1069,8 +1069,8 @@ export function HazardCapture() {
             )}
             {!isArea ? (
               <Button
-                size="$3"
-                chromeless
+                size="md"
+                variant="quiet"
                 onPress={() => {
                   const next = switchDraftKind(hazardDraft, 'polygon', hazardDraftType);
                   setHazardDraft(next);
@@ -1084,8 +1084,8 @@ export function HazardCapture() {
                 (Decision 1) — a ridge is linear but not *shore*-linear. */}
             {offersShore && !banding ? (
               <Button
-                size="$3"
-                chromeless
+                size="md"
+                variant="quiet"
                 onPress={() => {
                   setShoreError(null);
                   setShoreArcLength(null);
@@ -1102,7 +1102,7 @@ export function HazardCapture() {
 
           {error ? (
             <Text
-              color="$danger"
+              color="danger"
               fontSize={13}
               accessibilityRole="alert"
               accessibilityLiveRegion="assertive"
@@ -1115,21 +1115,21 @@ export function HazardCapture() {
               helps everyone; the way past is right beside it, one tap, and is never discouraged — a
               skater looking at something the map has wrong must not be argued with. */}
           {nudge ? (
-            <YStack gap="$2">
-              <Paragraph color="$foreground" fontSize={14}>
+            <YStack gap="2">
+              <Paragraph color="foreground" fontSize={14}>
                 {duplicateNudge(nudge.type, { reportedAgo: relativeWhen(nudge.at, Date.now()) })}
               </Paragraph>
               <Button
-                size="$6"
-                backgroundColor="$primary"
-                color="$primaryForeground"
+                size="hazard"
+                backgroundColor="primary"
+                color="primaryForeground"
                 disabled={saving}
                 onPress={() => confirmExisting(nudge.hazardId)}
               >
                 {DUPLICATE_NUDGE_CONFIRM}
               </Button>
               <Button
-                size="$5"
+                size="xl"
                 disabled={saving}
                 onPress={() => {
                   // One tap: dismiss *and* post. The id goes straight to `post` rather than being
@@ -1144,20 +1144,18 @@ export function HazardCapture() {
             </YStack>
           ) : (
             <Button
-              size="$6"
-              backgroundColor={postable ? '$primary' : undefined}
-              color={postable ? '$primaryForeground' : undefined}
-              disabled={!postable || saving}
+              size="hazard"
+              backgroundColor={postable ? 'primary' : undefined}
+              color={postable ? 'primaryForeground' : undefined}
               opacity={postable ? 1 : 0.5}
-              // Wrapped, not passed: the press handler is given a gesture event, and `post`'s first
-              // argument is the dismissed-duplicate id.
+              disabled={!postable || saving}
               onPress={() => post()}
             >
               {saving ? 'Posting…' : 'Done'}
             </Button>
           )}
           {isPassageMarker(hazardDraftType) ? (
-            <Paragraph color="$foregroundMuted" fontSize={12}>
+            <Paragraph color="foregroundMuted" fontSize={12}>
               A crossing marks where you got across — it’s not a promise it’s safe, and ridges
               change hour to hour.
             </Paragraph>

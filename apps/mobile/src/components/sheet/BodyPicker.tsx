@@ -48,10 +48,10 @@ export function BodyPicker({
 
   return (
     <Modal visible={open} animationType="slide" onRequestClose={onClose}>
-      <YStack flex={1} backgroundColor="$background" paddingTop={insets.top} padding="$4" gap="$3">
+      <YStack flex={1} backgroundColor="background" paddingTop={insets.top} padding="4" gap="3">
         <XStack alignItems="center" justifyContent="space-between">
-          <H4 color="$foreground">Which lake?</H4>
-          <Button size="$2" chromeless onPress={onClose}>
+          <H4 color="foreground">Which lake?</H4>
+          <Button size="sm" variant="quiet" onPress={onClose}>
             Cancel
           </Button>
         </XStack>
@@ -63,7 +63,7 @@ export function BodyPicker({
           autoCorrect={false}
         />
         <ScrollView keyboardShouldPersistTaps="handled">
-          <YStack gap="$1">
+          <YStack gap="1">
             {(results ?? []).map((hit) => (
               <Row
                 key={hit._id}
@@ -85,11 +85,11 @@ export function BodyPicker({
               <>
                 {offlineHits.length > 0 ? (
                   <Text
-                    color="$foregroundMuted"
+                    color="foregroundMuted"
                     fontSize={11}
                     letterSpacing={1.5}
                     textTransform="uppercase"
-                    paddingVertical="$2"
+                    paddingVertical="2"
                   >
                     {query.length >= 2 ? 'Lakes you have viewed' : 'Recently viewed'}
                   </Text>
@@ -108,7 +108,7 @@ export function BodyPicker({
             results !== undefined &&
             results.length === 0 &&
             offlineHits.length === 0 ? (
-              <Text color="$foregroundMuted" paddingVertical="$3">
+              <Text color="foregroundMuted" paddingVertical="3">
                 Nothing by that name. Try another spelling, or the lake's town.
               </Text>
             ) : null}
@@ -122,18 +122,18 @@ export function BodyPicker({
 function Row({ title, meta, onPress }: { title: string; meta: string; onPress: () => void }) {
   return (
     <YStack
-      paddingVertical="$2.5"
-      paddingHorizontal="$2"
-      borderRadius="$3"
-      pressStyle={{ backgroundColor: '$surfaceMuted' }}
+      paddingVertical="2-5"
+      paddingHorizontal="2"
+      borderRadius="3"
+      backgroundColor="press:surfaceMuted"
       onPress={onPress}
       accessibilityRole="button"
     >
-      <Text color="$foreground" fontSize={15}>
+      <Text color="foreground" fontSize={15}>
         {title}
       </Text>
       {meta ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {meta}
         </Text>
       ) : null}

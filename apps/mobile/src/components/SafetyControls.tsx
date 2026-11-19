@@ -44,12 +44,12 @@ export function FlagControl({
   const [submitted, setSubmitted] = useState(false);
 
   if (submitted) {
-    return <Text color="$foregroundMuted">Flag submitted — a moderator will review it.</Text>;
+    return <Text color="foregroundMuted">Flag submitted — a moderator will review it.</Text>;
   }
 
   if (!open) {
     return (
-      <Button size="$2" chromeless onPress={() => setOpen(true)}>
+      <Button size="sm" variant="quiet" onPress={() => setOpen(true)}>
         {label}
       </Button>
     );
@@ -57,21 +57,21 @@ export function FlagControl({
 
   return (
     <YStack
-      gap="$2"
-      padding="$2"
-      borderColor="$border"
+      gap="2"
+      padding="2"
+      borderColor="border"
       borderWidth={1}
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
+      borderRadius="4"
+      backgroundColor="surfaceMuted"
     >
-      <Text color="$foreground">Why are you flagging this {targetType}?</Text>
-      <YStack gap="$1.5">
+      <Text color="foreground">Why are you flagging this {targetType}?</Text>
+      <YStack gap="1-5">
         {REASONS.map((r) => (
           <Button
             key={r.value}
-            size="$2"
-            backgroundColor={reason === r.value ? '$primary' : undefined}
-            color={reason === r.value ? '$primaryForeground' : undefined}
+            size="sm"
+            backgroundColor={reason === r.value ? 'primary' : undefined}
+            color={reason === r.value ? 'primaryForeground' : undefined}
             onPress={() => setReason(r.value)}
           >
             {r.label}
@@ -82,13 +82,13 @@ export function FlagControl({
         value={note}
         onChangeText={setNote}
         placeholder="Add context (optional)"
-        borderColor="$border"
+        borderColor="border"
       />
-      <XStack gap="$2">
+      <XStack gap="2">
         <Button
-          size="$2"
-          backgroundColor="$primary"
-          color="$primaryForeground"
+          size="sm"
+          backgroundColor="primary"
+          color="primaryForeground"
           disabled={!reason}
           onPress={async () => {
             if (!reason) return;
@@ -103,7 +103,7 @@ export function FlagControl({
         >
           Submit
         </Button>
-        <Button size="$2" chromeless onPress={() => setOpen(false)}>
+        <Button size="sm" variant="quiet" onPress={() => setOpen(false)}>
           Cancel
         </Button>
       </XStack>
@@ -130,7 +130,7 @@ export function BlockButton({
 
   if (!confirming) {
     return (
-      <Button size="$2" onPress={() => setConfirming(true)}>
+      <Button size="sm" onPress={() => setConfirming(true)}>
         Block
       </Button>
     );
@@ -153,29 +153,29 @@ export function BlockButton({
 
   return (
     <YStack
-      gap="$2"
-      padding="$2"
-      borderColor="$border"
+      gap="2"
+      padding="2"
+      borderColor="border"
       borderWidth={1}
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
+      borderRadius="4"
+      backgroundColor="surfaceMuted"
     >
-      <Text color="$foreground">
+      <Text color="foreground">
         Block {displayName}? You won’t see each other’s profiles or comments. Their ice reports stay
         on the map.
       </Text>
-      {error ? <Text color="$danger">{error}</Text> : null}
-      <XStack gap="$2">
+      {error ? <Text color="danger">{error}</Text> : null}
+      <XStack gap="2">
         <Button
-          size="$2"
-          backgroundColor="$danger"
-          color="$dangerForeground"
+          size="sm"
+          backgroundColor="danger"
+          color="dangerForeground"
           disabled={pending}
           onPress={confirm}
         >
           Block
         </Button>
-        <Button size="$2" chromeless onPress={() => setConfirming(false)}>
+        <Button size="sm" variant="quiet" onPress={() => setConfirming(false)}>
           Cancel
         </Button>
       </XStack>

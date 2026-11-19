@@ -19,12 +19,12 @@ export function RecommendedCard({
 }) {
   return (
     <YStack
-      gap="$2"
-      padding="$2"
+      gap="2"
+      padding="2"
       borderWidth={2}
-      borderColor="$primary"
-      borderRadius="$4"
-      backgroundColor="$surface"
+      borderColor="primary"
+      borderRadius="4"
+      backgroundColor="surface"
     >
       {cards.map((data) => (
         <FeedCard key={data.reportId} data={data} now={now} onOpen={() => onOpen(data.reportId)} />

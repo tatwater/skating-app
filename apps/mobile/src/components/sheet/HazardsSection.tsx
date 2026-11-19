@@ -147,7 +147,7 @@ export function HazardsSection({
     >
       {body ? (
         <Button
-          size="$3"
+          size="md"
           alignSelf="flex-start"
           onPress={() =>
             router.navigate({
@@ -176,7 +176,7 @@ export function HazardsSection({
         />
       ) : null}
       {offered.length > 0 ? (
-        <YStack gap="$2.5">
+        <YStack gap="2-5">
           <SubLabel>
             {passed.length > 0 ? 'You skated past these' : 'Did you see any of these?'}
           </SubLabel>
@@ -184,11 +184,11 @@ export function HazardsSection({
             const verdict = sheet.scalars.passedVerdicts[hazard.id];
             const crossing = isPassageMarker(hazard.type);
             return (
-              <YStack key={hazard.id} gap="$1.5">
-                <Text color="$foreground" fontSize={13} fontWeight="600">
+              <YStack key={hazard.id} gap="1-5">
+                <Text color="foreground" fontSize={13} fontWeight="600">
                   {hazardTypeLabel(hazard.type)}
                   {p ? (
-                    <Text color="$foregroundMuted" fontSize={12} fontWeight="400">
+                    <Text color="foregroundMuted" fontSize={12} fontWeight="400">
                       {'  '}
                       {p.how === 'entered'
                         ? 'you were in it'

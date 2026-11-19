@@ -142,9 +142,9 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
       <Timeline model={model} onChooseEnd={gps ? undefined : choose} />
       <SubLabel>End</SubLabel>
       {gps ? (
-        <Text color="$foreground" fontSize={14}>
+        <Text color="foreground" fontSize={14}>
           {formatSkateTime(chosen.ms)}
-          <Text color="$foregroundMuted" fontSize={12}>
+          <Text color="foregroundMuted" fontSize={12}>
             {'  '}from your track
           </Text>
         </Text>
@@ -154,7 +154,7 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
           the ice — start a new one.
         </SheetHint>
       ) : (
-        <YStack gap="$2">
+        <YStack gap="2">
           {fromPhotos && photosPostable ? (
             <XStack gap={6} flexWrap="wrap">
               <SheetChip
@@ -264,9 +264,9 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
     return (
       <>
         <SubLabel>Started</SubLabel>
-        <Text color="$foreground" fontSize={14}>
+        <Text color="foreground" fontSize={14}>
           {formatSkateTime(start)}
-          <Text color="$foregroundMuted" fontSize={12}>
+          <Text color="foregroundMuted" fontSize={12}>
             {'  '}from your track · {duration ?? ''} on the ice
           </Text>
         </Text>
@@ -274,7 +274,7 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
     );
   }
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <SubLabel>Started · how long</SubLabel>
       <XStack gap={6} flexWrap="wrap">
         <SheetChip
@@ -297,11 +297,11 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
         />
       </XStack>
       {mode === 'start' ? (
-        <XStack gap="$2" alignItems="center">
-          <Text color="$foreground" flex={1} fontSize={13}>
+        <XStack gap="2" alignItems="center">
+          <Text color="foreground" flex={1} fontSize={13}>
             {start !== undefined ? formatSkateTime(start) : 'Not set'}
           </Text>
-          <Button size="$2" onPress={() => setPicker('date')}>
+          <Button size="sm" onPress={() => setPicker('date')}>
             {start !== undefined ? 'Change' : 'Set'}
           </Button>
         </XStack>
@@ -339,7 +339,7 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
         />
       ) : null}
       {error ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {error}
         </Text>
       ) : mode !== 'none' && !end ? (

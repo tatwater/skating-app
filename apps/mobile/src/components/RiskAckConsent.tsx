@@ -15,9 +15,9 @@ import { RISK_ACK_COPY } from '../lib/riskAck';
  */
 export function RiskAckConsent({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <XStack
-        gap="$3"
+        gap="3"
         alignItems="flex-start"
         onPress={onToggle}
         accessible
@@ -27,23 +27,23 @@ export function RiskAckConsent({ checked, onToggle }: { checked: boolean; onTogg
         accessibilityHint="Double tap to toggle acceptance"
       >
         <Text
-          color={checked ? '$primary' : '$foregroundMuted'}
-          fontSize="$6"
+          color={checked ? 'primary' : 'foregroundMuted'}
+          fontSize="6"
           accessibilityElementsHidden
           importantForAccessibility="no"
         >
           {checked ? '☑' : '☐'}
         </Text>
-        <Paragraph flex={1} color="$foregroundMuted">
+        <Paragraph flex={1} color="foregroundMuted">
           {RISK_ACK_COPY}
         </Paragraph>
       </XStack>
 
-      <XStack gap="$4">
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.privacy)}>
+      <XStack gap="4">
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.privacy)}>
           Privacy notice
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.terms)}>
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.terms)}>
           Terms (interim)
         </Anchor>
       </XStack>

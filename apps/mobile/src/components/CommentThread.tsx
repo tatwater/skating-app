@@ -62,19 +62,19 @@ function CommentBox({
   const valid = isValidCommentBody(body.trim());
 
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <TextArea
         value={body}
         onChangeText={setBody}
         maxLength={COMMENT_BODY_MAX_LENGTH}
         placeholder={placeholder}
-        borderColor="$border"
+        borderColor="border"
       />
-      <XStack gap="$2">
+      <XStack gap="2">
         <Button
-          size="$2"
-          backgroundColor="$primary"
-          color="$primaryForeground"
+          size="sm"
+          backgroundColor="primary"
+          color="primaryForeground"
           disabled={!valid || busy}
           onPress={async () => {
             setBusy(true);
@@ -89,7 +89,7 @@ function CommentBox({
           {submitLabel}
         </Button>
         {onCancel ? (
-          <Button size="$2" chromeless onPress={onCancel}>
+          <Button size="sm" variant="quiet" onPress={onCancel}>
             Cancel
           </Button>
         ) : null}
@@ -119,25 +119,25 @@ function CommentNode({
   const [editing, setEditing] = useState(false);
 
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       {node.comment === null ? (
-        <Text color="$foregroundMuted" fontStyle="italic">
+        <Text color="foregroundMuted" fontStyle="italic">
           [comment hidden]
         </Text>
       ) : (
-        <XStack gap="$2">
+        <XStack gap="2">
           <TrustAvatar
             displayName={node.comment.author?.displayName ?? 'Unknown'}
             imageUrl={node.comment.author?.profileImageUrl}
             trustClass={node.comment.author?.trustClass}
             size={28}
           />
-          <YStack flex={1} gap="$1">
-            <XStack gap="$2" alignItems="baseline">
-              <Text color="$foreground" fontWeight="600">
+          <YStack flex={1} gap="1">
+            <XStack gap="2" alignItems="baseline">
+              <Text color="foreground" fontWeight="600">
                 {node.comment.author?.displayName ?? 'Unknown'}
               </Text>
-              <Text color="$foregroundMuted" fontSize="$1">
+              <Text color="foregroundMuted" fontSize="1">
                 {formatSkateTime(node.comment.createdAt)}
                 {node.comment.editedAt ? ' · edited' : ''}
               </Text>
@@ -154,24 +154,24 @@ function CommentNode({
                 }}
               />
             ) : node.comment.redacted ? (
-              <Paragraph color="$foregroundMuted" fontStyle="italic">
+              <Paragraph color="foregroundMuted" fontStyle="italic">
                 {REDACTED_COMMENT_NOTICE}
               </Paragraph>
             ) : (
-              <Paragraph color="$foreground">{node.comment.body}</Paragraph>
+              <Paragraph color="foreground">{node.comment.body}</Paragraph>
             )}
-            <XStack gap="$1" flexWrap="wrap" alignItems="center">
+            <XStack gap="1" flexWrap="wrap" alignItems="center">
               {canComment && depth === 0 ? (
-                <Button size="$2" chromeless onPress={() => setReplying((r) => !r)}>
+                <Button size="sm" variant="quiet" onPress={() => setReplying((r) => !r)}>
                   Reply
                 </Button>
               ) : null}
               {node.comment.isOwn ? (
                 <>
-                  <Button size="$2" chromeless onPress={() => setEditing((e) => !e)}>
+                  <Button size="sm" variant="quiet" onPress={() => setEditing((e) => !e)}>
                     Edit
                   </Button>
-                  <Button size="$2" chromeless onPress={() => onRemove(node.id)}>
+                  <Button size="sm" variant="quiet" onPress={() => onRemove(node.id)}>
                     Delete
                   </Button>
                 </>
@@ -183,7 +183,7 @@ function CommentNode({
       )}
 
       {replying ? (
-        <YStack paddingLeft="$6">
+        <YStack paddingLeft="6">
           <CommentBox
             submitLabel="Reply"
             placeholder="Write a reply…"
@@ -197,7 +197,7 @@ function CommentNode({
       ) : null}
 
       {node.replies.length > 0 ? (
-        <YStack gap="$3" paddingLeft="$3" borderLeftWidth={1} borderColor="$border">
+        <YStack gap="3" paddingLeft="3" borderLeftWidth={1} borderColor="border">
           {node.replies.map((reply) => (
             <CommentNode
               key={reply.id}
@@ -237,7 +237,7 @@ export function CommentThread({
   renderActions?: (node: CommentNodeData) => ReactNode;
 }) {
   return (
-    <YStack gap="$4">
+    <YStack gap="4">
       {canComment ? (
         <CommentBox
           submitLabel="Comment"
@@ -246,7 +246,7 @@ export function CommentThread({
         />
       ) : null}
       {nodes.length === 0 ? (
-        <Text color="$foregroundMuted">No comments yet.</Text>
+        <Text color="foregroundMuted">No comments yet.</Text>
       ) : (
         nodes.map((node) => (
           <CommentNode
@@ -281,9 +281,9 @@ export function Comments({ reportId }: { reportId: string }) {
     me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now()) && !isLeaving(me);
 
   return (
-    <YStack gap="$3">
-      <Separator borderColor="$border" />
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="3">
+      <Separator borderColor="border" />
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Comments
       </Text>
       <CommentThread

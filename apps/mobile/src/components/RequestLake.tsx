@@ -65,24 +65,22 @@ export function RequestButtons({
   const pendingKind = openKinds[0];
 
   return (
-    <YStack gap="$2" testID="request-lake">
+    <YStack gap="2" testID="request-lake">
       {pendingKind ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           You asked — {requestKindLabel(pendingKind).toLowerCase()} — and it’s with the moderators.
         </Paragraph>
       ) : outcome ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           {outcome}
         </Paragraph>
       ) : null}
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap="2" flexWrap="wrap">
         {kinds.map((kind) => (
           <Button
             key={kind}
-            size="$3"
-            variant="outlined"
-            chromeless={kind === 'takedown'}
-            // A bay ask is per bay, not per lake (the server's rule): a second bay is a second ask.
+            size="md"
+            variant={kind === 'takedown' ? 'quiet' : 'outlined'}
             disabled={openKinds.includes(kind) && kind !== 'name_bay'}
             onPress={() => setAsking(kind)}
           >
@@ -129,14 +127,14 @@ function RequestSheet({
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <YStack flex={1} justifyContent="flex-end" backgroundColor="rgba(0,0,0,0.35)">
         <YStack
-          backgroundColor="$surface"
-          borderTopLeftRadius="$6"
-          borderTopRightRadius="$6"
-          padding="$4"
-          gap="$3"
+          backgroundColor="surface"
+          borderTopLeftRadius="6"
+          borderTopRightRadius="6"
+          padding="4"
+          gap="3"
         >
-          <H4 color="$foreground">{prompt.title}</H4>
-          <Paragraph color="$foregroundMuted" fontSize={13}>
+          <H4 color="foreground">{prompt.title}</H4>
+          <Paragraph color="foregroundMuted" fontSize={13}>
             {prompt.description}
           </Paragraph>
           {/* A bay ask names the bay (D201): the name is the question a moderator answers. */}
@@ -158,17 +156,17 @@ function RequestSheet({
             numberOfLines={3}
           />
           {error ? (
-            <Text color="$danger" fontSize={12}>
+            <Text color="danger" fontSize={12}>
               {error}
             </Text>
           ) : null}
-          <XStack gap="$2">
+          <XStack gap="2">
             <Button
               flex={1}
-              backgroundColor="$primary"
-              color="$primaryForeground"
-              disabled={busy || needsName}
+              backgroundColor="primary"
+              color="primaryForeground"
               opacity={needsName ? 0.6 : 1}
+              disabled={busy || needsName}
               onPress={async () => {
                 setBusy(true);
                 setError(null);
@@ -184,7 +182,7 @@ function RequestSheet({
             >
               {busy ? 'Sending…' : 'Send to the moderators'}
             </Button>
-            <Button chromeless onPress={onClose} disabled={busy}>
+            <Button variant="quiet" onPress={onClose} disabled={busy}>
               Cancel
             </Button>
           </XStack>

@@ -22,9 +22,9 @@ export function ReturnToRegion({ visible, onReturn }: { visible: boolean; onRetu
       bottom={24}
       alignSelf="center"
       zIndex={30}
-      size="$3"
-      backgroundColor="$surface"
-      borderColor="$border"
+      size="md"
+      backgroundColor="surface"
+      borderColor="border"
       borderWidth={1}
       onPress={onReturn}
       accessibilityLabel="Back to the Northeast"

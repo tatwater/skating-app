@@ -243,7 +243,7 @@ function SheetBody({
   // user's included: their queue is their own unsent work and this is the only screen that reaches
   // it (D62 amendment; the queue stays even when posting has closed).
   const queueBadges = (
-    <XStack gap="$2">
+    <XStack gap="2">
       <CountBadge label="Drafts" count={held} onPress={() => router.navigate('/drafts')} />
       <CountBadge
         label="Waiting"
@@ -254,9 +254,9 @@ function SheetBody({
     </XStack>
   );
   const header = (
-    <XStack alignItems="center" gap="$2" height={44} paddingHorizontal={14}>
+    <XStack alignItems="center" gap="2" height={44} paddingHorizontal={14}>
       <Text
-        color="$foreground"
+        color="foreground"
         fontSize={14}
         fontWeight="600"
         letterSpacing={1.4}
@@ -271,8 +271,8 @@ function SheetBody({
 
   if (minor) {
     return (
-      <YStack padding="$4">
-        <Text color="$foregroundMuted" fontSize={14}>
+      <YStack padding="4">
+        <Text color="foregroundMuted" fontSize={14}>
           Reports are shared publicly with the community, so posting opens when you turn 18. You can
           keep reading reports in the meantime.
         </Text>
@@ -281,7 +281,7 @@ function SheetBody({
   }
   if (leaving && !editing) {
     return (
-      <YStack gap="$3">
+      <YStack gap="3">
         {header}
         <YStack paddingHorizontal={14}>
           <LeavingNotice />
@@ -318,16 +318,16 @@ function SheetBody({
         <YStack onLayout={(e) => setWordsHeight(e.nativeEvent.layout.height + 44 + 34)}>
           {!editing && offline ? (
             <XStack
-              gap="$2"
+              gap="2"
               alignItems="center"
               paddingHorizontal={14}
               paddingVertical={6}
               borderBottomWidth={1}
-              borderBottomColor="$border"
-              backgroundColor="$surface"
+              borderBottomColor="border"
+              backgroundColor="surface"
             >
               <StatusSquare state="needed" />
-              <Text color="$foregroundMuted" fontSize={11.5} flex={1}>
+              <Text color="foregroundMuted" fontSize={11.5} flex={1}>
                 No signal — a post waits on your phone and sends on its own when you're back in
                 range.
               </Text>
@@ -335,15 +335,15 @@ function SheetBody({
           ) : null}
           {/* The words: the community's subject-line habit, then the story (D186). The Post's, not a lake's. */}
           <YStack
-            gap="$1"
+            gap="1"
             margin={12}
             marginBottom={0}
             padding={12}
             paddingBottom={8}
-            borderRadius="$xs"
+            borderRadius="xs"
             borderWidth={1}
-            borderColor="$border"
-            backgroundColor="$surface"
+            borderColor="border"
+            backgroundColor="surface"
           >
             <Input
               placeholder="Title — Crystal Lake, Enfield 12/6"
@@ -387,12 +387,12 @@ function SheetBody({
         />
 
         {notice ? (
-          <Text color="$warning" fontSize={13} paddingHorizontal={14} paddingTop={12}>
+          <Text color="warning" fontSize={13} paddingHorizontal={14} paddingTop={12}>
             {notice}
           </Text>
         ) : null}
         {message ? (
-          <Text color="$danger" fontSize={13} paddingHorizontal={14} paddingTop={12}>
+          <Text color="danger" fontSize={13} paddingHorizontal={14} paddingTop={12}>
             {message}
           </Text>
         ) : null}
@@ -401,17 +401,17 @@ function SheetBody({
       {/* The action bar, above the tab bar: the active Report's count, then the two buttons. */}
       <XStack
         alignItems="center"
-        gap="$2"
+        gap="2"
         paddingHorizontal={12}
         paddingVertical={8}
         borderTopWidth={1}
-        borderTopColor="$border"
-        backgroundColor="$surface"
+        borderTopColor="border"
+        backgroundColor="surface"
       >
         <YStack width={64}>
           <Text
-            color="$foregroundMuted"
-            fontFamily="$mono"
+            color="foregroundMuted"
+            fontFamily="mono"
             fontSize={9.5}
             letterSpacing={1}
             textTransform="uppercase"
@@ -420,7 +420,7 @@ function SheetBody({
             {ordered.length > 1 ? `${number} ` : ''}
             {(active.bodyName ?? 'lake').split(' ')[0]}
           </Text>
-          <Text color="$foreground" fontFamily="$mono" fontSize={12} fontWeight="700">
+          <Text color="foreground" fontFamily="mono" fontSize={12} fontWeight="700">
             {filled} / {SHEET_SECTION_COUNT}
           </Text>
         </YStack>
@@ -500,15 +500,15 @@ function CountBadge({
       alignItems="center"
       gap={6}
       borderWidth={1}
-      borderRadius="$xs"
-      borderColor={live ? '$primary' : '$border'}
+      borderRadius="xs"
+      borderColor={live ? 'primary' : 'border'}
+      opacity="press:0.7"
       onPress={onPress}
-      pressStyle={{ opacity: 0.7 }}
       accessibilityRole="button"
       accessibilityLabel={count > 0 ? `${label}, ${count}` : label}
     >
       <Text
-        color={live ? '$primary' : '$foregroundMuted'}
+        color={live ? 'primary' : 'foregroundMuted'}
         fontSize={11}
         fontWeight="700"
         letterSpacing={0.8}
@@ -517,7 +517,7 @@ function CountBadge({
         {label}
       </Text>
       {count > 0 ? (
-        <Text color="$foreground" fontFamily="$mono" fontSize={11} fontWeight="600">
+        <Text color="foreground" fontFamily="mono" fontSize={11} fontWeight="600">
           {count}
         </Text>
       ) : null}
@@ -548,8 +548,8 @@ function ReportTabs({
       <XStack
         height={34}
         borderBottomWidth={1}
-        borderBottomColor="$border"
-        backgroundColor="$surface"
+        borderBottomColor="border"
+        backgroundColor="surface"
         minWidth={Dimensions.get('window').width}
       >
         <Tab label="✎ Post" onPress={onPost} />
@@ -587,26 +587,26 @@ function Tab({
       gap={4}
       paddingHorizontal={12}
       borderRightWidth={1}
-      borderRightColor="$border"
+      borderRightColor="border"
       borderBottomWidth={2}
-      borderBottomColor={on ? '$primary' : 'transparent'}
+      borderBottomColor={`${on ? 'primary' : 'transparent'}`}
       marginBottom={-1}
-      backgroundColor={on ? '$background' : 'transparent'}
+      backgroundColor={on ? 'background' : 'transparent'}
+      opacity="press:0.7"
       onPress={onPress}
-      pressStyle={{ opacity: 0.7 }}
       accessibilityRole="tab"
       accessibilityState={{ selected: on }}
       accessibilityLabel={accessibilityLabel ?? label}
     >
       <Text
-        color={on ? '$foreground' : '$foregroundMuted'}
+        color={on ? 'foreground' : 'foregroundMuted'}
         fontSize={12}
         fontWeight={on ? '600' : '400'}
       >
         {label}
       </Text>
       {needed ? (
-        <Text color="$warning" fontSize={12} accessibilityElementsHidden>
+        <Text color="warning" fontSize={12} accessibilityElementsHidden>
           ·
         </Text>
       ) : null}
@@ -633,19 +633,18 @@ function ActionButton({
       height={38}
       alignItems="center"
       justifyContent="center"
-      borderRadius="$xs"
+      borderRadius="xs"
       borderWidth={1}
-      borderColor={primary ? '$foreground' : '$borderStrong'}
-      backgroundColor={primary ? '$foreground' : 'transparent'}
-      opacity={disabled ? 0.5 : 1}
+      borderColor={primary ? 'foreground' : 'borderStrong'}
+      backgroundColor={primary ? 'foreground' : 'transparent'}
+      opacity={`${disabled ? 0.5 : 1} press:0.7`}
       onPress={disabled ? undefined : onPress}
-      pressStyle={{ opacity: 0.7 }}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       accessibilityLabel={label}
     >
       <Text
-        color={primary ? '$background' : '$foreground'}
+        color={primary ? 'background' : 'foreground'}
         fontSize={13}
         fontWeight="700"
         letterSpacing={1}
@@ -690,7 +689,7 @@ function ReportHeader({
       ) : null}
       <YStack flex={1} gap={2}>
         <Text
-          color="$foreground"
+          color="foreground"
           fontSize={16}
           fontWeight="600"
           onPress={editing ? undefined : onPickBody}
@@ -700,7 +699,7 @@ function ReportHeader({
           {editing ? '' : '  ›'}
         </Text>
         {name === undefined && report.coord ? (
-          <Text color="$foregroundMuted" fontSize={11}>
+          <Text color="foregroundMuted" fontSize={11}>
             Matched from your location when it posts — or pick it by name.
           </Text>
         ) : (
@@ -710,7 +709,7 @@ function ReportHeader({
                 key={k}
                 width={12}
                 height={3}
-                backgroundColor={k < filled ? '$foreground' : '$surfaceMuted'}
+                backgroundColor={k < filled ? 'foreground' : 'surfaceMuted'}
               />
             ))}
           </XStack>
@@ -722,7 +721,7 @@ function ReportHeader({
       </Eyebrow>
       {post.reports.length > 1 && !editing ? (
         <Text
-          color="$foregroundMuted"
+          color="foregroundMuted"
           fontSize={12}
           onPress={() => updateSheet((p) => removeReport(p, reportId))}
           accessibilityRole="button"

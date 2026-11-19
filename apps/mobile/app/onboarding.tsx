@@ -81,13 +81,13 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
-        <YStack gap="$3" backgroundColor="$background">
-          <H1 color="$foreground">Finish your profile</H1>
-          <Paragraph color="$foregroundMuted">
+        <YStack gap="3" backgroundColor="background">
+          <H1 color="foreground">Finish your profile</H1>
+          <Paragraph color="foregroundMuted">
             A few details before you start — this is how other skaters will see you.
           </Paragraph>
 
-          <YStack gap="$1">
+          <YStack gap="1">
             <Input
               value={displayName}
               onChangeText={setDisplayName}
@@ -96,7 +96,7 @@ export default function OnboardingScreen() {
             />
           </YStack>
 
-          <YStack gap="$1">
+          <YStack gap="1">
             <Input
               value={username}
               onChangeText={setUsername}
@@ -105,13 +105,13 @@ export default function OnboardingScreen() {
               autoCorrect={false}
             />
             {usernameTouched && !usernameOk ? (
-              <Text color="$danger">
+              <Text color="danger">
                 3–30 characters: letters, numbers, or underscores (no leading or trailing _).
               </Text>
             ) : null}
           </YStack>
 
-          <YStack gap="$1">
+          <YStack gap="1">
             <Input
               value={dob}
               onChangeText={setDob}
@@ -120,19 +120,19 @@ export default function OnboardingScreen() {
               keyboardType="numbers-and-punctuation"
             />
             {dobTouched && dobMs === null ? (
-              <Text color="$danger">Enter a valid date as YYYY-MM-DD.</Text>
+              <Text color="danger">Enter a valid date as YYYY-MM-DD.</Text>
             ) : dobTouched && !oldEnough ? (
-              <Text color="$danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Gli.</Text>
+              <Text color="danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Gli.</Text>
             ) : null}
           </YStack>
 
           <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />
 
-          {error ? <Text color="$danger">{error}</Text> : null}
+          {error ? <Text color="danger">{error}</Text> : null}
 
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={!canSubmit}
             onPress={onSubmit}
           >

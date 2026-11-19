@@ -24,53 +24,53 @@ export function BodyResultCard({
   const theme = useTheme();
   return (
     <YStack
-      gap="$2"
-      padding="$3"
+      gap="2"
+      padding="3"
       borderWidth={1}
       borderStyle="dashed"
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surface"
-      pressStyle={{ opacity: 0.7 }}
+      borderColor="border"
+      borderRadius="4"
+      backgroundColor="surface"
+      opacity="press:0.7"
       onPress={() => onOpen(card.focusSubAreaId)}
     >
-      <XStack justifyContent="space-between" gap="$3" alignItems="flex-start">
+      <XStack justifyContent="space-between" gap="3" alignItems="flex-start">
         <YStack flex={1}>
-          <XStack alignItems="center" gap="$1.5">
+          <XStack alignItems="center" gap="1-5">
             {card.isFavorite ? (
               <FontAwesomeIcon icon={faStar} color={theme.primary?.val} size={12} />
             ) : null}
-            <Text color="$foreground" fontWeight="600" numberOfLines={1} flexShrink={1}>
+            <Text color="foreground" fontWeight="600" numberOfLines={1} flexShrink={1}>
               {card.locationPrimary}
             </Text>
           </XStack>
           {card.locationSecondary ? (
-            <Text color="$foregroundMuted" fontSize={13} numberOfLines={1}>
+            <Text color="foregroundMuted" fontSize={13} numberOfLines={1}>
               {card.locationSecondary}
             </Text>
           ) : null}
         </YStack>
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {card.relativeTime}
         </Text>
       </XStack>
 
-      <Text color="$foreground" fontSize={14}>
+      <Text color="foreground" fontSize={14}>
         {card.headline}
-        <Text color="$foregroundMuted">{` · ${card.asOfLabel}`}</Text>
+        <Text color="foregroundMuted">{` · ${card.asOfLabel}`}</Text>
       </Text>
       {card.alsoAtLabel ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {card.alsoAtLabel}
         </Text>
       ) : null}
       {card.caveat ? (
-        <Text color="$foregroundMuted" fontSize={12} fontStyle="italic">
+        <Text color="foregroundMuted" fontSize={12} fontStyle="italic">
           {card.caveat}
         </Text>
       ) : null}
 
-      <XStack gap="$1" flexWrap="wrap">
+      <XStack gap="1" flexWrap="wrap">
         <Badge tone="solid">Weather match</Badge>
         {card.isHikeIn ? <Badge>Hike-in</Badge> : null}
       </XStack>

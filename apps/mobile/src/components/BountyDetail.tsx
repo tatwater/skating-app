@@ -62,16 +62,16 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
   };
 
   return (
-    <YStack gap="$3">
-      <YStack gap="$1">
-        <H4 color="$foreground">Bounty{detail.waterBody ? ` · ${detail.waterBody.name}` : ''}</H4>
-        <Text color="$foregroundMuted">
+    <YStack gap="3">
+      <YStack gap="1">
+        <H4 color="foreground">Bounty{detail.waterBody ? ` · ${detail.waterBody.name}` : ''}</H4>
+        <Text color="foregroundMuted">
           {STATUS_LABEL[detail.status] ?? detail.status}
           {isOpen ? ` · ${expiryLabel(detail.expiresAt, now)}` : ''}
         </Text>
       </YStack>
 
-      <XStack gap="$2" alignItems="center">
+      <XStack gap="2" alignItems="center">
         <TrustAvatar
           displayName={detail.requester.displayName}
           trustClass={detail.requester.trustClass}
@@ -83,9 +83,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
             checked explicitly. */}
         <Text
           flex={1}
-          color={
-            detail.requester.username && !detail.requester.deleted ? '$primary' : '$foreground'
-          }
+          color={detail.requester.username && !detail.requester.deleted ? 'primary' : 'foreground'}
           onPress={
             detail.requester.username && !detail.requester.deleted
               ? () =>
@@ -97,14 +95,14 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           }
         >
           {detail.requester.displayName}
-          <Text color="$foregroundMuted"> wants fresh eyes here</Text>
+          <Text color="foregroundMuted"> wants fresh eyes here</Text>
         </Text>
         <Badge tone="solid">{detail.rewardPoints} pts</Badge>
       </XStack>
 
       {detail.waterBody ? (
         <Text
-          color="$primary"
+          color="primary"
           onPress={() =>
             router.navigate({
               pathname: '/water/[id]',
@@ -117,26 +115,26 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
         </Text>
       ) : null}
 
-      <Separator borderColor="$border" />
+      <Separator borderColor="border" />
 
       <Section label="Candidate reports">
         {detail.fulfillingReports.length === 0 ? (
-          <Paragraph color="$foregroundMuted">
+          <Paragraph color="foregroundMuted">
             No reports yet. Recent skaters have been notified.
           </Paragraph>
         ) : (
-          <YStack gap="$2">
+          <YStack gap="2">
             {detail.fulfillingReports.map((report) => (
               <YStack
                 key={report._id}
-                gap="$2"
-                padding="$2.5"
+                gap="2"
+                padding="2-5"
                 borderWidth={1}
-                borderColor="$border"
-                borderRadius="$4"
-                backgroundColor="$surface"
+                borderColor="border"
+                borderRadius="4"
+                backgroundColor="surface"
               >
-                <XStack gap="$2" alignItems="center">
+                <XStack gap="2" alignItems="center">
                   <TrustAvatar
                     displayName={report.authorName}
                     trustClass={report.authorTrustClass}
@@ -144,7 +142,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
                   />
                   <Text
                     flex={1}
-                    color="$foreground"
+                    color="foreground"
                     numberOfLines={1}
                     onPress={() =>
                       router.navigate({ pathname: '/report/[id]', params: { id: report._id } })
@@ -173,13 +171,13 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
 
       {detail.isRequester && isOpen ? (
         <>
-          <Separator borderColor="$border" />
-          <YStack gap="$1" alignItems="flex-start">
-            <Button size="$4" chromeless onPress={onCancel} disabled={canceling}>
+          <Separator borderColor="border" />
+          <YStack gap="1" alignItems="flex-start">
+            <Button size="lg" variant="quiet" onPress={onCancel} disabled={canceling}>
               {canceling ? 'Canceling…' : 'Cancel bounty'}
             </Button>
             {error ? (
-              <Text color="$danger" fontSize={12} accessibilityRole="alert">
+              <Text color="danger" fontSize={12} accessibilityRole="alert">
                 {error}
               </Text>
             ) : null}

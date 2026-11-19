@@ -1,41 +1,28 @@
 # Tamagui 3 migration
 
-Keep Expo SDK 58 and the app's existing design tokens and themes. This migration changes the
-Tamagui API and compiler integration, not the palette or spacing scale. Follow the
-[v3 guide](https://tamagui.dev/docs/guides/how-to-upgrade) and keep Config v5 for the first pass.
+The mobile app moves to Tamagui `3.3.3` while keeping Expo SDK 58, Config v5, and the app's
+palette and spacing tokens. The [v3 guide](https://tamagui.dev/docs/guides/how-to-upgrade)
+describes the new flat style syntax. The app uses Tamagui's runtime styles without the legacy
+Babel plugin; a Metro compiler integration is not required for this migration.
 
-## What the trial found
+## Conversion
 
-- The Tamagui `3.3.3` flat-values codemod identified 1,044 conversion sites under `app` and `src`.
-  It classified 1,027 as clean, seven as unverified hosts, and ten as requiring manual review.
-  These classifications are not proof that the resulting UI is correct.
-- Applying the codemod in isolation with Tamagui 3 and Babel 7 still left 182 type errors across
-  54 files. The remaining work includes shared fixes for button variants, size props, and theme
-  colors; the flat-values conversion alone is not enough.
-- Tamagui 3 no longer ships `@tamagui/babel-plugin`. Remove the legacy plugin rather than mixing
-  compiler versions; use the runtime path first, and evaluate the optional Metro integration
-  separately.
-- Babel `8.1.2` installed in an isolated trial, but pnpm reported unmet Babel 7 peer requirements
-  from Expo's transform stack even after removing `@tamagui/babel-plugin`. Keep Babel 7 while
-  migrating on SDK 58. Don't bypass the peer requirements to force Babel 8 into this change.
+The `3.3.3` codemod converted 1,034 style sites using v2 pixel semantics. The remaining work
+was done manually: dynamic theme values, the conditional press style on notification rows,
+named control sizes, and quiet button variants. Hazard actions retain their distinct 64 dp
+size. The app keeps the Expo 58 Babel 7 stack; the Babel 8 trial failed pnpm peer checks even
+after removing `@tamagui/babel-plugin`.
 
-## Implementation and review
+## Android preview checklist
 
-1. Capture the current Android preview in light and dark. Include sign-in, the map and its sheet,
-   report editing, notifications, and the theme picker.
-2. From `apps/mobile`, run the codemod dry-run and review its report before applying it:
+Compare a pre-upgrade preview and the migration preview on the same device in light and dark:
 
-   ```sh
-   pnpm dlx @tamagui/codemod-flat-values@3.3.3 \
-     --source-semantics v2-pixels --report /tmp/tamagui-flat-values.md ./app ./src
-   ```
+- Sign-in: button sizes, keyboard, placeholder and caret colors, and focus.
+- Map and lake sheet: spacing, close and back buttons, scrolling, and press feedback.
+- Report and hazard editing: chip outlines, selected states, and large hazard action targets.
+- Notifications: unread marker, pressed background, and navigation on actionable rows only.
+- Theme picker: compact touch targets and immediate light/dark updates, including inputs that
+  haven't changed value.
 
-3. Keep the app's custom token values. Convert the manual sites, including the style spread in
-   `app/notifications.tsx`. Check control sizes, focus and pressed states, and animation defaults
-   against the baseline; type-checking alone can't establish visual parity.
-4. Validate the frozen install, peer checks, Expo dependency check, mobile types and tests, and
-   Android and iOS bundle exports. Then build a fresh Android preview and repeat the device
-   checks. Don't publish this change over the air until native compatibility is established.
-
-The application dependencies and compiler settings remain unchanged until the conversion and
-validation are complete.
+Bundle exports do not validate the native UI. Don't publish the migration over the air before
+the Android preview is checked.

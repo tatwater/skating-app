@@ -50,7 +50,7 @@ export function ModeratorActions({
 
   if (!open) {
     return (
-      <Button size="$2" chromeless onPress={() => setOpen(true)}>
+      <Button size="sm" variant="quiet" onPress={() => setOpen(true)}>
         {label}
       </Button>
     );
@@ -65,34 +65,34 @@ export function ModeratorActions({
 
   return (
     <YStack
-      gap="$2"
-      padding="$2"
-      borderColor="$border"
+      gap="2"
+      padding="2"
+      borderColor="border"
       borderWidth={1}
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
+      borderRadius="4"
+      backgroundColor="surfaceMuted"
     >
-      <Text color="$foreground">Reason (required)</Text>
+      <Text color="foreground">Reason (required)</Text>
       <TextArea
         value={reason}
         onChangeText={setReason}
         placeholder="Why is this being taken down?"
-        borderColor="$border"
+        borderColor="border"
       />
-      <XStack gap="$2">
-        <Button size="$2" disabled={!reason.trim()} onPress={() => act('hidden')}>
+      <XStack gap="2">
+        <Button size="sm" disabled={!reason.trim()} onPress={() => act('hidden')}>
           Hide
         </Button>
         <Button
-          size="$2"
-          backgroundColor="$danger"
-          color="$dangerForeground"
+          size="sm"
+          backgroundColor="danger"
+          color="dangerForeground"
           disabled={!reason.trim()}
           onPress={() => act('removed')}
         >
           Remove
         </Button>
-        <Button size="$2" chromeless onPress={() => setOpen(false)}>
+        <Button size="sm" variant="quiet" onPress={() => setOpen(false)}>
           Cancel
         </Button>
       </XStack>

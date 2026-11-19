@@ -108,10 +108,10 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
         return (
           <YStack
             key={chip.key}
-            gap="$2"
-            padding="$3"
-            borderRadius="$xs"
-            backgroundColor="$surfaceMuted"
+            gap="2"
+            padding="3"
+            borderRadius="xs"
+            backgroundColor="surfaceMuted"
           >
             <ReadingEditor
               reading={r}
@@ -120,7 +120,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
               }
               onRemove={() => dispatch({ type: 'deselect', field: 'thickness', key: chip.key })}
             />
-            <XStack gap="$2">
+            <XStack gap="2">
               <SheetChip
                 compact
                 label={r.where ? 'Where: set' : 'Where?'}
@@ -142,7 +142,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
       })}
 
       {addingKey !== null ? (
-        <YStack gap="$2" padding="$3" borderRadius="$xs" backgroundColor="$surfaceMuted">
+        <YStack gap="2" padding="3" borderRadius="xs" backgroundColor="surfaceMuted">
           <ReadingEditor
             key={addingKey}
             // The stored chip once there is one, so a `where` set beside it rides the next keystroke.
@@ -157,7 +157,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
             fresh
           />
           {adding ? (
-            <XStack gap="$2">
+            <XStack gap="2">
               <SheetChip
                 compact
                 label={adding.value.where ? 'Where: set' : 'Where?'}
@@ -178,12 +178,9 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
         </YStack>
       ) : null}
       <Button
-        size="$2"
+        size="sm"
         alignSelf="flex-start"
-        chromeless
-        // A second measurement: the one being typed settles into the list as its chip and a fresh
-        // editor opens under the next key. With nothing typed yet, `nextKey()` is the key already
-        // open, and the tap is a no-op.
+        variant="quiet"
         onPress={() => setAddingKey(nextKey())}
       >
         + A measurement
@@ -271,7 +268,7 @@ function ReadingEditor({
   };
 
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <XStack gap={6} flexWrap="wrap" alignItems="center">
         {(['single', 'range', 'poke'] as const).map((m) => (
           <SheetChip
@@ -288,7 +285,7 @@ function ReadingEditor({
           />
         ))}
         <XStack flex={1} />
-        <Button size="$2" chromeless onPress={onRemove}>
+        <Button size="sm" variant="quiet" onPress={onRemove}>
           Remove
         </Button>
       </XStack>
@@ -304,7 +301,7 @@ function ReadingEditor({
           }}
         />
       ) : mode === 'range' ? (
-        <XStack gap="$2" alignItems="center">
+        <XStack gap="2" alignItems="center">
           <Input
             flex={1}
             keyboardType="decimal-pad"
@@ -316,7 +313,7 @@ function ReadingEditor({
               build({ min: v });
             }}
           />
-          <Text color="$foregroundMuted">–</Text>
+          <Text color="foregroundMuted">–</Text>
           <Input
             flex={1}
             keyboardType="decimal-pad"
@@ -330,7 +327,7 @@ function ReadingEditor({
           />
         </XStack>
       ) : (
-        <XStack gap="$2" alignItems="center">
+        <XStack gap="2" alignItems="center">
           <Input
             flex={1}
             keyboardType="number-pad"

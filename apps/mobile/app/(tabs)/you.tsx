@@ -81,13 +81,13 @@ export default function YouScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <ScrollView>
-        <YStack flex={1} gap="$4" padding="$4" backgroundColor="$background">
+        <YStack flex={1} gap="4" padding="4" backgroundColor="background">
           <XStack alignItems="center" justifyContent="space-between">
-            <H1 color="$foreground">You</H1>
+            <H1 color="foreground">You</H1>
             {/* The inbox lives behind this bell rather than in the tab bar (D28: five tabs stand). */}
             <Button
-              chromeless
-              size="$3"
+              variant="quiet"
+              size="md"
               circular
               hitSlop={tapTargetSlop('$3')}
               accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
@@ -103,9 +103,9 @@ export default function YouScreen() {
                       width={9}
                       height={9}
                       borderRadius={5}
-                      backgroundColor="$primary"
+                      backgroundColor="primary"
                       borderWidth={1.5}
-                      borderColor="$background"
+                      borderColor="background"
                     />
                   ) : null}
                 </XStack>
@@ -123,36 +123,31 @@ export default function YouScreen() {
               asChild
             >
               <Button
-                chromeless
-                size="$3"
-                hitSlop={tapTargetSlop('$3')}
+                variant="quiet"
+                size="md"
                 paddingHorizontal={0}
                 justifyContent="flex-start"
-                color="$foreground"
+                color="foreground"
+                hitSlop={tapTargetSlop('$3')}
               >
                 {profile.displayName} · @{profile.username}
               </Button>
             </Link>
           ) : (
-            <Paragraph color="$foreground">Loading your profile…</Paragraph>
+            <Paragraph color="foreground">Loading your profile…</Paragraph>
           )}
           <ChangeEmail />
 
-          <Separator borderColor="$border" />
-          <Text
-            color="$foregroundMuted"
-            fontSize={11}
-            letterSpacing={1.5}
-            textTransform="uppercase"
-          >
+          <Separator borderColor="border" />
+          <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
             Your profile
           </Text>
           <ProfileEdit />
 
-          <Separator borderColor="$border" />
+          <Separator borderColor="border" />
           <Appearance />
 
-          <Separator borderColor="$border" />
+          <Separator borderColor="border" />
           <HomeLocation />
           <NotificationSettings />
 
@@ -162,7 +157,7 @@ export default function YouScreen() {
 
           <BlockedUsers />
 
-          <Separator borderColor="$border" />
+          <Separator borderColor="border" />
           {/* Strava push (Phase 08). Sits with the account settings because it IS an account link —
               your skates going to your Strava — not a map or safety feature. The recorded-skate list
               sits directly under it because that's where a push that didn't land is retried by hand,
@@ -175,14 +170,14 @@ export default function YouScreen() {
 
           <AccountLifecycle />
 
-          <Separator borderColor="$border" />
+          <Separator borderColor="border" />
           <Link href="/support" asChild>
             <Button>Contact support</Button>
           </Link>
           <Link href="/about" asChild>
             <Button>About &amp; licenses</Button>
           </Link>
-          <Button backgroundColor="$danger" color="$dangerForeground" onPress={onSignOut}>
+          <Button backgroundColor="danger" color="dangerForeground" onPress={onSignOut}>
             Sign out
           </Button>
         </YStack>
@@ -220,17 +215,17 @@ function HomeLocation() {
   }
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Home &amp; drive time
       </Text>
-      <Paragraph color="$foregroundMuted" fontSize={13}>
+      <Paragraph color="foregroundMuted" fontSize={13}>
         Your home anchors the drive-time filter and nearby notifications. It stays private — we
         store only the derived travel-time zones, never the coordinate.
       </Paragraph>
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap="2" flexWrap="wrap">
         <Button
-          size="$3"
+          size="md"
           hitSlop={tapTargetSlop('$3')}
           onPress={useCurrentLocation}
           disabled={status === 'locating'}
@@ -239,9 +234,9 @@ function HomeLocation() {
         </Button>
         {hasHome ? (
           <Button
-            size="$3"
+            size="md"
             hitSlop={tapTargetSlop('$3')}
-            chromeless
+            variant="quiet"
             onPress={() => void setHome({})}
           >
             Clear
@@ -249,11 +244,11 @@ function HomeLocation() {
         ) : null}
       </XStack>
       {status === 'locating' ? (
-        <Text color="$foregroundMuted" fontSize={13}>
+        <Text color="foregroundMuted" fontSize={13}>
           Locating…
         </Text>
       ) : status === 'error' ? (
-        <Text color="$danger" fontSize={13}>
+        <Text color="danger" fontSize={13}>
           Couldn't get your location.
         </Text>
       ) : null}
@@ -288,11 +283,11 @@ function Appearance() {
   const { preference, resolved, setPreference } = useThemePreference();
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Appearance
       </Text>
-      <XStack gap="$2" alignItems="center">
+      <XStack gap="2" alignItems="center">
         {THEME_PREFERENCES.map((option) => (
           <SegmentButton
             key={option}
@@ -305,7 +300,7 @@ function Appearance() {
           </SegmentButton>
         ))}
       </XStack>
-      <Paragraph color="$foregroundMuted" fontSize={11}>
+      <Paragraph color="foregroundMuted" fontSize={11}>
         {preference === 'system'
           ? `Following your device — currently ${THEME_PREFERENCE_LABELS[resolved].toLowerCase()}.`
           : APPEARANCE_NOTE[preference]}
@@ -337,16 +332,14 @@ function SegmentButton({
 }) {
   return (
     <Button
-      size="$2"
-      // 28dp rendered — below the 48dp floor, and these are `chromeless` when unselected, so
-      // there isn't even a filled shape to aim at. Grows the touch rect, not the layout.
-      hitSlop={tapTargetSlop('$2')}
+      size="sm"
       flex={flex}
-      backgroundColor={selected ? '$primary' : undefined}
-      color={selected ? '$primaryForeground' : undefined}
-      chromeless={!selected}
+      backgroundColor={selected ? 'primary' : undefined}
+      color={selected ? 'primaryForeground' : undefined}
       borderWidth={1}
-      borderColor={selected ? '$primary' : '$border'}
+      borderColor={selected ? 'primary' : 'border'}
+      hitSlop={tapTargetSlop('$2')}
+      variant={!selected ? 'quiet' : undefined}
       onPress={onPress}
       aria-label={ariaLabel}
     >
@@ -366,8 +359,8 @@ function ToggleRow({
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <XStack gap="$2" alignItems="center" justifyContent="space-between">
-      <Text flex={1} color="$foreground" fontSize={14}>
+    <XStack gap="2" alignItems="center" justifyContent="space-between">
+      <Text flex={1} color="foreground" fontSize={14}>
         {label}
       </Text>
       <SegmentButton selected={value} onPress={() => onToggle(!value)}>
@@ -388,8 +381,8 @@ function RadiusRow({
   onChange: (minutes: number) => void;
 }) {
   return (
-    <XStack gap="$2" alignItems="center">
-      <Text color="$foregroundMuted" fontSize={13}>
+    <XStack gap="2" alignItems="center">
+      <Text color="foregroundMuted" fontSize={13}>
         {label}
       </Text>
       {DRIVE_TIME_BANDS.map((m) => (
@@ -421,12 +414,12 @@ function SwitchSetting({
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         {heading}
       </Text>
       <ToggleRow label={label} value={value} onToggle={onToggle} />
-      <Paragraph color="$foregroundMuted" fontSize={11}>
+      <Paragraph color="foregroundMuted" fontSize={11}>
         {explainer}
       </Paragraph>
     </YStack>
@@ -503,8 +496,8 @@ function NotificationSettings() {
   );
 
   return (
-    <YStack gap="$3">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="3">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Notifications
       </Text>
       {NOTIFICATION_PREF_ORDER.flatMap((key) => {
@@ -549,7 +542,7 @@ function NotificationSettings() {
         return [toggle(key)];
       })}
       {profile.homeCoord === undefined ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           Set a home location above for the nearby options to take effect.
         </Text>
       ) : null}
@@ -611,8 +604,8 @@ function ChannelSettings({
   }
 
   return (
-    <YStack gap="$3" marginTop="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="3" marginTop="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Where they reach you
       </Text>
       <ToggleRow
@@ -628,13 +621,13 @@ function ChannelSettings({
         />
       ) : null}
       {device === 'denied' ? (
-        <Paragraph color="$foregroundMuted" fontSize={12}>
+        <Paragraph color="foregroundMuted" fontSize={12}>
           Notifications are turned off for Gli in your phone’s settings. Allow them there, then flip
           this on.
         </Paragraph>
       ) : null}
       {device === 'unavailable' ? (
-        <Paragraph color="$foregroundMuted" fontSize={12}>
+        <Paragraph color="foregroundMuted" fontSize={12}>
           This phone couldn’t be set up for push just now. Check your connection and try again.
         </Paragraph>
       ) : null}
@@ -643,7 +636,7 @@ function ChannelSettings({
         value={channels.email}
         onToggle={(v) => void setChannels({ email: v })}
       />
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+      <Paragraph color="foregroundMuted" fontSize={12}>
         Email is only for the daily digest, unreported skates, bounties and moderator rulings —
         never every thumb. Every email has a one-click unsubscribe.
       </Paragraph>
@@ -659,17 +652,17 @@ function BlockedUsers() {
   if (blocks === undefined || blocks.length === 0) return null;
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Blocked users
       </Text>
       {blocks.map((b) => (
-        <XStack key={b.userId} gap="$2" alignItems="center">
+        <XStack key={b.userId} gap="2" alignItems="center">
           <Avatar displayName={b.displayName} imageUrl={b.profileImageUrl} size={28} />
-          <Text flex={1} color="$foreground">
+          <Text flex={1} color="foreground">
             {b.displayName} · @{b.username}
           </Text>
-          <Button size="$2" onPress={() => unblock({ targetUserId: b.userId as Id<'profiles'> })}>
+          <Button size="sm" onPress={() => unblock({ targetUserId: b.userId as Id<'profiles'> })}>
             Unblock
           </Button>
         </XStack>

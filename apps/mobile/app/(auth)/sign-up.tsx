@@ -74,25 +74,19 @@ export default function SignUpScreen() {
   if (pendingCode) {
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <YStack
-          flex={1}
-          gap="$3"
-          padding="$4"
-          justifyContent="center"
-          backgroundColor="$background"
-        >
-          <H1 color="$foreground">Verify email</H1>
-          <Paragraph color="$foregroundMuted">Enter the code we emailed to {email}.</Paragraph>
+        <YStack flex={1} gap="3" padding="4" justifyContent="center" backgroundColor="background">
+          <H1 color="foreground">Verify email</H1>
+          <Paragraph color="foregroundMuted">Enter the code we emailed to {email}.</Paragraph>
           <Input
             value={code}
             onChangeText={setCode}
             placeholder="Verification code"
             keyboardType="number-pad"
           />
-          {error ? <Text color="$danger">{error}</Text> : null}
+          {error ? <Text color="danger">{error}</Text> : null}
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={busy || !code}
             onPress={onVerify}
           >
@@ -106,8 +100,8 @@ export default function SignUpScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
-        <YStack gap="$3" backgroundColor="$background">
-          <H1 color="$foreground">Create account</H1>
+        <YStack gap="3" backgroundColor="background">
+          <H1 color="foreground">Create account</H1>
 
           <Input
             value={email}
@@ -125,11 +119,11 @@ export default function SignUpScreen() {
             autoComplete="new-password"
           />
 
-          {error ? <Text color="$danger">{error}</Text> : null}
+          {error ? <Text color="danger">{error}</Text> : null}
 
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={!canSubmit}
             onPress={onSignUp}
           >
@@ -137,11 +131,11 @@ export default function SignUpScreen() {
           </Button>
 
           {/* A control, not a word in a sentence — see the note on sign-in's twin. */}
-          <Paragraph color="$foregroundMuted" textAlign="center">
+          <Paragraph color="foregroundMuted" textAlign="center">
             Already have an account?
           </Paragraph>
           <Link href="/sign-in" replace asChild>
-            <Button chromeless color="$primary">
+            <Button variant="quiet" color="primary">
               Sign in
             </Button>
           </Link>

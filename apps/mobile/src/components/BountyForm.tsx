@@ -58,23 +58,23 @@ export function BountyForm({
   };
 
   return (
-    <YStack gap="$3">
-      <H4 color="$foreground">Post a bounty on {bodyName}</H4>
-      <Paragraph color="$foregroundMuted">
+    <YStack gap="3">
+      <H4 color="foreground">Post a bounty on {bodyName}</H4>
+      <Paragraph color="foregroundMuted">
         A bounty asks nearby skaters to check {bodyName} and post a fresh report. When you mark a
         fulfilling report helpful, its author earns a reward.
       </Paragraph>
       {bays.length > 0 ? (
-        <YStack gap="$2">
-          <Text color="$foreground" fontWeight="600" fontSize={14}>
+        <YStack gap="2">
+          <Text color="foreground" fontWeight="600" fontSize={14}>
             Which part?
           </Text>
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             <Button
-              size="$3"
-              chromeless={subAreaId !== null}
-              backgroundColor={subAreaId === null ? '$primary' : undefined}
-              color={subAreaId === null ? '$primaryForeground' : '$foreground'}
+              size="md"
+              backgroundColor={subAreaId === null ? 'primary' : undefined}
+              color={subAreaId === null ? 'primaryForeground' : 'foreground'}
+              variant={subAreaId !== null ? 'quiet' : undefined}
               onPress={() => setSubAreaId(null)}
             >
               Anywhere
@@ -82,45 +82,45 @@ export function BountyForm({
             {bays.map((bay) => (
               <Button
                 key={bay._id}
-                size="$3"
-                chromeless={subAreaId !== bay._id}
-                backgroundColor={subAreaId === bay._id ? '$primary' : undefined}
-                color={subAreaId === bay._id ? '$primaryForeground' : '$foreground'}
+                size="md"
+                backgroundColor={subAreaId === bay._id ? 'primary' : undefined}
+                color={subAreaId === bay._id ? 'primaryForeground' : 'foreground'}
+                variant={subAreaId !== bay._id ? 'quiet' : undefined}
                 onPress={() => setSubAreaId(bay._id)}
               >
                 {bay.name}
               </Button>
             ))}
           </XStack>
-          <Text color="$foregroundMuted" fontSize={13}>
+          <Text color="foregroundMuted" fontSize={13}>
             Narrowing the ask means only a report from that part of the lake will fulfill it — and a
             recent report somewhere else won't stop you asking.
           </Text>
         </YStack>
       ) : null}
-      <YStack gap="$1">
-        <Text color="$foregroundMuted" fontSize={13}>
+      <YStack gap="1">
+        <Text color="foregroundMuted" fontSize={13}>
           • Only if the lake doesn't already have a recent report — a well-confirmed read keeps it
           covered longer, and a big thaw or freeze reopens it sooner.
         </Text>
-        <Text color="$foregroundMuted" fontSize={13}>
+        <Text color="foregroundMuted" fontSize={13}>
           • Up to {myLimit?.limit ?? '—'} open bount{myLimit?.limit === 1 ? 'y' : 'ies'} at a time
           {myLimit?.restricted ? ' (a moderator has set this for your account)' : ''}.
         </Text>
       </YStack>
       {error ? (
-        <Text color="$danger" fontSize={13} accessibilityRole="alert">
+        <Text color="danger" fontSize={13} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$4" chromeless onPress={onClose} disabled={pending}>
+      <XStack gap="2" justifyContent="flex-end">
+        <Button size="lg" variant="quiet" onPress={onClose} disabled={pending}>
           Cancel
         </Button>
         <Button
-          size="$4"
-          backgroundColor="$primary"
-          color="$primaryForeground"
+          size="lg"
+          backgroundColor="primary"
+          color="primaryForeground"
           onPress={submit}
           disabled={pending}
         >

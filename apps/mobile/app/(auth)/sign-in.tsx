@@ -149,15 +149,9 @@ export default function SignInScreen() {
   if (pendingCode) {
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <YStack
-          flex={1}
-          gap="$3"
-          padding="$4"
-          justifyContent="center"
-          backgroundColor="$background"
-        >
-          <H1 color="$foreground">Check your email</H1>
-          <Paragraph color="$foregroundMuted">Enter the code we emailed to {email}.</Paragraph>
+        <YStack flex={1} gap="3" padding="4" justifyContent="center" backgroundColor="background">
+          <H1 color="foreground">Check your email</H1>
+          <Paragraph color="foregroundMuted">Enter the code we emailed to {email}.</Paragraph>
           <Input
             value={code}
             onChangeText={setCode}
@@ -165,10 +159,10 @@ export default function SignInScreen() {
             keyboardType="number-pad"
             autoComplete="one-time-code"
           />
-          {error ? <Text color="$danger">{error}</Text> : null}
+          {error ? <Text color="danger">{error}</Text> : null}
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={busy || !code}
             onPress={onVerify}
           >
@@ -181,19 +175,19 @@ export default function SignInScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <YStack flex={1} gap="$3" padding="$4" justifyContent="center" backgroundColor="$background">
-        <H1 color="$foreground">Sign in</H1>
+      <YStack flex={1} gap="3" padding="4" justifyContent="center" backgroundColor="background">
+        <H1 color="foreground">Sign in</H1>
 
         <Button
-          backgroundColor="$primary"
-          color="$primaryForeground"
+          backgroundColor="primary"
+          color="primaryForeground"
           disabled={busy}
           onPress={onGoogle}
         >
           {busy ? 'Please wait…' : 'Continue with Google'}
         </Button>
 
-        <Paragraph color="$foregroundMuted" textAlign="center">
+        <Paragraph color="foregroundMuted" textAlign="center">
           or use your email
         </Paragraph>
 
@@ -206,7 +200,7 @@ export default function SignInScreen() {
           autoComplete="email"
         />
 
-        {error ? <Text color="$danger">{error}</Text> : null}
+        {error ? <Text color="danger">{error}</Text> : null}
 
         <Button disabled={!canSubmit} onPress={onSendCode}>
           {busy ? 'Sending…' : 'Email me a code'}
@@ -217,11 +211,11 @@ export default function SignInScreen() {
             that you have to hit precisely, on the screen where a miss means being stuck at the door.
             `asChild` hands the navigation to the Button, which is the pattern the rest of the app
             already uses for exactly this. */}
-        <Paragraph color="$foregroundMuted" textAlign="center">
+        <Paragraph color="foregroundMuted" textAlign="center">
           New here?
         </Paragraph>
         <Link href="/sign-up" replace asChild>
-          <Button chromeless color="$primary">
+          <Button variant="quiet" color="primary">
             Create an account
           </Button>
         </Link>

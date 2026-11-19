@@ -42,47 +42,47 @@ export function SheetChip({
   const fill =
     tier === 'solid'
       ? danger
-        ? '$danger'
-        : '$foreground'
+        ? 'danger'
+        : 'foreground'
       : tier === 'extracted'
-        ? '$foregroundMuted'
+        ? 'foregroundMuted'
         : 'transparent';
   const border =
     tier === 'solid'
       ? danger
-        ? '$danger'
-        : '$foreground'
+        ? 'danger'
+        : 'foreground'
       : tier === 'extracted'
-        ? '$foregroundMuted'
+        ? 'foregroundMuted'
         : tier === 'ghost'
-          ? '$borderStrong'
+          ? 'borderStrong'
           : danger
-            ? '$danger'
-            : '$border';
+            ? 'danger'
+            : 'border';
   const color =
     tier === 'solid'
       ? danger
-        ? '$dangerForeground'
-        : '$background'
+        ? 'dangerForeground'
+        : 'background'
       : tier === 'extracted'
-        ? '$background'
+        ? 'background'
         : tier === 'ghost'
-          ? '$foregroundMuted'
+          ? 'foregroundMuted'
           : danger
-            ? '$danger'
-            : '$foreground';
+            ? 'danger'
+            : 'foreground';
   return (
     <XStack
       borderWidth={1}
       borderStyle={tier === 'ghost' ? 'dashed' : 'solid'}
       borderColor={border}
       backgroundColor={fill}
-      borderRadius="$xs"
+      borderRadius="xs"
       height={compact ? 26 : 32}
       paddingHorizontal={compact ? 9 : 11}
       alignItems="center"
       gap={5}
-      pressStyle={{ opacity: 0.7 }}
+      opacity="press:0.7"
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
@@ -96,7 +96,7 @@ export function SheetChip({
       }
     >
       {tier === 'ghost' ? (
-        <Text color="$foregroundMuted" fontSize={compact ? 12 : 13}>
+        <Text color="foregroundMuted" fontSize={compact ? 12 : 13}>
           +
         </Text>
       ) : null}
@@ -145,7 +145,7 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
 }) {
   const chips = (sheet.fields[field] as ChipField<unknown>).chips;
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <XStack gap={6} flexWrap="wrap">
         {options.map((option) => {
           const chip = chips.find((c) => c.key === option);

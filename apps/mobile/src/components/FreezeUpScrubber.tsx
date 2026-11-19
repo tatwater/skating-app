@@ -180,7 +180,7 @@ export function FreezeUpScrubber({
 
   if (loading) {
     return (
-      <Text color="$foregroundMuted" fontSize="$2">
+      <Text color="foregroundMuted" fontSize="2">
         Loading the freeze-up timeline…
       </Text>
     );
@@ -191,7 +191,7 @@ export function FreezeUpScrubber({
   // web component, where saying otherwise was a live bug.
   if (!timeline) {
     return error ? (
-      <Text color="$foregroundMuted" fontSize="$2">
+      <Text color="foregroundMuted" fontSize="2">
         The freeze-up archive could not be reached.
       </Text>
     ) : null;
@@ -199,7 +199,7 @@ export function FreezeUpScrubber({
 
   if (stops.length === 0) {
     return (
-      <Text color="$foregroundMuted" fontSize="$2">
+      <Text color="foregroundMuted" fontSize="2">
         No satellite passes recorded over this lake this season.
       </Text>
     );
@@ -232,7 +232,7 @@ export function FreezeUpScrubber({
     // argument. They had to move together: the X on that row has to exist even where this component
     // does not. The track's accessible name still carries the season, because a screen reader
     // reaching it has not necessarily read the heading.
-    <YStack gap="$2">
+    <YStack gap="2">
       <GestureDetector gesture={pan}>
         <XStack
           // The height is the thumb's, not the marks'. See the geometry note on the thumb: the
@@ -299,7 +299,7 @@ export function FreezeUpScrubber({
               borderRadius={THUMB_WIDTH / 2}
               backgroundColor="transparent"
               borderWidth={2}
-              borderColor="$primary"
+              borderColor="primary"
               pointerEvents="none"
             />
           ) : null}
@@ -308,11 +308,11 @@ export function FreezeUpScrubber({
 
       {/* The date is content, not furniture (D84, A06e §3.4). */}
       {caption ? (
-        <Text fontSize="$2" accessibilityLiveRegion="polite">
+        <Text fontSize="2" accessibilityLiveRegion="polite">
           <Text fontWeight="600">{caption.date}</Text>
           {/* A seam's second date at the same weight as the first — both halves are on screen. */}
           {companionCaption ? <Text fontWeight="600"> + {companionCaption.date}</Text> : null}
-          <Text color="$foregroundMuted">
+          <Text color="foregroundMuted">
             {' · '}
             {caption.source}
           </Text>
@@ -322,29 +322,29 @@ export function FreezeUpScrubber({
       {/* ⚠ Always rendered. The caveat's length varies with the cloud figure, so letting it appear
           and vanish changes the panel's height — under a thumb that is mid-drag. A control that
           resizes out from under the finger operating it is the one thing a scrubber must not do. */}
-      <Text color="$foregroundMuted" fontSize="$1" minHeight={16}>
+      <Text color="foregroundMuted" fontSize="1" minHeight={16}>
         {caption?.caveat ?? ' '}
       </Text>
 
       {companionCaption ? (
-        <Text color="$foregroundMuted" fontSize="$1">
+        <Text color="foregroundMuted" fontSize="1">
           Two passes, joined — this lake sits across a granule edge, so each half was photographed
           on its own date.
         </Text>
       ) : null}
 
       {bands.length > 1 ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           {bands.map((option) => (
             <Text
               key={option}
-              fontSize="$1"
-              paddingHorizontal="$2"
-              paddingVertical="$1"
-              borderRadius="$2"
+              fontSize="1"
+              paddingHorizontal="2"
+              paddingVertical="1"
+              borderRadius="2"
               borderWidth={1}
-              borderColor={option === band ? '$primary' : '$border'}
-              color={option === band ? '$primary' : '$foregroundMuted'}
+              borderColor={option === band ? 'primary' : 'border'}
+              color={option === band ? 'primary' : 'foregroundMuted'}
               onPress={() => onBandChange(option)}
               accessibilityRole="button"
               accessibilityState={{ selected: option === band }}
@@ -360,7 +360,7 @@ export function FreezeUpScrubber({
           argument. Rendered whether or not the toggle is: a season with one band still leaves a
           reader looking at a picture nobody has told them how to read. */}
       {frameSourceHint(band) ? (
-        <Text color="$foregroundMuted" fontSize="$1">
+        <Text color="foregroundMuted" fontSize="1">
           {frameSourceHint(band)}
         </Text>
       ) : null}
@@ -368,9 +368,9 @@ export function FreezeUpScrubber({
       {/* ⚠ **What makes the image legible, not decoration on it** — web's note carries the argument.
           Only for the band it explains. */}
       {band === 'scl' ? (
-        <XStack flexWrap="wrap" columnGap="$3" rowGap="$1">
+        <XStack flexWrap="wrap" columnGap="3" rowGap="1">
           {SCL_LEGEND.map((entry) => (
-            <XStack key={entry.color} alignItems="center" gap="$1.5">
+            <XStack key={entry.color} alignItems="center" gap="1-5">
               {/* `style`, not `backgroundColor`: these are literal hexes from the cutter's palette,
                   and a Tamagui color prop is typed to theme tokens. Casting one would be claiming
                   it is a token; it is deliberately not, because it has to equal what `gdaldem`
@@ -380,10 +380,10 @@ export function FreezeUpScrubber({
                 height={10}
                 borderRadius={2}
                 borderWidth={1}
-                borderColor="$border"
+                borderColor="border"
                 style={{ backgroundColor: entry.color }}
               />
-              <Text color="$foregroundMuted" fontSize="$1">
+              <Text color="foregroundMuted" fontSize="1">
                 {entry.label}
               </Text>
             </XStack>
@@ -392,7 +392,7 @@ export function FreezeUpScrubber({
       ) : null}
 
       {timeline.coverageInferred + timeline.coverageUnknown > 0 ? (
-        <Text color="$foregroundMuted" fontSize="$1">
+        <Text color="foregroundMuted" fontSize="1">
           {timeline.coverageInferred + timeline.coverageUnknown} of {stops.length} passes not yet
           confirmed against this lake.
         </Text>
@@ -448,7 +448,7 @@ function StopMark({
         width={2}
         height={stop.landable ? 24 : 10}
         borderRadius={1}
-        backgroundColor={stop.landable ? '$primary' : '$border'}
+        backgroundColor={stop.landable ? 'primary' : 'border'}
         opacity={stop.landable ? 0.5 : 1}
       />
     </XStack>

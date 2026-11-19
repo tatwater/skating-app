@@ -72,7 +72,7 @@ export function AccessSection({
   return (
     <Section label="Getting there">
       {target ? (
-        <XStack gap="$2" alignItems="center" flexWrap="wrap">
+        <XStack gap="2" alignItems="center" flexWrap="wrap">
           <Paragraph flexShrink={1}>
             {target.via === 'parking'
               ? `Park at ${target.parking?.name ?? 'the lot'}, then put in at ${target.putIn.name ?? 'the shore'}.`
@@ -86,7 +86,7 @@ export function AccessSection({
 
       {/* The hedge ("about" vs "at least") is decided in core: a straight-line fallback under-reports,
           so it is a floor rather than an estimate (D87). */}
-      {approach ? <Paragraph color="$foregroundMuted">{approach}</Paragraph> : null}
+      {approach ? <Paragraph color="foregroundMuted">{approach}</Paragraph> : null}
 
       {/* Rules posted on *these* access points (A06e), against the point each governs. The body's own
           rule is a separate section above and is never folded in here: a lot shut during a shop's
@@ -101,7 +101,7 @@ export function AccessSection({
       ) : null}
 
       {amenities.length > 0 ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {amenities.join(' · ')}
         </Text>
       ) : null}
@@ -123,14 +123,14 @@ export function AccessSection({
           types. */}
       {target ? (
         reporting ? (
-          <YStack gap="$1.5">
+          <YStack gap="1-5">
             {ACCESS_ALERT_REASONS.map((value) => (
               <Button
                 key={value}
-                size="$2"
-                chromeless
+                size="sm"
                 borderWidth={1}
-                borderColor="$border"
+                borderColor="border"
+                variant="quiet"
                 disabled={busy === 'new'}
                 onPress={async () => {
                   setBusy('new');
@@ -149,16 +149,16 @@ export function AccessSection({
                 <Text>{ACCESS_REASON_LABELS[value]}</Text>
               </Button>
             ))}
-            <Button size="$2" chromeless onPress={() => setReporting(false)}>
-              <Text color="$foregroundMuted">Cancel</Text>
+            <Button size="sm" variant="quiet" onPress={() => setReporting(false)}>
+              <Text color="foregroundMuted">Cancel</Text>
             </Button>
           </YStack>
         ) : (
           <Button
-            size="$2"
-            chromeless
+            size="sm"
             borderWidth={1}
-            borderColor="$border"
+            borderColor="border"
+            variant="quiet"
             onPress={() => setReporting(true)}
           >
             <Text>Report an access problem</Text>
@@ -175,26 +175,26 @@ export function AccessSection({
         return (
           <YStack
             key={alert.id}
-            gap="$1"
-            padding="$2"
+            gap="1"
+            padding="2"
             borderWidth={1}
-            borderColor="$border"
-            borderRadius="$2"
+            borderColor="border"
+            borderRadius="2"
           >
             <Text fontWeight="600">
               {ACCESS_REASON_LABELS[alert.reason as AccessReason] ?? 'Access problem'} —{' '}
               {nameFor(alert)}
               {alert.official ? ' (confirmed by a moderator)' : ''}
             </Text>
-            {alert.note ? <Paragraph color="$foregroundMuted">{alert.note}</Paragraph> : null}
+            {alert.note ? <Paragraph color="foregroundMuted">{alert.note}</Paragraph> : null}
             {votes.stillBlocked || votes.open ? (
-              <XStack gap="$2">
+              <XStack gap="2">
                 {votes.stillBlocked ? (
                   <Button
-                    size="$2"
-                    chromeless
+                    size="sm"
                     borderWidth={1}
-                    borderColor="$border"
+                    borderColor="border"
+                    variant="quiet"
                     disabled={busy === alert.id}
                     onPress={async () => {
                       setBusy(alert.id);
@@ -210,10 +210,10 @@ export function AccessSection({
                 ) : null}
                 {votes.open ? (
                   <Button
-                    size="$2"
-                    chromeless
+                    size="sm"
                     borderWidth={1}
-                    borderColor="$border"
+                    borderColor="border"
+                    variant="quiet"
                     disabled={busy === alert.id}
                     onPress={async () => {
                       setBusy(alert.id);

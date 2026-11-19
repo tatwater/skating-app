@@ -36,9 +36,9 @@ export function PostCard({
   const clamped = view.body !== null && view.body.length > CLAMP_CHARS && !expanded;
 
   return (
-    <YStack borderWidth={1} borderColor="$border" borderRadius="$4" backgroundColor="$surface">
-      <YStack gap="$2" padding="$3" paddingBottom="$1">
-        <XStack gap="$1.5" alignItems="center">
+    <YStack borderWidth={1} borderColor="border" borderRadius="4" backgroundColor="surface">
+      <YStack gap="2" paddingTop="3" paddingRight="3" paddingLeft="3" paddingBottom="1">
+        <XStack gap="1-5" alignItems="center">
           <TrustAvatar
             displayName={view.author.displayName}
             imageUrl={view.author.profileImageUrl}
@@ -46,7 +46,7 @@ export function PostCard({
             size={20}
           />
           <Text
-            color={view.blocked ? '$foregroundMuted' : '$foreground'}
+            color={view.blocked ? 'foregroundMuted' : 'foreground'}
             fontSize={13}
             numberOfLines={1}
             flexShrink={1}
@@ -54,22 +54,22 @@ export function PostCard({
             {view.author.displayName}
           </Text>
           {view.blocked ? <BlockedChip /> : null}
-          <Text color="$foregroundMuted" fontSize={12} marginLeft="auto">
+          <Text color="foregroundMuted" fontSize={12} marginLeft="auto">
             {view.relativeTime}
             {view.edited ? ' · edited' : ''}
           </Text>
         </XStack>
         {view.title ? (
-          <Text color="$foreground" fontWeight="600" fontSize={16}>
+          <Text color="foreground" fontWeight="600" fontSize={16}>
             {view.title}
           </Text>
         ) : null}
         {view.body ? (
-          <YStack gap="$1" alignItems="flex-start">
+          <YStack gap="1" alignItems="flex-start">
             <Text
-              color="$foreground"
+              color="foreground"
               fontSize={14}
-              lineHeight={21}
+              lineHeight="21px"
               numberOfLines={clamped ? 4 : undefined}
             >
               {view.body}
@@ -81,7 +81,7 @@ export function PostCard({
                 accessibilityState={{ expanded }}
                 hitSlop={8}
               >
-                <Text color="$foregroundMuted" fontSize={13}>
+                <Text color="foregroundMuted" fontSize={13}>
                   {expanded ? 'Show less' : 'Read more'}
                 </Text>
               </Pressable>
@@ -92,8 +92,8 @@ export function PostCard({
 
       <XStack>
         {sequence ? (
-          <View width={20} alignItems="center" paddingTop="$4" paddingBottom="$4">
-            <View flex={1} width={1} backgroundColor="$border" />
+          <View width={20} alignItems="center" paddingTop="4" paddingBottom="4">
+            <View flex={1} width={1} backgroundColor="border" />
           </View>
         ) : null}
         <YStack flex={1}>
@@ -108,8 +108,8 @@ export function PostCard({
                   height={7}
                   borderRadius={4}
                   borderWidth={1}
-                  borderColor="$border"
-                  backgroundColor="$surface"
+                  borderColor="border"
+                  backgroundColor="surface"
                 />
               ) : null}
               <YStack flex={1}>
@@ -126,7 +126,7 @@ export function PostCard({
       </XStack>
 
       {view.omittedLabel ? (
-        <Text color="$foregroundMuted" fontSize={12} paddingHorizontal="$3" paddingBottom="$3">
+        <Text color="foregroundMuted" fontSize={12} paddingHorizontal="3" paddingBottom="3">
           {view.omittedLabel}
         </Text>
       ) : (

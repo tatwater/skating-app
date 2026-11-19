@@ -48,7 +48,7 @@ export function WeatherCards({
   if (endMs === undefined || hours === null) return null;
   if (summary === null) {
     return (
-      <YStack gap="$1.5">
+      <YStack gap="1-5">
         <SubLabel>While you skated</SubLabel>
         <SheetHint>No archived weather for these hours yet.</SheetHint>
       </YStack>
@@ -56,7 +56,7 @@ export function WeatherCards({
   }
 
   return (
-    <YStack gap="$1.5">
+    <YStack gap="1-5">
       <SubLabel>While you skated</SubLabel>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <XStack>
@@ -69,14 +69,14 @@ export function WeatherCards({
               paddingVertical={6}
               borderWidth={1}
               borderRightWidth={i === cells.length - 1 ? 1 : 0}
-              borderColor="$border"
+              borderColor="border"
               accessibilityLabel={`${cell.label}, ${cell.conditionLabel}, ${cell.temperatureF} degrees${
                 cell.windMph !== undefined
                   ? `, wind ${cell.windFrom ?? ''} ${cell.windMph} miles per hour`
                   : ''
               }${cell.amount ? `, ${cell.amount}` : ''}`}
             >
-              <Text color="$foregroundMuted" fontSize={10}>
+              <Text color="foregroundMuted" fontSize={10}>
                 {cell.label}
               </Text>
               <FontAwesomeIcon
@@ -84,13 +84,13 @@ export function WeatherCards({
                 color={theme.foreground?.val}
                 size={15}
               />
-              <Text color="$foreground" fontSize={14}>
+              <Text color="foreground" fontSize={14}>
                 {cell.temperatureF}°
               </Text>
-              <Text color="$foregroundMuted" fontSize={10} height={12}>
+              <Text color="foregroundMuted" fontSize={10} height={12}>
                 {cell.amount ?? ''}
               </Text>
-              <Text color="$foregroundMuted" fontSize={10}>
+              <Text color="foregroundMuted" fontSize={10}>
                 {cell.windMph !== undefined ? `${cell.windFrom ?? ''} ${cell.windMph}` : ''}
               </Text>
             </YStack>
@@ -98,25 +98,25 @@ export function WeatherCards({
         </XStack>
       </ScrollView>
       <XStack gap={8} flexWrap="wrap" alignItems="baseline">
-        <Text color="$foreground" fontSize={12} fontWeight="600">
+        <Text color="foreground" fontSize={12} fontWeight="600">
           {summary.temperature}
         </Text>
         {summary.wind ? (
-          <Text color="$foreground" fontSize={12}>
+          <Text color="foreground" fontSize={12}>
             {summary.wind}
           </Text>
         ) : null}
-        <Text color="$foreground" fontSize={12}>
+        <Text color="foreground" fontSize={12}>
           {summary.sky}
         </Text>
         {corrected !== undefined && corrected.source !== 'openmeteo' ? (
-          <Text color="$foregroundMuted" fontSize={11}>
+          <Text color="foregroundMuted" fontSize={11}>
             · corrected
           </Text>
         ) : null}
         <XStack flex={1} />
         <Text
-          color="$foregroundMuted"
+          color="foregroundMuted"
           fontSize={11}
           onPress={() => setCorrecting((c) => !c)}
           accessibilityRole="button"

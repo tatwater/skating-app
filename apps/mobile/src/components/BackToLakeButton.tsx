@@ -45,11 +45,10 @@ export function BackToLakeButton() {
       position="absolute"
       top={insets.top + 8 + (searchVisible ? SEARCH_BAR_SLOT : 0)}
       right={16}
-      // Below the sheet (`DRAWER_Z_INDEX` is 25), unlike the hazard surfaces beside it in the layout.
       zIndex={20}
-      size="$3"
-      backgroundColor="$surface"
-      borderColor="$border"
+      size="md"
+      backgroundColor="surface"
+      borderColor="border"
       borderWidth={1}
       onPress={() => router.navigate({ pathname: '/water/[id]', params: { id: onIceWaterBodyId } })}
       accessibilityLabel="Back to the ice you're on"

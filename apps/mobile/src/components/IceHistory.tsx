@@ -49,15 +49,15 @@ export function IceHistory({ waterBodyId }: { waterBodyId: string }) {
 
   return (
     <Section label={ADVISORY_HEADING}>
-      <YStack gap="$1.5">
+      <YStack gap="1-5">
         {lines.map((line) => (
-          <Paragraph key={line} color="$foreground" fontSize={13}>
+          <Paragraph key={line} color="foreground" fontSize={13}>
             {line}
           </Paragraph>
         ))}
         {/* Not small print. A history panel with nothing beneath it reads as "and it's here now"
             unless something says otherwise. */}
-        <Paragraph color="$foregroundMuted" fontSize={12}>
+        <Paragraph color="foregroundMuted" fontSize={12}>
           {ADVISORY_DISCLAIMER}
         </Paragraph>
       </YStack>

@@ -106,20 +106,20 @@ export function ForecastPanel({
     <YStack opacity={state.loading ? 0.5 : 1} accessibilityState={{ busy: state.loading }}>
       <Section label="What's coming">
         {empty || !derived ? (
-          <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+          <Paragraph color="foregroundMuted" fontSize={14} fontStyle="italic">
             {revealPlaceholder('forecast')}
           </Paragraph>
         ) : (
           <>
             {derived.line ? (
-              <Paragraph color="$foreground" fontSize={14}>
+              <Paragraph color="foreground" fontSize={14}>
                 {derived.line}
               </Paragraph>
             ) : null}
             <ForecastPlanner plan={derived.plan} />
           </>
         )}
-        <Text color="$foregroundMuted" fontSize={11}>
+        <Text color="foregroundMuted" fontSize={11}>
           Forecast: Open-Meteo
         </Text>
       </Section>
@@ -200,7 +200,7 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   const caption = arrivalCaption(plan);
 
   return (
-    <YStack gap="$3" marginTop="$2">
+    <YStack gap="3" marginTop="2">
       <ScrollView
         ref={hoursRef}
         horizontal
@@ -223,9 +223,9 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
         </XStack>
       </ScrollView>
       {caption ? (
-        <XStack gap="$1.5" alignItems="center">
+        <XStack gap="1-5" alignItems="center">
           <FontAwesomeIcon icon={faCarSide} color={inkMuted} size={11} />
-          <Text color="$foregroundMuted" fontSize={11}>
+          <Text color="foregroundMuted" fontSize={11}>
             {caption}, if you left now
           </Text>
         </XStack>
@@ -235,7 +235,7 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
         showsHorizontalScrollIndicator={false}
         accessibilityLabel="Daily forecast"
       >
-        <XStack gap="$2">
+        <XStack gap="2">
           {plan.days.map((day) => (
             <DayCard
               key={day.localDate}
@@ -270,21 +270,21 @@ function HourCard({
     <YStack
       width={HOUR_CARD_WIDTH}
       alignItems="center"
-      gap="$1"
-      paddingVertical="$1.5"
-      borderRadius="$3"
+      gap="1"
+      paddingVertical="1-5"
+      borderRadius="3"
       borderWidth={1}
-      borderColor={hour.arrival ? '$borderStrong' : 'transparent'}
-      backgroundColor={hour.arrival ? '$surfaceMuted' : 'transparent'}
+      borderColor={hour.arrival ? 'borderStrong' : 'transparent'}
+      backgroundColor={hour.arrival ? 'surfaceMuted' : 'transparent'}
       accessibilityLabel={`${planHourLabel(hour)}, ${label}, ${hour.temperatureF} degrees, wind ${hour.windMph} miles per hour${
         amount ? `, ${amount} ${hour.snowfallIn >= 0.1 ? 'snow' : 'rain'}` : ''
       }${hour.arrival ? ', about when you would arrive' : ''}`}
     >
       {/* A fixed slot on every card so the row does not jog at midnight. */}
-      <Text color="$foregroundMuted" fontSize={9} height={12} textTransform="uppercase">
+      <Text color="foregroundMuted" fontSize={9} height={12} textTransform="uppercase">
         {firstOfDay ? dayLabel : ''}
       </Text>
-      <Text color="$foregroundMuted" fontSize={10}>
+      <Text color="foregroundMuted" fontSize={10}>
         {planHourLabel(hour)}
       </Text>
       <FontAwesomeIcon
@@ -292,13 +292,13 @@ function HourCard({
         color={ink}
         size={16}
       />
-      <Text color="$foreground" fontSize={14}>
+      <Text color="foreground" fontSize={14}>
         {hour.temperatureF}°
       </Text>
-      <Text color="$foregroundMuted" fontSize={10} height={12}>
+      <Text color="foregroundMuted" fontSize={10} height={12}>
         {amount}
       </Text>
-      <Text color="$foregroundMuted" fontSize={10}>
+      <Text color="foregroundMuted" fontSize={10}>
         {hour.windMph} mph
       </Text>
     </YStack>
@@ -324,63 +324,63 @@ function DayCard({
   return (
     <YStack
       width={DAY_CARD_WIDTH}
-      gap="$1"
-      padding="$2"
-      borderRadius="$3"
+      gap="1"
+      padding="2"
+      borderRadius="3"
       borderWidth={1}
-      borderColor={selected ? '$borderStrong' : '$border'}
-      backgroundColor={selected ? '$surfaceMuted' : 'transparent'}
+      borderColor={selected ? 'borderStrong' : 'border'}
+      backgroundColor={selected ? 'surfaceMuted' : 'transparent'}
+      opacity="press:0.7"
       onPress={onSelect}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={`${day.label}, ${day.dateLabel}: ${label}, high ${day.highF}, low ${day.lowF}`}
-      pressStyle={{ opacity: 0.7 }}
     >
       <XStack justifyContent="space-between" alignItems="baseline">
-        <Text color="$foreground" fontSize={14}>
+        <Text color="foreground" fontSize={14}>
           {day.label}
         </Text>
-        <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
+        <Text color="foregroundMuted" fontSize={10} textTransform="uppercase">
           {day.dateLabel}
         </Text>
       </XStack>
-      <XStack gap="$2" alignItems="center">
+      <XStack gap="2" alignItems="center">
         <FontAwesomeIcon
           icon={GLYPH_ICON[conditionGlyph(day.condition, false)]}
           color={ink}
           size={22}
         />
         <YStack>
-          <Text color="$foreground" fontSize={14}>
+          <Text color="foreground" fontSize={14}>
             {day.highF}°{' '}
-            <Text color="$foregroundMuted" fontSize={14}>
+            <Text color="foregroundMuted" fontSize={14}>
               / {day.lowF}°
             </Text>
           </Text>
           {day.nightLowF !== null ? (
-            <Text color="$foregroundMuted" fontSize={10}>
+            <Text color="foregroundMuted" fontSize={10}>
               night low {day.nightLowF}°
             </Text>
           ) : null}
         </YStack>
       </XStack>
-      <Text color="$foregroundMuted" fontSize={10}>
+      <Text color="foregroundMuted" fontSize={10}>
         {label}
       </Text>
-      <Text color="$foregroundMuted" fontSize={10}>
+      <Text color="foregroundMuted" fontSize={10}>
         {totals.join(' · ')}
       </Text>
       {day.lines.length > 0 ? (
-        <YStack gap="$0.5" borderTopWidth={1} borderTopColor="$border" paddingTop="$1">
+        <YStack gap="0-5" borderTopWidth={1} borderTopColor="border" paddingTop="1">
           {day.lines.map((line) => (
-            <Text key={line} color="$foreground" fontSize={12}>
+            <Text key={line} color="foreground" fontSize={12}>
               {line}
             </Text>
           ))}
         </YStack>
       ) : null}
       {day.partial ? (
-        <Text color="$foregroundMuted" fontSize={10} fontStyle="italic">
+        <Text color="foregroundMuted" fontSize={10} fontStyle="italic">
           {day.label === 'Today' ? 'rest of today' : 'partial day'}
         </Text>
       ) : null}

@@ -43,11 +43,11 @@ export interface ProfileViewData {
 /** A labeled stat / count number. */
 function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <YStack alignItems="center" gap="$0.5">
-      <Text color="$foreground" fontSize={22} fontWeight="600">
+    <YStack alignItems="center" gap="0-5">
+      <Text color="foreground" fontSize={22} fontWeight="600">
         {value}
       </Text>
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         {label}
       </Text>
     </YStack>
@@ -72,24 +72,24 @@ function Stat({ value, label }: { value: number; label: string }) {
  */
 function GhostProfile({ actions }: { actions?: ReactNode }) {
   return (
-    <YStack gap="$4" padding="$4" backgroundColor="$background">
-      <XStack gap="$3" alignItems="flex-start">
+    <YStack gap="4" padding="4" backgroundColor="background">
+      <XStack gap="3" alignItems="flex-start">
         <YStack
           width={64}
           height={64}
           borderRadius={32}
           borderWidth={1}
-          borderColor="$border"
+          borderColor="border"
           borderStyle="dashed"
         />
-        <YStack flex={1} gap="$1">
-          <H4 color="$foregroundMuted" fontStyle="italic">
+        <YStack flex={1} gap="1">
+          <H4 color="foregroundMuted" fontStyle="italic">
             {DELETED_DISPLAY_NAME}
           </H4>
         </YStack>
         {actions}
       </XStack>
-      <Paragraph color="$foregroundMuted">{LEAVING_PROFILE_NOTICE}</Paragraph>
+      <Paragraph color="foregroundMuted">{LEAVING_PROFILE_NOTICE}</Paragraph>
     </YStack>
   );
 }
@@ -106,46 +106,46 @@ export function ProfileView({
   if (data.isLeaving) return <GhostProfile actions={actions} />;
 
   return (
-    <YStack gap="$4" padding="$4" backgroundColor="$background">
-      <XStack gap="$3" alignItems="flex-start">
+    <YStack gap="4" padding="4" backgroundColor="background">
+      <XStack gap="3" alignItems="flex-start">
         <TrustAvatar
           displayName={data.displayName}
           imageUrl={data.profileImageUrl}
           trustClass={data.trustClass}
           size={64}
         />
-        <YStack flex={1} gap="$0.5">
-          <XStack gap="$2" alignItems="center" flexWrap="wrap">
-            <H4 color="$foreground">{data.displayName}</H4>
+        <YStack flex={1} gap="0-5">
+          <XStack gap="2" alignItems="center" flexWrap="wrap">
+            <H4 color="foreground">{data.displayName}</H4>
             <TrustClassChip trustClass={data.trustClass ?? null} />
           </XStack>
-          <Text color="$foregroundMuted">@{data.username}</Text>
+          <Text color="foregroundMuted">@{data.username}</Text>
           {!data.isPrivate && data.homeTownLabel ? (
-            <Text color="$foregroundMuted">{data.homeTownLabel}</Text>
+            <Text color="foregroundMuted">{data.homeTownLabel}</Text>
           ) : null}
           {/* Admin-only raw trust number (D50) — never shown to ordinary viewers. */}
           {data.adminReputationPoints !== undefined ? (
-            <Text color="$foregroundMuted" fontSize={12}>
+            <Text color="foregroundMuted" fontSize={12}>
               trust score: {data.adminReputationPoints} (admin)
             </Text>
           ) : null}
         </YStack>
-        {actions ? <YStack gap="$2">{actions}</YStack> : null}
+        {actions ? <YStack gap="2">{actions}</YStack> : null}
       </XStack>
 
       {data.isPrivate ? (
-        <Paragraph color="$foregroundMuted">This profile is private.</Paragraph>
+        <Paragraph color="foregroundMuted">This profile is private.</Paragraph>
       ) : (
         <>
-          {data.bio ? <Paragraph color="$foreground">{data.bio}</Paragraph> : null}
+          {data.bio ? <Paragraph color="foreground">{data.bio}</Paragraph> : null}
           {data.badges && data.badges.length > 0 ? (
-            <XStack gap="$1.5" flexWrap="wrap">
+            <XStack gap="1-5" flexWrap="wrap">
               {data.badges.map((badge) => (
                 <Badge key={badge}>{badgeLabel(badge)}</Badge>
               ))}
             </XStack>
           ) : null}
-          <Separator borderColor="$border" />
+          <Separator borderColor="border" />
           <XStack justifyContent="space-around">
             <Stat value={data.reportCount ?? 0} label="Reports" />
             <Stat value={data.commentCount ?? 0} label="Comments" />
@@ -157,13 +157,8 @@ export function ProfileView({
       )}
 
       {!data.isPrivate && reportHistory ? (
-        <YStack gap="$2">
-          <Text
-            color="$foregroundMuted"
-            fontSize={11}
-            letterSpacing={1.5}
-            textTransform="uppercase"
-          >
+        <YStack gap="2">
+          <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
             Recent reports
           </Text>
           {reportHistory}

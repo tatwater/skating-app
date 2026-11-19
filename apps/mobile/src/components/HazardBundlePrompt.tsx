@@ -36,23 +36,23 @@ export function HazardBundlePromptView({
   if (candidates.length === 0) return null;
 
   return (
-    <YStack gap="$2" borderWidth={1} borderColor="$border" borderRadius="$4" padding="$3">
-      <Text color="$foreground" fontWeight="700">
+    <YStack gap="2" borderWidth={1} borderColor="border" borderRadius="4" padding="3">
+      <Text color="foreground" fontWeight="700">
         You flagged {candidates.length} hazard{candidates.length === 1 ? '' : 's'} here
       </Text>
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+      <Paragraph color="foregroundMuted" fontSize={12}>
         Include them in this report? They stay on the map either way.
       </Paragraph>
       {candidates.map((candidate) => {
         const selected = selectedIds.includes(candidate._id);
         return (
-          <XStack key={candidate._id} gap="$2" alignItems="center">
+          <XStack key={candidate._id} gap="2" alignItems="center">
             <Button
-              size="$3"
+              size="md"
               flex={1}
               justifyContent="flex-start"
-              backgroundColor={selected ? '$primary' : undefined}
-              color={selected ? '$primaryForeground' : undefined}
+              backgroundColor={selected ? 'primary' : undefined}
+              color={selected ? 'primaryForeground' : undefined}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: selected }}
               onPress={() => onToggle(candidate._id, !selected)}

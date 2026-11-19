@@ -47,20 +47,20 @@ export default function ReAckScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
-        <YStack gap="$3" backgroundColor="$background">
-          <H1 color="$foreground">One quick thing</H1>
-          <Paragraph color="$foregroundMuted">
+        <YStack gap="3" backgroundColor="background">
+          <H1 color="foreground">One quick thing</H1>
+          <Paragraph color="foregroundMuted">
             We’ve updated our safety acknowledgment. Please review and accept it to keep using Gli —
             nothing else about your account changes.
           </Paragraph>
 
           <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />
 
-          {error ? <Text color="$danger">{error}</Text> : null}
+          {error ? <Text color="danger">{error}</Text> : null}
 
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={busy || !ack}
             onPress={onAccept}
           >

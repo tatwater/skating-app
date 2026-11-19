@@ -26,7 +26,7 @@ export function DetailTabStrip({
       accessibilityRole="tablist"
       accessibilityLabel="Lake detail sections"
       borderBottomWidth={1}
-      borderColor="$border"
+      borderColor="border"
     >
       {DETAIL_TABS.map((id) => {
         const selected = id === value;
@@ -34,13 +34,13 @@ export function DetailTabStrip({
           <Button
             key={id}
             flex={1}
-            size="$3"
-            chromeless
+            size="md"
             borderRadius={0}
             borderBottomWidth={2}
-            borderBottomColor={selected ? '$primary' : 'transparent'}
-            color={selected ? '$foreground' : '$foregroundMuted'}
+            borderBottomColor={`${selected ? 'primary' : 'transparent'}`}
+            color={selected ? 'foreground' : 'foregroundMuted'}
             fontWeight={selected ? '600' : '400'}
+            variant="quiet"
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             onPress={() => onChange(id)}

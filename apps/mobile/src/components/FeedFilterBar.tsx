@@ -69,27 +69,27 @@ export function FeedFilterBar({
 
   return (
     <YStack
-      gap="$2"
-      padding="$3"
+      gap="2"
+      padding="3"
       borderWidth={1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surface"
+      borderColor="border"
+      borderRadius="4"
+      backgroundColor="surface"
     >
       <XStack justifyContent="space-between" alignItems="center">
-        <Button chromeless size="$2" onPress={() => setExpanded((e) => !e)} paddingHorizontal="$1">
-          <Text
-            color="$foregroundMuted"
-            fontSize={11}
-            letterSpacing={1.5}
-            textTransform="uppercase"
-          >
+        <Button
+          variant="quiet"
+          size="sm"
+          paddingHorizontal="1"
+          onPress={() => setExpanded((e) => !e)}
+        >
+          <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
             {`Filters${count > 0 ? ` (${count})` : ''} ${expanded ? '▾' : '▸'}`}
           </Text>
         </Button>
         {count > 0 ? (
-          <Button chromeless size="$2" onPress={() => onChange({})}>
-            <Text color="$primary" fontSize={13}>
+          <Button variant="quiet" size="sm" onPress={() => onChange({})}>
+            <Text color="primary" fontSize={13}>
               Clear all
             </Text>
           </Button>
@@ -97,7 +97,7 @@ export function FeedFilterBar({
       </XStack>
 
       {expanded ? (
-        <YStack gap="$3">
+        <YStack gap="3">
           <Segmented
             label="Drive time"
             options={[
@@ -129,13 +129,13 @@ export function FeedFilterBar({
             onSelect={(v) => patch('recencyHours', v as number | undefined)}
           />
 
-          <XStack gap="$2" alignItems="center">
-            <Text color="$foregroundMuted" fontSize={13} width={90}>
+          <XStack gap="2" alignItems="center">
+            <Text color="foregroundMuted" fontSize={13} width={90}>
               Min ice (in)
             </Text>
             <Input
               flex={1}
-              size="$3"
+              size="md"
               keyboardType="decimal-pad"
               value={thicknessInches}
               onChangeText={(raw) => {
@@ -154,15 +154,15 @@ export function FeedFilterBar({
               since". Describes a lake, not a report — matching lakes appear as their own cards and
               non-matches dim on the map. Disabled, with the reason, out of season. */}
           <YStack
-            gap="$2"
-            padding="$2"
+            gap="2"
+            padding="2"
             borderWidth={1}
             borderStyle="dashed"
-            borderColor="$border"
-            borderRadius="$3"
+            borderColor="border"
+            borderRadius="3"
             opacity={weatherOff ? 0.6 : 1}
           >
-            <Text color="$foregroundMuted" fontSize={13}>
+            <Text color="foregroundMuted" fontSize={13}>
               {weatherOff
                 ? 'Weather — no weather data yet this season'
                 : weather?.asOfDayMs
@@ -195,8 +195,8 @@ export function FeedFilterBar({
                     if (filters.weather) patch('weather', { ...filters.weather, minNights: n });
                   }}
                 />
-                <XStack gap="$2" alignItems="center" justifyContent="space-between">
-                  <Text color="$foreground" fontSize={14}>
+                <XStack gap="2" alignItems="center" justifyContent="space-between">
+                  <Text color="foreground" fontSize={14}>
                     No snow since the first night
                   </Text>
                   <Chip
@@ -209,8 +209,8 @@ export function FeedFilterBar({
                     }}
                   />
                 </XStack>
-                <XStack gap="$2" alignItems="center" justifyContent="space-between">
-                  <Text color="$foreground" fontSize={14}>
+                <XStack gap="2" alignItems="center" justifyContent="space-between">
+                  <Text color="foreground" fontSize={14}>
                     Only show reports
                   </Text>
                   <Chip
@@ -223,8 +223,8 @@ export function FeedFilterBar({
             ) : null}
           </YStack>
 
-          <XStack gap="$2" alignItems="center" justifyContent="space-between">
-            <Text color="$foreground" fontSize={14}>
+          <XStack gap="2" alignItems="center" justifyContent="space-between">
+            <Text color="foreground" fontSize={14}>
               No snow cover
             </Text>
             <Chip
@@ -234,11 +234,11 @@ export function FeedFilterBar({
             />
           </XStack>
 
-          <YStack gap="$1">
-            <Text color="$foregroundMuted" fontSize={13}>
+          <YStack gap="1">
+            <Text color="foregroundMuted" fontSize={13}>
               Ideal ice
             </Text>
-            <XStack gap="$2" flexWrap="wrap">
+            <XStack gap="2" flexWrap="wrap">
               {[...IDEAL_ICE_TYPES, ...IDEAL_SURFACE_TAGS].map((value) => {
                 const isIce = (IDEAL_ICE_TYPES as string[]).includes(value);
                 const key = isIce ? 'iceTypes' : 'surfaceTags';
@@ -279,11 +279,11 @@ function Segmented<T>({
   onSelect: (value: T) => void;
 }) {
   return (
-    <YStack gap="$1">
-      <Text color="$foregroundMuted" fontSize={13}>
+    <YStack gap="1">
+      <Text color="foregroundMuted" fontSize={13}>
         {label}
       </Text>
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap="2" flexWrap="wrap">
         {options.map((o) => (
           <Chip
             key={o.label}
@@ -301,12 +301,12 @@ function Segmented<T>({
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
     <Button
-      size="$2"
-      backgroundColor={active ? '$primary' : undefined}
-      color={active ? '$primaryForeground' : undefined}
-      chromeless={!active}
+      size="sm"
+      backgroundColor={active ? 'primary' : undefined}
+      color={active ? 'primaryForeground' : undefined}
       borderWidth={1}
-      borderColor={active ? '$primary' : '$border'}
+      borderColor={active ? 'primary' : 'border'}
+      variant={!active ? 'quiet' : undefined}
       onPress={onPress}
     >
       {label}

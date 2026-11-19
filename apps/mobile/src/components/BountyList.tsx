@@ -39,21 +39,20 @@ export function BountyList({
   const now = Date.now();
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Open bounties
       </Text>
       {bounties.map((b) => (
         <XStack
           key={b._id}
-          gap="$2"
+          gap="2"
           alignItems="center"
-          padding="$2.5"
+          padding="2-5"
           borderWidth={1}
-          borderColor="$border"
-          borderRadius="$4"
-          backgroundColor="$surface"
-          pressStyle={{ backgroundColor: '$surfaceMuted' }}
+          borderColor="border"
+          borderRadius="4"
+          backgroundColor="surface press:surfaceMuted"
           onPress={() => router.navigate({ pathname: '/bounty/[id]', params: { id: b._id } })}
         >
           <TrustAvatar
@@ -62,10 +61,10 @@ export function BountyList({
             size={24}
           />
           <YStack flex={1}>
-            <Text color="$foreground" numberOfLines={1}>
+            <Text color="foreground" numberOfLines={1}>
               Requested by {b.requester.displayName}
             </Text>
-            <Text color="$foregroundMuted" fontSize={12}>
+            <Text color="foregroundMuted" fontSize={12}>
               {b.fulfillingCount > 0
                 ? `${b.fulfillingCount} candidate report${b.fulfillingCount === 1 ? '' : 's'} · `
                 : ''}

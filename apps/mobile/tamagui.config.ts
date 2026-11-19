@@ -100,6 +100,24 @@ const monoFont = createFont({
 export const config = createTamagui({
   ...defaultConfig,
   fonts: { ...defaultConfig.fonts, mono: monoFont },
+  sizing: {
+    ...defaultConfig.sizing,
+    // V3 has five named presets. Keep a separate 64 dp preset for the hazard actions that
+    // deliberately used the larger v2 size, rather than making them the same as ordinary XL.
+    sizes: {
+      ...defaultConfig.sizing.sizes,
+      hazard: {
+        fontSize: '6',
+        controlFontSize: '6',
+        paddingInline: '6',
+        paddingBlock: '2-5',
+        gap: '2-5',
+        radius: '3',
+        // The button adds its two 1 dp borders to this height.
+        px: { height: 62, icon: 20, square: 28 },
+      },
+    },
+  },
   settings: {
     ...defaultConfig.settings,
     // The v5 base enforces shorthand-only style props; relax that so screens can use

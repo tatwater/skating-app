@@ -282,7 +282,7 @@ export function PhotosSection({
     >
       {/* The reel (iOS): the library, for the skate's window — asked for only from a tap. */}
       {READS_LIBRARY && !editing && access !== null ? (
-        <YStack gap="$2">
+        <YStack gap="2">
           <SubLabel>
             {window
               ? `From your skate · ${clock(window.startMs)}–${clock(window.endMs)}${
@@ -292,7 +292,7 @@ export function PhotosSection({
           </SubLabel>
           {access === 'ask' ? (
             <>
-              <Button size="$2" alignSelf="flex-start" onPress={() => void askForLibrary()}>
+              <Button size="sm" alignSelf="flex-start" onPress={() => void askForLibrary()}>
                 {window ? 'Show photos from your skate' : 'Show your photos'}
               </Button>
               <SheetHint>
@@ -306,7 +306,7 @@ export function PhotosSection({
               <SheetHint>
                 Photo access is off for Gli. Turn it on in Settings to see them here.
               </SheetHint>
-              <Button size="$2" alignSelf="flex-start" onPress={() => void Linking.openSettings()}>
+              <Button size="sm" alignSelf="flex-start" onPress={() => void Linking.openSettings()}>
                 Open Settings
               </Button>
             </>
@@ -318,7 +318,7 @@ export function PhotosSection({
             <SheetHint>Couldn't read your library just now.</SheetHint>
           ) : null}
           {readable ? (
-            <XStack gap="$2" flexWrap="wrap">
+            <XStack gap="2" flexWrap="wrap">
               {window ? (
                 <SheetChip
                   compact
@@ -352,9 +352,9 @@ export function PhotosSection({
                       <YStack
                         width={74}
                         height={74}
-                        borderRadius="$xs"
+                        borderRadius="xs"
                         borderWidth={1}
-                        borderColor={on ? '$foreground' : '$border'}
+                        borderColor={on ? 'foreground' : 'border'}
                         overflow="hidden"
                       >
                         <Image source={{ uri: item.uri }} style={{ width: 74, height: 74 }} />
@@ -365,18 +365,18 @@ export function PhotosSection({
                           width={16}
                           height={16}
                           borderWidth={1}
-                          borderRadius="$xs"
-                          borderColor={on ? '$foreground' : '$borderStrong'}
-                          backgroundColor={on ? '$foreground' : '$background'}
+                          borderRadius="xs"
+                          borderColor={on ? 'foreground' : 'borderStrong'}
+                          backgroundColor={on ? 'foreground' : 'background'}
                           alignItems="center"
                           justifyContent="center"
                         >
                           {on ? (
                             <Text
-                              color="$background"
+                              color="background"
                               fontSize={11}
                               fontWeight="700"
-                              lineHeight={14}
+                              lineHeight="14px"
                             >
                               ✓
                             </Text>
@@ -389,7 +389,7 @@ export function PhotosSection({
                             bottom={4}
                             width={7}
                             height={7}
-                            backgroundColor="$primary"
+                            backgroundColor="primary"
                           />
                         ) : null}
                       </YStack>
@@ -411,21 +411,21 @@ export function PhotosSection({
       {/* What this Report carries, with a home for each. */}
       <XStack gap={6} flexWrap="wrap">
         {report.keptPhotoIds.map((photoId) => (
-          <YStack key={photoId} gap="$1" alignItems="center">
+          <YStack key={photoId} gap="1" alignItems="center">
             <YStack
               width={72}
               height={72}
-              borderRadius="$xs"
-              backgroundColor="$surfaceMuted"
+              borderRadius="xs"
+              backgroundColor="surfaceMuted"
               alignItems="center"
               justifyContent="center"
             >
-              <Text color="$foregroundMuted" fontSize={11}>
+              <Text color="foregroundMuted" fontSize={11}>
                 On the report
               </Text>
             </YStack>
             <Text
-              color="$foregroundMuted"
+              color="foregroundMuted"
               fontSize={11}
               onPress={() =>
                 setReport((r) => ({
@@ -439,12 +439,12 @@ export function PhotosSection({
           </YStack>
         ))}
         {report.photos.map((photo) => (
-          <YStack key={photo.id} gap="$1" alignItems="center" width={72}>
+          <YStack key={photo.id} gap="1" alignItems="center" width={72}>
             <YStack
-              borderRadius="$xs"
+              borderRadius="xs"
               overflow="hidden"
               borderWidth={placing === photo.id ? 2 : 0}
-              borderColor="$primary"
+              borderColor="primary"
             >
               <Image
                 source={{ uri: photo.thumbUri }}
@@ -458,7 +458,7 @@ export function PhotosSection({
                   bottom={4}
                   width={7}
                   height={7}
-                  backgroundColor="$primary"
+                  backgroundColor="primary"
                 />
               ) : null}
             </YStack>
@@ -488,7 +488,7 @@ export function PhotosSection({
             </XStack>
             <XStack gap={8}>
               <Text
-                color="$danger"
+                color="danger"
                 fontSize={11}
                 onPress={() => void asHazard(photo)}
                 accessibilityRole="button"
@@ -496,7 +496,7 @@ export function PhotosSection({
                 Hazard
               </Text>
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 onPress={() => remove(photo.id)}
                 accessibilityRole="button"
@@ -526,7 +526,7 @@ export function PhotosSection({
           <SheetHint>Tap the water where you took it, or leave it unplaced.</SheetHint>
         </QuestionBlock>
       ) : null}
-      <Button size="$2" alignSelf="flex-start" onPress={() => void add()} disabled={busy}>
+      <Button size="sm" alignSelf="flex-start" onPress={() => void add()} disabled={busy}>
         {busy ? 'Adding…' : READS_LIBRARY ? '+ Choose photos' : '+ Add photos'}
       </Button>
       {!READS_LIBRARY && !editing && count === 0 ? (
@@ -540,7 +540,7 @@ export function PhotosSection({
       ) : null}
       {editing ? <SheetHint>A photo you remove leaves the report when you save.</SheetHint> : null}
       {error ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {error}
         </Text>
       ) : null}

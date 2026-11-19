@@ -125,21 +125,21 @@ export default function ReportScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       {state === 'gone' ? (
-        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
-          <Paragraph color="$foregroundMuted">That report is no longer available.</Paragraph>
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="3" padding="4">
+          <Paragraph color="foregroundMuted">That report is no longer available.</Paragraph>
           <Button onPress={() => router.navigate(doorHref({}))}>Start a new one</Button>
         </YStack>
       ) : state === 'failed' ? (
-        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
-          <Paragraph color="$foregroundMuted" textAlign="center">
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="3" padding="4">
+          <Paragraph color="foregroundMuted" textAlign="center">
             Couldn't open your sheet. Check your connection and try again.
           </Paragraph>
           <Button onPress={() => router.navigate(doorHref(retryDoor.current))}>Try again</Button>
         </YStack>
       ) : state === 'opening' && getSheet() === null ? (
-        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3">
-          <Spinner color="$primary" />
-          <Paragraph color="$foregroundMuted">Opening your sheet…</Paragraph>
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="3">
+          <Spinner color="primary" />
+          <Paragraph color="foregroundMuted">Opening your sheet…</Paragraph>
         </YStack>
       ) : (
         <ReportSheet

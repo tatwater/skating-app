@@ -40,36 +40,36 @@ export function FeedCard({
 
   return (
     <YStack
-      gap="$2"
-      padding="$3"
+      gap="2"
+      padding="3"
       borderWidth={nested ? 0 : 1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor={nested ? 'transparent' : '$surface'}
-      pressStyle={{ opacity: 0.7 }}
+      borderColor="border"
+      borderRadius="4"
+      backgroundColor={nested ? 'transparent' : 'surface'}
+      opacity="press:0.7"
       onPress={onOpen}
     >
-      <XStack justifyContent="space-between" gap="$3" alignItems="flex-start">
+      <XStack justifyContent="space-between" gap="3" alignItems="flex-start">
         <YStack flex={1}>
           {/* The star sits beside the name rather than inside it: RN <Text> can only host text and
               inline images, and FontAwesome renders an SVG. Shrinking the label instead of the icon
               keeps the truncation on the long name, where it belongs. */}
-          <XStack alignItems="center" gap="$1.5">
+          <XStack alignItems="center" gap="1-5">
             {card.isFavorite ? (
               <FontAwesomeIcon icon={faStar} color={theme.primary?.val} size={12} />
             ) : null}
-            <Text color="$foreground" fontWeight="600" numberOfLines={1} flexShrink={1}>
+            <Text color="foreground" fontWeight="600" numberOfLines={1} flexShrink={1}>
               {card.locationPrimary}
             </Text>
           </XStack>
           {card.locationSecondary ? (
-            <Text color="$foregroundMuted" fontSize={13} numberOfLines={1}>
+            <Text color="foregroundMuted" fontSize={13} numberOfLines={1}>
               {card.locationSecondary}
             </Text>
           ) : null}
           {/* D87's third surface — beside the drive time, never folded into it (D72 amendment). */}
           {card.isHikeIn ? (
-            <Text color="$foregroundMuted" fontSize={12}>
+            <Text color="foregroundMuted" fontSize={12}>
               Hike-in
             </Text>
           ) : null}
@@ -77,8 +77,8 @@ export function FeedCard({
         {/* The right column: when, and where on the lake (A10 §12.3) — the silhouette carries the
             put-in, the skate and the chips' `where`, so the card shows the shape of the day without
             a map. Absent on a body with no usable outline, and on a cached card from before it. */}
-        <YStack alignItems="flex-end" gap="$1">
-          <Text color="$foregroundMuted" fontSize={12}>
+        <YStack alignItems="flex-end" gap="1">
+          <Text color="foregroundMuted" fontSize={12}>
             {card.relativeTime}
             {card.edited ? ' · edited' : ''}
           </Text>
@@ -88,24 +88,24 @@ export function FeedCard({
 
       {nested ? (
         card.durationLabel ? (
-          <Text color="$foregroundMuted" fontSize={13}>
+          <Text color="foregroundMuted" fontSize={13}>
             skated {card.durationLabel}
           </Text>
         ) : null
       ) : (
-        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+        <XStack gap="1-5" alignItems="center" flexWrap="wrap">
           <TrustAvatar
             displayName={card.author.displayName}
             imageUrl={card.author.profileImageUrl}
             trustClass={card.author.trustClass}
             size={20}
           />
-          <Text color={card.blocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
+          <Text color={card.blocked ? 'foregroundMuted' : 'foreground'} fontSize={13}>
             by {card.author.displayName}
           </Text>
           {card.blocked ? <BlockedChip /> : null}
           {card.durationLabel ? (
-            <Text color="$foregroundMuted" fontSize={13}>
+            <Text color="foregroundMuted" fontSize={13}>
               · skated {card.durationLabel}
             </Text>
           ) : null}
@@ -117,7 +117,7 @@ export function FeedCard({
       card.vantageLabel ||
       card.sightingLabels.length > 0 ||
       chips.length > 0 ? (
-        <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+        <XStack gap="1-5" flexWrap="wrap" alignItems="center">
           {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment. */}
           {card.suitabilityLabel ? (
             <Badge tone={card.isDontGo ? 'danger' : 'solid'}>{card.suitabilityLabel}</Badge>
@@ -136,7 +136,7 @@ export function FeedCard({
 
       {card.photoThumbUrls.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <XStack gap="$2">
+          <XStack gap="2">
             {card.photoThumbUrls.map((url) => (
               <Image
                 key={url}

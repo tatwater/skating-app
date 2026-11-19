@@ -139,43 +139,43 @@ export function LakeSearchBox({
       accessibilityElementsHidden={hidden}
       importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
     >
-      <YStack gap="$2">
+      <YStack gap="2">
         <Input
           value={value}
           onChangeText={onChangeText}
           onLayout={onInputLayout}
           placeholder="Search lakes by name…"
-          backgroundColor="$background"
-          borderColor="$border"
+          backgroundColor="background"
+          borderColor="border"
           aria-label="Search lakes by name"
           testID="lake-search-input"
         />
         {showResults ? (
           <YStack
-            backgroundColor="$background"
-            borderColor="$border"
+            backgroundColor="background"
+            borderColor="border"
             borderWidth={1}
-            borderRadius="$4"
+            borderRadius="4"
             overflow="hidden"
           >
             {items.map((hit) => (
               <YStack
                 key={hit._id}
                 onPress={() => onSelect(hit)}
-                paddingHorizontal="$3"
-                paddingVertical="$2.5"
-                pressStyle={{ backgroundColor: '$surfaceMuted' }}
+                paddingHorizontal="3"
+                paddingVertical="2-5"
+                backgroundColor="press:surfaceMuted"
                 accessibilityRole="button"
                 testID={`lake-search-result-${hit._id}`}
               >
-                <Text color="$foreground">{waterBodyDisplayName(hit.name)}</Text>
-                <Text color="$foregroundMuted" fontSize="$1">
+                <Text color="foreground">{waterBodyDisplayName(hit.name)}</Text>
+                <Text color="foregroundMuted" fontSize="1">
                   {hitMeta(hit)}
                 </Text>
               </YStack>
             ))}
             {emptyVisible ? (
-              <Text color="$foregroundMuted" paddingHorizontal="$3" paddingVertical="$3">
+              <Text color="foregroundMuted" paddingHorizontal="3" paddingVertical="3">
                 No lakes found.
               </Text>
             ) : null}

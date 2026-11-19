@@ -14,7 +14,7 @@ import { Paragraph } from 'tamagui';
  */
 export function LeavingNotice() {
   return (
-    <Paragraph color="$foregroundMuted" fontSize={13}>
+    <Paragraph color="foregroundMuted" fontSize={13}>
       {LEAVING_NOTICE.replace('in Settings', 'on the You tab')}
     </Paragraph>
   );

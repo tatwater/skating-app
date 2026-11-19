@@ -78,14 +78,14 @@ export function WindExposure({
   const emphasisColor = theme.foreground?.val ?? '#16232e';
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.2} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.2} textTransform="uppercase">
         Wind exposure
       </Text>
 
       {/* Rose centered, prose beneath — side by side it was pinned left against a narrow column of
           wrapped text and read as an afterthought. */}
-      <YStack gap="$3">
+      <YStack gap="3">
         <XStack justifyContent="center">
           <Svg
             width={CHART_SIZE}
@@ -151,20 +151,20 @@ export function WindExposure({
       </YStack>
 
       {/* With two encodings a key is not optional — without it the arrows read as decoration. */}
-      <Text color="$foregroundMuted" fontSize={11}>
+      <Text color="foregroundMuted" fontSize={11}>
         Shaded area: how often winter wind blows from each direction. Arrows: how hard it blows,
         against a {Math.round(WIND_ARROW_REFERENCE_MPS * MPS_TO_MPH)} mph scale shared by every
         lake.
         {model.emphasizedSector !== null ? ' The solid arrow marks the most exposed shore.' : ''}
       </Text>
       {/* The over-claim, said on every body (A09 kickoff call 6) — the same sentence web shows. */}
-      <Text color="$foregroundMuted" fontSize={11}>
+      <Text color="foregroundMuted" fontSize={11}>
         {windRoseCaption(scope)}
       </Text>
 
       {/* The values, reachable without reading a shape or a size. */}
       <Text
-        color="$foregroundMuted"
+        color="foregroundMuted"
         fontSize={11}
         textDecorationLine="underline"
         onPress={() => setShowTable((v) => !v)}
@@ -173,22 +173,22 @@ export function WindExposure({
         {showTable ? 'Hide the numbers' : 'Show the numbers'}
       </Text>
       {showTable ? (
-        <YStack gap="$1">
-          <XStack gap="$3">
-            <Text color="$foregroundMuted" fontSize={11} width={44}>
+        <YStack gap="1">
+          <XStack gap="3">
+            <Text color="foregroundMuted" fontSize={11} width={44}>
               From
             </Text>
-            <Text color="$foregroundMuted" fontSize={11} width={52}>
+            <Text color="foregroundMuted" fontSize={11} width={52}>
               Hours
             </Text>
-            <Text color="$foregroundMuted" fontSize={11}>
+            <Text color="foregroundMuted" fontSize={11}>
               Mean
             </Text>
           </XStack>
           {COMPASS_POINTS_16.map((point, sector) => {
             const mps = body.meanWindMps?.[sector];
             return (
-              <XStack key={point} gap="$3">
+              <XStack key={point} gap="3">
                 <Text fontSize={11} width={44}>
                   {point}
                 </Text>

@@ -225,10 +225,10 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
   }
 
   return (
-    <YStack gap="$3">
-      <H4 color="$foreground">{hazardTypeLabel(hazard.type)}</H4>
+    <YStack gap="3">
+      <H4 color="foreground">{hazardTypeLabel(hazard.type)}</H4>
 
-      <XStack gap="$1.5" flexWrap="wrap">
+      <XStack gap="1-5" flexWrap="wrap">
         <Badge tone={hazard.freshness === 'fresh' ? 'solid' : 'outline'}>
           {freshnessLabel(hazard.freshness)}
         </Badge>
@@ -241,20 +241,20 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       </XStack>
 
       {reporter ? (
-        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+        <XStack gap="1-5" alignItems="center" flexWrap="wrap">
           <TrustAvatar
             displayName={reporter.displayName}
             imageUrl={reporter.profileImageUrl}
             trustClass={reporter.trustClass}
             size={20}
           />
-          <Text color="$foreground" fontSize={13}>
+          <Text color="foreground" fontSize={13}>
             by {reporter.displayName}
           </Text>
         </XStack>
       ) : null}
 
-      <Paragraph color="$foregroundMuted" fontSize={13}>
+      <Paragraph color="foregroundMuted" fontSize={13}>
         {/* Attribution (name + TrustAvatar) is the row above — Phase 06's richer treatment supersedes
             Phase 09b's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
         Reported {formatWhen(hazard.firstReportedAt)}
@@ -270,7 +270,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           (A05a) and a past-season pin is off the map entirely, so a deep link is the only way anyone
           reaches this — the same courtesy a past-season report gets. */}
       {seasonOf(hazard.firstReportedAt) === seasonOf(Date.now()) ? null : (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           From the {formatSeason(seasonOf(hazard.firstReportedAt))} season — it is not on the map
           this winter. Open the lake and pick that season to see it in place.
         </Paragraph>
@@ -279,7 +279,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       {/* An expired suggested crossing (D64) — read before the staleness caveat, because it is the
           stronger statement: this pin is not merely faded, it has left the map. */}
       {hazard.expired ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           {expiredCrossingNote()}
         </Paragraph>
       ) : null}
@@ -287,12 +287,12 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       {/* Several pins, one outline (D80). Each sighting keeps its own reporter and date, because that
           separateness is what makes a cluster more convincing than any one report. */}
       {clusterMembers && clusterMembers.length > 1 ? (
-        <YStack gap="$1">
-          <Paragraph color="$foregroundMuted" fontSize={13}>
+        <YStack gap="1">
+          <Paragraph color="foregroundMuted" fontSize={13}>
             {consensusSummary(clusterMembers.length)}
           </Paragraph>
           {clusterMembers.map((m) => (
-            <Paragraph key={m.hazardId} color="$foregroundMuted" fontSize={12}>
+            <Paragraph key={m.hazardId} color="foregroundMuted" fontSize={12}>
               · {m.reporterName ?? 'A skater'} — {formatWhen(m.firstReportedAt)}
               {m.isOpen ? ' (this pin)' : ''}
             </Paragraph>
@@ -304,24 +304,24 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           the sighting and the standing feature are on the map. This line is what makes them one story
           rather than two independent warnings about the same ice. */}
       {hazard.promotedFeatureType !== undefined ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           {ALSO_A_KNOWN_FEATURE}
         </Paragraph>
       ) : null}
 
       {/* Freshness is confidence, never safety — a stale pin still says "unverified", not "clear". */}
-      <Paragraph color="$foregroundMuted" fontSize={13}>
+      <Paragraph color="foregroundMuted" fontSize={13}>
         {stalenessCaveat(hazard.type)}
       </Paragraph>
 
       {/* A disputed crossing outranks a healing note — "the ridge is closed here" is the stronger
           claim, and the one to read first (D64). */}
       {hazard.healingState === 'disputed' ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           {disputedNote()}
         </Paragraph>
       ) : hazard.healingState === 'healing_unsafe' ? (
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           {healingNote(hazard.type)}
         </Paragraph>
       ) : null}
@@ -330,7 +330,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           the whole point of the pin. Shown before the notes for that reason. */}
       {photos && photos.length > 0 ? (
         <Section label="Photos">
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             {photos.map((photo) =>
               photo.thumbUrl ? (
                 <Image
@@ -347,7 +347,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
       {hazard.description ? (
         <Section label="Notes">
-          <Paragraph color="$foreground">{hazard.description}</Paragraph>
+          <Paragraph color="foreground">{hazard.description}</Paragraph>
         </Section>
       ) : null}
 
@@ -360,12 +360,12 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         />
       )}
 
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+      <Paragraph color="foregroundMuted" fontSize={12}>
         {FOOTPRINT_IS_APPROXIMATE}
       </Paragraph>
 
       {done ? (
-        <Paragraph color="$foreground">
+        <Paragraph color="foreground">
           Thanks — recorded as “{verdictLabel(done, hazard.type)}”.
         </Paragraph>
       ) : archived || isLeaving(me) ? null : (
@@ -380,7 +380,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           }}
         >
           <Section label={passage ? 'Is it still crossable?' : 'Is it still there?'}>
-            <YStack gap="$2">
+            <YStack gap="2">
               {VERDICTS.map((verdict) => {
                 const destructive = verdict === 'fully_healed';
                 // The destructive verdict is the only one that retires the pin for everyone, so it
@@ -389,26 +389,26 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
                   return (
                     <YStack
                       key={verdict}
-                      gap="$2"
+                      gap="2"
                       borderWidth={1}
-                      borderColor="$border"
-                      borderRadius="$4"
-                      padding="$3"
+                      borderColor="border"
+                      borderRadius="4"
+                      padding="3"
                     >
-                      <Text color="$foreground">
+                      <Text color="foreground">
                         This retires the pin for everyone once another skater agrees. Only if you
                         can actually see it’s gone.
                       </Text>
-                      <XStack gap="$2">
+                      <XStack gap="2">
                         <Button
-                          size="$4"
+                          size="lg"
                           flex={1}
                           disabled={confirming}
                           onPress={() => cast(verdict)}
                         >
                           {confirming ? 'Saving…' : 'Yes, I can see it’s gone'}
                         </Button>
-                        <Button size="$4" chromeless onPress={() => setPendingHealed(false)}>
+                        <Button size="lg" variant="quiet" onPress={() => setPendingHealed(false)}>
                           Cancel
                         </Button>
                       </XStack>
@@ -418,16 +418,16 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
                 return (
                   <Button
                     key={verdict}
-                    size="$5"
-                    chromeless={destructive}
+                    size="xl"
+                    variant={destructive ? 'quiet' : undefined}
                     disabled={confirming}
                     onPress={() => (destructive ? setPendingHealed(true) : cast(verdict))}
                   >
                     <YStack>
-                      <Text color="$foreground" fontWeight={destructive ? '400' : '700'}>
+                      <Text color="foreground" fontWeight={destructive ? '400' : '700'}>
                         {verdictLabel(verdict, hazard.type)}
                       </Text>
-                      <Text color="$foregroundMuted" fontSize={12}>
+                      <Text color="foregroundMuted" fontSize={12}>
                         {verdictHelp(verdict, hazard.type)}
                       </Text>
                     </YStack>
@@ -441,7 +441,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
       {error ? (
         <Text
-          color="$danger"
+          color="danger"
           fontSize={13}
           accessibilityRole="alert"
           accessibilityLiveRegion="assertive"

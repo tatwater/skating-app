@@ -59,15 +59,15 @@ export function UnreportedSkates() {
 
   return (
     <Section label="Skates you haven't reported">
-      <YStack gap="$2">
+      <YStack gap="2">
         {rows.map((row) => (
-          <YStack key={row.activityId} gap="$1.5">
-            <Text color="$foreground">
+          <YStack key={row.activityId} gap="1-5">
+            <Text color="foreground">
               {row.waterBodyName ?? 'An unmatched lake'} · {formatSkateTime(row.startTime)}
             </Text>
-            <XStack gap="$2" flexWrap="wrap">
+            <XStack gap="2" flexWrap="wrap">
               <Button
-                size="$2"
+                size="sm"
                 disabled={busy === row.activityId || !row.waterBodyId}
                 onPress={() => {
                   // Mark `prompted` as we hand off — the transition the stop-card could never make,
@@ -88,8 +88,8 @@ export function UnreportedSkates() {
                 Report this skate
               </Button>
               <Button
-                size="$2"
-                chromeless
+                size="sm"
+                variant="quiet"
                 disabled={busy === row.activityId}
                 onPress={async () => {
                   setBusy(row.activityId);
@@ -120,11 +120,11 @@ export function UnreportedSkates() {
                 onDismiss={() => setAdding(null)}
               />
             ) : (
-              <YStack gap="$2">
-                <Paragraph color="$foregroundMuted" fontSize={12}>
+              <YStack gap="2">
+                <Paragraph color="foregroundMuted" fontSize={12}>
                   We couldn't match this to a lake we know.
                 </Paragraph>
-                <Button size="$2" variant="outlined" onPress={() => setAdding(row.activityId)}>
+                <Button size="sm" variant="outlined" onPress={() => setAdding(row.activityId)}>
                   Add it from your track
                 </Button>
               </YStack>
