@@ -221,7 +221,7 @@ describe('a manifest with nothing optional in it', () => {
   });
 });
 
-describe('stageName', () => {
+describe('stageName grouping contract', () => {
   // The five OSM extracts are one step conceptually and five files in fact; the separator is what
   // lets `/admin/imports` group them without the loader inventing a nesting level.
   it('joins a family and a key, and leaves a lone family alone', () => {

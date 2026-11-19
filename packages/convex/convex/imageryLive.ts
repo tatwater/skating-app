@@ -677,6 +677,7 @@ async function pollOnce(
       ? addDaysIso(state.windowTo, -LATE_PUBLISH_OVERLAP_DAYS)
       : state.opensOn;
     // Never before the watch opened: frames from before it are last season's business.
+    // biome-ignore lint/complexity/useMathMinMax: ISO days compare lexically; Math.max returns NaN.
     const from = overlap > state.opensOn ? overlap : state.opensOn;
     const datetime = stacDayRange(from, today);
     const search = async (mission: StacMission) =>

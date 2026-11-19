@@ -192,7 +192,7 @@ describe('summarizeWeatherSince (D19 / D56)', () => {
           6,
         );
         expect(s.thawDegreeHours).toBeCloseTo(
-          hours.reduce((sum, h) => sum + (h.temperatureC > 0 ? h.temperatureC : 0), 0),
+          hours.reduce((sum, h) => sum + Math.max(0, h.temperatureC), 0),
           6,
         );
         expect(s.rainMm).toBeCloseTo(

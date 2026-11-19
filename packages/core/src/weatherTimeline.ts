@@ -368,7 +368,10 @@ export function timelineExtent(
 }
 
 function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
+  // Offscreen labels can have crossed bounds. Keep the lower-bound check first.
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

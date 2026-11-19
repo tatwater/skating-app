@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -9,6 +9,8 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
+      "!**/*.md",
+      "!pnpm-lock.yaml",
       "!**/_generated",
       "!**/routeTree.gen.ts",
       "!**/assets/regionMask.ts",
@@ -25,7 +27,10 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "correctness": {
+        "noComponentHookFactories": "off"
+      }
     }
   },
   "javascript": {
@@ -40,6 +45,16 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["apps/mobile/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noReactNativeRawText": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["**/*.svg"],
       "linter": {

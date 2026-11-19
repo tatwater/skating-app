@@ -93,6 +93,11 @@ frozen CI installs. For an urgent fix, document any exception and scope it to th
 - An updater can collect candidates and prepare a PR in isolation, but it should not auto-merge
   or deploy, or have production credentials.
 
+Biome 2.6 adds Markdown support and new React lint checks. This repo keeps Markdown and the
+generated pnpm lockfile out of Biome for now. The hook-factory rule and the native raw-text rule
+need separate review because they flag existing callback factories, test mocks, and Tamagui text
+components. The remaining recommended lint checks still run.
+
 ### Running the apps
 
 Both apps talk to a **Convex** deployment and a **Clerk** instance, and draw the map from
