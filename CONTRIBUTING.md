@@ -98,6 +98,20 @@ generated pnpm lockfile out of Biome for now. The hook-factory rule and the nati
 need separate review because they flag existing callback factories, test mocks, and Tamagui text
 components. The remaining recommended lint checks still run.
 
+#### Intentional dependency holds
+
+`pnpm outdated -r` still lists these packages. Don't include them in a routine upgrade batch:
+
+| Packages | What needs to change first |
+|---|---|
+| `react`, `react-dom`, `react-is`, `react-test-renderer` | Expo SDK 58 recommends React and React DOM `19.3.0`. Keep the workspace React versions and test renderer aligned. |
+| `@react-native-community/datetimepicker`, `@sentry/react-native`, `react-native-gesture-handler`, `react-native-reanimated`, `react-native-svg`, `react-native-worklets` | Follow Expo SDK 58's recommended versions and verify with `expo install --check`. |
+| `@maplibre/maplibre-gl-style-spec` (mobile) | Native MapLibre `11.5.1` depends on `26.4.4` exactly. Web uses a newer style spec; aligning mobile to it broke type-checking. |
+| `@babel/core` (mobile) | The Tamagui 2 compiler plugin requires Babel 7. Revisit Babel 8 with the mobile compiler migration. |
+| `@types/node` | Use the latest 24.x definitions while [the runtime](./.node-version) is on Node 24; Node 26 types can describe APIs the runtime doesn't have. |
+| `tamagui`, `@tamagui/config` | [Tamagui 3](https://tamagui.dev/docs/guides/how-to-upgrade) removes the v2 token and conditional-style syntax the app uses. Migrate the UI separately and verify native screens on a device. |
+| `convex-test` | `0.0.62` is the last release before tests gained a transaction clock that can't rewind past a commit. Migrate fixtures that rewind time in an existing harness before updating to `0.0.63` or later. |
+
 ### Running the apps
 
 Both apps talk to a **Convex** deployment and a **Clerk** instance, and draw the map from
