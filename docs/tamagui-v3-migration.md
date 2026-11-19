@@ -9,6 +9,9 @@ Tamagui API and compiler integration, not the palette or spacing scale. Follow t
 - The Tamagui `3.3.3` flat-values codemod identified 1,044 conversion sites under `app` and `src`.
   It classified 1,027 as clean, seven as unverified hosts, and ten as requiring manual review.
   These classifications are not proof that the resulting UI is correct.
+- Applying the codemod in isolation with Tamagui 3 and Babel 7 still left 182 type errors across
+  54 files. The remaining work includes shared fixes for button variants, size props, and theme
+  colors; the flat-values conversion alone is not enough.
 - Tamagui 3 no longer ships `@tamagui/babel-plugin`. Remove the legacy plugin rather than mixing
   compiler versions; use the runtime path first, and evaluate the optional Metro integration
   separately.
