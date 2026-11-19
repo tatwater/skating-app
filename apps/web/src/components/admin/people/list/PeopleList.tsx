@@ -266,7 +266,7 @@ export function PeopleList({
       bringIntoView(cursor);
       return;
     }
-    moveTo(open >= 0 ? open : 0);
+    moveTo(Math.max(open, 0));
   };
 
   const loading = status === 'loading';

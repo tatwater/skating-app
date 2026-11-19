@@ -26,7 +26,8 @@
     "@fortawesome/sharp-solid-svg-icons": "^7.3.1",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@gorhom/portal": "^1.0.14",
-    "@maplibre/maplibre-react-native": "^11.4.0",
+    "@maplibre/maplibre-gl-style-spec": "26.4.4",
+    "@maplibre/maplibre-react-native": "^11.5.1",
     "@protomaps/basemaps": "^5.7.2",
     "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/netinfo": "12.0.1",
@@ -35,7 +36,7 @@
     "@skating/core": "workspace:*",
     "@skating/design": "workspace:*",
     "@tamagui/config": "^2.7.7",
-    "convex": "^1.46.0",
+    "convex": "^1.50.0",
     "expo": "~58.0.26",
     "expo-auth-session": "~58.0.19",
     "expo-constants": "~58.0.16",
@@ -71,15 +72,15 @@
     "tamagui": "^2.7.7"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
+    "@babel/core": "^7.29.13",
     "@expo/env": "2.6.0",
     "@react-native/metro-config": "0.88.1",
     "@tamagui/babel-plugin": "^2.7.7",
-    "@testing-library/react-native": "^14.0.1",
+    "@testing-library/react-native": "^14.1.0",
     "@types/react": "^19.3.0",
-    "@vitest/coverage-v8": "^5.0.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "babel-preset-expo": "~58.0.26",
     "react-test-renderer": "19.3.0",
-    "vitest": "^5.0.2"
+    "vitest": "^5.1.0"
   }
 }

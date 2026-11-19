@@ -138,7 +138,7 @@ export interface WindRoseChartInput {
   arrowBandFraction?: number;
 }
 
-const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 /** Compass bearing → a point at `radius`, with north up and bearings running clockwise. */
 export function polarPoint(center: ChartPoint, radius: number, bearingDeg: number): ChartPoint {

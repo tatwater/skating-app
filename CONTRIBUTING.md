@@ -73,9 +73,44 @@ pnpm format           # Biome --write
 > from contributing, please open an issue — it's a trade we made for the app's own design work, not
 > a decision we're attached to.
 
-Dependency updates must pass the [workspace supply-chain policy](./pnpm-workspace.yaml), even in
-frozen CI installs. Review the lockfile diff, allow a dependency's build script only if needed,
-and keep any emergency cooldown exception limited to the exact version being reviewed.
+### Dependency maintenance
+
+Review `pnpm outdated -r` and `pnpm audit` weekly. Treat the day as a review slot, not a deadline
+to upgrade. Triage advisories promptly, and prefer releases that are at least three days old for
+routine upgrades. The [workspace policy](./pnpm-workspace.yaml) enforces a 24-hour minimum even in
+frozen CI installs. For an urgent fix, document any exception and scope it to the exact version.
+
+- Group packages that must move together. Keep major, authentication, and native upgrades
+  separate from routine patches. Skim release notes for patches; read the migration guide for
+  changes that can affect build settings, APIs we use, or device behavior.
+- Review the manifest and lockfile diffs, especially new packages, registry sources, peer
+  changes, and install hooks. Run a frozen install, lint, type checks, tests, and the affected
+  build. Compare the audit before and after.
+- Keep native versions aligned with the installed Expo SDK. From `apps/mobile`, use
+  `pnpm exec expo install --check` to check them. A newer registry version isn't a reason to
+  override the SDK recommendation. Validate deliberate native changes with a fresh Android
+  preview and a device smoke test.
+- An updater can collect candidates and prepare a PR in isolation, but it should not auto-merge
+  or deploy, or have production credentials.
+
+Biome 2.6 adds Markdown support and new React lint checks. This repo keeps Markdown and the
+generated pnpm lockfile out of Biome for now. The hook-factory rule and the native raw-text rule
+need separate review because they flag existing callback factories, test mocks, and Tamagui text
+components. The remaining recommended lint checks still run.
+
+#### Intentional dependency holds
+
+`pnpm outdated -r` still lists these packages. Don't include them in a routine upgrade batch:
+
+| Packages | What needs to change first |
+|---|---|
+| `react`, `react-dom`, `react-is`, `react-test-renderer` | Expo SDK 58 recommends React and React DOM `19.3.0`. Keep the workspace React versions and test renderer aligned. |
+| `@react-native-community/datetimepicker`, `@sentry/react-native`, `react-native-gesture-handler`, `react-native-reanimated`, `react-native-svg`, `react-native-worklets` | Follow Expo SDK 58's recommended versions and verify with `expo install --check`. |
+| `@maplibre/maplibre-gl-style-spec` (mobile) | Native MapLibre `11.5.1` depends on `26.4.4` exactly. Web uses a newer style spec; aligning mobile to it broke type-checking. |
+| `@babel/core` (mobile) | The Tamagui 2 compiler plugin requires Babel 7. Revisit Babel 8 with the mobile compiler migration. |
+| `@types/node` | Use the latest 24.x definitions while [the runtime](./.node-version) is on Node 24; Node 26 types can describe APIs the runtime doesn't have. |
+| `tamagui`, `@tamagui/config` | [Tamagui 3](https://tamagui.dev/docs/guides/how-to-upgrade) removes the v2 token and conditional-style syntax the app uses. Migrate the UI separately and verify native screens on a device. |
+| `convex-test` | `0.0.62` is the last release before tests gained a transaction clock that can't rewind past a commit. Migrate fixtures that rewind time in an existing harness before updating to `0.0.63` or later. |
 
 ### Running the apps
 

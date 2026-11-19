@@ -125,7 +125,11 @@ export type KeyScope = 'pane' | 'global' | 'go';
  * every call site; this is the runtime half, for a cast, a key from data, or a future refactor.
  */
 export function assertBindable(hotkey: string, scope: KeyScope): void {
-  if (!validateHotkey(hotkey).valid) throw new KeyBindingError(`"${hotkey}" is not a key.`);
+  const validation = validateHotkey(hotkey);
+  if (validation.errors.some(({ reason }) => reason === 'modifier-only')) {
+    throw new KeyBindingError(`"${hotkey}" is only modifiers, not a key.`);
+  }
+  if (!validation.valid) throw new KeyBindingError(`"${hotkey}" is not a key.`);
   if (!hasNonModifierKey(hotkey)) {
     throw new KeyBindingError(`"${hotkey}" is only modifiers, not a key.`);
   }

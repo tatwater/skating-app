@@ -84,7 +84,13 @@ function useScrollFold(scroller: RefObject<HTMLElement | null>, initial = false)
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const onScroll = () => setFolded((f) => nextFolded(f, el.scrollTop));
+    const onScroll = () => {
+      // A hidden pane reports zero without losing its scroll position. Read before React
+      // schedules the update, so a later pane switch cannot change what this event means.
+      if (el.getClientRects().length === 0) return;
+      const scrollTop = el.scrollTop;
+      setFolded((f) => nextFolded(f, scrollTop));
+    };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, [scroller]);

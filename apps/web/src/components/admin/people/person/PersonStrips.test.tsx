@@ -35,9 +35,9 @@ describe('the staff strip', () => {
     expect(grid(container)).toBeNull();
     rerender(<StaffStrip person={SARAH_PAGE} stats={SARAH_STATS} season={SEASON} now={NOW} />);
     // Measured as fitting: the board's one row, the trend a quarter wider.
-    expect(grid(container)?.style.gridTemplateColumns).toBe(
-      'repeat(4, minmax(0, 1fr)) minmax(0, 1.25fr)',
-    );
+    const expected = document.createElement('div').style;
+    expected.gridTemplateColumns = 'repeat(4, minmax(0, 1fr)) minmax(0, 1.25fr)';
+    expect(grid(container)?.style.gridTemplateColumns).toBe(expected.gridTemplateColumns);
   });
 });
 

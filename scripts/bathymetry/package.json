@@ -32,9 +32,9 @@
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
-    "@types/node": "^24.19.0",
-    "@vitest/coverage-v8": "^5.0.2",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "tsx": "^4.23.15",
-    "vitest": "^5.0.2"
+    "vitest": "^5.1.0"
   }
 }

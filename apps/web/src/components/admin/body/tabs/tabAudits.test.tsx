@@ -610,18 +610,18 @@ function PlacesSettles() {
 }
 
 describe('a settling action never drops the keyboard to the page', () => {
-  it('Access: ruling no public access takes the button that ruled away; focus stays', async () => {
+  it('Access: ruling no public access hides its trigger without losing focus', async () => {
     const user = userEvent.setup();
     render(<InConsole panel={<AccessSettles />} />);
+    const trigger = screen.getByRole('button', { name: 'Rule no public access' });
     await press(user, 'Rule no public access');
     const dialog = await screen.findByRole('alertdialog');
     await user.type(within(dialog).getByRole('textbox'), 'Every approach is posted');
     await press(user, /^Rule no public access/, dialog);
     await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
-    });
-    expectFocusKept();
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('hidden');
+    await vi.waitFor(expectFocusKept);
   });
 
   it('Water: choosing a depth’s source takes its button away; focus stays', async () => {

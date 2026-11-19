@@ -259,34 +259,43 @@ describe('the same towns as before, for any boundaries', () => {
     pageCells: fc.option(fc.integer({ min: 1, max: 60 }), { nil: undefined }),
     columnRows: fc.option(fc.integer({ min: 1, max: 6 }), { nil: undefined }),
   });
-  /** What the runs reached, so a run that only ever met empty boxes can't pass for a proof. */
-  const reached = { towns: 0, paged: 0, fellBack: 0 };
-  const same = fc.asyncProperty(world, async ({ areas, box, pageCells, columnRows }) => {
-    const t = harness();
-    const seeded = await seedAreas(t, areas);
-    const before = await t.run((ctx) => referenceTownIds(ctx, box));
-    // The fixture's reference without a database is the database walk's answer.
-    expect(referenceOfAreas(areas, seeded, box)).toEqual(before);
-    const after = await pagedTownIds(t, box, {
-      ...(pageCells !== undefined ? { pageCells } : {}),
-      ...(columnRows !== undefined ? { columnRows } : {}),
+  const same = (record?: (hits: { towns: boolean; paged: boolean; fellBack: boolean }) => void) =>
+    fc.asyncProperty(world, async ({ areas, box, pageCells, columnRows }) => {
+      const t = harness();
+      const seeded = await seedAreas(t, areas);
+      const before = await t.run((ctx) => referenceTownIds(ctx, box));
+      // The fixture's reference without a database is the database walk's answer.
+      expect(referenceOfAreas(areas, seeded, box)).toEqual(before);
+      const after = await pagedTownIds(t, box, {
+        ...(pageCells !== undefined ? { pageCells } : {}),
+        ...(columnRows !== undefined ? { columnRows } : {}),
+      });
+      expect(after.ids).toEqual(before);
+      record?.({
+        towns: before.length > 0,
+        paged: after.pages.length > 1,
+        fellBack: after.pages.some((p) => p.calls > p.columns),
+      });
     });
-    expect(after.ids).toEqual(before);
-    if (before.length > 0) reached.towns++;
-    if (after.pages.length > 1) reached.paged++;
-    if (after.pages.some((p) => p.calls > p.columns)) reached.fellBack++;
-  });
-  test.each([7, 1337, 90210])('identical candidates, in order (seed %i)', async (seed) => {
-    await fc.assert(same, { seed, numRuns: 30 });
+  test('identical candidates, in order, with deterministic path coverage', async () => {
+    const reached = { towns: 0, paged: 0, fellBack: 0 };
+    const property = same((hits) => {
+      if (hits.towns) reached.towns++;
+      if (hits.paged) reached.paged++;
+      if (hits.fellBack) reached.fellBack++;
+    });
+    for (const seed of [7, 1337, 90210]) {
+      await fc.assert(property, { seed, numRuns: 60 });
+    }
+    // These floors describe the fixed corpus, not what a random seed happens to generate.
+    expect(reached.towns).toBeGreaterThan(20);
+    expect(reached.paged).toBeGreaterThan(10);
+    expect(reached.fellBack).toBeGreaterThan(5);
   });
   test('identical candidates, in order (a random seed, logged)', async () => {
     const seed = Date.now() % 2_147_483_647;
     console.info(`town candidates equivalence: seed ${seed}`);
-    await fc.assert(same, { seed, numRuns: 30 });
-    // Over the pinned seeds and this one: towns found, pages chained, columns read again by cell.
-    expect(reached.towns).toBeGreaterThan(20);
-    expect(reached.paged).toBeGreaterThan(10);
-    expect(reached.fellBack).toBeGreaterThan(5);
+    await fc.assert(same(), { seed, numRuns: 30 });
   });
 
   test('a cell over its cap still throws, by column read or by cell', async () => {

@@ -8,7 +8,7 @@ const OPENED_FROM_REGION = '[role="dialog"],[role="alertdialog"],[role="menu"],[
 
 /**
  * **A pending or settling action never drops the keyboard to the page.** Watches a region (the
- * inspector's panel): when the control that last had focus inside it is removed or disabled (a
+ * inspector's panel): when the control that last had focus inside it is removed, hidden, or disabled (a
  * row that leaves once its write lands, a button that becomes another, a dialog or menu closing
  * onto a trigger that is gone) and focus has fallen to the page, focus goes back into the region —
  * so a keyboard reader is never left to find the tab again.
@@ -27,7 +27,7 @@ export function useKeepFocus(region: RefObject<HTMLElement | null>): void {
     const gone = (el: HTMLElement) =>
       !el.isConnected ||
       (el as HTMLButtonElement).disabled === true ||
-      el.closest('[inert]') !== null;
+      el.closest('[hidden], [inert]') !== null;
     const rescue = () => {
       const active = document.activeElement;
       if (last === null || (active !== null && active !== document.body)) return;
@@ -64,7 +64,7 @@ export function useKeepFocus(region: RefObject<HTMLElement | null>): void {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['disabled', 'inert'],
+      attributeFilter: ['disabled', 'hidden', 'inert'],
     });
     document.addEventListener('focusin', onIn);
     document.addEventListener('focusout', later, true);

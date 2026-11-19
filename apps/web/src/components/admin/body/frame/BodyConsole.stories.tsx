@@ -476,11 +476,18 @@ export const PhoneKeepsThePlace: Story = {
     await expect(left).toBeGreaterThan(0);
     await userEvent.click(within(pane('body')).getByRole('button', { name: 'Show the tabs' }));
     await waitFor(() => expect(getComputedStyle(pane('inspector')).display).not.toBe('none'));
+    // A scroll notification delivered while the body has no layout box must not unfold it.
+    await expect(scroller().scrollTop).toBe(0);
+    scroller().dispatchEvent(new Event('scroll'));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await expect(slot(canvasElement, 'record-lockup')).toHaveAttribute('data-folded');
     await userEvent.click(
       within(pane('inspector')).getByRole('button', { name: 'Back to the body' }),
     );
     await waitFor(() => expect(getComputedStyle(pane('body')).display).not.toBe('none'));
-    await waitFor(() => expect(scroller().scrollTop).toBeCloseTo(left, 0));
-    await expect(slot(canvasElement, 'record-lockup')).toHaveAttribute('data-folded');
+    await waitFor(() => {
+      expect(scroller().scrollTop).toBeCloseTo(left, 0);
+      expect(slot(canvasElement, 'record-lockup')).toHaveAttribute('data-folded');
+    });
   },
 };
