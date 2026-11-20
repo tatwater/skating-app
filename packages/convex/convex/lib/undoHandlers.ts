@@ -66,14 +66,14 @@ function cascadeOf(row: Doc<'moderationActions'>): PostCascade[] | undefined {
 
 const takeContentBackTo =
   (status: ContentStatus) =>
-  async ({ ctx, actor, row, reason, moderation }: UndoCall) => {
+  async ({ ctx, actor, row, reason, writers }: UndoCall) => {
     // A Post whose row lists its members goes back with each of them to its own prior status,
     // whatever the Post returns to (founder call, 2026-11-13).
     if (cascadeOf(row) !== undefined) {
-      await moderation.revertPostVerdict(ctx, actor, { row, reason });
+      await writers.revertPostVerdict(ctx, actor, { row, reason });
       return;
     }
-    await moderation.setContentStatus(ctx, actor, {
+    await writers.setContentStatus(ctx, actor, {
       targetType: row.targetType as ContentTargetType,
       targetId: row.targetId,
       status,
@@ -230,7 +230,7 @@ function assertChanged(result: PersonWriteResult): void {
 async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   const userId = call.row.targetId as Id<'profiles'>;
   const reason = call.reason;
-  const { banImpl, suspendImpl, unbanImpl } = call.moderation;
+  const { banImpl, suspendImpl, unbanImpl } = call.writers;
   const write = statusWrite(prev);
   // The prior terms whole — their reason too, kept on file; the undo's own reason is its audit row's.
   // A row from before `prev` recorded one has none to put back: `null`, "not recorded", as the page
@@ -329,12 +329,12 @@ const undoPostingPermission: UndoHandler = {
           allowed: prev.allowed as boolean,
         };
   },
-  run: async ({ ctx, actor, row, reason, moderation }) => {
+  run: async ({ ctx, actor, row, reason, writers }) => {
     const { prev, permission } = meta(row);
     const userId = row.targetId as Id<'profiles'>;
     if (permission === 'bounties') {
       assertChanged(
-        await moderation.setBountyLimitImpl(ctx, actor, {
+        await writers.setBountyLimitImpl(ctx, actor, {
           userId,
           limit: prev.limit ?? undefined,
           reason,
@@ -342,7 +342,7 @@ const undoPostingPermission: UndoHandler = {
       );
     } else {
       assertChanged(
-        await moderation.setPostingPermissionImpl(ctx, actor, {
+        await writers.setPostingPermissionImpl(ctx, actor, {
           userId,
           permission: permission as PostingPermission,
           allowed: prev.allowed as boolean,

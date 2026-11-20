@@ -1,3 +1,4 @@
+export { batchNdjson } from './batchNdjson';
 export { convexRun } from './convexRun';
 export { resolveDeployment } from './deployment';
 export {

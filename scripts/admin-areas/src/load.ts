@@ -17,37 +17,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
-import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
-
-/**
- * Batches bounded like the water ETL: Convex caps a mutation at 4096 document reads, so cap by
- * count (since A01 a row costs one `by_area` lookup plus ≤ 4 cell writes — flat, not growing with
- * the index — so this cap has plenty of headroom); `convex run` also takes args only as an inline
- * JSON string (ARG_MAX), so cap by bytes — a state/county boundary can be large (~hundreds of KB
- * simplified), so the byte budget is what actually binds here.
- */
-const MAX_BATCH_COUNT = 150;
-const MAX_BATCH_BYTES = 512 * 1024;
-
-/** Group NDJSON lines into batches under both the count and byte budgets. */
-function chunk(lines: string[]): string[][] {
-  const batches: string[][] = [];
-  let current: string[] = [];
-  let size = 0;
-  for (const line of lines) {
-    const lineBytes = Buffer.byteLength(line) + 1;
-    const full = current.length >= MAX_BATCH_COUNT || size + lineBytes > MAX_BATCH_BYTES;
-    if (current.length > 0 && full) {
-      batches.push(current);
-      current = [];
-      size = 0;
-    }
-    current.push(line);
-    size += lineBytes;
-  }
-  if (current.length > 0) batches.push(current);
-  return batches;
-}
+import { batchNdjson, convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 
 /**
  * How many batches may fail back-to-back before the load gives up. Same reasoning as the water
@@ -107,7 +77,7 @@ function main(): void {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const batches = chunk(lines);
+  const batches = batchNdjson(lines);
   process.stderr.write(
     `[admin-areas] loading ${lines.length} areas in ${batches.length} batch(es) (state: ${state})…\n`,
   );

@@ -128,3 +128,28 @@ Regression tests cover overlapping tags, geometry vetoes, and tag coercion.
 `osmLandmarkKind` went from 27 to 8 cyclomatic and from 29 to 7 cognitive complexity. ETL now
 has 14 non-test functions above both thresholds, down from 15. The non-app score stayed at 77.3;
 no thresholds or exclusions changed.
+
+## Role undo and canonical import batching
+
+- The undo mutation now supplies the existing admin role writers along with the moderation
+  writers. Undo still uses the same guards and side effects, and the eligibility code no longer
+  imports `admin.ts` at runtime. The production-only non-app check reports zero cycles; the
+  ordinary report still shows the 20 test-discovery cycles.
+- The water-body and admin-area loaders now share `batchNdjson` in `@skating/run-log`. It preserves
+  the 150-record and 512 KiB input budgets and the oversized-single-record behavior. Each loader
+  still owns its write and failure policies. The non-app report went from 238 to 237 clone groups
+  and from 77.3 to **77.8 (B)**.
+- The next Convex candidate is `resolveFlagTarget` in `moderation.ts`: 32 cyclomatic, 40 cognitive,
+  and 34% measured statement coverage in the local Vitest run. First pin the queue's behavior
+  by target kind, including invalid or deleted IDs and the authorless water-body case. Then
+  separate loading a typed target from formatting its queue summary, without adding reads.
+
+## Moderation queue target resolution
+
+Each supported flag kind now has a typed table lookup and a pure summary formatter. Invalid or
+deleted targets still show as `(deleted)`. Attribution still takes at most one extra profile read,
+and a flagged water body still has no author. Queue tests cover all eight target kinds and distinguish
+a missing target from an existing target whose author is gone.
+
+`resolveFlagTarget` went from 32 to 3 cyclomatic and from 40 to 2 cognitive complexity. The
+non-app score stayed at **77.8 (B)**; clone groups fell from 237 to 236.

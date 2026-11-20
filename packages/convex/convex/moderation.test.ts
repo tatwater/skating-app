@@ -1,7 +1,7 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { RESTORE_ALREADY_UP } from './lib/recordRules';
 import schema from './schema';
 
@@ -87,6 +87,155 @@ async function seedReport(t: ReturnType<typeof convexTest>, authorId: Id<'profil
     }),
   );
 }
+
+describe('moderation.listFlags target context', () => {
+  type TargetKind = Doc<'contentFlags'>['targetType'];
+
+  test('presents every target kind with its own summary, attribution and moderation status', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const reportId = await seedReport(t, author.id);
+    const note = 'x'.repeat(101);
+    await t.run(async (ctx) => {
+      const report = await ctx.db.get(reportId);
+      if (!report) throw new Error('Expected the seeded report');
+      const now = report.createdAt;
+      await ctx.db.patch(reportId, { notes: `  ${note}  `, moderationStatus: 'hidden' });
+      // A mapped body's creator must not be presented as the subject of an access claim.
+      await ctx.db.patch(report.waterBodyId, { createdByUserId: author.id });
+      const postId = await ctx.db.insert('posts', {
+        authorId: author.id,
+        reportIds: [reportId],
+        photoIds: [],
+        title: 'Trip title',
+        body: 'Not the title',
+        latestSkateEndTime: now,
+        moderationStatus: 'visible',
+        createdAt: now,
+        updatedAt: now,
+      });
+      const commentId = await ctx.db.insert('comments', {
+        reportId,
+        authorId: author.id,
+        body: '  Reply text  ',
+        source: 'native',
+        moderationStatus: 'removed',
+        createdAt: now,
+      });
+      const hazardId = await ctx.db.insert('hazards', {
+        waterBodyId: report.waterBodyId,
+        type: 'open_water',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+        radiusMeters: 40,
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        status: 'active',
+        moderationStatus: 'hidden',
+        healingState: 'none',
+        confirmCount: 0,
+        goneCount: 0,
+        snowHidden: false,
+        photoIds: [],
+        createdByUserId: author.id,
+        createdAt: now,
+        firstReportedAt: now,
+        lastConfirmedAt: now,
+      });
+      const photoId = await ctx.db.insert('photos', {
+        storageId: 'unused-full-blob',
+        thumbStorageId: 'unused-thumb-blob',
+        uploaderId: author.id,
+        placeOnMap: false,
+        createdAt: now,
+      });
+      const alertId = await ctx.db.insert('accessAlerts', {
+        targetType: 'put_in',
+        waterBodyId: report.waterBodyId,
+        reason: 'not_plowed',
+        kind: 'blocker',
+        createdByUserId: author.id,
+        createdAt: now,
+        season: 2026,
+        status: 'official',
+        confirmCount: 0,
+        denyCount: 0,
+      });
+      const targets = {
+        report: reportId,
+        post: postId,
+        comment: commentId,
+        hazard: hazardId,
+        photo: photoId,
+        accessAlert: alertId,
+        waterbody: report.waterBodyId,
+        user: author.id,
+      } satisfies Record<TargetKind, string>;
+      for (const targetType of Object.keys(targets) as TargetKind[]) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: mod.id,
+          targetType,
+          targetId: targets[targetType],
+          reason: 'spam',
+          status: 'open',
+          createdAt: now,
+        });
+      }
+    });
+
+    const { standard } = await mod.as.query(api.moderation.listFlags, {});
+    const attributed = {
+      exists: true,
+      author: { userId: author.id, username: 'author', displayName: 'author' },
+    };
+    expect(
+      Object.fromEntries(standard.map(({ targetType, target }) => [targetType, target])),
+    ).toEqual({
+      report: { ...attributed, summary: `${note.slice(0, 100)}…`, moderationStatus: 'hidden' },
+      post: { ...attributed, summary: 'Trip title', moderationStatus: 'visible' },
+      comment: { ...attributed, summary: 'Reply text', moderationStatus: 'removed' },
+      hazard: { ...attributed, summary: 'Hazard: open_water', moderationStatus: 'hidden' },
+      photo: { ...attributed, summary: 'Photo' },
+      accessAlert: { ...attributed, summary: 'Access alert: not_plowed' },
+      waterbody: { exists: true, author: null, summary: 'Lake: Lake Morey' },
+      user: { ...attributed, summary: 'User: @author' },
+    });
+  });
+
+  test('keeps invalid and deleted targets distinct from an existing target with a missing author', async () => {
+    const t = convexTest(schema, modules);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const present = await seedReport(t, author.id);
+    const deleted = await seedReport(t, author.id);
+    await t.run(async (ctx) => {
+      await ctx.db.delete(deleted);
+      await ctx.db.delete(author.id);
+      for (const targetId of [mod.id, deleted, present]) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: mod.id,
+          targetType: 'report',
+          targetId,
+          reason: 'spam',
+          status: 'open',
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    const { standard } = await mod.as.query(api.moderation.listFlags, {});
+    const targets = new Map(standard.map(({ targetId, target }) => [targetId, target]));
+    const notFound = { exists: false, author: null, summary: '(deleted)' };
+    expect(targets.get(mod.id)).toEqual(notFound);
+    expect(targets.get(deleted)).toEqual(notFound);
+    expect(targets.get(present)).toEqual({
+      exists: true,
+      author: null,
+      summary: 'Ice report',
+      moderationStatus: 'visible',
+    });
+  });
+});
 
 describe('moderation.setModerationStatus', () => {
   test('rejects a non-moderator', async () => {

@@ -15,7 +15,7 @@
 import { disputesReview, effectiveBountyLimitOf } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { recordAlertVerdict } from './accessAlerts';
 import {
@@ -1378,128 +1378,94 @@ interface FlagTarget {
   author: QueueUser | null;
   /** A short human label for the queue row. */
   summary: string;
-  /** Present for content that carries a moderation axis (report/comment/hazard) — lets the queue show
-   *  whether it's already hidden. */
+  /** Present for reports, posts, comments and hazards, independently of their other statuses. */
   moderationStatus?: string;
 }
 
-/** Truncate free text to a queue-friendly snippet without splitting mid-surrogate awkwardly. */
-function snippet(text: string | undefined, max = 100): string {
+/** Trim free text and cap it for a queue row. */
+function snippet(text: string | undefined): string {
   if (!text) return '';
   const t = text.trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
+  return t.length > 100 ? `${t.slice(0, 100)}…` : t;
 }
 
+type FlagTargetKind = Doc<'contentFlags'>['targetType'];
+type FlagTargetSummary = Omit<FlagTarget, 'exists' | 'author'> & {
+  /** Load a content author's profile, reuse the flagged profile itself, or show no author. */
+  author: Id<'profiles'> | QueueUser | null;
+};
+type FlagTargetReader = (ctx: QueryCtx, rawId: string) => Promise<FlagTargetSummary | null>;
+
+/** Normalize against the right table and read at most one target; formatting needs no DB access. */
+function flagTargetFrom<Table extends TableNames>(
+  table: Table,
+  summarize: (doc: Doc<Table>) => FlagTargetSummary,
+): FlagTargetReader {
+  return async (ctx, rawId) => {
+    const id = ctx.db.normalizeId(table, rawId);
+    const doc = id ? await ctx.db.get(table, id) : null;
+    return doc ? summarize(doc) : null;
+  };
+}
+
+const FLAG_TARGET_READERS = {
+  report: flagTargetFrom('reports', (doc) => ({
+    author: doc.authorId,
+    summary: snippet(doc.notes) || 'Ice report',
+    moderationStatus: doc.moderationStatus,
+  })),
+  post: flagTargetFrom('posts', (doc) => ({
+    author: doc.authorId,
+    summary: doc.title || snippet(doc.body) || 'Post',
+    moderationStatus: doc.moderationStatus,
+  })),
+  comment: flagTargetFrom('comments', (doc) => ({
+    author: doc.authorId,
+    summary: snippet(doc.body) || 'Comment',
+    moderationStatus: doc.moderationStatus,
+  })),
+  hazard: flagTargetFrom('hazards', (doc) => ({
+    author: doc.createdByUserId,
+    summary: `Hazard: ${doc.type}`,
+    moderationStatus: doc.moderationStatus,
+  })),
+  photo: flagTargetFrom('photos', (doc) => ({
+    author: doc.uploaderId,
+    summary: snippet(doc.caption) || 'Photo',
+  })),
+  accessAlert: flagTargetFrom('accessAlerts', (doc) => ({
+    author: doc.createdByUserId,
+    // The reason is the claim; the note is its evidence, so lead with it when available.
+    summary: snippet(doc.note) || `Access alert: ${doc.reason}`,
+  })),
+  waterbody: flagTargetFrom('waterBodies', (doc) => ({
+    // Whoever drew the outline didn't make the access claim. No per-author actions on a body.
+    author: null,
+    summary: doc.name ? `Lake: ${doc.name}` : 'Unnamed water body',
+  })),
+  user: flagTargetFrom('profiles', (doc) => ({
+    // The accused is the target. Reuse the profile we already loaded.
+    author: { userId: doc._id, username: doc.username, displayName: doc.displayName },
+    summary: `User: @${doc.username}`,
+  })),
+} satisfies Record<FlagTargetKind, FlagTargetReader>;
+
 /**
- * Resolve a flag's target to just enough context to triage it in the queue (D37). `targetId` is a
- * string on the flag; we normalize it against the right table and read the one doc. Never fans out.
+ * Resolve a flag's target for queue triage (D37): at most one target read and one profile read.
  */
 async function resolveFlagTarget(
   ctx: QueryCtx,
-  targetType: Doc<'contentFlags'>['targetType'],
+  targetType: FlagTargetKind,
   rawTargetId: string,
 ): Promise<FlagTarget> {
-  const notFound: FlagTarget = { exists: false, author: null, summary: '(deleted)' };
-  switch (targetType) {
-    case 'report': {
-      const id = ctx.db.normalizeId('reports', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.authorId),
-        summary: snippet(doc.notes) || 'Ice report',
-        moderationStatus: doc.moderationStatus,
-      };
-    }
-    case 'post': {
-      // A10 (D186). The prose is the Post's; the summary leads with the title, then the body.
-      const id = ctx.db.normalizeId('posts', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.authorId),
-        summary: doc.title || snippet(doc.body) || 'Post',
-        moderationStatus: doc.moderationStatus,
-      };
-    }
-    case 'comment': {
-      const id = ctx.db.normalizeId('comments', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.authorId),
-        summary: snippet(doc.body) || 'Comment',
-        moderationStatus: doc.moderationStatus,
-      };
-    }
-    case 'hazard': {
-      const id = ctx.db.normalizeId('hazards', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.createdByUserId),
-        summary: `Hazard: ${doc.type}`,
-        moderationStatus: doc.moderationStatus,
-      };
-    }
-    case 'photo': {
-      const id = ctx.db.normalizeId('photos', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.uploaderId),
-        summary: snippet(doc.caption) || 'Photo',
-      };
-    }
-    case 'accessAlert': {
-      // A06d (D73). Without this case the switch falls through to `notFound`, and every access-alert
-      // flag renders in the queue as "(deleted)" with no author and no note — a moderator looking at
-      // a report about nothing. Adding the target type to `FLAG_TARGET_TYPES` made filing work; this
-      // is what makes *triaging* work, and the two are easy to ship apart.
-      const id = ctx.db.normalizeId('accessAlerts', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        author: await loadQueueUser(ctx, doc.createdByUserId),
-        // The reason is the claim and the note is the evidence for it; a bogus alert is usually only
-        // recognizable from the second, so it leads where there is one.
-        summary: snippet(doc.note) || `Access alert: ${doc.reason}`,
-      };
-    }
-    case 'waterbody': {
-      // A06f — the same trap the `accessAlert` case above documents, and the reason that note is worth
-      // its length: without this the switch falls through to `notFound` and every access report shows
-      // as "(deleted)".
-      const id = ctx.db.normalizeId('waterBodies', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      return {
-        exists: true,
-        // **No author, and that is not a gap.** Every other flag target was written by somebody who
-        // can be warned or banned; a lake has no author, and the `createdByUserId` on a user-drawn
-        // body is the wrong person entirely — they drew the outline, they did not claim it was
-        // private. Leaving it null keeps the queue's per-author affordances from pointing at them.
-        author: null,
-        summary: doc.name ? `Lake: ${doc.name}` : 'Unnamed water body',
-      };
-    }
-    case 'user': {
-      const id = ctx.db.normalizeId('profiles', rawTargetId);
-      const doc = id ? await ctx.db.get(id) : null;
-      if (!doc) return notFound;
-      // The accused *is* the target — the "author" slot doubles as the subject for a user flag.
-      const subject = { userId: doc._id, username: doc.username, displayName: doc.displayName };
-      return { exists: true, author: subject, summary: `User: @${doc.username}` };
-    }
-    default:
-      return notFound;
-  }
+  const target = await FLAG_TARGET_READERS[targetType](ctx, rawTargetId);
+  if (!target) return { exists: false, author: null, summary: '(deleted)' };
+  const { author, ...summary } = target;
+  return {
+    exists: true,
+    ...summary,
+    author: typeof author === 'string' ? await loadQueueUser(ctx, author) : author,
+  };
 }
 
 /** A flag as the queue presents it — the row, who filed it, and the resolved subject. */

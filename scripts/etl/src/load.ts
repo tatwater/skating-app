@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import {
+  batchNdjson,
   convexRun,
   type ExtractManifest,
   extractStage,
@@ -41,43 +42,6 @@ import {
   resolveDeployment,
 } from '@skating/run-log';
 import { loadMergeProvenance } from './mergeProvenance';
-
-/**
- * Batches are bounded by two Convex/OS limits:
- *
- *  1. **Reads per mutation: Convex caps a single mutation at 4096 document reads.** This used to
- *     be the binding constraint — each body's geospatial `.insert()` read ~15–20 S2-cell docs,
- *     a cost that *grew with the index size*, so a batch fine against an empty index blew the
- *     limit once tens of thousands of bodies were indexed. Since A01 a body costs one `by_body`
- *     lookup plus ≤ 4 cell writes, flat regardless of corpus size, so `MAX_BATCH_COUNT` now has
- *     enormous headroom here; ARG_MAX below is what actually binds.
- *  2. **ARG_MAX:** `convex run` takes its args only as an inline JSON string (macOS ARG_MAX
- *     ≈ 1 MiB for the whole argv+env). `MAX_BATCH_BYTES` keeps a batch's serialized args well
- *     under that; Lake Champlain (~0.3 MiB simplified) is the only body that ever nears a solo
- *     batch, and the oversized-single-line guard admits it regardless.
- */
-const MAX_BATCH_COUNT = 150;
-const MAX_BATCH_BYTES = 512 * 1024;
-
-/** Group NDJSON lines into batches under both the count and byte budgets. */
-function chunk(lines: string[]): string[][] {
-  const batches: string[][] = [];
-  let current: string[] = [];
-  let size = 0;
-  for (const line of lines) {
-    const lineBytes = Buffer.byteLength(line) + 1;
-    const full = current.length >= MAX_BATCH_COUNT || size + lineBytes > MAX_BATCH_BYTES;
-    if (current.length > 0 && full) {
-      batches.push(current);
-      current = [];
-      size = 0;
-    }
-    current.push(line);
-    size += lineBytes;
-  }
-  if (current.length > 0) batches.push(current);
-  return batches;
-}
 
 /**
  * How many batches may fail back-to-back before the load gives up.
@@ -252,7 +216,7 @@ function main(): void {
     );
     process.exit(1);
   }
-  const batches = chunk(lines);
+  const batches = batchNdjson(lines);
   /**
    * Every record by its arrival key, so an unresolved verdict can be written back out whole.
    *
