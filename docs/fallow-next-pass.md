@@ -267,3 +267,26 @@ five state-specific NDJSON files, the downstate mask, and the two generated app 
 sources were contacted and no app files in the checkout were rewritten. The remaining
 orchestration was kept intact; separating the mask builder into a new workflow is not necessary
 to fix archive publication.
+
+## `scripts/wind-climate`: offline derive
+
+Baseline `c3108e81`. Derive checks archive completeness before writes, then reads one cell at a
+time and writes the resulting body stamps in batches. The command's real subprocess trace and
+diagnostics matched the baseline for both a missing cell and a thin archived sample. Tests also
+cover full direction samples with unavailable speeds, absent winters, no eligible bodies, and
+the server's malformed and missing-row tallies. No WTK requests or shared Convex writes were made.
+
+| Check | Before | After |
+| --- | ---: | ---: |
+| Fallow check issues | 2 | 0 |
+| Default clone groups touching this workspace | 4 | 1 |
+| Health findings with Vitest coverage supplied | 5 | 4 |
+| Workspace tests | 55 | 61 |
+| Workspace line coverage | 99.06% | 96.79% |
+| Uncached workspace test command, one sample | 1.72 s | 2.23 s |
+
+The coverage denominator now includes the offline derive command (93.75% line coverage). Its
+process entry was exercised separately. The three derive clones were command-wrapper patterns,
+not shared wind rules. The one retained clone pairs the wind snapshot and elevation snapshot
+loops; keep their pacing, retries, and cache policies explicit until the snapshot lane is
+reviewed. The remaining health findings are in `snapshot.ts` and the CSV accumulator.

@@ -37,8 +37,7 @@ const RAW_DIR = resolve(HERE, '../.raw');
 /** Rows per mutation. Each carries two 16-element arrays and two scalars. */
 const WRITE_BATCH_SIZE = 100;
 
-async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+export function deriveWindClimate(args: string[], archiveDirectory = RAW_DIR): number {
   const allowNonDev = args.includes('--prod');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   const importFloorOnly = args.includes('--import-floor');
@@ -52,26 +51,24 @@ async function main(): Promise<void> {
     process.stderr.write(
       '[derive] refusing: target is not a dev deployment. Confirm, then re-run with --prod.\n',
     );
-    process.exit(1);
+    return 1;
   }
-  if (!existsSync(RAW_DIR)) {
+  if (!existsSync(archiveDirectory)) {
     process.stderr.write(
-      `[derive] no archive at ${RAW_DIR}.\n` +
+      `[derive] no archive at ${archiveDirectory}.\n` +
         '[derive] Run `snapshot` (7.7 h) or `mirror-r2.sh pull` (minutes). This command deliberately\n' +
         '[derive] cannot fetch: a derive that quietly hits the network is how an archive stops being\n' +
         '[derive] the source of truth.\n',
     );
-    process.exit(1);
+    return 1;
   }
 
   const { cells, scanned, belowFloor, bodies } = collectWindTargets(importFloorOnly);
 
   const archived = new Set(
-    existsSync(RAW_DIR)
-      ? readdirSync(RAW_DIR, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => d.name)
-      : [],
+    readdirSync(archiveDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name),
   );
   const missing = [...cells.keys()].filter((key) => !archived.has(key));
   process.stderr.write(
@@ -87,7 +84,7 @@ async function main(): Promise<void> {
         `e.g. ${missing.slice(0, 5).join(', ')}\n` +
         '[derive] Run `snapshot` to fetch only the difference — it is incremental.\n',
     );
-    process.exit(1);
+    return 1;
   }
 
   const logger = new RunLogger({
@@ -102,7 +99,7 @@ async function main(): Promise<void> {
         detail:
           `${archived.size} cells x ${WTK_YEARS.length} winters from .raw/ — NO network requests. ` +
           'Re-deriving at a different threshold costs minutes; the fetch cost 7.7 hours, once.',
-        output: RAW_DIR,
+        output: archiveDirectory,
       },
       {
         name: 'write',
@@ -115,63 +112,12 @@ async function main(): Promise<void> {
   });
   logger.start();
 
-  const updates: {
-    waterBodyId: string;
-    rose?: number[];
-    strongWindHours: number[];
-    meanWindMps?: (number | null)[];
-    sampledWindHours: number;
-    strongWindMinMps: number;
-  }[] = [];
-  let tooThin = 0;
-  let cellsRead = 0;
-  let yearsMissing = 0;
-
-  for (const [key, list] of cells) {
-    const acc = emptyAccumulator(minMps);
-    for (const year of WTK_YEARS) {
-      const path = join(RAW_DIR, responsePath(key, year));
-      if (!existsSync(path)) {
-        // A cell present but a year absent: a partial fetch. Counted rather than fatal — the other
-        // winters still describe the cell, and `sampledWindHours` records the smaller sample
-        // honestly, which is exactly what that field is for.
-        yearsMissing++;
-        continue;
-      }
-      accumulateCsv(gunzipSync(readFileSync(path)).toString('utf8'), acc);
-    }
-    const climate = climateFromAccumulator(acc);
-    if (climate.rose === null) tooThin += list.length;
-    // All-null means no hour in this cell had a readable speed at all. Storing sixteen nulls says
-    // the same thing as storing nothing while costing a column, so the field is simply absent.
-    const anySpeed = climate.meanWindMps.some((v) => v !== null);
-    for (const t of list) {
-      updates.push({
-        waterBodyId: t.waterBodyId,
-        ...(climate.rose ? { rose: climate.rose } : {}),
-        strongWindHours: climate.strongWindHours,
-        ...(anySpeed ? { meanWindMps: climate.meanWindMps } : {}),
-        sampledWindHours: climate.sampledWindHours,
-        strongWindMinMps: climate.strongWindMinMps,
-      });
-    }
-    cellsRead++;
-    if (cellsRead % 100 === 0) {
-      process.stderr.write(`[derive] ${cellsRead}/${cells.size} cells read\n`);
-    }
-  }
-
-  const totals = { updated: 0, malformed: 0, missing: 0 };
-  for (let i = 0; i < updates.length; i += WRITE_BATCH_SIZE) {
-    const result = convexRun<typeof totals>('waterBodies:importWindRoses', {
-      roses: updates.slice(i, i + WRITE_BATCH_SIZE),
-    });
-    totals.updated += result.updated;
-    totals.malformed += result.malformed;
-    totals.missing += result.missing;
-    logger.count('updated', totals.updated);
-    logger.flush();
-  }
+  const { updates, tooThin, cellsRead, yearsMissing } = readArchivedClimate(
+    archiveDirectory,
+    cells,
+    minMps,
+  );
+  const totals = writeWindClimate(updates, logger);
 
   const rate = bodies > 0 ? ((totals.updated / bodies) * 100).toFixed(1) : '0.0';
   process.stderr.write(
@@ -195,7 +141,7 @@ async function main(): Promise<void> {
       { reason: 'rose suppressed: cell too thin to render as a percentage', count: tooThin },
       { reason: 'rejected server-side as malformed', count: totals.malformed },
       { reason: 'row vanished mid-pass', count: totals.missing },
-    ].filter((o) => o.count > 0),
+    ].filter((omission) => omission.count > 0),
   });
   logger.succeed([
     `${totals.updated} bodies stamped at ${minMps} m/s, from the archive, with no requests made`,
@@ -203,9 +149,91 @@ async function main(): Promise<void> {
       ? [`${yearsMissing} cell-year(s) absent from the archive — re-run snapshot to complete them`]
       : []),
   ]);
+  return 0;
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`[derive] FAILED: ${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+interface WindClimateUpdate {
+  waterBodyId: string;
+  rose?: number[];
+  strongWindHours: number[];
+  meanWindMps?: (number | null)[];
+  sampledWindHours: number;
+  strongWindMinMps: number;
+}
+
+function readArchivedClimate(
+  archiveDirectory: string,
+  cells: ReturnType<typeof collectWindTargets>['cells'],
+  minMps: number,
+) {
+  const updates: WindClimateUpdate[] = [];
+  let tooThin = 0;
+  let cellsRead = 0;
+  let yearsMissing = 0;
+
+  for (const [cellKey, targets] of cells) {
+    const { climate, missingYearCount } = readArchivedCell(archiveDirectory, cellKey, minMps);
+    yearsMissing += missingYearCount;
+    if (climate.rose === null) tooThin += targets.length;
+    // All-null means no hour in this cell had a readable speed at all. Storing sixteen nulls says
+    // the same thing as storing nothing while costing a column, so the field is simply absent.
+    const hasSpeed = climate.meanWindMps.some((speed) => speed !== null);
+    for (const target of targets) {
+      updates.push({
+        waterBodyId: target.waterBodyId,
+        ...(climate.rose ? { rose: climate.rose } : {}),
+        strongWindHours: climate.strongWindHours,
+        ...(hasSpeed ? { meanWindMps: climate.meanWindMps } : {}),
+        sampledWindHours: climate.sampledWindHours,
+        strongWindMinMps: climate.strongWindMinMps,
+      });
+    }
+    cellsRead++;
+    if (cellsRead % 100 === 0) {
+      process.stderr.write(`[derive] ${cellsRead}/${cells.size} cells read\n`);
+    }
+  }
+  return { updates, tooThin, cellsRead, yearsMissing };
+}
+
+function readArchivedCell(archiveDirectory: string, cellKey: string, minMps: number) {
+  const accumulator = emptyAccumulator(minMps);
+  let missingYearCount = 0;
+  for (const year of WTK_YEARS) {
+    const path = join(archiveDirectory, responsePath(cellKey, year));
+    if (!existsSync(path)) {
+      // A partial cell can still describe the winters available. The stamp carries its actual
+      // sample size, and the receipt records how many winters were missing.
+      missingYearCount++;
+      continue;
+    }
+    accumulateCsv(gunzipSync(readFileSync(path)).toString('utf8'), accumulator);
+  }
+  return { climate: climateFromAccumulator(accumulator), missingYearCount };
+}
+
+function writeWindClimate(updates: WindClimateUpdate[], logger: RunLogger) {
+  const totals = { updated: 0, malformed: 0, missing: 0 };
+  for (let offset = 0; offset < updates.length; offset += WRITE_BATCH_SIZE) {
+    const result = convexRun<typeof totals>('waterBodies:importWindRoses', {
+      roses: updates.slice(offset, offset + WRITE_BATCH_SIZE),
+    });
+    totals.updated += result.updated;
+    totals.malformed += result.malformed;
+    totals.missing += result.missing;
+    logger.count('updated', totals.updated);
+    logger.flush();
+  }
+  return totals;
+}
+
+if (import.meta.main) {
+  try {
+    process.exitCode = deriveWindClimate(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(
+      `[derive] FAILED: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  }
+}
