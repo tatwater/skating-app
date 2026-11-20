@@ -233,21 +233,21 @@ export function WaterBodyDetail({
           a warning is never one tap away from unseen. Padding is carried here because the slot
           itself has none: an empty slot on another screen must cost no height. */}
       <DrawerHead>
-        <YStack gap="$3" paddingHorizontal={16} paddingTop={16} paddingBottom={12}>
-          <YStack gap="$1">
+        <YStack gap="3" paddingHorizontal={16} paddingTop={16} paddingBottom={12}>
+          <YStack gap="1">
             {focusSubArea && bayHeader ? (
               <>
-                <XStack justifyContent="space-between" alignItems="center" gap="$2">
-                  <H4 color="$foreground" flex={1}>
+                <XStack justifyContent="space-between" alignItems="center" gap="2">
+                  <H4 color="foreground" flex={1}>
                     {focusSubArea.name}
                   </H4>
                   <FavoriteButton waterBodyId={result.body._id} subAreaId={focusSubArea._id} />
                 </XStack>
                 {/* The lake, with its own heart — a bay favorite and a lake favorite are two
                     different statements, and the header offers both. */}
-                <XStack justifyContent="space-between" alignItems="center" gap="$2">
+                <XStack justifyContent="space-between" alignItems="center" gap="2">
                   <Text
-                    color="$foregroundMuted"
+                    color="foregroundMuted"
                     flex={1}
                     onPress={() =>
                       router.navigate({ pathname: '/water/[id]', params: { id: result.body._id } })
@@ -257,30 +257,30 @@ export function WaterBodyDetail({
                   </Text>
                   <FavoriteButton waterBodyId={result.body._id} />
                 </XStack>
-                <Text color="$foregroundMuted">
+                <Text color="foregroundMuted">
                   {bayHeader.area}
                   {bayHeader.depth ? ` · ${bayHeader.depth.text}` : ''}
                 </Text>
                 {bayHeader.depth ? (
-                  <Text color="$foregroundMuted" fontSize="$1">
+                  <Text color="foregroundMuted" fontSize="1">
                     {bayHeader.depth.caption}
                   </Text>
                 ) : null}
                 {bayHeader.elevation ? (
-                  <Text color="$foregroundMuted" fontSize="$1">
+                  <Text color="foregroundMuted" fontSize="1">
                     {bayHeader.elevation}
                   </Text>
                 ) : null}
               </>
             ) : (
               <>
-                <XStack justifyContent="space-between" alignItems="center" gap="$2">
-                  <H4 color="$foreground" flex={1}>
+                <XStack justifyContent="space-between" alignItems="center" gap="2">
+                  <H4 color="foreground" flex={1}>
                     {result.body.name}
                   </H4>
                   <FavoriteButton waterBodyId={result.body._id} />
                 </XStack>
-                <Text color="$foregroundMuted">
+                <Text color="foregroundMuted">
                   {waterBodyClassLabel(result.body.type)}
                   {result.body.surfaceAreaSqM !== undefined
                     ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
@@ -291,7 +291,7 @@ export function WaterBodyDetail({
                     inline in the type/area line would read as clutter on the minority that do have a
                     depth. */}
                 {depth ? (
-                  <Text color="$foregroundMuted" fontSize="$1">
+                  <Text color="foregroundMuted" fontSize="1">
                     {depth.caption}
                   </Text>
                 ) : null}
@@ -306,7 +306,7 @@ export function WaterBodyDetail({
             {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would
                 contradict the bay's own depth line, so the bay view omits it — same as web. */}
             {caption && !focusSubArea ? (
-              <Paragraph color="$foregroundMuted" fontSize={14} paddingTop="$1">
+              <Paragraph color="foregroundMuted" fontSize={14} paddingTop="1">
                 {caption}
               </Paragraph>
             ) : null}
@@ -321,8 +321,8 @@ export function WaterBodyDetail({
               ) : (
                 <>
                   <Button
-                    backgroundColor="$primary"
-                    color="$primaryForeground"
+                    backgroundColor="primary"
+                    color="primaryForeground"
                     onPress={() =>
                       router.navigate(doorHref({ body: result.body._id, name: result.body.name }))
                     }
@@ -351,7 +351,7 @@ export function WaterBodyDetail({
           to a tab the form is standing in for. */}
       {formShowing ? null : (
         <DrawerPinned>
-          <YStack paddingHorizontal={16} paddingBottom="$2">
+          <YStack paddingHorizontal={16} paddingBottom="2">
             {/* The three sub-tabs (A06h §8), the same groups as web over the same core vocabulary:
                 Overview = machine-compiled facts about the body, Reporting = user-supplied this
                 season, Planning = the trip decision. Nothing in the tab content is new — the sections
@@ -363,7 +363,7 @@ export function WaterBodyDetail({
           </YStack>
         </DrawerPinned>
       )}
-      <YStack gap="$3">
+      <YStack gap="3">
         {bountyFormOpen ? (
           <BountyForm
             waterBodyId={result.body._id}
@@ -411,7 +411,7 @@ export function WaterBodyDetail({
                       is where the depth provenance above and the Open-Meteo credit already live.
                       Provenance only — D82 means no sentence here about what a depth implies for ice. */}
             {contourCredit ? (
-              <Text color="$foregroundMuted" fontSize="$1">
+              <Text color="foregroundMuted" fontSize="1">
                 {contourCredit}
               </Text>
             ) : null}
@@ -529,7 +529,7 @@ function ReportFeed({
   // modal on a phone someone is holding in a glove.
   const bayFilter =
     bays.length > 0 ? (
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap="2" flexWrap="wrap">
         {[{ _id: '', name: 'Anywhere' }, ...bays].map((bay) => (
           <Text
             key={bay._id || 'all'}
@@ -537,12 +537,12 @@ function ReportFeed({
             accessibilityLabel={`Show reports from ${bay.name}`}
             accessibilityState={{ selected: activeBay === bay._id }}
             onPress={() => setSubAreaId(bay._id)}
-            paddingHorizontal="$2"
-            paddingVertical="$1"
-            borderRadius="$3"
+            paddingHorizontal="2"
+            paddingVertical="1"
+            borderRadius="3"
             borderWidth={1}
-            borderColor={activeBay === bay._id ? '$primary' : '$border'}
-            color={activeBay === bay._id ? '$primary' : '$foregroundMuted'}
+            borderColor={activeBay === bay._id ? 'primary' : 'border'}
+            color={activeBay === bay._id ? 'primary' : 'foregroundMuted'}
             fontSize={13}
           >
             {bay.name}
@@ -554,10 +554,10 @@ function ReportFeed({
   if (status === 'LoadingFirstPage') return <DetailLoading />;
   if (results.length === 0) {
     return (
-      <YStack gap="$2">
+      <YStack gap="2">
         {bayFilter}
         {activeBay ? (
-          <Paragraph color="$foregroundMuted">No reports from that part of the lake yet.</Paragraph>
+          <Paragraph color="foregroundMuted">No reports from that part of the lake yet.</Paragraph>
         ) : (
           <SeasonEmptyState browseSeason={browseSeason} currentSeason={seasons?.current} />
         )}
@@ -566,50 +566,50 @@ function ReportFeed({
   }
 
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       {bayFilter}
       <Section label="Reports">
-        <YStack gap="$2">
+        <YStack gap="2">
           {results.map((report) => (
             <YStack
               key={report._id}
-              gap="$2"
-              padding="$3"
+              gap="2"
+              padding="3"
               borderWidth={1}
-              borderColor="$border"
-              borderRadius="$4"
-              backgroundColor="$surfaceMuted"
-              pressStyle={{ opacity: 0.7 }}
+              borderColor="border"
+              borderRadius="4"
+              backgroundColor="surfaceMuted"
+              opacity="press:0.7"
               onPress={() =>
                 router.navigate({ pathname: '/report/[id]', params: { id: report._id } })
               }
             >
-              <XStack justifyContent="space-between" alignItems="center" gap="$2">
-                <Text color="$foreground">{formatSkateTime(report.skateEndTime)}</Text>
+              <XStack justifyContent="space-between" alignItems="center" gap="2">
+                <Text color="foreground">{formatSkateTime(report.skateEndTime)}</Text>
                 {report.skateQuality ? (
                   <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
                 ) : null}
               </XStack>
               {report.iceTypes.length > 0 ? (
-                <XStack gap="$1.5" flexWrap="wrap">
+                <XStack gap="1-5" flexWrap="wrap">
                   {iceTypeKeys(report.iceTypes).map((iceType) => (
                     <Badge key={iceType}>{humanizeEnum(iceType)}</Badge>
                   ))}
                 </XStack>
               ) : null}
-              <Text color="$foregroundMuted" fontSize={12}>
+              <Text color="foregroundMuted" fontSize={12}>
                 by {authors?.[report.authorId]?.displayName ?? '…'}
               </Text>
             </YStack>
           ))}
           {status === 'CanLoadMore' ? (
-            <Button size="$3" variant="outlined" onPress={() => loadMore(REPORTS_PAGE_SIZE)}>
+            <Button size="md" variant="outlined" onPress={() => loadMore(REPORTS_PAGE_SIZE)}>
               Load more
             </Button>
           ) : null}
           {status === 'LoadingMore' ? (
-            <YStack padding="$2" alignItems="center">
-              <Spinner color="$primary" />
+            <YStack padding="2" alignItems="center">
+              <Spinner color="primary" />
             </YStack>
           ) : null}
         </YStack>

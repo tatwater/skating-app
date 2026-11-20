@@ -50,16 +50,16 @@ export function WeatherStrip(props: WeatherStripProps) {
   return (
     <Section label={label}>
       {line ? (
-        <Paragraph color="$foreground" fontSize={14}>
+        <Paragraph color="foreground" fontSize={14}>
           {line}
         </Paragraph>
       ) : null}
       {caveat ? (
-        <Paragraph color="$foregroundMuted" fontSize={14}>
+        <Paragraph color="foregroundMuted" fontSize={14}>
           {caveat}
         </Paragraph>
       ) : null}
-      <Text color="$foregroundMuted" fontSize={11}>
+      <Text color="foregroundMuted" fontSize={11}>
         Weather: Open-Meteo
       </Text>
     </Section>

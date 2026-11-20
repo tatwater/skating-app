@@ -60,8 +60,8 @@ export function ThumbControl({
   const disabled = !canRate || pending || summary === undefined;
 
   return (
-    <YStack gap="$1">
-      <XStack gap="$2" alignItems="center">
+    <YStack gap="1">
+      <XStack gap="2" alignItems="center">
         <ThumbButton
           label="Helpful"
           emoji="👍"
@@ -80,7 +80,7 @@ export function ThumbControl({
         />
       </XStack>
       {error ? (
-        <Text color="$danger" fontSize={12} accessibilityRole="alert">
+        <Text color="danger" fontSize={12} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
@@ -105,17 +105,17 @@ function ThumbButton({
 }) {
   return (
     <Button
-      size="$2"
+      size="sm"
       borderRadius={9999}
       borderWidth={1}
-      borderColor={active ? '$primary' : '$border'}
-      backgroundColor={active ? '$surfaceMuted' : 'transparent'}
-      disabled={disabled}
+      borderColor={active ? 'primary' : 'border'}
+      backgroundColor={active ? 'surfaceMuted' : 'transparent'}
       opacity={disabled ? 0.5 : 1}
+      disabled={disabled}
       onPress={onPress}
       accessibilityLabel={`${label} (${count})`}
     >
-      <Text color={active ? '$primary' : '$foregroundMuted'} fontSize={14}>
+      <Text color={active ? 'primary' : 'foregroundMuted'} fontSize={14}>
         {emoji} {count}
       </Text>
     </Button>

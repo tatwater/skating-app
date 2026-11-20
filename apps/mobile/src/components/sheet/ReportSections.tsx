@@ -229,7 +229,7 @@ function ObservedFromSection({ report, body, dispatch, gaps, timeZone }: Section
             <SheetHint>{SIGHTING_PIN_HINT}</SheetHint>
           ) : null}
           {cards.length > 0 && !asking ? (
-            <XStack gap="$2" alignItems="center" flexWrap="wrap">
+            <XStack gap="2" alignItems="center" flexWrap="wrap">
               <SubLabel>Where?</SubLabel>
               <SheetChip
                 compact
@@ -265,7 +265,7 @@ function ObservedFromSection({ report, body, dispatch, gaps, timeZone }: Section
 function WhereMark({ text }: { text: string }) {
   return (
     <Text
-      color="$background"
+      color="background"
       fontSize={10}
       opacity={text.startsWith('◆') ? 0.9 : 0.5}
       accessibilityElementsHidden
@@ -348,7 +348,7 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
         }}
       />
       {cards.length > 0 && !asking ? (
-        <XStack gap="$2" alignItems="center" flexWrap="wrap">
+        <XStack gap="2" alignItems="center" flexWrap="wrap">
           <SubLabel>Where?</SubLabel>
           <SheetChip
             compact

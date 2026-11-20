@@ -86,22 +86,22 @@ export function TrackImport({
   };
 
   return (
-    <YStack gap="$2">
+    <YStack gap="2">
       <XStack>
         <XStack
           height={32}
           paddingHorizontal={12}
           alignItems="center"
-          borderRadius="$xs"
+          borderRadius="xs"
           borderWidth={1}
-          borderColor="$foreground"
+          borderColor="foreground"
+          opacity="press:0.7"
           onPress={() => setOpen((o) => !o)}
-          pressStyle={{ opacity: 0.7 }}
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
         >
           <Text
-            color="$foreground"
+            color="foreground"
             fontSize={12}
             fontWeight="700"
             letterSpacing={0.8}
@@ -113,26 +113,25 @@ export function TrackImport({
       </XStack>
       {open ? (
         <YStack
-          gap="$2"
+          gap="2"
           padding={10}
           borderWidth={1}
-          borderColor="$border"
-          borderRadius="$xs"
-          backgroundColor="$background"
+          borderColor="border"
+          borderRadius="xs"
+          backgroundColor="background"
         >
           <XStack
             height={36}
             paddingHorizontal={12}
             alignItems="center"
-            borderRadius="$xs"
-            backgroundColor="$foreground"
-            opacity={offline || busy ? 0.5 : 1}
+            borderRadius="xs"
+            backgroundColor="foreground"
+            opacity={`${offline || busy ? 0.5 : 1} press:0.7`}
             onPress={offline || busy ? undefined : () => void importGpx()}
-            pressStyle={{ opacity: 0.7 }}
             accessibilityRole="button"
             accessibilityLabel="Upload a GPX file"
           >
-            <Text color="$background" fontSize={13} fontWeight="700">
+            <Text color="background" fontSize={13} fontWeight="700">
               Upload a GPX file
             </Text>
           </XStack>
@@ -144,7 +143,7 @@ export function TrackImport({
         </YStack>
       ) : null}
       {error ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {error}
         </Text>
       ) : null}

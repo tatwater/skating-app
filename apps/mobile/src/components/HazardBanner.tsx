@@ -75,24 +75,22 @@ export function HazardBanner() {
       left={0}
       right={0}
       zIndex={50}
-      backgroundColor={warning ? '$danger' : '$warning'}
-      paddingTop="$6"
-      paddingHorizontal="$3"
-      paddingBottom="$3"
-      gap="$2"
-      // A proximity warning a screen-reader user is never *told* about is no warning at all. Announce
-      // it the moment it mounts (`assertive` interrupts, which is proportionate for on-ice danger).
+      backgroundColor={warning ? 'danger' : 'warning'}
+      paddingTop="6"
+      paddingHorizontal="3"
+      paddingBottom="3"
+      gap="2"
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
     >
-      <Text color={warning ? '$dangerForeground' : '$warningForeground'} fontWeight="700">
+      <Text color={warning ? 'dangerForeground' : 'warningForeground'} fontWeight="700">
         {headline}
       </Text>
 
       {warning ? (
-        <XStack gap="$2">
+        <XStack gap="2">
           <Button
-            size="$3"
+            size="md"
             flex={1}
             onPress={() => {
               dismissOnIceBanner();
@@ -101,16 +99,16 @@ export function HazardBanner() {
           >
             Show me
           </Button>
-          <Button size="$3" chromeless onPress={dismissOnIceBanner}>
+          <Button size="md" variant="quiet" onPress={dismissOnIceBanner}>
             Dismiss
           </Button>
         </XStack>
       ) : (
         // The gate IS the confirmation: answering this prompt is how an unconfirmed hazard collects
         // the confirmation it needs. One tap, no navigation.
-        <XStack gap="$2">
+        <XStack gap="2">
           <Button
-            size="$3"
+            size="md"
             flex={1}
             onPress={async () => {
               dismissOnIceBanner();
@@ -131,7 +129,7 @@ export function HazardBanner() {
               ridge all look identical to not-seeing-it. So this opens the three-tier control and
               clears nothing on its own (D3). */}
           <Button
-            size="$3"
+            size="md"
             flex={1}
             onPress={() => {
               dismissOnIceBanner();
@@ -144,7 +142,7 @@ export function HazardBanner() {
       )}
 
       <Paragraph
-        color={warning ? '$dangerForeground' : '$warningForeground'}
+        color={warning ? 'dangerForeground' : 'warningForeground'}
         fontSize={11}
         opacity={0.9}
       >

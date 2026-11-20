@@ -42,7 +42,7 @@ export function StravaConnect() {
 
   if (!status.configured) {
     return (
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+      <Paragraph color="foregroundMuted" fontSize={12}>
         {STRAVA_UNCONFIGURED_NOTE}
       </Paragraph>
     );
@@ -66,14 +66,14 @@ export function StravaConnect() {
 
   if (status.connected) {
     return (
-      <YStack gap="$2">
+      <YStack gap="2">
         <XStack justifyContent="space-between" alignItems="center">
-          <Text color="$foreground">{STRAVA_CONNECTED_LABEL}</Text>
-          <Button size="$2" chromeless disabled={busy} onPress={() => disconnect()}>
+          <Text color="foreground">{STRAVA_CONNECTED_LABEL}</Text>
+          <Button size="sm" variant="quiet" disabled={busy} onPress={() => disconnect()}>
             {STRAVA_DISCONNECT_LABEL}
           </Button>
         </XStack>
-        <Paragraph color="$foregroundMuted" fontSize={11}>
+        <Paragraph color="foregroundMuted" fontSize={11}>
           {STRAVA_ATTRIBUTION}
         </Paragraph>
       </YStack>
@@ -81,12 +81,12 @@ export function StravaConnect() {
   }
 
   return (
-    <YStack gap="$2">
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+    <YStack gap="2">
+      <Paragraph color="foregroundMuted" fontSize={12}>
         {STRAVA_CONNECT_EXPLAINER}
       </Paragraph>
       <Button
-        size="$4"
+        size="lg"
         backgroundColor={STRAVA_BRAND_COLOR}
         color="#fff"
         disabled={busy}
@@ -95,7 +95,7 @@ export function StravaConnect() {
       >
         {busy ? 'Opening Strava…' : STRAVA_CONNECT_LABEL}
       </Button>
-      <Paragraph color="$foregroundMuted" fontSize={11}>
+      <Paragraph color="foregroundMuted" fontSize={11}>
         {STRAVA_ATTRIBUTION}
       </Paragraph>
     </YStack>

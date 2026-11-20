@@ -29,11 +29,11 @@ export function Avatar({
       width={size}
       height={size}
       borderRadius={size / 2}
-      backgroundColor="$surfaceMuted"
+      backgroundColor="surfaceMuted"
       alignItems="center"
       justifyContent="center"
     >
-      <Text color="$foregroundMuted" fontSize={size / 2.5} fontWeight="600">
+      <Text color="foregroundMuted" fontSize={size / 2.5} fontWeight="600">
         {displayName.trim().charAt(0).toUpperCase() || '?'}
       </Text>
     </YStack>

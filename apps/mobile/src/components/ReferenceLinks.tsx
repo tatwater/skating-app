@@ -34,14 +34,14 @@ export function ReferenceLinks({
   return (
     <Section label="Elsewhere">
       {links.length === 0 ? (
-        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+        <Paragraph color="foregroundMuted" fontSize={14} fontStyle="italic">
           {revealPlaceholder('links')}
         </Paragraph>
       ) : null}
       {links.map((link) => (
-        <YStack key={link.id} gap="$1" paddingBottom="$2">
+        <YStack key={link.id} gap="1" paddingBottom="2">
           <Paragraph
-            color="$foreground"
+            color="foreground"
             fontSize={14}
             textDecorationLine="underline"
             accessibilityRole="link"
@@ -54,7 +54,7 @@ export function ReferenceLinks({
             {link.label}
           </Paragraph>
           {link.note ? (
-            <Text color="$foregroundMuted" fontSize={11}>
+            <Text color="foregroundMuted" fontSize={11}>
               {link.note}
             </Text>
           ) : null}

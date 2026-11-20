@@ -160,7 +160,7 @@ export function PastWeatherPanel({
   if (state.loading && state.days.length === 0) {
     return (
       <Section label="What it's been through">
-        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+        <Paragraph color="foregroundMuted" fontSize={14} fontStyle="italic">
           Reading the last {days} days…
         </Paragraph>
       </Section>
@@ -178,7 +178,7 @@ export function PastWeatherPanel({
     <YStack opacity={state.loading ? 0.5 : 1} accessibilityState={{ busy: state.loading }}>
       <Section label="What it's been through">
         {panel.headline.map((line) => (
-          <Paragraph color="$foreground" fontSize={14} key={line}>
+          <Paragraph color="foreground" fontSize={14} key={line}>
             {line}
           </Paragraph>
         ))}
@@ -188,13 +188,13 @@ export function PastWeatherPanel({
           table serves no hours until its next drawer-open. A dash rather than a zero for a day we
           could not get, which is the whole point of carrying `missing` through from the archive. */}
         {hasHourly ? (
-          <YStack marginTop="$2">
+          <YStack marginTop="2">
             {/* No window prop since the 2026-09-04 scale change — the container decides how many days
               fit at 2px/hour, and `days` still scopes only the sentences above. */}
             <WeatherTimeline days={state.timeline} fetchProfileM={state.fetchProfileM} />
           </YStack>
         ) : (
-          <XStack gap="$2" marginTop="$2">
+          <XStack gap="2" marginTop="2">
             {panel.rows.map((row) => (
               // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
               // happening right now is exactly what a skater wants to see, but it must not read as a
@@ -202,21 +202,21 @@ export function PastWeatherPanel({
               <YStack
                 alignItems="center"
                 flex={1}
-                gap="$1"
-                key={row.dayMs}
+                gap="1"
                 opacity={row.partial ? 0.5 : 1}
+                key={row.dayMs}
               >
-                <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
+                <Text color="foregroundMuted" fontSize={10} textTransform="uppercase">
                   {shortDayLabel(row.localDate)}
                 </Text>
-                <Text color="$foreground" fontSize={12}>
+                <Text color="foreground" fontSize={12}>
                   {row.highF === null ? '—' : `${row.highF}°`}
                 </Text>
-                <Text color="$foregroundMuted" fontSize={12}>
+                <Text color="foregroundMuted" fontSize={12}>
                   {row.lowF === null ? '—' : `${row.lowF}°`}
                 </Text>
                 {row.snowfallIn !== null && row.snowfallIn >= 0.1 ? (
-                  <Text color="$foregroundMuted" fontSize={10}>
+                  <Text color="foregroundMuted" fontSize={10}>
                     {row.snowfallIn}″
                   </Text>
                 ) : null}
@@ -226,17 +226,17 @@ export function PastWeatherPanel({
         )}
 
         {state.largeBody ? (
-          <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
+          <Text color="foregroundMuted" fontSize={11} fontStyle="italic">
             This lake is large enough that weather differs across it — these readings are from one
             point near the middle.
           </Text>
         ) : null}
         {panel.coarse ? (
-          <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
+          <Text color="foregroundMuted" fontSize={11} fontStyle="italic">
             Some days are from a wider area than usual.
           </Text>
         ) : null}
-        <Text color="$foregroundMuted" fontSize={11}>
+        <Text color="foregroundMuted" fontSize={11}>
           Past weather: Open-Meteo
         </Text>
       </Section>

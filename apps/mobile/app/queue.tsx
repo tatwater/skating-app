@@ -44,26 +44,26 @@ export default function QueueScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <YStack gap="$4">
+        <YStack gap="4">
           <XStack alignItems="center" justifyContent="space-between">
-            <H4 color="$foreground">Waiting to send</H4>
-            <XStack gap="$2">
+            <H4 color="foreground">Waiting to send</H4>
+            <XStack gap="2">
               {pendingCount > 0 && !offline ? (
-                <Button size="$2" onPress={() => void flushNow()}>
+                <Button size="sm" onPress={() => void flushNow()}>
                   Sync now
                 </Button>
               ) : null}
-              <Button size="$2" chromeless onPress={() => router.back()}>
+              <Button size="sm" variant="quiet" onPress={() => router.back()}>
                 Back
               </Button>
             </XStack>
           </XStack>
           {pendingCount > 0 ? (
-            <Paragraph color="$foregroundMuted" fontSize={13}>
+            <Paragraph color="foregroundMuted" fontSize={13}>
               {offline ? WAITING_TO_SEND_COPY.offline : WAITING_TO_SEND_COPY.online}
             </Paragraph>
           ) : queued.length === 0 && hazardItems.length === 0 ? (
-            <Paragraph color="$foregroundMuted">
+            <Paragraph color="foregroundMuted">
               Nothing waiting. Everything you posted has been sent.
             </Paragraph>
           ) : null}
@@ -101,41 +101,41 @@ function DraftRow({
   const latest = Math.max(...draft.reports.map(reportDraftEndTime).filter(Number.isFinite));
   return (
     <YStack
-      gap="$2"
-      padding="$3"
+      gap="2"
+      padding="3"
       borderWidth={1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
+      borderColor="border"
+      borderRadius="4"
+      backgroundColor="surfaceMuted"
     >
-      <XStack justifyContent="space-between" alignItems="center" gap="$2">
-        <Text color="$foreground" flex={1}>
+      <XStack justifyContent="space-between" alignItems="center" gap="2">
+        <Text color="foreground" flex={1}>
           {postDraftLabel(draft)}
         </Text>
         <Badge tone={draft.status === 'error' ? 'solid' : undefined}>
           {draft.status === 'error' ? 'Needs attention' : pending ? 'Waiting' : 'Sent'}
         </Badge>
       </XStack>
-      <Text color="$foregroundMuted" fontSize={12}>
+      <Text color="foregroundMuted" fontSize={12}>
         {Number.isFinite(latest) ? `Skated ${formatSkateTime(latest)}` : ''}
         {draft.reports.length > 1 ? ` · ${draft.reports.length} lakes` : ''}
       </Text>
       {draft.status === 'error' && draft.errorMessage ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {draft.errorMessage}
         </Text>
       ) : null}
       {sent ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {POST_SENT_COPY}
         </Text>
       ) : null}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$2" chromeless onPress={onDelete}>
+      <XStack gap="2" justifyContent="flex-end">
+        <Button size="sm" variant="quiet" onPress={onDelete}>
           Delete
         </Button>
         {draft.status === 'done' || sent ? null : (
-          <Button size="$2" onPress={onEdit}>
+          <Button size="sm" onPress={onEdit}>
             Edit
           </Button>
         )}
@@ -155,15 +155,15 @@ function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: ()
   const title = item.kind === 'hazard' ? hazardTypeLabel(item.type) : 'Hazard confirmation';
   return (
     <YStack
-      gap="$2"
-      padding="$3"
+      gap="2"
+      padding="3"
       borderWidth={1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
+      borderColor="border"
+      borderRadius="4"
+      backgroundColor="surfaceMuted"
     >
-      <XStack justifyContent="space-between" alignItems="center" gap="$2">
-        <Text color="$foreground" flex={1}>
+      <XStack justifyContent="space-between" alignItems="center" gap="2">
+        <Text color="foreground" flex={1}>
           {title}
         </Text>
         <Badge tone={item.status === 'error' ? 'solid' : undefined}>
@@ -171,12 +171,12 @@ function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: ()
         </Badge>
       </XStack>
       {item.status === 'error' && item.errorMessage ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {item.errorMessage}
         </Text>
       ) : null}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$2" chromeless onPress={onDelete}>
+      <XStack gap="2" justifyContent="flex-end">
+        <Button size="sm" variant="quiet" onPress={onDelete}>
           Delete
         </Button>
       </XStack>

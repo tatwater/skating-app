@@ -27,37 +27,37 @@ export function AlertStrip({
 
   return (
     <YStack
-      gap="$1"
-      padding="$3"
-      borderRadius="$3"
+      gap="1"
+      padding="3"
+      borderRadius="3"
       borderWidth={1}
-      borderColor="$warning"
-      backgroundColor="$surfaceMuted"
+      borderColor="warning"
+      backgroundColor="surfaceMuted"
       accessibilityLabel="National Weather Service alerts"
     >
-      <Text color="$foregroundMuted" fontSize={11} textTransform="uppercase">
+      <Text color="foregroundMuted" fontSize={11} textTransform="uppercase">
         Weather alerts
       </Text>
       {!alerts || alerts.length === 0 ? (
-        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+        <Paragraph color="foregroundMuted" fontSize={14} fontStyle="italic">
           {revealPlaceholder('active alerts')}
         </Paragraph>
       ) : null}
       {(alerts ?? []).map((alert) => (
-        <YStack key={alert.id} gap="$1">
-          <Paragraph color="$foreground" fontSize={14}>
+        <YStack key={alert.id} gap="1">
+          <Paragraph color="foreground" fontSize={14}>
             {formatAlertLine(alert)}
           </Paragraph>
           {/* NWS's own headline, never paraphrased — the value of this strip is that the words are
               theirs. */}
           {alert.headline ? (
-            <Text color="$foregroundMuted" fontSize={11}>
+            <Text color="foregroundMuted" fontSize={11}>
               {alert.headline}
             </Text>
           ) : null}
         </YStack>
       ))}
-      <Text color="$foregroundMuted" fontSize={11}>
+      <Text color="foregroundMuted" fontSize={11}>
         Issued by the US National Weather Service. Alerts may cover a wider area than this lake.
       </Text>
     </YStack>

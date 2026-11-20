@@ -13,15 +13,15 @@ export function PlaceholderScreen({ title, subtitle }: { title: string; subtitle
         flex={1}
         alignItems="center"
         justifyContent="center"
-        gap="$3"
-        padding="$4"
-        backgroundColor="$background"
+        gap="3"
+        padding="4"
+        backgroundColor="background"
       >
-        <H1 color="$foreground" textAlign="center">
+        <H1 color="foreground" textAlign="center">
           {title}
         </H1>
         {subtitle ? (
-          <Paragraph color="$foregroundMuted" textAlign="center">
+          <Paragraph color="foregroundMuted" textAlign="center">
             {subtitle}
           </Paragraph>
         ) : null}

@@ -210,8 +210,8 @@ export default function PhotoLibraryScreen() {
   if (!request) {
     return (
       <SafeAreaView style={{ flex: 1 }}>
-        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
-          <Paragraph color="$foregroundMuted">Open your photos from a report's Photos.</Paragraph>
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="3" padding="4">
+          <Paragraph color="foregroundMuted">Open your photos from a report's Photos.</Paragraph>
           <Button onPress={() => router.back()}>Back</Button>
         </YStack>
       </SafeAreaView>
@@ -241,14 +241,14 @@ export default function PhotoLibraryScreen() {
                 width={20}
                 height={20}
                 borderWidth={1}
-                borderRadius="$xs"
-                borderColor={on ? '$foreground' : '$borderStrong'}
-                backgroundColor={on ? '$foreground' : '$background'}
+                borderRadius="xs"
+                borderColor={on ? 'foreground' : 'borderStrong'}
+                backgroundColor={on ? 'foreground' : 'background'}
                 alignItems="center"
                 justifyContent="center"
               >
                 {on ? (
-                  <Text color="$background" fontSize={13} fontWeight="700" lineHeight={16}>
+                  <Text color="background" fontSize={13} fontWeight="700" lineHeight="16px">
                     ✓
                   </Text>
                 ) : null}
@@ -262,12 +262,12 @@ export default function PhotoLibraryScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-      <YStack flex={1} backgroundColor="$background">
-        <XStack alignItems="center" justifyContent="space-between" padding="$3" gap="$2">
-          <Button size="$2" chromeless disabled={adding} onPress={() => router.back()}>
+      <YStack flex={1} backgroundColor="background">
+        <XStack alignItems="center" justifyContent="space-between" padding="3" gap="2">
+          <Button size="sm" variant="quiet" disabled={adding} onPress={() => router.back()}>
             Cancel
           </Button>
-          <XStack gap="$1">
+          <XStack gap="1">
             {request.skateWindow ? (
               <SheetChip
                 compact
@@ -286,9 +286,9 @@ export default function PhotoLibraryScreen() {
         </XStack>
         {request.skateWindow ? (
           <Button
-            size="$2"
-            marginHorizontal="$3"
-            marginBottom="$2"
+            size="sm"
+            marginHorizontal="3"
+            marginBottom="2"
             onPress={() => void selectSkate()}
           >
             Select all from the skate
@@ -306,37 +306,37 @@ export default function PhotoLibraryScreen() {
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             loading ? undefined : (
-              <Paragraph color="$foregroundMuted" padding="$4">
+              <Paragraph color="foregroundMuted" padding="4">
                 {scope === 'skate' ? 'No photos from those hours.' : 'No photos from that day.'}
               </Paragraph>
             )
           }
-          ListFooterComponent={loading ? <Spinner margin="$4" color="$primary" /> : undefined}
+          ListFooterComponent={loading ? <Spinner margin="4" color="primary" /> : undefined}
         />
         {failed ? (
-          <Paragraph color="$danger" paddingHorizontal="$3">
+          <Paragraph color="danger" paddingHorizontal="3">
             Couldn't read your library just now.
           </Paragraph>
         ) : null}
         {changed ? (
-          <Paragraph color="$danger" paddingHorizontal="$3">
+          <Paragraph color="danger" paddingHorizontal="3">
             The report you opened this from was replaced, so nothing was added. Go back and open
             your photos from the report on screen.
           </Paragraph>
         ) : null}
         {capped ? (
-          <Paragraph color="$foregroundMuted" paddingHorizontal="$3">
+          <Paragraph color="foregroundMuted" paddingHorizontal="3">
             {`Selected the first ${SKATE_MAX.toLocaleString('en-US')} photos from the skate — choose the rest by hand.`}
           </Paragraph>
         ) : null}
         {missed > 0 ? (
-          <Paragraph color="$danger" paddingHorizontal="$3">
+          <Paragraph color="danger" paddingHorizontal="3">
             {missed === 1
               ? "One photo couldn't be read — it may be in iCloud only. The rest were added."
               : `${missed} photos couldn't be read — they may be in iCloud only. The rest were added.`}
           </Paragraph>
         ) : null}
-        <XStack padding="$3" borderTopWidth={1} borderColor="$border">
+        <XStack padding="3" borderTopWidth={1} borderColor="border">
           <Button
             flex={1}
             disabled={adding || (toAdd.length === 0 && toRemove.length === 0)}
@@ -372,22 +372,22 @@ export default function PhotoLibraryScreen() {
 function HourHeader({ hour }: { hour: GridHour<GridPhoto> }) {
   return (
     <XStack
-      backgroundColor="$background"
+      backgroundColor="background"
       alignItems="center"
-      gap="$2"
-      paddingVertical="$1.5"
-      paddingRight="$3"
+      gap="2"
+      paddingVertical="1-5"
+      paddingRight="3"
     >
       <YStack
         width={4}
         alignSelf="stretch"
-        backgroundColor={hour.inSkate ? '$primary' : 'transparent'}
+        backgroundColor={hour.inSkate ? 'primary' : 'transparent'}
       />
-      <Text color="$foreground" fontWeight="600" fontSize={13}>
+      <Text color="foreground" fontWeight="600" fontSize={13}>
         {hour.label}
       </Text>
       {hour.inSkate ? (
-        <Text color="$primary" fontSize={11} fontWeight="600">
+        <Text color="primary" fontSize={11} fontWeight="600">
           SKATE
         </Text>
       ) : null}
@@ -396,11 +396,11 @@ function HourHeader({ hour }: { hour: GridHour<GridPhoto> }) {
           key={n}
           paddingHorizontal={5}
           borderWidth={1}
-          borderColor="$border"
-          borderRadius="$xs"
+          borderColor="border"
+          borderRadius="xs"
           accessibilityLabel={`Report ${n}`}
         >
-          <Text color="$foregroundMuted" fontSize={11}>
+          <Text color="foregroundMuted" fontSize={11}>
             {n}
           </Text>
         </YStack>

@@ -174,16 +174,16 @@ export default function NewsfeedScreen() {
           if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
         }}
         ListHeaderComponent={
-          <YStack gap="$4" paddingBottom="$2">
-            <H1 color="$foreground">Latest</H1>
+          <YStack gap="4" paddingBottom="2">
+            <H1 color="foreground">Latest</H1>
             {isOfflineFallback ? (
-              <Text color="$foregroundMuted" fontSize={13}>
+              <Text color="foregroundMuted" fontSize={13}>
                 Offline — showing recently saved reports.
               </Text>
             ) : null}
-            <YStack gap="$2">
+            <YStack gap="2">
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 letterSpacing={1.5}
                 textTransform="uppercase"
@@ -200,7 +200,7 @@ export default function NewsfeedScreen() {
           if (item.kind === 'header') {
             return (
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 letterSpacing={1.5}
                 textTransform="uppercase"
@@ -232,11 +232,11 @@ export default function NewsfeedScreen() {
         }}
         ListEmptyComponent={
           status === 'LoadingFirstPage' ? (
-            <YStack padding="$4" alignItems="center">
-              <Spinner color="$primary" />
+            <YStack padding="4" alignItems="center">
+              <Spinner color="primary" />
             </YStack>
           ) : (
-            <Paragraph color="$foregroundMuted" paddingHorizontal="$1">
+            <Paragraph color="foregroundMuted" paddingHorizontal="1">
               {weatherActive && discovery?.available === false
                 ? 'No weather data yet this season, so the weather filter cannot match any lake. It fills in once the region freezes.'
                 : weatherActive
@@ -247,8 +247,8 @@ export default function NewsfeedScreen() {
         }
         ListFooterComponent={
           status === 'LoadingMore' ? (
-            <YStack padding="$3" alignItems="center">
-              <Spinner color="$primary" />
+            <YStack padding="3" alignItems="center">
+              <Spinner color="primary" />
             </YStack>
           ) : undefined
         }
@@ -300,7 +300,7 @@ function PastSeasonNotice({
   const season = seasonOf(first.latestSkateEndTime);
   if (season === seasonOf(now)) return null;
   return (
-    <Text color="$foregroundMuted" fontSize={13}>
+    <Text color="foregroundMuted" fontSize={13}>
       Nothing reported yet this season — showing the {formatSeason(season)} season, the last one
       anybody skated.
     </Text>

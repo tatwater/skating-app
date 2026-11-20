@@ -68,16 +68,16 @@ export default function BountiesScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <ScrollView>
-        <YStack flex={1} gap="$4" padding="$4" backgroundColor="$background">
-          <H1 color="$foreground">Bounties</H1>
-          <Paragraph color="$foregroundMuted">
+        <YStack flex={1} gap="4" padding="4" backgroundColor="background">
+          <H1 color="foreground">Bounties</H1>
+          <Paragraph color="foregroundMuted">
             A bounty asks nearby skaters to check a lake and post a fresh report. Post one from a
             lake's page; fulfill one by skating and reporting.
           </Paragraph>
 
-          <YStack gap="$2">
+          <YStack gap="2">
             <Text
-              color="$foregroundMuted"
+              color="foregroundMuted"
               fontSize={11}
               letterSpacing={1.5}
               textTransform="uppercase"
@@ -85,25 +85,24 @@ export default function BountiesScreen() {
               Open bounties
             </Text>
             {open === undefined ? (
-              <YStack padding="$4" alignItems="center">
-                <Spinner color="$primary" />
+              <YStack padding="4" alignItems="center">
+                <Spinner color="primary" />
               </YStack>
             ) : open.length === 0 ? (
-              <Paragraph color="$foregroundMuted">
+              <Paragraph color="foregroundMuted">
                 No open bounties right now. Post one from a lake to ask for a fresh report.
               </Paragraph>
             ) : (
               open.map((b) => (
                 <XStack
                   key={b._id}
-                  gap="$2"
+                  gap="2"
                   alignItems="center"
-                  padding="$3"
+                  padding="3"
                   borderWidth={1}
-                  borderColor="$border"
-                  borderRadius="$4"
-                  backgroundColor="$surface"
-                  pressStyle={{ backgroundColor: '$surfaceMuted' }}
+                  borderColor="border"
+                  borderRadius="4"
+                  backgroundColor="surface press:surfaceMuted"
                   onPress={() => openDetail(b._id)}
                 >
                   <TrustAvatar
@@ -112,10 +111,10 @@ export default function BountiesScreen() {
                     size={28}
                   />
                   <YStack flex={1}>
-                    <Text color="$foreground" numberOfLines={1}>
+                    <Text color="foreground" numberOfLines={1}>
                       {b.waterBodyName}
                     </Text>
-                    <Text color="$foregroundMuted" fontSize={12}>
+                    <Text color="foregroundMuted" fontSize={12}>
                       by {b.requester.displayName}
                       {b.distanceMeters !== undefined
                         ? ` · ${distanceLabel(b.distanceMeters)}`
@@ -134,9 +133,9 @@ export default function BountiesScreen() {
           </YStack>
 
           {mine && mine.length > 0 ? (
-            <YStack gap="$2">
+            <YStack gap="2">
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 letterSpacing={1.5}
                 textTransform="uppercase"
@@ -146,22 +145,21 @@ export default function BountiesScreen() {
               {mine.map((b) => (
                 <XStack
                   key={b._id}
-                  gap="$2"
+                  gap="2"
                   alignItems="center"
-                  padding="$3"
+                  padding="3"
                   borderWidth={1}
-                  borderColor="$border"
-                  borderRadius="$4"
-                  backgroundColor="$surface"
-                  pressStyle={{ backgroundColor: '$surfaceMuted' }}
+                  borderColor="border"
+                  borderRadius="4"
+                  backgroundColor="surface press:surfaceMuted"
                   onPress={() => openDetail(b._id)}
                 >
                   <YStack flex={1}>
-                    <Text color="$foreground">
+                    <Text color="foreground">
                       {STATUS_LABEL[b.status] ?? b.status}
                       {b.status === 'open' ? ` · ${expiryLabel(b.expiresAt, now)}` : ''}
                     </Text>
-                    <Text color="$foregroundMuted" fontSize={12}>
+                    <Text color="foregroundMuted" fontSize={12}>
                       {b.fulfillingReportIds.length > 0
                         ? `${b.fulfillingReportIds.length} candidate report${
                             b.fulfillingReportIds.length === 1 ? '' : 's'

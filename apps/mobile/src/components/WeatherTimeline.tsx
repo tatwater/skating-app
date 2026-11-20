@@ -157,7 +157,7 @@ export function WeatherTimeline({
   const sunGradientId = 'weatherTimelineSun';
 
   return (
-    <YStack gap="$1">
+    <YStack gap="1">
       <GestureDetector gesture={gesture}>
         <XStack
           onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
@@ -422,7 +422,7 @@ export function WeatherTimeline({
       />
 
       <TimelineReadout fetchProfileM={fetchProfileM} hour={scrub} />
-      <Text color="$foregroundMuted" fontSize={10} lineHeight={13}>
+      <Text color="foregroundMuted" fontSize={10} lineHeight="13px">
         Top to bottom: Temperature · Precipitation
         {model?.wind ? ' · Wind, marked when calm and freezing' : ''}
         {model?.sun ? ' · Sun, marked when sunlit above freezing' : ''}
@@ -539,7 +539,7 @@ function TimelineReadout({
 }) {
   if (!hour) {
     return (
-      <Text color="$foregroundMuted" fontSize={10} fontStyle="italic" minHeight={28}>
+      <Text color="foregroundMuted" fontSize={10} fontStyle="italic" minHeight={28}>
         Tap the chart for any hour
       </Text>
     );
@@ -550,7 +550,7 @@ function TimelineReadout({
   return (
     // ⚠ `minHeight`, not `height` — the readout grew to six fields with the open-water clause, and a
     // fixed 14 clipped the second line silently.
-    <Text color="$foreground" fontSize={10} lineHeight={13} minHeight={28}>
+    <Text color="foreground" fontSize={10} lineHeight="13px" minHeight={28}>
       {parts.join(' · ')}
     </Text>
   );

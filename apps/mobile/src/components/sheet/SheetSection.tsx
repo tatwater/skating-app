@@ -33,8 +33,8 @@ export function SheetSection({
   return (
     <YStack
       borderTopWidth={1}
-      borderTopColor="$border"
-      backgroundColor={collapsed ? 'transparent' : '$surface'}
+      borderTopColor="border"
+      backgroundColor={collapsed ? 'transparent' : 'surface'}
       position="relative"
     >
       {collapsed ? null : <Brackets />}
@@ -43,27 +43,27 @@ export function SheetSection({
         gap={9}
         height={40}
         paddingHorizontal={12}
+        opacity="press:0.7"
         onPress={onToggle}
-        pressStyle={{ opacity: 0.7 }}
         accessibilityRole="button"
         accessibilityState={{ expanded: !collapsed }}
         accessibilityLabel={filled ? `${label}: ${summary}` : label}
       >
         <StatusSquare state={gap ? 'needed' : filled ? 'filled' : 'empty'} />
-        <Eyebrow color={gap ? '$warning' : '$foregroundMuted'}>{label}</Eyebrow>
-        {gap ? <Eyebrow color="$warning">· needed</Eyebrow> : null}
+        <Eyebrow color={gap ? 'warning' : 'foregroundMuted'}>{label}</Eyebrow>
+        {gap ? <Eyebrow color="warning">· needed</Eyebrow> : null}
         <XStack flex={1} />
         {filled && collapsed ? (
-          <Text color="$foreground" fontSize={12.5} numberOfLines={1} flexShrink={1}>
+          <Text color="foreground" fontSize={12.5} numberOfLines={1} flexShrink={1}>
             {summary}
           </Text>
         ) : null}
-        <Text color="$foregroundMuted" fontSize={10}>
+        <Text color="foregroundMuted" fontSize={10}>
           {collapsed ? '▼' : '▲'}
         </Text>
       </XStack>
       {collapsed ? null : (
-        <YStack gap="$2.5" paddingLeft={28} paddingRight={12} paddingBottom={12}>
+        <YStack gap="2-5" paddingLeft={28} paddingRight={12} paddingBottom={12}>
           {children}
         </YStack>
       )}
@@ -74,15 +74,15 @@ export function SheetSection({
 /** The section's name as the instrument label it is: mono, caps, tracked. */
 export function Eyebrow({
   children,
-  color = '$foregroundMuted',
+  color = 'foregroundMuted',
 }: {
   children: ReactNode;
-  color?: '$foregroundMuted' | '$warning' | '$primary' | '$foreground';
+  color?: 'foregroundMuted' | 'warning' | 'primary' | 'foreground';
 }) {
   return (
     <Text
       color={color}
-      fontFamily="$mono"
+      fontFamily="mono"
       fontSize={10.5}
       letterSpacing={1.4}
       textTransform="uppercase"
@@ -97,12 +97,12 @@ export function Eyebrow({
 export function StatusSquare({ state }: { state: 'empty' | 'filled' | 'needed' | 'ice' }) {
   const color =
     state === 'filled'
-      ? '$foreground'
+      ? 'foreground'
       : state === 'needed'
-        ? '$warning'
+        ? 'warning'
         : state === 'ice'
-          ? '$primary'
-          : '$borderStrong';
+          ? 'primary'
+          : 'borderStrong';
   return (
     <YStack
       width={7}
@@ -117,7 +117,7 @@ export function StatusSquare({ state }: { state: 'empty' | 'filled' | 'needed' |
 }
 
 /** The bracket corners of an open section: one L on the top-left, one on the bottom-right. */
-function Brackets({ color = '$borderStrong' }: { color?: '$borderStrong' | '$primary' }) {
+function Brackets({ color = 'borderStrong' }: { color?: 'borderStrong' | 'primary' }) {
   return (
     <>
       <YStack
@@ -149,7 +149,7 @@ function Brackets({ color = '$borderStrong' }: { color?: '$borderStrong' | '$pri
 /** A quiet helper line under a row — a suggestion's source, a note on what the row means. */
 export function SheetHint({ children }: { children: ReactNode }) {
   return (
-    <Text color="$foregroundMuted" fontSize={12} lineHeight={16}>
+    <Text color="foregroundMuted" fontSize={12} lineHeight="16px">
       {children}
     </Text>
   );
@@ -159,8 +159,8 @@ export function SheetHint({ children }: { children: ReactNode }) {
 export function SubLabel({ children }: { children: ReactNode }) {
   return (
     <Text
-      color="$foregroundMuted"
-      fontFamily="$mono"
+      color="foregroundMuted"
+      fontFamily="mono"
       fontSize={10}
       letterSpacing={1}
       textTransform="uppercase"
@@ -190,30 +190,30 @@ export function QuestionBlock({
 }) {
   return (
     <YStack
-      gap="$2"
+      gap="2"
       borderWidth={1}
-      borderColor="$primary"
-      borderRadius="$xs"
-      backgroundColor="$background"
+      borderColor="primary"
+      borderRadius="xs"
+      backgroundColor="background"
       padding={10}
     >
       <XStack alignItems="center" gap={10}>
-        <Eyebrow color="$primary">{title}</Eyebrow>
+        <Eyebrow color="primary">{title}</Eyebrow>
         <XStack flex={1} />
         {extra}
         <XStack
           height={24}
           paddingHorizontal={9}
           alignItems="center"
-          borderRadius="$xs"
-          backgroundColor="$foreground"
+          borderRadius="xs"
+          backgroundColor="foreground"
+          opacity="press:0.7"
           onPress={onDone}
-          pressStyle={{ opacity: 0.7 }}
           accessibilityRole="button"
           accessibilityLabel="Done"
         >
           <Text
-            color="$background"
+            color="background"
             fontSize={11}
             fontWeight="700"
             letterSpacing={0.8}

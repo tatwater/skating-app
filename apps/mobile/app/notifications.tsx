@@ -121,7 +121,7 @@ export default function NotificationsScreen() {
       contentContainerStyle={{ paddingBottom: 24 }}
       ListHeaderComponent={
         !live && cached.length > 0 ? (
-          <Paragraph color="$foregroundMuted" fontSize={12} paddingHorizontal="$4" paddingTop="$3">
+          <Paragraph color="foregroundMuted" fontSize={12} paddingHorizontal="4" paddingTop="3">
             Offline — showing what was here last time.
           </Paragraph>
         ) : undefined
@@ -129,25 +129,25 @@ export default function NotificationsScreen() {
       ListEmptyComponent={
         !live && offline ? (
           // Nothing cached and no connection: a spinner here would spin until the signal came back.
-          <YStack padding="$4" gap="$2">
-            <Text color="$foreground" fontWeight="600">
+          <YStack padding="4" gap="2">
+            <Text color="foreground" fontWeight="600">
               Offline
             </Text>
-            <Paragraph color="$foregroundMuted">
+            <Paragraph color="foregroundMuted">
               Nothing was saved from last time. Your notifications will load when you’re back in
               signal.
             </Paragraph>
           </YStack>
         ) : status === 'LoadingFirstPage' ? (
-          <YStack padding="$6" alignItems="center">
+          <YStack padding="6" alignItems="center">
             <Spinner />
           </YStack>
         ) : (
-          <YStack padding="$4" gap="$2">
-            <Text color="$foreground" fontWeight="600">
+          <YStack padding="4" gap="2">
+            <Text color="foreground" fontWeight="600">
               Nothing yet
             </Text>
-            <Paragraph color="$foregroundMuted">
+            <Paragraph color="foregroundMuted">
               When someone comments on your report, finds it helpful, or a lake you follow gets new
               ice, it shows up here. Which of those reach you is up to you under Notifications on
               the You tab.
@@ -157,7 +157,7 @@ export default function NotificationsScreen() {
       }
       ListFooterComponent={
         status === 'LoadingMore' ? (
-          <YStack padding="$4" alignItems="center">
+          <YStack padding="4" alignItems="center">
             <Spinner />
           </YStack>
         ) : undefined
@@ -181,20 +181,16 @@ function NotificationRow({
   const route = notificationRoute(target, view);
   return (
     <XStack
-      gap="$3"
-      paddingHorizontal="$4"
-      paddingVertical="$3"
+      gap="3"
+      paddingHorizontal="4"
+      paddingVertical="3"
       borderBottomWidth={1}
-      borderColor="$border"
+      borderColor="border"
       alignItems="flex-start"
       opacity={route ? 1 : 0.8}
-      {...(route
-        ? {
-            pressStyle: { backgroundColor: '$surfaceMuted' },
-            onPress: () => router.navigate(route),
-            accessibilityRole: 'button' as const,
-          }
-        : {})}
+      backgroundColor={route ? 'press:surfaceMuted' : undefined}
+      onPress={route ? () => router.navigate(route) : undefined}
+      accessibilityRole={route ? 'button' : undefined}
     >
       {/* Fixed-width gutter so read and unread rows share a left edge. */}
       <YStack width={8} alignItems="center" paddingTop={7}>
@@ -203,21 +199,21 @@ function NotificationRow({
             width={8}
             height={8}
             borderRadius={4}
-            backgroundColor="$primary"
+            backgroundColor="primary"
             accessibilityLabel="Unread"
           />
         ) : null}
       </YStack>
-      <YStack flex={1} gap="$1">
-        <Text color="$foreground" fontWeight={unread ? '600' : '400'}>
+      <YStack flex={1} gap="1">
+        <Text color="foreground" fontWeight={unread ? '600' : '400'}>
           {title}
         </Text>
         {detail ? (
-          <Text color="$foregroundMuted" fontSize={12}>
+          <Text color="foregroundMuted" fontSize={12}>
             {detail}
           </Text>
         ) : null}
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {formatRelativeTime(view.createdAt, now)}
         </Text>
       </YStack>

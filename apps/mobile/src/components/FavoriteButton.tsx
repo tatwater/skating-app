@@ -41,16 +41,16 @@ export function FavoriteButton({
 
   return (
     <Button
-      size="$3"
-      chromeless={!isFav}
+      size="md"
       borderWidth={1}
-      borderColor={isFav ? '$primary' : '$border'}
+      borderColor={isFav ? 'primary' : 'border'}
+      variant={!isFav ? 'quiet' : undefined}
       onPress={() => void toggle(target)}
       disabled={favorited === undefined}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
     >
       <FontAwesomeIcon icon={isFav ? faStarSolid : faStarOutline} color={tint} size={16} />
-      <Text color={isFav ? '$primary' : '$foreground'}>{isFav ? 'Favorited' : 'Favorite'}</Text>
+      <Text color={isFav ? 'primary' : 'foreground'}>{isFav ? 'Favorited' : 'Favorite'}</Text>
     </Button>
   );
 }
@@ -90,13 +90,13 @@ export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies
 
   return (
     <Button
-      size="$3"
-      chromeless
+      size="md"
       borderWidth={1}
-      borderColor="$border"
+      borderColor="border"
+      variant="quiet"
       onPress={() => void Linking.openURL(directionsUrl(coord, detectPlatform()))}
     >
-      <Text color="$foreground">
+      <Text color="foreground">
         {target?.via === 'parking' ? 'Directions to parking' : 'Directions'}
         {approximate ? ' (approx.)' : ''}
         {isHikeIn(target?.approachKind) ? ' · hike-in' : ''}

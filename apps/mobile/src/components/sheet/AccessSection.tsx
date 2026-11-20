@@ -191,7 +191,7 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
           </SheetHint>
         </QuestionBlock>
       ) : (
-        <XStack gap="$2" alignItems="center" flexWrap="wrap">
+        <XStack gap="2" alignItems="center" flexWrap="wrap">
           <SubLabel>Where did you get on?</SubLabel>
           <SheetChip
             compact
@@ -202,12 +202,12 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
         </XStack>
       )}
       {error ? (
-        <Text color="$danger" fontSize={12}>
+        <Text color="danger" fontSize={12}>
           {error}
         </Text>
       ) : null}
       {body && body.parking.length > 0 ? (
-        <YStack gap="$1.5">
+        <YStack gap="1-5">
           <SubLabel>Where did you park?</SubLabel>
           <XStack gap={6} flexWrap="wrap">
             {body.parking.map((lot) => (
@@ -223,7 +223,7 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
         </YStack>
       ) : null}
 
-      <YStack gap="$1.5">
+      <YStack gap="1-5">
         <SubLabel>What did you find there?</SubLabel>
         {editing ? (
           // The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
@@ -275,7 +275,7 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
         )}
       </YStack>
 
-      <YStack gap="$1">
+      <YStack gap="1">
         <XStack>
           <SheetChip
             label={SHOW_PUT_IN_LABEL}

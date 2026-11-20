@@ -94,11 +94,11 @@ export function ChangeEmail() {
 
   if (step === 'idle') {
     return (
-      <XStack alignItems="center" justifyContent="space-between" gap="$3">
-        <Paragraph color="$foregroundMuted" flex={1}>
+      <XStack alignItems="center" justifyContent="space-between" gap="3">
+        <Paragraph color="foregroundMuted" flex={1}>
           {current ?? 'No email on this account'}
         </Paragraph>
-        <Button size="$2" onPress={() => setStep('enter')}>
+        <Button size="sm" onPress={() => setStep('enter')}>
           Change email
         </Button>
       </XStack>
@@ -107,36 +107,36 @@ export function ChangeEmail() {
 
   if (step === 'done') {
     return (
-      <YStack gap="$1">
-        <Paragraph color="$foreground">Your email is now {pending?.emailAddress}.</Paragraph>
+      <YStack gap="1">
+        <Paragraph color="foreground">Your email is now {pending?.emailAddress}.</Paragraph>
         {old?.kind === 'kept_linked' ? (
-          <Paragraph color="$foregroundMuted" fontSize="$1">
+          <Paragraph color="foregroundMuted" fontSize="1">
             Your old address stays on the account because it’s linked to your {old.provider}{' '}
             sign-in; it won’t receive notifications.
           </Paragraph>
         ) : null}
         {old?.kind === 'remove_failed' ? (
-          <Text color="$danger" fontSize="$1">
+          <Text color="danger" fontSize="1">
             We couldn’t remove your old address ({old.message}). It’s still on your account as a
             secondary and won’t receive notifications — you can try removing it again.
           </Text>
         ) : null}
-        <Paragraph color="$foregroundMuted" fontSize="$1">
+        <Paragraph color="foregroundMuted" fontSize="1">
           Notification emails go to the new address from here on.
         </Paragraph>
-        <XStack gap="$2">
+        <XStack gap="2">
           {old?.kind === 'remove_failed' ? (
             <Button
-              size="$2"
-              backgroundColor="$primary"
-              color="$primaryForeground"
+              size="sm"
+              backgroundColor="primary"
+              color="primaryForeground"
               disabled={busy}
               onPress={onRetryRemove}
             >
               {busy ? 'Removing…' : 'Remove old address'}
             </Button>
           ) : null}
-          <Button size="$2" disabled={busy} onPress={reset}>
+          <Button size="sm" disabled={busy} onPress={reset}>
             Done
           </Button>
         </XStack>
@@ -146,8 +146,8 @@ export function ChangeEmail() {
 
   if (step === 'code') {
     return (
-      <YStack gap="$2">
-        <Paragraph color="$foregroundMuted" fontSize="$1">
+      <YStack gap="2">
+        <Paragraph color="foregroundMuted" fontSize="1">
           Enter the code we emailed to {pending?.emailAddress}.
         </Paragraph>
         <Input
@@ -157,17 +157,17 @@ export function ChangeEmail() {
           keyboardType="number-pad"
           autoComplete="one-time-code"
         />
-        {error ? <Text color="$danger">{error}</Text> : null}
-        <XStack gap="$2">
+        {error ? <Text color="danger">{error}</Text> : null}
+        <XStack gap="2">
           <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
+            backgroundColor="primary"
+            color="primaryForeground"
             disabled={busy || code.trim().length === 0}
             onPress={onVerify}
           >
             {busy ? 'Verifying…' : 'Verify'}
           </Button>
-          <Button chromeless disabled={busy} onPress={reset}>
+          <Button variant="quiet" disabled={busy} onPress={reset}>
             Cancel
           </Button>
         </XStack>
@@ -176,8 +176,8 @@ export function ChangeEmail() {
   }
 
   return (
-    <YStack gap="$2">
-      <Paragraph color="$foregroundMuted" fontSize="$1">
+    <YStack gap="2">
+      <Paragraph color="foregroundMuted" fontSize="1">
         We’ll email a code to the new address to confirm it’s yours. Sign-in codes and notification
         emails go there afterwards.
       </Paragraph>
@@ -189,17 +189,17 @@ export function ChangeEmail() {
         keyboardType="email-address"
         autoComplete="email"
       />
-      {error ? <Text color="$danger">{error}</Text> : null}
-      <XStack gap="$2">
+      {error ? <Text color="danger">{error}</Text> : null}
+      <XStack gap="2">
         <Button
-          backgroundColor="$primary"
-          color="$primaryForeground"
+          backgroundColor="primary"
+          color="primaryForeground"
           disabled={busy || email.trim().length === 0}
           onPress={onSendCode}
         >
           {busy ? 'Sending…' : 'Email me a code'}
         </Button>
-        <Button chromeless disabled={busy} onPress={reset}>
+        <Button variant="quiet" disabled={busy} onPress={reset}>
           Cancel
         </Button>
       </XStack>

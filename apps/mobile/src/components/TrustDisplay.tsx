@@ -74,7 +74,7 @@ export function TrustClassChip({ trustClass }: { trustClass: TrustClass | null }
   return (
     <XStack
       alignItems="center"
-      gap="$1.5"
+      gap="1-5"
       borderRadius={9999}
       paddingHorizontal={10}
       paddingVertical={2}

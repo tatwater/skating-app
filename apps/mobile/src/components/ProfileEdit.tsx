@@ -27,57 +27,57 @@ export function ProfileEdit() {
   const publicValue = isPublic ?? profile.profileVisibility === 'public';
 
   return (
-    <YStack gap="$3">
-      <YStack gap="$1.5">
-        <Text color="$foreground">Bio</Text>
+    <YStack gap="3">
+      <YStack gap="1-5">
+        <Text color="foreground">Bio</Text>
         <TextArea
           value={bioValue}
           onChangeText={setBio}
           maxLength={BIO_MAX_LENGTH}
           placeholder="A short blurb — shown only on a public profile."
-          borderColor="$border"
+          borderColor="border"
         />
       </YStack>
-      <YStack gap="$1.5">
-        <Text color="$foreground">Town</Text>
+      <YStack gap="1-5">
+        <Text color="foreground">Town</Text>
         <Input
           value={townValue}
           onChangeText={setTown}
           maxLength={TOWN_LABEL_MAX_LENGTH}
           placeholder="e.g. Norwich, VT"
-          borderColor="$border"
+          borderColor="border"
         />
       </YStack>
-      <YStack gap="$1.5">
-        <XStack gap="$2">
+      <YStack gap="1-5">
+        <XStack gap="2">
           <Button
-            size="$2"
-            backgroundColor={publicValue ? '$primary' : undefined}
-            color={publicValue ? '$primaryForeground' : undefined}
+            size="sm"
+            backgroundColor={publicValue ? 'primary' : undefined}
+            color={publicValue ? 'primaryForeground' : undefined}
             disabled={!canGoPublic}
             onPress={() => setIsPublic(true)}
           >
             Public
           </Button>
           <Button
-            size="$2"
-            backgroundColor={!publicValue ? '$primary' : undefined}
-            color={!publicValue ? '$primaryForeground' : undefined}
+            size="sm"
+            backgroundColor={!publicValue ? 'primary' : undefined}
+            color={!publicValue ? 'primaryForeground' : undefined}
             onPress={() => setIsPublic(false)}
           >
             Private
           </Button>
         </XStack>
-        <Paragraph color="$foregroundMuted" fontSize="$1">
+        <Paragraph color="foregroundMuted" fontSize="1">
           {canGoPublic
             ? 'A public profile is searchable and shows your town, bio, and report history. Private shows only your name and photo.'
             : 'Under-18 profiles stay private until you turn 18. Your reports are still public and help the community.'}
         </Paragraph>
       </YStack>
-      {saved ? <Text color="$foregroundMuted">Saved.</Text> : null}
+      {saved ? <Text color="foregroundMuted">Saved.</Text> : null}
       <Button
-        backgroundColor="$primary"
-        color="$primaryForeground"
+        backgroundColor="primary"
+        color="primaryForeground"
         disabled={saving}
         onPress={async () => {
           setSaving(true);

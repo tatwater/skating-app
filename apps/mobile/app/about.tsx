@@ -17,9 +17,9 @@ export default function AboutScreen() {
   const counts = regionStats ? corpusCountLines(regionStats) : [];
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
-      <YStack gap="$3" backgroundColor="$background">
-        <H2 color="$foreground">{Constants.expoConfig?.name ?? 'Gli'}</H2>
-        <Paragraph color="$foregroundMuted">
+      <YStack gap="3" backgroundColor="background">
+        <H2 color="foreground">{Constants.expoConfig?.name ?? 'Gli'}</H2>
+        <Paragraph color="foregroundMuted">
           Version {Constants.expoConfig?.version ?? '0.0.1'}. A map-first, peer ice-reporting app
           for Nordic (wild) ice skating. Reports are named peers' observations at a specific time
           and place — never a guarantee that ice is safe. You alone decide whether to step on the
@@ -29,35 +29,35 @@ export default function AboutScreen() {
         {/* Both numbers, always (A07b, founder call): what the map knows and what it recommends. */}
         {counts.length > 0 ? (
           <>
-            <H2 color="$foreground">The map</H2>
-            <Paragraph color="$foregroundMuted">
+            <H2 color="foreground">The map</H2>
+            <Paragraph color="foregroundMuted">
               Every lake we know about is on the map when you zoom in. The active ones — the lakes
               people actually skate and can actually reach — are the ones we recommend, notify about
               and show first.
             </Paragraph>
             {counts.map((line) => (
-              <Paragraph key={line.state} color="$foregroundMuted" fontSize={13}>
+              <Paragraph key={line.state} color="foregroundMuted" fontSize={13}>
                 {line.stateName} — {formatCorpusCount(line)}
               </Paragraph>
             ))}
           </>
         ) : null}
 
-        <H2 color="$foreground">License</H2>
-        <Paragraph color="$foregroundMuted">
+        <H2 color="foreground">License</H2>
+        <Paragraph color="foregroundMuted">
           Licensed under AGPL-3.0, with a GPLv3 §7 additional permission (an App Store / Google Play
           distribution exception) so the app can ship on both stores.
         </Paragraph>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.license)}>
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.license)}>
           AGPL-3.0 license
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.licenseExceptions)}>
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.licenseExceptions)}>
           App Store / Play exception
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.privacy)}>
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.privacy)}>
           Privacy notice
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.terms)}>
+        <Anchor color="primary" onPress={() => openBrowserAsync(DOC_URLS.terms)}>
           Terms (interim)
         </Anchor>
       </YStack>

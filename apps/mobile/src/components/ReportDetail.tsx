@@ -134,12 +134,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     : [];
 
   return (
-    <YStack gap="$3">
-      <YStack gap="$1">
+    <YStack gap="3">
+      <YStack gap="1">
         {/* Composed through `@skating/core`, never assembled here (A02/D60): the bay name goes ahead
             of the lake, and this screen is the reason that helper exists — the mobile feed card was
             already showing "Malletts Bay" while this one still said "Lake Champlain". */}
-        <H4 color="$foreground">
+        <H4 color="foreground">
           {bodyName
             ? formatLocationLine({
                 ...(report.subAreaName !== undefined ? { subAreaName: report.subAreaName } : {}),
@@ -148,7 +148,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
               })
             : 'Report'}
         </H4>
-        <Text color="$foregroundMuted">
+        <Text color="foregroundMuted">
           Off the ice {formatSkateTime(report.skateEndTime)}
           {(() => {
             const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime);
@@ -163,14 +163,14 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {report.editedAt ? ' · edited' : ''}
         </Text>
         {authorName ? (
-          <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+          <XStack gap="1-5" alignItems="center" flexWrap="wrap">
             <TrustAvatar
               displayName={authorName}
               imageUrl={author?.profileImageUrl}
               trustClass={author?.trustClass}
               size={20}
             />
-            <Text color={authorBlocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
+            <Text color={authorBlocked ? 'foregroundMuted' : 'foreground'} fontSize={13}>
               by {authorName}
             </Text>
             {authorBlocked ? <BlockedChip /> : null}
@@ -186,7 +186,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       (report.observedFrom && report.observedFrom !== 'on_ice') ||
       sightingLines.length > 0 ||
       report.conflicting ? (
-        <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+        <XStack gap="1-5" flexWrap="wrap" alignItems="center">
           {report.suitability ? (
             <Badge tone={report.suitability === 'dont_go' ? 'danger' : 'solid'}>
               {SUITABILITY_LABELS[report.suitability]}
@@ -207,14 +207,14 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {/* The words this Report was posted with (A10 / D186) — the author's, over the data. */}
       {post?.title || post?.body ? (
-        <YStack gap="$1">
+        <YStack gap="1">
           {post.title ? (
-            <Text color="$foreground" fontWeight="600" fontSize={16}>
+            <Text color="foreground" fontWeight="600" fontSize={16}>
               {post.title}
             </Text>
           ) : null}
           {post.body ? (
-            <Paragraph color="$foreground" lineHeight={21}>
+            <Paragraph color="foreground" lineHeight="21px">
               {post.body}
             </Paragraph>
           ) : null}
@@ -242,12 +242,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {readings.length > 0 ? (
         <Section label="Thickness">
-          <YStack gap="$0.5">
+          <YStack gap="0-5">
             {readings.map((reading, i) => {
               const formatted = formatThicknessReading(reading);
               return formatted ? (
                 // biome-ignore lint/suspicious/noArrayIndexKey: readings are an ordered, stable list.
-                <Text key={i} color="$foreground">
+                <Text key={i} color="foreground">
                   {formatted}
                 </Text>
               ) : null;
@@ -258,17 +258,17 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {snow ? (
         <Section label="Snow">
-          <Text color="$foreground">{snow}</Text>
+          <Text color="foreground">{snow}</Text>
         </Section>
       ) : null}
 
       {conditions.length > 0 ? (
         <Section label="Conditions">
-          <YStack gap="$1">
+          <YStack gap="1">
             {conditions.map((row) => (
               <XStack key={row.label} justifyContent="space-between">
-                <Text color="$foregroundMuted">{row.label}</Text>
-                <Text color="$foreground">{row.value}</Text>
+                <Text color="foregroundMuted">{row.label}</Text>
+                <Text color="foreground">{row.value}</Text>
               </XStack>
             ))}
           </YStack>
@@ -287,18 +287,18 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {report.notes ? (
         <Section label="Notes">
-          <Paragraph color="$foreground">{report.notes}</Paragraph>
+          <Paragraph color="foreground">{report.notes}</Paragraph>
         </Section>
       ) : null}
 
       {/* The other legs of the same day (A10 / D186), in the author's order. */}
       {post && post.siblings.length > 0 ? (
         <Section label="Also in this post">
-          <XStack gap="$1.5" flexWrap="wrap">
+          <XStack gap="1-5" flexWrap="wrap">
             {post.siblings.map((sibling) => (
               <Button
                 key={sibling.reportId}
-                size="$2"
+                size="sm"
                 variant="outlined"
                 onPress={() =>
                   router.navigate({ pathname: '/report/[id]', params: { id: sibling.reportId } })
@@ -313,7 +313,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {photos && photos.length > 0 ? (
         <Section label="Photos">
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             {photos.map((photo) =>
               photo.thumbUrl ? (
                 <Pressable
@@ -337,7 +337,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       <Separator />
       <Text
-        color="$primary"
+        color="primary"
         onPress={() =>
           router.navigate({ pathname: '/water/[id]', params: { id: report.waterBodyId } })
         }
@@ -349,7 +349,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           withheld its put-in (D58 §3). Said out loud rather than left to look like the whole skate —
           a silently shortened track is the same quiet lie as a silently truncated list. */}
       {track?.clipped ? (
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           Start and end of this track are hidden — the skater didn’t share their put-in.
         </Text>
       ) : null}
@@ -357,7 +357,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {/* Told on the spot rather than pinged (D170): a stranger having asked is not a reason for
           the author's phone to ding, but it is a nice thing to know. */}
       {isOwn && bountiesAnswered !== undefined && bountiesAnswered > 0 ? (
-        <Text color="$foregroundMuted" fontSize={13}>
+        <Text color="foregroundMuted" fontSize={13}>
           Thanks for this report — at least{' '}
           {bountiesAnswered === 1 ? 'one skater was' : `${bountiesAnswered} skaters were`} looking
           forward to it.
@@ -374,7 +374,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
       {me && !isOwn ? (
-        <XStack gap="$2" flexWrap="wrap" alignItems="flex-start">
+        <XStack gap="2" flexWrap="wrap" alignItems="flex-start">
           <FlagControl targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
           {/* The Post is the other verdict (A10 / D186): hiding it hides every Report under it. */}
@@ -389,18 +389,18 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           left, and when, a moderator can still see (founder call, 2026-09-21). Hidden once
           moderated, which the server refuses. */}
       {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           <Button
-            size="$2"
-            chromeless
+            size="sm"
+            variant="quiet"
             onPress={() => router.navigate(doorHref({ edit: report._id }))}
           >
             Edit report
           </Button>
           <Button
-            size="$2"
-            chromeless
-            color="$danger"
+            size="sm"
+            color="danger"
+            variant="quiet"
             disabled={deleting}
             onPress={() =>
               Alert.alert(

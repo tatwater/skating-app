@@ -30,7 +30,7 @@ export default function ProfileRoute() {
   }
 
   const actions = profile.isSelf ? null : (
-    <YStack gap="$2">
+    <YStack gap="2">
       <BlockButton targetUserId={profile.userId} displayName={profile.displayName} />
       <FlagControl targetType="user" targetId={profile.userId} />
     </YStack>
@@ -62,7 +62,7 @@ export default function ProfileRoute() {
         reportHistory={
           !profile.private && profile.posts.length > 0 ? (
             // The person's Posts as the feed shows them (A10 / D186) — one card builder, one look.
-            <YStack gap="$3">
+            <YStack gap="3">
               {profile.posts.map((post) => (
                 <PostCard
                   key={post.postId}
@@ -75,7 +75,7 @@ export default function ProfileRoute() {
               ))}
             </YStack>
           ) : !profile.private ? (
-            <Text color="$foregroundMuted">No reports yet.</Text>
+            <Text color="foregroundMuted">No reports yet.</Text>
           ) : null
         }
       />

@@ -37,23 +37,20 @@ export function PostedAccess({
 
   return (
     <Section label="Posted rules">
-      <YStack gap="$1">
-        {described ? <Text color="$foreground">{described}</Text> : null}
+      <YStack gap="1">
+        {described ? <Text color="foreground">{described}</Text> : null}
         {nowLine ? (
-          <Text
-            color={closed ? '$warning' : '$foregroundMuted'}
-            fontWeight={closed ? '600' : '400'}
-          >
+          <Text color={closed ? 'warning' : 'foregroundMuted'} fontWeight={closed ? '600' : '400'}>
             {nowLine}
           </Text>
         ) : null}
         {rule?.note ? (
-          <Text color="$foregroundMuted" fontSize="$1">
+          <Text color="foregroundMuted" fontSize="1">
             {rule.note}
           </Text>
         ) : null}
         {!rule ? (
-          <Paragraph color="$foregroundMuted" fontStyle="italic">
+          <Paragraph color="foregroundMuted" fontStyle="italic">
             {revealPlaceholder('posted rules')}
           </Paragraph>
         ) : null}
@@ -79,7 +76,7 @@ export function PostedAccessLine({
   if (!rule || !described) return null;
 
   return (
-    <Text color={closed ? '$warning' : '$foregroundMuted'} fontSize="$1">
+    <Text color={closed ? 'warning' : 'foregroundMuted'} fontSize="1">
       {nowLine ? `${described} · ${nowLine}` : described}
     </Text>
   );

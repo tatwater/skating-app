@@ -53,7 +53,7 @@ export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }
   ];
 
   return (
-    <XStack gap="$2" flexWrap="wrap">
+    <XStack gap="2" flexWrap="wrap">
       {chips.map((chip) => {
         const selected = browseSeason === chip.value;
         return (
@@ -63,12 +63,12 @@ export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }
             accessibilityLabel={`Show ${chip.label} on this lake`}
             accessibilityState={{ selected }}
             onPress={() => setBrowseSeason(chip.value)}
-            paddingHorizontal="$2"
-            paddingVertical="$1"
-            borderRadius="$3"
+            paddingHorizontal="2"
+            paddingVertical="1"
+            borderRadius="3"
             borderWidth={1}
-            borderColor={selected ? '$primary' : '$border'}
-            color={selected ? '$primary' : '$foregroundMuted'}
+            borderColor={selected ? 'primary' : 'border'}
+            color={selected ? 'primary' : 'foregroundMuted'}
             fontSize={13}
           >
             {chip.label}
@@ -93,7 +93,7 @@ export function SeasonEmptyState({
   currentSeason: number | undefined;
 }) {
   return (
-    <Paragraph color="$foregroundMuted">
+    <Paragraph color="foregroundMuted">
       {browseSeason !== null
         ? `Nothing was reported here in ${formatSeason(browseSeason)}.`
         : `No reports yet${

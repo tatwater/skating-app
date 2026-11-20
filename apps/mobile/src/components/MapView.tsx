@@ -883,10 +883,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         flex={1}
         alignItems="center"
         justifyContent="center"
-        padding="$6"
-        backgroundColor="$background"
+        padding="6"
+        backgroundColor="background"
       >
-        <Paragraph color="$foreground" textAlign="center" fontSize={15} lineHeight={22}>
+        <Paragraph color="foreground" textAlign="center" fontSize={15} lineHeight="22px">
           Map unavailable — this build is missing its basemap configuration
           (EXPO_PUBLIC_PMTILES_URL).
         </Paragraph>
@@ -1331,20 +1331,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           right={8}
           zIndex={30}
           alignItems="center"
-          gap="$2"
-          paddingVertical="$1"
-          paddingHorizontal="$3"
+          gap="2"
+          paddingVertical="1"
+          paddingHorizontal="3"
           borderRadius={999}
           borderWidth={1}
-          borderColor="$border"
-          backgroundColor="$surface"
+          borderColor="border"
+          backgroundColor="surface"
           accessibilityRole="summary"
         >
-          <Text color="$foreground" fontSize={12} flex={1} numberOfLines={2}>
+          <Text color="foreground" fontSize={12} flex={1} numberOfLines={2}>
             {describeWeatherFilter(feedFilters, matchedCells?.asOfDayMs)}
           </Text>
           <Text
-            color="$primary"
+            color="primary"
             fontSize={12}
             fontWeight="600"
             accessibilityRole="button"

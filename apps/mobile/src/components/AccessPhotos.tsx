@@ -76,25 +76,25 @@ export function AccessPhotos({
   }
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         {label}
       </Text>
 
       {existing.length > 0 ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           {existing.map((photo) =>
             photo.thumbUrl ? (
               <YStack key={photo.photoId}>
                 <Image source={{ uri: photo.thumbUrl }} width={72} height={72} borderRadius={6} />
                 <Button
-                  size="$1"
-                  chromeless
+                  size="xs"
+                  variant="quiet"
                   onPress={() =>
                     void detach({ accessPhotoId: photo.accessPhotoId as Id<'accessPhotos'> })
                   }
                 >
-                  <Text fontSize={11} color="$foregroundMuted">
+                  <Text fontSize={11} color="foregroundMuted">
                     Remove
                   </Text>
                 </Button>
@@ -105,17 +105,17 @@ export function AccessPhotos({
       ) : null}
 
       {error ? (
-        <Text color="$danger" fontSize={13} accessibilityRole="alert">
+        <Text color="danger" fontSize={13} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
 
       {remaining > 0 ? (
         <Button
-          size="$2"
-          chromeless
+          size="sm"
           borderWidth={1}
-          borderColor="$border"
+          borderColor="border"
+          variant="quiet"
           disabled={busy}
           onPress={() => void add()}
         >
@@ -123,7 +123,7 @@ export function AccessPhotos({
         </Button>
       ) : (
         // Said rather than hidden: a button that vanishes reads as broken.
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {MAX_ACCESS_PHOTOS} photos is the limit for one access point.
         </Text>
       )}

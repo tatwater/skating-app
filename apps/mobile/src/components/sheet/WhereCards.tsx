@@ -63,19 +63,19 @@ export function WhereCards({
       extra={
         <>
           {cards.length > 1 ? (
-            <Text color="$foregroundMuted" fontFamily="$mono" fontSize={10}>
+            <Text color="foregroundMuted" fontFamily="mono" fontSize={10}>
               {index + 1} OF {cards.length}
             </Text>
           ) : null}
           <Text
-            color="$foregroundMuted"
+            color="foregroundMuted"
             fontSize={11}
             fontWeight="700"
             letterSpacing={0.8}
             textTransform="uppercase"
+            paddingHorizontal={6}
             onPress={next}
             accessibilityRole="button"
-            paddingHorizontal={6}
           >
             Skip
           </Text>
@@ -84,7 +84,7 @@ export function WhereCards({
     >
       {cards.length > 1 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <XStack gap={4} borderBottomWidth={1} borderBottomColor="$border">
+          <XStack gap={4} borderBottomWidth={1} borderBottomColor="border">
             {cards.map((card) => {
               const on = card.id === active.id;
               return (
@@ -95,20 +95,20 @@ export function WhereCards({
                   paddingBottom={6}
                   marginBottom={-1}
                   borderBottomWidth={2}
-                  borderBottomColor={on ? '$primary' : 'transparent'}
+                  borderBottomColor={`${on ? 'primary' : 'transparent'}`}
                   onPress={() => onActivate(card.id)}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: on }}
                   accessibilityLabel={`${card.label}${card.where === undefined ? ', no answer yet' : ''}`}
                 >
                   <Text
-                    color={on ? '$foreground' : '$foregroundMuted'}
+                    color={on ? 'foreground' : 'foregroundMuted'}
                     fontSize={12.5}
                     fontWeight={on ? '600' : '400'}
                   >
                     {card.label}
                     {card.where === undefined ? (
-                      <Text color="$warning" accessibilityElementsHidden>
+                      <Text color="warning" accessibilityElementsHidden>
                         {' '}
                         ·
                       </Text>
@@ -163,7 +163,7 @@ export function WhereCards({
       </SheetHint>
       {active.onAnotherPlace && where !== undefined ? (
         <Text
-          color="$foregroundMuted"
+          color="foregroundMuted"
           fontSize={11}
           fontWeight="700"
           letterSpacing={0.8}

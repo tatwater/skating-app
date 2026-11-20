@@ -107,8 +107,7 @@ components. The remaining recommended lint checks still run.
 | `react`, `react-dom`, `react-is`, `react-test-renderer` | Expo SDK 58 recommends React and React DOM `19.3.0`. Keep the workspace React versions and test renderer aligned. |
 | `@react-native-community/datetimepicker`, `@sentry/react-native`, `react-native-gesture-handler`, `react-native-reanimated`, `react-native-svg`, `react-native-worklets` | Follow Expo SDK 58's recommended versions and verify with `expo install --check`. |
 | `@maplibre/maplibre-gl-style-spec` (mobile) | Native MapLibre `11.5.1` depends on `26.4.4` exactly. Web uses a newer style spec; aligning mobile to it broke type-checking. |
-| `@babel/core` (mobile) | The Tamagui 2 compiler plugin requires Babel 7. Revisit Babel 8 with the mobile compiler migration. |
-| `tamagui`, `@tamagui/config` | [Tamagui 3](https://tamagui.dev/docs/guides/how-to-upgrade) removes the v2 token and conditional-style syntax the app uses. Migrate the UI separately and verify native screens on a device. |
+| `@babel/core` (mobile) | Expo SDK 58's transform stack requires Babel 7, even without the old Tamagui plugin. Revisit Babel 8 when Expo supports it. |
 
 ### Running the apps
 

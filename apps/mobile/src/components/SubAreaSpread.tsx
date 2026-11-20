@@ -21,14 +21,14 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
     router.navigate({ pathname: '/water/[id]', params: { id: waterBodyId, sub: subAreaId } });
   return (
     <Section label="Across the lake">
-      <YStack gap="$1">
-        <Text color="$foregroundMuted" fontSize={13}>
+      <YStack gap="1">
+        <Text color="foregroundMuted" fontSize={13}>
           {spread.summary}
         </Text>
         {spread.similar
           ? null
           : spread.lines.map((line) => (
-              <Paragraph key={line.kind} color="$foreground" fontSize={14}>
+              <Paragraph key={line.kind} color="foreground" fontSize={14}>
                 {line.parts.map((part) => (
                   <SpreadPartView key={partKey(part)} part={part} onPress={go} />
                 ))}
@@ -39,8 +39,8 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
         {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]
           .filter((r): r is NonNullable<typeof r> => !!r)
           .map((ranking) => (
-            <Paragraph key={ranking.kind} color="$foregroundMuted" fontSize={13}>
-              <Text color="$foreground">{ranking.label}: </Text>
+            <Paragraph key={ranking.kind} color="foregroundMuted" fontSize={13}>
+              <Text color="foreground">{ranking.label}: </Text>
               {ranking.bays.map((bay, i) => (
                 <Text key={bay.subAreaId}>
                   {i > 0 ? ' · ' : ''}
@@ -70,7 +70,7 @@ function SpreadPartView({
   if (typeof part === 'string') return <Text>{part}</Text>;
   return (
     <Text
-      color="$primary"
+      color="primary"
       accessibilityRole="link"
       accessibilityLabel={`Show weather at ${part.name}`}
       onPress={() => onPress(part.subAreaId)}

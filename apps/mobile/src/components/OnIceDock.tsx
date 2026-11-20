@@ -148,12 +148,12 @@ export function OnIceDock({
         {mode === 'panel' ? (
           <Animated.View entering={FadeIn.duration(160)}>
             <YStack
-              padding="$3"
-              borderRadius="$4"
-              backgroundColor="$surface"
-              borderColor="$primary"
+              padding="3"
+              borderRadius="4"
+              backgroundColor="surface"
+              borderColor="primary"
               borderWidth={1}
-              gap="$2"
+              gap="2"
             >
               {finished ? (
                 <FinishedSkate
@@ -168,12 +168,12 @@ export function OnIceDock({
                 <>
                   {armed ? (
                     <XStack justifyContent="space-between" alignItems="center">
-                      <Text color="$foreground" fontWeight="700">
+                      <Text color="foreground" fontWeight="700">
                         ⛸ On-ice mode is on
                       </Text>
                       <Button
-                        size="$2"
-                        chromeless
+                        size="sm"
+                        variant="quiet"
                         onPress={disarm}
                         accessibilityLabel="Stop on-ice mode"
                       >
@@ -192,9 +192,9 @@ export function OnIceDock({
                       contribution. */}
                   {!recording && !leaving ? (
                     <Button
-                      size="$3"
-                      backgroundColor="$surface"
-                      borderColor="$border"
+                      size="md"
+                      backgroundColor="surface"
+                      borderColor="border"
                       borderWidth={1}
                       disabled={busy}
                       onPress={startSkate}
@@ -204,12 +204,12 @@ export function OnIceDock({
                     </Button>
                   ) : null}
 
-                  <Button size="$2" chromeless onPress={() => setShowOptions((v) => !v)}>
+                  <Button size="sm" variant="quiet" onPress={() => setShowOptions((v) => !v)}>
                     {showOptions ? 'Hide options' : 'Options'}
                   </Button>
 
                   {showOptions ? (
-                    <YStack gap="$2">
+                    <YStack gap="2">
                       {armed ? (
                         <OptionRow
                           title="Remind me on every approach"
@@ -235,14 +235,14 @@ export function OnIceDock({
                       radio at navigation-grade accuracy; we say so before someone commits three
                       hours to it. */}
                   {recording ? (
-                    <Paragraph color="$foregroundMuted" fontSize={11}>
+                    <Paragraph color="foregroundMuted" fontSize={11}>
                       Recording uses GPS continuously — expect roughly 5–12% battery per hour, more
                       in the cold. You can lock the screen; recording continues.
                     </Paragraph>
                   ) : null}
 
                   {armed ? (
-                    <Paragraph color="$foregroundMuted" fontSize={11}>
+                    <Paragraph color="foregroundMuted" fontSize={11}>
                       {NO_ALERT_IS_NOT_ALL_CLEAR}
                     </Paragraph>
                   ) : null}
@@ -253,16 +253,16 @@ export function OnIceDock({
         ) : (
           <Animated.View entering={FadeIn.duration(160)}>
             <Button
-              size="$3"
-              backgroundColor="$surface"
-              borderColor="$border"
+              size="md"
+              backgroundColor="surface"
+              borderColor="border"
               borderWidth={1}
               disabled={busy}
               onPress={arm}
               accessibilityLabel="Start on-ice mode"
             >
               <FontAwesomeIcon icon={faIceSkate} size={14} color={theme.foreground?.val} />
-              <Text color="$foreground">{busy ? 'Starting…' : 'On ice'}</Text>
+              <Text color="foreground">{busy ? 'Starting…' : 'On ice'}</Text>
             </Button>
           </Animated.View>
         )}
@@ -284,16 +284,16 @@ function OptionRow({
   onChange: (on: boolean) => void;
 }) {
   return (
-    <XStack justifyContent="space-between" alignItems="center" gap="$2">
+    <XStack justifyContent="space-between" alignItems="center" gap="2">
       <YStack flex={1}>
-        <Text color="$foreground" fontSize={13}>
+        <Text color="foreground" fontSize={13}>
           {title}
         </Text>
-        <Paragraph color="$foregroundMuted" fontSize={11}>
+        <Paragraph color="foregroundMuted" fontSize={11}>
           {detail}
         </Paragraph>
       </YStack>
-      <Switch size="$2" checked={checked} onCheckedChange={onChange} accessibilityLabel={title}>
+      <Switch size="2" checked={checked} onCheckedChange={onChange} accessibilityLabel={title}>
         <Switch.Thumb />
       </Switch>
     </XStack>
@@ -316,21 +316,21 @@ function RecordingRows({
   return (
     <>
       <XStack justifyContent="space-between" alignItems="center">
-        <Text color="$foreground" fontWeight="700">
+        <Text color="foreground" fontWeight="700">
           {paused ? '⏸ Recording paused' : '⏺ Recording your skate'}
         </Text>
-        <XStack gap="$2">
+        <XStack gap="2">
           <Button
-            size="$2"
-            chromeless
+            size="sm"
+            variant="quiet"
             onPress={paused ? resumeRecording : pauseRecording}
             accessibilityLabel={paused ? 'Resume recording' : 'Pause recording'}
           >
             {paused ? 'Resume' : 'Pause'}
           </Button>
           <Button
-            size="$2"
-            chromeless
+            size="sm"
+            variant="quiet"
             disabled={busy}
             onPress={onStop}
             accessibilityLabel="Stop recording"
@@ -340,7 +340,7 @@ function RecordingRows({
         </XStack>
       </XStack>
 
-      <Text color="$foreground" fontSize={13}>
+      <Text color="foreground" fontSize={13}>
         {formatDistanceMiles(recorder.distanceMeters)} · {minutes} min · {recorder.pointCount}{' '}
         points
       </Text>
@@ -348,7 +348,7 @@ function RecordingRows({
       {/* The "I forgot to stop it" nudge. It never auto-stops: a genuine rest on the ice must not
           truncate someone's skate, so we ask rather than decide. */}
       {recorder.stationaryPrompt ? (
-        <Paragraph color="$foregroundMuted" fontSize={12}>
+        <Paragraph color="foregroundMuted" fontSize={12}>
           You haven't moved in a while. Still skating? If you're done, tap Stop — we'll keep
           everything recorded so far.
         </Paragraph>
@@ -372,17 +372,17 @@ function FinishedSkate({
 }) {
   return (
     <>
-      <Text color="$foreground" fontWeight="700">
+      <Text color="foreground" fontWeight="700">
         Skate saved
       </Text>
-      <Paragraph color="$foregroundMuted" fontSize={12}>
+      <Paragraph color="foregroundMuted" fontSize={12}>
         {finished.waterBodyId
           ? 'Want to post a report? Your recorded path goes on it, so other skaters can see where the ice was good.'
           : "We couldn't match this to a lake we know. Once it syncs you can add it from your track on the You tab, or long-press the water on the map to ask for it."}
       </Paragraph>
-      <XStack gap="$2">
+      <XStack gap="2">
         <Button
-          size="$3"
+          size="md"
           flex={1}
           disabled={!finished.waterBodyId}
           onPress={() => {
@@ -391,7 +391,7 @@ function FinishedSkate({
         >
           Report this skate
         </Button>
-        <Button size="$3" chromeless onPress={onDismiss}>
+        <Button size="md" variant="quiet" onPress={onDismiss}>
           Not now
         </Button>
       </XStack>

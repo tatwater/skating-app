@@ -95,8 +95,8 @@ export function TrackHistory() {
   if (tracks.length === 0) return null;
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+    <YStack gap="2">
+      <Text color="foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Your recorded skates
       </Text>
       {tracks.map((track) => (
@@ -109,7 +109,7 @@ export function TrackHistory() {
           onRemove={() => remove(track)}
         />
       ))}
-      <Separator borderColor="$border" />
+      <Separator borderColor="border" />
     </YStack>
   );
 }
@@ -138,31 +138,31 @@ function TrackRow({
   const failed = track.status === 'error';
 
   return (
-    <XStack gap="$2" alignItems="center">
-      <YStack flex={1} gap="$1">
-        <Text color="$foreground" fontSize={14}>
+    <XStack gap="2" alignItems="center">
+      <YStack flex={1} gap="1">
+        <Text color="foreground" fontSize={14}>
           {track.bodyName ?? 'Unrecognized water'}
         </Text>
-        <Text color="$foregroundMuted" fontSize={12}>
+        <Text color="foregroundMuted" fontSize={12}>
           {new Date(track.startedAt).toLocaleDateString()} ·{' '}
           {formatDistanceMiles(summary.distanceMeters)}
         </Text>
         {/* A recording we couldn't save says so in its own words — it has no Strava state to report,
             and "waiting to sync" would be a lie about a track that is never going to sync. */}
         <Text
-          color={failed || push.action === 'retry' ? '$danger' : '$foregroundMuted'}
+          color={failed || push.action === 'retry' ? 'danger' : 'foregroundMuted'}
           fontSize={12}
         >
           {failed ? (track.errorMessage ?? "Couldn't save this skate") : push.label}
         </Text>
       </YStack>
       {!failed && push.action ? (
-        <Button size="$2" disabled={busy} onPress={onRetry}>
+        <Button size="sm" disabled={busy} onPress={onRetry}>
           {busy ? 'Sending…' : push.action === 'retry' ? 'Retry' : 'Send to Strava'}
         </Button>
       ) : null}
       {removable ? (
-        <Button size="$2" chromeless disabled={busy} onPress={onRemove}>
+        <Button size="sm" variant="quiet" disabled={busy} onPress={onRemove}>
           Remove
         </Button>
       ) : null}

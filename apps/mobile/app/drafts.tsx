@@ -25,15 +25,15 @@ export default function DraftsScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <YStack gap="$4">
+        <YStack gap="4">
           <XStack alignItems="center" justifyContent="space-between">
-            <H4 color="$foreground">Drafts</H4>
-            <Button size="$2" chromeless onPress={() => router.back()}>
+            <H4 color="foreground">Drafts</H4>
+            <Button size="sm" variant="quiet" onPress={() => router.back()}>
               Back
             </Button>
           </XStack>
           {held.length === 0 ? (
-            <Paragraph color="$foregroundMuted">
+            <Paragraph color="foregroundMuted">
               Nothing saved. *Save draft* on the sheet keeps a half-written report here until you
               post it.
             </Paragraph>
@@ -45,27 +45,27 @@ export default function DraftsScreen() {
             return (
               <YStack
                 key={draft.id}
-                gap="$2"
-                padding="$3"
+                gap="2"
+                padding="3"
                 borderWidth={1}
-                borderColor="$border"
-                borderRadius="$4"
-                backgroundColor="$surfaceMuted"
+                borderColor="border"
+                borderRadius="4"
+                backgroundColor="surfaceMuted"
               >
-                <Text color="$foreground" fontWeight="600">
+                <Text color="foreground" fontWeight="600">
                   {postDraftLabel(draft)}
                 </Text>
-                <Text color="$foregroundMuted" fontSize={12}>
+                <Text color="foregroundMuted" fontSize={12}>
                   {Number.isFinite(latest)
                     ? `Skated ${formatSkateTime(latest)}`
                     : 'No end time yet'}
                   {draft.reports.length > 1 ? ` · ${draft.reports.length} lakes` : ''}
                 </Text>
-                <XStack gap="$2" justifyContent="flex-end">
-                  <Button size="$2" chromeless onPress={() => removeDraft(draft.id)}>
+                <XStack gap="2" justifyContent="flex-end">
+                  <Button size="sm" variant="quiet" onPress={() => removeDraft(draft.id)}>
                     Delete
                   </Button>
-                  <Button size="$2" onPress={() => router.navigate(doorHref({ draft: draft.id }))}>
+                  <Button size="sm" onPress={() => router.navigate(doorHref({ draft: draft.id }))}>
                     Open
                   </Button>
                 </XStack>

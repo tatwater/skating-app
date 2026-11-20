@@ -63,15 +63,15 @@ export function NewWaterPrompt({
   // Say so plainly rather than showing a create form that will fail.
   if (!candidates.derivable) {
     return (
-      <YStack padding="$3" gap="$2">
-        <Text color="$foreground" fontWeight="700">
+      <YStack padding="3" gap="2">
+        <Text color="foreground" fontWeight="700">
           We couldn't map this skate
         </Text>
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           The recording didn't cover enough ground to outline new water. You can still post a report
           on a lake you pick yourself.
         </Paragraph>
-        <Button size="$3" onPress={onDismiss}>
+        <Button size="md" onPress={onDismiss}>
           OK
         </Button>
       </YStack>
@@ -107,12 +107,12 @@ export function NewWaterPrompt({
   const hasMatches = candidates.matches.length > 0;
 
   return (
-    <YStack padding="$3" gap="$3">
-      <YStack gap="$1">
-        <Text color="$foreground" fontWeight="700">
+    <YStack padding="3" gap="3">
+      <YStack gap="1">
+        <Text color="foreground" fontWeight="700">
           New water?
         </Text>
-        <Paragraph color="$foregroundMuted" fontSize={13}>
+        <Paragraph color="foregroundMuted" fontSize={13}>
           This skate didn't match a lake we know about. We'll outline it from your recorded track —
           that's the only way water gets added, so the shape always comes from somewhere someone
           actually skated.
@@ -120,22 +120,22 @@ export function NewWaterPrompt({
       </YStack>
 
       {hasMatches && !showingCreate ? (
-        <YStack gap="$2">
-          <Paragraph color="$foreground" fontSize={13}>
+        <YStack gap="2">
+          <Paragraph color="foreground" fontSize={13}>
             These are close by — is it one of them?
           </Paragraph>
           {candidates.matches.map((match) => (
             <Button
               key={match.waterBodyId}
-              size="$3"
-              backgroundColor="$surface"
-              borderColor="$border"
+              size="md"
+              backgroundColor="surface"
+              borderColor="border"
               borderWidth={1}
               onPress={() => onResolved(match.waterBodyId)}
             >
               <YStack flex={1} alignItems="flex-start">
-                <Text color="$foreground">{waterBodyDisplayName(match.name)}</Text>
-                <Text color="$foregroundMuted" fontSize={11}>
+                <Text color="foreground">{waterBodyDisplayName(match.name)}</Text>
+                <Text color="foregroundMuted" fontSize={11}>
                   {match.centroidDistanceM} m away
                   {match.official ? ' · on the official map' : ''}
                   {/* A shelved or removed lake is still the water they skated (A07b): attaching
@@ -149,25 +149,25 @@ export function NewWaterPrompt({
               </YStack>
             </Button>
           ))}
-          <Button size="$3" chromeless onPress={() => setShowingCreate(true)}>
+          <Button size="md" variant="quiet" onPress={() => setShowingCreate(true)}>
             None of these — it's new
           </Button>
         </YStack>
       ) : (
-        <YStack gap="$2">
+        <YStack gap="2">
           <Input
             value={name}
             onChangeText={setName}
             placeholder="What's it called?"
             accessibilityLabel="Name of the water"
           />
-          <XStack gap="$2" flexWrap="wrap">
+          <XStack gap="2" flexWrap="wrap">
             {USER_SELECTABLE_WATER_BODY_CLASSES.map((t) => (
               <Button
                 key={t}
-                size="$2"
-                backgroundColor={t === type ? '$primary' : '$surface'}
-                borderColor="$border"
+                size="sm"
+                backgroundColor={t === type ? 'primary' : 'surface'}
+                borderColor="border"
                 borderWidth={1}
                 onPress={() => setType(t)}
               >
@@ -176,21 +176,21 @@ export function NewWaterPrompt({
             ))}
           </XStack>
           {error ? (
-            <Paragraph color="$danger" fontSize={12}>
+            <Paragraph color="danger" fontSize={12}>
               {error}
             </Paragraph>
           ) : null}
-          <Paragraph color="$foregroundMuted" fontSize={11}>
+          <Paragraph color="foregroundMuted" fontSize={11}>
             A moderator will check it later. If it turns out to be somewhere we already have,
             they'll merge the two — nothing you post is lost.
           </Paragraph>
-          <XStack gap="$2">
-            <Button size="$3" flex={1} disabled={busy || !name.trim()} onPress={create}>
+          <XStack gap="2">
+            <Button size="md" flex={1} disabled={busy || !name.trim()} onPress={create}>
               {busy ? 'Adding…' : 'Add it'}
             </Button>
             <Button
-              size="$3"
-              chromeless
+              size="md"
+              variant="quiet"
               onPress={hasMatches ? () => setShowingCreate(false) : onDismiss}
             >
               {hasMatches ? 'Back' : 'Not now'}

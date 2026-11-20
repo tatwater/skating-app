@@ -28,14 +28,14 @@ export function WeatherPlacePicker({
   if (bays.length === 0) return null;
   const places = [{ _id: null, name: 'Whole lake' }, ...bays];
   return (
-    <YStack gap="$1">
-      <Text color="$foregroundMuted" fontSize={13}>
+    <YStack gap="1">
+      <Text color="foregroundMuted" fontSize={13}>
         Weather at
       </Text>
       {/* One choice among several, so the group is a radio group and each chip a radio — not a tab
           list of buttons, which a screen reader announces as two things that do not go together. */}
       <XStack
-        gap="$2"
+        gap="2"
         flexWrap="wrap"
         accessibilityRole="radiogroup"
         accessibilityLabel="Which part of the lake the weather is for"
@@ -59,12 +59,12 @@ export function WeatherPlacePicker({
                     place._id === null ? { id: waterBodyId } : { id: waterBodyId, sub: place._id },
                 })
               }
-              paddingHorizontal="$2"
-              paddingVertical="$1"
-              borderRadius="$3"
+              paddingHorizontal="2"
+              paddingVertical="1"
+              borderRadius="3"
               borderWidth={1}
-              borderColor={selected ? '$primary' : '$border'}
-              color={selected ? '$primary' : '$foregroundMuted'}
+              borderColor={selected ? 'primary' : 'border'}
+              color={selected ? 'primary' : 'foregroundMuted'}
               fontSize={13}
             >
               {place.name}

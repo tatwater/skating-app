@@ -51,34 +51,34 @@ export default function SupportScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
       <ScrollView>
-        <YStack flex={1} gap="$3" padding="$4" backgroundColor="$background">
+        <YStack flex={1} gap="3" padding="4" backgroundColor="background">
           {state === 'sent' ? (
-            <YStack gap="$3">
-              <Paragraph color="$foreground">
+            <YStack gap="3">
+              <Paragraph color="foreground">
                 Thanks — we got it. We'll follow up if we need more.
               </Paragraph>
               <Button onPress={() => setState('idle')}>Send another</Button>
-              <Button chromeless onPress={() => router.back()}>
+              <Button variant="quiet" onPress={() => router.back()}>
                 Done
               </Button>
             </YStack>
           ) : (
             <>
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 letterSpacing={1.5}
                 textTransform="uppercase"
               >
                 Topic
               </Text>
-              <XStack gap="$2" flexWrap="wrap">
+              <XStack gap="2" flexWrap="wrap">
                 {CATEGORIES.map((c) => (
                   <Button
                     key={c.value}
-                    size="$2"
-                    backgroundColor={category === c.value ? '$primary' : undefined}
-                    color={category === c.value ? '$primaryForeground' : '$foreground'}
+                    size="sm"
+                    backgroundColor={category === c.value ? 'primary' : undefined}
+                    color={category === c.value ? 'primaryForeground' : 'foreground'}
                     onPress={() => setCategory(c.value)}
                   >
                     {c.label}
@@ -87,7 +87,7 @@ export default function SupportScreen() {
               </XStack>
 
               <Text
-                color="$foregroundMuted"
+                color="foregroundMuted"
                 fontSize={11}
                 letterSpacing={1.5}
                 textTransform="uppercase"
@@ -98,17 +98,17 @@ export default function SupportScreen() {
                 value={body}
                 onChangeText={setBody}
                 placeholder="What's going on?"
-                borderColor="$border"
+                borderColor="border"
                 minHeight={120}
               />
 
               {state === 'error' ? (
-                <Paragraph color="$danger">Couldn't send that. Please try again.</Paragraph>
+                <Paragraph color="danger">Couldn't send that. Please try again.</Paragraph>
               ) : null}
 
               <Button
-                backgroundColor="$primary"
-                color="$primaryForeground"
+                backgroundColor="primary"
+                color="primaryForeground"
                 disabled={!body.trim() || state === 'sending'}
                 onPress={onSubmit}
               >

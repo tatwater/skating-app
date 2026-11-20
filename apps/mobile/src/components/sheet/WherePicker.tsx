@@ -111,8 +111,8 @@ export function WherePicker({
   const unnamedTap = where?.point !== undefined && where.point.landmarkId === undefined;
 
   return (
-    <YStack gap="$2" accessibilityLabel="Where on the lake">
-      <XStack gap="$2" flexWrap="wrap">
+    <YStack gap="2" accessibilityLabel="Where on the lake">
+      <XStack gap="2" flexWrap="wrap">
         {EXTENTS.map((extent) => (
           <SheetChip
             key={extent}
@@ -124,7 +124,7 @@ export function WherePicker({
         ))}
       </XStack>
       {body && body.bays.length > 0 ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           {body.bays.map((bay) => (
             <SheetChip
               key={bay.id}
@@ -147,7 +147,7 @@ export function WherePicker({
         </XStack>
       ) : null}
       {shownLandmarks.length > 0 || more > 0 ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           {shownLandmarks.map((l) => (
             <SheetChip
               key={l._id}
@@ -171,7 +171,7 @@ export function WherePicker({
           onChangeText={setFinding}
         />
       ) : null}
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap="2" flexWrap="wrap">
         {sectors.map((sector) => (
           <SheetChip
             key={sector}
@@ -198,7 +198,7 @@ export function WherePicker({
         />
       </XStack>
       {where?.point?.landmarkId !== undefined ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap="2" flexWrap="wrap">
           {/* A tap near a landmark takes its name; the skater may mean some other spot by it. */}
           <SheetChip
             compact
@@ -211,7 +211,7 @@ export function WherePicker({
         </XStack>
       ) : null}
       {unnamedTap ? (
-        <YStack gap="$1">
+        <YStack gap="1">
           <Input
             accessibilityLabel="Name this spot"
             placeholder="Name this spot (optional) — e.g. Bird Poop Rock"
@@ -237,7 +237,7 @@ export function WherePicker({
         </YStack>
       ) : null}
       {!instrument && body?.silhouette && (placing || where?.sector || where?.point) ? (
-        <YStack gap="$1.5">
+        <YStack gap="1-5">
           <LakeMap
             data={body.silhouette}
             sector={where?.sector}
@@ -261,7 +261,7 @@ export function WherePicker({
         </YStack>
       ) : null}
       {words ? (
-        <Text color="$foreground" fontSize={12}>
+        <Text color="foreground" fontSize={12}>
           {words[0]?.toUpperCase()}
           {words.slice(1)}
         </Text>

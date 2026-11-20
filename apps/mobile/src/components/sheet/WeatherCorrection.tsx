@@ -64,10 +64,10 @@ export function WeatherCorrection({
   };
 
   return (
-    <YStack gap="$2.5" padding="$3" borderRadius="$xs" backgroundColor="$surfaceMuted">
-      <XStack gap="$2">
-        <YStack flex={1} gap="$1">
-          <Text color="$foregroundMuted" fontSize={11}>
+    <YStack gap="2-5" padding="3" borderRadius="xs" backgroundColor="surfaceMuted">
+      <XStack gap="2">
+        <YStack flex={1} gap="1">
+          <Text color="foregroundMuted" fontSize={11}>
             Air °F
           </Text>
           <Input
@@ -80,8 +80,8 @@ export function WeatherCorrection({
             }}
           />
         </YStack>
-        <YStack flex={1} gap="$1">
-          <Text color="$foregroundMuted" fontSize={11}>
+        <YStack flex={1} gap="1">
+          <Text color="foregroundMuted" fontSize={11}>
             Wind mph
           </Text>
           <Input
@@ -94,8 +94,8 @@ export function WeatherCorrection({
             }}
           />
         </YStack>
-        <YStack flex={1} gap="$1">
-          <Text color="$foregroundMuted" fontSize={11}>
+        <YStack flex={1} gap="1">
+          <Text color="foregroundMuted" fontSize={11}>
             From
           </Text>
           <Input
@@ -139,7 +139,7 @@ export function WeatherCorrection({
           />
         ))}
       </XStack>
-      <Button size="$2" alignSelf="flex-start" onPress={onDone}>
+      <Button size="sm" alignSelf="flex-start" onPress={onDone}>
         Done
       </Button>
     </YStack>

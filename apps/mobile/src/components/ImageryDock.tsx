@@ -114,33 +114,27 @@ export function ImageryDock({
         {expanded ? (
           <Animated.View entering={FadeIn.duration(160)}>
             <YStack
-              padding="$3"
-              borderRadius="$4"
-              backgroundColor="$surface"
-              borderColor="$border"
+              padding="3"
+              borderRadius="4"
+              backgroundColor="surface"
+              borderColor="border"
               borderWidth={1}
-              gap="$2"
+              gap="2"
             >
               {/* One row: what this is, what season it is, and the way out. It was two — a bare X
                   above the scrubber's own title — which cost a row of a phone's map to say nothing.
                   The X is pulled into the padding so the glyph sits in the corner optically rather
                   than inset from it, and the row's height is the button's. */}
-              <XStack
-                alignItems="center"
-                gap="$2"
-                marginTop={-6}
-                marginRight={-8}
-                marginBottom={-4}
-              >
+              <XStack alignItems="center" gap="2" marginTop={-6} marginRight={-8} marginBottom={-4}>
                 {heading ? (
-                  <Text fontSize="$3" fontWeight="600" flexShrink={1}>
+                  <Text fontSize="3" fontWeight="600" flexShrink={1}>
                     {heading}
                   </Text>
                 ) : null}
                 {seasonLabel ? (
                   <Text
-                    color="$foregroundMuted"
-                    fontSize="$1"
+                    color="foregroundMuted"
+                    fontSize="1"
                     flex={1}
                     textAlign="right"
                     numberOfLines={1}
@@ -151,9 +145,9 @@ export function ImageryDock({
                   <XStack flex={1} />
                 )}
                 <Button
-                  size="$2"
+                  size="sm"
                   circular
-                  chromeless
+                  variant="quiet"
                   onPress={onClose}
                   accessibilityLabel="Turn off imagery"
                 >
@@ -166,9 +160,9 @@ export function ImageryDock({
         ) : (
           <Animated.View entering={FadeIn.duration(160)}>
             <Button
-              size="$3"
-              backgroundColor={imageryOn ? '$primary' : '$surface'}
-              borderColor="$border"
+              size="md"
+              backgroundColor={imageryOn ? 'primary' : 'surface'}
+              borderColor="border"
               borderWidth={1}
               onPress={onPress}
               accessibilityLabel={
@@ -180,7 +174,7 @@ export function ImageryDock({
                 size={14}
                 color={(imageryOn ? theme.primaryForeground?.val : theme.foreground?.val) ?? '#fff'}
               />
-              <Text color={imageryOn ? '$primaryForeground' : '$foreground'}>
+              <Text color={imageryOn ? 'primaryForeground' : 'foreground'}>
                 {imageryOn ? 'Timeline' : 'Show imagery'}
               </Text>
             </Button>

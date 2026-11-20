@@ -85,15 +85,15 @@ function PublicAccessForm({ body }: { body: Doc<'waterBodies'> }) {
 
   return (
     <Section label="Access">
-      <YStack gap="$1.5">
+      <YStack gap="1-5">
         {verdict === 'none' ? (
-          <Text color="$warning" fontWeight="600">
+          <Text color="warning" fontWeight="600">
             {settled}
           </Text>
         ) : null}
-        {verdict === 'open' ? <Text color="$foregroundMuted">{settled}</Text> : null}
+        {verdict === 'open' ? <Text color="foregroundMuted">{settled}</Text> : null}
         {body.publicAccess?.note ? (
-          <Text color="$foregroundMuted" fontSize="$1">
+          <Text color="foregroundMuted" fontSize="1">
             {body.publicAccess.note}
           </Text>
         ) : null}
@@ -101,11 +101,11 @@ function PublicAccessForm({ body }: { body: Doc<'waterBodies'> }) {
         {/* Pending reports show only while unruled — once a moderator has answered, the count is
             history and the verdict is the answer. */}
         {!verdict && count > 0 ? (
-          <Text color="$foregroundMuted">{describePendingAccessReports(count)}</Text>
+          <Text color="foregroundMuted">{describePendingAccessReports(count)}</Text>
         ) : null}
 
         {open ? (
-          <YStack gap="$2">
+          <YStack gap="2">
             <TextArea
               value={note}
               onChangeText={setNote}
@@ -114,24 +114,24 @@ function PublicAccessForm({ body }: { body: Doc<'waterBodies'> }) {
                   ? 'What changed since the review? (required)'
                   : 'How do you know? (optional)'
               }
-              borderColor="$border"
+              borderColor="border"
             />
             {error ? (
-              <Text color="$danger" fontSize="$1">
+              <Text color="danger" fontSize="1">
                 {error}
               </Text>
             ) : null}
-            <XStack gap="$2">
+            <XStack gap="2">
               <Button
-                size="$2"
-                backgroundColor="$primary"
-                color="$primaryForeground"
+                size="sm"
+                backgroundColor="primary"
+                color="primaryForeground"
                 disabled={busy || (noteRequired && !note.trim())}
                 onPress={() => void submit()}
               >
                 {busy ? 'Sending…' : 'Send'}
               </Button>
-              <Button size="$2" chromeless onPress={() => setOpen(false)}>
+              <Button size="sm" variant="quiet" onPress={() => setOpen(false)}>
                 Cancel
               </Button>
             </XStack>
@@ -139,12 +139,12 @@ function PublicAccessForm({ body }: { body: Doc<'waterBodies'> }) {
         ) : alreadyReported ? (
           // Their own claim, acknowledged. The dedup means a second tap would be a no-op anyway, so
           // saying so beats offering a button that does nothing.
-          <Text color="$foregroundMuted" fontSize="$1">
+          <Text color="foregroundMuted" fontSize="1">
             You reported this — it's with the moderators, and you'll see it faded on your map.
           </Text>
         ) : verdict === 'none' ? null : (
           <XStack>
-            <Button size="$2" variant="outlined" onPress={() => setOpen(true)}>
+            <Button size="sm" variant="outlined" onPress={() => setOpen(true)}>
               {count > 0 ? "Confirm — I've been turned away" : 'Report no public access'}
             </Button>
           </XStack>

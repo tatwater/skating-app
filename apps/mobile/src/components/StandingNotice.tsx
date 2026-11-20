@@ -20,11 +20,11 @@ export function StandingNoticeView({ standing }: { standing: BodyStanding }) {
   const line = describeStanding(standing);
   if (line === null) return null;
   return (
-    <YStack gap="$1" paddingTop="$1" testID="standing-notice">
+    <YStack gap="1" paddingTop="1" testID="standing-notice">
       <XStack>
         <Badge>{standing.standing === 'removed' ? 'Removed' : INACTIVE_BADGE}</Badge>
       </XStack>
-      <Paragraph color="$foregroundMuted" fontSize={13}>
+      <Paragraph color="foregroundMuted" fontSize={13}>
         {line}
       </Paragraph>
     </YStack>
