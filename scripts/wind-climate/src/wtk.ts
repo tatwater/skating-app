@@ -29,7 +29,7 @@ import {
 } from '@skating/core';
 
 /** Where the API lives. The host moved from `developer.nrel.gov`, which no longer resolves at all. */
-export const WTK_BASE = 'https://developer.nlr.gov/api/wind-toolkit/v2/wind/wtk-download.csv';
+const WTK_BASE = 'https://developer.nlr.gov/api/wind-toolkit/v2/wind/wtk-download.csv';
 
 /**
  * The WIND Toolkit's native grid spacing, in degrees of latitude (~2 km).
@@ -38,7 +38,7 @@ export const WTK_BASE = 'https://developer.nlr.gov/api/wind-toolkit/v2/wind/wtk-
  * grid anyway — asking for `44.75, -72.06` returns `44.7501, -72.0525` — so two lakes in the same
  * cell would otherwise cost two requests for byte-identical data.
  */
-export const WTK_GRID_DEG = 0.018;
+const WTK_GRID_DEG = 0.018;
 
 /** Winters averaged into one rose. Five is enough to wash out an anomalous year (founder call). */
 export const WTK_YEARS = [2010, 2011, 2012, 2013, 2014] as const;

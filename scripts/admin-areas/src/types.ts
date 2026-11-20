@@ -25,9 +25,10 @@ export type OsmBoundaryProperties = Record<string, unknown> & {
 /**
  * A boundary feature from the convert stage. osmium normalizes every area to a `MultiPolygon`
  * (we accept a `Polygon` too), but the geometry is typed as the full `Geometry` union so the
- * transform can defensively reject anything non-area at runtime — this is raw OSM.
+ * transform can defensively reject anything non-area at runtime — this is raw OSM. GeoJSON
+ * permits null properties; the transform treats those features as having no classification tags.
  */
-export type OsmBoundaryFeature = Feature<Geometry, OsmBoundaryProperties>;
+export type OsmBoundaryFeature = Feature<Geometry, OsmBoundaryProperties | null>;
 
 /** Our admin-boundary granularity (mirrors the Convex `ADMIN_AREA_LEVELS` enum). */
 export type AdminAreaLevel = 'state' | 'county' | 'town';

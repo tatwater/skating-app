@@ -11,14 +11,14 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      // `wtk.ts`, `wtkFetch.ts`, and `archive.ts` are tested. `snapshot.ts` and `derive.ts` wire them
-      // to argv, Convex, and disk. Mirrors the water ETL, admin-areas and lake-depth configs.
+      // Derive has a local archive and Convex-boundary fixture. Snapshot is still exercised
+      // through its separately tested request, retry and archive helpers.
       //
       // **Thresholds raised to match every other package** (A07a-3). They sat at 80/75 while the rest
       // of the repo ran at 90/85, which is not a decision anybody took — it is where they landed
       // when this package held one file. A lower bar on the pass that costs 7.7 hours to re-run is
       // the wrong way round.
-      exclude: ['src/**/*.test.ts', 'src/snapshot.ts', 'src/derive.ts'],
+      exclude: ['src/**/*.test.ts', 'src/snapshot.ts'],
       thresholds: { lines: 90, functions: 90, branches: 85, statements: 90 },
     },
   },

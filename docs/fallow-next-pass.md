@@ -208,3 +208,85 @@ zero, publishes the full replacement, and returns its SHA-256. A separate fixtur
 ordinary CLI errors retain their diagnostic and release the signal handlers. No source hosts
 or shared storage were contacted. Vitest reported 0.75 s before and 1.28 s after in separate
 runs; these are wall-clock samples, not a controlled benchmark.
+
+## `scripts/admin-areas`: transform and load
+
+Baseline `ea291ef8`. Admin-area and water transforms now use one OSM identity rule and one
+D48 polygon-storage policy. The shared simplifier is a core subpath, not part of the app-facing
+barrel. Each transform still owns its classification, derived fields, and skip handling.
+The admin-area loader now separates batch execution from run finalization; its state stamping,
+dev-first guard, progress cadence, failure streak, and exit policy are unchanged.
+
+| Check | Before | After |
+| --- | ---: | ---: |
+| Fallow check issues | 1 | 0 |
+| Default clone groups touching this workspace | 11 | 5 |
+| Health findings with Vitest coverage supplied | 8 | 6 |
+| Workspace tests | 31 | 39 |
+| Workspace branch coverage | 90% | 95.55% |
+| Workspace function / line coverage | 100% / 100% | 100% / 100% |
+
+The coverage denominator now includes the loader. Some direct tests moved to the shared owners;
+the package totals do not include them. The new core polygon module has 100% measured coverage.
+Non-app production cycle check remains clean. An uncached workspace test command took 1.21 s
+before and 1.69 s after in separate runs; these are single samples, not a benchmark.
+
+- **Consolidated** the shared OSM ID and adaptive storage rules; removed the unused admin-only
+  tolerance export. The boundary and water transforms still exercise how those rules are applied.
+- **Keep separate for now:** The load-loop and transform error-collection matches are control flow
+  around different receipts and skip policies. Water imports attach additional counters and
+  identify failures by the first body in a batch; boundary imports apply a state stamp.
+- **Defer to the ETL pass:** The transform CLIs share record-separator cleanup, the loaders share
+  initial NDJSON framing, and canonical mutation replies have identical inserted/updated checks.
+  Trace other consumers before extracting a parser; preserve input ordering, parse-failure
+  boundaries, and each loader's diagnostics. Batch sizing itself already shares `batchNdjson`.
+- **Verify the acquisition and region-build lane separately:** At this point six health findings
+  remained, all estimates in the transform CLI, `fetchStates`, `tiger`, and `buildRegion`.
+  The cached TIGER/GDAL workflow was verified separately below.
+
+The actual transform command produced byte-identical NDJSON and matching diagnostics before and
+after for a synthetic town, classification drop, and invalid boundary. The water ETL also produced
+identical NDJSON and diagnostics for its checked-in Vermont fixture. The actual admin load
+command wrote to throwaway loopback Convex: the first load inserted one `VT` boundary, the replay
+updated that same row, and both runs filed successful receipts. No shared deployment or live
+inputs were used.
+
+### Acquisition and region artifacts
+
+The shared archive helper now downloads refreshes beside the cached zip and renames only after
+size and digest checks pass. A failed transfer or verification leaves the previous archive and
+manifest in place. Local `curl` fixtures cover those failures, successful refresh, and cache
+reuse. The workspace went from 39 to 47 tests; `tiger.ts` is now measured at 100% coverage and its
+estimated health finding no longer appears. The five remaining health findings are estimates in
+the three command entry points, not measured gaps in the verified archive helper.
+
+Both `fetch-states` and `build-region` ran with real GDAL against cached synthetic shapefiles in
+scratch. Only the size and digest pins in the scratch copy were changed to match the fixtures;
+`curl` was blocked for this check. All 12 output files matched before and after, including the
+five state-specific NDJSON files, the downstate mask, and the two generated app modules. No live
+sources were contacted and no app files in the checkout were rewritten. The remaining
+orchestration was kept intact; separating the mask builder into a new workflow is not necessary
+to fix archive publication.
+
+## `scripts/wind-climate`: offline derive
+
+Baseline `c3108e81`. Derive checks archive completeness before writes, then reads one cell at a
+time and writes the resulting body stamps in batches. The command's real subprocess trace and
+diagnostics matched the baseline for both a missing cell and a thin archived sample. Tests also
+cover full direction samples with unavailable speeds, absent winters, no eligible bodies, and
+the server's malformed and missing-row tallies. No WTK requests or shared Convex writes were made.
+
+| Check | Before | After |
+| --- | ---: | ---: |
+| Fallow check issues | 2 | 0 |
+| Default clone groups touching this workspace | 4 | 1 |
+| Health findings with Vitest coverage supplied | 5 | 4 |
+| Workspace tests | 55 | 61 |
+| Workspace line coverage | 99.06% | 96.79% |
+| Uncached workspace test command, one sample | 1.72 s | 2.23 s |
+
+The coverage denominator now includes the offline derive command (93.75% line coverage). Its
+process entry was exercised separately. The three derive clones were command-wrapper patterns,
+not shared wind rules. The one retained clone pairs the wind snapshot and elevation snapshot
+loops; keep their pacing, retries, and cache policies explicit until the snapshot lane is
+reviewed. The remaining health findings are in `snapshot.ts` and the CSV accumulator.

@@ -1,14 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import {
   CONVEX_ARRAY_LIMIT,
-  externalIdFromProperties,
-  featureToAdminArea,
   largestRingSize,
-  levelFromAdminLevel,
   MAX_RING_VERTICES,
-  maxArrayLength,
-  transformFeatures,
-} from './transform';
+} from '@skating/core/polygonStorage';
+import { describe, expect, it } from 'vitest';
+import { featureToAdminArea, levelFromAdminLevel, transformFeatures } from './transform';
 import type { OsmBoundaryFeature, OsmBoundaryProperties } from './types';
 
 /** A square-ring admin boundary feature over [w,e]×[s,n] with the given properties. */
@@ -55,19 +51,6 @@ describe('levelFromAdminLevel', () => {
   });
 });
 
-describe('externalIdFromProperties', () => {
-  it('builds a `type/id` key, accepting a numeric or string id', () => {
-    expect(externalIdFromProperties({ '@type': 'relation', '@id': 456 })).toBe('relation/456');
-    expect(externalIdFromProperties({ '@type': 'way', '@id': '9' })).toBe('way/9');
-  });
-
-  it('returns null when the attributes are missing', () => {
-    expect(externalIdFromProperties(undefined)).toBeNull();
-    expect(externalIdFromProperties({ '@type': 'relation' })).toBeNull();
-    expect(externalIdFromProperties({ '@id': 1 })).toBeNull();
-  });
-});
-
 describe('featureToAdminArea', () => {
   it('transforms a named town boundary into a record (bbox + centroid derived)', () => {
     const area = featureToAdminArea(
@@ -108,7 +91,12 @@ describe('featureToAdminArea', () => {
   });
 
   it('throws on a boundary with no name', () => {
+    expect(() => featureToAdminArea(boundary({ admin_level: '6' }))).toThrow(/no name/);
     expect(() => featureToAdminArea(boundary({ admin_level: '6', name: '  ' }))).toThrow(/no name/);
+  });
+
+  it('does not import a feature with no classification tags', () => {
+    expect(featureToAdminArea({ ...boundary({}), properties: null })).toBeNull();
   });
 
   it('throws on a non-area geometry', () => {
@@ -136,6 +124,13 @@ describe('transformFeatures', () => {
     expect(summary).toEqual({ total: 3, imported: 1, droppedByType: 1, skipped: 1 });
     expect(errors).toHaveLength(1);
     expect(errors[0]?.externalId).toBe('relation/3');
+  });
+
+  it('labels missing OSM IDs with a diagnostic key, not a stored external ID', () => {
+    const unidentified = boundary({ '@id': undefined, admin_level: '8', name: 'Fixture Town' });
+    const { areas, errors } = transformFeatures([{ ...unidentified, id: 'a42' }, unidentified]);
+    expect(areas).toEqual([]);
+    expect(errors.map(({ externalId }) => externalId)).toEqual(['a42', '(unknown)']);
   });
 });
 
@@ -193,23 +188,5 @@ describe('array-limit escape hatch (mirrors the water ETL)', () => {
       geometry: { type: 'MultiPolygon', coordinates },
     } as unknown as OsmBoundaryFeature;
     expect(() => featureToAdminArea(f)).toThrow(/array too large/);
-  });
-});
-
-describe('geometry array helpers', () => {
-  const poly = {
-    type: 'Polygon' as const,
-    coordinates: [
-      [
-        [0, 0],
-        [1, 0],
-        [1, 1],
-        [0, 0],
-      ],
-    ],
-  };
-  it('largestRingSize / maxArrayLength read the densest dimension', () => {
-    expect(largestRingSize(poly)).toBe(4);
-    expect(maxArrayLength(poly)).toBe(4);
   });
 });

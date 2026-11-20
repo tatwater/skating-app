@@ -17,10 +17,9 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
+import { largestRingSize, MAX_RING_VERTICES } from '@skating/core/polygonStorage';
 import {
   HARD_MIN_SURFACE_AREA_ACRES,
-  largestRingSize,
-  MAX_RING_VERTICES,
   MIN_SURFACE_AREA_ACRES,
   transformFeatures,
 } from './transform';

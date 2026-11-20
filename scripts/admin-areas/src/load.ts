@@ -3,8 +3,7 @@
  * `adminAreas.importCanonical` mutation via the Convex CLI (`pnpm exec convex run`), stamping the
  * required `--state=XX` (2-letter code) onto every row — each per-state extract is one state, so the
  * transform leaves `state` off and the loader injects it here. Loads the **dev** deployment by
- * default; refuses a non-dev target unless `--prod` is passed. Thin subprocess + file I/O — excluded
- * from coverage; all real work is in the tested transform.
+ * default; refuses a non-dev target unless `--prod` is passed.
  *
  *   pnpm --filter @skating/admin-areas load <areas.ndjson> --state=VT [--prod]
  *     [--campaign=<id>] [--no-run-log]
@@ -39,8 +38,7 @@ function runImport(areas: unknown[]): { inserted: number; updated: number } {
   return parsed as { inserted: number; updated: number };
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
+export function loadAdminAreas(args: string[]): number {
   const allowNonDev = args.includes('--prod');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   const runLogEnabled = !args.includes('--no-run-log');
@@ -55,13 +53,13 @@ function main(): void {
       'usage: pnpm --filter @skating/admin-areas load <areas.ndjson> --state=XX [--prod]\n' +
         '       [--campaign=<id>] [--no-run-log]\n',
     );
-    process.exit(1);
+    return 1;
   }
   if (!isKnownStateCode(state)) {
     process.stderr.write(
       `[admin-areas] refusing: unknown --state=${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.\n`,
     );
-    process.exit(1);
+    return 1;
   }
 
   const target = resolveDeployment();
@@ -70,7 +68,7 @@ function main(): void {
     process.stderr.write(
       '[admin-areas] refusing: target is not a dev deployment. Confirm, then re-run with --prod.\n',
     );
-    process.exit(1);
+    return 1;
   }
 
   const lines = readFileSync(inputPath, 'utf8')
@@ -82,29 +80,78 @@ function main(): void {
     `[admin-areas] loading ${lines.length} areas in ${batches.length} batch(es) (state: ${state})…\n`,
   );
 
+  const loadStage = {
+    name: 'load',
+    detail:
+      'adminAreas:importCanonical — idempotent upsert, cell-indexed (A01); the loader stamps `state` the transform leaves off',
+    input: inputPath,
+    output: target.label,
+  };
   const logger = new RunLogger({
     kind: 'admin_areas',
     label: `${state} admin areas`,
     campaignId,
     target,
     call: convexRun,
-    stages: [
-      {
-        name: 'load',
-        detail:
-          'adminAreas:importCanonical — idempotent upsert, cell-indexed (A01); the loader stamps `state` the transform leaves off',
-        input: inputPath,
-        output: target.label,
-      },
-    ],
+    stages: [loadStage],
   });
   if (runLogEnabled) logger.start();
 
+  const { inserted, updated, appliedBatchCount, failedBatchCount, skippedAreaCount, aborted } =
+    importBatches(batches, state, logger);
+  logger.count('areasRead', lines.length);
+  logger.count('batchesTotal', batches.length);
+  logger.count('batchesApplied', appliedBatchCount);
+  logger.count('batchesFailed', failedBatchCount);
+  logger.count('inserted', inserted);
+  logger.count('updated', updated);
+  logger.coverage({
+    unit: 'admin areas',
+    eligible: lines.length,
+    covered: inserted + updated,
+    omissions:
+      skippedAreaCount > 0
+        ? [{ reason: 'in a batch that failed and was skipped', count: skippedAreaCount }]
+        : [],
+  });
+  logger.stage({
+    ...loadStage,
+    counts: [
+      { name: 'inserted', value: inserted },
+      { name: 'updated', value: updated },
+      { name: 'batchesFailed', value: failedBatchCount },
+    ],
+  });
+
+  if (aborted) {
+    process.stderr.write(
+      `[admin-areas] ABORTED after ${MAX_CONSECUTIVE_BATCH_FAILURES} consecutive batch failures; ` +
+        `${appliedBatchCount}/${batches.length} applied. Re-running is safe (idempotent upsert).\n`,
+    );
+    logger.failed(aborted);
+    throw aborted;
+  }
+
+  process.stderr.write(
+    `[admin-areas] load complete: ${inserted} inserted · ${updated} updated` +
+      `${failedBatchCount > 0 ? ` · ${failedBatchCount} batch(es) failed and were skipped` : ''}\n`,
+  );
+  if (failedBatchCount > 0) {
+    logger.failed(
+      new Error(`${failedBatchCount} of ${batches.length} batches failed and were skipped`),
+    );
+    return 1;
+  }
+  logger.succeed();
+  return 0;
+}
+
+function importBatches(batches: string[][], state: string, logger: RunLogger) {
   let inserted = 0;
   let updated = 0;
-  let applied = 0;
-  let failedBatches = 0;
-  let skippedAreas = 0;
+  let appliedBatchCount = 0;
+  let failedBatchCount = 0;
+  let skippedAreaCount = 0;
   let consecutiveFailures = 0;
   let aborted: Error | undefined;
 
@@ -115,12 +162,12 @@ function main(): void {
       const result = runImport(areas);
       inserted += result.inserted;
       updated += result.updated;
-      applied++;
+      appliedBatchCount++;
       consecutiveFailures = 0;
       process.stderr.write(`[admin-areas] batch ${index + 1}/${batches.length} done\n`);
     } catch (err) {
-      failedBatches++;
-      skippedAreas += batch.length;
+      failedBatchCount++;
+      skippedAreaCount += batch.length;
       consecutiveFailures++;
       const message = err instanceof Error ? err.message : String(err);
       logger.fail({
@@ -140,60 +187,12 @@ function main(): void {
     if ((index + 1) % 25 === 0) {
       logger.count('inserted', inserted);
       logger.count('updated', updated);
-      logger.count('batchesApplied', applied);
+      logger.count('batchesApplied', appliedBatchCount);
       logger.flush();
     }
   }
 
-  logger.count('areasRead', lines.length);
-  logger.count('batchesTotal', batches.length);
-  logger.count('batchesApplied', applied);
-  logger.count('batchesFailed', failedBatches);
-  logger.count('inserted', inserted);
-  logger.count('updated', updated);
-  logger.coverage({
-    unit: 'admin areas',
-    eligible: lines.length,
-    covered: inserted + updated,
-    omissions:
-      skippedAreas > 0
-        ? [{ reason: 'in a batch that failed and was skipped', count: skippedAreas }]
-        : [],
-  });
-  logger.stage({
-    name: 'load',
-    detail:
-      'adminAreas:importCanonical — idempotent upsert, cell-indexed (A01); the loader stamps `state` the transform leaves off',
-    input: inputPath,
-    output: target.label,
-    counts: [
-      { name: 'inserted', value: inserted },
-      { name: 'updated', value: updated },
-      { name: 'batchesFailed', value: failedBatches },
-    ],
-  });
-
-  if (aborted) {
-    process.stderr.write(
-      `[admin-areas] ABORTED after ${MAX_CONSECUTIVE_BATCH_FAILURES} consecutive batch failures; ` +
-        `${applied}/${batches.length} applied. Re-running is safe (idempotent upsert).\n`,
-    );
-    logger.failed(aborted);
-    throw aborted;
-  }
-
-  process.stderr.write(
-    `[admin-areas] load complete: ${inserted} inserted · ${updated} updated` +
-      `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}\n`,
-  );
-  if (failedBatches > 0) {
-    logger.failed(
-      new Error(`${failedBatches} of ${batches.length} batches failed and were skipped`),
-    );
-    process.exitCode = 1;
-  } else {
-    logger.succeed();
-  }
+  return { inserted, updated, appliedBatchCount, failedBatchCount, skippedAreaCount, aborted };
 }
 
-main();
+if (import.meta.main) process.exitCode = loadAdminAreas(process.argv.slice(2));

@@ -1,23 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { type LatLng, pointInPolygon, shorelineMeters } from '@skating/core';
+import { CONVEX_ARRAY_LIMIT } from '@skating/core/polygonStorage';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   BELOW_AREA_FLOOR,
-  CONVEX_ARRAY_LIMIT,
   depthFromOsmTags,
-  externalIdFromProperties,
   featureToCanonicalBody,
   HARD_MIN_SURFACE_AREA_ACRES,
   HARD_MIN_SURFACE_AREA_SQM,
-  largestRingSize,
-  MAX_RING_VERTICES,
   MIN_SURFACE_AREA_ACRES,
   MIN_SURFACE_AREA_SQM,
-  maxArrayLength,
   meetsAreaFloor,
   parseOsmDepthMeters,
-  SIMPLIFY_TOLERANCE_DEG,
   transformFeatures,
 } from './transform';
 import type { CanonicalBody, OsmWaterFeature } from './types';
@@ -75,33 +70,6 @@ function importedBody(feature: OsmWaterFeature): CanonicalBody {
   if (body === BELOW_AREA_FLOOR) throw new Error('expected a body, got an area-floor skip');
   return body;
 }
-
-describe('externalIdFromProperties', () => {
-  it('builds `way/<id>` and `relation/<id>` from osmium @type/@id', () => {
-    expect(externalIdFromProperties({ '@type': 'way', '@id': 47338349 })).toBe('way/47338349');
-    expect(externalIdFromProperties({ '@type': 'relation', '@id': 6265947 })).toBe(
-      'relation/6265947',
-    );
-  });
-
-  it('accepts a string id (defensive) as well as a number', () => {
-    expect(externalIdFromProperties({ '@type': 'way', '@id': '12' })).toBe('way/12');
-  });
-
-  it('returns null when @type or @id is missing or the wrong type', () => {
-    expect(externalIdFromProperties({ '@id': 5 })).toBeNull();
-    expect(externalIdFromProperties({ '@type': '', '@id': 5 })).toBeNull();
-    expect(externalIdFromProperties({ '@type': 'way' })).toBeNull();
-    expect(
-      externalIdFromProperties({ '@type': 'way', '@id': true as unknown as number }),
-    ).toBeNull();
-  });
-
-  it('returns null for absent properties (null / undefined)', () => {
-    expect(externalIdFromProperties(null)).toBeNull();
-    expect(externalIdFromProperties(undefined)).toBeNull();
-  });
-});
 
 describe('featureToCanonicalBody', () => {
   it('classifies, simplifies, and derives bbox/centroid/area from the stored geometry', () => {
@@ -167,99 +135,6 @@ describe('featureToCanonicalBody', () => {
     expect(body).not.toBeNull();
     if (body === null || body === BELOW_AREA_FLOOR) return;
     expect(vertexCount(body.polygon)).toBeLessThan(vertexCount(feature.geometry as Polygon));
-  });
-
-  it('exposes a sane simplify tolerance (~5 m ≈ 0.00005°)', () => {
-    expect(SIMPLIFY_TOLERANCE_DEG).toBeGreaterThan(0);
-    expect(SIMPLIFY_TOLERANCE_DEG).toBeLessThan(0.001);
-  });
-
-  it('coarsens a body whose ring would exceed the Convex 8192-element array limit', () => {
-    // A dense spiky "star" ring (~9,000 vertices with 0.0003° spikes) survives the 5 m pass
-    // above the cap — the Lake Champlain case — so adaptive coarsening must kick in.
-    const n = 9000;
-    const ring: number[][] = [];
-    for (let i = 0; i < n; i++) {
-      const t = (i / n) * 2 * Math.PI;
-      const r = 0.5 + (i % 2 === 0 ? 0 : 0.0003);
-      ring.push([-72 + r * Math.cos(t), 44 + r * Math.sin(t)]);
-    }
-    ring.push(ring[0] as number[]); // close the ring
-    expect(ring.length).toBeGreaterThan(MAX_RING_VERTICES);
-
-    const body = importedBody(waterFeature({}, [ring]));
-    expect(largestRingSize(body.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
-    expect(body.surfaceAreaSqM).toBeGreaterThan(0);
-    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy, and under turbo every
-    // package's vitest pool runs at once on a 2-vCPU runner: 0.2 s locally has been 31.6 s on CI
-    // (PR #67), so the cap is wide — this is contention, not the test.
-  }, 120_000);
-
-  it('largestRingSize reports the biggest ring across polygons and holes', () => {
-    expect(
-      largestRingSize({
-        type: 'Polygon',
-        coordinates: [
-          [
-            [0, 0],
-            [1, 0],
-            [1, 1],
-            [0, 0],
-          ],
-        ],
-      }),
-    ).toBe(4);
-    const mp: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: [
-        [
-          [
-            [0, 0],
-            [1, 0],
-            [0, 0],
-          ],
-        ],
-        [
-          [
-            [0, 0],
-            [1, 0],
-            [1, 1],
-            [2, 2],
-            [0, 0],
-          ],
-        ],
-      ],
-    };
-    expect(largestRingSize(mp)).toBe(5);
-  });
-
-  it('maxArrayLength accounts for component and ring counts, not just positions', () => {
-    // 3 tiny components (each a 4-point triangle): positions=4, rings=1, components=3 → 4.
-    const fewComponents: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: Array.from({ length: 3 }, () => [
-        [
-          [0, 0],
-          [1, 0],
-          [1, 1],
-          [0, 0],
-        ],
-      ]),
-    };
-    expect(maxArrayLength(fewComponents)).toBe(4);
-    // Many components dominates over the (small) ring size.
-    const manyComponents: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: Array.from({ length: 20 }, () => [
-        [
-          [0, 0],
-          [1, 0],
-          [1, 1],
-          [0, 0],
-        ],
-      ]),
-    };
-    expect(maxArrayLength(manyComponents)).toBe(20);
   });
 
   it('skips (throws) a body still over the array cap after coarsening — too many components', () => {

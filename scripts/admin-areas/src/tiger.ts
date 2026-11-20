@@ -9,7 +9,15 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -95,30 +103,54 @@ export function archive(
   refresh: boolean,
   log: (message: string) => void,
   manifestName?: string,
+  archiveDirectory = RAW,
 ): string {
-  mkdirSync(RAW, { recursive: true });
-  const zip = join(RAW, source.filename);
-  if (!existsSync(zip) || refresh) {
-    log(`fetching ${source.url}…`);
-    const res = spawnSync('curl', ['-sS', '--fail', '--max-time', '900', '-o', zip, source.url], {
-      encoding: 'utf8',
-    });
-    if (res.status !== 0) throw new Error(`curl exited ${res.status}: ${res.stderr}`);
-  }
-  const bytes = readFileSync(zip);
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  if (source.bytes !== undefined && bytes.length !== source.bytes) {
-    throw new Error(`${source.filename}: byte count ${bytes.length} != expected ${source.bytes}`);
-  }
-  if (source.sha256 !== undefined && sha256 !== source.sha256) {
-    throw new Error(`${source.filename}: sha256 ${sha256} != expected ${source.sha256}`);
+  mkdirSync(archiveDirectory, { recursive: true });
+  const zip = join(archiveDirectory, source.filename);
+  const stagingDirectory =
+    refresh || !existsSync(zip) ? mkdtempSync(join(archiveDirectory, '.download-')) : undefined;
+  let receipt: ReturnType<typeof verifyArchive>;
+  try {
+    const candidate = stagingDirectory ? join(stagingDirectory, source.filename) : zip;
+    if (stagingDirectory) {
+      log(`fetching ${source.url}…`);
+      const result = spawnSync(
+        'curl',
+        ['-sS', '--fail', '--max-time', '900', '-o', candidate, source.url],
+        { encoding: 'utf8' },
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`curl exited ${result.status}: ${result.stderr}`);
+    }
+    receipt = verifyArchive(candidate, source);
+    // A failed refresh must not replace the last verified zip or its manifest.
+    if (stagingDirectory) renameSync(candidate, zip);
+  } finally {
+    if (stagingDirectory) rmSync(stagingDirectory, { recursive: true, force: true });
   }
   if (manifestName) {
     writeFileSync(
-      join(RAW, manifestName),
-      `${JSON.stringify({ ...source, actualSha256: sha256, fetchedAt: new Date().toISOString() }, null, 2)}\n`,
+      join(archiveDirectory, manifestName),
+      `${JSON.stringify({ ...source, actualSha256: receipt.sha256, fetchedAt: new Date().toISOString() }, null, 2)}\n`,
     );
   }
-  log(`  ${source.filename}: ${bytes.length.toLocaleString()} bytes, ${sha256.slice(0, 12)}…`);
+  log(
+    `  ${source.filename}: ${receipt.byteCount.toLocaleString()} bytes, ${receipt.sha256.slice(0, 12)}…`,
+  );
   return zip;
+}
+
+function verifyArchive(
+  candidate: string,
+  source: { filename: string; bytes?: number; sha256?: string },
+) {
+  const bytes = readFileSync(candidate);
+  if (source.bytes !== undefined && bytes.length !== source.bytes) {
+    throw new Error(`${source.filename}: byte count ${bytes.length} != expected ${source.bytes}`);
+  }
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  if (source.sha256 !== undefined && sha256 !== source.sha256) {
+    throw new Error(`${source.filename}: sha256 ${sha256} != expected ${source.sha256}`);
+  }
+  return { byteCount: bytes.length, sha256 };
 }

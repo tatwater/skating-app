@@ -12,24 +12,18 @@
  * each per-state extract is one state (unlike water bodies, admin boundaries don't span states).
  */
 
-import { type LatLng, polygonBBox, representativePoint } from '@skating/core';
-import simplify from '@turf/simplify';
-import type { MultiPolygon, Polygon } from 'geojson';
+import { type LatLng, osmExternalId, polygonBBox, representativePoint } from '@skating/core';
+import {
+  CONVEX_ARRAY_LIMIT,
+  maxArrayLength,
+  simplifyForStorage,
+} from '@skating/core/polygonStorage';
 import type {
   AdminAreaLevel,
   AdminAreaRecord,
   OsmBoundaryFeature,
   OsmBoundaryProperties,
 } from './types';
-
-/** ~5 m at these latitudes (Douglas–Peucker tolerance in degrees) — the fidelity-first baseline. */
-export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
-/** Convex rejects any array over 8192 elements (applies to every polygon nesting level). */
-export const CONVEX_ARRAY_LIMIT = 8192;
-/** Coarsening target for a ring's coordinate array — a safety margin under the array limit. */
-export const MAX_RING_VERTICES = 8000;
-/** Adaptive-coarsening step (~1 m) — nudge, don't double, so an over-limit body coarsens the least. */
-const SIMPLIFY_STEP_DEG = 0.00001;
 
 /**
  * Map an OSM `admin_level` to our coarse `level`. US convention: 4 = state, 6 = county, 7/8 =
@@ -44,55 +38,6 @@ export function levelFromAdminLevel(
   if (n === 6) return 'county';
   if (n === 7 || n === 8) return 'town';
   return null;
-}
-
-/**
- * The stable OSM id we key `externalId` on: `relation/456` / `way/123` (admin boundaries are almost
- * always relations). Returns `null` when the attributes are absent (feature not exported with
- * `-a type,id`).
- */
-export function externalIdFromProperties(
-  props: OsmBoundaryProperties | null | undefined,
-): string | null {
-  if (!props) return null;
-  const type = props['@type'];
-  const id = props['@id'];
-  if (typeof type !== 'string' || type.length === 0) return null;
-  if (typeof id !== 'number' && typeof id !== 'string') return null;
-  return `${type}/${id}`;
-}
-
-/** Largest coordinate count across all rings — the dimension adaptive coarsening can reduce. */
-export function largestRingSize(geom: Polygon | MultiPolygon): number {
-  const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
-  return rings.reduce((max, ring) => Math.max(max, ring.length), 0);
-}
-
-/** The largest array Convex will see anywhere in this geometry (polygon/ring/position counts). */
-export function maxArrayLength(geom: Polygon | MultiPolygon): number {
-  const polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
-  let max = polygons.length;
-  for (const rings of polygons) {
-    max = Math.max(max, rings.length);
-    for (const ring of rings) max = Math.max(max, ring.length);
-  }
-  return max;
-}
-
-/**
- * Simplify to the ~5 m target without mutating the input. If a ring is still over Convex's array
- * limit, coarsen *that body only* by nudging the tolerance up one step (~1 m) at a time until every
- * ring fits under `MAX_RING_VERTICES` — the least coarsening that fits. State/county boundaries are
- * the dense ones here (a state outline can be tens of thousands of vertices raw).
- */
-function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
-  let tolerance = SIMPLIFY_TOLERANCE_DEG;
-  let simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
-  for (let step = 0; step < 10_000 && largestRingSize(simplified) > MAX_RING_VERTICES; step++) {
-    tolerance += SIMPLIFY_STEP_DEG;
-    simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
-  }
-  return simplified;
 }
 
 /**
@@ -111,7 +56,7 @@ export function featureToAdminArea(feature: OsmBoundaryFeature): AdminAreaRecord
   const level = levelFromAdminLevel(props.admin_level);
   if (level === null) return null;
 
-  const externalId = externalIdFromProperties(props);
+  const externalId = osmExternalId(props);
   if (externalId === null) {
     throw new Error('feature is missing @type/@id (export with `osmium export -a type,id`)');
   }
@@ -186,8 +131,7 @@ export function transformFeatures(features: Iterable<OsmBoundaryFeature>): Trans
       areas.push(area);
     } catch (err) {
       errors.push({
-        externalId:
-          externalIdFromProperties(feature.properties) ?? String(feature.id ?? '(unknown)'),
+        externalId: osmExternalId(feature.properties) ?? String(feature.id ?? '(unknown)'),
         message: err instanceof Error ? err.message : String(err),
       });
     }

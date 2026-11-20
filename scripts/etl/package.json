@@ -38,7 +38,6 @@
     "@skating/archive-io": "workspace:*",
     "@skating/core": "workspace:*",
     "@skating/run-log": "workspace:*",
-    "@turf/simplify": "^7.4.0",
     "effect": "4.1.4"
   },
   "devDependencies": {

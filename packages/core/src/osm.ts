@@ -19,6 +19,21 @@ import type { LegacyWaterBodyType, WaterBodyClass } from './types';
 /** A raw OSM feature's tag bag (`key=value`), e.g. `{ natural: 'water', water: 'lake' }`. */
 export type OsmTags = Record<string, string | undefined>;
 
+/**
+ * Stable OSM identity from `osmium export -a type,id`, not the top-level GeoJSON area ID
+ * synthesized by osmium. Return null when the export did not provide both attributes.
+ */
+export function osmExternalId(
+  properties: { '@type'?: unknown; '@id'?: unknown } | null | undefined,
+): string | null {
+  if (!properties) return null;
+  const osmType = properties['@type'];
+  const osmId = properties['@id'];
+  if (typeof osmType !== 'string' || osmType.length === 0) return null;
+  if (typeof osmId !== 'number' && typeof osmId !== 'string') return null;
+  return `${osmType}/${osmId}`;
+}
+
 // ── The corpus-admission floor (D91) ─────────────────────────────────────────────────────────────
 //
 // Lives here, in core, rather than in the ETL transform that applies it, because **two** things
