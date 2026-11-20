@@ -60,6 +60,23 @@ const baseTokens = {
   zIndex: baseScale(defaultConfig.tokens.zIndex),
 };
 
+// `none` is a literal keyword in Tamagui 3. Rename it only in the mobile projection.
+const { none: squareRadius, ...namedRadii } = radius;
+
+// The v3 Input and TextArea skins request named font sizes, while v5 supplies numeric keys.
+// Without these aliases the name reaches React Native as a string instead of a font size.
+const v5BodyFont = defaultConfig.fonts.body;
+const bodyFont = {
+  ...v5BodyFont,
+  size: {
+    ...v5BodyFont.size,
+    xs: v5BodyFont.size[1],
+    sm: v5BodyFont.size[3],
+    base: v5BodyFont.size[4],
+    lg: v5BodyFont.size[5],
+  },
+};
+
 /** Map our flat semantic roles onto the Tamagui theme keys components expect. */
 function toTamaguiTheme(t: DesignTheme) {
   return {
@@ -99,7 +116,7 @@ const monoFont = createFont({
 
 export const config = createTamagui({
   ...defaultConfig,
-  fonts: { ...defaultConfig.fonts, mono: monoFont },
+  fonts: { ...defaultConfig.fonts, body: bodyFont, mono: monoFont },
   sizing: {
     ...defaultConfig.sizing,
     // V3 has five named presets. Keep a separate 64 dp preset for the hazard actions that
@@ -165,7 +182,7 @@ export const config = createTamagui({
      * blocky app-wide by one token change, as the founder asked, and `$full` stays round for the
      * avatars and dots that are drawn round on purpose. The named keys ride on top as before.
      */
-    radius: { ...allTo(baseTokens.radius, radius.xs), ...radius },
+    radius: { ...allTo(baseTokens.radius, radius.xs), ...namedRadii, square: squareRadius },
     zIndex: { ...baseTokens.zIndex, ...zIndex },
   },
 });
