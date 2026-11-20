@@ -72,6 +72,12 @@ describe('extractStage', () => {
     expect(stage.sourceAt).toBeUndefined();
     expect(stage.checksumVerified).toBeUndefined();
   });
+
+  it('does not invent a fetch time when only the extract slug is known', () => {
+    expect(extractStage({ slug: 'vermont' }).detail).toBe(
+      'Geofabrik vermont extract, archived at an unrecorded time',
+    );
+  });
 });
 
 describe('stageName', () => {
@@ -119,8 +125,12 @@ describe('nhdStage', () => {
   });
 
   it('says so loudly when the frozen dataset has moved under us', () => {
-    const stage = nhdStage({ ...manifest, frozenAsExpected: false }, 'source · nhd/VT');
-    expect(stage.detail).toMatch(/RE-PUBLISHED/);
+    expect(nhdStage({ ...manifest, frozenAsExpected: false }, 'nhd').detail).toContain(
+      `RE-PUBLISHED — Last-Modified is now ${manifest.lastModified}`,
+    );
+    expect(nhdStage({ frozenAsExpected: false }, 'nhd').detail).toContain(
+      'RE-PUBLISHED — Last-Modified is now unknown',
+    );
   });
 
   it('does not claim a freeze verdict it was never given', () => {

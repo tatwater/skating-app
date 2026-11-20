@@ -1,30 +1,35 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveDeployment } from './deployment';
+
+vi.mock('node:fs', { spy: true });
+
+const fixtureDirectories: string[] = [];
 
 /** A throwaway dir standing in for `packages/convex/`, with the given `.env.local` (or none). */
 function fakeConvexPackage(envLocal?: string): URL {
   const dir = mkdtempSync(join(tmpdir(), 'run-log-'));
+  fixtureDirectories.push(dir);
   if (envLocal !== undefined) writeFileSync(join(dir, '.env.local'), envLocal);
   return pathToFileURL(`${dir}/`);
 }
 
 describe('resolveDeployment', () => {
-  const saved = { ...process.env };
   beforeEach(() => {
-    process.env.CONVEX_DEPLOY_KEY = undefined;
-    delete process.env.CONVEX_DEPLOY_KEY;
-    delete process.env.CONVEX_DEPLOYMENT;
+    vi.stubEnv('CONVEX_DEPLOY_KEY', undefined);
+    vi.stubEnv('CONVEX_DEPLOYMENT', undefined);
   });
   afterEach(() => {
-    process.env = { ...saved };
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    for (const directory of fixtureDirectories.splice(0)) rmSync(directory, { recursive: true });
   });
 
   it('reads CONVEX_DEPLOYMENT from the environment first', () => {
-    process.env.CONVEX_DEPLOYMENT = 'dev:agile-bee-397';
+    vi.stubEnv('CONVEX_DEPLOYMENT', 'dev:agile-bee-397');
     expect(resolveDeployment(fakeConvexPackage('CONVEX_DEPLOYMENT=prod:other'))).toEqual({
       label: 'dev:agile-bee-397',
       isDev: true,
@@ -37,6 +42,17 @@ describe('resolveDeployment', () => {
     expect(resolveDeployment(dir).label).toBe('dev:agile-bee-397');
   });
 
+  it('looks in the Convex package, not the calling script directory, by default', () => {
+    vi.mocked(readFileSync).mockReturnValueOnce('CONVEX_DEPLOYMENT=dev:fixture\n');
+    expect(resolveDeployment().label).toBe('dev:fixture');
+    expect(readFileSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pathname: expect.stringMatching(/\/packages\/convex\/\.env\.local$/),
+      }),
+      'utf8',
+    );
+  });
+
   it('strips the trailing comment `convex dev` writes on the deployment line', () => {
     const dir = fakeConvexPackage(
       'CONVEX_DEPLOYMENT=dev:agile-bee-397 # team: teagan-atwater, project: skating-app\n',
@@ -45,7 +61,7 @@ describe('resolveDeployment', () => {
   });
 
   it('flags a prod deployment as prod and not dev', () => {
-    process.env.CONVEX_DEPLOYMENT = 'prod:diligent-guanaco-965';
+    vi.stubEnv('CONVEX_DEPLOYMENT', 'prod:diligent-guanaco-965');
     expect(resolveDeployment()).toEqual({
       label: 'prod:diligent-guanaco-965',
       isDev: false,
@@ -54,7 +70,7 @@ describe('resolveDeployment', () => {
   });
 
   it('treats a deploy key as non-dev — it points anywhere, so the guard fails closed', () => {
-    process.env.CONVEX_DEPLOY_KEY = 'secret';
+    vi.stubEnv('CONVEX_DEPLOY_KEY', 'fixture-key');
     const target = resolveDeployment(fakeConvexPackage('CONVEX_DEPLOYMENT=dev:agile-bee-397'));
     expect(target.isDev).toBe(false);
     expect(target.label).toContain('target unknown');

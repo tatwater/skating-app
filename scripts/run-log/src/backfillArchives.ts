@@ -11,7 +11,7 @@
  * *finished*, not when it started), so `startedAt` and `finishedAt` are the same instant and the
  * page shows no elapsed time.
  *
- * Idempotent by `(kind, label, startedAt)` — re-running adds nothing.
+ * Skips receipts already present in the recent run history by `(kind, label, startedAt)`.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -19,52 +19,62 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { convexRun } from './convexRun';
 import { resolveDeployment } from './deployment';
+import type { ExtractManifest } from './provenance';
 import { extractStage } from './provenance';
+import { writeRunReceipt } from './runReceipt';
 import type { RunCount, RunStage } from './types';
 
+interface Archive {
+  label: string;
+  directory: string;
+  kind: 'osm' | 'bathymetry';
+}
+
 /** The two `.raw/` archives that mirror to private R2 buckets. */
-const ARCHIVES = [
+const ARCHIVES: readonly Archive[] = [
   {
     label: 'OSM extracts',
-    dir: new URL('../../etl/.raw/', import.meta.url),
-    bucket: 'skating-raw-lake-osm',
-    kind: 'osm' as const,
+    directory: new URL('../../etl/.raw/', import.meta.url).pathname,
+    kind: 'osm',
   },
   {
     label: 'lake bathymetry sources',
-    dir: new URL('../../bathymetry/.raw/', import.meta.url),
-    bucket: 'skating-raw-lake-bathymetry',
-    kind: 'bathymetry' as const,
+    directory: new URL('../../bathymetry/.raw/', import.meta.url).pathname,
+    kind: 'bathymetry',
   },
 ];
 
 /** `scripts/bathymetry/src/fetch.ts`'s manifest — a different shape from the OSM one. */
-interface BathyManifest {
-  key?: string;
+interface BathymetryManifest {
   fetchedAt?: string;
   source?: { url?: string; kind?: string; format?: string };
   files?: { name: string; bytes: number; sha256: string }[];
   recordCount?: number;
-  http?: { lastModified?: string; etag?: string; contentLength?: number };
+  http?: { lastModified?: string };
   service?: { fields?: { name: string; type: string }[] };
 }
 
-interface OsmManifest {
-  state?: string;
-  slug?: string;
-  fetchedAt?: string;
-  requestedUrl?: string;
-  resolvedUrl?: string;
-  filename?: string;
-  bytes?: number;
-  sha256?: string;
-  buildDate?: string;
-  publishedMd5?: string;
-  md5Verified?: boolean;
+interface ArchiveRunKey {
+  kind: string;
+  label: string;
+  startedAt: number;
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
+interface ArchiveRun extends ArchiveRunKey {
+  kind: 'raw_archive';
+  stages: RunStage[];
+  counts: RunCount[];
+  notes: string[];
+}
+
+const RECONSTRUCTED_NOTE =
+  'Reconstructed from the archive manifest — this run predates the run-history table, so there is no duration.';
+
+function archiveRunKey(run: ArchiveRunKey): string {
+  return `${run.kind}|${run.label}|${run.startedAt}`;
+}
+
+export function backfillArchives(args: string[], archives = ARCHIVES): number {
   const dryRun = args.includes('--dry-run');
   const allowNonDev = args.includes('--prod');
 
@@ -72,45 +82,20 @@ function main(): void {
   process.stderr.write(`[backfill] target deployment: ${target.label}\n`);
   if (!target.isDev && !allowNonDev) {
     process.stderr.write('[backfill] refusing: not a dev deployment. Re-run with --prod.\n');
-    process.exit(1);
+    return 1;
   }
 
-  const existing = dryRun
-    ? []
-    : convexRun<{ kind: string; label: string; startedAt: number }[]>(
-        'importRuns:listForBackfill',
-        {},
-      );
-  const seen = new Set(existing.map((r) => `${r.kind}|${r.label}|${r.startedAt}`));
+  const existing = dryRun ? [] : convexRun<ArchiveRunKey[]>('importRuns:listForBackfill', {});
+  const seen = new Set(existing.map(archiveRunKey));
 
-  let written = 0;
-  let skipped = 0;
+  let receiptCount = 0;
+  let alreadyPresentCount = 0;
 
-  for (const archive of ARCHIVES) {
-    const root = archive.dir.pathname;
-    if (!existsSync(root)) {
-      process.stderr.write(`[backfill] no archive at ${root} — skipping ${archive.label}\n`);
-      continue;
-    }
-
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const dir = join(root, entry.name);
-      const manifestPath = join(dir, 'manifest.json');
-      if (!existsSync(manifestPath)) {
-        process.stderr.write(`[backfill] ${entry.name}: no manifest.json — cannot reconstruct\n`);
-        continue;
-      }
-
-      const run =
-        archive.kind === 'osm'
-          ? osmRun(manifestPath, entry.name, dir)
-          : bathymetryRun(manifestPath, entry.name, dir);
-      if (!run) continue;
-
-      const dedupeKey = `${run.kind}|${run.label}|${run.startedAt}`;
+  for (const archive of archives) {
+    for (const run of readArchiveRuns(archive)) {
+      const dedupeKey = archiveRunKey(run);
       if (seen.has(dedupeKey)) {
-        skipped++;
+        alreadyPresentCount++;
         continue;
       }
 
@@ -118,66 +103,74 @@ function main(): void {
         process.stderr.write(
           `[backfill] would record ${run.kind} "${run.label}" @ ${new Date(run.startedAt).toISOString()}\n`,
         );
-        written++;
+        receiptCount++;
         continue;
       }
 
-      const runId = convexRun<string>('importRuns:start', {
-        kind: run.kind,
-        label: run.label,
-        deployment: target.label,
-        isProd: target.isProd,
-        stages: run.stages,
-        notes: run.notes,
-      });
-      convexRun('importRuns:finish', {
-        runId,
-        status: 'succeeded',
-        counts: run.counts,
-        notes: run.notes,
-      });
-      convexRun('importRuns:restamp', {
-        runId,
-        startedAt: run.startedAt,
-        finishedAt: run.startedAt,
-      });
+      // Unlike the receipt CLI, a failed write is a failure of the backfill itself. Don't catch
+      // it or mark the row as seen until all three calls, including the restamp, succeed.
+      writeRunReceipt(run, target, convexRun);
       seen.add(dedupeKey);
-      written++;
+      receiptCount++;
       process.stderr.write(`[backfill] recorded ${run.kind} "${run.label}"\n`);
     }
   }
 
   process.stderr.write(
-    `[backfill] ${written} run(s) ${dryRun ? 'would be recorded' : 'recorded'}, ${skipped} already present\n`,
+    `[backfill] ${receiptCount} run(s) ${dryRun ? 'would be recorded' : 'recorded'}, ${alreadyPresentCount} already present\n`,
   );
+  return 0;
 }
 
-interface Reconstructed {
-  kind: string;
-  label: string;
-  startedAt: number;
-  stages: RunStage[];
-  counts: RunCount[];
-  notes: string[];
+function* readArchiveRuns(archive: Archive): Generator<ArchiveRun> {
+  if (!existsSync(archive.directory)) {
+    process.stderr.write(
+      `[backfill] no archive at ${archive.directory} — skipping ${archive.label}\n`,
+    );
+    return;
+  }
+  for (const entry of readdirSync(archive.directory, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const directory = join(archive.directory, entry.name);
+    const manifestPath = join(directory, 'manifest.json');
+    if (!existsSync(manifestPath)) {
+      process.stderr.write(`[backfill] ${entry.name}: no manifest.json — cannot reconstruct\n`);
+      continue;
+    }
+    const manifestJson = readFileSync(manifestPath, 'utf8');
+    const manifest: BathymetryManifest | ExtractManifest = JSON.parse(manifestJson);
+    const startedAt = Date.parse(manifest.fetchedAt ?? '');
+    if (!Number.isFinite(startedAt)) {
+      process.stderr.write(
+        `[backfill] ${entry.name}: manifest has no usable fetchedAt — skipping\n`,
+      );
+      continue;
+    }
+    yield archive.kind === 'osm'
+      ? osmRun(manifest as ExtractManifest, entry.name, directory, startedAt)
+      : bathymetryRun(manifest as BathymetryManifest, entry.name, directory, startedAt);
+  }
 }
 
 /** One archived Geofabrik extract. */
-function osmRun(manifestPath: string, name: string, dir: string): Reconstructed | undefined {
-  const m = JSON.parse(readFileSync(manifestPath, 'utf8')) as OsmManifest;
-  const fetchedAt = Date.parse(m.fetchedAt ?? '');
-  if (!Number.isFinite(fetchedAt)) {
-    process.stderr.write(`[backfill] ${name}: manifest has no usable fetchedAt — skipping\n`);
-    return undefined;
-  }
+function osmRun(
+  manifest: ExtractManifest,
+  archiveName: string,
+  directory: string,
+  startedAt: number,
+): ArchiveRun {
   return {
     kind: 'raw_archive',
-    label: `${(m.state ?? name).toUpperCase()} OSM extract archive`,
-    startedAt: fetchedAt,
-    stages: [extractStage(m, join(dir, m.filename ?? ''))],
-    counts: [{ name: 'files', value: 1 }, ...(m.bytes ? [{ name: 'bytes', value: m.bytes }] : [])],
+    label: `${(manifest.state ?? archiveName).toUpperCase()} OSM extract archive`,
+    startedAt,
+    stages: [extractStage(manifest, join(directory, manifest.filename ?? ''))],
+    counts: [
+      { name: 'files', value: 1 },
+      ...(manifest.bytes ? [{ name: 'bytes', value: manifest.bytes }] : []),
+    ],
     notes: [
-      'Reconstructed from the archive manifest — this run predates the run-history table, so there is no duration.',
-      m.md5Verified
+      RECONSTRUCTED_NOTE,
+      manifest.md5Verified
         ? "Publisher's md5 verified at fetch time."
         : "Publisher's md5 was NOT verified at fetch time.",
     ],
@@ -185,69 +178,72 @@ function osmRun(manifestPath: string, name: string, dir: string): Reconstructed 
 }
 
 /** One archived state-agency bathymetry source. */
-function bathymetryRun(manifestPath: string, name: string, dir: string): Reconstructed | undefined {
-  const m = JSON.parse(readFileSync(manifestPath, 'utf8')) as BathyManifest;
-  const fetchedAt = Date.parse(m.fetchedAt ?? '');
-  if (!Number.isFinite(fetchedAt)) {
-    process.stderr.write(`[backfill] ${name}: manifest has no usable fetchedAt — skipping\n`);
-    return undefined;
-  }
-
-  const files = m.files ?? [];
-  const bytes = files.reduce((sum, f) => sum + (f.bytes ?? 0), 0);
-  // Verify the archive still matches what the manifest says it fetched. A silently truncated or
-  // half-synced archive is the failure this reconstruction would otherwise paper over — it would
-  // record a clean historical fetch for files that are no longer there.
-  const missing = files.filter((f) => !existsSync(join(dir, f.name)));
-  const wrongSize = files.filter((f) => {
-    const path = join(dir, f.name);
-    return existsSync(path) && statSync(path).size !== f.bytes;
-  });
-
-  const stages: RunStage[] = [
-    {
-      name: 'fetch',
-      detail: m.source?.kind
-        ? `${m.source.kind} source${m.source.format ? ` (${m.source.format})` : ''}${
-            m.http?.lastModified ? ` — published ${m.http.lastModified}` : ''
-          }`
-        : 'third-party source',
-      sourceUrl: m.source?.url,
-      output: dir,
-      bytes,
-      // A multi-page ArcGIS pull has one sha256 per page, so the single-file case is the only one
-      // where a stage-level checksum means anything; the rest are in the manifest beside the files.
-      sha256: files.length === 1 ? files[0]?.sha256 : undefined,
-      sourceAt: m.http?.lastModified ? Date.parse(m.http.lastModified) || undefined : undefined,
-      counts: [
-        { name: 'files', value: files.length },
-        ...(m.recordCount !== undefined ? [{ name: 'records', value: m.recordCount }] : []),
-        ...(m.service?.fields ? [{ name: 'serviceFields', value: m.service.fields.length }] : []),
-      ],
-    },
-  ];
-
-  const notes = [
-    'Reconstructed from the archive manifest — this run predates the run-history table, so there is no duration.',
-  ];
-  if (missing.length > 0 || wrongSize.length > 0) {
-    notes.push(
-      `⚠ The local archive no longer matches this manifest: ${missing.length} file(s) missing, ${wrongSize.length} with a different size. Re-fetch or re-pull from R2 before trusting it.`,
-    );
-  }
+function bathymetryRun(
+  manifest: BathymetryManifest,
+  archiveName: string,
+  directory: string,
+  startedAt: number,
+): ArchiveRun {
+  const files = manifest.files ?? [];
+  const bytes = files.reduce((sum, file) => sum + (file.bytes ?? 0), 0);
+  const fileCount = { name: 'files', value: files.length };
+  const recordCounts: RunCount[] =
+    manifest.recordCount === undefined ? [] : [{ name: 'records', value: manifest.recordCount }];
+  const notes = [RECONSTRUCTED_NOTE];
+  const mismatch = findArchiveMismatch(directory, files);
+  if (mismatch) notes.push(mismatch);
 
   return {
     kind: 'raw_archive',
-    label: `${name} archive`,
-    startedAt: fetchedAt,
-    stages,
-    counts: [
-      { name: 'files', value: files.length },
-      { name: 'bytes', value: bytes },
-      ...(m.recordCount !== undefined ? [{ name: 'records', value: m.recordCount }] : []),
+    label: `${archiveName} archive`,
+    startedAt,
+    stages: [
+      {
+        name: 'fetch',
+        detail: bathymetrySourceDetail(manifest),
+        sourceUrl: manifest.source?.url,
+        output: directory,
+        bytes,
+        // Only a single-file fetch has a stage-level checksum; multi-page ArcGIS pulls record
+        // one per page in the manifest beside the files.
+        sha256: files.length === 1 ? files[0]?.sha256 : undefined,
+        sourceAt: Date.parse(manifest.http?.lastModified ?? '') || undefined,
+        counts: [
+          fileCount,
+          ...recordCounts,
+          ...(manifest.service?.fields
+            ? [{ name: 'serviceFields', value: manifest.service.fields.length }]
+            : []),
+        ],
+      },
     ],
+    counts: [fileCount, { name: 'bytes', value: bytes }, ...recordCounts],
     notes,
   };
 }
 
-main();
+function bathymetrySourceDetail(manifest: BathymetryManifest): string {
+  if (!manifest.source?.kind) return 'third-party source';
+  const format = manifest.source.format ? ` (${manifest.source.format})` : '';
+  const publishedAt = manifest.http?.lastModified
+    ? ` — published ${manifest.http.lastModified}`
+    : '';
+  return `${manifest.source.kind} source${format}${publishedAt}`;
+}
+
+function findArchiveMismatch(directory: string, files: NonNullable<BathymetryManifest['files']>) {
+  // Verify the archive still matches what the manifest says it fetched. A silently truncated or
+  // half-synced archive is the failure this reconstruction would otherwise paper over — it would
+  // record a clean historical fetch for files that are no longer there.
+  let missingFileCount = 0;
+  let wrongSizeFileCount = 0;
+  for (const file of files) {
+    const filePath = join(directory, file.name);
+    if (!existsSync(filePath)) missingFileCount++;
+    else if (statSync(filePath).size !== file.bytes) wrongSizeFileCount++;
+  }
+  if (missingFileCount === 0 && wrongSizeFileCount === 0) return undefined;
+  return `⚠ The local archive no longer matches this manifest: ${missingFileCount} file(s) missing, ${wrongSizeFileCount} with a different size. Re-fetch or re-pull from R2 before trusting it.`;
+}
+
+if (import.meta.main) process.exitCode = backfillArchives(process.argv.slice(2));

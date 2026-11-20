@@ -1,5 +1,5 @@
 /**
- * `pnpm exec convex run <fn> <json>` as a function call. Subprocess glue — excluded from coverage.
+ * `pnpm exec convex run <fn> <json>` as a function call.
  *
  * The CLI invokes internal functions with the deployment's admin credentials from
  * `packages/convex/.env.local`, which is why every loader shells out rather than holding a client.
