@@ -208,3 +208,46 @@ zero, publishes the full replacement, and returns its SHA-256. A separate fixtur
 ordinary CLI errors retain their diagnostic and release the signal handlers. No source hosts
 or shared storage were contacted. Vitest reported 0.75 s before and 1.28 s after in separate
 runs; these are wall-clock samples, not a controlled benchmark.
+
+## `scripts/admin-areas`: transform and load
+
+Baseline `ea291ef8`. Admin-area and water transforms now use one OSM identity rule and one
+D48 polygon-storage policy. The shared simplifier is a core subpath, not part of the app-facing
+barrel. Each transform still owns its classification, derived fields, and skip handling.
+The admin-area loader now separates batch execution from run finalization; its state stamping,
+dev-first guard, progress cadence, failure streak, and exit policy are unchanged.
+
+| Check | Before | After |
+| --- | ---: | ---: |
+| Fallow check issues | 1 | 0 |
+| Default clone groups touching this workspace | 11 | 5 |
+| Health findings with Vitest coverage supplied | 8 | 6 |
+| Workspace tests | 31 | 39 |
+| Workspace branch coverage | 90% | 95.55% |
+| Workspace function / line coverage | 100% / 100% | 100% / 100% |
+
+The coverage denominator now includes the loader. Some direct tests moved to the shared owners;
+the package totals do not include them. The new core polygon module has 100% measured coverage.
+Non-app production cycle check remains clean. An uncached workspace test command took 1.21 s
+before and 1.69 s after in separate runs; these are single samples, not a benchmark.
+
+- **Consolidated** the shared OSM ID and adaptive storage rules; removed the unused admin-only
+  tolerance export. The boundary and water transforms still exercise how those rules are applied.
+- **Keep separate for now:** The load-loop and transform error-collection matches are control flow
+  around different receipts and skip policies. Water imports attach additional counters and
+  identify failures by the first body in a batch; boundary imports apply a state stamp.
+- **Defer to the ETL pass:** The transform CLIs share record-separator cleanup, the loaders share
+  initial NDJSON framing, and canonical mutation replies have identical inserted/updated checks.
+  Trace other consumers before extracting a parser; preserve input ordering, parse-failure
+  boundaries, and each loader's diagnostics. Batch sizing itself already shares `batchNdjson`.
+- **Defer the acquisition and region-build lane:** The six remaining health findings are estimates
+  in the transform CLI, `fetchStates`, `tiger`, and `buildRegion`. The CLI was exercised directly.
+  The latter three need separate cached TIGER/GDAL fixtures; this pass did not fetch or rebuild
+  a region.
+
+The actual transform command produced byte-identical NDJSON and matching diagnostics before and
+after for a synthetic town, classification drop, and invalid boundary. The water ETL also produced
+identical NDJSON and diagnostics for its checked-in Vermont fixture. The actual admin load
+command wrote to throwaway loopback Convex: the first load inserted one `VT` boundary, the replay
+updated that same row, and both runs filed successful receipts. No shared deployment or live
+inputs were used.
