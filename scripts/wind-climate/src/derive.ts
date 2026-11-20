@@ -25,19 +25,14 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
-import { STRONG_WIND_MIN_MPS, WIND_ARCHIVE_MIN_FETCH_M } from '@skating/core';
+import { STRONG_WIND_MIN_MPS } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { responsePath } from './archive';
-import { accumulateCsv, climateFromAccumulator, emptyAccumulator, gridKey, WTK_YEARS } from './wtk';
+import { collectWindTargets } from './targets';
+import { accumulateCsv, climateFromAccumulator, emptyAccumulator, WTK_YEARS } from './wtk';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = resolve(HERE, '../.raw');
-
-interface Target {
-  waterBodyId: string;
-  lat: number;
-  lng: number;
-}
 
 /** Rows per mutation. Each carries two 16-element arrays and two scalars. */
 const WRITE_BATCH_SIZE = 100;
@@ -69,42 +64,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // ── Which bodies want a rose, folded onto the same grid the archive is keyed by ────────────
-  const cells = new Map<string, Target[]>();
-  let scanned = 0;
-  let belowFloor = 0;
-  let cursor: string | undefined;
-  let isDone = false;
-  while (!isDone) {
-    const page = convexRun<{
-      targets: Target[];
-      scanned: number;
-      belowFloor?: number;
-      cursor: string;
-      isDone: boolean;
-    }>('waterBodies:listNeedingWindRose', {
-      ...(cursor ? { cursor } : {}),
-      // Everything, not just the unstamped: a re-derive at a different threshold has to reach the
-      // bodies that already carry a rose, or `--min-mps` would only ever affect new ones.
-      refresh: true,
-      // **The same constant `snapshot` fetched against**, never a flag — see
-      // `WIND_ARCHIVE_MIN_FETCH_M`. This command refuses when a cell is missing, so scoping wider
-      // than the fetch did is not a smaller result, it is a failed run.
-      minFetchM: WIND_ARCHIVE_MIN_FETCH_M,
-      ...(importFloorOnly ? { importFloorOnly: true } : {}),
-    });
-    cursor = page.cursor;
-    isDone = page.isDone;
-    scanned += page.scanned;
-    belowFloor += page.belowFloor ?? 0;
-    for (const t of page.targets) {
-      const key = gridKey(t);
-      const bucket = cells.get(key);
-      if (bucket) bucket.push(t);
-      else cells.set(key, [t]);
-    }
-  }
-  const bodies = [...cells.values()].reduce((n, list) => n + list.length, 0);
+  const { cells, scanned, belowFloor, bodies } = collectWindTargets(importFloorOnly);
 
   const archived = new Set(
     existsSync(RAW_DIR)

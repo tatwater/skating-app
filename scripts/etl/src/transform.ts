@@ -180,6 +180,33 @@ function stringTags(props: OsmWaterProperties): OsmTagBag {
   return out;
 }
 
+function requireMinimumRingSize(geometry: Polygon | MultiPolygon): void {
+  if (largestRingSize(geometry) < 4) {
+    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
+  }
+}
+
+/** Measure the source before simplification and check the stored geometry against Convex's cap. */
+function prepareBodyGeometry(geometry: Polygon | MultiPolygon) {
+  if (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') {
+    throw new Error(`unsupported geometry type "${(geometry as { type: string }).type}"`);
+  }
+  requireMinimumRingSize(geometry);
+
+  // D85: measuring after simplification under-reports perimeter, especially on crenellated lakes.
+  const stats = lakeGeometryStats(geometry);
+  const interiorPoint = fetchOrigin(geometry) ?? undefined;
+  const polygon = simplifyForStorage(geometry);
+  const maxArray = maxArrayLength(polygon);
+  if (maxArray > CONVEX_ARRAY_LIMIT) {
+    throw new Error(
+      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
+    );
+  }
+  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
+  return { stats, interiorPoint, polygon, centroid };
+}
+
 /**
  * Turn a **classified, admitted** body into the record `importCanonical` stores — source-agnostic
  * (A07a step 5).
@@ -222,32 +249,7 @@ export function toCanonicalBody(input: {
   /** Every catalog's class (B01-3d) — see `CanonicalBody.classClaims`. */
   classClaims?: readonly { source: string; value: string }[] | undefined;
 }): CanonicalBody {
-  const geom = input.geometry;
-  if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
-    throw new Error(`unsupported geometry type "${(geom as { type: string }).type}"`);
-  }
-  // A closed linear ring needs four positions; anything less measures as zero area, which a floor
-  // would happily read as "a very small pond".
-  if (largestRingSize(geom) < 4) {
-    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
-  }
-
-  // ── D85: measure the SOURCE geometry, before anything touches it ────────────────────────────
-  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
-  // under-reports systematically, worst on the big crenellated lakes where a shoreline figure is
-  // most interesting. **Do not move this below `simplifyForStorage`.**
-  const stats = lakeGeometryStats(geom);
-  const interiorPoint = fetchOrigin(geom) ?? undefined;
-
-  const polygon = simplifyForStorage(geom);
-  const maxArray = maxArrayLength(polygon);
-  if (maxArray > CONVEX_ARRAY_LIMIT) {
-    throw new Error(
-      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
-    );
-  }
-  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
-
+  const { stats, interiorPoint, polygon, centroid } = prepareBodyGeometry(input.geometry);
   return {
     source: input.source,
     externalId: input.externalId,
@@ -314,9 +316,7 @@ export function featureToCanonicalBody(
   // read as "a very small pond" and tally into a bucket of ~100,000. This used to surface as a throw
   // from `representativePoint` further down — the check is now explicit and named, because the floor
   // moved in front of it and a broken polygon must never be indistinguishable from a puddle.
-  if (largestRingSize(geom) < 4) {
-    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
-  }
+  requireMinimumRingSize(geom);
 
   // The floor (founder call, 2026-08-02), checked **here** — after classification, before any of the
   // per-body geometry below. Four fifths of a raw extract fails it, and shoreline + axes + a

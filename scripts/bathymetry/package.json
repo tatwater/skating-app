@@ -9,7 +9,6 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "probe": "tsx src/probe.ts",
-    "//snapshot": "NOT `fetch` \u2014 that is a built-in pnpm command and silently runs an install instead.",
     "snapshot": "tsx src/fetch.ts",
     "verify": "tsx src/verify.ts",
     "provenance": "tsx src/provenanceCli.ts",

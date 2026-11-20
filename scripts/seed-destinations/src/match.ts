@@ -203,15 +203,10 @@ export function normalizeName(name: string): string {
 }
 
 /** Where a candidate is, preferring the on-water point for the same reason everything else does. */
-export function candidatePoint(
-  candidate: MatchCandidate,
-): { lat: number; lng: number } | undefined {
+function candidatePoint(candidate: MatchCandidate): { lat: number; lng: number } | undefined {
   if (isSubArea(candidate)) return candidate.representativePoint ?? candidate.centroid;
   return candidate.interiorPoint ?? candidate.representativePoint ?? candidate.centroid;
 }
-
-/** @deprecated Renamed to {@link candidatePoint}, which also accepts a sub-area. */
-export const bodyPoint = candidatePoint;
 
 export interface Bbox {
   minLat: number;

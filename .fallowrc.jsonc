@@ -1,0 +1,20 @@
+{
+  // These commands are development tools, not shipped entry points.
+  "supportEntry": [
+    "exports/weather-timeline/build-svg.ts",
+    "exports/weather-timeline/fetch-archive.ts",
+    "packages/email/src/templates/*.tsx"
+  ],
+  // React Email's preview server loads the default; senders use the named export.
+  "ignoreExports": [{ "file": "packages/email/src/templates/*.tsx", "exports": ["default"] }],
+  // Pipeline prerequisites supplied by the machine or container, not by pnpm.
+  "ignoreBinaries": ["gdal_contour", "gmt", "ogr2ogr", "ogrinfo", "osmium", "rclone"],
+  // Generated design tokens repeat by construction; keep them in the import graph.
+  "duplicates": { "ignore": ["packages/design/_generated/**"] },
+  "workspaces": {
+    "settings": {
+      // Guards deliberately imports the vocabulary by source path. Keep the workspace edge.
+      "packages/guards": { "ignoreDependencies": ["@skating/core"] }
+    }
+  }
+}

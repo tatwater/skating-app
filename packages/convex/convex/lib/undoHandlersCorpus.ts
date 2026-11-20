@@ -14,7 +14,7 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import { setOfficialImpl } from '../accessAlerts';
 import { setPutInAccessImpl } from '../accessPoints';
-import { type ElevatedRole, grantRoleImpl, revokeRoleImpl } from '../admin';
+import type { ElevatedRole } from '../admin';
 import { demoteImpl, type FeatureShape, shapeRefusal, updateShapeImpl } from '../bodyFeatures';
 import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
@@ -31,12 +31,15 @@ import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from
 type Role = Doc<'profiles'>['role'];
 
 /** Put a person's role back to `prior` through the verb that produces it (self-guard included). */
-async function restoreRole({ ctx, actor, row, reason }: UndoCall, prior: Role): Promise<void> {
+async function restoreRole(
+  { ctx, actor, row, reason, writers }: UndoCall,
+  prior: Role,
+): Promise<void> {
   const userId = row.targetId as Id<'profiles'>;
   if (prior === 'member') {
-    await revokeRoleImpl(ctx, actor, { userId, reason });
+    await writers.revokeRoleImpl(ctx, actor, { userId, reason });
   } else {
-    await grantRoleImpl(ctx, actor, { userId, role: prior as ElevatedRole, reason });
+    await writers.grantRoleImpl(ctx, actor, { userId, role: prior as ElevatedRole, reason });
   }
 }
 

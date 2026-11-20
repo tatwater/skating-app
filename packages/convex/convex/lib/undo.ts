@@ -30,7 +30,13 @@ import { ROW_MAX, requestBudget, type WaveCost } from './readBudget';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, type UndoRule, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
-import { meta, type UndoHandler, type UndoScope, type UndoViewer } from './undoTypes';
+import {
+  meta,
+  type UndoHandler,
+  type UndoScope,
+  type UndoViewer,
+  type UndoWriters,
+} from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
 export const TOAST_UNDO_MS = 10_000;
@@ -354,6 +360,7 @@ export async function runUndo(
   actor: Doc<'profiles'>,
   actionId: Id<'moderationActions'>,
   reason: string | undefined,
+  writers: UndoWriters,
 ): Promise<void> {
   const row = await ctx.db.get(actionId);
   if (!row) throw new ConvexError('That action no longer exists');
@@ -379,5 +386,5 @@ export async function runUndo(
     trimmed.length > 0
       ? trimmed
       : fitComposed(composed`Undid ${row.action.replace(/_/g, ' ')}: ${row.reason}`);
-  await asUndoOf(ctx, actionId, () => handler.run({ ctx, actor, row, reason: why }));
+  await asUndoOf(ctx, actionId, () => handler.run({ ctx, actor, row, reason: why, writers }));
 }

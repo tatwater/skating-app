@@ -8,11 +8,36 @@
 
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
+import { grantRoleImpl, revokeRoleImpl } from './admin';
 import { requireCapability } from './lib/auth';
 import { MODERATION_TARGET_TYPES } from './lib/enums';
 import { runUndo, TOAST_UNDO_MS, type UndoState, undoState } from './lib/undo';
 import { UNDO_POLICY, undoCapability } from './lib/undoPolicy';
+import type { UndoWriters } from './lib/undoTypes';
 import { literals } from './lib/validators';
+import {
+  banImpl,
+  revertPostVerdict,
+  setBountyLimitImpl,
+  setContentStatus,
+  setPostingPermissionImpl,
+  suspendImpl,
+  unbanImpl,
+} from './moderation';
+
+// Admin and moderation read undo eligibility. Bind their inverse writes at the mutation
+// boundary so the engine doesn't import either module at runtime.
+const undoWriters: UndoWriters = {
+  banImpl,
+  grantRoleImpl,
+  revertPostVerdict,
+  revokeRoleImpl,
+  setBountyLimitImpl,
+  setContentStatus,
+  setPostingPermissionImpl,
+  suspendImpl,
+  unbanImpl,
+};
 
 export const run = mutation({
   args: { actionId: v.id('moderationActions'), reason: v.optional(v.string()) },
@@ -23,7 +48,7 @@ export const run = mutation({
       ctx,
       undoCapability(UNDO_POLICY[row.action], row.targetType),
     );
-    await runUndo(ctx, actor, actionId, reason);
+    await runUndo(ctx, actor, actionId, reason, undoWriters);
   },
 });
 
