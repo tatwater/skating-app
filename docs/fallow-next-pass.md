@@ -240,10 +240,9 @@ before and 1.69 s after in separate runs; these are single samples, not a benchm
   initial NDJSON framing, and canonical mutation replies have identical inserted/updated checks.
   Trace other consumers before extracting a parser; preserve input ordering, parse-failure
   boundaries, and each loader's diagnostics. Batch sizing itself already shares `batchNdjson`.
-- **Defer the acquisition and region-build lane:** The six remaining health findings are estimates
-  in the transform CLI, `fetchStates`, `tiger`, and `buildRegion`. The CLI was exercised directly.
-  The latter three need separate cached TIGER/GDAL fixtures; this pass did not fetch or rebuild
-  a region.
+- **Verify the acquisition and region-build lane separately:** At this point six health findings
+  remained, all estimates in the transform CLI, `fetchStates`, `tiger`, and `buildRegion`.
+  The cached TIGER/GDAL workflow was verified separately below.
 
 The actual transform command produced byte-identical NDJSON and matching diagnostics before and
 after for a synthetic town, classification drop, and invalid boundary. The water ETL also produced
@@ -251,3 +250,20 @@ identical NDJSON and diagnostics for its checked-in Vermont fixture. The actual 
 command wrote to throwaway loopback Convex: the first load inserted one `VT` boundary, the replay
 updated that same row, and both runs filed successful receipts. No shared deployment or live
 inputs were used.
+
+### Acquisition and region artifacts
+
+The shared archive helper now downloads refreshes beside the cached zip and renames only after
+size and digest checks pass. A failed transfer or verification leaves the previous archive and
+manifest in place. Local `curl` fixtures cover those failures, successful refresh, and cache
+reuse. The workspace went from 39 to 47 tests; `tiger.ts` is now measured at 100% coverage and its
+estimated health finding no longer appears. The five remaining health findings are estimates in
+the three command entry points, not measured gaps in the verified archive helper.
+
+Both `fetch-states` and `build-region` ran with real GDAL against cached synthetic shapefiles in
+scratch. Only the size and digest pins in the scratch copy were changed to match the fixtures;
+`curl` was blocked for this check. All 12 output files matched before and after, including the
+five state-specific NDJSON files, the downstate mask, and the two generated app modules. No live
+sources were contacted and no app files in the checkout were rewritten. The remaining
+orchestration was kept intact; separating the mask builder into a new workflow is not necessary
+to fix archive publication.

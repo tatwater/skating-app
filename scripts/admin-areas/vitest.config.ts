@@ -12,14 +12,13 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
       // The loader is measured at its Convex boundary. The transform CLI is smoke-tested at
-      // the process boundary. Region construction and TIGER acquisition still need fixture coverage
-      // for their GDAL, Turf, and network orchestration; their extracted region rules are measured.
+      // the process boundary. The verified archive helper uses local curl fixtures; the region
+      // construction and layer extraction entry points still need GDAL/Turf fixtures.
       exclude: [
         'src/**/*.test.ts',
         'src/buildRegion.ts',
         'src/cli.ts',
         'src/fetchStates.ts',
-        'src/tiger.ts',
         'src/types.ts',
       ],
       thresholds: {
