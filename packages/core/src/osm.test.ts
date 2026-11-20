@@ -8,9 +8,30 @@ import {
   MAX_BODY_SURFACE_AREA_SQM,
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
+  osmExternalId,
   UNNAMED_WETLAND_MIN_ACRES,
   UNNAMED_WETLAND_MIN_SQM,
 } from './osm';
+
+describe('osmExternalId', () => {
+  it('preserves the exported OSM type and numeric or string identifier', () => {
+    expect(osmExternalId({ '@type': 'relation', '@id': 456 })).toBe('relation/456');
+    expect(osmExternalId({ '@type': 'way', '@id': '9' })).toBe('way/9');
+  });
+
+  it('rejects absent or malformed exported attributes', () => {
+    for (const properties of [
+      null,
+      undefined,
+      { '@id': 1 },
+      { '@type': '', '@id': 1 },
+      { '@type': 'relation' },
+      { '@type': 'way', '@id': true },
+    ]) {
+      expect(osmExternalId(properties)).toBeNull();
+    }
+  });
+});
 
 describe('meetsAreaFloor', () => {
   const ACRE = 4046.8564224;

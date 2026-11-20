@@ -6,7 +6,7 @@
  * ## The one rule that governs this whole file (D85)
  *
  * **These are measured on the *source* geometry, never on the copy we store.** The stored polygon
- * is Douglas–Peucker-simplified to ~5 m (`SIMPLIFY_TOLERANCE_DEG` in the ETL transform), and Lake
+ * is Douglas–Peucker-simplified to ~5 m (`polygonStorage.ts`), and Lake
  * Champlain is coarsened further to fit Convex's 8,192-element array cap. That tolerance exists to
  * make *drawing* cheap, and it corrupts *describing*: perimeter is resolution-dependent (the
  * coastline paradox), so measuring the simplified copy under-reports systematically and worst on

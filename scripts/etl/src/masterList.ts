@@ -52,6 +52,7 @@ import {
   settledWetlandDissent,
   type WaterBodyClass,
 } from '@skating/core';
+import { simplifyForStorage } from '@skating/core/polygonStorage';
 import {
   attachGazetteerIds,
   type Boundary,
@@ -91,7 +92,7 @@ import {
   type TownLayer,
   Union,
 } from './mergeRules';
-import { simplifyForStorage, toCanonicalBody } from './transform';
+import { toCanonicalBody } from './transform';
 import type { CanonicalBody } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────

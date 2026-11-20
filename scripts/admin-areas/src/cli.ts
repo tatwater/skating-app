@@ -10,7 +10,8 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
-import { largestRingSize, MAX_RING_VERTICES, transformFeatures } from './transform';
+import { largestRingSize, MAX_RING_VERTICES } from '@skating/core/polygonStorage';
+import { transformFeatures } from './transform';
 import type { OsmBoundaryFeature } from './types';
 
 /** RFC 8142 record separator (U+001E) — geojsonseq may prefix each line with it. */

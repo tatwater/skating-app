@@ -642,6 +642,9 @@ importers:
       '@turf/point-on-feature':
         specifier: ^7.4.0
         version: 7.4.0
+      '@turf/simplify':
+        specifier: ^7.4.0
+        version: 7.4.0
       '@turf/truncate':
         specifier: ^7.4.0
         version: 7.4.0
@@ -850,9 +853,6 @@ importers:
       '@skating/run-log':
         specifier: workspace:*
         version: link:../run-log
-      '@turf/simplify':
-        specifier: ^7.4.0
-        version: 7.4.0
       effect:
         specifier: 4.1.4
         version: 4.1.4
