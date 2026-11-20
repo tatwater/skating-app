@@ -23,11 +23,12 @@
  * claim a historical fetch happened this afternoon.
  */
 
+import type { RunReceipt } from './runReceipt';
+
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { convexRun } from './convexRun';
 import { resolveDeployment } from './deployment';
-import type { RunReceipt } from './runReceipt';
 import { writeRunReceipt } from './runReceipt';
 
 export function recordFromCommandLine(args: string[]): number {

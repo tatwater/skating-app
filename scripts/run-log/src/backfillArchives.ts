@@ -14,15 +14,16 @@
  * Skips receipts already present in the recent run history by `(kind, label, startedAt)`.
  */
 
+import type { ExtractManifest } from './provenance';
+import type { RunCount, RunStage } from './types';
+
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { convexRun } from './convexRun';
 import { resolveDeployment } from './deployment';
-import type { ExtractManifest } from './provenance';
 import { extractStage } from './provenance';
 import { writeRunReceipt } from './runReceipt';
-import type { RunCount, RunStage } from './types';
 
 interface Archive {
   label: string;

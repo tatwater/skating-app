@@ -85,10 +85,10 @@ import { parseImportRecord, writeImportRecord } from './importRecords';
 ```
 
 Biome 2.6.8 supports `useImportType` with `style: "separatedType"` and type-first organizer groups.
-Prototype that configuration on the pilot only. Keep bare imports unsorted; they can split
-organizer groups. Check that both rules agree after formatting, and verify type checking and
-the affected runtime workflow before expanding it. No repo-wide rewrite or style enforcement
-change in this planning pass. Leave apps and generated files alone.
+The pilot override applies only to `scripts/run-log`. It keeps bare imports unsorted; they can
+split organizer groups. Check that both rules agree after formatting, and verify type checking
+and the affected runtime workflow before expanding it. No repo-wide rewrite or style enforcement
+change. Leave apps and generated files alone.
 
 ## Coverage and runtime sign-off
 

@@ -1,6 +1,7 @@
+import type { DeploymentTarget } from './deployment';
+
 import process from 'node:process';
 import { describe, expect, it, vi } from 'vitest';
-import type { DeploymentTarget } from './deployment';
 import { DRY_RUN_NOTE, MAX_FORWARDED_FAILURES, RunLogger } from './runLogger';
 
 const DEV: DeploymentTarget = { label: 'dev:agile-bee-397', isDev: true, isProd: false };

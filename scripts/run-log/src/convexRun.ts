@@ -5,9 +5,11 @@
  * `packages/convex/.env.local`, which is why every loader shells out rather than holding a client.
  */
 
+import type { RunAs } from './runAs';
+
 import { execFileSync } from 'node:child_process';
 import { parseConvexOutput } from './parseOutput';
-import { identityArgs, type RunAs } from './runAs';
+import { identityArgs } from './runAs';
 
 /**
  * Call a Convex function and parse its return value.
