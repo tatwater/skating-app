@@ -142,3 +142,18 @@ test('leaves the previous file intact if publication fails', async () => {
   await expect(downloadArchive({ url, destination: dir, userAgent, fetchImpl })).rejects.toThrow();
   await assertPublished('previous');
 });
+
+test('passes through an ordinary CLI download failure and removes its signal handlers', async () => {
+  const interruptListeners = process.listenerCount('SIGINT');
+  const terminateListeners = process.listenerCount('SIGTERM');
+  const fetchImpl: typeof fetch = async () => {
+    throw 'fixture source unavailable';
+  };
+
+  await expect(downloadArchiveForCli({ url, destination, userAgent, fetchImpl })).rejects.toThrow(
+    'fixture source unavailable',
+  );
+  expect(process.listenerCount('SIGINT')).toBe(interruptListeners);
+  expect(process.listenerCount('SIGTERM')).toBe(terminateListeners);
+  await assertPublished('previous');
+});

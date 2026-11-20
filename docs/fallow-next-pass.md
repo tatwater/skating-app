@@ -193,3 +193,18 @@ Before/after command smoke checks used only a local subprocess stub and syntheti
 Receipt traces and diagnostics matched for live and historical records and an injected finish
 failure. Backfill traces and exit behavior matched for dry run, writes, non-dev refusal, and an
 injected restamp failure. Real archive files and shared Convex deployments were not used.
+
+## `scripts/archive-io`
+
+No production refactor. No default clone groups, check issues, or production cycles. Fallow
+flags `transfer` on estimated coverage only (14 cyclomatic / 12 cognitive); the finding does
+not appear with measured coverage, before or after. Keeping the streaming loop and writer
+cleanup together makes the interruption and close ordering visible.
+
+11 tests, up from 9. Branch coverage rose from 93.75% to 100%; statements, lines, and functions
+remain at 100%. The loopback HTTP test verifies that both an interrupted transfer and a size
+mismatch leave the published archive alone and remove staging. A fresh request starts at byte
+zero, publishes the full replacement, and returns its SHA-256. A separate fixture checks that
+ordinary CLI errors retain their diagnostic and release the signal handlers. No source hosts
+or shared storage were contacted. Vitest reported 0.75 s before and 1.28 s after in separate
+runs; these are wall-clock samples, not a controlled benchmark.
