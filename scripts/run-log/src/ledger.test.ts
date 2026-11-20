@@ -44,6 +44,14 @@ describe('the incident this exists to prevent', () => {
     expect(() => expectAcceptance(ledger.report(), 0.9)).toThrow(/141034078/);
   });
 
+  it('still diagnoses a rejection when a caller withholds raw samples', () => {
+    const ledger = new DropLedger('nhdId');
+    ledger.record(rejected('malformed'));
+    const report = ledger.report();
+    expect(report.samples.malformed).toEqual(['']);
+    expect(() => expectAcceptance({ ...report, samples: {} }, 1)).toThrow(/malformed=1\. Either/);
+  });
+
   it('passes silently when the rule actually fits the data', () => {
     const ledger = new DropLedger('nhdId');
     for (let i = 0; i < 100; i++)
@@ -104,6 +112,7 @@ describe('DropLedger bookkeeping', () => {
     const report = new DropLedger('x').report();
     expect(report.acceptanceRate).toBe(1);
     expect(() => expectAcceptance(report, 0.99)).not.toThrow();
+    expect(formatLedger(report)).toBe('x: 0/0 accepted');
   });
 
   it('flattens into run-row counts, omitting reasons that never fired', () => {

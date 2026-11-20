@@ -1,3 +1,5 @@
+export type { ImportRunKind, RunStage } from './types';
+
 export { batchNdjson } from './batchNdjson';
 export { convexRun } from './convexRun';
 export { resolveDeployment } from './deployment';
@@ -25,4 +27,3 @@ export {
 } from './provenance';
 export { identityArgs, type RunAs } from './runAs';
 export { DRY_RUN_NOTE, RunLogger } from './runLogger';
-export type { ImportRunKind, RunStage } from './types';

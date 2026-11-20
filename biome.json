@@ -56,6 +56,32 @@
       }
     },
     {
+      "includes": ["scripts/run-log/**"],
+      "assist": {
+        "actions": {
+          "source": {
+            "organizeImports": {
+              "level": "on",
+              "options": {
+                "groups": [{ "type": true }, ":BLANK_LINE:", { "type": false }],
+                "sortBareImports": false
+              }
+            }
+          }
+        }
+      },
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": {
+              "level": "error",
+              "options": { "style": "separatedType" }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.svg"],
       "linter": {
         "rules": {

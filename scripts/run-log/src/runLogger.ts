@@ -12,9 +12,10 @@
  *    laptop) shows up in the admin list as a run stuck in `running`, naming what it was doing.
  */
 
-import process from 'node:process';
 import type { DeploymentTarget } from './deployment';
 import type { ImportRunCoverage, ImportRunKind, RunCount, RunFailure, RunStage } from './types';
+
+import process from 'node:process';
 
 /**
  * How many itemized failures a loader forwards.

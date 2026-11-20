@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import type { DeploymentTarget } from './deployment';
+
+import process from 'node:process';
+import { describe, expect, it, vi } from 'vitest';
 import { DRY_RUN_NOTE, MAX_FORWARDED_FAILURES, RunLogger } from './runLogger';
 
 const DEV: DeploymentTarget = { label: 'dev:agile-bee-397', isDev: true, isProd: false };
@@ -145,6 +147,31 @@ describe('RunLogger', () => {
       status: 'failed',
       error: 'batch 7 blew the read cap',
     });
+  });
+
+  it('reports a non-Error failure and warns on stderr if it cannot save that failure', () => {
+    const originalFailure = 'loader reported a bad source';
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      const rec = recorder();
+      const logger = makeLogger(rec, {
+        warn: undefined,
+        call: <T>(functionName: string, args: unknown): T => {
+          const result = rec.call<T>(functionName, args);
+          if (functionName === 'importRuns:finish') throw 'fixture write failure';
+          return result;
+        },
+      });
+      logger.start();
+      logger.failed(originalFailure);
+
+      expect(rec.calls.at(-1)?.args).toMatchObject({ status: 'failed', error: originalFailure });
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        '[run-log] finish failed (the import itself is unaffected): fixture write failure\n',
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('closes once — a succeed after a failure cannot overwrite the verdict', () => {
