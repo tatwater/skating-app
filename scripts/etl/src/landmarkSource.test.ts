@@ -89,6 +89,42 @@ describe('osmLandmarkKind', () => {
       'marina',
     );
   });
+
+  it.each([
+    [{ natural: 'bay', tourism: 'hotel' }, 'Polygon'],
+    [{ waterway: 'canal', 'bridge:name': 'Old Bridge' }, 'Point'],
+    [{ place: 'hamlet', amenity: 'pub' }, 'MultiPolygon'],
+  ] as const)('rejects %o on %s instead of falling through to a later rule', (tags, geometry) => {
+    expect(osmLandmarkKind(tags, geometry)).toBeNull();
+  });
+
+  it.each([
+    [{ natural: 'cape', waterway: 'dam' }, 'point'],
+    [{ waterway: 'dam', man_made: 'bridge' }, 'dam'],
+    [{ waterway: 'canal', 'bridge:name': 'Old Bridge' }, 'waterway'],
+    [{ man_made: 'lighthouse', 'bridge:name': 'Old Bridge' }, 'lighthouse'],
+    [{ 'bridge:name': null, leisure: 'marina' }, 'bridge'],
+    [{ leisure: 'marina', natural: 'beach' }, 'marina'],
+  ] as const)('keeps the earlier kind for %o', (tags, kind) => {
+    expect(osmLandmarkKind(tags, 'LineString')).toEqual({ kind });
+  });
+
+  it('prefers lodging over food and food over the rock fallback', () => {
+    const tags = { tourism: 'hotel', amenity: 'pub', natural: 'rock' };
+    expect(osmLandmarkKind(tags, 'Point')).toEqual({
+      kind: 'establishment',
+      establishment: 'lodging',
+    });
+    expect(osmLandmarkKind({ amenity: 'pub', natural: 'rock' }, 'Point')).toEqual({
+      kind: 'establishment',
+      establishment: 'food',
+    });
+  });
+
+  it('keeps the distinction between string-coerced tags and the exact marina tag', () => {
+    expect(osmLandmarkKind({ place: ['island'] }, 'Point')).toEqual({ kind: 'island' });
+    expect(osmLandmarkKind({ leisure: ['marina'] }, 'Point')).toBeNull();
+  });
 });
 
 describe('parseOsmLandmark', () => {

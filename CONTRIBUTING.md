@@ -109,6 +109,27 @@ components. The remaining recommended lint checks still run.
 | `@maplibre/maplibre-gl-style-spec` (mobile) | Native MapLibre `11.5.1` depends on `26.4.4` exactly. Web uses a newer style spec; aligning mobile to it broke type-checking. |
 | `@babel/core` (mobile) | Expo SDK 58's transform stack requires Babel 7, even without the old Tamagui plugin. Revisit Babel 8 when Expo supports it. |
 
+### Fallow (optional, local only)
+
+Run Fallow from the repo root. `pnpm fallow` fetches a pinned CLI on demand rather than adding it
+to the workspace install. It does not run in CI, in the usual lint or test commands, or in a hook.
+
+```bash
+pnpm fallow list --workspaces
+pnpm fallow list scripts/run-log --entry-points
+pnpm fallow -w scripts/run-log --format json --output-file .fallow/run-log.json
+```
+
+Review one workspace at a time. `-w` filters the report, not the dependency graph: web and mobile
+still count as consumers of shared code, but their own findings aren't part of this rollout.
+Install the workspace dependencies before relying on import or dependency findings. For hand-run
+scripts, check the README and launchers against the detected entry points before treating code as
+unused. Fallow analyzes JS/TS, not the shell or Python implementations in `scripts/`.
+
+The combined JSON report is advisory: findings alone don't make it exit nonzero. Focused commands
+can exit nonzero on findings, but nothing uses that status to block a commit or merge. See the
+[first non-app review](./docs/fallow-rollout.md) for the grouped commands and triage decisions.
+
 ### Running the apps
 
 Both apps talk to a **Convex** deployment and a **Clerk** instance, and draw the map from

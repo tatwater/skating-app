@@ -36,17 +36,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import {
-  createReadStream,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   type ClassBasis,
@@ -61,6 +53,7 @@ import {
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { osmExportArgs, osmFilterArgs } from './extract';
+import { readGeoJsonSequence } from './geojsonSequence';
 import { NHD_SOURCES, nhdArchiveKey, normalizeNhdId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,9 +61,6 @@ const SCRATCH = join(HERE, '..', '.scratch', 'classify');
 const OSM_DIR = join(HERE, '..', '.raw');
 const NHD_DIR = join(HERE, '..', '.raw-nhd');
 const THREE_DHP_DIR = join(HERE, '..', '.raw-3dhp', 'waterbody');
-
-/** RFC 8142 record separator (U+001E), which a geojsonseq line may be prefixed with. */
-const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 
 /** The five extracts, by the directory name `fetchExtract` writes. */
 const OSM_STATES = ['me', 'nh', 'vt', 'ma', 'ny'] as const;
@@ -169,6 +159,11 @@ function osmFeatures(state: string, refresh: boolean): string {
   return out;
 }
 
+interface OsmClassificationFeature {
+  properties: OsmTagBag & { '@type'?: string; '@id'?: string | number; name?: string };
+  geometry: Polygon | MultiPolygon | null;
+}
+
 async function runOsm(refresh: boolean): Promise<Funnel> {
   const funnel = new Funnel('OSM');
   // The five extracts overlap at every border, so a body would otherwise be counted twice — and the
@@ -178,31 +173,9 @@ async function runOsm(refresh: boolean): Promise<Funnel> {
   for (const state of OSM_STATES) {
     const file = osmFeatures(state, refresh);
     log(`${state}: classifying…`);
-    const reader = createInterface({
-      input: createReadStream(file, 'utf8'),
-      crlfDelay: Infinity,
-    });
-    for await (const raw of reader) {
-      // RFC 8142 allows a record separator before each line. `osmium` is invoked with
-      // `print_record_separator=false`, but a stray one would fail `JSON.parse` and silently skip a
-      // whole state, so it is stripped by hand — as a string, because a control character inside a
-      // regular expression is exactly as unreadable as the lint rule says it is.
-      const trimmed = raw.trim();
-      const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
-      if (line.length === 0) continue;
-      let feature: {
-        properties: OsmTagBag & {
-          '@type'?: string;
-          '@id'?: string | number;
-          name?: string;
-        };
-        geometry: Polygon | MultiPolygon | null;
-      };
-      try {
-        feature = JSON.parse(line);
-      } catch {
-        continue;
-      }
+    for await (const record of readGeoJsonSequence<OsmClassificationFeature>(file)) {
+      if (!record.ok) continue;
+      const { feature } = record;
       const props = feature.properties;
       const osmType = props['@type'];
       const osmId = props['@id'];

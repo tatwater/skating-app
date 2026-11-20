@@ -51,44 +51,81 @@ function tagIn(tags: Tags, table: Readonly<Record<string, readonly string[]>>): 
   return Object.entries(table).some(([key, values]) => values.includes(String(tags[key])));
 }
 
+interface OsmLandmarkTags {
+  place: string;
+  natural: string;
+  waterway: string;
+  manMade: string;
+  raw: Tags;
+}
+
+interface LandmarkClassification {
+  kind: LandmarkKind;
+  establishment?: EstablishmentClass;
+}
+
+interface OsmLandmarkRule {
+  matches: (tags: OsmLandmarkTags) => boolean;
+  result: LandmarkClassification;
+  geometries?: readonly Geometry['type'][];
+}
+
 /**
- * What an OSM feature's tags make it, or `null` — **first match wins, in this order**, because one
- * feature often carries two: an island with a hotel on it (`place=island` + `tourism=hotel`) is an
- * island, a dam with a road over it is a dam, a marina's restaurant is a marina.
- *
- * `natural=bay` counts only as a **node**: a bay polygon is a sub-area's outline (A07a imported every
- * one with a parent), and the same bay's node is the landmark. The caller passes the geometry type
- * for that rule and for the settlement one (a `place=town` polygon is a boundary, not a point).
+ * First tag match wins: an island with a hotel is an island, a dam with a road is a dam, and a
+ * marina's restaurant is a marina. Geometry can reject the winning kind, but never let a lower
+ * rule win. A bay polygon is a sub-area outline, for example, even if it's tagged as a resort.
  */
+const OSM_LANDMARK_RULES: readonly OsmLandmarkRule[] = [
+  { matches: ({ place }) => ['island', 'islet'].includes(place), result: { kind: 'island' } },
+  { matches: ({ natural }) => ['cape', 'peninsula'].includes(natural), result: { kind: 'point' } },
+  { matches: ({ natural }) => natural === 'bay', result: { kind: 'bay' }, geometries: ['Point'] },
+  { matches: ({ natural }) => natural === 'strait', result: { kind: 'narrows' } },
+  { matches: ({ waterway }) => waterway === 'dam', result: { kind: 'dam' } },
+  {
+    matches: ({ waterway }) => ['river', 'stream', 'canal'].includes(waterway),
+    result: { kind: 'waterway' },
+    geometries: ['LineString', 'MultiLineString'],
+  },
+  { matches: ({ manMade }) => manMade === 'lighthouse', result: { kind: 'lighthouse' } },
+  {
+    matches: ({ manMade, raw }) => manMade === 'bridge' || raw['bridge:name'] !== undefined,
+    result: { kind: 'bridge' },
+  },
+  { matches: ({ raw }) => raw.leisure === 'marina', result: { kind: 'marina' } },
+  { matches: ({ natural }) => natural === 'beach', result: { kind: 'beach' } },
+  // A town boundary is not a settlement point.
+  {
+    matches: ({ place }) => ['town', 'village', 'hamlet'].includes(place),
+    result: { kind: 'settlement' },
+    geometries: ['Point'],
+  },
+  {
+    matches: ({ raw }) => tagIn(raw, LODGING),
+    result: { kind: 'establishment', establishment: 'lodging' },
+  },
+  {
+    matches: ({ raw }) => tagIn(raw, FOOD),
+    result: { kind: 'establishment', establishment: 'food' },
+  },
+  { matches: ({ natural }) => ['rock', 'stone'].includes(natural), result: { kind: 'other' } },
+];
+
+/** Classify a feature's tags, or return `null` if there is no eligible landmark kind. */
 export function osmLandmarkKind(
   tags: Tags,
   geometry: Geometry['type'],
-): { kind: LandmarkKind; establishment?: EstablishmentClass } | null {
-  const isPoint = geometry === 'Point';
-  const place = String(tags.place ?? '');
-  const natural = String(tags.natural ?? '');
-  const waterway = String(tags.waterway ?? '');
-  const manMade = String(tags.man_made ?? '');
-
-  if (place === 'island' || place === 'islet') return { kind: 'island' };
-  if (natural === 'cape' || natural === 'peninsula') return { kind: 'point' };
-  if (natural === 'bay') return isPoint ? { kind: 'bay' } : null;
-  if (natural === 'strait') return { kind: 'narrows' };
-  if (waterway === 'dam') return { kind: 'dam' };
-  if (['river', 'stream', 'canal'].includes(waterway)) {
-    return geometry === 'LineString' || geometry === 'MultiLineString'
-      ? { kind: 'waterway' }
-      : null;
-  }
-  if (manMade === 'lighthouse') return { kind: 'lighthouse' };
-  if (manMade === 'bridge' || tags['bridge:name'] !== undefined) return { kind: 'bridge' };
-  if (tags.leisure === 'marina') return { kind: 'marina' };
-  if (natural === 'beach') return { kind: 'beach' };
-  if (['town', 'village', 'hamlet'].includes(place)) return isPoint ? { kind: 'settlement' } : null;
-  if (tagIn(tags, LODGING)) return { kind: 'establishment', establishment: 'lodging' };
-  if (tagIn(tags, FOOD)) return { kind: 'establishment', establishment: 'food' };
-  if (natural === 'rock' || natural === 'stone') return { kind: 'other' };
-  return null;
+): LandmarkClassification | null {
+  const landmarkTags: OsmLandmarkTags = {
+    place: String(tags.place ?? ''),
+    natural: String(tags.natural ?? ''),
+    waterway: String(tags.waterway ?? ''),
+    manMade: String(tags.man_made ?? ''),
+    raw: tags,
+  };
+  const rule = OSM_LANDMARK_RULES.find((candidate) => candidate.matches(landmarkTags));
+  if (!rule) return null;
+  if (rule.geometries && !rule.geometries.includes(geometry)) return null;
+  return { ...rule.result };
 }
 
 /**

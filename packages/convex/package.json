@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@types/geojson": "^7946.0.16",
     "@vitest/coverage-v8": "^5.1.0",
     "convex-test": "0.0.72",
     "fast-check": "^4.10.2",

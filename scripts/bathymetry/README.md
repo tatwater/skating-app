@@ -176,6 +176,8 @@ for Vermont, and a probe is thirty seconds.
 
 ## 2. Fetch — fill the archive
 
+Use `snapshot`, not `fetch`: `pnpm fetch` is a package-store command, not this pipeline.
+
 ```bash
 pnpm --filter @skating/bathymetry snapshot                     # every source lacking a snapshot
 pnpm --filter @skating/bathymetry snapshot nh-granit-contours  # one

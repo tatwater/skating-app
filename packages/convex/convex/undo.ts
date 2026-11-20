@@ -12,7 +12,29 @@ import { requireCapability } from './lib/auth';
 import { MODERATION_TARGET_TYPES } from './lib/enums';
 import { runUndo, TOAST_UNDO_MS, type UndoState, undoState } from './lib/undo';
 import { UNDO_POLICY, undoCapability } from './lib/undoPolicy';
+import type { ModerationWriters } from './lib/undoTypes';
 import { literals } from './lib/validators';
+import {
+  banImpl,
+  revertPostVerdict,
+  setBountyLimitImpl,
+  setContentStatus,
+  setPostingPermissionImpl,
+  suspendImpl,
+  unbanImpl,
+} from './moderation';
+
+// History reads undo eligibility from the engine. Bind the inverse writes here so the engine
+// doesn't import moderation in return.
+const moderationWriters: ModerationWriters = {
+  banImpl,
+  revertPostVerdict,
+  setBountyLimitImpl,
+  setContentStatus,
+  setPostingPermissionImpl,
+  suspendImpl,
+  unbanImpl,
+};
 
 export const run = mutation({
   args: { actionId: v.id('moderationActions'), reason: v.optional(v.string()) },
@@ -23,7 +45,7 @@ export const run = mutation({
       ctx,
       undoCapability(UNDO_POLICY[row.action], row.targetType),
     );
-    await runUndo(ctx, actor, actionId, reason);
+    await runUndo(ctx, actor, actionId, reason, moderationWriters);
   },
 });
 

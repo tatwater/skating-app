@@ -29,11 +29,24 @@ export interface UndoRead {
   take<D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]>;
 }
 
+/** Inverse writes reuse the moderation mutations' helpers. Only the undo mutation binds them. */
+export type ModerationWriters = Pick<
+  typeof import('../moderation'),
+  | 'banImpl'
+  | 'revertPostVerdict'
+  | 'setBountyLimitImpl'
+  | 'setContentStatus'
+  | 'setPostingPermissionImpl'
+  | 'suspendImpl'
+  | 'unbanImpl'
+>;
+
 export interface UndoCall {
   ctx: MutationCtx;
   actor: Doc<'profiles'>;
   row: Doc<'moderationActions'>;
   reason: string;
+  moderation: ModerationWriters;
 }
 
 /**

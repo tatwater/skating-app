@@ -31,7 +31,6 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
-import { WIND_ARCHIVE_MIN_FETCH_M } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { Effect } from 'effect';
 import {
@@ -46,17 +45,12 @@ import {
   WTK_LICENSE,
   WTK_MEASURED_LATENCY_MS,
 } from './archive';
-import { gridKey, pointForGridKey, sleep, WTK_REQUEST_DELAY_MS, WTK_YEARS, wtkUrl } from './wtk';
+import { collectWindTargets } from './targets';
+import { pointForGridKey, sleep, WTK_REQUEST_DELAY_MS, WTK_YEARS, wtkUrl } from './wtk';
 import { fetchCellYear } from './wtkFetch';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = resolve(HERE, '../.raw');
-
-interface Target {
-  waterBodyId: string;
-  lat: number;
-  lng: number;
-}
 
 /** Responses between manifest writes. A killed run should lose one cell's bookkeeping, not a day's. */
 const CHECKPOINT_EVERY = 25;
@@ -127,48 +121,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // ── Qualify, and fold onto the grid ────────────────────────────────────────
-  //
-  // **The dedupe is the affordability argument.** A rose is a property of a 2 km cell, not of a
-  // lake, and the API snaps a requested point to its own grid anyway — so two lakes in one cell
-  // would otherwise cost two requests for byte-identical data.
-  const cells = new Map<string, Target[]>();
-  let scanned = 0;
-  let belowFloor = 0;
-  let cursor: string | undefined;
-  let isDone = false;
-  while (!isDone) {
-    const page = convexRun<{
-      targets: Target[];
-      scanned: number;
-      belowFloor?: number;
-      cursor: string;
-      isDone: boolean;
-    }>('waterBodies:listNeedingWindRose', {
-      ...(cursor ? { cursor } : {}),
-      // The archive is keyed on the cell, so "which bodies still lack a rose" is the wrong question
-      // for a fetch — a cell already archived is skipped by `missingResponses` regardless.
-      refresh: true,
-      // **The same constant `derive` scopes itself with**, never a flag. See
-      // `WIND_ARCHIVE_MIN_FETCH_M`: a fetch and a derive that disagree about scope produce a derive
-      // that refuses on missing cells, or a coverage figure quoted over whatever happened to be
-      // archived.
-      minFetchM: WIND_ARCHIVE_MIN_FETCH_M,
-      ...(importFloorOnly ? { importFloorOnly: true } : {}),
-    });
-    cursor = page.cursor;
-    isDone = page.isDone;
-    scanned += page.scanned;
-    belowFloor += page.belowFloor ?? 0;
-    for (const t of page.targets) {
-      const key = gridKey(t);
-      const bucket = cells.get(key);
-      if (bucket) bucket.push(t);
-      else cells.set(key, [t]);
-    }
-  }
-
-  const bodies = [...cells.values()].reduce((n, list) => n + list.length, 0);
+  // Bodies sharing a grid cell would otherwise cost separate requests for identical data.
+  const { cells, scanned, belowFloor, bodies } = collectWindTargets(importFloorOnly);
   const have = refresh ? new Set<string>() : archivedPaths();
   let wanted = missingResponses([...cells.keys()], WTK_YEARS, have);
   if (Number.isFinite(limit) && limit > 0) wanted = wanted.slice(0, limit);

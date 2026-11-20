@@ -16,18 +16,11 @@
 
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
-import {
-  banImpl,
-  type ContentTargetType,
-  type PersonWriteResult,
-  type PostCascade,
-  type PostingPermission,
-  revertPostVerdict,
-  setBountyLimitImpl,
-  setContentStatus,
-  setPostingPermissionImpl,
-  suspendImpl,
-  unbanImpl,
+import type {
+  ContentTargetType,
+  PersonWriteResult,
+  PostCascade,
+  PostingPermission,
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
@@ -73,14 +66,14 @@ function cascadeOf(row: Doc<'moderationActions'>): PostCascade[] | undefined {
 
 const takeContentBackTo =
   (status: ContentStatus) =>
-  async ({ ctx, actor, row, reason }: UndoCall) => {
+  async ({ ctx, actor, row, reason, moderation }: UndoCall) => {
     // A Post whose row lists its members goes back with each of them to its own prior status,
     // whatever the Post returns to (founder call, 2026-11-13).
     if (cascadeOf(row) !== undefined) {
-      await revertPostVerdict(ctx, actor, { row, reason });
+      await moderation.revertPostVerdict(ctx, actor, { row, reason });
       return;
     }
-    await setContentStatus(ctx, actor, {
+    await moderation.setContentStatus(ctx, actor, {
       targetType: row.targetType as ContentTargetType,
       targetId: row.targetId,
       status,
@@ -237,6 +230,7 @@ function assertChanged(result: PersonWriteResult): void {
 async function restoreStatus(call: UndoCall, prev: StatusPrev): Promise<void> {
   const userId = call.row.targetId as Id<'profiles'>;
   const reason = call.reason;
+  const { banImpl, suspendImpl, unbanImpl } = call.moderation;
   const write = statusWrite(prev);
   // The prior terms whole — their reason too, kept on file; the undo's own reason is its audit row's.
   // A row from before `prev` recorded one has none to put back: `null`, "not recorded", as the page
@@ -335,16 +329,20 @@ const undoPostingPermission: UndoHandler = {
           allowed: prev.allowed as boolean,
         };
   },
-  run: async ({ ctx, actor, row, reason }) => {
+  run: async ({ ctx, actor, row, reason, moderation }) => {
     const { prev, permission } = meta(row);
     const userId = row.targetId as Id<'profiles'>;
     if (permission === 'bounties') {
       assertChanged(
-        await setBountyLimitImpl(ctx, actor, { userId, limit: prev.limit ?? undefined, reason }),
+        await moderation.setBountyLimitImpl(ctx, actor, {
+          userId,
+          limit: prev.limit ?? undefined,
+          reason,
+        }),
       );
     } else {
       assertChanged(
-        await setPostingPermissionImpl(ctx, actor, {
+        await moderation.setPostingPermissionImpl(ctx, actor, {
           userId,
           permission: permission as PostingPermission,
           allowed: prev.allowed as boolean,

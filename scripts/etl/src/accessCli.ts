@@ -34,10 +34,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   type ApproachLeg,
@@ -60,6 +59,7 @@ import {
   osmTrailExportArgs,
   osmTrailFilterArgs,
 } from './extract';
+import { readGeoJsonSequence } from './geojsonSequence';
 import { createApproachRouter } from './orsApproach';
 import { createTrailGraphBuilder, pairByTrailConnectivity } from './trailGraph';
 
@@ -69,9 +69,6 @@ const SCRATCH = join(ROOT, '.scratch', 'access');
 const ROUTE_CACHE = join(SCRATCH, 'ors-cache.json');
 
 const ALL_STATES = ['vt', 'nh', 'me', 'ma', 'ny'] as const;
-
-/** RFC 8142 record separator (U+001E) — `geojsonseq` may prefix each line with it. */
-const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 
 function log(message: string): void {
   process.stderr.write(`[access] ${message}\n`);
@@ -158,6 +155,13 @@ function trailFile(state: string, refresh: boolean): string {
   return out;
 }
 
+interface OsmTrailFeature {
+  // `osmium export -a type,id` writes these as `@type` and `@id`. Without the id, cross-border
+  // deduplication would silently fold unrelated ways together.
+  properties?: { '@type'?: string; '@id'?: string | number };
+  geometry?: { type?: string; coordinates?: number[][] };
+}
+
 /**
  * Stream every state's trail lines into one graph.
  *
@@ -174,28 +178,12 @@ async function buildTrails(states: readonly string[], refresh: boolean) {
   for (const state of states) {
     const file = trailFile(state, refresh);
     let kept = 0;
-    const reader = createInterface({
-      input: createReadStream(file, 'utf8'),
-      crlfDelay: Infinity,
-    });
-    for await (const raw of reader) {
-      const trimmed = raw.trim();
-      const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
-      if (line.length === 0) continue;
-      let feature: {
-        // `-a type,id` writes these as `@type` and `@id`, which is what `parseAccessFeature` reads
-        // too. Getting it wrong is silent and total: every way lands under the id `way/undefined`,
-        // the dedupe folds the whole state into one edge, and the pass reports a graph of two ways
-        // and 40,838 "cross-border duplicates" without erroring once.
-        properties?: { '@type'?: string; '@id'?: string | number };
-        geometry?: { type?: string; coordinates?: number[][] };
-      };
-      try {
-        feature = JSON.parse(line) as typeof feature;
-      } catch {
+    for await (const record of readGeoJsonSequence<OsmTrailFeature>(file)) {
+      if (!record.ok) {
         refusedLines++;
         continue;
       }
+      const { feature } = record;
       const coordinates = feature.geometry?.coordinates;
       if (feature.geometry?.type !== 'LineString' || !coordinates) continue;
       const rawId = feature.properties?.['@id'];
@@ -231,22 +219,12 @@ async function readAccessFeatures(states: readonly string[], refresh: boolean) {
   for (const state of states) {
     const file = accessFeatureFile(state, refresh);
     let kept = 0;
-    const reader = createInterface({
-      input: createReadStream(file, 'utf8'),
-      crlfDelay: Infinity,
-    });
-    for await (const raw of reader) {
-      const trimmed = raw.trim();
-      const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
-      if (line.length === 0) continue;
-      let feature: OsmAccessFeature;
-      try {
-        feature = JSON.parse(line) as OsmAccessFeature;
-      } catch {
+    for await (const record of readGeoJsonSequence<OsmAccessFeature>(file)) {
+      if (!record.ok) {
         refusedLines++;
         continue;
       }
-      const parsed = parseAccessFeature(feature);
+      const parsed = parseAccessFeature(record.feature);
       if (!parsed || seen.has(parsed.externalId)) continue;
       seen.add(parsed.externalId);
       features.push(parsed);
