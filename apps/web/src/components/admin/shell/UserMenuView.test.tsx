@@ -191,8 +191,13 @@ describe('the keyboard', () => {
     render(<Menu onSignOut={onSignOut} />);
     trigger().focus();
     await userEvent.keyboard('{ArrowDown}');
-    await waitFor(() => expect(menu()).toBeInTheDocument());
-    await userEvent.keyboard('{End}{Enter}');
-    expect(onSignOut).toHaveBeenCalledOnce();
+    // The menu is in the page a beat before focus moves into it: wait for the focus itself, or
+    // End lands on the trigger and Enter closes the menu (the flake this test had).
+    await waitFor(() => expect(menu()).toContainElement(document.activeElement as HTMLElement));
+    await userEvent.keyboard('{End}');
+    const signOut = within(menu()).getByRole('menuitem', { name: 'Sign out' });
+    await waitFor(() => expect(signOut).toHaveAttribute('data-highlighted'));
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(onSignOut).toHaveBeenCalledOnce());
   });
 });
