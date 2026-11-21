@@ -62,7 +62,7 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — *open, for the founder's call:* pinning an alert as official from its flag has no verb in the Inbox (board 2.6 draws *Unpin* and *Retract*); the facts are in B01-5, *What the build found*, under *Pin as official* |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half in B01-5a, so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
@@ -854,7 +854,8 @@ Asked by the design (*The Inbox (B01-5, the design)*, its forks), answered the s
 
 Made on the design's engineering forks; the founder may overturn any of them.
 
-1. **Six PRs, the seed first** (fork 1), as the design slices them.
+1. **Six PRs, the seed first** (fork 1), as the design slices them. *(Superseded 2026-11-21 by the
+   founder's call for fewer PRs, below: the seed rides with the server.)*
 2. **The stored items are accepted** (`inboxItems`, `inboxItemMembers`, `inboxCounts`, one writer,
    its guard, the drift repair, the backfill) — with every backfill and repair pass bounded on bytes as
    well as rows, a pass that can't advance recording it and moving on rather than wedging, and the one
@@ -874,6 +875,42 @@ Made on the design's engineering forks; the founder may overturn any of them.
 7. **Undoing the admission of brand-new water shelves the body** as `not_in_campaign` (2026-11-21): the
    create's inverse is a soft removal (§11), never a delete — the body the admission inserted goes back
    to what the corpus doesn't keep, its id and history kept.
+
+### The founder's calls of 2026-11-21
+
+Asked by the governor as the Inbox's first PR was cut. **The calls:**
+
+1. **Fewer PRs.** "My preference is for fewer PRs so we spend less on Greptile requests, but that
+   preference breaks down if the seven-PR strategy is light enough (and you're confident/tested
+   enough) that we get 5/5 first time on all seven, vs going round and round with the two PRs. I'll
+   leave it to you." The governor's slicing: **B01-5a**, the Inbox's server and its seed; **B01-5b**,
+   the Inbox's web so far — the kit additions, the frame, the embedded map, the Access and flag
+   handlers, and `/admin/flags` retired; then the remaining slices as designed (requests, places,
+   drawn bodies and telling askers; merge and unmerge; photos; support), bundled where they review as
+   one unit. The design's *The slices* and *The phase branch for this wave* say how each is cut.
+2. **Pin as official is offered on the Inbox's alert item** (board 2.6), so retiring the old flags
+   page loses nothing: "Sure." Its server half is built with B01-5a; §1's row points at it.
+3. **The board-versus-kit differences go with the governor's suggestions for now**, to be discussed
+   later: "I have no idea where you laid these out so I'm just going to have to go with your
+   suggestions I think and we can discuss them later." The governor's rulings, each reversible at the
+   founder's look:
+
+| Difference | The boards draw | The build draws (ruled) | Why |
+|---|---|---|---|
+| A byline's name | a white name and a mono dotted handle | the kit's: a gray name, a plain handle | changing it moves every console page |
+| The life strip's dashed line | 1 px (board 2.6) | the kit's 2 px (from People 8.3) | the kit stays |
+| The candidate outline on Inbox maps | ice | neutral, bright and dashed | the console map's rule is no accent strokes |
+| The skate track | white | the console's gray | changing it recolors the Body console's tracks |
+| The map scale bar | KM and M (the kit's) | **miles and feet** — a change, done in B01-5b's kit pass | D25: stored metric, shown imperial; the kit's KM/M contradicts a decision |
+| Five values drawn without tokens: the `.08em` tracking, an 11 px sans step, the 204 \| 384 px columns, a 36 px pane head, the 26 px display title | as drawn | the build's values stay; no token minted | until the founder has seen them |
+
+### A governor's ruling the founder has been told of (2026-11-21)
+
+Not overturned, so recorded as standing:
+
+- **The Body console's ruling lever closes a body's access reports, including any the ruling staffer
+  filed, with no own-filing check**; and **a ruling's undo skips the undoer's own report, leaving it
+  dismissed.**
 
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
@@ -6953,7 +6990,15 @@ After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspe
 
 #### The build plan
 
-##### The slices (six, the governor's ruling)
+##### The slices (designed as six; shipped as the founder's call of 2026-11-21 has it)
+
+**As shipped** (§7, *The founder's calls of 2026-11-21*: fewer PRs, Greptile being metered per
+request): **B01-5a** is PR 1 below with the seed — the Inbox's server, its seed, and the least of the
+web the server forces (the audit-verb words, the Overview's Inbox card and heading); **B01-5b** is the
+Inbox's web so far — PR 2's kit additions, frame, embedded map, the Access and flag handlers, and
+`/admin/flags` retired; PRs 3–6 follow as designed, bundled where two review as one unit. The table
+is the design's six, kept for what each holds.
+
 
 | PR | What it holds | Size (est.) | Builders |
 |---|---|---|---|
@@ -7180,7 +7225,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 - **`dismissFlags`' reason is sent only when typed**; the cast that bridged the server's old validator
   came out with S2's second turn (below).
 - **The old flags page's *Pin as official* has no verb in the Inbox** (board 2.6 draws *Unpin* and
-  *Retract* on a pinned alert) — an open row in §1's lose-nothing table, for the founder's call. The
+  *Retract* on a pinned alert) — ~~an open row in §1's lose-nothing table, for the founder's call~~
+  (ruled 2026-11-21: offered on 2.6, §7 *The founder's calls of 2026-11-21*). The
   facts: the old page calls `accessAlerts.setOfficial({ accessAlertId, official: true, reason })`,
   which needs `access.alert`; refuses on the staffer's own alert (D269), on one its author retracted
   and on one already pinned; requires a reason; writes a `pin_access_alert` audit row with `prev`; and
@@ -7666,9 +7712,15 @@ without one.
 - **Moved onto main at `907011a8` on 2026-11-21** (the stored-facts PR squashed as #167; #168 and
   #169 came with it): the wave's commits replayed on top, and main's D290 (#169) now follows this
   wave's D283–D289. **The next new decision number is D291.**
-- **Each of the six PRs is a cut of `phase-b01-inbox` at its slice boundary** (`phase-b01-inbox-1` …
-  `-6`), opened against main only after the previous one merged, closed at Greptile 5/5 on its own
-  branch; after each squash, the same `rebase --onto main <the PR branch's last tip>`.
+- **Each PR is its slice's finished files laid on main, not a commit range** (2026-11-21): a branch
+  `phase-b01-inbox-<n>` from `origin/main`, then `git checkout phase-b01-inbox -- <the slice's paths>`
+  and the least of anything else the gate forces, each such piece named in the PR. Why: the wave's
+  commits interleave the server and web builders and three review-fix rounds, and the server
+  builders' work is one interdependent unit (S1's tests need S2's hooks; S2's fixes edit S1's rule
+  file), so no commit boundary is a slice boundary. `phase-b01-inbox` keeps every commit and stays the
+  source of truth; a fix made on a PR branch is cherry-picked back so the two never drift. Each PR
+  opens against main only after the previous one merged, and closes at Greptile 5/5 on its own
+  branch.
 - **One known conflict:** both branches append to the end of `plans/01-decisions.md` (D282 there,
   D283–D289 here). It resolves by keeping both blocks in number order, D282 first — and on the move
   onto main it was the only conflict: two commits, both blocks kept, D290 left last.
