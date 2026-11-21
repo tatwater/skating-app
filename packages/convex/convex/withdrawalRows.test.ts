@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
+import { syncWithdrawalById } from './lib/withdrawals';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -471,5 +472,87 @@ describe('the content record’s replay moves `held` (B01-4m)', () => {
     await step(w, { op: 'replay' });
     expect(await rowOf()).toMatchObject({ held: true });
     await holds(w);
+  });
+});
+
+describe('the one writer repairs what it finds (B01-4m)', () => {
+  test('a stale row is rewritten, one whose item isn’t withdrawn removed, and a gone item’s row skipped', async () => {
+    const w = await world();
+    const [report, , member, comment] = w.items as [Item, Item, Item, Item];
+    await w.author.mutation(api.reports.remove, { reportId: report.id as Id<'reports'> });
+    await w.author.mutation(api.comments.remove, { commentId: comment.id as Id<'comments'> });
+    // A row left wrong (as a writer that slipped would leave it), and a row for an item never withdrawn.
+    await w.t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('contentWithdrawals')
+        .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report.id))
+        .first();
+      await ctx.db.patch(row?._id as Id<'contentWithdrawals'>, { held: true, withdrawnAt: 1 });
+      await ctx.db.insert('contentWithdrawals', {
+        subjectUserId: w.rob,
+        targetType: 'report',
+        targetId: member.id,
+        withdrawnAt: T0,
+        kindRank: 4,
+        targetCreatedAt: T0,
+        held: false,
+      });
+    });
+    await w.t.run(async (ctx) => {
+      expect(await syncWithdrawalById(ctx, 'report', report.id)).toBe(true);
+      expect(await syncWithdrawalById(ctx, 'report', member.id)).toBe(true);
+      expect(await syncWithdrawalById(ctx, 'report', member.id)).toBe(false);
+    });
+    await holds(w);
+    // An item gone with its row still there (never left by the eraser): the list passes over it.
+    await w.t.run((ctx) => ctx.db.delete(comment.id as Id<'comments'>));
+    const page = await w.mod.query(api.contentRecord.personDeleted, { userId: w.rob });
+    expect(page.page.map((r) => r.targetId)).toEqual([report.id]);
+    expect(page.isDone).toBe(true);
+  });
+
+  test('a person with many heavy withdrawals spans passes, each row once', async () => {
+    const w = await world();
+    const ids = await w.t.run(async (ctx) => {
+      const body = (await ctx.db.query('waterBodies').first()) as Doc<'waterBodies'>;
+      const out: Id<'reports'>[] = [];
+      for (let i = 0; i < 14; i++) {
+        out.push(
+          await ctx.db.insert('reports', {
+            authorId: w.rob,
+            waterBodyId: body._id,
+            point: { lat: 0.5, lng: 0.5 },
+            skateEndTime: T0,
+            reportTime: T0,
+            source: 'native' as const,
+            iceTypes: [],
+            surfaceTags: [],
+            photoIds: [],
+            moderationStatus: 'removed' as const,
+            hazardIdsCreated: [],
+            authorDeletedAt: T0 - 1_000 + (i % 5),
+            createdAt: T0,
+            updatedAt: T0,
+          }),
+        );
+      }
+      return out;
+    });
+    await w.t.mutation(internal.peopleJobs.backfillWithdrawals, { alone: true });
+    let passes = 1;
+    for (;;) {
+      const next = (
+        await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+      ).find((f) => f.state.kind === 'pending' && f.name === 'peopleJobs:backfillWithdrawals');
+      if (!next) break;
+      await w.t.run((ctx) => ctx.scheduler.cancel(next._id));
+      await w.t.mutation(internal.peopleJobs.backfillWithdrawals, next.args[0]);
+      passes++;
+      expect(passes).toBeLessThan(50);
+    }
+    // Fourteen whole-document Reports don't fit one pass's budget beside their reads.
+    expect(passes).toBeGreaterThan(1);
+    const rows = await w.t.run((ctx) => ctx.db.query('contentWithdrawals').collect());
+    expect(rows.map((r) => r.targetId).sort()).toEqual([...ids].sort());
   });
 });
