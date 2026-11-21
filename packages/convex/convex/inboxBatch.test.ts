@@ -11,7 +11,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { FLAG_CLOSE_COST, FLAG_REOPEN_COST, FLAGS_READ } from './lib/inboxFlags';
+import { DECISION_FLAGS_MAX, FLAG_CLOSE_COST, FLAG_REOPEN_COST } from './lib/inboxFlags';
 import {
   AXES,
   CLOSER_RESERVE,
@@ -27,7 +27,7 @@ import {
 } from './lib/inboxItems';
 import { inboxDrift } from './lib/inboxRepair';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
-import { ReadBudget } from './lib/readBudget';
+import { ReadBudget, ROW_MAX } from './lib/readBudget';
 import { alongsideAnswer, QUEUE_CAP, siblingCost } from './lib/requestDecisions';
 import schema from './schema';
 
@@ -368,10 +368,17 @@ describe('a decision costs per member, not per member squared — measured small
     const page = sum(times(sum(siblingCost(bay), RECONCILE_COST), QUEUE_CAP), refresh);
     expect(page.documentsRead).toBeLessThanOrEqual(CONVEX_LIMITS.documentsRead);
     expect(page.databaseQueries).toBeLessThanOrEqual(CONVEX_LIMITS.databaseQueries);
-    // An undo reopens up to FLAGS_READ flags in one transaction (it isn't paged): they fit.
-    const undo = sum(times(FLAG_REOPEN_COST, FLAGS_READ), refresh, CLOSER_RESERVE);
-    expect(undo.documentsRead).toBeLessThanOrEqual(CONVEX_LIMITS.documentsRead);
-    expect(undo.databaseQueries).toBeLessThanOrEqual(CONVEX_LIMITS.databaseQueries);
+    // A flag decision's undo is paged (`reopenFlagStep`): a fresh transaction holds its gather —
+    // every member the decision stamped, at the closers' cap — and one flag with its exact reopen
+    // facts and its item's refresh, so its first page always advances.
+    const gather: TxCost = {
+      bytesRead: (DECISION_FLAGS_MAX + 1) * ROW_MAX.inboxMember,
+      documentsRead: DECISION_FLAGS_MAX + 1,
+      databaseQueries: 1,
+      documentsWritten: 0,
+      bytesWritten: 0,
+    };
+    expect(fits(sum(gather, FLAG_REOPEN_COST, refresh, CLOSER_RESERVE))).toBe(true);
     // Why the batch: a recount per source, over a primary and one page of a 500-ask item.
     let recounts = 0;
     for (let k = 1; k <= QUEUE_CAP + 1; k++) recounts += MAX_MEMBERS - k;

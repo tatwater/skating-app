@@ -282,17 +282,16 @@ const plainTake: RuleTake = (n, read) => read(n);
 /** The flag lanes a target's open flags can sit in, as items keyed `flag:<lane>:<type>:<id>`. */
 const FLAG_LANES = ['safety', 'contentFlags'] as const;
 
-/** A viewer's members of one item read to find an open one (a few: one open flag per target each). */
-const FILER_MEMBERS = 8;
-
 /**
  * Whether `viewer` has an open flag of their own on a flag item's target, in another lane (D289): a
  * takedown, an unpin or a retraction closes every open flag on the target, so one the viewer filed in
  * another lane would be theirs to decide. Point reads only — each other lane's open item on the same
- * target, by its key (`flag:<lane>:<type>:<id>`), then the viewer's members of it (`by_item_filer`);
- * this item's own members are `filedByViewer`'s — so a list row reads at most four small rows, charged
- * to the page's budget through `take`. Every open source row is the open member of the one open item
- * its fields key (the writer's invariant), so these reads are the whole answer.
+ * target, by its key (`flag:<lane>:<type>:<id>`), then whether the viewer has an open member of it
+ * (`by_item_filer`, `eq` on the item, the viewer and `open`: never the first few of their members,
+ * which closed ones of theirs can fill — PR #170); this item's own members are `filedByViewer`'s — so
+ * a list row reads at most two small rows, charged to the page's budget through `take`. Every open
+ * source row is the open member of the one open item its fields key (the writer's invariant), so
+ * these reads are the whole answer.
  */
 export async function filedOnTarget(
   ctx: QueryCtx,
@@ -313,13 +312,15 @@ export async function filedOnTarget(
         .take(n),
     );
     if (!open) continue;
-    const mine = await take(FILER_MEMBERS, (n) =>
+    const [mine] = await take(1, (n) =>
       ctx.db
         .query('inboxItemMembers')
-        .withIndex('by_item_filer', (q) => q.eq('itemId', open._id).eq('filedByUserId', viewerId))
+        .withIndex('by_item_filer', (q) =>
+          q.eq('itemId', open._id).eq('filedByUserId', viewerId).eq('status', 'open'),
+        )
         .take(n),
     );
-    if (mine.some((m) => m.status === 'open')) return true;
+    if (mine !== undefined) return true;
   }
   return false;
 }

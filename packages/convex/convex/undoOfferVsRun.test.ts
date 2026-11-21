@@ -11,7 +11,12 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { FLAG_REOPEN_COST, FLAGS_READ, NEWER_FLAGS_READ, REOPEN_HEADROOM } from './lib/inboxFlags';
+import {
+  DECISION_FLAGS_MAX,
+  FLAG_REOPEN_COST,
+  REOPEN_FACT_READS,
+  REOPEN_HEADROOM,
+} from './lib/inboxFlags';
 import {
   CLOSER_RESERVE,
   fileMember,
@@ -843,13 +848,13 @@ describe('the reservations hold at the real bound', () => {
     const ask = WORST_ASK_COST();
     expect(ask.bytesRead + refresh.bytesRead + CLOSER_RESERVE.bytesRead).toBeLessThanOrEqual(LIMIT);
     expect(ask.bytesWritten + CLOSER_RESERVE.bytesWritten).toBeLessThanOrEqual(LIMIT);
-    // A flag decision's undo (a dismissal's, a takedown's, a ruling's, a pin's): one flag, its row,
-    // its member — after the check read every flag once (at most `FLAGS_READ` of them, each at its
-    // longest note) and the target's newest flags.
-    const checked =
-      (FLAGS_READ + NEWER_FLAGS_READ) * ROW_MAX.contentFlag + FLAGS_READ * ROW_MAX.inboxMember;
+    // A flag decision's undo (a dismissal's, a takedown's, a ruling's, a pin's): the gather (every
+    // member the decision stamped, at most `DECISION_FLAGS_MAX`), then one flag at least — its exact
+    // reopen facts (each row at its longest note), its patch, its row, its member.
+    const gathered = (DECISION_FLAGS_MAX + 1) * ROW_MAX.inboxMember;
+    expect(FLAG_REOPEN_COST.databaseQueries).toBeGreaterThan(REOPEN_FACT_READS);
     expect(
-      checked + FLAG_REOPEN_COST.bytesRead + refresh.bytesRead + REOPEN_HEADROOM,
+      gathered + FLAG_REOPEN_COST.bytesRead + refresh.bytesRead + REOPEN_HEADROOM,
     ).toBeLessThanOrEqual(LIMIT);
     expect(FLAG_REOPEN_COST.bytesWritten + REOPEN_HEADROOM).toBeLessThanOrEqual(LIMIT);
   });

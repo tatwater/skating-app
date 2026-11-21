@@ -46,8 +46,8 @@ import {
   closeFlagsUnder,
   flagReopenRefusalOf,
   isOpenFlag,
-  NEWER_FLAGS_READ,
-  newerFlagsOn,
+  REOPEN_FACT_READS,
+  reopenFactsOf,
   reopenFlagsClosedBy,
 } from './inboxFlags';
 import {
@@ -426,19 +426,21 @@ export const UNDO_WITH_ITS_DECISION = 'This closed with another decision; undo t
 const undoFlagDecision: UndoHandler = {
   blocked: (row) => (meta(row).withActionId !== undefined ? UNDO_WITH_ITS_DECISION : null),
   undoTakesAway: () => UNDO_POLICY.reopen_flag.takesAway(),
+  // The flag, and the reopen rule's exact facts about its target — at most `REOPEN_FACT_READS` one-row
+  // reads (PR #170: never the target's newest flags, which can leave out the deciding row).
   refusalCost: () => ({
-    bytes: (NEWER_FLAGS_READ + 1) * ROW_MAX.contentFlag + ACTOR_CHECK_COST.bytes,
-    reads: 2 + ACTOR_CHECK_COST.reads,
-    docs: NEWER_FLAGS_READ + 1 + ACTOR_CHECK_COST.docs,
+    bytes: (1 + REOPEN_FACT_READS) * ROW_MAX.contentFlag + ACTOR_CHECK_COST.bytes,
+    reads: 1 + REOPEN_FACT_READS + ACTOR_CHECK_COST.reads,
+    docs: 1 + REOPEN_FACT_READS + ACTOR_CHECK_COST.docs,
   }),
   refusal: async (ctx, row, read, viewer) => {
     const id = ctx.db.normalizeId('contentFlags', row.targetId);
     const flag = id ? await read.row('contentFlag', id) : null;
-    const newer = flag
-      ? await read.take('contentFlag', NEWER_FLAGS_READ, () => newerFlagsOn(ctx, flag))
-      : [];
+    const facts = flag
+      ? await reopenFactsOf(ctx, flag, (r) => read.take('contentFlag', 1, r))
+      : null;
     return (
-      flagReopenRefusalOf(flag, newer) ??
+      flagReopenRefusalOf(flag, facts) ??
       (id
         ? await decisionActorRefusal(
             ctx,
@@ -761,11 +763,13 @@ const undoRequestDecision: UndoHandler = {
         await runUndo(ctx, actor, bodyActionId, reason, writers);
       }
     }
-    // The request and every sibling the decision closed (each stamped with this row), back to open.
+    // The request and every sibling the decision closed (each stamped with this row), back to open:
+    // all of them, the decision's cap (`REQUEST_SIBLINGS_MAX`) — never a window; past it, refused.
     const members = await ctx.db
       .query('inboxItemMembers')
       .withIndex('by_closed_by', (q) => q.eq('closedByActionId', row._id))
-      .take(MAX_MEMBERS);
+      .take(MAX_MEMBERS + 1);
+    if (members.length > MAX_MEMBERS) throw new ConvexError(UNDO_GROUP_TOO_LARGE);
     const ids = new Set<Id<'waterBodyRequests'>>([primaryId]);
     for (const m of members) {
       const id =
@@ -891,6 +895,10 @@ export async function reopenRequestsRestPage(
     reopenRequestPage(ctx, decision, args.reopenRowId, args.ids, args.actorId),
   );
 }
+
+/** A decision whose stamps pass its cap (no writer makes one): refused, never part-reopened. */
+export const UNDO_GROUP_TOO_LARGE =
+  'This decision closed more than an undo reopens at once; reopen the asks from the Inbox instead.';
 
 /** An ask's filer, for the no-item fallback: a script's ask (`origin: 'seed'`) has none (D289). */
 const askPeople = (r: Doc<'waterBodyRequests'>) =>

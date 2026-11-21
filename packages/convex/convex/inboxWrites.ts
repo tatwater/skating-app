@@ -455,7 +455,7 @@ export const closeRequestsRest = internalMutation({
 });
 
 /**
- * A flag decision's undo, a later page (`lib/inboxFlags.reopenFlagsPage`): the flags its first page had
+ * A flag decision's undo, a later page (`lib/inboxFlags.reopenFlagStep`): the flags its first page had
  * no room for, each reopened while the decision still holds it closed.
  */
 export const reopenFlagsRest = internalMutation({

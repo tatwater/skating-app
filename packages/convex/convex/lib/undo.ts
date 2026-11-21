@@ -54,8 +54,10 @@ function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
 
 /**
  * How many rows tagged with one undo are read to find that undo's own row. An undo tags every row it
- * writes (`asUndoOf`): a Post's undo writes a row per member it moves (at most ten), then the Post's
- * own, so this covers the largest undo with room to spare.
+ * writes (`asUndoOf`, and its continuations): a Post's undo a row per member it moves (at most ten),
+ * then the Post's own; a flag decision's undo a `reopen_flag` row a flag, hundreds. Whether the row
+ * was undone is decided by any one of them (PR #170: the cap can't change that answer); which row the
+ * state names is cosmetic — every tagged row is the one undo's, by the one actor.
  */
 const UNDO_TAG_READ = 16;
 

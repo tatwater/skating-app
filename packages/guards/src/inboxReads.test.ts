@@ -136,7 +136,7 @@ const READ_EXCEPTIONS: Record<string, string> = {
   'lib/inboxViews.ts#itemOfRef': 'point reads: the item, or one member per source table (four)',
   'lib/inboxRules.ts#filedByViewer': 'one member row',
   'lib/inboxRules.ts#filedOnTarget':
-    'reads through the caller’s take (a list row’s is its page budget): ≤2 lanes × (1 + 8) small rows',
+    'reads through the caller’s take (a list row’s is its page budget): ≤1 other lane × 2 point reads (its open item by key, the viewer’s open member of it)',
   'lib/inboxRules.ts#plainTake': 'the item read’s reader for the rule’s few small rows',
   'lib/requestDecisions.ts#ownAsks':
     'while pending, an ask at a time: the next pulled only after `affordsRead`, charged as it weighs',

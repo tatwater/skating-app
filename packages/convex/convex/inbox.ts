@@ -485,6 +485,11 @@ type ItemBase = {
   filedAt: number;
   lastActivityAt: number;
   memberCount: number;
+  /**
+   * The count stopped at the most an item counts (`MAX_MEMBERS`): `memberCount` is a floor, drawn
+   * "500+" — never a total a window cut short passed off as exact.
+   */
+  memberCountIsFloor: boolean;
   can: InboxCan;
   decided: InboxDecidedState | null;
 };
@@ -566,6 +571,11 @@ type RowBase = {
   filedAt: number;
   lastActivityAt: number;
   memberCount: number;
+  /**
+   * The count stopped at the most an item counts (`MAX_MEMBERS`): `memberCount` is a floor, drawn
+   * "500+" — never a total a window cut short passed off as exact.
+   */
+  memberCountIsFloor: boolean;
   body: BodyRefView | null;
   can: InboxCan;
   decided: InboxDecidedState | null;
@@ -594,7 +604,7 @@ export type InboxRowView = RowBase &
       }
     | {
         kind: 'access';
-        /** Distinct reporters (`memberCount`, by the one-flag-per-flagger rule). */
+        /** Distinct reporters (`memberCount`, by the one-flag-per-flagger rule; a floor with it). */
         reporters: number;
         latestNote: string | null;
         /** The standing ruling these reports came after (*disputes 12 Sep*). */

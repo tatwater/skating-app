@@ -3467,7 +3467,7 @@ export async function setPublicAccessImpl(
 }
 
 /** The most open access reports one ruling reads and closes. */
-const RULING_REPORTS_READ = 1_000;
+export const RULING_REPORTS_READ = 1_000;
 
 /** A citation, not a paragraph — it renders inline on the lake. Matches the depth-note ceiling. */
 const MAX_PUBLIC_ACCESS_NOTE_LENGTH = 160;

@@ -3878,7 +3878,29 @@ export default defineSchema({
     // A "not publicly accessible" report is a contribution; no other flag is. One reason by time
     // for the day and season reads, and one person's of that reason for *first-time*.
     .index('by_reason_created', ['reason', 'createdAt'])
-    .index('by_flagger_reason_created', ['flaggerId', 'reason', 'createdAt']),
+    .index('by_flagger_reason_created', ['flaggerId', 'reason', 'createdAt'])
+    // ── The reopen rule's exact questions (PR #170): each a point read, never a window ──
+    // Has a newer flag taken this one's place?
+    .index('by_supersedes', ['supersedesFlagId'])
+    // Does this person have an open flag on this target? `origin: 'user'` for their own filing (the
+    // reopen rule; an automatic flag names the rater whose thumb crossed it), the four-field prefix for
+    // any (the filing's one-open-flag dedupe, `contentFlags.flag`).
+    .index('by_target_flagger_status_origin', [
+      'targetType',
+      'targetId',
+      'flaggerId',
+      'status',
+      'origin',
+    ])
+    // Is an automatic flag of this reason open on this target? `origin` is optional (absent reads as
+    // automatic): `eq` on every value, `undefined` included — never a bare range.
+    .index('by_target_status_reason_origin', [
+      'targetType',
+      'targetId',
+      'status',
+      'reason',
+      'origin',
+    ]),
 
   moderationActions: defineTable({
     /**
@@ -5529,7 +5551,9 @@ export default defineSchema({
   })
     .index('by_item_status', ['itemId', 'status', 'filedAt'])
     .index('by_source', ['sourceTable', 'sourceId'])
-    .index('by_item_filer', ['itemId', 'filedByUserId'])
+    // A person's members of one item, by status: "filed any" on the prefix, "has an open one" exactly —
+    // never the first few of their members, which closed ones can fill (PR #170).
+    .index('by_item_filer', ['itemId', 'filedByUserId', 'status'])
     // A person's open filings of one kind, from small rows: a decision's own-filing check reads the
     // actor's open ask members here and compares the drain's reach by item key (D289, PR #170).
     .index('by_filer_source_status', ['filedByUserId', 'sourceTable', 'status'])

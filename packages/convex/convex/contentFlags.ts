@@ -24,6 +24,7 @@ import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { subjectOfTarget } from './lib/flagSubject';
 import { fileMember, flagSource, leaveMember } from './lib/inboxItems';
+import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { isSeedProfile } from './lib/seedPeople';
 import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
@@ -106,14 +107,22 @@ export const flag = mutation({
       }
     }
 
-    // Dedupe: one *open* flag per (flagger, target). A repeat flag is a no-op that returns the row.
-    const existing = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target', (q) => q.eq('targetType', args.targetType).eq('targetId', targetId))
-      .filter((q) => q.eq(q.field('flaggerId'), profile._id))
-      .filter((q) => q.eq(q.field('status'), 'open'))
-      .first();
-    if (existing) return existing._id;
+    // Dedupe: one *open* flag per (flagger, target) — either open status (`reviewing` too, D283). A
+    // repeat flag is a no-op that returns the row. An exact point read a status, never a scan of the
+    // target's flags: whatever the target holds, the same answer (the undo's reopen rule leans on it).
+    for (const status of OPEN_FLAG_STATUSES) {
+      const existing = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_flagger_status_origin', (q) =>
+          q
+            .eq('targetType', args.targetType)
+            .eq('targetId', targetId)
+            .eq('flaggerId', profile._id)
+            .eq('status', status),
+        )
+        .first();
+      if (existing) return existing._id;
+    }
 
     const flagId = await ctx.db.insert('contentFlags', {
       flaggerId: profile._id,

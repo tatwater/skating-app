@@ -793,9 +793,9 @@ const undoPutIn: UndoHandler = {
   // row is bounded at its writers (`ROW_MAX.launch`, B01-3h), so the body's hidden launches the
   // suppression rule reads can be reserved: the launch and up to `SUPPRESSION_ROWS_READ` of them.
   refusalCost: () => ({
-    bytes: ROW_MAX.launch * (1 + SUPPRESSION_ROWS_READ),
+    bytes: ROW_MAX.launch * (2 + SUPPRESSION_ROWS_READ),
     reads: 2,
-    docs: 1 + SUPPRESSION_ROWS_READ,
+    docs: 2 + SUPPRESSION_ROWS_READ,
   }),
   refusal: async (ctx, row, read) => {
     const m = meta(row) as {
@@ -806,8 +806,9 @@ const undoPutIn: UndoHandler = {
     };
     const launch = await read.row('launch', m.putInId);
     if (launch === null) return 'That put-in no longer exists';
-    const hidden = await read.take('launch', SUPPRESSION_ROWS_READ, () =>
-      hiddenLaunches(ctx, launch.waterBodyId).take(SUPPRESSION_ROWS_READ),
+    // One past the bound, so a body with more than the check reads is refused, not decided on a window.
+    const hidden = await read.take('launch', SUPPRESSION_ROWS_READ + 1, () =>
+      hiddenLaunches(ctx, launch.waterBodyId).take(SUPPRESSION_ROWS_READ + 1),
     );
     const refused = launchRefusalOf(launch, hidden);
     if (refused !== null) return refused;

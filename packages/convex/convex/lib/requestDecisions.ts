@@ -58,6 +58,15 @@ import { literals } from './validators';
 export const QUEUE_CAP = 200;
 
 /**
+ * **The most siblings one decision closes** (PR #170), across all its pages — so the request and its
+ * siblings, every member the decision stamps, are at most `MAX_MEMBERS` (a literal: `inboxItems`
+ * imports this module; `inboxReopenRule.test.ts` holds the sum): the undo's gather reads them all
+ * (`undoRequestDecision`), never a window of them. Past it the rest stay open in their item, shown,
+ * for the next decision — as a ruling leaves the reports past `RULING_REPORTS_READ`.
+ */
+export const REQUEST_SIBLINGS_MAX = 499;
+
+/**
  * Up to `limit` of the other open asks that share this one's question: the same kind on the same
  * body, or — for an `admit` — the same catalog feature (Greptile, PR #63: admits have no body to
  * group by, and two taps on one pond were two independent decisions). An unresolved admit has no
@@ -247,6 +256,8 @@ export const decisionArgs = {
    * pages. Set by `decide` once the primary is closed.
    */
   actionId: v.optional(v.id('moderationActions')),
+  /** Siblings the drain's earlier pages read (closed, or left to their own filer): to its cap. */
+  closedSoFar: v.optional(v.number()),
   /** The audit context the decision's first page wrote under, carried to its later pages. */
   ...auditContextArgs,
 };
@@ -267,6 +278,8 @@ export type Decision = AuditContext & {
   bodyActionId?: Id<'moderationActions'>;
   /** The primary request's decision row, which closes every sibling's Inbox member (`decisionArgs`). */
   actionId?: Id<'moderationActions'>;
+  /** Siblings the drain's earlier pages read, held to {@link REQUEST_SIBLINGS_MAX}. */
+  closedSoFar?: number;
 };
 
 /**
@@ -666,9 +679,12 @@ export async function closeSiblingPage(
     ...(decision.cursor !== undefined ? { cursor: decision.cursor } : {}),
     room: spare / 4,
   });
+  const before = decision.closedSoFar ?? 0;
   let closed = 0;
   await inboxBatch(ctx, async () => {
     for (const row of rows) {
+      // The decision's cap: past it the rest stay open, shown in their item.
+      if (before + closed >= REQUEST_SIBLINGS_MAX) break;
       if (closed > 0 && (pageIsFull(closed) || !(await batchHasRoom(ctx, siblingCost(row))))) break;
       // The decision refused itself over any of the actor's own asks it could see (`assertMayDecide`);
       // one past its scan's bound is left open here, never decided by its own filer (D289).
@@ -679,11 +695,12 @@ export async function closeSiblingPage(
     }
   });
   const cut = closed < rows.length;
-  if (cut || capped) {
+  if ((cut || capped) && before + closed < REQUEST_SIBLINGS_MAX) {
     const resume = cut ? decision.cursor : cursor;
     const { cursor: _last, ...rest } = decision;
     await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, {
       ...rest,
+      closedSoFar: before + closed,
       // The later page writes as this one does: under the same undo, through the same `via`.
       ...(await auditContextOf(ctx)),
       ...(resume !== undefined ? { cursor: resume } : {}),

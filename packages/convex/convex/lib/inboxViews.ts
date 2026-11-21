@@ -62,7 +62,7 @@ import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from '../inbox';
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
-import { inboxPending, readCount } from './inboxItems';
+import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
 import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import {
@@ -777,6 +777,7 @@ export async function rowLabel(
     filedAt: item.filedAt,
     lastActivityAt: item.lastActivityAt,
     memberCount: item.memberCount,
+    memberCountIsFloor: item.memberCount >= MAX_MEMBERS,
     body,
   };
   switch (item.kind) {
@@ -922,6 +923,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
     filedAt: item.filedAt,
     lastActivityAt: item.lastActivityAt,
     memberCount: item.memberCount,
+    memberCountIsFloor: item.memberCount >= MAX_MEMBERS,
   };
   switch (item.kind) {
     case 'flag': {
