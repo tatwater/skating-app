@@ -221,23 +221,32 @@ type Op =
   | { op: 'backfill' };
 
 const ITEMS = 7;
+/**
+ * An item, biased toward a few — a Report, the comment and the alert — so a run's operations land on
+ * the same item often enough to withdraw, decide on and erase it in one history.
+ */
+const itemArb = fc.oneof(
+  { weight: 4, arbitrary: fc.constantFrom(0, 3, 5) },
+  { weight: 1, arbitrary: fc.integer({ min: 0, max: ITEMS - 1 }) },
+);
 const opArb: fc.Arbitrary<Op> = fc.oneof(
+  // Withdrawals as often as decisions: a history needs one before the rows have anything to say.
+  { weight: 4, arbitrary: fc.record({ op: fc.constant('withdraw' as const), i: itemArb }) },
   {
-    weight: 10,
+    weight: 6,
     arbitrary: fc.record({
       op: fc.constantFrom(
-        'withdraw' as const,
         'hide' as const,
         'remove' as const,
         'restore' as const,
         'overturn' as const,
         'keep' as const,
       ),
-      i: fc.integer({ min: 0, max: ITEMS - 1 }),
+      i: itemArb,
     }),
   },
   { weight: 2, arbitrary: fc.constant<Op>({ op: 'undo' }) },
-  { weight: 1, arbitrary: fc.constant<Op>({ op: 'erase' }) },
+  { weight: 2, arbitrary: fc.constant<Op>({ op: 'erase' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ op: 'replay' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ op: 'backfill' }) },
 );
@@ -435,7 +444,7 @@ describe('the withdrawal rows over any history (B01-4m)', () => {
     console.log(`withdrawalRows seed ${seed}`);
     await fc.assert(fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 8 }), history), {
       seed,
-      numRuns: 4,
+      numRuns: 30,
     });
   });
 });
@@ -554,5 +563,37 @@ describe('the one writer repairs what it finds (B01-4m)', () => {
     expect(passes).toBeGreaterThan(1);
     const rows = await w.t.run((ctx) => ctx.db.query('contentWithdrawals').collect());
     expect(rows.map((r) => r.targetId).sort()).toEqual([...ids].sort());
+  });
+});
+
+describe('the backfill repairs stale rows (B01-4m)', () => {
+  test('a row whose item is gone, or no longer withdrawn, goes on the next run', async () => {
+    const w = await world();
+    const [report, , member, comment] = w.items as [Item, Item, Item, Item];
+    await w.author.mutation(api.reports.remove, { reportId: report.id as Id<'reports'> });
+    await w.author.mutation(api.comments.remove, { commentId: comment.id as Id<'comments'> });
+    // Left stale by writes outside the inventory: the comment deleted outright, a row for a Report
+    // never withdrawn.
+    await w.t.run(async (ctx) => {
+      await ctx.db.delete(comment.id as Id<'comments'>);
+      await ctx.db.insert('contentWithdrawals', {
+        subjectUserId: w.rob,
+        targetType: 'report',
+        targetId: member.id,
+        withdrawnAt: T0,
+        kindRank: 4,
+        targetCreatedAt: T0,
+        held: false,
+      });
+    });
+    await w.t.mutation(internal.peopleJobs.backfillWithdrawals, { alone: true });
+    await settle(w);
+    const rows = await w.t.run((ctx) => ctx.db.query('contentWithdrawals').collect());
+    expect(rows.map((r) => r.targetId)).toEqual([report.id]);
+    const prep = await w.t.query(internal.peopleJobs.preparation, {});
+    expect(prep.backfills.find((b) => b.backfill === 'withdrawals')).toMatchObject({
+      ready: true,
+      failed: 0,
+    });
   });
 });

@@ -524,6 +524,16 @@ export function tabCounts(
 }
 
 /**
+ * Whether the counts are still being prepared **for a tab** — `pending` names the backfills each
+ * figure rests on: the record itself (`verdicts`) holds every tab back; the withdrawal rows
+ * (`withdrawals`, B01-4m) only the Deleted figures. `null` (no tab): the sheet as a whole.
+ */
+export function countsPending(counts: RecordCounts | null, tab: RecordTab | null): boolean {
+  const named = counts?.pending ?? [];
+  return named.some((b) => b !== 'withdrawals' || tab === 'deleted');
+}
+
+/**
  * The Filter menu's kinds: each with its count where the count is exact (a floor or a figure still
  * being prepared isn't a count a filter can promise, so it is left off, never guessed).
  */

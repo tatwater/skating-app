@@ -30,6 +30,7 @@ import {
 import {
   ACTION_ORDER,
   chooserMembers,
+  countsPending,
   deletedRowView,
   endingUndoOf,
   endingUndoWhat,
@@ -44,6 +45,7 @@ import {
   listEnd,
   nextRestored,
   type RecordAction,
+  type RecordCounts,
   type RecordLevers,
   type Restored,
   receiptWords,
@@ -380,6 +382,27 @@ describe('counts', () => {
     expect(tabCounts('reversed', HIDDEN, COUNTS)?.capped).toBe(false);
     expect(tabCounts('standing', null, COUNTS)).toBeNull();
     expect(tabCounts('deleted', HIDDEN, null)).toBeNull();
+  });
+
+  it('the withdrawal rows still being prepared hold back only the Deleted figures', () => {
+    const rows = { ...COUNTS, pending: ['withdrawals'] } as unknown as RecordCounts;
+    const record = { ...COUNTS, pending: ['verdicts', 'withdrawals'] } as unknown as RecordCounts;
+    expect(countsPending(rows, 'deleted')).toBe(true);
+    expect(countsPending(rows, 'standing')).toBe(false);
+    expect(countsPending(rows, 'reversed')).toBe(false);
+    expect(countsPending(rows, null)).toBe(false);
+    for (const tab of ['standing', 'reversed', 'deleted', null] as const) {
+      expect(countsPending(record, tab), String(tab)).toBe(true);
+    }
+    expect(countsPending(COUNTS, 'deleted')).toBe(false);
+    expect(countsPending(null, 'deleted')).toBe(false);
+    // Standing's figures stay exact meanwhile; Deleted's filter drops its counts.
+    expect(
+      kindOptions(tabCounts('standing', HIDDEN, rows), countsPending(rows, 'standing'))[0]?.count,
+    ).toBe(2);
+    expect(
+      kindOptions(tabCounts('deleted', HIDDEN, rows), countsPending(rows, 'deleted'))[0]?.count,
+    ).toBeUndefined();
   });
 
   it('the filter keeps a count only where it is exact', () => {

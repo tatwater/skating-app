@@ -24,6 +24,7 @@ import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { refreshBodyNames } from './lib/bodyNames';
 import { listablePeople } from './lib/peopleFigures';
 import { refreshPersonRow } from './lib/peopleRows';
+import { PEOPLE_BACKFILLS } from './lib/peopleRuns';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -1410,7 +1411,7 @@ const SEASON_ROUNDS = 8 + 1 + Math.ceil(100 / 4);
 
 /**
  * What a staffer's figures or season charge before their per-row reads, for a test that opens the
- * request's budget smaller: the staffer's profile, the backfill marker (four small rows), and the
- * decisions' own read (4 MiB of real weight, charged with a document over).
+ * request's budget smaller: the staffer's profile, the backfill marker (a small row a backfill), and
+ * the decisions' own read (4 MiB of real weight, charged with a document over).
  */
-const STAFF_PAGE_FIXED = ROW_MAX.profile + 4 * ROW_MAX.small + 5 * DOC_MAX;
+const STAFF_PAGE_FIXED = ROW_MAX.profile + PEOPLE_BACKFILLS.length * ROW_MAX.small + 5 * DOC_MAX;

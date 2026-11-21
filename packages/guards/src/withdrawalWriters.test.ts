@@ -14,7 +14,8 @@
  *   eraser's `dropWithdrawal(`) — the writer itself, or for the eraser's shell, `eraseOne`;
  *   the writes of those field names on other tables are listed apart, by function;
  * - every write to `contentWithdrawals` (an insert, or the table named anywhere else) is in
- *   `lib/withdrawals`, its one writer — `contentRecord.ts` only reads it;
+ *   `lib/withdrawals`, its one writer — `contentRecord.ts` and the backfill in `peopleJobs.ts` only
+ *   query it;
  * - each verdict writer (`verdictWriters.test.ts`' inventory) moves `held` where it stands a verdict
  *   up or ends one: `refreshWithdrawalHold(` in the functions listed.
  *
@@ -151,13 +152,17 @@ test('`contentWithdrawals` is written only by `lib/withdrawals`', () => {
     .filter((p) => /['"]contentWithdrawals['"]/.test(readFileSync(p, 'utf8')))
     .map((p) => relative(CONVEX, p))
     .sort();
-  // `contentRecord` reads the Deleted list's range and counts it; it writes nothing there.
-  expect(touching).toEqual(['contentRecord.ts', 'lib/withdrawals.ts']);
-  const record = readFileSync(join(CONVEX, 'contentRecord.ts'), 'utf8');
-  expect(record).not.toMatch(/insert\('contentWithdrawals'/);
-  for (const m of record.matchAll(/['"]contentWithdrawals['"]/g)) {
-    const before = record.slice(Math.max(0, (m.index ?? 0) - 20), m.index);
-    expect(before, 'contentRecord only queries the rows').toMatch(/query\($/);
+  // `contentRecord` reads the Deleted list's range and counts it; the withdrawals backfill
+  // (`peopleJobs`) walks the stored rows for its repair — each through the one writer. Neither
+  // writes the table itself.
+  expect(touching).toEqual(['contentRecord.ts', 'lib/withdrawals.ts', 'peopleJobs.ts']);
+  for (const file of ['contentRecord.ts', 'peopleJobs.ts']) {
+    const text = readFileSync(join(CONVEX, file), 'utf8');
+    expect(text, file).not.toMatch(/(?:insert|patch|replace|delete)\('contentWithdrawals'/);
+    for (const m of text.matchAll(/['"]contentWithdrawals['"]/g)) {
+      const before = text.slice(Math.max(0, (m.index ?? 0) - 20), m.index);
+      expect(before, `${file} only queries the rows`).toMatch(/query\($/);
+    }
   }
 });
 

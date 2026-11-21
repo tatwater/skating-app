@@ -215,7 +215,7 @@ export async function withdrawalsAfter(
           q.eq('subjectUserId', userId).eq('held', false).eq('targetType', targetType),
         );
     if (after === null) return reads.take('withdrawal', n, (k) => base().order('desc').take(k));
-    const ownTie = DELETED_KINDS.indexOf(targetType) === after.kind;
+    const ownTie = DELETED_KINDS.indexOf(targetType) === (after.kind ?? 0);
     const [tie, rest] = await Promise.all([
       ownTie
         ? reads.take('withdrawal', n, (k) =>
