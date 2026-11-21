@@ -10,7 +10,7 @@
  * that create what a backfill fixes do its work themselves: the profile insert refreshes its row, a
  * flag is filed with its subject. The procedure's text is `AFTER_MERGE_PROCEDURE`, which
  * `packages/convex`'s `peopleBackfills.test.ts` performs literally; the phase doc and the roadmap must
- * quote it word for word, and the phase doc's newest table must name every backfill in order.
+ * quote it word for word, and the phase doc's table must name every backfill in order.
  *
  * A lint over the source text, not a proof (`peopleRuns.test.ts` is the property).
  */
@@ -178,14 +178,9 @@ test('the phase doc and the roadmap quote the procedure word for word', () => {
   }
 });
 
-/**
- * The newest table: a build that adds a backfill records the table again in its own section (the
- * phase doc is a build record, its earlier sections kept as they were written), so the last one is
- * the current registry.
- */
-test('the phase doc’s newest backfill table names every job, in order', () => {
+test('the phase doc’s backfill table names every job, in order', () => {
   const doc = readFileSync(PHASE_DOC, 'utf8');
-  const header = doc.lastIndexOf(TABLE_HEADER);
+  const header = doc.indexOf(TABLE_HEADER);
   expect(header, 'the backfill table').toBeGreaterThanOrEqual(0);
   const table = doc.slice(header, doc.indexOf('\n\n', header));
   const rows = [...table.matchAll(/^\| `peopleJobs:(\w+)`/gm)].map((m) => m[1]);

@@ -817,7 +817,7 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   `imageryRuns` and `importRuns` read through one list; stalled runs.
 - **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
   past seasons; A06i's components re-homed; the cost summary from the ledger.
-- **§7 — People.** The person's content record (`contentRecord.personVerdicts` and `personWithdrawals`, D248, built
+- **§7 — People.** The person's content record (`contentRecord.personVerdicts` and `personWithdrawals` — retired in B01-4m for `personDeleted` — D248, built
   server-side in B01-1b): the standing verdicts with the content still kept, labeled when its author
   deleted it afterward, and the recently withdrawn list with each item's erasure date; the controls
   to record a verdict on deleted content and to overturn one (`moderation.overturnVerdict`).
@@ -2305,6 +2305,7 @@ read.
 | `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
 | `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
 | `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `recordPresence`, `item` (B01-4d) |
+| `peopleJobs:backfillWithdrawals` | `backfillVerdicts`, when a run ends | `contentRecord.personDeleted`, `recordCounts`, `recordPresence` (B01-4m) |
 
 The ledger's "never no editor" check also reads whether the rows are ready (through the same
 reading), but it isn't a figure: before the rows exist it reads admins' profiles under its own
@@ -2377,7 +2378,7 @@ objects, on an empty database and on seeded ones, a failure and a stalled run in
 `packages/guards`' `peopleBackfills.test.ts` holds this doc and the roadmap to it, and this table to
 the registry. Each `convex` command runs as `pnpm --filter @skating/convex exec convex …` from main.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the four People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) or the status-terms rule (B01-4f) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure, and when each suspended or banned person's terms were set, on their row, then step 3 again.
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the five People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks — and the withdrawal rows the Deleted list reads). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) or the status-terms rule (B01-4f) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure, and when each suspended or banned person's terms were set, on their row, then step 3 again.
 
 **B01-4: one rule for what is offered** (Greptile on #115, P2). An undo is a write of the previous
 state, so its refusal is computed by `lib/peopleCan.writeRefusal` on the write the undo's handler
@@ -6924,29 +6925,18 @@ main):
    pass, in the logs, returns `{ phase: "bays", …, done: true }`.
 6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0`.
 
-A fresh deployment takes the People procedure, word for word as in `AFTER_MERGE_PROCEDURE`:
+A fresh deployment takes the People procedure, now five backfills: its text, and the table of
+which reads say `pending` until each is ready, are under *the backfills, and the one procedure that
+runs them* (B01-4), updated in this build.
 
-(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the five People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks — and the withdrawal rows the Deleted list reads). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) or the status-terms rule (B01-4f) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure, and when each suspended or banned person's terms were set, on their row, then step 3 again.
+**Retired:** `contentRecord.personWithdrawals`, the older per-kind withdrawals query. No page, app
+or script called it, only two tests, which now read the withdrawal rows.
 
-The People backfills, with this build's fifth (the table the guard reads is this one, the newest):
-
-| Job | Started by | Reads that say `pending` until it is ready |
-| --- | --- | --- |
-| `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
-| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
-| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
-| `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `recordPresence`, `item` (B01-4d) |
-| `peopleJobs:backfillWithdrawals` | `backfillVerdicts`, when a run ends | `contentRecord.personDeleted`, `recordCounts`, `recordPresence` (B01-4m) |
+**Ruled by the governor (2026-11-20):** the count's 500 cap ("500+") stands, and so does "open the
+landmark" for the bay half of the undo's rule — no bay outlines are stored.
 
 **Left:**
 
-- **Two stale quotes.** The procedure quoted under *the backfills, and the one procedure that runs
-  them*, and its table there, still say four backfills. The roadmap's People procedure line does
-  too. Both are outside this build's lines; the procedure above is the current text.
-- **`contentRecord.personWithdrawals`.** The older per-kind withdrawals query still reads the
-  content ranges. No page calls it, only two tests. Retire it, or read the rows.
-- **The bay half on a list** still points to the landmark. Exact would need each bay's outline per
-  line, or a stored per-bay reach.
 - **A capped body** (near the landmark cap) keeps the spellings-only check on a list.
 - **Not measured on dev:** the withdrawals backfill's pass count and the names backfill's length.
 
