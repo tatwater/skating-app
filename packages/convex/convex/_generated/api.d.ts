@@ -55,6 +55,7 @@ import type * as imageryOverrides from "../imageryOverrides.js";
 import type * as importRuns from "../importRuns.js";
 import type * as inbox from "../inbox.js";
 import type * as inboxItems from "../inboxItems.js";
+import type * as inboxSeed from "../inboxSeed.js";
 import type * as inboxWrites from "../inboxWrites.js";
 import type * as isochrones from "../isochrones.js";
 import type * as landmarks from "../landmarks.js";
@@ -258,6 +259,7 @@ declare const fullApi: ApiFromModules<{
   importRuns: typeof importRuns;
   inbox: typeof inbox;
   inboxItems: typeof inboxItems;
+  inboxSeed: typeof inboxSeed;
   inboxWrites: typeof inboxWrites;
   isochrones: typeof isochrones;
   landmarks: typeof landmarks;
