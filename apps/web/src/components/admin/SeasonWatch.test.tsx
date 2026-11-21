@@ -59,6 +59,29 @@ describe('WatchCard', () => {
     expect(onReset).toHaveBeenCalledWith('reset');
   });
 
+  it('states the winter night’s window count, or the share alone for a winter set in by one night', () => {
+    const frozen = [
+      { name: 'Umbagog Lake', state: 'ME', lowC: -3.1 },
+      { name: 'Flagstaff Lake', state: 'ME', lowC: -2.7 },
+    ];
+    const card = (winter: WatchRow['winter']) =>
+      render(
+        <WatchCard
+          season="winter-2026-27"
+          floor="2026-10-01"
+          row={{ ...ROW, winterFrom: '2026-12-11', winter }}
+          onReset={async () => {}}
+        />,
+      );
+    const windowed = card({ frozen, reporting: 3, nights: 10 });
+    expect(
+      screen.getByText('10 winter nights in the window · 2 of 3 lakes that night'),
+    ).toBeInTheDocument();
+    windowed.unmount();
+    card({ frozen, reporting: 3 });
+    expect(screen.getByText('2 of 3 ordinary lakes')).toBeInTheDocument();
+  });
+
   it('names version 0 as the defaults it shipped with', () => {
     render(
       <WatchCard

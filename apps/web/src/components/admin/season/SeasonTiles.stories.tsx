@@ -17,7 +17,7 @@ type Story = StoryObj<typeof meta>;
 
 const day = (m: number, d: number, y = 2026) => new Date(y, m, d).getTime();
 
-/** Board 1.1's strip: the watch open, a one-night winter (amber), imagery running, no skate yet. */
+/** Board 1.1's strip: the watch open, winter not yet (counted over the window), imagery running, no skate yet. */
 export const Strip: Story = {
   parameters: { fourUp: true },
   render: () => (
@@ -25,9 +25,7 @@ export const Strip: Story = {
       <IceWatchTile
         data={{ state: 'open', since: day(9, 3), sentinels: 2, of: 3, byRegion: false }}
       />
-      <WinterTile
-        data={{ state: 'set', from: day(9, 7), nights: 1, frozen: 11, reporting: 25, needs: 13 }}
-      />
+      <WinterTile data={{ state: 'not-yet', nights: 2, window: 14, needs: 10 }} />
       <ImageryTile data={{ state: 'running', granules: 0, cutterPinnedAt: day(9, 11) }} />
       <FirstSkatedTile
         data={{ at: null, body: null, lastWinter: { at: day(11, 6, 2025), body: 'Crystal Lake' } }}
@@ -40,14 +38,14 @@ export const Strip: Story = {
     await faceLoaded(must(tiles[0]?.querySelector('[data-slot="value-figure"]')));
     await expect(tiles.map((t) => t.querySelector('[data-slot="value"]')?.textContent)).toEqual([
       'Open Since 3 Oct',
-      'One night',
+      'Not yet',
       'Running 0 granules',
       '—',
     ]);
-    // A one-night winter waits on a person: amber. Never the ice accent for a value.
+    // Winter not yet is dim, never the ice accent for a value.
     const winter = must(tiles[1]?.querySelector<HTMLElement>('[data-slot="value"]'));
     await expect(getComputedStyle(winter).color).toEqual(
-      sameColor(computedColor(winter, 'var(--warn)')),
+      sameColor(computedColor(winter, 'var(--fg3)')),
     );
     const open = must(tiles[0]?.querySelector<HTMLElement>('[data-slot="value"]'));
     await expect(getComputedStyle(open).color).toEqual(sameColor(computedColor(open, 'var(--fg)')));
@@ -59,12 +57,12 @@ export const States: Story = {
   render: () => (
     <div className="grid w-[56rem] grid-cols-4 gap-x-(--space-5) gap-y-(--space-6)">
       <IceWatchTile data={{ state: 'waiting', countsFrom: day(9, 1) }} />
-      <WinterTile data={{ state: 'not-yet' }} />
+      <WinterTile data={{ state: 'not-yet', nights: 0, window: 14, needs: 10 }} />
       <ImageryTile data={{ state: 'not-started', granules: 0 }} />
       <FirstSkatedTile data={{ at: day(11, 4), body: 'Post Pond' }} />
       <IceWatchTile data={{ state: 'closed', since: day(3, 12, 2027) }} />
       <WinterTile
-        data={{ state: 'set', from: day(10, 20), nights: 3, frozen: 18, reporting: 25, needs: 13 }}
+        data={{ state: 'set', from: day(10, 20), endedOn: null, nights: 12, window: 14 }}
       />
       <ImageryTile data={{ state: 'paused', granules: 1204, lastLandedAt: day(11, 30) }} />
       <IceWatchTile data={undefined} />

@@ -125,7 +125,7 @@ export const FEED: FeedRow[] = [
 /** Board 1.1: Home as the founder reviewed it. */
 export const HOME: OverviewHomeData = {
   watch: { state: 'open', since: day(9, 3), sentinels: 2, of: 3, byRegion: false },
-  winter: { state: 'set', from: day(9, 7), nights: 1, frozen: 11, reporting: 25, needs: 13 },
+  winter: { state: 'not-yet', nights: 2, window: 14, needs: 10 },
   imagery: { state: 'running', granules: 0, cutterPinnedAt: day(9, 11), lastLandedAt: null },
   firstSkate: { at: null, body: null, lastWinter: { at: day(11, 6, 2025), body: 'Crystal Lake' } },
   cost: {

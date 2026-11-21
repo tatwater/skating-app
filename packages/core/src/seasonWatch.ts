@@ -22,7 +22,11 @@ import {
   DEFAULT_SENTINEL_NIGHTS,
   DEFAULT_THAW_C,
   DEFAULT_THAW_RUN_DAYS,
+  DEFAULT_WINTER_ENTER_NIGHTS,
+  DEFAULT_WINTER_EXIT_NIGHTS,
   DEFAULT_WINTER_FRACTION,
+  DEFAULT_WINTER_WINDOW_NIGHTS,
+  type GateOptions,
   type GateWindow,
   ingestWindow,
   type SiteLow,
@@ -39,8 +43,16 @@ export interface SeasonWatchSettings {
   sentinelNights: number;
   /** Fraction of ordinary sites freezing on one night that opens the watch without a sentinel. */
   corpusFraction: number;
-  /** Fraction of ordinary sites freezing on one night that counts as winter region-wide. */
+  /** Fraction of ordinary sites freezing on one night that makes it a winter night. */
   winterFraction: number;
+  /**
+   * The winter window (D290): the nights looked back over, the winter nights among them that set
+   * winter in, and the count at or below which it has ended. Absent on every version saved before
+   * D290, which reads as the defaults (14, 10, 4) — see {@link withWinterWindow}.
+   */
+  winterWindowNights?: number;
+  winterEnterNights?: number;
+  winterExitNights?: number;
   /** The sentinel low that sends the "time to start satellite imagery" email. */
   imageryNudgeC: number;
   /** A night above this counts as thawed at an ordinary site. */
@@ -77,18 +89,37 @@ export const MAX_SAMPLE_SITES = 60;
 /** The most sentinels, and the most pinned sites, a roster may name. */
 export const MAX_ROSTER_SITES = 10;
 
-/** The settings D149 shipped with, so nothing moves until someone saves an edit. */
+/**
+ * The settings D149 shipped with, and D290's winter window — the one default that moved after a
+ * season had run on them, because one winter night set winter in weeks before the region froze.
+ */
 export const DEFAULT_SEASON_WATCH_SETTINGS: SeasonWatchSettings = {
   startMonthDay: DEFAULT_START_MONTH_DAY,
   freezeC: DEFAULT_FREEZE_C,
   sentinelNights: DEFAULT_SENTINEL_NIGHTS,
   corpusFraction: DEFAULT_CORPUS_FRACTION,
   winterFraction: DEFAULT_WINTER_FRACTION,
+  winterWindowNights: DEFAULT_WINTER_WINDOW_NIGHTS,
+  winterEnterNights: DEFAULT_WINTER_ENTER_NIGHTS,
+  winterExitNights: DEFAULT_WINTER_EXIT_NIGHTS,
   imageryNudgeC: fahrenheitToCelsius(IMAGERY_NUDGE_F),
   thawC: DEFAULT_THAW_C,
   thawRunDays: DEFAULT_THAW_RUN_DAYS,
   sampleSize: DEFAULT_SAMPLE_SITES,
 };
+
+/**
+ * A settings object with its winter window filled in: a version saved before D290 has none, and
+ * reads as the defaults. What the editor shows and compares, so an untouched form is not an edit.
+ */
+export function withWinterWindow(settings: SeasonWatchSettings): Required<SeasonWatchSettings> {
+  return {
+    ...settings,
+    winterWindowNights: settings.winterWindowNights ?? DEFAULT_WINTER_WINDOW_NIGHTS,
+    winterEnterNights: settings.winterEnterNights ?? DEFAULT_WINTER_ENTER_NIGHTS,
+    winterExitNights: settings.winterExitNights ?? DEFAULT_WINTER_EXIT_NIGHTS,
+  };
+}
 
 /**
  * The earliest floor the editor accepts: the history fill (`seasonWatch.fillSeason`) keeps lows from
@@ -126,6 +157,29 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
   whole(settings.sentinelNights, 1, 14, 'Sentinel nights must be a whole number from 1 to 14.');
   within(settings.corpusFraction, 0.01, 1, 'The ordinary-lake opening share must be 1–100%.');
   within(settings.winterFraction, 0.01, 1, 'The winter share must be 1–100%.');
+  // Each count is bounded by the one above it only when that one is itself valid, so one bad
+  // field reads as one error.
+  const winter = withWinterWindow(settings);
+  const fits = (n: number, max: number) => Number.isInteger(n) && n >= 1 && n <= max;
+  whole(
+    winter.winterWindowNights,
+    1,
+    60,
+    'The winter window must be a whole number from 1 to 60 nights.',
+  );
+  const windowMax = fits(winter.winterWindowNights, 60) ? winter.winterWindowNights : 60;
+  whole(
+    winter.winterEnterNights,
+    1,
+    windowMax,
+    'Winter nights to set in must be a whole number from 1 to the window.',
+  );
+  whole(
+    winter.winterExitNights,
+    0,
+    fits(winter.winterEnterNights, windowMax) ? winter.winterEnterNights - 1 : windowMax - 1,
+    'Winter nights to end must be a whole number below the nights to set in.',
+  );
   within(settings.imageryNudgeC, -40, 5, 'The imagery line must be between −40 °F and 41 °F.');
   within(settings.thawC, -10, 10, 'The thaw line must be between 14 °F and 50 °F.');
   whole(settings.thawRunDays, 1, 60, 'Thawed nights must be a whole number from 1 to 60.');
@@ -217,6 +271,15 @@ export interface SeasonEvaluation extends GateWindow {
   imageryNudge: { date: string; sites: SiteLow[] } | null;
 }
 
+/** The winter window's three knobs as `GateOptions`; one a version never saved reads as default. */
+export function windowOptions(settings: SeasonWatchSettings): GateOptions {
+  return {
+    winterWindowNights: settings.winterWindowNights,
+    winterEnterNights: settings.winterEnterNights,
+    winterExitNights: settings.winterExitNights,
+  };
+}
+
 /**
  * One season, under one set of settings — the function the cron and the preview share.
  *
@@ -236,6 +299,7 @@ export function evaluateSeason(
     sentinelNights: settings.sentinelNights,
     corpusFraction: settings.corpusFraction,
     winterFraction: settings.winterFraction,
+    ...windowOptions(settings),
     thawC: settings.thawC,
     thawRunDays: settings.thawRunDays,
   });

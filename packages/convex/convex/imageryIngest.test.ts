@@ -127,6 +127,8 @@ function stubLows(
  */
 const IN_SEASON = '2026-12-15';
 const IN_SPRING = '2027-04-30';
+/** 1–11 Dec 2026: warm, then ten winter nights — winter sets in on the 11th (D290). */
+const DECEMBER = [2, -1, -3, -4, -5, -2, -6, -3, -4, -2, -5];
 const atDate = (iso: string, hour = 17) =>
   vi.setSystemTime(new Date(`${iso}T${String(hour).padStart(2, '0')}:00:00Z`));
 
@@ -195,19 +197,30 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const t = convexTest(schema, modules);
     await seedSites(t);
 
-    // A cold December: every site freezes, so the corpus signal fires and winter establishes.
-    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    // A cold December: every site freezes, so the corpus signal fires, and on the tenth winter night
+    // of fourteen winter sets in (D290).
+    stubLows('2026-12-01', DECEMBER);
     expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-12-02' });
 
     const row = await theRow(t);
     expect(row).toMatchObject({
       openedBy: ['corpus'],
-      winterFrom: '2026-12-02',
+      winterFrom: '2026-12-11',
       settingsVersion: 1,
       settings: DEFAULT_SEASON_WATCH_SETTINGS,
       opening: { sentinels: [], corpus: { frozen: 3, reporting: 3 } },
     });
     expect(row?.winter?.frozen).toHaveLength(3);
+    expect(row?.winter?.nights).toBe(10);
+    // What the console shows, counted on the lakes this tick decided on.
+    expect(row?.winterTally).toEqual({
+      through: '2026-12-11',
+      nights: 10,
+      window: 14,
+      needs: 10,
+      endedOn: null,
+      freezeC: 0,
+    });
 
     // The lows are kept, one document per site, from the forecast endpoint's observed past days.
     const series = await t.run((ctx) => ctx.db.query('seasonWatchSeries').collect());
@@ -217,7 +230,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
       source: 'forecast',
       firstDate: '2026-12-01',
     });
-    expect(series[0]?.lows).toEqual([2, -1, -3, -4, -5]);
+    expect(series[0]?.lows).toEqual(DECEMBER);
 
     // ⚠ The regression this file exists for. A second tick must NOT report "already recorded" —
     // the row has an open date and no close date, so there is still work to do.
@@ -261,7 +274,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t);
-    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    stubLows('2026-12-01', DECEMBER);
     await tickNow(t);
 
     // April: the fetch window no longer reaches December, but the stored lows and the recorded
@@ -312,6 +325,15 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const stamped = await theRow(t);
     expect(stamped).toMatchObject({
       winterFrom: null,
+      // Counted even before winter: no winter night yet, and the summits never vote.
+      winterTally: {
+        through: '2026-12-05',
+        nights: 0,
+        window: 14,
+        needs: 10,
+        endedOn: null,
+        freezeC: 0,
+      },
       // Version 0: the defaults it shipped with, before there were versions.
       settingsVersion: 0,
       // Its opening email already went, as the old message: stamped so the queue never re-sends it.
@@ -327,17 +349,18 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     });
 
     // The region freezes. Ice-in arrives *after* opening, so it has to be writable after opening.
-    atDate('2026-12-16');
-    stubLows('2026-12-01', [2, 2, 2, 2, 2, 2, 2, 2, -1, -3]);
+    atDate('2026-12-20');
+    stubLows('2026-12-01', [2, 2, 2, 2, 2, 2, 2, 2, -1, -3, -1, -2, -4, -1, -3, -2, -1, -2]);
     expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-12-02' });
     const row = await theRow(t);
-    expect(row?.winterFrom).toBe('2026-12-09');
+    // The tenth winter night from 9 Dec (D290).
+    expect(row?.winterFrom).toBe('2026-12-18');
     expect(row?.opensOn).toBe('2026-12-02');
 
     // A one-way door: a later window does not re-date ice-in.
     stubLows('2026-12-01', [-5, -5, -5]);
     await tickNow(t);
-    expect((await theRow(t))?.winterFrom).toBe('2026-12-09');
+    expect((await theRow(t))?.winterFrom).toBe('2026-12-18');
   });
 
   test('a legacy winter gets its detail filled, and no late email', async () => {
@@ -465,8 +488,9 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     // counted with its class, never parked; Machinery reads how many in a row and since when.
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
     const failures = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+    // The class names the fault, since the record keeps no message (three bare `Error` days, Nov 2026).
     expect(failures).toMatchObject([
-      { job: 'seasonWatch', key: 'winter-2026-27', attempts: 2, errorClass: 'Error' },
+      { job: 'seasonWatch', key: 'winter-2026-27', attempts: 2, errorClass: 'Open-Meteo HTTP 503' },
     ]);
     expect(failures[0]?.parkedAt).toBeUndefined();
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
@@ -474,6 +498,42 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     expect(third).toMatchObject({ attempts: 3 });
     expect(third?.parkedAt).toBeUndefined(); // a third day still is not parked: the watch keeps going
   });
+  test('a failed tick tries again twice that day, three hours apart', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t, 1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('busy', { status: 429, statusText: 'Too Many Requests' })),
+    );
+    const retries = () =>
+      t.run(async (ctx) =>
+        (await ctx.db.system.query('_scheduled_functions').collect()).filter((f) =>
+          f.name.includes('maybeCheckSeasonOpen'),
+        ),
+      );
+
+    await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 429/);
+    const [first] = await retries();
+    expect(first?.args).toEqual([{ retry: 1 }]);
+    expect(first?.scheduledTime).toBe(Date.now() + 3 * 60 * 60_000);
+    // A 4xx is not retried within the fetch, so the class says which refusal it was.
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').first())).toMatchObject({
+      errorClass: 'Open-Meteo HTTP 429',
+    });
+
+    await expect(
+      t.action(internal.imageryIngest.maybeCheckSeasonOpen, { retry: 1 }),
+    ).rejects.toThrow();
+    expect((await retries()).map((f) => f.args)).toEqual([[{ retry: 1 }], [{ retry: 2 }]]);
+    // The second retry is the last of the day: tomorrow's tick is next.
+    await expect(
+      t.action(internal.imageryIngest.maybeCheckSeasonOpen, { retry: 2 }),
+    ).rejects.toThrow();
+    expect(await retries()).toHaveLength(2);
+  });
+
   test('a tick that goes through clears the days it failed (D258)', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
@@ -601,7 +661,7 @@ describe('the staff emails — one a day, in order (D212)', () => {
     await seedSites(t);
     await seedStaff(t);
     // Opens and establishes winter on the same night: the opening goes today, winter tomorrow.
-    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    stubLows('2026-12-01', DECEMBER);
     await tickNow(t);
     expect((await broadcasts(t)).map((b) => b.subject)).toEqual([
       'Winter 2026-27: Ice Watch Has Begun',
@@ -848,6 +908,131 @@ describe('the staff emails — one a day, in order (D212)', () => {
     });
     const queued = (await theRow(t))?.emailQueue?.[0]?.email;
     expect(queued).toMatchObject({ kind: 'opened', replaces: { opensOn: '2026-10-03' } });
+  });
+
+  test('a winter set in by one night is decided again under the window, without a second opening email', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    // winter-2026-27 as dev holds it: opened by a sentinel, winter on one cold night, the opening
+    // email long sent.
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['sentinel'],
+      winterFrom: '2026-12-03',
+      sitesSampled: 3,
+      winter: { frozen: [{ name: 'Gate Lake 0', lowC: -1 }], reporting: 3 },
+    });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query('imageryIngestSeasons').first();
+      if (row) {
+        await ctx.db.patch(row._id, {
+          emailQueue: (row.emailQueue ?? []).filter((q) => q.email.kind === 'winter'),
+          emailsSent: [{ kind: 'opened', sentOn: '2026-12-03', sentAt: 0 }],
+          lastEmailOn: '2026-12-03',
+          winterTally: {
+            through: '2026-12-03',
+            nights: 1,
+            window: 1,
+            needs: 1,
+            endedOn: null,
+            freezeC: 0,
+          },
+        });
+      }
+    });
+
+    expect(
+      await t.mutation(internal.imageryIngest.redecideWinter, { season: 'winter-2026-27' }),
+    ).toEqual({ cleared: '2026-12-03', reason: null });
+    const cleared = await theRow(t);
+    expect(cleared?.winterFrom).toBeNull();
+    expect(cleared?.winter).toBeUndefined();
+    expect(cleared?.winterTally).toBeUndefined();
+    // The winter email that was waiting goes with it; the opening is untouched.
+    expect(cleared?.emailQueue).toEqual([]);
+    expect(cleared?.opensOn).toBe('2026-12-02');
+    expect(
+      await t.mutation(internal.imageryIngest.redecideWinter, { season: 'winter-2026-27' }),
+    ).toEqual({ cleared: null, reason: 'no winter recorded' });
+
+    // Three cold nights are not winter under the window…
+    stubLows('2026-12-01', [2, 2, -3, -3, -3]);
+    await tickNow(t);
+    expect((await theRow(t))?.winterFrom).toBeNull();
+    // …ten are, and the winter email is the only one that goes: no second opening.
+    stubLows('2026-12-01', DECEMBER);
+    await tickNow(t);
+    const decided = await theRow(t);
+    expect(decided?.winterFrom).toBe('2026-12-11');
+    expect(decided?.winter?.nights).toBe(10);
+    expect(decided?.emailsSent?.map((e: { kind: string }) => e.kind)).toEqual(['opened', 'winter']);
+    expect(decided?.emailQueue).toEqual([]);
+  });
+
+  test('the tally is written only when it moved, and never on an ended watch', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['corpus'],
+      winterFrom: null,
+      sitesSampled: 3,
+    });
+    const tally = {
+      through: '2026-12-05',
+      nights: 3,
+      window: 14,
+      needs: 10,
+      endedOn: null,
+      freezeC: 0,
+    };
+    const args = { season: 'winter-2026-27', tally };
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).not.toBeNull();
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).toBeNull();
+    const moved = { ...args, tally: { ...tally, through: '2026-12-06', nights: 4 } };
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, moved)).not.toBeNull();
+    expect((await theRow(t))?.winterTally?.nights).toBe(4);
+    await t.mutation(internal.imageryIngest.recordSeasonClose, {
+      season: 'winter-2026-27',
+      closesOn: '2027-04-10',
+    });
+    expect(
+      await t.mutation(internal.imageryIngest.recordWinterTally, {
+        ...args,
+        tally: { ...tally, nights: 9 },
+      }),
+    ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordWinterTally, {
+        ...args,
+        season: 'winter-2030-31',
+      }),
+    ).toBeNull();
+  });
+
+  test('redecideWinter refuses an ended watch and a missing one', async () => {
+    const t = convexTest(schema, modules);
+    expect(
+      await t.mutation(internal.imageryIngest.redecideWinter, { season: 'winter-2026-27' }),
+    ).toEqual({ cleared: null, reason: 'no watch for this season' });
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['corpus'],
+      winterFrom: '2026-12-02',
+      sitesSampled: 3,
+    });
+    await t.mutation(internal.imageryIngest.recordSeasonClose, {
+      season: 'winter-2026-27',
+      closesOn: '2027-04-10',
+    });
+    expect(
+      await t.mutation(internal.imageryIngest.redecideWinter, { season: 'winter-2026-27' }),
+    ).toEqual({ cleared: null, reason: 'the watch has ended' });
+    expect((await theRow(t))?.winterFrom).toBe('2026-12-02');
   });
 
   test('the record mutations are what actually make the emails once-only', async () => {

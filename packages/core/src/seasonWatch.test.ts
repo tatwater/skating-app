@@ -21,6 +21,7 @@ import {
   seasonFloorDate,
   seasonStartYear,
   validateSeasonWatchSettings,
+  withWinterWindow,
 } from './seasonWatch';
 
 /** `lows` from `start`, one per day; `null` leaves a gap in the series. */
@@ -72,12 +73,15 @@ describe('ingestWindow — what the opening night measured (A06i)', () => {
   });
 
   it('lists the lakes that froze the night winter set in, out of those reporting', () => {
-    const window = ingestWindow([
-      series('a', '2026-11-01', [5, -1, -3]),
-      series('b', '2026-11-01', [6, 2, -2]),
-      series('c', '2026-11-01', [7, 3, 4]),
-      series('d', '2026-11-01', [7, 3, null]),
-    ]);
+    const window = ingestWindow(
+      [
+        series('a', '2026-11-01', [5, -1, -3]),
+        series('b', '2026-11-01', [6, 2, -2]),
+        series('c', '2026-11-01', [7, 3, 4]),
+        series('d', '2026-11-01', [7, 3, null]),
+      ],
+      { winterWindowNights: 1, winterEnterNights: 1 },
+    );
     expect(window.winterFrom).toBe('2026-11-03');
     expect(window.winter).toEqual({
       frozen: [
@@ -85,6 +89,7 @@ describe('ingestWindow — what the opening night measured (A06i)', () => {
         { siteId: 'b', lowC: -2 },
       ],
       reporting: 3,
+      nights: 1,
     });
   });
 
@@ -217,10 +222,50 @@ describe('settings', () => {
     [{ thawC: 20 }, 'thaw line'],
     [{ thawRunDays: 0 }, 'Thawed nights'],
     [{ sampleSize: 100 }, 'sample'],
+    [{ winterWindowNights: 0 }, 'winter window'],
+    [{ winterWindowNights: 61 }, 'winter window'],
+    [{ winterEnterNights: 15 }, 'to set in'],
+    [{ winterEnterNights: 2.5 }, 'to set in'],
+    [{ winterExitNights: 10 }, 'to end'],
+    [{ winterExitNights: -1 }, 'to end'],
   ] as [Partial<SeasonWatchSettings>, string][])('refuses %o', (patch, message) => {
     const errors = validateSeasonWatchSettings({ ...DEFAULT_SEASON_WATCH_SETTINGS, ...patch });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain(message);
+  });
+
+  it('accepts a version saved before the winter window, and the old one-night rule', () => {
+    const { winterWindowNights, winterEnterNights, winterExitNights, ...before } =
+      DEFAULT_SEASON_WATCH_SETTINGS;
+    expect(validateSeasonWatchSettings(before)).toEqual([]);
+    expect(withWinterWindow(before)).toEqual(DEFAULT_SEASON_WATCH_SETTINGS);
+    expect(
+      validateSeasonWatchSettings({
+        ...DEFAULT_SEASON_WATCH_SETTINGS,
+        winterWindowNights: 1,
+        winterEnterNights: 1,
+        winterExitNights: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it('decides winter on the window it is given', () => {
+    const lows = (cold: number) => [
+      {
+        siteId: 'a',
+        days: Array.from({ length: cold }, (_, i) => ({
+          date: addDaysIso('2026-11-01', i),
+          minTempC: -2,
+        })),
+      },
+    ];
+    const season = 'winter-2026-27';
+    expect(evaluateSeason(lows(9), DEFAULT_SEASON_WATCH_SETTINGS, season).winterFrom).toBeNull();
+    expect(evaluateSeason(lows(10), DEFAULT_SEASON_WATCH_SETTINGS, season).winterFrom).toBe(
+      '2026-11-10',
+    );
+    const short = { ...DEFAULT_SEASON_WATCH_SETTINGS, winterWindowNights: 3, winterEnterNights: 3 };
+    expect(evaluateSeason(lows(9), short, season).winterFrom).toBe('2026-11-03');
   });
 
   it.each(['11-01', EARLIEST_START_MONTH_DAY])('accepts a %s floor', (startMonthDay) => {

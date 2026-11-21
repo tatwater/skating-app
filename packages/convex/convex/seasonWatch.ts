@@ -38,8 +38,6 @@ import {
   seasonRecordSpan,
   seasonStartYear,
   validateSeasonWatchSettings,
-  winterNeeds,
-  winterRunNights,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 
@@ -1049,9 +1047,6 @@ export const cliStatus = internalQuery({
 // schedule for the machines, winter is a share of overnight air lows, and the first skate is a
 // report someone filed from on the ice.
 
-/** The most stored series a season's winter count reads (roster, pinned and sample, with room). */
-const SUMMARY_SERIES_CAP = 200;
-
 /** The most reports the first-skate look reads before it says *not recorded*. */
 const FIRST_SKATE_SCAN = 500;
 
@@ -1123,10 +1118,9 @@ export const tape = query({
  * record's dates into the tiles' instants in the reader's zone.
  *
  * - `watch` — the record (`iceWatchFromRecord`'s input), `null` while waiting; `countsFrom` beside it.
- * - `winter` — `not-yet`, or the night it set in: how many of the reporting bodies were at or below
- *   freezing, how many the rule needs, and how many nights in a row it held (`winterRunNights` over
- *   the season's stored lows, under the settings that decided the season). `null` for a winter
- *   recorded without its night's detail, or when the stored lows run past the read's bound.
+ * - `winter` — `not-yet`, or the night it set in and the night it ended, if it has (D290); either way
+ *   how many of the last `window` nights were winter nights, through the last night read — as the
+ *   tick counted them (`winterTally` on the row), `null` before it has.
  * - `imagery` — not started, running, paused, or **ended** once the watch has closed (from the
  *   record) or, having started, its season is past; the granules cut (landed and empty); when the
  *   newest frame was indexed and when it was captured. When the cutter was pinned is not recorded.
@@ -1153,48 +1147,39 @@ export const homeSummary = query({
       season,
       countsFrom: seasonFloorDate(label, settings.startMonthDay),
       watch: record === null ? null : watchFacts(record),
-      winter: await winterSummary(ctx, label, record, settings),
+      winter: winterSummary(record, (await latestSettings(ctx))?.settings ?? settings),
       imagery: await imagerySummary(ctx, label, record, season < seasonOf(now)),
       firstSkate: await firstSkateSummary(ctx, season, now),
     };
   },
 });
 
-async function winterSummary(
-  ctx: QueryCtx,
-  label: string,
-  record: Doc<'imageryIngestSeasons'> | null,
-  settings: SeasonWatchSettings,
-) {
-  if (record === null || record.winterFrom === null) return { state: 'not-yet' as const };
-  if (record.winter === undefined) return null;
-  const docs = await ctx.db
-    .query('seasonWatchSeries')
-    .withIndex('by_season_body', (q) => q.eq('season', label))
-    .take(SUMMARY_SERIES_CAP + 1);
-  if (docs.length > SUMMARY_SERIES_CAP) return null;
-  // A sentinel never votes on winter. The rule that set it read the roster of its own night, not the
-  // copy taken at the opening, so a summit pond added since must not count here as an ordinary lake:
-  // both rosters' sentinels are left out.
-  const roster = (await latestSettings(ctx))?.sentinels ?? [];
-  const sentinels = new Set<string>(
-    [...(record.sentinels ?? []), ...roster].map((s) => s.waterBodyId),
-  );
-  const sites = docs.map((d) => ({
-    siteId: d.waterBodyId as string,
-    ...(sentinels.has(d.waterBodyId) ? { sentinel: true } : {}),
-    days: expandLows(d),
-  }));
-  const options = { freezeC: settings.freezeC, winterFraction: settings.winterFraction };
+/**
+ * Winter as the tick last counted it (D290): the tick writes `winterTally` on the row from the lakes
+ * and settings it decided on, so the tile never counts a set of its own. Without a tally yet — the
+ * watch not open, or no tick since — the counts are `null`.
+ */
+function winterSummary(record: Doc<'imageryIngestSeasons'> | null, settings: SeasonWatchSettings) {
+  const tally = record?.winterTally ?? null;
+  const counts = {
+    nights: tally?.nights ?? null,
+    window: tally?.window ?? null,
+    through: tally?.through ?? null,
+    /**
+     * The freezing line the nights were counted under, °C — the tile states it, never 32 °F. The
+     * tally's own line: an edit since must not relabel nights counted under the old one.
+     */
+    freezeC: tally?.freezeC ?? settings.freezeC,
+  };
+  if (record === null || record.winterFrom === null) {
+    return { state: 'not-yet' as const, needs: tally?.needs ?? null, ...counts };
+  }
   return {
     state: 'set' as const,
     from: record.winterFrom,
-    nights: winterRunNights(sites, record.winterFrom, options),
-    frozen: record.winter.frozen.length,
-    reporting: record.winter.reporting,
-    needs: winterNeeds(record.winter.reporting, settings.winterFraction),
-    /** The freezing line `frozen` was counted under, °C — the tile states it, never assumes 32 °F. */
-    freezeC: settings.freezeC,
+    /** The night it ended, once the window emptied — the watch itself runs on to its own end. */
+    endedOn: tally?.endedOn ?? null,
+    ...counts,
   };
 }
 
