@@ -83,6 +83,8 @@ export type DistOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> 
 
 /** Members an item's view lists at most, of each status. */
 export const VIEW_MEMBERS = 50;
+/** An Access row's newest reports read for the newest note among them. */
+export const LATEST_NOTE_READ = 5;
 /** A person's open flags counted at most on their author block. */
 const AUTHOR_FLAGS_CAP = 50;
 
@@ -121,12 +123,21 @@ export class InboxReader {
     return k > 0 ? this.budget.take(kind, k, read) : [];
   }
 
-  /** An item's members of one status, oldest first. */
-  members(itemId: Id<'inboxItems'>, status: 'open' | 'closed', n = VIEW_MEMBERS) {
-    return this.take('small', n, (k) =>
+  /**
+   * An item's members of one status: the oldest `n`, oldest first — or, `newest`, the newest `n`,
+   * newest first (a read labeled by its newest end must read from that end, PR #170).
+   */
+  members(
+    itemId: Id<'inboxItems'>,
+    status: 'open' | 'closed',
+    n = VIEW_MEMBERS,
+    end: 'oldest' | 'newest' = 'oldest',
+  ) {
+    return this.take('inboxMember', n, (k) =>
       this.ctx.db
         .query('inboxItemMembers')
         .withIndex('by_item_status', (q) => q.eq('itemId', itemId).eq('status', status))
+        .order(end === 'newest' ? 'desc' : 'asc')
         .take(k),
     );
   }
@@ -783,10 +794,17 @@ export async function rowLabel(
       };
     }
     case 'access': {
-      const latest = members.at(-1);
-      const flag = latest
-        ? await r.get<'contentFlags'>('contentFlag', latest.sourceId as Id<'contentFlags'>)
-        : null;
+      // The newest reports by their own read — not the last of the oldest five, which once an item
+      // had six reports hid every later note (PR #170) — and the newest of them that says something.
+      const newest = await r.members(item._id, status, LATEST_NOTE_READ, 'newest');
+      let flag: Doc<'contentFlags'> | null = null;
+      for (const m of newest) {
+        const f = await r.get<'contentFlags'>('contentFlag', m.sourceId as Id<'contentFlags'>);
+        if (f?.note?.trim()) {
+          flag = f;
+          break;
+        }
+      }
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const ruling = water?.publicAccess;
       return {
@@ -905,7 +923,13 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
-      const reports = (await Promise.all(members.map((m) => flagMember(r, m))))
+      // Listed newest first, so read from the newest end: past `VIEW_MEMBERS` a report about changed
+      // access would otherwise be the one left out (PR #170).
+      const recent = [
+        ...(await r.members(item._id, 'open', VIEW_MEMBERS, 'newest')),
+        ...(await r.members(item._id, 'closed', VIEW_MEMBERS, 'newest')),
+      ];
+      const reports = (await Promise.all(recent.map((m) => flagMember(r, m))))
         .filter((f): f is FlagMemberView => f !== null)
         .sort((a, b) => b.filedAt - a.filedAt);
       const p = water.publicAccess;

@@ -932,3 +932,42 @@ describe('no staffer decides an ask they filed, in any item the decision reaches
     expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
   });
 });
+
+// ── An Access item's newest words ─────────────────────────────────────────────────────────────
+
+describe('an Access item shows its newest reports', () => {
+  test('the row’s note is the newest report’s, past the oldest five; the drawer lists from the newest end', async () => {
+    const t = harness();
+    const lakeId = await lake(t);
+    const flaggers = await people(t, 60);
+    const admin = await staff(t, 'admin');
+    await t.run(async (ctx) => {
+      for (const [i, flaggerId] of flaggers.entries()) {
+        const id = await ctx.db.insert('contentFlags', {
+          flaggerId,
+          targetType: 'waterbody',
+          targetId: lakeId,
+          reason: 'no_public_access',
+          status: 'open',
+          origin: 'user',
+          // The newest says the gate is locked now; the oldest note is long out of date; the newest
+          // but one says nothing, so the note is the newest that says something.
+          ...(i === 58 ? { note: 'Gate locked since Friday' } : {}),
+          ...(i === 4 ? { note: 'Open through the farm road' } : {}),
+          createdAt: NOW - 100_000 + i * 1000,
+        });
+        await fileMember(ctx, flagSource(id));
+      }
+    });
+    const page = await admin.as.query(api.inbox.listPage, { lane: 'accessReports' });
+    const row = page.rows[0];
+    if (row?.kind !== 'access') throw new Error('no access row');
+    expect(row.latestNote).toBe('Gate locked since Friday');
+    const view = await admin.as.query(api.inbox.item, { ref: row.itemId });
+    if (view.item?.kind !== 'access') throw new Error('no access item');
+    // Newest first, and the newest is there though the item holds more than the drawer reads.
+    expect(view.item.reports[0]?.note).toBeNull();
+    expect(view.item.reports.map((r) => r.note)).toContain('Gate locked since Friday');
+    expect(view.item.reports).toHaveLength(50);
+  });
+});
