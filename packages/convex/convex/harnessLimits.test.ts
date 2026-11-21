@@ -1,5 +1,8 @@
 /**
- * **The harness enforces the real backend's one-paginated-query rule** (`vitest.config.ts`,
+ * **The harness enforces the real backend's limits** (`vitest.config.ts`): every transaction runs
+ * under Convex's default per-transaction limits (documents and bytes read and written, index ranges,
+ * functions scheduled), which `convex-test` leaves off unless asked; and its one-paginated-query rule
+ * (`vitest.config.ts`,
  * `singlePaginatePerMutation`): a mutation that calls `.paginate()` twice in one execution throws, as
  * Convex's `queryPage` syscall refuses it ("This query or mutation function ran multiple paginated
  * queries") — and each execution, a nested one too, counts on its own.
@@ -32,4 +35,17 @@ test('a nested call counts on its own, as the backend gives each execution its o
     await ctx.db.query('inboxItems').paginate({ cursor: null, numItems: 1 });
     await ctx.runMutation(internal.inboxItems.backfill, {});
   });
+});
+
+test('every transaction runs under Convex’s own limits: index ranges past 4,096 throw', async () => {
+  const t = convexTest(schema, modules);
+  const id = await t.run((ctx) => ctx.db.insert('inboxCounts', { key: 'k', count: 0 }));
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 4_000; i++) await ctx.db.get(id);
+  });
+  await expect(
+    t.run(async (ctx) => {
+      for (let i = 0; i < 4_097; i++) await ctx.db.get(id);
+    }),
+  ).rejects.toThrow(/index ranges|limit: 4096/);
 });

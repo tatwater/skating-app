@@ -1,7 +1,14 @@
 import { defineConfig, type Plugin } from 'vitest/config';
 
 /**
- * **The harness enforces Convex's one-paginated-query rule for mutations too** (PR #170). The real
+ * **The harness enforces the real backend's limits** (PR #170). Two rewrites of the inlined
+ * `convex-test` bundle, test-only:
+ *
+ * - every `convexTest(...)` runs under Convex's default per-transaction limits (`transactionLimits:
+ *   true` — documents and bytes read and written, index ranges, functions scheduled and their
+ *   argument bytes, files), which `convex-test` leaves off unless a test asks; a function or fixture
+ *   past one throws as the backend would;
+ * - Convex's one-paginated-query rule, for mutations too. The real
  * backend refuses a second `.paginate()` in one function execution, queries and mutations alike —
  * `crates/isolate/src/environment/udf/async_syscall.rs`, the `queryPage` syscall:
  * `MultiplePaginatedDatabaseQueries`, "This query or mutation function ran multiple paginated
@@ -18,17 +25,24 @@ function singlePaginatePerMutation(): Plugin {
             depth: (parentCtx?.depth ?? 0) + 1,
         };`;
   const THROW = `throw new Error("Only a single paginated query (\`.paginate()\`) is allowed per " +`;
+  const LIMITS_OFF = `export function convexTest(schemaOrOptions, modules) {
+    let schema = undefined;
+    let limitsConfig = false;`;
+  const LIMITS_ON = `export function convexTest(schemaOrOptions, modules) {
+    let schema = undefined;
+    let limitsConfig = true;`;
   return {
     name: 'convex-single-paginate-per-mutation',
     enforce: 'pre',
     transform(code, id) {
       if (!/convex-test[\\/]dist[\\/]index\.js$/.test(id)) return null;
-      if (!code.includes(MUTATION_CTX) || !code.includes(THROW)) {
+      if (!code.includes(MUTATION_CTX) || !code.includes(THROW) || !code.includes(LIMITS_OFF)) {
         throw new Error(
           'convex-test changed: the one-paginated-query harness rule no longer applies; update it',
         );
       }
       return code
+        .replace(LIMITS_OFF, LIMITS_ON)
         .replace(
           MUTATION_CTX,
           `udfType: "mutation",
