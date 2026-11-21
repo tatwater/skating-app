@@ -8465,3 +8465,25 @@ cover any realistic person.
 
 **Related:** D226, D248, D267, D202, [B01 phase doc](./phases/B01-admin-console.md) *The two stored
 facts built (B01-4m, B01-3u)*.
+
+## D290 — Winter region-wide sets in on 10 of the last 14 nights, and can end (A06i)
+
+**Decided (2026-11-20, founder).** A **winter night** is still one on which at least half the
+ordinary lakes are at or below the freezing line. Winter sets in region-wide on the winter night
+that brings the last 14 nights to 10 winter nights, and has ended once they hold 4 or fewer. Both
+counts and the window are versioned settings (D213); a version saved before this reads as 14, 10
+and 4. The watch's end is still `thawClose`, measured from the night winter set in; when winter
+ends, the console says so, but the watch runs on to its own reluctant end, because ice goes out
+weeks after the air turns. Winter-2026-27's 7 October winter, set in by the old rule, is cleared
+and decided again (`imageryIngest.redecideWinter`), so no opening email is re-sent.
+
+**Why:** one winter night set winter in between 10 October and 9 November in every season on
+record, weeks before the region froze, and the end was measured from it: 3–10 November 2026 had no
+freeze at any ordinary lake, two nights short of ending the watch, imagery and the weather sweep
+with it. The Overview's *One night* read as "one cold night all season" while the sentinels sat at
+20–32 °F. Backtested over ten seasons of stored lows, the window sets winter in between 13 November
+and 9 December and ends it mid-April to early May, restarting once (a real cold snap in late April
+2020). Counting runs of nights instead (three cold to set in, three warm to end) restarted in eight
+seasons, including a December thaw that ended 2023-24's winter for five days.
+
+**Related:** D3, D149, D212, D213, [`phase-A06i`](./phases/A06i-season-watch.md).

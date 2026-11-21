@@ -66,7 +66,7 @@ describe('the season emails (D212)', () => {
         'What to expect next',
         [
           '- That reminder email when a sentinel sees a 20°F night',
-          '- An email when winter sets in region-wide: half the ordinary lakes freezing on the same night',
+          '- An email when winter sets in region-wide: half the ordinary lakes freezing on 10 of 14 nights',
           '- An email when the watch ends: ten nights in a row with no freeze at any ordinary lake',
         ].join('\n'),
       ].join('\n\n'),
@@ -89,6 +89,8 @@ describe('the season emails (D212)', () => {
           ...DEFAULT_SEASON_WATCH_SETTINGS,
           sentinelNights: 3,
           winterFraction: 0.6,
+          winterWindowNights: 21,
+          winterEnterNights: 14,
           thawRunDays: 14,
         },
       },
@@ -101,7 +103,7 @@ describe('the season emails (D212)', () => {
     expect(email.body).toContain(
       'The rule: three nights in a row at or below 32°F at a sentinel pond',
     );
-    expect(email.body).toContain('60% of the ordinary lakes freezing on the same night');
+    expect(email.body).toContain('60% of the ordinary lakes freezing on 14 of 21 nights');
     expect(email.body).toContain('14 nights in a row');
   });
 
@@ -125,7 +127,7 @@ describe('the season emails (D212)', () => {
     );
   });
 
-  it('3 — winter has set in region-wide, and says it measures air, not ice', () => {
+  it('3 — winter has set in region-wide on a window of nights, and says it measures air, not ice', () => {
     const email = text({
       kind: 'winter',
       date: '2026-10-19',
@@ -134,17 +136,56 @@ describe('the season emails (D212)', () => {
         { name: 'Flagstaff Lake', state: 'ME', lowC: -2.7 },
       ],
       reporting: 3,
+      nights: 11,
     });
     expect(email.subject).toBe('Winter 2026-27: Winter Has Set In Region-Wide');
     expect(email.heading).toBe('Winter set in region-wide on Monday, October 19');
     expect(email.body).toContain(
-      '2 of 3 ordinary lakes had a night at or below 32°F on October 19. This is above the threshold of half, and is a measure of the air temperature at those lakes, not actual ice formation.',
+      '2 of 3 ordinary lakes had a night at or below 32°F on October 19. That made 11 of the last 14 nights on which at least half of the ordinary lakes we sample froze — the rule needs 10. This is a measure of the air temperature at those lakes, not actual ice formation.',
     );
     expect(email.body).toContain(
       'Lake                Low on October 19\nUmbagog Lake, ME    26.4°F (−3.1°C)',
     );
     expect(email.body).toContain(
       'The watch keeps running until spring; its end is measured from this date.',
+    );
+    // Saved as the old one-night rule, the copy says one night rather than "1 of the last 1".
+    const one = composeSeasonEmail(
+      {
+        kind: 'winter',
+        date: '2026-10-19',
+        frozen: [{ name: 'A', lowC: -1 }],
+        reporting: 2,
+        nights: 1,
+      },
+      {
+        ...ctx,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, winterWindowNights: 1, winterEnterNights: 1 },
+      },
+    );
+    expect(renderBlocksText(one.blocks)).toContain(
+      'That meets the threshold of half on one night.',
+    );
+    const opened = text(
+      { kind: 'opened', date: '2026-10-03', sentinels: [], corpus: { frozen: 0, reporting: 1 } },
+      {
+        ...ctx,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, winterWindowNights: 1, winterEnterNights: 1 },
+      },
+    );
+    expect(opened.body).toContain('half the ordinary lakes freezing on the same night');
+    // A winter set in by one night, before the window (D290), states the share it met.
+    const legacy = text({
+      kind: 'winter',
+      date: '2026-10-19',
+      frozen: [
+        { name: 'A', lowC: -1 },
+        { name: 'B', lowC: -1 },
+      ],
+      reporting: 3,
+    });
+    expect(legacy.body).toContain(
+      'This is above the threshold of half, and is a measure of the air temperature at those lakes, not actual ice formation.',
     );
     // Exactly at the threshold says "at", not "above".
     const at = text({

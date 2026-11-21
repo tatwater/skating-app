@@ -580,7 +580,7 @@ observations (D160). *A skater asks "do I get in the car?" against a water body 
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
 ## Phase A06i — The season watch
-🟢 **Complete** 2026-10-11 · PR #85 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
+🟢 **Complete** 2026-10-11 · PR #85 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214 D290
 
 The daily season checker opened winter-2026-27 on 3 October on one 31 °F night at two summit tarns
 and mailed staff that the skating season had begun, without saying which sentinel or what it
@@ -603,7 +603,7 @@ watch opened, tune it against past winters, and leave the season's imagery to ru
 #### Owed
 - The first *Start imagery* on dev — every setting is in place; the first real spawn is the token's first use
 - The lows re-fill finishes ~2026-10-13 11:00 UTC — its report (timings, failures, Open-Meteo use)
-- Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then. ⚠ Winter region-wide was recorded for 2026-10-07 on one cold night, so a warm October fortnight would end the watch
+- Matt's thresholds — the reason the settings page exists; the opening triggers are unchanged until then. Winter region-wide is now a window, 10 of the last 14 nights (D290), and the one-night 2026-10-07 winter is decided again under it
 
 ## Phase A07a — The unified corpus
 🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137

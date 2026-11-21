@@ -3,10 +3,14 @@ import {
   DEFAULT_THAW_RUN_DAYS,
   dailyLowsFromHourly,
   dailyLowsFromOpenMeteo,
+  type GateOptions,
   ingestWindow,
   type SiteSeries,
   thawClose,
 } from './ingestGate';
+
+/** The winter rule before D290: one winter night sets it in. */
+const ONE_NIGHT: GateOptions = { winterWindowNights: 1, winterEnterNights: 1 };
 
 /** `count` days from `start`, each with the given low. */
 function series(siteId: string, start: string, lows: number[], sentinel?: boolean): SiteSeries {
@@ -101,22 +105,27 @@ describe('ingestWindow — winter has to establish before it can end', () => {
   });
 
   it('records the date the region itself froze, not the summit', () => {
+    const cold = Array<number>(10).fill(-2);
     const sites = [
-      series('clouds', '2026-09-20', [-1, -2, -3, -4], true),
-      series('valley-a', '2026-09-20', [12, 11, -1, -2]),
-      series('valley-b', '2026-09-20', [13, 12, -1, -3]),
+      series('clouds', '2026-09-20', [-1, -2, ...cold], true),
+      series('valley-a', '2026-09-20', [12, 11, ...cold]),
+      series('valley-b', '2026-09-20', [13, 12, ...cold]),
     ];
     const window = ingestWindow(sites);
     expect(window.opensOn).toBe('2026-09-20');
-    // Both valleys froze on the third day — a majority, so winter is established there.
-    expect(window.winterFrom).toBe('2026-09-22');
+    // Both valleys froze from the third day; the tenth such night is when winter set in (D290).
+    expect(window.winterFrom).toBe('2026-10-01');
+    expect(window.winter?.nights).toBe(10);
   });
 });
 
 describe('ingestWindow — closing', () => {
+  // Closing is measured from winter. A window of one night sets winter in on the first winter night,
+  // so these stay about the close; D290's window is `winterWindow.test.ts`'s.
+
   it('stays open while the season is still cold', () => {
     const sites = [series('valley-a', '2026-12-01', [-5, -6, -4, -3])];
-    const window = ingestWindow(sites);
+    const window = ingestWindow(sites, ONE_NIGHT);
     expect(window.opensOn).toBe('2026-12-01');
     expect(window.winterFrom).toBe('2026-12-01');
     expect(window.closesOn).toBeNull();
@@ -125,7 +134,7 @@ describe('ingestWindow — closing', () => {
   it('closes only after a sustained run of thaw', () => {
     const warm = Array<number>(DEFAULT_THAW_RUN_DAYS).fill(12);
     const sites = [series('valley-a', '2026-12-01', [-5, ...warm])];
-    const window = ingestWindow(sites);
+    const window = ingestWindow(sites, ONE_NIGHT);
     expect(window.opensOn).toBe('2026-12-01');
     // The tenth consecutive warm day, not the first.
     expect(window.closesOn).toBe('2026-12-11');
@@ -135,23 +144,23 @@ describe('ingestWindow — closing', () => {
     // 4 °C was the earlier threshold and it closed 2025-26 on 9 June, because clear New England
     // spring nights dip below it on lakes that have been open for weeks. Zero measures the ice.
     const sites = [series('valley-a', '2026-12-01', [-5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3])];
-    expect(ingestWindow(sites).closesOn).toBe('2026-12-11');
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBe('2026-12-11');
     const frosty = [series('valley-b', '2026-12-01', [-5, 3, 3, 3, -1, 3, 3, 3, 3, 3, 3])];
-    expect(ingestWindow(frosty).closesOn).toBeNull();
+    expect(ingestWindow(frosty, ONE_NIGHT).closesOn).toBeNull();
   });
 
   it('a single warm week does not end a winter', () => {
     // January thaws happen. Closing on one would truncate the season mid-freeze and lose every frame
     // after it, which is exactly the expensive direction.
     const sites = [series('valley-a', '2026-12-01', [-5, 12, 12, 12, 12, 12, -3, -4])];
-    expect(ingestWindow(sites).closesOn).toBeNull();
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBeNull();
   });
 
   it('a cold day resets the thaw run', () => {
     const sites = [
       series('valley-a', '2026-12-01', [-5, 12, 12, 12, 12, 12, 12, 12, 12, 12, -1, 12]),
     ];
-    expect(ingestWindow(sites).closesOn).toBeNull();
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBeNull();
   });
 
   it('one cold ORDINARY site keeps the season open for everyone', () => {
@@ -162,7 +171,7 @@ describe('ingestWindow — closing', () => {
       series('valley-a', '2026-12-01', [-5, ...warm]),
       series('valley-b', '2026-12-01', [-5, ...cold]),
     ];
-    expect(ingestWindow(sites).closesOn).toBeNull();
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBeNull();
   });
 
   it('⚠ the sentinel opens a season but cannot hold it open', () => {
@@ -176,7 +185,7 @@ describe('ingestWindow — closing', () => {
       series('valley-a', '2026-12-01', [-5, ...warm]),
       series('clouds', '2026-12-01', [-5, ...cold], true),
     ];
-    expect(ingestWindow(sites).closesOn).toBe('2026-12-11');
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBe('2026-12-11');
   });
 
   it('⚠ a site that goes dark cannot close the season on the survivors', () => {
@@ -190,7 +199,7 @@ describe('ingestWindow — closing', () => {
       // Froze on day one alongside valley-a, establishing winter, and then stopped reporting.
       series('valley-b', '2026-12-01', [-5]),
     ];
-    const window = ingestWindow(sites);
+    const window = ingestWindow(sites, ONE_NIGHT);
     expect(window.winterFrom).toBe('2026-12-01');
     expect(window.closesOn).toBeNull();
   });
@@ -205,7 +214,7 @@ describe('ingestWindow — closing', () => {
       series('Mud Pond', '2026-12-01', [-5, ...warm]),
       series('Mud Pond', '2026-12-01', [-5, ...warm]),
     ];
-    expect(ingestWindow(sites).closesOn).toBe('2026-12-11');
+    expect(ingestWindow(sites, ONE_NIGHT).closesOn).toBe('2026-12-11');
   });
 
   it('a day nobody reported does not count toward the thaw run', () => {
@@ -222,7 +231,7 @@ describe('ingestWindow — closing', () => {
         });
       }
     }
-    const window = ingestWindow([{ siteId: 'valley-a', days }]);
+    const window = ingestWindow([{ siteId: 'valley-a', days }], ONE_NIGHT);
     // Only ~6 warm days actually reported across that span, short of the 10-day run.
     expect(window.closesOn).toBeNull();
   });

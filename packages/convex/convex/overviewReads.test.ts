@@ -12,7 +12,7 @@
  *  - **the capability map decides who reads what** — moderators read Metrics and the season summary,
  *    support's half and Machinery stay admin's.
  */
-import { metricDay } from '@skating/core';
+import { DEFAULT_SEASON_WATCH_SETTINGS, metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -2201,7 +2201,15 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     });
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.watch).toBeNull();
-    expect(home.winter).toEqual({ state: 'not-yet' });
+    // No tick has counted yet: nothing counted, and nothing counted through.
+    expect(home.winter).toEqual({
+      state: 'not-yet',
+      nights: null,
+      window: null,
+      needs: null,
+      through: null,
+      freezeC: 0,
+    });
     expect(home.imagery).toEqual({
       state: 'not-started',
       granules: 0,
@@ -2211,7 +2219,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(home.firstSkate).toEqual({ first: null, lastWinter: null });
   });
 
-  test('open, winter set in for two nights, imagery running, the first skate from on the ice', async () => {
+  test('open, winter set in on the window, imagery running, the first skate from on the ice', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const summit = await seedBody(t, 'Upper Lake of the Clouds');
@@ -2222,8 +2230,21 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
         season: 'winter-2026-27',
         opensOn: '2026-10-03',
         openedBy: ['sentinel'],
-        winterFrom: '2026-11-05',
-        winter: { frozen: [{ waterBodyId: a, name: 'Valley A', lowC: -2 }], reporting: 2 },
+        winterFrom: '2026-11-03',
+        winter: {
+          frozen: [{ waterBodyId: a, name: 'Valley A', lowC: -2 }],
+          reporting: 2,
+          nights: 10,
+        },
+        // As the tick counted it; the tile never counts the stored lows itself.
+        winterTally: {
+          through: '2026-11-07',
+          nights: 13,
+          window: 14,
+          needs: 10,
+          endedOn: null,
+          freezeC: 0,
+        },
         sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds' }],
         opening: {
           sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds', lowC: -3 }],
@@ -2246,13 +2267,14 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
           lat: 44,
           lng: -71,
           source: 'forecast' as const,
-          firstDate: '2026-11-05',
+          firstDate: '2026-10-25',
           lows,
           updatedAt: NOW,
         });
-      await site(summit, 'Upper Lake of the Clouds', [-9, -9, -9, -9]);
-      await site(a, 'Valley A', [-2, -1, 3, -1]);
-      await site(b, 'Valley B', [1, 2, 4, 3]);
+      // 25 Oct – 7 Nov: Valley A froze every night but the last, half of the two reporting.
+      await site(summit, 'Upper Lake of the Clouds', Array(14).fill(-9));
+      await site(a, 'Valley A', [...Array(13).fill(-2), 3]);
+      await site(b, 'Valley B', Array(14).fill(2));
       await ctx.db.insert('imageryCounts', {
         season: 'winter-2026-27',
         queued: 5,
@@ -2270,7 +2292,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     const tape = await mod.as.query(api.seasonWatch.tape, {});
     expect(tape.watch?.opensOn).toBe('2026-10-03');
     expect(tape.imageryNudgeOn).toBe('2026-10-20');
-    expect(tape.winterFrom).toBe('2026-11-05');
+    expect(tape.winterFrom).toBe('2026-11-03');
     expect(tape.imageryNudgeLowC).toBe(-8);
     expect(tape.lastWinterFirst).toEqual({
       source: 'report',
@@ -2282,14 +2304,13 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(home.watch).toEqual(
       expect.objectContaining({ opensOn: '2026-10-03', openedBy: ['sentinel'], closesOn: null }),
     );
-    // Valley A froze the 5th and 6th, half of the two reporting each night; the 7th it thawed.
     expect(home.winter).toEqual({
       state: 'set',
-      from: '2026-11-05',
-      nights: 2,
-      frozen: 1,
-      reporting: 2,
-      needs: 1,
+      from: '2026-11-03',
+      endedOn: null,
+      nights: 13,
+      window: 14,
+      through: '2026-11-07',
       freezeC: 0,
     });
     expect(home.imagery).toEqual({
@@ -2436,7 +2457,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(home.imagery.state).toBe('ended');
   });
 
-  test('a paused imagery run, and a winter recorded without its night', async () => {
+  test('a paused imagery run, and a winter with no lows to count', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     await t.run((ctx) =>
@@ -2453,7 +2474,56 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     );
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.imagery.state).toBe('paused');
-    expect(home.winter).toBeNull();
+    // A winter no tick has counted since still reads as set, with nothing counted and no end.
+    expect(home.winter).toEqual({
+      state: 'set',
+      from: '2026-11-05',
+      endedOn: null,
+      nights: null,
+      window: null,
+      through: null,
+      freezeC: 0,
+    });
+  });
+
+  test('an ended winter, labelled with the line it was counted under, not a later edit', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2026-27',
+        opensOn: '2026-10-03',
+        openedBy: ['corpus'],
+        winterFrom: '2026-11-03',
+        winterTally: {
+          through: '2026-11-15',
+          nights: 4,
+          window: 14,
+          needs: 10,
+          endedOn: '2026-11-15',
+          freezeC: 0,
+        },
+        sitesSampled: 1,
+        detectedAt: NOW - 40 * DAY,
+      });
+      await ctx.db.insert('seasonWatchSettings', {
+        version: 1,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, freezeC: -2 },
+        sentinels: [],
+        pinned: [],
+        savedAt: NOW,
+      });
+    });
+    expect((await mod.as.query(api.seasonWatch.homeSummary, {})).winter).toEqual({
+      state: 'set',
+      from: '2026-11-03',
+      endedOn: '2026-11-15',
+      nights: 4,
+      window: 14,
+      through: '2026-11-15',
+      // Saved as 28 °F since; these nights were counted at 32 °F.
+      freezeC: 0,
+    });
   });
 
   test('a member is refused', async () => {

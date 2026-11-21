@@ -179,17 +179,25 @@ describe('the Overview at /admin', () => {
       season: 2026,
       countsFrom: '2026-10-01',
       watch: null,
-      winter: null,
+      winter: {
+        state: 'not-yet',
+        nights: null,
+        window: null,
+        needs: null,
+        through: null,
+        freezeC: 0,
+      },
       imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
       firstSkate: null,
     });
     render(<OverviewRoute />);
-    for (const label of ['Winter, region-wide', 'First skated', 'Cost · this season']) {
+    for (const label of ['First skated', 'Cost · this season']) {
       expect(statTile(label)).toHaveTextContent('—Not recorded yet');
     }
-    // A waiting watch and imagery not started are facts, not absences.
+    // A waiting watch, imagery not started and a winter nothing has counted are facts, not absences.
     expect(statTile('Ice watch')).toHaveTextContent('Waiting');
     expect(statTile('Imagery')).toHaveTextContent('Not started');
+    expect(statTile('Winter, region-wide')).not.toHaveTextContent(/\d+ of the last/);
     const machinery = screen.getByRole('region', { name: 'Machinery' });
     expect(within(machinery).getByText('Not recorded yet')).toBeInTheDocument();
     expect(screen.getByText('Spend by month lands here')).toBeInTheDocument();

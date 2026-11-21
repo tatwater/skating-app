@@ -3273,16 +3273,22 @@ four cards and cost and audit — which reverses Review 3's "the sentinel lows l
   earlier night says which ("Eagle 30 · 9 Oct"). The marked nights come only from the record's stored
   facts (`opensOn` and its sentinels; `imageryNudgeOn` and its sites), never from the lows.
 - **Readable.** The chart names what it draws; the matrix is an ARIA grid whose every cell says its
-  sentinel, night and value, and writes the value when it fits. Under the console's narrow rule
+  sentinel, night and value, and its plate shows the value on hover. Under the console's narrow rule
   (`useColumnsFit`, the list and inspector widths) the end labels go and the names move left; at 360 px
   nothing scrolls sideways.
+- **One night, one column** (founder, 2026-11-20). The cells are color alone — written values forced
+  them too wide — and each night's cell sits under that night's point: the chart's x axis gives every
+  night an equal band with its point at the band's center, and the matrix pins its cells to the plot's
+  span (the kit's `MatrixChart` `track`), its gap capped at half a band so a long season in a narrow
+  plot still lines up.
 - **Home scrolls** under the page head now, as Metrics does: with the row it runs past a 900 px screen.
   The cost and audit half keeps at least its board height, the feed scrolling inside it.
 - **Where it differs from the board:** the legend is the kit's mono caps (the board sets it in sentence
   case); the chart has the kit's hover hairline and plate, and the matrix the kit's hover plate; the
   plot keeps the board's left and bottom hairlines but no minor ticks past a month of nights; an end
   label names its night when it isn't the last; the rows' names sit right of the matrix only while the
-  row is wide.
+  row is wide; the cells carry no numbers, and the first and last nights sit half a band in from the
+  plot's edges.
 
 **Metrics: what the board's Statistics hold, and what moved.** The founder, 2026-11-17: "I'm actually
 okay with dropping some of these stats, now that I look at them… Let's forget the grid and go with what
