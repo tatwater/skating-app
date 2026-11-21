@@ -4,7 +4,7 @@
  * handlers reach it without importing the mutation modules back (`inboxWrites.ts`, `moderation.ts`).
  */
 
-import { metricDay } from '@skating/core';
+import { AUDIT_REASON_MAX, metricDay } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -17,8 +17,10 @@ import {
   batchHasRoom,
   flagSource,
   inboxBatch,
-  reopenItem,
-  syncInboxSource,
+  owedRefreshes,
+  refreshCost,
+  reopenReads,
+  syncReopened,
   type TxCost,
 } from './inboxItems';
 import { OWN_FILING_REFUSAL } from './inboxRules';
@@ -30,10 +32,17 @@ import { ROW_MAX } from './readBudget';
 /** The most open flags one target's takedown closes in one write, and an undo reopens. */
 export const FLAGS_READ = 500;
 
+/** Room an undo keeps past its flags: the items' refreshes, the holds, the counters. */
+export const REOPEN_HEADROOM = 2 * 1024 * 1024;
+
+/** An undo whose flags, at their real weight, would pass the transaction's limits. */
+export const UNDO_TOO_LARGE =
+  'This undo reopens more than fits at once; reopen the flags from the Inbox instead.';
+
 /**
  * What reopening one flag costs an undo, which reopens them all in one transaction (it isn't paged):
- * the flag read and put back, its `reopen_flag` row, and its member reconciled under the reopen's
- * memoized reads (`reopenItem`). Held above what an undo is measured to read per flag
+ * the flag read whole twice — by the refusal check and by its patch (its reconcile reads it from the
+ * patched copy, `reopenItem`'s `known`) — and written back whole, its `reopen_flag` row, its member. Held above what an undo is measured to read per flag
  * (`inboxBatch.test.ts`), and {@link FLAGS_READ} of them, with one refresh per item, inside Convex's
  * limits — the arithmetic that test asserts.
  */
@@ -42,6 +51,9 @@ export const FLAG_REOPEN_COST: TxCost = {
   documentsRead: 14,
   databaseQueries: 7,
   documentsWritten: 4,
+  // The flag written back whole, its member, and its `reopen_flag` row: a reason of at most the cap
+  // and a small metadata object (the lead's list of every flag it reopens is one row, in headroom).
+  bytesWritten: ROW_MAX.contentFlag + ROW_MAX.inboxMember + AUDIT_REASON_MAX * 4 + 8 * 1024,
 };
 
 /** A flag's status counts as open (`reviewing` too, until it is narrowed out, D283). */
@@ -107,6 +119,8 @@ export const FLAG_CLOSE_COST: TxCost = {
   documentsRead: 12,
   databaseQueries: 12,
   documentsWritten: 6,
+  // The flag patched whole, its member, its audit row (a reason of at most the cap), the verdict queued.
+  bytesWritten: ROW_MAX.contentFlag + ROW_MAX.inboxMember + 2 * ROW_MAX.small,
 };
 
 /** What a page's settle reads once: each target's hold (its row and a few holds), the counters. */
@@ -115,6 +129,7 @@ const FLAG_SETTLE_COST: TxCost = {
   documentsRead: 64,
   databaseQueries: 32,
   documentsWritten: 16,
+  bytesWritten: 16 * ROW_MAX.small,
 };
 
 /**
@@ -378,57 +393,144 @@ export async function reopenFlagsClosedBy(
       });
     }
   }
-  const reopenedIds: Id<'contentFlags'>[] = [];
-  // Each target's hold and each counter moved once, after every flag is back open (PR #170).
+  await reopenFlagsPage(ctx, actor, actionId, flags, reason, {
+    ...(alsoFlagId !== undefined ? { alsoFlagId } : {}),
+    withUndoOf: opts.withUndoOf === true,
+    reopenedAll: flags.map((f) => f._id),
+    now,
+  });
+  return flags.length;
+}
+
+/** How one page of a flag reopen goes on: the decision's lead flag, and every flag it reopens. */
+type ReopenPageOpts = {
+  alsoFlagId?: Id<'contentFlags'>;
+  withUndoOf: boolean;
+  /** Every flag the undo reopens — this page's and the pages after — named on its lead row. */
+  reopenedAll: Id<'contentFlags'>[];
+  now: number;
+};
+
+/**
+ * **A flag decision's undo, one page of its flags** (PR #170): each flag put back to open, its
+ * `reopen_flag` row written, its member reconciled as one batch from the patched copy (`syncReopened`:
+ * not read again) — while the transaction's live metrics still hold one more at its worst
+ * ({@link FLAG_REOPEN_COST}) and every refresh the batch owes, always one at least, so the undo
+ * advances. Each target's hold and each counter moved once a page. The rest follow in
+ * `inboxWrites.reopenFlagsRest`, each flag skipped there unless the decision still holds it closed.
+ */
+async function reopenFlagsPage(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  actionId: Id<'moderationActions'>,
+  flags: readonly Doc<'contentFlags'>[],
+  reason: string,
+  opts: ReopenPageOpts,
+): Promise<void> {
+  const { now, alsoFlagId } = opts;
   const targets = new Map<string, { type: string; id: string }>();
   const counted = new Map<string, { count: number; at: number }>();
-  for (const flag of flags) {
-    const resolution = flag.status as FlagResolution;
-    await ctx.db.patch(flag._id, {
-      status: 'open',
-      resolvedByUserId: undefined,
-      resolvedAt: undefined,
-    });
-    targets.set(`${flag.targetType}:${flag.targetId}`, {
-      type: flag.targetType,
-      id: flag.targetId,
-    });
-    if (flag.resolvedAt !== undefined && metricDay(flag.resolvedAt) === metricDay(now)) {
-      const key = `${flag.reason}:${resolution}`;
-      counted.set(key, { count: (counted.get(key)?.count ?? 0) + 1, at: flag.resolvedAt });
+  let done = 0;
+  const reads = reopenReads(ctx);
+  await inboxBatch(ctx, async () => {
+    for (const flag of flags) {
+      if (done > 0) {
+        const m = await ctx.meta.getTransactionMetrics();
+        const refreshes = (owedRefreshes(ctx) + 1) * refreshCost().bytesRead;
+        if (
+          m.bytesRead.remaining < FLAG_REOPEN_COST.bytesRead + refreshes + REOPEN_HEADROOM ||
+          m.bytesWritten.remaining < FLAG_REOPEN_COST.bytesWritten + REOPEN_HEADROOM
+        ) {
+          break;
+        }
+      }
+      done++;
+      const resolution = flag.status as FlagResolution;
+      await ctx.db.patch(flag._id, {
+        status: 'open',
+        resolvedByUserId: undefined,
+        resolvedAt: undefined,
+      });
+      targets.set(`${flag.targetType}:${flag.targetId}`, {
+        type: flag.targetType,
+        id: flag.targetId,
+      });
+      if (flag.resolvedAt !== undefined && metricDay(flag.resolvedAt) === metricDay(now)) {
+        const key = `${flag.reason}:${resolution}`;
+        counted.set(key, { count: (counted.get(key)?.count ?? 0) + 1, at: flag.resolvedAt });
+      }
+      // A flag decision's own undo: the undone row's flag carries every reopened flag (`reopened`),
+      // so the undo of this undo closes them all again in one act; the others undo with it. Inside
+      // another undo, each undoes with that one.
+      const lead = flag._id === alsoFlagId && !opts.withUndoOf;
+      await writeAudit(ctx, {
+        actorId: actor._id,
+        action: 'reopen_flag',
+        targetType: 'contentFlag',
+        targetId: flag._id,
+        reason,
+        metadata: {
+          reopens: actionId,
+          prev: { status: resolution },
+          ...(lead ? { reopened: opts.reopenedAll } : { withActionId: actionId }),
+        },
+        createdAt: now,
+      });
+      // Its member reopens (its item with it) from the patched copy, whatever stamp it carries.
+      await syncReopened(
+        ctx,
+        flagSource(flag._id),
+        { ...flag, status: 'open', resolvedByUserId: undefined, resolvedAt: undefined },
+        reads,
+      );
     }
-    reopenedIds.push(flag._id);
-    // A flag decision's own undo: the undone row's flag carries every reopened flag (`reopened`), so
-    // the undo of this undo closes them all again in one act; the others undo with it. Inside another
-    // undo, each undoes with that one.
-    const lead = flag._id === alsoFlagId && !opts.withUndoOf;
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'reopen_flag',
-      targetType: 'contentFlag',
-      targetId: flag._id,
-      reason,
-      metadata: {
-        reopens: actionId,
-        prev: { status: resolution },
-        ...(lead ? { reopened: flags.map((f) => f._id) } : { withActionId: actionId }),
-      },
-      createdAt: now,
-    });
-  }
+  });
   // An open complaint holds withdrawn content back from erasure again (D248).
   for (const { type, id } of targets.values()) await holdMoved(ctx, type, id, now);
   for (const [key, { count, at }] of counted) {
     await bumpMetricMetaCounter(ctx, 'flag_dispositions', key, -count, at);
   }
-  // One batch with the reopen: every item it touches recounted once.
-  await inboxBatch(ctx, async () => {
-    const covered = new Set<string>();
-    await reopenItem(ctx, actionId, { now, covered });
-    // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
-    for (const id of reopenedIds) {
-      if (!covered.has(id)) await syncInboxSource(ctx, flagSource(id), { now });
-    }
-  });
-  return flags.length;
+  const rest = flags.slice(done);
+  if (rest.length > 0) {
+    await ctx.scheduler.runAfter(0, internal.inboxWrites.reopenFlagsRest, {
+      actorId: actor._id,
+      actionId,
+      flagIds: rest.map((f) => f._id),
+      reason,
+      ...(alsoFlagId !== undefined ? { alsoFlagId } : {}),
+      withUndoOf: opts.withUndoOf,
+      reopenedAll: opts.reopenedAll,
+      now,
+    });
+  }
+}
+
+/**
+ * A flag decision's undo, a later page: each flag still closed by that decision (its member stamped
+ * with it — an undo of the undo, or a new decision, stamps another), reopened as the first page did.
+ */
+export async function reopenFlagsRestPage(
+  ctx: MutationCtx,
+  args: Omit<ReopenPageOpts, 'alsoFlagId'> & {
+    actorId: Id<'profiles'>;
+    actionId: Id<'moderationActions'>;
+    flagIds: Id<'contentFlags'>[];
+    reason: string;
+    alsoFlagId?: Id<'contentFlags'>;
+  },
+): Promise<void> {
+  const actor = await ctx.db.get(args.actorId);
+  if (!actor) return;
+  const flags: Doc<'contentFlags'>[] = [];
+  for (const id of args.flagIds) {
+    const member = await ctx.db
+      .query('inboxItemMembers')
+      .withIndex('by_source', (q) => q.eq('sourceTable', 'contentFlags').eq('sourceId', id))
+      .first();
+    if (member?.closedByActionId !== args.actionId) continue;
+    const flag = await ctx.db.get(id);
+    if (flag && !isOpenFlag(flag) && flag.status !== 'retracted') flags.push(flag);
+  }
+  const { actorId: _a, actionId, flagIds: _f, reason, ...opts } = args;
+  await reopenFlagsPage(ctx, actor, actionId, flags, reason, opts);
 }

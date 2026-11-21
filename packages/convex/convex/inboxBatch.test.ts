@@ -27,7 +27,8 @@ import {
 } from './lib/inboxItems';
 import { inboxDrift } from './lib/inboxRepair';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
-import { alongsideIn, OWN_ASKS_READ, QUEUE_CAP, siblingCost } from './lib/requestDecisions';
+import { ReadBudget } from './lib/readBudget';
+import { alongsideAnswer, QUEUE_CAP, siblingCost } from './lib/requestDecisions';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -135,6 +136,7 @@ const CONVEX_LIMITS = {
   documentsRead: 32_000,
   databaseQueries: 4_096,
   documentsWritten: 16_000,
+  bytesWritten: 16 * 1024 * 1024,
 };
 
 /** A function run under {@link CONVEX_LIMITS}, as `subject` when given. */
@@ -891,281 +893,315 @@ const statusesOf = (t: T) =>
     (await ctx.db.query('waterBodyRequests').collect()).map((r) => [r.name, r.status]),
   );
 
-describe('no staffer decides an ask they filed, in any item the decision reaches (D289)', () => {
-  test('an approval whose bay’s alias reaches the approver’s own ask in another item is refused whole', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const [skater] = await people(t, 1, 'skater');
-    const mod = await staff(t, 'mod', 'moderator');
-    const other = await staff(t, 'other', 'moderator');
-    await aliasedBayOn(t, lakeId, other.id);
-    const at = { kind: 'name_bay' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: lakeId };
-    const theirs = await t
-      .withIdentity({ subject: 'skater0' })
-      .mutation(api.corpusRequests.create, { ...at, name: 'Northwest Bay' });
-    await mod.as.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
-    await settle();
-    // Two keys, two items: the moderator's ask isn't a member of the one they'd approve.
-    expect((await itemsNow(t)).items).toHaveLength(2);
-    // The drawer says so before the write does — and the decline (its own key only) is theirs to make.
-    const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
-    expect(view.item?.can.approve).toBe(OWN_FILING_REFUSAL);
-    expect(view.item?.can.decline).toBeNull();
-    await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: theirs }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-    expect(await statusesOf(t)).toEqual([
-      ['Northwest Bay', 'open'],
-      ['NW Bay', 'open'],
-    ]);
-    // A colleague's approval closes both, as one answer.
-    await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
-    expect(await statusesOf(t)).toEqual([
-      ['Northwest Bay', 'approved'],
-      ['NW Bay', 'approved'],
-    ]);
-    void skater;
-  });
+/** The Inbox ready (the backfill done, nothing owed): the own-filing check answers from members. */
+const markReady = (t: T) =>
+  t.run((ctx) =>
+    ctx.db.insert('inboxJobRuns', {
+      job: 'backfill',
+      phase: 'done',
+      cursor: null,
+      done: true,
+      startedAt: 1,
+      updatedAt: 1,
+    }),
+  );
 
-  test('a script’s ask is exempt alone: its app-filed sibling by the approver refuses the approval', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const mod = await staff(t, 'mod', 'moderator');
-    const other = await staff(t, 'other', 'moderator');
-    await aliasedBayOn(t, lakeId, other.id);
-    const seeded = await t.run((ctx) =>
-      ctx.db.insert('waterBodyRequests', {
-        kind: 'name_bay',
-        status: 'open',
-        origin: 'seed',
-        requesterId: other.id,
-        coord: { lat: 0.5, lng: 0.5 },
-        waterBodyId: lakeId,
-        name: 'Northwest Bay',
-        nameKey: requestNameKeyFor('name_bay', 'Northwest Bay'),
-        createdAt: NOW - 1000,
-      }),
-    );
-    await mod.as.mutation(api.corpusRequests.create, {
-      kind: 'name_bay',
-      coord: { lat: 0.5, lng: 0.5 },
-      waterBodyId: lakeId,
-      name: 'NW Bay',
+describe.each(['pending', 'ready'] as const)(
+  'no staffer decides an ask they filed, in any item the decision reaches (D289) — the Inbox %s',
+  (mode) => {
+    test('an approval whose bay’s alias reaches the approver’s own ask in another item is refused whole', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      const [skater] = await people(t, 1, 'skater');
+      const mod = await staff(t, 'mod', 'moderator');
+      const other = await staff(t, 'other', 'moderator');
+      await aliasedBayOn(t, lakeId, other.id);
+      const at = { kind: 'name_bay' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: lakeId };
+      const theirs = await t
+        .withIdentity({ subject: 'skater0' })
+        .mutation(api.corpusRequests.create, { ...at, name: 'Northwest Bay' });
+      await mod.as.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
+      await settle();
+      // Two keys, two items: the moderator's ask isn't a member of the one they'd approve.
+      expect((await itemsNow(t)).items).toHaveLength(2);
+      // The drawer says so before the write does — and the decline (its own key only) is theirs to make.
+      const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
+      expect(view.item?.can.approve).toBe(OWN_FILING_REFUSAL);
+      expect(view.item?.can.decline).toBeNull();
+      await expect(
+        mod.as.mutation(api.corpusRequests.approve, { requestId: theirs }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+      expect(await statusesOf(t)).toEqual([
+        ['Northwest Bay', 'open'],
+        ['NW Bay', 'open'],
+      ]);
+      // A colleague's approval closes both, as one answer.
+      await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
+      expect(await statusesOf(t)).toEqual([
+        ['Northwest Bay', 'approved'],
+        ['NW Bay', 'approved'],
+      ]);
+      void skater;
     });
-    await settle();
-    await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: seeded }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-    // The seed's own staff requester still decides it when no app-filed sibling is theirs.
-    await other.as.mutation(api.corpusRequests.approve, { requestId: seeded });
-    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
-  });
 
-  test('an own ask the backfill hasn’t filed yet: the drawer and the write both see it', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const askers = await people(t, 1);
-    const mod = await staff(t, 'mod', 'moderator');
-    const [theirs] = await bayAsks(t, lakeId, askers);
-    // The moderator's ask for the same bay, written raw: no member, so no item knows it is theirs —
-    // the rule reads the moderator's own asks, not the items.
-    await bayAsks(t, lakeId, [mod.id], { file: () => false });
-    await settle();
-    const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
-    expect(view.item?.can.decline).toBe(OWN_FILING_REFUSAL);
-    await expect(
-      mod.as.mutation(api.corpusRequests.decline, {
-        requestId: theirs as Id<'waterBodyRequests'>,
-        note: 'No',
-      }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
-  });
-
-  test('asks a script filed in the staffer’s name are not theirs: the staffer decides past them', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    await people(t, 1, 'skater');
-    const other = await staff(t, 'other', 'moderator');
-    await aliasedBayOn(t, lakeId, other.id);
-    const theirs = await t
-      .withIdentity({ subject: 'skater0' })
-      .mutation(api.corpusRequests.create, {
+    test('a script’s ask is exempt alone: its app-filed sibling by the approver refuses the approval', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      const mod = await staff(t, 'mod', 'moderator');
+      const other = await staff(t, 'other', 'moderator');
+      await aliasedBayOn(t, lakeId, other.id);
+      const seeded = await t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          origin: 'seed',
+          requesterId: other.id,
+          coord: { lat: 0.5, lng: 0.5 },
+          waterBodyId: lakeId,
+          name: 'Northwest Bay',
+          nameKey: requestNameKeyFor('name_bay', 'Northwest Bay'),
+          createdAt: NOW - 1000,
+        }),
+      );
+      await mod.as.mutation(api.corpusRequests.create, {
         kind: 'name_bay',
-        coord: { lat: 0.5, lng: 0.5 },
-        waterBodyId: lakeId,
-        name: 'Northwest Bay',
-      });
-    // The seed's "NW Bay", filed in this staffer's name: no person asked it, so none of theirs.
-    await t.run((ctx) =>
-      ctx.db.insert('waterBodyRequests', {
-        kind: 'name_bay',
-        status: 'open',
-        origin: 'seed',
-        requesterId: other.id,
         coord: { lat: 0.5, lng: 0.5 },
         waterBodyId: lakeId,
         name: 'NW Bay',
-        nameKey: requestNameKeyFor('name_bay', 'NW Bay'),
-        createdAt: NOW - 1000,
-      }),
-    );
-    await settle();
-    await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
-    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
-  });
-
-  test('past the read’s bound the rule can’t tell, and refuses rather than decide unseen', () => {
-    const ask = {
-      _id: 'a',
-      _creationTime: 1,
-      kind: 'activate',
-      status: 'open',
-      waterBodyId: 'b',
-    } as unknown as Doc<'waterBodyRequests'>;
-    const unrelated = { ...ask, _id: 'x', kind: 'takedown' } as Doc<'waterBodyRequests'>;
-    expect(alongsideIn(Array(OWN_ASKS_READ).fill(unrelated), ask, {})).toBe(false);
-    expect(alongsideIn(Array(OWN_ASKS_READ + 1).fill(unrelated), ask, {})).toBe(true);
-    expect(alongsideIn([{ ...ask, _id: 'y' } as Doc<'waterBodyRequests'>], ask, {})).toBe(true);
-  });
-
-  test('a re-decline over a reopened sibling in another item that is the undoer’s own: neither offered nor run', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const [skater, ...others] = await people(t, 1 + LANDMARK_SCAN, 'p');
-    const sib = await staff(t, 'sib', 'moderator');
-    const actor = await staff(t, 'actor', 'moderator');
-    const landmarkAsk = (requesterId: Id<'profiles'>, name: string, lat: number) =>
-      t.run(async (ctx) => {
-        const id = await ctx.db.insert('waterBodyRequests', {
-          kind: 'name_landmark',
-          status: 'open',
-          requesterId,
-          coord: { lat, lng: 0.5 },
-          waterBodyId: lakeId,
-          name,
-          nameKey: requestNameKeyFor('name_landmark', name),
-          createdAt: NOW - 1000,
-        });
-        await fileMember(ctx, requestSource(id));
-        return id;
       });
-    // A full scan of asks for another place first, so the same place's second ask, looking for the
-    // item to join, never reaches the first one: one place, two items.
-    for (const p of others) await landmarkAsk(p, 'Gull Rock', 0.9);
-    const theirs = await landmarkAsk(skater as Id<'profiles'>, 'Long Point', 0.5);
-    await landmarkAsk(sib.id, 'Long Point', 0.5);
-    const items = await t.run(async (ctx) =>
-      (await ctx.db.query('inboxItems').collect()).filter((i) => i.key.startsWith('landmark:')),
-    );
-    expect(items.length).toBeGreaterThanOrEqual(3);
-    await settle();
-    await actor.as.mutation(api.corpusRequests.decline, { requestId: theirs, note: 'No' });
-    await actor.as.mutation(api.undo.run, { actionId: await rowOn(t, theirs, 'decline_request') });
-    const reopen = await t.run(async (ctx) =>
-      (await ctx.db.query('moderationActions').collect()).find(
-        (r) => r.action === 'reopen_request',
-      ),
-    );
-    expect(
-      ((reopen as Doc<'moderationActions'>).metadata as { reopened: string[] }).reopened,
-    ).toHaveLength(2);
-    const offer = await t.run(async (ctx) => {
-      const { undoState } = await import('./lib/undo');
-      const viewer = (await ctx.db.get(sib.id)) as Doc<'profiles'>;
-      return undoState(ctx, viewer, reopen as Doc<'moderationActions'>, 'one');
+      await settle();
+      await expect(
+        mod.as.mutation(api.corpusRequests.approve, { requestId: seeded }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+      // The seed's own staff requester still decides it when no app-filed sibling is theirs.
+      await other.as.mutation(api.corpusRequests.approve, { requestId: seeded });
+      expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
     });
-    expect(offer).toMatchObject({ state: 'unavailable', why: OWN_FILING_REFUSAL });
-    await expect(
-      sib.as.mutation(api.undo.run, {
-        actionId: reopen?._id as Id<'moderationActions'>,
-        reason: 'x',
-      }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-  });
 
-  test('the undo of an approval that closed the undoer’s own ask in another item: neither offered nor run', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    await people(t, 1, 'skater');
-    const sib = await staff(t, 'sib', 'moderator');
-    const actor = await staff(t, 'actor', 'moderator');
-    await aliasedBayOn(t, lakeId, actor.id);
-    const at = { kind: 'name_bay' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: lakeId };
-    const theirs = await t
-      .withIdentity({ subject: 'skater0' })
-      .mutation(api.corpusRequests.create, { ...at, name: 'Northwest Bay' });
-    await sib.as.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
-    await settle();
-    await actor.as.mutation(api.corpusRequests.approve, { requestId: theirs });
-    const row = await rowOn(t, theirs as string, 'approve_request');
-    const offer = await t.run(async (ctx) => {
-      const { undoState } = await import('./lib/undo');
-      const viewer = (await ctx.db.get(sib.id)) as Doc<'profiles'>;
-      return undoState(ctx, viewer, (await ctx.db.get(row)) as Doc<'moderationActions'>, 'one');
+    test('an own ask the backfill hasn’t filed yet: the drawer and the write both see it', async () => {
+      // Only while the Inbox is pending can an open ask have no member.
+      if (mode === 'ready') return;
+      const t = harness();
+      const lakeId = await lake(t);
+      const askers = await people(t, 1);
+      const mod = await staff(t, 'mod', 'moderator');
+      const [theirs] = await bayAsks(t, lakeId, askers);
+      // The moderator's ask for the same bay, written raw: no member, so no item knows it is theirs —
+      // the rule reads the moderator's own asks, not the items.
+      await bayAsks(t, lakeId, [mod.id], { file: () => false });
+      await settle();
+      const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
+      expect(view.item?.can.decline).toBe(OWN_FILING_REFUSAL);
+      await expect(
+        mod.as.mutation(api.corpusRequests.decline, {
+          requestId: theirs as Id<'waterBodyRequests'>,
+          note: 'No',
+        }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+      expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
     });
-    expect(offer.state).not.toBe('available');
-    await expect(
-      sib.as.mutation(api.undo.run, { actionId: row, reason: 'Undone' }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-    // The approver undoes it: both reopen.
-    await actor.as.mutation(api.undo.run, { actionId: row, reason: 'Undone' });
-    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
-  });
 
-  test('a landmark’s approval reaching the approver’s ask by an alias, in another item, is refused', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const mod = await staff(t, 'mod', 'moderator');
-    const other = await staff(t, 'other', 'moderator');
-    await people(t, 1, 'skater');
-    await t.run((ctx) =>
-      ctx.db.insert('bodyLandmarks', {
-        waterBodyId: lakeId,
-        name: 'Long Point',
-        kind: 'point',
-        point: { lat: 0.5, lng: 0.5 },
-        source: 'moderator',
-        externalIds: [],
-        aliases: ['Gull Point'],
-        createdAt: NOW,
-        updatedAt: NOW,
-      } as never),
-    );
-    const [skater] = await t.run(async (ctx) =>
-      (await ctx.db.query('profiles').collect()).filter((p) => p.clerkUserId === 'skater0'),
-    );
-    // Landmark asks are filed from reports (`fileLandmarkProposals`); written here as it writes them.
-    const landmarkAsk = (requesterId: Id<'profiles'>, name: string) =>
-      t.run(async (ctx) => {
-        const id = await ctx.db.insert('waterBodyRequests', {
-          kind: 'name_landmark',
-          status: 'open',
-          requesterId,
+    test('asks a script filed in the staffer’s name are not theirs: the staffer decides past them', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      await people(t, 1, 'skater');
+      const other = await staff(t, 'other', 'moderator');
+      await aliasedBayOn(t, lakeId, other.id);
+      const theirs = await t
+        .withIdentity({ subject: 'skater0' })
+        .mutation(api.corpusRequests.create, {
+          kind: 'name_bay',
           coord: { lat: 0.5, lng: 0.5 },
           waterBodyId: lakeId,
-          name,
-          nameKey: requestNameKeyFor('name_landmark', name),
-          createdAt: NOW - 1000,
+          name: 'Northwest Bay',
         });
-        await fileMember(ctx, requestSource(id));
-        return id;
+      // The seed's "NW Bay", filed in this staffer's name: no person asked it, so none of theirs.
+      await t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          origin: 'seed',
+          requesterId: other.id,
+          coord: { lat: 0.5, lng: 0.5 },
+          waterBodyId: lakeId,
+          name: 'NW Bay',
+          nameKey: requestNameKeyFor('name_bay', 'NW Bay'),
+          createdAt: NOW - 1000,
+        }),
+      );
+      await settle();
+      await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
+      expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
+    });
+
+    test('a check that couldn’t finish refuses; read from rows, it asks the drain’s own selection', async () => {
+      const ask = {
+        _id: 'a',
+        _creationTime: 1,
+        kind: 'activate',
+        status: 'open',
+        waterBodyId: 'b',
+      } as unknown as Doc<'waterBodyRequests'>;
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const answer = (mine: Parameters<typeof alongsideAnswer>[1]) =>
+        t.run((ctx) =>
+          alongsideAnswer(ctx, mine, ask, {}, Number.POSITIVE_INFINITY, new ReadBudget()),
+        );
+      expect(await answer('unchecked')).toBe('unchecked');
+      const other = { ...ask, _id: 'x', kind: 'takedown' } as Doc<'waterBodyRequests'>;
+      expect(await answer({ by: 'rows', rows: [other] })).toBe('clear');
+      expect(
+        await answer({ by: 'rows', rows: [{ ...ask, _id: 'y' } as Doc<'waterBodyRequests'>] }),
+      ).toBe('own');
+    });
+
+    test('a re-decline over a reopened sibling in another item that is the undoer’s own: neither offered nor run', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      const [skater, ...others] = await people(t, 1 + LANDMARK_SCAN, 'p');
+      const sib = await staff(t, 'sib', 'moderator');
+      const actor = await staff(t, 'actor', 'moderator');
+      const landmarkAsk = (requesterId: Id<'profiles'>, name: string, lat: number) =>
+        t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_landmark',
+            status: 'open',
+            requesterId,
+            coord: { lat, lng: 0.5 },
+            waterBodyId: lakeId,
+            name,
+            nameKey: requestNameKeyFor('name_landmark', name),
+            createdAt: NOW - 1000,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        });
+      // A full scan of asks for another place first, so the same place's second ask, looking for the
+      // item to join, never reaches the first one: one place, two items.
+      for (const p of others) await landmarkAsk(p, 'Gull Rock', 0.9);
+      const theirs = await landmarkAsk(skater as Id<'profiles'>, 'Long Point', 0.5);
+      await landmarkAsk(sib.id, 'Long Point', 0.5);
+      const items = await t.run(async (ctx) =>
+        (await ctx.db.query('inboxItems').collect()).filter((i) => i.key.startsWith('landmark:')),
+      );
+      expect(items.length).toBeGreaterThanOrEqual(3);
+      await settle();
+      await actor.as.mutation(api.corpusRequests.decline, { requestId: theirs, note: 'No' });
+      await actor.as.mutation(api.undo.run, {
+        actionId: await rowOn(t, theirs, 'decline_request'),
       });
-    const theirs = await landmarkAsk(skater?._id as Id<'profiles'>, 'Long Point');
-    await landmarkAsk(mod.id, 'Gull Point');
-    await settle();
-    expect((await itemsNow(t)).items).toHaveLength(2);
-    // The drawer draws the approval as the moderator's own to leave; the decline reaches only its place.
-    const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
-    expect(view.item?.can.approve).toBe(OWN_FILING_REFUSAL);
-    expect(view.item?.can.decline).toBeNull();
-    await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: theirs }),
-    ).rejects.toThrow(OWN_FILING_REFUSAL);
-    await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
-    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
-  });
-});
+      const reopen = await t.run(async (ctx) =>
+        (await ctx.db.query('moderationActions').collect()).find(
+          (r) => r.action === 'reopen_request',
+        ),
+      );
+      expect(
+        ((reopen as Doc<'moderationActions'>).metadata as { reopened: string[] }).reopened,
+      ).toHaveLength(2);
+      const offer = await t.run(async (ctx) => {
+        const { undoState } = await import('./lib/undo');
+        const viewer = (await ctx.db.get(sib.id)) as Doc<'profiles'>;
+        return undoState(ctx, viewer, reopen as Doc<'moderationActions'>, 'one');
+      });
+      expect(offer).toMatchObject({ state: 'unavailable', why: OWN_FILING_REFUSAL });
+      await expect(
+        sib.as.mutation(api.undo.run, {
+          actionId: reopen?._id as Id<'moderationActions'>,
+          reason: 'x',
+        }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+    });
+
+    test('the undo of an approval that closed the undoer’s own ask in another item: neither offered nor run', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      await people(t, 1, 'skater');
+      const sib = await staff(t, 'sib', 'moderator');
+      const actor = await staff(t, 'actor', 'moderator');
+      await aliasedBayOn(t, lakeId, actor.id);
+      const at = { kind: 'name_bay' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: lakeId };
+      const theirs = await t
+        .withIdentity({ subject: 'skater0' })
+        .mutation(api.corpusRequests.create, { ...at, name: 'Northwest Bay' });
+      await sib.as.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
+      await settle();
+      await actor.as.mutation(api.corpusRequests.approve, { requestId: theirs });
+      const row = await rowOn(t, theirs as string, 'approve_request');
+      const offer = await t.run(async (ctx) => {
+        const { undoState } = await import('./lib/undo');
+        const viewer = (await ctx.db.get(sib.id)) as Doc<'profiles'>;
+        return undoState(ctx, viewer, (await ctx.db.get(row)) as Doc<'moderationActions'>, 'one');
+      });
+      expect(offer.state).not.toBe('available');
+      await expect(
+        sib.as.mutation(api.undo.run, { actionId: row, reason: 'Undone' }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+      // The approver undoes it: both reopen.
+      await actor.as.mutation(api.undo.run, { actionId: row, reason: 'Undone' });
+      expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
+    });
+
+    test('a landmark’s approval reaching the approver’s ask by an alias, in another item, is refused', async () => {
+      const t = harness();
+      if (mode === 'ready') await markReady(t);
+      const lakeId = await lake(t);
+      const mod = await staff(t, 'mod', 'moderator');
+      const other = await staff(t, 'other', 'moderator');
+      await people(t, 1, 'skater');
+      await t.run((ctx) =>
+        ctx.db.insert('bodyLandmarks', {
+          waterBodyId: lakeId,
+          name: 'Long Point',
+          kind: 'point',
+          point: { lat: 0.5, lng: 0.5 },
+          source: 'moderator',
+          externalIds: [],
+          aliases: ['Gull Point'],
+          createdAt: NOW,
+          updatedAt: NOW,
+        } as never),
+      );
+      const [skater] = await t.run(async (ctx) =>
+        (await ctx.db.query('profiles').collect()).filter((p) => p.clerkUserId === 'skater0'),
+      );
+      // Landmark asks are filed from reports (`fileLandmarkProposals`); written here as it writes them.
+      const landmarkAsk = (requesterId: Id<'profiles'>, name: string) =>
+        t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_landmark',
+            status: 'open',
+            requesterId,
+            coord: { lat: 0.5, lng: 0.5 },
+            waterBodyId: lakeId,
+            name,
+            nameKey: requestNameKeyFor('name_landmark', name),
+            createdAt: NOW - 1000,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        });
+      const theirs = await landmarkAsk(skater?._id as Id<'profiles'>, 'Long Point');
+      await landmarkAsk(mod.id, 'Gull Point');
+      await settle();
+      expect((await itemsNow(t)).items).toHaveLength(2);
+      // The drawer draws the approval as the moderator's own to leave; the decline reaches only its place.
+      const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
+      expect(view.item?.can.approve).toBe(OWN_FILING_REFUSAL);
+      expect(view.item?.can.decline).toBeNull();
+      await expect(
+        mod.as.mutation(api.corpusRequests.approve, { requestId: theirs }),
+      ).rejects.toThrow(OWN_FILING_REFUSAL);
+      await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
+      expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
+    });
+  },
+);
 
 // ── An Access item's newest words ─────────────────────────────────────────────────────────────
 

@@ -76,7 +76,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { refreshEraseClock } from './lib/eraseClock';
-import { fileMember, leaveMember, rekey, requestSource } from './lib/inboxItems';
+import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
 import { DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
@@ -1145,77 +1145,84 @@ export const seedBayRequests = internalMutation({
         | 'already_asked'
         | 'already_drawn';
     }[] = [];
-    for (const row of rows) {
-      const hits = await ctx.db
-        .query('waterBodies')
-        .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
-        .take(20);
-      // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
-      // and word order is the one difference that is never two lakes. A typo still misses.
-      const named = hits.filter(
-        (b) => sameName(b.name, row.parentName) && (b.states ?? []).includes(row.state),
-      );
-      const parents = named.filter((b) => isListed(b) && standingOf(b).standing === 'active');
-      if (parents.length === 0) {
-        // A parent the corpus holds but has shelved is a different fix (activate it) from a
-        // parent it does not hold at all (a name mismatch, or a lake to request).
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (const row of rows) {
+        const hits = await ctx.db
+          .query('waterBodies')
+          .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
+          .take(20);
+        // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
+        // and word order is the one difference that is never two lakes. A typo still misses.
+        const named = hits.filter(
+          (b) => sameName(b.name, row.parentName) && (b.states ?? []).includes(row.state),
+        );
+        const parents = named.filter((b) => isListed(b) && standingOf(b).standing === 'active');
+        if (parents.length === 0) {
+          // A parent the corpus holds but has shelved is a different fix (activate it) from a
+          // parent it does not hold at all (a name mismatch, or a lake to request).
+          report.push({
+            name: row.name,
+            ...(named[0] ? { parent: named[0].name } : {}),
+            status: named.length > 0 ? 'parent_not_active' : 'no_parent',
+          });
+          continue;
+        }
+        if (parents.length > 1) {
+          report.push({ name: row.name, status: 'ambiguous_parent' });
+          continue;
+        }
+        const parent = parents[0] as Doc<'waterBodies'>;
+        const names = [row.name, ...(row.aliases ?? [])];
+        if (await drawnBay(ctx, parent._id, names)) {
+          report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
+          continue;
+        }
+        let asked = false;
+        for (const key of new Set(names.map(requestNameKey))) {
+          const hit = await ctx.db
+            .query('waterBodyRequests')
+            .withIndex('by_water_body_name', (q) =>
+              q
+                .eq('waterBodyId', parent._id)
+                .eq('kind', 'name_bay')
+                .eq('status', 'open')
+                .eq('nameKey', key),
+            )
+            .first();
+          if (hit) asked = true;
+        }
+        if (asked) {
+          report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
+          continue;
+        }
+        if (apply) {
+          const requestId = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_bay',
+            // A script filed it, not a person: never an Inbox item, and decidable by any staffer
+            // holding the capability, the requester included (D289, amended).
+            origin: 'seed',
+            status: 'open',
+            requesterId,
+            coord: row.coord,
+            waterBodyId: parent._id,
+            name: row.name,
+            nameKey: requestNameKey(row.name),
+            ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
+            note: row.note,
+            createdAt: now,
+          });
+          // Files nothing: a seed-origin ask is no Inbox item (the reconcile says so, and is the proof).
+          await fileMember(ctx, requestSource(requestId), { now });
+          await queueLibraryRefresh(ctx, [parent._id], now);
+        }
         report.push({
           name: row.name,
-          ...(named[0] ? { parent: named[0].name } : {}),
-          status: named.length > 0 ? 'parent_not_active' : 'no_parent',
+          parent: parent.name,
+          status: apply ? 'filed' : 'would_file',
         });
-        continue;
       }
-      if (parents.length > 1) {
-        report.push({ name: row.name, status: 'ambiguous_parent' });
-        continue;
-      }
-      const parent = parents[0] as Doc<'waterBodies'>;
-      const names = [row.name, ...(row.aliases ?? [])];
-      if (await drawnBay(ctx, parent._id, names)) {
-        report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
-        continue;
-      }
-      let asked = false;
-      for (const key of new Set(names.map(requestNameKey))) {
-        const hit = await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body_name', (q) =>
-            q
-              .eq('waterBodyId', parent._id)
-              .eq('kind', 'name_bay')
-              .eq('status', 'open')
-              .eq('nameKey', key),
-          )
-          .first();
-        if (hit) asked = true;
-      }
-      if (asked) {
-        report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
-        continue;
-      }
-      if (apply) {
-        const requestId = await ctx.db.insert('waterBodyRequests', {
-          kind: 'name_bay',
-          // A script filed it, not a person: never an Inbox item, and decidable by any staffer
-          // holding the capability, the requester included (D289, amended).
-          origin: 'seed',
-          status: 'open',
-          requesterId,
-          coord: row.coord,
-          waterBodyId: parent._id,
-          name: row.name,
-          nameKey: requestNameKey(row.name),
-          ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
-          note: row.note,
-          createdAt: now,
-        });
-        // Files nothing: a seed-origin ask is no Inbox item (the reconcile says so, and is the proof).
-        await fileMember(ctx, requestSource(requestId), { now });
-        await queueLibraryRefresh(ctx, [parent._id], now);
-      }
-      report.push({ name: row.name, parent: parent.name, status: apply ? 'filed' : 'would_file' });
-    }
+    });
     return report;
   },
 });
@@ -1269,41 +1276,45 @@ export const backfillOrigin = internalMutation({
     let read = 0;
     let isDone = true;
     const asks = rows[Symbol.asyncIterator]();
-    for (;;) {
-      if (read >= cap || (read > 0 && !budget.affords(rowWorst))) {
-        // Stopped before the next row was read: whether there is one is the next call's to find.
-        isDone = false;
-        break;
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (;;) {
+        if (read >= cap || (read > 0 && !budget.affords(rowWorst))) {
+          // Stopped before the next row was read: whether there is one is the next call's to find.
+          isDone = false;
+          break;
+        }
+        const next = await asks.next();
+        if (next.done) break;
+        const r = next.value;
+        budget.spend(Math.min(getDocumentSize(r), budget.bytes));
+        read++;
+        last = r._creationTime;
+        if (r.kind !== 'name_bay' || r.origin !== undefined) continue;
+        const requester =
+          (await budget.measured('profile', () => ctx.db.get(r.requesterId))) ?? null;
+        let reason: SeedOriginReason | null = null;
+        if ((r.aliases?.length ?? 0) > 0) reason = 'aliases';
+        else if (requester && roleMeets(requester.role, 'moderator') && r.waterBodyId) {
+          const waterBodyId = r.waterBodyId;
+          const body = (await budget.measured('waterBody', () => ctx.db.get(waterBodyId))) ?? null;
+          if (body && !isLakePoint(r.coord, body)) reason = 'staff_requester_off_lake_point';
+        }
+        if (reason === null) continue;
+        candidates.push({
+          requestId: r._id,
+          requester: requester?.displayName ?? String(r.requesterId),
+          createdAt: r.createdAt,
+          name: r.name ?? null,
+          reason,
+        });
+        if (apply === true) {
+          await ctx.db.patch(r._id, { origin: 'seed' });
+          // No longer an Inbox item: its member leaves (the reconcile reads the stamp).
+          await rekey(ctx, requestSource(r._id));
+        }
       }
-      const next = await asks.next();
-      if (next.done) break;
-      const r = next.value;
-      budget.spend(Math.min(getDocumentSize(r), budget.bytes));
-      read++;
-      last = r._creationTime;
-      if (r.kind !== 'name_bay' || r.origin !== undefined) continue;
-      const requester = (await budget.measured('profile', () => ctx.db.get(r.requesterId))) ?? null;
-      let reason: SeedOriginReason | null = null;
-      if ((r.aliases?.length ?? 0) > 0) reason = 'aliases';
-      else if (requester && roleMeets(requester.role, 'moderator') && r.waterBodyId) {
-        const waterBodyId = r.waterBodyId;
-        const body = (await budget.measured('waterBody', () => ctx.db.get(waterBodyId))) ?? null;
-        if (body && !isLakePoint(r.coord, body)) reason = 'staff_requester_off_lake_point';
-      }
-      if (reason === null) continue;
-      candidates.push({
-        requestId: r._id,
-        requester: requester?.displayName ?? String(r.requesterId),
-        createdAt: r.createdAt,
-        name: r.name ?? null,
-        reason,
-      });
-      if (apply === true) {
-        await ctx.db.patch(r._id, { origin: 'seed' });
-        // No longer an Inbox item: its member leaves (the reconcile reads the stamp).
-        await rekey(ctx, requestSource(r._id));
-      }
-    }
+    });
     return {
       applied: apply === true,
       candidates,

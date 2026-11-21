@@ -11,10 +11,21 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { fileMember, flagSource, MAX_MEMBERS, MEMBER_BOUND, requestSource } from './lib/inboxItems';
-import { REQUEST_PROFILE_BUDGET, TX_CALLS, TX_DOCS } from './lib/readBudget';
+import { FLAG_REOPEN_COST, FLAGS_READ, NEWER_FLAGS_READ, REOPEN_HEADROOM } from './lib/inboxFlags';
+import {
+  CLOSER_RESERVE,
+  fileMember,
+  flagSource,
+  MAX_MEMBERS,
+  MEMBER_BOUND,
+  refreshCost,
+  requestSource,
+} from './lib/inboxItems';
+import { REQUEST_PROFILE_BUDGET, ROW_MAX, TX_CALLS, TX_DOCS } from './lib/readBudget';
+import { WORST_ASK_COST } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
-import { CORPUS_UNDO_HANDLERS } from './lib/undoHandlersCorpus';
+import { undoHandlers } from './lib/undoHandlers';
+import { REOPEN_ASK_COST, REOPEN_RESERVE } from './lib/undoHandlersCorpus';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -782,28 +793,64 @@ describe('a group’s undo is offered and runs at every size the wave supports',
 });
 
 describe('the reservations hold at the real bound', () => {
-  test('each group undo’s check, for a group past the real member bound, fits one request’s budget', () => {
-    const many = (prefix: string) =>
-      Array.from({ length: MAX_MEMBERS + 1 }, (_, i) => `${prefix}${i}`);
-    const row = (action: string, metadata: Record<string, unknown>) =>
-      ({ action, targetId: 'primary', metadata }) as unknown as Doc<'moderationActions'>;
-    const checks: [string, Doc<'moderationActions'>][] = [
-      [
-        'reopen_request',
-        row('reopen_request', { reopened: many('r'), prev: { status: 'declined' } }),
-      ],
-      ['reopen_flag', row('reopen_flag', { reopened: many('f'), prev: { status: 'dismissed' } })],
-      ['decline_request', row('decline_request', { kind: 'activate' })],
-      ['dismiss_flag', row('dismiss_flag', {})],
-    ];
-    for (const [action, r] of checks) {
-      const handler = CORPUS_UNDO_HANDLERS[action as keyof typeof CORPUS_UNDO_HANDLERS];
-      const cost = handler?.refusalCost?.('one', r);
-      if (!cost) throw new Error(`no reservation for ${action}`);
-      // The smaller of the budgets an offer can be checked from: a request's opening one.
-      expect(cost.bytes, action).toBeLessThanOrEqual(REQUEST_PROFILE_BUDGET);
-      expect(cost.reads, action).toBeLessThanOrEqual(TX_CALLS);
-      expect(cost.docs ?? cost.reads, action).toBeLessThanOrEqual(TX_DOCS);
-    }
+  const row = (action: string, metadata: Record<string, unknown>) =>
+    ({ action, targetId: 'primary', metadata }) as unknown as Doc<'moderationActions'>;
+  const sized = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+  const handlers = undoHandlers();
+
+  test.each([1, 11, 50, MAX_MEMBERS + 1])(
+    'every group undo’s offer and refusal check, for a group of %i, fit a request’s opening budget',
+    (n) => {
+      const checks: [string, Doc<'moderationActions'>][] = [
+        [
+          'reopen_request',
+          row('reopen_request', { reopened: sized('r', n), prev: { status: 'declined' } }),
+        ],
+        [
+          'reopen_flag',
+          row('reopen_flag', { reopened: sized('f', n), prev: { status: 'dismissed' } }),
+        ],
+        ['decline_request', row('decline_request', { kind: 'activate' })],
+        ['dismiss_flag', row('dismiss_flag', {})],
+        ['hide', row('hide', { priorStatus: 'visible' })],
+        ['set_public_access', row('set_public_access', { prev: { publicAccess: null } })],
+        ['pin_access_alert', row('pin_access_alert', {})],
+      ];
+      for (const [action, r] of checks) {
+        const handler = handlers[action as keyof typeof handlers];
+        if (!handler) throw new Error(`no handler for ${action}`);
+        const cost = handler.refusal
+          ? (handler.refusalCost?.('one', r) ?? { bytes: ROW_MAX.waterBody, reads: 1 })
+          : null;
+        if (cost === null) continue;
+        // The smaller of the budgets an offer can be checked from: a request's opening one.
+        expect(cost.bytes, action).toBeLessThanOrEqual(REQUEST_PROFILE_BUDGET);
+        expect(cost.reads, action).toBeLessThanOrEqual(TX_CALLS);
+        expect(cost.docs ?? cost.reads, action).toBeLessThanOrEqual(TX_DOCS);
+      }
+    },
+  );
+
+  test('every group undo’s run advances at the real bound: one source at its worst fits a fresh transaction', () => {
+    const LIMIT = 16 * 1024 * 1024;
+    const refresh = refreshCost(MAX_MEMBERS);
+    // A decision's undo, a page of asks: one ask read whole three times and written back.
+    expect(REOPEN_ASK_COST.bytesRead + refresh.bytesRead + REOPEN_RESERVE).toBeLessThanOrEqual(
+      LIMIT,
+    );
+    expect(REOPEN_ASK_COST.bytesWritten + REOPEN_RESERVE).toBeLessThanOrEqual(LIMIT);
+    // A re-decline, a page of the asks a reopen reopened.
+    const ask = WORST_ASK_COST();
+    expect(ask.bytesRead + refresh.bytesRead + CLOSER_RESERVE.bytesRead).toBeLessThanOrEqual(LIMIT);
+    expect(ask.bytesWritten + CLOSER_RESERVE.bytesWritten).toBeLessThanOrEqual(LIMIT);
+    // A flag decision's undo (a dismissal's, a takedown's, a ruling's, a pin's): one flag, its row,
+    // its member — after the check read every flag once (at most `FLAGS_READ` of them, each at its
+    // longest note) and the target's newest flags.
+    const checked =
+      (FLAGS_READ + NEWER_FLAGS_READ) * ROW_MAX.contentFlag + FLAGS_READ * ROW_MAX.inboxMember;
+    expect(
+      checked + FLAG_REOPEN_COST.bytesRead + refresh.bytesRead + REOPEN_HEADROOM,
+    ).toBeLessThanOrEqual(LIMIT);
+    expect(FLAG_REOPEN_COST.bytesWritten + REOPEN_HEADROOM).toBeLessThanOrEqual(LIMIT);
   });
 });

@@ -1035,17 +1035,18 @@ export const tail = query({
     const now = clockOf(args.now);
     const order = INBOX_LANE_ORDER[args.lane];
     const budget = budgetOf(ctx);
-    budget.reserve('small', TAIL_ROWS + 1);
-    const items = await ctx.db
-      .query('inboxItems')
-      .withIndex('by_lane_status_decided', (q) =>
-        q
-          .eq('laneOrder', order)
-          .eq('status', 'decided')
-          .gte('decidedAt', now - 7 * DAY_MS),
-      )
-      .order('desc')
-      .take(TAIL_ROWS + 1);
+    const items = await budget.take('small', TAIL_ROWS + 1, (n) =>
+      ctx.db
+        .query('inboxItems')
+        .withIndex('by_lane_status_decided', (q) =>
+          q
+            .eq('laneOrder', order)
+            .eq('status', 'decided')
+            .gte('decidedAt', now - 7 * DAY_MS),
+        )
+        .order('desc')
+        .take(n),
+    );
     const r = new InboxReader(ctx, budget, now, viewer._id, hasCapability(viewer, 'content.read'));
     const rows: InboxRowView[] = [];
     for (const item of items.slice(0, TAIL_ROWS)) rows.push(await rowOf(ctx, r, viewer, item));

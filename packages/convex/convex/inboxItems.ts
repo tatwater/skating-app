@@ -221,28 +221,7 @@ export const repairOne = internalMutation({
     }),
 });
 
-/**
- * **Whether the Inbox's stored items can't yet be taken as whole** — every Inbox read's `pending`, and
- * the Overview card's: until the backfill's scan has finished, **and** while any source it couldn't
- * file is still owed (a `jobFailures` row of `inboxBackfill`, parked or not — PR #170). The scan
- * finishing is not the Inbox being ready: a source that failed is a question missing from the counts,
- * so the counts say why they may be short rather than reading as exact. Such a failure is retried by
- * the drift repair's pass while it is failing, and once parked by the daily retry
- * (`recurringJobs.retryParkedDaily`, D258); Machinery counts both (`recurringJobs.health`), with their
- * error classes.
- */
-export async function inboxPending(ctx: QueryCtx): Promise<boolean> {
-  const run = await ctx.db
-    .query('inboxJobRuns')
-    .withIndex('by_job', (q) => q.eq('job', 'backfill'))
-    .first();
-  if (run?.done !== true) return true;
-  const owed = await ctx.db
-    .query('jobFailures')
-    .withIndex('by_job_parked', (q) => q.eq('job', 'inboxBackfill'))
-    .first();
-  return owed !== null;
-}
+export { inboxPending } from './lib/inboxItems';
 
 const passArgs = {
   /** Test seams: a smaller page, and a smaller budget (a pass ends early, then reschedules). */

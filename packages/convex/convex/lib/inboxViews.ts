@@ -62,20 +62,26 @@ import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from '../inbox';
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
-import { readCount } from './inboxItems';
-import type { InboxRuleFacts, RuleTake } from './inboxRules';
+import { inboxPending, readCount } from './inboxItems';
+import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
-import { CHARGED_QUERY_BUDGET, type ReadBudget, type RowKind, requestBudget } from './readBudget';
+import {
+  CHARGED_QUERY_BUDGET,
+  type ReadBudget,
+  ROW_MAX,
+  type RowKind,
+  requestBudget,
+} from './readBudget';
 import { type RecordFacts, recordFactsOf } from './recordRules';
 import { trustClassFor } from './reputation';
 import {
-  alongsideIn,
+  alongsideAnswer,
   type DecisionAnswer,
   drawnBay,
   landmarkAskOf,
   landmarkProposalView,
   matchLandmark,
-  ownOpenAsks,
+  ownAsks,
   requestNames,
 } from './requestDecisions';
 
@@ -450,7 +456,18 @@ async function recordOf(
   const held = await heldKindOn(r.ctx, targetType, doc._id);
   if (targetType !== 'post') return recordFactsOf(targetType, doc, held);
   const post = doc as Doc<'posts'>;
-  r.budget.reserve('report', post.reportIds.length);
+  // Its restore plan reads each member Report and its newest row, and the count below each Report
+  // again: reserved whole before any is read — or, when the budget can't hold that (Reports carry
+  // uncapped notes), left out: the plan is absent, and the restore's write decides by the same rule.
+  const n = post.reportIds.length;
+  if (
+    !r.budget.affords((2 * ROW_MAX.report + ROW_MAX.moderationAction) * n) ||
+    !r.budget.affordsCalls(2, 3 * n)
+  ) {
+    return recordFactsOf('post', post, held);
+  }
+  r.budget.reserve('report', 2 * n);
+  r.budget.reserve('moderationAction', n);
   const plan = await planPostRestore(r.ctx, post, {});
   let up = 0;
   for (const id of post.reportIds) {
@@ -1153,26 +1170,22 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
 }
 
 /**
- * Whether an ask's approval (by its answer) and its decline would each close one of the viewer's own
- * asks (`askedAlongside`): the viewer's own open asks read once — charged as they weigh, a handful of
- * capped rows — and each verb's reach asked of them.
+ * What an ask's approval (by its answer) and its decline would each close of the viewer's own asks
+ * (`lib/requestDecisions.alongsideAnswer`): their open filings read once, from small rows through the
+ * item's budget — members of 1 KiB with the Inbox ready, ask rows one at a time while it is pending —
+ * and each verb's reach asked of them. A check the budget can't finish answers `unchecked`: the item
+ * still returns, its `can` refusing the decision.
  */
 async function alongsideOf(
   r: InboxReader,
   first: Doc<'waterBodyRequests'>,
   approve: DecisionAnswer,
   decline: DecisionAnswer,
-): Promise<{ approve: boolean; decline: boolean }> {
-  const take: RuleTake = async (n, read) => {
-    r.budget.reserveCalls(1, n);
-    const rows = await read(n);
-    r.budget.spend(rows.reduce((b, row) => b + getDocumentSize(row as never), 0));
-    return rows;
-  };
-  const mine = await ownOpenAsks(r.ctx, r.viewerId, take);
+): Promise<{ approve: AlongsideAnswer; decline: AlongsideAnswer }> {
+  const mine = await ownAsks(r.ctx, r.viewerId, r.budget, await inboxPending(r.ctx));
   return {
-    approve: alongsideIn(mine, first, approve, r.now),
-    decline: alongsideIn(mine, first, decline, r.now),
+    approve: await alongsideAnswer(r.ctx, mine, first, approve, r.now, r.budget),
+    decline: await alongsideAnswer(r.ctx, mine, first, decline, r.now, r.budget),
   };
 }
 

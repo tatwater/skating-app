@@ -222,7 +222,7 @@ export async function writeAudit(
   const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;
   // An undo's place in its chain, and the chain's newest depth on its first row (`lib/undoChains`).
   const chain =
-    undoesActionId !== undefined ? await placeInUndoChain(ctx, undoesActionId, row.actorId) : {};
+    undoesActionId !== undefined ? await chainPlaceOf(ctx, undoesActionId, row.actorId) : {};
   const id = await ctx.db.insert('moderationActions', {
     ...row,
     ...(undoesActionId !== undefined ? { undoesActionId } : {}),
@@ -257,6 +257,33 @@ const LEGACY_HOPS = 32;
  * {@link LEGACY_HOPS}): otherwise it would be taken for a chain's first row, and since the backfill
  * passes over a row already placed, this row's place would stay wrong once the backfill had run.
  */
+/**
+ * An undo's place in its chain, worked out once a transaction (PR #170): every row an undo writes is
+ * tagged with what it undoes, and an undo that reopens five hundred flags writes five hundred rows —
+ * each reading the undone row again would read it five hundred times.
+ */
+const CHAIN_PLACES = new WeakMap<
+  object,
+  Map<string, Promise<{ undoRoot?: Id<'moderationActions'>; undoDepth?: number }>>
+>();
+function chainPlaceOf(
+  ctx: MutationCtx,
+  undoneId: Id<'moderationActions'>,
+  actorId: Id<'profiles'> | undefined,
+) {
+  let places = CHAIN_PLACES.get(ctx);
+  if (!places) {
+    places = new Map();
+    CHAIN_PLACES.set(ctx, places);
+  }
+  let place = places.get(undoneId);
+  if (!place) {
+    place = placeInUndoChain(ctx, undoneId, actorId);
+    places.set(undoneId, place);
+  }
+  return place;
+}
+
 async function placeInUndoChain(
   ctx: MutationCtx,
   undoneId: Id<'moderationActions'>,

@@ -12,8 +12,9 @@
 
 import { type DormancyReason, isLeaving, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
-import type { QueryCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 import {
   type AlertRetractionPrev,
   retractAlertImpl,
@@ -51,7 +52,8 @@ import {
   type InboxSource,
   inboxBatch,
   MAX_MEMBERS,
-  reopenItem,
+  owedRefreshes,
+  refreshCost,
   requestSource,
   syncInboxSource,
 } from './inboxItems';
@@ -59,7 +61,7 @@ import { OWN_FILING_REFUSAL } from './inboxRules';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { ownContentRefusal } from './ownContent';
 import { ROW_MAX, type RowKind } from './readBudget';
-import { assertMayDecide, closeRow } from './requestDecisions';
+import { assertMayDecide, closeRequestPage, closeRow } from './requestDecisions';
 import { runUndo, undoRowOf } from './undo';
 import { UNDO_POLICY, undoCapability } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE } from './undoReads';
@@ -752,22 +754,11 @@ const undoRequestDecision: UndoHandler = {
           : null;
       if (id) ids.add(id);
     }
-    const reopened: Id<'waterBodyRequests'>[] = [];
-    for (const id of ids) {
-      const r = await ctx.db.get(id);
-      if (!r || requestDecisionRefusal(r, row) !== null) continue;
-      await ctx.db.patch(id, {
-        status: 'open',
-        decidedAt: undefined,
-        decidedByUserId: undefined,
-        decisionNote: undefined,
-        admittedWaterBodyId: undefined,
-        landmarkId: undefined,
-      });
-      reopened.push(id);
-    }
-    // Tagged as this row's undo by name: the body-side undo above ran as its own row's undo.
-    await writeAudit(ctx, {
+    // Tagged as this row's undo by name: the body-side undo above ran as its own row's undo. It
+    // names every ask the undo reopens — this page's and the pages after — so its own undo (closing
+    // them again) reaches them all, closing only those still open.
+    const order = [primaryId, ...[...ids].filter((id) => id !== primaryId)];
+    const reopenRow = await writeAudit(ctx, {
       actorId: actor._id,
       action: 'reopen_request',
       targetType: 'waterBodyRequest',
@@ -776,21 +767,104 @@ const undoRequestDecision: UndoHandler = {
       undoesActionId: row._id,
       metadata: {
         kind: primary.kind,
-        reopened,
+        reopened: order,
         prev: { status: primary.status, note: primary.decisionNote ?? null },
         ...(primary.waterBodyId ? { waterBodyId: primary.waterBodyId } : {}),
       },
     });
-    await inboxBatch(ctx, async () => {
-      const covered = new Set<string>();
-      await reopenItem(ctx, row._id, { covered });
-      // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
-      for (const id of reopened) {
-        if (!covered.has(id)) await syncInboxSource(ctx, requestSource(id));
-      }
-    });
+    await reopenRequestPage(ctx, row, reopenRow, order, actor._id);
   },
 };
+
+/**
+ * What reopening one ask may cost a page, at its worst: read whole (an admit ask carries a catalog
+ * polygon near the document limit), read again by its patch and by its reconcile, written back whole
+ * by the patch, and its member and item touched.
+ */
+export const REOPEN_ASK_COST = {
+  bytesRead: 3 * ROW_MAX.waterBodyRequest + 4 * ROW_MAX.small,
+  bytesWritten: ROW_MAX.waterBodyRequest + 2 * ROW_MAX.small,
+};
+
+/**
+ * **A decision's undo, one page of its asks** (PR #170): the asks the decision closed, reopened while
+ * the transaction's live metrics still hold one more at its worst ({@link REOPEN_ASK_COST}) and every
+ * item refresh the batch owes — always one at least, so the undo advances — each reconciled through
+ * the one writer as one batch (only the asks this page reopened: `reopenItem` would read every member's
+ * source); the rest follow in `inboxWrites.reopenRequestsRest`, which stops once this reopen is itself
+ * undone. A group of any size the wave supports reopens, a page at a time, whatever its rows weigh.
+ */
+export async function reopenRequestPage(
+  ctx: MutationCtx,
+  decision: Doc<'moderationActions'>,
+  reopenRow: Id<'moderationActions'>,
+  ids: readonly Id<'waterBodyRequests'>[],
+  actorId: Id<'profiles'>,
+): Promise<void> {
+  let done = 0;
+  await inboxBatch(ctx, async () => {
+    for (const id of ids) {
+      if (done > 0) {
+        const m = await ctx.meta.getTransactionMetrics();
+        const refreshes = (owedRefreshes(ctx) + 1) * refreshCost().bytesRead;
+        if (
+          m.bytesRead.remaining < REOPEN_ASK_COST.bytesRead + refreshes + REOPEN_RESERVE ||
+          m.bytesWritten.remaining < REOPEN_ASK_COST.bytesWritten + REOPEN_RESERVE
+        ) {
+          break;
+        }
+      }
+      done++;
+      const r = await ctx.db.get(id);
+      if (!r || requestDecisionRefusal(r, decision) !== null) continue;
+      await ctx.db.patch(id, {
+        status: 'open',
+        decidedAt: undefined,
+        decidedByUserId: undefined,
+        decisionNote: undefined,
+        admittedWaterBodyId: undefined,
+        landmarkId: undefined,
+      });
+      // Its member reopens in place (a decided item reopens with it), whatever stamp it carries.
+      await syncInboxSource(ctx, requestSource(id));
+    }
+  });
+  const rest = ids.slice(done);
+  if (rest.length > 0) {
+    await ctx.scheduler.runAfter(0, internal.inboxWrites.reopenRequestsRest, {
+      decisionId: decision._id,
+      reopenRowId: reopenRow,
+      ids: [...rest],
+      actorId,
+    });
+  }
+}
+
+/** Headroom a reopen page keeps past its asks: its audit row, the next page's schedule. */
+export const REOPEN_RESERVE = 512 * 1024;
+
+/**
+ * A decision's undo, a later page: unless the reopen was itself undone since (its asks then closed
+ * again), the rest reopened as the first page did.
+ */
+export async function reopenRequestsRestPage(
+  ctx: MutationCtx,
+  args: {
+    decisionId: Id<'moderationActions'>;
+    reopenRowId: Id<'moderationActions'>;
+    ids: Id<'waterBodyRequests'>[];
+    actorId: Id<'profiles'>;
+  },
+): Promise<void> {
+  const undone = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', args.reopenRowId))
+    .first();
+  if (undone !== null) return;
+  const decision = await ctx.db.get(args.decisionId);
+  if (!decision) return;
+  await reopenRequestPage(ctx, decision, args.reopenRowId, args.ids, args.actorId);
+}
 
 /** An ask's filer, for the no-item fallback: a script's ask (`origin: 'seed'`) has none (D289). */
 const askPeople = (r: Doc<'waterBodyRequests'>) =>
@@ -1023,15 +1097,17 @@ const undoRequestReopen: UndoHandler = {
       now,
       ...(note !== undefined ? { note } : {}),
     };
-    // One batch: their items recounted once.
+    // The primary, then its reopened siblings a page at a time (each read whole and written back:
+    // an ask can weigh near the document limit), one batch a page — the rest in later pages.
+    let actionId: Id<'moderationActions'> | undefined;
     await inboxBatch(ctx, async () => {
-      const actionId = await closeRow(ctx, primary, decision);
-      for (const id of reopenedAsksOf(row)) {
-        if (id === primaryId) continue;
-        const sibling = await ctx.db.get(id);
-        if (sibling?.status === 'open') await closeRow(ctx, sibling, { ...decision, actionId });
-      }
+      actionId = await closeRow(ctx, primary, decision);
     });
+    await closeRequestPage(
+      ctx,
+      reopenedAsksOf(row).filter((id) => id !== primaryId),
+      { ...decision, actionId },
+    );
   },
 };
 

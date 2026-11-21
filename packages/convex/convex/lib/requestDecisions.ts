@@ -26,16 +26,24 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { composed, writeAudit } from './audit';
 import {
   batchHasRoom,
+  CLOSER_RESERVE,
   decideItem,
   inboxBatch,
+  inboxPending,
   itemToDecide,
   LANDMARK_SCAN,
+  refreshCost,
   requestSource,
   type TxCost,
 } from './inboxItems';
-import { assertInboxVerb, OWN_FILING_REFUSAL, type RuleTake } from './inboxRules';
+import {
+  ALONGSIDE_UNCHECKED,
+  type AlongsideAnswer,
+  assertInboxVerb,
+  OWN_FILING_REFUSAL,
+} from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
-import { ROW_MAX } from './readBudget';
+import { ReadBudget, ROW_MAX } from './readBudget';
 import { literals } from './validators';
 
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
@@ -74,10 +82,39 @@ export async function openSiblings(
     landmark?: Doc<'bodyLandmarks'> | null;
     /** For a landmark ask: where the last page ended. */
     cursor?: string;
+    /**
+     * The bytes the read may spend (PR #170): an ask can carry a catalog polygon near the document
+     * limit, so rows are taken one at a time — the next started only while its worst case still fits
+     * — and a page the room ends early says `capped`, as one past its row limit does. Absent:
+     * unbounded on bytes, for a caller whose rows are bounded otherwise.
+     */
+    room?: number;
   } = {},
 ): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean; cursor?: string }> {
   const none = { rows: [], capped: false };
   let rows: Doc<'waterBodyRequests'>[];
+  let short = false;
+  const room = answer.room ?? Number.POSITIVE_INFINITY;
+  let spent = 0;
+  /** Up to `n` rows of `q`, each started only while a whole ask still fits the room. */
+  const within = async (
+    q: AsyncIterable<Doc<'waterBodyRequests'>>,
+    n: number,
+  ): Promise<Doc<'waterBodyRequests'>[]> => {
+    const out: Doc<'waterBodyRequests'>[] = [];
+    const it = q[Symbol.asyncIterator]();
+    while (out.length < n) {
+      if (spent + ROW_MAX.waterBodyRequest > room && (out.length > 0 || spent > 0)) {
+        short = true;
+        break;
+      }
+      const next = await it.next();
+      if (next.done) break;
+      spent += getDocumentSize(next.value);
+      out.push(next.value);
+    }
+    return out;
+  };
   if (request.kind === 'name_landmark') {
     const waterBodyId = request.waterBodyId;
     if (waterBodyId === undefined) return none;
@@ -90,7 +127,13 @@ export async function openSiblings(
           .eq('status', 'open')
           .lte('_creationTime', asOf),
       )
-      .paginate({ numItems: limit, cursor: answer.cursor ?? null });
+      .paginate({
+        numItems: limit,
+        cursor: answer.cursor ?? null,
+        ...(answer.room !== undefined
+          ? { maximumBytesRead: Math.max(ROW_MAX.waterBodyRequest, answer.room) }
+          : {}),
+      });
     const asked = landmarkAskOf(request);
     const { landmark } = answer;
     const same = page.page.filter(
@@ -105,15 +148,17 @@ export async function openSiblings(
   }
   if (request.kind === 'admit') {
     if (request.candidateExternalId === undefined) return none;
-    rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_candidate_external_id', (q) =>
-        q
-          .eq('candidateExternalId', request.candidateExternalId)
-          .eq('status', 'open')
-          .lte('_creationTime', asOf),
-      )
-      .take(limit + 2);
+    rows = await within(
+      ctx.db
+        .query('waterBodyRequests')
+        .withIndex('by_candidate_external_id', (q) =>
+          q
+            .eq('candidateExternalId', request.candidateExternalId)
+            .eq('status', 'open')
+            .lte('_creationTime', asOf),
+        ),
+      limit + 2,
+    );
   } else if (request.kind === 'name_bay') {
     // A bay's siblings are the asks for the *same bay* — every name the answer carries when there
     // is one, else the ask's own — each an exact range on the stored key.
@@ -127,35 +172,39 @@ export async function openSiblings(
     rows = [];
     for (const key of keys) {
       rows.push(
-        ...(await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body_name', (q) =>
-            q
-              .eq('waterBodyId', waterBodyId)
-              .eq('kind', kind)
-              .eq('status', 'open')
-              .eq('nameKey', key)
-              .lte('_creationTime', asOf),
-          )
-          .take(limit + 2)),
+        ...(await within(
+          ctx.db
+            .query('waterBodyRequests')
+            .withIndex('by_water_body_name', (q) =>
+              q
+                .eq('waterBodyId', waterBodyId)
+                .eq('kind', kind)
+                .eq('status', 'open')
+                .eq('nameKey', key)
+                .lte('_creationTime', asOf),
+            ),
+          limit + 2,
+        )),
       );
     }
   } else {
     if (request.waterBodyId === undefined) return none;
-    rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_water_body', (q) =>
-        q
-          .eq('waterBodyId', request.waterBodyId)
-          .eq('kind', request.kind)
-          .eq('status', 'open')
-          .lte('_creationTime', asOf),
-      )
-      .take(limit + 2);
+    rows = await within(
+      ctx.db
+        .query('waterBodyRequests')
+        .withIndex('by_water_body', (q) =>
+          q
+            .eq('waterBodyId', request.waterBodyId)
+            .eq('kind', request.kind)
+            .eq('status', 'open')
+            .lte('_creationTime', asOf),
+        ),
+      limit + 2,
+    );
   }
   // +2: one for the request itself if it is still open, one to learn whether there are more.
   const others = rows.filter((r) => r._id !== request._id);
-  return { rows: others.slice(0, limit), capped: others.length > limit };
+  return { rows: others.slice(0, limit), capped: others.length > limit || short };
 }
 
 /** A `name_landmark` ask as core's same-place rule reads it: its names and the spot marked. */
@@ -368,56 +417,138 @@ export function closesWith(
   return true;
 }
 
-const plainTake: RuleTake = (n, read) => read(n);
+/** A decision's reach past its own ask: the item keys its drain closes, or a body's landmark items. */
+type Reach = { keys: Set<string>; landmarkPrefix: string | null };
+
+/** What a decision on `request` closes, as the items its siblings are keyed into (`openSiblings`). */
+function reachOf(request: Doc<'waterBodyRequests'>, answer: DecisionAnswer): Reach {
+  const keys = new Set<string>();
+  const body = request.waterBodyId;
+  if (request.kind === 'admit') {
+    if (request.candidateExternalId !== undefined) keys.add(`admit:${request.candidateExternalId}`);
+    return { keys, landmarkPrefix: null };
+  }
+  if (body === undefined) return { keys, landmarkPrefix: null };
+  if (request.kind === 'name_landmark') return { keys, landmarkPrefix: `landmark:${body}:` };
+  if (request.kind === 'name_bay') {
+    const names = new Set([requestKeyOf(request)]);
+    for (const n of answer.subArea ? bayNames(answer.subArea) : []) {
+      names.add(requestNameKeyFor('name_bay', n));
+    }
+    for (const k of names) keys.add(`bay:${body}:${k}`);
+    return { keys, landmarkPrefix: null };
+  }
+  keys.add(`${request.kind}:${body}`);
+  return { keys, landmarkPrefix: null };
+}
 
 /**
- * **The viewer's own open ask among those a decision on `request` would close** (D289, PR #170) —
- * in any item, filed into one or not. Read from the viewer's end: their own open asks a person filed
- * (`by_requester_status_origin`, `origin` unset — a script's asks in their name are exempt), each
- * asked whether the decision closes it ({@link closesWith}, the drain's own selection). One indexed
- * read, never a paginated one — a deciding mutation pages its first drain page, and Convex allows one
- * `paginate` per execution — and bounded by the person, not the question: the writers cap a person's
- * open asks at 30, so {@link OWN_ASKS_READ} always holds them all; past it (a row no capped writer
- * filed) the read can't tell, and refuses as an own filing rather than decide unseen — another
- * staffer decides, so no item is stranded. The item's `can` and the write both ask it.
+ * The actor's own open asks, as far as the check could read them: the members they filed (the Inbox
+ * ready) or their ask rows (the Inbox still pending) — or `unchecked`, when the read couldn't finish
+ * inside its budget.
  */
-export async function askedAlongside(
+export type OwnAsks =
+  | { by: 'members'; members: Doc<'inboxItemMembers'>[] }
+  | { by: 'rows'; rows: Doc<'waterBodyRequests'>[] }
+  | 'unchecked';
+
+/**
+ * **The actor's own open asks, from small rows** (D289, PR #170). With the Inbox ready every open ask
+ * a person filed is the open member of its item (the writer's invariant; a script's asks have none),
+ * so the actor's member rows say it all: one indexed read (`by_filer_source_status`) of at most
+ * {@link OWN_ASKS_READ} + 1 member rows of 1 KiB, charged at their worst before the read — 201 KiB.
+ * While the Inbox is pending, asks the backfill hasn't reached have no member, so their rows are read
+ * instead (`by_requester_status_origin`), one at a time: each started only while a whole ask still
+ * fits the budget and charged what it weighs (an admit ask carries its catalog polygon, up to the
+ * document limit), stopping `unchecked` the moment one doesn't fit. Never past the budget, never a
+ * throw; the writers cap a person at 30 open asks, so past {@link OWN_ASKS_READ} it is `unchecked`.
+ */
+export async function ownAsks(
   ctx: QueryCtx,
-  request: Doc<'waterBodyRequests'>,
   viewerId: Id<'profiles'>,
-  answer: DecisionAnswer = {},
-  asOf: number = Number.POSITIVE_INFINITY,
-  take: RuleTake = plainTake,
-): Promise<boolean> {
-  return alongsideIn(await ownOpenAsks(ctx, viewerId, take), request, answer, asOf);
+  budget: ReadBudget,
+  pending: boolean,
+): Promise<OwnAsks> {
+  if (!pending) {
+    if (!budget.affordsRead('inboxMember', OWN_ASKS_READ + 1)) return 'unchecked';
+    const members = await budget.take('inboxMember', OWN_ASKS_READ + 1, (n) =>
+      ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_filer_source_status', (q) =>
+          q
+            .eq('filedByUserId', viewerId)
+            .eq('sourceTable', 'waterBodyRequests')
+            .eq('status', 'open'),
+        )
+        .take(n),
+    );
+    return members.length > OWN_ASKS_READ ? 'unchecked' : { by: 'members', members };
+  }
+  const rows: Doc<'waterBodyRequests'>[] = [];
+  const asks = ctx.db
+    .query('waterBodyRequests')
+    .withIndex('by_requester_status_origin', (q) =>
+      q.eq('requesterId', viewerId).eq('status', 'open').eq('origin', undefined),
+    )
+    [Symbol.asyncIterator]();
+  for (;;) {
+    if (rows.length > OWN_ASKS_READ || !budget.affordsRead('waterBodyRequest')) return 'unchecked';
+    const next = await asks.next();
+    if (next.done) return { by: 'rows', rows };
+    budget.reserveCalls(0, 1);
+    budget.spend(getDocumentSize(next.value));
+    rows.push(next.value);
+  }
 }
 
-/** A person's own open asks a person filed, up to one past {@link OWN_ASKS_READ}. */
-export function ownOpenAsks(
+/**
+ * **Whether a decision on `request` would close one of the actor's own asks** — `own`, `clear`, or
+ * `unchecked` (the check couldn't finish in its budget: the decision is refused with a plain sentence,
+ * never decided unseen, and a read still returns its item, `can` carrying the refusal). From members,
+ * the drain's reach is compared by item key ({@link reachOf}) — an item row of the member's, read as
+ * it weighs — with an ask row read only for a landmark item on the body, whose place is the question
+ * ({@link closesWith}), each started only while it fits. From rows, {@link closesWith} directly.
+ */
+export async function alongsideAnswer(
   ctx: QueryCtx,
-  viewerId: Id<'profiles'>,
-  take: RuleTake = plainTake,
-): Promise<Doc<'waterBodyRequests'>[]> {
-  return take(OWN_ASKS_READ + 1, (n) =>
-    ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_requester_status_origin', (q) =>
-        q.eq('requesterId', viewerId).eq('status', 'open').eq('origin', undefined),
-      )
-      .take(n),
-  );
-}
-
-/** {@link askedAlongside} over asks already read: past the read's bound, it can't tell — refused. */
-export function alongsideIn(
-  mine: readonly Doc<'waterBodyRequests'>[],
+  mine: OwnAsks,
   request: Doc<'waterBodyRequests'>,
   answer: DecisionAnswer,
-  asOf: number = Number.POSITIVE_INFINITY,
-): boolean {
-  if (mine.length > OWN_ASKS_READ) return true;
-  return mine.some((other) => closesWith(request, other, answer, asOf));
+  asOf: number,
+  budget: ReadBudget,
+): Promise<AlongsideAnswer> {
+  if (mine === 'unchecked') return 'unchecked';
+  if (mine.by === 'rows') {
+    return mine.rows.some((r) => closesWith(request, r, answer, asOf)) ? 'own' : 'clear';
+  }
+  const reach = reachOf(request, answer);
+  for (const m of mine.members) {
+    if (m.sourceId === request._id || m.filedAt > asOf) continue;
+    const item = await budget.measured('small', () => ctx.db.get(m.itemId));
+    if (item === undefined) return 'unchecked';
+    if (!item) continue;
+    if (reach.keys.has(item.key)) return 'own';
+    if (reach.landmarkPrefix !== null && item.key.startsWith(reach.landmarkPrefix)) {
+      const id = ctx.db.normalizeId('waterBodyRequests', m.sourceId);
+      const ask = id ? await budget.measured('waterBodyRequest', () => ctx.db.get(id)) : null;
+      if (ask === undefined) return 'unchecked';
+      if (ask && closesWith(request, ask, answer, asOf)) return 'own';
+    }
+  }
+  return 'clear';
 }
+
+/**
+ * The check's budget in a deciding mutation: what the transaction has left on Convex's byte limit,
+ * less the room the decision's own first page needs after it — never more than the check can use.
+ */
+async function checkBudget(ctx: MutationCtx): Promise<ReadBudget> {
+  const m = await ctx.meta.getTransactionMetrics();
+  return new ReadBudget(Math.max(0, Math.min(CHECK_BYTES, m.bytesRead.remaining - CHECK_BYTES)));
+}
+
+/** At most this much of a deciding transaction's bytes go to the own-filing check. */
+const CHECK_BYTES = 4 * 1024 * 1024;
 
 /**
  * **D289 at the decision** — one rule for every caller that decides an ask (the queue's approve and
@@ -440,15 +571,19 @@ export async function assertMayDecide(
 ): Promise<void> {
   const viewer = await ctx.db.get(actorId);
   if (!viewer) throw new ConvexError('Your profile was not found');
-  const alongside = await askedAlongside(
+  const budget = await checkBudget(ctx);
+  const mine = await ownAsks(ctx, actorId, budget, await inboxPending(ctx));
+  const alongside = await alongsideAnswer(
     ctx,
+    mine,
     request,
-    actorId,
     answer,
     answer.asOf ?? Number.POSITIVE_INFINITY,
+    budget,
   );
   if (request.origin === 'seed') {
-    if (alongside) throw new ConvexError(OWN_FILING_REFUSAL);
+    if (alongside === 'own') throw new ConvexError(OWN_FILING_REFUSAL);
+    if (alongside === 'unchecked') throw new ConvexError(ALONGSIDE_UNCHECKED);
     return;
   }
   const item = await itemToDecide(ctx, requestSource(request._id));
@@ -459,8 +594,8 @@ export async function assertMayDecide(
       hasCandidate: request.candidate !== undefined,
       askedAlongside: { [verb]: alongside },
     });
-  } else if (alongside) {
-    throw new ConvexError(OWN_FILING_REFUSAL);
+  } else if (alongside !== 'clear') {
+    throw new ConvexError(alongside === 'own' ? OWN_FILING_REFUSAL : ALONGSIDE_UNCHECKED);
   }
 }
 
@@ -475,10 +610,14 @@ export function siblingCost(row: Doc<'waterBodyRequests'>): TxCost {
   const size = getDocumentSize(row);
   const place = row.kind === 'name_landmark' ? LANDMARK_SCAN * ROW_MAX.waterBodyRequest : 0;
   return {
-    bytesRead: 2 * size + 4 * ROW_MAX.small + place,
+    // Read again by the reconcile and by a filing, and once more by its own patch, which reads the
+    // row it merges into (an ask can carry a catalog polygon near the document limit).
+    bytesRead: 3 * size + 4 * ROW_MAX.small + place,
     documentsRead: 14 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
     databaseQueries: 8 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
     documentsWritten: 6,
+    // The patch writes it back whole; its audit row, its member, the asker's message.
+    bytesWritten: size + 4 * ROW_MAX.small,
   };
 }
 
@@ -500,10 +639,22 @@ export async function closeSiblingPage(
 ): Promise<void> {
   // A page scheduled before an undo reopened the decision closes nothing more (the drain race).
   if (!decisionStands(await ctx.db.get(decision.requestId), decision)) return;
+  // The page's read is held to what the transaction can still spend on the rows it reads, then
+  // closes (each read three times more and written back once — `siblingCost`), past the refresh
+  // the batch owes and the closer's headroom: an ask can weigh near the document limit.
+  const m = await ctx.meta.getTransactionMetrics();
+  const spare = Math.max(
+    0,
+    Math.min(
+      m.bytesRead.remaining - refreshCost().bytesRead - CLOSER_RESERVE.bytesRead,
+      m.bytesWritten.remaining - CLOSER_RESERVE.bytesWritten,
+    ),
+  );
   const { rows, capped, cursor } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, {
     subArea: decision.subAreaId ? await ctx.db.get(decision.subAreaId) : null,
     landmark: decision.landmarkId ? await ctx.db.get(decision.landmarkId) : null,
     ...(decision.cursor !== undefined ? { cursor: decision.cursor } : {}),
+    room: spare / 4,
   });
   let closed = 0;
   await inboxBatch(ctx, async () => {
@@ -526,6 +677,62 @@ export async function closeSiblingPage(
       ...(resume !== undefined ? { cursor: resume } : {}),
     });
   }
+}
+
+/** What closing one ask costs a page before it is read: {@link siblingCost} at the document limit. */
+export const WORST_ASK_COST = (): TxCost => {
+  const worst = { kind: 'name_bay' } as Doc<'waterBodyRequests'>;
+  const c = siblingCost(worst);
+  return {
+    ...c,
+    bytesRead: c.bytesRead + 3 * ROW_MAX.waterBodyRequest,
+    bytesWritten: c.bytesWritten + ROW_MAX.waterBodyRequest,
+  };
+};
+
+/**
+ * **Named asks closed under one decision, a page at a time** (PR #170) — a re-decline closing what a
+ * reopen reopened: each read only while the transaction holds one more at its worst
+ * ({@link WORST_ASK_COST}) and every refresh the batch owes, always one at least; closed if still open,
+ * as one batch; the rest in `inboxWrites.closeRequestsRest`, which stops once the decision is undone.
+ */
+export async function closeRequestPage(
+  ctx: MutationCtx,
+  ids: readonly Id<'waterBodyRequests'>[],
+  decision: Decision,
+): Promise<void> {
+  let done = 0;
+  await inboxBatch(ctx, async () => {
+    for (const id of ids) {
+      if (done > 0 && !(await batchHasRoom(ctx, WORST_ASK_COST()))) break;
+      done++;
+      const row = await ctx.db.get(id);
+      if (row?.status === 'open') await closeRow(ctx, row, decision);
+    }
+  });
+  const rest = ids.slice(done);
+  if (rest.length > 0 && decision.actionId !== undefined) {
+    await ctx.scheduler.runAfter(0, internal.inboxWrites.closeRequestsRest, {
+      ...decision,
+      ids: [...rest],
+    });
+  }
+}
+
+/** A later page of {@link closeRequestPage}: stopped once the decision it closes under is undone. */
+export async function closeRequestsRestPage(
+  ctx: MutationCtx,
+  args: Decision & { ids: Id<'waterBodyRequests'>[] },
+): Promise<void> {
+  const { ids, ...decision } = args;
+  if (decision.actionId === undefined) return;
+  const lead = decision.actionId;
+  const undone = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', lead))
+    .first();
+  if (undone !== null) return;
+  await closeRequestPage(ctx, ids, decision);
 }
 
 /**

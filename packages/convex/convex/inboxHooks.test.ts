@@ -272,6 +272,9 @@ describe('asks', () => {
     const primary = (await t.run((ctx) =>
       ctx.db.get(asks[0] as Id<'waterBodyRequests'>),
     )) as Doc<'waterBodyRequests'>;
+    // A moment for the wall clock to pass the asks: convex-test hands out `_creationTime` ahead of it
+    // under a burst of inserts, and a decision drains only the asks that existed by its `now`.
+    await new Promise((resolve) => setTimeout(resolve, 25));
     const now = Date.now();
     const decision = {
       requestId: primary._id,

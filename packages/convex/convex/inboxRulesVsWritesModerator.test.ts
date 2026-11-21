@@ -86,7 +86,8 @@ async function alongsideFact(w: W, verb: InboxVerb, s: Setup): Promise<boolean> 
     const r = new InboxReader(ctx, new ReadBudget(), Date.now(), w.viewer.id, true);
     const built = await itemView(r, item);
     const facts = built?.facts.askedAlongside;
-    return verb === 'decline' ? facts?.decline === true : facts?.approve === true;
+    const said = verb === 'decline' ? facts?.decline : facts?.approve;
+    return said === 'own' || said === 'unchecked';
   });
 }
 

@@ -117,8 +117,10 @@ export interface InboxReads {
  * A batch reopen's reads: each row read once (an item's row, a target's, a body's — none of which a
  * batch writes before its end), and each key's open item looked up once.
  */
-function memoReads(ctx: QueryCtx): InboxReads {
-  const memo = new Map<string, Promise<unknown>>();
+function memoReads(ctx: QueryCtx, known: ReadonlyMap<string, unknown> = new Map()): InboxReads {
+  const memo = new Map<string, Promise<unknown>>(
+    [...known].map(([id, doc]) => [id, Promise.resolve(doc)] as const),
+  );
   return {
     get: <T extends TableNames>(_kind: RowKind, id: Id<T>) => {
       let read = memo.get(id) as Promise<Doc<T> | null> | undefined;
@@ -640,6 +642,8 @@ export type TxCost = {
   documentsRead: number;
   databaseQueries: number;
   documentsWritten: number;
+  /** A patch writes the whole row back: an ask with its polygon is written at its full size. */
+  bytesWritten: number;
 };
 
 /**
@@ -654,6 +658,7 @@ export function refreshCost(members: number = MEMBER_BOUND.members): TxCost {
     documentsRead: 2 * members + 16,
     databaseQueries: 24,
     documentsWritten: 16,
+    bytesWritten: 16 * ROW_MAX.small,
   };
 }
 
@@ -663,6 +668,7 @@ export const RECONCILE_COST: TxCost = {
   documentsRead: 8,
   databaseQueries: 8,
   documentsWritten: 4,
+  bytesWritten: 4 * ROW_MAX.inboxMember,
 };
 
 /** Headroom a closer keeps past its batch: the next page's schedule, its own last rows. */
@@ -671,9 +677,16 @@ export const CLOSER_RESERVE: TxCost = {
   documentsRead: 200,
   databaseQueries: 100,
   documentsWritten: 100,
+  bytesWritten: 256 * 1024,
 };
 
-export const AXES = ['bytesRead', 'documentsRead', 'databaseQueries', 'documentsWritten'] as const;
+export const AXES = [
+  'bytesRead',
+  'documentsRead',
+  'databaseQueries',
+  'documentsWritten',
+  'bytesWritten',
+] as const;
 
 /**
  * **Room for one more source in this transaction's batch** — its own cost (`perSource`, the closer's
@@ -1116,6 +1129,11 @@ export async function reopenItem(
     now?: number;
     /** Filled with every source reconciled here, so a caller's follow-up skips them. */
     covered?: Set<string>;
+    /**
+     * Source rows the caller has just written, as they now stand: read from here rather than again
+     * (a flag at its longest note is 12 KiB, and an undo of five hundred reads each once fewer).
+     */
+    known?: ReadonlyMap<string, unknown>;
   } = {},
 ): Promise<number> {
   const members = await ctx.db
@@ -1126,7 +1144,7 @@ export async function reopenItem(
   // One batch, its reads memoized: an item that had every member closed by the decision is recounted
   // once, and its row, its target and its key's open item read once — not per member (PR #170: a
   // 500-report ruling's undo read past Convex's 4,096 index ranges, member by member).
-  const reads = memoReads(ctx);
+  const reads = memoReads(ctx, opts.known);
   await inboxBatch(ctx, async () => {
     for (const m of members) {
       const outcome = await syncInboxSource(ctx, sourceOfMember(m), {
@@ -1139,6 +1157,62 @@ export async function reopenItem(
     }
   });
   return reopened;
+}
+
+/**
+ * **Whether the Inbox's stored items can't yet be taken as whole** — every Inbox read's `pending`, and
+ * the Overview card's: until the backfill's scan has finished, **and** while any source it couldn't
+ * file is still owed (a `jobFailures` row of `inboxBackfill`, parked or not — PR #170). The scan
+ * finishing is not the Inbox being ready: a source that failed is a question missing from the counts,
+ * so the counts say why they may be short rather than reading as exact. Such a failure is retried by
+ * the drift repair's pass while it is failing, and once parked by the daily retry
+ * (`recurringJobs.retryParkedDaily`, D258); Machinery counts both (`recurringJobs.health`), with their
+ * error classes.
+ */
+export async function inboxPending(ctx: QueryCtx): Promise<boolean> {
+  const run = await ctx.db
+    .query('inboxJobRuns')
+    .withIndex('by_job', (q) => q.eq('job', 'backfill'))
+    .first();
+  if (run?.done !== true) return true;
+  const owed = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_parked', (q) => q.eq('job', 'inboxBackfill'))
+    .first();
+  return owed !== null;
+}
+
+/**
+ * A source an undo has just put back, reconciled from the row as the undo wrote it (`known`) rather
+ * than read again — a flag at its longest note is 12 KiB, and an undo reopens hundreds.
+ */
+export async function syncReopened(
+  ctx: MutationCtx,
+  source: InboxSource,
+  known: unknown,
+  reads: ReopenReads,
+  opts: { now?: number } = {},
+): Promise<SyncOutcome> {
+  reads.know(source.id, known);
+  return syncInboxSource(ctx, source, { ...opts, reads: reads.reads });
+}
+
+/** One undo page's memoized reads, shared by its reconciles: items and keys read once a page. */
+export type ReopenReads = { reads: InboxReads; know: (id: string, doc: unknown) => void };
+
+/** Reads for a page of {@link syncReopened}: a memo the page's patched rows are added to. */
+export function reopenReads(ctx: QueryCtx): ReopenReads {
+  const known = new Map<string, unknown>();
+  const memo = memoReads(ctx, known);
+  const base = memo.get;
+  return {
+    reads: {
+      ...memo,
+      get: <T extends TableNames>(kind: RowKind, id: Id<T>) =>
+        known.has(id) ? Promise.resolve(known.get(id) as Doc<T> | null) : base(kind, id),
+    },
+    know: (id, doc) => known.set(id, doc),
+  };
 }
 
 // ── What the reads and the repair share ────────────────────────────────────────────────────────

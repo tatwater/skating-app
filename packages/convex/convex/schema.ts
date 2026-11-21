@@ -5530,6 +5530,9 @@ export default defineSchema({
     .index('by_item_status', ['itemId', 'status', 'filedAt'])
     .index('by_source', ['sourceTable', 'sourceId'])
     .index('by_item_filer', ['itemId', 'filedByUserId'])
+    // A person's open filings of one kind, from small rows: a decision's own-filing check reads the
+    // actor's open ask members here and compares the drain's reach by item key (D289, PR #170).
+    .index('by_filer_source_status', ['filedByUserId', 'sourceTable', 'status'])
     // A decision's members one person filed: the undo's own-filing check, one point read (PR #170).
     .index('by_closed_filer', ['closedByActionId', 'filedByUserId'])
     // `eq` only.

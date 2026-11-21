@@ -16,7 +16,7 @@
  *
  * and holds each one's enclosing top-level function to calling an entry point of `lib/inboxItems`
  * (`fileMember`, `leaveMember`, `leaveMembers`, `decideItem`, `rekey`, `reopenItem`,
- * `syncInboxSource`, `refreshItemTab`), found in the function's text with comments **and strings**
+ * `syncInboxSource`, `syncReopened`, `refreshItemTab`), found in the function's text with comments **and strings**
  * blanked, so a mention in a comment or a string never counts. The functions making them are exactly
  * the inventories below — the writers, and the same-shaped writes that are named one by one as not an
  * Inbox source — so a new one fails until it is read.
@@ -51,8 +51,9 @@ const SOURCE_WRITERS: Record<string, string> = {
   'lib/landmarkProposals.ts#fileLandmarkProposals': 'a report’s where asks for a landmark',
   'lib/requestDecisions.ts#closeRow': 'every request decision, each sibling page’s included',
   // The Inbox's inverses (S2): an undo reopens the flags and the asks a decision closed.
-  'lib/inboxFlags.ts#reopenFlagsClosedBy': 'a flag decision undone: its flags reopen',
-  'lib/undoHandlersCorpus.ts#undoRequestDecision': 'a request decision undone: its asks reopen',
+  'lib/inboxFlags.ts#reopenFlagsPage': 'a flag decision undone: its flags reopen, a page at a time',
+  'lib/undoHandlersCorpus.ts#reopenRequestPage':
+    'a request decision undone: its asks reopen, a page at a time',
   'waterBodies.ts#create': 'a skater draws a body',
   // `approve`, `reject` and their undo (`return_to_review`) move a drawing's review through this one
   // helper since S2's turn 1 (the integration, 2026-11-21).
@@ -97,7 +98,7 @@ const DELETE_NOT_SOURCES: Record<string, string> = {
 };
 
 const ENTRY =
-  /\b(fileMember|leaveMember|leaveMembers|decideItem|rekey|reopenItem|syncInboxSource|refreshItemTab)\(/;
+  /\b(fileMember|leaveMember|leaveMembers|decideItem|rekey|reopenItem|syncInboxSource|syncReopened|refreshItemTab)\(/;
 const STAMP = /\b(resolvedAt|resolvedByUserId|retractedAt|decidedAt|decidedByUserId)\b/;
 
 function sources(dir: string): string[] {

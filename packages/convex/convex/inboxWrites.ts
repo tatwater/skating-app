@@ -34,10 +34,18 @@ import { retractAlertImpl, setOfficialImpl } from './accessAlerts';
 import { checkedReason } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { PUBLIC_ACCESS_VERDICTS } from './lib/enums';
-import { closeFlagsRestPage, closeFlagsUnder, isOpenFlag, openFlagsOn } from './lib/inboxFlags';
+import {
+  closeFlagsRestPage,
+  closeFlagsUnder,
+  isOpenFlag,
+  openFlagsOn,
+  reopenFlagsRestPage,
+} from './lib/inboxFlags';
 import { MAX_MEMBERS } from './lib/inboxItems';
 import { assertInboxVerb, type InboxRuleFacts } from './lib/inboxRules';
 import { reasonFor } from './lib/peopleCan';
+import { closeRequestsRestPage, decisionArgs } from './lib/requestDecisions';
+import { reopenRequestsRestPage } from './lib/undoHandlersCorpus';
 import { literals } from './lib/validators';
 import {
   type ContentTargetType,
@@ -414,5 +422,52 @@ export const closeFlagsRest = internalMutation({
   },
   handler: async (ctx, args) => {
     await closeFlagsRestPage(ctx, args);
+  },
+});
+
+/**
+ * A request decision's undo, a later page (`lib/undoHandlersCorpus.reopenRequestPage`): the asks its
+ * first page had no room for, reopened page by page — or stopped once the reopen is undone.
+ */
+export const reopenRequestsRest = internalMutation({
+  args: {
+    decisionId: v.id('moderationActions'),
+    reopenRowId: v.id('moderationActions'),
+    ids: v.array(v.id('waterBodyRequests')),
+    actorId: v.id('profiles'),
+  },
+  handler: async (ctx, args) => {
+    await reopenRequestsRestPage(ctx, args);
+  },
+});
+
+/**
+ * Named asks closed under a decision, a later page (`lib/requestDecisions.closeRequestPage` — a
+ * re-decline over what a reopen reopened), or stopped once that decision is undone.
+ */
+export const closeRequestsRest = internalMutation({
+  args: { ...decisionArgs, ids: v.array(v.id('waterBodyRequests')) },
+  handler: async (ctx, args) => {
+    await closeRequestsRestPage(ctx, args);
+  },
+});
+
+/**
+ * A flag decision's undo, a later page (`lib/inboxFlags.reopenFlagsPage`): the flags its first page had
+ * no room for, each reopened while the decision still holds it closed.
+ */
+export const reopenFlagsRest = internalMutation({
+  args: {
+    actorId: v.id('profiles'),
+    actionId: v.id('moderationActions'),
+    flagIds: v.array(v.id('contentFlags')),
+    reason: v.string(),
+    alsoFlagId: v.optional(v.id('contentFlags')),
+    withUndoOf: v.boolean(),
+    reopenedAll: v.array(v.id('contentFlags')),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await reopenFlagsRestPage(ctx, args);
   },
 });

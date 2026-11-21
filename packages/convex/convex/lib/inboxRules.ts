@@ -51,6 +51,15 @@ export const ALERT_PINNED_ALREADY = 'This alert is already pinned.';
 export const ALERT_RETRACTED_NO_PIN = 'This alert has been retracted, so it can’t be pinned.';
 /** D289: no staffer decides an ask or a flag they filed. */
 export const OWN_FILING_REFUSAL = 'You filed this, so another staff member decides it.';
+/**
+ * A decision whose reach over the viewer's own asks couldn't be checked inside the read's budget
+ * (D289, PR #170): never decided unseen.
+ */
+export const ALONGSIDE_UNCHECKED =
+  'Your own open asks couldn’t all be checked against this just now, so another staff member decides it.';
+
+/** Whether a decision would close one of the viewer's own asks: yes, no, or it couldn't be checked. */
+export type AlongsideAnswer = 'own' | 'clear' | 'unchecked';
 
 /** The capabilities each verb needs (all of them). */
 export function capabilitiesFor(
@@ -131,7 +140,7 @@ export type InboxRuleFacts = {
    * (`lib/requestDecisions.askedAlongside`, D289). Approving (and *Same as*) and declining reach
    * different sets, so each is its own answer.
    */
-  askedAlongside?: { approve?: boolean; decline?: boolean };
+  askedAlongside?: { approve?: AlongsideAnswer; decline?: AlongsideAnswer };
   /**
    * A flagged content row's record facts (`lib/recordRules`), read as `setContentStatus` reads them:
    * the decision standing on it, whether its author withdrew it or it was erased, a Post's members.
@@ -315,10 +324,25 @@ export async function filedOnTarget(
   return false;
 }
 
+/** What an ask's decision by `verb` would close of the viewer's own asks (absent: not asked). */
+function alongsideFor(verb: InboxVerb, facts: InboxRuleFacts): AlongsideAnswer {
+  const a =
+    verb === 'approve' || verb === 'sameAs'
+      ? facts.askedAlongside?.approve
+      : verb === 'decline'
+        ? facts.askedAlongside?.decline
+        : undefined;
+  return a ?? 'clear';
+}
+
 /** Whether an ask's decision by `verb` would close one of the viewer's own asks in another item. */
 function askedAlongsideFor(verb: InboxVerb, facts: InboxRuleFacts): boolean {
-  if (verb === 'approve' || verb === 'sameAs') return facts.askedAlongside?.approve === true;
-  return verb === 'decline' && facts.askedAlongside?.decline === true;
+  return alongsideFor(verb, facts) === 'own';
+}
+
+/** The refusal of a decision whose reach over the viewer's own asks couldn't be checked. */
+function uncheckedRefusal(verb: InboxVerb, facts: InboxRuleFacts): string | null {
+  return alongsideFor(verb, facts) === 'unchecked' ? ALONGSIDE_UNCHECKED : null;
 }
 
 /** Rules 1–4: who may act on this item at all, for `verb`. */
@@ -411,6 +435,7 @@ export async function inboxCan(
       filed || (onTarget && CLOSES_EVERY_LANE.has(verb)) || askedAlongsideFor(verb, facts ?? {});
     can[verb] =
       whoRefusal(viewer, item, verb, theirs, facts) ??
+      uncheckedRefusal(verb, facts ?? {}) ??
       (facts ? preconditionRefusal(verb, facts) : null);
   }
   return can;
@@ -430,7 +455,11 @@ export async function inboxVerbRefusal(
     (await filedByViewer(ctx, item._id, viewer._id)) ||
     (CLOSES_EVERY_LANE.has(verb) && (await filedOnTarget(ctx, item, viewer._id))) ||
     askedAlongsideFor(verb, facts);
-  return whoRefusal(viewer, item, verb, filed, facts) ?? preconditionRefusal(verb, facts);
+  return (
+    whoRefusal(viewer, item, verb, filed, facts) ??
+    uncheckedRefusal(verb, facts) ??
+    preconditionRefusal(verb, facts)
+  );
 }
 
 /** The write's side: refuse `verb` on `item` in the rule's words (a `ConvexError`, for a toast). */
