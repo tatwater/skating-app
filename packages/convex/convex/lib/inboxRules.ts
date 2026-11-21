@@ -126,6 +126,13 @@ export type InboxRuleFacts = {
   hasLookalike?: boolean;
   hasOverlap?: boolean;
   /**
+   * An ask's decision, per verb: the viewer has an open ask of their own among those it would close in
+   * another item — a sibling its drain reaches through an answer's names or a landmark's place
+   * (`lib/requestDecisions.askedAlongside`, D289). Approving (and *Same as*) and declining reach
+   * different sets, so each is its own answer.
+   */
+  askedAlongside?: { approve?: boolean; decline?: boolean };
+  /**
    * A flagged content row's record facts (`lib/recordRules`), read as `setContentStatus` reads them:
    * the decision standing on it, whether its author withdrew it or it was erased, a Post's members.
    * The item's read supplies them, and Hide, Remove and Restore answer from them; a write that
@@ -308,6 +315,12 @@ export async function filedOnTarget(
   return false;
 }
 
+/** Whether an ask's decision by `verb` would close one of the viewer's own asks in another item. */
+function askedAlongsideFor(verb: InboxVerb, facts: InboxRuleFacts): boolean {
+  if (verb === 'approve' || verb === 'sameAs') return facts.askedAlongside?.approve === true;
+  return verb === 'decline' && facts.askedAlongside?.decline === true;
+}
+
 /** Rules 1–4: who may act on this item at all, for `verb`. */
 export function whoRefusal(
   viewer: Doc<'profiles'>,
@@ -394,8 +407,10 @@ export async function inboxCan(
       : false;
   const can: InboxCan = {};
   for (const verb of verbs) {
+    const theirs =
+      filed || (onTarget && CLOSES_EVERY_LANE.has(verb)) || askedAlongsideFor(verb, facts ?? {});
     can[verb] =
-      whoRefusal(viewer, item, verb, filed || (onTarget && CLOSES_EVERY_LANE.has(verb)), facts) ??
+      whoRefusal(viewer, item, verb, theirs, facts) ??
       (facts ? preconditionRefusal(verb, facts) : null);
   }
   return can;
@@ -413,7 +428,8 @@ export async function inboxVerbRefusal(
   if (choice !== null) return choice;
   const filed =
     (await filedByViewer(ctx, item._id, viewer._id)) ||
-    (CLOSES_EVERY_LANE.has(verb) && (await filedOnTarget(ctx, item, viewer._id)));
+    (CLOSES_EVERY_LANE.has(verb) && (await filedOnTarget(ctx, item, viewer._id))) ||
+    askedAlongsideFor(verb, facts);
   return whoRefusal(viewer, item, verb, filed, facts) ?? preconditionRefusal(verb, facts);
 }
 

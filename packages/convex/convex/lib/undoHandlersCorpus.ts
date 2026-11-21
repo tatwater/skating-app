@@ -293,6 +293,33 @@ const chargedRead =
   (r) =>
     read.take('small', 1, r);
 
+/**
+ * Whether a member the decision `actionId` closed was filed by `viewerId` — a sibling's, in any item
+ * (D289, PR #170): the decision's undo reopens every one of them, and an undo is a decision too. The
+ * members it stamped, as many as its undo reopens.
+ */
+async function filedAmongClosedBy(
+  ctx: QueryCtx,
+  actionId: Id<'moderationActions'>,
+  viewerId: Id<'profiles'>,
+  take: <D>(n: number, read: (n: number) => Promise<D[]>) => Promise<D[]>,
+): Promise<boolean> {
+  const members = await take(MAX_MEMBERS, (n) =>
+    ctx.db
+      .query('inboxItemMembers')
+      .withIndex('by_closed_by', (q) => q.eq('closedByActionId', actionId))
+      .take(n),
+  );
+  return members.some((m) => m.filedByUserId === viewerId);
+}
+
+/** What {@link filedAmongClosedBy} reads at worst. */
+const CLOSED_BY_CHECK_COST = {
+  bytes: MAX_MEMBERS * ROW_MAX.inboxMember,
+  reads: 1,
+  docs: MAX_MEMBERS,
+};
+
 /** The reads {@link decisionActorRefusal} makes: the member, its item, the filer probe. */
 const ACTOR_CHECK_COST = { bytes: 3 * ROW_MAX.small, reads: 3, docs: 3 };
 
@@ -608,9 +635,13 @@ const undoRequestDecision: UndoHandler = {
   undoTakesAway: (row) =>
     row.action === 'approve_request' && bodySideOf(row) != null && meta(row).kind !== 'takedown',
   refusalCost: () => ({
-    bytes: ROW_MAX.waterBodyRequest + ROW_MAX.moderationAction + ACTOR_CHECK_COST.bytes,
-    reads: 2 + ACTOR_CHECK_COST.reads,
-    docs: 2 + ACTOR_CHECK_COST.docs,
+    bytes:
+      ROW_MAX.waterBodyRequest +
+      ROW_MAX.moderationAction +
+      ACTOR_CHECK_COST.bytes +
+      CLOSED_BY_CHECK_COST.bytes,
+    reads: 2 + ACTOR_CHECK_COST.reads + CLOSED_BY_CHECK_COST.reads,
+    docs: 2 + ACTOR_CHECK_COST.docs + CLOSED_BY_CHECK_COST.docs,
   }),
   refusal: async (ctx, row, read, viewer) => {
     const id = ctx.db.normalizeId('waterBodyRequests', row.targetId);
@@ -626,6 +657,11 @@ const undoRequestDecision: UndoHandler = {
             askPeople(request),
             chargedRead(read),
           )
+        : null) ??
+      ((await filedAmongClosedBy(ctx, row._id, viewer._id, (n, r) =>
+        read.take('inboxMember', n, () => r(n)),
+      ))
+        ? OWN_FILING_REFUSAL
         : null)
     );
   },
@@ -644,6 +680,9 @@ const undoRequestDecision: UndoHandler = {
       plainRead,
     );
     if (own !== null) throw new ConvexError(own);
+    if (await filedAmongClosedBy(ctx, row._id, actor._id, (n, r) => r(n))) {
+      throw new ConvexError(OWN_FILING_REFUSAL);
+    }
     const bodyActionId = bodySideOf(row);
     if (bodyActionId) {
       const bodyRow = await ctx.db.get(bodyActionId);
@@ -858,6 +897,14 @@ const undoMerge: UndoHandler = {
 export const REQUEST_DECIDED_SINCE =
   'The request has been decided since, so this can’t be put back.';
 
+/** The asks a `reopen_request` row reopened (its primary among them). */
+const reopenedAsksOf = (row: Doc<'moderationActions'>): Id<'waterBodyRequests'>[] =>
+  (meta(row).reopened ?? []) as Id<'waterBodyRequests'>[];
+
+/** An open ask a person filed, and that person is `viewerId`. */
+const ownOpenAsk = (r: Doc<'waterBodyRequests'> | null, viewerId: Id<'profiles'>): boolean =>
+  r?.status === 'open' && r.requesterId === viewerId && r.origin !== 'seed';
+
 const undoRequestReopen: UndoHandler = {
   blocked: (row) => {
     const prev = meta(row).prev as { status?: string } | undefined;
@@ -869,22 +916,34 @@ const undoRequestReopen: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.decline_request.takesAway(),
   // The decision's own rule, as its write asks it (`assertMayDecide`): the ask still open, and the
   // viewer not the filer of any member of its item — the primary's or a sibling's (D289).
-  refusalCost: () => ({
-    bytes: ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes,
-    reads: 1 + ACTOR_CHECK_COST.reads,
-    docs: 1 + ACTOR_CHECK_COST.docs,
-  }),
+  refusalCost: (_scope, row) => {
+    const n = reopenedAsksOf(row).length;
+    return {
+      bytes: (1 + n) * ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes,
+      reads: 1 + n + ACTOR_CHECK_COST.reads,
+      docs: 1 + n + ACTOR_CHECK_COST.docs,
+    };
+  },
   refusal: async (ctx, row, read, viewer) => {
     const id = row.targetId as Id<'waterBodyRequests'>;
     const primary = await read.row('waterBodyRequest', id);
     if (primary?.status !== 'open') return REQUEST_DECIDED_SINCE;
-    return decisionActorRefusal(
+    const own = await decisionActorRefusal(
       ctx,
       viewer,
       requestSource(id),
       askPeople(primary),
       chargedRead(read),
     );
+    if (own !== null) return own;
+    // Closing them again decides every reopened sibling: one of the viewer's own refuses it (D289).
+    for (const sid of reopenedAsksOf(row)) {
+      if (sid === id) continue;
+      if (ownOpenAsk(await read.row('waterBodyRequest', sid), viewer._id)) {
+        return OWN_FILING_REFUSAL;
+      }
+    }
+    return null;
   },
   run: async ({ ctx, actor, row }) => {
     const primaryId = row.targetId as Id<'waterBodyRequests'>;
@@ -893,6 +952,11 @@ const undoRequestReopen: UndoHandler = {
     const note = (meta(row).prev.note as string | null) ?? undefined;
     const now = Date.now();
     await assertMayDecide(ctx, primary, actor._id, 'declined');
+    for (const sid of reopenedAsksOf(row)) {
+      if (sid !== primaryId && ownOpenAsk(await ctx.db.get(sid), actor._id)) {
+        throw new ConvexError(OWN_FILING_REFUSAL);
+      }
+    }
     const decision = {
       requestId: primaryId,
       status: 'declined' as const,
@@ -900,12 +964,15 @@ const undoRequestReopen: UndoHandler = {
       now,
       ...(note !== undefined ? { note } : {}),
     };
-    const actionId = await closeRow(ctx, primary, decision);
-    for (const id of (meta(row).reopened ?? []) as Id<'waterBodyRequests'>[]) {
-      if (id === primaryId) continue;
-      const sibling = await ctx.db.get(id);
-      if (sibling?.status === 'open') await closeRow(ctx, sibling, { ...decision, actionId });
-    }
+    // One batch: their items recounted once.
+    await inboxBatch(ctx, async () => {
+      const actionId = await closeRow(ctx, primary, decision);
+      for (const id of reopenedAsksOf(row)) {
+        if (id === primaryId) continue;
+        const sibling = await ctx.db.get(id);
+        if (sibling?.status === 'open') await closeRow(ctx, sibling, { ...decision, actionId });
+      }
+    });
   },
 };
 

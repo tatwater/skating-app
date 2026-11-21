@@ -268,6 +268,43 @@ const CASES: Case[] = [
     },
   },
   {
+    // PR #170: the approval's bay closed an ask by its alias — another key, another item.
+    name: 'approve_request (a bay whose alias closed the viewer’s ask in another item) → reopen_request',
+    viewers: ALL,
+    setup: async (w) => {
+      await w.t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: w.lake,
+          name: 'Northwest Bay',
+          aliases: ['NW Bay'],
+          searchText: 'Northwest Bay NW Bay',
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 40_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: w.p.admin.id,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      );
+      const at = { kind: 'name_bay' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: w.lake };
+      const first = await w.p.skater.as.mutation(api.corpusRequests.create, {
+        ...at,
+        name: 'Northwest Bay',
+      });
+      await w.p.siblingFiler.as.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await w.p.actor.as.mutation(api.corpusRequests.approve, { requestId: first });
+      return w.t.run(async (ctx) => {
+        const rows = await ctx.db.query('moderationActions').collect();
+        return rows.find((x) => x.action === 'approve_request' && x.targetId === first)
+          ?._id as Id<'moderationActions'>;
+      });
+    },
+  },
+  {
     name: 'reopen_request → declined again (the reproduction D)',
     viewers: ALL,
     setup: async (w) => {

@@ -61,12 +61,14 @@ import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
 import { readCount } from './inboxItems';
-import type { InboxRuleFacts } from './inboxRules';
+import type { InboxRuleFacts, RuleTake } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import { CHARGED_QUERY_BUDGET, type ReadBudget, type RowKind, requestBudget } from './readBudget';
 import { type RecordFacts, recordFactsOf } from './recordRules';
 import { trustClassFor } from './reputation';
 import {
+  askedAlongside,
+  type DecisionAnswer,
   drawnBay,
   landmarkAskOf,
   landmarkProposalView,
@@ -1012,6 +1014,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
             hasCandidate: candidate !== null,
             resolveError: first.resolveError ?? null,
             candidateFlowing: c !== undefined && c.cls === undefined,
+            // Its siblings are its own question's asks either way: one answer for both verbs.
+            askedAlongside: await alongsideOf(r, first, {}, {}),
           },
         };
       }
@@ -1027,6 +1031,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         facts.bayMissing = bay
           ? null
           : `No sub-area called "${first.name}" on ${water.name} yet — draw it in the lake editor first, then approve.`;
+        facts.askedAlongside = await alongsideOf(r, first, { subArea: bay }, {});
       } else {
         r.budget.reserve('landmark', 8);
         const landmarks = await liveLandmarksForBody(r.ctx, water._id);
@@ -1036,6 +1041,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         facts.landmarkMissing = answering
           ? null
           : `No landmark called "${first.name}" near that spot on ${water.name} yet — add it in the lake editor first, then approve.`;
+        facts.askedAlongside = await alongsideOf(r, first, { landmark: answering ?? null }, {});
         const others = asks.slice(1).map((a) => a.doc);
         const found = landmarkProposalView(ask, landmarks, others);
         if (found.similarLandmark) {
@@ -1113,6 +1119,25 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       };
     }
   }
+}
+
+/**
+ * Whether an ask's approval (by its answer) and its decline would each close one of the viewer's own
+ * asks in another item — `askedAlongside`, read through the item's budget.
+ */
+async function alongsideOf(
+  r: InboxReader,
+  first: Doc<'waterBodyRequests'>,
+  approve: DecisionAnswer,
+  decline: DecisionAnswer,
+): Promise<{ approve: boolean; decline: boolean }> {
+  const take: RuleTake = (n, read) => r.take('small', n, read);
+  const readAsk = (id: Id<'waterBodyRequests'>) =>
+    r.get<'waterBodyRequests'>('waterBodyRequest', id);
+  return {
+    approve: await askedAlongside(r.ctx, first, r.viewerId, approve, take, readAsk),
+    decline: await askedAlongside(r.ctx, first, r.viewerId, decline, take, readAsk),
+  };
 }
 
 /** The item a ref names: its id, or a source ref (`flag:`, `request:`, `body:`, `ticket:`), or a bare source id. */

@@ -594,7 +594,53 @@ const requestCells: Cell[] = [
     verbs: ['approve', 'decline'],
     setup: (w) => ask(w, w.author.as, 'name_bay'),
   },
+  // An approval's bay closes the asks by every one of its names — past the ask's own item (PR #170).
+  {
+    kind: 'place (bay, drawn with an alias)',
+    state: 'a sibling in another item is someone else’s',
+    verbs: ['approve', 'decline'],
+    setup: (w) => aliasedBay(w, w.other.as),
+  },
+  {
+    kind: 'place (bay, drawn with an alias)',
+    state: 'a sibling in another item is the viewer’s own',
+    verbs: ['approve', 'decline'],
+    setup: (w) => aliasedBay(w, w.viewer.as),
+  },
 ];
+
+/**
+ * "Northwest Bay" drawn with the alias "NW Bay"; the author asks by its name and `sibling` by its
+ * alias — another key, so another item, which the approval's drain closes too.
+ */
+async function aliasedBay(w: W, sibling: As): Promise<Setup> {
+  await w.t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId: w.active,
+      name: 'Northwest Bay',
+      aliases: ['NW Bay'],
+      searchText: 'Northwest Bay NW Bay',
+      polygon: square(0),
+      bbox: { minLat: -0.5, minLng: -0.5, maxLat: 0.5, maxLng: 0.5 },
+      centroid: { lat: 0, lng: 0 },
+      surfaceAreaSqM: 40_000,
+      displayScore: 1,
+      minVisibleZoom: 10,
+      createdByUserId: w.other.id,
+      createdAt: NOW,
+      updatedAt: NOW,
+    }),
+  );
+  const at = { coord: { lat: 0.2, lng: 0.2 }, waterBodyId: w.active, kind: 'name_bay' as const };
+  const requestId = await w.author.as.mutation(api.corpusRequests.create, {
+    ...at,
+    name: 'Northwest Bay',
+  });
+  await sibling.mutation(api.corpusRequests.create, { ...at, name: 'NW Bay' });
+  // A moment for the wall clock to pass the asks (a decision drains those that existed by its now).
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  return { ref: `request:${requestId}`, requestId };
+}
 
 const drawn = async (_w: W, by: As, i: number) => {
   const T0 = Date.UTC(2026, 0, 15, 14 + i);
@@ -758,7 +804,7 @@ const AWAITING_THE_WRITE: Record<string, string> = {};
 describe('the rule and the write', () => {
   test('agree in every cell', async () => {
     const { size, disagreements } = await runCells();
-    expect(size).toBe(137);
+    expect(size).toBe(141);
     const cellOf = (d: string) => d.slice(0, d.indexOf(':'));
     expect(disagreements.filter((d) => !(cellOf(d) in AWAITING_THE_WRITE))).toEqual([]);
     // A seam that landed comes off the list.

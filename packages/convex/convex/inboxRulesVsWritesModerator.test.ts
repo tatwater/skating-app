@@ -25,8 +25,9 @@ import {
   write,
 } from './inboxRulesVsWrites.test';
 import { DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './lib/inboxRules';
-import { itemOfRef } from './lib/inboxViews';
+import { InboxReader, itemOfRef, itemView } from './lib/inboxViews';
 import { OWN_CONTENT_REFUSAL } from './lib/ownContent';
+import { ReadBudget } from './lib/readBudget';
 
 /**
  * The requests whose approval is an admin's lever (`body.remove`): a takedown on a body that is up,
@@ -73,6 +74,22 @@ const forWho = (s: string | null) =>
     s === OWN_FILING_REFUSAL ||
     s === OWN_CONTENT_REFUSAL);
 
+/**
+ * Whether the item's facts say `verb` would close one of the viewer's own asks in another item
+ * (`askedAlongside`) — a refusal that hangs on the decision's answer (the bay or landmark drawn), a
+ * fact the item reads and a row doesn't, like a bay not drawn yet.
+ */
+async function alongsideFact(w: W, verb: InboxVerb, s: Setup): Promise<boolean> {
+  return w.t.run(async (ctx) => {
+    const item = await itemOfRef(ctx, s.ref);
+    if (!item) return false;
+    const r = new InboxReader(ctx, new ReadBudget(), Date.now(), w.viewer.id, true);
+    const built = await itemView(r, item);
+    const facts = built?.facts.askedAlongside;
+    return verb === 'decline' ? facts?.decline === true : facts?.approve === true;
+  });
+}
+
 /** The row's `can` for the item, as the moderator's list draws it; `undefined` when no row shows. */
 async function rowCan(w: W, verb: InboxVerb, s: Setup): Promise<string | null | undefined> {
   const item = await w.t.run((ctx) => itemOfRef(ctx, s.ref));
@@ -99,6 +116,7 @@ describe('the rule and the write, from a moderator’s chair', () => {
         const s = await cell.setup(w);
         const said = await rule(w, verb, s);
         const row = await rowCan(w, verb, s);
+        const factual = await alongsideFact(w, verb, s);
         let did: string | null = null;
         try {
           await write(w, verb, s);
@@ -109,7 +127,8 @@ describe('the rule and the write, from a moderator’s chair', () => {
         if (said !== did)
           disagreements.push(`${at}: item ${JSON.stringify(said)}, write ${JSON.stringify(did)}`);
         if (row !== undefined) {
-          const rowAgrees = row === null ? !forWho(did) : row === did;
+          // A row allows where only the item's facts refuse (rule 5, or an answer's own-filing reach).
+          const rowAgrees = row === null ? !forWho(did) || factual : row === did;
           if (!rowAgrees)
             disagreements.push(`${at}: row ${JSON.stringify(row)}, write ${JSON.stringify(did)}`);
         }
