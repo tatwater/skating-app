@@ -54,6 +54,19 @@ export const winterDetail = v.object({
 });
 
 /**
+ * Where winter stood on the last night the tick read (D290): the winter nights in the window, what
+ * setting in needs, and the night it ended, if it has. The tick writes it and the console reads it,
+ * so the tile counts the lakes and nights the tick decided on, never a set of its own.
+ */
+export const winterTally = v.object({
+  through: v.string(),
+  nights: v.number(),
+  window: v.number(),
+  needs: v.number(),
+  endedOn: v.union(v.string(), v.null()),
+});
+
+/**
  * One staff email waiting its turn (D212: never two on one day). Each carries what it reports, so
  * the copy is written from what was measured that night rather than re-derived from a rolling
  * 92-day window that may no longer hold it.
@@ -124,6 +137,8 @@ export const seasonRecordFields = {
    * nights in the window that night (D290; absent on a winter set in by one night).
    */
   winter: v.optional(winterDetail),
+  /** Where winter stood as of the last tick (D290); absent until a tick after this field. */
+  winterTally: v.optional(winterTally),
 
   /**
    * Staff emails waiting to go, oldest first, and the New York date the last one went (D212). Each

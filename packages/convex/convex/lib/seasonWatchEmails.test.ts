@@ -149,6 +149,31 @@ describe('the season emails (D212)', () => {
     expect(email.body).toContain(
       'The watch keeps running until spring; its end is measured from this date.',
     );
+    // Saved as the old one-night rule, the copy says one night rather than "1 of the last 1".
+    const one = composeSeasonEmail(
+      {
+        kind: 'winter',
+        date: '2026-10-19',
+        frozen: [{ name: 'A', lowC: -1 }],
+        reporting: 2,
+        nights: 1,
+      },
+      {
+        ...ctx,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, winterWindowNights: 1, winterEnterNights: 1 },
+      },
+    );
+    expect(renderBlocksText(one.blocks)).toContain(
+      'That meets the threshold of half on one night.',
+    );
+    const opened = text(
+      { kind: 'opened', date: '2026-10-03', sentinels: [], corpus: { frozen: 0, reporting: 1 } },
+      {
+        ...ctx,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, winterWindowNights: 1, winterEnterNights: 1 },
+      },
+    );
+    expect(opened.body).toContain('half the ordinary lakes freezing on the same night');
     // A winter set in by one night, before the window (D290), states the share it met.
     const legacy = text({
       kind: 'winter',

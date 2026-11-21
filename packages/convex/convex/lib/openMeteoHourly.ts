@@ -48,8 +48,8 @@ export interface HourlyFetch {
   requests: number;
   lastError: string | null;
   /**
-   * The last error's class — `unreachable`, `HTTP 429`, `cut off`, `short answer`, `out of time` —
-   * short enough to keep on a failure record, where the message itself is not kept.
+   * The last error's class — `timed out`, `unreachable`, `HTTP 429`, `cut off`, `short answer`,
+   * `out of time` — short enough to keep on a failure record, where the message itself is not kept.
    */
   lastErrorClass: string | null;
 }
@@ -84,6 +84,15 @@ class FetchFailure extends Error {
   }
 }
 
+/**
+ * Whether an attempt's own deadline cut it off (`AbortSignal.timeout` rejects with a `TimeoutError`),
+ * kept apart from a connection that failed: which of the two a failed tick was is the question its
+ * record has to answer.
+ */
+function timedOut(error: unknown): boolean {
+  return (error as { name?: unknown } | null)?.name === 'TimeoutError';
+}
+
 async function attempt(
   url: string,
   timeoutMs: number,
@@ -92,7 +101,11 @@ async function attempt(
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
-    throw new FetchFailure(`Open-Meteo did not answer: ${String(error)}`, true, 'unreachable');
+    throw new FetchFailure(
+      `Open-Meteo did not answer: ${String(error)}`,
+      true,
+      timedOut(error) ? 'timed out' : 'unreachable',
+    );
   }
   if (!res.ok) {
     throw new FetchFailure(
@@ -107,7 +120,7 @@ async function attempt(
     throw new FetchFailure(
       `Open-Meteo's answer did not arrive whole: ${String(error)}`,
       true,
-      'cut off',
+      timedOut(error) ? 'timed out' : 'cut off',
     );
   }
 }

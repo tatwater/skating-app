@@ -104,14 +104,18 @@ export function iceWatchWords(watch: IceWatch): {
 
 // ── Winter, region-wide ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Winter region-wide (D290), with the counts as the watch's daily tick last made them: `null` until
+ * a tick has counted (the watch not open, or no tick since).
+ */
 export type RegionWinter =
   | {
       state: 'not-yet';
-      /** Winter nights in the last `window` — half the bodies at or below the line (D290). */
-      nights: number;
-      window: number;
+      /** Winter nights in the last `window` — half the bodies at or below the line. */
+      nights: number | null;
+      window: number | null;
       /** How many winter nights in the window set winter in. */
-      needs: number;
+      needs: number | null;
       /** The freezing line the nights were counted under, °C. Absent reads as 0 °C. */
       freezeC?: number;
     }
@@ -121,8 +125,8 @@ export type RegionWinter =
       from: number;
       /** The night it ended, once the window emptied; the watch runs on to its own end. */
       endedOn: number | null;
-      nights: number;
-      window: number;
+      nights: number | null;
+      window: number | null;
       freezeC?: number;
     };
 
@@ -134,9 +138,16 @@ export function winterWords(winter: RegionWinter): {
 } {
   // The line the nights were counted under, never an assumed 32 °F: staff can move it.
   const lineF = Math.round(celsiusToFahrenheit(winter.freezeC ?? 0));
-  const counted = `${winter.nights} of the last ${winter.window} nights ≤ ${lineF} °F`;
+  const counted =
+    winter.nights === null || winter.window === null
+      ? 'Not counted yet'
+      : `${winter.nights} of the last ${winter.window} nights ≤ ${lineF} °F`;
   if (winter.state === 'not-yet') {
-    return { value: 'Not yet', tone: 'dim', sub: `${counted} · needs ${winter.needs}` };
+    return {
+      value: 'Not yet',
+      tone: 'dim',
+      sub: winter.needs === null ? counted : `${counted} · needs ${winter.needs}`,
+    };
   }
   if (winter.endedOn !== null) {
     return {
@@ -264,7 +275,7 @@ export function seasonFromSummary(
   /**
    * The season is over (a past season chosen with `?season=`): with no watch record it never
    * waited — nothing recorded one — so the watch, winter and imagery say *Not recorded yet*, never
-   * "Waiting", "No night has met the rule" or "Starts when the watch asks for it".
+   * "Waiting", winter's "Not yet" or "Starts when the watch asks for it".
    */
   past = false,
 ): {
@@ -277,25 +288,24 @@ export function seasonFromSummary(
   const unrecordedPast = past && summary.watch === null;
   return {
     watch: unrecordedPast ? null : iceWatchFromRecord(summary.watch, isoDay(summary.countsFrom)),
-    winter:
-      summary.winter === null || unrecordedPast
-        ? null
-        : summary.winter.state === 'not-yet'
-          ? {
-              state: 'not-yet',
-              nights: summary.winter.nights,
-              window: summary.winter.window,
-              needs: summary.winter.needs,
-              freezeC: summary.winter.freezeC,
-            }
-          : {
-              state: 'set',
-              from: isoDay(summary.winter.from),
-              endedOn: summary.winter.endedOn === null ? null : isoDay(summary.winter.endedOn),
-              nights: summary.winter.nights,
-              window: summary.winter.window,
-              freezeC: summary.winter.freezeC,
-            },
+    winter: unrecordedPast
+      ? null
+      : summary.winter.state === 'not-yet'
+        ? {
+            state: 'not-yet',
+            nights: summary.winter.nights,
+            window: summary.winter.window,
+            needs: summary.winter.needs,
+            freezeC: summary.winter.freezeC,
+          }
+        : {
+            state: 'set',
+            from: isoDay(summary.winter.from),
+            endedOn: summary.winter.endedOn === null ? null : isoDay(summary.winter.endedOn),
+            nights: summary.winter.nights,
+            window: summary.winter.window,
+            freezeC: summary.winter.freezeC,
+          },
     imagery: unrecordedPast && summary.imagery.state === 'not-started' ? null : summary.imagery,
     firstSkate:
       first === null

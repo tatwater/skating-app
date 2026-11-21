@@ -47,8 +47,10 @@ import {
   type SiteSeries,
   seasonFloorDate,
   thawClose,
+  type WinterTally,
   windowOptions,
   winterOnOrAfter,
+  winterTally,
 } from '@skating/core';
 import { type Infer, v } from 'convex/values';
 
@@ -71,6 +73,7 @@ import {
   rosterSite,
   seasonWatchSettings,
   winterDetail,
+  winterTally as winterTallyValidator,
 } from './lib/seasonWatchValidators';
 
 type NamedSiteLow = Infer<typeof namedSiteLow>;
@@ -195,6 +198,8 @@ export const redecideWinter = internalMutation({
     await ctx.db.patch(row._id, {
       winterFrom: null,
       winter: undefined,
+      // It was counted from the winter being cleared; the next tick counts again.
+      winterTally: undefined,
       emailQueue: (row.emailQueue ?? []).filter((q) => q.email.kind !== 'winter'),
     });
     console.warn(
@@ -203,6 +208,31 @@ export const redecideWinter = internalMutation({
     return { cleared: row.winterFrom, reason: null };
   },
 });
+
+/**
+ * Keep where winter stands as of this tick (D290) for the console, when it moved. Not on a closed
+ * watch: its record is final.
+ */
+export const recordWinterTally = internalMutation({
+  args: { season: v.string(), tally: winterTallyValidator },
+  handler: async (ctx, { season, tally }) => {
+    const row = await rowFor(ctx, season);
+    if (!row || row.closesOn !== undefined || sameTally(row.winterTally, tally)) return null;
+    await ctx.db.patch(row._id, { winterTally: tally });
+    return row._id;
+  },
+});
+
+function sameTally(a: WinterTally | undefined, b: WinterTally): boolean {
+  return (
+    a !== undefined &&
+    a.through === b.through &&
+    a.nights === b.nights &&
+    a.window === b.window &&
+    a.needs === b.needs &&
+    a.endedOn === b.endedOn
+  );
+}
 
 /**
  * Record the first sentinel night at or below the imagery line, once (A06i §4). The reminder email is
@@ -275,6 +305,7 @@ export const recordSeasonOpen = internalMutation({
     sentinels: v.optional(v.array(rosterSite)),
     opening: v.optional(openingDetail),
     winter: v.optional(winterDetail),
+    winterTally: v.optional(winterTallyValidator),
     imageryNudge: v.optional(v.object({ date: v.string(), sites: v.array(namedSiteLow) })),
   },
   handler: async (ctx, { imageryNudge, ...args }) => {
@@ -451,7 +482,8 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   );
   // ⚠ **All of the sample or none of it.** Deciding on the sites that answered would shrink the
   // sample, and a shrinking sample is how one freezing pond comes to clear `corpusFraction` alone.
-  // A failed tick is retried tomorrow; its email still goes (the `finally` above).
+  // A failed tick is tried again later that day (`TICK_RETRIES`); its email still goes (the
+  // `finally` above).
   if (fetched.failed > 0) {
     throw new TickFetchFailure(
       `${fetched.lastError} (${fetched.failed} of ${fetched.requests} requests)`,
@@ -512,6 +544,16 @@ export const maybeCheckSeasonOpen = internalAction({
       // failing tick is no longer silent past the logs: each failed day is counted with its class,
       // never parked (parking would stop the watch), and Machinery shows how many days in a row and
       // since when. The tick still throws, so Convex records it as failed.
+      //
+      // A failed day used to wait for tomorrow's tick, and three in a row left the lows three days
+      // behind (18–20 Nov 2026) for a fault that cleared within hours. Two retries, three hours
+      // apart; nothing is lost either way — every tick re-reads 92 days. Booked before the count, so
+      // a count that fails to write cannot also cost the day its retry.
+      if (retry < TICK_RETRIES) {
+        await ctx.scheduler.runAfter(TICK_RETRY_MS, internal.imageryIngest.maybeCheckSeasonOpen, {
+          retry: retry + 1,
+        });
+      }
       await ctx.runMutation(internal.recurringJobs.settle, {
         job: 'seasonWatch',
         failed: [
@@ -523,14 +565,6 @@ export const maybeCheckSeasonOpen = internalAction({
         succeeded: [],
         park: false,
       });
-      // A failed day used to wait for tomorrow's tick, and three in a row left the lows three days
-      // behind (18–20 Nov 2026) for a fault that cleared within hours. Two retries, three hours
-      // apart; nothing is lost either way — every tick re-reads 92 days.
-      if (retry < TICK_RETRIES) {
-        await ctx.scheduler.runAfter(TICK_RETRY_MS, internal.imageryIngest.maybeCheckSeasonOpen, {
-          retry: retry + 1,
-        });
-      }
       throw err;
     } finally {
       // Whatever is queued — including what this tick just found — goes out last, one a day (D212),
@@ -650,6 +684,11 @@ async function openIfDue(
   if (!evaluation.opensOn || !evaluation.opening) {
     return { open: false as const, season, sitesSampled: clipped.length };
   }
+  const tally = winterTally(clipped, evaluation.winterFrom, {
+    freezeC: settings.freezeC,
+    winterFraction: settings.winterFraction,
+    ...windowOptions(settings),
+  });
   await ctx.runMutation(internal.imageryIngest.recordSeasonOpen, {
     season,
     opensOn: evaluation.opensOn,
@@ -672,6 +711,7 @@ async function openIfDue(
           },
         }
       : {}),
+    ...(tally ? { winterTally: tally } : {}),
     ...(evaluation.imageryNudge
       ? {
           imageryNudge: {
@@ -789,6 +829,9 @@ async function followOpenSeason(
       console.warn(`[season watch] ${season} winter established region-wide on ${winter.date}`);
     }
   }
+  // Where winter stands, for the console — counted here, on what this tick decided on.
+  const tally = winterTally(clipped, winterFrom, options);
+  if (tally) await ctx.runMutation(internal.imageryIngest.recordWinterTally, { season, tally });
   if (winterFrom === null) {
     return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
   }

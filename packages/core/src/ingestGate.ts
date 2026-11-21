@@ -427,8 +427,11 @@ export function winterOnOrAfter(
 }
 
 /**
- * The first night after `winterFrom` on which winter ended (D290): the winter nights in the window
- * ending on it fell to `winterExitNights` or fewer. `null` while winter holds.
+ * The night after `winterFrom` on which winter ended (D290): the winter nights in the window ending
+ * on it fell to `winterExitNights` or fewer. `null` while winter holds — and again once it has set
+ * back in, by the rule that set it in the first time (a winter night bringing the window to
+ * `winterEnterNights`), as it did in 2019-20's late-April cold snap. A winter that ended twice gives
+ * its later end.
  *
  * Only a night some ordinary site reported on can end it, so the days after the last reading —
  * today, or a tick that failed — never read as winter ending; a gap *inside* the window counts as
@@ -442,13 +445,53 @@ export function winterEndAfter(
   winterFrom: string,
   options: GateOptions = {},
 ): string | null {
-  const { exit } = winterWindow(options);
+  const { enter, exit } = winterWindow(options);
   const nights = winterNights(sites, options);
-  for (const date of nights.keys()) {
+  let ended: string | null = null;
+  for (const [date, night] of nights) {
     if (date <= winterFrom) continue;
-    if (countInWindow(nights, date, options) <= exit) return date;
+    const count = countInWindow(nights, date, options);
+    if (ended === null) {
+      if (count <= exit) ended = date;
+    } else if (night !== null && count >= enter) {
+      ended = null;
+    }
   }
-  return null;
+  return ended;
+}
+
+/** Winter's state as one tick read it — what the console shows, so it never counts differently. */
+export interface WinterTally {
+  /** The last night an ordinary site reported: what was counted through. */
+  through: string;
+  /** Winter nights in the window ending on `through`. */
+  nights: number;
+  window: number;
+  /** Winter nights in the window that set winter in. */
+  needs: number;
+  /** The night winter ended, once it has; `null` while it holds or has not set in. */
+  endedOn: string | null;
+}
+
+/**
+ * Where winter stands on the last night read (D290), for the sites and settings a tick decided on.
+ * `null` with no ordinary site's reading to count.
+ */
+export function winterTally(
+  sites: readonly SiteSeries[],
+  winterFrom: string | null,
+  options: GateOptions = {},
+): WinterTally | null {
+  const through = allDates(sites.filter((s) => !s.sentinel)).at(-1);
+  if (through === undefined) return null;
+  const { window, enter } = winterWindow(options);
+  return {
+    through,
+    nights: winterNightsInWindow(sites, through, options),
+    window,
+    needs: enter,
+    endedOn: winterFrom === null ? null : winterEndAfter(sites, winterFrom, options),
+  };
 }
 
 /**
@@ -508,9 +551,15 @@ function countInWindow(
   options: GateOptions,
 ): number {
   const { window } = winterWindow(options);
+  // Nothing before the first reported night can count, so the walk stops there: the editor's preview
+  // runs any finite window typed, past the 60 the validator allows, and a window of a million nights
+  // would otherwise walk a million days per night of every season and hang the page.
+  const first = nights.keys().next().value;
   let count = 0;
   for (let back = 0; back < window; back++) {
-    if (nights.get(addDaysIso(date, -back))) count++;
+    const day = addDaysIso(date, -back);
+    if (first === undefined || day < first) break;
+    if (nights.get(day)) count++;
   }
   return count;
 }

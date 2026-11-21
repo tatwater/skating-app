@@ -180,7 +180,7 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
         kind: 'list',
         items: [
           `That reminder email when a sentinel sees a ${nudge} night`,
-          `An email when winter sets in region-wide: ${settings.winterFraction === 0.5 ? 'half the' : `${shareWord(settings.winterFraction)} of the`} ordinary lakes freezing on ${enter} of ${window} nights`,
+          `An email when winter sets in region-wide: ${settings.winterFraction === 0.5 ? 'half the' : `${shareWord(settings.winterFraction)} of the`} ordinary lakes freezing on ${window === 1 ? 'the same night' : `${enter} of ${window} nights`}`,
           `An email when the watch ends: ${countWord(settings.thawRunDays)} nights in a row with no freeze at any ordinary lake`,
         ],
       });
@@ -215,7 +215,9 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
       const rule =
         email.nights === undefined
           ? `This is ${share > settings.winterFraction ? 'above' : 'at'} the threshold of ${lakes}, and is a measure of the air temperature at those lakes, not actual ice formation.`
-          : `That made ${email.nights} of the last ${window} nights on which at least ${lakes} of the ordinary lakes we sample froze — the rule needs ${enter}. This is a measure of the air temperature at those lakes, not actual ice formation.`;
+          : window === 1
+            ? `That meets the threshold of ${lakes} on one night. This is a measure of the air temperature at those lakes, not actual ice formation.`
+            : `That made ${email.nights} of the last ${window} nights on which at least ${lakes} of the ordinary lakes we sample froze — the rule needs ${enter}. This is a measure of the air temperature at those lakes, not actual ice formation.`;
       return {
         subject: `${title}: Winter Has Set In Region-Wide`,
         heading: `Winter set in region-wide on ${longDate(email.date)}`,

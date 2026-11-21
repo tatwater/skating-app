@@ -302,8 +302,9 @@ which is harder to read on a tile and to tune.
 
 **What changed.** `winterOnOrAfter` sets winter in on a winter night that brings the window to its
 enter count. `winterEndAfter` finds the night the window falls to the exit count; only a night some
-lake reported on can end it, so a failed tick never reads as a thaw. `winterNightsInWindow` is the
-tile's count. The three knobs are versioned settings on `/admin/seasons`, absent on older versions,
+lake reported on can end it, so a failed tick never reads as a thaw. Each tick writes `winterTally`
+(the window's count, what setting in needs, the end) on the season row, and the tile reads it, so
+the tile and the tick count the same lakes under the same settings. The three knobs are versioned settings on `/admin/seasons`, absent on older versions,
 which read as the defaults. The tile reads *Not yet · 2 of the last 14 nights ≤ 32 °F · needs 10*,
 then *Set in · Since …*, then *Ended · On …*, and never amber. The winter email states the window
 count. The 7 October winter is cleared by `imageryIngest.redecideWinter`, which leaves the opening

@@ -8,6 +8,7 @@ import {
   iceWatchWords,
   imageryWords,
   isoDay,
+  type RegionWinter,
   seasonFromSummary,
   winterWords,
 } from './seasonFacts';
@@ -214,10 +215,29 @@ describe('seasonFromSummary — the server’s days and instants, in the reader�
     });
   });
 
-  it('keeps the server’s nulls: a winter not recorded, a first skate the look could not find', () => {
-    const facts = seasonFromSummary({ ...SUMMARY, watch: null, winter: null, firstSkate: null });
+  it('keeps the server’s nulls: winter not counted yet, a first skate the look could not find', () => {
+    const facts = seasonFromSummary({
+      ...SUMMARY,
+      watch: null,
+      winter: {
+        state: 'not-yet',
+        nights: null,
+        window: null,
+        needs: null,
+        through: null,
+        freezeC: 0,
+      },
+      firstSkate: null,
+    });
     expect(facts.watch).toEqual({ state: 'waiting', countsFrom: day(9, 1) });
-    expect(facts.winter).toBeNull();
+    expect(facts.winter).toEqual({
+      state: 'not-yet',
+      nights: null,
+      window: null,
+      needs: null,
+      freezeC: 0,
+    });
+    expect(winterWords(facts.winter as RegionWinter).sub).toBe('Not counted yet');
     expect(facts.firstSkate).toBeNull();
     expect(
       seasonFromSummary({
@@ -314,7 +334,14 @@ describe('a first skate staff recorded', () => {
       season: 2026,
       countsFrom: '2026-10-01',
       watch: null,
-      winter: null,
+      winter: {
+        state: 'not-yet',
+        nights: null,
+        window: null,
+        needs: null,
+        through: null,
+        freezeC: 0,
+      },
       imagery: { state: 'not-started', granules: 0, lastLandedAt: null, lastFrameAt: null },
       firstSkate: { first: null, lastWinter: { source: 'field', day: '2025-12-20', body: null } },
     });

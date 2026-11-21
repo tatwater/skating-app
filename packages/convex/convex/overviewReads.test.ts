@@ -2201,12 +2201,12 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     });
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.watch).toBeNull();
-    // No lows read yet: nothing counted, and nothing counted through.
+    // No tick has counted yet: nothing counted, and nothing counted through.
     expect(home.winter).toEqual({
       state: 'not-yet',
-      nights: 0,
-      window: 14,
-      needs: 10,
+      nights: null,
+      window: null,
+      needs: null,
       through: null,
       freezeC: 0,
     });
@@ -2236,6 +2236,8 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
           reporting: 2,
           nights: 10,
         },
+        // As the tick counted it; the tile never counts the stored lows itself.
+        winterTally: { through: '2026-11-07', nights: 13, window: 14, needs: 10, endedOn: null },
         sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds' }],
         opening: {
           sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds', lowC: -3 }],
@@ -2295,7 +2297,6 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     expect(home.watch).toEqual(
       expect.objectContaining({ opensOn: '2026-10-03', openedBy: ['sentinel'], closesOn: null }),
     );
-    // Thirteen winter nights of the last fourteen, through 7 Nov; the summit never votes.
     expect(home.winter).toEqual({
       state: 'set',
       from: '2026-11-03',
@@ -2466,42 +2467,43 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     );
     const home = await mod.as.query(api.seasonWatch.homeSummary, {});
     expect(home.imagery.state).toBe('paused');
-    // A winter recorded without its night still reads as set; with no lows, nothing has ended.
+    // A winter no tick has counted since still reads as set, with nothing counted and no end.
     expect(home.winter).toEqual({
       state: 'set',
       from: '2026-11-05',
       endedOn: null,
-      nights: 0,
-      window: 14,
+      nights: null,
+      window: null,
       through: null,
       freezeC: 0,
     });
   });
 
-  test('winter ends when the window empties, under the current settings', async () => {
+  test('an ended winter, under the current freezing line', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
-    const a = await seedBody(t, 'Valley A');
     await t.run(async (ctx) => {
       await ctx.db.insert('imageryIngestSeasons', {
         season: 'winter-2026-27',
         opensOn: '2026-10-03',
         openedBy: ['corpus'],
         winterFrom: '2026-11-03',
+        winterTally: {
+          through: '2026-11-15',
+          nights: 4,
+          window: 14,
+          needs: 10,
+          endedOn: '2026-11-15',
+        },
         sitesSampled: 1,
         detectedAt: NOW - 40 * DAY,
       });
-      // Twelve winter nights from 25 Oct, then ten warm: the window is down to four on 15 Nov.
-      await ctx.db.insert('seasonWatchSeries', {
-        season: 'winter-2026-27',
-        waterBodyId: a,
-        name: 'Valley A',
-        lat: 44,
-        lng: -71,
-        source: 'forecast' as const,
-        firstDate: '2026-10-25',
-        lows: [...Array(12).fill(-2), ...Array(10).fill(4)],
-        updatedAt: NOW,
+      await ctx.db.insert('seasonWatchSettings', {
+        version: 1,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, freezeC: -2 },
+        sentinels: [],
+        pinned: [],
+        savedAt: NOW,
       });
     });
     expect((await mod.as.query(api.seasonWatch.homeSummary, {})).winter).toEqual({
@@ -2511,28 +2513,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       nights: 4,
       window: 14,
       through: '2026-11-15',
-      freezeC: 0,
-    });
-
-    // A saved window of 7, entered on 5 and ended at 2, reads under the same rule as the tick.
-    await t.run((ctx) =>
-      ctx.db.insert('seasonWatchSettings', {
-        version: 1,
-        settings: {
-          ...DEFAULT_SEASON_WATCH_SETTINGS,
-          winterWindowNights: 7,
-          winterEnterNights: 5,
-          winterExitNights: 2,
-        },
-        sentinels: [],
-        pinned: [],
-        savedAt: NOW,
-      }),
-    );
-    expect((await mod.as.query(api.seasonWatch.homeSummary, {})).winter).toMatchObject({
-      endedOn: '2026-11-10',
-      nights: 0,
-      window: 7,
+      freezeC: -2,
     });
   });
 

@@ -198,6 +198,10 @@ describe('fetchHourlyRows', () => {
 
   test.each([
     ['unreachable', () => Promise.reject(new TypeError('fetch failed'))],
+    [
+      'timed out',
+      () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')),
+    ],
     ['cut off', async () => new Response('[{"hourly":{"time":[1,')],
   ])('names a %s failure for the record', async (kind, impl) => {
     vi.stubGlobal('fetch', vi.fn(impl));

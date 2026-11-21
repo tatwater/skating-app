@@ -212,6 +212,14 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     });
     expect(row?.winter?.frozen).toHaveLength(3);
     expect(row?.winter?.nights).toBe(10);
+    // What the console shows, counted on the lakes this tick decided on.
+    expect(row?.winterTally).toEqual({
+      through: '2026-12-11',
+      nights: 10,
+      window: 14,
+      needs: 10,
+      endedOn: null,
+    });
 
     // The lows are kept, one document per site, from the forecast endpoint's observed past days.
     const series = await t.run((ctx) => ctx.db.query('seasonWatchSeries').collect());
@@ -316,6 +324,8 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const stamped = await theRow(t);
     expect(stamped).toMatchObject({
       winterFrom: null,
+      // Counted even before winter: no winter night yet, and the summits never vote.
+      winterTally: { through: '2026-12-05', nights: 0, window: 14, needs: 10, endedOn: null },
       // Version 0: the defaults it shipped with, before there were versions.
       settingsVersion: 0,
       // Its opening email already went, as the old message: stamped so the queue never re-sends it.
@@ -914,6 +924,7 @@ describe('the staff emails — one a day, in order (D212)', () => {
           emailQueue: (row.emailQueue ?? []).filter((q) => q.email.kind === 'winter'),
           emailsSent: [{ kind: 'opened', sentOn: '2026-12-03', sentAt: 0 }],
           lastEmailOn: '2026-12-03',
+          winterTally: { through: '2026-12-03', nights: 1, window: 1, needs: 1, endedOn: null },
         });
       }
     });
@@ -924,6 +935,7 @@ describe('the staff emails — one a day, in order (D212)', () => {
     const cleared = await theRow(t);
     expect(cleared?.winterFrom).toBeNull();
     expect(cleared?.winter).toBeUndefined();
+    expect(cleared?.winterTally).toBeUndefined();
     // The winter email that was waiting goes with it; the opening is untouched.
     expect(cleared?.emailQueue).toEqual([]);
     expect(cleared?.opensOn).toBe('2026-12-02');
@@ -943,6 +955,40 @@ describe('the staff emails — one a day, in order (D212)', () => {
     expect(decided?.winter?.nights).toBe(10);
     expect(decided?.emailsSent?.map((e: { kind: string }) => e.kind)).toEqual(['opened', 'winter']);
     expect(decided?.emailQueue).toEqual([]);
+  });
+
+  test('the tally is written only when it moved, and never on an ended watch', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['corpus'],
+      winterFrom: null,
+      sitesSampled: 3,
+    });
+    const tally = { through: '2026-12-05', nights: 3, window: 14, needs: 10, endedOn: null };
+    const args = { season: 'winter-2026-27', tally };
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).not.toBeNull();
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).toBeNull();
+    const moved = { ...args, tally: { ...tally, through: '2026-12-06', nights: 4 } };
+    expect(await t.mutation(internal.imageryIngest.recordWinterTally, moved)).not.toBeNull();
+    expect((await theRow(t))?.winterTally?.nights).toBe(4);
+    await t.mutation(internal.imageryIngest.recordSeasonClose, {
+      season: 'winter-2026-27',
+      closesOn: '2027-04-10',
+    });
+    expect(
+      await t.mutation(internal.imageryIngest.recordWinterTally, {
+        ...args,
+        tally: { ...tally, nights: 9 },
+      }),
+    ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordWinterTally, {
+        ...args,
+        season: 'winter-2030-31',
+      }),
+    ).toBeNull();
   });
 
   test('redecideWinter refuses an ended watch and a missing one', async () => {

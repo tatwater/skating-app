@@ -10,6 +10,7 @@ import {
   winterEndAfter,
   winterNightsInWindow,
   winterOnOrAfter,
+  winterTally,
   winterWindow,
 } from './ingestGate';
 
@@ -130,6 +131,25 @@ describe('winterEndAfter — winter ends when the window empties (D290)', () => 
     expect(winterEndAfter(nights(`${WINTER}${'W'.repeat(12)}`), night(9))).toBe(night(23));
   });
 
+  it('reads winter as holding again once it sets back in, and gives a later end', () => {
+    const ended = `${WINTER}${'W'.repeat(12)}`;
+    // Nine cold nights after the end are not enough to set it back in…
+    expect(winterEndAfter(nights(`${ended}${'C'.repeat(9)}`), night(9))).toBe(night(23));
+    // …the tenth is, as 2019-20's late-April cold snap did.
+    expect(winterEndAfter(nights(`${ended}${'C'.repeat(10)}`), night(9))).toBeNull();
+    // Ten warm nights later the window is down to four again.
+    expect(winterEndAfter(nights(`${ended}${'C'.repeat(10)}${'W'.repeat(10)}`), night(9))).toBe(
+      night(45),
+    );
+  });
+
+  it('walks a window typed far past the editor’s bound no further than the record', () => {
+    const sites = nights(`${'C'.repeat(30)}`);
+    const huge = { winterWindowNights: 1e9, winterEnterNights: 1e9 };
+    expect(winterNightsInWindow(sites, night(29), huge)).toBe(30);
+    expect(winterOnOrAfter(sites, START, huge)).toBeNull();
+  });
+
   it('never ends on nights nobody reported — a failed tick is not a thaw', () => {
     expect(winterEndAfter(nights(`${WINTER}WW..........`), night(9))).toBeNull();
   });
@@ -144,6 +164,28 @@ describe('winterEndAfter — winter ends when the window empties (D290)', () => 
       ...nights(`${WINTER}${'W'.repeat(12)}`),
     ];
     expect(winterEndAfter(sites, night(9))).toBe(night(23));
+  });
+});
+
+describe('winterTally — where winter stands on the last night read', () => {
+  it('counts through the last night an ordinary lake reported, never a summit’s', () => {
+    const sites = [series('summit', Array(20).fill(-9), true), ...nights('CCCWC...')];
+    expect(winterTally(sites, null)).toEqual({
+      through: night(4),
+      nights: 4,
+      window: 14,
+      needs: 10,
+      endedOn: null,
+    });
+  });
+
+  it('names the night winter ended, once it has', () => {
+    const sites = nights(`${'C'.repeat(14)}${'W'.repeat(12)}`);
+    expect(winterTally(sites, night(9))).toMatchObject({ endedOn: night(23), nights: 2 });
+  });
+
+  it('is null with nothing to count', () => {
+    expect(winterTally([series('summit', [-9], true)], null)).toBeNull();
   });
 });
 
@@ -225,15 +267,33 @@ describe('the window rule, for any weather', () => {
     );
   });
 
-  it('ends on the first night the count falls to the exit, and holds until then', () => {
+  it('ends when the count falls to the exit, and holds again only on a night that sets it in', () => {
     fc.assert(
       fc.property(roster, fc.integer({ min: 0, max: 40 }), knobs, (sites, offset, options) => {
         const from = night(offset);
         const end = winterEndAfter(sites, from, options);
-        const { exit } = winterWindow(options);
+        const { enter, exit } = winterWindow(options);
+        const reported = [
+          ...new Set(sites.filter((s) => !s.sentinel).flatMap((s) => s.days.map((d) => d.date))),
+        ]
+          .filter((date) => date > from)
+          .sort();
+        const count = (date: string) => winterNightsInWindow(sites, date, options);
+        const setsIn = (date: string) =>
+          count(date) >= enter &&
+          winterOnOrAfter(sites, date, { ...options, winterWindowNights: 1, winterEnterNights: 1 })
+            ?.date === date;
         if (end !== null) {
           expect(end > from).toBe(true);
-          expect(winterNightsInWindow(sites, end, options)).toBeLessThanOrEqual(exit);
+          expect(count(end)).toBeLessThanOrEqual(exit);
+          // Nothing after the end set winter back in.
+          expect(reported.filter((date) => date > end).some(setsIn)).toBe(false);
+        } else {
+          // Either it never fell to the exit, or it set back in after the last night it did.
+          const lastLow = reported.filter((date) => count(date) <= exit).at(-1);
+          if (lastLow !== undefined) {
+            expect(reported.filter((date) => date > lastLow).some(setsIn)).toBe(true);
+          }
         }
       }),
     );
