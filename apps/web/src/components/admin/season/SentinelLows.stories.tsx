@@ -27,6 +27,23 @@ type Story = StoryObj<typeof meta>;
 const steady = (check: () => void) => waitFor(check, { timeout: 5_000 });
 const all = (scope: Element, sel: string) => [...scope.querySelectorAll<HTMLElement>(sel)];
 const texts = (scope: Element, sel: string) => all(scope, sel).map((el) => el.textContent ?? '');
+const centerX = (el: Element) => {
+  const r = el.getBoundingClientRect();
+  return r.left + r.width / 2;
+};
+
+/** Each night's tick on the x axis sits over the center of that night's cell in every row. */
+const expectCellsUnderNights = (scope: Element) => {
+  const ticks = all(scope, '[data-slot="night-tick"] line').map(centerX);
+  const rows = all(scope, '[data-slot="matrix-cells"]');
+  expect(ticks.length).toBeGreaterThan(1);
+  for (const row of rows) {
+    const cells = [...row.querySelectorAll('[role="gridcell"]')].map(centerX);
+    expect(cells).toHaveLength(ticks.length);
+    for (const [i, x] of ticks.entries())
+      expect(Math.abs((cells[i] as number) - x)).toBeLessThan(1);
+  }
+};
 
 /** Board 7.1's row: three lines, both lines, both marked nights, end labels, the matrix. */
 export const Board: Story = {
@@ -61,16 +78,26 @@ export const Board: Story = {
         sameColor(computedColor(dashes[1] as HTMLElement, 'var(--warn)')),
       );
     });
-    // The matrix writes each night's low and says it with its sentinel and night.
+    // The matrix is color alone, says each night's low with its sentinel and night, and sits
+    // each night's cell under its point.
     await steady(() => {
       const cells = all(canvasElement, '[role="gridcell"]');
       expect(cells).toHaveLength(36);
       expect(cells[6]).toHaveAttribute('aria-label', 'Clouds, 7 Oct: 19 °F');
-      expect(texts(canvasElement, '[data-slot="matrix-value"]').slice(0, 3)).toEqual([
-        '34',
-        '31',
-        '27',
-      ]);
+      expect(all(canvasElement, '[data-slot="matrix-value"]')).toHaveLength(0);
+      expectCellsUnderNights(canvasElement);
+    });
+    // Hovering a night's tick titles the plate with that night and the lows under it.
+    const wrapper = canvasElement.querySelector('.recharts-wrapper') as HTMLElement;
+    const seventh = all(canvasElement, '[data-slot="night-tick"] line')[6] as HTMLElement;
+    const box = wrapper.getBoundingClientRect();
+    const at = { bubbles: true, clientX: centerX(seventh), clientY: box.top + box.height / 2 };
+    wrapper.dispatchEvent(new MouseEvent('mouseover', at));
+    wrapper.dispatchEvent(new MouseEvent('mousemove', at));
+    await steady(() => {
+      const plate = canvasElement.querySelector('[data-slot="chart-tooltip"]');
+      expect(plate).toHaveTextContent('7 Oct');
+      expect(plate).toHaveTextContent('19 °F');
     });
     // The chart names what it draws.
     await expect(canvasElement.querySelector('[data-slot="chart"]')).toHaveAttribute(
@@ -104,7 +131,7 @@ export const Gaps: Story = {
   },
 };
 
-/** A whole winter: the cells too narrow for their numbers say them on hover and to a reader. */
+/** A whole winter: color alone, each cell still saying its low on hover and to a reader. */
 export const LongSeason: Story = {
   args: { state: { kind: 'value', view: lowsView(LOWS_WINTER) } },
   play: async ({ canvasElement }) => {
@@ -228,11 +255,22 @@ export const Phone: Story = {
         a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
       expect(apart).toBe(true);
       expect(all(canvasElement, '.recharts-line-curve')).toHaveLength(3);
-      // The cells still speak their values.
+      // The cells still speak their values, and still sit under their nights.
       expect(all(canvasElement, '[role="gridcell"]')[0]).toHaveAttribute(
         'aria-label',
         'Clouds, 1 Oct: 34 °F',
       );
+      expectCellsUnderNights(canvasElement);
+      // The names moved left, every one's text clear of the cells (its text, not its box: a name
+      // is stretched to its column, which ends before the cells whatever the text does).
+      const firstCell = all(canvasElement, '[role="gridcell"]')[0] as HTMLElement;
+      const range = document.createRange();
+      for (const name of all(canvasElement, '[data-slot="matrix-row-kicker"]')) {
+        range.selectNodeContents(name);
+        expect(range.getBoundingClientRect().right).toBeLessThan(
+          firstCell.getBoundingClientRect().left,
+        );
+      }
     });
   },
 };

@@ -281,6 +281,68 @@ export const KickersRight: Story = {
   },
 };
 
+/**
+ * Under a chart: the cells pinned to a span (here 80–480 px), each column centered on its band —
+ * where a chart with one band a night draws that night's point — with the names on either side.
+ */
+export const PinnedTrack: Story = {
+  args: {
+    rows: SENTINELS,
+    columns: NIGHTS,
+    showValues: false,
+    columnKickers: 'none',
+    track: { start: 80, width: 400 },
+    'aria-label': 'Overnight lows',
+  },
+  render: (args) => (
+    <div className="flex flex-col gap-(--space-4)">
+      <MatrixChart {...args} kickerSide="left" />
+      <MatrixChart {...args} kickerSide="right" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const grid of canvasElement.querySelectorAll<HTMLElement>('[role="grid"]')) {
+      const left = grid.getBoundingClientRect().left;
+      const cells = cellsOf(grid).slice(0, NIGHTS.length);
+      for (const [i, cell] of cells.entries()) {
+        const r = cell.getBoundingClientRect();
+        near(r.left + r.width / 2 - left, 80 + ((i + 0.5) / NIGHTS.length) * 400);
+      }
+    }
+  },
+};
+
+/** A whole winter's nights under a narrow plot: bands thinner than two gaps still center, and fit. */
+const WINTER_NIGHTS: MatrixColumn[] = Array.from({ length: 150 }, (_, i) => ({
+  key: `w${i}`,
+  label: `Night ${i + 1}`,
+}));
+
+export const PinnedTrackDense: Story = {
+  args: {
+    rows: [{ key: 'clouds', label: 'Clouds', values: WINTER_NIGHTS.map((_, i) => 20 + (i % 20)) }],
+    columns: WINTER_NIGHTS,
+    showValues: false,
+    columnKickers: 'none',
+    track: { start: 80, width: 300 },
+    'aria-label': 'Overnight lows',
+  },
+  play: async ({ canvasElement }) => {
+    const grid = must(canvasElement.querySelector<HTMLElement>('[role="grid"]'));
+    const left = grid.getBoundingClientRect().left;
+    const cells = cellsOf(grid);
+    expect(cells).toHaveLength(WINTER_NIGHTS.length);
+    for (const [i, cell] of cells.entries()) {
+      const r = cell.getBoundingClientRect();
+      expect(r.width).toBeGreaterThan(0);
+      near(r.left + r.width / 2 - left, 80 + ((i + 0.5) / WINTER_NIGHTS.length) * 300);
+    }
+    // The columns stay inside the track: nothing runs past its end.
+    const row = must(grid.querySelector<HTMLElement>('[data-slot="matrix-cells"]'));
+    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+  },
+};
+
 /** Color alone (a dense season), and no column kickers. */
 export const ColorOnly: Story = {
   args: {
