@@ -11,7 +11,10 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { fileMember, flagSource, MAX_MEMBERS, MEMBER_BOUND, requestSource } from './lib/inboxItems';
+import { REQUEST_PROFILE_BUDGET, TX_CALLS, TX_DOCS } from './lib/readBudget';
 import { undoState } from './lib/undo';
+import { CORPUS_UNDO_HANDLERS } from './lib/undoHandlersCorpus';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -226,6 +229,32 @@ const CASES: Case[] = [
     },
   },
   {
+    name: 'reopen_flag → dismissed again (a reopened flag decided again since)',
+    viewers: ALL,
+    setup: async (w) => {
+      const r = await w.report(w.p.subject.id);
+      const f = await flagReport(w, w.p.skater, r);
+      const g = await flagReport(w, w.p.filer, r, 'harassment');
+      const out = await w.p.colleague.as.mutation(api.inboxWrites.dismissFlags, {
+        itemId: await w.itemOfFlag(f),
+      });
+      await w.p.admin.as.mutation(api.undo.run, { actionId: out.actionId });
+      const reopen = await w.t.run(async (ctx) => {
+        const rows = await ctx.db.query('moderationActions').collect();
+        return rows.find((x) => x.action === 'reopen_flag' && x.metadata?.reopened)
+          ?._id as Id<'moderationActions'>;
+      });
+      // The other one decided again on its own since (not the row's own flag, which would overtake
+      // the row): nothing to close it from.
+      await w.p.admin.as.mutation(api.moderation.resolveFlag, {
+        flagId: g,
+        resolution: 'dismissed',
+        reason: 'Checked again',
+      });
+      return reopen;
+    },
+  },
+  {
     name: 'approve_request (a takedown) → reopen_request, the body restored (body.remove)',
     viewers: ALL,
     setup: async (w) => {
@@ -259,7 +288,10 @@ const CASES: Case[] = [
       const first = await w.p.skater.as.mutation(api.corpusRequests.create, ask);
       await w.p.siblingFiler.as.mutation(api.corpusRequests.create, ask);
       await w.tick();
-      await w.p.actor.as.mutation(api.corpusRequests.decline, { requestId: first, note: 'No' });
+      await w.p.actor.as.mutation(api.corpusRequests.decline, {
+        requestId: first as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
       return w.t.run(async (ctx) => {
         const rows = await ctx.db.query('moderationActions').collect();
         return rows.find((x) => x.action === 'decline_request' && x.targetId === first)
@@ -315,7 +347,10 @@ const CASES: Case[] = [
       const first = await w.p.skater.as.mutation(api.corpusRequests.create, ask);
       await w.p.siblingFiler.as.mutation(api.corpusRequests.create, ask);
       await w.tick();
-      await w.p.colleague.as.mutation(api.corpusRequests.decline, { requestId: first, note: 'No' });
+      await w.p.colleague.as.mutation(api.corpusRequests.decline, {
+        requestId: first as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
       const decline = await w.t.run(async (ctx) => {
         const rows = await ctx.db.query('moderationActions').collect();
         return rows.find((x) => x.action === 'decline_request' && x.targetId === first)
@@ -525,4 +560,250 @@ describe('an undo’s offer and its write agree for every viewer (D217)', () => 
     expect(size).toBe(CASES.length * ALL.length);
     expect(disagreements).toEqual([]);
   }, 600_000);
+});
+
+// ── Groups of every size the wave supports ─────────────────────────────────────────────────────
+
+/**
+ * The member bound in force for these cases — the seam (`MEMBER_BOUND`), with the real bound held by
+ * arithmetic below — so a group "at the bound" is built quickly.
+ */
+const BOUND = 60;
+const SIZES = [1, 11, 50, BOUND] as const;
+
+/** `n` people of no role, raw, to file a group's members. */
+async function crowd(w: W, n: number): Promise<Id<'profiles'>[]> {
+  return w.t.run(async (ctx) => {
+    const ids: Id<'profiles'>[] = [];
+    for (let i = 0; i < n; i++) {
+      ids.push(
+        await ctx.db.insert('profiles', {
+          clerkUserId: `crowd${i}`,
+          displayName: `crowd${i} Test-Person`,
+          username: `crowd${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'active' as const,
+          createdAt: Date.now(),
+        }),
+      );
+    }
+    return ids;
+  });
+}
+
+/** A group of `n` asks for one dormant body's activation: the skater's first, the sibling filer's last. */
+async function askGroup(w: W, n: number): Promise<Id<'waterBodyRequests'>[]> {
+  await w.t.run((ctx) =>
+    ctx.db.patch(w.lake, { dormant: { since: Date.now(), reason: 'inactive' as const } }),
+  );
+  const people = [w.p.skater.id, ...(await crowd(w, Math.max(0, n - 2)))];
+  if (n > 1) people.push(w.p.siblingFiler.id);
+  const ids = await w.t.run(async (ctx) => {
+    const out: Id<'waterBodyRequests'>[] = [];
+    for (const [i, requesterId] of people.entries()) {
+      const id = await ctx.db.insert('waterBodyRequests', {
+        kind: 'activate',
+        status: 'open',
+        requesterId,
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId: w.lake,
+        createdAt: Date.now() - 10_000 + i,
+      });
+      await fileMember(ctx, requestSource(id));
+      out.push(id);
+    }
+    return out;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  return ids;
+}
+
+/** A group of `n` flags on one report: the skater's first, the sibling filer's last. */
+async function flagGroup(w: W, n: number) {
+  const reportId = await w.report(w.p.subject.id);
+  const people = [w.p.skater.id, ...(await crowd(w, Math.max(0, n - 2)))];
+  if (n > 1) people.push(w.p.siblingFiler.id);
+  const flags = await w.t.run(async (ctx) => {
+    const out: Id<'contentFlags'>[] = [];
+    for (const [i, flaggerId] of people.entries()) {
+      const id = await ctx.db.insert('contentFlags', {
+        flaggerId,
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'spam',
+        status: 'open',
+        origin: 'user',
+        subjectUserId: w.p.subject.id,
+        createdAt: Date.now() - 10_000 + i,
+      });
+      await fileMember(ctx, flagSource(id));
+      out.push(id);
+    }
+    return out;
+  });
+  return { reportId, flags };
+}
+
+type GroupCase = {
+  name: string;
+  setup: (w: W, n: number) => Promise<Id<'moderationActions'>>;
+  /**
+   * What the staffer who filed one of the group gets: refused, by offer and write alike — or, for a
+   * takedown's undo, offered: it reopens the others and leaves theirs closed, named on its row.
+   */
+  sibling: 'refused' | 'offered';
+};
+
+/** The decision row a primary request's decline wrote (its siblings' rows undo with it). */
+const declineOf = (w: W, requestId: Id<'waterBodyRequests'> | undefined) =>
+  w.t.run(async (ctx) => {
+    const rows = await ctx.db.query('moderationActions').collect();
+    return rows.find((x) => x.action === 'decline_request' && x.targetId === requestId)
+      ?._id as Id<'moderationActions'>;
+  });
+
+const GROUP_CASES: GroupCase[] = [
+  {
+    name: 'decline_request → reopen_request',
+    setup: async (w, n) => {
+      const [first] = await askGroup(w, n);
+      await w.p.actor.as.mutation(api.corpusRequests.decline, {
+        requestId: first as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      return declineOf(w, first);
+    },
+    sibling: 'refused',
+  },
+  {
+    name: 'reopen_request → declined again',
+    setup: async (w, n) => {
+      const [first] = await askGroup(w, n);
+      await w.p.actor.as.mutation(api.corpusRequests.decline, {
+        requestId: first as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      await w.p.actor.as.mutation(api.undo.run, { actionId: await declineOf(w, first) });
+      return w.newest('reopen_request');
+    },
+    sibling: 'refused',
+  },
+  {
+    name: 'dismiss_flag → reopen_flag',
+    setup: async (w, n) => {
+      const { flags } = await flagGroup(w, n);
+      const out = await w.p.actor.as.mutation(api.inboxWrites.dismissFlags, {
+        itemId: await w.itemOfFlag(flags[0] as Id<'contentFlags'>),
+      });
+      return out.actionId;
+    },
+    sibling: 'refused',
+  },
+  {
+    name: 'reopen_flag → dismissed again',
+    setup: async (w, n) => {
+      const { flags } = await flagGroup(w, n);
+      const out = await w.p.actor.as.mutation(api.inboxWrites.dismissFlags, {
+        itemId: await w.itemOfFlag(flags[0] as Id<'contentFlags'>),
+      });
+      await w.p.actor.as.mutation(api.undo.run, { actionId: out.actionId });
+      return w.t.run(async (ctx) => {
+        const rows = await ctx.db.query('moderationActions').collect();
+        return rows.find((x) => x.action === 'reopen_flag' && x.metadata?.reopened)
+          ?._id as Id<'moderationActions'>;
+      });
+    },
+    sibling: 'refused',
+  },
+  {
+    name: 'hide (an Inbox takedown) → restore, every flag reopened',
+    setup: async (w, n) => {
+      const { flags } = await flagGroup(w, n);
+      const out = await w.p.actor.as.mutation(api.inboxWrites.takeDown, {
+        itemId: await w.itemOfFlag(flags[0] as Id<'contentFlags'>),
+        status: 'hidden',
+        reason: 'Checked',
+      });
+      return out.actionId;
+    },
+    sibling: 'offered',
+  },
+];
+
+/** The offer a viewer is shown for `actionId`, and what running it does. */
+async function offerAndRun(w: W, viewer: P, actionId: Id<'moderationActions'>) {
+  const offer = await w.t.run(async (ctx) => {
+    const profile = (await ctx.db.get(viewer.id)) as Doc<'profiles'>;
+    const row = (await ctx.db.get(actionId)) as Doc<'moderationActions'>;
+    return undoState(ctx, profile, row, 'one');
+  });
+  let ran: string | null = null;
+  try {
+    await viewer.as.mutation(api.undo.run, { actionId, reason: 'Checked' });
+  } catch (err) {
+    ran = (err as { data?: unknown }).data ? String((err as { data: unknown }).data) : String(err);
+  }
+  return { offer, ran };
+}
+
+describe('a group’s undo is offered and runs at every size the wave supports', () => {
+  test.each(GROUP_CASES.flatMap((c) => SIZES.map((n) => [c.name, n] as const)))(
+    '%s, a group of %i',
+    async (name, n) => {
+      const c = GROUP_CASES.find((x) => x.name === name) as GroupCase;
+      MEMBER_BOUND.members = BOUND;
+      try {
+        // A colleague who filed none of it: offered, and it runs.
+        const w = await world();
+        const actionId = await c.setup(w, n);
+        const colleague = await offerAndRun(w, w.p.colleague, actionId);
+        expect(colleague.offer.state, JSON.stringify(colleague)).toBe('available');
+        expect(colleague.ran).toBeNull();
+        // The staffer who filed one of the group (any group past one): refused, by offer and write alike.
+        if (n > 1) {
+          const w2 = await world();
+          const again = await c.setup(w2, n);
+          const sib = await offerAndRun(w2, w2.p.siblingFiler, again);
+          expect(sib.offer.state === 'available', JSON.stringify(sib)).toBe(
+            c.sibling === 'offered',
+          );
+          expect(sib.ran === null).toBe(c.sibling === 'offered');
+        }
+      } finally {
+        MEMBER_BOUND.members = MAX_MEMBERS;
+      }
+    },
+  );
+});
+
+describe('the reservations hold at the real bound', () => {
+  test('each group undo’s check, for a group past the real member bound, fits one request’s budget', () => {
+    const many = (prefix: string) =>
+      Array.from({ length: MAX_MEMBERS + 1 }, (_, i) => `${prefix}${i}`);
+    const row = (action: string, metadata: Record<string, unknown>) =>
+      ({ action, targetId: 'primary', metadata }) as unknown as Doc<'moderationActions'>;
+    const checks: [string, Doc<'moderationActions'>][] = [
+      [
+        'reopen_request',
+        row('reopen_request', { reopened: many('r'), prev: { status: 'declined' } }),
+      ],
+      ['reopen_flag', row('reopen_flag', { reopened: many('f'), prev: { status: 'dismissed' } })],
+      ['decline_request', row('decline_request', { kind: 'activate' })],
+      ['dismiss_flag', row('dismiss_flag', {})],
+    ];
+    for (const [action, r] of checks) {
+      const handler = CORPUS_UNDO_HANDLERS[action as keyof typeof CORPUS_UNDO_HANDLERS];
+      const cost = handler?.refusalCost?.('one', r);
+      if (!cost) throw new Error(`no reservation for ${action}`);
+      // The smaller of the budgets an offer can be checked from: a request's opening one.
+      expect(cost.bytes, action).toBeLessThanOrEqual(REQUEST_PROFILE_BUDGET);
+      expect(cost.reads, action).toBeLessThanOrEqual(TX_CALLS);
+      expect(cost.docs ?? cost.reads, action).toBeLessThanOrEqual(TX_DOCS);
+    }
+  });
 });

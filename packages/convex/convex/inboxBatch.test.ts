@@ -17,6 +17,7 @@ import {
   CLOSER_RESERVE,
   fileMember,
   flagSource,
+  LANDMARK_SCAN,
   MAX_MEMBERS,
   MEMBER_BOUND,
   RECONCILE_COST,
@@ -1026,6 +1027,61 @@ describe('no staffer decides an ask they filed, in any item the decision reaches
     expect(alongsideIn(Array(OWN_ASKS_READ).fill(unrelated), ask, {})).toBe(false);
     expect(alongsideIn(Array(OWN_ASKS_READ + 1).fill(unrelated), ask, {})).toBe(true);
     expect(alongsideIn([{ ...ask, _id: 'y' } as Doc<'waterBodyRequests'>], ask, {})).toBe(true);
+  });
+
+  test('a re-decline over a reopened sibling in another item that is the undoer’s own: neither offered nor run', async () => {
+    const t = harness();
+    const lakeId = await lake(t);
+    const [skater, ...others] = await people(t, 1 + LANDMARK_SCAN, 'p');
+    const sib = await staff(t, 'sib', 'moderator');
+    const actor = await staff(t, 'actor', 'moderator');
+    const landmarkAsk = (requesterId: Id<'profiles'>, name: string, lat: number) =>
+      t.run(async (ctx) => {
+        const id = await ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId,
+          coord: { lat, lng: 0.5 },
+          waterBodyId: lakeId,
+          name,
+          nameKey: requestNameKeyFor('name_landmark', name),
+          createdAt: NOW - 1000,
+        });
+        await fileMember(ctx, requestSource(id));
+        return id;
+      });
+    // A full scan of asks for another place first, so the same place's second ask, looking for the
+    // item to join, never reaches the first one: one place, two items.
+    for (const p of others) await landmarkAsk(p, 'Gull Rock', 0.9);
+    const theirs = await landmarkAsk(skater as Id<'profiles'>, 'Long Point', 0.5);
+    await landmarkAsk(sib.id, 'Long Point', 0.5);
+    const items = await t.run(async (ctx) =>
+      (await ctx.db.query('inboxItems').collect()).filter((i) => i.key.startsWith('landmark:')),
+    );
+    expect(items.length).toBeGreaterThanOrEqual(3);
+    await settle();
+    await actor.as.mutation(api.corpusRequests.decline, { requestId: theirs, note: 'No' });
+    await actor.as.mutation(api.undo.run, { actionId: await rowOn(t, theirs, 'decline_request') });
+    const reopen = await t.run(async (ctx) =>
+      (await ctx.db.query('moderationActions').collect()).find(
+        (r) => r.action === 'reopen_request',
+      ),
+    );
+    expect(
+      ((reopen as Doc<'moderationActions'>).metadata as { reopened: string[] }).reopened,
+    ).toHaveLength(2);
+    const offer = await t.run(async (ctx) => {
+      const { undoState } = await import('./lib/undo');
+      const viewer = (await ctx.db.get(sib.id)) as Doc<'profiles'>;
+      return undoState(ctx, viewer, reopen as Doc<'moderationActions'>, 'one');
+    });
+    expect(offer).toMatchObject({ state: 'unavailable', why: OWN_FILING_REFUSAL });
+    await expect(
+      sib.as.mutation(api.undo.run, {
+        actionId: reopen?._id as Id<'moderationActions'>,
+        reason: 'x',
+      }),
+    ).rejects.toThrow(OWN_FILING_REFUSAL);
   });
 
   test('the undo of an approval that closed the undoer’s own ask in another item: neither offered nor run', async () => {

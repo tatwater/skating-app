@@ -878,7 +878,7 @@ async function invariants(t: T, unfiled: ReadonlySet<string> = new Set()): Promi
 }
 
 /**
- * One random run of histories. The 42 runs are three tests of 14, each its own fresh draw, so none
+ * One random run of histories. The 44 runs are four tests of 11, each its own fresh draw, so none
  * holds a runner for long (a slower runner, under coverage, was timing whole suites out).
  */
 async function histories(numRuns: number) {
@@ -898,8 +898,8 @@ async function histories(numRuns: number) {
 }
 
 describe('the one writer, under random histories', () => {
-  test.each(['first', 'second', 'third'])(
+  test.each(['first', 'second', 'third', 'fourth'])(
     'after every step, the stored items are what the source rows say (%s draw)',
-    () => histories(14),
+    () => histories(11),
   );
 });

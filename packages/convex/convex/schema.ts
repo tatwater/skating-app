@@ -5530,6 +5530,8 @@ export default defineSchema({
     .index('by_item_status', ['itemId', 'status', 'filedAt'])
     .index('by_source', ['sourceTable', 'sourceId'])
     .index('by_item_filer', ['itemId', 'filedByUserId'])
+    // A decision's members one person filed: the undo's own-filing check, one point read (PR #170).
+    .index('by_closed_filer', ['closedByActionId', 'filedByUserId'])
     // `eq` only.
     .index('by_closed_by', ['closedByActionId']),
 

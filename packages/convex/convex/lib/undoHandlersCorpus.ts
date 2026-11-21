@@ -58,7 +58,7 @@ import {
 import { OWN_FILING_REFUSAL } from './inboxRules';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { ownContentRefusal } from './ownContent';
-import { ROW_MAX } from './readBudget';
+import { ROW_MAX, type RowKind } from './readBudget';
 import { assertMayDecide, closeRow } from './requestDecisions';
 import { runUndo, undoRowOf } from './undo';
 import { UNDO_POLICY, undoCapability } from './undoPolicy';
@@ -285,43 +285,79 @@ const undoUnretraction: UndoHandler = {
 
 // ── Who may undo a decision on what a person filed (D289, D269) ───────────────────────────────────
 
-/** A point read the refusal side charges to its reservation, and the write side reads plainly. */
-type SmallRead = <D>(read: () => Promise<D[]>) => Promise<D[]>;
+/**
+ * A point read the refusal side charges to its reservation — as the row it is (a member is a 1 KiB
+ * row, not an 8 KiB "small" one) — and the write side reads plainly.
+ */
+type SmallRead = <D>(read: () => Promise<D[]>, kind?: RowKind) => Promise<D[]>;
 const plainRead: SmallRead = (read) => read();
 const chargedRead =
   (read: Parameters<NonNullable<UndoHandler['refusal']>>[2]): SmallRead =>
-  (r) =>
-    read.take('small', 1, r);
+  (r, kind = 'small') =>
+    read.take(kind, 1, r);
 
 /**
  * Whether a member the decision `actionId` closed was filed by `viewerId` — a sibling's, in any item
- * (D289, PR #170): the decision's undo reopens every one of them, and an undo is a decision too. The
- * members it stamped, as many as its undo reopens.
+ * (D289, PR #170): the decision's undo reopens every one of them, and an undo is a decision too. One
+ * point read on the stored fact (`by_closed_filer`), whatever the group's size — not the decision's
+ * members read whole to look for theirs.
  */
 async function filedAmongClosedBy(
   ctx: QueryCtx,
   actionId: Id<'moderationActions'>,
   viewerId: Id<'profiles'>,
-  take: <D>(n: number, read: (n: number) => Promise<D[]>) => Promise<D[]>,
+  take: SmallRead,
 ): Promise<boolean> {
-  const members = await take(MAX_MEMBERS, (n) =>
-    ctx.db
-      .query('inboxItemMembers')
-      .withIndex('by_closed_by', (q) => q.eq('closedByActionId', actionId))
-      .take(n),
+  const [mine] = await take(
+    () =>
+      ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_closed_filer', (q) =>
+          q.eq('closedByActionId', actionId).eq('filedByUserId', viewerId),
+        )
+        .take(1),
+    'inboxMember',
   );
-  return members.some((m) => m.filedByUserId === viewerId);
+  return mine !== undefined;
 }
 
-/** What {@link filedAmongClosedBy} reads at worst. */
-const CLOSED_BY_CHECK_COST = {
-  bytes: MAX_MEMBERS * ROW_MAX.inboxMember,
-  reads: 1,
-  docs: MAX_MEMBERS,
-};
+/** What {@link filedAmongClosedBy} reads: one member row. */
+const CLOSED_BY_CHECK_COST = { bytes: ROW_MAX.inboxMember, reads: 1, docs: 1 };
 
 /** The reads {@link decisionActorRefusal} makes: the member, its item, the filer probe. */
-const ACTOR_CHECK_COST = { bytes: 3 * ROW_MAX.small, reads: 3, docs: 3 };
+const ACTOR_CHECK_COST = {
+  bytes: 2 * ROW_MAX.inboxMember + ROW_MAX.small,
+  reads: 3,
+  docs: 3,
+};
+
+/**
+ * The items a flag reopen's check reads the own-filing answer of: a flag decision closes one item's
+ * flags, and they reopen into it or a newer open item on the same key — two at most, held to four.
+ */
+const REOPEN_ITEMS = 4;
+
+/** A reopen whose flags have since spread past {@link REOPEN_ITEMS} items: not checked here. */
+export const UNDO_SPREAD_TOO_WIDE =
+  'These flags have moved into more items than this can check here; decide them in the Inbox.';
+
+/** One reopened source's stored facts: its member (open, by whom), charged as the row it is. */
+const MEMBER_FACT_COST = { bytes: ROW_MAX.inboxMember, reads: 1, docs: 1 };
+
+/** A source's member, read on the stored fact. */
+const memberOfSource = async (ctx: QueryCtx, source: InboxSource, take: SmallRead) =>
+  (
+    await take(
+      () =>
+        ctx.db
+          .query('inboxItemMembers')
+          .withIndex('by_source', (q) =>
+            q.eq('sourceTable', source.table).eq('sourceId', source.id),
+          )
+          .take(1),
+      'inboxMember',
+    )
+  )[0] ?? null;
 
 /**
  * **Whether `viewer` may undo a decision on `source`** — the forward rule's own answer, so History
@@ -335,13 +371,10 @@ async function decisionActorRefusal(
   source: InboxSource,
   fallback: { filer?: Id<'profiles'>; subject?: Id<'profiles'> },
   take: SmallRead,
+  /** The source's member, when the caller has read it already. */
+  known?: Doc<'inboxItemMembers'> | null,
 ): Promise<string | null> {
-  const [member] = await take(() =>
-    ctx.db
-      .query('inboxItemMembers')
-      .withIndex('by_source', (q) => q.eq('sourceTable', source.table).eq('sourceId', source.id))
-      .take(1),
-  );
+  const member = known !== undefined ? known : await memberOfSource(ctx, source, take);
   const [item] = member
     ? await take(async () => {
         const got = await ctx.db.get(member.itemId);
@@ -352,11 +385,13 @@ async function decisionActorRefusal(
     if (fallback.filer !== undefined && fallback.filer === viewer._id) return OWN_FILING_REFUSAL;
     return ownContentRefusal(viewer, fallback.subject);
   }
-  const [filed] = await take(() =>
-    ctx.db
-      .query('inboxItemMembers')
-      .withIndex('by_item_filer', (q) => q.eq('itemId', item._id).eq('filedByUserId', viewer._id))
-      .take(1),
+  const [filed] = await take(
+    () =>
+      ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_item_filer', (q) => q.eq('itemId', item._id).eq('filedByUserId', viewer._id))
+        .take(1),
+    'inboxMember',
   );
   if (filed) return OWN_FILING_REFUSAL;
   return item.kind === 'flag' || item.kind === 'access'
@@ -462,18 +497,31 @@ const undoFlagReopen: UndoHandler = {
     return meta(row).prev?.status === undefined ? PREDATES : null;
   },
   undoTakesAway: (row) => UNDO_POLICY.reopen_flag.takesAway(meta(row).prev.status),
+  // On the stored facts, each flag's member (PR #170): open while its flag is (the writer's
+  // invariant), and by whom — a 1 KiB row a flag, not the flag read whole — and each item's own-filing
+  // answer read once. A reopen of any size the wave supports fits the request's budget.
   refusalCost: (_scope, row) => {
     const n = reopenedFlagsOf(row).length;
+    const items = Math.min(n, REOPEN_ITEMS);
     return {
-      bytes: n * (ROW_MAX.contentFlag + ACTOR_CHECK_COST.bytes),
-      reads: n * (1 + ACTOR_CHECK_COST.reads),
-      docs: n * (1 + ACTOR_CHECK_COST.docs),
+      bytes: n * MEMBER_FACT_COST.bytes + items * ACTOR_CHECK_COST.bytes,
+      reads: n * MEMBER_FACT_COST.reads + items * ACTOR_CHECK_COST.reads,
+      docs: n * MEMBER_FACT_COST.docs + items * ACTOR_CHECK_COST.docs,
     };
   },
   refusal: async (ctx, row, read, viewer) => {
+    const take = chargedRead(read);
+    const byItem = new Map<string, string | null>();
     for (const id of reopenedFlagsOf(row)) {
-      const flag = await read.row('contentFlag', id);
-      const why = await recloseRefusal(ctx, viewer, id, flag, chargedRead(read));
+      const member = await memberOfSource(ctx, flagSource(id), take);
+      // Every reopened flag was filed by its reopen; an open member is an open flag.
+      if (member?.status !== 'open') return FLAG_DECIDED_SINCE;
+      let why = byItem.get(member.itemId);
+      if (why === undefined) {
+        if (byItem.size >= REOPEN_ITEMS) return UNDO_SPREAD_TOO_WIDE;
+        why = await decisionActorRefusal(ctx, viewer, flagSource(id), {}, take, member);
+        byItem.set(member.itemId, why);
+      }
       if (why !== null) return why;
     }
     return null;
@@ -658,9 +706,7 @@ const undoRequestDecision: UndoHandler = {
             chargedRead(read),
           )
         : null) ??
-      ((await filedAmongClosedBy(ctx, row._id, viewer._id, (n, r) =>
-        read.take('inboxMember', n, () => r(n)),
-      ))
+      ((await filedAmongClosedBy(ctx, row._id, viewer._id, chargedRead(read)))
         ? OWN_FILING_REFUSAL
         : null)
     );
@@ -680,7 +726,7 @@ const undoRequestDecision: UndoHandler = {
       plainRead,
     );
     if (own !== null) throw new ConvexError(own);
-    if (await filedAmongClosedBy(ctx, row._id, actor._id, (n, r) => r(n))) {
+    if (await filedAmongClosedBy(ctx, row._id, actor._id, plainRead)) {
       throw new ConvexError(OWN_FILING_REFUSAL);
     }
     const bodyActionId = bodySideOf(row);
@@ -901,9 +947,25 @@ export const REQUEST_DECIDED_SINCE =
 const reopenedAsksOf = (row: Doc<'moderationActions'>): Id<'waterBodyRequests'>[] =>
   (meta(row).reopened ?? []) as Id<'waterBodyRequests'>[];
 
-/** An open ask a person filed, and that person is `viewerId`. */
-const ownOpenAsk = (r: Doc<'waterBodyRequests'> | null, viewerId: Id<'profiles'>): boolean =>
-  r?.status === 'open' && r.requesterId === viewerId && r.origin !== 'seed';
+/**
+ * Whether a sibling a `reopen_request` reopened is open now and the viewer's own — on its member, the
+ * stored fact (open while its ask is; `filedByUserId` the person who asked; a script's ask has no
+ * member): one 1 KiB row a sibling.
+ */
+async function ownReopenedSibling(
+  ctx: QueryCtx,
+  row: Doc<'moderationActions'>,
+  primaryId: Id<'waterBodyRequests'>,
+  viewerId: Id<'profiles'>,
+  take: SmallRead,
+): Promise<boolean> {
+  for (const sid of reopenedAsksOf(row)) {
+    if (sid === primaryId) continue;
+    const member = await memberOfSource(ctx, requestSource(sid), take);
+    if (member?.status === 'open' && member.filedByUserId === viewerId) return true;
+  }
+  return false;
+}
 
 const undoRequestReopen: UndoHandler = {
   blocked: (row) => {
@@ -916,12 +978,15 @@ const undoRequestReopen: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.decline_request.takesAway(),
   // The decision's own rule, as its write asks it (`assertMayDecide`): the ask still open, and the
   // viewer not the filer of any member of its item — the primary's or a sibling's (D289).
+  // The primary read whole (one row); each reopened sibling on its stored facts — its member, open
+  // and by whom — not its row read whole (PR #170: a 1 MiB reservation a sibling made eleven asks
+  // more than the request's budget, for asks of any real size).
   refusalCost: (_scope, row) => {
     const n = reopenedAsksOf(row).length;
     return {
-      bytes: (1 + n) * ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes,
-      reads: 1 + n + ACTOR_CHECK_COST.reads,
-      docs: 1 + n + ACTOR_CHECK_COST.docs,
+      bytes: ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes + n * MEMBER_FACT_COST.bytes,
+      reads: 1 + ACTOR_CHECK_COST.reads + n * MEMBER_FACT_COST.reads,
+      docs: 1 + ACTOR_CHECK_COST.docs + n * MEMBER_FACT_COST.docs,
     };
   },
   refusal: async (ctx, row, read, viewer) => {
@@ -937,13 +1002,9 @@ const undoRequestReopen: UndoHandler = {
     );
     if (own !== null) return own;
     // Closing them again decides every reopened sibling: one of the viewer's own refuses it (D289).
-    for (const sid of reopenedAsksOf(row)) {
-      if (sid === id) continue;
-      if (ownOpenAsk(await read.row('waterBodyRequest', sid), viewer._id)) {
-        return OWN_FILING_REFUSAL;
-      }
-    }
-    return null;
+    return (await ownReopenedSibling(ctx, row, id, viewer._id, chargedRead(read)))
+      ? OWN_FILING_REFUSAL
+      : null;
   },
   run: async ({ ctx, actor, row }) => {
     const primaryId = row.targetId as Id<'waterBodyRequests'>;
@@ -952,10 +1013,8 @@ const undoRequestReopen: UndoHandler = {
     const note = (meta(row).prev.note as string | null) ?? undefined;
     const now = Date.now();
     await assertMayDecide(ctx, primary, actor._id, 'declined');
-    for (const sid of reopenedAsksOf(row)) {
-      if (sid !== primaryId && ownOpenAsk(await ctx.db.get(sid), actor._id)) {
-        throw new ConvexError(OWN_FILING_REFUSAL);
-      }
+    if (await ownReopenedSibling(ctx, row, primaryId, actor._id, plainRead)) {
+      throw new ConvexError(OWN_FILING_REFUSAL);
     }
     const decision = {
       requestId: primaryId,
