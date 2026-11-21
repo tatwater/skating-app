@@ -875,6 +875,12 @@ Made on the design's engineering forks; the founder may overturn any of them.
 7. **Undoing the admission of brand-new water shelves the body** as `not_in_campaign` (2026-11-21): the
    create's inverse is a soft removal (§11), never a delete — the body the admission inserted goes back
    to what the corpus doesn't keep, its id and history kept.
+8. **A flag decision's own undo refuses whole only on its lead flag** (2026-11-21, Greptile on #170,
+   round five): the lead is the one its offer checks. Any other flag that can't reopen is left closed
+   and named on the undo's row, so the offer and the run always agree.
+9. **A request decision's drain closes at most 499 siblings** (`REQUEST_SIBLINGS_MAX`; 2026-11-21,
+   round five). Any past that stay open in their item for another decision, as a ruling already leaves
+   reports past its cap.
 
 ### The founder's calls of 2026-11-21
 
@@ -7209,9 +7215,11 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   reporters attach no photos. **The drawn item:** the 0.8 overlap share that suggests a merge is the
   build's own number, for the founder's look.
 - **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once` (it adds the four new
-  tables and, since Greptile's rounds two and three, three more indexes:
-  `waterBodyRequests.by_requester_status_origin`, `inboxItemMembers.by_closed_filer` and
-  `inboxItemMembers.by_filer_source_status`); `corpusRequests:backfillOrigin
+  tables and, since Greptile's rounds two, three and five, six more indexes:
+  `waterBodyRequests.by_requester_status_origin`, `inboxItemMembers.by_closed_filer`,
+  `inboxItemMembers.by_filer_source_status`, and on `contentFlags` `by_supersedes`,
+  `by_target_flagger_status_origin` and `by_target_status_reason_origin`; round five also adds `status`
+  to `inboxItemMembers.by_item_filer`, which the deploy rebuilds); `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
   call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
@@ -8078,7 +8086,8 @@ exact lookup, (b) a bounded read that refuses in words at its bound, (c) a bound
 
 **The reverse direction** (a window hiding rows that should allow something, or that a count needs):
 - **The item's member count** stops at `MAX_MEMBERS`. Reads now say so with `memberCountIsFloor`, so a
-  view can draw "500+".
+  view can draw "500+". **A contract addition for the web** (B01-5b): an item's
+  `memberCountIsFloor`, drawn as "500+".
 - **`flagsClosed`** is the length of what the decision closes, every page together, so it is exact.
   The rows past a closer's cap stay open and shown.
 - **"M in other lanes"** has no count anywhere yet. A takedown closes every lane's open flags, up to
