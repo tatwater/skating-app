@@ -240,11 +240,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test('for real authors only, the gated paths give what the ungated ones give', async () => {
-  await fc.assert(
-    fc.asyncProperty(scenario, async (s) => {
-      expect(await play(s, true)).toEqual(await play(s, false));
-    }),
-    { numRuns: 12 },
-  );
-}, 120_000);
+// Twelve scenarios as three draws of four, each its own test, so none holds a slow runner for long.
+test.each(['first', 'second', 'third'])(
+  'for real authors only, the gated paths give what the ungated ones give (%s draw)',
+  async () => {
+    await fc.assert(
+      fc.asyncProperty(scenario, async (s) => {
+        expect(await play(s, true)).toEqual(await play(s, false));
+      }),
+      { numRuns: 4 },
+    );
+  },
+);

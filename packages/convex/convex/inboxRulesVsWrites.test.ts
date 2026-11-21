@@ -756,23 +756,25 @@ const choiceCells: Cell[] = [
   },
 ];
 
-const CELLS: Cell[] = [
-  ...crossLaneCells,
-  ...choiceCells,
-  ...reportCells,
-  ...otherContentCells,
-  ...alertCells,
-  ...accessCells,
-  ...requestCells,
-  ...drawnCells,
-  ...ticketCells,
-];
+/** The table's groups, each its own test (so none holds a slow runner for long). */
+const GROUPS: Record<string, Cell[]> = {
+  'cross-lane': crossLaneCells,
+  choice: choiceCells,
+  report: reportCells,
+  'other content': otherContentCells,
+  alert: alertCells,
+  access: accessCells,
+  request: requestCells,
+  drawn: drawnCells,
+  ticket: ticketCells,
+};
+const CELLS: Cell[] = Object.values(GROUPS).flat();
 
-/** Every cell: the rule's answer and the write's outcome. */
-async function runCells(): Promise<{ size: number; disagreements: string[] }> {
+/** A group's cells: the rule's answer and the write's outcome. */
+async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: string[] }> {
   const disagreements: string[] = [];
   let size = 0;
-  for (const cell of CELLS) {
+  for (const cell of cells) {
     for (const verb of cell.verbs) {
       size++;
       const w = await world();
@@ -802,16 +804,22 @@ async function runCells(): Promise<{ size: number; disagreements: string[] }> {
 const AWAITING_THE_WRITE: Record<string, string> = {};
 
 describe('the rule and the write', () => {
-  test('agree in every cell', async () => {
-    const { size, disagreements } = await runCells();
-    expect(size).toBe(141);
+  test('the table holds every cell', () => {
+    expect(CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(141);
+  });
+
+  test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {
+    const cells = GROUPS[group] as Cell[];
+    const { size, disagreements } = await runCells(cells);
+    expect(size).toBe(cells.reduce((n, c) => n + c.verbs.length, 0));
     const cellOf = (d: string) => d.slice(0, d.indexOf(':'));
     expect(disagreements.filter((d) => !(cellOf(d) in AWAITING_THE_WRITE))).toEqual([]);
     // A seam that landed comes off the list.
-    expect(
-      Object.keys(AWAITING_THE_WRITE).filter((c) => !disagreements.some((d) => cellOf(d) === c)),
-    ).toEqual([]);
-  }, 600_000);
+    const mine = Object.keys(AWAITING_THE_WRITE).filter((c) =>
+      cells.some((cell) => c.startsWith(`${cell.kind} · ${cell.state}`)),
+    );
+    expect(mine.filter((c) => !disagreements.some((d) => cellOf(d) === c))).toEqual([]);
+  });
 });
 
 // Shared with the moderator pass (`inboxRulesVsWritesModerator.test.ts`).

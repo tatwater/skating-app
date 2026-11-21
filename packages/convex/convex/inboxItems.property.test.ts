@@ -877,20 +877,29 @@ async function invariants(t: T, unfiled: ReadonlySet<string> = new Set()): Promi
   });
 }
 
-describe('the one writer, under random histories', () => {
-  test('after every step, the stored items are what the source rows say', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.array(ev, { minLength: 10, maxLength: 40 }), async (events) => {
-        const w = await world();
-        for (const [n, e] of events.entries()) {
-          await apply(w, e);
-          const holes = await invariants(w.t, w.unfiled);
-          if (holes.length > 0) {
-            throw new Error(`after step ${n} (${JSON.stringify(e)}):\n${holes.join('\n')}`);
-          }
+/**
+ * One random run of histories. The 42 runs are three tests of 14, each its own fresh draw, so none
+ * holds a runner for long (a slower runner, under coverage, was timing whole suites out).
+ */
+async function histories(numRuns: number) {
+  await fc.assert(
+    fc.asyncProperty(fc.array(ev, { minLength: 10, maxLength: 40 }), async (events) => {
+      const w = await world();
+      for (const [n, e] of events.entries()) {
+        await apply(w, e);
+        const holes = await invariants(w.t, w.unfiled);
+        if (holes.length > 0) {
+          throw new Error(`after step ${n} (${JSON.stringify(e)}):\n${holes.join('\n')}`);
         }
-      }),
-      { numRuns: 40, endOnFailure: true },
-    );
-  }, 600_000);
+      }
+    }),
+    { numRuns, endOnFailure: true },
+  );
+}
+
+describe('the one writer, under random histories', () => {
+  test.each(['first', 'second', 'third'])(
+    'after every step, the stored items are what the source rows say (%s draw)',
+    () => histories(14),
+  );
 });
