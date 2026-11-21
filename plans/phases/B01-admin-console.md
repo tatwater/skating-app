@@ -6819,7 +6819,10 @@ correct before, during and after its backfill.
   person it reads that person's own withdrawn ranges (`lib/recordReads.deletedRange`: each kind's
   `by_author_deleted`, an alert's `by_author_retracted`), one kind and one step at a time, as far as
   the budget goes. A person with many withdrawals spans passes and resumes after the last row it
-  synced.
+  synced. A second phase then walks every stored row by creation time and re-derives it from its
+  item, a few a pass (the item read at its kind's worst case). A row whose item is gone or no
+  longer withdrawn — left by a writer outside the inventory — goes, so a re-run of the procedure is
+  the repair.
 
 **B01-3u — a body's short list of names.**
 
@@ -6847,17 +6850,31 @@ correct before, during and after its backfill.
   engine's reader. The answers:
   - a landmark already there under the old names is refused exactly, in the words the
     one-landmark view uses;
-  - a live bay answering to an old name says *A bay on this lake answers to the old name — open
-    this landmark to see whether this undo can bring it back.* The bay's outline decides, and the
-    list holds none;
+  - a live bay answering to an old name is **a deliberate conservative answer on the list**: the
+    undo is not offered, and the line says *A bay on this lake answers to the old name — open this
+    landmark to see whether this undo can bring it back.* The single-landmark view may offer that
+    same undo: the bay's outline decides, the list holds none, and the governor ruled against storing
+    outlines (2026-11-20). The whole rule runs where one landmark is in view (the toast, the
+    landmark's own history) and in `runUndo`'s write;
   - a body with no row (before its backfill), or a capped row, keeps the spellings-only check.
     The write still runs the whole rule, as before.
 - **The web** draws the server's `why` as it stands, so no web file changed for this. The rows are
   History's (`apps/web/src/components/admin/bodies/`, through `bodyConsole.history`).
+- **Every rebuild is bounded by bytes.** `refreshBodyNames` reads the landmarks (64 a chunk) and
+  then the bays (4 a chunk, each with its outline) by real size, to 4 MiB
+  (`BODY_NAMES_READ_MAX_BYTES`); past it the row is `capped`. A rebuild therefore reads at most 4 MiB
+  and one chunk, whoever calls it.
+- **Once a write, never once a bay.** A loop rebuilds once after it: the re-clip that delists bays
+  (`reclipSubAreasToParent`, the ETL's and a merge's), the merge's repoint, a batch's
+  `retireCollected`. A bay's insert, rename or restore rebuilds once — by `retireNamedAsBays` when it
+  retires a landmark, else itself. The guard holds `systemDelist` to its two callers: a new caller
+  that isn't a listed keeper fails it.
 - **The backfill:** `landmarks:backfillBodyNames`, self-chaining. It finds bodies a step at a time
-  through the landmark index and then the bay index (`gt` the last body seen). A pass rebuilds up to
-  50 bodies or 2,000 rows read (its first body always). A body with neither has no row and needs
-  none.
+  through the landmark index and then the bay index (`gt` the last body seen). A pass ends once what
+  its rebuilds read passes 4 MiB (its first body always) or at 50 bodies, so a pass stays under the
+  transaction's read limit. Each step moves past its body before rebuilding it, so a body whose
+  rebuild throws is logged (`failed` in the pass's answer) and passed over, its row left absent or
+  capped; a re-run converges. A body with neither landmarks nor bays has no row and needs none.
 
 **What the code said that the doc did not:**
 
@@ -6921,13 +6938,32 @@ main):
 4. Step 2 again, until `ready: true` and `pending: []`. On a failure, step 3 again (a new run
    supersedes the old).
 5. `convex run landmarks:backfillBodyNames '{}'`. It returns its first pass, for example
-   `{ phase: "landmarks", bodies: 50, wrote: 50, done: false }`, and chains to the end. The last
-   pass, in the logs, returns `{ phase: "bays", …, done: true }`.
-6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0`.
+   `{ phase: "landmarks", bodies: 50, read: 812345, wrote: 50, failed: 0, done: false }`, and chains
+   to the end. The last pass, in the logs, returns `{ phase: "bays", …, done: true }`. A pass with
+   `failed` above 0 logged each body it passed over (`landmarks.backfillBodyNames: <id> failed`).
+6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0` and `failed: 0`.
 
 A fresh deployment takes the People procedure, now five backfills: its text, and the table of
 which reads say `pending` until each is ready, are under *the backfills, and the one procedure that
 runs them* (B01-4), updated in this build.
+
+**An independent review** (of the branch at `397d8331`) found no correctness bug and no missed
+writer. What it found, all fixed on the branch:
+
+- the names backfill stopped a pass on rows and bodies, never bytes, and a rebuild read every bay
+  outline whole — now every rebuild is bounded by bytes, a pass ends on bytes, and a failing body is
+  logged and passed over (`bodyNameRows.test.ts`, *a rebuild reads a body by its real size*);
+- `systemDelist` rebuilt once per delisted bay, and the bay writers rebuilt twice when a landmark
+  retired — now once per write (*a rebuild once a write, never once a bay*, counting the calls);
+- any backfill in the counts' `pending` held the whole sheet back — now `withdrawals` holds back
+  only the Deleted figures (`record/recordModel.ts` `countsPending`);
+- `people.ts` reserved four rows for the backfills' state — now `PEOPLE_BACKFILLS.length`, held by
+  `peopleBackfills.test.ts` in `packages/guards`;
+- stale withdrawal rows had no repair — now the backfill's second phase (*the backfill repairs
+  stale rows*);
+- the narrowed Deleted read compared a cursor's kind without its default, `kind` wasn't a watched
+  field in the names guard, and the random histories alone missed two mutations (now biased toward
+  a few items, 30 runs a seed; they catch both).
 
 **Retired:** `contentRecord.personWithdrawals`, the older per-kind withdrawals query. No page, app
 or script called it, only two tests, which now read the withdrawal rows.

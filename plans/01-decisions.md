@@ -8442,11 +8442,15 @@ for existing data by a paged backfill:
   live bay's names, rebuilt whole by `lib/bodyNames` beside every write of a landmark's or a bay's
   names, kind, point, removal or body. Bounded at the write at 256 KiB by an estimate that never
   undercounts (about a thousand typical landmarks; a body near the 1,500-landmark cap always
-  passes it); past it the row is `capped` and empty. A list page of History checks the landmark
-  undo's whole rule from it: a duplicate exactly, word for word; a bay answering to an old name
-  sends the reader to the landmark (the bay's outline decides, and the list holds none). A body
-  with no row, or a capped one, keeps the spellings-only check — the write still runs the whole
-  rule.
+  passes it); past it the row is `capped` and empty. A rebuild reads the body's rows by real size,
+  to 4 MiB, and caps past that, so no rebuild (a writer's or the backfill's) reads a giant whole.
+  A list page of History checks the landmark undo's whole rule from it: a duplicate exactly, word
+  for word. **A bay answering to an old name is a deliberate conservative answer on the list**: the
+  undo is not offered there, and the line points to the landmark, though the single-landmark view
+  may offer it — the bay's outline decides, and the list holds none (governor ruling, 2026-11-20:
+  no stored outlines). The whole rule runs where one landmark is in view (the toast, its own
+  history) and in `runUndo`'s write. A body with no row, or a capped one, keeps the spellings-only
+  check on the list.
 
 **Why:** both were reads that could not be both exact and bounded — a floor past a few heavy items
 and erased shells counted, or a per-line read of up to 1,500 rows and every bay outline — and each
