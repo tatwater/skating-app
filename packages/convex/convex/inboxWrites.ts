@@ -31,7 +31,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation } from './_generated/server';
 import { retractAlertImpl, setOfficialImpl } from './accessAlerts';
-import { checkedReason } from './lib/audit';
+import { auditContextArgs, checkedReason } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { PUBLIC_ACCESS_VERDICTS } from './lib/enums';
 import {
@@ -399,6 +399,7 @@ function openAccessReports(ctx: MutationCtx, waterBodyId: Id<'waterBodies'>) {
  */
 export const closeFlagsRest = internalMutation({
   args: {
+    ...auditContextArgs,
     actorId: v.id('profiles'),
     flagIds: v.array(v.id('contentFlags')),
     resolution: literals(['actioned', 'dismissed'] as const),
@@ -431,6 +432,7 @@ export const closeFlagsRest = internalMutation({
  */
 export const reopenRequestsRest = internalMutation({
   args: {
+    ...auditContextArgs,
     decisionId: v.id('moderationActions'),
     reopenRowId: v.id('moderationActions'),
     ids: v.array(v.id('waterBodyRequests')),
@@ -458,6 +460,7 @@ export const closeRequestsRest = internalMutation({
  */
 export const reopenFlagsRest = internalMutation({
   args: {
+    ...auditContextArgs,
     actorId: v.id('profiles'),
     actionId: v.id('moderationActions'),
     flagIds: v.array(v.id('contentFlags')),

@@ -31,7 +31,10 @@ import { suppressImpl, unsuppressImpl } from '../recurrence';
 import { setStandingImpl } from '../standing';
 import { setIncludedByRequestImpl } from '../waterBodies';
 import {
+  type AuditContext,
+  asContinuationOf,
   asUndoOf,
+  auditContextOf,
   type ModerationAction,
   type ModerationTargetType,
   readSnapshot,
@@ -53,6 +56,7 @@ import {
   inboxBatch,
   MAX_MEMBERS,
   owedRefreshes,
+  pageIsFull,
   refreshCost,
   requestSource,
   syncInboxSource,
@@ -491,6 +495,18 @@ async function recloseRefusal(
   return decisionActorRefusal(ctx, viewer, flagSource(id), flagPeople(flag), take);
 }
 
+/**
+ * Whether a flag a `reopen_flag` row names is still closed by the decision that row undid — a later
+ * page of the reopen hasn't reached it (and, once the reopen is undone, never will).
+ */
+const stillHeldBy = (
+  member: Doc<'inboxItemMembers'> | null,
+  row: Doc<'moderationActions'>,
+): boolean =>
+  member?.status === 'closed' &&
+  member.closedByActionId !== undefined &&
+  member.closedByActionId === (meta(row).reopens as Id<'moderationActions'> | undefined);
+
 const undoFlagReopen: UndoHandler = {
   blocked: (row) => {
     // A flag reopened beside the lead, or by a takedown's (an alert verdict's, a restore's, a ruling's)
@@ -516,6 +532,9 @@ const undoFlagReopen: UndoHandler = {
     const byItem = new Map<string, string | null>();
     for (const id of reopenedFlagsOf(row)) {
       const member = await memberOfSource(ctx, flagSource(id), take);
+      // A flag the reopen's later pages haven't reached yet is still held by the decision it undid:
+      // undoing a reopen mid-way closes what reopened and stops the rest (PR #170).
+      if (stillHeldBy(member, row)) continue;
       // Every reopened flag was filed by its reopen; an open member is an open flag.
       if (member?.status !== 'open') return FLAG_DECIDED_SINCE;
       let why = byItem.get(member.itemId);
@@ -531,6 +550,7 @@ const undoFlagReopen: UndoHandler = {
   run: async ({ ctx, actor, row, reason }) => {
     const flags: Doc<'contentFlags'>[] = [];
     for (const id of reopenedFlagsOf(row)) {
+      if (stillHeldBy(await memberOfSource(ctx, flagSource(id), plainRead), row)) continue;
       const flag = await ctx.db.get(id);
       const why = await recloseRefusal(ctx, actor, id, flag, plainRead);
       if (why !== null) throw new ConvexError(why);
@@ -804,6 +824,7 @@ export async function reopenRequestPage(
   let done = 0;
   await inboxBatch(ctx, async () => {
     for (const id of ids) {
+      if (done > 0 && pageIsFull(done)) break;
       if (done > 0) {
         const m = await ctx.meta.getTransactionMetrics();
         const refreshes = (owedRefreshes(ctx) + 1) * refreshCost().bytesRead;
@@ -832,6 +853,7 @@ export async function reopenRequestPage(
   const rest = ids.slice(done);
   if (rest.length > 0) {
     await ctx.scheduler.runAfter(0, internal.inboxWrites.reopenRequestsRest, {
+      ...(await auditContextOf(ctx)),
       decisionId: decision._id,
       reopenRowId: reopenRow,
       ids: [...rest],
@@ -849,7 +871,7 @@ export const REOPEN_RESERVE = 512 * 1024;
  */
 export async function reopenRequestsRestPage(
   ctx: MutationCtx,
-  args: {
+  args: AuditContext & {
     decisionId: Id<'moderationActions'>;
     reopenRowId: Id<'moderationActions'>;
     ids: Id<'waterBodyRequests'>[];
@@ -863,7 +885,11 @@ export async function reopenRequestsRestPage(
   if (undone !== null) return;
   const decision = await ctx.db.get(args.decisionId);
   if (!decision) return;
-  await reopenRequestPage(ctx, decision, args.reopenRowId, args.ids, args.actorId);
+  // The same act, in another transaction: each ask re-checked as the first page checks it (still
+  // closed by this decision, `requestDecisionRefusal`), written under the undo and `via` it had.
+  await asContinuationOf(ctx, { undoOf: args.undoOf, via: args.via }, () =>
+    reopenRequestPage(ctx, decision, args.reopenRowId, args.ids, args.actorId),
+  );
 }
 
 /** An ask's filer, for the no-item fallback: a script's ask (`origin: 'seed'`) has none (D289). */

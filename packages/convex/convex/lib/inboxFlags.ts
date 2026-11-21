@@ -9,7 +9,7 @@ import { ConvexError } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { writeAudit } from './audit';
+import { type AuditContext, asContinuationOf, auditContextOf, writeAudit } from './audit';
 import { holdMoved } from './eraseClock';
 import { closeFlag, FlagCloseEffects, type FlagResolution } from './flagResolution';
 import { flagSubject } from './flagSubject';
@@ -18,6 +18,7 @@ import {
   flagSource,
   inboxBatch,
   owedRefreshes,
+  pageIsFull,
   refreshCost,
   reopenReads,
   syncReopened,
@@ -155,7 +156,12 @@ export async function closeFlagsUnder(
   let closed = 0;
   await inboxBatch(ctx, async () => {
     for (const flag of flags) {
-      if (closed > 0 && !(await batchHasRoom(ctx, FLAG_CLOSE_COST, FLAG_SETTLE_COST))) break;
+      if (
+        closed > 0 &&
+        (pageIsFull(closed) || !(await batchHasRoom(ctx, FLAG_CLOSE_COST, FLAG_SETTLE_COST)))
+      ) {
+        break;
+      }
       lead = await closeOne(ctx, actor, flag, { ...opts, lead }, effects);
       closed++;
     }
@@ -164,6 +170,7 @@ export async function closeFlagsUnder(
   const rest = flags.slice(closed);
   if (rest.length > 0 && lead !== undefined) {
     await ctx.scheduler.runAfter(0, internal.inboxWrites.closeFlagsRest, {
+      ...(await auditContextOf(ctx)),
       actorId: actor._id,
       flagIds: rest.map((f) => f._id),
       resolution: opts.resolution,
@@ -185,11 +192,12 @@ export async function closeFlagsUnder(
  */
 export async function closeFlagsRestPage(
   ctx: MutationCtx,
-  args: Omit<FlagCloseOpts, 'lead'> & {
-    actorId: Id<'profiles'>;
-    flagIds: Id<'contentFlags'>[];
-    lead: Id<'moderationActions'>;
-  },
+  args: Omit<FlagCloseOpts, 'lead'> &
+    AuditContext & {
+      actorId: Id<'profiles'>;
+      flagIds: Id<'contentFlags'>[];
+      lead: Id<'moderationActions'>;
+    },
 ): Promise<void> {
   const undone = await ctx.db
     .query('moderationActions')
@@ -203,8 +211,9 @@ export async function closeFlagsRestPage(
     const flag = await ctx.db.get(id);
     if (flag && isOpenFlag(flag)) flags.push(flag);
   }
-  const { actorId: _a, flagIds: _f, ...opts } = args;
-  await closeFlagsUnder(ctx, actor, flags, opts);
+  const { actorId: _a, flagIds: _f, undoOf, via, ...opts } = args;
+  // Written under the undo and `via` its first page had (a re-close inside an undo of a reopen).
+  await asContinuationOf(ctx, { undoOf, via }, () => closeFlagsUnder(ctx, actor, flags, opts));
 }
 
 /** One flag closed under the decision: its own row when the decision writes them, then `closeFlag`. */
@@ -378,21 +387,7 @@ export async function reopenFlagsClosedBy(
   // on the undone row's own target. Not merely the newest row tagged as the undo: a ruling's undo that
   // shelves the body again writes `set_standing` after its `set_public_access`, and a Post's undo
   // writes its members' rows on other targets.
-  if (leftClosed.length > 0) {
-    const undone = await ctx.db.get(actionId);
-    const tagged = await ctx.db
-      .query('moderationActions')
-      .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
-      .take(LEAD_ROW_READ);
-    const lead = tagged.find(
-      (r) => r.targetType === undone?.targetType && r.targetId === undone?.targetId,
-    );
-    if (lead) {
-      await ctx.db.patch(lead._id, {
-        metadata: { ...(lead.metadata ?? {}), flagsLeftClosed: leftClosed },
-      });
-    }
-  }
+  await recordLeftClosed(ctx, actionId, leftClosed);
   await reopenFlagsPage(ctx, actor, actionId, flags, reason, {
     ...(alsoFlagId !== undefined ? { alsoFlagId } : {}),
     withUndoOf: opts.withUndoOf === true,
@@ -400,6 +395,52 @@ export async function reopenFlagsClosedBy(
     now,
   });
   return flags.length;
+}
+
+/**
+ * Flags an undo left closed, named on its lead row — the first row it wrote on the undone row's own
+ * target (a flag decision's own undo: the lead flag's `reopen_flag` row; inside another undo, that
+ * undo's row) — and taken off that row's `reopened` list, so the undo of the undo closes only what
+ * reopened. The first page records what its check refused; a later page what its own check refuses
+ * then (PR #170). Pages run one after another — each scheduled by the last, after it committed — so
+ * no two write the row at once.
+ */
+async function recordLeftClosed(
+  ctx: MutationCtx,
+  actionId: Id<'moderationActions'>,
+  leftClosed: readonly { flagId: Id<'contentFlags'>; why: string }[],
+): Promise<void> {
+  if (leftClosed.length === 0) return;
+  const lead = await leadRowOf(ctx, actionId);
+  if (!lead) return;
+  const meta = (lead.metadata ?? {}) as {
+    flagsLeftClosed?: { flagId: Id<'contentFlags'>; why: string }[];
+    reopened?: Id<'contentFlags'>[];
+  };
+  const left = new Set<string>(leftClosed.map((l) => l.flagId));
+  await ctx.db.patch(lead._id, {
+    metadata: {
+      ...meta,
+      flagsLeftClosed: [...(meta.flagsLeftClosed ?? []), ...leftClosed],
+      ...(meta.reopened ? { reopened: meta.reopened.filter((id) => !left.has(id)) } : {}),
+    },
+  });
+}
+
+/**
+ * An undo's lead row: the first row it wrote on the undone row's own target (a flag decision's own
+ * undo: the lead flag's `reopen_flag` row; inside another undo, that undo's row).
+ */
+async function leadRowOf(
+  ctx: MutationCtx,
+  actionId: Id<'moderationActions'>,
+): Promise<Doc<'moderationActions'> | undefined> {
+  const undone = await ctx.db.get(actionId);
+  const tagged = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
+    .take(LEAD_ROW_READ);
+  return tagged.find((r) => r.targetType === undone?.targetType && r.targetId === undone?.targetId);
 }
 
 /** How one page of a flag reopen goes on: the decision's lead flag, and every flag it reopens. */
@@ -434,6 +475,7 @@ async function reopenFlagsPage(
   const reads = reopenReads(ctx);
   await inboxBatch(ctx, async () => {
     for (const flag of flags) {
+      if (done > 0 && pageIsFull(done)) break;
       if (done > 0) {
         const m = await ctx.meta.getTransactionMetrics();
         const refreshes = (owedRefreshes(ctx) + 1) * refreshCost().bytesRead;
@@ -493,6 +535,7 @@ async function reopenFlagsPage(
   const rest = flags.slice(done);
   if (rest.length > 0) {
     await ctx.scheduler.runAfter(0, internal.inboxWrites.reopenFlagsRest, {
+      ...(await auditContextOf(ctx)),
       actorId: actor._id,
       actionId,
       flagIds: rest.map((f) => f._id),
@@ -511,26 +554,55 @@ async function reopenFlagsPage(
  */
 export async function reopenFlagsRestPage(
   ctx: MutationCtx,
-  args: Omit<ReopenPageOpts, 'alsoFlagId'> & {
-    actorId: Id<'profiles'>;
-    actionId: Id<'moderationActions'>;
-    flagIds: Id<'contentFlags'>[];
-    reason: string;
-    alsoFlagId?: Id<'contentFlags'>;
-  },
+  args: Omit<ReopenPageOpts, 'alsoFlagId'> &
+    AuditContext & {
+      actorId: Id<'profiles'>;
+      actionId: Id<'moderationActions'>;
+      flagIds: Id<'contentFlags'>[];
+      reason: string;
+      alsoFlagId?: Id<'contentFlags'>;
+    },
 ): Promise<void> {
   const actor = await ctx.db.get(args.actorId);
   if (!actor) return;
-  const flags: Doc<'contentFlags'>[] = [];
-  for (const id of args.flagIds) {
-    const member = await ctx.db
-      .query('inboxItemMembers')
-      .withIndex('by_source', (q) => q.eq('sourceTable', 'contentFlags').eq('sourceId', id))
+  const { actorId: _a, actionId, flagIds: _f, reason, undoOf, via, ...opts } = args;
+  // Undone since — its lead row has an undo of its own — the reopen stops: what reopened is closed
+  // again by that undo, and the rest stay closed.
+  const lead = await leadRowOf(ctx, actionId);
+  if (lead) {
+    const undone = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_undoes', (q) => q.eq('undoesActionId', lead._id))
       .first();
-    if (member?.closedByActionId !== args.actionId) continue;
-    const flag = await ctx.db.get(id);
-    if (flag && !isOpenFlag(flag) && flag.status !== 'retracted') flags.push(flag);
+    if (undone !== null) return;
   }
-  const { actorId: _a, actionId, flagIds: _f, reason, ...opts } = args;
-  await reopenFlagsPage(ctx, actor, actionId, flags, reason, opts);
+  // The same act, in another transaction: every check the first page made, made again now — each
+  // flag still closed by this decision, and still able to reopen beside what is open on its target
+  // (`flagReopenRefusalOf`: a reporter who filed again since keeps the new flag, not both); written
+  // under the undo and `via` the first page had.
+  await asContinuationOf(ctx, { undoOf, via }, async () => {
+    const flags: Doc<'contentFlags'>[] = [];
+    const leftClosed: { flagId: Id<'contentFlags'>; why: string }[] = [];
+    const newerByTarget = new Map<string, Doc<'contentFlags'>[]>();
+    for (const id of args.flagIds) {
+      const member = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) => q.eq('sourceTable', 'contentFlags').eq('sourceId', id))
+        .first();
+      if (member?.closedByActionId !== actionId) continue;
+      const flag = await ctx.db.get(id);
+      if (!flag || isOpenFlag(flag) || flag.status === 'retracted') continue;
+      const key = `${flag.targetType}:${flag.targetId}`;
+      let newer = newerByTarget.get(key);
+      if (newer === undefined) {
+        newer = await newerFlagsOn(ctx, flag);
+        newerByTarget.set(key, newer);
+      }
+      const why = flagReopenRefusalOf(flag, newer) ?? flagActorRefusal(actor, flag);
+      if (why === null) flags.push(flag);
+      else leftClosed.push({ flagId: id, why });
+    }
+    await recordLeftClosed(ctx, actionId, leftClosed);
+    await reopenFlagsPage(ctx, actor, actionId, flags, reason, opts);
+  });
 }

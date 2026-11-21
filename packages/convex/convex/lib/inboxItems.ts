@@ -626,6 +626,15 @@ export async function inboxBatch<T>(ctx: MutationCtx, work: () => Promise<T>): P
   return value;
 }
 
+/**
+ * The most sources a closer takes a page — a **test seam** (a test sets it to force pages between
+ * which it interleaves writes); in force, every page is sized by its room alone.
+ */
+export const PAGE_SEAM = { sources: Number.POSITIVE_INFINITY };
+
+/** Whether a page that has taken `done` sources is full by the seam. */
+export const pageIsFull = (done: number): boolean => done >= PAGE_SEAM.sources;
+
 /** How many items the open batch owes a refresh (none outside one) — for a closer sizing its page. */
 export function owedRefreshes(ctx: MutationCtx): number {
   return BATCHES.get(ctx)?.owed.size ?? 0;

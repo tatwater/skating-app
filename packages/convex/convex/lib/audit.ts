@@ -9,7 +9,7 @@
  */
 
 import { AUDIT_REASON_MAX, AUDIT_REASON_TOO_LONG, isAuditVia } from '@skating/core';
-import { ConvexError } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { noteAuditedAction } from './bodyLibrary';
@@ -219,7 +219,7 @@ export async function writeAudit(
   const row = { ...rest, reason };
   const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
   const at = createdAt ?? Date.now();
-  const via = row.actorId !== undefined ? await viaOf(ctx) : undefined;
+  const via = row.actorId !== undefined ? (VIA.get(ctx) ?? (await viaOf(ctx))) : undefined;
   // An undo's place in its chain, and the chain's newest depth on its first row (`lib/undoChains`).
   const chain =
     undoesActionId !== undefined ? await chainPlaceOf(ctx, undoesActionId, row.actorId) : {};
@@ -345,6 +345,44 @@ const UNDOING = new WeakMap<object, Id<'moderationActions'>>();
 export function isUndoing(ctx: object): boolean {
   return UNDOING.has(ctx);
 }
+
+/** The `via` a continuation carries from the act it continues (a scheduled call has no identity). */
+const VIA = new WeakMap<object, string>();
+
+/**
+ * **What a continuation must carry to write as the act it continues** (PR #170): the row an undo is
+ * undoing (so every row it writes is tagged with it, chain fields and all, as the first page's rows
+ * are) and the script or agent the act was made through. Read at the schedule; re-entered by
+ * {@link asContinuationOf} in the later page's transaction.
+ */
+export type AuditContext = { undoOf?: Id<'moderationActions'>; via?: string };
+
+/** The audit context the current transaction writes under, for a continuation to carry. */
+export async function auditContextOf(ctx: MutationCtx): Promise<AuditContext> {
+  const undoOf = UNDOING.get(ctx);
+  const via = VIA.get(ctx) ?? (await viaOf(ctx));
+  return { ...(undoOf !== undefined ? { undoOf } : {}), ...(via !== undefined ? { via } : {}) };
+}
+
+/** Run a continuation's page under the audit context its first page carried. */
+export async function asContinuationOf<T>(
+  ctx: MutationCtx,
+  carried: AuditContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (carried.via !== undefined) VIA.set(ctx, carried.via);
+  try {
+    return carried.undoOf !== undefined ? await asUndoOf(ctx, carried.undoOf, fn) : await fn();
+  } finally {
+    VIA.delete(ctx);
+  }
+}
+
+/** An audit context as a continuation's arguments carry it. */
+export const auditContextArgs = {
+  undoOf: v.optional(v.id('moderationActions')),
+  via: v.optional(v.string()),
+};
 
 export async function asUndoOf<T>(
   ctx: MutationCtx,

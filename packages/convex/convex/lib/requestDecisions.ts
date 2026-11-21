@@ -23,7 +23,14 @@ import { ConvexError, getDocumentSize, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { composed, writeAudit } from './audit';
+import {
+  type AuditContext,
+  asContinuationOf,
+  auditContextArgs,
+  auditContextOf,
+  composed,
+  writeAudit,
+} from './audit';
 import {
   batchHasRoom,
   CLOSER_RESERVE,
@@ -32,6 +39,7 @@ import {
   inboxPending,
   itemToDecide,
   LANDMARK_SCAN,
+  pageIsFull,
   refreshCost,
   requestSource,
   type TxCost,
@@ -239,8 +247,10 @@ export const decisionArgs = {
    * pages. Set by `decide` once the primary is closed.
    */
   actionId: v.optional(v.id('moderationActions')),
+  /** The audit context the decision's first page wrote under, carried to its later pages. */
+  ...auditContextArgs,
 };
-export type Decision = {
+export type Decision = AuditContext & {
   requestId: Id<'waterBodyRequests'>;
   status: 'approved' | 'declined';
   actorId: Id<'profiles'>;
@@ -659,7 +669,7 @@ export async function closeSiblingPage(
   let closed = 0;
   await inboxBatch(ctx, async () => {
     for (const row of rows) {
-      if (closed > 0 && !(await batchHasRoom(ctx, siblingCost(row)))) break;
+      if (closed > 0 && (pageIsFull(closed) || !(await batchHasRoom(ctx, siblingCost(row))))) break;
       // The decision refused itself over any of the actor's own asks it could see (`assertMayDecide`);
       // one past its scan's bound is left open here, never decided by its own filer (D289).
       if (row.requesterId !== decision.actorId || row.origin === 'seed') {
@@ -674,6 +684,8 @@ export async function closeSiblingPage(
     const { cursor: _last, ...rest } = decision;
     await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, {
       ...rest,
+      // The later page writes as this one does: under the same undo, through the same `via`.
+      ...(await auditContextOf(ctx)),
       ...(resume !== undefined ? { cursor: resume } : {}),
     });
   }
@@ -704,7 +716,7 @@ export async function closeRequestPage(
   let done = 0;
   await inboxBatch(ctx, async () => {
     for (const id of ids) {
-      if (done > 0 && !(await batchHasRoom(ctx, WORST_ASK_COST()))) break;
+      if (done > 0 && (pageIsFull(done) || !(await batchHasRoom(ctx, WORST_ASK_COST())))) break;
       done++;
       const row = await ctx.db.get(id);
       if (row?.status === 'open') await closeRow(ctx, row, decision);
@@ -714,6 +726,7 @@ export async function closeRequestPage(
   if (rest.length > 0 && decision.actionId !== undefined) {
     await ctx.scheduler.runAfter(0, internal.inboxWrites.closeRequestsRest, {
       ...decision,
+      ...(await auditContextOf(ctx)),
       ids: [...rest],
     });
   }
@@ -732,7 +745,10 @@ export async function closeRequestsRestPage(
     .withIndex('by_undoes', (q) => q.eq('undoesActionId', lead))
     .first();
   if (undone !== null) return;
-  await closeRequestPage(ctx, ids, decision);
+  // The same act, in another transaction: written under the undo and `via` its first page had.
+  await asContinuationOf(ctx, { undoOf: decision.undoOf, via: decision.via }, () =>
+    closeRequestPage(ctx, ids, decision),
+  );
 }
 
 /**

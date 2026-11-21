@@ -64,7 +64,7 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
-import { composed, writeAudit } from './lib/audit';
+import { asContinuationOf, composed, writeAudit } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -868,7 +868,10 @@ export const closeSiblings = internalMutation({
   handler: async (ctx, decision) => {
     const request = await ctx.db.get(decision.requestId);
     if (!request) return;
-    await closeSiblingPage(ctx, request, decision);
+    // The same act, in another transaction: written under the undo and `via` its first page had.
+    await asContinuationOf(ctx, { undoOf: decision.undoOf, via: decision.via }, () =>
+      closeSiblingPage(ctx, request, decision),
+    );
   },
 });
 
