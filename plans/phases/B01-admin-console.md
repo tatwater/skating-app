@@ -7199,8 +7199,9 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   reporters attach no photos. **The drawn item:** the 0.8 overlap share that suggests a merge is the
   build's own number, for the founder's look.
 - **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once` (it adds the four new
-  tables and, since Greptile's round two, two more indexes: `waterBodyRequests.by_requester_status_origin`
-  and `inboxItemMembers.by_closed_filer`); `corpusRequests:backfillOrigin
+  tables and, since Greptile's rounds two and three, three more indexes:
+  `waterBodyRequests.by_requester_status_origin`, `inboxItemMembers.by_closed_filer` and
+  `inboxItemMembers.by_filer_source_status`); `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
   call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
@@ -7862,6 +7863,95 @@ decline's, a reopen's re-decline, a dismissal's, a `reopen_flag`'s re-close, a t
 filed one of the group is refused by both. An agreement-only table passed with the bug, because both
 sides refused. One more test holds the real bound by arithmetic: each group's reservation for
 `MAX_MEMBERS + 1` fits a request's opening 4 MiB budget.
+
+#### Greptile on #170, round three (2026-11-21)
+
+**The score:** 3/5 on `8bdb7d7d`, with one new finding and one listed as still open. S1 judged both
+right:
+
+- **Request details failed to load.** The own-filing read (`alongsideOf`) read every open ask of the
+  viewer and only then charged them, so past the budget the charge threw, and `inbox.item` and
+  `inbox.itemMap` failed for a staffer with big asks. The write did the same: up to 201 asks of up to
+  1 MiB each, against a 16 MiB transaction.
+- **Larger reopenings could not be undone — still.** The inline thread was stale, but the finding was
+  not. Round two fixed the reservation, but the run of a decision's undo still read every reopened ask
+  whole (past 16 MiB with heavy asks; the matrix reproduced it). The re-decline also closed them all in
+  one transaction, and a flag reopen read each flag three times.
+
+**The family behind all three rounds:** a read that pulls rows before it knows it can afford them,
+where a row can weigh nearly the document limit (an admit ask carries its catalog polygon).
+
+**The own-filing check, as now built.**
+- **With the Inbox ready,** every open ask a person filed is the open member of its item, so the
+  check reads the actor's member rows through a new index, `by_filer_source_status` (at most 201 rows
+  of 1 KiB, charged before the read). It compares the decision's reach by item key, reading one item
+  row (8 KiB, measured) per member, and an ask row only for a landmark item on the body (measured, and
+  started only while its worst case fits).
+- **While the Inbox is pending** — the only time an open ask can lack a member — it reads the actor's
+  asks one at a time, each only while a whole ask fits, and stops at "unchecked" when one doesn't.
+  Both `can` and the write refuse "unchecked" with its own sentence, and the item always returns.
+- **Worst case:** the read spends at most what its budget holds, by construction (members 201 KiB,
+  items up to 1.6 MiB, plus measured landmark asks, stopping when they don't fit). The write gives the
+  check the lesser of 4 MiB and the remaining budget less 4 MiB.
+
+**Every group run pages by live metrics,** at least one source a page, the rest scheduled through an
+internal continuation:
+- `reopenRequestPage`, continued by `reopenRequestsRest`, which stops once the reopen is undone;
+- `closeRequestPage`, continued by `closeRequestsRest` for a re-decline's named asks, which stops
+  once that decision is undone;
+- `reopenFlagsPage`, continued by `reopenFlagsRest`, which skips each flag the decision no longer
+  holds closed.
+
+**Also found and fixed:**
+- the drain's sibling read (`openSiblings`) took up to 200 asks before weighing them; it now takes
+  them one at a time against a byte room;
+- the closers' declared costs now count bytes written (a patch writes the whole row back);
+- a flagged Post's restore plan reserved ten reports at their worst and threw when they didn't fit;
+  it is now left out then, and the write decides by the same rule;
+- an undo's place in its chain is worked out once a transaction, not once per row written;
+- five loops calling the writer outside a batch are now batches (`seedBayRequests`, `backfillOrigin`,
+  `flagAsDuplicates`, `importReconciliation`, `resolveIncomingMergeDuplicates`).
+
+**The heavy-rows matrix** (`convex/inboxHeavy.test.ts`).
+- **The rows:** every source the Inbox touches, as large as the schema and its writers allow: twenty
+  admit asks for one catalog feature at about 900 KiB each (18 MiB together, past one transaction),
+  the moderator's own heavy asks, flags at their longest notes, tickets at their longest bodies, and
+  drawn bodies with outlines near the limit.
+- **The reads (8):** `item`, `itemMap`, the list by lane and across all lanes, `lanes`, `today`,
+  `tail`, and the Overview card.
+- **The writes (8; the brief said 9), each with its undo:** a decline with its drain, a landmark
+  decline, a dismissal, a takedown, a ruling, a drawn body's approval and rejection, and a ticket's
+  resolve. They run under the harness's real limits with every continuation run to its end, and the
+  requests run with the Inbox both pending and ready.
+- **Three allowed outcomes:** complete; answer capped or pending; or refuse with a sentence. Never
+  throw, never stall.
+- **What it catches with each earlier round's fix reverted:** the drain's byte room (round one), a
+  second paginate (round two), the reopen's per-ask reservation (round two), the own-filing check
+  reading asks unbudgeted (round three), and the unpaged reopen run and re-decline (round three). It
+  runs in about 5 s on its own here, its slowest test 2.1 s under coverage.
+
+**The guard** (`packages/guards/src/inboxReads.test.ts`), with comments and strings blanked first:
+- **Reads:** in `inbox.ts`, `lib/inboxViews.ts`, `lib/inboxRules.ts` and the own-filing check the
+  views call, every row read and every read-callback call must sit inside a budgeted call (the
+  reader's `get`, `take` or `members`; a `ReadBudget`'s `take`, `measured`, `one`, `page` or `row`; a
+  pass's `reads.get` or `reads.take`; or `itemsUpTo`). Nine read exceptions are named, each bounded
+  another way.
+- **Writes:** in the write and undo modules, every loop that calls the writer must sit inside
+  `inboxBatch(`. One write exception is named, `retargetEach`, which runs inside its caller's batch.
+- It fails on `alongsideOf` and `recordOf` as they stood at `8bdb7d7d`. At the integration, a bare
+  `ctx.db.get` added to `inbox.ts`' `lanes` failed it, naming `inbox.ts#lanes`.
+
+**Owed:**
+- the matrix doesn't yet cover alert verdicts, restore-and-dismiss, a single `resolveFlag`, or
+  approving a heavy admit;
+- `bodies.ts` (about line 875), a Body-console read on main, calls `openSiblings` without a byte room
+  (not this PR's code).
+
+**Still arithmetic only:** a flag reopen of 500 at maximum notes, the 1 s execution time, and
+call-nesting depth.
+
+**For the copy pass,** the new sentence: "Your own open asks couldn’t all be checked against this
+just now, so another staff member decides it."
 
 #### How the forks were ruled (2026-11-20)
 
