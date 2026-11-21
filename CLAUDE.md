@@ -43,6 +43,10 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
 - **A Convex index on an optional field is not sparse** — `undefined` sorts first, so a bare
   `lte()` range matches every row lacking the field. Schema changes go widen → deploy → backfill →
   narrow; field names must be ASCII.
+- **`convex-test` doesn't enforce every backend rule** — a mutation that paginates twice passes
+  there and throws on a deployment. The convex suite's harness now enforces one `.paginate()` per
+  execution and Convex's default transaction limits, through a transform in
+  `packages/convex/vitest.config.ts`; a new suite or config must keep it.
 - **Bound every corpus-wide read** — pass `marginMeters` to `listedBodiesNearCoord`; without it one
   ETL load read 105 GB and disabled the deployment.
 - **A test that reads the repo belongs in `packages/guards`** — Turbo hashes a package's own files

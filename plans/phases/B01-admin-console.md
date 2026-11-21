@@ -7198,7 +7198,9 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 - **The access item:** its `contestAsks` are the only stored claims that a body is accessible, and
   reporters attach no photos. **The drawn item:** the 0.8 overlap share that suggests a merge is the
   build's own number, for the founder's look.
-- **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once`; `corpusRequests:backfillOrigin
+- **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once` (it adds the four new
+  tables and, since Greptile's round two, two more indexes: `waterBodyRequests.by_requester_status_origin`
+  and `inboxItemMembers.by_closed_filer`); `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
   call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
@@ -7799,6 +7801,67 @@ never be filed has its failure forgotten by hand: `recurringJobs:forgetBefore` w
 - An own ask the backfill hasn't filed is seen only by the write (its row scan), not by `can`.
 - An undo reopens at most 500 members.
 - A large flag decision's later flags close moments after its toast, on the scheduled pages.
+
+#### Greptile on #170, round two (2026-11-21)
+
+**The score:** 3/5 on `3cb5e6b2`, with two new findings, both in round one's code. S1 judged both right:
+
+- **Landmark decisions fail on a deployment.** Round one's own-filing scan (`ownAskAmongSiblings`)
+  paged the drain's sibling selection, and then the drain paged again. Convex refuses a second
+  `.paginate()` in one execution, so every landmark approval and decline would have thrown on deploy,
+  the old editor's queue included.
+- **Larger reopenings could not be undone.** `reopen_request`'s undo reserved a whole ask's worst
+  case (1 MiB) per reopened ask. From eleven asks the reservation passed the request's budget, so
+  History answered "check elsewhere" without checking, and the run refused the same way, even for
+  small, ordinary asks.
+
+**Convex's rule, as S1 read it in the backend's source:** one `.paginate()` per function execution,
+queries and mutations alike. The `queryPage` syscall refuses a second with
+`MultiplePaginatedDatabaseQueries`, in `crates/isolate/src/environment/udf/async_syscall.rs`. Each
+execution has its own journal, so a nested `runMutation` call and a scheduled function each count on
+their own. `convex-test` 0.0.72 enforces the rule for queries only; its docs say mutations may
+paginate more than once, which is wrong.
+
+**The harness now enforces it.** A test-only transform in `packages/convex/vitest.config.ts` rewrites
+the inlined `convex-test` bundle. It gives every mutation execution its own pagination counter, as
+the backend does, and names the function in the error. It touches nothing that ships, and it fails
+loudly if `convex-test` changes shape. With it on, the suite caught `corpusRequests:approve`,
+`corpusRequests:decline` and `landmarks:create`, all on landmark paths. S1 counted 13 tests failing;
+at the integration, 14 failed with the rule on and the round-one code (the property test's three
+draws among them), and all passed with the rule off — the rule is what catches it.
+`harnessLimits.test.ts` tests the rule.
+
+**Convex's transaction limits are now enforced in every test.** The same transform turns on
+`convex-test`'s default per-transaction limits for every harness: documents and bytes read and
+written, index ranges, functions scheduled and their argument bytes, and files. The whole suite
+passes under them. **Still arithmetic only:** the 1 s execution time, and call-nesting depth
+(`convex-test` tracks depth but sets no limit; the wave nests two deep).
+
+**The own-filing check, read from the actor's end.** The question is whether the actor has an open
+ask the decision closes, so it reads the actor's own open, person-filed asks through a new index
+(`by_requester_status_origin`, `origin` unset, so a script's asks in their name stay exempt). It reads
+at most 200, where the writers cap a person at 30 open asks. It applies the drain's own sibling
+selection to each one (`closesWith`). Past the bound it refuses as an own filing rather than decide
+unseen; another staffer decides, so no item strands. The item's `can` and the write ask the same
+function, so the drawer now also sees an own ask the backfill hasn't filed. The drain pages once a
+transaction; its later pages run as scheduled executions of their own.
+
+**The undo reservations, before and after** (S1's table):
+
+| Undo | Before | After |
+|---|---|---|
+| `reopen_request`'s re-decline | (1 + n) × 1 MiB (an ask's worst case per reopened ask) | each reopened sibling's member row (n × 1 KiB), the primary read whole once |
+| A decision's undo (`approve_request`, `decline_request`) | `MAX_MEMBERS` members reserved and read | one point read on a new index, `by_closed_filer` (did the decision close a member this viewer filed?) |
+| `reopen_flag`'s re-close | a reservation per flag for the actor | each flag's member, and the own-filing answer read once per item, up to four items (past that it says so rather than over-reserve) |
+| Members, everywhere | charged as 8 KiB "small" rows | charged as 1 KiB `inboxMember` rows |
+
+**The offer-versus-run table** is now 16 cases × 8 viewers, 128 cells. S1's brief said 17; the test,
+run, has 16. **Plus 20 sized cases** that assert the outcome as well as agreement: every group undo (a
+decline's, a reopen's re-decline, a dismissal's, a `reopen_flag`'s re-close, a takedown's) at 1, 11,
+50 and the seam's bound. In each, a colleague is offered the undo and it runs, and the staffer who
+filed one of the group is refused by both. An agreement-only table passed with the bug, because both
+sides refused. One more test holds the real bound by arithmetic: each group's reservation for
+`MAX_MEMBERS + 1` fits a request's opening 4 MiB budget.
 
 #### How the forks were ruled (2026-11-20)
 
