@@ -25,6 +25,9 @@ import { useNearestTheme } from './trace-chart';
  * - **Kickers**: each row's name in a kicker column (left, or right beside a chart's end
  *   labels; 3.75 rem, wider for a longer name),
  *   and a row of column kickers under the cells (the ends only, by default, as the boards draw).
+ * - **Under a chart** (`track`): the cells' track is pinned to the chart's plot, so each column's
+ *   center sits under its night's point — the plot split into one band a night, a cell's gap
+ *   shared half each side of its band (at most half the band, so a dense season still fits).
  * - **One hover plate**: hovering or focusing a cell lifts the focus ring onto it and shows the
  *   plate over it — the row and column as a kicker title, ~6 px, the mono value. The grid is one
  *   tab stop; the arrows move between cells, Home and End go to a row's ends.
@@ -106,9 +109,17 @@ type MatrixChartProps = Omit<ComponentProps<'div'>, 'children'> & {
   columnKickers?: 'ends' | 'all' | 'none';
   /** The step a reading falls in; the °F scale by default. */
   stepOf?: (value: number) => TempStep;
+  /**
+   * Pins the cells' track to a span of the matrix (px from its left edge): column `i`'s center
+   * sits at `start + (i + ½) · width / columns`, under a chart whose x axis puts each night at its
+   * band's center. The row kickers take the room on their side, which must hold them.
+   */
+  track?: MatrixTrack;
   /** What the matrix shows, for a reader ("Overnight lows, 1–12 Oct"). */
   'aria-label': string;
 };
+
+type MatrixTrack = { start: number; width: number };
 
 type Cell = { r: number; c: number };
 
@@ -132,7 +143,9 @@ function MatrixChart({
   kickerSide = 'left',
   columnKickers = 'ends',
   stepOf = temperatureStep,
+  track,
   className,
+  style,
   onKeyDown,
   onBlur,
   ...props
@@ -197,6 +210,30 @@ function MatrixChart({
   };
 
   const hotRow = hot === null ? undefined : rows[hot.r];
+  // The pinned track: on the left, the kicker column is the room before it less the column gap
+  // (set here too, so the two can't drift apart); on the right, the room before it is padding and
+  // the kickers take what is left after it.
+  const trackStyle =
+    track === undefined
+      ? undefined
+      : kickerSide === 'left'
+        ? {
+            columnGap: 'var(--space-2_5)',
+            gridTemplateColumns: `calc(${track.start}px - var(--space-2_5)) ${track.width}px`,
+          }
+        : { paddingLeft: track.start, gridTemplateColumns: `${track.width}px auto` };
+  const cellsClass = 'grid auto-cols-fr grid-flow-col gap-(--space-1)';
+  // Each cell's gap is shared half each side of its band, so a column centers on its band. A band
+  // narrower than two gaps (a whole winter in a narrow plot) gives up half itself to the gap
+  // instead, so its cell keeps a width and the columns never run past the track.
+  const band = track === undefined ? 0 : track.width / Math.max(1, columns.length);
+  const cellsStyle =
+    track === undefined
+      ? undefined
+      : {
+          columnGap: `min(var(--space-1), ${band / 2}px)`,
+          paddingInline: `min(var(--space-1) / 2, ${band / 4}px)`,
+        };
   const hotValue = hot === null ? undefined : hotRow?.values[hot.c];
 
   return (
@@ -216,6 +253,7 @@ function MatrixChart({
           : 'grid-cols-[minmax(0,1fr)_minmax(3.75rem,max-content)]',
         className,
       )}
+      style={trackStyle === undefined ? style : { ...style, ...trackStyle }}
       onKeyDown={(event) => {
         onKeyDown?.(event);
         move(event);
@@ -245,10 +283,7 @@ function MatrixChart({
           // biome-ignore lint/a11y/useFocusableInteractive: a row holds the focusable cells
           <div key={row.key} role="row" className="contents">
             {kickerSide === 'left' && kicker}
-            <div
-              data-slot="matrix-cells"
-              className="grid auto-cols-fr grid-flow-col gap-(--space-1)"
-            >
+            <div data-slot="matrix-cells" className={cellsClass} style={cellsStyle}>
               {columns.map((col, c) => {
                 const v = row.values[c] ?? null;
                 const step = v === null ? null : stepOf(v);
@@ -301,7 +336,7 @@ function MatrixChart({
       {columnKickers !== 'none' && (
         <div aria-hidden="true" data-slot="matrix-column-kickers" className="contents">
           {kickerSide === 'left' && <span />}
-          <div className="grid auto-cols-fr grid-flow-col gap-(--space-1)">
+          <div className={cellsClass} style={cellsStyle}>
             {columns.map((col, c) => {
               const shown = columnKickers === 'all' || c === 0 || c === columns.length - 1;
               return (
@@ -418,6 +453,7 @@ export {
   MatrixLegend,
   type MatrixLegendProps,
   type MatrixRow,
+  type MatrixTrack,
   TEMP_BOUNDS_F,
   TEMP_LEGEND,
   TEMP_STEPS,

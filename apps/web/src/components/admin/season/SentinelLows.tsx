@@ -1,5 +1,5 @@
-import { type ComponentProps, useLayoutEffect, useRef, useState } from 'react';
-import { LineChart, usePlotArea, useXAxisScale, useYAxisScale } from 'recharts';
+import { type ComponentProps, type RefObject, useLayoutEffect, useRef, useState } from 'react';
+import { LineChart, useMargin, usePlotArea, useXAxisScale, useYAxisScale } from 'recharts';
 
 import { dayLabel } from '@/components/admin/metrics/metricsModel';
 import { SpanTag } from '@/components/admin/metrics/metricsParts';
@@ -14,7 +14,7 @@ import {
   ChartYAxis,
 } from '@/components/kit/chart';
 import { ChartLegend, ChartNote, type LegendItem } from '@/components/kit/chart-legend';
-import { MatrixChart, MatrixLegend } from '@/components/kit/matrix-chart';
+import { MatrixChart, MatrixLegend, type MatrixTrack } from '@/components/kit/matrix-chart';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { Skeleton } from '@/components/kit/skeleton';
@@ -55,10 +55,13 @@ import {
  *   again), nothing recorded (before the season's floor: *Record begins 1 Oct*; after it with nothing
  *   stored: *Not recorded yet*) and the lows. Every one keeps the same box, so the page doesn't move.
  * - **A gap is a gap**: no line across it, an empty cell, never zero.
- * - **Readable without color**: every cell is in the matrix's grid with its night, its sentinel and
- *   its value spoken; the cells write their value whenever it fits.
+ * - **One night, one column**: the x axis gives each night a band and draws its point at the band's
+ *   center; the matrix's cells are pinned to the plot (`track`), so each cell sits under its night.
+ * - **Readable without color**: the cells are color alone, but every cell is in the matrix's grid
+ *   with its night, its sentinel and its value spoken, and its plate says the value on hover.
  * - **Narrow** (`useColumnsFit`, the console's rule): below the chart and its end labels' width, the
- *   end labels go (the matrix names each row and its plate says each value); nothing scrolls sideways.
+ *   end labels go and the matrix's names move left, the plot making room for them beside the y axis;
+ *   nothing scrolls sideways.
  */
 
 /** The board's plot height (158 px), and the room the event words take over it. */
@@ -72,8 +75,12 @@ const END_GUTTER = 120;
 const WIDE_TOKENS = ['--size-list', '--size-inspector'] as const;
 /** A marked night's words, per character: the mono kicker's advance and its tracking (10 px type). */
 const WORDS_CHAR_PX = 8.3;
-/** The narrowest cell that still writes its value (two mono digits and a hair either side). */
-const VALUE_CELL_PX = 18;
+/** The plot's right room, narrow (no end labels). */
+const NARROW_GUTTER = 8;
+/** The plot's left rule (`border-s`): the SVG starts this far into the row. */
+const PLOT_EDGE = 1;
+/** The matrix's names and their gap until measured: the kit's 3.75 rem kicker column and its gap. */
+const KICKER_ROOM = 70;
 
 const TONE_INK: Record<LowsTone, string> = {
   lead: 'var(--fg)',
@@ -143,8 +150,9 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
   const config: ChartConfig = Object.fromEntries(
     view.rows.map((r, i) => [`s${i}`, { label: r.label, tone: r.tone, unit: ' °F' }]),
   );
-  const data = view.nights.map((night, n) => ({
-    night,
+  // The x axis is the night's index: a band each, its point at the band's center (−½ … n − ½).
+  const data = view.nights.map((_, n) => ({
+    n,
     ...Object.fromEntries(view.rows.map((r, i) => [`s${i}`, r.values[n] ?? null])),
   }));
   const legend: LegendItem[] = [
@@ -153,11 +161,20 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
     { label: view.lines.imageryWords, ink: 'var(--warn)', mark: 'line', pattern: 'dashed' },
   ];
   const ticks = view.ticks;
-  const minorTicks = view.nights.length <= 31;
-  const cells = useCellWidth(view.nights.length);
+  const count = view.nights.length;
+  const minorTicks = count <= 31;
+  const [plot, setPlot] = useState<PlotSpan | null>(null);
+  const matrix = useRef<HTMLDivElement>(null);
+  const kickers = useKickerRoom(matrix);
+  // The plot makes room for the matrix's names on their side: right of it beside the end labels,
+  // wide; left of it, narrow, where the y axis already takes part of their room.
+  const left = wide ? 0 : Math.max(0, kickers - (plot?.axis ?? 0));
+  const right = wide ? Math.max(END_GUTTER, kickers) : NARROW_GUTTER;
   // Whether the marked nights' words take two lines at this width (narrow, they always may): the
-  // room over the plot is kept for the second before the chart lays out.
-  const twoLines = !wide || wordsTakeTwoLines(view, cells.width);
+  // room over the plot is kept for the second, decided from the plot as soon as it is laid out.
+  const twoLines = !wide || wordsTakeTwoLines(view, plot, right);
+  const track: MatrixTrack | undefined =
+    plot === null ? undefined : { start: PLOT_EDGE + plot.x, width: plot.width };
   return (
     <div className="flex flex-col gap-(--space-3)">
       <ChartLegend items={legend} className="justify-end" />
@@ -172,19 +189,19 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
           // Narrow, the marked nights' words may need a second line: the room is kept for it.
           margin={{
             top: twoLines ? EVENT_ROOM + WORDS_LINE : EVENT_ROOM,
-            right: wide ? END_GUTTER : 8,
+            right,
             bottom: 0,
-            left: 0,
+            left,
           }}
         >
           <ChartXAxis
-            dataKey="night"
-            ticks={minorTicks ? view.nights : view.labeled.map((i) => view.nights[i] as string)}
+            dataKey="n"
+            type="number"
+            domain={[-0.5, count - 0.5]}
+            ticks={minorTicks ? view.nights.map((_, n) => n) : view.labeled}
             interval={0}
             tickLine={false}
-            tick={
-              <NightTick labeled={new Set(view.labeled.map((i) => view.nights[i] as string))} />
-            }
+            tick={<NightTick nights={view.nights} labeled={new Set(view.labeled)} />}
           />
           <ChartYAxis
             ticks={ticks}
@@ -204,19 +221,22 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
           <LowsMarks
             view={view}
             endLabels={wide}
+            right={right}
             room={twoLines ? EVENT_ROOM + WORDS_LINE : EVENT_ROOM}
           />
-          <ChartTooltip labelFormatter={(night) => dayLabel(String(night))} />
+          <ChartTooltip labelFormatter={(n) => nightLabel(view, n)} />
+          <PlotProbe onPlot={setPlot} />
         </LineChart>
       </ChartContainer>
-      <div ref={cells.ref}>
+      <div ref={matrix}>
         <MatrixChart
           aria-label={lowsMatrixLabel(view.period)}
           rows={view.rows.map((r) => ({ key: r.key, label: r.label, values: r.values }))}
           columns={view.nights.map((night, n) => ({ key: night, label: view.labels[n] as string }))}
           kickerSide={wide ? 'right' : 'left'}
           columnKickers="none"
-          showValues={cells.fits}
+          showValues={false}
+          track={track}
         />
       </div>
       <MatrixLegend />
@@ -224,57 +244,111 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
   );
 }
 
-/** The y axis' width as the kit draws it (two mono digits, a tick and its gap), for the estimate below. */
-const Y_AXIS_PX = 40;
+/** The plot as Recharts laid it out (SVG px): its left edge, its width, and the y axis' share of the left. */
+type PlotSpan = { x: number; width: number; axis: number };
+
+/** The night an x value (an index) names, as the tooltip titles it. */
+function nightLabel(view: LowsView, n: unknown): string {
+  const night = view.nights[Number(n)];
+  return night === undefined ? '' : dayLabel(night);
+}
+
+/** Where a night's point sits in the plot: the center of its band. */
+const bandCenter = (plot: PlotSpan, index: number, count: number) =>
+  plot.x + ((index + 0.5) / Math.max(1, count)) * plot.width;
 
 /**
- * Whether the two marked nights' words would take two lines in a row `width` wide with its end
- * labels: the rules' x estimated from the nights (the plot runs from the y axis to the end labels'
- * gutter), the words placed as the chart places them. `false` until the row is measured.
+ * Whether the two marked nights' words would take two lines over the plot with `right` px of room
+ * after it: the rules at their nights' band centers, the words placed as the chart places them.
+ * `false` until the plot is laid out.
  */
-function wordsTakeTwoLines(view: LowsView, width: number): boolean {
+function wordsTakeTwoLines(view: LowsView, plot: PlotSpan | null, right: number): boolean {
   const events = [view.opened, view.imagery].filter((e): e is LowsEvent => e !== null);
-  if (width === 0 || events.length < 2) return false;
-  const plot = width - Y_AXIS_PX - END_GUTTER;
-  const at = (i: number) =>
-    Y_AXIS_PX + (view.nights.length <= 1 ? 0 : (i / (view.nights.length - 1)) * plot);
+  if (plot === null || events.length < 2) return false;
   return placeEventWords(
-    events.map((e) => ({ x: at(e.index), width: e.words.length * WORDS_CHAR_PX })),
-    width,
+    events.map((e) => ({
+      x: bandCenter(plot, e.index, view.nights.length),
+      width: e.words.length * WORDS_CHAR_PX,
+    })),
+    plot.x + plot.width + right,
   ).some((p) => p.line === 1);
 }
 
-/** Whether a matrix cell is wide enough to write its value: the matrix's width over its nights. */
-function useCellWidth(nights: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+/**
+ * Reports the plot's span out of the chart when it moves, so the matrix can sit under it. The y
+ * axis' share is read against the margin the chart laid out with (its store lags the prop). A plot
+ * with no width is the chart before it is measured (its 1 × 1 first draw), never reported: the
+ * matrix keeps its own layout until the plot is real.
+ */
+function PlotProbe({ onPlot }: { onPlot: (plot: PlotSpan) => void }) {
+  const area = usePlotArea();
+  const left = useMargin()?.left ?? 0;
+  const x = area?.x;
+  const width = area?.width;
   useLayoutEffect(() => {
-    const el = ref.current;
+    if (x === undefined || width === undefined || width <= 0) return;
+    onPlot({ x, width, axis: x - left });
+  }, [x, width, left, onPlot]);
+  return null;
+}
+
+/**
+ * The room the matrix's names take beside the cells: the widest name and the column gap, measured
+ * (names can be any sentinel's, and the font lands late); the kit's minimum until it is. Measured
+ * after every commit, since the names move sides and change with the rows, and again when a font
+ * lands: a name's box is its column's, pinned to the plot, so a wider face never resizes it.
+ */
+function useKickerRoom(ref: RefObject<HTMLDivElement | null>): number {
+  const [room, setRoom] = useState(KICKER_ROOM);
+  useLayoutEffect(() => {
+    const box = ref.current;
     /* v8 ignore next */
-    if (el === null) return;
-    const measure = () => setWidth(el.getBoundingClientRect().width);
+    if (box === null) return;
+    const grid = box.querySelector<HTMLElement>('[data-slot="matrix-chart"]');
+    const names = [...box.querySelectorAll<HTMLElement>('[data-slot="matrix-row-kicker"]')];
+    const measure = () => {
+      // The text's own width: a name is a grid item, stretched to its column, which this sizes.
+      const range = document.createRange();
+      // A page with no layout (jsdom has no range boxes) measures nothing: the minimum stands.
+      /* v8 ignore next */
+      if (typeof range.getBoundingClientRect !== 'function') return;
+      const widest = Math.max(
+        0,
+        ...names.map((n) => {
+          range.selectNodeContents(n);
+          return range.getBoundingClientRect().width;
+        }),
+      );
+      const gap = grid === null ? 0 : Number.parseFloat(getComputedStyle(grid).columnGap) || 0;
+      // Names with no box (none drawn, or the row hidden) measure nothing: the last room stands.
+      if (widest > 0) setRoom(Math.ceil(widest + gap));
+    };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  // The matrix's kicker column (3.75 rem at least) and its gaps come out of the width; until it is
-  // measured (and in a test page with no layout), a cell is taken to fit, as the board draws it.
-  const cell = (width - 75) / Math.max(1, nights) - 4;
-  return { ref, width, fits: width === 0 || cell >= VALUE_CELL_PX };
+    for (const n of names) observer.observe(n);
+    const fonts = document.fonts as FontFaceSet | undefined;
+    fonts?.addEventListener('loadingdone', measure);
+    return () => {
+      observer.disconnect();
+      fonts?.removeEventListener('loadingdone', measure);
+    };
+  });
+  return room;
 }
 
 type NightTickProps = {
   x?: number | string;
   y?: number | string;
-  payload?: { value: string };
-  labeled: ReadonlySet<string>;
+  payload?: { value: number };
+  nights: readonly string[];
+  labeled: ReadonlySet<number>;
 };
 
 /** A night on the x axis: a short tick each night, a longer one and its date on the labeled nights. */
-function NightTick({ x = 0, y = 0, payload, labeled }: NightTickProps) {
-  const night = payload?.value ?? '';
-  const major = labeled.has(night);
+function NightTick({ x = 0, y = 0, payload, nights, labeled }: NightTickProps) {
+  const index = payload?.value ?? -1;
+  const night = nights[index] ?? '';
+  const major = labeled.has(index);
   const top = Number(y) - 6;
   return (
     <g data-slot="night-tick" data-major={major ? '' : undefined}>
@@ -308,10 +382,13 @@ function NightTick({ x = 0, y = 0, payload, labeled }: NightTickProps) {
 function LowsMarks({
   view,
   endLabels,
+  right,
   room,
 }: {
   view: LowsView;
   endLabels: boolean;
+  /** The room right of the plot. */
+  right: number;
   /** The room over the plot the words have. */
   room: number;
 }) {
@@ -319,7 +396,7 @@ function LowsMarks({
   const x = useXAxisScale();
   const y = useYAxisScale();
   if (plot === undefined || x === undefined || y === undefined) return null;
-  const xAt = (night: string) => x(night) as number | undefined;
+  const xAt = (index: number) => x(index) as number | undefined;
   const ends = view.rows.map((r) => (r.end === null ? null : (y(r.end.value) as number)));
   const drawn = ends.flatMap((e, i) => (e == null ? [] : [{ i, y: e }]));
   const spread = spreadLabels(
@@ -332,13 +409,13 @@ function LowsMarks({
     { key: 'opened', event: view.opened, ink: 'var(--fg2)', mark: 'var(--fg2)' },
     { key: 'imagery', event: view.imagery, ink: 'var(--warn)', mark: 'var(--fg)' },
   ].flatMap((e) => {
-    const at = e.event === null ? undefined : xAt(e.event.night);
+    const at = e.event === null ? undefined : xAt(e.event.index);
     return e.event === null || at === undefined ? [] : [{ ...e, event: e.event, at }];
   });
   // Each label's width from its characters: the mono kicker's advance and tracking, as drawn.
   const places = placeEventWords(
     events.map((e) => ({ x: e.at, width: e.event.words.length * WORDS_CHAR_PX })),
-    plot.x + plot.width + (endLabels ? END_GUTTER : 8),
+    plot.x + plot.width + right,
   );
   return (
     <g data-slot="lows-marks" className="font-(family-name:--family-mono) text-kick">
