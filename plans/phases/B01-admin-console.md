@@ -7035,7 +7035,7 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 1. `convex dev --once` from main by the named executor (codegen committed first).
 2. PR 1: `corpusRequests:backfillOrigin` dry, paged (repeat with `{"cursor": <continueCursor>}` until
    `isDone`), its candidates confirmed, then applied the same way (before the
-   items backfill, so seeded asks never file items); `inboxItems:backfill` to done; then `seed-inbox --apply` with `CONVEX_RUN_AS`; then
+   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then `seed-inbox --apply` with `CONVEX_RUN_AS`; then
    `peopleJobs:backfillRows` (Pe26); confirm the Overview's Inbox card equals the lanes.
 3. PR 3: the `notificationPrefs` canonicalize backfill, then the narrowing commit's deploy; an EAS
    `preview` build installed on the Pixel.
@@ -7155,10 +7155,13 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   build's own number, for the founder's look.
 - **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once`; `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
-  candidates read, then `'{"apply":true}'` the same way; `inboxItems:backfill '{}'` to done; then
-  the Overview's Inbox card checked equal to `inbox.lanes`.
-- **Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage — the photo, hazard,
-  alert, Post and comment views and the landmark lookalikes are untested.
+  candidates read, then `'{"apply":true}'` the same way; `inboxItems:backfill '{}'`, which chains
+  itself (its later passes' answers never reach the logs): its end is told by its `inboxJobRuns` row
+  (`job: "backfill"`) reading `done: true` — from then a direct run answers `{ done: true, read: 0 }`
+  and starts nothing — with no `inboxBackfill` row in `jobFailures`; until then the Overview's Inbox
+  card says "Still being prepared". Then the card checked equal to `inbox.lanes`.
+- ~~**Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage~~ — closed: on the
+  PR 1 branch it is at 98.9% of lines (95.6% of statements).
 - **Where the server met the web** (the integration, 2026-11-21): the frame's words map labels the five
   new decisions (placeholders for the copy pass); the list's lane fixtures carry `olderThan`; the Access
   handler's fixtures carry the ruling's `reason` and the item's `contestAsks`.
@@ -8724,9 +8727,11 @@ main):
    supersedes the old).
 5. `convex run landmarks:backfillBodyNames '{}'`. It returns its first pass, for example
    `{ phase: "landmarks", bodies: 50, read: 812345, wrote: 50, failed: 0, done: false }`, and chains
-   to the end. The last pass, in the logs, returns `{ phase: "bays", …, done: true }`. A pass with
-   `failed` above 0 logged each body it passed over (`landmarks.backfillBodyNames: <id> failed`).
-6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0` and `failed: 0`.
+   to the end. Convex's logs don't record a function's return value, so the end is told by the
+   chain stopping: no further `landmarks:backfillBodyNames` call in the logs and none scheduled. A
+   pass that passed over a body logged it (`landmarks.backfillBodyNames: <id> failed`); none should.
+6. Optional: run step 5 again once it is done; the passes write nothing (on dev, 2026-11-21: the
+   first run took 213 passes over about 3 minutes and wrote 10,577 rows; the re-run wrote none).
 
 A fresh deployment takes the People procedure, now five backfills: its text, and the table of
 which reads say `pending` until each is ready, are under *the backfills, and the one procedure that
