@@ -1249,7 +1249,8 @@ export const backfillOrigin = internalMutation({
   handler: async (ctx, { apply, cursor, pageCap, budgetBytes }) => {
     // Walked by creation time, a row at a time, each charged its real weight: a row starts only while
     // its worst case (the ask, its requester, its body) still fits, so a call reads at most the
-    // budget's bytes and always advances at least one row. The cursor is the last row's position.
+    // budget's bytes and always advances at least one row; the next row is pulled only once it may
+    // start, so none is read past the bound uncharged. The cursor is the last row's position.
     const budget = new ReadBudget(budgetBytes ?? TX_BUDGET);
     const rowWorst = ROW_MAX.waterBodyRequest + ROW_MAX.profile + ROW_MAX.waterBody;
     const cap = Math.max(1, Math.min(pageCap ?? ORIGIN_BACKFILL_PAGE, ORIGIN_BACKFILL_PAGE));
@@ -1267,11 +1268,16 @@ export const backfillOrigin = internalMutation({
     let last = after;
     let read = 0;
     let isDone = true;
-    for await (const r of rows) {
+    const asks = rows[Symbol.asyncIterator]();
+    for (;;) {
       if (read >= cap || (read > 0 && !budget.affords(rowWorst))) {
+        // Stopped before the next row was read: whether there is one is the next call's to find.
         isDone = false;
         break;
       }
+      const next = await asks.next();
+      if (next.done) break;
+      const r = next.value;
       budget.spend(Math.min(getDocumentSize(r), budget.bytes));
       read++;
       last = r._creationTime;

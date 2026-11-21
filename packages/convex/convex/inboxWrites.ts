@@ -68,7 +68,7 @@ export type DismissFlagsResult = InboxWriteResult;
 export type TakeDownResult = InboxWriteResult & { status: 'hidden' | 'removed' };
 
 /** `alertVerdict`'s answer: the alert's own row the toast's, and which verdict it was. */
-export type AlertVerdictResult = InboxWriteResult & { verb: 'unpin' | 'retract' };
+export type AlertVerdictResult = InboxWriteResult & { verb: 'pin' | 'unpin' | 'retract' };
 
 /** `restoreAndDismiss`'s answer: the content's restore the toast's, the item's flags dismissed. */
 export type RestoreAndDismissResult = InboxWriteResult;
@@ -246,16 +246,21 @@ export const takeDown = mutation({
 });
 
 /**
- * *Unpin* or *Retract* on a flagged access alert (2.6): the alert's own verdict (`setOfficialImpl`'s
- * release, or a moderator's retraction, which records the alert's `prev` so its undo puts it back),
- * then every open flag on the alert closed `actioned`, each flagger told. The alert's row is the
- * toast's. Both ask a reason (an unpin's, as `setOfficial` always has; a retraction takes the claim
- * away).
+ * *Pin*, *Unpin* or *Retract* on a flagged access alert (2.6): the alert's own verdict through its own
+ * writer — a pin (`setOfficialImpl`: official, no lapse, the moderator's name on it), a release, or a
+ * moderator's retraction (which records the alert's `prev`, so its undo puts it back) — then every open
+ * flag on the alert, in every lane, closed with it, each flagger told once:
+ * - a pin sides with the alert, so its flags close `dismissed` and the item is decided `pinned` (a
+ *   pinned alert with open flags against it would be an item nobody could finish);
+ * - an unpin or a retraction sides with the flags: `actioned`, decided `unpinned` / `retracted`.
+ * The alert's row is the toast's. Each asks a reason (as `setOfficial` always has; a retraction takes
+ * the claim away). The pin's own refusals hold — the moderator's own alert (D269), a retracted one
+ * (D248: and an author's "it's open" still resolves a pinned alert), one already pinned.
  */
 export const alertVerdict = mutation({
   args: {
     itemId: v.id('inboxItems'),
-    verb: literals(['unpin', 'retract'] as const),
+    verb: literals(['pin', 'unpin', 'retract'] as const),
     reason: v.string(),
   },
   handler: async (ctx, { itemId, verb, reason: given }): Promise<AlertVerdictResult> => {
@@ -266,13 +271,17 @@ export const alertVerdict = mutation({
     const typed = checkedReason(reason);
     const accessAlertId = it.targetId as Id<'accessAlerts'>;
     const actionId =
-      verb === 'unpin'
-        ? await setOfficialImpl(ctx, actor, { accessAlertId, official: false, reason: typed })
-        : await retractAlertImpl(ctx, actor, { accessAlertId, reason: typed });
+      verb === 'retract'
+        ? await retractAlertImpl(ctx, actor, { accessAlertId, reason: typed })
+        : await setOfficialImpl(ctx, actor, {
+            accessAlertId,
+            official: verb === 'pin',
+            reason: typed,
+          });
     const flags = await openFlagsOn(ctx, it.targetType, it.targetId);
     await closeFlagsUnder(ctx, actor, flags, {
-      resolution: 'actioned',
-      decision: verb === 'unpin' ? 'unpinned' : 'retracted',
+      resolution: verb === 'pin' ? 'dismissed' : 'actioned',
+      decision: verb === 'pin' ? 'pinned' : verb === 'unpin' ? 'unpinned' : 'retracted',
       reason: typed,
       defaulted: false,
       now: Date.now(),

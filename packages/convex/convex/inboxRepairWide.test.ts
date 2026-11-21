@@ -105,13 +105,18 @@ async function flaggedReport(t: T, n: number) {
 }
 
 describe('the repair at the member bound', () => {
-  test.each([10, 60, MAX_MEMBERS])('an item with %i members is checked, not failed', async (n) => {
-    const t = harness();
-    await flaggedReport(t, n);
-    const pass = await t.mutation(internal.inboxItems.repair, {});
-    expect(pass).toMatchObject({ failed: 0, fixed: 0 });
-    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
-  });
+  // Filing 500 members is about 4 s alone and six times that beside the whole suite: its own timeout.
+  test.each([10, 60, MAX_MEMBERS])(
+    'an item with %i members is checked, not failed',
+    async (n) => {
+      const t = harness();
+      await flaggedReport(t, n);
+      const pass = await t.mutation(internal.inboxItems.repair, {});
+      expect(pass).toMatchObject({ failed: 0, fixed: 0 });
+      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    },
+    90_000,
+  );
 });
 
 describe('the repair widened', () => {

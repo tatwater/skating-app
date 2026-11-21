@@ -272,6 +272,28 @@ describe('inboxItems:repair', () => {
     void a;
   });
 
+  test('the retry’s read is charged: a pass whose walk spent the budget retries none, the next does', async () => {
+    const t = harness();
+    await seedRaw(t);
+    const flags = await t.run((ctx) => ctx.db.query('contentFlags').collect());
+    const poisoned = `contentFlags:${flags[0]?._id}`;
+    const real = recurringWork.asItem;
+    const spy = vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === poisoned) throw new Error('too heavy');
+      return real(key, work);
+    });
+    await runToDone(t);
+    spy.mockRestore();
+    // One open item's worth and a little: the walk reads it, the decided walk and the retry none.
+    const tight = await t.mutation(internal.inboxItems.repair, {
+      pageCap: 1,
+      budgetBytes: ROW_MAX.small + 100,
+    });
+    expect(tight).toMatchObject({ checked: 1, decidedChecked: 0, retried: 0 });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toHaveLength(1);
+    expect((await t.mutation(internal.inboxItems.repair, {})).retried).toBe(1);
+  });
+
   test('a bounded pass: a page cap of one checks one item', async () => {
     const t = harness();
     await seedRaw(t);

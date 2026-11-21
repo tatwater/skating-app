@@ -31,6 +31,7 @@ export type FlagDecision =
   | 'actioned'
   | 'hidden'
   | 'removed'
+  | 'pinned'
   | 'unpinned'
   | 'retracted'
   | 'restored';
@@ -101,6 +102,9 @@ export async function closeFlagsUnder(
   }
   return lead;
 }
+
+/** Rows tagged as one undo read to find its lead (a Post's undo writes at most ten members first). */
+const LEAD_ROW_READ = 32;
 
 /** The newest flags on a target read to find one that would break the bundling rule. */
 export const NEWER_FLAGS_READ = 100;
@@ -216,17 +220,22 @@ export async function reopenFlagsClosedBy(
     else if (opts.withUndoOf) leftClosed.push({ flagId: id, why });
     else throw new ConvexError(why);
   }
-  // The parent undo's own row says which flags it left closed: written before this, it is the newest
-  // row tagged as that undo (the `reopen_flag` rows below come after).
+  // The parent undo's own row says which flags it left closed: its lead row — the first row it wrote
+  // on the undone row's own target. Not merely the newest row tagged as the undo: a ruling's undo that
+  // shelves the body again writes `set_standing` after its `set_public_access`, and a Post's undo
+  // writes its members' rows on other targets.
   if (leftClosed.length > 0) {
-    const undoRow = await ctx.db
+    const undone = await ctx.db.get(actionId);
+    const tagged = await ctx.db
       .query('moderationActions')
       .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
-      .order('desc')
-      .first();
-    if (undoRow) {
-      await ctx.db.patch(undoRow._id, {
-        metadata: { ...(undoRow.metadata ?? {}), flagsLeftClosed: leftClosed },
+      .take(LEAD_ROW_READ);
+    const lead = tagged.find(
+      (r) => r.targetType === undone?.targetType && r.targetId === undone?.targetId,
+    );
+    if (lead) {
+      await ctx.db.patch(lead._id, {
+        metadata: { ...(lead.metadata ?? {}), flagsLeftClosed: leftClosed },
       });
     }
   }

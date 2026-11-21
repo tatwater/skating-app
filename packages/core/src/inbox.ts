@@ -60,7 +60,7 @@ export type InboxSourceTable = (typeof INBOX_SOURCE_TABLES)[number];
 
 /**
  * How an item was decided — what the Decided list and the colleague lock say. A flag's takedown says
- * what it did (`hidden`, `removed`; an alert's `unpinned`, `retracted`; content put back and the flag
+ * what it did (`hidden`, `removed`; an alert's `pinned` (its flags dismissed), `unpinned`, `retracted`; content put back and the flag
  * dismissed, `restored`); `actioned` is a flag actioned without a takedown — and every flag decided
  * before the Inbox recorded which, since the old flags page closed the flag and moderated the content
  * as two separate writes.
@@ -70,6 +70,7 @@ export const INBOX_DECISIONS = [
   'actioned',
   'hidden',
   'removed',
+  'pinned',
   'unpinned',
   'retracted',
   'restored',

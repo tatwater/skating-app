@@ -12,7 +12,13 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { DISMISS_DEFAULT_REASON } from './inboxWrites';
 import { fileMember, flagSource } from './lib/inboxItems';
-import { DECIDED_REFUSAL, NOT_A_CHOICE_REFUSAL, OWN_FILING_REFUSAL } from './lib/inboxRules';
+import {
+  ALERT_PINNED_ALREADY,
+  ALERT_RETRACTED_NO_PIN,
+  DECIDED_REFUSAL,
+  NOT_A_CHOICE_REFUSAL,
+  OWN_FILING_REFUSAL,
+} from './lib/inboxRules';
 import { UNDO_WITH_ITS_DECISION } from './lib/undoHandlersCorpus';
 import schema from './schema';
 
@@ -466,6 +472,112 @@ describe('alertVerdict', () => {
     });
     return { ...w, alertId, flagId };
   }
+
+  test('a pin decides the item: the alert pinned, its flags dismissed, each flagger told once', async () => {
+    const { t, mod, f1, alertId, flagId } = await alertWorld();
+    const item = await itemOf(t, flagId);
+    const out = await mod.as.mutation(api.inboxWrites.alertVerdict, {
+      itemId: item._id,
+      verb: 'pin',
+      reason: 'Town confirmed',
+    });
+    expect(out).toMatchObject({ verb: 'pin', flagsClosed: 1, undoable: true });
+    const alert = await t.run((ctx) => ctx.db.get(alertId));
+    expect(alert).toMatchObject({ status: 'official', pinnedByUserId: mod.id });
+    expect((await flagsOf(t, [flagId]))[0]?.status).toBe('dismissed');
+    expect(await itemOf(t, flagId)).toMatchObject({
+      status: 'decided',
+      decision: 'pinned',
+      decisionActionId: out.actionId,
+    });
+    const told = await flushAllDue(t);
+    expect(told.map((n) => [n.userId, (n.payload as { resolution?: string }).resolution])).toEqual([
+      [f1.id, 'dismissed'],
+    ]);
+  });
+
+  test('a pin’s undo releases the alert and reopens its flags and item; a later write overtakes it', async () => {
+    const { t, mod, alertId, flagId } = await alertWorld();
+    const out = await mod.as.mutation(api.inboxWrites.alertVerdict, {
+      itemId: (await itemOf(t, flagId))._id,
+      verb: 'pin',
+      reason: 'Town confirmed',
+    });
+    // Releasing gives nothing back that a reason guards: none asked.
+    await mod.as.mutation(api.undo.run, { actionId: out.actionId });
+    const alert = await t.run((ctx) => ctx.db.get(alertId));
+    expect(alert?.status).toBe('active');
+    expect(alert?.pinnedByUserId).toBeUndefined();
+    expect((await flagsOf(t, [flagId]))[0]?.status).toBe('open');
+    expect((await itemOf(t, flagId)).status).toBe('open');
+    expect(await flushAllDue(t)).toHaveLength(0);
+
+    const again = await mod.as.mutation(api.inboxWrites.alertVerdict, {
+      itemId: (await itemOf(t, flagId))._id,
+      verb: 'pin',
+      reason: 'Town confirmed',
+    });
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId: alertId, reason: 'Wrong' });
+    await expect(mod.as.mutation(api.undo.run, { actionId: again.actionId })).rejects.toThrow(
+      'Something changed this since; open its history to see what',
+    );
+  });
+
+  test('a pin is refused: a member, pinned already, retracted, the moderator’s own alert, a decided item', async () => {
+    const w = await alertWorld();
+    const { t, mod, mod2, member, alertId, flagId } = w;
+    const itemId = (await itemOf(t, flagId))._id;
+    const pin = (who: { as: ReturnType<T['withIdentity']> }, id = itemId) =>
+      who.as.mutation(api.inboxWrites.alertVerdict, { itemId: id, verb: 'pin', reason: 'x' });
+    await expect(pin(member)).rejects.toThrow('Requires moderator role');
+    await mod2.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: alertId,
+      official: true,
+      reason: 'Earlier',
+    });
+    await expect(pin(mod)).rejects.toThrow(ALERT_PINNED_ALREADY);
+    await mod2.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: alertId,
+      official: false,
+      reason: 'Released',
+    });
+    // Its author's withdrawal (once pinned, only staff could retract it; set as a backfill would).
+    await t.run((ctx) =>
+      ctx.db.patch(alertId, {
+        status: 'retracted',
+        retractedByUserId: w.author.id,
+        retractedAt: Date.now(),
+      }),
+    );
+    await expect(pin(mod)).rejects.toThrow(ALERT_RETRACTED_NO_PIN);
+
+    // The moderator's own alert (D269).
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: w.waterBodyId,
+        coord: { lat: 0.5, lng: 0.002 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const own = await mod.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      reason: 'gate_locked',
+      putInId,
+    });
+    const onOwn = await w.f2.as.mutation(api.contentFlags.flag, {
+      targetType: 'accessAlert',
+      targetId: own,
+      reason: 'other',
+    });
+    const ownItem = (await itemOf(t, onOwn))._id;
+    await expect(pin(mod, ownItem)).rejects.toThrow(
+      'This is yours, so another moderator decides on it.',
+    );
+    await pin(mod2, ownItem);
+    await expect(pin(mod2, ownItem)).rejects.toThrow(DECIDED_REFUSAL);
+  });
 
   test('a retraction closes the alert’s flags; its undo puts the alert back and reopens them', async () => {
     const { t, mod, alertId, flagId } = await alertWorld();

@@ -165,6 +165,7 @@ async function write(w: W, verb: InboxVerb, s: Setup): Promise<void> {
     case 'restore':
       await as.mutation(api.inboxWrites.restoreAndDismiss, { itemId: await itemId() });
       return;
+    case 'pin':
     case 'unpin':
     case 'retract':
       await as.mutation(api.inboxWrites.alertVerdict, {
@@ -437,7 +438,7 @@ const alert = async (w: W, by: Id<'profiles'>, extra: Partial<Doc<'accessAlerts'
       ...extra,
     });
   });
-const ALERT_VERBS: InboxVerb[] = ['dismiss', 'unpin', 'retract'];
+const ALERT_VERBS: InboxVerb[] = ['dismiss', 'pin', 'unpin', 'retract'];
 const alertCells: Cell[] = [
   {
     kind: 'alert',
@@ -692,13 +693,13 @@ const choiceCells: Cell[] = [
   {
     kind: 'person',
     state: 'flagged',
-    verbs: ['dismiss', 'hide', 'remove', 'restore', 'unpin', 'retract'],
+    verbs: ['dismiss', 'hide', 'remove', 'restore', 'pin', 'unpin', 'retract'],
     setup: async (w) => flagOn(w, w.filer.as, 'user', w.author.id, 'harassment'),
   },
   {
     kind: 'report',
     state: 'up, with an alert’s verbs',
-    verbs: ['unpin', 'retract'],
+    verbs: ['pin', 'unpin', 'retract'],
     setup: async (w) => flagOn(w, w.filer.as, 'report', await w.report(w.author.id)),
   },
   {
@@ -757,7 +758,7 @@ const AWAITING_THE_WRITE: Record<string, string> = {};
 describe('the rule and the write', () => {
   test('agree in every cell', async () => {
     const { size, disagreements } = await runCells();
-    expect(size).toBe(128);
+    expect(size).toBe(137);
     const cellOf = (d: string) => d.slice(0, d.indexOf(':'));
     expect(disagreements.filter((d) => !(cellOf(d) in AWAITING_THE_WRITE))).toEqual([]);
     // A seam that landed comes off the list.

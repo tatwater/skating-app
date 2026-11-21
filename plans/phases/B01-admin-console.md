@@ -62,7 +62,7 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half in B01-5a, so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`; the button is owed in B01-5b), so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
@@ -7200,7 +7200,9 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   build's own number, for the founder's look.
 - **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once`; `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
-  candidates read, then `'{"apply":true}'` the same way; `inboxItems:backfill '{}'`, which chains
+  candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
+  call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
+  `inboxItems:backfill '{}'`, which chains
   itself (its later passes' answers never reach the logs): its end is told by its `inboxJobRuns` row
   (`job: "backfill"`) reading `done: true` — from then a direct run answers `{ done: true, read: 0 }`
   and starts nothing — with no `inboxBackfill` row in `jobFailures`; until then the Overview's Inbox
@@ -7659,6 +7661,60 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 - **`return_to_review` and `unretract_access_alert` are real** (S2, turn 1), with the retraction's
   `prev` recorded and the moderator's retraction moved behind `access.alert`; the remaining §2
   inverses (`reopen_flag`, `reopen_request`) land in S2's second turn, with the items S1 writes.
+
+#### The re-check of the fix rounds, and its fixes (2026-11-21)
+
+**The verdict.** An independent re-check of the three review-fix rounds found eighteen of the twenty
+fixes closed and two closed only in part; both are finished below, and the class behind one of them
+now has a table of its own.
+
+**The undo of an undo.** The handlers that undo a reopen (`undoFlagReopen`, `undoRequestReopen`,
+`undoReturnToReview`) offered themselves by the actor's own rule while their write asked the Inbox's,
+so History could offer an undo its run then refused. Each now has a refusal that reads the viewer and
+asks the function its run asks: each reopened flag still open and its item not the viewer's (D289,
+D269); the reopened ask still open and no member of its item filed by the viewer; the drawing still
+pending and not the viewer's. `undoFlagReopen.run` asks the item-level check, not only each flag's own
+filer. **The table that holds the class:** `undoOfferVsRun.test.ts`, 14 cases × 8 viewer kinds (the
+actor, a colleague, the filer, a sibling's filer, the subject, the drawer, a moderator without the
+capability, an admin) — 112 cells, each comparing the offer with the run, no disagreement listed. It
+found one more: **a takedown approval's undo was offered to a moderator** although its body-side
+restore needs `body.remove`; `undoRequestDecision`'s offer now asks that capability, as its run does.
+The rule-versus-write table gains the pin: 137 cells, no disagreement.
+
+**Smaller fixes in the same round.** `filedOnTarget` makes point reads (the target's other-lane open
+item by its key, then the viewer's members of it), charged to the list page's budget;
+`flagsLeftClosed` lands on the parent undo's lead row (its first row on the undone row's target), not
+the newest tagged row.
+
+**The read-budget sweep** (S1's table: each read now charged for every row it pulls, and a range a
+budget cut short said as capped):
+
+| Read | Before | Now |
+|---|---|---|
+| `aroundIt` | a report its author took back was skipped before the budget check, so a window of them was scanned uncharged | the next row is pulled only while a whole report fits and the scan is under `AROUND_SCAN` (four times the list's); every pulled row charged; capped when either bound ends the read |
+| `lanes`' figures and `today` | ranges read by row cap alone | each charged at its worst and sized to the request's budget (`itemsUpTo`); a short range says capped, and no median is given over one |
+| An author's report count, Around it's companion scan, `backfillOrigin` | the row past the bound read uncharged | the next row pulled only once it may start |
+| The repair's decided walk and its retry read | unsized | sized and charged |
+
+**The pin, as built** (the founder's "Sure.", §7). `InboxVerb` gains `pin`; `inboxWrites.alertVerdict`
+takes `verb: 'pin'` beside `unpin` and `retract`. **Precondition:** the alert not already pinned and
+not retracted, and the pinner holds `access.alert`. **What it does:** the alert goes official through
+`setOfficialImpl` (no lapse, the moderator's name on it, a reason required as `setOfficial` always
+asked), and because a pin sides with the alert every open flag on it, in every lane, closes
+`dismissed`, each flagger told once, and the item is decided `pinned` (`INBOX_DECISIONS` widened) — a
+pinned alert with open flags against it would be an item nobody could finish. **Its refusals:** the
+moderator's own alert (D269), "This alert is already pinned.", "This alert has been retracted, so it
+can't be pinned." (D248). **Its undo** releases the alert and reopens the flags it closed. §1's
+lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is owed in B01-5b.
+
+**For the founder's record:**
+
+- A staffer's own report that a colleague's ruling dismissed stays dismissed after the staffer undoes
+  that ruling (the undo skips the undoer's own report, the standing ruling in §7); a new report by them
+  reopens their question as a new member, which they still can't decide (D289).
+- A real skater's flag on seeded content is answered when a moderator decides it: a true answer to a
+  real flag, not gated on purpose — only the seed's fake people are never told (D287).
+- The 500-member repair test has its own timeout: under a full suite's load it outran the default.
 
 #### How the forks were ruled (2026-11-20)
 

@@ -135,7 +135,12 @@ describe('the verbs a handler draws, and their preconditions (rule 5)', () => {
       'restore',
     ]);
     expect(verbsOf(item(), { targetType: 'user' })).toEqual(['dismiss']);
-    expect(verbsOf(item(), { targetType: 'accessAlert' })).toEqual(['dismiss', 'unpin', 'retract']);
+    expect(verbsOf(item(), { targetType: 'accessAlert' })).toEqual([
+      'dismiss',
+      'pin',
+      'unpin',
+      'retract',
+    ]);
     expect(verbsOf(item({ kind: 'access' }), { hasRuling: true })).toContain('clearRuling');
     expect(verbsOf(item({ kind: 'request' }), { requestKind: 'admit' })).toEqual([
       'lookUpAgain',

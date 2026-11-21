@@ -56,6 +56,7 @@ import {
   InboxReader,
   itemMapOf,
   itemOfRef,
+  itemsUpTo,
   itemView,
   MEDIAN_CAP,
   metersBetween,
@@ -86,6 +87,7 @@ export type InboxVerb =
   | 'hide'
   | 'remove'
   | 'restore'
+  | 'pin'
   | 'unpin'
   | 'retract'
   | 'ruleClosed'
@@ -856,6 +858,11 @@ const MAX_PAGE = 100;
 export const TAIL_ROWS = 20;
 /** Reports *Around it* reads on each side of the flagged one. */
 export const AROUND_ROWS = 50;
+/**
+ * Rows *Around it* scans on a side at most, kept or not: reports an author took back are read and
+ * skipped, so the scan, not only the list, needs a bound.
+ */
+export const AROUND_SCAN = 4 * AROUND_ROWS;
 
 /** The request's budget: the transaction's, less the caller's own profile. */
 const budgetOf = (ctx: QueryCtx) => requestBudget(ctx, CHARGED_QUERY_BUDGET);
@@ -870,7 +877,7 @@ async function rowOf(
   const label = await rowLabel(r, item);
   return {
     ...label,
-    can: await inboxCan(ctx, viewer, item, rowFactsOf(item)),
+    can: await inboxCan(ctx, viewer, item, rowFactsOf(item), (n, read) => r.take('small', n, read)),
     decided: await decidedOf(r, item),
   } as InboxRowView;
 }
@@ -1102,10 +1109,16 @@ export const today = query({
     const now = clockOf(args.now);
     const since = heldDayStart(args.dayStart, now);
     const seen = (lane: InboxLane) => support || lane !== 'support';
-    const decidedRows = await ctx.db
-      .query('inboxItems')
-      .withIndex('by_status_decided', (q) => q.eq('status', 'decided').gte('decidedAt', since))
-      .take(TODAY_CAP + 1);
+    // Every range below is charged at its worst and sized to the request's budget (`itemsUpTo`): a
+    // range the budget cut short is said as capped, as one past its cap is.
+    const budget = budgetOf(ctx);
+    const { rows: decidedRows, short: decidedShort } = await itemsUpTo(budget, TODAY_CAP + 1, (n) =>
+      ctx.db
+        .query('inboxItems')
+        .withIndex('by_status_decided', (q) => q.eq('status', 'decided').gte('decidedAt', since))
+        .take(n),
+    );
+    const decidedCapped = decidedRows.length > TODAY_CAP || decidedShort;
     const decided = decidedRows
       .slice(0, TODAY_CAP)
       .filter((i) => seen(i.lane))
@@ -1119,7 +1132,7 @@ export const today = query({
     // Open items filed today: each lane's range from today's first instant (the rank is the filing,
     // but for Access's), then the decided ones filed today.
     const filed: InboxTodayView['filed'] = [];
-    let filedCapped = decidedRows.length > TODAY_CAP;
+    let filedCapped = decidedCapped;
     for (const lane of INBOX_LANES) {
       if (!seen(lane)) continue;
       const order = INBOX_LANE_ORDER[lane];
@@ -1127,20 +1140,25 @@ export const today = query({
       if (lane === 'accessReports') {
         // Access ranks by corroboration, so its range isn't by filing: its first 200 by rank are
         // read and filtered, and past them the day's filings can't be told whole — said as capped.
-        const ranked = await ctx.db
-          .query('inboxItems')
-          .withIndex('by_status_lane_rank', (q) => q.eq('status', 'open').eq('laneOrder', order))
-          .take(MEDIAN_CAP + 1);
-        filedCapped ||= ranked.length > MEDIAN_CAP;
+        const { rows: ranked, short } = await itemsUpTo(budget, MEDIAN_CAP + 1, (n) =>
+          ctx.db
+            .query('inboxItems')
+            .withIndex('by_status_lane_rank', (q) => q.eq('status', 'open').eq('laneOrder', order))
+            .take(n),
+        );
+        filedCapped ||= ranked.length > MEDIAN_CAP || short;
         rows = ranked.slice(0, MEDIAN_CAP).filter((i) => i.filedAt >= since);
       } else {
-        rows = await ctx.db
-          .query('inboxItems')
-          .withIndex('by_status_lane_rank', (q) =>
-            q.eq('status', 'open').eq('laneOrder', order).gte('rankKey', since),
-          )
-          .take(TODAY_CAP + 1);
-        filedCapped ||= rows.length > TODAY_CAP;
+        const read = await itemsUpTo(budget, TODAY_CAP + 1, (n) =>
+          ctx.db
+            .query('inboxItems')
+            .withIndex('by_status_lane_rank', (q) =>
+              q.eq('status', 'open').eq('laneOrder', order).gte('rankKey', since),
+            )
+            .take(n),
+        );
+        rows = read.rows;
+        filedCapped ||= rows.length > TODAY_CAP || read.short;
       }
       for (const i of rows) filed.push({ at: i.filedAt, lane: i.lane });
     }
@@ -1153,7 +1171,7 @@ export const today = query({
     const figures = await readInboxLanes(ctx, { support, dayStart: null });
     const openFiledToday = filed.length - decided.filter((d) => d.filedAt >= since).length;
     const openAtStart =
-      filedCapped || decidedRows.length > TODAY_CAP
+      filedCapped || decidedCapped
         ? null
         : figures.allOpen - openFiledToday + decided.filter((d) => d.filedAt < since).length;
     return {
@@ -1161,7 +1179,7 @@ export const today = query({
       filed,
       filedCapped,
       decided,
-      decidedCapped: decidedRows.length > TODAY_CAP,
+      decidedCapped,
       openAtStart,
       pending: await inboxPending(ctx),
     };
@@ -1186,11 +1204,14 @@ export const aroundIt = query({
     const end = flagged.skateEndTime;
     const from = end - days * DAY_MS;
     const to = end + days * DAY_MS;
-    // Each side read lazily, a report at a time: started only while a whole report still fits the
-    // budget, charged its real weight, and stopped at its bound (one `paginate` is all a query gets).
+    // Each side read lazily, a report at a time: the next row is pulled only while a whole report
+    // still fits the budget, and every row pulled is charged its real weight and counted toward the
+    // scan's bound — a skipped one too (one `paginate` is all a query gets). `capped` says the read
+    // stopped before the window's end was seen: by the list's bound, the scan's, or the budget.
     const side = async (dir: 'before' | 'after') => {
       const rows: Doc<'reports'>[] = [];
       let capped = false;
+      let scanned = 0;
       const q = ctx.db
         .query('reports')
         .withIndex('by_water_body_skate_end_time', (q) =>
@@ -1205,14 +1226,29 @@ export const aroundIt = query({
                 .lte('skateEndTime', to),
         )
         .order(dir === 'before' ? 'desc' : 'asc');
-      for await (const rep of q) {
-        // An author's deletion is honored (D248): a report they took back is no context.
-        if (rep._id === flagged._id || rep.authorDeletedAt !== undefined) continue;
-        if (rows.length >= AROUND_ROWS || !budget.affordsRead('report')) {
+      const reports = q[Symbol.asyncIterator]();
+      for (;;) {
+        if (!budget.affordsRead('report')) {
           capped = true;
           break;
         }
+        const next = await reports.next();
+        if (next.done) break;
+        const rep = next.value;
+        budget.reserveCalls(0, 1);
         budget.spend(getDocumentSize(rep));
+        // The one past the scan's bound is read only to learn there is more: charged, then capped.
+        if (scanned >= AROUND_SCAN) {
+          capped = true;
+          break;
+        }
+        scanned++;
+        // An author's deletion is honored (D248): a report they took back is no context.
+        if (rep._id === flagged._id || rep.authorDeletedAt !== undefined) continue;
+        if (rows.length >= AROUND_ROWS) {
+          capped = true;
+          break;
+        }
         rows.push(rep);
       }
       return { rows, capped };

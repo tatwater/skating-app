@@ -40,7 +40,6 @@ import { hasCapability } from './auth';
 import { flagSubject } from './flagSubject';
 import {
   closeFlagsUnder,
-  flagActorRefusal,
   flagReopenRefusalOf,
   isOpenFlag,
   NEWER_FLAGS_READ,
@@ -188,6 +187,8 @@ const undoPin: UndoHandler = {
       official: false,
       reason,
     });
+    // A pin made from the Inbox dismissed the alert's flags with it: they reopen with the release.
+    await reopenFlagsClosedBy(ctx, actor, row._id, reason, { withUndoOf: true });
   },
 };
 
@@ -402,6 +403,29 @@ const undoFlagDecision: UndoHandler = {
  * decision whose first row stamps their Inbox members. The other flags' rows undo with the lead's.
  * Refused once any of them has been decided again, and to a filer or a subject (D289, D269).
  */
+/** The flags a reopen reopened: the lead row lists them; a row from before the list names its own. */
+const reopenedFlagsOf = (row: Doc<'moderationActions'>): Id<'contentFlags'>[] =>
+  (meta(row).reopened as Id<'contentFlags'>[] | undefined) ?? [row.targetId as Id<'contentFlags'>];
+
+/** A reopened flag decided since: the undo of the reopen has nothing to close it from. */
+export const FLAG_DECIDED_SINCE = 'A flag has been decided since, so this can’t be put back.';
+
+/**
+ * Why closing `flag` again (one of a reopen's) is refused to `viewer`, or `null` — one rule for the
+ * offer and the write: it must still be open, and the viewer mustn't decide its item (any member
+ * they filed, D289; a flag about them, D269), as the forward dismissal and the reopen's own undo ask.
+ */
+async function recloseRefusal(
+  ctx: QueryCtx,
+  viewer: UndoViewer,
+  id: Id<'contentFlags'>,
+  flag: Doc<'contentFlags'> | null,
+  take: SmallRead,
+): Promise<string | null> {
+  if (!flag || !isOpenFlag(flag)) return FLAG_DECIDED_SINCE;
+  return decisionActorRefusal(ctx, viewer, flagSource(id), flagPeople(flag), take);
+}
+
 const undoFlagReopen: UndoHandler = {
   blocked: (row) => {
     // A flag reopened beside the lead, or by a takedown's (an alert verdict's, a restore's, a ruling's)
@@ -410,19 +434,29 @@ const undoFlagReopen: UndoHandler = {
     return meta(row).prev?.status === undefined ? PREDATES : null;
   },
   undoTakesAway: (row) => UNDO_POLICY.reopen_flag.takesAway(meta(row).prev.status),
+  refusalCost: (_scope, row) => {
+    const n = reopenedFlagsOf(row).length;
+    return {
+      bytes: n * (ROW_MAX.contentFlag + ACTOR_CHECK_COST.bytes),
+      reads: n * (1 + ACTOR_CHECK_COST.reads),
+      docs: n * (1 + ACTOR_CHECK_COST.docs),
+    };
+  },
+  refusal: async (ctx, row, read, viewer) => {
+    for (const id of reopenedFlagsOf(row)) {
+      const flag = await read.row('contentFlag', id);
+      const why = await recloseRefusal(ctx, viewer, id, flag, chargedRead(read));
+      if (why !== null) return why;
+    }
+    return null;
+  },
   run: async ({ ctx, actor, row, reason }) => {
-    const ids = ((meta(row).reopened as Id<'contentFlags'>[] | undefined) ?? [
-      row.targetId as Id<'contentFlags'>,
-    ]) as Id<'contentFlags'>[];
     const flags: Doc<'contentFlags'>[] = [];
-    for (const id of ids) {
+    for (const id of reopenedFlagsOf(row)) {
       const flag = await ctx.db.get(id);
-      if (!flag || !isOpenFlag(flag)) {
-        throw new ConvexError('A flag has been decided since, so this can’t be put back.');
-      }
-      const own = flagActorRefusal(actor, flag);
-      if (own !== null) throw new ConvexError(own);
-      flags.push(flag);
+      const why = await recloseRefusal(ctx, actor, id, flag, plainRead);
+      if (why !== null) throw new ConvexError(why);
+      flags.push(flag as Doc<'contentFlags'>);
     }
     const resolution = meta(row).prev.status as 'actioned' | 'dismissed';
     await closeFlagsUnder(ctx, actor, flags, {
@@ -524,6 +558,27 @@ async function undoAdmission(call: UndoCall, bodyRow: Doc<'moderationActions'>):
   });
 }
 
+/** What a viewer without the body-side undo's capability is told — the engine's own words. */
+const BODY_SIDE_ROLE = 'Undoing this takes a role you do not hold.';
+
+/**
+ * Whether `viewer` holds what the approval's body-side undo needs — the engine asks it when the
+ * request's undo runs that undo (a restore's or a takedown's needs `body.remove`, as the act did; an
+ * admission's, `body.standing`), so the offer asks it too.
+ */
+async function bodySideCapabilityRefusal(
+  row: Doc<'moderationActions'>,
+  viewer: UndoViewer,
+  read: Parameters<NonNullable<UndoHandler['refusal']>>[2],
+): Promise<string | null> {
+  const bodyActionId = bodySideOf(row);
+  if (!bodyActionId) return null;
+  const bodyRow = await read.row('moderationAction', bodyActionId);
+  if (!bodyRow) return null;
+  const capability = undoCapability(UNDO_POLICY[bodyRow.action], bodyRow.targetType);
+  return hasCapability(viewer, capability) ? null : BODY_SIDE_ROLE;
+}
+
 /**
  * approve_request / decline_request → reopened (`reopen_request`): an approval's body-side act undone
  * first — through the engine, with its capability and its "still current" (a restore or takedown
@@ -552,15 +607,16 @@ const undoRequestDecision: UndoHandler = {
   undoTakesAway: (row) =>
     row.action === 'approve_request' && bodySideOf(row) != null && meta(row).kind !== 'takedown',
   refusalCost: () => ({
-    bytes: ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes,
-    reads: 1 + ACTOR_CHECK_COST.reads,
-    docs: 1 + ACTOR_CHECK_COST.docs,
+    bytes: ROW_MAX.waterBodyRequest + ROW_MAX.moderationAction + ACTOR_CHECK_COST.bytes,
+    reads: 2 + ACTOR_CHECK_COST.reads,
+    docs: 2 + ACTOR_CHECK_COST.docs,
   }),
   refusal: async (ctx, row, read, viewer) => {
     const id = ctx.db.normalizeId('waterBodyRequests', row.targetId);
     const request = id ? await read.row('waterBodyRequest', id) : null;
     return (
       requestDecisionRefusal(request, row) ??
+      (await bodySideCapabilityRefusal(row, viewer, read)) ??
       (id && request
         ? await decisionActorRefusal(
             ctx,
@@ -792,6 +848,10 @@ const undoMerge: UndoHandler = {
  * approval reopened isn't re-run by an undo — it acts on the body, through the approval's own checks
  * — so it is approved again from the Inbox.
  */
+/** A reopened ask decided again since: its reopen's undo has nothing to decline. */
+export const REQUEST_DECIDED_SINCE =
+  'The request has been decided since, so this can’t be put back.';
+
 const undoRequestReopen: UndoHandler = {
   blocked: (row) => {
     const prev = meta(row).prev as { status?: string } | undefined;
@@ -801,12 +861,29 @@ const undoRequestReopen: UndoHandler = {
       : null;
   },
   undoTakesAway: () => UNDO_POLICY.decline_request.takesAway(),
+  // The decision's own rule, as its write asks it (`assertMayDecide`): the ask still open, and the
+  // viewer not the filer of any member of its item — the primary's or a sibling's (D289).
+  refusalCost: () => ({
+    bytes: ROW_MAX.waterBodyRequest + ACTOR_CHECK_COST.bytes,
+    reads: 1 + ACTOR_CHECK_COST.reads,
+    docs: 1 + ACTOR_CHECK_COST.docs,
+  }),
+  refusal: async (ctx, row, read, viewer) => {
+    const id = row.targetId as Id<'waterBodyRequests'>;
+    const primary = await read.row('waterBodyRequest', id);
+    if (primary?.status !== 'open') return REQUEST_DECIDED_SINCE;
+    return decisionActorRefusal(
+      ctx,
+      viewer,
+      requestSource(id),
+      askPeople(primary),
+      chargedRead(read),
+    );
+  },
   run: async ({ ctx, actor, row }) => {
     const primaryId = row.targetId as Id<'waterBodyRequests'>;
     const primary = await ctx.db.get(primaryId);
-    if (primary?.status !== 'open') {
-      throw new ConvexError('The request has been decided since, so this can’t be put back.');
-    }
+    if (primary?.status !== 'open') throw new ConvexError(REQUEST_DECIDED_SINCE);
     const note = (meta(row).prev.note as string | null) ?? undefined;
     const now = Date.now();
     await assertMayDecide(ctx, primary, actor._id, 'declined');

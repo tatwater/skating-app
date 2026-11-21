@@ -14,6 +14,8 @@ import { bodySource, fileMember, requestSource } from './lib/inboxItems';
 import { inboxCan, NOT_A_CHOICE_REFUSAL, OWN_FILING_REFUSAL } from './lib/inboxRules';
 import { approveNamedLandmarkRequest } from './lib/requestDecisions';
 import { undoState } from './lib/undo';
+import { undoHandlers } from './lib/undoHandlers';
+import type { UndoWriters } from './lib/undoTypes';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -219,6 +221,14 @@ describe('1. a takedown or an alert verdict never closes a flag the actor filed,
         reason: 'x',
       }),
     ).rejects.toThrow(OWN_FILING_REFUSAL);
+    // A pin closes them too (dismissed): the same refusal.
+    await expect(
+      mod.as.mutation(api.inboxWrites.alertVerdict, {
+        itemId: (await itemOf(t, theirs))._id,
+        verb: 'pin',
+        reason: 'x',
+      }),
+    ).rejects.toThrow(OWN_FILING_REFUSAL);
     expect((await t.run((ctx) => ctx.db.get(alertId)))?.status).toBe('active');
   });
 });
@@ -292,6 +302,70 @@ describe('3. a parent undo runs beside a flag that can’t reopen, and names it'
         why: 'The same person has flagged this again since, so this one can’t be reopened beside it.',
       },
     ]);
+  });
+});
+
+describe('3b. flagsLeftClosed lands on the undo’s lead row, not the newest', () => {
+  test('a ruling that woke a shelved body: its undo shelves it again, and the lead row names the skip', async () => {
+    const { t, mod, f1, waterBodyId } = await world();
+    const admin = await person(t, 'boss2', 'admin');
+    await t.run((ctx) =>
+      ctx.db.patch(waterBodyId, { dormant: { since: Date.now(), reason: 'inactive' as const } }),
+    );
+    const fileAccess = (note?: string) =>
+      f1.as.mutation(api.contentFlags.flag, {
+        targetType: 'waterbody',
+        targetId: waterBodyId,
+        reason: 'no_public_access',
+        ...(note ? { note } : {}),
+      });
+    const first = await fileAccess();
+    const out = await mod.as.mutation(api.inboxWrites.ruleAccess, {
+      itemId: (await itemOf(t, first))._id,
+      verdict: 'open',
+    });
+    await fileAccess('Gated after all');
+    await admin.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Too soon' });
+    const tagged = (await actions(t)).filter((r) => r.undoesActionId === out.actionId);
+    const lead = tagged.find((r) => r.action === 'set_public_access');
+    const shelve = tagged.find((r) => r.action === 'set_standing');
+    expect(shelve).toBeDefined();
+    expect(lead?.metadata?.flagsLeftClosed).toEqual([
+      {
+        flagId: first,
+        why: 'The same person has flagged this again since, so this one can’t be reopened beside it.',
+      },
+    ]);
+    expect(shelve?.metadata?.flagsLeftClosed).toBeUndefined();
+  });
+});
+
+describe('the undo of a reopen asks the item’s rule in its write, not only in its offer', () => {
+  test('a staffer whose flag joined the item after the reopen can’t close it again (D289)', async () => {
+    const { t, mod, mod2, f1, flag } = await world();
+    const a = await flag(f1);
+    const out = await mod.as.mutation(api.inboxWrites.dismissFlags, {
+      itemId: (await itemOf(t, a))._id,
+    });
+    await mod.as.mutation(api.undo.run, { actionId: out.actionId });
+    await flag(mod2, 'harassment');
+    const reopen = (await actions(t)).find((r) => r.action === 'reopen_flag');
+    // The handler's write itself, past the engine's offer: the same rule answers.
+    await expect(
+      t.run(async (ctx) => {
+        const actor = (await ctx.db.get(mod2.id)) as Doc<'profiles'>;
+        const row = (await ctx.db.get(
+          reopen?._id as Id<'moderationActions'>,
+        )) as Doc<'moderationActions'>;
+        await undoHandlers().reopen_flag?.run({
+          ctx,
+          actor,
+          row,
+          reason: 'x',
+          writers: {} as UndoWriters,
+        });
+      }),
+    ).rejects.toThrow(OWN_FILING_REFUSAL);
   });
 });
 

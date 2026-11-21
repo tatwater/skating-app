@@ -51,6 +51,7 @@ import {
   restoreDepthImpl,
   returnToReviewImpl,
   returnToReviewRefusal,
+  reviewAgainRefusal,
   reviewDrawnBodyImpl,
   samplePointsRefusal,
   setAliasesImpl,
@@ -385,6 +386,11 @@ const undoReview: UndoHandler = {
  */
 const undoReturnToReview: UndoHandler = {
   blocked: (row) => (meta(row).prev?.reviewStatus === undefined ? PREDATES : null),
+  // The review's own rule, as its write asks it (`reviewDrawnBodyImpl`): still pending, not merged,
+  // and never the drawer's to review (D289) — so History offers only what the write accepts.
+  refusalCost: () => ({ bytes: ROW_MAX.waterBody, reads: 1 }),
+  refusal: async (_ctx, row, read, viewer) =>
+    reviewAgainRefusal(await read.row('waterBody', waterBodyIdOf(row)), viewer._id),
   undoTakesAway: (row) => UNDO_POLICY.return_to_review.takesAway(meta(row).prev.reviewStatus),
   run: async ({ ctx, actor, row, reason }) => {
     await reviewDrawnBodyImpl(ctx, actor, {

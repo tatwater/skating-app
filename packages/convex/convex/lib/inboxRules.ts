@@ -45,6 +45,10 @@ export const FLOWING_ADMIT_REFUSAL =
 
 /** D283: an item someone decided takes no further decision. */
 export const DECIDED_REFUSAL = 'This has already been decided.';
+/** A pin of an alert already pinned (`accessAlerts.ALERT_ALREADY_PINNED`'s words). */
+export const ALERT_PINNED_ALREADY = 'This alert is already pinned.';
+/** A pin of a retracted alert: a withdrawn claim is never put back up (D248). */
+export const ALERT_RETRACTED_NO_PIN = 'This alert has been retracted, so it can’t be pinned.';
 /** D289: no staffer decides an ask or a flag they filed. */
 export const OWN_FILING_REFUSAL = 'You filed this, so another staff member decides it.';
 
@@ -60,6 +64,7 @@ export function capabilitiesFor(
     case 'remove':
     case 'restore':
       return ['inbox.flag', 'content.moderate'];
+    case 'pin':
     case 'unpin':
     case 'retract':
       return ['access.alert'];
@@ -156,7 +161,7 @@ export function verbsOf(
   switch (item.kind as InboxItemKind) {
     case 'flag': {
       if (facts.targetType === 'user' || facts.targetType === 'waterbody') return ['dismiss'];
-      if (facts.targetType === 'accessAlert') return ['dismiss', 'unpin', 'retract'];
+      if (facts.targetType === 'accessAlert') return ['dismiss', 'pin', 'unpin', 'retract'];
       const down = facts.targetStatus === 'hidden' || facts.targetStatus === 'removed';
       return down ? ['dismiss', 'restore'] : ['dismiss', 'hide', 'remove'];
     }
@@ -195,7 +200,13 @@ export async function filedByViewer(
 type RuleItem = Pick<Doc<'inboxItems'>, '_id' | 'kind' | 'status' | 'subjectUserId' | 'key'>;
 
 /** The verbs that close every open flag on a flag item's target, in every lane (`inboxWrites`). */
-const CLOSES_EVERY_LANE: ReadonlySet<InboxVerb> = new Set(['hide', 'remove', 'unpin', 'retract']);
+const CLOSES_EVERY_LANE: ReadonlySet<InboxVerb> = new Set([
+  'hide',
+  'remove',
+  'pin',
+  'unpin',
+  'retract',
+]);
 
 /** Content a takedown or a restore moves (a photo's axis is the precondition's to refuse). */
 const CONTENT_TARGETS: ReadonlySet<string> = new Set([
@@ -208,7 +219,7 @@ const CONTENT_TARGETS: ReadonlySet<string> = new Set([
 
 /** The verbs each kind of item has at all, whatever its state. */
 const KIND_VERBS: Record<InboxItemKind, ReadonlySet<InboxVerb>> = {
-  flag: new Set(['dismiss', 'hide', 'remove', 'restore', 'unpin', 'retract']),
+  flag: new Set(['dismiss', 'hide', 'remove', 'restore', 'pin', 'unpin', 'retract']),
   // `dismiss` too: the old flags page's one-flag resolution (`moderation.resolveFlag`) asks it of any
   // flag's item, an access report's included; the Access handler itself draws only the rulings.
   access: new Set(['ruleClosed', 'ruleAccessible', 'clearRuling', 'dismiss']),
@@ -239,43 +250,63 @@ export function choiceRefusal(
   ) {
     return NOT_A_CHOICE_REFUSAL;
   }
-  if ((verb === 'unpin' || verb === 'retract') && facts.targetType !== 'accessAlert') {
+  if (
+    (verb === 'pin' || verb === 'unpin' || verb === 'retract') &&
+    facts.targetType !== 'accessAlert'
+  ) {
     return NOT_A_CHOICE_REFUSAL;
   }
   return null;
 }
 
+/** How a read is made: plainly (a write), or charged to a page's budget (a list row, `InboxReader`). */
+export type RuleTake = <T>(n: number, read: (n: number) => Promise<T[]>) => Promise<T[]>;
+const plainTake: RuleTake = (n, read) => read(n);
+
+/** The flag lanes a target's open flags can sit in, as items keyed `flag:<lane>:<type>:<id>`. */
+const FLAG_LANES = ['safety', 'contentFlags'] as const;
+
+/** A viewer's members of one item read to find an open one (a few: one open flag per target each). */
+const FILER_MEMBERS = 8;
+
 /**
- * Whether `viewer` has an open flag of their own on a flag item's target, in any lane (D289): a
+ * Whether `viewer` has an open flag of their own on a flag item's target, in another lane (D289): a
  * takedown, an unpin or a retraction closes every open flag on the target, so one the viewer filed in
- * another lane would be theirs to decide. Read from the item's key (`flag:<lane>:<type>:<id>`).
+ * another lane would be theirs to decide. Point reads only — each other lane's open item on the same
+ * target, by its key (`flag:<lane>:<type>:<id>`), then the viewer's members of it (`by_item_filer`);
+ * this item's own members are `filedByViewer`'s — so a list row reads at most four small rows, charged
+ * to the page's budget through `take`. Every open source row is the open member of the one open item
+ * its fields key (the writer's invariant), so these reads are the whole answer.
  */
 export async function filedOnTarget(
   ctx: QueryCtx,
   item: Pick<Doc<'inboxItems'>, 'kind' | 'key'>,
   viewerId: Id<'profiles'>,
+  take: RuleTake = plainTake,
 ): Promise<boolean> {
   if (item.kind !== 'flag') return false;
-  const [, , targetType, ...rest] = item.key.split(':');
-  const targetId = rest.join(':');
-  if (!targetType || !targetId) return false;
-  for (const status of ['open', 'reviewing'] as const) {
-    const open = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target_status_reason', (q) =>
-        q
-          .eq('targetType', targetType as Doc<'contentFlags'>['targetType'])
-          .eq('targetId', targetId)
-          .eq('status', status),
-      )
-      .take(MAX_TARGET_FLAGS);
-    if (open.some((f) => f.origin === 'user' && f.flaggerId === viewerId)) return true;
+  const [, lane, ...target] = item.key.split(':');
+  if (lane === undefined || target.length < 2) return false;
+  for (const other of FLAG_LANES) {
+    if (other === lane) continue;
+    const key = `flag:${other}:${target.join(':')}`;
+    const [open] = await take(1, (n) =>
+      ctx.db
+        .query('inboxItems')
+        .withIndex('by_key', (q) => q.eq('key', key).eq('status', 'open'))
+        .take(n),
+    );
+    if (!open) continue;
+    const mine = await take(FILER_MEMBERS, (n) =>
+      ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_item_filer', (q) => q.eq('itemId', open._id).eq('filedByUserId', viewerId))
+        .take(n),
+    );
+    if (mine.some((m) => m.status === 'open')) return true;
   }
   return false;
 }
-
-/** The open flags on one target read for {@link filedOnTarget} (one per flagger, so a handful). */
-const MAX_TARGET_FLAGS = 500;
 
 /** Rules 1–4: who may act on this item at all, for `verb`. */
 export function whoRefusal(
@@ -308,6 +339,11 @@ export function preconditionRefusal(verb: InboxVerb, facts: InboxRuleFacts): str
     case 'restore':
       if (facts.targetType === 'photo') return 'A photo can’t be hidden or removed yet.';
       return facts.record ? contentVerbRefusal(facts.record, verb) : null;
+    case 'pin':
+      // The pin's own refusals (`setOfficialImpl`): pinned already, or withdrawn (D248).
+      if (!facts.alert) return 'This alert is gone.';
+      if (facts.alert.status === 'official') return ALERT_PINNED_ALREADY;
+      return facts.alert.status === 'retracted' ? ALERT_RETRACTED_NO_PIN : null;
     case 'unpin':
       if (!facts.alert) return 'This alert is gone.';
       return facts.alert.pinned ? null : 'This alert isn’t pinned.';
@@ -347,12 +383,14 @@ export async function inboxCan(
   viewer: Doc<'profiles'>,
   item: RuleItem,
   facts?: InboxRuleFacts,
+  /** How a list row reads (charged to its page's budget); an item's read reads plainly. */
+  take: RuleTake = plainTake,
 ): Promise<InboxCan> {
   const filed = await filedByViewer(ctx, item._id, viewer._id);
   const verbs = verbsOf(item, facts ?? {});
   const onTarget =
     !filed && verbs.some((v) => CLOSES_EVERY_LANE.has(v))
-      ? await filedOnTarget(ctx, item, viewer._id)
+      ? await filedOnTarget(ctx, item, viewer._id, take)
       : false;
   const can: InboxCan = {};
   for (const verb of verbs) {

@@ -6,14 +6,20 @@
  * instrument's, and `notifications.list`'s `knows`.
  */
 
-import { approximateUtcOffsetSeconds, INBOX_LANES, localDayMsAt } from '@skating/core';
+import {
+  approximateUtcOffsetSeconds,
+  INBOX_LANE_ORDER,
+  INBOX_LANES,
+  localDayMsAt,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { SCAN_ROWS } from './inbox';
+import { AROUND_SCAN, SCAN_ROWS } from './inbox';
 import { fileMember, flagSource } from './lib/inboxItems';
+import * as readBudget from './lib/readBudget';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -752,7 +758,67 @@ describe('inbox.aroundIt and withdrawn or moderated reports', () => {
     expect(view?.phrases).toEqual([{ key: 'measured_less', count: 1 }]);
     void deleted;
   });
+
+  /** A window whose nearer side is `n` reports their authors took back, then one standing report. */
+  async function deletedWindow(n: number) {
+    const t = harness();
+    const mod = await person(t, 'mod', 'moderator');
+    const s = await person(t, 's');
+    const a = await lake(t, 'osm/A', 0);
+    const end = NOW - 10 * DAY;
+    const flagged = await report(t, s.id, a, end);
+    await t.run(async (ctx) => {
+      for (let i = 1; i <= n; i++) {
+        await ctx.db.insert('reports', {
+          authorId: s.id,
+          waterBodyId: a,
+          point: { lat: 0, lng: 0 },
+          skateEndTime: end - i * 60_000,
+          reportTime: end,
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          authorDeletedAt: end,
+          createdAt: end,
+          updatedAt: end,
+        });
+      }
+    });
+    const standing = await report(t, s.id, a, end - 2 * DAY);
+    return { mod, flagged, standing };
+  }
+
+  test('reports an author took back count toward the scan’s bound: past it, the side says capped', async () => {
+    const w = await deletedWindow(AROUND_SCAN + 5);
+    const view = await w.mod.as.query(api.inbox.aroundIt, { reportId: w.flagged });
+    expect(view?.reports).toEqual([]);
+    expect(view?.cappedBefore).toBe(true);
+    expect(view?.cappedAfter).toBe(false);
+  });
+
+  test('reports an author took back are charged: a small budget ends the scan, and says so', async () => {
+    const w = await deletedWindow(20);
+    // A report's worst case and 2 KB over: a few of these small reports' real weight, not twenty.
+    vi.spyOn(readBudget, 'requestBudget').mockImplementation(
+      () => new readBudget.ReadBudget(readBudget.ROW_MAX.report + 2_000),
+    );
+    const view = await w.mod.as.query(api.inbox.aroundIt, { reportId: w.flagged });
+    expect(view?.reports).toEqual([]);
+    expect(view?.cappedBefore).toBe(true);
+  });
+
+  test('under both bounds, a side read to its end is not capped', async () => {
+    const w = await deletedWindow(30);
+    const view = await w.mod.as.query(api.inbox.aroundIt, { reportId: w.flagged });
+    expect(view?.reports.map((r) => r.reportId)).toEqual([w.standing]);
+    expect(view?.cappedBefore).toBe(false);
+  });
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('inbox.today’s Access lane', () => {
   test('past the 200 it reads, filed today says capped and the day’s start is not claimed', async () => {
@@ -778,5 +844,90 @@ describe('inbox.today’s Access lane', () => {
     const day = await mod.as.query(api.inbox.today, { now: NOW, dayStart: DAY_START });
     expect(day.filedCapped).toBe(true);
     expect(day.openAtStart).toBeNull();
+  });
+});
+
+describe('the lanes’ and the day’s figures under a short budget', () => {
+  /** Ten Content items decided today and ten open, filed a week ago. */
+  async function figuresWorld() {
+    const t = harness();
+    const mod = await person(t, 'mod', 'moderator');
+    await t.run(async (ctx) => {
+      const order = INBOX_LANE_ORDER.contentFlags;
+      // The stored counts a writer would keep: the lane's figures read its range only when it's open.
+      await ctx.db.insert('inboxCounts', { key: 'open:contentFlags', count: 10 });
+      for (let i = 0; i < 10; i++) {
+        const base = {
+          kind: 'flag' as const,
+          lane: 'contentFlags' as const,
+          laneOrder: order,
+          facet: 'people',
+          memberCount: 1,
+          lastActivityAt: NOW,
+          refreshedAt: NOW,
+        };
+        await ctx.db.insert('inboxItems', {
+          ...base,
+          key: `flag:d${i}`,
+          status: 'decided',
+          decision: 'dismissed',
+          decidedAt: NOW - 60_000 * (i + 1),
+          rankKey: NOW - 7 * DAY,
+          filedAt: NOW - 7 * DAY,
+        });
+        await ctx.db.insert('inboxItems', {
+          ...base,
+          key: `flag:o${i}`,
+          status: 'open',
+          rankKey: NOW - 7 * DAY,
+          filedAt: NOW - 7 * DAY,
+        });
+      }
+    });
+    return mod;
+  }
+  const short = () =>
+    vi
+      .spyOn(readBudget, 'requestBudget')
+      .mockImplementation(() => new readBudget.ReadBudget(4 * readBudget.ROW_MAX.small));
+
+  test('lanes: a range the budget cut short says capped, never a short count as whole', async () => {
+    const mod = await figuresWorld();
+    const whole = await mod.as.query(api.inbox.lanes, { now: NOW, dayStart: DAY_START });
+    const content = (v: typeof whole) => v.lanes.find((l) => l.lane === 'contentFlags');
+    expect(whole.today).toEqual({ count: 10, capped: false });
+    expect(content(whole)?.olderThan.find((o) => o.days === 1)?.count).toEqual({
+      count: 10,
+      capped: false,
+    });
+    short();
+    const cut = await mod.as.query(api.inbox.lanes, { now: NOW, dayStart: DAY_START });
+    expect(cut.today.capped).toBe(true);
+    expect(content(cut)?.olderThan.find((o) => o.days === 1)?.count.capped).toBe(true);
+    expect(cut.medianFiledAt).toBeNull();
+  });
+
+  test('lanes: a median over a range the budget cut short is not given', async () => {
+    const mod = await figuresWorld();
+    // Room for every range but the last whole: the lane's oldest (1), its age floors (10 each at one,
+    // three and seven days; none at thirty), decided today (10), and five of the ten the median reads.
+    vi.spyOn(readBudget, 'requestBudget').mockImplementation(
+      () => new readBudget.ReadBudget(46 * readBudget.ROW_MAX.small),
+    );
+    const cut = await mod.as.query(api.inbox.lanes, { now: NOW, dayStart: DAY_START });
+    expect(cut.today).toEqual({ count: 10, capped: false });
+    expect(cut.medianFiledAt).toBeNull();
+  });
+
+  test('today: decided cut short says capped, and the day’s start is not claimed', async () => {
+    const mod = await figuresWorld();
+    const whole = await mod.as.query(api.inbox.today, { now: NOW, dayStart: DAY_START });
+    expect(whole.decidedCapped).toBe(false);
+    expect(whole.openAtStart).not.toBeNull();
+    short();
+    const cut = await mod.as.query(api.inbox.today, { now: NOW, dayStart: DAY_START });
+    expect(cut.decidedCapped).toBe(true);
+    expect(cut.filedCapped).toBe(true);
+    expect(cut.openAtStart).toBeNull();
   });
 });

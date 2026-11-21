@@ -3043,6 +3043,29 @@ async function drawnBodyOf(
   return body;
 }
 
+/** A drawing reviewed or merged already: no further review. */
+function reviewedAlready(body: Doc<'waterBodies'>): boolean {
+  return (
+    body.reviewStatus !== 'pending' ||
+    body.dedupStatus === 'merged' ||
+    body.mergedIntoId !== undefined
+  );
+}
+
+/**
+ * Why reviewing a drawing again (the undo of a return to review) is refused to `viewerId`, or `null` —
+ * the review's own rule, as `reviewDrawnBodyImpl` and `assertMayReview` ask it: reviewed or merged
+ * already, or the viewer drew it (D289). For the undo's offer, so History offers what the write accepts.
+ */
+export function reviewAgainRefusal(
+  body: Doc<'waterBodies'> | null,
+  viewerId: Id<'profiles'>,
+): string | null {
+  if (!body) return 'The water body no longer exists.';
+  if (reviewedAlready(body)) return DECIDED_REFUSAL;
+  return body.createdByUserId === viewerId ? OWN_FILING_REFUSAL : null;
+}
+
 /**
  * **A drawn body's review** — `approve`'s and `reject`'s body, shared with the undo of a return to
  * review (which approves or rejects again, as the reviewed row had it). Only a pending body is
@@ -3056,15 +3079,9 @@ export async function reviewDrawnBodyImpl(
 ): Promise<Id<'moderationActions'>> {
   const body = await drawnBodyOf(ctx, args.waterBodyId);
   // Idempotency + audit integrity: only a pending body can be reviewed, so we never reverse a
-  // rejection or write duplicate audit rows on a re-approve.
-  if (
-    body.reviewStatus !== 'pending' ||
-    body.dedupStatus === 'merged' ||
-    body.mergedIntoId !== undefined
-  ) {
-    // Reviewed (or merged) already: in the Inbox rule's words, so the item and this write agree.
-    throw new ConvexError(DECIDED_REFUSAL);
-  }
+  // rejection or write duplicate audit rows on a re-approve. Reviewed (or merged) already: in the
+  // Inbox rule's words, so the item and this write agree.
+  if (reviewedAlready(body)) throw new ConvexError(DECIDED_REFUSAL);
   await assertMayReview(ctx, actor, body, args.verdict);
   const approved = args.verdict === 'approved';
   return moveDrawnReview(ctx, actor, body, args.verdict, {

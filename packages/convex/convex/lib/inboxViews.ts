@@ -63,7 +63,7 @@ import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
 import { readCount } from './inboxItems';
 import type { InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
-import type { ReadBudget, RowKind } from './readBudget';
+import { CHARGED_QUERY_BUDGET, type ReadBudget, type RowKind, requestBudget } from './readBudget';
 import { type RecordFacts, recordFactsOf } from './recordRules';
 import { trustClassFor } from './reputation';
 import {
@@ -246,12 +246,23 @@ async function authoredReports(
     .query('reports')
     .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', authorId))
     .order('desc');
-  for await (const rep of rows) {
-    if (scanned >= AUTHORED_SCAN || !r.budget.affordsRead('report')) {
+  // The next row is pulled only once it fits the budget, and charged whatever becomes of it — the one
+  // past the scan's bound too, read only to learn there is more.
+  const reports = rows[Symbol.asyncIterator]();
+  for (;;) {
+    if (!r.budget.affordsRead('report')) {
       capped = true;
       break;
     }
+    const next = await reports.next();
+    if (next.done) break;
+    const rep = next.value;
+    r.budget.reserveCalls(0, 1);
     r.budget.spend(getDocumentSize(rep));
+    if (scanned >= AUTHORED_SCAN) {
+      capped = true;
+      break;
+    }
     scanned++;
     if (rep.moderationStatus === 'visible') visible++;
     if (rep.contradiction === true && contradicted.length < CONTRADICTED_LIST) {
@@ -1145,6 +1156,21 @@ export const MEDIAN_CAP = 200;
 export const TODAY_CAP = 500;
 
 /**
+ * Up to `cap` items in one read, charged at their worst and sized to what the request's budget still
+ * holds — so every row read, kept or filtered after, is paid for. `short` when the budget held fewer
+ * than asked and they all came back: the range's end wasn't seen, which the caller says as capped.
+ */
+export async function itemsUpTo(
+  budget: ReadBudget,
+  cap: number,
+  read: (n: number) => Promise<Doc<'inboxItems'>[]>,
+): Promise<{ rows: Doc<'inboxItems'>[]; short: boolean }> {
+  const n = budget.rows('small', cap);
+  const rows = n > 0 ? await budget.take('small', n, read) : [];
+  return { rows, short: n < cap && rows.length === n };
+}
+
+/**
  * The lanes' figures from the stored counts — what `inbox.lanes` serves and what `console.overview`'s
  * Inbox card reads, so the two agree by construction. Support is absent for a viewer without its read.
  */
@@ -1164,6 +1190,8 @@ export async function readInboxLanes(
   today: Count;
   medianFiledAt: number | null;
 }> {
+  // The request's own budget (one per transaction: a caller's reads and these share it).
+  const budget = requestBudget(ctx, CHARGED_QUERY_BUDGET);
   const lanes = [];
   for (const lane of INBOX_LANES) {
     if (lane === 'support' && !opts.support) continue;
@@ -1178,10 +1206,15 @@ export async function readInboxLanes(
     const access = lane === 'accessReports';
     if (open > 0) {
       // Access ranks by corroboration, so its oldest is the least filedAt of its open items.
-      const rows = await ctx.db
-        .query('inboxItems')
-        .withIndex('by_status_lane_rank', (q) => q.eq('status', 'open').eq('laneOrder', order))
-        .take(access ? MEDIAN_CAP + 1 : 1);
+      const { rows, short: oldestShort } = await itemsUpTo(
+        budget,
+        access ? MEDIAN_CAP + 1 : 1,
+        (n) =>
+          ctx.db
+            .query('inboxItems')
+            .withIndex('by_status_lane_rank', (q) => q.eq('status', 'open').eq('laneOrder', order))
+            .take(n),
+      );
       oldestFiledAt =
         rows.length > 0 ? Math.min(...rows.slice(0, MEDIAN_CAP).map((r) => r.filedAt)) : null;
       const at = opts.ageFloorsAt;
@@ -1190,19 +1223,27 @@ export async function readInboxLanes(
           const floor = at - days * DAY_MS;
           if (access) {
             const n = rows.slice(0, MEDIAN_CAP).filter((r) => r.filedAt <= floor).length;
-            olderThan.push({ days, count: { count: n, capped: rows.length > MEDIAN_CAP } });
+            olderThan.push({
+              days,
+              count: { count: n, capped: rows.length > MEDIAN_CAP || oldestShort },
+            });
             continue;
           }
           // Every other lane's rank is the filing: an exact range.
-          const aged = await ctx.db
-            .query('inboxItems')
-            .withIndex('by_status_lane_rank', (q) =>
-              q.eq('status', 'open').eq('laneOrder', order).lte('rankKey', floor),
-            )
-            .take(COUNT_CAP + 1);
+          const { rows: aged, short } = await itemsUpTo(budget, COUNT_CAP + 1, (n) =>
+            ctx.db
+              .query('inboxItems')
+              .withIndex('by_status_lane_rank', (q) =>
+                q.eq('status', 'open').eq('laneOrder', order).lte('rankKey', floor),
+              )
+              .take(n),
+          );
           olderThan.push({
             days,
-            count: { count: Math.min(aged.length, COUNT_CAP), capped: aged.length > COUNT_CAP },
+            count: {
+              count: Math.min(aged.length, COUNT_CAP),
+              capped: aged.length > COUNT_CAP || short,
+            },
           });
         }
       }
@@ -1220,23 +1261,29 @@ export async function readInboxLanes(
   let today: Count = { count: 0, capped: false };
   if (opts.dayStart !== null) {
     const dayStart = opts.dayStart;
-    const rows = await ctx.db
-      .query('inboxItems')
-      .withIndex('by_status_decided', (q) => q.eq('status', 'decided').gte('decidedAt', dayStart))
-      .take(TODAY_CAP + 1);
+    const { rows, short } = await itemsUpTo(budget, TODAY_CAP + 1, (n) =>
+      ctx.db
+        .query('inboxItems')
+        .withIndex('by_status_decided', (q) => q.eq('status', 'decided').gte('decidedAt', dayStart))
+        .take(n),
+    );
     const seen = rows.filter((row) => opts.support || row.lane !== 'support');
-    today = { count: Math.min(seen.length, TODAY_CAP), capped: rows.length > TODAY_CAP };
+    today = { count: Math.min(seen.length, TODAY_CAP), capped: rows.length > TODAY_CAP || short };
   }
-  const openRows = await ctx.db
-    .query('inboxItems')
-    .withIndex('by_status_lane_rank', (q) =>
-      opts.support
-        ? q.eq('status', 'open')
-        : q.eq('status', 'open').lt('laneOrder', INBOX_LANE_ORDER.support),
-    )
-    .take(MEDIAN_CAP + 1);
+  const { rows: openRows, short: openShort } = await itemsUpTo(budget, MEDIAN_CAP + 1, (n) =>
+    ctx.db
+      .query('inboxItems')
+      .withIndex('by_status_lane_rank', (q) =>
+        opts.support
+          ? q.eq('status', 'open')
+          : q.eq('status', 'open').lt('laneOrder', INBOX_LANE_ORDER.support),
+      )
+      .take(n),
+  );
   const medianFiledAt =
-    openRows.length > MEDIAN_CAP ? null : medianOpenedAt(openRows.map((r) => r.filedAt));
+    openRows.length > MEDIAN_CAP || openShort
+      ? null
+      : medianOpenedAt(openRows.map((r) => r.filedAt));
   return { lanes, allOpen: lanes.reduce((n, l) => n + l.open, 0), decided, today, medianFiledAt };
 }
 

@@ -329,7 +329,8 @@ async function repairPass(
   // The open items, and a few decided ones: an item wrongly left decided while one of its sources is
   // open again (a missed reopen) is found there, never among the open.
   const open = await walk('open', n);
-  const decided = await walk('decided', Math.min(n, REPAIR_DECIDED_PAGE));
+  // Sized to what the walk left, as the retry's read below is: a short budget reads fewer, never past.
+  const decided = await walk('decided', budget.rows('small', Math.min(n, REPAIR_DECIDED_PAGE)));
   let fixed = 0;
   let failed = 0;
   let checked = 0;
@@ -359,10 +360,12 @@ async function repairPass(
   // The backfill's failures, retried a few at a time until they go through (or park, by the rule) —
   // read past the parked ones by index (`eq(parkedAt, undefined)`, the equality the non-sparse index
   // answers), so parked rows never hold the head and a later failure is always reached.
-  const owed = await ctx.db
-    .query('jobFailures')
-    .withIndex('by_job_parked', (q) => q.eq('job', 'inboxBackfill').eq('parkedAt', undefined))
-    .take(RETRY_PAGE);
+  const owed = await budget.take('small', budget.rows('small', RETRY_PAGE), (k) =>
+    ctx.db
+      .query('jobFailures')
+      .withIndex('by_job_parked', (q) => q.eq('job', 'inboxBackfill').eq('parkedAt', undefined))
+      .take(k),
+  );
   let retried = 0;
   for (const row of owed) {
     const [table, id] = row.key.split(':') as [Phase['table'], string];

@@ -169,8 +169,9 @@ describe('corpusRequests:backfillOrigin', () => {
       if (page.isDone) break;
       cursor = page.continueCursor;
     }
-    // Six rows, one a call: the sixth call reads the last and says done.
-    expect(calls + 1).toBe(6);
+    // Six rows, one a call; a call stops before reading a row it can't start, so the seventh reads
+    // none and finds the end.
+    expect(calls + 1).toBe(7);
     expect(found).toHaveLength(2);
   });
 
