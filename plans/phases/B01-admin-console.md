@@ -1347,6 +1347,12 @@ around:
   `metadata.flagsLeftClosed`: a reporter who filed again (their newer flag holds the question open), a
   superseded app flag, and the undoer's own report or a report about them. And the siblings of a
   request decision made before the Inbox stay decided when it is undone: no stamp names them.
+- **Added 2026-11-21 (Greptile on #170, round four).** A paged undo is one act across its pages. A
+  flag that a later page can no longer reopen (its reporter filed again between pages) is left closed
+  and named on the undo's lead row, as the first page names one. Undoing a flag reopen part-way closes
+  again only what reopened; the flags no page had reached stay closed under the original decision.
+  An actor suspended between pages doesn't stop their act: it was authorized when made, so it
+  completes.
 
 ### The founder's calls (2026-10-14)
 
@@ -7952,6 +7958,74 @@ call-nesting depth.
 
 **For the copy pass,** the new sentence: "Your own open asks couldn’t all be checked against this
 just now, so another staff member decides it."
+
+#### Greptile on #170, round four (2026-11-21)
+
+**The score:** 4/5 on `c0082fa5`, with two findings, both in round three's paged continuations. S1
+judged both right:
+
+- **Old flags reopened beside new ones.** A later page of a flag reopen never repeated the reopen
+  rule (`flagReopenRefusalOf`): it checked only the old member's stamp and the flag's status. So a
+  reporter who filed again between pages got their old flag reopened beside the new one.
+- **Later undo rows lost their links.** `asUndoOf` keys the row being undone by the transaction's
+  context, so a scheduled page lost it, along with the caller's `via` (which comes from an identity a
+  scheduled call doesn't have). The later pages' audit rows carried no `undoesActionId` and no chain
+  fields.
+
+**The fixes.**
+- **Each later page re-runs the first page's per-flag check** in its own transaction (the target's
+  newest flags read once per target, and the actor check). A flag that can no longer reopen stays
+  closed and is recorded on the undo's lead row, found by the same lookup the first page uses
+  (`leadRowOf`): it is appended to `flagsLeftClosed` and taken off the lead's `reopened` list, so the
+  undo of the undo closes only what reopened. The pages run strictly one after another, each
+  scheduled by the last at its end, after its writes; the lead row has one writer at a time.
+- **Every continuation carries its audit context** (`undoOf`, an id, and `via`, a short string) in
+  its scheduled arguments (`auditContextArgs`), read at the schedule (`auditContextOf`) and re-entered
+  by the later page (`asContinuationOf`). Its rows then carry the same links as the first page's.
+  All five continuations are internal mutations, so no client can call one with a forged context.
+
+**The continuations** (operation → what its later pages lacked → what is now re-checked or
+inherited):
+
+| Continuation | The operation | What later pages lacked | Now |
+|---|---|---|---|
+| `corpusRequests.closeSiblings` | a request decision's sibling drain | the audit context | carried and re-entered; the drain still stops once its decision is undone |
+| `inboxWrites.closeFlagsRest` | a flag decision's later flags (takedown, dismissal, ruling, pin, and the rest) | the audit context | carried and re-entered; still stops once the decision is undone |
+| `inboxWrites.reopenRequestsRest` | a request decision's undo | the audit context | carried and re-entered; still stops once the reopen is undone |
+| `inboxWrites.closeRequestsRest` | a re-decline over what a reopen reopened | the audit context | carried and re-entered; still stops once the re-decline is undone |
+| `inboxWrites.reopenFlagsRest` | a flag decision's undo | the per-flag reopen rule, the record of a flag left closed, a stop once its own lead row is undone, and the audit context | all four, re-checked in the page's own transaction |
+
+**Inherited by design, not re-checked:** the actor's permission. The act was authorized when it was
+made, and completing it keeps it whole, so a suspended actor's paged undo completes. The own-filing
+rule over the act's fixed sources is inherited too.
+
+**The interleaving table** (`convex/inboxPages.test.ts`, 14 cases). A new seam, `PAGE_SEAM`, forces
+every paged operation into two or more pages: a flag decision's undo, a flag reopen undone, a flag
+decision's later flags, a request decision's drain, its undo and a re-decline. Between the first page
+and the rest, a write that can matter lands: the reporter files again, a colleague decides one of the
+remaining sources, the asker withdraws one, a new ask is filed, the act is undone, the undo is undone,
+or the actor is suspended. **It asserts** that the end state is what the rule says (the per-source
+rule re-checked in the transaction that applies it, the act stopping once it is undone), that every
+later row carries its first page's links, and that the stored Inbox still matches its sources. It
+runs in about 1.2 s on its own here.
+
+**The further bug it caught:** undoing a flag reopen part-way was refused ("A flag has been decided
+since"), because the lead row's `reopened` list named flags no page had reached yet, still held by the
+original decision. The undo of the undo now skips flags still held by the decision it undid
+(`stillHeldBy`), and the reopen's later pages stop once their lead row is undone.
+
+**What else reads a paged act, and why each reads it right:**
+- **The web receipt** says what the decision does, in the present tense ("Closes 3 flags"), so a
+  receipt shown before the later pages land is still true.
+- **History and `undoStates`** read the audit rows; every later row now carries the first page's links
+  and chain fields, so they see one act.
+- **The People record** reads the decisions' rows, which now carry the same links on every page.
+- **The notification settle** re-checks each flag's status before it sends ("the flag's status is still
+  that resolution"), so a flagger whose flag a later undo reopened is not told.
+- **The Inbox item** is decided by its members, each closed under the decision's one row whichever
+  page closed it, so the item tells one decision.
+
+**Owed:** the carried `via` has no test, because test identities carry no `via` claim.
 
 #### How the forks were ruled (2026-11-20)
 
