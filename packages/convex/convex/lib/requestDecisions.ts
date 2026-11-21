@@ -406,7 +406,7 @@ export async function askedAlongside(
       if (asked === null) return true;
       const id = ctx.db.normalizeId('waterBodyRequests', m.sourceId);
       const other = id ? await readAsk(id) : null;
-      if (!other || other.status !== 'open') continue;
+      if (other?.status !== 'open') continue;
       const theirs = landmarkAskOf(other);
       if (
         other._id === request._id ||

@@ -26,7 +26,7 @@
  * an ask moved by `{ waterBodyId }`, which every body-keyed table shares; a function nested inside
  * another's body, judged by its top-level function's text. The writers of those found by reading are
  * hooked, each with its test: `erasure.ts`' erasers (a withdrawn flag or ask, 30 days on),
- * `accountDeletion.ts`' `erasePrivate` (an account's tickets), `waterBodies.ts`' `retargetAsks` (a
+ * `accountDeletion.ts`' `erasePrivate` (an account's tickets), `waterBodies.ts`' `retargetEach` (a
  * merge's asks moved by body id), and the duplicate-candidate and ruling writes that move a tab
  * (`flagAsDuplicates`, `clearDuplicateFlag`, `setPublicAccessImpl`). The drift repair
  * (`inboxItems:repair`, over open and decided items) is the net for anything else.
@@ -57,7 +57,7 @@ const SOURCE_WRITERS: Record<string, string> = {
   // `approve`, `reject` and their undo (`return_to_review`) move a drawing's review through this one
   // helper since S2's turn 1 (the integration, 2026-11-21).
   'waterBodies.ts#moveDrawnReview': 'a drawing approved, rejected, or returned to review',
-  'waterBodies.ts#retargetAsks': 'a merge moves access reports (and, by body id, asks)',
+  'waterBodies.ts#retargetEach': 'a merge moves access reports (and, by body id, asks), one batch',
   'waterBodies.ts#mergeBodyInto': 'a drawing merged into a known body',
   'support.ts#create': 'a ticket filed',
   'support.ts#resolve': 'a ticket resolved',
