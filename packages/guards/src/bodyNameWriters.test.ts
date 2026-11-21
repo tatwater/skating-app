@@ -6,11 +6,11 @@
  *
  * This lint finds, in the convex sources, every `ctx.db.insert('bodyLandmarks' | 'waterBodySubAreas',
  * …)` and every `ctx.db.patch`/`replace` whose literal names `name`, `aliases`, `point`, `removedAt`,
- * or — in the files that write landmarks or bays — `waterBodyId`, and holds:
+ * or — in the files that write landmarks or bays — `waterBodyId` or `kind`, and holds:
  *
  * - each is in a function of the inventory below, whose listed keepers each call
- *   `refreshBodyNames(` (the writer itself, or — for a write a batch makes — the functions that
- *   rebuild once for it);
+ *   `refreshBodyNames(` (the writer itself, or — for a write a loop or a batch makes — the functions
+ *   that rebuild once for it, which must then be its only callers);
  * - the other tables' writes of those field names are listed apart, by function;
  * - both lists are exact, so a new writer fails until it is read and listed;
  * - `bodyNameLists` is written only by `lib/bodyNames`.
@@ -48,7 +48,10 @@ const NAME_WRITERS: Record<string, { keepers: string[]; why: string }> = {
     keepers: ['self', 'subAreas.ts:retireCollected'],
     why: 'every bay’s birth (chord, freehand, the seed, the campaign); a batch rebuilds per parent',
   },
-  'subAreas.ts:systemDelist': { keepers: ['self'], why: 'an automatic delist' },
+  'subAreas.ts:systemDelist': {
+    keepers: ['subAreas.ts:reclipSubAreasToParent', 'subAreas.ts:repointSubAreasOnMerge'],
+    why: 'an automatic delist — rebuilt once a parent after each caller’s loop',
+  },
   'subAreas.ts:repointSubAreasOnMerge': { keepers: ['self'], why: 'a body merge’s bays' },
   'subAreas.ts:renameSubAreaImpl': { keepers: ['self'], why: 'a bay renamed, and its undo' },
   'subAreas.ts:removeSubAreaImpl': { keepers: ['self'], why: 'a bay delisted, and an undo' },
@@ -123,7 +126,7 @@ test('every write of what a body’s short list holds is an inventoried writer t
       const fields =
         listedInsert ||
         ['name', 'aliases', 'point', 'removedAt'].some((f) => names(span, f)) ||
-        (MOVE_FILES.includes(file) && names(span, 'waterBodyId'));
+        (MOVE_FILES.includes(file) && (names(span, 'waterBodyId') || names(span, 'kind')));
       if (!fields) continue;
       const key = `${file}:${enclosing(text, at).name}`;
       if (key in OTHER_TABLES) {
@@ -141,6 +144,23 @@ test('every write of what a body’s short list holds is an inventoried writer t
         const k = keeper === 'self' ? key : keeper;
         if (!/\brefreshBodyNames\(/.test(bodyOf(k))) {
           holes.push(`${where}: ${k} doesn’t rebuild the body’s short list of names`);
+        }
+      }
+    }
+  }
+  // A writer rebuilt by its callers instead of itself: every caller must be one of its keepers, so a
+  // new path to the write that skips the rebuild fails here.
+  for (const [key, entry] of Object.entries(NAME_WRITERS)) {
+    if (entry.keepers.includes('self')) continue;
+    const fn = key.split(':')[1] as string;
+    for (const path of sources(CONVEX)) {
+      const file = relative(CONVEX, path);
+      const text = readFileSync(path, 'utf8');
+      for (const m of text.matchAll(new RegExp(`\\b${fn}\\(`, 'g'))) {
+        const caller = `${file}:${enclosing(text, m.index ?? 0).name}`;
+        if (caller === key) continue;
+        if (!entry.keepers.includes(caller)) {
+          holes.push(`${caller} calls ${fn} without being one of its keepers`);
         }
       }
     }

@@ -328,8 +328,12 @@ export const importBatch = internalMutation({
   },
 });
 
-/** Rows a pass of the names backfill reads at most beyond its first body (landmarks and bays). */
-const NAMES_PASS_ROWS = 2_000;
+/**
+ * Bytes a pass of the names backfill reads, at most, beyond its first body: each rebuild reads at
+ * most `BODY_NAMES_READ_MAX_BYTES` and a chunk (`lib/bodyNames`), so a pass is under the
+ * transaction's read limit whatever the bodies weigh.
+ */
+const NAMES_PASS_BYTES = 4 * 1024 * 1024;
 /** Bodies a pass of the names backfill rebuilds at most. */
 const NAMES_PASS_BODIES = 50;
 
@@ -337,11 +341,12 @@ const NAMES_PASS_BODIES = 50;
  * Backfill: **every body's short list of place names** (B01-3u, `lib/bodyNames`) — one row for each
  * body that has a landmark or a bay, rebuilt by the one writer. Bodies are found a step at a time
  * through the landmark index, then the bay index (`gt` the last body seen: one row read a body, never
- * the table), and a pass rebuilds them until it has read `NAMES_PASS_ROWS` rows (its first body
- * always, however large — at most `MAX_LANDMARKS_PER_BODY` live landmarks and its bays) or
- * `NAMES_PASS_BODIES` bodies, then schedules the next. Idempotent: a row already right is left alone,
- * and a body met in both phases is rebuilt twice to no effect. A body with no row reads as it did
- * before the row existed, so the backfill can run at any time, and again.
+ * the table). A pass rebuilds bodies until what they read passes `NAMES_PASS_BYTES` (its first body
+ * always) or it has rebuilt `NAMES_PASS_BODIES`, then schedules the next. Each step moves past its
+ * body before rebuilding it, so a body whose rebuild throws is logged and passed over — its row left
+ * as it was, absent or capped: the conservative answer — and the walk never wedges. A giant reads
+ * as `capped` (its rebuild stops at the bound). Idempotent: a row already right is left alone, and a
+ * body met in both phases is rebuilt twice to no effect; a re-run converges.
  * `convex run landmarks:backfillBodyNames '{}'`.
  */
 export const backfillBodyNames = internalMutation({
@@ -358,6 +363,7 @@ export const backfillBodyNames = internalMutation({
     let read = 0;
     let bodies = 0;
     let wrote = 0;
+    let failed = 0;
     const next = () =>
       phase === 'landmarks'
         ? ctx.db
@@ -369,25 +375,30 @@ export const backfillBodyNames = internalMutation({
             .withIndex('by_parent', (q) => (after ? q.gt('waterBodyId', after) : q))
             .first();
     for (;;) {
-      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_PASS_ROWS)) break;
+      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_PASS_BYTES)) break;
       const row = await next();
       if (row === null) {
         // This phase is done: the bays next, or the end.
         if (phase === 'landmarks' && args.chain !== false) {
           await ctx.scheduler.runAfter(0, internal.landmarks.backfillBodyNames, { phase: 'bays' });
         }
-        return { phase, bodies, wrote, done: phase === 'bays' };
+        return { phase, bodies, read, wrote, failed, done: phase === 'bays' };
       }
-      const refreshed = await refreshBodyNames(ctx, row.waterBodyId);
       after = row.waterBodyId;
-      read += refreshed.read;
       bodies++;
-      if (refreshed.wrote) wrote++;
+      try {
+        const refreshed = await refreshBodyNames(ctx, row.waterBodyId);
+        read += refreshed.read;
+        if (refreshed.wrote) wrote++;
+      } catch (err) {
+        failed++;
+        console.error(`landmarks.backfillBodyNames: ${row.waterBodyId} failed`, err);
+      }
     }
     if (args.chain !== false) {
       await ctx.scheduler.runAfter(0, internal.landmarks.backfillBodyNames, { phase, after });
     }
-    return { phase, bodies, wrote, done: false };
+    return { phase, bodies, read, wrote, failed, done: false };
   },
 });
 

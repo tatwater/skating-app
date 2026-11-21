@@ -9,15 +9,19 @@
  *
  * Pinned histories, pinned seeds plus one random seed, logged. The backfill builds the same rows.
  */
+import { getDocumentSize } from 'convex/values';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
+import * as bodyNamesLib from './lib/bodyNames';
+import { BODY_NAMES_READ_MAX_BYTES, READ_CHUNK, refreshBodyNames } from './lib/bodyNames';
 import { undoStates } from './lib/undo';
 import { UNDO_BAY_NAME_ON_LANDMARK } from './lib/undoHandlersBody';
 import schema from './schema';
+import { reclipSubAreasToParent } from './subAreas';
 
 const modules = import.meta.glob('./**/*.*s');
 const T0 = Date.UTC(2026, 10, 19, 12);
@@ -515,6 +519,105 @@ describe('the list on History', () => {
         }))
         .sort((a, b) => a.waterBodyId.localeCompare(b.waterBodyId));
     expect(strip(after)).toEqual(strip(before));
+    await rowsHold(w);
+  });
+});
+
+describe('a rebuild reads a body by its real size (B01-3u)', () => {
+  /** A bay with a long outline (~0.6 MB), inserted as a loader would leave it. */
+  async function heavyBay(t: W['t'], waterBodyId: Id<'waterBodies'>, name: string) {
+    const ring: number[][] = [];
+    for (let i = 0; i < 20_000; i++) ring.push([-73.4 + i * 1e-6, 44.1 + (i % 2) * 1e-6]);
+    ring.push(ring[0] as number[]);
+    return t.run(async (ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId,
+        name,
+        searchText: name,
+        polygon: { type: 'Polygon', coordinates: [ring] },
+        bbox: { minLat: 44.1, minLng: -73.4, maxLat: 44.11, maxLng: -73.38 },
+        centroid: { lat: 44.1, lng: -73.39 },
+        surfaceAreaSqM: 1,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: (await ctx.db.query('profiles').first())?._id,
+        createdAt: T0,
+        updatedAt: T0,
+      } as never),
+    );
+  }
+
+  test('past the read bound the row is capped (the conservative answer), never a read of every outline', async () => {
+    const w = await world();
+    const body = w.bodies[0] as Id<'waterBodies'>;
+    const id = await heavyBay(w.t, body, 'Bay 0');
+    const each = await w.t.run(async (ctx) => getDocumentSize((await ctx.db.get(id)) as never));
+    const n = Math.ceil(BODY_NAMES_READ_MAX_BYTES / each) + READ_CHUNK.bays;
+    for (let i = 1; i < n; i++) await heavyBay(w.t, body, `Bay ${i}`);
+    const refreshed = await w.t.run((ctx) => refreshBodyNames(ctx, body));
+    // It stopped at the bound and one chunk past it — not at every bay.
+    expect(refreshed.read).toBeLessThanOrEqual(
+      BODY_NAMES_READ_MAX_BYTES + (READ_CHUNK.bays + 1) * each,
+    );
+    expect(refreshed.read).toBeLessThan(n * each);
+    const row = await w.t.run((ctx) => ctx.db.query('bodyNameLists').first());
+    expect(row).toMatchObject({ capped: true, landmarks: [], bays: [] });
+  });
+
+  test('a pass ends on what it read, every body is reached, and a failing body is passed over', async () => {
+    const w = await world();
+    const extra = await w.t.run(async (ctx) => {
+      const base = (await ctx.db.get(w.bodies[0] as Id<'waterBodies'>)) as Doc<'waterBodies'>;
+      const { _id, _creationTime, ...rest } = base;
+      return [await ctx.db.insert('waterBodies', rest), await ctx.db.insert('waterBodies', rest)];
+    });
+    const bodies = [...w.bodies, ...extra] as Id<'waterBodies'>[];
+    for (const body of bodies) for (let i = 0; i < 7; i++) await heavyBay(w.t, body, `Bay ${i}`);
+    // The first body's rebuild throws: logged, passed over, the walk goes on.
+    const spy = vi
+      .spyOn(bodyNamesLib, 'refreshBodyNames')
+      .mockRejectedValueOnce(new Error('too heavy'));
+    const first = await w.t.mutation(internal.landmarks.backfillBodyNames, {
+      phase: 'bays',
+      chain: false,
+    });
+    spy.mockRestore();
+    expect(first.failed).toBe(1);
+    // Four bodies of ~2.8 MB each: the pass stopped on bytes, not on its fifty bodies.
+    expect(first.bodies).toBeGreaterThan(1);
+    expect(first.bodies).toBeLessThan(bodies.length);
+    await w.t.mutation(internal.landmarks.backfillBodyNames, { phase: 'bays' });
+    await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rows = await w.t.run((ctx) => ctx.db.query('bodyNameLists').collect());
+    // The failed body was passed over by that pass; the re-run from the start reached it too.
+    expect(new Set(rows.map((r) => r.waterBodyId))).toEqual(new Set(bodies));
+    expect(rows.every((r) => !r.capped && r.bays.length === 7)).toBe(true);
+  });
+});
+
+describe('a rebuild once a write, never once a bay (B01-3u)', () => {
+  test('a re-clip that delists several bays rebuilds the list once, and a bay that retires a landmark once', async () => {
+    const w = await world();
+    const body = w.bodies[0] as Id<'waterBodies'>;
+    await step(w, { op: 'create', b: 0, name: 0, alias: null, point: 0 });
+    const spy = vi.spyOn(bodyNamesLib, 'refreshBodyNames');
+    // A bay named for the landmark under it: the retirement rebuilds, the insert doesn't again.
+    await step(w, { op: 'bay', b: 0, name: 0, slot: 0 });
+    expect(spy).toHaveBeenCalledTimes(1);
+    for (const slot of [1, 2]) await step(w, { op: 'bay', b: 0, name: slot, slot });
+    spy.mockClear();
+    // The lake's outline moves off all three bays: three delists, one rebuild.
+    const out = await w.t.run(async (ctx) => {
+      const parent = (await ctx.db.get(body)) as Doc<'waterBodies'>;
+      const moved = {
+        ...parent,
+        polygon: { type: 'Polygon' as const, coordinates: [ring(-72.9, 44.8, -72.6, 44.95)] },
+      };
+      return reclipSubAreasToParent(ctx, body, moved as Doc<'waterBodies'>);
+    });
+    expect(out.delisted).toBe(3);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
     await rowsHold(w);
   });
 });

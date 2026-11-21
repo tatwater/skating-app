@@ -512,6 +512,9 @@ export async function reclipSubAreasToParent(
   }
   const landmarksRetired =
     regrown.length > 0 ? await retireNamedAsBays(ctx, actorId, waterBodyId, regrown) : 0;
+  // A bay delisted leaves the body's short list of names — rebuilt once for the parent, unless the
+  // retirement just did (`retireNamedAsBays` rebuilds when it retires one).
+  if (delisted > 0 && landmarksRetired === 0) await refreshBodyNames(ctx, waterBodyId);
   // The re-stamp is the caller's: `importCanonical` and `merge` both schedule one when this reports
   // movement, and the ETL gates it so an unchanged batch schedules nothing.
   return { reclipped, delisted, landmarksRetired };
@@ -618,9 +621,11 @@ async function insertSubArea(
     list.push(naming);
     input.retireInto.set(input.waterBodyId, list);
   } else {
-    await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, naming);
-    // The bay's names join the body's short list (`lib/bodyNames`) — a batch's, once per parent.
-    await refreshBodyNames(ctx, input.waterBodyId);
+    // The bay's names join the body's short list (`lib/bodyNames`) — a batch's, once per parent —
+    // rebuilt by the retirement when it retires a landmark, else here.
+    if ((await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, naming)) === 0) {
+      await refreshBodyNames(ctx, input.waterBodyId);
+    }
   }
   return subAreaId;
 }
@@ -635,8 +640,9 @@ async function retireCollected(
   named: ReadonlyMap<Id<'waterBodies'>, BayNaming[]>,
 ): Promise<void> {
   for (const [waterBodyId, bays] of named) {
-    await retireNamedAsBays(ctx, actorId, waterBodyId, bays);
-    await refreshBodyNames(ctx, waterBodyId);
+    if ((await retireNamedAsBays(ctx, actorId, waterBodyId, bays)) === 0) {
+      await refreshBodyNames(ctx, waterBodyId);
+    }
   }
 }
 
@@ -824,7 +830,8 @@ async function systemDelist(
     systemDelistReason: reason,
     updatedAt: now,
   });
-  await refreshBodyNames(ctx, subArea.waterBodyId);
+  // The body's short list of names is rebuilt by the callers, once a parent after their loops
+  // (`reclipSubAreasToParent`, `repointSubAreasOnMerge`) — never once a bay.
   await syncSubAreaCells(ctx, subArea._id, {
     bbox: subArea.bbox,
     minVisibleZoom: subArea.minVisibleZoom,
@@ -1358,7 +1365,6 @@ export async function renameSubAreaImpl(
       searchText: subAreaSearchText(nextName, nextAliases),
       updatedAt: Date.now(),
     });
-    await refreshBodyNames(ctx, subArea.waterBodyId);
     await audit(
       ctx,
       actor._id,
@@ -1376,13 +1382,16 @@ export async function renameSubAreaImpl(
       },
     );
     // A name the bay now answers to is the bay's — a live landmark saying it retires (D202).
-    if (subArea.removedAt === undefined) {
-      await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
-        _id: subAreaId,
-        polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
-        names: [nextName, ...nextAliases],
-      });
-    }
+    const retired =
+      subArea.removedAt === undefined
+        ? await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+            _id: subAreaId,
+            polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
+            names: [nextName, ...nextAliases],
+          })
+        : 0;
+    // The new names join the body's short list — rebuilt by the retirement when it retired one.
+    if (retired === 0) await refreshBodyNames(ctx, subArea.waterBodyId);
     // Only the name is denormalized, so an alias-only edit changes nothing downstream — skip the job.
     if (nextName !== subArea.name) await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1520,7 +1529,6 @@ export async function restoreSubAreaImpl(
       removedByUserId: undefined,
       updatedAt: Date.now(),
     });
-    await refreshBodyNames(ctx, subArea.waterBodyId);
     // The re-derivation runs on the restored row (the patch above has landed) so a bay whose
     // outline the re-clip *did* move gets its depth cleared like any other geometry change, and one
     // the parent never moved under keeps it. Restoring a bay on a delisted lake leaves it off the
@@ -1557,12 +1565,14 @@ export async function restoreSubAreaImpl(
         ...(plan ? { via: plan.use === 'chord' ? 'chord' : 'reclip' } : {}),
       },
     );
-    // A bay back on the map takes its names back from any landmark that carried them meanwhile.
-    await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+    // A bay back on the map takes its names back from any landmark that carried them meanwhile —
+    // and joins the body's short list (rebuilt by the retirement when it retired one).
+    const retired = await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
       _id: subAreaId,
       polygon: geometry.polygon as Polygon | MultiPolygon,
       names: [subArea.name, ...(subArea.aliases ?? [])],
     });
+    if (retired === 0) await refreshBodyNames(ctx, subArea.waterBodyId);
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
   }

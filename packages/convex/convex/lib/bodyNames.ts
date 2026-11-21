@@ -6,10 +6,10 @@
  * otherwise read the body's whole landmark list and every bay's outline per line.
  *
  * - **One writer, rebuilt whole** ({@link refreshBodyNames}): every function that writes a landmark's
- *   or a bay's names, kind, point, removal or body calls it beside its write, with the body id read
- *   off the stored row (`packages/guards`' `bodyNameWriters.test.ts` holds the list). A rebuild reads
- *   what the writes beside it already read: the body's live landmarks (`MAX_LANDMARKS_PER_BODY`) and
- *   its bays.
+ *   or a bay's names, kind, point, removal or body calls it beside its write (or once after its
+ *   loop), with the body id read off the stored row (`packages/guards`' `bodyNameWriters.test.ts`
+ *   holds the list). A rebuild reads the body's live landmarks and its bays by real size, to
+ *   {@link BODY_NAMES_READ_MAX_BYTES}; past that the row is `capped`.
  * - **Bounded at the write** ({@link BODY_NAMES_MAX_BYTES}, by an estimate that never undercounts):
  *   past it the row says `capped` and holds nothing, and every reader answers as it did before the
  *   row existed — as it does for a body with no row yet (before the backfill reaches it).
@@ -20,12 +20,8 @@
  *
  * A name is a place someone might call the water by, never a claim about the ice (D3).
  */
-import {
-  type LandmarkKind,
-  landmarkNameKey,
-  landmarksAreSamePlace,
-  MAX_LANDMARKS_PER_BODY,
-} from '@skating/core';
+import { type LandmarkKind, landmarkNameKey, landmarksAreSamePlace } from '@skating/core';
+import { getDocumentSize } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
@@ -56,24 +52,64 @@ export function namesBytes(
 }
 
 /**
- * A body's live landmarks, and one past the writers' cap (`MAX_LANDMARKS_PER_BODY`) — which no writer
- * leaves, but which the bound then caps rather than a list missing a name.
+ * What one rebuild may read of a body's rows, by their real size: past it the row is `capped` (the
+ * answer every reader gave before the row existed), so a rebuild — a writer's or the backfill's —
+ * never reads a giant's every bay outline and landmark in one transaction. The rows come in chunks,
+ * so a rebuild reads at most this plus one chunk ({@link READ_CHUNK}).
  */
-function liveLandmarks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
-  return ctx.db
-    .query('bodyLandmarks')
-    .withIndex('by_water_body_removed', (q) =>
-      q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined),
-    )
-    .take(MAX_LANDMARKS_PER_BODY + 1);
+export const BODY_NAMES_READ_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Rows a rebuild reads at a time: a landmark is small in fact; a bay carries its whole outline. */
+export const READ_CHUNK = { landmarks: 64, bays: 4 } as const;
+
+/** A body's live landmarks or its bays, chunk by chunk while the read stays under the bound. */
+async function weighedRows<D extends { _creationTime: number }>(
+  take: (after: number | null, n: number) => Promise<D[]>,
+  chunk: number,
+  spent: { bytes: number },
+): Promise<{ rows: D[]; over: boolean }> {
+  const rows: D[] = [];
+  for (let after: number | null = null; ; ) {
+    if (spent.bytes > BODY_NAMES_READ_MAX_BYTES) return { rows, over: true };
+    const page = await take(after, chunk);
+    for (const row of page) spent.bytes += getDocumentSize(row as never);
+    rows.push(...page);
+    if (page.length < chunk) {
+      return { rows, over: spent.bytes > BODY_NAMES_READ_MAX_BYTES };
+    }
+    after = (page[page.length - 1] as D)._creationTime;
+  }
+}
+
+function liveLandmarks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { bytes: number }) {
+  return weighedRows(
+    (after, n) =>
+      ctx.db
+        .query('bodyLandmarks')
+        .withIndex('by_water_body_removed', (q) => {
+          const live = q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined);
+          return after === null ? live : live.gt('_creationTime', after);
+        })
+        .take(n),
+    READ_CHUNK.landmarks,
+    spent,
+  );
 }
 
 /** A body's bays, delisted ones included (the caller keeps the live). */
-function bays(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
-  return ctx.db
-    .query('waterBodySubAreas')
-    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
+function bays(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { bytes: number }) {
+  return weighedRows(
+    (after, n) =>
+      ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => {
+          const parent = q.eq('waterBodyId', waterBodyId);
+          return after === null ? parent : parent.gt('_creationTime', after);
+        })
+        .take(n),
+    READ_CHUNK.bays,
+    spent,
+  );
 }
 
 /** The lists one body's rows make — and whether they fit the bound. */
@@ -104,24 +140,28 @@ export function namesOf(
 
 /**
  * **The one writer**: rebuild a body's row from its live landmarks and bays as they stand in this
- * transaction, writing only when it changed. Says whether it wrote, and how many rows it read (the
- * backfill sizes its passes by it). Call it beside every write of a landmark's or a bay's names,
+ * transaction, writing only when it changed. Says whether it wrote, and how many bytes of rows it
+ * read (the backfill sizes its passes by it) — at most {@link BODY_NAMES_READ_MAX_BYTES} and a chunk. Call it beside every write of a landmark's or a bay's names,
  * kind, point, removal or body, with the body id off the stored row — both bodies when a row moves.
  */
 export async function refreshBodyNames(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<{ wrote: boolean; read: number }> {
-  const [landmarks, subAreas, existing] = await Promise.all([
-    liveLandmarks(ctx, waterBodyId),
-    bays(ctx, waterBodyId),
-    ctx.db
-      .query('bodyNameLists')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .first(),
-  ]);
-  const next = namesOf(landmarks, subAreas);
-  const read = landmarks.length + subAreas.length;
+  const spent = { bytes: 0 };
+  const existing = await ctx.db
+    .query('bodyNameLists')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  // One after the other, so the bound is the read's whole: the landmarks, then the bays with what
+  // the landmarks left. Past it, `capped`.
+  const landmarks = await liveLandmarks(ctx, waterBodyId, spent);
+  const subAreas = landmarks.over ? { rows: [], over: true } : await bays(ctx, waterBodyId, spent);
+  const next =
+    landmarks.over || subAreas.over
+      ? { capped: true, landmarks: [], bays: [] }
+      : namesOf(landmarks.rows, subAreas.rows);
+  const read = spent.bytes;
   if (existing !== null && sameLists(existing, next)) {
     return { wrote: false, read };
   }
