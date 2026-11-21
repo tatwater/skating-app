@@ -6201,7 +6201,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Bo28 | Filing a bathymetry survey | `WaterView.tsx`, Unavailable | blocked on the founder (call 7) | missing | M | His ruling on what a filing records |
 | Bo29 | Each catalog's own name claims (the Names ladder reads "not recorded") | BS9; `importCanonical` | blocked on the ETL: it must keep the claims, then each body's next campaign | missing (data) | L | ETL work |
 | Bo30 | Staff reference links have no stored id, so another moderator's edit reads as a new link | `schema.ts` `referenceLinks: {label, url}` | open | correctness | M (schema) | An id per link. Every writer of the list must keep it: `setReferenceLinks` and its undo, and a merge's union (`mergedModeratorLists`); needs an inventory |
-| Bo31 | A stored short list of a body's bay and landmark names | `lib/landmarkRows.ts`, `subAreas.ts` | scheduled (founder call 6) | performance/correctness | L | See *The three stored facts* below |
+| Bo31 | A stored short list of a body's bay and landmark names | `lib/bodyNames`, `lib/undoHandlersBody` | built on `phase-b01-stored-facts` (B01-3u, D282), not yet merged: one row per body, bounded at 256 KiB at the write; History's landmark undo checks the duplicate rule exactly from it and sends a bay-name clash to the landmark. On dev: deploy, then `landmarks:backfillBodyNames` | performance/correctness | L | See *The two stored facts built* |
 | Bo32 | The Bodies library queue keeps its own copy of the parking rule rather than `lib/attempts` | `lib/bodyLibrary.ts:523` | open (switching changes behavior: the first `parkedAt` is kept, and there is no daily-retry stamp) | polish (engine) | M | — |
 | Bo33 | Count the dev rows written before the text caps that exceed one | B01-3h | blocked on a dev read (the dev agent's) | ops | S | — |
 | Bo34 | The map pans only within 3× the body's box | the map's pan fence | blocked on the founder (not yet ruled) | polish | S | — |
@@ -6231,7 +6231,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe13 | The already-hidden refusal lived in the write, not in the record sheet's shared rule (`lib/recordRules`) | `lib/recordRules.ts` `takedownRefusal` | done in #140 | correctness | S–M | — |
 | Pe14 | The Clerk ban mirror's two rare gaps: a run that dies between an answer and its re-read; a request whose answer is lost but which Clerk applies after the retry that follows | `clerkAdmin.ts` `setBanned` | done in #149 (B01-4k, D277: a daily reconcile job). Dry run on dev 2026-11-17; the first real run is due 2026-11-18 10:20 UTC, not yet confirmed | correctness / auth | M–L | — |
 | Pe15 | `clerkAdmin.deleteUser` had no tests and no request timeout | `clerkAdmin.ts` | done in #140 (one request path, 20 s) | test gap | S | — |
-| Pe16 | The Deleted count is a floor past a few heavy items. Erased comment shells keep `authorDeletedAt`, so they stay in the ranges the count reads, and a person with 30 or more always gets a floor. A small stored row per withdrawal is the proposed fix | `contentRecord.ts` `recordCounts`, `personDeleted` | scheduled (founder call 6); its design is open (below) | correctness of a figure | L | See *The three stored facts* below |
+| Pe16 | The Deleted count was a floor past a few heavy items, and erased comment shells kept counting | `contentRecord.ts` `recordCounts`, `personDeleted`; `lib/withdrawals` | built on `phase-b01-stored-facts` (B01-4m, D282), not yet merged: a stored row per withdrawal with a stored `held`; the count exact to 500, `capped` past it; shells have no row. On dev: deploy, then the fifth People backfill (`peopleJobs:backfillWithdrawals`) | correctness of a figure | L | See *The two stored facts built* |
 | Pe17 | The sheet's *Kept* label is inferred from timing (a decision at or after the author's deletion), so an ordinary hide or removal on content already deleted also reads *Kept*. The server already stores the fact that tells them apart (`keptOnRecord` on the decision's audit row); no read returns it | `record/recordModel.ts` `keptAfter`; `moderation.ts` `recordOnWithdrawn`; `accessAlerts.ts` `recordAlertVerdict` | done in #152 (B01-4l): `kept` from the decision's audit row on every row and pane decision; the web reads it (`isKept`). No schema change, no backfill | correctness of a label | S | See *The three stored facts* below |
 | Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page | blocked on the Inbox | polish | S | The Inbox's `can` per row |
 | Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | done in #145 | polish | S | — |
@@ -6577,13 +6577,16 @@ banned in Clerk against 0 expected and planned 0 repairs. The first real cron ru
 > "Schedule them. Let's record what's needed so we don't lose track, and we should get around to
 > them sooner than later."
 
-**Scheduled next after tonight's People PR (#145, which holds `schema.ts`).**
+**Built in B01-4m and B01-3u (2026-11-20, D282)**: the exact Deleted count and the names list — see
+*The two stored facts built*. *Kept* was done in B01-4l. What follows is the design record as
+scheduled; where the code turned out to differ, that section says so.
 
 - Two of the three are schema changes, rolled out as widen → deploy → backfill → narrow: the exact
   Deleted count and the names list.
 - Reading the code for the third showed it needs no schema: *Kept* is a read-and-web fix.
 
-**Exact Deleted counts (Pe16).** *The design is open; this is what the code says it must cover.*
+**Exact Deleted counts (Pe16).** *Done in B01-4m (the `held` fact kept by the verdict writers); as
+scheduled:*
 
 - **Why the count is a floor today:**
   - Convex counts nothing without reading it. `recordCounts` reads each kind's withdrawn rows by
@@ -6659,8 +6662,8 @@ banned in Clerk against 0 expected and planned 0 repairs. The first real cron ru
 - **No schema change, no backfill.** Size S (about 100–150 lines with tests). It stays in the
   founder's schedule beside the other two.
 
-**A stored short list of a body's bay and landmark names (Bo31).** *The writer list must be
-inventoried, not assumed.*
+**A stored short list of a body's bay and landmark names (Bo31).** *Done in B01-3u, the writers
+inventoried by a guard; as scheduled:*
 
 - **Schema:** one row per body with each bay's and landmark's name and spellings, bounded.
 - **Writers:** every insert is in `landmarks.ts` (two) and `subAreas.ts` (one). Names and spellings
@@ -6763,6 +6766,189 @@ What the day's rollouts on dev measured, recorded by #152's build (which ran not
 One more is named in *The People pages draw what the server sends (B01-4i)* for B04 but not yet on
 that list: the skater feed's *Read more* is decided by characters, not by rendered lines
 (`FeedCard.tsx`).
+
+### The two stored facts built (B01-4m, B01-3u, D282)
+
+The founder's call 6 (2026-11-17) scheduled them before the Inbox: the exact Deleted count (Pe16)
+and a body's short list of bay and landmark names (Bo31). Both are new tables with required fields
+only, so they roll out widen-only: deploy, then backfill. There is no narrow step. Every read is
+correct before, during and after its backfill.
+
+**B01-4m — the Deleted list and its count from a stored row per withdrawal.**
+
+- **The table:** `contentWithdrawals`, one row per item its author took back. That is a deleted
+  Report, Post, comment or hazard, or an access alert its author retracted with a time. Each row
+  holds the author, the item, the withdrawal time, the kind's place in the list's tie-break, the
+  item's creation time and `held`. Three indexes, every field required: `by_target`, and the list's
+  order (`by_subject_held`, with `by_subject_held_type` for one kind).
+- **The one writer** is `lib/withdrawals`:
+  - `syncWithdrawal` re-derives an item's row from the item as its writer just wrote it;
+  - `refreshWithdrawalHold` re-reads `held` beside every verdict write;
+  - `dropWithdrawal` is the eraser's.
+- **`held`** is the question the Deleted list used to ask of each row: does a standing verdict on
+  this item exist (`contentVerdicts.by_target_standing`)? A Post's decision or an open flag holds an
+  item back from erasure. It never took an item off the Deleted list, and it doesn't now.
+- **The withdrawal writers, as inventoried** (`packages/guards`' `withdrawalWriters.test.ts` holds
+  the list):
+  - `moderation.ts` `authorRemoveReport` and `authorRemovePost` (the Post and each member);
+  - `comments.ts` `remove`;
+  - `hazardWithdrawal.ts` `withdraw`;
+  - `accessAlerts.ts` `retract` (both sites: a live alert retracted, and an old author retraction
+    given its time);
+  - `authorDeletions.ts` `stampWithdrawal`, `stampMembers` and `commentLastWord` (D248's stamps);
+  - `erasure.ts` `backfillClocks` (an old author retraction stamped);
+  - the eraser, `erasure.ts` `eraseOne`, for everything it erases or leaves as a comment's shell.
+- **The `held` keepers:** `lib/contentVerdicts` `endVerdicts` and `recordVerdict`, and the replay
+  `contentRecord.replayVerdictHistory`.
+- **The reads.** `personDeleted` reads one index range of the person's unheld rows, in the list's
+  order. That is up to three parts after a cursor: its tie, the kinds after it at its time, earlier
+  times. Then it reads each item in waves, as the other lists do. Cursors keep their old shape
+  (withdrawal time, creation time, kind), so a client's cursor carries across the deploy.
+- **The count is exact.** `recordCounts` counts the same range to 500 (`DELETED_COUNT_CAP`, the
+  Reversed count's cap). Past 500 it says `capped` ("500+"). Each row is about 250 bytes (1 KiB
+  declared), so the count reserves half a MiB. `recordPresence` reads the range's first row, so it
+  is exact both ways now. Erased comment shells have no row, so they no longer count.
+- **What went:** the per-kind ranges' fence, the heavy kinds' steps (`countHeavy`, `HEAVY_STEPS`)
+  and `DELETED_TAKE` / `DELETED_ALONE`.
+- **Pending.** The Deleted reads (list, counts, presence) say `pending: ['withdrawals']` until the
+  fifth People backfill concludes. The web treats any named backfill as *still being prepared*
+  (`record/recordReads.ts`); it used to look for `verdicts` only.
+- **The backfill:** `peopleJobs:backfillWithdrawals`, fifth in `PEOPLE_BACKFILLS`, chained after
+  the content record. It walks people by creation time a page a pass (by real weight). For each
+  person it reads that person's own withdrawn ranges (`lib/recordReads.deletedRange`: each kind's
+  `by_author_deleted`, an alert's `by_author_retracted`), one kind and one step at a time, as far as
+  the budget goes. A person with many withdrawals spans passes and resumes after the last row it
+  synced.
+
+**B01-3u — a body's short list of names.**
+
+- **The table:** `bodyNameLists`, one row per body. It holds each live landmark's id, kind, point
+  and names (name, then spellings), and each live bay's id and names, plus `capped`.
+- **The one writer** is `lib/bodyNames.refreshBodyNames`. It rebuilds the whole row from the body's
+  live landmarks and bays, with the body id read off the stored row (both bodies when a row moves).
+  It writes only on a change.
+- **The bound:** 256 KiB, held at the write by an estimate that never undercounts. A fast-check
+  property holds the estimate against `getDocumentSize`. That fits about a thousand landmarks of a
+  typical name and a spelling or two. Every entry is estimated at 192 bytes or more, so a body near
+  the 1,500-landmark cap always passes the bound. Past it the row is `capped` and empty.
+- **The writers, as inventoried** (`packages/guards`' `bodyNameWriters.test.ts`):
+  - `landmarks.ts`: `importOneBody` (the catalog load, `importBatch`; once a body), `create`,
+    `updateLandmarkImpl`, `removeLandmarkImpl`, `restoreLandmarkImpl`, `unrestoreLandmarkImpl`;
+  - `lib/landmarkRows.ts`: `retireRow`, rebuilt by its callers `retireAsPromoted` and
+    `retireNamedAsBays` (once for all a bay names), and `repointLandmarksOnMerge` (the merge's moves
+    and fold, both bodies);
+  - `corpusPlaceNames.ts` `fileAsSpelling`;
+  - `subAreas.ts`: `insertSubArea` (every bay's birth; a batch, the seed and the campaign, rebuilds
+    once a parent in `retireCollected`), `systemDelist`, `repointSubAreasOnMerge`,
+    `renameSubAreaImpl`, `removeSubAreaImpl`, `restoreSubAreaImpl`.
+- **What it unlocks.** The landmark undo's refusal on a page of History (`lib/undoHandlersBody`,
+  `edit_landmark`) now reads the body's list. The list is read once a query, through the undo
+  engine's reader. The answers:
+  - a landmark already there under the old names is refused exactly, in the words the
+    one-landmark view uses;
+  - a live bay answering to an old name says *A bay on this lake answers to the old name — open
+    this landmark to see whether this undo can bring it back.* The bay's outline decides, and the
+    list holds none;
+  - a body with no row (before its backfill), or a capped row, keeps the spellings-only check.
+    The write still runs the whole rule, as before.
+- **The web** draws the server's `why` as it stands, so no web file changed for this. The rows are
+  History's (`apps/web/src/components/admin/bodies/`, through `bodyConsole.history`).
+- **The backfill:** `landmarks:backfillBodyNames`, self-chaining. It finds bodies a step at a time
+  through the landmark index and then the bay index (`gt` the last body seen). A pass rebuilds up to
+  50 bodies or 2,000 rows read (its first body always). A body with neither has no row and needs
+  none.
+
+**What the code said that the doc did not:**
+
+- **Pe16, the existing row.** No per-withdrawal row existed to extend. The erase clock is a field
+  on each content row (`eraseAt`), set by `lib/eraseClock`, not a row of its own. So the build adds
+  a table.
+- **Pe16, the verdict writers.** There are two, not one: `lib/contentVerdicts` and the replay in
+  `contentRecord` (`verdictWriters.test.ts` lists both). `held` still has one writer, a helper both
+  call. The ruling stood: the property below shows the stored `held` always equals the per-row check.
+- **Pe16, the writer list.** It missed `authorDeletions`' three stamps, `erasure.backfillClocks`'
+  alert stamp, `accessAlerts.retract`'s second site and the eraser's shell.
+- **Pe16, the emptied Post.** A Post read as withdrawn because every member was erased
+  (`lib/eraseClock.withdrawnAtOf`) never appeared on the Deleted list, which reads
+  `by_author_deleted`. So it gets no row, and the eraser writes none for it.
+- **Bo31, the writer list.** `acceptCompleteLoad` writes no landmark (only the source baseline). The
+  undo handlers in `lib/undoHandlersBody` write nothing of their own; they call the `Impl`s.
+  `waterBodies.mergeBodyInto` writes no landmark or bay itself; it calls the two repoint helpers.
+  Missing from the list: `retireAsPromoted` / `retireNamedAsBays` and `systemDelist`.
+- **Bo31, names alone.** A list of names alone can answer neither half of the undo's rule. The
+  duplicate rule needs each landmark's kind and point, and the bay rule a bay's outline. So the row
+  stores kind and point, and the bay half points to the landmark.
+
+**Tests:**
+
+- `withdrawalRows.test.ts` (fast-check, pinned and seeded) runs histories across all five kinds:
+  withdrawals, hides, removals, an alert's kept retraction, keeps, restores, overturns, undos,
+  erasure, the content record's replay and the withdrawals backfill. The rows and their `held` must
+  equal what the raw items and verdicts say after every step. A rerun of the backfill writes
+  nothing. A replay that stands up a decision only the audit log knew of sets `held`.
+- `bodyNameRows.test.ts` (fast-check) runs histories of landmark, bay, catalog, undo and merge
+  writes. Each body's row must equal its live rows. History's list answer must never be "available"
+  where the one-landmark answer refuses, and a duplicate must read word for word. The backfill must
+  rebuild the same rows.
+- `lib/bodyNames.test.ts` (fast-check): the estimate never undercounts, and the list never answers
+  "no clash" where `landmarkEditRefusal` refuses.
+- The record tests run on the rows. `recordRounds.test.ts` restates the rounds: counts 2, presence 1.
+  `undoRounds.test.ts` adds the worst History page with the list built: one round more, the list
+  read once.
+- The People two-runs property and the literal procedure test cover the fifth backfill.
+
+**Mutations run** (each failed a test, then was restored):
+
+- B01-4m: dropped the hold refresh in `recordVerdict`, and in `endVerdicts`; dropped the eraser's
+  `dropWithdrawal`; dropped the row write in a comment's delete, in a Post's delete, and in an
+  alert's retraction; dropped the replay's finish refresh; listed erased shells.
+- B01-3u: dropped the rebuild in a landmark edit, a bay rename, `retireNamedAsBays`, the merge, and
+  a catalog load; skipped the bay check in `nameListRefusal`; made the list ignore duplicates.
+- The guards: dropped `syncWithdrawal` in `hazardWithdrawal.withdraw`, and `refreshBodyNames` in
+  `systemDelist`.
+- The web: `record/recordReads.test.ts` holds a Deleted page pending on `withdrawals` alone.
+
+**After merge, on dev** (each `convex` command as `pnpm --filter @skating/convex exec convex …` from
+main):
+
+1. `convex dev --once`. New tables `contentWithdrawals` and `bodyNameLists`, and the job literal
+   `withdrawals`. Widen-only, no index on an optional field.
+2. `convex run peopleJobs:preparation '{}'`. Expected: `ready: false`, `pending: ["withdrawals"]`,
+   `rerun: ["peopleJobs:backfillWithdrawals"]`. Dev's other four backfills are already ready.
+3. `convex run peopleJobs:backfillWithdrawals '{"alone":true}'`. Expected `{ done: false }` (it
+   schedules its passes), or `{ done: true, failed: 0 }` on a database with no profiles.
+4. Step 2 again, until `ready: true` and `pending: []`. On a failure, step 3 again (a new run
+   supersedes the old).
+5. `convex run landmarks:backfillBodyNames '{}'`. It returns its first pass, for example
+   `{ phase: "landmarks", bodies: 50, wrote: 50, done: false }`, and chains to the end. The last
+   pass, in the logs, returns `{ phase: "bays", …, done: true }`.
+6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0`.
+
+A fresh deployment takes the People procedure, word for word as in `AFTER_MERGE_PROCEDURE`:
+
+(1) `convex dev --once`. (2) `convex run peopleJobs:backfillRows '{}'` — it runs the five People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks — and the withdrawal rows the Deleted list reads). Estimate: unmeasured. (3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`. (4) For each job in its `rerun`: `convex run <job> '{"alone":true}'` (a new run, which supersedes any older one), then step 3 again. (5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus '{"userId":"<id>"}'`. (6) Only if steps 2–5 ran before the People follow-up (B01-4b) or the status-terms rule (B01-4f) was deployed: `convex run peopleJobs:backfillRows '{"alone":true}'` once, which stamps each staffer's tenure, and when each suspended or banned person's terms were set, on their row, then step 3 again.
+
+The People backfills, with this build's fifth (the table the guard reads is this one, the newest):
+
+| Job | Started by | Reads that say `pending` until it is ready |
+| --- | --- | --- |
+| `peopleJobs:backfillRows` | the operator (step 2) | `people.lanes` (every lane, and the top level), `people.listPage` (every lane and search), `console.overview` → `people` (every figure but *N users*) |
+| `peopleJobs:backfillFlagSubjects` | `backfillRows`, when a run ends | `people.lanes` (Flagged, and the top level), `people.listPage` (every page: rows carry open flags), `people.person`, `people.history`, `console.overview` → `people` |
+| `peopleJobs:backfillUndoChains` | `backfillFlagSubjects`, when a run ends | `people.staffStats`, `people.staffSeason` |
+| `peopleJobs:backfillVerdicts` | `backfillUndoChains`, when a run ends | `people.person`, `contentRecord.personVerdicts`, `personReversed`, `personDeleted`, `recordCounts`, `recordPresence`, `item` (B01-4d) |
+| `peopleJobs:backfillWithdrawals` | `backfillVerdicts`, when a run ends | `contentRecord.personDeleted`, `recordCounts`, `recordPresence` (B01-4m) |
+
+**Left:**
+
+- **Two stale quotes.** The procedure quoted under *the backfills, and the one procedure that runs
+  them*, and its table there, still say four backfills. The roadmap's People procedure line does
+  too. Both are outside this build's lines; the procedure above is the current text.
+- **`contentRecord.personWithdrawals`.** The older per-kind withdrawals query still reads the
+  content ranges. No page calls it, only two tests. Retire it, or read the rows.
+- **The bay half on a list** still points to the landmark. Exact would need each bay's outline per
+  line, or a stored per-bay reach.
+- **A capped body** (near the landmark cap) keeps the spellings-only check on a list.
+- **Not measured on dev:** the withdrawals backfill's pass count and the names backfill's length.
 
 ## Ruled out
 

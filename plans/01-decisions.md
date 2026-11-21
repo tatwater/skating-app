@@ -8421,3 +8421,40 @@ out of scope. A hard kill can leave staging on disk but does not publish it.
 valid bytes with a prefix while the old manifest still said the archive was complete.
 
 **Related:** D278, [`bathymetry`](../scripts/bathymetry/README.md), [`water ETL`](../scripts/etl/README.md).
+
+## D282 — Two derived facts stored by one writer each: withdrawal rows and a body's names
+
+**2026-11-20 (B01-4m, B01-3u; founder call 6 of 2026-11-17).** Two figures the console read by
+walking whole documents are now small stored rows, each kept by one helper beside every write of
+what it is derived from, each held to its writer list by a guard in `packages/guards`, each built
+for existing data by a paged backfill:
+
+- **`contentWithdrawals`** — one row per item its author took back (a deleted Report, Post, comment
+  or hazard; an access alert its author retracted with a time), dropped by the eraser (an erased
+  comment's shell has none). It carries a stored `held`: whether a moderator's decision stands on
+  that item — the same question the Deleted list asked of each row before — re-read by the one
+  writer (`lib/withdrawals`) beside every verdict write. The Deleted list reads one index range of
+  the unheld rows; the count is exact to 500 and says `capped` past it. The fifth People backfill
+  (`peopleJobs:backfillWithdrawals`) builds the rows; the Deleted reads say `pending` until it
+  concludes. A Post read as withdrawn only because every member was erased gets no row: the list
+  never showed one.
+- **`bodyNameLists`** — one row per body: each live landmark's id, kind, point and names, and each
+  live bay's names, rebuilt whole by `lib/bodyNames` beside every write of a landmark's or a bay's
+  names, kind, point, removal or body. Bounded at the write at 256 KiB by an estimate that never
+  undercounts (about a thousand typical landmarks; a body near the 1,500-landmark cap always
+  passes it); past it the row is `capped` and empty. A list page of History checks the landmark
+  undo's whole rule from it: a duplicate exactly, word for word; a bay answering to an old name
+  sends the reader to the landmark (the bay's outline decides, and the list holds none). A body
+  with no row, or a capped one, keeps the spellings-only check — the write still runs the whole
+  rule.
+
+**Why:** both were reads that could not be both exact and bounded — a floor past a few heavy items
+and erased shells counted, or a per-line read of up to 1,500 rows and every bay outline — and each
+answer is a pure function of rows that a known, short list of writers changes. Storing it beside
+those writes, rebuilt rather than patched, makes the read one bounded row (or range) and keeps the
+answer the same on every path. A maintained counter was set aside for the count: it would add a
+contended write to every withdrawal and verdict, where 500 small rows read in one call already
+cover any realistic person.
+
+**Related:** D226, D248, D267, D202, [B01 phase doc](./phases/B01-admin-console.md) *The two stored
+facts built (B01-4m, B01-3u)*.
