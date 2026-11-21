@@ -6,17 +6,26 @@
 
 import { metricDay } from '@skating/core';
 import { ConvexError } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { holdMoved } from './eraseClock';
-import { closeFlag, type FlagResolution } from './flagResolution';
+import { closeFlag, FlagCloseEffects, type FlagResolution } from './flagResolution';
 import { flagSubject } from './flagSubject';
-import { flagSource, reopenItem, syncInboxSource } from './inboxItems';
+import {
+  batchHasRoom,
+  flagSource,
+  inboxBatch,
+  reopenItem,
+  syncInboxSource,
+  type TxCost,
+} from './inboxItems';
 import { OWN_FILING_REFUSAL } from './inboxRules';
 import { bumpMetricMetaCounter } from './metrics';
 import { OPEN_FLAG_STATUSES } from './openFlags';
 import { ownContentRefusal } from './ownContent';
+import { ROW_MAX } from './readBudget';
 
 /** The most open flags one target's takedown closes in one write, and an undo reopens. */
 const FLAGS_READ = 500;
@@ -34,7 +43,9 @@ export type FlagDecision =
   | 'pinned'
   | 'unpinned'
   | 'retracted'
-  | 'restored';
+  | 'restored'
+  | 'ruled_closed'
+  | 'ruled_accessible';
 
 /** Every open flag on a target, in every lane (both open statuses, every reason), oldest first. */
 export async function openFlagsOn(
@@ -56,29 +67,127 @@ export async function openFlagsOn(
   return rows.sort((a, b) => a.createdAt - b.createdAt);
 }
 
+/** How a decision closes its flags (`closeFlagsUnder`), and what a later page needs to carry on. */
+export type FlagCloseOpts = {
+  resolution: FlagResolution;
+  decision: FlagDecision;
+  reason: string;
+  defaulted: boolean;
+  now: number;
+  /** The decision's own row (the content's, the alert's, the ruling's); absent: the first flag's. */
+  lead?: Id<'moderationActions'>;
+  /**
+   * Each flag its own `resolve_flag` / `dismiss_flag` row (the queue's decisions; the default). A
+   * ruling writes none: its one row names the reports it closed, which are its consequence.
+   */
+  perFlagRows?: boolean;
+};
+
+/**
+ * What closing one flag can cost beyond the batch's reconcile, at its worst: the flag read again, its
+ * target (a report's body is read through it), the flagger the verdict goes to, the coalesce lookup,
+ * and its writes — the patch, its member, its audit row, the queued verdict.
+ */
+export const FLAG_CLOSE_COST: TxCost = {
+  bytesRead: 2 * ROW_MAX.contentFlag + ROW_MAX.report + ROW_MAX.profile + 4 * ROW_MAX.small,
+  documentsRead: 12,
+  databaseQueries: 12,
+  documentsWritten: 6,
+};
+
+/** What a page's settle reads once: each target's hold (its row and a few holds), the counters. */
+const FLAG_SETTLE_COST: TxCost = {
+  bytesRead: ROW_MAX.report + 32 * ROW_MAX.small,
+  documentsRead: 64,
+  databaseQueries: 32,
+  documentsWritten: 16,
+};
+
 /**
  * Close `flags` under one decision: each its own `resolve_flag` / `dismiss_flag` row naming the
  * decision's row (`withActionId`) — the first flag's own row is the decision's when no other row is
  * (a dismissal) — and each through `closeFlag`, which closes its Inbox member stamped with the
- * decision's row, moves the hold and the metric, and tells a user-origin flagger. Returns the
- * decision's row.
+ * decision's row and tells a user-origin flagger. Returns the decision's row.
+ *
+ * **Paged, as one Inbox batch a page** (PR #170): a page closes flags while the transaction's live
+ * budget holds one more and every item refresh it owes (`batchHasRoom`), recounts each item once at
+ * its end, and moves each target's hold and the counters once (`FlagCloseEffects`); the flags it had
+ * no room for follow in `inboxWrites.closeFlagsRest`, which stops if the decision was undone since.
+ * A page always closes one at least, so it advances.
  */
 export async function closeFlagsUnder(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   flags: readonly Doc<'contentFlags'>[],
-  opts: {
-    resolution: FlagResolution;
-    decision: FlagDecision;
-    reason: string;
-    defaulted: boolean;
-    now: number;
-    /** The decision's own row (the content's, the alert's); absent: the first flag's row is it. */
-    lead?: Id<'moderationActions'>;
+  opts: FlagCloseOpts,
+): Promise<Id<'moderationActions'> | undefined> {
+  const effects = new FlagCloseEffects();
+  let lead = opts.lead;
+  let closed = 0;
+  await inboxBatch(ctx, async () => {
+    for (const flag of flags) {
+      if (closed > 0 && !(await batchHasRoom(ctx, FLAG_CLOSE_COST, FLAG_SETTLE_COST))) break;
+      lead = await closeOne(ctx, actor, flag, { ...opts, lead }, effects);
+      closed++;
+    }
+  });
+  await effects.settle(ctx, opts.now);
+  const rest = flags.slice(closed);
+  if (rest.length > 0 && lead !== undefined) {
+    await ctx.scheduler.runAfter(0, internal.inboxWrites.closeFlagsRest, {
+      actorId: actor._id,
+      flagIds: rest.map((f) => f._id),
+      resolution: opts.resolution,
+      decision: opts.decision,
+      reason: opts.reason,
+      defaulted: opts.defaulted,
+      now: opts.now,
+      lead,
+      perFlagRows: opts.perFlagRows !== false,
+    });
+  }
+  return lead;
+}
+
+/**
+ * A decision's later page: the flags still open of those it had no room for, closed as the first page
+ * closed them — unless the decision was undone since (an undo row names its lead), when it stops: the
+ * undo reopened what was closed, and the rest were never closed.
+ */
+export async function closeFlagsRestPage(
+  ctx: MutationCtx,
+  args: Omit<FlagCloseOpts, 'lead'> & {
+    actorId: Id<'profiles'>;
+    flagIds: Id<'contentFlags'>[];
+    lead: Id<'moderationActions'>;
   },
+): Promise<void> {
+  const undone = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', args.lead))
+    .first();
+  if (undone !== null) return;
+  const actor = await ctx.db.get(args.actorId);
+  if (!actor) return;
+  const flags: Doc<'contentFlags'>[] = [];
+  for (const id of args.flagIds) {
+    const flag = await ctx.db.get(id);
+    if (flag && isOpenFlag(flag)) flags.push(flag);
+  }
+  const { actorId: _a, flagIds: _f, ...opts } = args;
+  await closeFlagsUnder(ctx, actor, flags, opts);
+}
+
+/** One flag closed under the decision: its own row when the decision writes them, then `closeFlag`. */
+async function closeOne(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  flag: Doc<'contentFlags'>,
+  opts: FlagCloseOpts,
+  effects: FlagCloseEffects,
 ): Promise<Id<'moderationActions'> | undefined> {
   let lead = opts.lead;
-  for (const flag of flags) {
+  if (opts.perFlagRows !== false) {
     const id = await writeAudit(ctx, {
       actorId: actor._id,
       action: opts.resolution === 'actioned' ? 'resolve_flag' : 'dismiss_flag',
@@ -95,11 +204,16 @@ export async function closeFlagsUnder(
       createdAt: opts.now,
     });
     lead ??= id;
-    await closeFlag(ctx, flag, opts.resolution, actor._id, opts.now, {
-      actionId: lead,
-      decision: opts.decision,
-    });
   }
+  await closeFlag(
+    ctx,
+    flag,
+    opts.resolution,
+    actor._id,
+    opts.now,
+    { ...(lead !== undefined ? { actionId: lead } : {}), decision: opts.decision },
+    effects,
+  );
   return lead;
 }
 
@@ -211,10 +325,21 @@ export async function reopenFlagsClosedBy(
   const now = Date.now();
   const flags: Doc<'contentFlags'>[] = [];
   const leftClosed: { flagId: Id<'contentFlags'>; why: string }[] = [];
+  // A decision's flags share a target: its newest flags read once per target, not once per flag.
+  const newerByTarget = new Map<string, Doc<'contentFlags'>[]>();
+  const newerOf = async (flag: Doc<'contentFlags'>) => {
+    const key = `${flag.targetType}:${flag.targetId}`;
+    let newer = newerByTarget.get(key);
+    if (newer === undefined) {
+      newer = await newerFlagsOn(ctx, flag);
+      newerByTarget.set(key, newer);
+    }
+    return newer;
+  };
   for (const id of ids) {
     const flag = await ctx.db.get(id);
     const why =
-      flagReopenRefusalOf(flag, flag ? await newerFlagsOn(ctx, flag) : []) ??
+      flagReopenRefusalOf(flag, flag ? await newerOf(flag) : []) ??
       flagActorRefusal(actor, flag as Doc<'contentFlags'>);
     if (why === null) flags.push(flag as Doc<'contentFlags'>);
     else if (opts.withUndoOf) leftClosed.push({ flagId: id, why });
@@ -240,6 +365,9 @@ export async function reopenFlagsClosedBy(
     }
   }
   const reopenedIds: Id<'contentFlags'>[] = [];
+  // Each target's hold and each counter moved once, after every flag is back open (PR #170).
+  const targets = new Map<string, { type: string; id: string }>();
+  const counted = new Map<string, { count: number; at: number }>();
   for (const flag of flags) {
     const resolution = flag.status as FlagResolution;
     await ctx.db.patch(flag._id, {
@@ -247,16 +375,13 @@ export async function reopenFlagsClosedBy(
       resolvedByUserId: undefined,
       resolvedAt: undefined,
     });
-    // An open complaint holds withdrawn content back from erasure again (D248).
-    await holdMoved(ctx, flag.targetType, flag.targetId, now);
+    targets.set(`${flag.targetType}:${flag.targetId}`, {
+      type: flag.targetType,
+      id: flag.targetId,
+    });
     if (flag.resolvedAt !== undefined && metricDay(flag.resolvedAt) === metricDay(now)) {
-      await bumpMetricMetaCounter(
-        ctx,
-        'flag_dispositions',
-        `${flag.reason}:${resolution}`,
-        -1,
-        flag.resolvedAt,
-      );
+      const key = `${flag.reason}:${resolution}`;
+      counted.set(key, { count: (counted.get(key)?.count ?? 0) + 1, at: flag.resolvedAt });
     }
     reopenedIds.push(flag._id);
     // A flag decision's own undo: the undone row's flag carries every reopened flag (`reopened`), so
@@ -277,8 +402,19 @@ export async function reopenFlagsClosedBy(
       createdAt: now,
     });
   }
-  await reopenItem(ctx, actionId, { now });
-  // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
-  for (const id of reopenedIds) await syncInboxSource(ctx, flagSource(id), { now });
+  // An open complaint holds withdrawn content back from erasure again (D248).
+  for (const { type, id } of targets.values()) await holdMoved(ctx, type, id, now);
+  for (const [key, { count, at }] of counted) {
+    await bumpMetricMetaCounter(ctx, 'flag_dispositions', key, -count, at);
+  }
+  // One batch with the reopen: every item it touches recounted once.
+  await inboxBatch(ctx, async () => {
+    const covered = new Set<string>();
+    await reopenItem(ctx, actionId, { now, covered });
+    // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
+    for (const id of reopenedIds) {
+      if (!covered.has(id)) await syncInboxSource(ctx, flagSource(id), { now });
+    }
+  });
   return flags.length;
 }

@@ -41,7 +41,7 @@ import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { flagSubject, subjectOfTarget } from './flagSubject';
 import { flagBodyId } from './openFlags';
-import type { RowKind } from './readBudget';
+import { ROW_MAX, type RowKind } from './readBudget';
 import { requestKeyOf } from './requestDecisions';
 
 // ── Sources ────────────────────────────────────────────────────────────────────────────────────
@@ -100,6 +100,28 @@ export type SourceFacts = {
 export interface InboxReads {
   get<T extends TableNames>(kind: RowKind, id: Id<T>): Promise<Doc<T> | null>;
   take<T>(kind: RowKind, n: number, read: (n: number) => Promise<T[]>): Promise<T[]>;
+  /** Within one batch's reopen: each key's open item, looked up once (a new item forgets its key). */
+  openByKey?: Map<string, Doc<'inboxItems'> | null>;
+}
+
+/**
+ * A batch reopen's reads: each row read once (an item's row, a target's, a body's — none of which a
+ * batch writes before its end), and each key's open item looked up once.
+ */
+function memoReads(ctx: QueryCtx): InboxReads {
+  const memo = new Map<string, Promise<unknown>>();
+  return {
+    get: <T extends TableNames>(_kind: RowKind, id: Id<T>) => {
+      let read = memo.get(id) as Promise<Doc<T> | null> | undefined;
+      if (read === undefined) {
+        read = ctx.db.get(id);
+        memo.set(id, read);
+      }
+      return read;
+    },
+    take: (_kind, n, read) => read(n),
+    openByKey: new Map(),
+  };
 }
 
 /** A live hook's reads: the mutation's own handful, unmetered. */
@@ -406,6 +428,10 @@ type SyncOpts = DecideOpts & {
   decidedAt?: number;
   /** The backfill's decided history: a decided source with no member joins a decided item. */
   history?: boolean;
+  /** A decision's own reconcile: a decided source with no member is filed, then closed (`decideItem`). */
+  record?: boolean;
+  /** The source's member as just read (a reopen's walk by decision row), so it isn't read again. */
+  member?: Doc<'inboxItemMembers'>;
 };
 
 /** What a reconcile did — for the drift repair's count and the tests. */
@@ -422,13 +448,17 @@ async function memberOf(ctx: QueryCtx, reads: InboxReads, source: InboxSource) {
 }
 
 async function openItemByKey(ctx: QueryCtx, reads: InboxReads, key: string) {
+  const known = reads.openByKey?.get(key);
+  if (known !== undefined) return known;
   const rows = await reads.take('small', 1, (n) =>
     ctx.db
       .query('inboxItems')
       .withIndex('by_key', (q) => q.eq('key', key).eq('status', 'open'))
       .take(n),
   );
-  return rows[0] ?? null;
+  const found = rows[0] ?? null;
+  reads.openByKey?.set(key, found);
+  return found;
 }
 
 /**
@@ -493,6 +523,8 @@ async function createItem(
   facts: SourceFacts,
   now: number,
   status: 'open' | 'decided',
+  /** A decided item's instant, set at once: a batch's later twin finds it before its refresh runs. */
+  decidedAt?: number,
 ): Promise<Id<'inboxItems'>> {
   return ctx.db.insert('inboxItems', {
     key: facts.key,
@@ -507,6 +539,7 @@ async function createItem(
     memberCount: 0,
     ...(facts.waterBodyId ? { waterBodyId: facts.waterBodyId } : {}),
     ...(facts.subjectUserId ? { subjectUserId: facts.subjectUserId } : {}),
+    ...(decidedAt !== undefined ? { decidedAt } : {}),
     refreshedAt: now,
   });
 }
@@ -528,13 +561,162 @@ type Decided = {
   decisionActionId?: Id<'moderationActions'>;
 };
 
+// ── Batches ────────────────────────────────────────────────────────────────────────────────────
+
+/** A refresh an open batch owes an item: the newest facts and decision it was handed, and whether it is new. */
+type OwedRefresh = { facts?: SourceFacts; decided?: Decided; fresh: boolean; now: number };
+
+/**
+ * The open batch of each transaction (one per `ctx`, as the request budget is): while one is open,
+ * an item's refresh is owed, not run — so closing N members of one item recounts it **once** at the
+ * batch's end, not N times (a recount reads up to {@link MAX_MEMBERS} members; per source, a
+ * 201-ask drain of a 500-ask item read ~80,000 member rows, past Convex's documents limit).
+ */
+const BATCHES = new WeakMap<object, { depth: number; owed: Map<string, OwedRefresh> }>();
+
+/**
+ * **Run `work` as one Inbox batch** (B01-5): every reconcile inside it updates its member at once and
+ * leaves its item's refresh owed; the batch ends by refreshing each touched item once, with the last
+ * facts and decision it was handed (the decision that closes an item is the one handed with its last
+ * open member, as one at a time). Nested batches join the outer one. Within a batch an item's stored
+ * status and counts lag its members until the end — which no reconcile reads for a close, and for a
+ * reopen reads to the same end (a decided item reopens in place either way).
+ */
+export async function inboxBatch<T>(ctx: MutationCtx, work: () => Promise<T>): Promise<T> {
+  const open = BATCHES.get(ctx);
+  if (open) {
+    open.depth++;
+    try {
+      return await work();
+    } finally {
+      open.depth--;
+    }
+  }
+  const batch = { depth: 1, owed: new Map<string, OwedRefresh>() };
+  BATCHES.set(ctx, batch);
+  let value: T;
+  try {
+    value = await work();
+  } finally {
+    BATCHES.delete(ctx);
+  }
+  const reads = liveReads(ctx);
+  for (const [itemId, owed] of batch.owed) {
+    await refreshItemNow(
+      ctx,
+      reads,
+      itemId as Id<'inboxItems'>,
+      owed.now,
+      owed.facts,
+      owed.decided,
+      owed.fresh,
+    );
+  }
+  return value;
+}
+
+/** How many items the open batch owes a refresh (none outside one) — for a closer sizing its page. */
+export function owedRefreshes(ctx: MutationCtx): number {
+  return BATCHES.get(ctx)?.owed.size ?? 0;
+}
+
+/** Whether `ctx` has an open batch. */
+export function inBatch(ctx: MutationCtx): boolean {
+  return BATCHES.has(ctx);
+}
+
+/** A cost on each axis Convex limits a transaction by. */
+export type TxCost = {
+  bytesRead: number;
+  documentsRead: number;
+  databaseQueries: number;
+  documentsWritten: number;
+};
+
+/**
+ * The worst one item's refresh reads and writes: its first open and closed member, up to
+ * {@link MAX_MEMBERS} of each status counted, the item, a decision's source (a request's worst), and
+ * its counts.
+ */
+export const REFRESH_COST: TxCost = {
+  bytesRead:
+    (2 * MAX_MEMBERS + 4) * ROW_MAX.inboxMember + 8 * ROW_MAX.small + ROW_MAX.waterBodyRequest,
+  documentsRead: 2 * MAX_MEMBERS + 16,
+  databaseQueries: 24,
+  documentsWritten: 16,
+};
+
+/** A reconcile's own reads and writes beyond its source row: its member, its item, an open item by key. */
+export const RECONCILE_COST: TxCost = {
+  bytesRead: 6 * ROW_MAX.small,
+  documentsRead: 8,
+  databaseQueries: 8,
+  documentsWritten: 4,
+};
+
+/** Headroom a closer keeps past its batch: the next page's schedule, its own last rows. */
+const CLOSER_RESERVE: TxCost = {
+  bytesRead: 256 * 1024,
+  documentsRead: 200,
+  databaseQueries: 100,
+  documentsWritten: 100,
+};
+
+const AXES = ['bytesRead', 'documentsRead', 'databaseQueries', 'documentsWritten'] as const;
+
+/**
+ * **Room for one more source in this transaction's batch** — its own cost (`perSource`, the closer's
+ * reads and writes for it plus {@link RECONCILE_COST}), a refresh for every item the batch owes and one
+ * more for the item it may touch, and the closer's headroom — on Convex's live metrics, so the reads
+ * already made count as made. A closer asks before each source and, out of room, stops and schedules
+ * the rest: always one source at least, so it advances.
+ */
+export async function batchHasRoom(
+  ctx: MutationCtx,
+  perSource: TxCost,
+  /** What the closer runs once after its batch (a flag page's settle), kept back too. */
+  after?: TxCost,
+): Promise<boolean> {
+  const m = await ctx.meta.getTransactionMetrics();
+  const refreshes = owedRefreshes(ctx) + 1;
+  return AXES.every(
+    (k) =>
+      m[k].remaining >=
+      perSource[k] +
+        RECONCILE_COST[k] +
+        refreshes * REFRESH_COST[k] +
+        CLOSER_RESERVE[k] +
+        (after?.[k] ?? 0),
+  );
+}
+
+async function refreshItem(
+  ctx: MutationCtx,
+  reads: InboxReads,
+  itemId: Id<'inboxItems'>,
+  now: number,
+  facts?: SourceFacts,
+  decided?: Decided,
+  freshItem?: boolean,
+): Promise<void> {
+  const batch = BATCHES.get(ctx);
+  if (!batch) return refreshItemNow(ctx, reads, itemId, now, facts, decided, freshItem);
+  const prior = batch.owed.get(itemId);
+  batch.owed.set(itemId, {
+    facts: facts ?? prior?.facts,
+    decided: decided ?? prior?.decided,
+    fresh: (prior?.fresh ?? false) || freshItem === true,
+    now,
+  });
+}
+
 /**
  * Re-derive an item from its members and move its counts: open while any member is open (its count,
  * oldest filing and rank from the open ones); decided once none is (from them all); deleted once it
  * has none. `facts` refresh its tab, body and kind; `decided` is the decision that closed its last open
  * member, when this refresh is the one that closes it.
  */
-async function refreshItem(
+async function refreshItemNow(
   ctx: MutationCtx,
   reads: InboxReads,
   itemId: Id<'inboxItems'>,
@@ -673,7 +855,7 @@ export async function syncInboxSource(
   const reads = opts.reads ?? liveReads(ctx);
   const now = opts.now ?? Date.now();
   const facts = await factsOf(ctx, source, reads);
-  const member = await memberOf(ctx, reads, source);
+  const member = opts.member ?? (await memberOf(ctx, reads, source));
   const current = member ? await reads.get('small', member.itemId) : null;
 
   // ── No member owed: withdrawn, erased, or never an Inbox row ──
@@ -711,22 +893,30 @@ export async function syncInboxSource(
       if (current) await refreshItem(ctx, reads, current._id, now, facts, decided);
       return 'closed';
     }
-    if (!opts.history) return 'none';
-    // The decided history (the backfill): a decided item with this key and this decision instant.
-    const twins = await reads.take('small', 20, (n) =>
-      ctx.db
-        .query('inboxItems')
-        .withIndex('by_key', (q) => q.eq('key', facts.key).eq('status', 'decided'))
-        .take(n),
-    );
-    const twin = twins.find((t) => t.decidedAt === decided.decidedAt);
-    const itemId = twin?._id ?? (await createItem(ctx, facts, now, 'decided'));
+    if (!opts.history && !opts.record) return 'none';
+    const stamp = opts.actionId ? { closedByActionId: opts.actionId } : {};
+    // A decision on a source the backfill hadn't reached (`record`): it is filed first — into the open
+    // item its question is, when there is one — then closed, stamped with the decision's row, so the
+    // decision records every member it closed and its undo reopens them all.
+    const open = opts.record ? await targetItem(ctx, reads, source, facts, null) : null;
+    // Else (and for the backfill's decided history): a decided item with this key and this instant.
+    const twins = open
+      ? []
+      : await reads.take('small', 20, (n) =>
+          ctx.db
+            .query('inboxItems')
+            .withIndex('by_key', (q) => q.eq('key', facts.key).eq('status', 'decided'))
+            .take(n),
+        );
+    const twin = open ?? twins.find((t) => t.decidedAt === decided.decidedAt);
+    const itemId = twin?._id ?? (await createItem(ctx, facts, now, 'decided', decided.decidedAt));
     await ctx.db.insert('inboxItemMembers', {
       itemId,
       sourceTable: source.table,
       sourceId: source.id,
       ...(facts.filedByUserId ? { filedByUserId: facts.filedByUserId } : {}),
       status: 'closed',
+      ...stamp,
       filedAt: facts.filedAt,
     });
     await refreshItem(ctx, reads, itemId, now, facts, decided, twin === undefined);
@@ -757,6 +947,7 @@ export async function syncInboxSource(
   }
   const fresh = target === null;
   const into = target?._id ?? (await createItem(ctx, facts, now, 'open'));
+  if (target === null) reads.openByKey?.delete(facts.key);
   if (member) {
     const reopening = member.status === 'closed';
     await ctx.db.patch(member._id, {
@@ -889,7 +1080,7 @@ export async function decideItem(
   source: InboxSource,
   opts: DecideOpts = {},
 ): Promise<SyncOutcome> {
-  return syncInboxSource(ctx, source, opts);
+  return syncInboxSource(ctx, source, { ...opts, record: true });
 }
 
 /** A source's question changed (an admit resolved; a merge moved it): its member moves to its new item. */
@@ -909,17 +1100,32 @@ export async function rekey(
 export async function reopenItem(
   ctx: MutationCtx,
   actionId: Id<'moderationActions'>,
-  opts: { now?: number } = {},
+  opts: {
+    now?: number;
+    /** Filled with every source reconciled here, so a caller's follow-up skips them. */
+    covered?: Set<string>;
+  } = {},
 ): Promise<number> {
   const members = await ctx.db
     .query('inboxItemMembers')
     .withIndex('by_closed_by', (q) => q.eq('closedByActionId', actionId))
     .take(MAX_MEMBERS);
   let reopened = 0;
-  for (const m of members) {
-    const outcome = await syncInboxSource(ctx, sourceOfMember(m), opts);
-    if (outcome === 'reopened' || outcome === 'moved' || outcome === 'filed') reopened++;
-  }
+  // One batch, its reads memoized: an item that had every member closed by the decision is recounted
+  // once, and its row, its target and its key's open item read once — not per member (PR #170: a
+  // 500-report ruling's undo read past Convex's 4,096 index ranges, member by member).
+  const reads = memoReads(ctx);
+  await inboxBatch(ctx, async () => {
+    for (const m of members) {
+      const outcome = await syncInboxSource(ctx, sourceOfMember(m), {
+        ...(opts.now !== undefined ? { now: opts.now } : {}),
+        reads,
+        member: m,
+      });
+      opts.covered?.add(m.sourceId);
+      if (outcome === 'reopened' || outcome === 'moved' || outcome === 'filed') reopened++;
+    }
+  });
   return reopened;
 }
 

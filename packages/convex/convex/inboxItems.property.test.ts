@@ -24,6 +24,7 @@
  * S2's real hooks too.
  */
 
+import { requestNameKeyFor } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
@@ -33,7 +34,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { closeFlag } from './lib/flagResolution';
+import { closeFlagsUnder } from './lib/inboxFlags';
 import {
   asksSameQuestion,
   bodySource,
@@ -109,6 +110,11 @@ type World = {
   drawn: Id<'waterBodies'>[];
   /** Decisions whose primary closed and whose siblings wait for a drain page. */
   pendingDrains: Doc<'waterBodyRequests'>[];
+  /**
+   * Sources written raw, as before the backfill reached them: no member yet, and none owed while they
+   * stay open — but a decision on one must record it, and its undo put it back (PR #170).
+   */
+  unfiled: Set<string>;
 };
 
 async function person(t: T, subject: string, role: 'member' | 'moderator' | 'admin') {
@@ -219,7 +225,7 @@ async function world(): Promise<World> {
       }),
     );
   }
-  return { t, members, mods, admin, bodies, reports, drawn, pendingDrains: [] };
+  return { t, members, mods, admin, bodies, reports, drawn, pendingDrains: [], unfiled: new Set() };
 }
 
 // ── The events ─────────────────────────────────────────────────────────────────────────────────
@@ -242,7 +248,10 @@ type Ev =
   | { k: 'mergeBody' }
   | { k: 'ticket'; who: number; category: number }
   | { k: 'resolveTicket'; i: number }
-  | { k: 'undo'; i: number };
+  | { k: 'undo'; i: number }
+  | { k: 'rawFlag'; who: number; target: number; reason: number }
+  | { k: 'rawAsk'; who: number; name: number }
+  | { k: 'takedown'; i: number };
 
 const ev: fc.Arbitrary<Ev> = fc.oneof(
   {
@@ -315,6 +324,20 @@ const ev: fc.Arbitrary<Ev> = fc.oneof(
   },
   { weight: 1, arbitrary: fc.record({ k: fc.constant('resolveTicket' as const), i: fc.nat(20) }) },
   { weight: 3, arbitrary: fc.record({ k: fc.constant('undo' as const), i: fc.nat(20) }) },
+  {
+    weight: 3,
+    arbitrary: fc.record({
+      k: fc.constant('rawFlag' as const),
+      who: fc.nat(3),
+      target: fc.nat(5),
+      reason: fc.nat(3),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({ k: fc.constant('rawAsk' as const), who: fc.nat(2), name: fc.nat(1) }),
+  },
+  { weight: 2, arbitrary: fc.record({ k: fc.constant('takedown' as const), i: fc.nat(20) }) },
 );
 
 /** Swallow the real mutations' own refusals (a dupe, a D269 own-content refusal, a decided row…). */
@@ -439,6 +462,8 @@ async function apply(w: World, e: Ev): Promise<void> {
           .withIndex('by_item_status', (q) => q.eq('itemId', member.itemId).eq('status', 'open'))
           .collect();
         const actorId = w.mods[1]?.id as Id<'profiles'>;
+        const actor = await ctx.db.get(actorId);
+        if (!actor) return;
         const now = Date.now();
         const actionId = await writeAudit(ctx, {
           actorId,
@@ -448,10 +473,20 @@ async function apply(w: World, e: Ev): Promise<void> {
           reason: 'checked',
           createdAt: now,
         });
+        // Through the batch closer every flag decision uses: one recount per item.
+        const rows: Doc<'contentFlags'>[] = [];
         for (const m of open) {
           const row = await ctx.db.get(m.sourceId as Id<'contentFlags'>);
-          if (row) await closeFlag(ctx, row, resolution, actorId, now, { actionId });
+          if (row) rows.push(row);
         }
+        await closeFlagsUnder(ctx, actor, rows, {
+          resolution,
+          decision: resolution,
+          reason: 'checked',
+          defaulted: false,
+          now,
+          lead: actionId,
+        });
       });
       return;
     }
@@ -621,6 +656,79 @@ async function apply(w: World, e: Ev): Promise<void> {
       if (tk) await w.admin.as.mutation(api.support.resolve, { ticketId: tk._id });
       return;
     }
+    case 'rawFlag': {
+      const flagger = (e.who < 3 ? w.members[e.who] : w.mods[0]) as World['admin'];
+      const targets: [Doc<'contentFlags'>['targetType'], string][] = [
+        ['report', w.reports[0] as string],
+        ['report', w.reports[1] as string],
+        ['user', w.members[2]?.id as string],
+        ['waterbody', w.bodies[0] as string],
+        ['waterbody', w.bodies[2] as string],
+        ['waterbody', w.bodies[1] as string],
+      ];
+      const [targetType, targetId] = targets[e.target % targets.length] as [
+        Doc<'contentFlags'>['targetType'],
+        string,
+      ];
+      const id = await t.run(async (ctx) => {
+        // One open flag per flagger per target, as the table keeps it.
+        const mine = (await ctx.db.query('contentFlags').collect()).some(
+          (f) =>
+            f.flaggerId === flagger.id &&
+            f.targetId === targetId &&
+            (f.status === 'open' || f.status === 'reviewing'),
+        );
+        if (mine) return null;
+        return ctx.db.insert('contentFlags', {
+          flaggerId: flagger.id,
+          targetType,
+          targetId,
+          reason: REASONS[e.reason % REASONS.length] as (typeof REASONS)[number],
+          status: 'open',
+          origin: 'user',
+          createdAt: Date.now(),
+        });
+      });
+      if (id) w.unfiled.add(id);
+      return;
+    }
+    case 'rawAsk': {
+      const asker = w.members[e.who] as World['admin'];
+      const name = ['Cove', 'North Bay'][e.name % 2] as string;
+      const id = await t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          requesterId: asker.id,
+          coord: { lat: 0.4, lng: 0.4 },
+          waterBodyId: w.bodies[0] as Id<'waterBodies'>,
+          name,
+          nameKey: requestNameKeyFor('name_bay', name),
+          createdAt: Date.now(),
+        }),
+      );
+      w.unfiled.add(id);
+      return;
+    }
+    case 'takedown': {
+      // The Inbox's takedown on a flagged report: every open flag on it, in every lane, closed in
+      // pages of one batch each — filed or not.
+      const itemId = await t.run(async (ctx) => {
+        const items = (await ctx.db.query('inboxItems').collect()).filter(
+          (i) => i.status === 'open' && i.kind === 'flag' && i.key.includes(':report:'),
+        );
+        return pick(items, e.i)?._id ?? null;
+      });
+      if (!itemId) return;
+      await attempt(() =>
+        w.admin.as.mutation(api.inboxWrites.takeDown, {
+          itemId,
+          status: 'hidden',
+          reason: 'Fabricated',
+        }),
+      );
+      return;
+    }
     case 'undo': {
       // The real undo engine on a decision's audit row (`undo.run`): `reopen_flag`,
       // `reopen_request`, `return_to_review` — each reopens its sources and then its items through
@@ -647,7 +755,7 @@ async function apply(w: World, e: Ev): Promise<void> {
 
 // ── The invariants ─────────────────────────────────────────────────────────────────────────────
 
-async function invariants(t: T): Promise<string[]> {
+async function invariants(t: T, unfiled: ReadonlySet<string> = new Set()): Promise<string[]> {
   return t.run(async (ctx) => {
     const holes: string[] = [];
     const items = await ctx.db.query('inboxItems').collect();
@@ -669,6 +777,8 @@ async function invariants(t: T): Promise<string[]> {
         if (mine.length > 0) holes.push(`${at}: a member for a source owed none`);
         continue;
       }
+      // A raw source the backfill hasn't reached owes no member while it stays open.
+      if (mine.length === 0 && facts.state === 'open' && unfiled.has(source.id)) continue;
       if (mine.length !== 1) {
         holes.push(`${at}: ${mine.length} members (${facts.state})`);
         continue;
@@ -774,7 +884,7 @@ describe('the one writer, under random histories', () => {
         const w = await world();
         for (const [n, e] of events.entries()) {
           await apply(w, e);
-          const holes = await invariants(w.t);
+          const holes = await invariants(w.t, w.unfiled);
           if (holes.length > 0) {
             throw new Error(`after step ${n} (${JSON.stringify(e)}):\n${holes.join('\n')}`);
           }

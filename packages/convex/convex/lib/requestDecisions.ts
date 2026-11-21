@@ -19,14 +19,23 @@ import {
   requestNameKey,
   requestNameKeyFor,
 } from '@skating/core';
-import { ConvexError, v } from 'convex/values';
+import { ConvexError, getDocumentSize, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { composed, writeAudit } from './audit';
-import { decideItem, itemToDecide, requestSource } from './inboxItems';
+import {
+  batchHasRoom,
+  decideItem,
+  inboxBatch,
+  itemToDecide,
+  LANDMARK_SCAN,
+  requestSource,
+  type TxCost,
+} from './inboxItems';
 import { assertInboxVerb } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
+import { ROW_MAX } from './readBudget';
 import { literals } from './validators';
 
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
@@ -337,12 +346,31 @@ export async function assertMayDecide(
 }
 
 /**
+ * What closing one sibling costs beyond the batch's reconcile: the row read again (twice — the
+ * reconcile reads its facts, and a filing reads them again), for a landmark ask the body's open asks
+ * its place is compared with, its patch, its audit row and its member.
+ */
+function siblingCost(row: Doc<'waterBodyRequests'>): TxCost {
+  const size = getDocumentSize(row);
+  const place = row.kind === 'name_landmark' ? LANDMARK_SCAN * ROW_MAX.waterBodyRequest : 0;
+  return {
+    bytesRead: 2 * size + place,
+    documentsRead: 4 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
+    databaseQueries: 6 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
+    documentsWritten: 4,
+  };
+}
+
+/**
  * One page of siblings closed with the decision; the next page scheduled if there is one. The page
- * is the transaction's bound — `QUEUE_CAP` patches plus as many audit rows — so a sibling group of
- * any size drains in bounded steps instead of one mutation that grows until it cannot commit
- * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed, and
- * the range ends at `decision.now`, so the drain converges on the group the moderator saw. A
- * landmark decision's pages leave the other places' asks open, so it resumes from a cursor instead.
+ * is one Inbox batch (`inboxBatch`: each item they belong to recounted once, not once per sibling) and
+ * is sized against the transaction's live budget (`batchHasRoom`): a sibling starts only while it and
+ * every refresh the batch owes still fit, so a group of any size — 500 asks in one item — drains in
+ * bounded steps instead of one mutation that grows until it cannot commit (Greptile, PR #63, third
+ * pass; PR #170). A page always closes one at least, so the drain advances. Each page comes back empty
+ * of the rows the last one closed, and the range ends at `decision.now`, so the drain converges on the
+ * group the moderator saw. A landmark decision's pages leave the other places' asks open, so it
+ * resumes from a cursor instead — from the same one when the budget, not the page, ended this one.
  */
 export async function closeSiblingPage(
   ctx: MutationCtx,
@@ -356,11 +384,21 @@ export async function closeSiblingPage(
     landmark: decision.landmarkId ? await ctx.db.get(decision.landmarkId) : null,
     ...(decision.cursor !== undefined ? { cursor: decision.cursor } : {}),
   });
-  for (const row of rows) await closeRow(ctx, row, decision);
-  if (capped) {
+  let closed = 0;
+  await inboxBatch(ctx, async () => {
+    for (const row of rows) {
+      if (closed > 0 && !(await batchHasRoom(ctx, siblingCost(row)))) break;
+      await closeRow(ctx, row, decision);
+      closed++;
+    }
+  });
+  const cut = closed < rows.length;
+  if (cut || capped) {
+    const resume = cut ? decision.cursor : cursor;
+    const { cursor: _last, ...rest } = decision;
     await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, {
-      ...decision,
-      ...(cursor !== undefined ? { cursor } : {}),
+      ...rest,
+      ...(resume !== undefined ? { cursor: resume } : {}),
     });
   }
 }
@@ -395,8 +433,11 @@ export async function decide(
     ...(bodyActionId !== undefined ? { bodyActionId } : {}),
   };
   await assertMayDecide(ctx, request, actorId, status);
-  const actionId = await closeRow(ctx, request, decision);
-  await closeSiblingPage(ctx, request, { ...decision, actionId });
+  // The primary and its first page, one batch: their items recounted once at its end.
+  await inboxBatch(ctx, async () => {
+    const actionId = await closeRow(ctx, request, decision);
+    await closeSiblingPage(ctx, request, { ...decision, actionId });
+  });
 }
 
 // ── Bays (D201) ────────────────────────────────────────────────────────────────────────────────

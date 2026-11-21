@@ -128,12 +128,13 @@ import {
   REMOVAL_REASONS,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { closeFlag } from './lib/flagResolution';
+import { closeFlagsUnder } from './lib/inboxFlags';
 import {
   bodySource,
   decideItem,
   fileMember,
   flagSource,
+  inboxBatch,
   itemToDecide,
   refreshItemTab,
   rekey,
@@ -3418,7 +3419,8 @@ export async function setPublicAccessImpl(
               .eq('status', 'open')
               .eq('reason', 'no_public_access'),
           )
-          .collect()
+          // Bounded: past this many open reports the rest stay open in the item for the next ruling.
+          .take(RULING_REPORTS_READ)
       : [];
 
     // The ruling's row first, so each report it closes is stamped with it (its Inbox member, and
@@ -3439,18 +3441,27 @@ export async function setPublicAccessImpl(
       createdAt: now,
     });
     if (resolution) {
-      for (const row of open) {
-        await closeFlag(ctx, row, resolution, actor._id, now, {
-          actionId,
-          decision: resolution === 'actioned' ? 'ruled_closed' : 'ruled_accessible',
-        });
-      }
+      // Paged, one Inbox batch a page (`closeFlagsUnder`): the body's Access item recounted once a
+      // page, each report's hold and the counters moved once; no row per report — the ruling's names
+      // them.
+      await closeFlagsUnder(ctx, actor, open, {
+        resolution,
+        decision: resolution === 'actioned' ? 'ruled_closed' : 'ruled_accessible',
+        reason: '',
+        defaulted: false,
+        now,
+        lead: actionId,
+        perFlagRows: false,
+      });
     }
     // Reports the ruling left open (a clear) now read against the new ruling: *New* or *Disputes*.
     await refreshItemTab(ctx, `access:${waterBodyId}`, { now });
     return actionId;
   }
 }
+
+/** The most open access reports one ruling reads and closes. */
+const RULING_REPORTS_READ = 1_000;
 
 /** A citation, not a paragraph — it renders inline on the lake. Matches the depth-note ceiling. */
 const MAX_PUBLIC_ACCESS_NOTE_LENGTH = 160;
@@ -3647,6 +3658,20 @@ const RETARGET_CAP = 1_000;
  * table's own rule), and is counted. Returns the ids moved, for the merge's change set.
  */
 export async function retargetAsks(
+  ctx: MutationCtx,
+  loserId: Id<'waterBodies'>,
+  survivorId: Id<'waterBodies'>,
+): Promise<{
+  requests: Id<'waterBodyRequests'>[];
+  placeNames: Id<'corpusPlaceNames'>[];
+  flags: Id<'contentFlags'>[];
+  flagsLeft: number;
+}> {
+  // One batch: each item the moved asks and reports leave or join is recounted once.
+  return inboxBatch(ctx, () => retargetEach(ctx, loserId, survivorId));
+}
+
+async function retargetEach(
   ctx: MutationCtx,
   loserId: Id<'waterBodies'>,
   survivorId: Id<'waterBodies'>,

@@ -78,7 +78,7 @@ import { internalMutation, type MutationCtx, mutation } from './_generated/serve
 import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
-import { leaveMember, ticketSource } from './lib/inboxItems';
+import { inboxBatch, leaveMember, ticketSource } from './lib/inboxItems';
 import { refreshPersonRow } from './lib/peopleRows';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
 import {
@@ -789,7 +789,9 @@ async function erasePrivate(
     .take(size);
   await drain(tickets);
   // A deleted ticket is no question: each leaves its Inbox item (B01-5), which goes with it.
-  for (const ticket of tickets) await leaveMember(ctx, ticketSource(ticket._id));
+  await inboxBatch(ctx, async () => {
+    for (const ticket of tickets) await leaveMember(ctx, ticketSource(ticket._id));
+  });
 
   return { more: full, deleted };
 }

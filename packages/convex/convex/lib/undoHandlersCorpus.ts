@@ -49,6 +49,7 @@ import {
 import {
   flagSource,
   type InboxSource,
+  inboxBatch,
   MAX_MEMBERS,
   reopenItem,
   requestSource,
@@ -695,9 +696,14 @@ const undoRequestDecision: UndoHandler = {
         ...(primary.waterBodyId ? { waterBodyId: primary.waterBodyId } : {}),
       },
     });
-    await reopenItem(ctx, row._id);
-    // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
-    for (const id of reopened) await syncInboxSource(ctx, requestSource(id));
+    await inboxBatch(ctx, async () => {
+      const covered = new Set<string>();
+      await reopenItem(ctx, row._id, { covered });
+      // Whatever its member's stamp — a decision from before the Inbox stamped none — each item follows.
+      for (const id of reopened) {
+        if (!covered.has(id)) await syncInboxSource(ctx, requestSource(id));
+      }
+    });
   },
 };
 

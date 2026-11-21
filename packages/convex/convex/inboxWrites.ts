@@ -29,12 +29,12 @@
 
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation } from './_generated/server';
+import { internalMutation, type MutationCtx, mutation } from './_generated/server';
 import { retractAlertImpl, setOfficialImpl } from './accessAlerts';
 import { checkedReason } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { PUBLIC_ACCESS_VERDICTS } from './lib/enums';
-import { closeFlagsUnder, isOpenFlag, openFlagsOn } from './lib/inboxFlags';
+import { closeFlagsRestPage, closeFlagsUnder, isOpenFlag, openFlagsOn } from './lib/inboxFlags';
 import { MAX_MEMBERS } from './lib/inboxItems';
 import { assertInboxVerb, type InboxRuleFacts } from './lib/inboxRules';
 import { reasonFor } from './lib/peopleCan';
@@ -383,3 +383,36 @@ function openAccessReports(ctx: MutationCtx, waterBodyId: Id<'waterBodies'>) {
     )
     .collect();
 }
+
+/**
+ * A flag decision's later page (`lib/inboxFlags.closeFlagsUnder`): the flags its first page had no
+ * room for, closed under the same decision row, page by page, until none is left — or stopped once the
+ * decision is undone.
+ */
+export const closeFlagsRest = internalMutation({
+  args: {
+    actorId: v.id('profiles'),
+    flagIds: v.array(v.id('contentFlags')),
+    resolution: literals(['actioned', 'dismissed'] as const),
+    decision: literals([
+      'dismissed',
+      'actioned',
+      'hidden',
+      'removed',
+      'pinned',
+      'unpinned',
+      'retracted',
+      'restored',
+      'ruled_closed',
+      'ruled_accessible',
+    ] as const),
+    reason: v.string(),
+    defaulted: v.boolean(),
+    now: v.number(),
+    lead: v.id('moderationActions'),
+    perFlagRows: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await closeFlagsRestPage(ctx, args);
+  },
+});

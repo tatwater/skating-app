@@ -19,6 +19,7 @@ import {
   deriveItem,
   factsOf,
   type InboxReads,
+  inboxBatch,
   leaveMembers,
   MAX_MEMBERS,
   refreshInboxItem,
@@ -137,10 +138,14 @@ export async function repairInboxItem(
 ): Promise<number> {
   const { drifted, kinds, facetFrom } = await examine(ctx, item);
   const stale = drifted.filter((d) => d.kind === 'member_stale').map((d) => d.member);
-  const left = await leaveMembers(ctx, item._id, stale, { now });
   const fixing = drifted.filter((d) => d.kind !== 'member_stale').slice(0, REPAIR_FIXES_PER_VISIT);
-  for (const { member } of fixing) await syncInboxSource(ctx, sourceOfMember(member), { now });
-  if (facetFrom !== null) await syncInboxSource(ctx, sourceOfMember(facetFrom), { now });
+  // One batch: every item the fixes touch recounted once at its end.
+  const left = await inboxBatch(ctx, async () => {
+    const gone = await leaveMembers(ctx, item._id, stale, { now });
+    for (const { member } of fixing) await syncInboxSource(ctx, sourceOfMember(member), { now });
+    if (facetFrom !== null) await syncInboxSource(ctx, sourceOfMember(facetFrom), { now });
+    return gone;
+  });
   if ((await ctx.db.get(item._id)) !== null) await refreshInboxItem(ctx, item._id, now);
   return left + fixing.length + (kinds.has('fields') ? 1 : 0) + (facetFrom !== null ? 1 : 0);
 }
