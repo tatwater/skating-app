@@ -3542,6 +3542,32 @@ export default defineSchema({
     .index('by_water_body_removed', ['waterBodyId', 'removedAt']),
 
   /**
+   * **A body's short list of its place names** (B01-3u, D282): one row per body holding each live
+   * landmark's id, kind, point and names (its name, then its spellings) and each live bay's id and
+   * names — what a list of changes needs to check the landmark undo's whole rule (a landmark already
+   * there under the old names, or a bay that answers to one) without reading up to 1,500 landmark rows
+   * and every bay's outline per line. Bounded at the write (`lib/bodyNames`, `BODY_NAMES_MAX_BYTES`):
+   * past it the row says `capped`, holds nothing, and every reader gives the answer it gave before the
+   * row existed. Rebuilt whole beside every write of a landmark's or a bay's names, kind, point,
+   * removal or body (`packages/guards`' `bodyNameWriters.test.ts` holds the list); a body with no row
+   * (before its backfill) reads as before.
+   */
+  bodyNameLists: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    capped: v.boolean(),
+    landmarks: v.array(
+      v.object({
+        id: v.id('bodyLandmarks'),
+        kind: literals(LANDMARK_KINDS),
+        point: latLng,
+        names: v.array(v.string()),
+      }),
+    ),
+    bays: v.array(v.object({ id: v.id('waterBodySubAreas'), names: v.array(v.string()) })),
+    updatedAt: v.number(),
+  }).index('by_body', ['waterBodyId']),
+
+  /**
    * The community corpus's unplaced names (D202) — a place the emails name that no landmark took:
    * "Apple Island" (a peninsula since the causeway, in neither catalog), "Hero's Welcome", "the sea
    * caves". A moderator's queue, loaded by `scripts/etl load-landmark-names` from the landmark pass's

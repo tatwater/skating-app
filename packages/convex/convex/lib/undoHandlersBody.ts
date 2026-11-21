@@ -62,6 +62,7 @@ import {
   setWeatherSamplePointsImpl,
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
+import { NAMES_NEED_THE_BAY, nameListRefusal } from './bodyNames';
 import { landmarkEditRefusal, liveBaysForNaming, liveLandmarksForBody } from './landmarkRows';
 import { listChangedRefusal } from './listCas';
 import { ROW_MAX } from './readBudget';
@@ -431,6 +432,14 @@ export function undoClashRefusal(clash: string, fromRun: boolean): string {
   return fromRun ? `${base} — a list of changes can’t check that in advance.` : `${base}.`;
 }
 
+/**
+ * A list's answer when a bay on the lake answers to one of the old names: the bay's outline decides
+ * whether it names that point (`bayNaming`), and a list reads no outline — so it says where to look,
+ * never a guess (B01-3u).
+ */
+export const UNDO_BAY_NAME_ON_LANDMARK =
+  'A bay on this lake answers to the old name — open this landmark to see whether this undo can bring it back.';
+
 /** edit_landmark → the name, aliases, kind and point it replaced. */
 const undoEditLandmark: UndoHandler = {
   blocked: (row) => {
@@ -443,9 +452,14 @@ const undoEditLandmark: UndoHandler = {
   // A merge's fold and a catalog run change a landmark's spellings with no row on it: the undo
   // compares the spellings the edit left with the landmark as it stands (B01-3d). Where one landmark
   // is in view (the toast, its own history, `runUndo`), the edit's own rule runs too — a landmark
-  // already there under the old names, or a bay that answers to one (B01-3h). **A list page checks
-  // the spellings only**: that rule reads the body's whole landmark list and its bays' outlines,
-  // which a page can't afford per row — a deliberate exception, made honest where it bites.
+  // already there under the old names, or a bay that answers to one (B01-3h). **A list page reads
+  // the body's short list of names instead** (`lib/bodyNames`, B01-3u): the duplicate rule exactly,
+  // and a bay answering to an old name sends the reader to the landmark. A body whose list isn't
+  // built yet, or is capped, keeps the spellings-only check (the write still runs the whole rule).
+  refusalCost: (scope) =>
+    scope === 'list'
+      ? { bytes: ROW_MAX.landmark + ROW_MAX.bodyNames, reads: 2 }
+      : { bytes: ROW_MAX.landmark, reads: 1 },
   refusal: async (ctx, row, read) => {
     const id = ctx.db.normalizeId('bodyLandmarks', row.targetId);
     const current = id ? await read.row('landmark', id) : null;
@@ -455,13 +469,24 @@ const undoEditLandmark: UndoHandler = {
       meta(row).aliases as string[] | undefined,
       'this landmark’s other spellings',
     );
-    // A list checks the spellings only; `runUndo` leaves the rule to the write it runs, which reads
-    // the lists once and says a clash plainly (`clashMessage`) — never twice in one mutation.
-    if (spellings !== null || read.scope === 'list' || 'insert' in ctx.db) return spellings;
+    // `runUndo` leaves the rule to the write it runs, which reads the lists once and says a clash
+    // plainly (`clashMessage`) — never twice in one mutation.
+    if (spellings !== null || 'insert' in ctx.db) return spellings;
     const prev = meta(row).prev as LandmarkEditPrev;
     const names = normalizeLandmarkNames(prev.name, prev.aliases);
     if (names === null) return null;
-    // Uncharged, as the edit reads them (owed: a stored light list of a body's names would bound it).
+    if (read.scope === 'list') {
+      const list = await read.bodyNames(current.waterBodyId);
+      const answer =
+        list === null
+          ? undefined
+          : nameListRefusal(list, { kind: prev.kind, point: prev.point, ...names }, current._id);
+      if (answer === undefined || answer === null) return null;
+      return answer === NAMES_NEED_THE_BAY
+        ? UNDO_BAY_NAME_ON_LANDMARK
+        : undoClashRefusal(answer, false);
+    }
+    // Where one landmark is in view: the whole rule, uncharged, as the edit reads it.
     const clash = landmarkEditRefusal(
       await liveLandmarksForBody(ctx, current.waterBodyId),
       await liveBaysForNaming(ctx, current.waterBodyId),

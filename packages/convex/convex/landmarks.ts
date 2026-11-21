@@ -37,6 +37,7 @@ import {
   normalizeLandmarkNames,
 } from '@skating/core';
 import { ConvexError, type Infer, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -49,6 +50,7 @@ import {
 import { composed } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
+import { refreshBodyNames } from './lib/bodyNames';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -323,6 +325,69 @@ export const importBatch = internalMutation({
     }
     // Twenty notes are enough to see a pattern and never dominate the return.
     return { ...total, shortfalls: vouched ? [] : shortfalls, notes: notes.slice(0, 20) };
+  },
+});
+
+/** Rows a pass of the names backfill reads at most beyond its first body (landmarks and bays). */
+const NAMES_PASS_ROWS = 2_000;
+/** Bodies a pass of the names backfill rebuilds at most. */
+const NAMES_PASS_BODIES = 50;
+
+/**
+ * Backfill: **every body's short list of place names** (B01-3u, `lib/bodyNames`) — one row for each
+ * body that has a landmark or a bay, rebuilt by the one writer. Bodies are found a step at a time
+ * through the landmark index, then the bay index (`gt` the last body seen: one row read a body, never
+ * the table), and a pass rebuilds them until it has read `NAMES_PASS_ROWS` rows (its first body
+ * always, however large — at most `MAX_LANDMARKS_PER_BODY` live landmarks and its bays) or
+ * `NAMES_PASS_BODIES` bodies, then schedules the next. Idempotent: a row already right is left alone,
+ * and a body met in both phases is rebuilt twice to no effect. A body with no row reads as it did
+ * before the row existed, so the backfill can run at any time, and again.
+ * `convex run landmarks:backfillBodyNames '{}'`.
+ */
+export const backfillBodyNames = internalMutation({
+  args: {
+    phase: v.optional(literals(['landmarks', 'bays'] as const)),
+    /** The last body this phase rebuilt: the walk resumes after it. */
+    after: v.optional(v.id('waterBodies')),
+    /** Test seam: one pass, nothing scheduled. */
+    chain: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const phase = args.phase ?? 'landmarks';
+    let after = args.after;
+    let read = 0;
+    let bodies = 0;
+    let wrote = 0;
+    const next = () =>
+      phase === 'landmarks'
+        ? ctx.db
+            .query('bodyLandmarks')
+            .withIndex('by_water_body', (q) => (after ? q.gt('waterBodyId', after) : q))
+            .first()
+        : ctx.db
+            .query('waterBodySubAreas')
+            .withIndex('by_parent', (q) => (after ? q.gt('waterBodyId', after) : q))
+            .first();
+    for (;;) {
+      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_PASS_ROWS)) break;
+      const row = await next();
+      if (row === null) {
+        // This phase is done: the bays next, or the end.
+        if (phase === 'landmarks' && args.chain !== false) {
+          await ctx.scheduler.runAfter(0, internal.landmarks.backfillBodyNames, { phase: 'bays' });
+        }
+        return { phase, bodies, wrote, done: phase === 'bays' };
+      }
+      const refreshed = await refreshBodyNames(ctx, row.waterBodyId);
+      after = row.waterBodyId;
+      read += refreshed.read;
+      bodies++;
+      if (refreshed.wrote) wrote++;
+    }
+    if (args.chain !== false) {
+      await ctx.scheduler.runAfter(0, internal.landmarks.backfillBodyNames, { phase, after });
+    }
+    return { phase, bodies, wrote, done: false };
   },
 });
 
@@ -637,6 +702,8 @@ async function importOneBody(
       updatedAt: now,
     });
   }
+  // The body's short list of names follows the load (`lib/bodyNames`), once a body.
+  if (write) await refreshBodyNames(ctx, body._id);
   return counts;
 }
 
@@ -700,7 +767,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.places');
-    await requireListedBody(ctx, args.waterBodyId);
+    const body = await requireListedBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
     const rows = await liveLandmarksForBody(ctx, args.waterBodyId);
     assertNotDuplicate(rows, { kind: args.kind, point: args.point, ...names });
@@ -735,6 +802,7 @@ export const create = mutation({
     await auditLandmark(ctx, actor._id, 'create_landmark', id, composed`Added "${names.name}"`, {
       kind: args.kind,
     });
+    await refreshBodyNames(ctx, body._id);
     if (args.requestId !== undefined) {
       await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
     }
@@ -826,6 +894,7 @@ export async function updateLandmarkImpl(
       moderatorEditedAt: now,
       updatedAt: now,
     });
+    await refreshBodyNames(ctx, row.waterBodyId);
     const prev: LandmarkEditPrev = {
       name: row.name,
       aliases: row.aliases,
@@ -877,6 +946,7 @@ export async function removeLandmarkImpl(
       catalogDroppedAt: undefined,
       updatedAt: Date.now(),
     });
+    await refreshBodyNames(ctx, row.waterBodyId);
     await auditLandmark(
       ctx,
       actor._id,
@@ -929,6 +999,7 @@ export async function restoreLandmarkImpl(
       // A row a merge folded away is a place again once a moderator brings it back.
       mergedIntoId: undefined,
     });
+    await refreshBodyNames(ctx, row.waterBodyId);
     // What the restore cleared, so its undo is a true inverse (D226, founder call 2026-11-13): a
     // catalog-dropped row goes back to the catalogs, a merge-folded one back into its twin.
     const prev: LandmarkRestorePrev = {
@@ -988,6 +1059,7 @@ export async function unrestoreLandmarkImpl(
     moderatorEditedAt: prev.moderatorEditedAt ?? undefined,
     updatedAt: Date.now(),
   });
+  await refreshBodyNames(ctx, row.waterBodyId);
   // A fold put back is the merge's again: the row names its twin, so undoing *this* removal is
   // refused the way the merge's own fold row is — it comes back with the merge.
   await auditLandmark(

@@ -27,6 +27,11 @@ export interface UndoRead {
   snapshot<P>(kind: RowKind, actionId: Id<'moderationActions'>): Promise<P | null | 'parts'>;
   /** Up to `n` rows of `kind` in one read, `n` worst cases reserved and the difference handed back. */
   take<D>(kind: RowKind, n: number, read: () => Promise<D[]>): Promise<D[]>;
+  /**
+   * A body's short list of place names (`lib/bodyNames`, B01-3u): `null` before its row is built.
+   * Read once a query however many lines ask, like {@link UndoRead.row}.
+   */
+  bodyNames(waterBodyId: Id<'waterBodies'>): Promise<Doc<'bodyNameLists'> | null>;
 }
 
 /** The undo mutation supplies these writers so eligibility reads don't import the mutations back. */

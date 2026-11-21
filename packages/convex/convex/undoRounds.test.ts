@@ -21,6 +21,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
+import { refreshBodyNames } from './lib/bodyNames';
 import { listablePeople } from './lib/peopleFigures';
 import { refreshPersonRow } from './lib/peopleRows';
 import {
@@ -270,6 +271,26 @@ describe('History’s rounds (B01-3h)', () => {
     // The landmark edits and the depth choice are each offered; the old boosts say why not.
     expect(page.entries.filter((e) => e.undo.state === 'available')).toHaveLength(46);
     expect(stats.rounds).toBeLessThanOrEqual(WORST_PAGE_ROUNDS);
+  });
+
+  test('the worst page with the body’s short list of names built: one more read, shared by every line (B01-3u)', async () => {
+    const t = harness();
+    const { actorId, waterBodyId } = await busyBody(t, 50);
+    await t.run((ctx) => refreshBodyNames(ctx, waterBodyId as Id<'waterBodies'>));
+    const { page, stats } = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+      const { ctx, stats } = counted(raw);
+      const page = await historyPage(ctx, viewer, {
+        waterBodyId: waterBodyId as Id<'waterBodies'>,
+        limit: 50,
+      });
+      return { page, stats };
+    });
+    console.log(`History rounds (45 refusals, names built): ${stats.rounds} / ${stats.calls}`);
+    // Every landmark edit checked against the whole rule from the list, and offered (no clash).
+    expect(page.entries.filter((e) => e.undo.state === 'available')).toHaveLength(46);
+    // The list is read once a query — the first wave pays one round more, the rest share it.
+    expect(stats.rounds).toBeLessThanOrEqual(WORST_PAGE_ROUNDS + 1);
   });
 
   test('worst case across bodies: heavy refusal reads past the budget in one feed stay inside the budget; the overflow says "check elsewhere", never a throw', async () => {

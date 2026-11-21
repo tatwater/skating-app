@@ -75,6 +75,7 @@ import {
   writeSnapshot,
 } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { refreshBodyNames } from './lib/bodyNames';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -618,17 +619,25 @@ async function insertSubArea(
     input.retireInto.set(input.waterBodyId, list);
   } else {
     await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, naming);
+    // The bay's names join the body's short list (`lib/bodyNames`) — a batch's, once per parent.
+    await refreshBodyNames(ctx, input.waterBodyId);
   }
   return subAreaId;
 }
 
-/** Retire, once per parent, the landmarks a batch of inserted bays name (`insertSubArea.retireInto`). */
+/**
+ * Retire, once per parent, the landmarks a batch of inserted bays name (`insertSubArea.retireInto`),
+ * and rebuild each parent's short list of names once.
+ */
 async function retireCollected(
   ctx: MutationCtx,
   actorId: Id<'profiles'>,
   named: ReadonlyMap<Id<'waterBodies'>, BayNaming[]>,
 ): Promise<void> {
-  for (const [waterBodyId, bays] of named) await retireNamedAsBays(ctx, actorId, waterBodyId, bays);
+  for (const [waterBodyId, bays] of named) {
+    await retireNamedAsBays(ctx, actorId, waterBodyId, bays);
+    await refreshBodyNames(ctx, waterBodyId);
+  }
 }
 
 /**
@@ -815,6 +824,7 @@ async function systemDelist(
     systemDelistReason: reason,
     updatedAt: now,
   });
+  await refreshBodyNames(ctx, subArea.waterBodyId);
   await syncSubAreaCells(ctx, subArea._id, {
     bbox: subArea.bbox,
     minVisibleZoom: subArea.minVisibleZoom,
@@ -889,6 +899,9 @@ export async function repointSubAreasOnMerge(
     survivor,
     actorId,
   );
+  // Both bodies' short lists of names: the loser's bays left it, the survivor's arrived.
+  await refreshBodyNames(ctx, loserId);
+  await refreshBodyNames(ctx, survivor._id);
   return { repointed, delisted: delisted + reclipDelisted };
 }
 
@@ -1345,6 +1358,7 @@ export async function renameSubAreaImpl(
       searchText: subAreaSearchText(nextName, nextAliases),
       updatedAt: Date.now(),
     });
+    await refreshBodyNames(ctx, subArea.waterBodyId);
     await audit(
       ctx,
       actor._id,
@@ -1406,6 +1420,7 @@ export async function removeSubAreaImpl(
       removedByUserId: actor._id,
       updatedAt: now,
     });
+    await refreshBodyNames(ctx, subArea.waterBodyId);
     await syncSubAreaCells(ctx, subAreaId, {
       bbox: subArea.bbox,
       minVisibleZoom: subArea.minVisibleZoom,
@@ -1505,6 +1520,7 @@ export async function restoreSubAreaImpl(
       removedByUserId: undefined,
       updatedAt: Date.now(),
     });
+    await refreshBodyNames(ctx, subArea.waterBodyId);
     // The re-derivation runs on the restored row (the patch above has landed) so a bay whose
     // outline the re-clip *did* move gets its depth cleared like any other geometry change, and one
     // the parent never moved under keeps it. Restoring a bay on a delisted lake leaves it off the
