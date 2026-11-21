@@ -274,14 +274,23 @@ describe('each other subject', () => {
         goneCount: 1,
         createdAt: NOW,
       });
-      for (const verdict of ['still_there', 'fully_healed'] as const) {
-        await ctx.db.insert('hazardConfirmations', {
-          hazardId: id,
-          userId: w.filer.id,
-          verdict,
-          via: 'report_flow',
-          createdAt: NOW,
-        });
+      // Every verdict, each a different count, so a fold of two into one side shows (PR #170).
+      const cast = {
+        still_there: 1,
+        healing_unsafe: 2,
+        fully_healed: 3,
+        never_existed: 4,
+      } as const;
+      for (const [verdict, n] of Object.entries(cast)) {
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert('hazardConfirmations', {
+            hazardId: id,
+            userId: w.filer.id,
+            verdict: verdict as keyof typeof cast,
+            via: 'report_flow',
+            createdAt: NOW,
+          });
+        }
       }
       return id;
     });
@@ -291,8 +300,25 @@ describe('each other subject', () => {
     expect(h.hazard).toMatchObject({
       note: 'Hole by the launch',
       point: { lat: 0.3, lng: 0.2 },
-      confirmations: { up: 1, down: 1 },
+      votes: { still_there: 1, healing_unsafe: 2, fully_healed: 3, never_existed: 4 },
+      votesCapped: false,
     });
+    // Past the 200 it reads, each count is a floor, and says so.
+    await w.t.run(async (ctx) => {
+      for (let i = 0; i < 191; i++) {
+        await ctx.db.insert('hazardConfirmations', {
+          hazardId: hazard,
+          userId: w.filer.id,
+          verdict: 'still_there',
+          via: 'report_flow',
+          createdAt: NOW,
+        });
+      }
+    });
+    const many = targetOf(await (await w.flagOn('hazard', hazard)).read());
+    if (many.targetType !== 'hazard') throw new Error('hazard');
+    expect(many.hazard.votesCapped).toBe(true);
+    expect(Object.values(many.hazard.votes).reduce((a, b) => a + b, 0)).toBe(200);
 
     const r = await w.report();
     const photo = await w.t.run(async (ctx) => {

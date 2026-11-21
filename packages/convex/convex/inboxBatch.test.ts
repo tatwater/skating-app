@@ -842,7 +842,10 @@ describe('no staffer decides an ask they filed, in any item the decision reaches
     await bayAsks(t, lakeId, [mod.id], { file: () => false });
     await settle();
     await expect(
-      mod.as.mutation(api.corpusRequests.decline, { requestId: theirs, note: 'No' }),
+      mod.as.mutation(api.corpusRequests.decline, {
+        requestId: theirs as Id<'waterBodyRequests'>,
+        note: 'No',
+      }),
     ).rejects.toThrow(OWN_FILING_REFUSAL);
     expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
   });

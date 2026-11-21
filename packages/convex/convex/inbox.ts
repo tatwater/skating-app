@@ -23,6 +23,7 @@ import {
   aroundItPhrases,
   type Count,
   callerNow,
+  type HazardVerdict,
   INBOX_LANE_ORDER,
   INBOX_LANES,
   INBOX_LIST_LANES,
@@ -283,7 +284,16 @@ export type HazardSubjectView = {
   note: string | null;
   point: LatLng | null;
   createdAt: number;
-  confirmations: { up: number; down: number };
+  /**
+   * The skaters' votes on it, **by verdict, as they cast them** (PR #170) — never folded into two
+   * sides: "never existed" says the pin was in the wrong place, "fully healed" that what was there is
+   * gone, "healing" that it is still dangerous, and a passage marker (`ridge_crossing`) inverts what
+   * each means. The handler labels each with core's `verdictLabel(verdict, type)`. D3: none of these is
+   * a reading of the ice; a moderator reads who said what, never "fewer warnings" as safer.
+   */
+  votes: Record<HazardVerdict, number>;
+  /** More votes than the read counts (200): each count is then a floor. */
+  votesCapped: boolean;
 };
 
 /** The flagged thing, by target type; `exists: false` when it is gone (`(deleted)`). */

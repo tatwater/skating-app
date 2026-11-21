@@ -14,6 +14,8 @@ import {
   COUNT_CAP,
   type Count,
   coveredFraction,
+  HAZARD_VERDICTS,
+  type HazardVerdict,
   haversineMeters,
   INBOX_AGE_FLOORS_DAYS,
   INBOX_FACETS,
@@ -530,12 +532,18 @@ async function flagTargetView(
     }
     case 'hazard': {
       const h = doc as Doc<'hazards'>;
-      const votes = await r.take('small', 200, (k) =>
+      const votes = await r.take('small', HAZARD_VOTES_READ + 1, (k) =>
         r.ctx.db
           .query('hazardConfirmations')
           .withIndex('by_hazard', (q) => q.eq('hazardId', h._id))
           .take(k),
       );
+      // Each verdict counted as itself (PR #170): "never existed" is not "still there".
+      const byVerdict = Object.fromEntries(HAZARD_VERDICTS.map((v) => [v, 0])) as Record<
+        HazardVerdict,
+        number
+      >;
+      for (const v of votes.slice(0, HAZARD_VOTES_READ)) byVerdict[v.verdict] += 1;
       const geometry = h.geometry as { type?: string; coordinates?: number[] };
       const point: LatLng | null =
         geometry?.type === 'Point' && Array.isArray(geometry.coordinates)
@@ -548,10 +556,8 @@ async function flagTargetView(
         note: r.text(h, h.description),
         point,
         createdAt: h._creationTime,
-        confirmations: {
-          up: votes.filter((v) => v.verdict !== 'fully_healed').length,
-          down: votes.filter((v) => v.verdict === 'fully_healed').length,
-        },
+        votes: byVerdict,
+        votesCapped: votes.length > HAZARD_VOTES_READ,
       };
       return { view: { ...base, targetType, hazard }, facts };
     }
@@ -1139,6 +1145,9 @@ async function alongsideOf(
     decline: await askedAlongside(r.ctx, first, r.viewerId, decline, take, readAsk),
   };
 }
+
+/** A flagged hazard's votes the item counts; past it, each count is a floor. */
+export const HAZARD_VOTES_READ = 200;
 
 /** The item a ref names: its id, or a source ref (`flag:`, `request:`, `body:`, `ticket:`), or a bare source id. */
 export async function itemOfRef(ctx: QueryCtx, ref: string): Promise<Doc<'inboxItems'> | null> {
