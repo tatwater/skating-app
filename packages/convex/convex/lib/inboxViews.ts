@@ -69,12 +69,13 @@ import { CHARGED_QUERY_BUDGET, type ReadBudget, type RowKind, requestBudget } fr
 import { type RecordFacts, recordFactsOf } from './recordRules';
 import { trustClassFor } from './reputation';
 import {
-  askedAlongside,
+  alongsideIn,
   type DecisionAnswer,
   drawnBay,
   landmarkAskOf,
   landmarkProposalView,
   matchLandmark,
+  ownOpenAsks,
   requestNames,
 } from './requestDecisions';
 
@@ -1153,7 +1154,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
 
 /**
  * Whether an ask's approval (by its answer) and its decline would each close one of the viewer's own
- * asks in another item — `askedAlongside`, read through the item's budget.
+ * asks (`askedAlongside`): the viewer's own open asks read once — charged as they weigh, a handful of
+ * capped rows — and each verb's reach asked of them.
  */
 async function alongsideOf(
   r: InboxReader,
@@ -1161,12 +1163,16 @@ async function alongsideOf(
   approve: DecisionAnswer,
   decline: DecisionAnswer,
 ): Promise<{ approve: boolean; decline: boolean }> {
-  const take: RuleTake = (n, read) => r.take('small', n, read);
-  const readAsk = (id: Id<'waterBodyRequests'>) =>
-    r.get<'waterBodyRequests'>('waterBodyRequest', id);
+  const take: RuleTake = async (n, read) => {
+    r.budget.reserveCalls(1, n);
+    const rows = await read(n);
+    r.budget.spend(rows.reduce((b, row) => b + getDocumentSize(row as never), 0));
+    return rows;
+  };
+  const mine = await ownOpenAsks(r.ctx, r.viewerId, take);
   return {
-    approve: await askedAlongside(r.ctx, first, r.viewerId, approve, take, readAsk),
-    decline: await askedAlongside(r.ctx, first, r.viewerId, decline, take, readAsk),
+    approve: alongsideIn(mine, first, approve, r.now),
+    decline: alongsideIn(mine, first, decline, r.now),
   };
 }
 

@@ -26,7 +26,7 @@ import {
 } from './lib/inboxItems';
 import { inboxDrift } from './lib/inboxRepair';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
-import { QUEUE_CAP, siblingCost } from './lib/requestDecisions';
+import { alongsideIn, OWN_ASKS_READ, QUEUE_CAP, siblingCost } from './lib/requestDecisions';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -960,15 +960,18 @@ describe('no staffer decides an ask they filed, in any item the decision reaches
     expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
   });
 
-  test('an own ask the backfill hasn’t filed yet is seen by the write’s own scan', async () => {
+  test('an own ask the backfill hasn’t filed yet: the drawer and the write both see it', async () => {
     const t = harness();
     const lakeId = await lake(t);
     const askers = await people(t, 1);
     const mod = await staff(t, 'mod', 'moderator');
     const [theirs] = await bayAsks(t, lakeId, askers);
-    // The moderator's ask for the same bay, written raw: no member, so no item knows it is theirs.
+    // The moderator's ask for the same bay, written raw: no member, so no item knows it is theirs —
+    // the rule reads the moderator's own asks, not the items.
     await bayAsks(t, lakeId, [mod.id], { file: () => false });
     await settle();
+    const view = await mod.as.query(api.inbox.item, { ref: `request:${theirs}` });
+    expect(view.item?.can.decline).toBe(OWN_FILING_REFUSAL);
     await expect(
       mod.as.mutation(api.corpusRequests.decline, {
         requestId: theirs as Id<'waterBodyRequests'>,
@@ -976,6 +979,53 @@ describe('no staffer decides an ask they filed, in any item the decision reaches
       }),
     ).rejects.toThrow(OWN_FILING_REFUSAL);
     expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['open', 'open']);
+  });
+
+  test('asks a script filed in the staffer’s name are not theirs: the staffer decides past them', async () => {
+    const t = harness();
+    const lakeId = await lake(t);
+    await people(t, 1, 'skater');
+    const other = await staff(t, 'other', 'moderator');
+    await aliasedBayOn(t, lakeId, other.id);
+    const theirs = await t
+      .withIdentity({ subject: 'skater0' })
+      .mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId: lakeId,
+        name: 'Northwest Bay',
+      });
+    // The seed's "NW Bay", filed in this staffer's name: no person asked it, so none of theirs.
+    await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay',
+        status: 'open',
+        origin: 'seed',
+        requesterId: other.id,
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId: lakeId,
+        name: 'NW Bay',
+        nameKey: requestNameKeyFor('name_bay', 'NW Bay'),
+        createdAt: NOW - 1000,
+      }),
+    );
+    await settle();
+    await other.as.mutation(api.corpusRequests.approve, { requestId: theirs });
+    expect((await statusesOf(t)).map(([, s]) => s)).toEqual(['approved', 'approved']);
+  });
+
+  test('past the read’s bound the rule can’t tell, and refuses rather than decide unseen', () => {
+    const ask = {
+      _id: 'a',
+      _creationTime: 1,
+      kind: 'activate',
+      status: 'open',
+      waterBodyId: 'b',
+    } as unknown as Doc<'waterBodyRequests'>;
+    const unrelated = { ...ask, _id: 'x', kind: 'takedown' } as Doc<'waterBodyRequests'>;
+    expect(alongsideIn(Array(OWN_ASKS_READ).fill(unrelated), ask, {})).toBe(false);
+    expect(alongsideIn(Array(OWN_ASKS_READ + 1).fill(unrelated), ask, {})).toBe(true);
+    expect(alongsideIn([{ ...ask, _id: 'y' } as Doc<'waterBodyRequests'>], ask, {})).toBe(true);
   });
 
   test('the undo of an approval that closed the undoer’s own ask in another item: neither offered nor run', async () => {

@@ -324,135 +324,99 @@ export type DecisionAnswer = {
   landmark?: Doc<'bodyLandmarks'> | null;
 };
 
-/** Open landmark items on a body, and a viewer's members of each, read to find their own ask. */
-const ALONGSIDE_ITEMS = 8;
-const ALONGSIDE_MEMBERS = 8;
+/** The most of a person's own open asks read to find one a decision would close. */
+export const OWN_ASKS_READ = QUEUE_CAP;
+
+/**
+ * Whether `other` is one of the asks a decision on `request` closes with it — `openSiblings`'
+ * selection, one row at a time: open and filed by the decision's `asOf`, the same kind, and the same
+ * question (the same catalog feature for an admit; for a bay, a name key of the ask's or of its
+ * answer's names; for a landmark ask, the same place, or one the answering landmark answers; else the
+ * same body).
+ */
+export function closesWith(
+  request: Doc<'waterBodyRequests'>,
+  other: Doc<'waterBodyRequests'>,
+  answer: DecisionAnswer,
+  asOf: number,
+): boolean {
+  if (other._id === request._id || other.status !== 'open' || other._creationTime > asOf) {
+    return false;
+  }
+  if (other.kind !== request.kind) return false;
+  if (request.kind === 'admit') {
+    return (
+      request.candidateExternalId !== undefined &&
+      other.candidateExternalId === request.candidateExternalId
+    );
+  }
+  if (request.waterBodyId === undefined || other.waterBodyId !== request.waterBodyId) return false;
+  if (request.kind === 'name_bay') {
+    const keys = new Set([requestKeyOf(request)]);
+    for (const n of answer.subArea ? bayNames(answer.subArea) : []) {
+      keys.add(requestNameKeyFor('name_bay', n));
+    }
+    return other.nameKey !== undefined && keys.has(other.nameKey);
+  }
+  if (request.kind === 'name_landmark') {
+    const theirs = landmarkAskOf(other);
+    return (
+      landmarkAsksAreSamePlace(landmarkAskOf(request), theirs) ||
+      (answer.landmark != null && landmarkAnswersAsk(answer.landmark, theirs))
+    );
+  }
+  return true;
+}
 
 const plainTake: RuleTake = (n, read) => read(n);
 
 /**
  * **The viewer's own open ask among those a decision on `request` would close** (D289, PR #170) —
- * in any item, not only the one that holds `request`. A decision drains its siblings
- * (`openSiblings`), and an answer widens them past the ask's own item: an approval's bay closes every
- * ask by any of its names (a moderator approving someone's "Northwest Bay" with the alias "NW Bay"
- * would close their own "NW Bay" ask, another item), and a landmark's same-place asks can sit in a
- * second item that bridged in. Point reads only, the way `filedOnTarget` reads a takedown's other
- * lanes: each item those siblings are keyed into (`bay:`, `admit:`, `<kind>:` — or a body's open
- * landmark items), and the viewer's members of it (`by_item_filer`); a landmark member is the
- * viewer's sibling only when its ask is the same place, or one the answering landmark answers. Every
- * open ask is the open member of the item its fields key (the writer's invariant), so this is the
- * rule's whole answer — the item's `can` and the write both ask it. (The write also scans the asks
- * themselves, `ownAskAmongSiblings`, for any the backfill hasn't filed yet.)
+ * in any item, filed into one or not. Read from the viewer's end: their own open asks a person filed
+ * (`by_requester_status_origin`, `origin` unset — a script's asks in their name are exempt), each
+ * asked whether the decision closes it ({@link closesWith}, the drain's own selection). One indexed
+ * read, never a paginated one — a deciding mutation pages its first drain page, and Convex allows one
+ * `paginate` per execution — and bounded by the person, not the question: the writers cap a person's
+ * open asks at 30, so {@link OWN_ASKS_READ} always holds them all; past it (a row no capped writer
+ * filed) the read can't tell, and refuses as an own filing rather than decide unseen — another
+ * staffer decides, so no item is stranded. The item's `can` and the write both ask it.
  */
 export async function askedAlongside(
   ctx: QueryCtx,
   request: Doc<'waterBodyRequests'>,
   viewerId: Id<'profiles'>,
   answer: DecisionAnswer = {},
+  asOf: number = Number.POSITIVE_INFINITY,
   take: RuleTake = plainTake,
-  /** How a landmark member's ask is read (an item's read charges it as the ask it is). */
-  readAsk: (id: Id<'waterBodyRequests'>) => Promise<Doc<'waterBodyRequests'> | null> = (id) =>
-    ctx.db.get(id),
 ): Promise<boolean> {
-  const body = request.waterBodyId;
-  const keys: string[] = [];
-  if (request.kind === 'admit') {
-    keys.push(
-      request.candidateExternalId ? `admit:${request.candidateExternalId}` : `admit:${request._id}`,
-    );
-  } else if (body === undefined) {
-    return false;
-  } else if (request.kind === 'name_bay') {
-    const names = new Set([requestKeyOf(request)]);
-    for (const n of answer.subArea ? bayNames(answer.subArea) : []) {
-      names.add(requestNameKeyFor('name_bay', n));
-    }
-    for (const k of names) keys.push(`bay:${body}:${k}`);
-  } else if (request.kind !== 'name_landmark') {
-    keys.push(`${request.kind}:${body}`);
-  }
-  const items: Doc<'inboxItems'>[] = [];
-  for (const key of keys) {
-    items.push(
-      ...(await take(1, (n) =>
-        ctx.db
-          .query('inboxItems')
-          .withIndex('by_key', (q) => q.eq('key', key).eq('status', 'open'))
-          .take(n),
-      )),
-    );
-  }
-  if (request.kind === 'name_landmark' && body !== undefined) {
-    const prefix = `landmark:${body}:`;
-    const rows = await take(ALONGSIDE_ITEMS, (n) =>
-      ctx.db
-        .query('inboxItems')
-        .withIndex('by_key', (q) => q.gte('key', prefix).lt('key', `landmark:${body};`))
-        .filter((q) => q.eq(q.field('status'), 'open'))
-        .take(n),
-    );
-    items.push(...rows);
-  }
-  const asked = request.kind === 'name_landmark' ? landmarkAskOf(request) : null;
-  for (const item of items) {
-    const mine = await take(ALONGSIDE_MEMBERS, (n) =>
-      ctx.db
-        .query('inboxItemMembers')
-        .withIndex('by_item_filer', (q) => q.eq('itemId', item._id).eq('filedByUserId', viewerId))
-        .take(n),
-    );
-    for (const m of mine) {
-      if (m.status !== 'open') continue;
-      if (asked === null) return true;
-      const id = ctx.db.normalizeId('waterBodyRequests', m.sourceId);
-      const other = id ? await readAsk(id) : null;
-      if (other?.status !== 'open') continue;
-      const theirs = landmarkAskOf(other);
-      if (
-        other._id === request._id ||
-        landmarkAsksAreSamePlace(asked, theirs) ||
-        (answer.landmark != null && landmarkAnswersAsk(answer.landmark, theirs))
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return alongsideIn(await ownOpenAsks(ctx, viewerId, take), request, answer, asOf);
 }
 
-/** The siblings the write scans for one of the actor's own, past the members (before the backfill). */
-export const SIBLING_CHECK_ROWS = 1_000;
-
-/**
- * Whether any open sibling a decision on `request` would close — scanned row by row, every page the
- * drain would read, up to {@link SIBLING_CHECK_ROWS} — is an ask `actorId` filed (a person's ask, not
- * a script's). The write's own check beside {@link askedAlongside}: it also sees asks the backfill
- * hasn't filed into any item yet. Past the scan's bound the drain itself leaves the actor's own ask
- * open (`closeSiblingPage`).
- */
-export async function ownAskAmongSiblings(
+/** A person's own open asks a person filed, up to one past {@link OWN_ASKS_READ}. */
+export function ownOpenAsks(
   ctx: QueryCtx,
+  viewerId: Id<'profiles'>,
+  take: RuleTake = plainTake,
+): Promise<Doc<'waterBodyRequests'>[]> {
+  return take(OWN_ASKS_READ + 1, (n) =>
+    ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_requester_status_origin', (q) =>
+        q.eq('requesterId', viewerId).eq('status', 'open').eq('origin', undefined),
+      )
+      .take(n),
+  );
+}
+
+/** {@link askedAlongside} over asks already read: past the read's bound, it can't tell — refused. */
+export function alongsideIn(
+  mine: readonly Doc<'waterBodyRequests'>[],
   request: Doc<'waterBodyRequests'>,
-  actorId: Id<'profiles'>,
-  asOf: number,
-  answer: DecisionAnswer = {},
-): Promise<boolean> {
-  const own = (r: Doc<'waterBodyRequests'>) => r.requesterId === actorId && r.origin !== 'seed';
-  if (request.kind !== 'name_landmark') {
-    const { rows } = await openSiblings(ctx, request, SIBLING_CHECK_ROWS, asOf, answer);
-    return rows.some(own);
-  }
-  let cursor: string | undefined;
-  for (let seen = 0; seen < SIBLING_CHECK_ROWS; seen += QUEUE_CAP) {
-    const page = await openSiblings(ctx, request, QUEUE_CAP, asOf, {
-      ...answer,
-      ...(cursor !== undefined ? { cursor } : {}),
-    });
-    if (page.rows.some(own)) return true;
-    if (!page.capped) return false;
-    cursor = page.cursor;
-  }
-  return false;
+  answer: DecisionAnswer,
+  asOf: number = Number.POSITIVE_INFINITY,
+): boolean {
+  if (mine.length > OWN_ASKS_READ) return true;
+  return mine.some((other) => closesWith(request, other, answer, asOf));
 }
 
 /**
@@ -476,9 +440,13 @@ export async function assertMayDecide(
 ): Promise<void> {
   const viewer = await ctx.db.get(actorId);
   if (!viewer) throw new ConvexError('Your profile was not found');
-  const alongside =
-    (await askedAlongside(ctx, request, actorId, answer)) ||
-    (await ownAskAmongSiblings(ctx, request, actorId, answer.asOf ?? Date.now(), answer));
+  const alongside = await askedAlongside(
+    ctx,
+    request,
+    actorId,
+    answer,
+    answer.asOf ?? Number.POSITIVE_INFINITY,
+  );
   if (request.origin === 'seed') {
     if (alongside) throw new ConvexError(OWN_FILING_REFUSAL);
     return;

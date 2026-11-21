@@ -3771,6 +3771,11 @@ export default defineSchema({
     // The per-person cap on OPEN asks: an equality on status, so a long history of decided rows
     // cannot push an open one out of a newest-N window (Greptile, PR #63).
     .index('by_requester_status', ['requesterId', 'status'])
+    // A person's own open asks a person filed (`origin` unset; a script's are `'seed'`) — the exact
+    // range a decision's own-filing check reads (D289, PR #170): bounded by the per-person caps at
+    // the writers, however many asks a script filed in the same staffer's name. `eq()` only: the
+    // field is optional and the index not sparse.
+    .index('by_requester_status_origin', ['requesterId', 'status', 'origin'])
     // One person's asks on one lake — the drawer's "you asked for this" line, bounded by the
     // person rather than by the lake's whole history (PR #63, the read audit).
     .index('by_requester_body', ['requesterId', 'waterBodyId'])
