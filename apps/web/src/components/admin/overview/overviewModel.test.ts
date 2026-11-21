@@ -90,6 +90,10 @@ describe('overviewHeads', () => {
     expect(
       overviewHeads({ inbox: n(200, true), refits: n(0), stalled: 0, failed: 3 })[0]?.badges,
     ).toEqual(['200+ in the inbox']);
+    // While the Inbox's backfill runs its count may be short: the badge says so, never a number.
+    expect(
+      overviewHeads({ inbox: 'pending', refits: n(0), stalled: 0, failed: 0 })[0]?.badges,
+    ).toEqual(['Inbox still being prepared']);
   });
 
   it('says a capped re-fit count is a floor, as the inbox’s is', () => {

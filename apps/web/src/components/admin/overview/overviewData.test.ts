@@ -10,6 +10,7 @@ import {
   feedFromActions,
   inboxFootAges,
   inboxFromOverview,
+  inboxHeadCount,
   inboxTotal,
   jobWhen,
   machineryTrouble,
@@ -57,6 +58,9 @@ describe('the Inbox card', () => {
     expect(inbox.lanes.safety).toEqual(c(1));
     expect(inbox.oldestOpenAt).toBe(1_000);
     expect(inboxTotal(inbox)).toEqual(c(17));
+    expect(inboxHeadCount(inbox)).toEqual(c(17));
+    expect(inboxHeadCount({ ...inbox, pending: true })).toBe('pending');
+    expect(inboxHeadCount(undefined)).toEqual(c(0));
   });
 
   it('ages the oldest and the median item from now, never below zero', () => {

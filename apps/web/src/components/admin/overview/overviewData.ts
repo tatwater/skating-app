@@ -85,6 +85,12 @@ export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardDat
   };
 }
 
+/** The heading's Inbox figure: the open total, `pending` while the backfill runs, 0 while loading. */
+export function inboxHeadCount(data: InboxCardData | undefined): Count | 'pending' {
+  if (data === undefined) return { count: 0, capped: false };
+  return data.pending ? 'pending' : inboxTotal(data);
+}
+
 /** Everything open in the Inbox the viewer can see. */
 export function inboxTotal(data: InboxCardData): Count {
   return sumCounts(INBOX_LANES.map((lane) => data.lanes[lane]));
