@@ -153,21 +153,45 @@ const keyOf = (table: string, id: string) => `${table}:${id}`;
  */
 export const syncOne = internalMutation({
   args: { table: literals(INBOX_SOURCE_TABLES), id: v.string() },
-  handler: (ctx, { table, id }) =>
-    asItem(keyOf(table, id), async () => {
-      const source = sourceOf(table, id);
-      let decidedAt: number | undefined;
-      let actorId: Id<'profiles'> | undefined;
-      if (table === 'waterBodies') {
-        const review = await reviewAuditOf(ctx, id);
-        decidedAt = review?.createdAt;
-        actorId = review?.actorId;
+  handler: (ctx, { table, id }) => asItem(keyOf(table, id), () => fileFromBackfill(ctx, table, id)),
+});
+
+/** One source filed as the backfill files it: open or into the decided history. */
+async function fileFromBackfill(
+  ctx: MutationCtx,
+  table: (typeof INBOX_SOURCE_TABLES)[number],
+  id: string,
+) {
+  const source = sourceOf(table, id);
+  let decidedAt: number | undefined;
+  let actorId: Id<'profiles'> | undefined;
+  if (table === 'waterBodies') {
+    const review = await reviewAuditOf(ctx, id);
+    decidedAt = review?.createdAt;
+    actorId = review?.actorId;
+  }
+  return syncInboxSource(ctx, source, {
+    history: true,
+    ...(decidedAt !== undefined ? { decidedAt } : {}),
+    ...(actorId ? { actorId } : {}),
+  });
+}
+
+/**
+ * A parked backfill failure, tried again (the daily retry, `recurringJobs.retryParkedDaily`): the
+ * source filed as the backfill files it, and its failure cleared with it — in one transaction, so a
+ * source that files is never still owed. A key that names no source table is no question: cleared.
+ */
+export const retryBackfillSource = internalMutation({
+  args: { key: v.string() },
+  handler: (ctx, { key }) =>
+    asItem(key, async () => {
+      const [table, id] = key.split(':');
+      if ((INBOX_SOURCE_TABLES as readonly string[]).includes(table ?? '') && id) {
+        await fileFromBackfill(ctx, table as (typeof INBOX_SOURCE_TABLES)[number], id);
       }
-      return syncInboxSource(ctx, source, {
-        history: true,
-        ...(decidedAt !== undefined ? { decidedAt } : {}),
-        ...(actorId ? { actorId } : {}),
-      });
+      await clearFailure(ctx, 'inboxBackfill', key);
+      return null;
     }),
 });
 
@@ -197,13 +221,27 @@ export const repairOne = internalMutation({
     }),
 });
 
-/** Whether the backfill has finished: until it has, every Inbox read says `pending`. */
+/**
+ * **Whether the Inbox's stored items can't yet be taken as whole** — every Inbox read's `pending`, and
+ * the Overview card's: until the backfill's scan has finished, **and** while any source it couldn't
+ * file is still owed (a `jobFailures` row of `inboxBackfill`, parked or not — PR #170). The scan
+ * finishing is not the Inbox being ready: a source that failed is a question missing from the counts,
+ * so the counts say why they may be short rather than reading as exact. Such a failure is retried by
+ * the drift repair's pass while it is failing, and once parked by the daily retry
+ * (`recurringJobs.retryParkedDaily`, D258); Machinery counts both (`recurringJobs.health`), with their
+ * error classes.
+ */
 export async function inboxPending(ctx: QueryCtx): Promise<boolean> {
   const run = await ctx.db
     .query('inboxJobRuns')
     .withIndex('by_job', (q) => q.eq('job', 'backfill'))
     .first();
-  return run?.done !== true;
+  if (run?.done !== true) return true;
+  const owed = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_parked', (q) => q.eq('job', 'inboxBackfill'))
+    .first();
+  return owed !== null;
 }
 
 const passArgs = {

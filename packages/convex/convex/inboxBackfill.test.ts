@@ -6,7 +6,7 @@
 
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { BACKFILL_PHASES, ITEM_BYTES } from './inboxItems';
 import { ROW_MAX } from './lib/readBudget';
@@ -299,5 +299,79 @@ describe('inboxItems:repair', () => {
     await seedRaw(t);
     await runToDone(t);
     expect((await t.mutation(internal.inboxItems.repair, { pageCap: 1 })).checked).toBe(1);
+  });
+});
+
+describe('the scan finishing is not the Inbox being ready', () => {
+  /** A backfill that couldn't file one flag, with staff `b` to read as. */
+  async function withOneUnfiled() {
+    const t = harness();
+    const { b } = await seedRaw(t);
+    await t.run((ctx) => ctx.db.patch(b, { role: 'admin' }));
+    const flags = await t.run((ctx) => ctx.db.query('contentFlags').collect());
+    const poisoned = `contentFlags:${flags[0]?._id}`;
+    const real = recurringWork.asItem;
+    const spy = vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === poisoned) throw new Error('too heavy');
+      return real(key, work);
+    });
+    await runToDone(t);
+    const staff = t.withIdentity({ subject: 'b' });
+    const pendingNow = async () => ({
+      lanes: (await staff.query(api.inbox.lanes, { dayStart: Date.now() - 3_600_000 })).pending,
+      overview: (await staff.query(api.console.overview, {})).inbox.pending,
+    });
+    return { t, spy, poisoned, pendingNow };
+  }
+
+  test('a source the backfill couldn’t file keeps every read pending until it is filed', async () => {
+    const { t, spy, pendingNow } = await withOneUnfiled();
+    expect((await t.run((ctx) => ctx.db.query('inboxJobRuns').first()))?.done).toBe(true);
+    // The scan is done, but a question is missing from the counts: they say so.
+    expect(await pendingNow()).toEqual({ lanes: true, overview: true });
+    spy.mockRestore();
+    await t.mutation(internal.inboxItems.repair, {});
+    expect(await pendingNow()).toEqual({ lanes: false, overview: false });
+  });
+
+  test('a parked one is shown to an operator, stays pending, and the daily retry files it', async () => {
+    const { t, spy, poisoned, pendingNow } = await withOneUnfiled();
+    // Two more failed retries park it; the repair's retry then steps past it.
+    await t.mutation(internal.inboxItems.repair, {});
+    await t.mutation(internal.inboxItems.repair, {});
+    const parked = await t.run((ctx) => ctx.db.query('jobFailures').collect());
+    expect(parked.map((f) => [f.key, f.parkedAt !== undefined])).toEqual([[poisoned, true]]);
+    expect((await t.mutation(internal.inboxItems.repair, {})).retried).toBe(0);
+    expect(await pendingNow()).toEqual({ lanes: true, overview: true });
+    // Machinery counts it, by its error class.
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'ops',
+        displayName: 'ops Test-Person',
+        username: 'ops',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'admin',
+        status: 'active',
+        createdAt: 1,
+      }),
+    );
+    const health = await t.withIdentity({ subject: 'ops' }).query(api.recurringJobs.health, {});
+    const backfill = health.jobs.filter((j) => j.job === 'repair inbox items drift');
+    expect(backfill.some((j) => j.parked === 1 && Object.keys(j.errorClasses).length === 1)).toBe(
+      true,
+    );
+    // A fix deployed: the daily retry files it, and the Inbox is whole.
+    spy.mockRestore();
+    const run = await t.mutation(internal.recurringJobs.retryParkedDaily, {
+      cutoff: Date.now() + 1,
+    });
+    expect(run.freed).toBeGreaterThanOrEqual(1);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+    expect(await pendingNow()).toEqual({ lanes: false, overview: false });
+    expect((await snapshot(t)).counts).toContain('open:contentFlags=1');
   });
 });
