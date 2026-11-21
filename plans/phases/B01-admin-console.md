@@ -1353,6 +1353,10 @@ around:
   again only what reopened; the flags no page had reached stay closed under the original decision.
   An actor suspended between pages doesn't stop their act: it was authorized when made, so it
   completes.
+- **Added 2026-11-21 (Greptile on #170, round five).** A flag decision's own undo is refused whole
+  only when its lead flag (the one its offer checks) can't reopen. Any other flag that can't is left
+  closed and named, so the offer and the run always agree. An undo whose decision stamped more rows
+  than any decision closes is refused in words, never part-reopened.
 
 ### The founder's calls (2026-10-14)
 
@@ -7905,7 +7909,7 @@ internal continuation:
 - `reopenRequestPage`, continued by `reopenRequestsRest`, which stops once the reopen is undone;
 - `closeRequestPage`, continued by `closeRequestsRest` for a re-decline's named asks, which stops
   once that decision is undone;
-- `reopenFlagsPage`, continued by `reopenFlagsRest`, which skips each flag the decision no longer
+- `reopenFlagStep`, continued by `reopenFlagsRest`, which skips each flag the decision no longer
   holds closed.
 
 **Also found and fixed:**
@@ -8026,6 +8030,75 @@ original decision. The undo of the undo now skips flags still held by the decisi
   page closed it, so the item tells one decision.
 
 **Owed:** the carried `via` has no test, because test identities carry no `via` claim.
+
+#### Greptile on #170, round five (2026-11-21)
+
+**The score:** 4/5 on `a09e9e19`, with one finding: the flag reopen rule still read the target's
+newest 100 flags, so a reporter's new filing outside them didn't refuse the reopen. S1 judged it right,
+and swept every rule for the same shape.
+
+**The fix.** The rule's three questions are now point reads, `eq` on every field, the same answer at 1
+flag or 5,000 (`reopenFactsOf`):
+- **superseded:** `by_supersedes`, one row;
+- **the reporter's open filing:** `by_target_flagger_status_origin`, each open status, `origin:
+  'user'` (an automatic flag names its rater as the flagger, so origin tells them apart);
+- **an open automatic flag of the reason:** `by_target_status_reason_origin`, each open status, for
+  `origin` `'auto'` and for absent (the field is optional, so `eq(undefined)` is its own read, never a
+  range).
+
+The reopen now checks each flag in the page that reaches it, inside that page's room on bytes, index
+ranges and documents. Exact facts cost up to five reads a flag, so 500 flags checked up front would
+not fit one transaction.
+
+**The rule-window table** (each capped read in a rule → its category → what holds it). (a) is an
+exact lookup, (b) a bounded read that refuses in words at its bound, (c) a bound a writer holds:
+
+| Function | Read | Bound | Kind | Held by |
+|---|---|---|---|---|
+| `reopenFactsOf` | three point reads | `take(1)` | a | `inboxReopenRule.test.ts` (newest, 101st, oldest, 5,000) |
+| `reopenFlagsClosedBy` | the decision's stamped members | 1,001 | b, refuses past 1,000 (`UNDO_TOO_LARGE`) | the same file |
+| `openFlagsOn` (takedown, alert verdict) | open flags a status | 500 | c: the rest stay open, shown | `DECISION_FLAGS_MAX` arithmetic |
+| `flagItemOf` (dismiss) | the item's open members | 500 | c: the rest stay open, shown | the same |
+| a ruling's reports | open access reports | 1,000 | c: the rest stay open, shown | the same |
+| `leadRowOf` | rows tagged with the undo | 32 | c: an undo writes its own row first | the later-page cases |
+| `undoRowOf` | rows tagged with the undo | 16 | a: any one means undone | — |
+| `newestOnTarget` (overtaken) | the newest row on the target | `first` | a | — |
+| `filedByViewer`, `decisionActorRefusal` | any member the viewer filed | `first`/1 | a | — |
+| `filedOnTarget` | the viewer's open member in the other lane | was 8, now 1 on `status: 'open'` | a (**fixed**) | the closed-members case |
+| `filedAmongClosedBy`, `memberOfSource`, `itemToDecide` | point reads | 1 | a | — |
+| `ownAsks` | the actor's open ask members | 201 | b, `unchecked` refuses | `inboxBatch.test.ts` |
+| `alongsideAnswer` | the asks' items | budget | b, `unchecked` refuses | the same |
+| `REOPEN_ITEMS` | a reopen's items | 4 | b, `UNDO_SPREAD_TOO_WIDE` | `undoOfferVsRun.test.ts` |
+| `undoRequestDecision` gather | the decision's stamped members | 501 | b, refuses past 500 (**was a window**) | `inboxReopenRule.test.ts` |
+| `closeSiblingPage` | the drain | `REQUEST_SIBLINGS_MAX` (499) | c: the rest stay open, shown (**new cap**) | the same |
+| `recordOnlyRefusal` | verdicts a row minted or ended | 2 / 1 | c: one verdict a row; a | — |
+| `heldKindOn` | the standing verdict | `first` | c: one standing a target | — |
+| `launchRefusal`, the put-in undo | hidden launches | 201 | b, `SUPPRESSION_UNCHECKED` (**was a window**) | the same |
+| `contentFlags.flag` dedupe | the person's open flag | point read a status | a (**was a scan, and missed `reviewing`**) | the same |
+
+**The reverse direction** (a window hiding rows that should allow something, or that a count needs):
+- **The item's member count** stops at `MAX_MEMBERS`. Reads now say so with `memberCountIsFloor`, so a
+  view can draw "500+".
+- **`flagsClosed`** is the length of what the decision closes, every page together, so it is exact.
+  The rows past a closer's cap stay open and shown.
+- **"M in other lanes"** has no count anywhere yet. A takedown closes every lane's open flags, up to
+  500 a status.
+- **The own-filing check in another lane** was a window (above), and is fixed.
+- **One open flag per reporter at filing** was an unbounded filtered scan that saw only `open`. It is
+  now exact, for both open statuses.
+
+**The guard** (`packages/guards/src/ruleWindows.test.ts`). In the rule modules and the named rule
+functions, every capped read must take one of three shapes:
+- an exact read (`.first()`, `take(1)`);
+- a read of `X + 1` rows in a function that compares a length past `X`;
+- an entry on the allow-list, with its category and its reason.
+
+A query `.filter(` must be listed too. **It can't see** whether an index's `eq`s make a read exact, a
+cap passed in from another module, whether the `> X` branch really refuses, or rules outside its
+scope.
+
+**Also changed:** the reopen's per-flag cost (`FLAG_REOPEN_COST`) now counts the rule's reads. A flag
+decision's own undo now refuses whole only on its lead flag (see the undo policy above).
 
 #### How the forks were ruled (2026-11-20)
 
