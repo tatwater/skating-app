@@ -62,7 +62,7 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`; the button is owed in B01-5b), so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
@@ -785,6 +785,139 @@ Made while B01-3 built the Bodies list and the Body console; the founder may ove
 11. **`/admin/water/$id` stays standing, with no redirect,** until the tools that still say *Not
     available yet* exist; the console's empty slots and the bay tiles link to it.
 
+### The founder's calls on the Inbox (2026-11-20)
+
+Asked by the governor before the Inbox's design (B01-5). **The calls:**
+
+1. **Everything in §8 §2 is in this wave**, including the three heavy additions, each its own PR:
+   photo moderation (D222: an axis on photos — hide, remove, restore, audited; removed photos purge at
+   30 days), support notes and replies, and telling askers a decision (§11's call 3: email, push and the
+   in-app notifications page, through the settle queue, so an undo inside the window cancels it).
+2. **The dev inbox seed's hold (2026-11-17) is lifted.** The seed may create fake users, and every fake
+   user's last name starts with "Test-" (D287).
+3. **Handlers no board draws are derived by the build** from the nearest board, with every invented
+   choice listed for the founder's look; Paper is there for any worth working through together
+   first.
+4. ***Draw in Body*** (board 2.4) **opens the old editor** (`/admin/water/$id`) until task modes exist
+   (the wave after this one), as the Bodies bay tiles do (the Bodies rulings, 4).
+5. **Merge into another body from the console** (register row Bo21) **is pulled into this wave**:
+   board 2.5 is a drawn body merged into a known one.
+6. **A link to a mode that isn't built** (*Open in Reports →*, a *History →* naming Reports) **is drawn
+   but unavailable, saying "Coming soon"** on hover, focus and press (D286; the governor's pick between
+   the founder's two offers, on the console's existing pattern for unbuilt tools).
+7. **The colleague lock is decided-only** ("Sarah decided this"), never a claim ("Sarah is looking at
+   this"); the flag status `reviewing` is retired — nothing writes it, D251 stays true trivially, the
+   member is narrowed out at the close (D283).
+8. **Support builds no assignee and no `in_progress`** (anyone pitches in). Replies go out from an
+   address at `skating.teaganatwater.com` until a real domain is bought, and are outbound only: a
+   person's emailed answer is not threaded back in (D284).
+9. **Askers are told the decision for all seven request kinds and for drawn bodies**; access reporters
+   already hear through the flag verdict (D285).
+10. **The two stored facts** (the exact Deleted count, a body's names list) **are built first**, by
+    another agent, on `phase-b01-stored-facts`, which holds `packages/convex`, `packages/core` and
+    `packages/guards` meanwhile and D282.
+11. **The Inbox ships as about five sequential PRs** (each merges before the next opens, each under
+    ~5,000 lines and ~100 files unless the reason is stated) — re-sliced where the code says a different
+    cut reviews better. *The design re-slices it to six* (*The Inbox (B01-5, the design)*, the build
+    plan, and its fork 1).
+
+### The founder's answers to the Inbox design's forks (2026-11-20)
+
+Asked by the design (*The Inbox (B01-5, the design)*, its forks), answered the same day. **The calls:**
+
+1. **A takedown closes every flag on the content** (fork 2): *Hide* or *Remove* on a flagged item
+   actions every open flag on that content, in every lane, and tells each flagger; *Dismiss* clears
+   only that item's flags.
+2. **One item per question** (fork 3); the Overview's Safety and Content figures count items, not flags.
+3. **The Stefan estimate is shown on 2.1** (fork 4): *"Let's still show it, but make it clear that
+   estimate is the Stefan thickness (with an eventual link to the Tuning page with that function
+   explained)"* — labeled plainly, context for the moderator and never a verdict, never shown to
+   skaters, with a *Coming soon* link to the page that will explain it (D288, amending D160).
+4. **A photo takedown moves the bytes** (fork 5): copied to a new storage object and the old one
+   deleted, so a hide takes the photo off its old address at once and a restore serves the new copy —
+   proved on dev first.
+5. **The unmerge is built in this wave** (fork 6, PR 4).
+6. **A support reply's footer** says replies to the email aren't read and to write back from the app's
+   Help (fork 8).
+7. **An alert's author is told when a moderator retracts it** (fork 9), as board 2.6 draws: a second
+   kind under D285's type, through the settle queue (D285, amended).
+8. ***Around it* quotes the reports' own claims** (fork 10) — "2 measured less · 1 saw open water" —
+   never a class like "thin".
+9. **A staffer can't decide an ask or a flag they filed** (fork 12): *"If we want to make a change
+   without going through the request flow with the other's approval, we can just make the change
+   manually in the admin dashboard, which is how we'd probably do it anyway. Admin dashboard
+   modifications should not go through the Inbox"* (D289).
+10. **Confirmed from earlier answers:** a purged photo keeps its record; *Sarah is on it* and *Take
+    over* are removed; a merged drawing gets `reviewStatus: 'merged'`.
+
+### The governor's rulings on the Inbox design (2026-11-20)
+
+Made on the design's engineering forks; the founder may overturn any of them.
+
+1. **Six PRs, the seed first** (fork 1), as the design slices them. *(Superseded 2026-11-21 by the
+   founder's call for fewer PRs, below: the seed rides with the server.)*
+2. **The stored items are accepted** (`inboxItems`, `inboxItemMembers`, `inboxCounts`, one writer,
+   its guard, the drift repair, the backfill) — with every backfill and repair pass bounded on bytes as
+   well as rows, a pass that can't advance recording it and moving on rather than wedging, and the one
+   writer's property test strong enough that its random runs alone catch a dropped `decideItem` or
+   `leaveMember` (the mutation checks are listed in the design).
+3. **Installed phone builds** (fork 7): `notifications.list` takes the client's known types and serves
+   anything newer as the existing unknown row, plus a new preview build in PR 3.
+4. **The seed is its own package**, `scripts/seed-inbox` (fork 11).
+5. **D282 is the stored-facts branch's**; this wave holds D283 onward.
+6. **Asks a script filed are not Inbox items** (from D216 and D289). `waterBodyRequests` gains an
+   optional `origin` (`app` | `seed`; absent reads as `app`), written `seed` by
+   `corpusRequests.seedBayRequests` and backfilled on the rows it already wrote. A seed-origin ask
+   files no Inbox item and counts in no lane and not on the Overview's Inbox card; it stays decidable
+   where it is today (the old editor's bay queue, the Bodies preview's asks) until Corpus (§4) takes
+   it; and D289's own-filing refusal doesn't apply to it — no person asked, so any staffer holding the
+   capability decides it (D289, amended).
+7. **Undoing the admission of brand-new water shelves the body** as `not_in_campaign` (2026-11-21): the
+   create's inverse is a soft removal (§11), never a delete — the body the admission inserted goes back
+   to what the corpus doesn't keep, its id and history kept.
+8. **A flag decision's own undo refuses whole only on its lead flag** (2026-11-21, Greptile on #170,
+   round five): the lead is the one its offer checks. Any other flag that can't reopen is left closed
+   and named on the undo's row, so the offer and the run always agree.
+9. **A request decision's drain closes at most 499 siblings** (`REQUEST_SIBLINGS_MAX`; 2026-11-21,
+   round five). Any past that stay open in their item for another decision, as a ruling already leaves
+   reports past its cap.
+
+### The founder's calls of 2026-11-21
+
+Asked by the governor as the Inbox's first PR was cut. **The calls:**
+
+1. **Fewer PRs.** "My preference is for fewer PRs so we spend less on Greptile requests, but that
+   preference breaks down if the seven-PR strategy is light enough (and you're confident/tested
+   enough) that we get 5/5 first time on all seven, vs going round and round with the two PRs. I'll
+   leave it to you." The governor's slicing: **B01-5a**, the Inbox's server and its seed; **B01-5b**,
+   the Inbox's web so far — the kit additions, the frame, the embedded map, the Access and flag
+   handlers, and `/admin/flags` retired; then the remaining slices as designed (requests, places,
+   drawn bodies and telling askers; merge and unmerge; photos; support), bundled where they review as
+   one unit. The design's *The slices* and *The phase branch for this wave* say how each is cut.
+2. **Pin as official is offered on the Inbox's alert item** (board 2.6), so retiring the old flags
+   page loses nothing: "Sure." Its server half is built with B01-5a; §1's row points at it.
+3. **The board-versus-kit differences go with the governor's suggestions for now**, to be discussed
+   later: "I have no idea where you laid these out so I'm just going to have to go with your
+   suggestions I think and we can discuss them later." The governor's rulings, each reversible at the
+   founder's look:
+
+| Difference | The boards draw | The build draws (ruled) | Why |
+|---|---|---|---|
+| A byline's name | a white name and a mono dotted handle | the kit's: a gray name, a plain handle | changing it moves every console page |
+| The life strip's dashed line | 1 px (board 2.6) | the kit's 2 px (from People 8.3) | the kit stays |
+| The candidate outline on Inbox maps | ice | neutral, bright and dashed | the console map's rule is no accent strokes |
+| The skate track | white | the console's gray | changing it recolors the Body console's tracks |
+| The map scale bar | KM and M (the kit's) | **miles and feet** — a change, done in B01-5b's kit pass | D25: stored metric, shown imperial; the kit's KM/M contradicts a decision |
+| Five values drawn without tokens: the `.08em` tracking, an 11 px sans step, the 204 \| 384 px columns, a 36 px pane head, the 26 px display title | as drawn | the build's values stay; no token minted | until the founder has seen them |
+
+### A governor's ruling the founder has been told of (2026-11-21)
+
+Not overturned, so recorded as standing:
+
+- **The Body console's ruling lever closes a body's access reports, including any the ruling staffer
+  filed, with no own-filing check**; and **a ruling's undo skips the undoer's own report, leaving it
+  dismissed.**
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -804,6 +937,9 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   an auto flag with occurrences), access reports (one disputing a prior ruling), requests of every
   kind, place asks with a lookalike, a drawn body over a known lake, and tickets of every category,
   from the second dev account — invented by the build, run with `CONVEX_RUN_AS`.
+  **Designed 2026-11-20** (the founder's calls that day and answers to its forks, §7; D283–D289):
+  see *The Inbox (B01-5, the design)* in §12.8, which also names what in this item and §5.2 is now
+  stale.
 - **§3 — Body console.** The frame over `mapCanvas`; the layer rack; every existing tool re-homed
   into the tabs; the public-access ruling, lot editing, aliases, and **merge into** added (D221:
   no outline editing, no split); task modes (`?task=`); moderators see only what they can do; the
@@ -962,6 +1098,34 @@ B01-3, and what the Overview adopted:
 | `LifeStrip` | ✅ | An item's life as a strip map | — |
 | The top bar's search and tape | ✅ | Never truncate the search or run the tape over it | The shell |
 | Tokens: `btn-row`, `avatar-xl`; the gaps `section`, `unit` (7 px), `segment` (3 px); the fade opacity; a token catalog story read off the registry | ✅ | — | — |
+
+**Kit extensions (B01-5, 2026-11-20)** — what the Inbox's boards needed, and People's candidates
+promoted, built on `b01-inbox-w4-kit` and integrated on `phase-b01-inbox` (ten new pieces join the
+count above):
+
+| Piece | Status | What it is | Adopted by |
+|---|---|---|---|
+| ActionBar (`action-bar`) | ✅ | The inspector's floating bar: labeled groups of buttons with their keys; a single unlabeled button takes the full-width layout by itself; a button's key defaults to its label's first letter; J, K, G and a duplicate key throw at render (Review 3's keys) | — (the Inbox handlers, PR 2) |
+| ToolbarKeyButton (`toolbar`) | ✅ | An action-bar button: its label, its key as a chip (announced as `aria-keyshortcuts`, the chip hidden from a reader) and its tooltip | `ActionBar` |
+| PersonByline (`person-lockup`) | ✅ | The boards' `.byline` under a flag's quote (2.1, 2.6, 2.7): the person lockup, and at the line's far end their standing and when, in mono | — (the flag block, PR 2) |
+| Quote (`note`) | ✅ | The boards' `.q`: someone's own words, a faint hairline down the left, italic; who said it is a byline under it, never inside (2.3, 2.5) | — (PR 2–3) |
+| Badge `tone="bright"` | ✅ | A standing fact, outlined in the bright ink (*Standing ruling*, 2.2) | — (the access handler, PR 2) |
+| SheetFooter `full` | ✅ | One action filling a sheet's ruled foot (`.sfoot.full`) | — |
+| UnavailableButton `title` + ComingSoonLink (`unavailable-button`) | ✅ | A link into an unbuilt mode says *Coming soon* on hover, focus and press (D286); tools keep *Not available yet*; `ComingSoonLink` is that link ready made, ending in its arrow | — (the Inbox's *Open in Reports →*, *History →*, Tuning; PR 2) |
+| SearchLane (`search-lane`) | ✅ | Promoted from People's list | People |
+| LeverRow (`lever-row`) | ✅ | Promoted from People's person page | People |
+| RecordRow, LabelRows, LifeList (`record-row`, `label-rows`, `life-list`) | ✅ | Promoted from People's record sheet | People |
+| ActionBar — the narrow layout (`action-bar`) | ✅ | Switches when the boards' bar would be wider than its pane — measured on an unseen copy, no breakpoint — spans the pane, fits what fits and folds the rest under *More*, every key still live | The Access handler (its *Narrow* story at 360 px) |
+| ToolbarOverflow — keyed and stretch modes (`toolbar`) | ✅ | *More* lists its actions with their keys and grows to fill the bar's remainder | `ActionBar`'s narrow layout |
+| ReticleMark, LookalikeMark (`map-marks`) | ✅ | Promoted from `inbox/map/kit-candidates`: a report point's reticle, and a lookalike's dashed ring | `InboxMap`, `BodyMapMarks` |
+| MapLegend (`map-controls`) | ✅ | Promoted: a map's legend plate, swatch and label per line | `InboxMap` |
+| ItemTimeline (`item-timeline`) | ✅ | Promoted from the Access handler: claims against a ruling, newest first, down to the ruling (2.2) | The Access handler |
+| StepRugChart (`step-rug-chart`) | ✅ | Promoted from the Inbox list: an open-count step line with its rug of filings and decisions (2.9) | Inbox zero |
+| LockBanner — decided-only (`note`) | ✅ | The held state and *Take over* are gone (D283); `state` is optional and only `decided` | `DecidedLock` |
+| LifeStrip — the narrow form (`life-strip`) | ✅ | Stacks top to bottom when its stations don't fit across — a date wider than its station, or a line shorter than a mark on either side of its duration — measured on a hidden, inert copy so the visible strip never remounts | 2.6's alert life (its own scroller removed) |
+| ClaimChip (`claim-chip`) | ✅ | Promoted from the flag handler: a report's claim as a chip, the claim under question marked | The flag handler's report subject |
+| FactList (`fact-list`) | ✅ | Promoted from the flag handler: a compact, unruled near-twin of `LabelRows` | The author block, 2.6's alert facts |
+| FacetMenu — a floor count (`facet-menu`) | ✅ | An option's count may be `{ count, capped }`, drawn "200+" and marked, the shape `Section` already uses; a number draws as before | The Inbox's age options |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -1153,11 +1317,12 @@ ban, suspend, lift, posting rights and the bounty limit, role changes, every bod
 standing, a body's removal (admin), sub-area create/redraw/rename/remove/restore, landmark
 create/edit/remove/restore, access pins, approach overrides, posted rules, promotions, recurrence
 suppression, hazard merges. Body merges write their change set to `auditSnapshots` (the ETL's merges
-too). `undoOwed()` lists what §2–§4 still owe.
+too). `undoOwed()` lists what §2–§4 still owe. **Since (the Inbox, B01-5, 2026-11-21):** an access
+ruling's undo reopens the reports it closed and their Inbox item — the leftover this section once listed
+("flags a no-public-access ruling closed stay closed after its undo") is gone.
 
 **What some undos leave behind** — each is the forward verb's own behavior, kept rather than patched
 around:
-- Flags a no-public-access ruling closed stay closed after its undo (reopening flags is §2).
 - An undone dormancy restarts its clock; a body restore clears any stored dormancy.
 - A sub-area redraw's undo puts the outline and mouth back but not `mouthStale`, `mouthReview`,
   `systemDelistReason` or the cleared derived depth; landmarks the redraw retired stay retired.
@@ -1177,6 +1342,27 @@ around:
   row when the undo runs: a depth undo refuses once the import has rewritten the depth since (each
   `set_lake_depth` row records `after`), and an unpin's undo refuses a claim the community resolved
   or whose clock ran out before the sweep.
+- **Added 2026-11-21 (the Inbox, B01-5).** A past day's flag-disposition count stands after its flag is
+  reopened (it was decided that day). When an ask for a bay or a landmark is reopened, the bay or
+  landmark that answered it stays. Undoing the undo of a takedown takes the content down again but
+  leaves its flags open. And an approval made before the Inbox's deploy refuses its undo ("This was
+  done before undo existed, and nothing records what it replaced."): the body-side marker
+  (`bodyActionId`) exists only on later approvals.
+- **Added 2026-11-21 (the Inbox's review fixes).** Inside a parent's undo — a ruling, a takedown, an
+  alert verdict, a restore — a flag that can't reopen is left closed and named on the undo's row as
+  `metadata.flagsLeftClosed`: a reporter who filed again (their newer flag holds the question open), a
+  superseded app flag, and the undoer's own report or a report about them. And the siblings of a
+  request decision made before the Inbox stay decided when it is undone: no stamp names them.
+- **Added 2026-11-21 (Greptile on #170, round four).** A paged undo is one act across its pages. A
+  flag that a later page can no longer reopen (its reporter filed again between pages) is left closed
+  and named on the undo's lead row, as the first page names one. Undoing a flag reopen part-way closes
+  again only what reopened; the flags no page had reached stay closed under the original decision.
+  An actor suspended between pages doesn't stop their act: it was authorized when made, so it
+  completes.
+- **Added 2026-11-21 (Greptile on #170, round five).** A flag decision's own undo is refused whole
+  only when its lead flag (the one its offer checks) can't reopen. Any other flag that can't is left
+  closed and named, so the offer and the run always agree. An undo whose decision stamped more rows
+  than any decision closes is refused in words, never part-reopened.
 
 ### The founder's calls (2026-10-14)
 
@@ -6151,6 +6337,2084 @@ call 6*). Web and read only: no schema change, no write, nothing to backfill.
   next to a line PR #150 edits, so it is corrected in the next roadmap pass. This doc and the
   register are right.
 
+### The Inbox (B01-5, the design)
+
+*Designed 2026-11-20 against `origin/main` at `5cac61f8`; nothing built.* The Inbox mode
+(`/admin/inbox`, workstream §2, boards 2.1–2.9 in `review9/boards.tsv`): everything a person filed
+that waits on a moderator, each item decided where it is found. The founder's calls of 2026-11-20
+(§7) scope it; D283–D289 are the decisions it mints. The boards are the spec where they and §5.2
+differ, and §5.2's stale lines are named below. The design's twelve forks were ruled the same day
+(the founder's and the governor's blocks in §7, 2026-11-20; D288, D289, and D284, D285 amended); this
+section reads as the settled plan, and *How the forks were ruled* at its end maps each one to where it
+landed. The *Briefs* appendix is what PR 1's builders are handed.
+
+#### What the code says today
+
+| Lane | Read | Decision writes | Audit | Undo today | Who hears |
+|---|---|---|---|---|---|
+| Safety and content flags | `moderation.listFlags` (`moderation.ts:1625`): `open` and `reviewing` off `by_status`, 100 each, oldest first, split *priority* (`unsafe_false_report`) / *standard*; one row **per flag**, no grouping, no `can`, no cursor | `moderation.resolveFlag` (`inbox.flag`, refuses own subject per D269, terminal and single-shot) → `lib/flagResolution.closeFlag` (status, `flag_dispositions` metric, erasure hold, notification); the content's takedown is a **separate** `setModerationStatus` (`content.moderate`) | `resolve_flag` / `dismiss_flag` (`metadata.filedAt`); the takedown its own `hide`/`remove` | none: both `later('§2 Inbox')` in `lib/undoPolicy.ts` | the flagger, `content_flag_resolved` through the settle queue, `origin === 'user'` only; re-checked at flush (`lib/notificationQueue.settleTrigger`, `flag_resolved`: the status must still be that resolution) |
+| Auto-filed flags | the same read; `occurrences`, `priorResolution` from `supersedesFlagId` | the same | the same | none | nobody (auto origin) |
+| Access reports | `listFlags.accessReports`: `no_public_access` flags on a body grouped by body, most reporters first, `disputesReviewFrom` derived from the ruling's date | `waterBodies.setPublicAccess` (`access.rule`), which closes every open access flag on the body through `closeFlag` | one `set_public_access` with `prev` | `setPrev` (but the flags it closed stay closed, §11 *What some undos leave behind*) | each reporter, by the flag verdict |
+| Requests (5 kinds) | `corpusRequests.listQueue` (`corpusRequests.ts:515`): open off `by_status_created`, 200, **every row** (siblings separately) with `askers` grouped from the page | `corpusRequests.approve` performs the verb (`activateBody`; `ctx.runMutation(api.waterBodies.restore/setPublicAccess/remove)`; `admitCandidate`), then `lib/requestDecisions.decide` closes the row and every sibling, the rest in scheduled pages (`closeSiblings`); `decline` needs a note | one `approve_request`/`decline_request` **per closed row** (siblings carry `withRequestId`), plus the body-side row (`activate_body`, `set_standing`, `set_public_access`, `remove`, `set_included_by_request`) | none (`later('§2 Inbox')`) | nobody; the drawer reads the decision back (D179) |
+| Places asked (bay, landmark) | the same `listQueue`; the old editor's `openBayRequestsForBody`, `openLandmarkRequestsForBody`, lookalikes (`landmarkProposalView`) | approve needs the bay or landmark to exist (`drawnBay`, `namedLandmark`, `sameAs`); `subAreas.createFromChord` and the landmark add approve from the editor | as requests | none | nobody |
+| Drawn bodies | `waterBodies.listPendingReview` (`waterBodies.ts:7123`): `by_review_status = pending`, capped | `waterBodies.approve` / `reject` (`inbox.drawnBody`); `waterBodies.merge` (`corpus.duplicates`) accepts a pending loser with **no review check** and leaves its `reviewStatus: 'pending'` | `approve_waterbody`, `reject_waterbody`, `merge_waterbody` (change set in `auditSnapshots`) | none for any of the three | nobody |
+| Access-alert flags | the content lane; no alert life read | `accessAlerts.setOfficial` (`access.alert`, own-content refused), `accessAlerts.retract` (`requireContributor`, a moderator branch inside) | `pin_access_alert`/`unpin_access_alert` with `prev`; a moderator's `retract_access_alert` records **no prior status** | pin ↔ unpin; retract `later('§2 Inbox')` | nobody on retraction |
+| Photo flags | the content lane; `FLAG_TARGET_READERS.photo` gives uploader and caption | **none** — `photos` has no moderation field (`schema.ts:4148`) | — | — | — |
+| Support | `support.list` (`support.ts:66`, `inbox.support.read`): 100 by status or newest, category filtered after the page | `support.assign` (sets `in_progress`), `support.resolve` | **none** | none | nobody; `create` mails the operator (D38) |
+
+**Every place §5.2, §8 §2 and §11 are stale against the boards or the code:**
+
+- The keys in §5.2 (`j`/`k`, `e` resolve, `x` decline, `o` open) predate Review 3: no J/K, Tab between
+  panes, ↑↓ within, a button's key is its label's letter (§6, *The Inbox pass*).
+- The lanes in §5.2 list "skater landmark proposals" beside `name_landmark`; they are the same
+  thing (D202).
+- The safety handler in §5.2 offers *action* and *restrict posting / suspend / ban* as buttons;
+  board 2.1 draws *Dismiss*, *Hide*, *Remove* and the author as a menu — there is no separate
+  *Action* (the takedown is the action; the founder's call, §7).
+- The request handler in §5.2 keeps *look up again*; the Inbox pass took it off 2.3 (which has a
+  match). It stays only where no catalog feature matched (`resolveError`), as
+  `corpusRequests.reresolve` serves.
+- Both §5.2 and board 2.8 send replies from `support@gli.app` (`SUPPORT_FROM_EMAIL`); the
+  founder's call 8 moves them to `skating.teaganatwater.com` (D284).
+- The states board (`states-v5.html`) draws a presence lock (*Sarah · 2 min*, *Take over*), and
+  board 2.4's row wears *Sarah is on it*; D283 retires both. The states board's *Decided while you
+  looked* is the one lock built, as §5.2's "colleague decided this" always said.
+- The seed in §8 §2 files "from the second dev account"; call 2 makes it fake *Test-* people (D287).
+- The line in §8 §2 ("the `reviewing` status used or removed") is settled: retired (D283).
+- The table in §11 says `approve_waterbody → reject`; `lib/undoPolicy.ts` says "Back to pending review",
+  and the policy's pure inverse wins (D247's "undo stays a pure inverse").
+- The line in §11 ("the unmerge lands with the merge UI in §4") moves to this wave with Bo21
+  (call 5).
+- The deep links out of the server still name the old pages: `contentFlags.flag`'s safety alert and
+  `support.create`'s operator mail say `/admin/flags` and `/admin/support`.
+- `console.overview` counts the content lane **per flag** and access **per body**; the Inbox lists one
+  item per question (below), so the Overview and the lanes would disagree until the Overview reads
+  the Inbox's own counts.
+- "Changed after posting" (§6, Review 3) is drawn only on the Reports row, never in the Inbox row, so
+  it is not in this wave.
+
+#### The server design
+
+##### The unit: one item per question
+
+An operator decides *a question*, not a row: five people saying a lake has no public access is one
+job (A06f), four asks to activate one body are one decision (D179), and a report flagged by three
+people is one report to rule on. So the Inbox lists **items**, one per question, each holding the
+source rows that ask it (the founder confirmed it for content flags too, and the Overview's Safety and
+Content figures count items, not flags — §7, 2026-11-20):
+
+| Item kind | Lane | Members | Question key |
+|---|---|---|---|
+| `flag` | Safety, or Content flags | the open flags on one target in that lane (Safety: `unsafe_false_report`; Content: every other reason but an access report) | `flag:<lane>:<targetType>:<targetId>` |
+| `access` | Access reports | the open `no_public_access` flags on one body | `access:<waterBodyId>` |
+| `request` | Requests | the open asks of one kind on one body; an `admit` by its catalog feature once resolved, alone until then | as `corpusRequests.questionKey` |
+| `place` | Places asked | a bay ask's open asks by `nameKey` on one body; a landmark ask joins the first open item on its body it is the same place as (`landmarkAsksAreSamePlace`), else starts one | `bay:<body>:<nameKey>`, `landmark:<body>:<first ask id>` |
+| `drawn` | Drawn bodies | one pending user-drawn body | `drawn:<waterBodyId>` |
+| `ticket` | Support | one ticket | `ticket:<ticketId>` |
+
+A report with a safety flag and a spam flag is two items, one per lane; a takedown from either closes
+both (the founder's call). A landmark ask that would bridge two open items does not merge them: the decision's
+sibling drain (`openSiblings`) already closes every same-place ask, and each item closes with its last
+member.
+
+##### The stored items, their members and their counts
+
+Lanes span four tables, rank access reports by how many people agree, group siblings that straddle
+any page of a source index, and need a flow-through order across lanes ("All open") that no source
+index holds. As with the Bodies library, the list reads a **stored row per item**, written where the
+facts change:
+
+- **`inboxItems`**: `key` (the question key), `kind`, `lane`, `laneOrder` (Safety 0 … Support 6),
+  `facet` (the lane's tab: Reports/Hazards; Disputes/New; the request kind; Bays/Landmarks;
+  Overlap/New water; Alerts/Photos/…; the ticket category), `status` (`open` | `decided`),
+  `rankKey` (a required number, smaller first: `filedAt` for every lane but Access, whose key is
+  `(MAX_REPORTERS − reporters) × 10¹³ + filedAt`, so most-corroborated then oldest),
+  `filedAt` (the oldest open member), `lastActivityAt`, `memberCount`, `waterBodyId?`,
+  `subjectUserId?` (whose content or person it is about, from `lib/flagSubject`; the asker for an
+  ask, the drawer for a drawn body, the filer for a ticket; what the own-content rule asks), and the
+  decision once decided: `decidedAt`, `decidedByUserId`, `decision` (`dismissed`, `actioned`, `ruled_closed`,
+  `ruled_accessible`, `cleared`, `approved`, `declined`, `merged`, `rejected`, `resolved`), and
+  `decisionActionId` (the audit row an undo and the lock read).
+  Indexes: `by_key` (`[key, status]`), `by_status_lane_rank` (`[status, laneOrder, rankKey]` — "All
+  open" is this range, Support's rows excluded for a viewer without support's read by an upper bound
+  on `laneOrder`), `by_status_lane_facet_rank`, `by_status_decided` (`[status, decidedAt]`),
+  `by_lane_status_decided` (each lane's *Decided this week* tail), `by_body_status`
+  (`[waterBodyId, status, filedAt]`) and `by_subject_status` (`[subjectUserId, status, filedAt]`) —
+  both read with `eq` on the optional field, never a bare range (the sparse-index rule).
+- **`inboxItemMembers`**: `itemId`, `sourceTable` (`contentFlags` | `waterBodyRequests` |
+  `waterBodies` | `supportTickets`), `sourceId`, `filedByUserId?` (who filed it, for D289),
+  `status` (`open` | `closed`), `closedByActionId?`, `filedAt`. Indexes `by_item_status`,
+  `by_source`, `by_item_filer`, `by_closed_by` (the literal blocks are in *Briefs*). The members are how an undo finds every sibling a decision
+  closed, across the scheduled drain pages, without the `withRequestId` scan.
+- **`inboxCounts`**: one row per `(lane, facet)` and `(lane, *)` open count, and the decided total,
+  moved by the one writer in the same transaction as the item, so a count is the tally of the rows by
+  construction (the `bodyLibraryCounts` pattern). Support's rows are counted and served only to a
+  viewer with `inbox.support.read`.
+
+**One writer, `lib/inboxItems.ts`**: `fileMember(source)` (find or create the item by key, add the
+member, move `filedAt`, `memberCount`, `rankKey` and the counts), `leaveMember(source)` (a retraction
+or an erasure: the member goes; an item with no member left is deleted, never decided),
+`decideItem(item, decision, actionId)` (the members it closed are stamped), `reopenItem(actionId)`
+(the undo's: the members that decision closed reopen, the item reopens, the counts move back), and
+`rekey(source)` (an admit resolving to a catalog feature, a merge moving asks and flags to a
+survivor). A guard in `packages/guards` (`inboxWriters.test.ts`, the `verdictWriters` shape) holds
+every writer of the four source tables' open/closed state to calling it. **Every path in the code
+today:**
+
+| Source | Paths that open, close or move a member |
+|---|---|
+| `contentFlags` | `contentFlags.flag` (insert), `contentFlags.retract`, `lib/autoFlag` (insert and the occurrence bump), `lib/flagResolution.closeFlag` (every resolution, the ruling's included), `waterBodies.retargetAsks` (a merge), the erasure of a retracted flag (`erasure.ts`) |
+| `waterBodyRequests` | `corpusRequests.create` (two inserts), `corpusRequests.retract`, `corpusRequests.recordResolution` (an admit's rekey), `lib/requestDecisions.closeRow` (every decision: the queue, `subAreas.createFromChord`, the landmark add), `lib/landmarkProposals` (a report's `where`), `corpusRequests.seedBayRequests` (writes `origin: 'seed'` and files no item), `waterBodies.retargetAsks`, the erasure of a retracted request |
+| `waterBodies` | `waterBodies.create` (a user-drawn body), `approve`, `reject`, `mergeBodyInto` (a pending loser) |
+| `supportTickets` | `support.create`, `support.resolve`, the new reopen (below) |
+
+That list is from reading, not proven complete: the guard is what proves it. A **drift repair**
+(the Bodies library's, smaller) walks open items a few a minute and re-derives each from its members,
+counting fixes on Machinery; nothing a moderator does depends on it.
+
+**Every pass is bounded on bytes as well as rows, and never wedges.** The backfill, the drift repair
+and the clear each read through a `ReadBudget` (`lib/readBudget.ts`, as the People backfills and the
+Bodies library's drain do) charged by each document's real size, not a row count: a pass takes rows
+while it can still afford a whole item's worth (its members and their source rows, each sized at its
+worst case), stops when it can't, saves its cursor and reschedules itself. A row-bounded pass can
+cross Convex's read limit on a few heavy rows and then never reschedule, so the cursor moves only
+inside a pass that committed. A pass that cannot advance — its first item alone outweighs a pass —
+records the item (`jobFailures`, keyed by the job and the item, its error class, never its contents),
+steps past it and goes on; the item is retried by the next drift-repair pass and counted on Machinery
+until it succeeds. No pass ever re-runs the same page forever.
+
+**The one writer's property test** (`fast-check`, `inboxItems.property.test.ts` with `convex-test`):
+random sequences of source events — file a flag of any reason on any of a few targets, retract it,
+resolve or dismiss, a ruling closing access flags, file and decide asks (siblings across a drain
+page), resolve an admit to a catalog feature, draw/approve/reject/merge a body, open and resolve a
+ticket, merge a body moving asks, undo any decision — applied through the real mutations, then after
+each step: every open source row is the member of exactly one open item whose key its fields give;
+no open item has no open member; every decided item's members are closed by its `decisionActionId`;
+`memberCount`, `filedAt` and `rankKey` equal what the members derive; every `inboxCounts` row equals
+the tally of its rows; and the drift repair finds nothing to fix. **The mutation checks the builder
+runs** (§12.5), each of which the random runs alone must catch, with no targeted test helping:
+drop the `leaveMember` call from `contentFlags.retract`; drop `decideItem` from `closeFlag`; drop it
+from `closeRow`'s sibling page (only the primary decided); skip the count move in `decideItem`;
+skip `rekey` in `recordResolution`; skip `reopenItem` in `reopen_request`; and make `fileMember` key a
+content flag by flag id instead of target. A check that survives means the generators are too narrow
+(more targets, longer runs, sibling drains forced across a page), and the report names which
+mutations were run.
+
+**Backfill** (`inboxItems.backfill`, paged and resumable): every open flag (both open statuses),
+open request, pending drawn body and open or `in_progress` ticket, grouped by key; then the decided
+history from the source rows' decided states (flags by `by_status_resolved_at`, requests by their
+`decidedAt`, bodies by their review audit rows, tickets resolved), so *Decided* starts with the
+record. Reads say `pending` until it finishes, as People's do (`PEOPLE_BACKFILLS`).
+
+##### The reads
+
+All gated on `inbox.read` (Support's rows on `inbox.support.read` as well), all bounded, all on the
+console's read clock (`reads/readArgs.ts`).
+
+- **`inbox.listPage({ lane, facet?, filter?, cursor, endCursor, pageSize, now })`** — People's
+  `endCursor` chain (`people.listPage`, `list/peopleReads.ts`): a page read past is pinned to where it
+  ended, so an item decided on page one moves nothing on page two. `lane` is a lane or `all` (the
+  flow-through range, each row carrying its lane so the list draws the boundary) or `decided`.
+  `filter` is `{ waterBodyId: string }`, `{ subjectUserId: string }` (ids as strings, checked by the
+  read; each its own index, ordered by `filedAt`) or `{ minAgeDays }` (one of `INBOX_AGE_FLOORS_DAYS`),
+  applied inside the paged read with `maximumRowsRead` as the Bodies facets are, with
+  `scanBudgetSpent` when the scan, not the list, ended a page. Each row returns its label facts (the
+  target's snippet, the body's name, the people's names — up to three point reads a row, resolved at
+  read so a rename never leaves a row stale), `memberCount`, `filedAt` and `lastActivityAt`, and
+  **`can`** (below), as `InboxRowView` (one variant per kind); the page answers `InboxListPage`
+  (`rows`, `isDone`, `continueCursor`, `splitCursor?`, `pageStatus?`, `scanBudgetSpent`, `pending`).
+  Decided rows add who, when and what (`InboxDecidedState`).
+- **`inbox.lanes({ now, dayStart })`** — the lanes' open counts and each tab's from `inboxCounts`,
+  *All open*, the decided total, *Today* (decided since `dayStart`, counted from `by_status_decided`
+  to 500 with `capped`), the oldest open item per lane, the median open item's `filedAt`, and
+  `pending` while the backfill runs (`InboxLanesView`). **`dayStart` is the console's local midnight,
+  sent by the client** — the server can't know the browser's zone — and held to the 36 hours before
+  `now` (`heldDayStart`), so a stale or hand-made value never widens a read. **`console.overview`
+  switches its Inbox card to these counts** (and its foot's median age to the items' `filedAt`) in the
+  same PR, so the Overview and the lanes agree by
+  construction; `readOpenFlags` stays for Metrics' flag figures and the rollup.
+- **`inbox.tail({ lane, now })`** — the lane's *Decided this week* (newest 20, `capped`).
+- **`inbox.item({ ref, now })`** behind `?item=`, answering **`{ item, pending }`** (`InboxItemRead`). `ref` is the item's id or a source ref
+  (`flag:<id>`, `request:<id>`, `body:<id>`, `ticket:<id>`), so the audit feed's existing
+  `?item=<contentFlag id>` links (`overviewLinks.tsx` `auditHref`), People's open-item links and the
+  Bodies preview's asks all resolve to the item that holds them. It returns the kind's handler facts
+  (each kind's below), its members, `can`, and the decided state (`decidedAt`, `decidedBy`,
+  `decision`, `decisionActionId`, `byMe`). A ref to nothing is `item: null` — *No such item* with the
+  list still usable, as People's `No such person` — except while `pending` (the backfill hasn't
+  stored that source's item yet), when it reads *Not yet*.
+- **`inbox.today({ now, dayStart })`** (2.9): the items filed and decided since `dayStart` (held as
+  `lanes` holds it; 500 each, `filedCapped`/`decidedCapped`), with the open count as the day began
+  (`openAtStart`, `null` when it can't be told) (`InboxTodayView`), from which the page draws the open line, its rug, the median from filing to
+  decision and *Decided today, by lane*.
+- **`inbox.aroundIt({ reportId, days })`** (board 2.1's line and its drawer, `content.read`): the
+  body's reports within ±`days` (default 3, the drawer's control offers 1, 3, 7) of the flagged
+  report's skate end, off `reports.by_water_body_skate_end_time`, 50 each side with `capped`, each
+  with time, vantage, author lockup and report count, notes, claims, its distance from the flagged
+  report's point, and its moderation status (staff read hidden ones, marked). **The line's summary
+  quotes the reports' own claims, never a class** (the founder's call; D3): one rule in core,
+  `aroundItPhrases(flagged, others)`, builds each phrase from stored claim fields, counting each other
+  report once per phrase it earns, in this order, at most three on the line (the drawer lists all):
+  - *N measured less* / *N measured more*: reports with a `measured` reading
+    (`iceThickness.readings[].method`) whose mean, in cm, is below / above the flagged report's own
+    measured mean by more than 0.5 cm — only when the flagged report has a measured reading;
+  - *N saw open water*: `sightings` includes `open`; *N saw skim ice*: `sightings` includes `skim`;
+  - *N said don't go*: `suitability === 'dont_go'` (the report's own label, quoted);
+  - *N surface wet or slushy*: `surfaceTags` includes `wet`, `slushy` or `overflow`.
+  Nothing else becomes a phrase: no "thin", "safe", "solid" or any word the reports didn't choose, and
+  an estimate (`method: 'estimated'`) never counts as measured. A `fast-check` property holds that
+  every phrase's count equals a recount of the rows by its field rule.
+- **`inbox.claimWeather({ reportId })`** (2.1's *That night, at the body*, `content.read`), read
+  from the code that already computes the Ice calibration instrument's pairs (`iceCalibration.ts`):
+  - **The cell and the day.** The body's browse cell (`lib/sampling.bodyWeatherCell(body,
+    'browse')`, as `collectCalibrationPairs` uses) and the skate's *local* calendar day
+    (`iceCalibration.skateLocalDay`, which resolves the day by span containment, not a guessed
+    offset). Both private helpers move to `lib/stefanWindow.ts` (with `windowIntegrals`), so the
+    instrument and the Inbox read one rule and 2.1's figure for a report always equals the
+    instrument's *predicted* for the same report.
+  - **Low · ‹day›**: that day's `weatherDays.nightMinTempC` (the minimum over the previous 18:00 to
+    09:00 local, `schema.ts`); absent when that window wasn't fully observed — then *Not recorded*.
+  - **Freezing nights**: consecutive days ending on the skate day whose `nightMinTempC` is below 0 °C;
+    a missing night ends the run (said: "2 in a row, then a gap").
+  - **Freezing degree-days since 1 October** (D249's window): Σ `freezingDegreeHours` ÷ 24 over the
+    complete days (`isCompleteDay`, so a forecast hour never counts) from 1 October to the skate day,
+    off `weatherDays.by_cell_day` (at most ~150 rows), shown in °F·days beside the °F low (the unit
+    is the copy pass's).
+  - **The Stefan thickness estimate** (D288, amending D160): core's `estimateIceThickness(fdh)` over
+    the instrument's own window (`CALIBRATION_WINDOW_DAYS`, 60 days to the skate day) at
+    `STEFAN_ALPHA_DEFAULT`, refused as the instrument refuses it — over
+    `CALIBRATION_MAX_THAW_DEGREE_HOURS` of thaw in the window, or under `STEFAN_MIN_FDD`. The answer is
+    `{ thicknessIn, freezingDegreeDays, alpha, windowDays } | { declined: 'thaw' | 'too_little_cold' |
+    'no_weather' }`, and each declined case is worded ("Too much thaw in the last 60 days for the
+    estimate", "Not enough cold yet for an estimate", "No weather recorded for this body"). Labeled
+    on 2.1 as *Stefan thickness estimate* with the sub-line *a model's figure from air temperatures
+    only — context, not a verdict*, and a *How it is calculated →* link to the Tuning page that will
+    explain the function, unbuilt, so *Coming soon* (D286). Never on any skater payload: the read is
+    `content.read`, and nothing stores or reads the figure back.
+  - A removed body, or one with no cell, answers `null` for the block (*Not recorded yet*).
+
+##### Per-row `can`
+
+One rule per verb, shared by the read and the write, as `lib/recordRules` is for the record sheet:
+`lib/inboxRules.ts` answers, for a viewer and an item, each verb the item's handler draws — `null`
+(allowed) or the write's own refusal sentence — and every Inbox write asks the same function before
+it writes. It covers the capability (D217), the own-content rule (D269, `lib/ownContent`: no ruling on
+a flag about you or your content, no pin or retraction of your own alert, no takedown of your own
+content — this closes Pe18), a decided item (refused, D283), a retracted member, and the verb's own
+preconditions (an admit with no class we accept, a bay not yet drawn, an alert its author retracted,
+a restore/takedown approval without `body.remove`). A button the answer refuses is not drawn
+(D217); a verb drawn but refused by a later write is a toast (D268). **A staffer never decides an
+ask or a flag they filed themselves** (D289): `inboxRules` refuses every verb on an item whose members
+include one the viewer filed ("You filed this, so another staff member decides it"), and the writes
+refuse the same; another staffer decides it. A seed-origin ask is never an item and is exempt (no
+person asked; *What D289 found in the code*). Staff change the corpus directly in the console; the
+Inbox is for what skaters file (D289).
+
+##### The decided-only lock (D283)
+
+The lock is the item's own decision, read live: `inbox.item` is a subscription, and when an item open
+in the inspector turns `decided` by someone else the inspector locks — the action bar goes, a banner
+says who decided it, when and what ("Decided by Sarah Berman · 14:42 · approved"), with the item's
+*History* link (D286 where it names Reports) and *Back to the queue* (⏎) — and the list moves the row
+to its lane's *Decided this week* tail. A decision of the viewer's own clears quietly (they know).
+`corpusRequests.reviewState` and `useReviewWatch` stay for the old landmark tool until it retires;
+the Inbox reads only the item.
+
+##### Decisions made from the Inbox
+
+The boards decide a flagged item with the content's own levers (2.1: *Hide*, *Remove*; 2.6: *Unpin*,
+*Retract*; 2.7: *Hide*, *Remove*), and nothing else closes the flag. So each lever is **one
+mutation** that writes the content's verdict through its existing path and closes the item's flags as
+`actioned` through `closeFlag`, each flagger told (the founder's call, §7):
+
+| Mutation (`inboxWrites.ts`) | What it runs | Audit |
+|---|---|---|
+| `dismissFlags({ itemId, reason? })` (`inbox.flag`; the reason is optional — dismissing takes nothing away, D226) | `closeFlag(…, 'dismissed')` on each open member | one `dismiss_flag` per flag, the first the toast's, the rest `withActionId`; the first's undo reopens every flag that names it |
+| `takeDown({ itemId, status: 'hidden' \| 'removed', reason })` (`content.moderate` + `inbox.flag`) | `setContentStatus` (reports, Posts, comments, hazards; photos once they have the axis), then `closeFlag(…, 'actioned')` on every open flag on that target, every lane | the content row (the toast's), and each flag's `resolve_flag` with `withActionId` naming it — which is how its undo finds the flags (*corrected after the build*: no `resolvedFlagIds` list is written or needed) |
+| `alertVerdict({ itemId, verb: 'unpin' \| 'retract', reason })` (`access.alert` + `inbox.flag`) | `setOfficialImpl` or the retraction (moved behind `access.alert` from `requireContributor`'s moderator branch), then the flags as above | the alert's row, with `prev` (`status`, `expiresAt`, `pinnedByUserId`) added to the retraction |
+| `restoreAndDismiss` (`content.moderate` + `inbox.flag`) | for an item whose content is already down (a flag filed before the takedown): restore and dismiss | as above |
+
+The access ruling (2.2) is `setPublicAccess` as today, which already closes the item's flags; *Clear
+the accessible ruling* is its `verdict: undefined` path. The person levers on the author menu are
+People's writes (`usePersonWrites`), unchanged.
+
+##### Undo: the inverses this wave owes
+
+`undoOwed()` lists seven for §2; Bo21 and the support and photo verbs add more. Each runs the inverse
+through the forward path (§11), so its side effects run too:
+
+| Verb | Inverse | How it runs | What it re-runs |
+|---|---|---|---|
+| `resolve_flag`, `dismiss_flag` | `reopen_flag` (new verb) | the flag back to `open`, resolver cleared; the item reopens; the erasure hold put back (`holdMoved`); `flag_dispositions` moved back by one (not verified that `bumpMetricMetaCounter` takes a negative; else a paired counter) | the verdict message: inside the settle window the flush re-check (`flag.status !== resolution`) drops it; after it went, nothing (§11). **Refused** when a newer flag supersedes it (`supersedesFlagId`) or an open flag of the same reason now exists on the target — reopening would break the auto-flag bundling's one-open-row rule (`lib/autoFlag.ts`). A past day's 07-2 rollup keeps its count: it was resolved that day |
+| a `takeDown`'s content row | the content's existing `restore` inverse, then `reopen_flag` on every flag whose row names it (`withActionId`) | one undo, from the toast or History | D247 and D271 hold: a Post's restore that would show it empty is refused and points at Restore |
+| `approve_request` | `reopen_request` (new) | **first the body-side row's own undo** through the engine (its capability, its "still current"), then every member the decision closed reopens | the body-side effect (activate → dormant, admit's `set_included_by_request`, the ruling, a removal); `approve` must call the verbs' impls and record the body-side `actionId` on its row, since `ctx.runMutation` hides it today. Refused, with History's overtaken sentence, if the body-side row was overtaken. A restore or takedown approval's undo needs `body.remove`, as the act did. **An admitted new body runs its own path** (*What the build found*): its body-side row is blocked by its own undo handler |
+| `decline_request` | `reopen_request` | the members reopen | the message, as a flag's |
+| `approve_waterbody`, `reject_waterbody` | `return_to_review` (new) | `reviewStatus: 'pending'`, cells re-synced (listed again, as a pending body is), the item reopens | the drawer's message, as a flag's; this is also the old `RestoreGate` dead end fixed |
+| `merge_waterbody` | `unmerge_waterbody` (new; built in PR 4, the founder's call) | from the change set already written to `auditSnapshots` (`MergeChangeSet`, `waterBodies.ts`): every moved row back to the loser, deleted favorites re-created from `deletedFavorites`, bays and landmarks back from their before-images, the lists from `listsBefore`, dedup flags from `dedupBefore`, the loser untombstoned and re-listed; then both bodies' library rows, cells and geometry facts re-marked | refused if any moved row has since changed bodies again or the loser's id is reused by a later merge; a merge from before change sets were recorded (pre-§1) has none and is refused, said in the dialog before it runs (D226) |
+| `retract_access_alert` | `unretract_access_alert` (new) | the alert back to its recorded `prev` | the author's message (from PR 3), as a flag's: inside the window the re-check drops it. Refused where the author has since resolved or retracted it; a retraction recorded on an alert its author already retracted is a verdict, reversed by an overturn, as the policy already says. Rows written before `prev` are refused |
+| `support_note` | `remove_support_note` | soft-removes the note | — |
+| `support_reply` | `cancel_support_reply` | only while it settles (below); after it went, `none` with "Sent replies can't be unsent" | the send |
+| `resolve_ticket` | `reopen_ticket` | back to open | — |
+| photo `hide`, `remove` | `restore` | the photo back to visible, its purge clock cleared | — |
+| `purge_photo` (system) | none | permanent (§11's *Permanent* row); the removal's dialog says so | — |
+
+Each new verb joins `MODERATION_ACTIONS` and the registry, whose exhaustiveness test already holds
+it; `supportTicket` joins `MODERATION_TARGET_TYPES`. Each needs a `convex-test` round trip (act, undo,
+state equals before, side effects included), its overtaken case, and its capability refusal (§11).
+
+**The scheduled sibling drain and undo race.** A decision's later sibling pages run in scheduled
+transactions. A `reopen_request` that lands between two pages would be undone by the next page closing
+more rows. So every drain page first checks its decision is still current (the primary request still
+closed by that `actionId`) and stops if not, and the reopen reopens what the members say was closed.
+
+##### Retiring `reviewing` (D283)
+
+Nothing writes it; the new reads never read it (an item is `open` or `decided`); the old readers keep
+it until they go; the member is narrowed out at B01's close after a dev count of zero. `contentFlags`'
+comments that name "picked up" are reworded when their files are next open.
+
+##### Telling askers, and an alert's author (D285)
+
+- **The type** `moderator_decision` joins `NOTIFICATION_TYPES` (`packages/core/src/notifications.ts`)
+  with the pref key `moderatorDecision` (default on), a label ("A moderator decides something I asked
+  for or posted" — invented), email-eligible, and a `NotificationView` variant: `{ type:
+  'moderator_decision'; about: RequestKind | 'drawn' | 'accessAlert'; outcome: 'approved' |
+  'declined' | 'merged' | 'rejected' | 'retracted'; body: NotificationBodyRef | null; note?: string
+  }`. `describeNotification` words it (invented, for the copy pass): "Gli added ‹body› to the map",
+  "Your request for ‹body› was declined — ‹note›", "Your drawing was merged into ‹body› — your
+  report moved with it", "A moderator took down your access alert at ‹place›, ‹body›". A decline
+  carries the moderator's note (D179: the asker reads it); a retraction does not carry the
+  moderator's reason, which is audit-facing (invented, for the founder's look). It never says
+  anything about the ice (D3).
+- **Two queue kinds** in `notificationTrigger` (`lib/validators.ts`) and `TYPE_FOR_KIND`, both
+  flushing to the one type: `request_decided` (`{ requestId | waterBodyId, outcome, actionId }`,
+  enqueued by `closeRow` for each closed row's requester and by `approve`/`reject`/the drawn merge for
+  the drawer) and `alert_retracted` (`{ accessAlertId, actionId }`, enqueued by a moderator's
+  retraction of someone else's live alert — never a verdict recorded on an alert its author already
+  retracted, which they withdrew themselves). Settle re-check: the row's decision is still that
+  `actionId` (an alert still `retracted` by it). No `actorId` (the moderator is not the actor, as
+  `closeFlag` reasons). An undo inside the window reopens or unretracts, so the re-check drops it.
+- **The order across PRs is safe.** PR 2 builds 2.6's *Retract* (through `alertVerdict`), and the
+  author's message starts with PR 3, where the type and its queue kind land. Between the two merges a
+  retraction tells no one, exactly as today, and nothing is queued that a later flush can't parse (the
+  kind doesn't exist yet); prod has never been initialized, so no skater misses a message. 2.6's
+  *What each does* says *Retract · gone, "no longer true"* in PR 2 and gains *· author told* in PR 3.
+- **Schema**: `profiles.notificationPrefs` is a strict object (`boolFlags`, `schema.ts`), so the new
+  key rolls out widen (optional) → deploy → backfill (`profiles.ts`' existing canonicalizing
+  migration, which writes every `NOTIFICATION_PREF_KEYS` key) → narrow.
+- **Push and email** are composed on the server from core's `describeNotification`
+  (`notificationDelivery.ts`), so they work without a phone build. **The in-app page on the phone
+  does not**: `apps/mobile/app/notifications.tsx` destructures `describeNotification(view)`, and an
+  installed build whose core lacks the case returns `undefined` and throws. So `notifications.list`
+  takes the client's known types (`knows?: NotificationType[]`); absent (every build installed today),
+  a type outside the pre-wave list is served as the existing `unknown` view, which every build words.
+  The web reads the current core on deploy. A new EAS `preview` build ships the case and the toggle
+  in PR 3 (the governor's ruling).
+
+##### Support: notes, replies, audit (D284)
+
+- **`supportMessages`**: `ticketId`, `kind` (`note` | `reply`), `authorId`, `body` (capped, core's
+  `textCaps`), `createdAt`, `removedAt?`; a reply adds `sendAfter`, `status` (`settling` | `sent` |
+  `canceled` | `failed`), `sentAt?`, and never the address (resolved at send from `profiles.email`,
+  else `lib/clerkEmail.clerkEmailForSubject` on the ticket's `clerkUserId`, so a ticket filed before
+  provisioning can be answered). Index `by_ticket_created`.
+- **Writes** (`inbox.support`): `support.addNote`, `support.reply` (`settling`, `sendAfter = now +
+  SETTLE_MS`, a scheduled `support.sendReply` action that re-reads and sends only a still-settling
+  row), `support.resolve` (audited now), `support.reopen`. Audit verbs as in the undo table; reasons
+  are their defaults (a note or reply takes nothing away; a resolve's undo gives back). A note or
+  reply is staff-only and PII: no read outside `inbox.support.read` returns it.
+- **The sender**: `lib/resend.sendEmail` with a new from-address variable (`SUPPORT_FROM_EMAIL`, an
+  address at `skating.teaganatwater.com`); it ships unset on dev as every Resend variable does, and the
+  reply then reads `failed` with the skip logged, never `sent`. The new variable is a row in
+  `05-accounts-and-credentials.md`, which `credentialsRegister.test.ts` enforces. **Every reply's
+  footer** says replies to this email aren't read and to write back from the app's Help (the founder's
+  call; the sending domain has no inbound mail on purpose, so an answer would bounce).
+- **The thread** on 2.8 is the ticket body, then every message, newest last; notes in the dashed staff
+  box. `in_progress` and `assignedToUserId` read as open and are never drawn or written.
+
+##### Photos: the moderation axis (D222)
+
+- **Schema** (`photos`): `moderationStatus?` (`visible` | `hidden` | `removed`; absent reads as
+  visible through one helper, `photoVisible`), `moderatedAt?`, `purgeAt?` (a removal's 30 days),
+  `purgedAt?`; index `by_purge_at` read `gt(0).lte(now)` (the erasure clock's shape, never a bare
+  range). Rollout: widen, deploy, backfill `visible`, narrow `moderationStatus` to required, as every
+  other content table has it. `contentVerdicts.targetType` gains `photo` (an enum widening, no
+  backfill), so a photo verdict is on the uploader's record (D248); `verdictWriters.test.ts` holds the
+  new writer.
+- **Writes**: `setModerationStatus` gains `photo` (`content.moderate`, `lib/recordRules`' refusals,
+  D269 on the uploader). A hide is restorable indefinitely; a removal sets `purgeAt = now + 30 days`
+  and its dialog says the photo is deleted then unless restored (the board's tooltip words it); a
+  restore clears it. A **purge job** (daily, bounded, `lib/attempts` parking) deletes the blobs through
+  `lib/photoOrphans.deletePhotoAndBlobs`' blob half and keeps the row as a tombstone (`purgedAt`, the
+  caption cleared, the uploader kept), so the verdict and History still name what was removed —
+  meeting D248: the verdict outlives the content, the bytes go on the founder's 30-day clock (§11,
+  call 4). `purge_photo` is a system row with no actor and no undo.
+- **A takedown moves the bytes** (the founder's call): a hide or removal schedules
+  `photos.rotateBlobs` (an action: a mutation can't read stored bytes), which reads the full image and
+  the thumbnail (`ctx.storage.get`), stores each as a new object (`ctx.storage.store`), then an
+  internal mutation swaps `storageId`/`thumbStorageId` on the row — only if the row is still moderated
+  and still holds the old ids — and deletes the old blobs (`lib/storageBlobs`' honest delete). So a hide
+  takes the photo off its old address within seconds, and a restore serves the new copy (whose address
+  nobody outside staff has seen). A failure parks by `lib/attempts` and is retried, never dropped; the
+  photo stays hidden from every read meanwhile. The rotation is a system effect of the takedown, not a
+  separate audited action, and the takedown's undo (a restore) doesn't rotate back. **Verified on dev
+  before PR 5 opens** (its after-merge steps): an old URL fetched after the rotation answers 404. **If
+  Convex storage can't do it** (an old address still answers after its blob is deleted, or `get`/`store`
+  can't carry the bytes): the fallback is the founder's option (a) — the old address serves until the
+  removal's 30-day purge — recorded as a finding and said in the removal dialog ("Anyone who already
+  has its link can still open it until it is deleted"), with a hide offering *Remove* for an urgent
+  case.
+- **Every reader that must honor it:**
+
+| Where | Reader | What changes |
+|---|---|---|
+| `lib/photoAccess.ts` | `resolvePhotoUrls` — `photos.getUrls` (a report), `photos.getHazardUrls`, `accessPoints.listPhotos` | skips a photo that isn't visible, unless the caller asks for staff reads (`content.read`), which mark it |
+| `lib/feedCards.ts` | `thumbUrlsFor` (the feed carousel, web and phone) | skips it |
+| `reports.ts` | `recommended` (`photoIds.length` against `RECOMMENDED_MIN_PHOTOS`, `photoCount`) | counts visible photos only |
+| `lib/reportWrite.ts`, `reports.update`, `posts.ts`, `lib/postSync.ts` | the author's edit re-sends `photoIds` | **keeps every moderated photo attached** whatever the client sends: an author can't drop evidence by editing (D248, ruling 2) |
+| `lib/photoOrphans.ts`, `photoReconcile.ts`, `storageHygiene.ts` | the orphan and season-expiry sweeps | never delete a photo that is moderated or under an open flag; a removal's purge is theirs alone |
+| `erasure.ts` (settlements) | erasing a withdrawn item's photos | a held photo (a standing verdict) keeps its row; its bytes follow the purge clock |
+| `dataExport.ts` | the uploader's export | includes the uploader's own hidden photo (it is theirs); a removed one after its purge, as a line without bytes |
+| `analyticsRollup.ts`, `metrics.ts`, `seasonReach.ts` | photo counts and bytes | unchanged (storage is a cost line whatever a photo's status) |
+| `moderation.ts` `FLAG_TARGET_READERS.photo`, `lib/flagSubject`, `lib/openFlags.flagBodyId` | the flag's subject | add `moderationStatus` to the summary |
+| web: `skater/cards/ReportCard.tsx`, `FeedCard.tsx`, `panels/ReportPanel*`, `HazardPanel*`, `lake/AccessTab.tsx`, `access/AccessViews.tsx`, `usePhotoDrafts.ts`, `lib/sheetActions.ts`, `sheet/SheetWords.tsx` | render what the reads serve | nothing, once the reads skip; the sheet's draft keeps a moderated photo's id it can't show (a placeholder, invented) |
+| phone: `ReportDetail.tsx`, `FeedCard.tsx`, `HazardDetail.tsx`, `HazardCapture.tsx`, `AccessPhotos.tsx`, `lib/reportCacheModel.ts`, `lib/flushService.ts`, `lib/sheetActions.ts` | the same reads, and the offline report cache | nothing for the reads; a cached address dies with the rotation (above) and the cache shows a missing image |
+| People: `record/RecordItem.tsx`, `contentRecord.ts` | the record sheet's items | a photo verdict is a new item kind (thumbnail pixelated, as 2.7's stage) |
+
+##### Merge into (Bo21, call 5)
+
+- **What exists**: `waterBodies.merge({ survivorId, loserId, reason })` (`corpus.duplicates`) runs
+  `mergeBodyInto`: every body-keyed child re-pointed, asks re-targeted (`retargetAsks`), lists unioned
+  or the merge refused (`mergedModeratorLists`), the loser tombstoned (`dedupStatus: 'merged'`,
+  `mergedIntoId`), the change set in `auditSnapshots`. It **accepts a pending loser and leaves its
+  `reviewStatus` pending**, so the old drawn list (`listPendingReview`) and `console.overview`'s drawn
+  count would still count a merged drawing.
+- **From the Inbox (2.5)**: `inboxWrites.mergeDrawn({ itemId, survivorId, reason? })` (`inbox.drawnBody` and
+  `corpus.duplicates`): `mergeBodyInto`, then `reviewStatus: 'merged'` (a new review status, an enum
+  widening, no backfill) and the item decided `merged`, the drawer told (D285). The suggested survivor
+  is the overlapping known body: overlap as a share of the drawing (2.5's *92 %*, "merge suggested
+  from 80 %" — the threshold is invented, a core constant) from `duplicateCandidateIds` and the scorer
+  `scoreAgainstNearby` already stamped at create.
+- **From the Shape tab** (`ShapeTab.tsx`'s *Merge into another body*, *Unavailable* today): the same
+  write with the survivor picked among the touching bodies (`consoleExtras`) or by search, a preview
+  of what moves (counts per kind and the union's caps, a new read `bodyConsole.mergePreview`), a
+  required reason (a takeaway, D226), the receipt naming both bodies, History on both. After it, the
+  loser's console shows the existing merged page (no redirect, as Bo21 records).
+- **The unmerge** is in the undo table, built in PR 4 (the founder's call).
+
+##### Every schema change, and its rollout
+
+| Table | Change | Rollout |
+|---|---|---|
+| `inboxItems`, `inboxItemMembers`, `inboxCounts`, `inboxJobRuns` | new | deploy, then `inboxItems.backfill` (open, then decided); reads `pending` until done |
+| `jobFailures.job` | `inboxBackfill`, `inboxRepair` | widen only |
+| `waterBodyRequests` | `origin?` (`app` \| `seed`; absent reads as `app`) | widen (PR 1) → deploy → `corpusRequests.backfillOrigin` (dry, then apply); stays optional |
+| `moderationActions` | verbs and the `supportTicket` target join the unions | widen only |
+| `profiles.notificationPrefs` | `moderatorDecision` | widen (optional) → deploy → canonicalize backfill → narrow |
+| `notificationQueue.trigger` | the `request_decided` and `alert_retracted` kinds | widen only |
+| `notifications.type` | `moderator_decision` | widen only |
+| `supportMessages` | new | deploy |
+| `photos` | `moderationStatus?`, `moderatedAt?`, `purgeAt?`, `purgedAt?`, `by_purge_at` | widen → deploy → backfill `visible` → narrow `moderationStatus` |
+| `contentVerdicts.targetType` | `photo` | widen only |
+| `waterBodies.reviewStatus` | `merged` | widen only |
+| `contentFlags.status` | `reviewing` out | narrow at B01's close, after a dev count of zero (D283) |
+
+#### The web design
+
+##### The route and its search
+
+`routes/admin.inbox.tsx` on the console's layout route, the rail's Inbox mode (`consoleNav.ts`
+`CONSOLE_MODES`: `id: 'inbox'`, `to: '/admin/inbox'`, `goKey: 'I'`, `capability: 'inbox.read'`,
+between Overview and Bodies as §5's table orders it). The search is validated like `bodySearch.ts`
+(`components/admin/inbox/inboxSearch.ts`), never trusted:
+
+- **`lane`** — `all` (the default, written as no param), `safety`, `accessReports`, `requests`,
+  `placesAsked`, `drawnBodies`, `contentFlags`, `support`, `decided`: the Overview's `InboxLane`
+  names (`overview/overviewData.ts`), so its links (`overviewHref`) land as they are. `support` for a
+  viewer without support's read reads as `all`.
+- **`facet`** — the lane's tab; one the lane doesn't have is dropped.
+- **`item`** — an item id or a source ref (`flag:`, `request:`, `body:`, `ticket:` and an id of word
+  characters); anything else is dropped. A bare id (the audit feed's `?item=<id>` today) is tried as
+  each source.
+- **`body`**, **`about`** (a person), **`age`** — the filter menu's; each only if well formed.
+- **`from`** — a return path for ⇧⏎, only under `RETURN_PATHS`' rule (the Overview, People, the Bodies
+  list, a Body console).
+
+##### The layout and the components
+
+One page, three columns (204 | 384 | the rest, the boards' `.main`): the lanes, the lane's list, the
+inspector; the console's one narrow rule (`shell/columnsFit`, `usePaneFocus`): below the summed column
+tokens the open item takes the page with *Back to the list*, and with none open the list does, the
+lanes over it. Under `apps/web/src/components/admin/inbox/`:
+
+```
+InboxRoute.tsx          the route binding: search ↔ state, reads, the narrow rule
+inboxSearch.ts          the validated search (above)
+InboxView.tsx           the three columns, drawn from props (stories and the board compare)
+lanes/InboxLanes.tsx    kit Lanes: Lanes, then Record (Decided, Today)
+list/                   InboxList, InboxRow, LaneFacets (kit tabs), FilterMenu (kit FacetMenu),
+                        DecidedTail, LaneBoundary (All open's lane breaks), inboxReads.ts
+                        (the endCursor chain), inboxModel.ts (rows → what the list draws)
+inspector/              InspectorFrame (pane head, scroll, the floating action bar), DecidedLock,
+                        ComingSoonLink, AuthorMenu, FlagBlock, AuthorBlock, ActionBar keys
+handlers/               Flag/ (Report, Post, Comment, Hazard, Person, Photo, Alert subjects),
+                        Access, Request/ (Admit, Activate, Restore, ContestAccess, Takedown),
+                        Place/ (Bay, Landmark), Drawn, Ticket, Zero
+map/InboxMap.tsx        the embed (below)
+around/AroundSheet.tsx  2.1's drawer, on the kit sheet
+actions/useInboxWrites.ts   every write through `said` to the undo toast
+words/inboxWords.ts     every word no board supplied, in one module for the copy pass
+kit-candidates/         what a board shows that another mode will want (below)
+```
+
+**Reused, by path** (nothing here is rebuilt):
+
+| Piece | From |
+|---|---|
+| Shell, rail, status bar, palette, go-mode, the undo toast and History | `components/admin/shell/` (`ConsoleLayout`, `undo.tsx`, `HistoryPanel`) |
+| The narrow rule and pane focus | `shell/columnsFit.ts`, `usePaneFocus` |
+| The read layer, retry notes, boundaries | `reads/consoleReads.ts`, kit `RetryNote`, `ReadBoundary` |
+| The `endCursor` page chain | `people/list/pageChain.ts`, `useChainedPages.ts` — moved to `reads/` as a seam (two modes now read it) |
+| Paging on scroll | `lib/loadAhead` |
+| Ages | `lib/ages` (`shortAge` on rows, `ageInWords` in a pane head) |
+| Writes and refusals | `components/admin/said.ts` (D268), the toast's `{ actionId, undoNeedsReason }` offer |
+| The author menu's levers and dialogs | `people/person/levers.ts`, `LeverBlock`, `SuspendDialog`, `AskDialog`, `usePersonWrites` |
+| Reason dialogs | the console's `ReasonAsk` / `AskDialog` (one reason dialog, §4) |
+| Lanes, list end, filter chips, facet menu, person lockup, section slug, note, plate, map controls, life strip, sheet, tabs, toggle group, textarea, kbd, display word | `components/kit/` (`lanes`, `list-end`, `filter-chip`, `facet-menu`, `person-lockup`, `section-slug`, `note`, `plate`, `map-controls`, `life-strip` — built for 2.6 and 8.3 —, `sheet`, `tabs`, `toggle-group`, `textarea`, `kbd`, `display-word`) |
+| Unbuilt links | kit `UnavailableButton`, given a `title` (D286's "Coming soon"; the tools keep "Not available yet") |
+| The map | `body/map/` (`useBodyMapCanvas`, `BodyMapPane`, `mapDescriptors`, `BodyMapStill` for stories) |
+| Ask and reason words | `bodies/askWords.ts` (the founder-approved request kinds and flag reasons) |
+
+**Kit candidates** this wave proposes (one writer promotes, §12.3): `ItemTimeline` (2.2's claims and
+ruling), `CompareTable` (2.4's two-column same-place table), `OverlapGauge` (2.5), `PhotoStage` (2.7's
+pixelated stage and *Show the photo*), `ThreadMessage` and `ReplyDock` (2.8), `OpenTodayChart`
+(2.9's step line with its rug), `DecidedLock`, and `SearchLane`'s sibling `ComingSoonLink`.
+
+##### The boards, mapped
+
+| Board | Mock (render-compare) | Components | Reads | Writes |
+|---|---|---|---|---|
+| 2.1 Safety · Unsafe report | `inbox-v5.html` | `Flag/ReportSubject` (the report, claims, *That night, at the body*, *Around it*), `FlagBlock`, `AuthorBlock`, `AuthorMenu`, `InboxMap` (report point, red reticle) | `inbox.item`, `inbox.claimWeather`, `inbox.aroundIt` | `dismissFlags`, `takeDown`, People's levers |
+| 2.1 · Reports around it | `inbox-v5.html?around=1` | `AroundSheet` (summary stats, day groups, rows; *Open in Reports →* and *Open all 4* Coming soon) | `inbox.aroundIt` | — |
+| 2.2 Access reports · Dispute | `inbox-handler-v5.html?h=access` | `Access` (stats, `ItemTimeline`, *If no public access* / *If confirmed accessible*), `InboxMap` | `inbox.item` (reporters newest first, the standing ruling, the reports it dismissed) | `setPublicAccess` (N, C, clear) |
+| 2.3 Requests · Admit | `…?h=admit` | `Request/Admit` (the ask list, the catalog block, *Admitting it* / *Declining it*), `InboxMap` (catalog outline dashed ice, the skate, ours, a distance rule) | `inbox.item` | `corpusRequests.approve` / `decline` |
+| 2.4 Places asked · Lookalike | `…?h=place` | `Place/Landmark` (the where, `CompareTable`, *If same place* / *If drawn*), `InboxMap` (asked cross, lookalike ring, dashed distance) | `inbox.item` (lookalikes via `landmarkProposalView`) | `approve` with `sameAs` (S), *Draw in Body →* opens `/admin/water/$id` with the ask (B, call 4), `decline` (D) |
+| 2.5 Drawn bodies · Merge | `…?h=drawn` | `Drawn` (overlap `OverlapGauge`, the report it came from, *If merged into*), `InboxMap` (ours, the drawing dashed ice, the skate) | `inbox.item` | `inboxWrites.mergeDrawn` (M), `waterBodies.approve` (A), `reject` (R) |
+| 2.6 Content flags · Access alert | `…?h=alert` | `Flag/AlertSubject` (as skaters see it, the flag, kit `LifeStrip`, *What each does*), `InboxMap` (the launch boxed amber, the alternative) | `inbox.item` (the alert's audit rows and votes for its life) | `alertVerdict` (U, R), `dismissFlags` (D) |
+| 2.7 Content flags · Photo | `…?h=photo` | `Flag/PhotoSubject` (`PhotoStage`, *On the same report* thumbnails, the flag, the author) | `inbox.item` (staff photo URLs) | `takeDown` on the photo (H, R), `dismissFlags`, People's levers |
+| 2.8 Support · Ticket | `…?h=ticket` | `Ticket` (`ThreadMessage`s, `ReplyDock` with *Reply by email* / *Note*, the user block, *Related*), the side bar's full-width *Resolve* | `inbox.item` (the thread, the person's row, related flags) | `support.reply` (⌘⏎), `addNote`, `resolve` (R) |
+| 2.9 Zero | `…?h=zero` | `Zero` (the word, the line, `OpenTodayChart`, decided by lane, *Not in the inbox*), the list's *Nothing open* then *Decided today* | `inbox.lanes`, `inbox.tail`, the day's filed and decided items (`inbox.today`, bounded), `console.overview`'s Corpus card | — |
+
+Every board renders beside its mock at 1440 × 900 in both modes before handoff (§12.5).
+
+**Where the boards and this design differ** (the design stands until the founder rules): 2.4's row
+loses *Sarah is on it* (D283); 2.8 says the reply is sent from the new address, not `support@gli.app`
+(D284); 2.1's *Stefan estimate* is drawn as *Stefan thickness estimate* with its sub-line and a
+*How it is calculated →* link that is Coming soon (D288); 2.6's *author told* starts with PR 3; every
+*Open in Reports →*, *Reports →*, *Corpus →* and *Machinery →* is Coming soon (D286), while *Open in
+Body →*, *Open in People →* and *Safety →* are live.
+
+##### The handlers no board draws (call 3)
+
+| Handler | Derived from | Invented, for the founder's look |
+|---|---|---|
+| Requests: activate, restore, contest access, takedown | 2.3 | The map shows the body (ours) instead of a catalog outline; *Activating it* says what comes back (the active map, enrichment if missing) and the dormancy reason; restore and takedown are drawn only for a `body.remove` viewer (admin), else the item shows *An admin decides this* with no bar; contest access shows the standing `none` ruling as 2.2's ruling event; takedown's *Approve* is *Take it down*, red, with a reason asked |
+| An admit with no catalog match | 2.3 | *Look up again* (`reresolve`) in the bar's place of *Admit*; the catalog block says why (`resolveError`) |
+| Places: a bay ask | 2.4 | No lookalike table (the bay rule is a name rule, `namesMeet`); *Approve* drawn only once a bay by that name exists (`drawnSubAreaId`), else *Draw in Body →* (B) |
+| A plain content flag on a report, Post, comment or hazard | 2.1 (subject) and 2.7 (bar) | A Post shows its Reports as 2.1's report block, one per member; a comment shows its Report's head above it; a hazard shows its footprint on the map and its votes; the bar is *Hide* / *Remove* / *Dismiss* / author menu; content already down shows *Restore* (`restoreAndDismiss`) |
+| A flag on a person | 2.1's author block and menu | The person's block leads (status, trust, reports, open flags), *Open in People →* in the head, the bar is *Dismiss* and the author menu — no content levers |
+| Auto-filed flags (the hazard vote's "never existed", the contradiction check) | 2.1 | No flagger byline: *Filed by the app* with the rule's sentence and `occurrences` ("4th occurrence · last dismissed 6 d ago"); the contradiction check's subject is the person, so it is a flag on a person with their recent contradicted reports listed |
+| The Decided lane | 2.1's *Decided this week* rows | One list, newest first, every lane, each row its decision chip and the person who decided it; opening one shows the item read-only with its History; Undo where `undo` allows |
+| The colleague lock | `states-v5.html`, *Decided while you looked* | As drawn there, in the inspector's head; the bar gone |
+| The filter menu | the boards' *Filter ▾* and §5.2 | Kind, age (1 d, 3 d, 7 d, 30 d), body (search), person (search); counts on the menu's options, none on the tabs (the Inbox pass) |
+| Phone width | the console's narrow rule | As People: one column at a time; the map embeds view-only; the action bar full width at the foot |
+
+##### The embedded map
+
+`BodyMap` is the Body console's whole map (rack, dock, camera fence on the body). The Inbox needs a
+smaller thing: a fixed-height embed with the zoom pair (*the Inbox pass*: "map embeds pan and zoom
+inside their body's reach"), a legend **plate** (2.3, 2.5), no rack, and a few marks the descriptors
+lack. So `InboxMap` composes the Body console's pieces rather than `BodyMap` itself:
+`useBodyMapCanvas` (the camera fit and fence), `BodyMapPane` with a new `rack={false}` prop and a
+`plate` slot, and scene items from `mapDescriptors` — `outline` (`body`, `neighbor`), `line`
+(`track`, `leader`, `dimension`), `point` (`putIn`, `lot`, `proposal`, `photo`) — plus four new
+descriptor styles: an outline `candidate` (the catalog's or a drawing's dashed ice), a point
+`reticle` (2.1's report point, in the hazard red only for a safety item) and `asked` (2.4's cross), a
+point `lookalike` (amber, dashed ring) and a line `gap` (a dashed distance rule with its `measure`
+label). Stories use `BodyMapStill`. The new styles are additions to `body/map/` (a seam: the Body
+console's territory), specified by the canonical snippet below.
+
+##### Legacy retirement
+
+| PR | Redirects | `OLD_SHELL_TREES` loses | Links fixed |
+|---|---|---|---|
+| 2 (the list and flags) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
+| 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest`; the record sheet's flag links (Pe25, by the item's open flag ids — a server ask: `contentRecord.item` returns them) |
+| 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
+| 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
+
+The old components (`admin.flags.tsx`, `admin.water.requests.tsx`, `admin.support.tsx`,
+`BayRequestQueue.tsx`) are deleted at B01's close, not before (§12.7); `LandmarkTool.tsx`,
+`useReviewWatch.ts`, `ReviewClosedNotice.tsx` and `corpusRequests.reviewState` stay with the old
+editor until task modes (Bo23).
+
+#### The seed (D287)
+
+**Where it runs.** A new workspace package, `scripts/seed-inbox` (the governor's ruling), on `scripts/lib`'s
+`convexRun` and `RunLogger`, as `seed-destinations` is. Dry run by default; `--apply` refuses unless
+the target is a dev deployment and `CONVEX_RUN_AS` names the operator (the moderator decisions it
+seeds are theirs, D256: "Teagan via seed-inbox"). `--clear` removes it.
+
+**Fake people.** An internal mutation (`inboxSeed.ensurePeople`, dev-refusing by the same check)
+inserts eight profiles: `clerkUserId: 'seed_inbox_<n>'` (Clerk's ids are `user_…`, so no real subject
+can collide), `displayName` with a *Test-* surname (as built, an invented cast: Ada Test-Lindqvist, Ben
+Test-Okafor, Cleo Test-Marchetti, Dev Test-Raman, Elin Test-Haugen, Finn Test-Aguilar, Gus
+Test-Whitcombe, Hana Test-Sato — none from the boards), varied trust (points), `notificationPrefs` all off and both channels
+off, no `email`, no push tokens. One predicate, `isSeedProfile` (`lib/seedPeople.ts`), is asked by
+`clerkAdmin.setBanned`, `clerkAdmin.deleteUser`, `clerkReconcile` (step 2 skips them; step 1 never
+sees them, as Clerk holds no such user), `lib/clerkEmail`'s fallback and the notification flush, so a
+fake person is never synced, mailed or pushed — **this guard lands before the seed suspends or bans
+anyone**. People lists them (Pe26 needs exactly that); PostHog sees nothing (they never sign in); the
+Overview's and Metrics' counts include them on dev, which the clear undoes.
+
+**What it files, through which mutations, as whom.** Each fake person acts through the real public
+mutation by `convex run --identity '{"subject":"seed_inbox_<n>",…}'` — `requireProfile` finds the
+profile by `identity.subject` (to verify in the build on dev: the identity JSON's minimum fields).
+
+| Filed | Mutation | Count |
+|---|---|---|
+| Reports, Posts, comments, hazards, an access alert, photos (fake blobs) to flag | `reports.create`, `posts.create`, `comments.create`, `hazards.create`, `accessAlerts.create`, `photos.create` | ~12 |
+| Flags of every reason: a safety flag on a report (2.1's), a safety flag a second person files on the same report, spam, harassment, inappropriate, other, a flag on a person, a flag on a photo, a flag on the alert | `contentFlags.flag` | ~10 |
+| An auto flag with occurrences: the hazard vote's "never existed" from two people; the contradiction check against a person | `hazardConfirmations.confirm` ×2; `contradictions.applyContradictionSettlement` (internal: it is a settlement, not a public write) | 2 |
+| Access reports, one disputing a prior ruling (the operator rules a body accessible first, then two reports land) | `waterBodies.setPublicAccess` (as the operator), `contentFlags.flag` | 3 bodies, 5 reports |
+| Requests of every kind: activate (two askers), admit (two askers on one catalog feature, one with no match), restore, contest access, takedown | `corpusRequests.create` | ~8 |
+| Place asks: a bay (three askers), a landmark with a lookalike, a landmark from a report's `where` | `corpusRequests.create`, `reports.create` (the `where` files it, `lib/landmarkProposals`) | 4 |
+| A drawn body over a known body (2.5's overlap) and one over open land | an internal insert of a `gpsActivities` row, then `waterBodies.create` with `confirmedNew` | 2 |
+| Tickets of every category, an appeal from a suspended person | `support.create` (five an hour per person: spread across people) | 4 |
+| Moderated content for People: hides and removals on fake people's content, a suspension, a ban, a posting restriction, a verdict kept on deleted content | `setModerationStatus`, `moderation.suspendUser`, `banUser`, `setPostingPermission`; `reports.remove` as the fake author, then `moderation.keepOnRecord` as the operator | ~10 |
+
+Bodies are real dev bodies picked by name (Mascoma Lake, Caspian Lake, Lake Morey, Tomhannock
+Reservoir, Newfound Lake — the boards' own), so the maps draw real outlines.
+
+**Idempotent.** The real mutations' own dedup (one open flag per flagger and target; one open ask per
+person, body and kind) makes a re-run a no-op for most rows; content and tickets are found first by an
+internal read (`inboxSeed.state`: what each fake person already authored), and skipped. **Clear**
+(`inboxSeed.clear`, paged): every row a fake person wrote or that is about one — flags, requests,
+tickets, messages, reports, Posts, comments, hazards, alerts, photos and their blobs, drawn bodies and
+their activities, inbox items and members, verdicts, the audit rows targeting any of them, notification
+rows — then the profiles and their People rows; the counts move with the rows through their writers.
+After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspended and banned rows.
+
+#### The build plan
+
+##### The slices (designed as six; shipped as the founder's call of 2026-11-21 has it)
+
+**As shipped** (§7, *The founder's calls of 2026-11-21*: fewer PRs, Greptile being metered per
+request): **B01-5a** is PR 1 below with the seed — the Inbox's server, its seed, and the least of the
+web the server forces (the audit-verb words, the Overview's Inbox card and heading); **B01-5b** is the
+Inbox's web so far — PR 2's kit additions, frame, embedded map, the Access and flag handlers, and
+`/admin/flags` retired; PRs 3–6 follow as designed, bundled where two review as one unit. The table
+is the design's six, kept for what each holds.
+
+
+| PR | What it holds | Size (est.) | Builders |
+|---|---|---|---|
+| **1 — Server foundations and the seed** | the stored items, members, counts, the one writer and its guard, the backfill, the drift repair; `inbox.listPage`, `lanes`, `tail`, `item`, `aroundIt`, `claimWeather`; `lib/inboxRules`; `reopen_flag`, `reopen_request` (with `approve`'s body-side capture and the drain's currency check), `return_to_review`, `unretract_access_alert`; `dismissFlags`, `takeDown`, `alertVerdict`, `restoreAndDismiss`; `console.overview` on the counts; `notifications.list`'s `knows`; the seed-person guard and `scripts/seed-inbox` (all but tickets) | ~4,800 lines, ~60 files | 3 |
+| **2 — The list and the flag lanes** | the route, mode and search; lanes, list, facets, filter menu, decided tail, Decided lane, zero, the lock; the inspector frame, author menu, Coming soon; the Safety, Content (every subject but a photo) and Access handlers (2.1, 2.1 drawer, 2.2, 2.6), the embed; `/admin/flags` retired; Pe6, Pe18 | ~4,500, ~90 | 4 |
+| **3 — Requests, places, drawn bodies, and telling askers** | handlers 2.3, 2.4, the four undrawn request kinds, the bay ask, 2.5's approve and reject; `moderator_decision` end to end with both kinds — askers and a retracted alert's author (core, convex, web bell, phone page and toggle, an EAS `preview` build); `/admin/water/requests` retired; Pe25 | ~4,200, ~70 | 3 |
+| **4 — Merge into, and the unmerge** | `inboxWrites.mergeDrawn`, `reviewStatus: 'merged'`, the Shape tab's merge flow and `bodyConsole.mergePreview` (Bo21), `unmerge_waterbody` from the change set, its round trips | ~3,500, ~40 | 2 |
+| **5 — Photos** | the axis, its rollout, every reader in the inventory, the purge job, the photo verdict on the record, 2.7, the record sheet's photo item | ~3,000, ~55 | 2 |
+| **6 — Support** | `supportMessages`, notes, replies and the sender, resolve and reopen audited, their undos, 2.8, the seed's tickets, `/admin/support` retired | ~2,500, ~35 | 2 |
+
+**Why six.** The unmerge is L on its own (Bo21's estimate), and a merge flow that spans the Inbox and
+the Body console reads best as one review boundary, not tacked onto three handlers. And the seed moves
+from last to first: every later PR is checked on dev against the data it fills, which the founder's
+order (seed with support, last) would leave empty for four PRs.
+
+##### Builders, per slice
+
+`packages/convex` and `packages/core` have one owner per slice (§12.1); `schema.ts`, the route tree,
+`consoleNav.ts`, `lib/theme.ts`, kit promotions, `package.json` and `plans/` are the governor's seams,
+applied by an executor. **Nothing starts before `phase-b01-stored-facts` merges** (it holds
+`packages/convex`, `packages/core` and `packages/guards`, call 10).
+
+PR 1:
+
+| Agent | Scope (owns) | Needs | Starts |
+|---|---|---|---|
+| **S1 — items** | `packages/convex` (`lib/inboxItems.ts`, `inbox.ts`, `lib/inboxRules.ts`, every writer hook in the inventory, the backfill and drift repair, `console.ts`'s Inbox card, `notifications.ts` `list`), `packages/core` (lane, facet and rank constants; `knows`), `packages/guards/src/inboxWriters.test.ts` | stored facts merged; the schema seam | T0 |
+| **S2 — inverses** | `packages/convex` `lib/undoHandlers*.ts`, `lib/undoPolicy.ts`, `lib/requestDecisions.ts`, `corpusRequests.ts` `approve` (impl calls, body-side capture), `accessAlerts.ts` (retraction's `prev`, `access.alert`), `waterBodies.ts` `approve`/`reject` | S1's writer (`decideItem`, `reopenItem`) | T1 |
+| **D — seed** | `scripts/seed-inbox/` (new package), `packages/convex` `inboxSeed.ts` and `lib/seedPeople.ts`, the predicate's call sites in `clerkAdmin.ts`, `clerkReconcile.ts`, `lib/clerkEmail.ts`, the flush | the package seam; S1 integrated (so its rows file items) | T1 |
+
+PR 2 (web only; server asks go to a follow-up on PR 1's owner):
+
+| Agent | Scope (owns) | Needs | Starts |
+|---|---|---|---|
+| **W1 — frame** | `routes/admin.inbox.tsx`, `inbox/InboxRoute.tsx`, `InboxView.tsx`, `inboxSearch.ts`, `lanes/`, `list/`, `inspector/` (frame, lock, Coming soon), `words/`, the redirects | the route, mode and theme seams | T0 |
+| **W2 — flag handlers** | `inbox/handlers/Flag/` (all subjects but photo), `inspector/AuthorMenu.tsx`, `FlagBlock`, `AuthorBlock`, `around/` | W1's `InspectorFrame` (canonical snippet) | T0 |
+| **W3 — access and the map** | `inbox/handlers/Access/`, `inbox/map/`, the four descriptor styles in `body/map/` (seam) | the map seam | T0 |
+| **W4 — links and kit** | `overview/overviewRoutes.ts`, `people/person/PersonFeeds.tsx`, `bodies/` ask links, the kit `UnavailableButton` title, `pageChain`/`useChainedPages` to `reads/` | the kit seam | T0 |
+
+PR 3: **S3** (`packages/convex`, `packages/core`: the `moderator_decision` type, both queue kinds, settle, pref
+rollout; `contentRecord.item`'s open flag ids), **W5** (`handlers/Request/`, `handlers/Place/`,
+`handlers/Drawn/` approve and reject, the record sheet's links), **M** (`apps/mobile`: the page's case,
+the toggle, the `knows` argument, the build) — S3 at T0, W5 at T0 on PR 1's reads, M after S3.
+
+PR 4: **S4** (`packages/convex`: `mergeDrawn`, `reviewStatus`, `unmerge_waterbody`, `mergePreview`),
+**W6** (`handlers/Drawn/` merge, `body/tabs/shape/` merge flow) — W6 after S4's read shapes.
+
+PR 5: **S5** (`packages/convex`: the axis, readers, purge, verdicts; `packages/core` if a rule
+moves), **W7** (`handlers/Flag/PhotoSubject.tsx`, `PhotoStage`, the record sheet's photo item, the
+web readers if any change).
+
+PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the seed's tickets),
+**W8** (`handlers/Ticket/`, `ReplyDock`, `ThreadMessage`, the support redirect).
+
+##### Shared seams and canonical snippets
+
+- **Schema** (`schema.ts`): each slice's tables and widenings, in one executor commit at T0 of its
+  slice; narrowings in their own later commit.
+- **The route tree and `consoleNav.ts`**: `admin.inbox.tsx`; the `inbox` mode; `OLD_SHELL_TREES` and
+  `lib/theme.ts`'s copy narrowed per the retirement table; `oldShellPredicate.test.tsx` updated.
+- **`package.json` / the lockfile**: `scripts/seed-inbox` (PR 1); no new web dependency is foreseen.
+- **Kit**: `UnavailableButton`'s `title` (PR 2, W4 proposes, the executor lands); the candidates above
+  promoted at each slice's integration.
+- **The map** (W3 into the Body console's `body/map/`): `MapOutlineStyle` gains `'candidate'`;
+  `MapPointMark` gains `'reticle' | 'asked' | 'lookalike'`; `MapLineStyle` gains `'gap'`;
+  `BodyMapPane` gains `rack?: boolean` (default `true`) and `plate?: ReactNode`. Nothing existing
+  changes behavior.
+- **The inspector** (W1 lands, W2/W3/W5–W8 import): `inbox/inspector/InspectorFrame.tsx` exports
+  `InspectorFrame({ head, actions, locked, children }: { head: ReactNode; actions?: ReactNode;
+  locked?: DecidedState | null; children: ReactNode })` and `type DecidedState = { by: string; at:
+  number; decision: InboxDecision; byMe: boolean; actionId: string }`.
+- **The item read's type** (S1 lands, every handler imports): `InboxItemView` in
+  `packages/convex/convex/inbox.ts` exported through the API types, one variant per kind.
+- **`plans/`**: `05-accounts-and-credentials.md` (`SUPPORT_FROM_EMAIL`, PR 6); `06-data-model.md` for
+  each new table (its register test); the roadmap entry and this doc (governor).
+
+##### After each merge, on dev
+
+1. `convex dev --once` from main by the named executor (codegen committed first).
+2. PR 1: `corpusRequests:backfillOrigin` dry, paged (repeat with `{"cursor": <continueCursor>}` until
+   `isDone`), its candidates confirmed, then applied the same way (before the
+   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then `seed-inbox --apply` with `CONVEX_RUN_AS`; then
+   `peopleJobs:backfillRows` (Pe26); confirm the Overview's Inbox card equals the lanes.
+3. PR 3: the `notificationPrefs` canonicalize backfill, then the narrowing commit's deploy; an EAS
+   `preview` build installed on the Pixel.
+4. PR 4: a merge and its unmerge on two seeded bodies, compared row by row.
+5. PR 5: **before the PR opens**, the rotation proved on dev: seed a photo, read its URL, hide it,
+   wait for `rotateBlobs`, fetch the old URL (expect 404) and the staff read's new one (expect the
+   image); if the old URL still answers, the fallback above ships instead and the finding is recorded
+   here. After merge: the photos backfill (`visible`), then the narrowing deploy; the purge job's first
+   run checked on a seeded removal with its clock moved (dev only).
+6. PR 6: `SUPPORT_FROM_EMAIL` set on dev by the founder (never printed), one reply sent to a real
+   staff account.
+7. At B01's close: count `contentFlags` rows in `reviewing` (expect zero), then narrow (D283).
+
+#### What the build found (PR 1)
+
+- **The reads' contract (S1, `326ec709`):** `inbox.item` answers `{ item, pending }`; `lanes` and
+  `today` take the client's `dayStart`, held to the 36 hours before `now`; items and rows carry
+  `lastActivityAt`; filter ids are strings (the reads above say so).
+- **The writes' contract (S2, turn 1):** the four Inbox writes share one result,
+  `InboxWriteResult = { itemId, actionId, flagsClosed } & ({ undoable: true; undoNeedsReason } |
+  { undoable: false })` — the toast's offer without a second read, as People's writes give it — and
+  each holds both capabilities its act needs: `dismissFlags` `inbox.flag`; `takeDown`
+  `content.moderate` + `inbox.flag`; `alertVerdict` `access.alert` + `inbox.flag`;
+  `restoreAndDismiss` `content.moderate` + `inbox.flag`.
+- **A dismissal's reason is optional** (the governor's ruling): dismissing takes nothing away (D226),
+  so `dismissFlags` asks none (with none given, a default is written, as a restore's is). S2 changes
+  the validator in its second turn.
+- **`approve` performs its act through the verbs' impls** and records the body-side row's id
+  (`bodyActionId`) on its `approve_request` row, so `reopen_request` can undo it through the engine.
+- **An admitted new body's body-side row can't be undone by the engine.** For an admit that inserted
+  a body, that row is `set_included_by_request` carrying `requestId`, and its own undo handler blocks a
+  row that names a request ("This body was admitted from the catalog on a skater's request; reopening
+  the request in the Inbox undoes it", `lib/undoHandlersBody.ts`). So `reopen_request` runs its own path for an admit: the body's inclusion and standing put
+  back from the approval's recorded state, then the request and its siblings reopened, in one
+  transaction.
+- **An admit of a body already in the corpus will be audited** (the governor's ruling): `admitCandidate`
+  activates an existing twin and patches `includedByRequest` with no audit row today. S2 makes that
+  patch an audited `set_included_by_request` with its `prev`, so the approval's undo restores it
+  exactly — rather than adding it to §11's *What some undos leave behind*.
+- **The page chain is shared** (W4): People's `endCursor` chain moved to
+  `components/admin/reads/` as `useChainedPages` and `joinChain`, which the Inbox list, People's list
+  and the record sheet's lists read.
+- **`ActionBar` decides its own layout and keys** (W4): one unlabeled button alone takes the
+  full-width bar; a button's key defaults to its label's first letter; J, K, G or a duplicate key in one
+  bar throws, so a board's key mistake fails a story rather than shipping.
+- **Two board-versus-kit differences, left for the founder:** a byline's name — the kit's
+  `PersonLockup md` draws the name in g6 with a plain handle, where the boards' `.person` draws a white
+  name and a mono, dotted handle; and the life strip's dashed line — the kit draws it 2 px in g6 (from
+  People's 8.3), where board 2.6 draws 1 px in g5. The kit stands until ruled.
+- **The kit's `LockBanner` is decided-only** since its second pass: the `held` state and *Take over*
+  are gone (D283), and `DecidedLock` no longer names the state.
+- **At 360 px** (the Access handler's *Narrow* story, after the kit's narrow bar): the head, the body
+  and the seen action bar keep to the pane and the map's zoom pair sits clear of the bar; the head's
+  *Disputes a ruling* pill truncates — left for the founder's look, said in the story, not asserted
+  away.
+- **The handler registry, as built** (W1): each handler adds
+  `components/admin/inbox/handlers/<Name>/register.ts(x)` exporting `registration` (or
+  `registrations`) of type `{ keys: HandlerKey[]; Handler }`. The keys are
+  `flag:report|post|comment|hazard|photo|accessAlert|waterbody|user`, `access`, `request`, `place`,
+  `drawn` and `ticket`. A `Handler` receives `{ item, locked, now }` and draws the whole inspector
+  inside `InspectorFrame`. Registrations are found with `import.meta.glob`, and two claims on one key
+  throw. `InspectorFrame` no longer places the action bar — the kit's `ActionBar` floats itself and
+  the frame gives the scroll 80 px for it — and a handler gets the pane, the way back, History and the
+  clock from `useInspectorPane()`.
+- **The search, as built** (W1): `lane` (`all` is written as no param), `facet`, `item` (an item id
+  or a `flag:`/`request:`/`body:`/`ticket:` ref), one filter of `body`, `about` or `age`, and `from`.
+  The mode registers on the rail between Overview and Bodies (G then I); no old page is retired yet —
+  `OLD_SHELL_TREES` is unchanged and `/admin/flags`, `/admin/water/requests` and `/admin/support` still
+  draw their old pages.
+- **The decision vocabulary widens** (the governor's ruling): so a Decided row can say what happened,
+  `INBOX_DECISIONS` gains `hidden`, `removed`, `unpinned`, `retracted` and `restored`, with `actioned`
+  kept for a flag actioned without a takedown. S1 adds the literals (core and the stored item), S2
+  writes them, and the frame's words map gains their labels.
+- **Left for the founder's look, as differences from the boards** (W1):
+  - no key hints in the status bar — a page can't add them to the shell's bar yet (a shell seam
+    owed, for every mode);
+  - Safety's four tabs push *Filter* onto a second line at 384 px;
+  - Inbox zero's *Not in the inbox* shows only *Coming soon* links until Corpus and Machinery exist,
+    and its chart has no hover plate;
+  - *Today* opens the Decided list;
+  - lists aren't virtualized: a long Decided list renders every row it has loaded;
+  - three values are drawn without tokens of their own: the Inbox's columns (204 | 384 px, set as page
+    overrides of the size tokens), a 36 px pane head, and *Inbox zero* at the display step (20 px,
+    where the board draws 26).
+- **Kit candidate** `StepRugChart` (2.9's open line and its rug) — promoted in the kit's second pass,
+  with `ReticleMark`, `LookalikeMark`, `MapLegend` and `ItemTimeline`.
+- **The one writer, as built** (S1, `lib/inboxItems.ts`): `fileMember`, `leaveMember`, `decideItem`,
+  `rekey` and `reopenItem`, each taking a source built by `flagSource`, `requestSource`, `bodySource`
+  or `ticketSource`. Every entry point reads the source row and makes its member match it, so a hook
+  is idempotent: called twice, or after a change it already saw, it writes nothing new.
+- **The guard** (`packages/guards/src/inboxWriters.test.ts`) holds sixteen writer functions after the
+  integration (seventeen as S1 built it: S2's turn 1 moved `approve`, `reject` and their undo onto one
+  helper, `waterBodies.moveDrawnReview`, which the inventory now names). Two are owed to S2 —
+  `lib/requestDecisions.ts` `closeRow` and `moveDrawnReview` — and until they land the property test
+  runs with `CLOSE_ROW_HOOKED` and `REVIEW_HOOKED` false. The erasers and `retargetAsks`' moves are
+  hooked by hand: the guard reads inserts and patches, not deletes. `accountDeletion.ts` deletes a
+  departing person's tickets with no hook (owed; the drift repair covers it meanwhile).
+- **Every read's bounds** (S1): `listPage` at most 100 rows a page and 500 scanned; `lanes` from the
+  stored counts; `tail` 21 rows (20 and a probe); `item` at most 50 members a status; `aroundIt` at most
+  50 reports a side; `claimWeather` the season's `weatherDays` for one cell; `itemMap` an outline whole
+  to 256 KiB, else simplified to 512 points, the answer capped at 1 MiB, at most 50 put-ins and 50 lots.
+  The backfill pages at most 40 rows, each item in its own nested transaction, a failure recorded and
+  stepped past; the drift repair takes 12 items a pass, every 3 minutes.
+- **The contract since turn 1:** the decisions widened (*hidden*, *removed*, *unpinned*,
+  *retracted*, *restored*); each lane carries `olderThan`, the age-floor counts the filter menu shows;
+  the place item names `answeringLandmarkId`; `inbox.itemMap` serves an item's map geometry; an empty
+  page's cursor is no longer `''`; `openAtStart` is a real `0`; a ruling carries its `reason` and the
+  access item its `contestAsks`; the Overview's Inbox card counts items (the founder's ruling) and
+  dropped its `pending` field.
+- **What the backfill cannot tell:** a flag decided before the Inbox reads `actioned` or `dismissed`,
+  never what the takedown beside it did — the widened decisions start with this build.
+- **Always `null` or empty for now:** `AuthorBlockView.reports`, `contradicted` and `standing.by`;
+  `ratings`; `fromReport`; `CandidateView.nearestKnown`; a row's `lookalikeMeters`; and `messages` until
+  PR 6. `BodyRefView.place` is the body's state or states, not a town.
+- **The access item:** its `contestAsks` are the only stored claims that a body is accessible, and
+  reporters attach no photos. **The drawn item:** the 0.8 overlap share that suggests a merge is the
+  build's own number, for the founder's look.
+- **PR 1's after-merge steps on dev, as S1 gave them:** `convex dev --once` (it adds the four new
+  tables and, since Greptile's rounds two, three and five, six more indexes:
+  `waterBodyRequests.by_requester_status_origin`, `inboxItemMembers.by_closed_filer`,
+  `inboxItemMembers.by_filer_source_status`, and on `contentFlags` `by_supersedes`,
+  `by_target_flagger_status_origin` and `by_target_status_reason_origin`; round five also adds `status`
+  to `inboxItemMembers.by_item_filer`, which the deploy rebuilds); `corpusRequests:backfillOrigin
+  '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
+  candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
+  call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
+  `inboxItems:backfill '{}'`, which chains
+  itself (its later passes' answers never reach the logs): its scan's end is told by its
+  `inboxJobRuns` row (`job: "backfill"`) reading `done: true` — from then a direct run answers
+  `{ done: true, read: 0 }` and starts nothing. **The Inbox is ready only when no `inboxBackfill` row
+  remains in `jobFailures` too** (Greptile on #170): until then every read says `pending` and the
+  Overview's Inbox card says "Still being prepared". A failing source is retried by the drift repair, a
+  parked one by the daily retry; Machinery's "repair inbox items drift" shows both counts. One that
+  should never be filed: `recurringJobs:forgetBefore '{"job":"inboxBackfill","before":<ms>}'`. Then
+  the card checked equal to `inbox.lanes`.
+- ~~**Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage~~ — closed: on the
+  PR 1 branch it is at 98.9% of lines (95.6% of statements).
+- **Where the server met the web** (the integration, 2026-11-21): the frame's words map labels the five
+  new decisions (placeholders for the copy pass); the list's lane fixtures carry `olderThan`; the Access
+  handler's fixtures carry the ruling's `reason` and the item's `contestAsks`.
+- **The flag handler, as built** (W2): registered for `flag:report`, `flag:post`, `flag:comment`,
+  `flag:hazard`, `flag:accessAlert`, `flag:waterbody` and `flag:user` — not `flag:photo`, which is
+  PR 5's (the frame's placeholder draws it until then). A flag on a body that isn't an access report
+  draws the body and its flags with *Dismiss* only. Its pieces: `blocks/FlagBlock` (`flags`,
+  `targetType` — which names an app flag's rule —, `now`, `timeZone?`, `children?` for 2.1's *Also on
+  this report*, `bare?` for 2.6's flag under the skater's card: no slug, each byline with its time) and
+  `blocks/AuthorBlock` (`author`, `title?` — *Author*, or *The person* for a flag on them —,
+  `ownFlags?` for "1 · this one", `timeZone?`, `children?`), the author menu (`inspector/AuthorMenu`,
+  People's levers), and *Reports around this one* (2.1's drawer). Its one write path,
+  `useFlagWrites`, sends every refusal through `said` naming the item's subject (in the
+  `adminWriters` inventory). The map is still a slot on both the report and the alert handler until
+  `inbox.itemMap` is wired.
+- **`dismissFlags`' reason is sent only when typed**; the cast that bridged the server's old validator
+  came out with S2's second turn (below).
+- **The old flags page's *Pin as official* has no verb in the Inbox** (board 2.6 draws *Unpin* and
+  *Retract* on a pinned alert) — ~~an open row in §1's lose-nothing table, for the founder's call~~
+  (ruled 2026-11-21: offered on 2.6, §7 *The founder's calls of 2026-11-21*). The
+  facts: the old page calls `accessAlerts.setOfficial({ accessAlertId, official: true, reason })`,
+  which needs `access.alert`; refuses on the staffer's own alert (D269), on one its author retracted
+  and on one already pinned; requires a reason; writes a `pin_access_alert` audit row with `prev`; and
+  stops the alert lapsing. The Inbox's server offers no pin — `InboxVerb` has none, and an alert's
+  verbs are `dismiss`, `unpin` and `retract`. Offering it on 2.6 would take a `pin` verb with its
+  precondition in `lib/inboxRules`, a `pin` branch in `alertVerdict`, and a *Pin* button with a reason
+  dialog.
+- **The undrawn subjects, as the code draws them** (W2, call 3; `handlers/Flag/subjects.tsx`,
+  `FlagView.tsx`, `flagModel.ts` `verbGroups`, read 2026-11-21):
+  - **A Post** (from 2.1): its title (or an untitled word) and words, then each of its Reports as 2.1's
+    report block in a compact form, under a count; the bar is *Flag* (Dismiss) and *Post* (Hide,
+    Remove).
+  - **A comment** (from 2.1): a kicker with its time, the head of what it was on when the view gives it,
+    and its words behind a note rule; the bar as a Post's.
+  - **A hazard** (from 2.1): its kind as the title (kicker: hazard, body, time), its note, its votes as
+    one line (up and down), a line when its footprint can't be drawn, and the map slot; the bar as a
+    Post's.
+  - **A person** (from 2.1's author block): `AuthorBlock` titled *The person* leads, with how many of the
+    item's flags are open; the flags follow under it; the bar is *Dismiss* and, for a live person, the
+    author menu — no content levers.
+  - **A flag on a body** (from 2.6's head): the body by name and place, the flag's summary, the map
+    slot, the flags under it; *Dismiss* only — a body changes in the Body console, never from a flag.
+  - **An app-filed flag**: in the flag block, no byline — *Filed by the app* with its rule (two people
+    said the hazard never existed; a person's reports disagreed with the weather too often; enough
+    people rated it unhelpful; or a generic rule) and its occurrence line ("4th occurrence · last
+    dismissed …").
+  - **Content already down**: a warning note over the subject (hidden or removed), and the content
+    group's *Hide*/*Remove* replaced by *Restore* (`restoreAndDismiss`).
+  - **Content gone** (deleted by its author or erased): a note in place of the subject, the flags still
+    listed, and *Dismiss* only; *History →* still names Reports (Coming soon), a person's People, and
+    nothing for a gone alert or body.
+- **Left for the founder's look** (W2): claim chips in core's wording ("3.5″ measured" where the board
+  writes 3½″; "still open, south end" where it writes "open water · south end"); the weather figures at
+  the kit's stat step; 2.6's life strip sub-lines as names only, with "Still so" and "Not so" coined;
+  *Seen by* replaced by *Votes* (no data holds views); the drawer at the kit's 820 px where the board
+  draws 720, and showing every quiet run of days; 2.1's *Corrob.* row and its "second unsafe flag
+  inside a week" line not drawn (no data). Three values without tokens: the subject title's .08em
+  tracking, an 11 px sans chip step, and the 280/300 px map columns and 720 px drawer.
+- **Kit candidates** `ClaimChip` and `FactList` were promoted in the kit's third pass; 2.6's life strip
+  now takes the kit's narrow form at 360 px (its own scroller and minimum width removed).
+- **The values drawn without tokens, as the kit builder found them** (left for the founder's look):
+
+  | Value | Where the mocks use it | The kit | Verdict |
+  |---|---|---|---|
+  | `.08em` tracking | 27 uses in 18 mock files (subject titles) | `tracking-rail` is .1em | no existing token fits |
+  | An 11 px sans step | 30 uses in 22 files (`.pill.lo` is global) | `--type-mono-sm` borrowed | none fits |
+  | The 204 \| 384 px columns | the Inbox and all five Reports boards | `lanes` 236 and `list` 340, overridden on the page | none fits, but two modes share it |
+  | The 280 / 300 px map columns, the 720 px drawer | the Inbox only | `drawer` is 820 (the Machinery runs drawer) | literals |
+  | A 36 px pane head | the mocks' global `.pane > .ph`, 25 uses in 21 files | drawn as space-8 + space-1 | the space ruler has no 9 step |
+  | A 26 px display | Inbox zero and 2.5's mono value | the admin `disp-lg` is deliberately 20 | — |
+- **Owed to the server builders:** `AuthorBlockView.priorActioned`, `ReportSubjectView.corroborations`,
+  the contradiction flag's `contradictedReports`, `AlertSubjectView.seenByWeek`; and core's `roundTo`
+  returns `NaN` for numbers JavaScript prints in exponent form (found by `fast-check`; fixed in core
+  since, below — the handler's local rounding is removable).
+- **Every Inbox view tested** (S1, turn 3): `lib/inboxViews.ts` at 98.9% lines, and the tests found
+  three defects, fixed: an alert's put-in or lot point is read from its `coord` (it was read from a
+  field that doesn't exist); hidden or removed text is served only to a viewer with `content.read`;
+  and author-deleted or erased content carries `withdrawnAt` (an item) and `withdrawn` (a row), so it
+  no longer reads as still up whatever its moderation status says.
+- **Every source delete is hooked**: the only one that wasn't was `erasePrivate`'s ticket drain (an
+  account's deletion), now hooked, with a test per source delete.
+- **The contract additions:** `FlagTargetView.withdrawnAt` and the row's `withdrawn` (required on the
+  row since the integration); `AuthorBlockView.priorActioned`, `contradictedReports`, `contradicted`
+  and `reports` filled; `ReportSubjectView.corroborations` as a count. A corroboration is a ledger row
+  keyed to the corroborated report that doesn't store who corroborated, so there is a count and no
+  "first corroborator". Alert views aren't stored, so 2.6's *Seen by* has no source.
+- **Core's `roundTo` returned `NaN` for numbers JavaScript prints in exponent form** (found by the flag
+  handler's `fast-check`); fixed in core. Of its 76 callers, the one that could really reach `NaN` was
+  the Ice calibration page's error column. The flag handler's local rounding was replaced with core's
+  `roundTo` in W2's second piece.
+- **Owed to the web:** the flag and Access handlers don't yet draw `withdrawnAt`, `priorActioned`,
+  `contradictedReports`, `reports` or `corroborations`.
+- **The inverses, as built** (S2, turn 2), each run through the forward path, with what it restores and
+  each sentence it refuses with:
+
+  | Undoes | Inverse | Restores | Refuses with |
+  |---|---|---|---|
+  | `resolve_flag`, `dismiss_flag` | `reopen_flag` (`lib/inboxFlags.ts`) | the flag open, its resolver cleared, its Inbox member and item reopened, the erasure hold back, the disposition counter moved back | "The flag no longer exists." · "The flag has changed since, so it can’t be reopened." · "A newer flag has taken this one’s place, so it can’t be reopened." · "A flag of the same kind is open on this now, so this one can’t be reopened beside it." · a flag that closed with a takedown: "This closed with another decision; undo that one." |
+  | `approve_request`, `decline_request` | `reopen_request` | the approval's body-side act first (through the engine, or for an admission its own path), then the request and every sibling its decision closed back to open, the item reopened | "The request no longer exists." · "The request has changed since this decision, so it can’t be reopened." · a sibling's row: "This closed with another request’s decision; undo that one." · "The change this approval made no longer exists." · History's overtaken sentence · the asker: "You filed this, so another staff member decides it." (a script's ask exempt) · a pre-deploy approval: "This was done before undo existed, and nothing records what it replaced." |
+  | `approve_waterbody`, `reject_waterbody` | `return_to_review` | pending review, listed again as a pending body is; asks no reason | "The water body no longer exists." · "It has been merged into another body since, so it can’t go back to review." · "It has been reviewed again since, so this review can’t be taken back." |
+  | `retract_access_alert` | `unretract_access_alert` | the alert's recorded status, expiry and pin | "The alert no longer exists." · "The alert has changed since this retraction, so it can’t be put back." · "It would have expired by now; putting it back would show a lapsed claim on the map." · a verdict on an author-retracted alert: "Its author had already retracted this alert; this retraction is a verdict on the record. Overturn it there instead." · a pre-`prev` row: the *before undo existed* sentence |
+  | the content's and the alert's takedowns | their existing inverses | the content restored (or the alert unpinned or unretracted), **and the flags the takedown closed reopened with it** | the content's own refusals (D247, D271) |
+
+- **Undoing a reopen:** a reopened flag re-closes with its earlier resolution; a reopened decline
+  re-declines exactly the asks it reopened; a reopened approval is refused — "An approval acts on the
+  body; approve it again from the Inbox." — so an undo never re-runs a body act. An admission of
+  brand-new water undone shelves the body as `not_in_campaign` (the governor's ruling, §7).
+- **The undo handler map is built on first use.** It was spread at module load, and importing the
+  engine from the request undo silently dropped every corpus handler (a module cycle evaluated one map
+  before the other existed); S2 found it, and the map now assembles when first read.
+- **`alertVerdict` asks only `access.alert`** (the alert lever itself), not `inbox.flag` as well; the
+  flags it closes ride on the verdict.
+- **Siblings close only if created at or before the decision's timestamp**, and every drain page checks
+  the decision is still current before closing more — an ask filed while a decision drains is a new
+  question.
+- **`takeDown` and `alertVerdict` report `flagsClosed` across every lane**, and the toast's `actionId` is
+  the content's or the alert's row, whose undo reopens the flags with it.
+- **D289 on every path that decides an ask or a flag:** `corpusRequests.approve` and `decline`;
+  `subAreas.createFromChord` through `approveNamedBayRequest` (the whole save rolls back, the bay
+  included); the landmark add-with-request; `waterBodies.approve` and `reject` for the drawer;
+  `moderation.resolveFlag` for the filer; and `undo.run` on an approval or a decline for the asker. A
+  seed-origin ask is exempt. `resolveFlag` now writes its audit row first, and an admission of a body
+  already held is audited with its `prev` (the governor's ruling).
+- **PR 1's after-merge note for S2's part:** deploy only — no backfill.
+- **Decision numbers:** D290 was taken on main by another phase (A06i's winter window, PR #169), so the
+  next new Inbox decision is **D291**; D282–D289 are unaffected.
+- **The dismissal cast is gone:** `useFlagWrites` sends a dismissal's reason without a cast now that the
+  server's validator takes it as optional.
+- **The flag handler draws the new server fields** (W2, second piece):
+  - **Corroborations** — 2.1's *Corrob.* row under the flags: "N other reports agreed", a floor ("50+")
+    where the read stopped short; nothing when none (no names: the ledger doesn't store who).
+  - **Earlier actioned flags** — a line under the author block: "An earlier flag on them was actioned on
+    Sat 10 Oct", or "N earlier flags on them were actioned, the latest on …"; nothing when none.
+  - **The contradicted reports** — on a contradiction flag, *Reports the rule counted*, each linking to
+    the skater app's `/report/$id` in a new tab (*Open in the app*: that page works today; a Reports
+    link would be a dead end until that mode lands).
+  - **The author's report count at its cap** — read as a floor ("100+").
+  - **Withdrawn content** — a note in place of the subject: "Withdrawn on ‹day›" with "Its author deleted
+    it, or it was erased. Skaters no longer see it, and nothing here brings it back." (the view's
+    `withdrawnAt` doesn't say which, so the note covers both); an alert its author took down reads
+    "Retracted on ‹day›". A takedown on withdrawn content keeps the decision on the author's record and
+    closes every open flag on it, and its dialog says so.
+  - **Held-back words** — hidden or removed content's text, served only with `content.read`, reads "Its
+    words are shown only to staff who can read hidden content" where it is held back.
+  - **The real writes' receipts** — a takedown or an alert verdict says how many flags closed and how many
+    in other lanes ("3 flags closed, 2 in other lanes").
+  - **Rounding** is core's `roundTo` again (the local workaround is gone).
+- **The flag handler at 360 px:** the bar folds to *More* plus the author menu; the subject, the map and
+  the two columns stack.
+- **Owed:** the server's `can.restore` answers allowed on withdrawn content though the write refuses (the
+  server builder is fixing it); the kit's `LifeStrip` has no narrow form (it scrolls sideways inside its
+  box at 360 px); the frame's head clips its link at 360 px.
+- **The seed, as built** (D, `scripts/seed-inbox` and `packages/convex/convex/inboxSeed.ts`; D287):
+  - **The cast** is eight invented people, none from the boards, the corpus or anyone real: Ada
+    Test-Lindqvist, Ben Test-Okafor, Cleo Test-Marchetti, Dev Test-Raman, Elin Test-Haugen, Finn
+    Test-Aguilar, Gus Test-Whitcombe, Hana Test-Sato (`lib/seedPeople.ts` `SEED_CAST`; the surname
+    rule held by a test and refused by `ensurePeople`). Each profile carries `clerkUserId:
+    seed_inbox_<n>` and files through the real public mutations as `convex run --identity` with that
+    subject; the operator's acts carry `via: "seed-inbox"` (D256).
+  - **Dev only, twice:** the script refuses unless `@skating/run-log`'s resolved target is dev; and
+    every `inboxSeed` function (`ensurePeople`, `ensureActivity`, `state`, `clear`, `clearPlan`) calls
+    `assertSeedDeployment()` first, which passes only when the deployment's own `CONVEX_CLOUD_URL` parses
+    as `https`, with no port, and its host is exactly dev's under Convex's cloud domain
+    (`agile-bee-397.convex.cloud`, as `05-accounts-and-credentials.md` registers it); anything else —
+    a look-alike name, another host, a path or query holding the name, a missing or unparseable value —
+    is refused (`lib/deployment.ts`, since the integration: the run rows' `isProd` in `standing.ts`,
+    `regionStats.ts` and `waterBodies.ts` read the same exact check now, where they had a substring test).
+    The script calls `ensurePeople` before any operator act, so a run against anything else fails before
+    it writes.
+  - **`--apply` needs an active admin**, refused up front: the script checks `CONVEX_RUN_AS` names an
+    active admin before it files anything (the takedown approval needs `body.remove`).
+  - **Who skips a fake person** (`isSeedProfile`, a prefix test on the Clerk subject; a real Clerk id is
+    `user_…`, so it is false for every real person): Clerk's ban lock and account delete
+    (`clerkAdmin.ts`), the daily reconcile (counted, never asked about or repaired; `clerkReconcile.ts`),
+    the email-address lookup (`lib/clerkEmail.ts`), the push and email delivery
+    (`notificationDelivery.ts`), every actor notification a fake person triggers
+    (`lib/notificationQueue.ts`), a fake person's report notifying anyone and the nearby fan-out
+    (`notifications.ts`), the operator alerts a fake person's safety flag or ticket would send
+    (`contentFlags.ts`, `support.ts`), the Clerk ban sync after a discipline write (`moderation.ts`),
+    and four pairings with real people's content — corroboration (`lib/reportWrite.ts`), the
+    contradiction cluster and its operator page (`contradictions.ts`), hazard auto-merge
+    (`lib/hazardMerge.ts`) and answering a bounty (`bounties.ts`).
+  - **What the pairings cost a real write** (after the seed's hardening pass): one shared indexed read
+    per transaction — does any seed person exist — and profiles read only while one does, each distinct
+    author once. On prod, where no seed person ever exists, a real write reads nothing more than that one
+    lookup. None can change a result for two real people, and a parity property holds it: all-real
+    content in a world with and without a seed person elsewhere gives identical points, clusters, bounty
+    answers, merges, flags and notifications.
+  - **Idempotence:** every step is found by a stable seed key — a report, hazard or alert's
+    `idempotencyKey` (`seed-inbox:<step>`), a drawn body's activity by `providerActivityId`, a flag by its
+    filer, target and reason in any status — never by counting; a second `--apply` files nothing.
+  - **The clear** removes every row a fake person wrote or that is about one, through the real writers
+    where a row has one (the Deleted list through `lib/withdrawals`), bounded on bytes; it leaves three
+    anonymous counters by design (`textLengthEvents`, `externalApiCalls`, `metricSnapshots`: counts only,
+    naming no one).
+  - **The lanes after a full seed:** 23 open — Safety 2, Access 2, Requests 6, Places 3, Drawn 1, Content
+    5, Support 4 — and 9 decided (10 since the third review, below), covering *hidden*, *removed*, *dismissed*, *unpinned*, *restored*, an
+    approved and a declined ask, and an approved and a rejected drawing. The seed decides through the
+    Inbox's own writes.
+  - **Where the design was wrong:** the hazard "never existed" auto flag never counts repeats (it has no
+    occurrences to seed); a `name_landmark` ask can't be filed through `corpusRequests.create` (only a
+    report's `where` files one); a `contest_access` ask needs a body ruled closed and an `activate` ask a
+    dormant body — each picked from dev by index, and shown as unavailable in the plan if dev lacks one.
+  - **On dev, in order** (`CONVEX_RUN_AS` must be an **admin**: the takedown approval needs
+    `body.remove`; the package README says so): `pnpm --filter @skating/seed-inbox seed` (the plan,
+    dry); `CONVEX_RUN_AS=<your Clerk id> pnpm --filter @skating/seed-inbox seed --apply`, ending
+    `filed 82 · failed 0 · still ready 0` (after the seed's third review; 23 open and 10 decided); a
+    second `--apply` filing 0; `peopleJobs:backfillRows` (Pe26); and, to undo it all, `seed
+    --clear` then `seed --clear --apply`.
+  - **Owed:** an `importRuns` kind `seed_inbox`; until then each writing run's log is a JSON file under
+    `scripts/seed-inbox/runs/` (gitignored). **Not verified, for the first dev run:** `--identity` with
+    a seed subject, whether dev's bodies match the plan, and the admit resolver's network call.
+- **The rule answers what the write does, cell by cell** (S1, turn 4): a 110-cell table — every verb that
+  has a write, on every kind and subject state — asks `lib/inboxRules` and then runs the real write, and
+  holds the two to the same answer. It fixed: *Restore* allowed on withdrawn content (`can.restore`
+  now refuses it); a deleted report now reads the write's own sentence; an unmatched or flowing-water
+  admit; and `support.resolve`, which resolved decided tickets and a staffer's own, now asks the rule.
+  **Twelve cells still disagree**, owed to S2 next: a decided request and a decided drawn body refused by
+  the write before the rule is asked; the access ruling made through the body's own lever
+  (`waterBodies.setPublicAccess`), which never checks a decided item or the staffer's own filing — an
+  `inboxWrites.rule` write is being added; and clearing a ruling that doesn't exist.
+- **`FlagTargetView.withdrawal`** (`'deleted' | 'erased' | null`, required since the integration):
+  `deleted` — its author deleted it, the row kept for the record until the sweep; `erased` — the 30-day
+  sweep has since erased its words, which happens only to a comment (kept as a placeholder): a Report,
+  Post or hazard the sweep erases is deleted outright and reads as gone. It is `null` exactly when
+  `withdrawnAt` is, so the flag handler's withdrawn note always says which: "Its author deleted it." or
+  "It was erased: its author deleted it and its words are gone."
+- **The property test undoes through the real undo engine** (S1, turn 4). Dropping `reopenItem` from
+  `return_to_review` changes nothing it can see, because `moveDrawnReview` calls `fileMember` right
+  after, which files the drawing again.
+- **The aerial pass isn't on `itemMap`**: `imageryFrames` holds a row per satellite pass, not per body,
+  so a body's latest pass would take a per-body frame table written by the imagery index job — owed,
+  not in this wave.
+- **The rule and the write agree in all 110 cells** (S2, turn 3): `inboxRulesVsWrites.test.ts` lists no
+  known disagreement (`AWAITING_THE_WRITE` is empty) and passes. The fixes: a decided ask, and a drawing
+  reviewed or merged since, are refused with the rule's own sentence; `setPublicAccessImpl` writes its
+  audit row before closing the reports and stamps each with it, so its undo reopens the reports and
+  their item; clearing a ruling that doesn't exist is refused; and a reopen is refused only for an app
+  flag beside an open app flag of its reason, or a person's flag beside that person's own open flag.
+- **`inboxWrites.ruleAccess({ itemId, verdict: 'none' | 'open' | null, reason? })`** — the Inbox's access
+  ruling, through the rule (`access.rule`, D269/D289, a decided item refused), answering
+  `RuleAccessResult`: the usual `InboxWriteResult` plus the `verdict` written. *No public access* asks a
+  reason; *confirm accessible* and *clear* don't. A **clear** leaves the reports open, so the item stays
+  open with `flagsClosed` 0 — and the decision word `cleared` is never written: it stays in
+  `INBOX_DECISIONS` unused, removable at the wave's close. The web's Access handler still rules through
+  `waterBodies.setPublicAccess` until a builder switches it.
+- **A ruling made from the Body console decides an open Inbox access item** (`ruled_closed` or
+  `ruled_accessible`), stamped with the ruling's own row, so undoing the ruling reopens the item.
+- **Two related fixes:** a drawing merged away while it was pending could still be approved (now refused
+  with the review's sentence); and the reopen refusal was too broad for an access ruling with several
+  reporters (each reporter's flag reopens beside the others).
+- **The Access handler rules through `inboxWrites.ruleAccess`** (W3, fourth piece), called with the
+  item's id: `'none'` with its reason, `'open'`, or `null` to clear. A clear's receipt says "The reports
+  stay open, in the lane" and never claims a report closed (a clear closes none). Undo is taken from the
+  answer's own `actionId` and offered only when the server says it can be undone. The Body console's
+  lever (`waterBodies.setPublicAccess`) is no longer called from the Inbox.
+- **No Inbox handler decides around the rule** (the integration's inventory, 2026-11-21, of every Convex
+  reference under `components/admin/inbox/`, tests and stories aside):
+  - Inbox writes: `inboxWrites.ruleAccess` (Access), `inboxWrites.dismissFlags`, `takeDown`,
+    `alertVerdict`, `restoreAndDismiss` (Flag); their argument and result types beside them.
+  - Inbox reads: `inbox.lanes`, `listPage`, `tail`, `today`, `item`, `itemMap`, `aroundIt`,
+    `claimWeather`; the filter menu's lookups `waterBodies.searchByName` and `admin.userSearch`.
+  - People, on the author menu: `people.person` (read) and People's own write path,
+    `usePersonWrites` — unchanged.
+  - Undo: the shell's `useUndo` (`announce`) only.
+  - Nothing else: no body-level or page-level mutation is called from an Inbox handler.
+- **The frame's second pass** (W1):
+  - **The inspector's head wraps when narrow**, every part kept whole.
+  - **Decision words:** every member of `INBOX_DECISIONS` has a label, held by a test; `actioned` reads
+    *action taken* (never *taken down*: every flag decided before the Inbox carries it, whatever was
+    done).
+  - **A withdrawn row** wears its own chip and sub-line, never read as still up.
+  - **The age filter's counts:** All open sums its lanes; Access is exact below its 200-item scan and
+    capped past it — drawn as a floor ("200+") since the kit's facet menu takes one.
+  - **Refusals and empty states:** a `?lane=support` link reads as All open for a viewer without
+    Support's read; a `ticket:` ref shows the server's own sentence.
+  - **Focus after a decision** lands on the next open row after the viewer's own decision.
+  - **The list is virtualized above 100 rows**, with People's approach.
+  - **A lane's tabs wrap inside the 384 px column** (Safety has four, Content flags six).
+- **Owed:** `ReadFailure` carrying the server's refusal text (`reads/consoleReads`), so any refused read
+  can be shown in the server's words; the console's status bar overlapping itself at 360 px (a shell
+  fix, for every mode); key hints in the status bar.
+- **For the founder's copy pass, words newly coined:** action taken, retracted, restored, declined,
+  withdrawn, Withdrawn by its author.
+- **The independent review of the writes and inverses, and its fixes** (S2, turn 4). The four defects,
+  as the reviewer reproduced them:
+  1. **A staffer could close their own flag through another lane's item** — a takedown from the Content
+     item closed the Safety flag they had filed. Fixed: a takedown, unpin or retract is refused up front,
+     in `can` and in the write, with the own-filing sentence when the viewer filed any open flag on that
+     content in another lane.
+  2. **The drawer could undo a colleague's review of their own drawing.** Fixed: `undoReview`'s refusal
+     and `waterBodies.returnToReviewImpl` both ask `returnToReviewRefusal(body, from, viewerId)`, which
+     answers the own-filing sentence when the body's `createdByUserId` is the undoer — so History
+     doesn't offer it and the write refuses it.
+  3. **A ruling's undo was refused entirely once a reporter filed again.** Fixed: the reports that can
+     reopen do; the rest stay closed and are named on the undo's row (`flagsLeftClosed`, §11).
+  4. **A pre-Inbox decision undone left its item decided.** Fixed: after a reopen, `reopenItem` reopens
+     the members stamped with the decision's row (a pre-Inbox decision stamped none), and then every flag
+     or request the undo reopened is synced through `syncInboxSource`, which makes its member match its
+     row — so the item reopens whatever its member's stamp (`lib/inboxFlags.ts`,
+     `lib/undoHandlersCorpus.ts`). A pre-Inbox decision's siblings stay decided (§11).
+
+  Also: an undo's refusal check now receives the viewer, so History never offers an undo the viewer
+  couldn't run — including for a staffer who filed a sibling ask; undoing the reopen of an N-flag
+  dismissal re-closes all N; and a verb outside an item's choices is refused with "That isn't a choice
+  for this item." `metadata.resolvedFlagIds` was never written and isn't needed (the design's line said
+  otherwise; corrected above), and `takedownWordOf` is dead, being removed by its owner. **Recorded on
+  purpose:** the Body console's `setPublicAccess` closes a body's access reports, including any the ruling
+  staffer filed, with no own-filing check — staff change the corpus directly, and the Inbox's rule binds
+  only the Inbox (D289). The rule-versus-write table now holds 128 cells, with no listed disagreement.
+- **The independent review of the stored items, reads and rules, and its fixes** (S1, turn 5):
+  - **The drift repair failed forever on an item with many members** ("Too many index ranges read"):
+    it read each member's facts twice. Now each source is read once (memoized), members whose sources
+    are gone leave in one batch (`leaveMembers`) with one recount, and the item is refreshed once. Each
+    item runs as its own nested transaction capped at 8 MiB, 12,000 documents, 2,400 queries and 3,000
+    writes, admitted only while the pass can afford it; a pass takes up to 12 open and 4 decided items,
+    and fixes at most 10 drifted members a visit, so a badly drifted item takes several passes.
+  - **A second walk over decided items** re-checks the 4 oldest-refreshed a pass, so an item left decided
+    while a source is open again is reopened.
+  - **A row's `can` gets the facts restore and takedown requests need**, so `can.approve` is refused for a
+    moderator there, as the write is; the rule-versus-write table gained a moderator pass.
+  - **The backfill's retry reads only unparked failures** (`by_job_parked` with `parkedAt` unset), so a
+    parked one can't hold its head for ever.
+  - **`aroundIt` leaves author-deleted reports out** of both the list and the phrases, and counts only
+    visible reports in the phrases.
+  - **The tab is kept right:** every `duplicateCandidateIds` write rekeys the body (through `rekey`), a
+    ruling refreshes the body's open access item's tab (`refreshItemTab`), and the repair compares the
+    tab with its open member's facts.
+  - **`today`** says the Access lane is capped past what it reads, and `openAtStart` is `null` when the
+    day's filings or decisions were capped — the frame works the start back from the day's events.
+  - **`backfillOrigin`** is bounded on bytes and walks by creation time, always advancing (paged by
+    `cursor`).
+  - **The Support cut is tested for a moderator** against every read and filter (`inboxSupportCut.test.ts`).
+  - **The writer guard reads code, not comments or strings,** and names seven functions in place of two
+    whole-file exclusions.
+  - **`takedownWordOf` is removed** (nothing could match its words).
+  - **`itemToDecide`:** a deciding mutation on a source with no Inbox item yet (the backfill hasn't
+    reached it) files it first — an open source as an open member, a decided one into the decided
+    history — then asks the rule through the item. Before, `support.resolve` asked the rule only through
+    an existing item, so such a ticket could be resolved by the staffer who filed it, or twice; and
+    `resolveFlag`, the ask decisions and the drawn-body review each carried a hand-copied own-filing
+    fallback, now gone — all four answer through the one rule (a decided one with "This has already been
+    decided.").
+- **Web, after the review:** Inbox zero's `ZeroDayStartUnknown` story draws the day with
+  `openAtStart: null` (the start worked back; `InboxZero.test.ts` holds the figure).
+- **The independent review of the seed, and its fixes** (D, fourth turn). The reviewer reproduced four
+  defects, and four mutations of the clear had left the suite green:
+  1. **The seed's ruling on a real body dismissed real people's access reports and notified them.** Now
+     the dispute's ruling goes on a body the seed draws and approves, never a real one (`rule-beach`), and
+     the old `revertRulings` is deleted.
+  2. **The clear wiped a later real ruling, or skipped a body that had moved.** The clear no longer touches
+     a ruling; it re-derives each real body a removed row was counted on.
+  3. **A real person's comment was deleted with its count left up.** The clear removes it the way
+     `comments.remove` does, its count moved back.
+  4. **A drawn body's geometry links outlived it.** The clear sends it out through bodyGeo's own "gone"
+     path.
+
+  **The rule, now held by a fixture** of real people and real bodies compared whole after an apply and
+  after a clear: no seed step changes a real body's stored state or a real person's row. Every operator
+  act lands on a row the seed created — its alert, reports, drawn bodies, asks and fake people (read at
+  integration, 2026-11-21). Names and roles are resolved through library rows and pinned; a fake person's
+  account deletion is refused (`requestDeletion`, `finalizeNow`; `finalizeAccount` stops) — a guard placed
+  first, so a real person's deletion path is unchanged; and seeded reports carry their own conditions, so
+  none triggers the weather auto-fill.
+
+  **What an apply writes on real bodies:** derived state only — summary cards, library rows and counts,
+  refresh-queue rows, a neighbor's geometry once the geo cron runs — and three anonymous counters. **What
+  the clear deletes that belongs to a real person, by design:** their comment, flag, thumb or vote on
+  seeded content, with their count and points moved back.
+
+  | Derived system | While the seed is loaded | Verified |
+  |---|---|---|
+  | Summary cards, library rows and counts, the refresh queue | follow the seed's rows; the clear re-derives each real body they touched | yes |
+  | Geometry facts of a neighbor | recomputed by the geo cron; the drawn body leaves through the "gone" path | yes |
+  | Weather cells | the weekly sync may register the seed body's cell while it is loaded | **not verified** |
+  | Imagery plans, season rollups | a run while the seed is loaded counts its active body or its reports | **not verified** |
+  | Badges | a badge a real person earns from a vote on seeded content isn't taken back | known leftover |
+
+  **External calls:** a full apply makes 3 USGS 3DHP calls (the admit resolver) and no Open-Meteo call;
+  a second apply, a dry run and the clear make none. The run log stores the server's own sentence for a
+  failed step, and the counts add the steps still ready.
+- **`ItemMap({ item })`, the one map every handler drops into its slot** (W3, third piece;
+  `inbox/map/ItemMap.tsx`): it reads `inbox.itemMap` at the console's read clock for the item, turns the
+  answer into the board's scene (`itemMapAdapters`), and draws the embed. A kind with nothing to place —
+  a ticket, a flag on a person, a comment, a Post or a photo — reads nothing and draws nothing, not even
+  a loading box, and so does a viewer without `body.read`; while it loads, a skeleton holds the embed's
+  height; a failed read says *The map didn't load* with *Try again*; an answer with nothing in it
+  collapses the slot. A short answer is said on the map's own caption: *Outline simplified* (an outline
+  sent simplified) and *Not everything is shown* (an answer the server capped). Its props-only twin,
+  `ItemMapView`, takes the read's state for stories.
+- **The adapters** (`itemMapAdapters.ts`), one per kind:
+
+  | Kind | Draws |
+  |---|---|
+  | `flag` on a report or a hazard | `reportPointScene`: the point, the reticle hazard-red in the Safety lane and the bright asked mark elsewhere |
+  | `flag` on an access alert | `alertScene`: the body, its put-in or lot lit |
+  | `flag` on a body | the body alone, framed whole |
+  | `access` | `accessScene`: the body, its put-ins and lots |
+  | `request` | `admitScene` for a catalog candidate; for a body we hold, the body and its asks (`requestOnBodyScene`) |
+  | `place` | `lookalikeScene`: the asked points, each lookalike, the rule to the nearest |
+  | `drawn` | `drawnScene`: the drawing over the body it overlaps, the share on the shore |
+
+- **The flag handler's map slot is wired** (the integration, 2026-11-21): `FlagHandler` passes
+  `<ItemMap item={item} />` for every subject, and `SubjectRow` collapses the slot when it draws
+  nothing (no second column, no rule) — before the fix an empty answer left an empty bordered box beside
+  the subject. Stories (`handlers/Flag/FlagMap.stories.tsx`, through `ItemMapView` over fixtures, at
+  788 and 360 px) hold a report in Safety (the red reticle), a report in Content flags (not red), a
+  hazard, an alert, and the collapse.
+- **The Access handler against the real server** (W3, third piece): `ItemMap` in its map slot; the
+  ruling's source line (its audit `reason`); and the contest-access figure — shown only under a *no
+  public access* ruling, since under an accessible ruling a zero would read as a finding, so the board's
+  dispute state shows two figures, not three. When narrow, the head's badge moves above the body's line.
+- **Aerial is off in the Inbox's embeds** until `inbox.itemMap` carries the body's latest archived pass
+  key (asked of the server builder).
+- **Left for the founder's look on 2.2** (W3): bylines show points, not report counts; label rows at the
+  kit's 76 px; no reporter photos (no data holds them); no gate or posted marks (access reports carry no
+  coordinates).
+- **The embed, as built** (W3, `inbox/map/`): `<InboxMap view mode height? viewOnly? />` for the
+  page and `<InboxMapStill …/>` for stories, fed by six scene builders — `reportPointScene`,
+  `accessScene`, `admitScene`, `lookalikeScene`, `drawnScene`, `alertScene` — each returning `{ frame,
+  scene, legend, caption }`. *Reach* is the console map's fence around the item's frame, never smaller
+  than 400 m a side; `BodyMapPane`'s `rack` takes rows or `false`. Seams granted in the Body console's
+  map: `useBodyMapCanvas` takes `padding` and `reach`, and `MapHoverPlate` flips only when it would
+  overflow its pane.
+- **The aerial backdrop is the archived satellite pass** the console map already draws, so a catalog
+  candidate on 2.3 has none until it is admitted. The console map has no NAIP source; owed if
+  candidates need an aerial — port the skater app's grid-snapped imagery canvas as a console layer, or
+  bake candidates into the archive. Distances follow D25 (stored metric, shown imperial).
+- **The Access handler (2.2)** is registered for `access`, with its one write path
+  (`useAccessWrites`: `setPublicAccess` through `said`, the toast naming the body; in the
+  `adminWriters` inventory). *Open in Body →* carries the item's way back: the Body console's
+  `RETURN_PATHS` takes `/admin/inbox`, and a return path keeps its search, so the lane, the open item
+  and the filter come back with it.
+- **Left for the founder's look** (W3): the candidate outline is drawn bright and dashed where boards
+  2.3 and 2.5 draw ice (a palette test forbids accent strokes on the console map); the skate track is
+  in the console's gray where the boards draw white; the kit's scale bar reads KM/M against D25; and on
+  2.2 there is no *Say accessible* figure, evidence photo or ruling source (no data holds them),
+  `LabelRows` sits at 76 px where the board draws 96, and there are no posted or gate marks (access
+  reports carry no coordinates).
+- **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
+  handler draws no map. **Owed to the kit:** an `ActionBar` narrow layout (three buttons run to
+  471 px at 360), a controlled `open` on `ReasonAsk`, and the promotion of `ReticleMark`,
+  `LookalikeMark`, `MapLegend`, `ItemTimeline` and `StepRugChart`.
+- **The frame's stories once a handler registers:** stories about the list or the frame (`InboxView`'s
+  Keys and Access Reports, `InspectorFrame`'s Placeholders and History) pass an empty registry and keep
+  drawing the placeholder; a story about a handler mounts the real one with its providers.
+- **The shell's Go Mode story** listed the rail's go chips without the Inbox, so registering the mode
+  turned it red; the integration updated it (G then I) and added `components/admin/inbox/**` to the web
+  coverage include.
+- **`return_to_review` and `unretract_access_alert` are real** (S2, turn 1), with the retraction's
+  `prev` recorded and the moderator's retraction moved behind `access.alert`; the remaining §2
+  inverses (`reopen_flag`, `reopen_request`) land in S2's second turn, with the items S1 writes.
+
+#### The re-check of the fix rounds, and its fixes (2026-11-21)
+
+**The verdict.** An independent re-check of the three review-fix rounds found eighteen of the twenty
+fixes closed and two closed only in part; both are finished below, and the class behind one of them
+now has a table of its own.
+
+**The undo of an undo.** The handlers that undo a reopen (`undoFlagReopen`, `undoRequestReopen`,
+`undoReturnToReview`) offered themselves by the actor's own rule while their write asked the Inbox's,
+so History could offer an undo its run then refused. Each now has a refusal that reads the viewer and
+asks the function its run asks: each reopened flag still open and its item not the viewer's (D289,
+D269); the reopened ask still open and no member of its item filed by the viewer; the drawing still
+pending and not the viewer's. `undoFlagReopen.run` asks the item-level check, not only each flag's own
+filer. **The table that holds the class:** `undoOfferVsRun.test.ts`, 14 cases × 8 viewer kinds (the
+actor, a colleague, the filer, a sibling's filer, the subject, the drawer, a moderator without the
+capability, an admin) — 112 cells, each comparing the offer with the run, no disagreement listed. It
+found one more: **a takedown approval's undo was offered to a moderator** although its body-side
+restore needs `body.remove`; `undoRequestDecision`'s offer now asks that capability, as its run does.
+The rule-versus-write table gains the pin: 137 cells, no disagreement.
+
+**Smaller fixes in the same round.** `filedOnTarget` makes point reads (the target's other-lane open
+item by its key, then the viewer's members of it), charged to the list page's budget;
+`flagsLeftClosed` lands on the parent undo's lead row (its first row on the undone row's target), not
+the newest tagged row.
+
+**The read-budget sweep** (S1's table: each read now charged for every row it pulls, and a range a
+budget cut short said as capped):
+
+| Read | Before | Now |
+|---|---|---|
+| `aroundIt` | a report its author took back was skipped before the budget check, so a window of them was scanned uncharged | the next row is pulled only while a whole report fits and the scan is under `AROUND_SCAN` (four times the list's); every pulled row charged; capped when either bound ends the read |
+| `lanes`' figures and `today` | ranges read by row cap alone | each charged at its worst and sized to the request's budget (`itemsUpTo`); a short range says capped, and no median is given over one |
+| An author's report count, Around it's companion scan, `backfillOrigin` | the row past the bound read uncharged | the next row pulled only once it may start |
+| The repair's decided walk and its retry read | unsized | sized and charged |
+
+**The pin, as built** (the founder's "Sure.", §7). `InboxVerb` gains `pin`; `inboxWrites.alertVerdict`
+takes `verb: 'pin'` beside `unpin` and `retract`. **Precondition:** the alert not already pinned and
+not retracted, and the pinner holds `access.alert`. **What it does:** the alert goes official through
+`setOfficialImpl` (no lapse, the moderator's name on it, a reason required as `setOfficial` always
+asked), and because a pin sides with the alert every open flag on it, in every lane, closes
+`dismissed`, each flagger told once, and the item is decided `pinned` (`INBOX_DECISIONS` widened) — a
+pinned alert with open flags against it would be an item nobody could finish. **Its refusals:** the
+moderator's own alert (D269), "This alert is already pinned.", "This alert has been retracted, so it
+can't be pinned." (D248). **Its undo** releases the alert and reopens the flags it closed. §1's
+lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is owed in B01-5b.
+
+**For the founder's record:**
+
+- A staffer's own report that a colleague's ruling dismissed stays dismissed after the staffer undoes
+  that ruling (the undo skips the undoer's own report, the standing ruling in §7); a new report by them
+  reopens their question as a new member, which they still can't decide (D289).
+- A real skater's flag on seeded content is answered when a moderator decides it: a true answer to a
+  real flag, not gated on purpose — only the seed's fake people are never told (D287).
+- The 500-member repair test has its own timeout: under a full suite's load it outran the default.
+
+#### Greptile on #170, round one (2026-11-21)
+
+**The score:** 1/5 on `c819c44f`, three P1 and three P2. S1 judged five right as stated, and the
+own-filing one right and wider than stated. The fixes:
+
+- **P1, large decisions exceed read limits** (right as stated). `refreshItem` recounted up to 500 open
+  members after every source it closed: a decline's first page on a 500-ask item read about 80,200
+  member rows, past Convex's 32,000 documents a transaction (reproduced under Convex's own limits).
+  **Fix:** the writer's batch entry point, below.
+- **P1, an undo missed requests before the backfill** (right as stated). `closeRow` closed an unfiled
+  sibling, `decideItem` returned `none`, and the undo found siblings only through stamped members.
+  **Fix:** `decideItem` files a decided source that has no member before closing it (into the open
+  item its question is, else a decided twin), stamped with the decision's row, so every closer records
+  every member whether or not the backfill reached it.
+- **P1 (security), staff could decide their own filings** (right, and wider). `assertMayDecide` asked
+  the rule only through the primary's item, while the drain closes every sibling it selects: an
+  approval's bay widens that set by its aliases (a moderator approving "Northwest Bay" with the alias
+  "NW Bay" closed their own "NW Bay" ask, in another item), and an approving landmark's answer and
+  same-place rule reach other items too. The seed exemption had the same gap. **Fix:** `askedAlongside`,
+  below.
+- **P2, an incomplete backfill looked ready** (right as stated). **Fix:** the Inbox stays `pending`
+  while a failure remains, below.
+- **P2, hazard votes read backward** (right as stated, on a safety-adjacent screen): every vote that
+  wasn't `fully_healed` counted as "up", so `never_existed` read as "still there". **Fix:** a hazard's
+  four verdicts are counted separately — `HazardSubjectView.votes` (a count per verdict) and
+  `votesCapped` (each a floor past the 200 read) replace `confirmations { up, down }`; no net, no side
+  (D3), labelled by core's `verdictLabel(verdict, type)`.
+- **P2, an access item's newest note disappeared** (right as stated): the row read the five oldest
+  members and took the last as its note. **Fix:** the newest-end reads — the row's note is the newest
+  of the five newest reports that says something, and the Access drawer reads each status from the
+  newest end too (it had read the 50 oldest while listing newest first); members are charged as
+  `inboxMember` rows.
+
+**The batch entry point (`inboxBatch`).** Inside a batch a reconcile updates its member and leaves its
+item's refresh owed; the batch ends by refreshing each touched item once. `batchHasRoom` reads the
+transaction's live metrics before each source — the source, every owed refresh and their headroom in
+rows, bytes, index ranges and writes — and out of room the closer schedules the rest, always closing at
+least one source a page. **Every caller moved onto it:** the sibling drain (`closeSiblingPage`, and a
+decision's primary with its first page); `closeFlagsUnder` (a takedown, a dismissal, an alert verdict,
+restore-and-dismiss, the pin), now paged through `inboxWrites.closeFlagsRest`, which stops once its
+decision is undone; the ruling (now through `closeFlagsUnder`, its unbounded read bounded at 1,000);
+`reopenItem` and the undos that reopen many; `retargetAsks` (through `retargetEach`); an account's
+tickets; the repair. Found on the way: each flag close also moved the target's erasure hold and a
+metric, and the undo re-read the target's newest flags per flag — both now once per target
+(`FlagCloseEffects`, a memoized reopen). **The decide-then-undo table** (`inboxBatch.test.ts`): a
+decline and its drain, a two-lane takedown, a ruling and a dismissal, each with none, some or all of
+its sources filed, plus a single flag's resolution and a drawn body's approval with none or all —
+16 cases, each decided and undone.
+
+**`askedAlongside`.** Point reads over every item a decision's drain can reach — a bay keyed by every
+name of the answer, an admit, a kind, or the body's open landmark items — and the viewer's members of
+each; a landmark member counts when its ask is the same place or one the answering landmark answers.
+`inboxRules` reads it as an own filing, in `can` and in the write alike; for asks the backfill hasn't
+filed, `assertMayDecide` also scans every page the drain would read (up to 1,000). **The whole decision
+is refused before anything is written** — a partial decision that silently left the actor's ask open
+would leave it with no visible reason. **The seed-origin exemption covers only the primary;** an
+app-filed sibling still asks the rule. An approval's or decline's undo reopens every member its row
+closed, and one the undoer filed refuses it (offer and run). The rule-versus-write table is now 141
+cells; the offer-versus-run table 15 cases × 8 viewer kinds, 120 cells (S1's commit says 16 × 8; the
+test, run, has 15).
+
+**Pending until the Inbox is ready.** "The scan finished" and "the Inbox is ready" are two facts:
+`inboxPending` is true until the backfill's scan is done **and** while any `inboxBackfill` failure
+remains, parked or not. In that state `inbox.lanes`, `listPage`, `tail`, `today` and the item read
+serve `pending: true`, and the Overview's Inbox card and heading draw no figure. **The way out:** while
+a source is failing the drift repair retries it; once parked, the daily retry
+(`recurringJobs.retryParkedDaily`, D258) now retries parked backfill sources too, filing each and
+clearing its failure in one transaction. Machinery's health read (`recurringJobs.health`, "repair
+inbox items drift") counts both, failing and parked, with their error classes. A source that should
+never be filed has its failure forgotten by hand: `recurringJobs:forgetBefore` with
+`job: "inboxBackfill"`, which forgets every such failure last seen before the given time.
+
+**Owed, or known:**
+
+- A list row's `can` can't see a reach that depends on the answer (the drawn bay): only the item's
+  read and the write refuse it.
+- An own ask the backfill hasn't filed is seen only by the write (its row scan), not by `can`.
+- An undo reopens at most 500 members.
+- A large flag decision's later flags close moments after its toast, on the scheduled pages.
+
+#### Greptile on #170, round two (2026-11-21)
+
+**The score:** 3/5 on `3cb5e6b2`, with two new findings, both in round one's code. S1 judged both right:
+
+- **Landmark decisions fail on a deployment.** Round one's own-filing scan (`ownAskAmongSiblings`)
+  paged the drain's sibling selection, and then the drain paged again. Convex refuses a second
+  `.paginate()` in one execution, so every landmark approval and decline would have thrown on deploy,
+  the old editor's queue included.
+- **Larger reopenings could not be undone.** `reopen_request`'s undo reserved a whole ask's worst
+  case (1 MiB) per reopened ask. From eleven asks the reservation passed the request's budget, so
+  History answered "check elsewhere" without checking, and the run refused the same way, even for
+  small, ordinary asks.
+
+**Convex's rule, as S1 read it in the backend's source:** one `.paginate()` per function execution,
+queries and mutations alike. The `queryPage` syscall refuses a second with
+`MultiplePaginatedDatabaseQueries`, in `crates/isolate/src/environment/udf/async_syscall.rs`. Each
+execution has its own journal, so a nested `runMutation` call and a scheduled function each count on
+their own. `convex-test` 0.0.72 enforces the rule for queries only; its docs say mutations may
+paginate more than once, which is wrong.
+
+**The harness now enforces it.** A test-only transform in `packages/convex/vitest.config.ts` rewrites
+the inlined `convex-test` bundle. It gives every mutation execution its own pagination counter, as
+the backend does, and names the function in the error. It touches nothing that ships, and it fails
+loudly if `convex-test` changes shape. With it on, the suite caught `corpusRequests:approve`,
+`corpusRequests:decline` and `landmarks:create`, all on landmark paths. S1 counted 13 tests failing;
+at the integration, 14 failed with the rule on and the round-one code (the property test's three
+draws among them), and all passed with the rule off — the rule is what catches it.
+`harnessLimits.test.ts` tests the rule.
+
+**Convex's transaction limits are now enforced in every test.** The same transform turns on
+`convex-test`'s default per-transaction limits for every harness: documents and bytes read and
+written, index ranges, functions scheduled and their argument bytes, and files. The whole suite
+passes under them. **Still arithmetic only:** the 1 s execution time, and call-nesting depth
+(`convex-test` tracks depth but sets no limit; the wave nests two deep).
+
+**The own-filing check, read from the actor's end.** The question is whether the actor has an open
+ask the decision closes, so it reads the actor's own open, person-filed asks through a new index
+(`by_requester_status_origin`, `origin` unset, so a script's asks in their name stay exempt). It reads
+at most 200, where the writers cap a person at 30 open asks. It applies the drain's own sibling
+selection to each one (`closesWith`). Past the bound it refuses as an own filing rather than decide
+unseen; another staffer decides, so no item strands. The item's `can` and the write ask the same
+function, so the drawer now also sees an own ask the backfill hasn't filed. The drain pages once a
+transaction; its later pages run as scheduled executions of their own.
+
+**The undo reservations, before and after** (S1's table):
+
+| Undo | Before | After |
+|---|---|---|
+| `reopen_request`'s re-decline | (1 + n) × 1 MiB (an ask's worst case per reopened ask) | each reopened sibling's member row (n × 1 KiB), the primary read whole once |
+| A decision's undo (`approve_request`, `decline_request`) | `MAX_MEMBERS` members reserved and read | one point read on a new index, `by_closed_filer` (did the decision close a member this viewer filed?) |
+| `reopen_flag`'s re-close | a reservation per flag for the actor | each flag's member, and the own-filing answer read once per item, up to four items (past that it says so rather than over-reserve) |
+| Members, everywhere | charged as 8 KiB "small" rows | charged as 1 KiB `inboxMember` rows |
+
+**The offer-versus-run table** is now 16 cases × 8 viewers, 128 cells. S1's brief said 17; the test,
+run, has 16. **Plus 20 sized cases** that assert the outcome as well as agreement: every group undo (a
+decline's, a reopen's re-decline, a dismissal's, a `reopen_flag`'s re-close, a takedown's) at 1, 11,
+50 and the seam's bound. In each, a colleague is offered the undo and it runs, and the staffer who
+filed one of the group is refused by both. An agreement-only table passed with the bug, because both
+sides refused. One more test holds the real bound by arithmetic: each group's reservation for
+`MAX_MEMBERS + 1` fits a request's opening 4 MiB budget.
+
+#### Greptile on #170, round three (2026-11-21)
+
+**The score:** 3/5 on `8bdb7d7d`, with one new finding and one listed as still open. S1 judged both
+right:
+
+- **Request details failed to load.** The own-filing read (`alongsideOf`) read every open ask of the
+  viewer and only then charged them, so past the budget the charge threw, and `inbox.item` and
+  `inbox.itemMap` failed for a staffer with big asks. The write did the same: up to 201 asks of up to
+  1 MiB each, against a 16 MiB transaction.
+- **Larger reopenings could not be undone — still.** The inline thread was stale, but the finding was
+  not. Round two fixed the reservation, but the run of a decision's undo still read every reopened ask
+  whole (past 16 MiB with heavy asks; the matrix reproduced it). The re-decline also closed them all in
+  one transaction, and a flag reopen read each flag three times.
+
+**The family behind all three rounds:** a read that pulls rows before it knows it can afford them,
+where a row can weigh nearly the document limit (an admit ask carries its catalog polygon).
+
+**The own-filing check, as now built.**
+- **With the Inbox ready,** every open ask a person filed is the open member of its item, so the
+  check reads the actor's member rows through a new index, `by_filer_source_status` (at most 201 rows
+  of 1 KiB, charged before the read). It compares the decision's reach by item key, reading one item
+  row (8 KiB, measured) per member, and an ask row only for a landmark item on the body (measured, and
+  started only while its worst case fits).
+- **While the Inbox is pending** — the only time an open ask can lack a member — it reads the actor's
+  asks one at a time, each only while a whole ask fits, and stops at "unchecked" when one doesn't.
+  Both `can` and the write refuse "unchecked" with its own sentence, and the item always returns.
+- **Worst case:** the read spends at most what its budget holds, by construction (members 201 KiB,
+  items up to 1.6 MiB, plus measured landmark asks, stopping when they don't fit). The write gives the
+  check the lesser of 4 MiB and the remaining budget less 4 MiB.
+
+**Every group run pages by live metrics,** at least one source a page, the rest scheduled through an
+internal continuation:
+- `reopenRequestPage`, continued by `reopenRequestsRest`, which stops once the reopen is undone;
+- `closeRequestPage`, continued by `closeRequestsRest` for a re-decline's named asks, which stops
+  once that decision is undone;
+- `reopenFlagStep`, continued by `reopenFlagsRest`, which skips each flag the decision no longer
+  holds closed.
+
+**Also found and fixed:**
+- the drain's sibling read (`openSiblings`) took up to 200 asks before weighing them; it now takes
+  them one at a time against a byte room;
+- the closers' declared costs now count bytes written (a patch writes the whole row back);
+- a flagged Post's restore plan reserved ten reports at their worst and threw when they didn't fit;
+  it is now left out then, and the write decides by the same rule;
+- an undo's place in its chain is worked out once a transaction, not once per row written;
+- five loops calling the writer outside a batch are now batches (`seedBayRequests`, `backfillOrigin`,
+  `flagAsDuplicates`, `importReconciliation`, `resolveIncomingMergeDuplicates`).
+
+**The heavy-rows matrix** (`convex/inboxHeavy.test.ts`).
+- **The rows:** every source the Inbox touches, as large as the schema and its writers allow: twenty
+  admit asks for one catalog feature at about 900 KiB each (18 MiB together, past one transaction),
+  the moderator's own heavy asks, flags at their longest notes, tickets at their longest bodies, and
+  drawn bodies with outlines near the limit.
+- **The reads (8):** `item`, `itemMap`, the list by lane and across all lanes, `lanes`, `today`,
+  `tail`, and the Overview card.
+- **The writes (8; the brief said 9), each with its undo:** a decline with its drain, a landmark
+  decline, a dismissal, a takedown, a ruling, a drawn body's approval and rejection, and a ticket's
+  resolve. They run under the harness's real limits with every continuation run to its end, and the
+  requests run with the Inbox both pending and ready.
+- **Three allowed outcomes:** complete; answer capped or pending; or refuse with a sentence. Never
+  throw, never stall.
+- **What it catches with each earlier round's fix reverted:** the drain's byte room (round one), a
+  second paginate (round two), the reopen's per-ask reservation (round two), the own-filing check
+  reading asks unbudgeted (round three), and the unpaged reopen run and re-decline (round three). It
+  runs in about 5 s on its own here, its slowest test 2.1 s under coverage.
+
+**The guard** (`packages/guards/src/inboxReads.test.ts`), with comments and strings blanked first:
+- **Reads:** in `inbox.ts`, `lib/inboxViews.ts`, `lib/inboxRules.ts` and the own-filing check the
+  views call, every row read and every read-callback call must sit inside a budgeted call (the
+  reader's `get`, `take` or `members`; a `ReadBudget`'s `take`, `measured`, `one`, `page` or `row`; a
+  pass's `reads.get` or `reads.take`; or `itemsUpTo`). Nine read exceptions are named, each bounded
+  another way.
+- **Writes:** in the write and undo modules, every loop that calls the writer must sit inside
+  `inboxBatch(`. One write exception is named, `retargetEach`, which runs inside its caller's batch.
+- It fails on `alongsideOf` and `recordOf` as they stood at `8bdb7d7d`. At the integration, a bare
+  `ctx.db.get` added to `inbox.ts`' `lanes` failed it, naming `inbox.ts#lanes`.
+
+**Owed:**
+- the matrix doesn't yet cover alert verdicts, restore-and-dismiss, a single `resolveFlag`, or
+  approving a heavy admit;
+- `bodies.ts` (about line 875), a Body-console read on main, calls `openSiblings` without a byte room
+  (not this PR's code).
+
+**Still arithmetic only:** a flag reopen of 500 at maximum notes, the 1 s execution time, and
+call-nesting depth.
+
+**For the copy pass,** the new sentence: "Your own open asks couldn’t all be checked against this
+just now, so another staff member decides it."
+
+#### Greptile on #170, round four (2026-11-21)
+
+**The score:** 4/5 on `c0082fa5`, with two findings, both in round three's paged continuations. S1
+judged both right:
+
+- **Old flags reopened beside new ones.** A later page of a flag reopen never repeated the reopen
+  rule (`flagReopenRefusalOf`): it checked only the old member's stamp and the flag's status. So a
+  reporter who filed again between pages got their old flag reopened beside the new one.
+- **Later undo rows lost their links.** `asUndoOf` keys the row being undone by the transaction's
+  context, so a scheduled page lost it, along with the caller's `via` (which comes from an identity a
+  scheduled call doesn't have). The later pages' audit rows carried no `undoesActionId` and no chain
+  fields.
+
+**The fixes.**
+- **Each later page re-runs the first page's per-flag check** in its own transaction (the target's
+  newest flags read once per target, and the actor check). A flag that can no longer reopen stays
+  closed and is recorded on the undo's lead row, found by the same lookup the first page uses
+  (`leadRowOf`): it is appended to `flagsLeftClosed` and taken off the lead's `reopened` list, so the
+  undo of the undo closes only what reopened. The pages run strictly one after another, each
+  scheduled by the last at its end, after its writes; the lead row has one writer at a time.
+- **Every continuation carries its audit context** (`undoOf`, an id, and `via`, a short string) in
+  its scheduled arguments (`auditContextArgs`), read at the schedule (`auditContextOf`) and re-entered
+  by the later page (`asContinuationOf`). Its rows then carry the same links as the first page's.
+  All five continuations are internal mutations, so no client can call one with a forged context.
+
+**The continuations** (operation → what its later pages lacked → what is now re-checked or
+inherited):
+
+| Continuation | The operation | What later pages lacked | Now |
+|---|---|---|---|
+| `corpusRequests.closeSiblings` | a request decision's sibling drain | the audit context | carried and re-entered; the drain still stops once its decision is undone |
+| `inboxWrites.closeFlagsRest` | a flag decision's later flags (takedown, dismissal, ruling, pin, and the rest) | the audit context | carried and re-entered; still stops once the decision is undone |
+| `inboxWrites.reopenRequestsRest` | a request decision's undo | the audit context | carried and re-entered; still stops once the reopen is undone |
+| `inboxWrites.closeRequestsRest` | a re-decline over what a reopen reopened | the audit context | carried and re-entered; still stops once the re-decline is undone |
+| `inboxWrites.reopenFlagsRest` | a flag decision's undo | the per-flag reopen rule, the record of a flag left closed, a stop once its own lead row is undone, and the audit context | all four, re-checked in the page's own transaction |
+
+**Inherited by design, not re-checked:** the actor's permission. The act was authorized when it was
+made, and completing it keeps it whole, so a suspended actor's paged undo completes. The own-filing
+rule over the act's fixed sources is inherited too.
+
+**The interleaving table** (`convex/inboxPages.test.ts`, 14 cases). A new seam, `PAGE_SEAM`, forces
+every paged operation into two or more pages: a flag decision's undo, a flag reopen undone, a flag
+decision's later flags, a request decision's drain, its undo and a re-decline. Between the first page
+and the rest, a write that can matter lands: the reporter files again, a colleague decides one of the
+remaining sources, the asker withdraws one, a new ask is filed, the act is undone, the undo is undone,
+or the actor is suspended. **It asserts** that the end state is what the rule says (the per-source
+rule re-checked in the transaction that applies it, the act stopping once it is undone), that every
+later row carries its first page's links, and that the stored Inbox still matches its sources. It
+runs in about 1.2 s on its own here.
+
+**The further bug it caught:** undoing a flag reopen part-way was refused ("A flag has been decided
+since"), because the lead row's `reopened` list named flags no page had reached yet, still held by the
+original decision. The undo of the undo now skips flags still held by the decision it undid
+(`stillHeldBy`), and the reopen's later pages stop once their lead row is undone.
+
+**What else reads a paged act, and why each reads it right:**
+- **The web receipt** says what the decision does, in the present tense ("Closes 3 flags"), so a
+  receipt shown before the later pages land is still true.
+- **History and `undoStates`** read the audit rows; every later row now carries the first page's links
+  and chain fields, so they see one act.
+- **The People record** reads the decisions' rows, which now carry the same links on every page.
+- **The notification settle** re-checks each flag's status before it sends ("the flag's status is still
+  that resolution"), so a flagger whose flag a later undo reopened is not told.
+- **The Inbox item** is decided by its members, each closed under the decision's one row whichever
+  page closed it, so the item tells one decision.
+
+**Owed:** the carried `via` has no test, because test identities carry no `via` claim.
+
+#### Greptile on #170, round five (2026-11-21)
+
+**The score:** 4/5 on `a09e9e19`, with one finding: the flag reopen rule still read the target's
+newest 100 flags, so a reporter's new filing outside them didn't refuse the reopen. S1 judged it right,
+and swept every rule for the same shape.
+
+**The fix.** The rule's three questions are now point reads, `eq` on every field, the same answer at 1
+flag or 5,000 (`reopenFactsOf`):
+- **superseded:** `by_supersedes`, one row;
+- **the reporter's open filing:** `by_target_flagger_status_origin`, each open status, `origin:
+  'user'` (an automatic flag names its rater as the flagger, so origin tells them apart);
+- **an open automatic flag of the reason:** `by_target_status_reason_origin`, each open status, for
+  `origin` `'auto'` and for absent (the field is optional, so `eq(undefined)` is its own read, never a
+  range).
+
+The reopen now checks each flag in the page that reaches it, inside that page's room on bytes, index
+ranges and documents. Exact facts cost up to five reads a flag, so 500 flags checked up front would
+not fit one transaction.
+
+**The rule-window table** (each capped read in a rule → its category → what holds it). (a) is an
+exact lookup, (b) a bounded read that refuses in words at its bound, (c) a bound a writer holds:
+
+| Function | Read | Bound | Kind | Held by |
+|---|---|---|---|---|
+| `reopenFactsOf` | three point reads | `take(1)` | a | `inboxReopenRule.test.ts` (newest, 101st, oldest, 5,000) |
+| `reopenFlagsClosedBy` | the decision's stamped members | 1,001 | b, refuses past 1,000 (`UNDO_TOO_LARGE`) | the same file |
+| `openFlagsOn` (takedown, alert verdict) | open flags a status | 500 | c: the rest stay open, shown | `DECISION_FLAGS_MAX` arithmetic |
+| `flagItemOf` (dismiss) | the item's open members | 500 | c: the rest stay open, shown | the same |
+| a ruling's reports | open access reports | 1,000 | c: the rest stay open, shown | the same |
+| `leadRowOf` | rows tagged with the undo | 32 | c: an undo writes its own row first | the later-page cases |
+| `undoRowOf` | rows tagged with the undo | 16 | a: any one means undone | — |
+| `newestOnTarget` (overtaken) | the newest row on the target | `first` | a | — |
+| `filedByViewer`, `decisionActorRefusal` | any member the viewer filed | `first`/1 | a | — |
+| `filedOnTarget` | the viewer's open member in the other lane | was 8, now 1 on `status: 'open'` | a (**fixed**) | the closed-members case |
+| `filedAmongClosedBy`, `memberOfSource`, `itemToDecide` | point reads | 1 | a | — |
+| `ownAsks` | the actor's open ask members | 201 | b, `unchecked` refuses | `inboxBatch.test.ts` |
+| `alongsideAnswer` | the asks' items | budget | b, `unchecked` refuses | the same |
+| `REOPEN_ITEMS` | a reopen's items | 4 | b, `UNDO_SPREAD_TOO_WIDE` | `undoOfferVsRun.test.ts` |
+| `undoRequestDecision` gather | the decision's stamped members | 501 | b, refuses past 500 (**was a window**) | `inboxReopenRule.test.ts` |
+| `closeSiblingPage` | the drain | `REQUEST_SIBLINGS_MAX` (499) | c: the rest stay open, shown (**new cap**) | the same |
+| `recordOnlyRefusal` | verdicts a row minted or ended | 2 / 1 | c: one verdict a row; a | — |
+| `heldKindOn` | the standing verdict | `first` | c: one standing a target | — |
+| `launchRefusal`, the put-in undo | hidden launches | 201 | b, `SUPPRESSION_UNCHECKED` (**was a window**) | the same |
+| `contentFlags.flag` dedupe | the person's open flag | point read a status | a (**was a scan, and missed `reviewing`**) | the same |
+
+**The reverse direction** (a window hiding rows that should allow something, or that a count needs):
+- **The item's member count** stops at `MAX_MEMBERS`. Reads now say so with `memberCountIsFloor`, so a
+  view can draw "500+". **A contract addition for the web** (B01-5b): an item's
+  `memberCountIsFloor`, drawn as "500+".
+- **`flagsClosed`** is the length of what the decision closes, every page together, so it is exact.
+  The rows past a closer's cap stay open and shown.
+- **"M in other lanes"** has no count anywhere yet. A takedown closes every lane's open flags, up to
+  500 a status.
+- **The own-filing check in another lane** was a window (above), and is fixed.
+- **One open flag per reporter at filing** was an unbounded filtered scan that saw only `open`. It is
+  now exact, for both open statuses.
+
+**The guard** (`packages/guards/src/ruleWindows.test.ts`). In the rule modules and the named rule
+functions, every capped read must take one of three shapes:
+- an exact read (`.first()`, `take(1)`);
+- a read of `X + 1` rows in a function that compares a length past `X`;
+- an entry on the allow-list, with its category and its reason.
+
+A query `.filter(` must be listed too. **It can't see** whether an index's `eq`s make a read exact, a
+cap passed in from another module, whether the `> X` branch really refuses, or rules outside its
+scope.
+
+**Also changed:** the reopen's per-flag cost (`FLAG_REOPEN_COST`) now counts the rule's reads. A flag
+decision's own undo now refuses whole only on its lead flag (see the undo policy above).
+
+#### How the forks were ruled (2026-11-20)
+
+The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
+rulings); each answer is in the text above, and this is the map.
+
+| # | Fork | Ruling | Where it landed |
+|---|---|---|---|
+| 1 | Six PRs, the seed first | the governor: six, as sliced | *The slices* |
+| 2 | What a takedown closes | the founder: every open flag on the content, every lane, each flagger told; *Dismiss* only the item's | *Decisions made from the Inbox* |
+| 3 | One item per question | the founder: yes; the Overview counts items | *The unit* |
+| 4 | The Stefan estimate on 2.1 | the founder: show it, labeled, with a link to Tuning's explanation (Coming soon) | `inbox.claimWeather`; D288 amends D160 |
+| 5 | A hidden photo's old address | the founder: copy the bytes and delete the old ones on a takedown, proved on dev first | *Photos*; PR 5's after-merge steps |
+| 6 | The unmerge | the founder: build it in PR 4 | the undo table; *Merge into* |
+| 7 | Installed phone builds | the governor: `knows` plus a preview build | *Telling askers* |
+| 8 | Answers to a support reply | the founder: the footer | *Support* |
+| 9 | Telling an alert's author | the founder: build it, a second kind under D285, in PR 3 | *Telling askers*; D285 amended |
+| 10 | *Around it*'s words | the founder: quote the claims | `inbox.aroundIt` |
+| 11 | Where the seed lives | the governor: `scripts/seed-inbox` | *The seed* |
+| 12 | A staffer deciding what they filed | the founder: refused; the Inbox is for what skaters file | *Per-row `can`*; D289 |
+
+**What D289 found in the code.** One path files a staff-originated change as an Inbox item:
+`corpusRequests.seedBayRequests` (`corpusRequests.ts:1086`) files the corpus's destination bays as
+`name_bay` asks under a `--requester=<profileId>` the operator passes — in practice a staff account.
+They are machine-sourced work nobody is waiting on (D216's Corpus line), so they are **not Inbox
+items** (the governor's ruling, §7; D289 amended): `waterBodyRequests.origin` (`app` | `seed`, optional,
+absent reads as `app`) is written `seed` by that function from PR 1; `lib/inboxItems.fileMember` files
+nothing for a seed-origin ask, so it counts in no lane and not on the Overview's Inbox card; it stays
+decidable where it is today (the old editor's bay queue, `openBayRequestsForBody`, and the Bodies
+preview's asks) until §4 takes it into Corpus; and the own-filing refusal doesn't apply to it (no
+person asked). **The backfill** (`corpusRequests.backfillOrigin`, internal, dry by default): the
+function writes no audit row and no marker, so the rows it wrote are told apart by what only it writes
+— a `name_bay` ask carrying `aliases` (`corpusRequests.create` never writes them) — or a `name_bay`
+ask whose requester is staff and whose `coord` is a real place rather than the lake's own point
+(`isLakePoint` false: a skater's drawer ask carries the lake's point). The dry run lists every
+candidate with its requester and date for the operator to confirm before `apply`; D201 says sixteen
+were filed, and whether dev holds them, and whether any skater's ask could match the second test, is
+**not verified** without a dev read. No other path
+routes a staff change through an item: the approvals perform the act a skater asked for, and every
+direct lever (the Body console's tabs, merge from the Shape tab, the ruling, People's levers) writes
+without one.
+
+#### The phase branch for this wave (§12.2)
+
+- **`phase-b01-inbox` is the integration branch.** Builders cut their worktrees from it and the
+  executor cherry-picks their commits onto it, one builder at a time, with the full gate after each.
+- **Now:** it is rebased onto the stored-facts PR branch's head (`phase-b01-stored-facts`), so PR 1's
+  server work starts on the schema and guards that branch changes. **After that PR squash-merges:**
+  `git rebase --onto main <the stored-facts branch's last tip> phase-b01-inbox`, so only this wave's
+  commits replay and the review fixes arrive from main; never a merge of main into it.
+- **Moved onto main at `907011a8` on 2026-11-21** (the stored-facts PR squashed as #167; #168 and
+  #169 came with it): the wave's commits replayed on top, and main's D290 (#169) now follows this
+  wave's D283–D289. **The next new decision number is D291.**
+- **Each PR is its slice's finished files laid on main, not a commit range** (2026-11-21): a branch
+  `phase-b01-inbox-<n>` from `origin/main`, then `git checkout phase-b01-inbox -- <the slice's paths>`
+  and the least of anything else the gate forces, each such piece named in the PR. Why: the wave's
+  commits interleave the server and web builders and three review-fix rounds, and the server
+  builders' work is one interdependent unit (S1's tests need S2's hooks; S2's fixes edit S1's rule
+  file), so no commit boundary is a slice boundary. `phase-b01-inbox` keeps every commit and stays the
+  source of truth; a fix made on a PR branch is cherry-picked back so the two never drift. Each PR
+  opens against main only after the previous one merged, and closes at Greptile 5/5 on its own
+  branch.
+- **One known conflict:** both branches append to the end of `plans/01-decisions.md` (D282 there,
+  D283–D289 here). It resolves by keeping both blocks in number order, D282 first — and on the move
+  onto main it was the only conflict: two commits, both blocks kept, D290 left last.
+
+#### Briefs (PR 1)
+
+Self-contained for the governor to paste. Every brief also carries §12.4's invariants verbatim.
+
+##### Territories (disjoint)
+
+| Agent | Owns | Requests as a seam, never edits |
+|---|---|---|
+| **S1 — items** | `packages/convex/convex/inbox.ts` (new), `lib/inboxItems.ts` (new), `lib/inboxRules.ts` (new), `lib/stefanWindow.ts` (new, with `iceCalibration.ts`'s two helpers moved out and its imports updated), `inboxItems.property.test.ts`, `inbox*.test.ts`; the writer hooks in `contentFlags.ts`, `lib/autoFlag.ts`, `lib/flagResolution.ts`, `waterBodies.ts` (`create`, `retargetAsks`, `mergeBodyInto` only), `corpusRequests.ts` (`create`, `retract`, `recordResolution`, `seedBayRequests`, and the new `backfillOrigin` only), `lib/landmarkProposals.ts`, `support.ts` (`create`, `resolve` only), `erasure.ts` (the retracted-flag and retracted-request erasers only); `console.ts` (the Inbox card); `notifications.ts` (`list`'s `knows`); `packages/core/src/inbox.ts` (new: unions, lane order, facets, `aroundItPhrases`) and its export from `packages/core/src/index.ts`; `packages/guards/src/inboxWriters.test.ts` (new) | `schema.ts` (the seam below); `lib/requestDecisions.ts` `closeRow` and `closeSiblingPage` hooks (S2 owns the file — S1 names the two calls, S2 adds them); `waterBodies.ts` `approve`/`reject` hooks (S2's) |
+| **S2 — inverses and Inbox writes** | `lib/undoPolicy.ts`, `lib/undoHandlers.ts`, `lib/undoHandlersBody.ts`, `lib/undoHandlersCorpus.ts`, `lib/undo.ts`, `lib/requestDecisions.ts`, `corpusRequests.ts` `approve` and `decline` only, `accessAlerts.ts` (the retraction's `prev`, `access.alert`, `alertVerdict`'s impls), `waterBodies.ts` `approve` and `reject` only, `moderation.ts` `resolveFlag` only (made to call S1's `decideItem`); `inboxWrites.ts` (new: `dismissFlags`, `takeDown`, `alertVerdict`, `restoreAndDismiss`); `lib/enums.ts` (the new verbs and target); their tests | `schema.ts`; S1's `lib/inboxItems.ts` (imports `decideItem`, `reopenItem`; asks for any change); `packages/core/src/capabilities.ts` if a capability moves |
+| **D — seed** | `scripts/seed-inbox/**` (new package), `packages/convex/convex/inboxSeed.ts` (new), `lib/seedPeople.ts` (new); the `isSeedProfile` call sites in `clerkAdmin.ts`, `clerkReconcile.ts`, `lib/clerkEmail.ts`, `lib/notificationQueue.ts` (the flush gate only); their tests | `package.json`/the lockfile (the new package); `schema.ts` (`jobFailures`' job literal if the clear parks) |
+
+`waterBodies.ts`, `corpusRequests.ts` and `moderation.ts` are split by function as listed; a builder
+who needs a line in a function they don't own asks for it in their report.
+
+##### The schema seam for PR 1 (an executor pastes this into `schema.ts`)
+
+New tables, beside `bodyLibraryRows`:
+
+```ts
+  /**
+   * One Inbox item per question a person filed (B01-5): a flag target in a lane, a body's access
+   * reports, an ask and its siblings, a drawn body, a ticket. Written only by `lib/inboxItems.ts`.
+   */
+  inboxItems: defineTable({
+    key: v.string(),
+    kind: literals(INBOX_ITEM_KINDS),
+    lane: literals(INBOX_LANES),
+    laneOrder: v.number(),
+    facet: v.string(),
+    status: literals(INBOX_ITEM_STATUSES),
+    rankKey: v.number(),
+    filedAt: v.number(),
+    lastActivityAt: v.number(),
+    memberCount: v.number(),
+    waterBodyId: v.optional(v.id('waterBodies')),
+    subjectUserId: v.optional(v.id('profiles')),
+    decidedAt: v.optional(v.number()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decision: v.optional(literals(INBOX_DECISIONS)),
+    decisionActionId: v.optional(v.id('moderationActions')),
+    refreshedAt: v.number(),
+  })
+    .index('by_key', ['key', 'status'])
+    .index('by_status_lane_rank', ['status', 'laneOrder', 'rankKey'])
+    .index('by_status_lane_facet_rank', ['status', 'laneOrder', 'facet', 'rankKey'])
+    .index('by_status_decided', ['status', 'decidedAt'])
+    .index('by_lane_status_decided', ['laneOrder', 'status', 'decidedAt'])
+    // `eq` on the optional field only, never a bare range (an index on an optional field is not sparse).
+    .index('by_body_status', ['waterBodyId', 'status', 'filedAt'])
+    .index('by_subject_status', ['subjectUserId', 'status', 'filedAt'])
+    .index('by_refreshed_at', ['status', 'refreshedAt']),
+
+  inboxItemMembers: defineTable({
+    itemId: v.id('inboxItems'),
+    sourceTable: literals(INBOX_SOURCE_TABLES),
+    sourceId: v.string(),
+    /** Who filed it (D289); absent for a member no person filed (an auto flag). */
+    filedByUserId: v.optional(v.id('profiles')),
+    status: literals(INBOX_MEMBER_STATUSES),
+    closedByActionId: v.optional(v.id('moderationActions')),
+    filedAt: v.number(),
+  })
+    .index('by_item_status', ['itemId', 'status', 'filedAt'])
+    .index('by_source', ['sourceTable', 'sourceId'])
+    .index('by_item_filer', ['itemId', 'filedByUserId'])
+    // `eq` only.
+    .index('by_closed_by', ['closedByActionId']),
+
+  inboxCounts: defineTable({
+    /** `open:<lane>`, `open:<lane>:<facet>`, `decided`. */
+    key: v.string(),
+    count: v.number(),
+  }).index('by_key', ['key']),
+
+  // and in `waterBodyRequests`, beside `kind`:
+  //   /** Who filed it (D289): a person through an app, or a script. Absent reads as `app`. */
+  //   origin: v.optional(literals(REQUEST_ORIGINS)),
+
+  inboxJobRuns: defineTable({
+    job: literals(['backfill', 'repair', 'seedClear'] as const),
+    phase: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_job', ['job']),
+```
+
+Widenings (each an added literal, no backfill): `moderationActions.action` gains `reopen_flag`,
+`reopen_request`, `return_to_review`, `unretract_access_alert` (through `MODERATION_ACTIONS` in
+`lib/enums.ts`; landed at the seam commit with `later` undo rows owed to S2 and their History and feed
+wording); `jobFailures.job` gains `inboxBackfill`, `inboxRepair` (`FAILING_JOBS`) — **not** at the seam:
+`recurringJobs.ts`' `CRON_OF` is a `Record<FailingJob, string>`, so S1 adds each literal with its cron
+when the job exists. `REQUEST_ORIGINS = ['app', 'seed'] as const` sits beside
+`REQUEST_KINDS` in `packages/core/src/corpusRequests.ts`. The
+constants come from core (below) through `lib/enums.ts`'s re-exports, as the request kinds do.
+
+##### Canonical type snippets
+
+`packages/core/src/inbox.ts` (S1 lands; everyone imports):
+
+```ts
+export const INBOX_LANES = [
+  'safety', 'accessReports', 'requests', 'placesAsked', 'drawnBodies', 'contentFlags', 'support',
+] as const;
+export type InboxLane = (typeof INBOX_LANES)[number];
+/** The flow-through order "All open" reads; Support last, so a viewer without it reads `< 6`. */
+export const INBOX_LANE_ORDER: Record<InboxLane, number> = {
+  safety: 0, accessReports: 1, requests: 2, placesAsked: 3, drawnBodies: 4, contentFlags: 5, support: 6,
+};
+export const INBOX_ITEM_KINDS = ['flag', 'access', 'request', 'place', 'drawn', 'ticket'] as const;
+export type InboxItemKind = (typeof INBOX_ITEM_KINDS)[number];
+export const INBOX_ITEM_STATUSES = ['open', 'decided'] as const;
+export const INBOX_MEMBER_STATUSES = ['open', 'closed'] as const;
+export const INBOX_SOURCE_TABLES = [
+  'contentFlags', 'waterBodyRequests', 'waterBodies', 'supportTickets',
+] as const;
+export const INBOX_DECISIONS = [
+  'dismissed', 'actioned', 'ruled_closed', 'ruled_accessible', 'cleared',
+  'approved', 'declined', 'merged', 'rejected', 'resolved',
+] as const;
+export type InboxDecision = (typeof INBOX_DECISIONS)[number];
+/** Each lane's tabs, `all` first; the filter menu holds the rest. */
+export const INBOX_FACETS: Record<InboxLane, readonly string[]> = {
+  safety: ['all', 'reports', 'hazards', 'people'],
+  accessReports: ['all', 'disputes', 'new'],
+  requests: ['all', 'admit', 'activate', 'restore', 'contest_access', 'takedown'],
+  placesAsked: ['all', 'bays', 'landmarks'],
+  drawnBodies: ['all', 'overlap', 'newWater'],
+  contentFlags: ['all', 'reports', 'comments', 'alerts', 'photos', 'people'],
+  support: ['all', 'account', 'bug', 'safety', 'other'],
+};
+export const INBOX_PAGE_SIZE = 50;
+```
+
+`packages/convex/convex/inbox.ts` (S1 lands; every handler imports the API type):
+
+```ts
+export type InboxCan = Partial<Record<InboxVerb, string | null>>; // null: allowed; text: the refusal
+export type InboxVerb =
+  | 'dismiss' | 'hide' | 'remove' | 'restore' | 'unpin' | 'retract'
+  | 'ruleClosed' | 'ruleAccessible' | 'clearRuling'
+  | 'approve' | 'decline' | 'sameAs' | 'lookUpAgain'
+  | 'approveDrawn' | 'rejectDrawn' | 'mergeDrawn'
+  | 'reply' | 'note' | 'resolve' | 'reopen';
+export type InboxDecidedState = {
+  at: number; by: { userId: Id<'profiles'>; displayName: string } | null;
+  decision: InboxDecision; actionId: Id<'moderationActions'> | null; byMe: boolean;
+};
+type ItemBase = {
+  itemId: Id<'inboxItems'>; lane: InboxLane; facet: string; filedAt: number; lastActivityAt: number;
+  memberCount: number; can: InboxCan; decided: InboxDecidedState | null;
+};
+export type InboxItemView = ItemBase & (
+  | { kind: 'flag'; target: FlagTargetView; flags: FlagMemberView[]; author: AuthorBlockView | null }
+  | { kind: 'access'; body: BodyRefView; reports: FlagMemberView[]; ruling: RulingView | null;
+      dismissedByRuling: FlagMemberView[] }
+  | { kind: 'request'; requestKind: RequestKind; body: BodyRefView | null; asks: AskMemberView[];
+      candidate: CandidateView | null; resolveError: string | null }
+  | { kind: 'place'; placeKind: 'name_bay' | 'name_landmark'; body: BodyRefView; asks: AskMemberView[];
+      drawnSubAreaId: Id<'waterBodySubAreas'> | null; lookalikes: LookalikeView[] }
+  | { kind: 'drawn'; body: BodyRefView; drawer: PersonLockupView | null; overlap: OverlapView | null;
+      fromReport: ReportRefView | null }
+  | { kind: 'ticket'; ticket: TicketView; messages: SupportMessageView[]; person: AuthorBlockView | null }
+);
+/** `inbox.item`'s answer: `null` is *No such item*, or *Not yet* while `pending`. */
+export type InboxItemRead = { item: InboxItemView | null; pending: boolean };
+```
+
+**As landed (S1, `326ec709`):** the code is the source for every `…View`, `InboxRowView` (a list
+row, one variant per kind), `InboxListPage`, `InboxLanesView`, `InboxTailView`, `InboxTodayView`,
+`AroundItView` and `ClaimWeatherView` in `packages/convex/convex/inbox.ts`, and for
+`INBOX_LIST_LANES`, `INBOX_AGE_FLOORS_DAYS`, `AROUND_IT_DAYS` and `AROUND_IT_PHRASE_KEYS` in core;
+where this snippet and that file differ, the file wins.
+
+The `…View` helpers are S1's to define beside it, from the reads they come from (`FLAG_TARGET_READERS`,
+`landmarkProposalView`, `peopleRows`, `publicAuthor`); PR 2's builders take them as landed.
+
+##### Definitions of done
+
+**S1 — items:**
+- [ ] `convex-test` for each writer hook in the inventory: the source event moves the item, its
+  members and its counts (a flag filed, bumped, retracted, resolved, closed by a ruling; an ask filed,
+  retracted, resolved to a catalog feature, decided with siblings across a drain page; a body drawn,
+  approved, rejected, merged; a ticket filed and resolved; a merge moving asks and flags).
+- [ ] The property test above, and every mutation check listed with it run and failing; the report
+  names them.
+- [ ] `inboxWriters.test.ts` fails on a new writer of the four tables' status that doesn't call
+  `lib/inboxItems` (proved by adding one in a scratch commit).
+- [ ] Backfill and drift repair: a pass bounded by `ReadBudget` on bytes (a test with oversized rows
+  ends the pass early and reschedules); a pass whose first item can't fit records it in `jobFailures`
+  and advances; resumable from any cursor; idempotent (a second run changes nothing).
+- [ ] `listPage`: the `endCursor` chain (a decision on page one moves nothing on page two), `all`'s
+  flow-through with Support cut for a moderator, each filter, `scanBudgetSpent`; `lanes` equals
+  `console.overview`'s Inbox card on the same data; `item` by every ref form, *No such item*;
+  `aroundIt`'s bounds and `aroundItPhrases`' recount property; `claimWeather` equal to
+  `iceCalibration`'s predicted for the same report, and each declined case.
+- [ ] `lib/inboxRules`: every verb's refusal for a moderator without the capability, on own content
+  (D269), on an item the viewer filed (D289), on a decided item (D283); each refusal equals the write's.
+- [ ] `notifications.list` without `knows` serves a newer type as `unknown`; with it, the view.
+- [ ] Seed-origin asks: `seedBayRequests` writes `origin: 'seed'`; a seed-origin ask files no item and
+  moves no count (lanes and `console.overview` both); deciding one from the old editor's bay queue
+  works for any staffer with the capability, the requester included (the D289 exemption); and
+  `backfillOrigin`'s dry run lists exactly the rows the rule matches (aliases, or a staff requester
+  with a non-lake point) and its apply stamps only those, idempotently.
+- [ ] Types, lint and the touched suites green; `convex/_generated` regenerated and committed.
+
+**S2 — inverses and Inbox writes:**
+- [ ] A round trip per new inverse (`reopen_flag`, `reopen_request`, `return_to_review`,
+  `unretract_access_alert`): act, undo, state equals before — side effects included (the erasure hold,
+  the disposition metric, the body-side effect of an approval, cells re-synced, the item and its
+  counts back).
+- [ ] Overtaken cases: a flag superseded by a newer auto flag, or with a new open flag of its reason; an
+  approval whose body-side row was overtaken; an alert its author since resolved; a pre-`prev`
+  retraction row — each refused with its sentence.
+- [ ] Capability refusals: each undo by a viewer without the inverse's capability (a restore or takedown
+  approval's undo without `body.remove`); each Inbox write without its capability; own content (D269)
+  and own filing (D289).
+- [ ] The drain race: a `reopen_request` between two sibling pages stops the next page.
+- [ ] `takeDown` closes every open flag on the target in every lane, tells each user-origin flagger, and
+  its one undo restores the content and reopens them all; `dismissFlags` closes only its item's.
+- [ ] The settle re-check drops a verdict message after an undo inside the window, and sends it after.
+- [ ] `undoPolicy`'s exhaustiveness test green with the new verbs; `undoOwed()` no longer lists the
+  seven §2 rows built here (`resolve_flag`, `dismiss_flag`, `approve_request`, `decline_request`,
+  `approve_waterbody`, `reject_waterbody`, `retract_access_alert`), while `merge_waterbody` stays until
+  PR 4 and the §3 and §4 rows stay; mutation checks: drop the drain's currency check, drop the
+  body-side undo from `reopen_request`, drop the hold restore — each caught.
+
+**D — seed:**
+- [ ] `isSeedProfile` asked by every Clerk sender and the flush: a `convex-test` per call site proves a
+  seed profile is skipped (no scheduled Clerk call, no queue row, no email lookup), and the D277
+  reconcile's step 2 counts and skips them.
+- [ ] `ensurePeople`, `state` and `clear` refuse on a deployment that isn't dev; `clear` is paged on the
+  byte budget and leaves no row a fake person wrote or that is about one (a test seeds, clears and
+  counts every table it touches).
+- [ ] The script's dry run prints the plan and writes nothing; `--apply` refuses without
+  `CONVEX_RUN_AS`; a second `--apply` files nothing new (the run log's counts are zero).
+- [ ] Every fake person's surname starts with "Test-" (a test over the seed's cast).
+- [ ] Run against a local `convex-test` world end to end: the lanes' counts match the seed's plan.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
@@ -6243,7 +8507,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page | blocked on the Inbox | polish | S | The Inbox's `can` per row |
 | Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | done in #145 | polish | S | — |
 | Pe20 | `RestorePost` named people by `@username` (the rule is real names) | `moderation/RestorePost.tsx` | done in #145. That it is a dialog where the boards draw a sheet stays open | polish | S | A board check |
-| Pe21 | Kit promotions: `SearchLane`, `LeverRow`, `RecordRow`, `LifeList`, `LabelRows` | the `kit-candidates/` directories | open. The record candidates' tests are done in #142 | kit | M | A kit pass (one writer promotes, §12.3) |
+| Pe21 | Kit promotions: `SearchLane`, `LeverRow`, `RecordRow`, `LifeList`, `LabelRows` | the `kit-candidates/` directories | done on `phase-b01-inbox` (B01-5's kit pass, `f9cf8592`; the record candidates' tests were done in #142) | kit | M | — |
 | Pe22 | Superseded decisions under Reversed. The flip constant was removed untested; each item shows once, as its newest decision | `lib/contentVerdicts.ts` `isReversed` | blocked on the founder (not yet ruled) | polish | M | His call |
 | Pe23 | No photos and no *Restore all* on the person page | *Where the boards and the code differ* | blocked on the founder (not yet ruled) | missing planned | M | His call |
 | Pe24 | History filters (People and Body) | `people.history` and `bodyConsole.history` take no filter from any page | blocked on a board | missing | M | The board below (*History filters*) |
@@ -6964,9 +9228,11 @@ main):
    supersedes the old).
 5. `convex run landmarks:backfillBodyNames '{}'`. It returns its first pass, for example
    `{ phase: "landmarks", bodies: 50, read: 812345, wrote: 50, failed: 0, done: false }`, and chains
-   to the end. The last pass, in the logs, returns `{ phase: "bays", …, done: true }`. A pass with
-   `failed` above 0 logged each body it passed over (`landmarks.backfillBodyNames: <id> failed`).
-6. Optional: run step 5 again once it is done. Every pass should say `wrote: 0` and `failed: 0`.
+   to the end. Convex's logs don't record a function's return value, so the end is told by the
+   chain stopping: no further `landmarks:backfillBodyNames` call in the logs and none scheduled. A
+   pass that passed over a body logged it (`landmarks.backfillBodyNames: <id> failed`); none should.
+6. Optional: run step 5 again once it is done; the passes write nothing (on dev, 2026-11-21: the
+   first run took 213 passes over about 3 minutes and wrote 10,577 rows; the re-run wrote none).
 
 A fresh deployment takes the People procedure, now five backfills: its text, and the table of
 which reads say `pending` until each is ready, are under *the backfills, and the one procedure that

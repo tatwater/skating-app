@@ -39,6 +39,7 @@ import {
   isActive,
   isDriveTimeBand,
   memberSubAreaIds,
+  NOTIFICATION_TYPES_EVERY_BUILD_KNOWS,
   nextZonedHourMs,
   standingOf,
   viewerDriveTime,
@@ -74,6 +75,7 @@ import {
 } from './lib/recurringWork';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped } from './lib/scan';
+import { seedSideOf } from './lib/seedPeople';
 import { subAreaDriveCoordFor } from './subAreas';
 
 /**
@@ -181,6 +183,8 @@ export async function enqueueReportNotifications(
   report: Doc<'reports'>,
 ): Promise<void> {
   const now = Date.now();
+  // A fake person's report from the dev seed is news to no one (D287): no favorite, digest or great.
+  if (await seedSideOf(ctx).isSeed(report.authorId)) return;
   const body = await ctx.db.get(report.waterBodyId);
   if (!body) return;
 
@@ -243,6 +247,7 @@ export const fanOutNearbyNotifications = internalMutation({
     const now = Date.now();
     const report = await ctx.db.get(reportId);
     if (report?.moderationStatus !== 'visible') return { stopped: 'report_gone' as const };
+    if (await seedSideOf(ctx).isSeed(report.authorId)) return { stopped: 'seed_author' as const };
     const body = await ctx.db.get(report.waterBodyId);
     if (!body) return { stopped: 'body_gone' as const };
     // Only an active body is pushed at people (A07b). A report on a machine-shelved body activated it
@@ -896,8 +901,16 @@ async function flushRows(
  * blocked are omitted, so a page can come back slightly short.
  */
 export const list = query({
-  args: { paginationOpts: paginationOptsValidator },
-  handler: async (ctx, { paginationOpts }) => {
+  args: {
+    paginationOpts: paginationOptsValidator,
+    /**
+     * The notification types this client words (B01-5). Absent — every build installed before the
+     * Inbox wave — reads as the types every build knows; a type outside it is served as the `unknown`
+     * row, which every build words, so an older phone never meets a case its core lacks.
+     */
+    knows: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { paginationOpts, knows }) => {
     // Fail soft like `unreadCount`: the route is behind the auth gate, but a hard refresh can run
     // the subscription a frame before the Convex client has its token, and an empty page beats an
     // error boundary for that frame.
@@ -910,9 +923,20 @@ export const list = query({
       .order('desc')
       .paginate(paginationOpts);
     const blocked = await loadBlockedAuthorIds(ctx, profile._id);
+    const known = new Set<string>(knows ?? NOTIFICATION_TYPES_EVERY_BUILD_KNOWS);
+    const views = await resolveNotifications(ctx, page.page, blocked, now);
     return {
       ...page,
-      page: await resolveNotifications(ctx, page.page, blocked, now),
+      page: views.map((view) =>
+        view.type === 'unknown' || known.has(view.type)
+          ? view
+          : {
+              id: view.id,
+              createdAt: view.createdAt,
+              ...(view.readAt !== undefined ? { readAt: view.readAt } : {}),
+              type: 'unknown' as const,
+            },
+      ),
     };
   },
 });

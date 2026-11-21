@@ -64,6 +64,8 @@ export interface InboxCardData {
    * reads. `null` with nothing open, or when the server's read of a lane stopped short.
    */
   medianOpenedAt: number | null;
+  /** The Inbox's backfill hasn't concluded: the counts may be short, so the card draws none. */
+  pending: boolean;
 }
 
 export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardData {
@@ -79,7 +81,14 @@ export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardDat
     },
     oldestOpenAt: inbox.oldestOpenAt,
     medianOpenedAt: inbox.medianOpenedAt,
+    pending: inbox.pending,
   };
+}
+
+/** The heading's Inbox figure: the open total, `pending` while the backfill runs, 0 while loading. */
+export function inboxHeadCount(data: InboxCardData | undefined): Count | 'pending' {
+  if (data === undefined) return { count: 0, capped: false };
+  return data.pending ? 'pending' : inboxTotal(data);
 }
 
 /** Everything open in the Inbox the viewer can see. */
@@ -371,6 +380,11 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned access alert',
   unpin_access_alert: 'Unpinned access alert',
   retract_access_alert: 'Retracted access alert',
+  // The Inbox's inverses (B01-5); wording for the copy pass.
+  reopen_flag: 'Reopened flag',
+  reopen_request: 'Reopened request',
+  return_to_review: 'Returned drawn body to review',
+  unretract_access_alert: 'Restored access alert',
   author_resolve_access_alert: 'Said “It’s open” on their pinned alert',
   set_posted_access: 'Set posted rules',
   set_satellite_imagery: 'Set satellite link',

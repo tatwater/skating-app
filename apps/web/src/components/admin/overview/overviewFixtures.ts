@@ -192,6 +192,7 @@ export const HOME: OverviewHomeData = {
     },
     oldestOpenAt: NOW - 4 * DAY - 3 * HOUR,
     medianOpenedAt: NOW - 1.5 * DAY,
+    pending: false,
   },
   corpus: {
     duplicates: { count: 283, capped: false },

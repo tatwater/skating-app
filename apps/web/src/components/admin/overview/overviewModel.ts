@@ -132,8 +132,8 @@ export function overviewHeads({
   stalled,
   failed,
 }: {
-  /** Everything open in the Inbox. */
-  inbox: Count;
+  /** Everything open in the Inbox, or `pending` while its backfill runs (the count may be short). */
+  inbox: Count | 'pending';
   /** Chord re-fits waiting in the Corpus — "200+" once the read stopped, as the inbox's count. */
   refits: Count;
   /** Runs gone quiet past their heartbeat. */
@@ -142,7 +142,11 @@ export function overviewHeads({
   failed: number;
 }): Head[] {
   const person = [
-    inbox.count > 0 ? `${countText(inbox)} in the inbox` : null,
+    inbox === 'pending'
+      ? 'Inbox still being prepared'
+      : inbox.count > 0
+        ? `${countText(inbox)} in the inbox`
+        : null,
     refits.count > 0 ? `${countText(refits)} ${plural(refits.count, 're-fit', 're-fits')}` : null,
   ].filter((b): b is string => b !== null);
   const hand = [

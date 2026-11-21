@@ -209,6 +209,24 @@ export async function recomputeBodySummary(
 }
 
 /**
+ * Ask for this body's card to be recomputed by `at` — its refresh row made due then, or kept if it is
+ * due sooner. For a write that changed what the card counts without recomputing it (the dev seed's
+ * clear, D287); the summary sweep recomputes it, and the recompute sets the row's next due time.
+ */
+export async function queueSummaryRefresh(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  at: number,
+): Promise<void> {
+  const keep = await ctx.db
+    .query('bodySummaryRefreshes')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (!keep) await ctx.db.insert('bodySummaryRefreshes', { waterBodyId, refreshAt: at });
+  else if (keep.refreshAt > at) await ctx.db.patch(keep._id, { refreshAt: at });
+}
+
+/**
  * Make `bodySummaryRefreshes` say `refreshAt` for this body: one row, or none for `null`.
  *
  * Reads every row the body has (a handful at most — there is meant to be one) rather than

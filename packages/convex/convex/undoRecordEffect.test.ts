@@ -16,7 +16,7 @@ import { AUTHOR_DELETED_OVERTURN } from './lib/authorDeletion';
 import { recordVerdict } from './lib/contentVerdicts';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { TAKEDOWN_ALREADY } from './lib/recordRules';
-import { RESTORE_ENDED_ONLY, UNDO_HANDLERS } from './lib/undoHandlers';
+import { RESTORE_ENDED_ONLY, undoHandlers } from './lib/undoHandlers';
 import { UNDO_POLICY } from './lib/undoPolicy';
 import { PREDATES } from './lib/undoTypes';
 import schema from './schema';
@@ -592,13 +592,13 @@ describe('an undo that only moved the record', () => {
     // A hide that moved the content: its undo reads nothing, so it costs the page nothing.
     await set(w, 'report', w.r, 'hidden');
     const hide = await newestOn(w, 'report', w.r);
-    expect(UNDO_HANDLERS.hide?.refusalCost?.('list', hide)).toBeNull();
+    expect(undoHandlers().hide?.refusalCost?.('list', hide)).toBeNull();
     expect(await undoStateOf(w, hide)).toEqual({ state: 'available', needsReason: false });
     // One that left the item as it found it reserves the record's two reads.
     await set(w, 'post', w.p, 'hidden');
     await set(w, 'report', w.m0, 'hidden', 'its own call');
     const recordOnly = await newestOn(w, 'report', w.m0);
-    expect(UNDO_HANDLERS.hide?.refusalCost?.('list', recordOnly)).toMatchObject({ reads: 2 });
+    expect(undoHandlers().hide?.refusalCost?.('list', recordOnly)).toMatchObject({ reads: 2 });
   });
 });
 

@@ -83,6 +83,14 @@ export type RequestKind = (typeof REQUEST_KINDS)[number];
 export const REQUEST_STATUSES = ['open', 'approved', 'declined', 'retracted'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
+/**
+ * Who filed a request (D289, the governor's ruling of 2026-11-20): a person through one of the apps,
+ * or a script (`corpusRequests.seedBayRequests`). A script's ask is machine-found work, never an Inbox
+ * item. Absent on a stored row reads as `app`.
+ */
+export const REQUEST_ORIGINS = ['app', 'seed'] as const;
+export type RequestOrigin = (typeof REQUEST_ORIGINS)[number];
+
 /** The name a `name_bay` or `name_landmark` request carries — a place name, not a sentence. */
 export const MAX_REQUEST_NAME_LENGTH = 80;
 

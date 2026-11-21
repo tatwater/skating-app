@@ -111,6 +111,23 @@ describe('OverviewHome', () => {
     expect(screen.getByText('17 open')).toBeInTheDocument();
   });
 
+  it('draws no Inbox figure while the items’ backfill is still being prepared', () => {
+    render(
+      <OverviewHome data={{ ...HOME, inbox: { ...must(HOME.inbox), pending: true } }} now={NOW} />,
+    );
+    const card = must(
+      screen.getByText('Still being prepared').closest<HTMLElement>('[data-slot="count-card"]'),
+    );
+    // One row, linking to the Inbox, with no number in it: no lane, no open total, no ages.
+    expect(within(card).queryByText('Safety')).toBeNull();
+    expect(within(card).queryByText(/open/)).toBeNull();
+    const rows = [...card.querySelectorAll('[data-slot="count-row"]')];
+    expect(rows.map((r) => r.querySelector('[data-slot="count-value"]')?.textContent)).toEqual([
+      '',
+    ]);
+    expect(within(card).getByRole('link')).toHaveAttribute('href', '/admin/inbox');
+  });
+
   it('draws no People figure while its backfills are still being prepared', () => {
     const people = must(HOME.people);
     render(<OverviewHome data={{ ...HOME, people: { ...people, pending: ['rows'] } }} now={NOW} />);
@@ -356,6 +373,7 @@ describe('the status bar’s integration points', () => {
           lanes: { ...must(HOME.inbox).lanes, safety: { count: 0, capped: false } },
           oldestOpenAt: null,
           medianOpenedAt: null,
+          pending: false,
         },
         machinery: { jobs: [], more: 3, moreAllOk: true },
         corpus: { ...must(HOME.corpus), preIcePass: { state: 'done', at: 1 } },
@@ -523,7 +541,7 @@ describe('useOverviewHome', () => {
 
   it('adapts each read, the Corpus counts over the intake rows, and the feeds in time order', () => {
     convex.results.set(getFunctionName(api.console.overview), {
-      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5, medianOpenedAt: 6 },
+      inbox: { ...must(HOME.inbox).lanes, oldestOpenAt: 5, medianOpenedAt: 6, pending: true },
       people: { ...must(HOME.people), totalUsers: null },
     });
     convex.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
@@ -577,6 +595,7 @@ describe('useOverviewHome', () => {
     const r = result.current;
     expect(r.inbox?.oldestOpenAt).toBe(5);
     expect(r.inbox?.medianOpenedAt).toBe(6);
+    expect(r.inbox?.pending).toBe(true);
     expect(r.people?.totalUsers).toBeNull();
     expect(r.corpus?.nameConflicts).toEqual({ count: 3, capped: false });
     // Decisions, not rows: the Corpus counts replace the intake reasons' sum.

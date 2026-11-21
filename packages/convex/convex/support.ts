@@ -15,6 +15,9 @@ import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireCapability } from './lib/auth';
 import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
+import { decideItem, fileMember, itemToDecide, ticketSource } from './lib/inboxItems';
+import { assertInboxVerb } from './lib/inboxRules';
+import { isSeedProfile } from './lib/seedPeople';
 import { literals } from './lib/validators';
 
 /** Support-ticket body bounds — enough for a real report, capped so it stays an inbox row not an essay. */
@@ -166,8 +169,12 @@ export const create = mutation({
       ...(context !== undefined ? { context } : {}),
       createdAt: now,
     });
+    // The Inbox's Support item for it (B01-5).
+    await fileMember(ctx, ticketSource(ticketId), { now });
 
-    // Alert the founder on every new ticket (D38) — fire-and-forget; no-ops without Resend keys.
+    // Alert the founder on every new ticket (D38) — fire-and-forget; no-ops without Resend keys. Never
+    // for a fake person from the dev seed (D287): a seeded ticket must not send real mail.
+    if (isSeedProfile(identity.subject)) return ticketId;
     await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
       subject: `New ${category} ticket`,
       heading: `New support ticket · ${category}`,
@@ -206,11 +213,19 @@ export const resolve = mutation({
     const actor = await requireCapability(ctx, 'inbox.support');
     const ticket = await ctx.db.get(ticketId);
     if (!ticket) throw new ConvexError('Ticket not found');
+    // The Inbox's one rule (B01-5): a decided ticket takes no second resolve (D283), and no staffer
+    // resolves a ticket they filed themselves (D289) — the same answer the item's `can` gives. A ticket
+    // the backfill hasn't reached is filed first, so it gets that answer too.
+    const now = Date.now();
+    const item = await itemToDecide(ctx, ticketSource(ticketId), { now });
+    if (item) await assertInboxVerb(ctx, actor, item, 'resolve');
     await ctx.db.patch(ticketId, {
       status: 'resolved',
       resolvedByUserId: actor._id,
-      resolvedAt: Date.now(),
+      resolvedAt: now,
     });
+    // Its Inbox item is decided `resolved` (no audit row yet: PR 6 audits the resolve).
+    await decideItem(ctx, ticketSource(ticketId), { now, actorId: actor._id });
     return ticketId;
   },
 });

@@ -46,12 +46,13 @@ import {
   requestKindsFor,
   requestNameKey,
   requestRetraction,
+  roleMeets,
   sameName,
   standingOf,
 } from '@skating/core';
-import { ConvexError, v } from 'convex/values';
+import { ConvexError, getDocumentSize, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { api, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalAction,
@@ -63,7 +64,7 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
-import { composed, writeAudit } from './lib/audit';
+import { asContinuationOf, composed, writeAudit } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -75,9 +76,13 @@ import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { refreshEraseClock } from './lib/eraseClock';
+import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
+import { DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
+import { ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
 import {
+  bodyActionSince,
   closeSiblingPage,
   decide,
   decisionArgs,
@@ -88,6 +93,7 @@ import {
   matchBay,
   namedByModerator,
   namedLandmark,
+  newestBodyAction,
   QUEUE_CAP,
   requestKeyOf,
   requestNames,
@@ -95,7 +101,12 @@ import {
 import { scoreFields } from './lib/scoring';
 import { activateBody, registerWeatherMembership } from './lib/standing';
 import { latLng, literals } from './lib/validators';
-import { listedBodiesNearCoord } from './waterBodies';
+import {
+  listedBodiesNearCoord,
+  removeBodyImpl,
+  restoreBodyImpl,
+  setPublicAccessImpl,
+} from './waterBodies';
 
 // ── Limits ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -210,6 +221,8 @@ export const create = mutation({
         ...(trimmedNote ? { note: trimmedNote } : {}),
         createdAt: now,
       });
+      // Alone in its Inbox item until the resolver names the water (B01-5).
+      await fileMember(ctx, requestSource(requestId), { now });
       // The catalog lookup cannot happen in a mutation (D106): schedule it.
       await ctx.scheduler.runAfter(0, internal.corpusRequests.resolveAdmit, { requestId });
       return requestId;
@@ -249,6 +262,8 @@ export const create = mutation({
       ...(bayName ? { name: bayName, nameKey: requestNameKey(bayName) } : {}),
       createdAt: now,
     });
+    // The Inbox item for the question (B01-5): the ask joins it, or starts it.
+    await fileMember(ctx, requestSource(requestId), { now });
     // A new ask on the body: its library row's asks move with the minute cron (B01-3b).
     await queueLibraryRefresh(ctx, [waterBodyId], now);
     return requestId;
@@ -280,6 +295,8 @@ export const retract = mutation({
     if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
     const now = Date.now();
     await ctx.db.patch(requestId, { status: 'retracted', retractedAt: now });
+    // Withdrawn: it leaves its Inbox item (deleted if it was the last ask).
+    await leaveMember(ctx, requestSource(requestId), { now });
     await refreshEraseClock(ctx, 'waterBodyRequest', requestId, now);
     return requestId;
   },
@@ -384,6 +401,9 @@ export const recordResolution = internalMutation({
       candidateExternalId: candidate?.externalId,
       resolveError,
     });
+    // Resolved to a catalog feature, the admit's question is that feature: its Inbox member moves to
+    // the item every ask for the same water shares (B01-5).
+    await rekey(ctx, requestSource(requestId));
   },
 });
 
@@ -690,37 +710,51 @@ export const approve = mutation({
     if (sameAs !== undefined && request.kind !== 'name_landmark') {
       throw new ConvexError('Only a landmark request is answered by a landmark');
     }
-    if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
-    if (request.status !== 'open') throw new ConvexError('This request has been decided');
     // Restoring or taking down a body is the body.remove lever itself (D48), whoever asked for it.
+    // The capability, then a decided ask — in the Inbox rule's order and words (`lib/inboxRules`),
+    // so the item's levers and this write say one thing (D217, D268).
     const actor = await requireCapability(
       ctx,
       request.kind === 'restore' || request.kind === 'takedown' ? 'body.remove' : 'inbox.request',
     );
+    if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
+    if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
     const now = Date.now();
     const trimmedNote = note?.trim();
 
     let admittedWaterBodyId: Id<'waterBodies'> | undefined;
     let answeringSubAreaId: Id<'waterBodySubAreas'> | undefined;
     let answeringLandmarkId: Id<'bodyLandmarks'> | undefined;
+    // The audit row the act writes on the body, recorded on the request's own row so the request's
+    // undo can undo the act first (`reopen_request`, B01-5). Each act runs through its verb's own
+    // helper — never a nested `runMutation`, which would hide the row it wrote.
+    let bodyActionId: Id<'moderationActions'> | undefined;
     if (request.kind === 'admit') {
-      admittedWaterBodyId = await admitCandidate(ctx, request, actor, now);
+      ({ waterBodyId: admittedWaterBodyId, bodyActionId } = await admitCandidate(
+        ctx,
+        request,
+        actor,
+        now,
+      ));
     } else {
       const body = await ctx.db.get(request.waterBodyId as Id<'waterBodies'>);
       if (!body || !isListed(body)) throw new ConvexError('Water body not found');
+      const before = await newestBodyAction(ctx, body._id);
       switch (request.kind) {
         case 'activate':
           await activateBody(ctx, body, { via: 'request', actorId: actor._id, now });
           break;
         case 'restore':
           if (body.removedAt === undefined) break; // already back — the ask is moot, still approved
-          await ctx.runMutation(api.waterBodies.restore, { waterBodyId: body._id });
+          await restoreBodyImpl(ctx, actor, { waterBodyId: body._id });
           break;
         case 'contest_access':
+          // The ruling's own lever, as the nested call to `setPublicAccess` asked of the caller.
+          await requireCapability(ctx, 'access.rule');
           // The decision note goes to the requester; the ruling carries none. A public,
           // 160-character note on the lake is a different sentence for a different reader, and the
           // lake editor is where a moderator writes one.
-          await ctx.runMutation(api.waterBodies.setPublicAccess, {
+          await setPublicAccessImpl(ctx, actor, {
             waterBodyId: body._id,
             verdict: 'open',
             reason: 'Public access confirmed on a skater\u2019s request',
@@ -728,7 +762,7 @@ export const approve = mutation({
           break;
         case 'takedown':
           if (body.removedAt !== undefined) break;
-          await ctx.runMutation(api.waterBodies.remove, {
+          await removeBodyImpl(ctx, actor, {
             waterBodyId: body._id,
             reason: 'landowner_request',
           });
@@ -765,6 +799,10 @@ export const approve = mutation({
           break;
         }
       }
+      // A bay or a landmark ask has no body-side act: the drawing or the add was its own write.
+      if (request.kind !== 'name_bay' && request.kind !== 'name_landmark') {
+        bodyActionId = await bodyActionSince(ctx, body._id, before);
+      }
     }
 
     // The act must have taken: a body that acquired a `none` ruling or a removal after the ask was
@@ -797,6 +835,7 @@ export const approve = mutation({
       admittedWaterBodyId,
       answeringSubAreaId,
       answeringLandmarkId,
+      bodyActionId,
     );
     return { requestId, ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}) };
   },
@@ -810,7 +849,8 @@ export const decline = mutation({
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
-    if (request.status !== 'open') throw new ConvexError('This request has been decided');
+    // In the Inbox rule's words, so the item's levers and this write say one thing (D268).
+    if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
     // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
     // that A07b exists to end. Enforced here, not only in the dialog.
     const trimmed = note.trim();
@@ -828,7 +868,10 @@ export const closeSiblings = internalMutation({
   handler: async (ctx, decision) => {
     const request = await ctx.db.get(decision.requestId);
     if (!request) return;
-    await closeSiblingPage(ctx, request, decision);
+    // The same act, in another transaction: written under the undo and `via` its first page had.
+    await asContinuationOf(ctx, { undoOf: decision.undoOf, via: decision.via }, () =>
+      closeSiblingPage(ctx, request, decision),
+    );
   },
 });
 
@@ -1105,73 +1148,183 @@ export const seedBayRequests = internalMutation({
         | 'already_asked'
         | 'already_drawn';
     }[] = [];
-    for (const row of rows) {
-      const hits = await ctx.db
-        .query('waterBodies')
-        .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
-        .take(20);
-      // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
-      // and word order is the one difference that is never two lakes. A typo still misses.
-      const named = hits.filter(
-        (b) => sameName(b.name, row.parentName) && (b.states ?? []).includes(row.state),
-      );
-      const parents = named.filter((b) => isListed(b) && standingOf(b).standing === 'active');
-      if (parents.length === 0) {
-        // A parent the corpus holds but has shelved is a different fix (activate it) from a
-        // parent it does not hold at all (a name mismatch, or a lake to request).
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (const row of rows) {
+        const hits = await ctx.db
+          .query('waterBodies')
+          .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
+          .take(20);
+        // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
+        // and word order is the one difference that is never two lakes. A typo still misses.
+        const named = hits.filter(
+          (b) => sameName(b.name, row.parentName) && (b.states ?? []).includes(row.state),
+        );
+        const parents = named.filter((b) => isListed(b) && standingOf(b).standing === 'active');
+        if (parents.length === 0) {
+          // A parent the corpus holds but has shelved is a different fix (activate it) from a
+          // parent it does not hold at all (a name mismatch, or a lake to request).
+          report.push({
+            name: row.name,
+            ...(named[0] ? { parent: named[0].name } : {}),
+            status: named.length > 0 ? 'parent_not_active' : 'no_parent',
+          });
+          continue;
+        }
+        if (parents.length > 1) {
+          report.push({ name: row.name, status: 'ambiguous_parent' });
+          continue;
+        }
+        const parent = parents[0] as Doc<'waterBodies'>;
+        const names = [row.name, ...(row.aliases ?? [])];
+        if (await drawnBay(ctx, parent._id, names)) {
+          report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
+          continue;
+        }
+        let asked = false;
+        for (const key of new Set(names.map(requestNameKey))) {
+          const hit = await ctx.db
+            .query('waterBodyRequests')
+            .withIndex('by_water_body_name', (q) =>
+              q
+                .eq('waterBodyId', parent._id)
+                .eq('kind', 'name_bay')
+                .eq('status', 'open')
+                .eq('nameKey', key),
+            )
+            .first();
+          if (hit) asked = true;
+        }
+        if (asked) {
+          report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
+          continue;
+        }
+        if (apply) {
+          const requestId = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_bay',
+            // A script filed it, not a person: never an Inbox item, and decidable by any staffer
+            // holding the capability, the requester included (D289, amended).
+            origin: 'seed',
+            status: 'open',
+            requesterId,
+            coord: row.coord,
+            waterBodyId: parent._id,
+            name: row.name,
+            nameKey: requestNameKey(row.name),
+            ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
+            note: row.note,
+            createdAt: now,
+          });
+          // Files nothing: a seed-origin ask is no Inbox item (the reconcile says so, and is the proof).
+          await fileMember(ctx, requestSource(requestId), { now });
+          await queueLibraryRefresh(ctx, [parent._id], now);
+        }
         report.push({
           name: row.name,
-          ...(named[0] ? { parent: named[0].name } : {}),
-          status: named.length > 0 ? 'parent_not_active' : 'no_parent',
+          parent: parent.name,
+          status: apply ? 'filed' : 'would_file',
         });
-        continue;
       }
-      if (parents.length > 1) {
-        report.push({ name: row.name, status: 'ambiguous_parent' });
-        continue;
-      }
-      const parent = parents[0] as Doc<'waterBodies'>;
-      const names = [row.name, ...(row.aliases ?? [])];
-      if (await drawnBay(ctx, parent._id, names)) {
-        report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
-        continue;
-      }
-      let asked = false;
-      for (const key of new Set(names.map(requestNameKey))) {
-        const hit = await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body_name', (q) =>
-            q
-              .eq('waterBodyId', parent._id)
-              .eq('kind', 'name_bay')
-              .eq('status', 'open')
-              .eq('nameKey', key),
-          )
-          .first();
-        if (hit) asked = true;
-      }
-      if (asked) {
-        report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
-        continue;
-      }
-      if (apply) {
-        await ctx.db.insert('waterBodyRequests', {
-          kind: 'name_bay',
-          status: 'open',
-          requesterId,
-          coord: row.coord,
-          waterBodyId: parent._id,
-          name: row.name,
-          nameKey: requestNameKey(row.name),
-          ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
-          note: row.note,
-          createdAt: now,
-        });
-        await queueLibraryRefresh(ctx, [parent._id], now);
-      }
-      report.push({ name: row.name, parent: parent.name, status: apply ? 'filed' : 'would_file' });
-    }
+    });
     return report;
+  },
+});
+
+/** Rows one `backfillOrigin` page reads at most. */
+export const ORIGIN_BACKFILL_PAGE = 200;
+
+/** Why a row is the seed's: what only `seedBayRequests` writes. */
+export type SeedOriginReason = 'aliases' | 'staff_requester_off_lake_point';
+
+/**
+ * **Stamp the asks `seedBayRequests` filed before it wrote `origin`** (D289, amended): `origin: 'seed'`,
+ * so they file no Inbox item and count in no lane. **Dry by default** — it lists every candidate with
+ * its requester and date for the operator to confirm, then `apply` stamps exactly those. The function
+ * wrote no audit row and no marker, so the rows are told apart by what only it writes: a `name_bay`
+ * ask carrying `aliases` (`create` never writes them), or one whose requester is staff and whose point
+ * is a real place rather than the lake's own (a skater's drawer ask carries the lake's point). Paged
+ * (`cursor`, `continueCursor`); idempotent — a stamped row is no candidate.
+ *
+ *   pnpm convex run corpusRequests:backfillOrigin '{}'                 # dry: the candidates
+ *   pnpm convex run corpusRequests:backfillOrigin '{"apply":true}'     # stamp them
+ */
+export const backfillOrigin = internalMutation({
+  args: {
+    apply: v.optional(v.boolean()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    pageCap: v.optional(v.number()),
+    /** A test seam: a smaller budget, so a call ends early and the next resumes. */
+    budgetBytes: v.optional(v.number()),
+  },
+  handler: async (ctx, { apply, cursor, pageCap, budgetBytes }) => {
+    // Walked by creation time, a row at a time, each charged its real weight: a row starts only while
+    // its worst case (the ask, its requester, its body) still fits, so a call reads at most the
+    // budget's bytes and always advances at least one row; the next row is pulled only once it may
+    // start, so none is read past the bound uncharged. The cursor is the last row's position.
+    const budget = new ReadBudget(budgetBytes ?? TX_BUDGET);
+    const rowWorst = ROW_MAX.waterBodyRequest + ROW_MAX.profile + ROW_MAX.waterBody;
+    const cap = Math.max(1, Math.min(pageCap ?? ORIGIN_BACKFILL_PAGE, ORIGIN_BACKFILL_PAGE));
+    const after = cursor ? Number(cursor) : null;
+    const rows = ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_creation_time', (q) => (after === null ? q : q.gt('_creationTime', after)));
+    const candidates: {
+      requestId: Id<'waterBodyRequests'>;
+      requester: string;
+      createdAt: number;
+      name: string | null;
+      reason: SeedOriginReason;
+    }[] = [];
+    let last = after;
+    let read = 0;
+    let isDone = true;
+    const asks = rows[Symbol.asyncIterator]();
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (;;) {
+        if (read >= cap || (read > 0 && !budget.affords(rowWorst))) {
+          // Stopped before the next row was read: whether there is one is the next call's to find.
+          isDone = false;
+          break;
+        }
+        const next = await asks.next();
+        if (next.done) break;
+        const r = next.value;
+        budget.spend(Math.min(getDocumentSize(r), budget.bytes));
+        read++;
+        last = r._creationTime;
+        if (r.kind !== 'name_bay' || r.origin !== undefined) continue;
+        const requester =
+          (await budget.measured('profile', () => ctx.db.get(r.requesterId))) ?? null;
+        let reason: SeedOriginReason | null = null;
+        if ((r.aliases?.length ?? 0) > 0) reason = 'aliases';
+        else if (requester && roleMeets(requester.role, 'moderator') && r.waterBodyId) {
+          const waterBodyId = r.waterBodyId;
+          const body = (await budget.measured('waterBody', () => ctx.db.get(waterBodyId))) ?? null;
+          if (body && !isLakePoint(r.coord, body)) reason = 'staff_requester_off_lake_point';
+        }
+        if (reason === null) continue;
+        candidates.push({
+          requestId: r._id,
+          requester: requester?.displayName ?? String(r.requesterId),
+          createdAt: r.createdAt,
+          name: r.name ?? null,
+          reason,
+        });
+        if (apply === true) {
+          await ctx.db.patch(r._id, { origin: 'seed' });
+          // No longer an Inbox item: its member leaves (the reconcile reads the stamp).
+          await rekey(ctx, requestSource(r._id));
+        }
+      }
+    });
+    return {
+      applied: apply === true,
+      candidates,
+      read,
+      isDone,
+      continueCursor: last === null ? '' : String(last),
+    };
   },
 });
 
@@ -1207,7 +1360,7 @@ async function admitCandidate(
   request: Doc<'waterBodyRequests'>,
   actor: Doc<'profiles'>,
   now: number,
-): Promise<Id<'waterBodies'>> {
+): Promise<{ waterBodyId: Id<'waterBodies'>; bodyActionId?: Id<'moderationActions'> }> {
   const c = request.candidate;
   if (!c) {
     throw new ConvexError(
@@ -1242,13 +1395,35 @@ async function admitCandidate(
         'The catalog feature under this point is a body under a no-public-access ruling. Decline this, or change the ruling in the lake editor.',
       );
     }
+    // The twin's flag, and its standing when it was shelved, recorded as the admission's `prev`, so
+    // the approval's undo puts both back exactly (B01-5): one audited row, whatever the twin was.
+    const prev = {
+      includedByRequest: twin.includedByRequest === true,
+      ...(twin.dormant !== undefined ? { dormant: twin.dormant } : {}),
+    };
+    if (prev.includedByRequest && isActive(twin)) return { waterBodyId: twin._id };
     await activateBody(ctx, twin, {
       via: 'request',
       actorId: actor._id,
       now,
+      audit: false,
       extraPatch: { includedByRequest: true },
     });
-    return twin._id;
+    const bodyActionId = await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'set_included_by_request',
+      targetType: 'waterbody',
+      targetId: twin._id,
+      reason: composed`Admitted from the catalog on a skater’s request (3DHP ${c.externalId}): already in the corpus`,
+      metadata: {
+        includedByRequest: true,
+        requestId: request._id,
+        serviceUrl: c.serviceUrl,
+        prev,
+      },
+      createdAt: now,
+    });
+    return { waterBodyId: twin._id, bodyActionId };
   }
 
   // Only a new row takes the catalog's name and id, so only it is held to their caps (B01-3h); a twin
@@ -1293,7 +1468,7 @@ async function admitCandidate(
   });
   const inserted = await ctx.db.get(id);
   if (inserted) await registerWeatherMembership(ctx, inserted, now);
-  await writeAudit(ctx, {
+  const bodyActionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_included_by_request',
     targetType: 'waterbody',
@@ -1302,5 +1477,5 @@ async function admitCandidate(
     metadata: { includedByRequest: true, requestId: request._id, serviceUrl: c.serviceUrl },
     createdAt: now,
   });
-  return id;
+  return { waterBodyId: id, bodyActionId };
 }

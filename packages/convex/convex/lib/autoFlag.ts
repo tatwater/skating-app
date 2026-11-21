@@ -27,6 +27,7 @@ import type { MutationCtx } from '../_generated/server';
 import type { FLAG_REASONS, FLAG_TARGET_TYPES } from './enums';
 import { holdMoved } from './eraseClock';
 import { flagSubjectOf } from './flagSubject';
+import { fileMember, flagSource } from './inboxItems';
 
 type FlagTargetType = (typeof FLAG_TARGET_TYPES)[number];
 type FlagReason = (typeof FLAG_REASONS)[number];
@@ -151,6 +152,8 @@ export async function fileOrBumpAutoFlag(
     }
     const bumped = occurrences + 1;
     await ctx.db.patch(open._id, { occurrences: bumped, lastOccurrenceAt: now });
+    // Still the same open question: its Inbox item stands (a reconcile, a no-op unless it drifted).
+    await fileMember(ctx, flagSource(open._id), { now });
     return { flagId: open._id, occurrences: bumped, filed: false, alert: shouldAlertAt(bumped) };
   }
 
@@ -188,6 +191,8 @@ export async function fileOrBumpAutoFlag(
     ...(recent && resolved ? { supersedesFlagId: resolved._id } : {}),
     createdAt: now,
   });
+  // The Inbox's item for the question (B01-5): the app's flag joins it, or starts it.
+  await fileMember(ctx, flagSource(flagId), { now });
   // An open complaint holds withdrawn content back from erasure (D248).
   await holdMoved(ctx, args.targetType, args.targetId, now);
   return {

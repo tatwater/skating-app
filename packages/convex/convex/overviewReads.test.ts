@@ -37,6 +37,23 @@ import {
 
 const modules = import.meta.glob('./**/*.*s');
 
+/**
+ * The Inbox's stored items for rows seeded raw (B01-5): the Overview's Inbox card reads the items'
+ * counts, so a test that seeds source rows directly files them the way the backfill does.
+ */
+async function fileStored(t: {
+  mutation: (
+    fn: typeof internal.inboxItems.backfill,
+    args: { restart?: boolean },
+  ) => Promise<{ done: boolean }>;
+}) {
+  for (let i = 0; i < 100; i++) {
+    const pass = await t.mutation(internal.inboxItems.backfill, i === 0 ? { restart: true } : {});
+    if (pass.done) return;
+  }
+  throw new Error('the Inbox backfill did not finish');
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -295,6 +312,7 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
     await seedFlag(t, s.id, 'report', 'r1', { status: 'reviewing', createdAt: NOW - 3 * DAY });
     await seedFlag(t, s.id, 'report', 'r2');
     await seedFlag(t, s.id, 'report', 'r3', { status: 'dismissed' });
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.contentFlags).toEqual({ count: 2, capped: false });
     expect(o.inbox.oldestOpenAt).toBe(NOW - 3 * DAY);
@@ -405,6 +423,7 @@ describe('console.overview — the Inbox foot and the People total', () => {
         createdAt: NOW - 2 * DAY,
       }),
     );
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     // Ages 4 d, 2 d, 1 d, 2 h: the lower median is the 1-day-old flag.
     expect(o.inbox.medianOpenedAt).toBe(NOW - DAY);
@@ -415,12 +434,14 @@ describe('console.overview — the Inbox foot and the People total', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     const s = await seedUser(t, 's');
     for (let i = 0; i < 201; i++) await seedFlag(t, s.id, 'report', `r${i}`);
+    await fileStored(t);
     expect((await mod.as.query(api.console.overview, {})).inbox.medianOpenedAt).toBeNull();
   });
 
   test('nothing open: no age at all', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.oldestOpenAt).toBeNull();
     expect(o.inbox.medianOpenedAt).toBeNull();
@@ -434,6 +455,7 @@ describe('console.overview — the Inbox foot and the People total', () => {
     await t.run(async (ctx) => {
       for (const p of await ctx.db.query('profiles').collect()) await refreshPersonRow(ctx, p._id);
     });
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     const lanes = await mod.as.query(api.people.lanes, {});
     // The tombstone is not a user; the 6-hourly rollup (Metrics' history) is not read here.

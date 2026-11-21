@@ -64,7 +64,12 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { writeAudit } from './lib/audit';
-import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
+import {
+  getCurrentProfile,
+  hasCapability,
+  requireCapability,
+  requireContributor,
+} from './lib/auth';
 import { recordVerdict, standingVerdictsOn } from './lib/contentVerdicts';
 import {
   ACCESS_ALERT_KINDS,
@@ -430,8 +435,10 @@ export const retract = mutation({
     if (!alert) throw new ConvexError('Access alert not found');
 
     const isAuthor = alert.createdByUserId === profile._id;
-    const isModerator = profile.role === 'moderator' || profile.role === 'admin';
-    if (!isAuthor && !isModerator) {
+    // Another person's alert is retracted by the alert lever (D217), as a pin is — never by a bare
+    // role check beside it.
+    const holdsLever = hasCapability(profile, 'access.alert');
+    if (!isAuthor && !holdsLever) {
       throw new ConvexError('Only the author or a moderator can retract an alert');
     }
     if (alert.status === 'retracted') {
@@ -449,7 +456,7 @@ export const retract = mutation({
       // this write answers a retraction already made. The verdicts are read last, only where they
       // can change the answer.
       if (
-        isModerator &&
+        holdsLever &&
         !isAuthor &&
         authorWithdrew &&
         verdictReason.length > 0 &&
@@ -469,45 +476,177 @@ export const retract = mutation({
       // Anything else: nothing left to retract.
       return;
     }
+    // A moderator's retraction of someone else's alert is a decision on the claim, audited with what
+    // it replaced, so its undo puts the alert back (B01-5).
+    if (!isAuthor) {
+      await retractAlertImpl(ctx, profile, {
+        accessAlertId,
+        reason: reason ?? 'Retracted an access alert',
+      });
+      return;
+    }
     // On their own alert a moderator is its author, and takes back what they posted by the author's
     // rule — a pin someone else made of it is a shared record (D248) — so the clock and the record
     // never disagree about whose withdrawal it was.
-    if (isAuthor) {
-      // The history is read only where it can change the answer: a live community claim.
-      const pinnedOnce = alert.status === 'active' ? await everPinned(ctx, alert._id) : false;
-      if (pinnedOnce === 'unknown') throw new ConvexError(RETRACT_REFUSALS.historyTooLong);
-      const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
-      if (rule === 'already') return;
-      if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
-    }
-
-    const now = Date.now();
-    const retracted = {
-      status: 'retracted' as const,
-      retractedByUserId: profile._id,
-      retractedAt: now,
-      expiresAt: undefined,
-    };
-    await ctx.db.patch(accessAlertId, retracted);
-    // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`) — read off the
-    // row as just written, without reading it again.
-    await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...retracted }, now);
-    // The author's own retraction is on their record's Deleted list; a moderator's never is.
-    await syncWithdrawal(ctx, 'accessAlert', accessAlertId, { ...alert, ...retracted });
-
-    if (isModerator && !isAuthor) {
-      await writeAudit(ctx, {
-        actorId: profile._id,
-        action: 'retract_access_alert',
-        targetType: 'accessAlert',
-        targetId: accessAlertId,
-        reason: reason ?? 'Retracted an access alert',
-        metadata: { waterBodyId: alert.waterBodyId, alertReason: alert.reason },
-        createdAt: Date.now(),
-      });
-    }
+    // The history is read only where it can change the answer: a live community claim.
+    const pinnedOnce = alert.status === 'active' ? await everPinned(ctx, alert._id) : false;
+    if (pinnedOnce === 'unknown') throw new ConvexError(RETRACT_REFUSALS.historyTooLong);
+    const rule = alertRetractionByAuthor(alert.status, pinnedOnce);
+    if (rule === 'already') return;
+    if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
+    await applyRetraction(ctx, alert, profile._id, Date.now());
   },
 });
+
+/**
+ * The retraction itself, the author's or a moderator's: the row moved to `retracted` by whom and when,
+ * its erasure clock and its place on the author's Deleted list re-derived from the row as written.
+ */
+async function applyRetraction(
+  ctx: MutationCtx,
+  alert: Doc<'accessAlerts'>,
+  byUserId: Id<'profiles'>,
+  now: number,
+): Promise<void> {
+  const retracted = {
+    status: 'retracted' as const,
+    retractedByUserId: byUserId,
+    retractedAt: now,
+    expiresAt: undefined,
+  };
+  await ctx.db.patch(alert._id, retracted);
+  // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`) — read off the
+  // row as just written, without reading it again.
+  await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...retracted }, now);
+  // The author's own retraction is on their record's Deleted list; a moderator's never is.
+  await syncWithdrawal(ctx, 'accessAlert', alert._id, { ...alert, ...retracted });
+}
+
+/** What a moderator's retraction replaced, so its undo puts the alert back exactly (B01-5). */
+export interface AlertRetractionPrev {
+  status: Exclude<Doc<'accessAlerts'>['status'], 'retracted'>;
+  expiresAt: number | null;
+  pinnedByUserId: Id<'profiles'> | null;
+}
+
+/** A retraction of an alert that is already retracted: nothing would change (D270). */
+export const ALERT_ALREADY_RETRACTED = 'This alert has already been retracted.';
+
+/**
+ * **A moderator's retraction of someone else's alert** (`access.alert`): "this never was" on a claim,
+ * their decision on it rather than the author's withdrawal — so no erasure clock and not on the
+ * author's Deleted list. The audit row records the alert's `prev` (`status`, `expiresAt`,
+ * `pinnedByUserId`), so its undo (`unretract_access_alert`) puts the alert back as it stood. Shared by
+ * `retract`, the Inbox's `alertVerdict` and the undo of an unretraction. Refuses a retraction of the
+ * moderator's own alert (D269: theirs to take back as its author) and of one already retracted.
+ */
+export async function retractAlertImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { accessAlertId, reason }: { accessAlertId: Id<'accessAlerts'>; reason: string },
+): Promise<Id<'moderationActions'>> {
+  const alert = await ctx.db.get(accessAlertId);
+  if (!alert) throw new ConvexError('Access alert not found');
+  const own = ownContentRefusal(actor, alert.createdByUserId);
+  if (own !== null) throw new ConvexError(own);
+  if (alert.status === 'retracted') throw new ConvexError(ALERT_ALREADY_RETRACTED);
+  const prev: AlertRetractionPrev = {
+    status: alert.status,
+    expiresAt: alert.expiresAt ?? null,
+    pinnedByUserId: alert.pinnedByUserId ?? null,
+  };
+  const now = Date.now();
+  await applyRetraction(ctx, alert, actor._id, now);
+  return writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'retract_access_alert',
+    targetType: 'accessAlert',
+    targetId: accessAlertId,
+    reason,
+    metadata: { waterBodyId: alert.waterBodyId, alertReason: alert.reason, prev },
+    createdAt: now,
+  });
+}
+
+/**
+ * Why a moderator's retraction can't be put back now, or `null` — read from the alert as it stands,
+ * for the undo's offer and its write alike (one rule). Its author can't have moved it since (a
+ * retracted alert takes no votes and no author retraction), but a later retraction by another hand,
+ * an erasure, or a claim that would have lapsed by now all say no.
+ */
+export function unretractRefusal(
+  alert: Doc<'accessAlerts'> | null,
+  row: { actorId?: Id<'profiles'> },
+  prev: AlertRetractionPrev,
+  now: number,
+): string | null {
+  if (!alert) return 'The alert no longer exists.';
+  if (alert.status !== 'retracted' || alert.retractedByUserId !== row.actorId) {
+    return 'The alert has changed since this retraction, so it can’t be put back.';
+  }
+  if (prev.status === 'active' && prev.expiresAt !== null && prev.expiresAt <= now) {
+    return 'It would have expired by now; putting it back would show a lapsed claim on the map.';
+  }
+  return null;
+}
+
+/**
+ * **The undo of a moderator's retraction** (`unretract_access_alert`, B01-5): the alert back to the
+ * `prev` its retraction recorded — its status, its expiry, its pin — with the retraction's stamps
+ * cleared and its clock and Deleted-list place re-derived. Refused as {@link unretractRefusal} says;
+ * the alert's own author can't be the one putting it back (D269). The row records what it cleared, so
+ * its own undo retracts again.
+ */
+export async function unretractAlertImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    accessAlertId,
+    retractedBy,
+    prev,
+    reason,
+  }: {
+    accessAlertId: Id<'accessAlerts'>;
+    /** Who made the retraction being put back (its row's actor). */
+    retractedBy: Id<'profiles'> | undefined;
+    prev: AlertRetractionPrev;
+    reason: string;
+  },
+): Promise<Id<'moderationActions'>> {
+  const alert = await ctx.db.get(accessAlertId);
+  const own = alert ? ownContentRefusal(actor, alert.createdByUserId) : null;
+  if (own !== null) throw new ConvexError(own);
+  const now = Date.now();
+  const why = unretractRefusal(alert, { actorId: retractedBy }, prev, now);
+  if (why !== null || !alert) throw new ConvexError(why ?? 'The alert no longer exists.');
+  const restored = {
+    status: prev.status,
+    expiresAt: prev.expiresAt ?? undefined,
+    pinnedByUserId: prev.pinnedByUserId ?? undefined,
+    retractedByUserId: undefined,
+    retractedAt: undefined,
+  };
+  await ctx.db.patch(accessAlertId, restored);
+  await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...restored }, now);
+  await syncWithdrawal(ctx, 'accessAlert', accessAlertId, { ...alert, ...restored });
+  return writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'unretract_access_alert',
+    targetType: 'accessAlert',
+    targetId: accessAlertId,
+    reason,
+    metadata: {
+      waterBodyId: alert.waterBodyId,
+      alertReason: alert.reason,
+      restored: prev,
+      cleared: {
+        retractedByUserId: alert.retractedByUserId ?? null,
+        retractedAt: alert.retractedAt ?? null,
+      },
+    },
+    createdAt: now,
+  });
+}
 
 /**
  * Moderator: pin an alert as `official`, or release it.
@@ -547,7 +686,7 @@ export async function setOfficialImpl(
     official,
     reason,
   }: { accessAlertId: Id<'accessAlerts'>; official: boolean; reason: string },
-): Promise<void> {
+): Promise<Id<'moderationActions'>> {
   const alert = await ctx.db.get(accessAlertId);
   if (!alert) throw new ConvexError('Access alert not found');
   // Pinning or releasing an alert is a decision on it, never its author's (D269).
@@ -586,7 +725,7 @@ export async function setOfficialImpl(
     });
   }
 
-  await writeAudit(ctx, {
+  return writeAudit(ctx, {
     actorId: actor._id,
     action: official ? 'pin_access_alert' : 'unpin_access_alert',
     targetType: 'accessAlert',

@@ -1,0 +1,22 @@
+{
+  "name": "@skating/seed-inbox",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Fill dev's Inbox with realistic work filed by fake \"Test-\" people through the real mutations, and clear it again (B01-5, D287). Dev only; dry by default.",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "seed": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@skating/run-log": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "tsx": "^4.23.15",
+    "vitest": "^5.1.0"
+  }
+}

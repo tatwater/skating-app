@@ -50,6 +50,7 @@ import {
 } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
+import { isProdDeployment } from './lib/deployment';
 import { OverBudget, ReadBudget, sizePage } from './lib/readBudget';
 import {
   affords,
@@ -706,7 +707,7 @@ export const runStandingRollover = internalAction({
         label: `standing rollover into ${season}${apply === true ? '' : ' (dry)'}`,
         campaignId: rolloverCampaignId(season, apply === true),
         deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
-        isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+        isProd: isProdDeployment(),
         stages: [
           {
             name: 'rollover',

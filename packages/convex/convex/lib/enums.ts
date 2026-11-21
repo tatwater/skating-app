@@ -425,6 +425,14 @@ export const MODERATION_ACTIONS = [
   'create_landmark',
   'edit_landmark',
   'promote_landmark',
+  // ── The Inbox (B01-5) ────────────────────────────────────────────────────────────────────────────
+  // The inverses the Inbox's decisions owe (B01 §11): a decided flag back to open, a decided request
+  // (and every sibling its decision closed) back to open, a reviewed drawn body back to pending, and a
+  // moderator's retraction of an access alert put back to the status it recorded.
+  'reopen_flag',
+  'reopen_request',
+  'return_to_review',
+  'unretract_access_alert',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -731,6 +739,10 @@ export const FAILING_JOBS = [
   'geoMissing',
   'lapses',
   'clerkMirror',
+  // B01-5: the Inbox's stored items — a source the backfill could not reconcile (keyed by its table
+  // and id, retried by the repair's passes), and an open item the drift repair could not (by item id).
+  'inboxBackfill',
+  'inboxRepair',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];
 

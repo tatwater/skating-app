@@ -48,6 +48,7 @@ import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { bumpMetricCounter } from './lib/metrics';
 import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped } from './lib/scan';
+import { seedSideOf } from './lib/seedPeople';
 import { resolveWeatherSince } from './weather';
 
 /**
@@ -109,8 +110,14 @@ export const contradictionCluster = internalQuery({
     );
 
     const reports: ClusterReport[] = [];
+    // A fake person's report from the dev seed and a real one are never in one cluster (D287): no
+    // real report is marked conflicting, and no real tally moves, on a fake report's word.
+    const side = seedSideOf(ctx);
+    const isSeed = (authorId: Id<'profiles'>) => side.isSeed(authorId);
+    const anchorSeed = await isSeed(anchor.authorId);
     for (const r of inWindow) {
       if (r.skateQuality === undefined) continue;
+      if ((await isSeed(r.authorId)) !== anchorSeed) continue;
       const events = await takeCapped(
         ctx.db.query('pointEvents').withIndex('by_ref', (q) => q.eq('refId', r._id)),
         CLUSTER_EVENT_CAP,
@@ -164,6 +171,8 @@ async function flagContradictionPattern(
   // exists to remove. It fires on the first and then at widening intervals, so a contributor quietly
   // accumulating behind an already-open flag still surfaces (see `shouldAlertAt`).
   if (!result.alert) return;
+  // Nothing a fake person from the dev seed does pages an operator (D287).
+  if (await seedSideOf(ctx).isSeed(authorId)) return;
   await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
     subject: 'Safety flag: contradiction pattern',
     heading: `New safety flag · contradiction pattern (occurrence ${result.occurrences})`,

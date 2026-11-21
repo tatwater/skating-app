@@ -74,6 +74,7 @@ export * from './imageryMask';
 export * from './imagerySeam';
 export * from './imageryTiles';
 export * from './imageryTimeline';
+export * from './inbox';
 export * from './ingestGate';
 export * from './jpegExif';
 export * from './lakeCaption';

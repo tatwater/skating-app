@@ -78,13 +78,28 @@ export function sqMetersToSqFeet(sqm: number): number {
  * Scales via exponent-string notation rather than `value * 10**decimals` so that
  * float artifacts don't swallow a digit: `1.005` is stored as `1.00499…`, so the
  * naive `Math.round(1.005 * 100)` yields `100` → `1` instead of `1.01`. Parsing
- * `"1.005e2"` lands on the true `100.5` first. Non-finite input passes through.
+ * `"1.005e2"` lands on the true `100.5` first. Non-finite input passes through; finite input
+ * always comes back finite.
  */
 export function roundTo(value: number, decimals = 0): number {
   if (!Number.isFinite(value)) return value;
-  const scaled = Number(`${value}e${decimals}`);
+  // A number JavaScript prints in exponent form (`1e-7`, `2.5e+21`) can't take a second `e`: the
+  // shift is added to its own exponent instead (`"1e-7" + 2` → `"1e-5"`). Pasting the suffix on was
+  // `"1e-7e2"`, which parses to `NaN` — a displayed thickness or distance of `NaN″`.
+  const scaled = shift(value, decimals);
+  // Past 2⁵² at this scale a double has no fractional digit left to round: the value is already
+  // whole there, and a decimal round-trip of so long a number could only move it by a unit in its
+  // last place. Past the doubles' range (a huge value to many places) likewise.
+  if (!Number.isFinite(scaled) || Math.abs(scaled) >= 2 ** 52) return value;
   const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled));
-  return Number(`${rounded}e${-decimals}`);
+  const out = shift(rounded, -decimals);
+  return Number.isFinite(out) ? out : value;
+}
+
+/** `value × 10^by`, by exponent arithmetic on its decimal form (so no float artifact creeps in). */
+function shift(value: number, by: number): number {
+  const [mantissa, exponent = '0'] = String(value).split('e');
+  return Number(`${mantissa}e${Number(exponent) + by}`);
 }
 
 // --- Imperial display formatters (D25) ---

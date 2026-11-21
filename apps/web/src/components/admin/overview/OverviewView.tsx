@@ -12,7 +12,7 @@ import { ConsoleStatus } from '../shell/ConsoleShell';
 import { LiveMark } from './LiveMark';
 import { OverviewHome, type OverviewHomeData } from './OverviewHome';
 import { OverviewPage } from './OverviewPage';
-import { type FeedTarget, inboxTotal, machineryTrouble } from './overviewData';
+import { type FeedTarget, inboxHeadCount, machineryTrouble } from './overviewData';
 import type { LinkTo } from './overviewLinks';
 import { type LiveState, overviewHeads } from './overviewModel';
 import type { OverviewTabValue } from './overviewSearch';
@@ -93,7 +93,7 @@ export function OverviewView({
     }),
   };
   const heads = overviewHeads({
-    inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
+    inbox: inboxHeadCount(data.inbox),
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
     ...machineryTrouble(data.machinery),
   });

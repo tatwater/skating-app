@@ -51,6 +51,7 @@ import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { sendEmail } from './lib/resend';
+import { isSeedProfile } from './lib/seedPeople';
 
 /** Expo asks for receipts to be checked at least 15 minutes after the send. */
 const RECEIPT_DELAY_MS = 15 * 60 * 1000;
@@ -99,7 +100,8 @@ export const loadForDelivery = internalQuery({
     const out: Deliverable[] = [];
     for (const [userId, rows] of byUser) {
       const profile = await ctx.db.get(userId);
-      if (!profile || !canReceiveNotifications(profile)) continue;
+      // A fake person from the dev seed is never pushed or mailed, whatever their toggles say (D287).
+      if (!profile || !canReceiveNotifications(profile) || isSeedProfile(profile)) continue;
       const channels = effectiveChannelPrefs(profile.channelPrefs);
       const blocked = await loadBlockedAuthorIds(ctx, userId);
       // The resolver drops a row whose actors are all blocked — nothing to say, nothing to send.
