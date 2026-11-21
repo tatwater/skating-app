@@ -370,6 +370,7 @@ test('`alone` re-runs one backfill without starting the rest', async () => {
     'flagSubjects',
     'undoChains',
     'verdicts',
+    'withdrawals',
   ]);
 });
 

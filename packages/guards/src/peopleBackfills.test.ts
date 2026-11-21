@@ -1,7 +1,7 @@
 /**
  * The People chained jobs and their after-merge procedure are one thing each (B01 §5.7). The registry
  * (`PEOPLE_BACKFILLS` in `convex/lib/peopleRuns.ts`) lists the backfills in run order. Every chained
- * job — the four backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
+ * job — the five backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
  * first (`takeLease`), so a pass of a superseded run does nothing; every backfill takes the same
  * arguments (`BACKFILL_ARGS`), concludes through `finishBackfill`, and names the next backfill in
  * `BACKFILL_JOB`. `peopleJobRuns` and `peopleJobProgress` are read and written only by
@@ -73,6 +73,7 @@ test('the registry and the procedure parse', () => {
     'flagSubjects',
     'undoChains',
     'verdicts',
+    'withdrawals',
   ]);
   expect(procedure).toMatch(/^\(1\) `convex dev --once`\. \(2\) /);
   expect(procedure).toContain(`\`convex run peopleJobs:${entries[0]?.job} '{}'\``);

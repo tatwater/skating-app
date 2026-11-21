@@ -14,6 +14,7 @@ import { AUTHOR_DELETED_OVERTURN, AUTHOR_DELETED_RESTORE } from './lib/authorDel
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
 import { isReversed } from './lib/contentVerdicts';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
+import { RECORD_PAGE, RECORD_PAGE_ROWS } from './lib/recordReads';
 import {
   ERASED_ALREADY,
   KEEP_ALREADY_HELD,
@@ -77,7 +78,10 @@ async function setup({ ready = true }: { ready?: boolean } = {}) {
   const t = convexTest({ schema, modules, transactionLimits: true });
   await t.run(async (ctx) => {
     for (const b of ['rows', 'flagSubjects', 'undoChains'] as const) await markReady(ctx, b);
-    if (ready) await markReady(ctx, 'verdicts');
+    if (ready) {
+      await markReady(ctx, 'verdicts');
+      await markReady(ctx, 'withdrawals');
+    }
   });
   const bodyId = await t.run(async (ctx) => {
     const id = await ctx.db.insert('waterBodies', {
@@ -696,9 +700,17 @@ describe('Deleted', () => {
     vi.advanceTimersByTime(1_000);
     await rob.as.mutation(api.comments.remove, { commentId: gone });
     await t.run((ctx) => ctx.db.patch(gone, { erasedAt: Date.now() }));
-    const { rows, pages } = await deletedOf(matt.as, rob.id);
+    const { rows } = await deletedOf(matt.as, rob.id);
     expect(rows.map((d) => d.targetId)).toEqual(expected);
-    expect(pages).toBeGreaterThan(1);
+    // Pages of three rows: the tie of comments spans a page boundary, and nothing repeats.
+    RECORD_PAGE_ROWS.n = 3;
+    try {
+      const small = await deletedOf(matt.as, rob.id);
+      expect(small.rows.map((d) => d.targetId)).toEqual(expected);
+      expect(small.pages).toBeGreaterThan(2);
+    } finally {
+      RECORD_PAGE_ROWS.n = RECORD_PAGE;
+    }
     expect(rows[0]).toMatchObject({
       targetType: 'comment',
       reportAuthor: { userId: kate.id },
@@ -721,7 +733,7 @@ describe('Deleted', () => {
 });
 
 describe('the counts and "still being prepared"', () => {
-  test('the counts agree with the lists, a capped kind says so, and pending names the backfill', async () => {
+  test('the counts agree with the lists and pending names the backfills each rests on', async () => {
     const { t, rob, kate, matt, report, comment, post, set, tick } = await setup({ ready: false });
     const r = await report(rob.id);
     await set('report', r, 'hidden', 'h');
@@ -731,23 +743,28 @@ describe('the counts and "still being prepared"', () => {
     await rob.as.mutation(api.comments.remove, { commentId: c });
     const counts = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
     expect(counts).toMatchObject({
-      pending: ['verdicts'],
+      pending: ['verdicts', 'withdrawals'],
       reversed: { count: 1, capped: false, byKind: { report: 1 } },
       deleted: { count: 1, capped: false, byKind: { comment: 1 } },
     });
     expect((await matt.as.query(api.people.person, { userId: rob.id }))?.pending).toContain(
       'verdicts',
     );
-    for (const q of [
-      api.contentRecord.personVerdicts,
-      api.contentRecord.personReversed,
-      api.contentRecord.personDeleted,
-    ]) {
+    for (const q of [api.contentRecord.personVerdicts, api.contentRecord.personReversed]) {
       expect((await matt.as.query(q, { userId: rob.id })).pending).toEqual(['verdicts']);
     }
-    await t.run((ctx) => markReady(ctx, 'verdicts'));
-    // Nine Posts deleted — four of them in one instant — counted by their real weight, exactly: the
-    // steps each read their share of the budget, passing over the rows tied with the last.
+    // Deleted and presence rest on the withdrawal rows too (B01-4m).
+    expect(
+      (await matt.as.query(api.contentRecord.personDeleted, { userId: rob.id })).pending,
+    ).toEqual(['verdicts', 'withdrawals']);
+    expect(
+      (await matt.as.query(api.contentRecord.recordPresence, { userId: rob.id })).pending,
+    ).toEqual(['verdicts', 'withdrawals']);
+    await t.run(async (ctx) => {
+      await markReady(ctx, 'verdicts');
+      await markReady(ctx, 'withdrawals');
+    });
+    // Nine Posts deleted — four of them in one instant — counted exactly from their rows.
     const posts: Id<'posts'>[] = [];
     for (let i = 0; i < 9; i++) {
       const { postId } = await post(1);
@@ -767,10 +784,8 @@ describe('the counts and "still being prepared"', () => {
     expect(exact.deleted.count).toBe(listed.rows.length);
   });
 
-  test('a heavy kind past its last step is a floor, never a guess', async () => {
+  test('a hundred deleted Posts count exactly: the count reads the small rows, not the Posts', async () => {
     const { rob, matt, post, tick } = await setup();
-    // Each step is at most its share of what the budget has left at a whole document a row, so the
-    // seven steps reach some way past what one worst case allows — and past them, a floor.
     const total = 100;
     for (let i = 0; i < total; i++) {
       const { postId } = await post(1);
@@ -778,9 +793,12 @@ describe('the counts and "still being prepared"', () => {
       tick();
     }
     const counts = await matt.as.query(api.contentRecord.recordCounts, { userId: rob.id });
-    expect(counts.deleted.capped).toBe(true);
-    expect(counts.deleted.byKind.post).toBeGreaterThanOrEqual(15);
-    expect(counts.deleted.byKind.post).toBeLessThan(total);
+    // Each Post's one Report went with it: both kinds, every one, and no floor.
+    expect(counts.deleted).toMatchObject({
+      count: 2 * total,
+      capped: false,
+      byKind: { post: total, report: total },
+    });
   });
 });
 

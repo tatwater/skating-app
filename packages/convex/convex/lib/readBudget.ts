@@ -102,6 +102,8 @@ export const ROW_MAX = {
   bodyLibraryRow: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
+  // A withdrawal row (B01-4m): two ids, a literal, four numbers and a boolean — about 250 bytes.
+  withdrawal: 1024,
   small: SLACK,
   // A bounty-create attempt: ids, a decision, a few numbers and a trust class — no free text.
   gateEvent: 2 * 1024,

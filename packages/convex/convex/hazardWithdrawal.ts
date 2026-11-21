@@ -35,6 +35,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { refreshClockOf } from './lib/eraseClock';
 import { ReadBudget } from './lib/readBudget';
 import { MAX_BODY_CLUSTERS } from './lib/recurrence';
+import { syncWithdrawal } from './lib/withdrawals';
 
 /** The refusals, worded once for the mutation and its tests. */
 export const HAZARD_WITHDRAW_REFUSALS = {
@@ -138,13 +139,10 @@ export const withdraw = mutation({
       metadata: { priorStatus: hazard.moderationStatus, newStatus: 'removed' },
       createdAt: now,
     });
-    await refreshClockOf(
-      ctx,
-      new ReadBudget(),
-      'hazard',
-      { ...hazard, moderationStatus: 'removed', authorDeletedAt: now },
-      now,
-    );
+    const withdrawn = { ...hazard, moderationStatus: 'removed' as const, authorDeletedAt: now };
+    await refreshClockOf(ctx, new ReadBudget(), 'hazard', withdrawn, now);
+    // On their record's Deleted list, unless a decision holds it (`lib/withdrawals`).
+    await syncWithdrawal(ctx, 'hazard', hazardId, withdrawn);
     return hazardId;
   },
 });

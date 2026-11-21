@@ -76,6 +76,7 @@ import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseC
 import { ownContentRefusal } from './lib/ownContent';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
+import { syncWithdrawal } from './lib/withdrawals';
 
 /**
  * Recompute one alert from its full vote set and persist the result. Returns the new row.
@@ -462,6 +463,8 @@ export const retract = mutation({
         const now = Date.now();
         await ctx.db.patch(accessAlertId, { retractedAt: now });
         await refreshEraseClock(ctx, 'accessAlert', accessAlertId, now);
+        // With a time it is on their record's Deleted list (`lib/withdrawals`).
+        await syncWithdrawal(ctx, 'accessAlert', accessAlertId, { ...alert, retractedAt: now });
       }
       // Anything else: nothing left to retract.
       return;
@@ -489,6 +492,8 @@ export const retract = mutation({
     // Only an author's own retraction is a withdrawal with a clock (`lib/eraseClock`) — read off the
     // row as just written, without reading it again.
     await refreshClockOf(ctx, new ReadBudget(), 'accessAlert', { ...alert, ...retracted }, now);
+    // The author's own retraction is on their record's Deleted list; a moderator's never is.
+    await syncWithdrawal(ctx, 'accessAlert', accessAlertId, { ...alert, ...retracted });
 
     if (isModerator && !isAuthor) {
       await writeAudit(ctx, {

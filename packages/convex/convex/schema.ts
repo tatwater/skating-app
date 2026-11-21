@@ -145,6 +145,8 @@ const peopleJob = v.union(
   v.literal('undoChains'),
   // The content record (B01-4d): the verdict replay and the erasure clocks after it.
   v.literal('verdicts'),
+  // The withdrawal rows the record sheet's Deleted list and count read (B01-4m).
+  v.literal('withdrawals'),
   v.literal('lapseSweep'),
   v.literal('lapseRetry'),
 );
@@ -3947,6 +3949,49 @@ export default defineSchema({
     // What an action ended, for its undo (`lib/contentVerdicts.recordUndoneVerdict`). Equality reads
     // only, so the unset value on every standing row never matches (no sparse-index trap).
     .index('by_ended_by', ['endedByActionId']),
+
+  /**
+   * **One small row per item its author took back** (B01-4m, D282): a Report, Post, comment or
+   * hazard its author deleted (`authorDeletedAt`), or an access alert its author retracted (with a
+   * time) — the record sheet's Deleted list and count, read as one index range of rows a few hundred
+   * bytes each instead of each kind's whole documents. A row exists exactly while the item is so
+   * withdrawn and not erased (an erased comment's shell has none); `held` is whether a moderator's
+   * decision stands on it (then it is Standing's, not Deleted's). Written only by `lib/withdrawals`:
+   * the row by every withdrawal writer and removed by the eraser, `held` beside every verdict write
+   * (`packages/guards`' `withdrawalWriters.test.ts` holds both lists). Staff-only, never reputation.
+   */
+  contentWithdrawals: defineTable({
+    subjectUserId: v.id('profiles'),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert'] as const),
+    targetId: v.string(),
+    /** The author's deletion, or the alert's retraction by its author. */
+    withdrawnAt: v.number(),
+    /**
+     * The kind's place in the Deleted list's tie-break, inverted (a Report 4 … an alert 0), so a
+     * descending read takes a tie in the list's order (`lib/recordReads.DELETED_KINDS`).
+     */
+    kindRank: v.number(),
+    /** The item's own creation time: the list's last tie-break, as its cursors carry it. */
+    targetCreatedAt: v.number(),
+    held: v.boolean(),
+  })
+    .index('by_target', ['targetType', 'targetId'])
+    // The Deleted list, every kind, in its order (withdrawal, kind, creation; all required fields).
+    .index('by_subject_held', [
+      'subjectUserId',
+      'held',
+      'withdrawnAt',
+      'kindRank',
+      'targetCreatedAt',
+    ])
+    // The same, narrowed to one kind.
+    .index('by_subject_held_type', [
+      'subjectUserId',
+      'held',
+      'targetType',
+      'withdrawnAt',
+      'targetCreatedAt',
+    ]),
 
   /**
    * **A photo settlement owed** (D248). When the erasure sweep erases an item that carried photos, it

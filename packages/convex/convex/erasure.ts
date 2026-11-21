@@ -69,6 +69,12 @@ import {
   traced,
 } from './lib/readBudget';
 import { literals } from './lib/validators';
+import {
+  dropWithdrawal,
+  syncWithdrawal,
+  WITHDRAWAL_DROP_COST,
+  WITHDRAWAL_SYNC_COST,
+} from './lib/withdrawals';
 
 export { ROW_MAX } from './lib/readBudget';
 
@@ -118,16 +124,17 @@ const WRITES_PER_ROW = 20;
  * affordable when the drains are done.
  */
 const TAIL: Record<Erasable, number> = {
-  // Its replies (one), itself, its parent, the parent's replies (one), the parent.
-  comment: 5 * ROW_MAX.comment,
-  // The Report it was drawn in, read and patched; itself, deleted; its uploader's settlement place.
-  hazard: 2 * ROW_MAX.report + ROW_MAX.hazard + ROW_MAX.settleQueue,
-  // Its recording, read and patched; itself, deleted; its uploader's settlement place.
-  report: 2 * ROW_MAX.activity + ROW_MAX.report + ROW_MAX.settleQueue,
-  post: ROW_MAX.post,
+  // Its replies (one), itself, its parent, the parent's replies (one), the parent; its withdrawal row.
+  comment: 5 * ROW_MAX.comment + WITHDRAWAL_DROP_COST,
+  // The Report it was drawn in, read and patched; itself, deleted; its uploader's settlement place;
+  // its withdrawal row (`lib/withdrawals`), read and deleted.
+  hazard: 2 * ROW_MAX.report + ROW_MAX.hazard + ROW_MAX.settleQueue + WITHDRAWAL_DROP_COST,
+  // Its recording, read and patched; itself, deleted; its uploader's settlement place; its row.
+  report: 2 * ROW_MAX.activity + ROW_MAX.report + ROW_MAX.settleQueue + WITHDRAWAL_DROP_COST,
+  post: ROW_MAX.post + WITHDRAWAL_DROP_COST,
   contentFlag: ROW_MAX.contentFlag,
   waterBodyRequest: ROW_MAX.waterBodyRequest,
-  accessAlert: ROW_MAX.accessAlert,
+  accessAlert: ROW_MAX.accessAlert + WITHDRAWAL_DROP_COST,
 };
 
 /** The heaviest row each eraser drains, read and touched: one is the least a started item must do. */
@@ -359,6 +366,11 @@ export const eraseOne = internalMutation({
           ...spent(),
           ...(dueAt !== undefined ? { dueAt } : {}),
         };
+      }
+      // Erased — or a comment left as its replies' shell, no longer its author's: off their record's
+      // Deleted list (`lib/withdrawals`), inside the eraser's reserve.
+      if (kind !== 'contentFlag' && kind !== 'waterBodyRequest') {
+        await dropWithdrawal(ctx, kind, item._id as Id<'reports'>, tick.reads);
       }
       await writeAudit(ctx, {
         action: 'erase',
@@ -1587,9 +1599,13 @@ export const backfillClocks = internalMutation({
       reads.reserve('small', LEASE_READS);
       const lease = await chainedLease(ctx, 'verdicts', args.lease);
       if (lease === null) return { kind: current, set: 0, stamped: 0, more: false };
-      // A withdrawn row's own work beside its read: a stamp, its hold, its clock. Kept back for one
-      // row, so every pass gets through at least one; most rows are not withdrawn and cost only the read.
-      const work = 2 * ROW_MAX[current] + HOLD_COST[current];
+      // A withdrawn row's own work beside its read: a stamp, its hold, its clock (and an alert's
+      // withdrawal row). Kept back for one row, so every pass gets through at least one; most rows
+      // are not withdrawn and cost only the read.
+      const work =
+        2 * ROW_MAX[current] +
+        HOLD_COST[current] +
+        (current === 'accessAlert' ? WITHDRAWAL_SYNC_COST : 0);
       // By creation time (which no write moves), resumed after the last row looked at — never by a
       // position on a page, since erasure deletes rows of these tables while the walk runs.
       const requested = sizePage(reads, current, { cap: size, reserve: work });
@@ -1627,6 +1643,14 @@ export const backfillClocks = internalMutation({
               reads.touch('accessAlert');
               await ctx.db.patch(doc._id as Id<'accessAlerts'>, { retractedAt: now });
               fresh = { ...(doc as Doc<'accessAlerts'>), retractedAt: now };
+              // With a time it is on its author's Deleted list (`lib/withdrawals`).
+              await syncWithdrawal(
+                ctx,
+                'accessAlert',
+                doc._id,
+                fresh as Doc<'accessAlerts'>,
+                reads,
+              );
               stamped++;
             }
             if (withdrawnAtOf(current, fresh) === undefined || fresh.eraseAt !== undefined)

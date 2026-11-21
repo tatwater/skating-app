@@ -31,6 +31,9 @@ describe('joining a list’s pages', () => {
       joinRecordPages([page([a], { isDone: false }), page([b], { pending: true })]).pending,
     ).toBe(true);
     expect(joinRecordPages([page(DELETED)]).pending).toBe(false);
+    // The Deleted list rests on its withdrawal rows too: that backfill alone is "still being prepared".
+    const withdrawals = { ...page(DELETED), pending: ['withdrawals'] as unknown as [] };
+    expect(joinRecordPages([withdrawals]).pending).toBe(true);
   });
 
   it('stops at a failed page, keeping the rows before it', () => {

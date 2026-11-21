@@ -144,7 +144,7 @@ async function world() {
       return id;
     });
   await t.run(async (ctx) => {
-    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts'] as const) {
+    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts', 'withdrawals'] as const) {
       await markReady(ctx, b);
     }
   });

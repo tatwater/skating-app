@@ -31,8 +31,9 @@ import type { RecordKind } from './recordWords';
  * says (`splitCursor`). A failed page is said in its place with *Try again*; the rows before it stand.
  *
  * - **A short page is not the end** — `isDone` is. A page can even come back empty with more to
- *   come (the Deleted list passes over an erased comment's shell); the list asks for the next.
- * - **`pending`**: any page saying `verdicts` makes the whole list *still being prepared*.
+ *   come (the budget cut it before its first shown row); the list asks for the next.
+ * - **`pending`**: any page naming a backfill (`verdicts`; on Deleted, `withdrawals` too) makes the
+ *   whole list *still being prepared*.
  */
 
 export type RecordRowOf<T extends RecordTab> = T extends 'standing'
@@ -156,7 +157,8 @@ export function joinRecordPages(pages: readonly Loadable<AnyPage>[] | null): Joi
       seen.add(k);
       rows.push(row);
     }
-    if (page.pending.includes('verdicts')) pending = true;
+    // Whatever backfill a page rests on — the record's verdicts, or the Deleted list's withdrawal rows.
+    if (page.pending.length > 0) pending = true;
     // A page the server says must be split holds only the start of its range: its rows stand, and
     // nothing after them is drawn until the split pages land (a gap would read as a lost row).
     if (mustSplit(page)) {

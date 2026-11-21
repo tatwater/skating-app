@@ -28,7 +28,7 @@ import {
  *
  * - **Three lists**: Standing (`contentRecord.personVerdicts`), Deleted (`personDeleted`), Reversed
  *   (`personReversed`) — each a chain of pages; a short page is not the end, `isDone` is.
- * - **Three answers that aren't a number**: still being prepared (`pending: ['verdicts']`), a floor
+ * - **Three answers that aren't a number**: still being prepared (`pending` names a backfill), a floor
  *   (`capped`, or a list with pages still to come), and not recorded (`null`) — never a zero.
  * - **One item, one read** (`contentRecord.item`): its decisions, who made them and why, its life,
  *   and the one lever its state offers this viewer.
