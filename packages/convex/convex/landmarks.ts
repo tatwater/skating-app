@@ -36,6 +36,7 @@ import {
   nextLandmarkSourceBar,
   normalizeLandmarkNames,
 } from '@skating/core';
+import type { WithoutSystemFields } from 'convex/server';
 import { ConvexError, getDocumentSize, type Infer, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -319,7 +320,7 @@ export const importBatch = internalMutation({
     // One read allowance for the whole batch: each body's own reads and each body's names rebuild
     // draw from it (`lib/bodyNames`); a rebuild it can't cover is deferred to its own transaction.
     setNamesAllowance(ctx, NAMES_BOUNDS.loadBytes);
-    const names = { deferred: 0 };
+    const names = { deferred: 0, on: [] as Id<'waterBodies'>[], read: 0 };
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
         complete: complete === true && vouched,
@@ -334,11 +335,14 @@ export const importBatch = internalMutation({
       if (dryRun === false) await queueLibraryRefresh(ctx, [waterBodyId]);
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
-    // Twenty notes are enough to see a pattern and never dominate the return. `namesDeferred`: the
-    // bodies whose names rebuild the batch's allowance couldn't cover (a dry run says the same).
+    // Twenty notes are enough to see a pattern and never dominate the return. `namesDeferred` (and
+    // `namesDeferredOn`, the first twenty): the bodies whose names rebuild the batch's allowance
+    // couldn't cover; `namesRead`, what the rebuilds read — a dry run says the same as the applied run.
     return {
       ...total,
       namesDeferred: names.deferred,
+      namesDeferredOn: names.on.slice(0, 20),
+      namesRead: names.read,
       shortfalls: vouched ? [] : shortfalls,
       notes: notes.slice(0, 20),
     };
@@ -497,8 +501,8 @@ async function importOneBody(
     write: boolean;
     /** What the run says by name — a row whose ids were trimmed (B01-3j). */
     notes: LoadNote[];
-    /** Names rebuilds the batch's read allowance couldn't cover, deferred (`lib/bodyNames`). */
-    names: { deferred: number };
+    /** The names rebuilds: what they read, and those the batch's allowance couldn't cover. */
+    names: { deferred: number; on: Id<'waterBodies'>[]; read: number };
   },
 ): Promise<ImportCounts> {
   const counts = emptyCounts();
@@ -524,6 +528,13 @@ async function importOneBody(
   const allBays = await subAreasForBody(ctx, waterBodyId);
   drawNamesAllowance(ctx, weigh(allBays));
   const candidates = toCandidates(allBays);
+  // What this load writes, kept as it goes: applied to the stored rows in memory, the rows it would
+  // leave — what a dry run's names rebuild weighs (`landmarksAfter`).
+  const proposed: Proposed = { patched: new Map(), inserted: [] };
+  const put = async (id: Id<'bodyLandmarks'>, fields: Partial<Doc<'bodyLandmarks'>>) => {
+    proposed.patched.set(id, { ...proposed.patched.get(id), ...fields });
+    if (write) await ctx.db.patch(id, fields);
+  };
   // A name a live bay here already answers to is the bay's (D202): "Malletts Bay" the village and
   // "Malletts Bay" the sub-area would be two labels saying one thing — the one rule, `bayNaming`.
   const bays = candidates.map(({ ref, polygon }) => ({
@@ -634,14 +645,12 @@ async function importOneBody(
     for (const row of held ? [] : dropping) {
       counts.dropped++;
       live--;
-      if (write) {
-        await ctx.db.patch(row._id, {
-          removedAt: now,
-          catalogDroppedAt: now,
-          ...stamp,
-          updatedAt: now,
-        });
-      }
+      await put(row._id, {
+        removedAt: now,
+        catalogDroppedAt: now,
+        ...stamp,
+        updatedAt: now,
+      });
     }
   }
 
@@ -694,15 +703,13 @@ async function importOneBody(
       counts.returned++;
       // Outside the gate: it counts trimmed ids, which a dry run reports too.
       const patch = catalogPatch(existing, members);
-      if (write) {
-        await ctx.db.patch(existing._id, {
-          ...patch,
-          removedAt: undefined,
-          catalogDroppedAt: undefined,
-          ...stamp,
-          updatedAt: now,
-        });
-      }
+      await put(existing._id, {
+        ...patch,
+        removedAt: undefined,
+        catalogDroppedAt: undefined,
+        ...stamp,
+        updatedAt: now,
+      });
       continue;
     }
     let patch: Partial<Doc<'bodyLandmarks'>>;
@@ -730,7 +737,7 @@ async function importOneBody(
       continue;
     }
     if (existing.moderatorEditedAt === undefined) counts.updated++;
-    if (write) await ctx.db.patch(existing._id, { ...patch, ...stamp, updatedAt: now });
+    await put(existing._id, { ...patch, ...stamp, updatedAt: now });
   }
 
   // ── New rows, up to the cap ──────────────────────────────────────────────────────────────────
@@ -745,8 +752,7 @@ async function importOneBody(
     const corpusMessages = corpusOf(members);
     // Before the gate: it counts trimmed ids, which a dry run reports too.
     const externalIds = idsOf(members);
-    if (!write) continue;
-    await ctx.db.insert('bodyLandmarks', {
+    const created = {
       waterBodyId,
       name: first.name,
       kind: first.kind,
@@ -760,14 +766,71 @@ async function importOneBody(
       ...stamp,
       createdAt: now,
       updatedAt: now,
-    });
+    } satisfies WithoutSystemFields<Doc<'bodyLandmarks'>>;
+    proposed.inserted.push(created);
+    if (write) await ctx.db.insert('bodyLandmarks', created);
   }
   // The body's short list of names follows the load (`lib/bodyNames`), once a body, from the bays
-  // already in hand and the batch's allowance — deferred to its own transaction past it. A dry run
-  // makes the same reads and the same call, and writes nothing.
-  const rebuilt = await refreshBodyNames(ctx, body._id, { bays: allBays, dryRun: !write });
-  if (rebuilt.deferred) tally.deferred++;
+  // already in hand and the batch's allowance — deferred to its own transaction past it. The applied
+  // run rebuilds from the stored rows; a dry run, from the rows this load would leave — the stored
+  // ones with its patches and inserts applied in memory (`landmarksAfter`) — through the same read,
+  // so it weighs, draws and defers as the applied run does.
+  const rebuilt = await refreshBodyNames(ctx, body._id, {
+    bays: allBays,
+    ...(write ? {} : { dryRun: true, landmarks: landmarksAfter(rows, proposed) }),
+  });
+  tally.read += rebuilt.read;
+  if (rebuilt.deferred) {
+    tally.deferred++;
+    tally.on.push(body._id);
+  }
   return counts;
+}
+
+/** What a load writes to one body's rows: each row's patches merged, and its inserts, in order. */
+interface Proposed {
+  patched: Map<Id<'bodyLandmarks'>, Partial<Doc<'bodyLandmarks'>>>;
+  inserted: WithoutSystemFields<Doc<'bodyLandmarks'>>[];
+}
+
+/** A stored document's shape after a patch: a field set to `undefined` is gone, as Convex stores it. */
+function patchedDoc<D extends object>(doc: D, fields: object): D {
+  const out = { ...doc, ...fields } as Record<string, unknown>;
+  for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
+  return out as D;
+}
+
+/**
+ * **The live rows a load would leave**, in the index's order (`by_water_body_removed`: live, then by
+ * creation time) — what a dry run's names rebuild reads in place of the stored rows. Each stored row
+ * with the load's patches applied as Convex applies them, the removed left out; each insert last, in
+ * the order made, with an id of a stored id's length and a creation time after every stored row's —
+ * so each weighs what the applied run's row will (`importBatch`'s dry and applied runs agree).
+ */
+export function landmarksAfter(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  proposed: Proposed,
+): Doc<'bodyLandmarks'>[] {
+  const stored = rows
+    .map((row) => {
+      const fields = proposed.patched.get(row._id);
+      return fields === undefined ? row : patchedDoc(row, fields);
+    })
+    .filter((row) => row.removedAt === undefined)
+    .sort((a, b) => a._creationTime - b._creationTime);
+  const idLength = rows[0]?._id.length ?? 32;
+  const after = Math.max(0, ...rows.map((r) => r._creationTime));
+  const created = proposed.inserted.map(
+    (doc, i) =>
+      patchedDoc(
+        {
+          _id: 'x'.repeat(idLength) as Id<'bodyLandmarks'>,
+          _creationTime: after + i + 1,
+        },
+        doc,
+      ) as Doc<'bodyLandmarks'>,
+  );
+  return [...stored, ...created];
 }
 
 /** Would this patch change nothing a reader sees? Arrays compare as sets, in order-insensitive form. */

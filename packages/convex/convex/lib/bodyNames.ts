@@ -156,16 +156,22 @@ function liveLandmarks(
   waterBodyId: Id<'waterBodies'>,
   spent: { bytes: number },
   drawn: { bytes: number; left: number },
+  /** The rows as a dry run says they would stand, in the index's order: read in place of the table. */
+  proposed?: readonly Doc<'bodyLandmarks'>[],
 ) {
   return weighedRows(
     (after, n) =>
-      ctx.db
-        .query('bodyLandmarks')
-        .withIndex('by_water_body_removed', (q) => {
-          const live = q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined);
-          return after === null ? live : live.gt('_creationTime', after);
-        })
-        .take(n),
+      proposed !== undefined
+        ? Promise.resolve(
+            proposed.filter((row) => after === null || row._creationTime > after).slice(0, n),
+          )
+        : ctx.db
+            .query('bodyLandmarks')
+            .withIndex('by_water_body_removed', (q) => {
+              const live = q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined);
+              return after === null ? live : live.gt('_creationTime', after);
+            })
+            .take(n),
     READ_CHUNK.landmarks,
     spent,
     drawn,
@@ -234,7 +240,15 @@ export function namesOf(
 export async function refreshBodyNames(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  opts: { bays?: readonly Doc<'waterBodySubAreas'>[]; dryRun?: boolean } = {},
+  opts: {
+    bays?: readonly Doc<'waterBodySubAreas'>[];
+    dryRun?: boolean;
+    /**
+     * A dry run's live landmarks as the load would leave them (`landmarks.landmarksAfter`), read
+     * through the same chunks as the table — so it weighs, draws and defers as the applied run will.
+     */
+    landmarks?: readonly Doc<'bodyLandmarks'>[];
+  } = {},
 ): Promise<{ wrote: boolean; read: number; deferred: boolean }> {
   const allowance = allowanceOf(ctx);
   const spent = { bytes: 0 };
@@ -254,10 +268,10 @@ export async function refreshBodyNames(
     };
     landmarks =
       subAreas.stop === null
-        ? await liveLandmarks(ctx, waterBodyId, spent, drawn)
+        ? await liveLandmarks(ctx, waterBodyId, spent, drawn, opts.landmarks)
         : { rows: [], stop: 'cap' };
   } else {
-    landmarks = await liveLandmarks(ctx, waterBodyId, spent, drawn);
+    landmarks = await liveLandmarks(ctx, waterBodyId, spent, drawn, opts.landmarks);
     subAreas =
       landmarks.stop === null
         ? await bays(ctx, waterBodyId, spent, drawn)

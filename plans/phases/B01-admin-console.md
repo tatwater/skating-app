@@ -6991,6 +6991,17 @@ rebuilds) passed. Right as stated. Fixed by the one allowance per transaction ab
 `bodyNameRows.test.ts` *a catalog load whose reads and rebuilds would pass its allowance commits,
 deferring the rest* and *a merge adds no names reads to its own transaction*.
 
+**Greptile on #167 (5/5, one P2 on `80cb061c`):** the dry run rebuilt from the stored landmarks, not
+the ones the load would write, so near the allowance its `namesDeferred` could differ from the applied
+run's, and with it the allowance left for every later body. Right as stated. The load now records
+what it writes as it goes (`put` and the inserts); a dry run applies those to the stored rows in
+memory (`landmarksAfter`: patches as Convex applies them, removed rows out, inserts last with a
+stored id's length) and reads them through the same chunked read as the table, so its rebuild weighs,
+draws and defers as the applied run's. The batch now also reports `namesDeferredOn` (which bodies)
+and `namesRead`. Held by a fast-check property over generated batches near the boundary (*a dry run
+defers exactly the rebuilds the applied run defers*): the two runs' deferrals, bodies and bytes read
+are equal; Greptile's sixteen-landmark case is pinned.
+
 **Retired:** `contentRecord.personWithdrawals`, the older per-kind withdrawals query. No page, app
 or script called it, only two tests, which now read the withdrawal rows.
 

@@ -619,6 +619,131 @@ describe('a rebuild reads a body by its real size (B01-3u)', () => {
     expect(rows.every((r) => r.landmarks.length === 1 && r.bays.length === 5)).toBe(true);
   });
 
+  /**
+   * Greptile on #167 (P2): the dry run rebuilt from the stored landmarks, not the ones the load would
+   * write, so near the allowance its `namesDeferred` could differ from the applied run's. Now the dry
+   * run weighs the rows the load would leave, through the same read; over generated batches — stored
+   * landmarks and bays, a line of updates, inserts and (with `complete`) drops, an allowance near the
+   * boundary — the dry run's deferrals, which bodies, and what the rebuilds read equal the applied run's.
+   */
+  const SOURCES = [
+    { source: 'vt.osm', count: 100 },
+    { source: 'vt.gnis', count: 10 },
+  ];
+  const label = fc.record({
+    id: fc.nat(5),
+    name: fc.constantFrom('Apple Island', 'Long Point', 'The Gut', 'Mud Bay', 'Diamond Island'),
+    pad: fc.nat(300),
+  });
+  const bodyArb = fc.record({
+    stored: fc.array(label, { maxLength: 4 }),
+    bays: fc.nat(2),
+    line: fc.array(label, { maxLength: 4 }),
+    complete: fc.boolean(),
+  });
+  type BodySpec = {
+    stored: { id: number; name: string; pad: number }[];
+    bays: number;
+    line: { id: number; name: string; pad: number }[];
+    complete: boolean;
+  };
+  async function batchAgrees(spec: { bodies: BodySpec[]; allowance: number }) {
+    vi.setSystemTime(T0);
+    Object.assign(NAMES_BOUNDS, { loadBytes: spec.allowance });
+    const w = await world();
+    const bodies = await w.t.run(async (ctx) => {
+      const base = (await ctx.db.get(w.bodies[0] as Id<'waterBodies'>)) as Doc<'waterBodies'>;
+      const { _id, _creationTime, ...rest } = base;
+      await ctx.db.insert('landmarkSourceBaselines', { sources: SOURCES, acceptedAt: 0 });
+      const out: Id<'waterBodies'>[] = [];
+      for (const [b, body] of spec.bodies.entries()) {
+        const id = await ctx.db.insert('waterBodies', rest);
+        out.push(id);
+        for (const l of body.stored) {
+          await ctx.db.insert('bodyLandmarks', {
+            waterBodyId: id,
+            name: l.name,
+            kind: 'island',
+            point: { lat: 44.9, lng: -73.4 + l.id * 0.01 },
+            source: 'osm',
+            externalIds: [`osm:node/${b}-${l.id}`],
+            aliases: l.pad > 0 ? ['x'.repeat(l.pad)] : [],
+            createdAt: T0,
+            updatedAt: T0,
+          });
+        }
+      }
+      return out;
+    });
+    for (const [b, body] of spec.bodies.entries()) {
+      for (let i = 0; i < body.bays; i++)
+        await heavyBay(w.t, bodies[b] as Id<'waterBodies'>, `Bay ${i}`);
+    }
+    const batch = (dryRun: boolean) =>
+      w.t.mutation(internal.landmarks.importBatch, {
+        bodies: spec.bodies.map((body, b) => ({
+          waterBodyId: bodies[b] as Id<'waterBodies'>,
+          complete: body.complete,
+          landmarks: body.line.map((l) => ({
+            name: l.name,
+            kind: 'island' as const,
+            point: { lat: 44.9, lng: -73.4 + l.id * 0.01 },
+            source: 'osm' as const,
+            externalIds: [`osm:node/${b}-${l.id}`],
+            aliases: l.pad > 0 ? ['y'.repeat(l.pad)] : [],
+          })),
+        })),
+        sources: SOURCES,
+        acceptMassDrop: true,
+        dryRun,
+      });
+    const dry = await batch(true);
+    const applied = await batch(false);
+    expect({
+      deferred: dry.namesDeferred,
+      on: dry.namesDeferredOn,
+      read: dry.namesRead,
+    }).toEqual({
+      deferred: applied.namesDeferred,
+      on: applied.namesDeferredOn,
+      read: applied.namesRead,
+    });
+  }
+
+  test('a dry run defers exactly the rebuilds the applied run defers, over any batch', async () => {
+    // Greptile's case, pinned: sixteen landmarks added near the remaining allowance.
+    await batchAgrees({
+      allowance: 40_000,
+      bodies: [
+        { stored: [], bays: 2, line: [], complete: false },
+        {
+          stored: [],
+          bays: 1,
+          line: Array.from({ length: 16 }, (_, i) => ({
+            id: i % 6,
+            name: 'Apple Island',
+            pad: 200 + i,
+          })),
+          complete: false,
+        },
+        { stored: [{ id: 1, name: 'The Gut', pad: 50 }], bays: 1, line: [], complete: false },
+      ],
+    });
+    for (const seed of [11, 20261121, Math.floor(Math.random() * 2 ** 31)]) {
+      console.log(`bodyNameRows dry-run seed ${seed}`);
+      await fc.assert(
+        fc.asyncProperty(
+          fc.record({
+            bodies: fc.array(bodyArb, { minLength: 1, maxLength: 4 }),
+            allowance: fc.integer({ min: 0, max: 120_000 }),
+          }),
+          batchAgrees,
+        ),
+        { seed, numRuns: 12 },
+      );
+    }
+  });
+
   test('a pass ends on what it read, every body is reached, and a failing body is passed over', async () => {
     const w = await world();
     const extra = await w.t.run(async (ctx) => {
