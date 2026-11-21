@@ -21,6 +21,7 @@ import {
   type SeasonWatchSettings,
   type SiteSeries,
   seasonFloorDate,
+  withWinterWindow,
 } from '@skating/core';
 
 /** A stored series as `seasonWatch.series` returns it. */
@@ -277,6 +278,9 @@ export interface SettingsForm {
   sentinelNights: string;
   corpusPct: string;
   winterPct: string;
+  winterWindowNights: string;
+  winterEnterNights: string;
+  winterExitNights: string;
   imageryNudgeF: string;
   thawF: string;
   thawRunDays: string;
@@ -286,13 +290,18 @@ export interface SettingsForm {
 const f1 = (c: number) => String(Math.round(celsiusToFahrenheit(c) * 10) / 10);
 const pct = (fraction: number) => String(Math.round(fraction * 1000) / 10);
 
-export function toForm(s: SeasonWatchSettings): SettingsForm {
+export function toForm(saved: SeasonWatchSettings): SettingsForm {
+  // A version saved before the winter window (D290) shows the window it is read under.
+  const s = withWinterWindow(saved);
   return {
     startMonthDay: s.startMonthDay,
     freezeF: f1(s.freezeC),
     sentinelNights: String(s.sentinelNights),
     corpusPct: pct(s.corpusFraction),
     winterPct: pct(s.winterFraction),
+    winterWindowNights: String(s.winterWindowNights),
+    winterEnterNights: String(s.winterEnterNights),
+    winterExitNights: String(s.winterExitNights),
     imageryNudgeF: f1(s.imageryNudgeC),
     thawF: f1(s.thawC),
     thawRunDays: String(s.thawRunDays),
@@ -320,6 +329,9 @@ export function fromForm(form: SettingsForm, saved: SeasonWatchSettings): Season
     sentinelNights: num(form.sentinelNights),
     corpusFraction: share(form.corpusPct, saved.corpusFraction),
     winterFraction: share(form.winterPct, saved.winterFraction),
+    winterWindowNights: num(form.winterWindowNights),
+    winterEnterNights: num(form.winterEnterNights),
+    winterExitNights: num(form.winterExitNights),
     imageryNudgeC: temp(form.imageryNudgeF, saved.imageryNudgeC),
     thawC: temp(form.thawF, saved.thawC),
     thawRunDays: num(form.thawRunDays),
@@ -327,9 +339,13 @@ export function fromForm(form: SettingsForm, saved: SeasonWatchSettings): Season
   };
 }
 
-/** Whether two settings objects decide the same thing. */
+/**
+ * Whether two settings objects decide the same thing. A version saved before the winter window
+ * (D290) decides the same as one that names the defaults, so an untouched form is not an edit.
+ */
 export function sameSettings(a: SeasonWatchSettings, b: SeasonWatchSettings): boolean {
-  return (Object.keys(a) as (keyof SeasonWatchSettings)[]).every((k) => a[k] === b[k]);
+  const [x, y] = [withWinterWindow(a), withWinterWindow(b)];
+  return (Object.keys(x) as (keyof SeasonWatchSettings)[]).every((k) => x[k] === y[k]);
 }
 
 /** `2026-10-03` → `Oct 3`; `null` → an em dash. */

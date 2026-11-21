@@ -12,6 +12,10 @@ export const seasonWatchSettings = v.object({
   sentinelNights: v.number(),
   corpusFraction: v.number(),
   winterFraction: v.number(),
+  /** The winter window (D290); absent on versions saved before it, which read as 14, 10 and 4. */
+  winterWindowNights: v.optional(v.number()),
+  winterEnterNights: v.optional(v.number()),
+  winterExitNights: v.optional(v.number()),
   imageryNudgeC: v.number(),
   thawC: v.number(),
   thawRunDays: v.number(),
@@ -42,6 +46,13 @@ export const openingDetail = v.object({
   corpus: v.object({ frozen: v.number(), reporting: v.number() }),
 });
 
+/** What the night winter set in measured (D290 adds the window's count). */
+export const winterDetail = v.object({
+  frozen: v.array(namedSiteLow),
+  reporting: v.number(),
+  nights: v.optional(v.number()),
+});
+
 /**
  * One staff email waiting its turn (D212: never two on one day). Each carries what it reports, so
  * the copy is written from what was measured that night rather than re-derived from a rolling
@@ -62,6 +73,8 @@ export const seasonEmail = v.union(
     date: v.string(),
     frozen: v.array(namedSiteLow),
     reporting: v.number(),
+    /** Winter nights in the window the night it set in (D290); absent before the window. */
+    nights: v.optional(v.number()),
   }),
   v.object({ kind: v.literal('closed'), date: v.string(), sitesSampled: v.number() }),
 );
@@ -106,8 +119,11 @@ export const seasonRecordFields = {
   /** The first sentinel night at or below the imagery line, and the sentinels that reached it. */
   imageryNudgeOn: v.optional(v.string()),
   imageryNudgeSites: v.optional(v.array(namedSiteLow)),
-  /** The ordinary lakes that froze the night winter set in, out of how many reported. */
-  winter: v.optional(v.object({ frozen: v.array(namedSiteLow), reporting: v.number() })),
+  /**
+   * The ordinary lakes that froze the night winter set in, out of how many reported, and the winter
+   * nights in the window that night (D290; absent on a winter set in by one night).
+   */
+  winter: v.optional(winterDetail),
 
   /**
    * Staff emails waiting to go, oldest first, and the New York date the last one went (D212). Each

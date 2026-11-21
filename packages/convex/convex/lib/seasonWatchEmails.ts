@@ -10,7 +10,13 @@
  * was measured that night and of the settings that measured it.
  */
 
-import { celsiusToFahrenheit, formatLow, type SeasonWatchSettings } from '@skating/core';
+import {
+  celsiusToFahrenheit,
+  formatLow,
+  type SeasonWatchSettings,
+  windowOptions,
+  winterWindow,
+} from '@skating/core';
 import type { Infer } from 'convex/values';
 
 import type { EmailBlock } from './emailBlocks';
@@ -128,6 +134,7 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
   const { settings } = ctx;
   const freezing = degreesF(settings.freezeC);
   const nudge = degreesF(settings.imageryNudgeC);
+  const { window, enter } = winterWindow(windowOptions(settings));
 
   switch (email.kind) {
     case 'opened': {
@@ -173,7 +180,7 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
         kind: 'list',
         items: [
           `That reminder email when a sentinel sees a ${nudge} night`,
-          `An email when winter sets in region-wide: ${settings.winterFraction === 0.5 ? 'half the' : `${shareWord(settings.winterFraction)} of the`} ordinary lakes freezing on the same night`,
+          `An email when winter sets in region-wide: ${settings.winterFraction === 0.5 ? 'half the' : `${shareWord(settings.winterFraction)} of the`} ordinary lakes freezing on ${enter} of ${window} nights`,
           `An email when the watch ends: ${countWord(settings.thawRunDays)} nights in a row with no freeze at any ordinary lake`,
         ],
       });
@@ -202,17 +209,20 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
       };
 
     case 'winter': {
+      const lakes = shareWord(settings.winterFraction);
       const share = email.reporting > 0 ? email.frozen.length / email.reporting : 0;
-      const relation = share > settings.winterFraction ? 'above' : 'at';
+      // A winter set in before D290 has no window count: one night set it in, against the share.
+      const rule =
+        email.nights === undefined
+          ? `This is ${share > settings.winterFraction ? 'above' : 'at'} the threshold of ${lakes}, and is a measure of the air temperature at those lakes, not actual ice formation.`
+          : `That made ${email.nights} of the last ${window} nights on which at least ${lakes} of the ordinary lakes we sample froze — the rule needs ${enter}. This is a measure of the air temperature at those lakes, not actual ice formation.`;
       return {
         subject: `${title}: Winter Has Set In Region-Wide`,
         heading: `Winter set in region-wide on ${longDate(email.date)}`,
         blocks: [
           {
             kind: 'paragraph',
-            text:
-              `${email.frozen.length} of ${email.reporting} ordinary lakes had a night at or below ${freezing} on ${shortDate(email.date)}. ` +
-              `This is ${relation} the threshold of ${shareWord(settings.winterFraction)}, and is a measure of the air temperature at those lakes, not actual ice formation.`,
+            text: `${email.frozen.length} of ${email.reporting} ordinary lakes had a night at or below ${freezing} on ${shortDate(email.date)}. ${rule}`,
           },
           lowsTable('Lake', email.date, email.frozen),
           {

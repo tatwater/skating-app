@@ -105,39 +105,53 @@ export function iceWatchWords(watch: IceWatch): {
 // ── Winter, region-wide ──────────────────────────────────────────────────────────────────────
 
 export type RegionWinter =
-  | { state: 'not-yet' }
+  | {
+      state: 'not-yet';
+      /** Winter nights in the last `window` — half the bodies at or below the line (D290). */
+      nights: number;
+      window: number;
+      /** How many winter nights in the window set winter in. */
+      needs: number;
+      /** The freezing line the nights were counted under, °C. Absent reads as 0 °C. */
+      freezeC?: number;
+    }
   | {
       state: 'set';
-      /** The night it was recorded for. */
+      /** The night it set in. */
       from: number;
-      /** How many nights in a row met the rule — one is a fragile winter, flagged amber. */
+      /** The night it ended, once the window emptied; the watch runs on to its own end. */
+      endedOn: number | null;
       nights: number;
-      frozen: number;
-      reporting: number;
-      /** How many bodies the rule needs on a night. */
-      needs: number;
-      /**
-       * The freezing line `frozen` was counted under, °C (the settings that decided the season).
-       * Absent reads as the default line, 0 °C.
-       */
+      window: number;
       freezeC?: number;
     };
 
 export function winterWords(winter: RegionWinter): {
   value: string;
   unit?: string;
-  tone: 'default' | 'dim' | 'warn';
+  tone: 'default' | 'dim';
   sub: string;
 } {
-  if (winter.state === 'not-yet') {
-    return { value: 'Not yet', tone: 'dim', sub: 'No night has met the rule' };
-  }
-  // The line the bodies were counted under, never an assumed 32 °F: staff can move it.
+  // The line the nights were counted under, never an assumed 32 °F: staff can move it.
   const lineF = Math.round(celsiusToFahrenheit(winter.freezeC ?? 0));
-  const sub = `${winter.frozen} of ${winter.reporting} bodies ≤ ${lineF} °F on ${dayMonthOf(winter.from)} · needs ${winter.needs}`;
-  // A winter recorded from a single night waits on a person to look at the thresholds.
-  if (winter.nights <= 1) return { value: 'One night', tone: 'warn', sub };
-  return { value: 'Set in', unit: `Since ${dayMonthOf(winter.from)}`, tone: 'default', sub };
+  const counted = `${winter.nights} of the last ${winter.window} nights ≤ ${lineF} °F`;
+  if (winter.state === 'not-yet') {
+    return { value: 'Not yet', tone: 'dim', sub: `${counted} · needs ${winter.needs}` };
+  }
+  if (winter.endedOn !== null) {
+    return {
+      value: 'Ended',
+      unit: `On ${dayMonthOf(winter.endedOn)}`,
+      tone: 'dim',
+      sub: `Set in ${dayMonthOf(winter.from)} · ${counted}`,
+    };
+  }
+  return {
+    value: 'Set in',
+    unit: `Since ${dayMonthOf(winter.from)}`,
+    tone: 'default',
+    sub: counted,
+  };
 }
 
 // ── Imagery ──────────────────────────────────────────────────────────────────────────────────
@@ -267,8 +281,21 @@ export function seasonFromSummary(
       summary.winter === null || unrecordedPast
         ? null
         : summary.winter.state === 'not-yet'
-          ? { state: 'not-yet' }
-          : { ...summary.winter, from: isoDay(summary.winter.from) },
+          ? {
+              state: 'not-yet',
+              nights: summary.winter.nights,
+              window: summary.winter.window,
+              needs: summary.winter.needs,
+              freezeC: summary.winter.freezeC,
+            }
+          : {
+              state: 'set',
+              from: isoDay(summary.winter.from),
+              endedOn: summary.winter.endedOn === null ? null : isoDay(summary.winter.endedOn),
+              nights: summary.winter.nights,
+              window: summary.winter.window,
+              freezeC: summary.winter.freezeC,
+            },
     imagery: unrecordedPast && summary.imagery.state === 'not-started' ? null : summary.imagery,
     firstSkate:
       first === null

@@ -52,7 +52,7 @@ describe('fetchHourlyRows', () => {
         metered.push(n);
       },
     );
-    expect(out).toMatchObject({ failed: 0, requests: 3, lastError: null });
+    expect(out).toMatchObject({ failed: 0, requests: 3, lastError: null, lastErrorClass: null });
     expect(out.rows.every((r) => r?.hourly?.time?.length === 24)).toBe(true);
     // Each attempt is metered by its sites — the retry included.
     expect(metered.reduce((a, b) => a + b, 0)).toBe(10);
@@ -111,6 +111,8 @@ describe('fetchHourlyRows', () => {
     expect(out.rows[1]).toBeUndefined();
     expect(out.rows[2]?.hourly?.time?.length).toBe(24);
     expect(out.lastError).toMatch(/Open-Meteo (429|502)/);
+    // The class the tick's failure record keeps, since it keeps no message.
+    expect(out.lastErrorClass).toMatch(/^HTTP (429|502)$/);
   });
 
   test('a stalled API runs out the budget, not the action: no attempt starts past it', async () => {
@@ -138,6 +140,7 @@ describe('fetchHourlyRows', () => {
     expect(out.failed).toBe(9);
     expect(out.rows.every((r) => r === undefined)).toBe(true);
     expect(out.lastError).toMatch(/out of time after 0 s/);
+    expect(out.lastErrorClass).toBe('out of time');
   });
 
   test.each([1, 2])('skips attempt %i if metering exhausts the budget', async (n) => {
@@ -166,6 +169,7 @@ describe('fetchHourlyRows', () => {
       requests: 1,
       rows: [undefined],
       lastError: 'Open-Meteo: out of time after 5 s',
+      lastErrorClass: 'out of time',
     });
   });
 
@@ -192,6 +196,22 @@ describe('fetchHourlyRows', () => {
     expect(out).toMatchObject({ failed: 0, requests: 1, lastError: null });
   });
 
+  test.each([
+    ['unreachable', () => Promise.reject(new TypeError('fetch failed'))],
+    ['cut off', async () => new Response('[{"hourly":{"time":[1,')],
+  ])('names a %s failure for the record', async (kind, impl) => {
+    vi.stubGlobal('fetch', vi.fn(impl));
+    const out = await fetchHourlyRows(
+      'https://x.test',
+      new URLSearchParams(),
+      [{ lat: 44, lng: -71 }],
+      1,
+      async () => {},
+    );
+    expect(out.failed).toBe(1);
+    expect(out.lastErrorClass).toBe(kind);
+  });
+
   test('an answer missing a requested site is a failed request, retried once', async () => {
     const sites = [0, 1, 2].map((i) => ({ lat: 44 + i, lng: -71.65 }));
     let calls = 0;
@@ -215,5 +235,6 @@ describe('fetchHourlyRows', () => {
     expect(out.failed).toBe(1);
     expect(out.rows.every((r) => r === undefined)).toBe(true);
     expect(out.lastError).toBe('Open-Meteo answered for 2 of 3 sites');
+    expect(out.lastErrorClass).toBe('short answer');
   });
 });

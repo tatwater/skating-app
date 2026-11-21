@@ -59,10 +59,21 @@ export interface GateOptions {
    */
   corpusFraction?: number;
   /**
-   * The fraction that must freeze for **winter to count as established**, which is what closing is
-   * measured from. Deliberately a majority, where opening takes almost anything.
+   * The fraction of ordinary sites that must freeze on a night for it to be a **winter night**.
+   * Deliberately a majority, where opening takes almost anything.
    */
   winterFraction?: number;
+  /**
+   * The nights the winter rule looks back over, ending on the night it is asked about (D290).
+   * Winter sets in when {@link GateOptions.winterEnterNights} of them are winter nights, and ends
+   * when no more than {@link GateOptions.winterExitNights} are. One window of one night, entered on
+   * one, is the rule before D290: a single winter night set it in for good.
+   */
+  winterWindowNights?: number;
+  /** Winter nights in the window that set winter in — on a night that is itself a winter night. */
+  winterEnterNights?: number;
+  /** Winter nights in the window at or below which winter has ended. Fewer than the enter count. */
+  winterExitNights?: number;
   /**
    * A day whose low stays above this counts as thaw at a site.
    *
@@ -166,6 +177,16 @@ export function dailyLowsFromOpenMeteo(
 export const DEFAULT_FREEZE_C = 0;
 export const DEFAULT_CORPUS_FRACTION = 0.1;
 export const DEFAULT_WINTER_FRACTION = 0.5;
+/**
+ * 10 of the last 14 nights to set winter in, 4 or fewer to end it (D290). Backtested over ten
+ * seasons of stored lows (2016-17 to 2025-26): onset 13 Nov – 9 Dec, the end mid-April to early
+ * May, and only one season (2019-20's late-April cold snap) in which winter ended and came back.
+ * Counting runs of nights instead flickered in eight of the ten; one night alone set winter in
+ * between 10 October and 9 November every year, weeks before the region froze.
+ */
+export const DEFAULT_WINTER_WINDOW_NIGHTS = 14;
+export const DEFAULT_WINTER_ENTER_NIGHTS = 10;
+export const DEFAULT_WINTER_EXIT_NIGHTS = 4;
 export const DEFAULT_THAW_C = 0;
 export const DEFAULT_THAW_RUN_DAYS = 10;
 export const DEFAULT_SENTINEL_NIGHTS = 1;
@@ -195,9 +216,10 @@ export interface GateWindow {
   opening: { sentinels: SiteLow[]; corpus: { frozen: number; reporting: number } } | null;
   /**
    * What the night winter established measured: the ordinary sites that froze, coldest first, out of
-   * how many reported. `null` while winter has not established.
+   * how many reported, and how many of the window's nights were winter nights. `null` while winter
+   * has not established.
    */
-  winter: { frozen: SiteLow[]; reporting: number } | null;
+  winter: { frozen: SiteLow[]; reporting: number; nights: number } | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -355,7 +377,7 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   const established = winterOnOrAfter(sites, opensOn, options);
   const winterFrom = established?.date ?? null;
   const winter: GateWindow['winter'] = established
-    ? { frozen: established.frozen, reporting: established.reporting }
+    ? { frozen: established.frozen, reporting: established.reporting, nights: established.nights }
     : null;
   if (winterFrom === null) {
     return { opensOn, winterFrom: null, closesOn: null, openedBy, opening, winter: null };
@@ -372,9 +394,17 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
 }
 
 /**
- * The first night on or after `from` on which at least `winterFraction` of the **ordinary** sites
- * that reported were at or below freezing — winter established region-wide — with the sites that
- * froze, coldest first.
+ * The first night on or after `from` on which winter set in region-wide (D290): a **winter night**
+ * — at least `winterFraction` of the ordinary sites that reported were at or below freezing — that
+ * brings the winter nights in the window ending on it (`winterWindowNights`) to `winterEnterNights`.
+ * With the sites that froze that night, coldest first, and the window's count.
+ *
+ * ⚠ **A window, not one night and not a run.** One night set winter in weeks before the region froze
+ * every year on record, and the watch's end is measured from it (`thawClose`), so a warm fortnight
+ * in October could end the watch. A run of nights flickers instead: shoulder-season nights
+ * alternate, and a three-night January thaw ends a run where it barely dents a window.
+ *
+ * The window may reach back before `from`: cold nights before the watch opened are still cold.
  *
  * Split out of {@link ingestWindow} for the live watch (A06i): a season already open under one set
  * of settings looks for winter from its *recorded* opening date, not from wherever a re-run of the
@@ -385,21 +415,110 @@ export function winterOnOrAfter(
   sites: readonly SiteSeries[],
   from: string,
   options: GateOptions = {},
-): { date: string; frozen: SiteLow[]; reporting: number } | null {
-  const others = sites.filter((s) => !s.sentinel);
-  const index = indexLows(sites);
-  for (const date of allDates(sites)) {
-    if (date < from) continue;
-    const night = winterNight(lowsOn(others, date, index), options);
-    if (night !== null) return { date, ...night };
+): { date: string; frozen: SiteLow[]; reporting: number; nights: number } | null {
+  const { enter } = winterWindow(options);
+  const nights = winterNights(sites, options);
+  for (const [date, night] of nights) {
+    if (date < from || night === null) continue;
+    const count = countInWindow(nights, date, options);
+    if (count >= enter) return { date, ...night, nights: count };
   }
   return null;
 }
 
 /**
+ * The first night after `winterFrom` on which winter ended (D290): the winter nights in the window
+ * ending on it fell to `winterExitNights` or fewer. `null` while winter holds.
+ *
+ * Only a night some ordinary site reported on can end it, so the days after the last reading —
+ * today, or a tick that failed — never read as winter ending; a gap *inside* the window counts as
+ * no winter night, as a gap never counts toward winter anywhere in this file.
+ *
+ * What the console shows; it never closes the watch. That stays `thawClose`'s, which is reluctant on
+ * purpose: ice goes out weeks after the air warms.
+ */
+export function winterEndAfter(
+  sites: readonly SiteSeries[],
+  winterFrom: string,
+  options: GateOptions = {},
+): string | null {
+  const { exit } = winterWindow(options);
+  const nights = winterNights(sites, options);
+  for (const date of nights.keys()) {
+    if (date <= winterFrom) continue;
+    if (countInWindow(nights, date, options) <= exit) return date;
+  }
+  return null;
+}
+
+/**
+ * How many of the `winterWindowNights` nights ending on `date` were winter nights — what the console
+ * shows beside winter's state ("9 of the last 14 nights"). A night no ordinary site reported on is
+ * not one.
+ */
+export function winterNightsInWindow(
+  sites: readonly SiteSeries[],
+  date: string,
+  options: GateOptions = {},
+): number {
+  return countInWindow(winterNights(sites, options), date, options);
+}
+
+/**
+ * The window's sizes, whole and in order: a window of at least one night, an enter count inside it,
+ * and an exit count below the enter count — so a winter can always be entered, and is never both
+ * entered and ended on the same night.
+ */
+export function winterWindow(options: GateOptions = {}): {
+  window: number;
+  enter: number;
+  exit: number;
+} {
+  const window = Math.max(
+    1,
+    Math.floor(options.winterWindowNights ?? DEFAULT_WINTER_WINDOW_NIGHTS),
+  );
+  const enter = Math.min(
+    window,
+    Math.max(1, Math.floor(options.winterEnterNights ?? DEFAULT_WINTER_ENTER_NIGHTS)),
+  );
+  const exit = Math.min(
+    enter - 1,
+    Math.max(0, Math.floor(options.winterExitNights ?? DEFAULT_WINTER_EXIT_NIGHTS)),
+  );
+  return { window, enter, exit };
+}
+
+/** Every date an ordinary site reported, ascending, with that night's winter verdict. */
+function winterNights(
+  sites: readonly SiteSeries[],
+  options: GateOptions,
+): Map<string, { frozen: SiteLow[]; reporting: number } | null> {
+  const others = sites.filter((s) => !s.sentinel);
+  const index = indexLows(others);
+  const out = new Map<string, { frozen: SiteLow[]; reporting: number } | null>();
+  for (const date of allDates(others))
+    out.set(date, winterNight(lowsOn(others, date, index), options));
+  return out;
+}
+
+function countInWindow(
+  nights: ReadonlyMap<string, { frozen: SiteLow[]; reporting: number } | null>,
+  date: string,
+  options: GateOptions,
+): number {
+  const { window } = winterWindow(options);
+  let count = 0;
+  for (let back = 0; back < window; back++) {
+    if (nights.get(addDaysIso(date, -back))) count++;
+  }
+  return count;
+}
+
+/**
  * The winter rule on one night, given the ordinary sites that reported on it: the sites that froze,
  * coldest first, when at least `winterFraction` of them did; `null` when too few did, or none
- * reported. The one rule {@link winterOnOrAfter} and {@link winterRunNights} both apply.
+ * reported.
  */
 function winterNight(
   lows: ReadonlyMap<string, number>,
@@ -411,48 +530,9 @@ function winterNight(
     .filter(([, low]) => low <= freezeC)
     .map(([siteId, lowC]) => ({ siteId, lowC }));
   // Asked as "meets the fraction", never "falls short of it": a fraction that isn't a number then
-  // meets nothing, as `winterOnOrAfter` always read it, rather than every night.
+  // meets nothing, rather than every night.
   if (lows.size === 0 || !(frozen.length / lows.size >= winterFraction)) return null;
   return { frozen: frozen.sort(byLow), reporting: lows.size };
-}
-
-/**
- * How many nights in a row, starting on `from`, met the winter rule (B01's season tile). One is a
- * fragile winter — a single cold night that a warm one undid — which the console flags for a person to
- * look at; zero means `from` itself did not meet it.
- *
- * A night no ordinary site reported on ends the run, as a missing reading never counts toward a
- * run anywhere in this file: a gap in the record must not read as winter holding. Bounded by the
- * series — a run can't outlast the last date any site reported.
- */
-export function winterRunNights(
-  sites: readonly SiteSeries[],
-  from: string,
-  options: GateOptions = {},
-): number {
-  const others = sites.filter((s) => !s.sentinel);
-  const index = indexLows(sites);
-  const last = allDates(others).at(-1);
-  let nights = 0;
-  for (let date = from; last !== undefined && date <= last; date = addDaysIso(date, 1)) {
-    if (winterNight(lowsOn(others, date, index), options) === null) break;
-    nights++;
-  }
-  return nights;
-}
-
-/**
- * The fewest of `reporting` sites that must freeze for a night to meet the winter rule — the
- * smallest `k` with `k / reporting >= winterFraction`, the same comparison {@link winterOnOrAfter}
- * makes. Computed from that comparison rather than as `ceil(fraction × reporting)`, which floating
- * point puts one too high (`0.3 × 10` is `3.0000000000000004`).
- */
-export function winterNeeds(reporting: number, winterFraction: number): number {
-  if (reporting <= 0) return 0;
-  let k = Math.min(reporting, Math.max(0, Math.ceil(winterFraction * reporting)));
-  while (k > 0 && (k - 1) / reporting >= winterFraction) k--;
-  while (k < reporting && k / reporting < winterFraction) k++;
-  return k;
 }
 
 /**

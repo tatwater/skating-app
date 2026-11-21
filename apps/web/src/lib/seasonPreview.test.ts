@@ -205,6 +205,9 @@ describe('the form', () => {
       sentinelNights: '1',
       corpusPct: '10',
       winterPct: '50',
+      winterWindowNights: '14',
+      winterEnterNights: '10',
+      winterExitNights: '4',
       imageryNudgeF: '20',
       thawF: '32',
       thawRunDays: '10',
@@ -213,6 +216,21 @@ describe('the form', () => {
     const back = fromForm(form, DEFAULT_SEASON_WATCH_SETTINGS);
     expect(back).toEqual(DEFAULT_SEASON_WATCH_SETTINGS);
     expect(sameSettings(back, DEFAULT_SEASON_WATCH_SETTINGS)).toBe(true);
+  });
+
+  it('reads a version saved before the winter window as the defaults, and not as an edit', () => {
+    const { winterWindowNights, winterEnterNights, winterExitNights, ...before } =
+      DEFAULT_SEASON_WATCH_SETTINGS;
+    const form = toForm(before);
+    expect(form).toMatchObject({
+      winterWindowNights: '14',
+      winterEnterNights: '10',
+      winterExitNights: '4',
+    });
+    expect(sameSettings(fromForm(form, before), before)).toBe(true);
+    const edited = fromForm({ ...form, winterEnterNights: '12' }, before);
+    expect(edited.winterEnterNights).toBe(12);
+    expect(sameSettings(edited, before)).toBe(false);
   });
 
   it('converts an edit, and leaves a blank field as NaN for validation to name', () => {

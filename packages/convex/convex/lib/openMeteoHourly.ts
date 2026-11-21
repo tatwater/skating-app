@@ -47,6 +47,11 @@ export interface HourlyFetch {
   failed: number;
   requests: number;
   lastError: string | null;
+  /**
+   * The last error's class — `unreachable`, `HTTP 429`, `cut off`, `short answer`, `out of time` —
+   * short enough to keep on a failure record, where the message itself is not kept.
+   */
+  lastErrorClass: string | null;
 }
 
 /** Records each attempt on the call meter (`externalApiCalls`) — told the sites it asked for. */
@@ -73,6 +78,7 @@ class FetchFailure extends Error {
   constructor(
     message: string,
     readonly retryable: boolean,
+    readonly kind: string,
   ) {
     super(message);
   }
@@ -86,15 +92,23 @@ async function attempt(
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
-    throw new FetchFailure(`Open-Meteo did not answer: ${String(error)}`, true);
+    throw new FetchFailure(`Open-Meteo did not answer: ${String(error)}`, true, 'unreachable');
   }
   if (!res.ok) {
-    throw new FetchFailure(`Open-Meteo ${res.status} ${res.statusText}`, res.status >= 500);
+    throw new FetchFailure(
+      `Open-Meteo ${res.status} ${res.statusText}`,
+      res.status >= 500,
+      `HTTP ${res.status}`,
+    );
   }
   try {
     return (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
   } catch (error) {
-    throw new FetchFailure(`Open-Meteo's answer did not arrive whole: ${String(error)}`, true);
+    throw new FetchFailure(
+      `Open-Meteo's answer did not arrive whole: ${String(error)}`,
+      true,
+      'cut off',
+    );
   }
 }
 
@@ -116,6 +130,7 @@ export async function fetchHourlyRows(
   const rows: (OpenMeteoHourlyRow | undefined)[] = new Array(sites.length).fill(undefined);
   let failed = 0;
   let lastError: string | null = null;
+  let lastErrorClass: string | null = null;
 
   const one = async (chunk: (typeof chunks)[number]) => {
     const query = new URLSearchParams(params);
@@ -139,6 +154,7 @@ export async function fetchHourlyRows(
           throw new FetchFailure(
             `Open-Meteo answered for ${whole} of ${chunk.sites.length} sites`,
             true,
+            'short answer',
           );
         }
         chunk.sites.forEach((_, j) => {
@@ -147,19 +163,21 @@ export async function fetchHourlyRows(
         return;
       } catch (error) {
         const failure =
-          error instanceof FetchFailure ? error : new FetchFailure(String(error), false);
+          error instanceof FetchFailure ? error : new FetchFailure(String(error), false, 'unknown');
         if (failure.retryable && n < 2) continue;
         failed++;
         lastError = failure.message;
+        lastErrorClass = failure.kind;
         return;
       }
     }
     failed++;
     lastError = `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`;
+    lastErrorClass = 'out of time';
   };
 
   for (let i = 0; i < chunks.length; i += FETCHES_AT_ONCE) {
     await Promise.all(chunks.slice(i, i + FETCHES_AT_ONCE).map(one));
   }
-  return { rows, failed, requests: chunks.length, lastError };
+  return { rows, failed, requests: chunks.length, lastError, lastErrorClass };
 }

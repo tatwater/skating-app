@@ -275,3 +275,45 @@ a main-based schema cannot validate; that branch is never pushed. What the real 
   (`fly deploy --build-only --push`, `deployment-01M4PM9DRGFJDYBYFSDDACEYQT`) passed its smoke test
   and is pinned as `FLY_IMAGE` on dev.
 - The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.
+
+## Winter region-wide as a window — 2026-11-20 (D290)
+
+The Overview's winter tile read *One night · 13 of 25 bodies ≤ 32 °F on 7 Oct · needs 13* in late
+November, with the sentinels regularly at 20–32 °F. The tile was not counting nights since October.
+The rule had recorded winter on the first night half the ordinary lakes froze (7 October) and never
+looked again, and the tile showed how long that first run lasted. The watch's end is measured from
+that date, so 3–10 November, with no freeze at any ordinary lake, came within two nights of ending
+the watch, and imagery and the weather sweep with it.
+
+**What the stored lows said** (dev's `seasonWatchSeries`, every season back to 2016-17; a *winter
+night* is half the ordinary lakes at or below 32 °F):
+
+| Rule | Winter set in | Seasons it ended and came back | 2026-27 so far |
+| --- | --- | --- | --- |
+| One winter night (the old rule) | 10 Oct – 9 Nov | can't end | 7 Oct |
+| 3 winter nights in a row; 3 warm in a row ends it | 27 Oct – 22 Nov | 8 of 10 | 19 Oct to 4 Nov, then none |
+| **10 of the last 14 nights; 4 or fewer ends it** | 13 Nov – 9 Dec | 1 of 10 | not yet |
+| 14 of the last 21 nights; 7 or fewer ends it | 18 Nov – 8 Dec | 0 of 10 | not yet |
+| 7-night weighted mean of the regional low | 12 Nov – 10 Dec | 0–1 of 10 | not yet |
+
+The founder chose 14 nights (D290). The one season that ended and came back, 2019-20, had a real
+cold snap from 22 April to 5 May. The weighted mean did as well, but its threshold is in degrees,
+which is harder to read on a tile and to tune.
+
+**What changed.** `winterOnOrAfter` sets winter in on a winter night that brings the window to its
+enter count. `winterEndAfter` finds the night the window falls to the exit count; only a night some
+lake reported on can end it, so a failed tick never reads as a thaw. `winterNightsInWindow` is the
+tile's count. The three knobs are versioned settings on `/admin/seasons`, absent on older versions,
+which read as the defaults. The tile reads *Not yet · 2 of the last 14 nights ≤ 32 °F · needs 10*,
+then *Set in · Since …*, then *Ended · On …*, and never amber. The winter email states the window
+count. The 7 October winter is cleared by `imageryIngest.redecideWinter`, which leaves the opening
+and its email alone, so only the winter email goes out, when winter sets in.
+
+**The daily tick had failed 18–20 November.** Lows stopped at 16 November. `jobFailures` held three
+failures of class `Error` and no message (the record keeps none), and the logs had rolled past them.
+A manual run that evening went through and re-read the missing nights through 19 November (every
+tick re-reads 92 days, so nothing was lost), and the same request from a laptop answered in 0.5 s. Our metered use was 1.5–4k weighted
+calls a day, well inside the free tier, so it was not our own quota; a refusal shared with other
+tenants of Convex's egress, or a timeout, fits, but the cause is gone. The tick now records the
+fetch's class (`Open-Meteo HTTP 429`, `unreachable`, `out of time`, …) and tries again twice that
+day, three hours apart, before waiting for tomorrow.

@@ -119,7 +119,7 @@ export interface WatchRow {
   opening?: { sentinels: NamedLow[]; corpus: { frozen: number; reporting: number } };
   imageryNudgeOn?: string;
   imageryNudgeSites?: NamedLow[];
-  winter?: { frozen: NamedLow[]; reporting: number };
+  winter?: { frozen: NamedLow[]; reporting: number; nights?: number };
   emailQueue?: { email: { kind: string; date: string } }[];
   emailsSent?: { kind: string; sentOn: string }[];
   imageryStartedAt?: number;
@@ -198,7 +198,9 @@ export function WatchCard({
           value={shortDay(row.winterFrom)}
           hint={
             row.winter
-              ? `${row.winter.frozen.length} of ${row.winter.reporting} ordinary lakes`
+              ? row.winter.nights === undefined
+                ? `${row.winter.frozen.length} of ${row.winter.reporting} ordinary lakes`
+                : `${row.winter.nights} winter nights in the window · ${row.winter.frozen.length} of ${row.winter.reporting} lakes that night`
               : 'Not yet'
           }
         />
@@ -525,9 +527,27 @@ const FIELDS: { key: keyof SettingsForm; label: string; unit: string; help: stri
   },
   {
     key: 'winterPct',
-    label: 'Ordinary lakes for winter',
+    label: 'Ordinary lakes for a winter night',
     unit: '%',
-    help: 'Winter has set in region-wide when this share freeze on one night. The end is measured from it.',
+    help: 'A night on which this share of ordinary lakes freeze is a winter night.',
+  },
+  {
+    key: 'winterWindowNights',
+    label: 'Winter window',
+    unit: 'nights',
+    help: 'How many recent nights the winter rule counts winter nights over.',
+  },
+  {
+    key: 'winterEnterNights',
+    label: 'Winter nights to set in',
+    unit: 'nights',
+    help: 'Winter sets in region-wide on a winter night that brings the window to this many. The watch’s end is measured from it.',
+  },
+  {
+    key: 'winterExitNights',
+    label: 'Winter nights to end',
+    unit: 'nights',
+    help: 'Winter has ended when the window holds this many or fewer. Only the thawed nights below end the watch.',
   },
   {
     key: 'imageryNudgeF',
