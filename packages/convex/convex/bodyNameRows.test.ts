@@ -17,7 +17,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import * as bodyNamesLib from './lib/bodyNames';
-import { BODY_NAMES_READ_MAX_BYTES, READ_CHUNK, refreshBodyNames } from './lib/bodyNames';
+import { NAMES_BOUNDS, READ_CHUNK, refreshBodyNames } from './lib/bodyNames';
 import { undoStates } from './lib/undo';
 import { UNDO_BAY_NAME_ON_LANDMARK } from './lib/undoHandlersBody';
 import schema from './schema';
@@ -524,10 +524,15 @@ describe('the list on History', () => {
 });
 
 describe('a rebuild reads a body by its real size (B01-3u)', () => {
-  /** A bay with a long outline (~0.6 MB), inserted as a loader would leave it. */
+  // The bounds shrunk to small bays (the real ones are 4 MiB each), and put back.
+  const real = { ...NAMES_BOUNDS };
+  beforeEach(() => Object.assign(NAMES_BOUNDS, { readMaxBytes: 80_000, passBytes: 100_000 }));
+  afterEach(() => Object.assign(NAMES_BOUNDS, real));
+
+  /** A bay with a long outline (~10 KB; the bounds shrunk to match), as a loader would leave it. */
   async function heavyBay(t: W['t'], waterBodyId: Id<'waterBodies'>, name: string) {
     const ring: number[][] = [];
-    for (let i = 0; i < 20_000; i++) ring.push([-73.4 + i * 1e-6, 44.1 + (i % 2) * 1e-6]);
+    for (let i = 0; i < 400; i++) ring.push([-73.4 + i * 1e-6, 44.1 + (i % 2) * 1e-6]);
     ring.push(ring[0] as number[]);
     return t.run(async (ctx) =>
       ctx.db.insert('waterBodySubAreas', {
@@ -552,12 +557,12 @@ describe('a rebuild reads a body by its real size (B01-3u)', () => {
     const body = w.bodies[0] as Id<'waterBodies'>;
     const id = await heavyBay(w.t, body, 'Bay 0');
     const each = await w.t.run(async (ctx) => getDocumentSize((await ctx.db.get(id)) as never));
-    const n = Math.ceil(BODY_NAMES_READ_MAX_BYTES / each) + READ_CHUNK.bays;
+    const n = Math.ceil(NAMES_BOUNDS.readMaxBytes / each) + READ_CHUNK.bays;
     for (let i = 1; i < n; i++) await heavyBay(w.t, body, `Bay ${i}`);
     const refreshed = await w.t.run((ctx) => refreshBodyNames(ctx, body));
     // It stopped at the bound and one chunk past it — not at every bay.
     expect(refreshed.read).toBeLessThanOrEqual(
-      BODY_NAMES_READ_MAX_BYTES + (READ_CHUNK.bays + 1) * each,
+      NAMES_BOUNDS.readMaxBytes + (READ_CHUNK.bays + 1) * each,
     );
     expect(refreshed.read).toBeLessThan(n * each);
     const row = await w.t.run((ctx) => ctx.db.query('bodyNameLists').first());
@@ -583,7 +588,7 @@ describe('a rebuild reads a body by its real size (B01-3u)', () => {
     });
     spy.mockRestore();
     expect(first.failed).toBe(1);
-    // Four bodies of ~2.8 MB each: the pass stopped on bytes, not on its fifty bodies.
+    // Four bodies of seven bays each: the pass stopped on bytes, not on its fifty bodies.
     expect(first.bodies).toBeGreaterThan(1);
     expect(first.bodies).toBeLessThan(bodies.length);
     await w.t.mutation(internal.landmarks.backfillBodyNames, { phase: 'bays' });

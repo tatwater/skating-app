@@ -59,6 +59,9 @@ export function namesBytes(
  */
 export const BODY_NAMES_READ_MAX_BYTES = 4 * 1024 * 1024;
 
+/** The bounds in force — a test seam (a test shrinks them to small rows, then puts them back). */
+export const NAMES_BOUNDS = { readMaxBytes: BODY_NAMES_READ_MAX_BYTES, passBytes: 4 * 1024 * 1024 };
+
 /** Rows a rebuild reads at a time: a landmark is small in fact; a bay carries its whole outline. */
 export const READ_CHUNK = { landmarks: 64, bays: 4 } as const;
 
@@ -70,12 +73,12 @@ async function weighedRows<D extends { _creationTime: number }>(
 ): Promise<{ rows: D[]; over: boolean }> {
   const rows: D[] = [];
   for (let after: number | null = null; ; ) {
-    if (spent.bytes > BODY_NAMES_READ_MAX_BYTES) return { rows, over: true };
+    if (spent.bytes > NAMES_BOUNDS.readMaxBytes) return { rows, over: true };
     const page = await take(after, chunk);
     for (const row of page) spent.bytes += getDocumentSize(row as never);
     rows.push(...page);
     if (page.length < chunk) {
-      return { rows, over: spent.bytes > BODY_NAMES_READ_MAX_BYTES };
+      return { rows, over: spent.bytes > NAMES_BOUNDS.readMaxBytes };
     }
     after = (page[page.length - 1] as D)._creationTime;
   }

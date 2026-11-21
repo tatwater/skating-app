@@ -50,7 +50,7 @@ import {
 import { composed } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
-import { refreshBodyNames } from './lib/bodyNames';
+import { NAMES_BOUNDS, refreshBodyNames } from './lib/bodyNames';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -329,11 +329,11 @@ export const importBatch = internalMutation({
 });
 
 /**
- * Bytes a pass of the names backfill reads, at most, beyond its first body: each rebuild reads at
- * most `BODY_NAMES_READ_MAX_BYTES` and a chunk (`lib/bodyNames`), so a pass is under the
- * transaction's read limit whatever the bodies weigh.
+ * Bytes a pass of the names backfill reads, at most, beyond its first body, is
+ * `NAMES_BOUNDS.passBytes` (4 MiB, `lib/bodyNames`): each rebuild reads at most
+ * `BODY_NAMES_READ_MAX_BYTES` and a chunk, so a pass is under the transaction's read limit whatever
+ * the bodies weigh.
  */
-const NAMES_PASS_BYTES = 4 * 1024 * 1024;
 /** Bodies a pass of the names backfill rebuilds at most. */
 const NAMES_PASS_BODIES = 50;
 
@@ -341,7 +341,7 @@ const NAMES_PASS_BODIES = 50;
  * Backfill: **every body's short list of place names** (B01-3u, `lib/bodyNames`) — one row for each
  * body that has a landmark or a bay, rebuilt by the one writer. Bodies are found a step at a time
  * through the landmark index, then the bay index (`gt` the last body seen: one row read a body, never
- * the table). A pass rebuilds bodies until what they read passes `NAMES_PASS_BYTES` (its first body
+ * the table). A pass rebuilds bodies until what they read passes `NAMES_BOUNDS.passBytes` (its first body
  * always) or it has rebuilt `NAMES_PASS_BODIES`, then schedules the next. Each step moves past its
  * body before rebuilding it, so a body whose rebuild throws is logged and passed over — its row left
  * as it was, absent or capped: the conservative answer — and the walk never wedges. A giant reads
@@ -375,7 +375,7 @@ export const backfillBodyNames = internalMutation({
             .withIndex('by_parent', (q) => (after ? q.gt('waterBodyId', after) : q))
             .first();
     for (;;) {
-      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_PASS_BYTES)) break;
+      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_BOUNDS.passBytes)) break;
       const row = await next();
       if (row === null) {
         // This phase is done: the bays next, or the end.
