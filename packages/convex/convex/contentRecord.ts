@@ -105,7 +105,7 @@ async function loadTarget(
 }
 
 /** The record's pages run beside the caller's own profile read (`requireCapability`). */
-const recordBudget = () => new ReadBudget(TX_BUDGET - ROW_MAX.profile);
+const _recordBudget = () => new ReadBudget(TX_BUDGET - ROW_MAX.profile);
 
 const VERDICT_TARGETS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
 
@@ -1109,97 +1109,6 @@ export async function itemPane(
     };
   }
 }
-
-/**
- * What the person withdrew themselves, of one kind, newest first, a page at a time — with when each is
- * due to be erased. Each range carries its lower bound: `authorDeletedAt` is optional, and an absent
- * value sorts first. An alert counts only when its author retracted it (a moderator's retraction is
- * not theirs to list). Staff only. (The record sheet reads `personDeleted`: every kind in one list.)
- */
-export const personWithdrawals = query({
-  args: {
-    userId: v.id('profiles'),
-    kind: literals(VERDICT_TARGETS),
-    cursor: v.optional(v.union(v.string(), v.null())),
-  },
-  handler: async (ctx, { userId, kind, cursor }) => {
-    await requireCapability(ctx, 'people.read');
-    const reads = recordBudget();
-    const opts = (numItems: number) => ({ cursor: cursor ?? null, numItems });
-    const n = reads.rows(kind, RECORD_PAGE);
-    const page = await (async () => {
-      switch (kind) {
-        case 'post':
-          return reads.page(kind, n, (numItems) =>
-            ctx.db
-              .query('posts')
-              .withIndex('by_author_deleted', (q) =>
-                q.eq('authorId', userId).gt('authorDeletedAt', 0),
-              )
-              .order('desc')
-              .paginate(opts(numItems)),
-          );
-        case 'report':
-          return reads.page(kind, n, (numItems) =>
-            ctx.db
-              .query('reports')
-              .withIndex('by_author_deleted', (q) =>
-                q.eq('authorId', userId).gt('authorDeletedAt', 0),
-              )
-              .order('desc')
-              .paginate(opts(numItems)),
-          );
-        case 'comment':
-          return reads.page(kind, n, (numItems) =>
-            ctx.db
-              .query('comments')
-              .withIndex('by_author_deleted', (q) =>
-                q.eq('authorId', userId).gt('authorDeletedAt', 0),
-              )
-              .order('desc')
-              .paginate(opts(numItems)),
-          );
-        case 'hazard':
-          return reads.page(kind, n, (numItems) =>
-            ctx.db
-              .query('hazards')
-              .withIndex('by_author_deleted', (q) =>
-                q.eq('createdByUserId', userId).gt('authorDeletedAt', 0),
-              )
-              .order('desc')
-              .paginate(opts(numItems)),
-          );
-        case 'accessAlert':
-          return reads.page(kind, n, (numItems) =>
-            ctx.db
-              .query('accessAlerts')
-              .withIndex('by_author_status_expires_at', (q) =>
-                q.eq('createdByUserId', userId).eq('status', 'retracted'),
-              )
-              .order('desc')
-              .paginate(opts(numItems)),
-          );
-      }
-    })();
-    const rows = (page.page as ContentDoc[]).filter(
-      // An erased comment's placeholder is no longer anything they wrote; a moderator's retraction
-      // of their alert is not their withdrawal.
-      (row) =>
-        !('erasedAt' in row && row.erasedAt !== undefined) && withdrawnAt(kind, row) !== null,
-    );
-    return {
-      page: rows.map((row) => ({
-        targetType: kind,
-        targetId: row._id as string,
-        deletedAt: withdrawnAt(kind, row) as number,
-        eraseAt: row.eraseAt ?? null,
-        content: contentOf(kind, row),
-      })),
-      isDone: page.isDone,
-      continueCursor: page.continueCursor,
-    };
-  },
-});
 
 // ── The backfill (run once on each deployment after this ships) ──────────────────────────────────
 

@@ -159,13 +159,16 @@ async function newestOn(t: T, targetType: string, targetId: string) {
   if (!row) throw new Error(`no audit row on ${targetType} ${targetId}`);
   return row;
 }
-/** The whole record, every page of it, as the People page will read it. */
+/**
+ * The whole record, every page of it, as the People page will read it — and everything the person
+ * withdrew, held or not, from their withdrawal rows (`lib/withdrawals`, B01-4m), newest first.
+ */
 async function readRecord(
+  t: ReturnType<typeof convexTest>,
   as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
   userId: Id<'profiles'>,
 ) {
   type Verdict = FunctionReturnType<typeof api.contentRecord.personVerdicts>['page'][number];
-  type Withdrawal = FunctionReturnType<typeof api.contentRecord.personWithdrawals>['page'][number];
   const verdicts: Verdict[] = [];
   for (let cursor: string | null = null; ; ) {
     const page: { page: Verdict[]; isDone: boolean; continueCursor: string } = await as.query(
@@ -176,19 +179,16 @@ async function readRecord(
     if (page.isDone) break;
     cursor = page.continueCursor;
   }
-  const deleted: Withdrawal[] = [];
-  for (const kind of ['post', 'report', 'comment', 'hazard', 'accessAlert'] as const) {
-    for (let cursor: string | null = null; ; ) {
-      const page: { page: Withdrawal[]; isDone: boolean; continueCursor: string } = await as.query(
-        api.contentRecord.personWithdrawals,
-        { userId, kind, cursor },
-      );
-      deleted.push(...page.page);
-      if (page.isDone) break;
-      cursor = page.continueCursor;
-    }
-  }
-  deleted.sort((a, b) => b.deletedAt - a.deletedAt);
+  const deleted = (
+    await t.run((ctx) =>
+      ctx.db
+        .query('contentWithdrawals')
+        .collect()
+        .then((rows) => rows.filter((r) => r.subjectUserId === userId)),
+    )
+  )
+    .map((r) => ({ targetType: r.targetType, targetId: r.targetId, deletedAt: r.withdrawnAt }))
+    .sort((a, b) => b.deletedAt - a.deletedAt);
   return { verdicts, deleted };
 }
 
@@ -232,7 +232,7 @@ describe('a verdict belongs to the person', () => {
     await author.as.mutation(api.comments.remove, { commentId });
     expect(await standing()).toHaveLength(1);
 
-    const record = await readRecord(mod.as, author.id);
+    const record = await readRecord(t, mod.as, author.id);
     expect(record.verdicts).toEqual([
       expect.objectContaining({
         targetId: commentId,
@@ -398,7 +398,7 @@ describe('a verdict belongs to the person', () => {
     });
     await author.as.mutation(api.posts.remove, { postId });
 
-    const record = await readRecord(mod.as, author.id);
+    const record = await readRecord(t, mod.as, author.id);
     const byType = Object.fromEntries(record.verdicts.map((v) => [v.targetType, v]));
     expect(byType.report?.content).toEqual(expect.objectContaining({ text: 'thin by the inlet' }));
     expect(byType.post?.content).toEqual(
