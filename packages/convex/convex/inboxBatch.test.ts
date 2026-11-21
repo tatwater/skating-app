@@ -11,9 +11,22 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { fileMember, flagSource, MAX_MEMBERS, requestSource } from './lib/inboxItems';
+import { FLAG_CLOSE_COST, FLAG_REOPEN_COST, FLAGS_READ } from './lib/inboxFlags';
+import {
+  AXES,
+  CLOSER_RESERVE,
+  fileMember,
+  flagSource,
+  MAX_MEMBERS,
+  MEMBER_BOUND,
+  RECONCILE_COST,
+  refreshCost,
+  requestSource,
+  type TxCost,
+} from './lib/inboxItems';
 import { inboxDrift } from './lib/inboxRepair';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
+import { QUEUE_CAP, siblingCost } from './lib/requestDecisions';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -231,39 +244,6 @@ async function bayAsks(
   return ids;
 }
 
-describe('the sibling drain at the member bound', () => {
-  test('declining one of 500 asks for one bay closes them all, page by page, with exact counts', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const askers = await people(t, MAX_MEMBERS);
-    const mod = await staff(t, 'mod');
-    const asks = await bayAsks(t, lakeId, askers);
-    const before = await itemsNow(t);
-    expect(before.items).toEqual([
-      expect.objectContaining({ status: 'open', memberCount: MAX_MEMBERS, open: MAX_MEMBERS }),
-    ]);
-    await limited(
-      t,
-      api.corpusRequests.decline,
-      { requestId: asks[0] as Id<'waterBodyRequests'>, note: 'not a bay' },
-      'mod',
-    );
-    void mod;
-    const pages = await drain(t);
-    expect(pages).toBeGreaterThan(0);
-    const after = await itemsNow(t);
-    const statuses = await t.run(async (ctx) =>
-      (await ctx.db.query('waterBodyRequests').collect()).map((r) => r.status),
-    );
-    expect(new Set(statuses)).toEqual(new Set(['declined']));
-    expect(after.items).toEqual([
-      expect.objectContaining({ status: 'decided', memberCount: MAX_MEMBERS, closed: MAX_MEMBERS }),
-    ]);
-    expect(after.counts).toEqual({ decided: 1 });
-    expect(after.drift).toBe(0);
-  });
-});
-
 /** `n` open flags on one target, from `flaggers[i]`, each filed into its lane's item. */
 async function flagsOn(
   t: T,
@@ -317,87 +297,210 @@ async function aReport(t: T, authorId: Id<'profiles'>, waterBodyId: Id<'waterBod
   );
 }
 
-describe('a takedown and a ruling at the member bound, and their undos', () => {
-  test('removing a report with 450 Content and 50 Safety flags closes them all in one write; the undo reopens them', async () => {
-    const t = harness();
-    const lakeId = await lake(t);
-    const [author] = await people(t, 1, 'author');
-    const flaggers = await people(t, MAX_MEMBERS);
-    await staff(t, 'admin');
-    const reportId = await aReport(t, author as Id<'profiles'>, lakeId);
-    const flags = await flagsOn(
-      t,
-      { targetType: 'report', targetId: reportId },
-      flaggers,
-      (i) => (i < 450 ? 'spam' : 'unsafe_false_report'),
-      author,
-    );
-    const before = await itemsNow(t);
-    expect(before.items.map((i) => i.memberCount).sort((a, b) => a - b)).toEqual([50, 450]);
-    const itemId = await t.run(
-      async (ctx) =>
-        (await ctx.db.query('inboxItems').collect()).find((i) => i.memberCount === 450)?._id,
-    );
-    const result = (await limited(
-      t,
-      api.inboxWrites.takeDown,
-      { itemId, status: 'removed', reason: 'Fabricated' },
-      'admin',
-    )) as { actionId: Id<'moderationActions'> };
-    await drain(t);
-    const after = await itemsNow(t);
-    expect(after.items.map((i) => [i.status, i.memberCount, i.closed])).toEqual([
-      ['decided', 450, 450],
-      ['decided', 50, 50],
-    ]);
-    expect(after.counts).toEqual({ decided: 2 });
-    expect(after.drift).toBe(0);
-    const statuses = await t.run(async (ctx) =>
-      Promise.all(flags.map(async (id) => (await ctx.db.get(id))?.status)),
-    );
-    expect(new Set(statuses)).toEqual(new Set(['actioned']));
-    // The one undo restores the report and reopens every flag, in both lanes.
-    await limited(t, api.undo.run, { actionId: result.actionId, reason: 'Undone' }, 'admin');
-    const undone = await itemsNow(t);
-    expect(undone.items.map((i) => [i.status, i.memberCount, i.open])).toEqual([
-      ['open', 450, 450],
-      ['open', 50, 50],
-    ]);
-    expect(undone.drift).toBe(0);
+// ── What a decision costs, per member — measured small, held to the real bound ─────────────────
+
+/**
+ * A call in a transaction of its own, and what it read (documents, index ranges). Run under limits
+ * no decision reaches, so one transaction holds all of it: this measures cost, the tight-limit tests
+ * below prove the paging.
+ */
+async function measured(
+  t: T,
+  // biome-ignore lint/suspicious/noExplicitAny: any public or internal mutation reference
+  fn: any,
+  args: Record<string, unknown>,
+  subject: string,
+): Promise<{ out: unknown; documentsRead: number; databaseQueries: number }> {
+  return t.withIdentity({ subject }).run(async (ctx) => {
+    const before = await ctx.meta.getTransactionMetrics();
+    const out = await (
+      ctx as unknown as { runMutation: (f: unknown, a: unknown, o: unknown) => Promise<unknown> }
+    ).runMutation(fn, args, {
+      transactionLimits: {
+        bytesRead: 1 << 30,
+        documentsRead: 10_000_000,
+        databaseQueries: 1_000_000,
+        documentsWritten: 1_000_000,
+      },
+    });
+    const after = await ctx.meta.getTransactionMetrics();
+    return {
+      out,
+      documentsRead: before.documentsRead.remaining - after.documentsRead.remaining,
+      databaseQueries: before.databaseQueries.remaining - after.databaseQueries.remaining,
+    };
+  });
+}
+
+/** What each source past the first `small` cost, between two decisions of `small` and `large`. */
+const marginal = (
+  small: { documentsRead: number; databaseQueries: number },
+  large: { documentsRead: number; databaseQueries: number },
+  sources: number,
+) => ({
+  documentsRead: (large.documentsRead - small.documentsRead) / sources,
+  databaseQueries: (large.databaseQueries - small.databaseQueries) / sources,
+});
+
+const SMALL = 10;
+const LARGE = 30;
+
+describe('a decision costs per member, not per member squared — measured small, held to the real bound', () => {
+  test('arithmetic at the real bound: each closer fits a source and its refreshes; an undo of every flag fits; the shape before batching did not', () => {
+    const fits = (cost: TxCost) => AXES.every((k) => cost[k] <= CONVEX_LIMITS[k]);
+    const sum = (...costs: TxCost[]) =>
+      Object.fromEntries(AXES.map((k) => [k, costs.reduce((n, c) => n + c[k], 0)])) as TxCost;
+    const times = (cost: TxCost, n: number) =>
+      Object.fromEntries(AXES.map((k) => [k, cost[k] * n])) as TxCost;
+    const refresh = refreshCost(MAX_MEMBERS);
+    // A fresh transaction always holds one source and its item's refresh at the real bound, so a
+    // page always advances — for a bay or admit sibling, a landmark sibling, a flag.
+    const bay = { kind: 'name_bay', name: 'North Bay' } as Doc<'waterBodyRequests'>;
+    const place = { kind: 'name_landmark', name: 'Long Point' } as Doc<'waterBodyRequests'>;
+    for (const perSource of [siblingCost(bay), siblingCost(place)]) {
+      expect(fits(sum(perSource, RECONCILE_COST, refresh, CLOSER_RESERVE))).toBe(true);
+    }
+    expect(fits(sum(FLAG_CLOSE_COST, RECONCILE_COST, refresh, CLOSER_RESERVE))).toBe(true);
+    // A whole sibling page of one item at the real bound, recounted once, fits on rows and ranges.
+    const page = sum(times(sum(siblingCost(bay), RECONCILE_COST), QUEUE_CAP), refresh);
+    expect(page.documentsRead).toBeLessThanOrEqual(CONVEX_LIMITS.documentsRead);
+    expect(page.databaseQueries).toBeLessThanOrEqual(CONVEX_LIMITS.databaseQueries);
+    // An undo reopens up to FLAGS_READ flags in one transaction (it isn't paged): they fit.
+    const undo = sum(times(FLAG_REOPEN_COST, FLAGS_READ), refresh, CLOSER_RESERVE);
+    expect(undo.documentsRead).toBeLessThanOrEqual(CONVEX_LIMITS.documentsRead);
+    expect(undo.databaseQueries).toBeLessThanOrEqual(CONVEX_LIMITS.databaseQueries);
+    // Why the batch: a recount per source, over a primary and one page of a 500-ask item.
+    let recounts = 0;
+    for (let k = 1; k <= QUEUE_CAP + 1; k++) recounts += MAX_MEMBERS - k;
+    expect(recounts).toBeGreaterThan(CONVEX_LIMITS.documentsRead);
   });
 
-  test('a ruling on a body with 500 access reports closes them all in one write; the undo reopens them', async () => {
+  test('a decline’s drain: each further sibling costs no more than the drain budgets for it', async () => {
     const t = harness();
     const lakeId = await lake(t);
-    const flaggers = await people(t, MAX_MEMBERS);
+    const askers = await people(t, LARGE);
+    await staff(t, 'admin');
+    const few = await bayAsks(t, lakeId, askers.slice(0, SMALL), { name: 'Cove' });
+    const many = await bayAsks(t, lakeId, askers, { name: 'North Bay' });
+    await settle();
+    const decline = (requestId: Id<'waterBodyRequests'> | undefined) =>
+      measured(t, api.corpusRequests.decline, { requestId, note: 'No' }, 'admin');
+    const each = marginal(await decline(few[0]), await decline(many[0]), LARGE - SMALL);
+    const row = await t.run((ctx) => ctx.db.get(many[1] as Id<'waterBodyRequests'>));
+    const budget = sum2(siblingCost(row as Doc<'waterBodyRequests'>), RECONCILE_COST);
+    expect(each.documentsRead).toBeLessThanOrEqual(budget.documentsRead);
+    expect(each.databaseQueries).toBeLessThanOrEqual(budget.databaseQueries);
+    const after = await itemsNow(t);
+    expect(after.items.map((i) => [i.status, i.memberCount, i.closed]).sort()).toEqual([
+      ['decided', SMALL, SMALL],
+      ['decided', LARGE, LARGE],
+    ]);
+    expect(after.drift).toBe(0);
+  });
+
+  test('a ruling and its undo: each further report costs no more than the closer and the reopen budget', async () => {
+    const t = harness();
+    const first = await lake(t, 'osm/A');
+    const second = await lake(t, 'osm/B');
+    const flaggers = await people(t, LARGE);
     await staff(t, 'admin');
     await flagsOn(
       t,
-      { targetType: 'waterbody', targetId: lakeId },
+      { targetType: 'waterbody', targetId: first },
+      flaggers.slice(0, SMALL),
+      () => 'no_public_access',
+    );
+    await flagsOn(
+      t,
+      { targetType: 'waterbody', targetId: second },
       flaggers,
       () => 'no_public_access',
     );
-    const itemId = await t.run(async (ctx) => (await ctx.db.query('inboxItems').first())?._id);
-    const ruled = (await limited(
+    const itemOn = (body: Id<'waterBodies'>) =>
+      t.run(
+        async (ctx) =>
+          (await ctx.db.query('inboxItems').collect()).find((i) => i.waterBodyId === body)?._id,
+      );
+    const rule = async (body: Id<'waterBodies'>) =>
+      measured(
+        t,
+        api.inboxWrites.ruleAccess,
+        { itemId: await itemOn(body), verdict: 'none', reason: 'Posted' },
+        'admin',
+      );
+    const ruledFew = await rule(first);
+    const ruledMany = await rule(second);
+    const closing = marginal(ruledFew, ruledMany, LARGE - SMALL);
+    const closeBudget = sum2(FLAG_CLOSE_COST, RECONCILE_COST);
+    expect(closing.documentsRead).toBeLessThanOrEqual(closeBudget.documentsRead);
+    expect(closing.databaseQueries).toBeLessThanOrEqual(closeBudget.databaseQueries);
+    const undo = (r: { out: unknown }) =>
+      measured(
+        t,
+        api.undo.run,
+        { actionId: (r.out as { actionId: string }).actionId, reason: 'Undone' },
+        'admin',
+      );
+    const reopening = marginal(await undo(ruledFew), await undo(ruledMany), LARGE - SMALL);
+    expect(reopening.documentsRead).toBeLessThanOrEqual(FLAG_REOPEN_COST.documentsRead);
+    expect(reopening.databaseQueries).toBeLessThanOrEqual(FLAG_REOPEN_COST.databaseQueries);
+    const back = await itemsNow(t);
+    expect(back.items.map((i) => [i.status, i.open]).sort()).toEqual([
+      ['open', SMALL],
+      ['open', LARGE],
+    ]);
+    expect(back.drift).toBe(0);
+  });
+
+  test('a takedown of a report: each further flag costs no more than the closer budgets — its hold moved once', async () => {
+    const t = harness();
+    const lakeId = await lake(t);
+    const [author] = await people(t, 1, 'author');
+    const flaggers = await people(t, LARGE);
+    await staff(t, 'admin');
+    const reports = [
+      await aReport(t, author as Id<'profiles'>, lakeId),
+      await aReport(t, author as Id<'profiles'>, lakeId),
+    ];
+    await flagsOn(
       t,
-      api.inboxWrites.ruleAccess,
-      { itemId, verdict: 'none', reason: 'Posted no trespassing' },
-      'admin',
-    )) as { actionId: Id<'moderationActions'> };
-    await drain(t);
-    const after = await itemsNow(t);
-    expect(after.items.map((i) => [i.status, i.memberCount, i.closed])).toEqual([
-      ['decided', MAX_MEMBERS, MAX_MEMBERS],
+      { targetType: 'report', targetId: reports[0] as string },
+      flaggers.slice(0, SMALL),
+      () => 'spam',
+      author,
+    );
+    await flagsOn(
+      t,
+      { targetType: 'report', targetId: reports[1] as string },
+      flaggers,
+      () => 'spam',
+      author,
+    );
+    const takeDown = async (n: number) => {
+      const itemId = await t.run(
+        async (ctx) =>
+          (await ctx.db.query('inboxItems').collect()).find((i) => i.memberCount === n)?._id,
+      );
+      return measured(
+        t,
+        api.inboxWrites.takeDown,
+        { itemId, status: 'hidden', reason: 'Fabricated' },
+        'admin',
+      );
+    };
+    const each = marginal(await takeDown(SMALL), await takeDown(LARGE), LARGE - SMALL);
+    const budget = sum2(FLAG_CLOSE_COST, RECONCILE_COST);
+    expect(each.documentsRead).toBeLessThanOrEqual(budget.documentsRead);
+    expect(each.databaseQueries).toBeLessThanOrEqual(budget.databaseQueries);
+    expect((await itemsNow(t)).items.map((i) => [i.status, i.closed]).sort()).toEqual([
+      ['decided', SMALL],
+      ['decided', LARGE],
     ]);
-    expect(after.drift).toBe(0);
-    await limited(t, api.undo.run, { actionId: ruled.actionId, reason: 'Undone' }, 'admin');
-    const undone = await itemsNow(t);
-    expect(undone.items.map((i) => [i.status, i.memberCount, i.open])).toEqual([
-      ['open', MAX_MEMBERS, MAX_MEMBERS],
-    ]);
-    expect(undone.drift).toBe(0);
   });
 });
+
+const sum2 = (a: TxCost, b: TxCost): TxCost =>
+  Object.fromEntries(AXES.map((k) => [k, a[k] + b[k]])) as TxCost;
 
 // ── Decide, then undo, whether or not the backfill had filed the sources ─────────────────────────
 
@@ -647,6 +750,22 @@ describe('a decision records every source it closes, filed or not; its undo puts
   });
 });
 
+/**
+ * The seams in force together: a member bound of 60 (a refresh's cost in proportion) and Convex's
+ * document limit cut in the same proportion, so a page runs out of room before its siblings or flags
+ * do — more than one page, the room check deciding each.
+ */
+const TIGHT_BOUND = 60;
+const TIGHT = { documentsRead: 700 };
+async function atBound<R>(body: () => Promise<R>): Promise<R> {
+  MEMBER_BOUND.members = TIGHT_BOUND;
+  try {
+    return await body();
+  } finally {
+    MEMBER_BOUND.members = MAX_MEMBERS;
+  }
+}
+
 describe('a closer sized by the transaction it is in (the limits as a seam)', () => {
   test('a tight transaction cuts the drain into more pages, and it still closes every ask exactly', async () => {
     const t = harness();
@@ -655,11 +774,16 @@ describe('a closer sized by the transaction it is in (the limits as a seam)', ()
     await staff(t, 'admin');
     const asks = await bayAsks(t, lakeId, askers);
     await settle();
-    const pages = await under({ documentsRead: 1_800 }, async () => {
-      await limited(t, api.corpusRequests.decline, { requestId: asks[0], note: 'no' }, 'admin');
-      return drain(t);
-    });
+    const pages = await atBound(() =>
+      under(TIGHT, async () => {
+        await limited(t, api.corpusRequests.decline, { requestId: asks[0], note: 'no' }, 'admin');
+        return drain(t);
+      }),
+    );
+    // More than one page — and few: each item recounted once a page, not once a sibling (a recount per
+    // sibling spends a page's room on recounts, five pages here where batched pages take two).
     expect(pages).toBeGreaterThan(1);
+    expect(pages).toBeLessThanOrEqual(3);
     const after = await itemsNow(t);
     expect(after.items).toEqual([
       expect.objectContaining({ status: 'decided', memberCount: 60, closed: 60 }),
@@ -672,24 +796,26 @@ describe('a closer sized by the transaction it is in (the limits as a seam)', ()
     const t = harness();
     const lakeId = await lake(t);
     const [author] = await people(t, 1, 'author');
-    const flaggers = await people(t, 120);
+    const flaggers = await people(t, 60);
     await staff(t, 'admin');
     const reportId = await aReport(t, author as Id<'profiles'>, lakeId);
     await flagsOn(t, { targetType: 'report', targetId: reportId }, flaggers, () => 'spam', author);
     const itemId = await t.run(async (ctx) => (await ctx.db.query('inboxItems').first())?._id);
-    const pages = await under({ documentsRead: 1_800 }, async () => {
-      await limited(
-        t,
-        api.inboxWrites.takeDown,
-        { itemId, status: 'hidden', reason: 'Fabricated' },
-        'admin',
-      );
-      return drain(t);
-    });
+    const pages = await atBound(() =>
+      under(TIGHT, async () => {
+        await limited(
+          t,
+          api.inboxWrites.takeDown,
+          { itemId, status: 'hidden', reason: 'Fabricated' },
+          'admin',
+        );
+        return drain(t);
+      }),
+    );
     expect(pages).toBeGreaterThan(0);
     const after = await itemsNow(t);
     expect(after.items.map((i) => [i.status, i.memberCount, i.closed])).toEqual([
-      ['decided', 120, 120],
+      ['decided', 60, 60],
     ]);
     expect(after.drift).toBe(0);
     const stamped = await t.run(async (ctx) =>
@@ -702,7 +828,7 @@ describe('a closer sized by the transaction it is in (the limits as a seam)', ()
     const t = harness();
     const lakeId = await lake(t);
     const [author] = await people(t, 1, 'author');
-    const flaggers = await people(t, 120);
+    const flaggers = await people(t, 60);
     await staff(t, 'admin');
     const reportId = await aReport(t, author as Id<'profiles'>, lakeId);
     const flags = await flagsOn(
@@ -713,23 +839,25 @@ describe('a closer sized by the transaction it is in (the limits as a seam)', ()
       author,
     );
     const itemId = await t.run(async (ctx) => (await ctx.db.query('inboxItems').first())?._id);
-    await under({ documentsRead: 1_800 }, async () => {
-      const done = (await limited(
-        t,
-        api.inboxWrites.takeDown,
-        { itemId, status: 'hidden', reason: 'Fabricated' },
-        'admin',
-      )) as { actionId: Id<'moderationActions'> };
-      // Some flags are still open: the undo lands before their page runs.
-      await limited(t, api.undo.run, { actionId: done.actionId, reason: 'Undone' }, 'admin');
-      await drain(t);
-    });
+    await atBound(() =>
+      under(TIGHT, async () => {
+        const done = (await limited(
+          t,
+          api.inboxWrites.takeDown,
+          { itemId, status: 'hidden', reason: 'Fabricated' },
+          'admin',
+        )) as { actionId: Id<'moderationActions'> };
+        // Some flags are still open: the undo lands before their page runs.
+        await limited(t, api.undo.run, { actionId: done.actionId, reason: 'Undone' }, 'admin');
+        await drain(t);
+      }),
+    );
     const statuses = await t.run(async (ctx) =>
       Promise.all(flags.map(async (id) => (await ctx.db.get(id))?.status)),
     );
     expect(new Set(statuses)).toEqual(new Set(['open']));
     const after = await itemsNow(t);
-    expect(after.items.map((i) => [i.status, i.open])).toEqual([['open', 120]]);
+    expect(after.items.map((i) => [i.status, i.open])).toEqual([['open', 60]]);
     expect(after.drift).toBe(0);
   });
 });

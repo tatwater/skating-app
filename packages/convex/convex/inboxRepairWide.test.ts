@@ -8,6 +8,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { REPAIR_LIMITS } from './inboxItems';
 import { fileMember, flagSource, MAX_MEMBERS } from './lib/inboxItems';
 import schema from './schema';
 
@@ -105,18 +106,64 @@ async function flaggedReport(t: T, n: number) {
 }
 
 describe('the repair at the member bound', () => {
-  // Filing 500 members is about 4 s alone and six times that beside the whole suite: its own timeout.
-  test.each([10, 60, MAX_MEMBERS])(
-    'an item with %i members is checked, not failed',
-    async (n) => {
-      const t = harness();
-      await flaggedReport(t, n);
-      const pass = await t.mutation(internal.inboxItems.repair, {});
-      expect(pass).toMatchObject({ failed: 0, fixed: 0 });
-      expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
-    },
-    90_000,
-  );
+  test.each([10, 60])('an item with %i members is checked, not failed', async (n) => {
+    const t = harness();
+    await flaggedReport(t, n);
+    const pass = await t.mutation(internal.inboxItems.repair, {});
+    expect(pass).toMatchObject({ failed: 0, fixed: 0 });
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toEqual([]);
+  });
+
+  test('its cost per member, measured small, keeps an item at the real bound inside one repair’s limits', async () => {
+    const t = harness();
+    const few = await flaggedReport(t, 10);
+    const many = await flaggedReport(t, 40);
+    const itemOf = (flag: Id<'contentFlags'> | undefined) =>
+      t.run(async (ctx) => {
+        const m = await ctx.db
+          .query('inboxItemMembers')
+          .withIndex('by_source', (q) =>
+            q.eq('sourceTable', 'contentFlags').eq('sourceId', flag as string),
+          )
+          .first();
+        return m?.itemId as Id<'inboxItems'>;
+      });
+    // One repair of each item, as its own transaction; what it read, under limits it can't reach.
+    const cost = async (itemId: Id<'inboxItems'>) =>
+      t.run(async (ctx) => {
+        const before = await ctx.meta.getTransactionMetrics();
+        await (
+          ctx as unknown as {
+            runMutation: (f: unknown, a: unknown, o: unknown) => Promise<unknown>;
+          }
+        ).runMutation(
+          internal.inboxItems.repairOne,
+          { itemId },
+          {
+            transactionLimits: {
+              bytesRead: 1 << 30,
+              documentsRead: 10_000_000,
+              databaseQueries: 1_000_000,
+              documentsWritten: 1_000_000,
+            },
+          },
+        );
+        const after = await ctx.meta.getTransactionMetrics();
+        return {
+          documentsRead: before.documentsRead.remaining - after.documentsRead.remaining,
+          databaseQueries: before.databaseQueries.remaining - after.databaseQueries.remaining,
+        };
+      });
+    const small = await cost(await itemOf(few.flags[0]));
+    const large = await cost(await itemOf(many.flags[0]));
+    // Linear in its members (each source read once, the item recounted once): at the real bound —
+    // `MAX_MEMBERS` open and as many closed — the repair stays inside `REPAIR_LIMITS`.
+    for (const axis of ['documentsRead', 'databaseQueries'] as const) {
+      const perMember = (large[axis] - small[axis]) / 30;
+      const fixed = small[axis] - perMember * 10;
+      expect(fixed + perMember * 2 * MAX_MEMBERS, axis).toBeLessThanOrEqual(REPAIR_LIMITS[axis]);
+    }
+  });
 });
 
 describe('the repair widened', () => {

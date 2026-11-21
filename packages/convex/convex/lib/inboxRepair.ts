@@ -21,7 +21,7 @@ import {
   type InboxReads,
   inboxBatch,
   leaveMembers,
-  MAX_MEMBERS,
+  MEMBER_BOUND,
   refreshInboxItem,
   type SourceFacts,
   sourceOfMember,
@@ -59,12 +59,12 @@ function memoReads(ctx: QueryCtx): InboxReads {
   };
 }
 
-/** Up to `MAX_MEMBERS` of an item's members of one status. */
+/** Up to the member bound (`MEMBER_BOUND`) of an item’s members of one status. */
 function membersOf(ctx: QueryCtx, item: Pick<Doc<'inboxItems'>, '_id'>, status: 'open' | 'closed') {
   return ctx.db
     .query('inboxItemMembers')
     .withIndex('by_item_status', (q) => q.eq('itemId', item._id).eq('status', status))
-    .take(MAX_MEMBERS);
+    .take(MEMBER_BOUND.members);
 }
 
 type Examination = {

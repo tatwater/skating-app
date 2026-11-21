@@ -28,7 +28,21 @@ import { ownContentRefusal } from './ownContent';
 import { ROW_MAX } from './readBudget';
 
 /** The most open flags one target's takedown closes in one write, and an undo reopens. */
-const FLAGS_READ = 500;
+export const FLAGS_READ = 500;
+
+/**
+ * What reopening one flag costs an undo, which reopens them all in one transaction (it isn't paged):
+ * the flag read and put back, its `reopen_flag` row, and its member reconciled under the reopen's
+ * memoized reads (`reopenItem`). Held above what an undo is measured to read per flag
+ * (`inboxBatch.test.ts`), and {@link FLAGS_READ} of them, with one refresh per item, inside Convex's
+ * limits — the arithmetic that test asserts.
+ */
+export const FLAG_REOPEN_COST: TxCost = {
+  bytesRead: 2 * ROW_MAX.contentFlag + 2 * ROW_MAX.inboxMember,
+  documentsRead: 14,
+  databaseQueries: 7,
+  documentsWritten: 4,
+};
 
 /** A flag's status counts as open (`reviewing` too, until it is narrowed out, D283). */
 export const isOpenFlag = (f: Pick<Doc<'contentFlags'>, 'status'>): boolean =>

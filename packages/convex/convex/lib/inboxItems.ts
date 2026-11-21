@@ -66,6 +66,15 @@ export const ticketSource = (id: Id<'supportTickets'>): InboxSource => ({
 
 /** The most members an item counts, and the most reporters an Access rank tells apart. */
 export const MAX_MEMBERS = 500;
+
+/**
+ * The member bound in force — a **test seam**, as `MAP_BOUNDS` is: a test shrinks it (with Convex's
+ * limits in proportion) to prove the batching, the paging and the room check on a small item, then
+ * puts it back. Everything the bound sizes at run time reads it here — a recount, a reopen, a derive,
+ * the repair's member reads, a refresh's cost; {@link MAX_MEMBERS} stays the real bound, which a test
+ * holds the real limits to by arithmetic ({@link refreshCost} at it).
+ */
+export const MEMBER_BOUND = { members: MAX_MEMBERS };
 /** Open landmark asks on a body a landmark ask is compared with, to find the place it joins. */
 export const LANDMARK_SCAN = 8;
 /** How far apart two rank tiers sit: past any instant (`Date.now()` stays under 10¹³ until 2286). */
@@ -634,17 +643,19 @@ export type TxCost = {
 };
 
 /**
- * The worst one item's refresh reads and writes: its first open and closed member, up to
- * {@link MAX_MEMBERS} of each status counted, the item, a decision's source (a request's worst), and
- * its counts.
+ * The worst one item's refresh reads and writes at a member bound (the one in force by default): its
+ * first open and closed member, up to `members` of each status counted, the item, a decision's source
+ * (a request's worst), and its counts.
  */
-export const REFRESH_COST: TxCost = {
-  bytesRead:
-    (2 * MAX_MEMBERS + 4) * ROW_MAX.inboxMember + 8 * ROW_MAX.small + ROW_MAX.waterBodyRequest,
-  documentsRead: 2 * MAX_MEMBERS + 16,
-  databaseQueries: 24,
-  documentsWritten: 16,
-};
+export function refreshCost(members: number = MEMBER_BOUND.members): TxCost {
+  return {
+    bytesRead:
+      (2 * members + 4) * ROW_MAX.inboxMember + 8 * ROW_MAX.small + ROW_MAX.waterBodyRequest,
+    documentsRead: 2 * members + 16,
+    databaseQueries: 24,
+    documentsWritten: 16,
+  };
+}
 
 /** A reconcile's own reads and writes beyond its source row: its member, its item, an open item by key. */
 export const RECONCILE_COST: TxCost = {
@@ -655,14 +666,14 @@ export const RECONCILE_COST: TxCost = {
 };
 
 /** Headroom a closer keeps past its batch: the next page's schedule, its own last rows. */
-const CLOSER_RESERVE: TxCost = {
+export const CLOSER_RESERVE: TxCost = {
   bytesRead: 256 * 1024,
   documentsRead: 200,
   databaseQueries: 100,
   documentsWritten: 100,
 };
 
-const AXES = ['bytesRead', 'documentsRead', 'databaseQueries', 'documentsWritten'] as const;
+export const AXES = ['bytesRead', 'documentsRead', 'databaseQueries', 'documentsWritten'] as const;
 
 /**
  * **Room for one more source in this transaction's batch** — its own cost (`perSource`, the closer's
@@ -679,12 +690,13 @@ export async function batchHasRoom(
 ): Promise<boolean> {
   const m = await ctx.meta.getTransactionMetrics();
   const refreshes = owedRefreshes(ctx) + 1;
+  const refresh = refreshCost();
   return AXES.every(
     (k) =>
       m[k].remaining >=
       perSource[k] +
         RECONCILE_COST[k] +
-        refreshes * REFRESH_COST[k] +
+        refreshes * refresh[k] +
         CLOSER_RESERVE[k] +
         (after?.[k] ?? 0),
   );
@@ -737,7 +749,7 @@ async function refreshItemNow(
     );
   const countOf = async (status: 'open' | 'closed') =>
     (
-      await reads.take('small', MAX_MEMBERS, (n) =>
+      await reads.take('small', MEMBER_BOUND.members, (n) =>
         ctx.db
           .query('inboxItemMembers')
           .withIndex('by_item_status', (q) => q.eq('itemId', itemId).eq('status', status))
@@ -1109,7 +1121,7 @@ export async function reopenItem(
   const members = await ctx.db
     .query('inboxItemMembers')
     .withIndex('by_closed_by', (q) => q.eq('closedByActionId', actionId))
-    .take(MAX_MEMBERS);
+    .take(MEMBER_BOUND.members);
   let reopened = 0;
   // One batch, its reads memoized: an item that had every member closed by the decision is recounted
   // once, and its row, its target and its key's open item read once — not per member (PR #170: a
@@ -1146,7 +1158,7 @@ export async function deriveItem(
   reads: InboxReads = liveReads(ctx),
 ): Promise<DerivedItem> {
   const of = (status: 'open' | 'closed') =>
-    reads.take('small', MAX_MEMBERS, (n) =>
+    reads.take('small', MEMBER_BOUND.members, (n) =>
       ctx.db
         .query('inboxItemMembers')
         .withIndex('by_item_status', (q) => q.eq('itemId', item._id).eq('status', status))

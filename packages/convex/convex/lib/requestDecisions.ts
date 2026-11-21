@@ -498,17 +498,19 @@ export async function assertMayDecide(
 
 /**
  * What closing one sibling costs beyond the batch's reconcile: the row read again (twice — the
- * reconcile reads its facts, and a filing reads them again), for a landmark ask the body's open asks
- * its place is compared with, its patch, its audit row and its member.
+ * reconcile reads its facts, and a filing reads them again), the audit row's chain and the asker's
+ * verdict message, for a landmark ask the body's open asks its place is compared with, its patch, its
+ * audit row and its member. Held above what a decline is measured to read per sibling
+ * (`inboxBatch.test.ts`), so `batchHasRoom` never budgets less than a sibling reads.
  */
-function siblingCost(row: Doc<'waterBodyRequests'>): TxCost {
+export function siblingCost(row: Doc<'waterBodyRequests'>): TxCost {
   const size = getDocumentSize(row);
   const place = row.kind === 'name_landmark' ? LANDMARK_SCAN * ROW_MAX.waterBodyRequest : 0;
   return {
-    bytesRead: 2 * size + place,
-    documentsRead: 4 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
-    databaseQueries: 6 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
-    documentsWritten: 4,
+    bytesRead: 2 * size + 4 * ROW_MAX.small + place,
+    documentsRead: 14 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
+    databaseQueries: 8 + (row.kind === 'name_landmark' ? 2 * LANDMARK_SCAN : 0),
+    documentsWritten: 6,
   };
 }
 
