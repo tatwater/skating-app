@@ -51,7 +51,8 @@ const SOURCE_WRITERS: Record<string, string> = {
   'lib/landmarkProposals.ts#fileLandmarkProposals': 'a report’s where asks for a landmark',
   'lib/requestDecisions.ts#closeRow': 'every request decision, each sibling page’s included',
   // The Inbox's inverses (S2): an undo reopens the flags and the asks a decision closed.
-  'lib/inboxFlags.ts#reopenFlagStep': 'a flag decision undone: each flag checked and reopened, a page at a time',
+  'lib/inboxFlags.ts#reopenFlagStep':
+    'a flag decision undone: each flag checked and reopened, a page at a time',
   'lib/undoHandlersCorpus.ts#reopenRequestPage':
     'a request decision undone: its asks reopen, a page at a time',
   'waterBodies.ts#create': 'a skater draws a body',
