@@ -22,6 +22,7 @@ import {
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import { inboxPending } from './inboxItems';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
 import { countDedupDecisions } from './lib/dedupQueue';
 import { readInboxLanes } from './lib/inboxViews';
@@ -72,6 +73,9 @@ export const overview = query({
         // When the median open item was filed, for the client to age on its own clock; `null` past
         // the lanes' median read (the oldest two hundred are not the queue).
         medianOpenedAt: figures.medianFiledAt,
+        // The items' backfill not yet concluded: the stored counts may be short, so the card draws
+        // no figure — the same fact `inbox.lanes` serves, read from the same job row.
+        pending: await inboxPending(ctx),
       },
       people,
     };

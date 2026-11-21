@@ -31,6 +31,15 @@ type CardProps<T> = Omit<ComponentProps<'section'>, 'title' | 'children'> & { da
 
 export function InboxCard({ data, now, ...props }: CardProps<InboxCardData> & { now: number }) {
   if (data === undefined) return <CountCard title="Inbox" loadingRows={7} {...props} />;
+  // The items' backfill not yet concluded: a count may be short, so none is drawn — never a number
+  // (the People card's rule).
+  if (data.pending) {
+    return (
+      <CountCard title="Inbox" {...props}>
+        <CountRow label="Still being prepared" value="" tone="dim" to={{ kind: 'inbox' }} />
+      </CountCard>
+    );
+  }
   const total = inboxTotal(data);
   const ages = inboxFootAges(data, now);
   return (

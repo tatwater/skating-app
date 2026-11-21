@@ -33,6 +33,7 @@ const OVERVIEW: ConsoleOverview = {
     support: null,
     oldestOpenAt: 1_000,
     medianOpenedAt: 2_500,
+    pending: false,
   },
   people: {
     moderators: c(1),

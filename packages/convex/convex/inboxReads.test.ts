@@ -315,6 +315,53 @@ describe('inbox.listPage', () => {
 });
 
 describe('inbox.lanes and the Overview’s Inbox card', () => {
+  test('pending until the backfill concludes, exact after, and equal to the lanes in both', async () => {
+    const t = harness();
+    const mod = await person(t, 'mod', 'moderator');
+    const [s1, s2] = [await person(t, 's1'), await person(t, 's2')];
+    const a = await lake(t, 'osm/A', 0);
+    // Filed live: an item from the first moment.
+    await s1.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: await report(t, s2.id, a, NOW - DAY),
+      reason: 'spam',
+    });
+    // From before the deploy: a row the backfill hasn't reached, so no item yet.
+    await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: s1.id,
+        targetType: 'user',
+        targetId: s2.id,
+        reason: 'unsafe_false_report',
+        status: 'open',
+        createdAt: NOW - 2 * DAY,
+      }),
+    );
+    const read = async () => ({
+      lanes: await mod.as.query(api.inbox.lanes, { dayStart: DAY_START }),
+      card: (await mod.as.query(api.console.overview, {})).inbox,
+    });
+    const agree = ({ lanes, card }: Awaited<ReturnType<typeof read>>) => {
+      for (const l of lanes.lanes) expect(card[l.lane]).toEqual({ count: l.open, capped: false });
+      expect(card.pending).toBe(lanes.pending);
+    };
+
+    const before = await read();
+    expect(before.card.pending).toBe(true);
+    expect(before.card.safety.count).toBe(0);
+    agree(before);
+
+    for (let i = 0; i < 100; i++) {
+      const pass = await t.mutation(internal.inboxItems.backfill, i === 0 ? { restart: true } : {});
+      if (pass.done) break;
+    }
+    const after = await read();
+    expect(after.card.pending).toBe(false);
+    expect(after.card.safety).toEqual({ count: 1, capped: false });
+    expect(after.card.contentFlags).toEqual({ count: 1, capped: false });
+    agree(after);
+  });
+
   test('equal on the same data; a seed-origin ask moves neither', async () => {
     const t = harness();
     const mod = await person(t, 'mod', 'moderator');

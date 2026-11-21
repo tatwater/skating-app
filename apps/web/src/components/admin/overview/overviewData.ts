@@ -64,6 +64,8 @@ export interface InboxCardData {
    * reads. `null` with nothing open, or when the server's read of a lane stopped short.
    */
   medianOpenedAt: number | null;
+  /** The Inbox's backfill hasn't concluded: the counts may be short, so the card draws none. */
+  pending: boolean;
 }
 
 export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardData {
@@ -79,6 +81,7 @@ export function inboxFromOverview(inbox: ConsoleOverview['inbox']): InboxCardDat
     },
     oldestOpenAt: inbox.oldestOpenAt,
     medianOpenedAt: inbox.medianOpenedAt,
+    pending: inbox.pending,
   };
 }
 
