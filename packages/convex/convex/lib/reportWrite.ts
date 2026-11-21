@@ -78,6 +78,7 @@ import { refreshPostSearchText } from './postSync';
 import { syncReportSubAreas } from './reportSubAreas';
 import { awardPointEvent, checkAndAwardBadges } from './reputation';
 import { postSnapshotOf, recordRevision } from './revisions';
+import { seedSideOf } from './seedPeople';
 import { deriveSightingHazards, drawnHazardOf } from './sightingHazards';
 import { activateOnEvidence } from './standing';
 import { recordTextLength } from './textLengths';
@@ -715,11 +716,16 @@ async function runCorroboration(
 
   const priorAuthorIds = new Set<Id<'profiles'>>();
   let counted = 0;
+  // A fake person from the dev seed and a real one never corroborate each other (D287): no real
+  // person's points move on a fake report, in either direction.
+  const side = seedSideOf(ctx);
+  const seedAuthor = await side.isSeed(report.authorId);
   for (const prior of candidates) {
     if (counted >= CORROBORATION_MAX_PER_REPORT) break;
     if (prior._id === report._id) continue; // the just-inserted report itself (both edges now in-index)
     if (prior.authorId === report.authorId) continue; // self-corroboration excluded
     if (!reportsAgree(report, prior)) continue;
+    if ((await side.isSeed(prior.authorId)) !== seedAuthor) continue;
 
     counted++;
     priorAuthorIds.add(prior.authorId);

@@ -24,6 +24,7 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import { fileMember, requestSource } from './inboxItems';
 import { landmarksForBody } from './landmarkRows';
 import { landmarkAskOf, QUEUE_CAP } from './requestDecisions';
 
@@ -62,7 +63,7 @@ export async function fileLandmarkProposals(
     ) {
       continue;
     }
-    await ctx.db.insert('waterBodyRequests', {
+    const requestId = await ctx.db.insert('waterBodyRequests', {
       kind: 'name_landmark',
       status: 'open',
       requesterId,
@@ -73,6 +74,8 @@ export async function fileLandmarkProposals(
       reportId,
       createdAt: Date.now(),
     });
+    // Each ask joins the Inbox item for its place, or starts one (B01-5).
+    await fileMember(ctx, requestSource(requestId));
     asked.push(ask);
     budget--;
     filed++;

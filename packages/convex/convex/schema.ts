@@ -26,6 +26,12 @@ import {
   ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  INBOX_DECISIONS,
+  INBOX_ITEM_KINDS,
+  INBOX_ITEM_STATUSES,
+  INBOX_LANES,
+  INBOX_MEMBER_STATUSES,
+  INBOX_SOURCE_TABLES,
   LANDMARK_KINDS,
   LANDMARK_SOURCES,
   LENGTH_BANDS,
@@ -38,6 +44,7 @@ import {
   RATING_TARGET_TYPES,
   RECURRENCE_FAMILIES,
   REQUEST_KINDS,
+  REQUEST_ORIGINS,
   REQUEST_STATUSES,
   RESTRICTIONS,
   REVIEW_REASONS,
@@ -3664,6 +3671,12 @@ export default defineSchema({
    */
   waterBodyRequests: defineTable({
     kind: literals(REQUEST_KINDS),
+    /**
+     * Who filed it (D289, the governor's ruling of 2026-11-20): a person through an app, or a script
+     * (`seedBayRequests`). A script's ask is machine-found work and files no Inbox item. Absent reads
+     * as `app`; the rows the seed wrote before the field are backfilled.
+     */
+    origin: v.optional(literals(REQUEST_ORIGINS)),
     status: literals(REQUEST_STATUSES),
     requesterId: v.id('profiles'),
     /** Where the skater pointed — always stored, even when a body id resolves it, for the queue's map. */
@@ -5463,4 +5476,71 @@ export default defineSchema({
     // The drain: `eq('parkedAt', undefined)` — the waiting entries, oldest first. The parked read:
     // `gt('parkedAt', 0)`, a lower bound past the unparked majority.
     .index('by_parked_queued', ['parkedAt', 'queuedAt']),
+
+  /**
+   * **One Inbox item per question a person filed** (B01-5): a flag target in a lane, a body's access
+   * reports, an ask and its siblings, a drawn body, a ticket. Written only by `lib/inboxItems.ts`;
+   * the list, the lanes' counts and the colleague lock (D283) read it.
+   */
+  inboxItems: defineTable({
+    key: v.string(),
+    kind: literals(INBOX_ITEM_KINDS),
+    lane: literals(INBOX_LANES),
+    laneOrder: v.number(),
+    facet: v.string(),
+    status: literals(INBOX_ITEM_STATUSES),
+    rankKey: v.number(),
+    filedAt: v.number(),
+    lastActivityAt: v.number(),
+    memberCount: v.number(),
+    waterBodyId: v.optional(v.id('waterBodies')),
+    subjectUserId: v.optional(v.id('profiles')),
+    decidedAt: v.optional(v.number()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decision: v.optional(literals(INBOX_DECISIONS)),
+    decisionActionId: v.optional(v.id('moderationActions')),
+    refreshedAt: v.number(),
+  })
+    .index('by_key', ['key', 'status'])
+    .index('by_status_lane_rank', ['status', 'laneOrder', 'rankKey'])
+    .index('by_status_lane_facet_rank', ['status', 'laneOrder', 'facet', 'rankKey'])
+    .index('by_status_decided', ['status', 'decidedAt'])
+    .index('by_lane_status_decided', ['laneOrder', 'status', 'decidedAt'])
+    // `eq` on the optional field only, never a bare range (an index on an optional field is not sparse).
+    .index('by_body_status', ['waterBodyId', 'status', 'filedAt'])
+    .index('by_subject_status', ['subjectUserId', 'status', 'filedAt'])
+    .index('by_refreshed_at', ['status', 'refreshedAt']),
+
+  /** The source rows an Inbox item holds, and which decision closed each (an undo reopens them). */
+  inboxItemMembers: defineTable({
+    itemId: v.id('inboxItems'),
+    sourceTable: literals(INBOX_SOURCE_TABLES),
+    sourceId: v.string(),
+    /** Who filed it (D289); absent for a member no person filed (an auto flag). */
+    filedByUserId: v.optional(v.id('profiles')),
+    status: literals(INBOX_MEMBER_STATUSES),
+    closedByActionId: v.optional(v.id('moderationActions')),
+    filedAt: v.number(),
+  })
+    .index('by_item_status', ['itemId', 'status', 'filedAt'])
+    .index('by_source', ['sourceTable', 'sourceId'])
+    .index('by_item_filer', ['itemId', 'filedByUserId'])
+    // `eq` only.
+    .index('by_closed_by', ['closedByActionId']),
+
+  /** The Inbox's counts, moved with the items by their one writer: `open:<lane>`, `open:<lane>:<facet>`, `decided`. */
+  inboxCounts: defineTable({
+    key: v.string(),
+    count: v.number(),
+  }).index('by_key', ['key']),
+
+  /** Where the Inbox's chained jobs stand: the backfill, the drift repair, the seed's clear. */
+  inboxJobRuns: defineTable({
+    job: literals(['backfill', 'repair', 'seedClear'] as const),
+    phase: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_job', ['job']),
 });

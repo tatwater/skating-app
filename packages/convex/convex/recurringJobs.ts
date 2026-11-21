@@ -408,4 +408,7 @@ const CRON_OF: Record<FailingJob, string> = {
   geoMissing: 'find bodies missing geometry',
   lapses: 'reset lapsed suspensions',
   clerkMirror: 'reconcile clerk ban locks',
+  // The backfill is run by hand; its failures are retried, and counted, by the repair's cron.
+  inboxBackfill: 'repair inbox items drift',
+  inboxRepair: 'repair inbox items drift',
 };

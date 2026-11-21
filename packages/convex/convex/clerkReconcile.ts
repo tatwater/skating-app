@@ -58,6 +58,7 @@ import { internalAction, internalMutation, internalQuery } from './_generated/se
 import { type ClerkAnswer, clerkRequest, type LockWish, lockWish, retryOrPage } from './clerkAdmin';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { clearFailure, forgetFailuresBefore, recordFailure } from './lib/recurringWork';
+import { isSeedProfile } from './lib/seedPeople';
 import { literals } from './lib/validators';
 
 const DAY = 24 * 60 * 60_000;
@@ -117,6 +118,12 @@ const tallyValidator = v.object({
   overCap: v.number(),
   /** Requests sent to Clerk (every read, a retried one included). */
   clerkReads: v.number(),
+  /**
+   * Banned in Convex, a fake person from the dev seed (D287): no Clerk account, so never sent to
+   * Clerk and never repaired — counted and skipped. Present only once one is met, and optional so a
+   * run in flight across the deploy that added it still validates.
+   */
+  seedSkipped: v.optional(v.number()),
 });
 export type Tally = typeof tallyValidator.type;
 
@@ -306,11 +313,16 @@ export const run = internalAction({
         if (side === 'convex') {
           convexPages++;
           const page = await ctx.runQuery(internal.clerkReconcile.bannedPage, { cursor });
-          if (page.clerkUserIds.length > 0) {
+          // A fake person from the dev seed has no Clerk account (D287): counted, never asked
+          // about and never repaired.
+          const clerkUserIds = page.clerkUserIds.filter((id) => !isSeedProfile(id));
+          const skipped = page.clerkUserIds.length - clerkUserIds.length;
+          if (skipped > 0) tally.seedSkipped = (tally.seedSkipped ?? 0) + skipped;
+          if (clerkUserIds.length > 0) {
             reads++;
             tally.clerkReads++;
             const query = [
-              ...page.clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
+              ...clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
               `limit=${CLERK_PAGE}`,
             ].join('&');
             const answer = await readUsers(key, query);
@@ -318,7 +330,7 @@ export const run = internalAction({
             attempt = 0;
             const locked = new Map(answer.users.map((u) => [u.id, u.banned]));
             const toLock: string[] = [];
-            for (const id of page.clerkUserIds) {
+            for (const id of clerkUserIds) {
               tally.convexChecked++;
               const isLocked = locked.get(id);
               if (isLocked === undefined) tally.notInClerk++;

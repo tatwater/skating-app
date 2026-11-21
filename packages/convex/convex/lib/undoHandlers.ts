@@ -24,6 +24,7 @@ import type {
 } from '../moderation';
 import type { ModerationAction, ModerationTargetType } from './audit';
 import { AUTHOR_DELETED_OVERTURN } from './authorDeletion';
+import { reopenFlagsClosedBy } from './inboxFlags';
 import { type PersonWrite, type StatusTerms, sameStatusTerms } from './peopleCan';
 import { ROW_MAX, type WaveCost } from './readBudget';
 import { termsSetBy } from './statusTerms';
@@ -182,7 +183,13 @@ const contentUndoTakedown: UndoHandler = {
   // Only a row that left the item as it was reads the record; any other has nothing to check.
   refusalCost: (_scope, row) => (leftContentAsItWas(row) ? RECORD_ONLY_COST : null),
   refusal: recordOnlyRefusal,
-  run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
+  run: async (call) => {
+    await takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call);
+    // A takedown made from the Inbox closed every flag on the content with it (B01-5): they reopen.
+    await reopenFlagsClosedBy(call.ctx, call.actor, call.row._id, call.reason, {
+      withUndoOf: true,
+    });
+  },
 };
 
 /**
@@ -203,7 +210,13 @@ const contentUndoRestore: UndoHandler = {
     return contentBlocked(row);
   },
   undoTakesAway: contentUndoTakesAway,
-  run: (call) => takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call),
+  run: async (call) => {
+    await takeContentBackTo(meta(call.row).priorStatus as ContentStatus)(call);
+    // A restore made from the Inbox dismissed the item's flags with it (B01-5): they reopen.
+    await reopenFlagsClosedBy(call.ctx, call.actor, call.row._id, call.reason, {
+      withUndoOf: true,
+    });
+  },
 };
 
 // ── People: lifecycle and posting rights ──────────────────────────────────────────────────────────
@@ -360,16 +373,19 @@ const CONTENT: TargetUndo = {
 };
 
 /** `hide`, `remove` and `restore` are shared across kinds; each kind brings its own undo. */
-const TARGET_UNDO: Partial<Record<ModerationTargetType, TargetUndo>> = {
-  report: CONTENT,
-  post: CONTENT,
-  comment: CONTENT,
-  hazard: CONTENT,
-  ...BODY_TARGET_UNDO,
-  ...CORPUS_TARGET_UNDO,
-};
+function targetUndo(): Partial<Record<ModerationTargetType, TargetUndo>> {
+  return {
+    report: CONTENT,
+    post: CONTENT,
+    comment: CONTENT,
+    hazard: CONTENT,
+    ...BODY_TARGET_UNDO,
+    ...CORPUS_TARGET_UNDO,
+  };
+}
 
 function shared(verb: keyof TargetUndo): UndoHandler {
+  const TARGET_UNDO = targetUndo();
   const forRow = (row: Doc<'moderationActions'>) => TARGET_UNDO[row.targetType]?.[verb];
   const anyChecks = Object.values(TARGET_UNDO).some((t) => t?.[verb]?.refusal !== undefined);
   return {
@@ -391,7 +407,8 @@ function shared(verb: keyof TargetUndo): UndoHandler {
               ? h.refusalCost(scope, row)
               : { bytes: ROW_MAX.waterBody, reads: 1 };
           },
-          refusal: async (ctx, row, read) => (await forRow(row)?.refusal?.(ctx, row, read)) ?? null,
+          refusal: async (ctx, row, read, viewer) =>
+            (await forRow(row)?.refusal?.(ctx, row, read, viewer)) ?? null,
         }
       : {}),
     run: async (call) => {
@@ -402,14 +419,25 @@ function shared(verb: keyof TargetUndo): UndoHandler {
   };
 }
 
-export const UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
-  hide: shared('hide'),
-  remove: shared('remove'),
-  restore: shared('restore'),
-  ban: undoDiscipline,
-  suspend: undoDiscipline,
-  unban: undoLift,
-  set_posting_permission: undoPostingPermission,
-  ...BODY_UNDO_HANDLERS,
-  ...CORPUS_UNDO_HANDLERS,
-};
+let composed: Partial<Record<ModerationAction, UndoHandler>> | undefined;
+
+/**
+ * Every undoable verb's handler — composed on first use, never at load. The per-area handler files
+ * import the modules whose own imports reach back to the undo engine (the Inbox's request undo runs
+ * the engine on the approval's body-side row), so a map spread at load could read one of them
+ * half-loaded and silently lose its handlers, whichever module a bundle happens to enter first.
+ */
+export function undoHandlers(): Partial<Record<ModerationAction, UndoHandler>> {
+  composed ??= {
+    hide: shared('hide'),
+    remove: shared('remove'),
+    restore: shared('restore'),
+    ban: undoDiscipline,
+    suspend: undoDiscipline,
+    unban: undoLift,
+    set_posting_permission: undoPostingPermission,
+    ...BODY_UNDO_HANDLERS,
+    ...CORPUS_UNDO_HANDLERS,
+  };
+  return composed;
+}

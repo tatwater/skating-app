@@ -49,6 +49,9 @@ import {
   removeBodyImpl,
   restoreBodyImpl,
   restoreDepthImpl,
+  returnToReviewImpl,
+  returnToReviewRefusal,
+  reviewDrawnBodyImpl,
   samplePointsRefusal,
   setAliasesImpl,
   setClassImpl,
@@ -63,6 +66,7 @@ import {
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { NAMES_NEED_THE_BAY, nameListRefusal } from './bodyNames';
+import { reopenFlagsClosedBy } from './inboxFlags';
 import { landmarkEditRefusal, liveBaysForNaming, liveLandmarksForBody } from './landmarkRows';
 import { listChangedRefusal } from './listCas';
 import { ROW_MAX } from './readBudget';
@@ -242,8 +246,7 @@ const undoWeatherSamplePoints: UndoHandler = {
 /**
  * set_public_access → the ruling it replaced, ruled again. Its standing follows as it does for any
  * ruling — and an `open` ruling that brought a shelved body back shelves it again, for the reason it
- * had, as a boost's undo does. Flags the ruling closed stay closed: reopening a flag is §2's inverse,
- * not this one.
+ * had, as a boost's undo does. The reports the ruling closed reopen, and their Inbox item with them.
  */
 const undoPublicAccess: UndoHandler = {
   blocked: needsPrev,
@@ -276,6 +279,8 @@ const undoPublicAccess: UndoHandler = {
         reason,
       });
     }
+    // The reports this ruling closed reopen with it, and their Inbox item (B01-5).
+    await reopenFlagsClosedBy(ctx, actor, row._id, reason, { withUndoOf: true });
   },
 };
 
@@ -343,6 +348,54 @@ const undoStanding: UndoHandler = {
     }
   },
 };
+
+// ── A drawn body's review (B01-5) ─────────────────────────────────────────────────────────────────
+
+/** The review an approval or a rejection made. */
+const reviewMadeBy = (row: Doc<'moderationActions'>): 'approved' | 'rejected' =>
+  row.action === 'approve_waterbody' ? 'approved' : 'rejected';
+
+/**
+ * approve_waterbody / reject_waterbody → back to pending review (`return_to_review`), listed again as
+ * a pending body is. Asks no reason: pending takes nothing away. The body as it stands is read for
+ * the offer and the write alike (`returnToReviewRefusal`): reviewed again, or merged, says no.
+ */
+const undoReview: UndoHandler = {
+  undoTakesAway: () => UNDO_POLICY.return_to_review.takesAway('pending'),
+  refusalCost: () => ({ bytes: ROW_MAX.waterBody, reads: 1 }),
+  refusal: async (_ctx, row, read, viewer) =>
+    returnToReviewRefusal(
+      await read.row('waterBody', waterBodyIdOf(row)),
+      reviewMadeBy(row),
+      viewer._id,
+    ),
+  run: async ({ ctx, actor, row, reason }) => {
+    await returnToReviewImpl(ctx, actor, {
+      waterBodyId: waterBodyIdOf(row),
+      from: reviewMadeBy(row),
+      reason,
+      undoes: row._id,
+    });
+  },
+};
+
+/**
+ * return_to_review → reviewed again as the row it took back had it: approved, or rejected (which
+ * takes the drawing off the map, so it asks why).
+ */
+const undoReturnToReview: UndoHandler = {
+  blocked: (row) => (meta(row).prev?.reviewStatus === undefined ? PREDATES : null),
+  undoTakesAway: (row) => UNDO_POLICY.return_to_review.takesAway(meta(row).prev.reviewStatus),
+  run: async ({ ctx, actor, row, reason }) => {
+    await reviewDrawnBodyImpl(ctx, actor, {
+      waterBodyId: waterBodyIdOf(row),
+      verdict: meta(row).prev.reviewStatus as 'approved' | 'rejected',
+      reason,
+    });
+  },
+};
+
+const waterBodyIdOf = (row: Doc<'moderationActions'>) => row.targetId as Id<'waterBodies'>;
 
 // ── Sub-areas ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -812,6 +865,9 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_standing: undoStanding,
   activate_body: undoStanding,
   demote_body: undoStanding,
+  approve_waterbody: undoReview,
+  reject_waterbody: undoReview,
+  return_to_review: undoReturnToReview,
   create_sub_area: undoCreateSubArea,
   redraw_sub_area: undoRedrawSubArea,
   rename_sub_area: undoRenameSubArea,

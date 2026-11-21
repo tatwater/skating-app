@@ -1,6 +1,7 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
+import { type DecideOpts, decideItem, flagSource } from './inboxItems';
 import { bumpMetricMetaCounter } from './metrics';
 import { enqueueActorNotification } from './notificationQueue';
 
@@ -34,12 +35,20 @@ export async function closeFlag(
   resolution: FlagResolution,
   actorId: Id<'profiles'>,
   now: number,
+  /**
+   * The decision's audit row and the Inbox decision it makes (B01-5): stamped on the flag's Inbox
+   * member, so an undo finds every flag a decision closed. A caller that writes its audit row first
+   * passes it; one that doesn't leaves the member unstamped (its undo can't reopen the item).
+   */
+  inbox: Pick<DecideOpts, 'actionId' | 'decision'> = {},
 ): Promise<void> {
   await ctx.db.patch(flag._id, {
     status: resolution,
     resolvedByUserId: actorId,
     resolvedAt: now,
   });
+  // Its Inbox member closes; the item is decided when this was its last open flag.
+  await decideItem(ctx, flagSource(flag._id), { now, actorId, ...inbox });
   // A decided complaint no longer holds withdrawn content back from erasure (D248).
   await holdMoved(ctx, flag.targetType, flag.targetId, now);
 

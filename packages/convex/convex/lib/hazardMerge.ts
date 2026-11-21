@@ -27,6 +27,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { writeAudit } from './audit';
 import { recomputeBodySummary } from './bodySummary';
+import { seedSideOf } from './seedPeople';
 
 /**
  * Follow a merged hazard to its surviving row, or `null` if the chain dead-ends.
@@ -338,10 +339,15 @@ export async function tryAutoMerge(
 
   const candidate = toCandidate(fresh);
   const dismissedIds = await dismissedIdentity(ctx, fresh, siblings, season);
+  // A fake person's pin from the dev seed and a real one never fold into each other (D287).
+  const side = seedSideOf(ctx);
+  const seedPin = (h: Doc<'hazards'>) => side.isSeed(h.createdByUserId);
+  const freshSeed = await seedPin(fresh);
   for (const other of siblings) {
     if (other._id === fresh._id) continue;
     if (seasonOf(other.firstReportedAt) !== season) continue;
     if (shouldAutoMerge(candidate, toCandidate(other), { dismissedIds }).merge !== true) continue;
+    if ((await seedPin(other)) !== freshSeed) continue;
 
     // The earliest sighting survives — the honest first-seen date, and the one recurrence keys on.
     const survivorIsOther = mergeSurvivorOf(candidate, toCandidate(other)).id === other._id;

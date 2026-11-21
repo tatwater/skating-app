@@ -23,6 +23,8 @@ import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { FLAG_REASONS, FLAG_TARGET_TYPES } from './lib/enums';
 import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { subjectOfTarget } from './lib/flagSubject';
+import { fileMember, flagSource, leaveMember } from './lib/inboxItems';
+import { isSeedProfile } from './lib/seedPeople';
 import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
 
@@ -125,6 +127,8 @@ export const flag = mutation({
       origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
+    // The Inbox's item for this question (B01-5): the flag joins it, or starts it.
+    await fileMember(ctx, flagSource(flagId));
     // A flag on a body is one of its asks: its library row moves with the minute cron (B01-3b).
     if (args.targetType === 'waterbody') {
       await queueLibraryRefresh(ctx, [targetId as Id<'waterBodies'>]);
@@ -136,7 +140,8 @@ export const flag = mutation({
 
     // Safety-priority alert (D38/D3): a dangerously-false "ice is great" flag is a safety incident, not
     // FIFO spam — email the founder to the priority lane. Fire-and-forget; no-ops without Resend keys.
-    if (args.reason === 'unsafe_false_report') {
+    // Never for a fake person from the dev seed (D287): seeding must not page anyone.
+    if (args.reason === 'unsafe_false_report' && !isSeedProfile(profile)) {
       await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
         subject: 'Safety flag: unsafe false report',
         heading: 'New safety flag · unsafe false report',
@@ -173,6 +178,8 @@ export const retract = mutation({
     if (rule !== 'retract') throw new ConvexError(RETRACT_REFUSALS[rule]);
     const now = Date.now();
     await ctx.db.patch(flagId, { status: 'retracted', retractedAt: now });
+    // Withdrawn, so no longer a question: it leaves its Inbox item (deleted if it was the last).
+    await leaveMember(ctx, flagSource(flagId), { now });
     await holdMoved(ctx, flag.targetType, flag.targetId, now);
     await refreshEraseClock(ctx, 'contentFlag', flagId, now);
     return flagId;

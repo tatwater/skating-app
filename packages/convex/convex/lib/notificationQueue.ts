@@ -41,6 +41,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { canReceiveNotifications } from './auth';
 import { loadBlockedAuthorIds } from './reportVisibility';
+import { isSeedProfile, seedSideOf } from './seedPeople';
 import type { notificationTrigger } from './validators';
 
 export type NotificationTrigger = Infer<typeof notificationTrigger>;
@@ -212,6 +213,9 @@ export async function enqueueActorNotification(
   const recipient = await ctx.db.get(args.recipientId);
   if (!recipient) return false;
   if (!recipientWants(recipient, type)) return false;
+  // What a fake person from the dev seed does tells no one anything (D287): a comment, a thumb, a
+  // corroboration, a bounty answer, a hazard vote — whoever the recipient.
+  if (await seedSideOf(ctx).isSeed(args.actorId)) return false;
   if (args.actorId !== undefined) {
     const blocked = await loadBlockedAuthorIds(ctx, args.recipientId);
     if (blocked.has(args.actorId)) return false;
@@ -248,9 +252,13 @@ export async function enqueueActorNotification(
   return true;
 }
 
-/** Active, not departing, and the type's toggle is on. Shared by enqueue and flush. */
+/**
+ * Active, not departing, not a fake person from the dev seed (D287 — whatever their toggles say), and
+ * the type's toggle is on. Shared by enqueue and flush.
+ */
 export function recipientWants(profile: Doc<'profiles'>, type: NotificationType): boolean {
   if (!canReceiveNotifications(profile)) return false;
+  if (isSeedProfile(profile)) return false;
   return profile.notificationPrefs[NOTIFICATION_PREF_KEY_FOR[type]] === true;
 }
 

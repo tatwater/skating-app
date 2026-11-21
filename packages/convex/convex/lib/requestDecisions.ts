@@ -24,6 +24,8 @@ import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { composed, writeAudit } from './audit';
+import { decideItem, itemToDecide, requestSource } from './inboxItems';
+import { assertInboxVerb } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
@@ -166,6 +168,19 @@ export const decisionArgs = {
   landmarkId: v.optional(v.id('bodyLandmarks')),
   /** A landmark decision's drain: where the last page of the lake's asks ended (`openSiblings`). */
   cursor: v.optional(v.string()),
+  /**
+   * The audit row the approval's body-side act wrote (`activate_body`, `restore`, `remove`,
+   * `set_public_access`, `set_included_by_request`), recorded on the primary request's row so its
+   * undo (`reopen_request`) can undo the act through the engine first. Absent when the act wrote no
+   * row (the body was already as asked) and on every decline.
+   */
+  bodyActionId: v.optional(v.id('moderationActions')),
+  /**
+   * The primary request's own `approve_request` / `decline_request` row: every sibling's Inbox member
+   * is closed by it, so the decision's undo (`reopen_request`) finds them all, across the drain's
+   * pages. Set by `decide` once the primary is closed.
+   */
+  actionId: v.optional(v.id('moderationActions')),
 };
 export type Decision = {
   requestId: Id<'waterBodyRequests'>;
@@ -180,13 +195,59 @@ export type Decision = {
   landmarkId?: Id<'bodyLandmarks'>;
   /** Where the drain of a landmark decision resumes — set only on its scheduled pages. */
   cursor?: string;
+  /** The approval's body-side audit row, recorded on the primary request's row (`decisionArgs`). */
+  bodyActionId?: Id<'moderationActions'>;
+  /** The primary request's decision row, which closes every sibling's Inbox member (`decisionArgs`). */
+  actionId?: Id<'moderationActions'>;
 };
+
+/**
+ * The newest audit row on a water body, by id — read before and after an approval's body-side act,
+ * so the row the act wrote is known without the act's helpers having to return it (`activateBody`,
+ * `restoreBodyImpl`, `removeBodyImpl`, `setPublicAccessImpl` each write exactly one row on the body,
+ * or none when the body was already as asked).
+ */
+export async function newestBodyAction(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Id<'moderationActions'> | null> {
+  const row = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', waterBodyId))
+    .order('desc')
+    .first();
+  return row?._id ?? null;
+}
+
+/**
+ * The row an approval's act wrote on the body: the newest row there now, when it is not the one that
+ * was newest before the act. `null` when the act wrote none.
+ */
+export async function bodyActionSince(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  before: Id<'moderationActions'> | null,
+): Promise<Id<'moderationActions'> | undefined> {
+  const after = await newestBodyAction(ctx, waterBodyId);
+  return after !== null && after !== before ? after : undefined;
+}
 
 export async function closeRow(
   ctx: MutationCtx,
   row: Doc<'waterBodyRequests'>,
-  { requestId, status, actorId, now, note, admittedWaterBodyId, subAreaId, landmarkId }: Decision,
-): Promise<void> {
+  {
+    requestId,
+    status,
+    actorId,
+    now,
+    note,
+    admittedWaterBodyId,
+    subAreaId,
+    landmarkId,
+    bodyActionId,
+    actionId: primaryActionId,
+  }: Decision,
+): Promise<Id<'moderationActions'>> {
   await ctx.db.patch(row._id, {
     status,
     decidedAt: now,
@@ -195,7 +256,7 @@ export async function closeRow(
     ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
     ...(landmarkId ? { landmarkId } : {}),
   });
-  await writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId,
     action: status === 'approved' ? 'approve_request' : 'decline_request',
     targetType: 'waterBodyRequest',
@@ -211,9 +272,68 @@ export async function closeRow(
       ...(subAreaId ? { subAreaId } : {}),
       ...(landmarkId ? { landmarkId } : {}),
       ...(row._id !== requestId ? { withRequestId: requestId } : {}),
+      // Only the primary row names the act: the siblings closed with it share it through the primary.
+      // `bodySide` is written on every primary approval — `null` when the act wrote no row — so its
+      // undo can tell "nothing to undo on the body" from a row written before the act was recorded.
+      ...(row._id === requestId && status === 'approved'
+        ? { bodySide: bodyActionId ?? null, ...(bodyActionId ? { bodyActionId } : {}) }
+        : {}),
     },
     createdAt: now,
   });
+  // Its Inbox member closes, stamped with the primary's row — the one every sibling shares, so the
+  // decision's undo reopens them all — and the item is decided with its last open member.
+  await decideItem(ctx, requestSource(row._id), {
+    now,
+    actorId,
+    decision: status,
+    ...((row._id === requestId ? actionId : primaryActionId) !== undefined
+      ? {
+          actionId: (row._id === requestId ? actionId : primaryActionId) as Id<'moderationActions'>,
+        }
+      : {}),
+  });
+  return actionId;
+}
+
+/**
+ * **Whether a drain page's decision still stands** (B01-5, the drain race): the primary request is
+ * still closed by it — the same status at the same instant. A `reopen_request` landing between two
+ * pages reopens the primary, so the next page finds it open and stops, rather than closing more rows
+ * the undo meant to leave open; a re-decision since has another instant, and its own drain.
+ */
+export function decisionStands(
+  primary: Pick<Doc<'waterBodyRequests'>, 'status' | 'decidedAt'> | null,
+  decision: Pick<Decision, 'status' | 'now'>,
+): boolean {
+  return primary?.status === decision.status && primary.decidedAt === decision.now;
+}
+
+/**
+ * **D289 at the decision** — one rule for every caller that decides an ask (the queue's approve and
+ * decline, the old editor's bay drawing and landmark add): the Inbox's own rule
+ * (`lib/inboxRules.assertInboxVerb`) on the item that holds the ask, so the staffer who filed it is
+ * refused in the rule's words, as is a decision on a decided item. An ask a script filed
+ * (`origin: 'seed'`) is never an item and is exempt: no person asked, so any staffer holding the
+ * capability decides it. An ask the backfill hasn't reached is filed first (`itemToDecide`), so it
+ * gets the same answer.
+ */
+export async function assertMayDecide(
+  ctx: MutationCtx,
+  request: Doc<'waterBodyRequests'>,
+  actorId: Id<'profiles'>,
+  status: 'approved' | 'declined',
+): Promise<void> {
+  if (request.origin === 'seed') return;
+  const viewer = await ctx.db.get(actorId);
+  if (!viewer) throw new ConvexError('Your profile was not found');
+  const item = await itemToDecide(ctx, requestSource(request._id));
+  if (item) {
+    await assertInboxVerb(ctx, viewer, item, status === 'approved' ? 'approve' : 'decline', {
+      requestKind: request.kind,
+      hasCandidate: request.candidate !== undefined,
+    });
+  }
 }
 
 /**
@@ -229,6 +349,8 @@ export async function closeSiblingPage(
   request: Doc<'waterBodyRequests'>,
   decision: Decision,
 ): Promise<void> {
+  // A page scheduled before an undo reopened the decision closes nothing more (the drain race).
+  if (!decisionStands(await ctx.db.get(decision.requestId), decision)) return;
   const { rows, capped, cursor } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, {
     subArea: decision.subAreaId ? await ctx.db.get(decision.subAreaId) : null,
     landmark: decision.landmarkId ? await ctx.db.get(decision.landmarkId) : null,
@@ -259,6 +381,7 @@ export async function decide(
   admittedWaterBodyId?: Id<'waterBodies'>,
   subAreaId?: Id<'waterBodySubAreas'>,
   landmarkId?: Id<'bodyLandmarks'>,
+  bodyActionId?: Id<'moderationActions'>,
 ): Promise<void> {
   const decision: Decision = {
     requestId: request._id,
@@ -269,9 +392,11 @@ export async function decide(
     ...(admittedWaterBodyId !== undefined ? { admittedWaterBodyId } : {}),
     ...(subAreaId !== undefined ? { subAreaId } : {}),
     ...(landmarkId !== undefined ? { landmarkId } : {}),
+    ...(bodyActionId !== undefined ? { bodyActionId } : {}),
   };
-  await closeRow(ctx, request, decision);
-  await closeSiblingPage(ctx, request, decision);
+  await assertMayDecide(ctx, request, actorId, status);
+  const actionId = await closeRow(ctx, request, decision);
+  await closeSiblingPage(ctx, request, { ...decision, actionId });
 }
 
 // ── Bays (D201) ────────────────────────────────────────────────────────────────────────────────

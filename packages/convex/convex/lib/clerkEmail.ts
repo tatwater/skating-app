@@ -16,6 +16,8 @@
  * subject. A digest to every member must never be this function in a loop.
  */
 
+import { isSeedProfile } from './seedPeople';
+
 const CLERK_API_BASE = 'https://api.clerk.com/v1';
 
 /** The slice of Clerk's user JSON the primary-address pick reads — the Backend API and the webhook payload share it. */
@@ -57,6 +59,8 @@ export function primaryEmailOf(body: ClerkUserEmails): string | null {
  * lookup failing must not roll anything back or abort a fan-out partway.
  */
 export async function clerkEmailForSubject(subject: string): Promise<string | null> {
+  // A fake person from the dev seed has no Clerk account, and no address to find (D287).
+  if (isSeedProfile(subject)) return null;
   const key = process.env.CLERK_SECRET_KEY;
   if (!key) {
     console.warn('CLERK_SECRET_KEY not set — cannot look up an email address');

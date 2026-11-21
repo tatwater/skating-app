@@ -27,7 +27,7 @@ import { ownContentRefusal } from './ownContent';
 import { type PersonWrite, refusalFor, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { ROW_MAX, requestBudget, type WaveCost } from './readBudget';
-import { UNDO_HANDLERS } from './undoHandlers';
+import { undoHandlers } from './undoHandlers';
 import { UNDO_POLICY, type UndoRule, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
 import {
@@ -49,7 +49,7 @@ export type UndoState =
 
 /** The handler for a row, if its verb is undoable in this build. */
 function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
-  return UNDO_HANDLERS[row.action] ?? null;
+  return undoHandlers()[row.action] ?? null;
 }
 
 /**
@@ -197,7 +197,8 @@ export async function undoStates(
     pending,
     ({ cost }) => cost,
     async ({ row, handler }, share): Promise<UndoState> => {
-      const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope))) ?? null;
+      const why =
+        (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope), viewer)) ?? null;
       return why
         ? { state: 'unavailable', why }
         : { state: 'available', needsReason: undoNeedsReason(row) };

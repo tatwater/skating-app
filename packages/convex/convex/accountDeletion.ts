@@ -78,6 +78,7 @@ import { internalMutation, type MutationCtx, mutation } from './_generated/serve
 import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
+import { leaveMember, ticketSource } from './lib/inboxItems';
 import { refreshPersonRow } from './lib/peopleRows';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
 import {
@@ -89,6 +90,15 @@ import {
   recordFailure,
   saveLap,
 } from './lib/recurringWork';
+import { isSeedProfile } from './lib/seedPeople';
+
+/**
+ * What deleting a fake person from the dev seed is told (D287). Deletion rewrites the Clerk subject
+ * that marks a person fake, so the predicate would stop matching them (Clerk, mail and push would no
+ * longer skip them) and the seed's clear could no longer find them: they are removed only by the clear.
+ */
+export const SEED_NOT_DELETED =
+  'A test person from the dev seed is removed by the seed’s clear (seed-inbox --clear), never deleted.';
 
 /**
  * Rows touched per invocation. Small on purpose: every stage runs in its own transaction and
@@ -167,6 +177,7 @@ export const requestDeletion = mutation({
   args: {},
   handler: async (ctx) => {
     const profile = await requireProfile(ctx);
+    if (isSeedProfile(profile)) throw new ConvexError(SEED_NOT_DELETED);
     if (profile.deletionRequestedAt !== undefined) {
       return { scheduledFor: profile.deletionRequestedAt + DELETION_GRACE_MS };
     }
@@ -488,6 +499,9 @@ export const finalizeAccount = internalMutation({
   handler: async (ctx, { userId, stage = STAGES[0], cursor, pageSize }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) return { stopped: 'gone' as const };
+    // A fake person from the dev seed is never finalized (D287): the tombstone would rewrite the
+    // subject that marks them fake. The seed's clear removes them.
+    if (isSeedProfile(profile)) return { stopped: 'seed' as const };
     // Canceled mid-flight: the user changed their mind between the sweep and this page. Stop, and
     // leave what's already erased erased — those rows are notifications and cached bands, all of which
     // regenerate. Nothing that was anonymized or severed has been touched yet (see the stage order).
@@ -769,12 +783,13 @@ async function erasePrivate(
   // Support tickets have no by-user index — they're looked up by status and by Clerk subject — so they
   // come off the Clerk-subject index. That's the identifier the tombstone is about to scrub, which is
   // one concrete reason the stage order isn't arbitrary: `erase` runs first, while it still resolves.
-  await drain(
-    await ctx.db
-      .query('supportTickets')
-      .withIndex('by_clerk_user_created', (q) => q.eq('clerkUserId', profile.clerkUserId))
-      .take(size),
-  );
+  const tickets = await ctx.db
+    .query('supportTickets')
+    .withIndex('by_clerk_user_created', (q) => q.eq('clerkUserId', profile.clerkUserId))
+    .take(size);
+  await drain(tickets);
+  // A deleted ticket is no question: each leaves its Inbox item (B01-5), which goes with it.
+  for (const ticket of tickets) await leaveMember(ctx, ticketSource(ticket._id));
 
   return { more: full, deleted };
 }
@@ -973,6 +988,7 @@ export const finalizeNow = internalMutation({
   handler: async (ctx, { userId }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) throw new ConvexError('No such profile');
+    if (isSeedProfile(profile)) throw new ConvexError(SEED_NOT_DELETED);
     if (profile.deletionRequestedAt === undefined) {
       await ctx.db.patch(userId, { deletionRequestedAt: Date.now() });
       await refreshPersonRow(ctx, userId);

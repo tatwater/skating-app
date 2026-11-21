@@ -80,4 +80,25 @@ describe('the undo registry (D226)', () => {
     expect(owed.length).toBeGreaterThan(0);
     for (const o of owed) expect(o.plan.length).toBeGreaterThan(10);
   });
+
+  test('the Inbox’s inverses are built: none of its §2 rows is still owed, the merge and §3/§4 are', () => {
+    const owed = new Set(undoOwed().map((o) => o.action));
+    for (const action of [
+      'resolve_flag',
+      'dismiss_flag',
+      'approve_request',
+      'decline_request',
+      'approve_waterbody',
+      'reject_waterbody',
+      'retract_access_alert',
+      'reopen_flag',
+      'reopen_request',
+      'return_to_review',
+      'unretract_access_alert',
+    ] as const) {
+      expect(owed.has(action), action).toBe(false);
+    }
+    expect(owed.has('merge_waterbody')).toBe(true);
+    expect(undoOwed().every((o) => o.workstream !== '§2 Inbox')).toBe(true);
+  });
 });

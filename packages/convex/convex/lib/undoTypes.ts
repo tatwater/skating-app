@@ -83,6 +83,8 @@ export interface UndoHandler {
     ctx: QueryCtx | MutationCtx,
     row: Doc<'moderationActions'>,
     read: UndoRead,
+    /** Who would undo it: a refusal that turns on the person (their own filing, D289) reads it. */
+    viewer: UndoViewer,
   ) => Promise<string | null>;
   /**
    * What `refusal` reads at worst for this row, through `read`, where it is asked — reserved before

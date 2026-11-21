@@ -371,6 +371,11 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned access alert',
   unpin_access_alert: 'Unpinned access alert',
   retract_access_alert: 'Retracted access alert',
+  // The Inbox's inverses (B01-5); wording for the copy pass.
+  reopen_flag: 'Reopened flag',
+  reopen_request: 'Reopened request',
+  return_to_review: 'Returned drawn body to review',
+  unretract_access_alert: 'Restored access alert',
   author_resolve_access_alert: 'Said “It’s open” on their pinned alert',
   set_posted_access: 'Set posted rules',
   set_satellite_imagery: 'Set satellite link',

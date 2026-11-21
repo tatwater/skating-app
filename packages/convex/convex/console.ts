@@ -16,8 +16,7 @@ import {
   type Count,
   callerNow,
   cappedCount,
-  medianOpenedAt,
-  type REQUEST_KINDS,
+  type InboxLane,
   roleMeets,
 } from '@skating/core';
 import { v } from 'convex/values';
@@ -25,13 +24,11 @@ import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
 import { countDedupDecisions } from './lib/dedupQueue';
+import { readInboxLanes } from './lib/inboxViews';
 import { readOpenFlags } from './lib/openFlags';
-import { peopleCardFigures, readWaitingTickets } from './lib/peopleFigures';
+import { peopleCardFigures } from './lib/peopleFigures';
 
 export type { Count };
-
-type RequestKind = (typeof REQUEST_KINDS)[number];
-const PLACE_KINDS: readonly RequestKind[] = ['name_bay', 'name_landmark'];
 
 export const overview = query({
   args: {},
@@ -39,39 +36,20 @@ export const overview = query({
     const viewer = await requireCapability(ctx, 'inbox.read');
     const now = Date.now();
 
-    // ── Inbox: flags, split into the lanes the Inbox shows ────────────────────────────────────
-    // Open means `open` or `reviewing` — one definition, `lib/openFlags` (the governor's ruling).
+    // ── Inbox: the stored items' counts (B01-5) — the lanes' own read, so the card and the
+    // Inbox's lanes agree by construction; one item per question, never per flag or per ask.
+    const supportRead = hasCapability(viewer, 'inbox.support.read');
+    const figures = await readInboxLanes(ctx, { support: supportRead, dayStart: null });
+    const laneCount = (lane: InboxLane): Count => ({
+      count: figures.lanes.find((l) => l.lane === lane)?.open ?? 0,
+      capped: false,
+    });
+    const oldests = figures.lanes
+      .map((l) => l.oldestFiledAt)
+      .filter((at): at is number => at !== null);
+
+    // Metrics' flag figures and the People card still read the open flags themselves.
     const { flags, capped: flagsCapped } = await readOpenFlags(ctx, COUNT_CAP);
-    // The same split `moderation.listFlags` draws: an access report is a `no_public_access` flag on a
-    // *body*; the same reason on anything else (a report, a put-in) stays in the content lane.
-    const isAccessReport = (f: (typeof flags)[number]) =>
-      f.reason === 'no_public_access' && f.targetType === 'waterbody';
-    const safety = flags.filter((f) => f.reason === 'unsafe_false_report').length;
-    const access = new Set(flags.filter(isAccessReport).map((f) => f.targetId)).size;
-    const content = flags.filter(
-      (f) => f.reason !== 'unsafe_false_report' && !isAccessReport(f),
-    ).length;
-
-    // ── Inbox: requests (places are their own lane) ───────────────────────────────────────────
-    const openRequests = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_status_created', (q) => q.eq('status', 'open'))
-      .take(COUNT_CAP + 1);
-    const requestsCapped = openRequests.length > COUNT_CAP;
-    const requests = openRequests.slice(0, COUNT_CAP);
-    const places = requests.filter((r) => PLACE_KINDS.includes(r.kind)).length;
-
-    const drawn = await ctx.db
-      .query('waterBodies')
-      .withIndex('by_review_status', (q) => q.eq('reviewStatus', 'pending'))
-      .take(COUNT_CAP + 1);
-
-    // Support is PII (D37): counted only for a viewer who may open it. A ticket waits until it is
-    // resolved — `in_progress` is still waiting — the same rule `support_queue_depth` counts by.
-    const waiting = hasCapability(viewer, 'inbox.support.read')
-      ? await readWaitingTickets(ctx)
-      : null;
-    const support: Count | null = waiting === null ? null : cappedCount(waiting.tickets.length);
 
     // ── People: the People lanes' own reads (`lib/peopleFigures`), so the card and the lanes agree ──
     const people = await peopleCardFigures(
@@ -81,25 +59,19 @@ export const overview = query({
       hasCapability(viewer, 'inbox.support.read'),
     );
 
-    // What the Inbox card's foot ages: the open flags and the open requests. The oldest of each read
-    // is its oldest overall (both read oldest first); the median needs every one, so it is `null`
-    // whenever either read stopped short rather than a median of the oldest two hundred.
-    const openedAts = [...flags.map((f) => f.createdAt), ...requests.map((r) => r.createdAt)];
-    const oldest = openedAts.length > 0 ? Math.min(...openedAts) : null;
     return {
       inbox: {
-        safety: { count: safety, capped: flagsCapped },
-        accessReports: { count: access, capped: flagsCapped },
-        requests: { count: requests.length - places, capped: requestsCapped },
-        placesAsked: { count: places, capped: requestsCapped },
-        drawnBodies: cappedCount(drawn.length),
-        contentFlags: { count: content, capped: flagsCapped },
-        support,
-        oldestOpenAt: oldest,
-        // When the median open item was opened, for the client to age on its own clock: an age
-        // computed here would freeze between data changes. `null` once a lane read stopped short —
-        // a median of the oldest two hundred is not the queue's.
-        medianOpenedAt: flagsCapped || requestsCapped ? null : medianOpenedAt(openedAts),
+        safety: laneCount('safety'),
+        accessReports: laneCount('accessReports'),
+        requests: laneCount('requests'),
+        placesAsked: laneCount('placesAsked'),
+        drawnBodies: laneCount('drawnBodies'),
+        contentFlags: laneCount('contentFlags'),
+        support: supportRead ? laneCount('support') : null,
+        oldestOpenAt: oldests.length > 0 ? Math.min(...oldests) : null,
+        // When the median open item was filed, for the client to age on its own clock; `null` past
+        // the lanes' median read (the oldest two hundred are not the queue).
+        medianOpenedAt: figures.medianFiledAt,
       },
       people,
     };

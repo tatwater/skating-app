@@ -382,6 +382,13 @@ crons.interval('turn the bodies library season', { hours: 1 }, internal.bodyLibr
 /** The drift repair: the oldest-refreshed rows, a few a tick — the corpus about every four days. */
 crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibrary.repairDrift, {});
 
+// ── The Inbox (B01-5) ──
+/**
+ * The drift repair: the oldest-refreshed open items, a few a tick, each re-derived from its members and
+ * their sources; and the backfill's failures retried. Nothing a moderator does depends on it.
+ */
+crons.interval('repair inbox items drift', { minutes: 3 }, internal.inboxItems.repair, {});
+
 // ── People (B01 §5.7) ──
 /**
  * A lapsed suspension's stored status is reset to active (D222): each person in their own nested

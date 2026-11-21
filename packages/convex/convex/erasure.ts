@@ -54,6 +54,7 @@ import {
   unparkOnProgress,
   withdrawnAtOf,
 } from './lib/eraseClock';
+import { flagSource, leaveMember, requestSource } from './lib/inboxItems';
 import { chainedLease, handOn, LEASE_ARG, LEASE_READS, VERDICTS_DONE } from './lib/peopleRuns';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { postSearchText } from './lib/postSync';
@@ -211,12 +212,17 @@ const ERASERS: Record<Erasable, Eraser> = {
   post: (ctx, tick, doc) => erasePost(ctx, tick, doc as Doc<'posts'>),
   contentFlag: async (ctx, tick, doc) => {
     tick.reads.touch('contentFlag');
-    await ctx.db.delete((doc as Doc<'contentFlags'>)._id);
+    const id = (doc as Doc<'contentFlags'>)._id;
+    await ctx.db.delete(id);
+    // A retracted flag left its Inbox item when it was withdrawn; erased, it can have no member.
+    await leaveMember(ctx, flagSource(id));
     return true;
   },
   waterBodyRequest: async (ctx, tick, doc) => {
     tick.reads.touch('waterBodyRequest');
-    await ctx.db.delete((doc as Doc<'waterBodyRequests'>)._id);
+    const id = (doc as Doc<'waterBodyRequests'>)._id;
+    await ctx.db.delete(id);
+    await leaveMember(ctx, requestSource(id));
     return true;
   },
   accessAlert: (ctx, tick, doc) => eraseAlert(ctx, tick, doc as Doc<'accessAlerts'>),
