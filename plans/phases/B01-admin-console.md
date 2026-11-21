@@ -6860,10 +6860,29 @@ correct before, during and after its backfill.
     The write still runs the whole rule, as before.
 - **The web** draws the server's `why` as it stands, so no web file changed for this. The rows are
   History's (`apps/web/src/components/admin/bodies/`, through `bodyConsole.history`).
-- **Every rebuild is bounded by bytes.** `refreshBodyNames` reads the landmarks (64 a chunk) and
-  then the bays (4 a chunk, each with its outline) by real size, to 4 MiB
-  (`BODY_NAMES_READ_MAX_BYTES`); past it the row is `capped`. A rebuild therefore reads at most 4 MiB
-  and one chunk, whoever calls it.
+- **Every rebuild is bounded by bytes, and one allowance covers a transaction.** `refreshBodyNames`
+  reads the landmarks (16 a chunk) and then the bays (one at a time, each with its outline) by real
+  size. A body whose rows pass 4 MiB (`BODY_NAMES_READ_MAX_BYTES`) is `capped`, the same answer on
+  every path. Every rebuild in a transaction draws from one read allowance (`setNamesAllowance`):
+  4 MiB by default (a single write and its undo); a catalog load's batch, 12 MiB for its own reads
+  and its rebuilds together (each body's reads drawn as they are made, and its bays reused, not read
+  again); a body merge, a canonical re-import and the two bay batch loaders, none. A rebuild the
+  allowance can't cover is **deferred**: its row is made `capped` in the same transaction, so no
+  reader trusts a list the writes beside it changed, and `landmarks:rebuildBodyNames` rebuilds it in
+  a transaction of its own (allowance: the body's cap alone, so it can't defer again; a throw is
+  logged and the row stays `capped`). Until then a list reads that body as before the row existed —
+  the spellings-only check, with the undo's own write still running the whole rule. A dry run makes
+  the same reads and the same decision and reports `namesDeferred` as the applied run does.
+
+  | Caller | Its added reads, worst case | Changed by Greptile's finding |
+  | --- | --- | --- |
+  | `importOneBody` (`importBatch`, a catalog load) | within the batch's 12 MiB, with its own reads | yes: shared allowance, bays reused, dry run counts it |
+  | `mergeBodyInto` (both repoints, the re-clip, `retireNamedAsBays`) | none: deferred | yes |
+  | `waterBodies.importCanonical` (the re-clip's delists) | none: deferred | yes |
+  | `subAreas.importSeed`, `importBaySubAreas` (`retireCollected`) | none: deferred | yes |
+  | landmark create, edit, removal, restore and their undos; `fileAsSpelling`; a bay's create, rename, delist, restore and their undos | 4 MiB and one chunk a transaction | no (bounded since the review) |
+  | `backfillBodyNames` | 8 MiB a pass and a chunk; never defers | allowance shared across the pass |
+  | `rebuildBodyNames` | one body: 4 MiB and a chunk | new |
 - **Once a write, never once a bay.** A loop rebuilds once after it: the re-clip that delists bays
   (`reclipSubAreasToParent`, the ETL's and a merge's), the merge's repoint, a batch's
   `retireCollected`. A bay's insert, rename or restore rebuilds once — by `retireNamedAsBays` when it
@@ -6964,6 +6983,13 @@ writer. What it found, all fixed on the branch:
 - the narrowed Deleted read compared a cursor's kind without its default, `kind` wasn't a watched
   field in the names guard, and the random histories alone missed two mutations (now biased toward
   a few items, 30 runs a seed; they catch both).
+
+**Greptile on #167 (4/5, one P1 on `7c916339`):** a catalog load rebuilt each body's names after
+reading the body already, with a fresh allowance each time, so a batch of bay-heavy bodies could
+double its reads past the transaction's limit and roll back, while the dry run (which skipped the
+rebuilds) passed. Right as stated. Fixed by the one allowance per transaction above; held by
+`bodyNameRows.test.ts` *a catalog load whose reads and rebuilds would pass its allowance commits,
+deferring the rest* and *a merge adds no names reads to its own transaction*.
 
 **Retired:** `contentRecord.personWithdrawals`, the older per-kind withdrawals query. No page, app
 or script called it, only two tests, which now read the withdrawal rows.

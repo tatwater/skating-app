@@ -75,7 +75,7 @@ import {
   writeSnapshot,
 } from './lib/audit';
 import { requireCapability } from './lib/auth';
-import { refreshBodyNames } from './lib/bodyNames';
+import { refreshBodyNames, setNamesAllowance } from './lib/bodyNames';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -225,7 +225,7 @@ export async function stampCandidates(
   return toCandidates(await subAreasForBody(ctx, waterBodyId));
 }
 
-function toCandidates(
+export function toCandidates(
   rows: readonly Doc<'waterBodySubAreas'>[],
 ): SubAreaCandidate<Doc<'waterBodySubAreas'>>[] {
   return rows
@@ -2115,6 +2115,9 @@ export const importSeed = internalMutation({
     minRetainedFraction: v.optional(v.number()),
   },
   handler: async (ctx, { actorUserId, seed, dryRun, minRetainedFraction }) => {
+    // A batch loader sized before the names lists: its parents' rebuilds add no reads here — each
+    // is deferred to its own transaction, the row `capped` meanwhile (`lib/bodyNames`).
+    setNamesAllowance(ctx, 0);
     const bar = minRetainedFraction ?? SEED_MIN_RETAINED_FRACTION;
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
@@ -2351,6 +2354,9 @@ export const importBaySubAreas = internalMutation({
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, { actorUserId, bays, dryRun }) => {
+    // A batch loader sized before the names lists: its parents' rebuilds add no reads here — each
+    // is deferred to its own transaction, the row `capped` meanwhile (`lib/bodyNames`).
+    setNamesAllowance(ctx, 0);
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
     const named = new Map<Id<'waterBodies'>, BayNaming[]>();

@@ -9,7 +9,9 @@
  *   or a bay's names, kind, point, removal or body calls it beside its write (or once after its
  *   loop), with the body id read off the stored row (`packages/guards`' `bodyNameWriters.test.ts`
  *   holds the list). A rebuild reads the body's live landmarks and its bays by real size, to
- *   {@link BODY_NAMES_READ_MAX_BYTES}; past that the row is `capped`.
+ *   {@link BODY_NAMES_READ_MAX_BYTES}; past that the row is `capped`. Every rebuild in a transaction
+ *   draws from one read allowance; one that can't finish in what is left is deferred to a
+ *   transaction of its own, its row `capped` meanwhile ({@link setNamesAllowance}).
  * - **Bounded at the write** ({@link BODY_NAMES_MAX_BYTES}, by an estimate that never undercounts):
  *   past it the row says `capped` and holds nothing, and every reader answers as it did before the
  *   row existed — as it does for a body with no row yet (before the backfill reaches it).
@@ -22,6 +24,7 @@
  */
 import { type LandmarkKind, landmarkNameKey, landmarksAreSamePlace } from '@skating/core';
 import { getDocumentSize } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
@@ -52,39 +55,108 @@ export function namesBytes(
 }
 
 /**
- * What one rebuild may read of a body's rows, by their real size: past it the row is `capped` (the
- * answer every reader gave before the row existed), so a rebuild — a writer's or the backfill's —
- * never reads a giant's every bay outline and landmark in one transaction. The rows come in chunks,
- * so a rebuild reads at most this plus one chunk ({@link READ_CHUNK}).
+ * What one body's rows may weigh for its list, by their real size: past it the row is `capped` (the
+ * answer every reader gave before the row existed) — the same answer whichever path rebuilds it.
  */
 export const BODY_NAMES_READ_MAX_BYTES = 4 * 1024 * 1024;
 
-/** The bounds in force — a test seam (a test shrinks them to small rows, then puts them back). */
-export const NAMES_BOUNDS = { readMaxBytes: BODY_NAMES_READ_MAX_BYTES, passBytes: 4 * 1024 * 1024 };
+/**
+ * The bounds in force — a test seam (a test shrinks them to small rows, then puts them back):
+ * - `readMaxBytes` — one body's cap, above;
+ * - `txBytes` — what rebuilds may add to a transaction that hasn't said otherwise
+ *   ({@link setNamesAllowance}): a single write's rebuild, and an undo's;
+ * - `passBytes` — the names backfill's pass;
+ * - `loadBytes` — a catalog load's batch, its own reads and its rebuilds together: under the
+ *   transaction's 16 MiB read limit with room for the writes' own reads (`landmarks.importBatch`).
+ */
+export const NAMES_BOUNDS = {
+  readMaxBytes: BODY_NAMES_READ_MAX_BYTES,
+  txBytes: BODY_NAMES_READ_MAX_BYTES,
+  passBytes: 2 * BODY_NAMES_READ_MAX_BYTES,
+  loadBytes: 12 * 1024 * 1024,
+};
 
-/** Rows a rebuild reads at a time: a landmark is small in fact; a bay carries its whole outline. */
-export const READ_CHUNK = { landmarks: 64, bays: 4 } as const;
+/**
+ * Rows a rebuild reads at a time: a landmark is small in fact; a bay carries its whole outline (a
+ * document at most), so one at a time — a read stops at most a chunk past its allowance.
+ */
+export const READ_CHUNK = { landmarks: 16, bays: 1 } as const;
 
-/** A body's live landmarks or its bays, chunk by chunk while the read stays under the bound. */
+/**
+ * **One read allowance per transaction** for every rebuild in it (keyed by the transaction's
+ * context): {@link NAMES_BOUNDS}.`txBytes` unless the transaction sets its own — a catalog load the
+ * read limit less what its own reads took ({@link drawNamesAllowance}), a body merge or a batch
+ * loader none. A rebuild that can't finish in what is left is **deferred**: its body's row is made
+ * `capped` now (so no reader trusts a list the writes beside it just changed) and a standalone
+ * rebuild is scheduled, in a transaction of its own.
+ */
+const ALLOWANCES = new WeakMap<object, { bytes: number; deferred: Set<string> }>();
+
+function allowanceOf(ctx: object) {
+  let allowance = ALLOWANCES.get(ctx);
+  if (allowance === undefined) {
+    allowance = { bytes: NAMES_BOUNDS.txBytes, deferred: new Set() };
+    ALLOWANCES.set(ctx, allowance);
+  }
+  return allowance;
+}
+
+/** Set what rebuilds may read in this transaction from now on (0: every rebuild deferred). */
+export function setNamesAllowance(ctx: object, bytes: number): void {
+  allowanceOf(ctx).bytes = bytes;
+}
+
+/** This transaction's own reads, drawn from the same allowance (a catalog load's per body). */
+export function drawNamesAllowance(ctx: object, bytes: number): void {
+  allowanceOf(ctx).bytes -= bytes;
+}
+
+/** What rebuilds may still read in this transaction. */
+export function namesAllowanceLeft(ctx: object): number {
+  return allowanceOf(ctx).bytes;
+}
+
+/**
+ * A body's live landmarks or its bays, chunk by chunk: the body's cap first (`spent` past
+ * `readMaxBytes` → `cap`, final), then the transaction's allowance (`drawn` past what was left →
+ * `allowance`, deferred). Checked before each chunk, so a read stops at most a chunk past either.
+ */
 async function weighedRows<D extends { _creationTime: number }>(
   take: (after: number | null, n: number) => Promise<D[]>,
   chunk: number,
   spent: { bytes: number },
-): Promise<{ rows: D[]; over: boolean }> {
+  drawn: { bytes: number; left: number },
+): Promise<{ rows: D[]; stop: 'cap' | 'allowance' | null }> {
   const rows: D[] = [];
+  const stopped = () =>
+    spent.bytes > NAMES_BOUNDS.readMaxBytes
+      ? ('cap' as const)
+      : drawn.left <= 0 || drawn.bytes > drawn.left
+        ? ('allowance' as const)
+        : null;
   for (let after: number | null = null; ; ) {
-    if (spent.bytes > NAMES_BOUNDS.readMaxBytes) return { rows, over: true };
+    const stop = stopped();
+    if (stop !== null) return { rows, stop };
     const page = await take(after, chunk);
-    for (const row of page) spent.bytes += getDocumentSize(row as never);
+    for (const row of page) {
+      const size = getDocumentSize(row as never);
+      spent.bytes += size;
+      drawn.bytes += size;
+    }
     rows.push(...page);
     if (page.length < chunk) {
-      return { rows, over: spent.bytes > NAMES_BOUNDS.readMaxBytes };
+      return { rows, stop: spent.bytes > NAMES_BOUNDS.readMaxBytes ? 'cap' : null };
     }
     after = (page[page.length - 1] as D)._creationTime;
   }
 }
 
-function liveLandmarks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { bytes: number }) {
+function liveLandmarks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  spent: { bytes: number },
+  drawn: { bytes: number; left: number },
+) {
   return weighedRows(
     (after, n) =>
       ctx.db
@@ -96,11 +168,17 @@ function liveLandmarks(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { b
         .take(n),
     READ_CHUNK.landmarks,
     spent,
+    drawn,
   );
 }
 
 /** A body's bays, delisted ones included (the caller keeps the live). */
-function bays(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { bytes: number }) {
+function bays(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  spent: { bytes: number },
+  drawn: { bytes: number; left: number },
+) {
   return weighedRows(
     (after, n) =>
       ctx.db
@@ -112,6 +190,7 @@ function bays(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>, spent: { bytes: num
         .take(n),
     READ_CHUNK.bays,
     spent,
+    drawn,
   );
 }
 
@@ -143,35 +222,65 @@ export function namesOf(
 
 /**
  * **The one writer**: rebuild a body's row from its live landmarks and bays as they stand in this
- * transaction, writing only when it changed. Says whether it wrote, and how many bytes of rows it
- * read (the backfill sizes its passes by it) — at most {@link BODY_NAMES_READ_MAX_BYTES} and a chunk. Call it beside every write of a landmark's or a bay's names,
- * kind, point, removal or body, with the body id off the stored row — both bodies when a row moves.
+ * transaction, writing only when it changed — or, when this transaction's read allowance can't cover
+ * the rebuild, make the row `capped` now and schedule a standalone rebuild (`deferred`). Call it
+ * beside every write of a landmark's or a bay's names, kind, point, removal or body (or once after
+ * a loop), with the body id off the stored row — both bodies when a row moves.
+ *
+ * `bays`: the body's bays as this transaction already read them, unchanged since (a catalog load,
+ * which writes no bay) — counted toward the body's cap as if read, never read again. `dryRun`: read
+ * and decide, write and schedule nothing (a dry run's reads are the applied run's).
  */
 export async function refreshBodyNames(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-): Promise<{ wrote: boolean; read: number }> {
+  opts: { bays?: readonly Doc<'waterBodySubAreas'>[]; dryRun?: boolean } = {},
+): Promise<{ wrote: boolean; read: number; deferred: boolean }> {
+  const allowance = allowanceOf(ctx);
   const spent = { bytes: 0 };
+  const drawn = { bytes: 0, left: allowance.bytes };
   const existing = await ctx.db
     .query('bodyNameLists')
     .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
     .first();
-  // One after the other, so the bound is the read's whole: the landmarks, then the bays with what
-  // the landmarks left. Past it, `capped`.
-  const landmarks = await liveLandmarks(ctx, waterBodyId, spent);
-  const subAreas = landmarks.over ? { rows: [], over: true } : await bays(ctx, waterBodyId, spent);
-  const next =
-    landmarks.over || subAreas.over
-      ? { capped: true, landmarks: [], bays: [] }
-      : namesOf(landmarks.rows, subAreas.rows);
-  const read = spent.bytes;
-  if (existing !== null && sameLists(existing, next)) {
-    return { wrote: false, read };
+  let landmarks: Awaited<ReturnType<typeof liveLandmarks>>;
+  let subAreas: { rows: Doc<'waterBodySubAreas'>[]; stop: 'cap' | 'allowance' | null };
+  if (opts.bays !== undefined) {
+    // Already in hand: toward the body's cap, never drawn from the allowance again.
+    for (const bay of opts.bays) spent.bytes += getDocumentSize(bay as never);
+    subAreas = {
+      rows: [...opts.bays],
+      stop: spent.bytes > NAMES_BOUNDS.readMaxBytes ? 'cap' : null,
+    };
+    landmarks =
+      subAreas.stop === null
+        ? await liveLandmarks(ctx, waterBodyId, spent, drawn)
+        : { rows: [], stop: 'cap' };
+  } else {
+    landmarks = await liveLandmarks(ctx, waterBodyId, spent, drawn);
+    subAreas =
+      landmarks.stop === null
+        ? await bays(ctx, waterBodyId, spent, drawn)
+        : { rows: [], stop: landmarks.stop };
   }
+  allowance.bytes -= drawn.bytes;
+  const stop = landmarks.stop ?? subAreas.stop;
+  const read = drawn.bytes;
+  const deferred = stop === 'allowance';
+  if (opts.dryRun === true) return { wrote: false, read, deferred };
+  const next =
+    stop === null
+      ? namesOf(landmarks.rows, subAreas.rows)
+      : { capped: true, landmarks: [], bays: [] };
+  if (deferred && !allowance.deferred.has(waterBodyId)) {
+    allowance.deferred.add(waterBodyId);
+    await ctx.scheduler.runAfter(0, internal.landmarks.rebuildBodyNames, { waterBodyId });
+  }
+  if (existing !== null && sameLists(existing, next)) return { wrote: false, read, deferred };
   const row = { waterBodyId, ...next, updatedAt: Date.now() };
   if (existing === null) await ctx.db.insert('bodyNameLists', row);
   else await ctx.db.replace(existing._id, row);
-  return { wrote: true, read };
+  return { wrote: true, read, deferred };
 }
 
 /** Whether a stored row already holds these lists (a stored object's keys come back in their own order). */

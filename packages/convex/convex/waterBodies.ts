@@ -114,6 +114,7 @@ import {
 import { resolveSurvivor } from './lib/bodies';
 import { markGeoStale, outlineStamp, refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
+import { setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
@@ -612,6 +613,9 @@ export const importCanonical = internalMutation({
     campaignId: v.optional(v.string()),
   },
   handler: async (ctx, { bodies, campaignId }) => {
+    // A batch sized before the names lists: a re-clip's rebuild adds no reads here — deferred to its
+    // own transaction, the body's row `capped` meanwhile (`lib/bodyNames`).
+    setNamesAllowance(ctx, 0);
     // Every record's region answer first, before any write: one broken record refuses the batch.
     const statesByItem = bodies.map(regionStatesOf);
     let inserted = 0;
@@ -3598,6 +3602,9 @@ export async function mergeBodyInto(
 ): Promise<{ repointed: Record<string, number> }> {
   const survivorId = survivor._id;
   const loserId = loser._id;
+  // A merge reads both bodies' children whole: its names rebuilds add no reads to it — both bodies'
+  // rows are made `capped` now and rebuilt in transactions of their own (`lib/bodyNames`).
+  setNamesAllowance(ctx, 0);
   // The survivor holds the union of both bodies' moderator-held lists, or the merge does not happen
   // (B01-3g): refused before any write, never truncated. The caller that offers or runs a merge asks
   // the same function first (`mergedModeratorLists`).

@@ -8444,6 +8444,9 @@ for existing data by a paged backfill:
   undercounts (about a thousand typical landmarks; a body near the 1,500-landmark cap always
   passes it); past it the row is `capped` and empty. A rebuild reads the body's rows by real size,
   to 4 MiB, and caps past that, so no rebuild (a writer's or the backfill's) reads a giant whole.
+  Every rebuild in one transaction draws from one read allowance; one it can't cover is deferred —
+  the row made `capped` at once, rebuilt in a transaction of its own — so a write never rolls back
+  for the names list's sake.
   A list page of History checks the landmark undo's whole rule from it: a duplicate exactly, word
   for word. **A bay answering to an old name is a deliberate conservative answer on the list**: the
   undo is not offered there, and the line points to the landmark, though the single-landmark view

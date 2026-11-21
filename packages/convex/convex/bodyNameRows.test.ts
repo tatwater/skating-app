@@ -569,6 +569,56 @@ describe('a rebuild reads a body by its real size (B01-3u)', () => {
     expect(row).toMatchObject({ capped: true, landmarks: [], bays: [] });
   });
 
+  test('a catalog load whose reads and rebuilds would pass its allowance commits, deferring the rest', async () => {
+    // Greptile on #167: each body's rebuild began a fresh allowance after the batch had read the body
+    // already, so a batch of bay-heavy bodies doubled its reads past the limit and rolled back. Now
+    // the batch and its rebuilds share one allowance; what it can't cover is deferred.
+    Object.assign(NAMES_BOUNDS, { loadBytes: 150_000 });
+    const w = await world();
+    const extra = await w.t.run(async (ctx) => {
+      const base = (await ctx.db.get(w.bodies[0] as Id<'waterBodies'>)) as Doc<'waterBodies'>;
+      const { _id, _creationTime, ...rest } = base;
+      return [await ctx.db.insert('waterBodies', rest), await ctx.db.insert('waterBodies', rest)];
+    });
+    const bodies = [...w.bodies, ...extra] as Id<'waterBodies'>[];
+    for (const body of bodies) for (let i = 0; i < 5; i++) await heavyBay(w.t, body, `Bay ${i}`);
+    const batch = (dryRun: boolean) =>
+      w.t.mutation(internal.landmarks.importBatch, {
+        bodies: bodies.map((waterBodyId, i) => ({
+          waterBodyId,
+          landmarks: [
+            {
+              name: `Island ${i}`,
+              kind: 'island' as const,
+              point: POINTS[2] as { lat: number; lng: number },
+              source: 'osm' as const,
+              externalIds: [`osm:node/${i}`],
+              aliases: [],
+            },
+          ],
+        })),
+        dryRun,
+      });
+    // The dry run makes the same reads and says the same.
+    const dry = await batch(true);
+    const applied = await batch(false);
+    expect(applied.created).toBe(bodies.length);
+    expect(applied.namesDeferred).toBeGreaterThan(0);
+    expect(applied.namesDeferred).toBeLessThan(bodies.length);
+    expect(dry.namesDeferred).toBe(applied.namesDeferred);
+    // Committed; the deferred bodies read `capped` (the old check) until their own rebuild runs.
+    const capped = await w.t.run(async (ctx) =>
+      (await ctx.db.query('bodyNameLists').collect()).filter((r) => r.capped),
+    );
+    expect(capped).toHaveLength(applied.namesDeferred);
+    await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rows = await w.t.run((ctx) => ctx.db.query('bodyNameLists').collect());
+    expect(rows.filter((r) => r.waterBodyId !== undefined && !r.capped)).toHaveLength(
+      bodies.length,
+    );
+    expect(rows.every((r) => r.landmarks.length === 1 && r.bays.length === 5)).toBe(true);
+  });
+
   test('a pass ends on what it read, every body is reached, and a failing body is passed over', async () => {
     const w = await world();
     const extra = await w.t.run(async (ctx) => {
@@ -624,5 +674,23 @@ describe('a rebuild once a write, never once a bay (B01-3u)', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
     await rowsHold(w);
+  });
+});
+
+describe('a merge adds no names reads to its own transaction (B01-3u)', () => {
+  test('both bodies’ rows read capped until their own rebuilds run, then exact', async () => {
+    const w = await world();
+    await step(w, { op: 'create', b: 1, name: 2, alias: null, point: 3 });
+    await step(w, { op: 'bay', b: 0, name: 0, slot: 1 });
+    await w.mod.mutation(api.waterBodies.merge, {
+      survivorId: w.bodies[0] as Id<'waterBodies'>,
+      loserId: w.bodies[1] as Id<'waterBodies'>,
+    });
+    const before = await w.t.run((ctx) => ctx.db.query('bodyNameLists').collect());
+    expect(before.map((r) => r.capped)).toEqual([true, true]);
+    await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+    await rowsHold(w);
+    const after = await w.t.run((ctx) => ctx.db.query('bodyNameLists').collect());
+    expect(after.every((r) => !r.capped)).toBe(true);
   });
 });

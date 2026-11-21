@@ -36,7 +36,7 @@ import {
   nextLandmarkSourceBar,
   normalizeLandmarkNames,
 } from '@skating/core';
-import { ConvexError, type Infer, v } from 'convex/values';
+import { ConvexError, getDocumentSize, type Infer, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
@@ -50,7 +50,13 @@ import {
 import { composed } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
-import { NAMES_BOUNDS, refreshBodyNames } from './lib/bodyNames';
+import {
+  drawNamesAllowance,
+  NAMES_BOUNDS,
+  namesAllowanceLeft,
+  refreshBodyNames,
+  setNamesAllowance,
+} from './lib/bodyNames';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -71,7 +77,7 @@ import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import { approveNamedLandmarkRequest } from './lib/requestDecisions';
 import { latLng, literals } from './lib/validators';
-import { stampCandidates } from './subAreas';
+import { stampCandidates, subAreasForBody, toCandidates } from './subAreas';
 
 /** The label-ready view of a row: what both maps and the sheet read. */
 function toView(row: Doc<'bodyLandmarks'>) {
@@ -310,6 +316,10 @@ export const importBatch = internalMutation({
     const shortfalls = landmarkSourceReasons(check);
     const total = emptyCounts();
     const notes: LoadNote[] = [];
+    // One read allowance for the whole batch: each body's own reads and each body's names rebuild
+    // draw from it (`lib/bodyNames`); a rebuild it can't cover is deferred to its own transaction.
+    setNamesAllowance(ctx, NAMES_BOUNDS.loadBytes);
+    const names = { deferred: 0 };
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
         complete: complete === true && vouched,
@@ -318,22 +328,43 @@ export const importBatch = internalMutation({
         campaignId,
         write: dryRun === false,
         notes,
+        names,
       });
       // The load leaves no audit row: the Bodies library's landmarks fact is refreshed by the queue.
       if (dryRun === false) await queueLibraryRefresh(ctx, [waterBodyId]);
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
-    // Twenty notes are enough to see a pattern and never dominate the return.
-    return { ...total, shortfalls: vouched ? [] : shortfalls, notes: notes.slice(0, 20) };
+    // Twenty notes are enough to see a pattern and never dominate the return. `namesDeferred`: the
+    // bodies whose names rebuild the batch's allowance couldn't cover (a dry run says the same).
+    return {
+      ...total,
+      namesDeferred: names.deferred,
+      shortfalls: vouched ? [] : shortfalls,
+      notes: notes.slice(0, 20),
+    };
   },
 });
 
 /**
- * Bytes a pass of the names backfill reads, at most, beyond its first body, is
- * `NAMES_BOUNDS.passBytes` (4 MiB, `lib/bodyNames`): each rebuild reads at most
- * `BODY_NAMES_READ_MAX_BYTES` and a chunk, so a pass is under the transaction's read limit whatever
- * the bodies weigh.
+ * **One body's names rebuild, in a transaction of its own** (`lib/bodyNames`): what a write defers
+ * when its own transaction's read allowance can't cover the rebuild — its row is `capped` until this
+ * runs. The allowance here is the body's own cap alone (at most `BODY_NAMES_READ_MAX_BYTES` and a
+ * chunk), so it never defers again: one call, nothing chained, a throw logged and the row left
+ * `capped` (the conservative answer; the backfill's re-run rebuilds it).
  */
+export const rebuildBodyNames = internalMutation({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    setNamesAllowance(ctx, Number.POSITIVE_INFINITY);
+    try {
+      return await refreshBodyNames(ctx, waterBodyId);
+    } catch (err) {
+      console.error(`landmarks.rebuildBodyNames: ${waterBodyId} failed`, err);
+      return null;
+    }
+  },
+});
+
 /** Bodies a pass of the names backfill rebuilds at most. */
 const NAMES_PASS_BODIES = 50;
 
@@ -341,8 +372,9 @@ const NAMES_PASS_BODIES = 50;
  * Backfill: **every body's short list of place names** (B01-3u, `lib/bodyNames`) — one row for each
  * body that has a landmark or a bay, rebuilt by the one writer. Bodies are found a step at a time
  * through the landmark index, then the bay index (`gt` the last body seen: one row read a body, never
- * the table). A pass rebuilds bodies until what they read passes `NAMES_BOUNDS.passBytes` (its first body
- * always) or it has rebuilt `NAMES_PASS_BODIES`, then schedules the next. Each step moves past its
+ * the table). A pass's rebuilds share one read allowance (`NAMES_BOUNDS.passBytes`, 8 MiB): a body
+ * starts only while what is left covers a whole body's cap (its first always), and a pass rebuilds
+ * `NAMES_PASS_BODIES` at most, then schedules the next. Each step moves past its
  * body before rebuilding it, so a body whose rebuild throws is logged and passed over — its row left
  * as it was, absent or capped: the conservative answer — and the walk never wedges. A giant reads
  * as `capped` (its rebuild stops at the bound). Idempotent: a row already right is left alone, and a
@@ -374,8 +406,12 @@ export const backfillBodyNames = internalMutation({
             .query('waterBodySubAreas')
             .withIndex('by_parent', (q) => (after ? q.gt('waterBodyId', after) : q))
             .first();
+    // The pass's rebuilds share one allowance; a body starts only while what is left covers a whole
+    // body's cap (its first always), so no rebuild in a pass is deferred.
+    setNamesAllowance(ctx, NAMES_BOUNDS.passBytes);
     for (;;) {
-      if (bodies >= NAMES_PASS_BODIES || (bodies > 0 && read >= NAMES_BOUNDS.passBytes)) break;
+      if (bodies >= NAMES_PASS_BODIES) break;
+      if (bodies > 0 && namesAllowanceLeft(ctx) < NAMES_BOUNDS.readMaxBytes) break;
       const row = await next();
       if (row === null) {
         // This phase is done: the bays next, or the end.
@@ -452,6 +488,7 @@ async function importOneBody(
     campaignId,
     write,
     notes,
+    names: tally,
   }: {
     complete: boolean;
     matchedAt: number | undefined;
@@ -460,21 +497,33 @@ async function importOneBody(
     write: boolean;
     /** What the run says by name — a row whose ids were trimmed (B01-3j). */
     notes: LoadNote[];
+    /** Names rebuilds the batch's read allowance couldn't cover, deferred (`lib/bodyNames`). */
+    names: { deferred: number };
   },
 ): Promise<ImportCounts> {
   const counts = emptyCounts();
+  const weigh = (docs: readonly object[]) =>
+    docs.reduce((n, d) => n + getDocumentSize(d as never), 0);
   const liveRows = await liveLandmarksForBody(ctx, waterBodyId);
+  // What this body's own reads take of the batch's allowance, as they are made.
+  drawNamesAllowance(ctx, weigh(liveRows));
   // A complete run's empty line usually lands on a body that never had a landmark: the live read
   // says so, and neither the removed rows nor the body's polygon is read.
   if (landmarks.length === 0 && !(complete && liveRows.some(isCatalogsLive))) return counts;
-  const rows = [...liveRows, ...(await removedLandmarksForBody(ctx, waterBodyId))];
+  const removedRows = await removedLandmarksForBody(ctx, waterBodyId);
+  const rows = [...liveRows, ...removedRows];
   const body = await ctx.db.get(waterBodyId);
+  drawNamesAllowance(ctx, weigh(removedRows) + (body ? getDocumentSize(body as never) : 0));
   if (!body || !isListed(body)) {
     counts.bodyNotListed = landmarks.length;
     return counts;
   }
 
-  const candidates = await stampCandidates(ctx, waterBodyId);
+  // Every bay, delisted ones too — the stamp's candidates, and the names rebuild's bays (this load
+  // writes no bay, so they are as the rebuild would read them).
+  const allBays = await subAreasForBody(ctx, waterBodyId);
+  drawNamesAllowance(ctx, weigh(allBays));
+  const candidates = toCandidates(allBays);
   // A name a live bay here already answers to is the bay's (D202): "Malletts Bay" the village and
   // "Malletts Bay" the sub-area would be two labels saying one thing — the one rule, `bayNaming`.
   const bays = candidates.map(({ ref, polygon }) => ({
@@ -713,8 +762,11 @@ async function importOneBody(
       updatedAt: now,
     });
   }
-  // The body's short list of names follows the load (`lib/bodyNames`), once a body.
-  if (write) await refreshBodyNames(ctx, body._id);
+  // The body's short list of names follows the load (`lib/bodyNames`), once a body, from the bays
+  // already in hand and the batch's allowance — deferred to its own transaction past it. A dry run
+  // makes the same reads and the same call, and writes nothing.
+  const rebuilt = await refreshBodyNames(ctx, body._id, { bays: allBays, dryRun: !write });
+  if (rebuilt.deferred) tally.deferred++;
   return counts;
 }
 
