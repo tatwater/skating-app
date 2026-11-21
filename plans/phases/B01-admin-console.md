@@ -7203,10 +7203,14 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
   call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
   `inboxItems:backfill '{}'`, which chains
-  itself (its later passes' answers never reach the logs): its end is told by its `inboxJobRuns` row
-  (`job: "backfill"`) reading `done: true` — from then a direct run answers `{ done: true, read: 0 }`
-  and starts nothing — with no `inboxBackfill` row in `jobFailures`; until then the Overview's Inbox
-  card says "Still being prepared". Then the card checked equal to `inbox.lanes`.
+  itself (its later passes' answers never reach the logs): its scan's end is told by its
+  `inboxJobRuns` row (`job: "backfill"`) reading `done: true` — from then a direct run answers
+  `{ done: true, read: 0 }` and starts nothing. **The Inbox is ready only when no `inboxBackfill` row
+  remains in `jobFailures` too** (Greptile on #170): until then every read says `pending` and the
+  Overview's Inbox card says "Still being prepared". A failing source is retried by the drift repair, a
+  parked one by the daily retry; Machinery's "repair inbox items drift" shows both counts. One that
+  should never be filed: `recurringJobs:forgetBefore '{"job":"inboxBackfill","before":<ms>}'`. Then
+  the card checked equal to `inbox.lanes`.
 - ~~**Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage~~ — closed: on the
   PR 1 branch it is at 98.9% of lines (95.6% of statements).
 - **Where the server met the web** (the integration, 2026-11-21): the frame's words map labels the five
@@ -7715,6 +7719,86 @@ lose-nothing row for *Pin as official* is closed on the server; the button on 2.
 - A real skater's flag on seeded content is answered when a moderator decides it: a true answer to a
   real flag, not gated on purpose — only the seed's fake people are never told (D287).
 - The 500-member repair test has its own timeout: under a full suite's load it outran the default.
+
+#### Greptile on #170, round one (2026-11-21)
+
+**The score:** 1/5 on `c819c44f`, three P1 and three P2. S1 judged five right as stated, and the
+own-filing one right and wider than stated. The fixes:
+
+- **P1, large decisions exceed read limits** (right as stated). `refreshItem` recounted up to 500 open
+  members after every source it closed: a decline's first page on a 500-ask item read about 80,200
+  member rows, past Convex's 32,000 documents a transaction (reproduced under Convex's own limits).
+  **Fix:** the writer's batch entry point, below.
+- **P1, an undo missed requests before the backfill** (right as stated). `closeRow` closed an unfiled
+  sibling, `decideItem` returned `none`, and the undo found siblings only through stamped members.
+  **Fix:** `decideItem` files a decided source that has no member before closing it (into the open
+  item its question is, else a decided twin), stamped with the decision's row, so every closer records
+  every member whether or not the backfill reached it.
+- **P1 (security), staff could decide their own filings** (right, and wider). `assertMayDecide` asked
+  the rule only through the primary's item, while the drain closes every sibling it selects: an
+  approval's bay widens that set by its aliases (a moderator approving "Northwest Bay" with the alias
+  "NW Bay" closed their own "NW Bay" ask, in another item), and an approving landmark's answer and
+  same-place rule reach other items too. The seed exemption had the same gap. **Fix:** `askedAlongside`,
+  below.
+- **P2, an incomplete backfill looked ready** (right as stated). **Fix:** the Inbox stays `pending`
+  while a failure remains, below.
+- **P2, hazard votes read backward** (right as stated, on a safety-adjacent screen): every vote that
+  wasn't `fully_healed` counted as "up", so `never_existed` read as "still there". **Fix:** a hazard's
+  four verdicts are counted separately — `HazardSubjectView.votes` (a count per verdict) and
+  `votesCapped` (each a floor past the 200 read) replace `confirmations { up, down }`; no net, no side
+  (D3), labelled by core's `verdictLabel(verdict, type)`.
+- **P2, an access item's newest note disappeared** (right as stated): the row read the five oldest
+  members and took the last as its note. **Fix:** the newest-end reads — the row's note is the newest
+  of the five newest reports that says something, and the Access drawer reads each status from the
+  newest end too (it had read the 50 oldest while listing newest first); members are charged as
+  `inboxMember` rows.
+
+**The batch entry point (`inboxBatch`).** Inside a batch a reconcile updates its member and leaves its
+item's refresh owed; the batch ends by refreshing each touched item once. `batchHasRoom` reads the
+transaction's live metrics before each source — the source, every owed refresh and their headroom in
+rows, bytes, index ranges and writes — and out of room the closer schedules the rest, always closing at
+least one source a page. **Every caller moved onto it:** the sibling drain (`closeSiblingPage`, and a
+decision's primary with its first page); `closeFlagsUnder` (a takedown, a dismissal, an alert verdict,
+restore-and-dismiss, the pin), now paged through `inboxWrites.closeFlagsRest`, which stops once its
+decision is undone; the ruling (now through `closeFlagsUnder`, its unbounded read bounded at 1,000);
+`reopenItem` and the undos that reopen many; `retargetAsks` (through `retargetEach`); an account's
+tickets; the repair. Found on the way: each flag close also moved the target's erasure hold and a
+metric, and the undo re-read the target's newest flags per flag — both now once per target
+(`FlagCloseEffects`, a memoized reopen). **The decide-then-undo table** (`inboxBatch.test.ts`): a
+decline and its drain, a two-lane takedown, a ruling and a dismissal, each with none, some or all of
+its sources filed, plus a single flag's resolution and a drawn body's approval with none or all —
+16 cases, each decided and undone.
+
+**`askedAlongside`.** Point reads over every item a decision's drain can reach — a bay keyed by every
+name of the answer, an admit, a kind, or the body's open landmark items — and the viewer's members of
+each; a landmark member counts when its ask is the same place or one the answering landmark answers.
+`inboxRules` reads it as an own filing, in `can` and in the write alike; for asks the backfill hasn't
+filed, `assertMayDecide` also scans every page the drain would read (up to 1,000). **The whole decision
+is refused before anything is written** — a partial decision that silently left the actor's ask open
+would leave it with no visible reason. **The seed-origin exemption covers only the primary;** an
+app-filed sibling still asks the rule. An approval's or decline's undo reopens every member its row
+closed, and one the undoer filed refuses it (offer and run). The rule-versus-write table is now 141
+cells; the offer-versus-run table 15 cases × 8 viewer kinds, 120 cells (S1's commit says 16 × 8; the
+test, run, has 15).
+
+**Pending until the Inbox is ready.** "The scan finished" and "the Inbox is ready" are two facts:
+`inboxPending` is true until the backfill's scan is done **and** while any `inboxBackfill` failure
+remains, parked or not. In that state `inbox.lanes`, `listPage`, `tail`, `today` and the item read
+serve `pending: true`, and the Overview's Inbox card and heading draw no figure. **The way out:** while
+a source is failing the drift repair retries it; once parked, the daily retry
+(`recurringJobs.retryParkedDaily`, D258) now retries parked backfill sources too, filing each and
+clearing its failure in one transaction. Machinery's health read (`recurringJobs.health`, "repair
+inbox items drift") counts both, failing and parked, with their error classes. A source that should
+never be filed has its failure forgotten by hand: `recurringJobs:forgetBefore` with
+`job: "inboxBackfill"`, which forgets every such failure last seen before the given time.
+
+**Owed, or known:**
+
+- A list row's `can` can't see a reach that depends on the answer (the drawn bay): only the item's
+  read and the write refuse it.
+- An own ask the backfill hasn't filed is seen only by the write (its row scan), not by `can`.
+- An undo reopens at most 500 members.
+- A large flag decision's later flags close moments after its toast, on the scheduled pages.
 
 #### How the forks were ruled (2026-11-20)
 
