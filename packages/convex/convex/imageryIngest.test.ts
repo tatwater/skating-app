@@ -219,6 +219,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
       window: 14,
       needs: 10,
       endedOn: null,
+      freezeC: 0,
     });
 
     // The lows are kept, one document per site, from the forecast endpoint's observed past days.
@@ -325,7 +326,14 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     expect(stamped).toMatchObject({
       winterFrom: null,
       // Counted even before winter: no winter night yet, and the summits never vote.
-      winterTally: { through: '2026-12-05', nights: 0, window: 14, needs: 10, endedOn: null },
+      winterTally: {
+        through: '2026-12-05',
+        nights: 0,
+        window: 14,
+        needs: 10,
+        endedOn: null,
+        freezeC: 0,
+      },
       // Version 0: the defaults it shipped with, before there were versions.
       settingsVersion: 0,
       // Its opening email already went, as the old message: stamped so the queue never re-sends it.
@@ -924,7 +932,14 @@ describe('the staff emails — one a day, in order (D212)', () => {
           emailQueue: (row.emailQueue ?? []).filter((q) => q.email.kind === 'winter'),
           emailsSent: [{ kind: 'opened', sentOn: '2026-12-03', sentAt: 0 }],
           lastEmailOn: '2026-12-03',
-          winterTally: { through: '2026-12-03', nights: 1, window: 1, needs: 1, endedOn: null },
+          winterTally: {
+            through: '2026-12-03',
+            nights: 1,
+            window: 1,
+            needs: 1,
+            endedOn: null,
+            freezeC: 0,
+          },
         });
       }
     });
@@ -966,7 +981,14 @@ describe('the staff emails — one a day, in order (D212)', () => {
       winterFrom: null,
       sitesSampled: 3,
     });
-    const tally = { through: '2026-12-05', nights: 3, window: 14, needs: 10, endedOn: null };
+    const tally = {
+      through: '2026-12-05',
+      nights: 3,
+      window: 14,
+      needs: 10,
+      endedOn: null,
+      freezeC: 0,
+    };
     const args = { season: 'winter-2026-27', tally };
     expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).not.toBeNull();
     expect(await t.mutation(internal.imageryIngest.recordWinterTally, args)).toBeNull();

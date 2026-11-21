@@ -230,7 +230,8 @@ function sameTally(a: WinterTally | undefined, b: WinterTally): boolean {
     a.nights === b.nights &&
     a.window === b.window &&
     a.needs === b.needs &&
-    a.endedOn === b.endedOn
+    a.endedOn === b.endedOn &&
+    a.freezeC === b.freezeC
   );
 }
 

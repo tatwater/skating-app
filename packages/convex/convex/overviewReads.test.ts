@@ -2237,7 +2237,14 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
           nights: 10,
         },
         // As the tick counted it; the tile never counts the stored lows itself.
-        winterTally: { through: '2026-11-07', nights: 13, window: 14, needs: 10, endedOn: null },
+        winterTally: {
+          through: '2026-11-07',
+          nights: 13,
+          window: 14,
+          needs: 10,
+          endedOn: null,
+          freezeC: 0,
+        },
         sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds' }],
         opening: {
           sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds', lowC: -3 }],
@@ -2479,7 +2486,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
     });
   });
 
-  test('an ended winter, under the current freezing line', async () => {
+  test('an ended winter, labelled with the line it was counted under, not a later edit', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     await t.run(async (ctx) => {
@@ -2494,6 +2501,7 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
           window: 14,
           needs: 10,
           endedOn: '2026-11-15',
+          freezeC: 0,
         },
         sitesSampled: 1,
         detectedAt: NOW - 40 * DAY,
@@ -2513,7 +2521,8 @@ describe('seasonWatch.tape and seasonWatch.homeSummary — for moderators', () =
       nights: 4,
       window: 14,
       through: '2026-11-15',
-      freezeC: -2,
+      // Saved as 28 °F since; these nights were counted at 32 °F.
+      freezeC: 0,
     });
   });
 

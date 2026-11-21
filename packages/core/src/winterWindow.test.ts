@@ -176,12 +176,17 @@ describe('winterTally — where winter stands on the last night read', () => {
       window: 14,
       needs: 10,
       endedOn: null,
+      freezeC: 0,
     });
   });
 
   it('names the night winter ended, once it has', () => {
     const sites = nights(`${'C'.repeat(14)}${'W'.repeat(12)}`);
     expect(winterTally(sites, night(9))).toMatchObject({ endedOn: night(23), nights: 2 });
+  });
+
+  it('keeps the line it counted under', () => {
+    expect(winterTally(nights('CC'), null, { freezeC: -2 })?.freezeC).toBe(-2);
   });
 
   it('is null with nothing to count', () => {

@@ -64,6 +64,8 @@ export const winterTally = v.object({
   window: v.number(),
   needs: v.number(),
   endedOn: v.union(v.string(), v.null()),
+  /** The freezing line the nights were counted under, °C. */
+  freezeC: v.number(),
 });
 
 /**

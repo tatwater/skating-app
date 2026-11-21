@@ -1165,8 +1165,11 @@ function winterSummary(record: Doc<'imageryIngestSeasons'> | null, settings: Sea
     nights: tally?.nights ?? null,
     window: tally?.window ?? null,
     through: tally?.through ?? null,
-    /** The freezing line the nights were counted under, °C — the tile states it, never 32 °F. */
-    freezeC: settings.freezeC,
+    /**
+     * The freezing line the nights were counted under, °C — the tile states it, never 32 °F. The
+     * tally's own line: an edit since must not relabel nights counted under the old one.
+     */
+    freezeC: tally?.freezeC ?? settings.freezeC,
   };
   if (record === null || record.winterFrom === null) {
     return { state: 'not-yet' as const, needs: tally?.needs ?? null, ...counts };

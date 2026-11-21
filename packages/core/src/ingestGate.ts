@@ -471,6 +471,8 @@ export interface WinterTally {
   needs: number;
   /** The night winter ended, once it has; `null` while it holds or has not set in. */
   endedOn: string | null;
+  /** The freezing line the nights were counted under, °C — a later edit must not relabel them. */
+  freezeC: number;
 }
 
 /**
@@ -491,6 +493,7 @@ export function winterTally(
     window,
     needs: enter,
     endedOn: winterFrom === null ? null : winterEndAfter(sites, winterFrom, options),
+    freezeC: options.freezeC ?? DEFAULT_FREEZE_C,
   };
 }
 
