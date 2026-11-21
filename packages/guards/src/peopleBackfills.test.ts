@@ -1,7 +1,7 @@
 /**
  * The People chained jobs and their after-merge procedure are one thing each (B01 §5.7). The registry
  * (`PEOPLE_BACKFILLS` in `convex/lib/peopleRuns.ts`) lists the backfills in run order. Every chained
- * job — the four backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
+ * job — the five backfills, the lapsed-suspension sweep, its daily retry — takes its run's lease
  * first (`takeLease`), so a pass of a superseded run does nothing; every backfill takes the same
  * arguments (`BACKFILL_ARGS`), concludes through `finishBackfill`, and names the next backfill in
  * `BACKFILL_JOB`. `peopleJobRuns` and `peopleJobProgress` are read and written only by
@@ -73,6 +73,7 @@ test('the registry and the procedure parse', () => {
     'flagSubjects',
     'undoChains',
     'verdicts',
+    'withdrawals',
   ]);
   expect(procedure).toMatch(/^\(1\) `convex dev --once`\. \(2\) /);
   expect(procedure).toContain(`\`convex run peopleJobs:${entries[0]?.job} '{}'\``);
@@ -184,4 +185,28 @@ test('the phase doc’s backfill table names every job, in order', () => {
   const table = doc.slice(header, doc.indexOf('\n\n', header));
   const rows = [...table.matchAll(/^\| `peopleJobs:(\w+)`/gm)].map((m) => m[1]);
   expect(rows).toEqual(entries.map((e) => e.job));
+});
+
+/**
+ * A charged read of the backfills' state reserves one row per backfill (`PEOPLE_BACKFILLS.length`),
+ * never a count written down when there were four: a fifth would read past what its budget planned.
+ */
+test('every charged read of the backfills’ state reserves a row per backfill', () => {
+  const holes: string[] = [];
+  for (const file of ['people.ts', 'contentRecord.ts']) {
+    const text = withoutComments(readFileSync(join(CONVEX, file), 'utf8'));
+    for (const m of text.matchAll(/\b(?:readPending|readStoredCounts)\(ctx\)/g)) {
+      const at = m.index ?? 0;
+      const start = Math.max(
+        text.lastIndexOf('\nfunction ', at),
+        text.lastIndexOf('\nasync function ', at),
+        text.lastIndexOf('\nexport ', at),
+      );
+      const body = text.slice(start, at);
+      if (!body.includes('PEOPLE_BACKFILLS.length')) {
+        holes.push(`${file}:${text.slice(0, at).split('\n').length}`);
+      }
+    }
+  }
+  expect(holes).toEqual([]);
 });

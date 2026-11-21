@@ -24,6 +24,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { type AuditReasonOrText, composed, writeAudit } from './audit';
+import { refreshBodyNames } from './bodyNames';
 
 type BayCandidates = readonly (SubAreaCandidate<Doc<'waterBodySubAreas'>> & {
   bbox?: Doc<'waterBodySubAreas'>['bbox'];
@@ -252,12 +253,26 @@ export async function retireAsPromoted(
     throw new ConvexError('That landmark is not on this lake');
   }
   if (row.removedAt !== undefined) return;
-  await ctx.db.patch(landmarkId, { removedAt: Date.now(), updatedAt: Date.now() });
+  await retireRow(ctx, actorId, row, subAreaId);
+  await refreshBodyNames(ctx, row.waterBodyId);
+}
+
+/**
+ * The promotion's write and its audit row — the body's short list of names is rebuilt by the caller
+ * once ({@link retireAsPromoted} for one, {@link retireNamedAsBays} for every one a bay names).
+ */
+async function retireRow(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'> | undefined,
+  row: Doc<'bodyLandmarks'>,
+  subAreaId: Id<'waterBodySubAreas'>,
+): Promise<void> {
+  await ctx.db.patch(row._id, { removedAt: Date.now(), updatedAt: Date.now() });
   await auditLandmark(
     ctx,
     actorId,
     'promote_landmark',
-    landmarkId,
+    row._id,
     composed`"${row.name}" drawn as a bay`,
     {
       subAreaId,
@@ -347,9 +362,10 @@ export async function retireNamedAsBays(
   for (const row of await liveLandmarksForBody(ctx, waterBodyId)) {
     const bay = bayNaming({ point: row.point, names: [row.name, ...row.aliases] }, bays);
     if (!bay) continue;
-    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, bay._id);
+    await retireRow(ctx, actorId, row, bay._id);
     retired++;
   }
+  if (retired > 0) await refreshBodyNames(ctx, waterBodyId);
   return retired;
 }
 
@@ -514,6 +530,9 @@ export async function repointLandmarksOnMerge(
     survivorId,
     await liveBaysForNaming(ctx, survivorId),
   );
+  // Both bodies' short lists of names: the loser's emptied, the survivor's with what moved in.
+  await refreshBodyNames(ctx, loserId);
+  await refreshBodyNames(ctx, survivorId);
   return {
     repointed: moving.length,
     folded,

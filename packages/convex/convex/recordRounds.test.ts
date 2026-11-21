@@ -15,16 +15,16 @@ import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import {
   countsOf,
-  DELETED_ALONE,
+  DELETED_COUNT_CAP,
   deletedPage,
-  HEAVY_STEPS,
   presenceOf,
   reversedPage,
   standingPage,
 } from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { CHARGED_QUERY_BUDGET, ROW_MAX } from './lib/readBudget';
-import { DELETED_TAKE, RECORD_PAGE } from './lib/recordReads';
+import { RECORD_PAGE } from './lib/recordReads';
+import { syncWithdrawalById } from './lib/withdrawals';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -83,7 +83,7 @@ const NOTIF_PREFS = {
  */
 async function record(t: T, n: number) {
   return t.run(async (ctx) => {
-    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts'] as const) {
+    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts', 'withdrawals'] as const) {
       await markReady(ctx, b);
     }
     const profile = async (subject: string, role: 'member' | 'moderator') => {
@@ -197,7 +197,7 @@ async function record(t: T, n: number) {
         endedByActionId: restore,
         superseded: false,
       });
-      await ctx.db.insert('comments', {
+      const comment = await ctx.db.insert('comments', {
         reportId: on,
         authorId: rob,
         body: `c${i}`,
@@ -207,6 +207,7 @@ async function record(t: T, n: number) {
         eraseAt: NOW + 30 * 86_400_000,
         createdAt: NOW - 5_000,
       } as never);
+      await syncWithdrawalById(ctx, 'comment', comment);
     }
     return { rob, viewer: (await ctx.db.get(matt)) as Doc<'profiles'> };
   });
@@ -248,21 +249,16 @@ const HEAD_ROUNDS = 4;
 const STANDING_ROUNDS = 2 + HEAD_ROUNDS + waves(2 * ROW_MAX.report) + 1;
 const REVERSED_ROUNDS = 2 + HEAD_ROUNDS + waves(3 * ROW_MAX.report) + 1 + 3;
 /**
- * Deleted: the five ranges together, each row's hold, the Reports once a page — fifty comments on fifty
- * Reports take a Report's waves (the fixture shares one, so it measures fewer) — then the names.
+ * Deleted (B01-4m): the withdrawal rows in one range (its parts together), then the items in waves (a
+ * Report is the dearest), the Reports once a page — fifty comments on fifty Reports take a Report's
+ * waves (the fixture shares one, so it measures fewer) — then the names.
  */
-const DELETED_ROUNDS = 2 + HEAD_ROUNDS + waves(ROW_MAX.verdict) + waves(ROW_MAX.report) + 1;
-/**
- * The counts: the check, then Reversed's range, the Reports' range and the light kinds' ranges together,
- * then the heavy kinds' steps (one round each, at most `HEAVY_STEPS`), then the holds (two waves at
- * worst).
- */
-const COUNT_ROUNDS = 2 + HEAVY_STEPS + 2;
-/** The same with no Post or hazard deleted: the heavy kinds end on their first step. */
-const COUNT_ROUNDS_LIGHT = 2 + 1 + 2;
+const DELETED_ROUNDS = 2 + HEAD_ROUNDS + waves(ROW_MAX.report) + waves(ROW_MAX.report) + 1;
+/** The counts: the check, then Reversed's range and the withdrawal rows' range together. */
+const COUNT_ROUNDS = 2;
 
-/** Presence: the backfill check, Reversed's first row and the five Deleted ranges together, then holds. */
-const PRESENCE_ROUNDS = 2;
+/** Presence: the check, Reversed's first row and the first withdrawal row, together. */
+const PRESENCE_ROUNDS = 1;
 
 describe('presence is a handful of small reads (B01-4d)', () => {
   test('the person page’s presence check costs two rounds, whatever the record holds', async () => {
@@ -277,8 +273,8 @@ describe('presence is a handful of small reads (B01-4d)', () => {
     );
     expect(out).toMatchObject({ deleted: true, reversed: true });
     expect(stats.rounds).toBeLessThanOrEqual(PRESENCE_ROUNDS);
-    // At most: Reversed's one row, each range's look, each looked-at row's hold — a few calls.
-    expect(stats.calls).toBeLessThanOrEqual(1 + 4 + 5 + 20);
+    // The backfill rows, Reversed's first row and the first withdrawal row.
+    expect(stats.calls).toBeLessThanOrEqual(5 + 1 + 1);
   });
 });
 
@@ -292,19 +288,11 @@ describe('a page’s first row always fits (B01-4d)', () => {
     // the Report a comment names its body through (or a gone item's erasure row), then the names.
     const reversedHead = 2 * ROW_MAX.moderationAction + item + ROW_MAX.report + names;
     expect(prep + verdictRows + reversedHead).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
-    // Deleted: its five ranges, and the tie part of the one kind the cursor sits in (the dearest),
-    // then one row's hold, Report and names.
-    const parts = Object.entries(DELETED_TAKE).map(
-      ([kind, n]) => n * ROW_MAX[kind as keyof typeof DELETED_TAKE],
-    );
-    const ranges = parts.reduce((a, b) => a + b, 0) + Math.max(...parts);
-    const deletedHead = ROW_MAX.verdict + ROW_MAX.report + names;
+    // Deleted: the withdrawal rows in three parts (the cursor's tie, the kinds after it, earlier
+    // times), a page and one more each, then one row's item, its Report and names.
+    const ranges = 3 * (RECORD_PAGE + 1) * ROW_MAX.withdrawal;
+    const deletedHead = item + ROW_MAX.report + names;
     expect(prep + ranges + deletedHead).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
-    // Narrowed to one kind: that kind's range in its two parts (the tie and the rest).
-    for (const [kind, n] of Object.entries(DELETED_ALONE)) {
-      const alone = 2 * n * ROW_MAX[kind as keyof typeof DELETED_ALONE];
-      expect(prep + alone + deletedHead, kind).toBeLessThanOrEqual(CHARGED_QUERY_BUDGET);
-    }
   });
 });
 
@@ -327,7 +315,7 @@ describe('the record sheet’s rounds (B01-4d)', () => {
     expect(fifty.rounds).toBeLessThanOrEqual(REVERSED_ROUNDS);
   });
 
-  test('Deleted: five ranges at once, then the rows in waves', async () => {
+  test('Deleted: one range of withdrawal rows, then the items in waves', async () => {
     const fifty = await roundsOf(50, deletedPage as Page);
     console.log(
       `Deleted: 50 rows ${fifty.rounds} rounds / ${fifty.calls} calls (worst ${DELETED_ROUNDS})`,
@@ -345,63 +333,62 @@ describe('the record sheet’s rounds (B01-4d)', () => {
       expect(out.reversed.count).toBe(50);
       return stats;
     });
-    console.log(
-      `Counts: ${stats.rounds} rounds / ${stats.calls} calls (worst ${COUNT_ROUNDS_LIGHT})`,
-    );
-    expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS_LIGHT);
+    console.log(`Counts: ${stats.rounds} rounds / ${stats.calls} calls (worst ${COUNT_ROUNDS})`);
+    expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
   });
 
-  test('the counts with many deleted Posts: a few steps, never a round a Post', async () => {
+  test('the counts with many deleted Posts: exact, in the same two rounds (B01-4m)', async () => {
     const t = convexTest(schema, modules);
     const { rob } = await record(t, 1);
     await t.run(async (ctx) => {
       for (let i = 0; i < 40; i++) {
-        await ctx.db.insert('posts', {
+        const post = await ctx.db.insert('posts', {
           authorId: rob,
           reportIds: [],
           photoIds: [],
           latestSkateEndTime: NOW,
           moderationStatus: 'removed' as const,
-          authorDeletedAt: NOW - 10_000 + i,
+          // Twelve in one instant: the old count's steps re-read a tie and gave up on it.
+          authorDeletedAt: i < 12 ? NOW - 10_000 : NOW - 10_000 + i,
           createdAt: NOW,
           updatedAt: NOW,
         });
+        await syncWithdrawalById(ctx, 'post', post);
       }
     });
     const stats = await t.run(async (ctx) => {
       const { ctx: c, stats } = counted(ctx);
       const out = await countsOf(c, { userId: rob });
-      // Exact as far as the steps reached; past them, a floor that says so.
       expect(out.deleted.byKind.post).toBe(40);
-      expect(out.deleted.capped).toBe(out.deleted.byKind.post < 40);
+      expect(out.deleted.capped).toBe(false);
       return stats;
     });
     console.log(`Counts, 40 Posts: ${stats.rounds} rounds (worst ${COUNT_ROUNDS})`);
     expect(stats.rounds).toBeLessThanOrEqual(COUNT_ROUNDS);
   });
 
-  test('the counts with Posts deleted in one instant: a floor once the ties fill the share', async () => {
+  test('the count is exact to its cap and a floor past it, never a guess', async () => {
     const t = convexTest(schema, modules);
-    const { rob } = await record(t, 1);
-    await t.run(async (ctx) => {
-      for (let i = 0; i < 12; i++) {
-        await ctx.db.insert('posts', {
-          authorId: rob,
-          reportIds: [],
-          photoIds: [],
-          latestSkateEndTime: NOW,
-          moderationStatus: 'removed' as const,
-          authorDeletedAt: NOW - 10_000,
-          createdAt: NOW,
-          updatedAt: NOW,
-        });
-      }
-    });
-    const out = await t.run((ctx) => countsOf(ctx, { userId: rob }));
-    // Each step reads the rows tied at the last one's time again, at a whole document a row: once
-    // they alone fill the kind's share, no further row can be reserved, and the count says so.
-    expect(out.deleted.capped).toBe(true);
-    expect(out.deleted.byKind.post).toBeGreaterThanOrEqual(1);
-    expect(out.deleted.byKind.post).toBeLessThan(12);
+    const { rob } = await record(t, 0);
+    const seed = (n: number, from: number) =>
+      t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert('contentWithdrawals', {
+            subjectUserId: rob,
+            targetType: 'comment',
+            targetId: `c${from + i}`,
+            withdrawnAt: NOW - from - i,
+            kindRank: 2,
+            targetCreatedAt: NOW - 10_000,
+            held: false,
+          });
+        }
+      });
+    await seed(DELETED_COUNT_CAP, 0);
+    const at = await t.run((ctx) => countsOf(ctx, { userId: rob }));
+    expect(at.deleted).toMatchObject({ count: DELETED_COUNT_CAP, capped: false });
+    await seed(1, DELETED_COUNT_CAP);
+    const past = await t.run((ctx) => countsOf(ctx, { userId: rob }));
+    expect(past.deleted).toMatchObject({ count: DELETED_COUNT_CAP, capped: true });
   });
 });

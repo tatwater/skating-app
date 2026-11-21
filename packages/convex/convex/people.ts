@@ -74,6 +74,7 @@ import {
   readWaitingAppeals,
 } from './lib/peopleFigures';
 import { OPEN_ENDED, type PeopleBackfill, personRowOf, readPending } from './lib/peopleRows';
+import { PEOPLE_BACKFILLS } from './lib/peopleRuns';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -137,7 +138,7 @@ function profileIdOf(ctx: QueryCtx, raw: string): Id<'profiles'> | null {
 
 /** What the backfills leave pending (`lib/peopleRuns.readPending`, never a pass's progress), its rows charged ahead. */
 function preparationOf(budget: ReadBudget, ctx: QueryCtx) {
-  budget.reserve('small', 4);
+  budget.reserve('small', PEOPLE_BACKFILLS.length);
   return readPending(ctx);
 }
 
@@ -162,7 +163,7 @@ async function readUpstream(ctx: QueryCtx, viewer: Doc<'profiles'>) {
   // The shared helpers' reads, charged ahead to the request's budget: the counts, each open-flag
   // status and each waiting-ticket status read one past their cap.
   const budget = queryBudget(ctx);
-  budget.reserve('small', 64 + 4);
+  budget.reserve('small', 64 + PEOPLE_BACKFILLS.length);
   const stored = await readStoredCounts(ctx);
   budget.reserve('contentFlag', COUNT_CAP + 1);
   budget.reserve('contentFlag', COUNT_CAP + 1);
@@ -1038,7 +1039,7 @@ export const person = query({
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     // The counts and the backfills' state, twice over (here and in the ledger check).
-    budget.reserve('small', 64 + 8);
+    budget.reserve('small', 64 + 2 * PEOPLE_BACKFILLS.length);
     // The helpers' reads are reserved before the page's own: each `takeCapped` below sizes itself by
     // what is left, so a reserve after them could find a heavily flagged person's reads had spent it,
     // and throw. The ledger check reads admins' People rows once for every lever, and only for a
@@ -1544,7 +1545,7 @@ export const history = query({
     const target = await budget.one('profile', () => ctx.db.get(userId));
     if (!target) return null;
     const n = clampLimit(limit);
-    budget.reserve('small', 64 + 4);
+    budget.reserve('small', 64 + PEOPLE_BACKFILLS.length);
     const stored = await readStoredCounts(ctx);
     const sources: Source[] = [];
     type Audit = Doc<'moderationActions'>;

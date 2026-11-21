@@ -1,5 +1,5 @@
 /**
- * **The People pages' chained jobs and their runs** (B01 §5.7): the three backfills the reads rest on,
+ * **The People pages' chained jobs and their runs** (B01 §5.7): the backfills the reads rest on,
  * the lapsed-suspension sweep and its daily retry. Each is a chain of passes, a pass scheduling the
  * next, so two chains of the same job could be alive at once — a delayed pass of an old run beside a
  * new run started by an operator, a cron tick or another job's end — sharing whatever state they keep.
@@ -53,6 +53,10 @@ export const PEOPLE_BACKFILLS = [
   // (`contentRecord.backfillVerdicts`, `contentRecord.replayVerdictHistory`, `erasure.backfillClocks`),
   // which carry its lease.
   { backfill: 'verdicts', job: 'peopleJobs:backfillVerdicts' },
+  // The withdrawal rows the Deleted list and count read (B01-4m, D282): one per item a person took
+  // back, from each person's withdrawn ranges — after the content record, whose standing verdicts
+  // say which are held.
+  { backfill: 'withdrawals', job: 'peopleJobs:backfillWithdrawals' },
 ] as const;
 
 /**
@@ -67,6 +71,7 @@ export const PEOPLE_JOBS = [
   'flagSubjects',
   'undoChains',
   'verdicts',
+  'withdrawals',
   'lapseSweep',
   'lapseRetry',
 ] as const;
@@ -84,12 +89,13 @@ export const PASS_SIZE: Record<PeopleJob, number> = {
   flagSubjects: 200,
   undoChains: 200,
   verdicts: 200,
+  withdrawals: 100,
   lapseSweep: 1_000,
   lapseRetry: 1_000,
 };
 
 /**
- * Every backfill's arguments — one shape, one meaning, so one recovery sentence is true of all three:
+ * Every backfill's arguments — one shape, one meaning, so one recovery sentence is true of all of them:
  * - `run` and `pass` — the run a pass belongs to and its pass token. Left out, the call **starts a new
  *   run**, which supersedes any older one (its delayed passes then do nothing); a backfill passes both
  *   to its own next pass, and only the pass holding the current token may act.
@@ -120,7 +126,7 @@ export interface BackfillArgs {
  */
 export const AFTER_MERGE_PROCEDURE = [
   '(1) `convex dev --once`.',
-  "(2) `convex run peopleJobs:backfillRows '{}'` — it runs the four People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks). Estimate: unmeasured.",
+  "(2) `convex run peopleJobs:backfillRows '{}'` — it runs the five People backfills in turn (rows, flag subjects, undo chains, the content record — which ends by giving withdrawn content its erasure clocks — and the withdrawal rows the Deleted list reads). Estimate: unmeasured.",
   "(3) `convex run peopleJobs:preparation '{}'` until it returns `ready: true`.",
   '(4) For each job in its `rerun`: `convex run <job> \'{"alone":true}\'` (a new run, which supersedes any older one), then step 3 again.',
   '(5) For each id `backfillRows` logs as an overwritten tombstone: `convex run peopleJobs:restoreTombstoneStatus \'{"userId":"<id>"}\'`.',

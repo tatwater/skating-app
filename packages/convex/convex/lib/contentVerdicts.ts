@@ -21,7 +21,8 @@
  *   that was down by a Post's cascade or a derived hide was never on the record.
  *
  * A standing verdict also holds withdrawn content back from erasure, so every write here moves the
- * item's erasure clock (`lib/eraseClock`).
+ * item's erasure clock (`lib/eraseClock`) — and the item's withdrawal row's `held`
+ * (`lib/withdrawals.refreshWithdrawalHold`), which sends it from the Deleted list to Standing and back.
  *
  * {@link replayStep} is the same rules over an item's audit history, a row at a time, for the
  * backfill (`contentRecord.replayVerdictHistory`). An undo's undone row is the one before it on the
@@ -33,6 +34,7 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
+import { refreshWithdrawalHold } from './withdrawals';
 
 export type VerdictTargetType = Doc<'contentVerdicts'>['targetType'];
 type ContentDoc =
@@ -198,7 +200,11 @@ export async function endVerdicts(
   ended: { actionId: Id<'moderationActions'>; at: number },
 ): Promise<number> {
   const count = await endStanding(ctx, targetType, targetId, ended, false);
-  if (count > 0) await holdMoved(ctx, targetType, targetId, ended.at);
+  if (count > 0) {
+    await holdMoved(ctx, targetType, targetId, ended.at);
+    // Nothing holds it on the record now: a withdrawn item goes back to Deleted (`lib/withdrawals`).
+    await refreshWithdrawalHold(ctx, targetType, targetId);
+  }
   return count;
 }
 
@@ -224,6 +230,8 @@ export async function recordVerdict(ctx: MutationCtx, entry: VerdictEntry): Prom
   await supersedeNewest(ctx, entry.targetType, entry.targetId);
   await ctx.db.insert('contentVerdicts', { ...entry, standing: true, superseded: false });
   await holdMoved(ctx, entry.targetType, entry.targetId, entry.at);
+  // A decision holds it now: a withdrawn item is Standing's, not Deleted's (`lib/withdrawals`).
+  await refreshWithdrawalHold(ctx, entry.targetType, entry.targetId);
 }
 
 /**

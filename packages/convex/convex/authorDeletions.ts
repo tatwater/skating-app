@@ -22,6 +22,7 @@ import {
 } from './lib/authorDeletion';
 import { DOC_MAX, ReadBudget, ROW_MAX, sizePage, traced } from './lib/readBudget';
 import { literals } from './lib/validators';
+import { syncWithdrawal, WITHDRAWAL_SYNC_COST } from './lib/withdrawals';
 
 /** Rows per backfill page, at most; each page is its own transaction and schedules the next. */
 const BACKFILL_PAGE = 200;
@@ -183,7 +184,7 @@ export const stampWithdrawal = internalMutation({
         sizePage(reads, 'moderationAction', {
           cap: args.pageSize ?? BACKFILL_PAGE,
           work,
-          reserve: 2 * DOC_MAX,
+          reserve: 2 * DOC_MAX + WITHDRAWAL_SYNC_COST,
         }),
         (numItems) =>
           ctx.db
@@ -215,6 +216,14 @@ export const stampWithdrawal = internalMutation({
       if (!target || !stillDown(target)) return resumeWalk(ctx, args.resume, args.pageSize, 0);
       reads.touch(targetType);
       await ctx.db.patch(target._id, { authorDeletedAt: deletedAt });
+      // On the author's Deleted list from now (`lib/withdrawals`), inside the kept-back reserve.
+      await syncWithdrawal(
+        ctx,
+        targetType,
+        target._id,
+        { ...target, authorDeletedAt: deletedAt } as Doc<'reports'>,
+        reads,
+      );
       if (targetType === 'post' && (target as Doc<'posts'>).reportIds.length > 0) {
         await again({ phase: 'members' });
         return { stamped: 1 };
@@ -242,7 +251,7 @@ async function stampMembers(
   const todo = (post?.reportIds ?? []).filter((reportId) => !seen.has(reportId));
   const looked: Id<'reports'>[] = [];
   // A member read, and stamped.
-  const perMember = 2 * ROW_MAX.report;
+  const perMember = 2 * ROW_MAX.report + WITHDRAWAL_SYNC_COST;
   for (const reportId of todo) {
     if (!reads.affords(perMember)) break;
     looked.push(reportId);
@@ -252,6 +261,13 @@ async function stampMembers(
       if (report.moderationStatus === 'visible') return;
       reads.touch('report');
       await ctx.db.patch(reportId, { authorDeletedAt: deletedAt });
+      await syncWithdrawal(
+        ctx,
+        'report',
+        reportId,
+        { ...report, authorDeletedAt: deletedAt },
+        reads,
+      );
     });
   }
   // The Post and one member always fit a fresh pass, so a pass that looked at none is a plan error.
@@ -341,7 +357,7 @@ export const commentLastWord = internalMutation({
         'moderationAction',
         sizePage(reads, 'moderationAction', {
           cap: pageSize ?? BACKFILL_PAGE,
-          reserve: 2 * ROW_MAX.comment,
+          reserve: 2 * ROW_MAX.comment + WITHDRAWAL_SYNC_COST,
         }),
         (numItems) =>
           ctx.db
@@ -370,7 +386,15 @@ export const commentLastWord = internalMutation({
           comment.authorDeletedAt === undefined
         ) {
           reads.touch('comment');
-          await ctx.db.patch(commentId, { authorDeletedAt: Date.now() });
+          const deletedAt = Date.now();
+          await ctx.db.patch(commentId, { authorDeletedAt: deletedAt });
+          await syncWithdrawal(
+            ctx,
+            'comment',
+            commentId,
+            { ...comment, authorDeletedAt: deletedAt },
+            reads,
+          );
           stamped = true;
         }
       }

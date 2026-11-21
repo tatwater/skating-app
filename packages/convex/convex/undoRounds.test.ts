@@ -21,8 +21,10 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { historyPage } from './bodyConsole';
 import { writeAudit, writeSnapshot } from './lib/audit';
 import { rebuildBodyLibrary } from './lib/bodyLibrary';
+import { refreshBodyNames } from './lib/bodyNames';
 import { listablePeople } from './lib/peopleFigures';
 import { refreshPersonRow } from './lib/peopleRows';
+import { PEOPLE_BACKFILLS } from './lib/peopleRuns';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -270,6 +272,26 @@ describe('History’s rounds (B01-3h)', () => {
     // The landmark edits and the depth choice are each offered; the old boosts say why not.
     expect(page.entries.filter((e) => e.undo.state === 'available')).toHaveLength(46);
     expect(stats.rounds).toBeLessThanOrEqual(WORST_PAGE_ROUNDS);
+  });
+
+  test('the worst page with the body’s short list of names built: one more read, shared by every line (B01-3u)', async () => {
+    const t = harness();
+    const { actorId, waterBodyId } = await busyBody(t, 50);
+    await t.run((ctx) => refreshBodyNames(ctx, waterBodyId as Id<'waterBodies'>));
+    const { page, stats } = await t.run(async (raw) => {
+      const viewer = (await raw.db.get(actorId)) as Doc<'profiles'>;
+      const { ctx, stats } = counted(raw);
+      const page = await historyPage(ctx, viewer, {
+        waterBodyId: waterBodyId as Id<'waterBodies'>,
+        limit: 50,
+      });
+      return { page, stats };
+    });
+    console.log(`History rounds (45 refusals, names built): ${stats.rounds} / ${stats.calls}`);
+    // Every landmark edit checked against the whole rule from the list, and offered (no clash).
+    expect(page.entries.filter((e) => e.undo.state === 'available')).toHaveLength(46);
+    // The list is read once a query — the first wave pays one round more, the rest share it.
+    expect(stats.rounds).toBeLessThanOrEqual(WORST_PAGE_ROUNDS + 1);
   });
 
   test('worst case across bodies: heavy refusal reads past the budget in one feed stay inside the budget; the overflow says "check elsewhere", never a throw', async () => {
@@ -1389,7 +1411,7 @@ const SEASON_ROUNDS = 8 + 1 + Math.ceil(100 / 4);
 
 /**
  * What a staffer's figures or season charge before their per-row reads, for a test that opens the
- * request's budget smaller: the staffer's profile, the backfill marker (four small rows), and the
- * decisions' own read (4 MiB of real weight, charged with a document over).
+ * request's budget smaller: the staffer's profile, the backfill marker (a small row a backfill), and
+ * the decisions' own read (4 MiB of real weight, charged with a document over).
  */
-const STAFF_PAGE_FIXED = ROW_MAX.profile + 4 * ROW_MAX.small + 5 * DOC_MAX;
+const STAFF_PAGE_FIXED = ROW_MAX.profile + PEOPLE_BACKFILLS.length * ROW_MAX.small + 5 * DOC_MAX;

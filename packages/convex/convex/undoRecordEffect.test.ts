@@ -70,7 +70,7 @@ async function world() {
   const matt = await profile('matt', 'moderator');
   await profile('sam', 'moderator');
   const ids = await t.run(async (ctx) => {
-    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts'] as const) {
+    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts', 'withdrawals'] as const) {
       await markReady(ctx, b);
     }
     const waterBodyId = await ctx.db.insert('waterBodies', {

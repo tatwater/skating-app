@@ -33,6 +33,8 @@ const MODULES = [
   'lib/undoReads.ts',
   // The People record sheet's lists, counts and pane (B01-4d).
   'lib/recordReads.ts',
+  // The withdrawal rows the Deleted list reads, and their one writer (B01-4m).
+  'lib/withdrawals.ts',
 ];
 
 /**

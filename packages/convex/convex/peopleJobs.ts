@@ -46,6 +46,7 @@ import {
   VERDICTS_DONE,
 } from './lib/peopleRuns';
 import { DOC_MAX, errorClassOf, ReadBudget, ROW_MAX, traced } from './lib/readBudget';
+import { DELETED_KINDS, deletedRange, withdrawnAt } from './lib/recordReads';
 import {
   clearFailure,
   failureOf,
@@ -57,6 +58,7 @@ import {
 } from './lib/recurringWork';
 import { STAMP_WORK, stampTenure } from './lib/staffTenure';
 import { stampStatusTerms, TERMS_STAMP_WORK } from './lib/statusTerms';
+import { syncWithdrawal, syncWithdrawalById, WITHDRAWAL_SYNC_COST } from './lib/withdrawals';
 
 const DAY = 86_400_000;
 
@@ -648,7 +650,11 @@ const BACKFILL_JOB = {
     self: internal.peopleJobs.backfillUndoChains,
     next: internal.peopleJobs.backfillVerdicts,
   },
-  verdicts: { self: internal.peopleJobs.backfillVerdicts, next: null },
+  verdicts: {
+    self: internal.peopleJobs.backfillVerdicts,
+    next: internal.peopleJobs.backfillWithdrawals,
+  },
+  withdrawals: { self: internal.peopleJobs.backfillWithdrawals, next: null },
 } as const;
 
 /**
@@ -1034,6 +1040,183 @@ export const backfillVerdicts = internalMutation({
         lease: next,
       });
       return { done: false };
+    }),
+});
+
+/** Where the withdrawals backfill resumes: a person (by creation time), and inside them a kind and a row. */
+interface WithdrawalWalk {
+  /** The person in progress (`done: false`) or the last one finished; `null` before the first. */
+  at: number | null;
+  done: boolean;
+  /** Inside the person in progress: the kind (`DELETED_KINDS`) and the last row synced. */
+  kind: number;
+  pos: { key: number; ct: number } | null;
+  /**
+   * The second phase: every stored row, by its creation time (`at`, the last looked at), re-derived
+   * from its item — a row whose item is gone or no longer withdrawn goes. The people walk only meets
+   * items that read as withdrawn now, so a stale row is met here.
+   */
+  rows?: boolean;
+}
+
+const WALK_START: WithdrawalWalk = { at: null, done: true, kind: 0, pos: null };
+
+function decodeWalk(cursor: string | null | undefined): WithdrawalWalk {
+  if (typeof cursor !== 'string' || cursor === '') return WALK_START;
+  const parsed = JSON.parse(cursor) as WithdrawalWalk;
+  return {
+    at: parsed.at ?? null,
+    done: parsed.done !== false,
+    kind: parsed.kind ?? 0,
+    pos: parsed.pos ?? null,
+    ...(parsed.rows === true ? { rows: true } : {}),
+  };
+}
+
+/** People read a pass at most by real weight (a profile is a whole document only at its worst). */
+const WALK_PROFILE_BYTES = DOC_MAX / 2;
+/** Withdrawn rows of one kind read in one step, at most. */
+const WALK_BATCH = 50;
+
+/**
+ * Backfill: **the withdrawal rows** (B01-4m, D282) — one `contentWithdrawals` row for every item a
+ * person took back, read from that person's own withdrawn ranges (each kind's `by_author_deleted`,
+ * an alert's `by_author_retracted` — the ranges the Deleted list read before), and kept by
+ * `lib/withdrawals.syncWithdrawal`, the one writer: an erased comment's shell gets none, `held` is
+ * read from the standing verdicts (so this runs after the content record). People are walked by
+ * creation time a page a pass (by real weight), and inside one person a kind and a row at a time, as
+ * far as the budget goes — a person with many withdrawals spans passes, resuming at the row after the
+ * last one synced. Then **every stored row** is walked by creation time and re-derived from its item
+ * (the item read at its kind's worst case, a few a pass), so a row whose item is gone or no longer
+ * withdrawn — one a writer outside the inventory left — goes: a re-run of the procedure is the
+ * repair. Idempotent: a row already right is left alone; a pass that wrote one found a gap.
+ */
+export const backfillWithdrawals = internalMutation({
+  args: BACKFILL_ARGS,
+  handler: (ctx, args) =>
+    traced('peopleJobs.backfillWithdrawals', args, async () => {
+      const reads = new ReadBudget();
+      reads.reserve('small', LEASE_READS);
+      const lease = await takeLease(ctx, 'withdrawals', args);
+      if (lease === null) return SUPERSEDED;
+      let failed = lease.failed;
+      const walk = decodeWalk(args.cursor);
+      if (walk.rows === true) {
+        // Each row: itself, its item at its kind's worst, and what keeping it reads and writes.
+        const n = reads.rows('withdrawal', WALK_BATCH, 0, DOC_MAX + WITHDRAWAL_SYNC_COST);
+        const rows = await reads.take('withdrawal', n, (k) =>
+          ctx.db
+            .query('contentWithdrawals')
+            .withIndex('by_creation_time', (q) =>
+              walk.at === null ? q : q.gt('_creationTime', walk.at),
+            )
+            .take(k),
+        );
+        let gap = false;
+        for (const row of rows) {
+          try {
+            if (await syncWithdrawalById(ctx, row.targetType, row.targetId, reads)) gap = true;
+          } catch (err) {
+            failed++;
+            console.error(
+              `peopleJobs.backfillWithdrawals: row ${row._id} failed (${errorClassOf(err)})`,
+            );
+          }
+        }
+        const tail = rows[rows.length - 1];
+        if (tail !== undefined && rows.length === n) {
+          const next = { ...WALK_START, rows: true, at: tail._creationTime };
+          await nextPass(ctx, lease, JSON.stringify(next), failed, gap);
+          return { done: false };
+        }
+        await finishBackfill(ctx, lease, failed, gap);
+        return { done: true, failed };
+      }
+      const people = await reads.capped(WALK_PROFILE_BYTES, PASS_SIZE.withdrawals, () =>
+        ctx.db
+          .query('profiles')
+          .withIndex('by_creation_time', (q) =>
+            walk.at === null
+              ? q
+              : walk.done
+                ? q.gt('_creationTime', walk.at)
+                : q.gte('_creationTime', walk.at),
+          )
+          .paginate({
+            cursor: null,
+            numItems: PASS_SIZE.withdrawals,
+            maximumBytesRead: WALK_PROFILE_BYTES,
+          }),
+      );
+      let gap = false;
+      let synced = 0;
+      let resume: WithdrawalWalk | null = null;
+      let last: number | null = walk.at;
+      walking: for (const person of people.page) {
+        const inProgress = !walk.done && walk.at === person._creationTime;
+        let pos = inProgress ? walk.pos : null;
+        for (let k = inProgress ? walk.kind : 0; k < DELETED_KINDS.length; k++, pos = null) {
+          const kind = DELETED_KINDS[k] as (typeof DELETED_KINDS)[number];
+          for (;;) {
+            // Each row: read twice at worst (its tie and the rest), then its own row kept.
+            const n = reads.rows(kind, WALK_BATCH, 0, 2 * ROW_MAX[kind] + WITHDRAWAL_SYNC_COST);
+            if (n === 0) {
+              resume = { at: person._creationTime, done: false, kind: k, pos };
+              break walking;
+            }
+            const rows = await deletedRange(
+              ctx,
+              reads,
+              kind,
+              person._id,
+              pos === null ? null : { ...pos, kind: k },
+              n,
+            );
+            for (const doc of rows) {
+              try {
+                if (await syncWithdrawal(ctx, kind, doc._id, doc, reads)) gap = true;
+                synced++;
+              } catch (err) {
+                failed++;
+                console.error(
+                  `peopleJobs.backfillWithdrawals: ${kind} ${doc._id} failed (${errorClassOf(err)})`,
+                );
+              }
+            }
+            if (rows.length < n) break;
+            const tail = rows[rows.length - 1] as (typeof rows)[number];
+            pos = { key: withdrawnAt(kind, tail) ?? 0, ct: tail._creationTime };
+          }
+        }
+        last = person._creationTime;
+      }
+      // The first step of a fresh pass always fits (a Report's two reads and its row are well under
+      // what the people page leaves), so a pass that synced nothing and finished no one is a plan error.
+      if (
+        resume !== null &&
+        synced === 0 &&
+        last === walk.at &&
+        resume.kind === walk.kind &&
+        resume.pos === walk.pos
+      ) {
+        throw new Error('peopleJobs.backfillWithdrawals: a pass made no progress');
+      }
+      if (resume !== null || !people.isDone) {
+        const next = resume ?? { at: last, done: true, kind: 0, pos: null };
+        await nextPass(ctx, lease, JSON.stringify(next), failed, gap);
+        return { done: false };
+      }
+      // Every person walked: the stored rows next, for any a writer left stale — unless there are
+      // none (a database with nothing to backfill ends at once, ready, as every backfill does).
+      const anyRow = await reads.one('withdrawal', () =>
+        ctx.db.query('contentWithdrawals').first(),
+      );
+      if (anyRow !== null) {
+        await nextPass(ctx, lease, JSON.stringify({ ...WALK_START, rows: true }), failed, gap);
+        return { done: false };
+      }
+      await finishBackfill(ctx, lease, failed, gap);
+      return { done: true, failed };
     }),
 });
 

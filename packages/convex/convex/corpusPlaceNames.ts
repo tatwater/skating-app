@@ -20,6 +20,7 @@ import { type AuditReasonOrText, checkedReason, composed, writeAudit } from './l
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
+import { refreshBodyNames } from './lib/bodyNames';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -408,6 +409,8 @@ export const fileAsSpelling = mutation({
       moderatorEditedAt: now,
       updatedAt: now,
     });
+    // The spelling joins the body's short list of names (`lib/bodyNames`).
+    await refreshBodyNames(ctx, landmark.waterBodyId);
     await auditLandmark(
       ctx,
       actor._id,

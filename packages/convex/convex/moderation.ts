@@ -80,6 +80,7 @@ import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { type UndoState, undoState, undoStates } from './lib/undo';
 import { literals } from './lib/validators';
+import { syncWithdrawal } from './lib/withdrawals';
 
 /** The audit action implied by a target moderation status (D37). */
 const ACTION_FOR_STATUS = {
@@ -237,6 +238,8 @@ export async function authorRemoveReport(
   await ctx.db.patch(report._id, { authorDeletedAt: now });
   // The 30 days start now, unless a verdict or an open flag holds it (D248).
   await refreshEraseClock(ctx, 'report', report._id, now);
+  // On their record's Deleted list, unless a decision holds it (`lib/withdrawals`).
+  await syncWithdrawal(ctx, 'report', report._id, { ...report, authorDeletedAt: now });
   if (priorStatus === 'removed') {
     await writeAudit(ctx, {
       actorId: author._id,
@@ -315,12 +318,18 @@ export async function authorRemovePost(
   await ctx.db.patch(post._id, { moderationStatus: 'removed', authorDeletedAt: now });
   // The 30 days start now for the Post and each member, unless something holds it (D248).
   await refreshEraseClock(ctx, 'post', post._id, now);
+  await syncWithdrawal(ctx, 'post', post._id, {
+    ...post,
+    moderationStatus: 'removed',
+    authorDeletedAt: now,
+  });
   for (const reportId of post.reportIds) {
     const report = await ctx.db.get(reportId);
     if (!report || report.authorDeletedAt !== undefined) continue;
     const memberPrior = report.moderationStatus;
     await ctx.db.patch(report._id, { authorDeletedAt: now });
     await refreshEraseClock(ctx, 'report', report._id, now);
+    await syncWithdrawal(ctx, 'report', report._id, { ...report, authorDeletedAt: now });
     if (memberPrior !== 'removed') await applyReportStatus(ctx, report, 'removed', audit);
     await writeAudit(ctx, {
       actorId: author._id,

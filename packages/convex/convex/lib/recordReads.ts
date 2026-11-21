@@ -5,7 +5,7 @@
  * rounds, never one per row:
  *
  * 1. **the rows** — one `take` per index range (two after a cursor that lands inside a tie), keyed by
- *    position, never `paginate` (a function gets one, and the Deleted list merges five ranges);
+ *    position, never `paginate` (a function gets one, and a page may read a range in parts);
  * 2. **each row's documents** — its decision and the action that ended it, the item — in waves
  *    (`ReadBudget.waves`): each row reserves its worst case before it reads, the difference is handed
  *    back when its wave is done, and which rows are read depends only on the page's order;
@@ -437,24 +437,14 @@ export function namesOf({ names, persons }: PageCache): Names {
   };
 }
 
-// ── The Deleted list's five ranges ─────────────────────────────────────────────────────────────
+// ── The person's withdrawn ranges, by kind ─────────────────────────────────────────────────────
 
 /** The Deleted list's kinds, in the order that breaks a tie on the withdrawal time. */
 export const DELETED_KINDS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
 
 /**
- * Rows of each kind one merged page asks for, at most: the light kinds a page's worth, the heavy ones
- * (a Report, a Post, a hazard can each weigh a whole document) what a page's row budget affords.
- */
-export const DELETED_TAKE: Record<VerdictTargetType, number> = {
-  report: 2,
-  post: 1,
-  comment: RECORD_PAGE,
-  hazard: 1,
-  accessAlert: RECORD_PAGE,
-};
-
-/**
+ * Each kind's withdrawn rows by its own index — what the Deleted list read before its withdrawal rows
+ * (B01-4m), and what the withdrawals backfill (`peopleJobs:backfillWithdrawals`) walks a person by.
  * The rows of one kind after `after`, newest withdrawal first, up to `n` — strictly after the position
  * in the merged order (withdrawal desc, kind, creation desc): a kind before the position's, on an
  * earlier time only; the same kind, its tie by creation and then an earlier time; a kind after it, the
@@ -626,15 +616,6 @@ export function deletedRange(
             .take(m),
       );
   }
-}
-
-/** A withdrawn row's key in the merged order. */
-export function deletedKey(kind: VerdictTargetType, doc: RecordContentDoc): Position {
-  return {
-    key: withdrawnAt(kind, doc) ?? 0,
-    ct: doc._creationTime,
-    kind: DELETED_KINDS.indexOf(kind),
-  };
 }
 
 /** Whether `a` comes before `b` in the merged order (withdrawal desc, kind, creation desc). */

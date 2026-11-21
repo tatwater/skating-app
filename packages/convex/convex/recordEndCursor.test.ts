@@ -10,19 +10,19 @@
  * against random changes anywhere in the list while deeper pages are held. After each change the
  * chain is settled and its rows must be the list's own from its start — none twice, none lost, in
  * order — and `isDone` only when nothing follows. Pages are shrunk to three rows (`RECORD_PAGE_ROWS`)
- * so a handful of rows spans several, and the Deleted list's comment ranges — a page's worth — with
- * them, so a full comment range fences the page as a full Report range does. Pinned seeds plus one
- * random seed, logged.
+ * so a handful of rows spans several. The Deleted list reads one range of withdrawal rows
+ * (`lib/withdrawals`, B01-4m), every kind in its order, so it pages as the others do. Pinned seeds
+ * plus one random seed, logged.
  */
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { DELETED_ALONE } from './contentRecord';
 import { ERASABLE } from './lib/eraseClock';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
-import { DELETED_TAKE, RECORD_PAGE, RECORD_PAGE_ROWS } from './lib/recordReads';
+import { RECORD_PAGE, RECORD_PAGE_ROWS } from './lib/recordReads';
+import { syncWithdrawalById } from './lib/withdrawals';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -33,17 +33,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(T0);
   RECORD_PAGE_ROWS.n = ROWS;
-  DELETED_TAKE.comment = ROWS;
-  DELETED_ALONE.comment = ROWS;
-  DELETED_TAKE.accessAlert = ROWS;
-  DELETED_ALONE.accessAlert = ROWS;
 });
 afterEach(() => {
   RECORD_PAGE_ROWS.n = RECORD_PAGE;
-  DELETED_TAKE.comment = RECORD_PAGE;
-  DELETED_ALONE.comment = RECORD_PAGE;
-  DELETED_TAKE.accessAlert = RECORD_PAGE;
-  DELETED_ALONE.accessAlert = RECORD_PAGE;
   vi.useRealTimers();
 });
 
@@ -63,7 +55,7 @@ const NOTIF_PREFS = {
 async function world() {
   const t = convexTest(schema, modules);
   const ids = await t.run(async (ctx) => {
-    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts'] as const) {
+    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts', 'withdrawals'] as const) {
       await markReady(ctx, b);
     }
     const profile = async (subject: string, role: 'member' | 'moderator') => {
@@ -212,7 +204,11 @@ async function item(w: W, list: List, kind: Kind, at: number): Promise<string> {
       createdAt: at - 1,
       ...withdrawn,
     } as never);
-    if (deleted) return id;
+    // Its withdrawal row, as the author's delete or retraction writes it (B01-4m).
+    if (deleted) {
+      await syncWithdrawalById(ctx, kind, id);
+      return id;
+    }
     const actionId = await ctx.db.insert('moderationActions', {
       actorId: w.mod,
       action: 'hide',
@@ -254,6 +250,10 @@ async function remove(w: W, list: List, id: string) {
   await w.t.run(async (ctx) => {
     if (list === 'personDeleted') {
       await ctx.db.delete(id as Id<(typeof ERASABLE)[Kind]>);
+      // The eraser takes its withdrawal row with it.
+      for (const row of await ctx.db.query('contentWithdrawals').collect()) {
+        if (row.targetId === id) await ctx.db.delete(row._id);
+      }
       return;
     }
     const verdicts = await ctx.db.query('contentVerdicts').collect();
@@ -529,7 +529,7 @@ describe.each(['personVerdicts', 'personReversed', 'personDeleted'] as const)(
 // ── The merged Deleted list: several kinds' ranges, one order ──
 
 describe('personDeleted, every kind merged (the default tab)', () => {
-  test('Greptile’s case: a full Report range ends before the pinned end — the page splits, and every row stays, in order', async () => {
+  test('Greptile’s case: Reports land inside a pinned page of every kind — it splits, and every row stays, in order', async () => {
     const w = await world();
     // Reports at 100 and 90 (a page asks two: the range is full), comments between and after.
     await item(w, 'personDeleted', 'report', at(100));
@@ -551,17 +551,14 @@ describe('personDeleted, every kind merged (the default tab)', () => {
     );
     await check(state);
     const end = state.chain[0]?.end as string;
-    // Two Reports land inside the pinned page: its Report range is full and now ends at the
-    // second of them, before the page's end — what lies past it can't be placed yet.
+    // Two Reports land inside the pinned page: it now holds more than a page, and splits after the
+    // rows it returned — the one range every kind shares, so no kind is left behind another.
     await item(w, 'personDeleted', 'report', at(99));
     await item(w, 'personDeleted', 'report', at(98));
     const pinned = await readLink(w, 'personDeleted', null, { cursor: null, end });
     expect(pinned.pageStatus).toBe('SplitRequired');
     expect(pinned.continueCursor).toBe(end);
-    // Fewer rows than a page: the fence split it, not its size (were a page to ask more Reports,
-    // this would be a page grown past its rows, and the case would test nothing of the fence).
-    expect(pinned.page).toHaveLength(DELETED_TAKE.report);
-    expect(DELETED_TAKE.report).toBeLessThan(ROWS);
+    expect(pinned.page).toHaveLength(ROWS);
     expect(pinned.page.map((r) => r.targetId)).toEqual(
       (await truth(w, 'personDeleted', null)).slice(0, pinned.page.length),
     );
@@ -604,12 +601,12 @@ describe('personDeleted, every kind merged (the default tab)', () => {
   });
 
   test.each(SEEDS)(
-    'mixes where a full range ends before another kind’s rows, pinned pages split and held (seed %i)',
+    'mixes of kinds at tied times, pinned pages split and held (seed %i)',
     async (seed) => {
       console.log(`recordEndCursor merged Deleted seed ${seed}`);
       await fc.assert(
         fc.asyncProperty(
-          // Reports and Posts fill their few-a-page ranges; comments rarely do.
+          // Heavy kinds and light ones, at times that tie.
           fc.array(
             fc.record({
               what: fc.constantFrom<Kind>(
@@ -625,8 +622,8 @@ describe('personDeleted, every kind merged (the default tab)', () => {
             { minLength: 5, maxLength: 10 },
           ),
           fc.array(opArb, { minLength: 2, maxLength: 8 }),
-          // A heavy kind landing at the top of the first page once it is pinned: its range fills
-          // ahead of the page's end — the fence before the end, every run, whatever the mix.
+          // A heavy kind landing at the top of the first page once it is pinned: the page grows
+          // past its rows and splits, every run, whatever the mix.
           fc.constantFrom<Kind>('report', 'hazard'),
           (seeded, ops, heavy) =>
             drive('personDeleted', null, seeded, [

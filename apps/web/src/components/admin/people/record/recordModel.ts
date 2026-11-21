@@ -28,7 +28,7 @@ import {
  *
  * - **Three lists**: Standing (`contentRecord.personVerdicts`), Deleted (`personDeleted`), Reversed
  *   (`personReversed`) — each a chain of pages; a short page is not the end, `isDone` is.
- * - **Three answers that aren't a number**: still being prepared (`pending: ['verdicts']`), a floor
+ * - **Three answers that aren't a number**: still being prepared (`pending` names a backfill), a floor
  *   (`capped`, or a list with pages still to come), and not recorded (`null`) — never a zero.
  * - **One item, one read** (`contentRecord.item`): its decisions, who made them and why, its life,
  *   and the one lever its state offers this viewer.
@@ -521,6 +521,16 @@ export function tabCounts(
   if (counts === null) return null;
   const c = tab === 'deleted' ? counts.deleted : counts.reversed;
   return { byKind: c.byKind, capped: c.capped };
+}
+
+/**
+ * Whether the counts are still being prepared **for a tab** — `pending` names the backfills each
+ * figure rests on: the record itself (`verdicts`) holds every tab back; the withdrawal rows
+ * (`withdrawals`, B01-4m) only the Deleted figures. `null` (no tab): the sheet as a whole.
+ */
+export function countsPending(counts: RecordCounts | null, tab: RecordTab | null): boolean {
+  const named = counts?.pending ?? [];
+  return named.some((b) => b !== 'withdrawals' || tab === 'deleted');
 }
 
 /**

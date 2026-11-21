@@ -58,7 +58,8 @@ const OTHER_NAME_WRITERS: Record<string, string> = {
   'adminAreas.ts:importCanonical': 'a boundary',
   'accessPoints.ts:matchAndImportParking': 'a parking lot',
   'accessPoints.ts:setOfficialParking': 'a parking lot',
-  'landmarks.ts:importOneBody': 'a landmark',
+  // `landmarks.ts:importOneBody` writes a landmark's name through its recorded write (`put`, and an
+  // insert of a built row), which a dry run also replays in memory — no literal `name` here to list.
   'landmarks.ts:create': 'a landmark',
   'landmarks.ts:updateLandmarkImpl': 'a landmark',
 };

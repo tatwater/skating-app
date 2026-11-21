@@ -9,6 +9,7 @@ import { useUndo } from '../../shell/undo';
 import { firstName, personName } from '../person/personModel';
 import { RecordSheetView } from './RecordSheetView';
 import {
+  countsPending,
   type EndingUndo,
   endingUndoWhat,
   type ItemRead,
@@ -268,7 +269,7 @@ function SheetSitting({
       {...(container !== undefined && { container })}
       subject={subject}
       standing={standing}
-      pending={pending || (counts?.pending.length ?? 0) > 0}
+      pending={pending || countsPending(counts, null)}
       counts={counts}
       tab={tab}
       onTab={state.onTab}

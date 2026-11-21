@@ -54,5 +54,23 @@ export function undoReader(ctx: QueryCtx | MutationCtx, share: Share, scope: Und
         : (first.payload as P);
     },
     take: (kind, n, read) => share.take(kind, n, read),
+    bodyNames: (waterBodyId) => {
+      // Keyed apart from a row's id: the list is read by its body, through its index.
+      const key = `bodyNames:${waterBodyId}`;
+      const seen = isQuery ? (SEEN.get(ctx) ?? new Map<string, Promise<unknown>>()) : null;
+      const known = seen?.get(key);
+      if (known) return known as Promise<Doc<'bodyNameLists'> | null>;
+      const read = share.read('bodyNames', () =>
+        ctx.db
+          .query('bodyNameLists')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .first(),
+      );
+      if (seen) {
+        seen.set(key, read);
+        SEEN.set(ctx, seen);
+      }
+      return read;
+    },
   };
 }

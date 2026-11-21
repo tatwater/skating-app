@@ -14,6 +14,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { headFirst } from './contentRecord';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import { OverBudget } from './lib/readBudget';
+import { syncWithdrawalById } from './lib/withdrawals';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -42,7 +43,7 @@ const NOTIF_PREFS = {
 async function world() {
   const t = convexTest({ schema, modules, transactionLimits: true });
   const ids = await t.run(async (ctx) => {
-    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts'] as const) {
+    for (const b of ['rows', 'flagSubjects', 'undoChains', 'verdicts', 'withdrawals'] as const) {
       await markReady(ctx, b);
     }
     const profile = async (subject: string, role: 'member' | 'moderator') => {
@@ -117,8 +118,8 @@ function report(w: W, authorId: Id<'profiles'>, bytes: number, over: Partial<Doc
 
 /** A comment `rob` deleted on Report `on`, at `at`. */
 function deletedComment(w: W, on: Id<'reports'>, at: number) {
-  return w.t.run((ctx) =>
-    ctx.db.insert('comments', {
+  return w.t.run(async (ctx) => {
+    const id = await ctx.db.insert('comments', {
       reportId: on,
       authorId: w.rob,
       body: 'Fine, I’ll stop posting here.',
@@ -127,8 +128,11 @@ function deletedComment(w: W, on: Id<'reports'>, at: number) {
       authorDeletedAt: at,
       eraseAt: at + 30 * 86_400_000,
       createdAt: at - 1,
-    } as never),
-  );
+    } as never);
+    // Its withdrawal row, as the author's delete writes it (B01-4m).
+    await syncWithdrawalById(ctx, 'comment', id);
+    return id;
+  });
 }
 
 /** A verdict on an item of `rob`'s, standing or ended by a restore. */
@@ -296,6 +300,10 @@ describe('a page always moves on', () => {
                   moderationStatus: it.list === 'deleted' ? 'removed' : 'hidden',
                   ...(it.list === 'deleted' ? { authorDeletedAt: at } : {}),
                 });
+                if (it.list === 'deleted') {
+                  const reportId = id;
+                  await w.t.run((ctx) => syncWithdrawalById(ctx, 'report', reportId));
+                }
               }
               if (it.list !== 'deleted') await verdict(w, it.kind, id, at, it.list === 'reversed');
               want[it.list].push(id);

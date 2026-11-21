@@ -1,6 +1,6 @@
 /**
  * Two runs of the same chained job, alive at once (B01 §5.7, `lib/peopleRuns`). For each of the six
- * chained People jobs — the four backfills, the lapsed-suspension sweep, its daily retry — a property
+ * chained People jobs — the five backfills, the lapsed-suspension sweep, its daily retry — a property
  * drives run A (whose passes are delayed) and run B (a recovery, or the next cron tick, started once
  * the old run reads as stalled) through arbitrary interleavings of their passes, with failures and
  * items added mid-run. It holds that a superseded run's pass changes nothing and schedules nothing,
@@ -33,6 +33,7 @@ import {
   savePass,
   takeLease,
 } from './lib/peopleRuns';
+import * as withdrawalsLib from './lib/withdrawals';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -347,6 +348,44 @@ const SPECS: Spec[] = [
       'contentRecord:replayVerdictHistory': internal.contentRecord.replayVerdictHistory,
       'erasure:backfillClocks': internal.erasure.backfillClocks,
     },
+  },
+  {
+    // The withdrawal rows (B01-4m): one per item a person took back, walked person by person.
+    job: 'withdrawals',
+    name: 'peopleJobs:backfillWithdrawals',
+    ref: internal.peopleJobs.backfillWithdrawals,
+    restart: { alone: true },
+    // A Report its author deleted before the rows existed: its row is the backfill's to make.
+    seed: async (ctx, i) => {
+      const author = await filer(ctx);
+      await ctx.db.insert('reports', {
+        ...(await reportRow(ctx, author)),
+        moderationStatus: 'removed',
+        authorDeletedAt: T0 - 5_000 + i,
+      });
+    },
+    // The live writers keep the row as they withdraw: nothing for the backfill to fix.
+    add: async (ctx, i) => {
+      const author = await filer(ctx);
+      const id = await ctx.db.insert('reports', {
+        ...(await reportRow(ctx, author)),
+        moderationStatus: 'removed',
+        authorDeletedAt: Date.now() + i,
+      });
+      await withdrawalsLib.syncWithdrawalById(ctx, 'report', id);
+    },
+    remaining: async (ctx) => {
+      const rows = new Set(
+        (await ctx.db.query('contentWithdrawals').collect()).map((r) => r.targetId),
+      );
+      return (await ctx.db.query('reports').collect())
+        .filter((r) => r.authorDeletedAt !== undefined && !rows.has(r._id))
+        .map((r) => r._id);
+    },
+    failOnce: () =>
+      vi.spyOn(withdrawalsLib, 'syncWithdrawal').mockRejectedValueOnce(new Error('poison')),
+    tables: ['contentWithdrawals', 'peopleJobRuns', 'peopleJobProgress'],
+    holds: backfillHolds,
   },
   {
     job: 'lapseSweep',
@@ -731,7 +770,10 @@ async function pendingDocs(t: T): Promise<string[]> {
 
 /** Every pass of every backfill scheduled now, by the scheduler's name. */
 const BACKFILL_REFS = Object.fromEntries(
-  SPECS.slice(0, 4).flatMap((s) => [[s.name, s.ref], ...Object.entries(s.chain ?? {})]),
+  SPECS.slice(0, PEOPLE_BACKFILLS.length).flatMap((s) => [
+    [s.name, s.ref],
+    ...Object.entries(s.chain ?? {}),
+  ]),
 ) as Record<string, Spec['ref']>;
 
 describe('a backfill in flight re-runs no People read pass by pass', () => {
@@ -748,10 +790,11 @@ describe('a backfill in flight re-runs no People read pass by pass', () => {
     expect(seen.answer.pending.length).toBeGreaterThan(0);
   });
 
-  test('over a whole chain of four backfills, each run row changes only as its run starts and concludes', async () => {
+  test('over a whole chain of five backfills, each run row changes only as its run starts and concludes', async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      for (const spec of SPECS.slice(0, 4)) for (let i = 0; i < 3; i++) await spec.seed(ctx, i);
+      for (const spec of SPECS.slice(0, PEOPLE_BACKFILLS.length))
+        for (let i = 0; i < 3; i++) await spec.seed(ctx, i);
     });
     const versions: string[][] = PEOPLE_BACKFILLS.map(() => []);
     const observe = async () => {

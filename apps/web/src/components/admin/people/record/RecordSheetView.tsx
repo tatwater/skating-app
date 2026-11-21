@@ -16,6 +16,7 @@ import { RecordList } from './RecordList';
 import {
   ACTION_KEY,
   type ChoicesRead,
+  countsPending,
   type DeletedRow,
   deletedRowView,
   type EndingUndo,
@@ -422,7 +423,7 @@ function SheetBodyView({
               onTab={onTab}
               kind={kind}
               onKind={onKind}
-              kindOptions={kindOptions(counted, pending || (counts?.pending.length ?? 0) > 0)}
+              kindOptions={kindOptions(counted, pending || countsPending(counts, tab))}
               rows={rows.rows}
               loading={status === 'loading'}
               end={end}

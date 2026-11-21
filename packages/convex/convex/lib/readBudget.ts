@@ -97,11 +97,16 @@ export const ROW_MAX = {
   launch: 12 * 1024,
   // A landmark's name and spellings, and a known feature's other fields, no writer caps.
   landmark: DOC_MAX,
+  // A body's short list of its place names (B01-3u): bounded at its one writer by an estimate that
+  // never undercounts (`lib/bodyNames`, 256 KiB), with room for the row's own fields.
+  bodyNames: 256 * 1024 + SLACK,
   bodyFeature: DOC_MAX,
   // A Bodies library row carries the body's name, which no writer caps.
   bodyLibraryRow: DOC_MAX,
   // Ids, literals, numbers and a coordinate — no free text.
   verdict: SLACK,
+  // A withdrawal row (B01-4m): two ids, a literal, four numbers and a boolean — about 250 bytes.
+  withdrawal: 1024,
   small: SLACK,
   // A bounty-create attempt: ids, a decision, a few numbers and a trust class — no free text.
   gateEvent: 2 * 1024,
