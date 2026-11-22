@@ -108,7 +108,8 @@ export interface RecordFacts {
   authorDeleted: boolean;
   /**
    * Its author took it back: {@link RecordFacts.authorDeleted}, or a Post every Report of which its
-   * author deleted (the clients delete Reports, never a whole Post) — what an overturn asks.
+   * author deleted (the clients delete Reports, never a whole Post) — what an overturn asks. A photo
+   * is `'unknown'` where its uploader's withdrawal wasn't read (a list row).
    */
   withdrawn: boolean | 'unknown';
   /** `visible`, `hidden` or `removed` — an alert's moderation axis is its retraction, so `null`. */
@@ -161,6 +162,10 @@ export function recordRefusal(facts: RecordFacts, action: RecordAction): string 
     case 'restore': {
       if (facts.targetType === 'accessAlert') return ALERT_HAS_NO_STATUS;
       if (facts.authorDeleted) return AUTHOR_DELETED_RESTORE;
+      // A photo whose uploader's withdrawal wasn't read (a list row) may be theirs to keep down.
+      if (facts.targetType === 'photo' && facts.withdrawn === 'unknown') {
+        return RECORD_CHECK_ON_ITEM;
+      }
       // Up already: nothing to change — unless a decision still stands on it (a history rebuilt from
       // before the record), which the restore ends.
       if (facts.status === 'visible' && !facts.standing) return RESTORE_ALREADY_UP;
@@ -276,13 +281,20 @@ type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards
  * The facts of an item from its document (or `null`, gone) and the kind of the verdict standing on it
  * (`null`: none). A Post its author didn't delete is `withdrawn: 'unknown'` unless `members` says
  * whether every one of its Reports was withdrawn; `post` carries its restore plan and `membersUp`
- * how many of its Reports are up, where they were read.
+ * how many of its Reports are up, where they were read. A photo's withdrawal by its uploader is not on
+ * its document (`lib/photoAccess.photoWithdrawnAt` reads it): `photoWithdrawn` carries it, and every
+ * caller building a photo's facts passes it (`photoRecordFacts`), so a lever and its write agree.
  */
 export function recordFactsOf(
   targetType: VerdictTargetType,
-  doc: ContentDoc | Doc<'accessAlerts'> | null,
+  doc: ContentDoc | Doc<'accessAlerts'> | Doc<'photos'> | null,
   heldAs: VerdictKind | null,
-  members?: { everyWithdrawn?: boolean; plan?: PostRestoreFacts; up?: number },
+  members?: {
+    everyWithdrawn?: boolean;
+    plan?: PostRestoreFacts;
+    up?: number;
+    photoWithdrawn?: boolean;
+  },
 ): RecordFacts {
   const standing = heldAs !== null;
   if (doc === null) {
@@ -309,6 +321,23 @@ export function recordFactsOf(
       standing,
       heldAs,
       authorId: authorOf(doc),
+    };
+  }
+  if (targetType === 'photo') {
+    // A purged photo is a tombstone (D222): its bytes are gone, its row names what was removed — as
+    // an erased comment's shell, only a standing decision can still come off it.
+    // A list row that didn't read the withdrawal answers `unknown`: its levers point at the item.
+    const photo = doc as Doc<'photos'>;
+    const withdrawn = members?.photoWithdrawn ?? 'unknown';
+    return {
+      targetType,
+      erased: photo.purgedAt !== undefined,
+      authorDeleted: withdrawn === true,
+      withdrawn,
+      status: photo.moderationStatus ?? 'visible',
+      standing,
+      heldAs,
+      authorId: authorOf(photo),
     };
   }
   const content = doc as ContentDoc;

@@ -8,6 +8,7 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { authorOf } from './ownContent';
+import { photoWithdrawnAt } from './photoAccess';
 
 type ContentDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
 
@@ -53,6 +54,15 @@ export async function contentFactsOn(
   targetType: string,
   targetId: string,
 ): Promise<{ authorDeletedAt: number | undefined; authorId: Id<'profiles'> | null }> {
+  if (targetType === 'photo') {
+    // A photo (B01-5e): its uploader is its author (D269), and their withdrawal of a held photo is on
+    // its audit rows, not its document (`lib/photoAccess.photoWithdrawnAt`).
+    const photoId = ctx.db.normalizeId('photos', targetId);
+    const photo = photoId ? await ctx.db.get(photoId) : null;
+    if (!photo) return { authorDeletedAt: undefined, authorId: null };
+    const withdrawn = await photoWithdrawnAt(ctx, photo._id);
+    return { authorDeletedAt: withdrawn ?? undefined, authorId: photo.uploaderId };
+  }
   const table = isWithdrawable(targetType)
     ? WITHDRAWABLE_TABLE[targetType]
     : targetType === 'accessAlert'

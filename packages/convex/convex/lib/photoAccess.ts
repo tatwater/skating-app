@@ -11,6 +11,79 @@
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { OPEN_FLAG_STATUSES } from './openFlags';
+
+// ── The photo's moderation axis (B01-5e, D222) ──────────────────────────────────────────────────
+
+/**
+ * **The one visibility rule** — a photo is shown to a skater or the public only while it is `visible`.
+ * Absent reads as visible (the field is widened optional until the backfill narrows it). Every
+ * skater-facing read of a photo — its URL, its count, its thumbnail — asks this, never the field.
+ */
+export const photoVisible = (p: Pick<Doc<'photos'>, 'moderationStatus'>): boolean =>
+  (p.moderationStatus ?? 'visible') === 'visible';
+
+/** A removal's purge, 30 days on (D222, the founder's clock; §11 call 4). */
+export const PHOTO_PURGE_DELAY_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Rows {@link photoHeld} reads at most beyond the photo: one verdict, one flag per open status. */
+export const PHOTO_HOLD_READS = 1 + OPEN_FLAG_STATUSES.length;
+
+/**
+ * **What keeps a photo from every deleter** (D248: an author can't drop evidence; D222): a photo that
+ * is moderated (hidden or removed — an uploader's withdrawal of a held photo leaves it removed), under
+ * an open flag, or under a standing verdict. Point reads on exact prefixes (`first()` each), so the
+ * answer is the same at one flag or five thousand. Every path that deletes a photo row or its blobs
+ * asks it (`lib/photoOrphans.deletePhotoAndBlobs` asks it itself; `packages/guards`'
+ * `photoDeleters.test.ts` holds the list), and a removal's bytes go only by the purge
+ * (`photoPurge`), which deletes blobs and keeps the row.
+ */
+export async function photoHeld(ctx: QueryCtx, photo: Doc<'photos'>): Promise<boolean> {
+  if (!photoVisible(photo)) return true;
+  const verdict = await ctx.db
+    .query('contentVerdicts')
+    .withIndex('by_target_standing', (q) =>
+      q.eq('targetType', 'photo').eq('targetId', photo._id).eq('standing', true),
+    )
+    .first();
+  if (verdict) return true;
+  for (const status of OPEN_FLAG_STATUSES) {
+    const flag = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target_status_reason', (q) =>
+        q.eq('targetType', 'photo').eq('targetId', photo._id).eq('status', status),
+      )
+      .first();
+    if (flag) return true;
+  }
+  return false;
+}
+
+/**
+ * When the photo's uploader withdrew it, if they did — their delete of a photo that was held
+ * (`photos.remove`, the B01-5e fork 1 ruling) writes an `author_delete` row on it and leaves it removed
+ * on the purge clock. Final, as every author's deletion is (D248): no restore brings it back. One
+ * point read (`by_target_action`); the row is never deleted.
+ */
+export async function photoWithdrawnAt(
+  ctx: QueryCtx,
+  photoId: Id<'photos'>,
+): Promise<number | null> {
+  return (await photoWithdrawalRow(ctx, photoId))?.createdAt ?? null;
+}
+
+/** The uploader's `author_delete` row on a photo, if any — {@link photoWithdrawnAt}'s one read. */
+export function photoWithdrawalRow(
+  ctx: QueryCtx,
+  photoId: Id<'photos'>,
+): Promise<Doc<'moderationActions'> | null> {
+  return ctx.db
+    .query('moderationActions')
+    .withIndex('by_target_action', (q) =>
+      q.eq('targetType', 'photo').eq('targetId', photoId).eq('action', 'author_delete'),
+    )
+    .first();
+}
 
 /**
  * Verify every photo id exists and belongs to the author (no attaching someone else's photo).
@@ -69,24 +142,35 @@ export interface ResolvedPhoto {
   caption?: string;
   coord?: { lat: number; lng: number };
   placeOnMap: boolean;
+  /** Only on a staff read: the photo is hidden or removed (its moderation status says which). */
+  down?: true;
+  moderationStatus?: 'hidden' | 'removed';
 }
 
 /**
- * Resolve serving URLs for a set of photo ids. **Callers must have already applied their own
- * visibility gate** — this function deliberately performs no access check of its own, so that the
- * gate is always visible at the call site rather than hidden in here.
+ * Resolve serving URLs for a set of photo ids. **Callers must have already applied their own gate on
+ * the thing that references the photos** — the report, hazard or access point — so that gate is
+ * visible at the call site. The photo's **own** moderation gate is applied here, the one place: a
+ * photo that isn't visible ({@link photoVisible}) is skipped, unless the caller passes `staff` (a
+ * viewer with `content.read`), when it is returned marked `down` with its status.
  *
- * A URL is `null` when its stored file is missing (deleted / never finalized), so callers must guard
- * it rather than assume a serving URL. Missing photo rows are skipped.
+ * Each result carries its `photoId`, and **callers join by id, never by position**: a skipped or
+ * missing photo leaves no slot, so the i-th result is not the i-th id.
+ *
+ * A URL is `null` when its stored file is missing (deleted / never finalized / purged), so callers
+ * must guard it rather than assume a serving URL. Missing photo rows are skipped.
  */
 export async function resolvePhotoUrls(
   ctx: QueryCtx,
   photoIds: readonly Id<'photos'>[],
+  opts: { staff?: boolean } = {},
 ): Promise<ResolvedPhoto[]> {
   const results: ResolvedPhoto[] = [];
   for (const photoId of photoIds) {
     const photo = await ctx.db.get(photoId);
     if (!photo) continue;
+    const shown = photoVisible(photo);
+    if (!shown && opts.staff !== true) continue;
     // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`.
     const [url, thumbUrl] = await Promise.all([
       ctx.storage.getUrl(photo.storageId as Id<'_storage'>),
@@ -99,6 +183,9 @@ export async function resolvePhotoUrls(
       ...(photo.caption !== undefined ? { caption: photo.caption } : {}),
       ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
       placeOnMap: photo.placeOnMap,
+      ...(shown
+        ? {}
+        : { down: true as const, moderationStatus: photo.moderationStatus as 'hidden' | 'removed' }),
     });
   }
   return results;

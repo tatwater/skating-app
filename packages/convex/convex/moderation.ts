@@ -49,6 +49,7 @@ import {
   recordUndoneVerdict,
   recordVerdict,
   subjectOf,
+  VERDICT_TABLE,
   type VerdictTargetType,
 } from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
@@ -57,6 +58,7 @@ import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { flagSubject, flagSubjectOf } from './lib/flagSubject';
 import { flagSource, itemToDecide } from './lib/inboxItems';
+import { PHOTO_PURGE_DELAY_MS, photoWithdrawnAt } from './lib/photoAccess';
 import { assertInboxVerb } from './lib/inboxRules';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { ownContentRefusal } from './lib/ownContent';
@@ -108,7 +110,18 @@ const MODERATION_TABLE = {
   post: 'posts',
   comment: 'comments',
   hazard: 'hazards',
+  // B01-5e (D222): a photo's moderation axis — a hide restorable indefinitely, a removal purged 30
+  // days on unless restored (`photoPurge`).
+  photo: 'photos',
 } as const;
+
+/** Content a moderator's verdict can be recorded on after its author withdrew it. */
+type WithdrawnTarget =
+  | Doc<'reports'>
+  | Doc<'posts'>
+  | Doc<'comments'>
+  | Doc<'hazards'>
+  | Doc<'photos'>;
 
 type ModerationStatus = (typeof MODERATION_STATUSES)[number];
 
@@ -592,14 +605,14 @@ async function recordWriteResult(
 }
 
 /**
- * Hide, remove or restore a report, Post, comment or hazard (D32/D37), `content.moderate`. A takedown
+ * Hide, remove or restore a report, Post, comment, hazard or photo (D32/D37, D222), `content.moderate`. A takedown
  * asks a reason; a restore is a give-back and takes one only if given (D226), else a default marked
  * `reasonDefaulted` so History can leave it out. Refuses through `lib/recordRules` (the record sheet's
  * `can` answers by the same rule). Returns the audit row and whether this viewer can undo it now.
  */
 export const setModerationStatus = mutation({
   args: {
-    targetType: literals(['report', 'post', 'comment', 'hazard']),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'photo']),
     targetId: v.string(),
     status: literals(MODERATION_STATUSES),
     /** Required for a hide or removal; optional for a restore. */
@@ -669,7 +682,7 @@ export async function setContentStatus(
     reasonDefaulted?: boolean;
   },
 ): Promise<{
-  targetId: Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>;
+  targetId: Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'> | Id<'photos'>;
   actionId: Id<'moderationActions'>;
 }> {
   {
@@ -682,8 +695,9 @@ export async function setContentStatus(
     const target = await ctx.db.get(targetId);
     if (!target) throw new ConvexError('Target not found');
 
-    const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
-    const priorStatus = typedTarget.moderationStatus;
+    const typedTarget = target as WithdrawnTarget;
+    // A photo's status is optional until the backfill narrows it: absent reads as visible (D222).
+    const priorStatus = typedTarget.moderationStatus ?? 'visible';
     const asUndo = args.undoes !== undefined;
     if (
       args.withReportIds !== undefined &&
@@ -703,11 +717,17 @@ export async function setContentStatus(
       !asUndo && args.targetType === 'post' && args.status !== 'visible'
         ? await membersUpOf(ctx, target as Doc<'posts'>)
         : undefined;
+    // A photo's uploader withdrawal is on its audit rows, not its document: read it, forward or undo,
+    // as the reads do (`photoMembersOf`), so a withdrawn photo never comes back by either.
     const facts = recordFactsOf(
       args.targetType,
       typedTarget,
       held,
-      membersUp !== undefined ? { up: membersUp } : undefined,
+      args.targetType === 'photo'
+        ? await photoMembersOf(ctx, target as Doc<'photos'>)
+        : membersUp !== undefined
+          ? { up: membersUp }
+          : undefined,
     );
     // Never on their own content (D269) — a forward write or an undo: the lever's one rule.
     const own = recordActorRefusal(actor, facts);
@@ -814,6 +834,18 @@ export async function setContentStatus(
           cascaded.push(await moveMember(ctx, post._id, report, 'visible', audit, true));
         }
       }
+    } else if (args.targetType === 'photo') {
+      // A photo (B01-5e, D222): a hide is restorable indefinitely; a removal's bytes go 30 days on
+      // (`photoPurge`) unless a restore — or an undo back up or to hidden — clears the clock first.
+      await ctx.db.patch(targetId as Id<'photos'>, {
+        moderationStatus: args.status,
+        moderatedAt: now,
+        purgeAt: args.status === 'removed' ? now + PHOTO_PURGE_DELAY_MS : undefined,
+      });
+      // ── ROTATION SEAM (B01-5e) ── A takedown would schedule `photos.rotateBlobs` here, so the
+      // photo's old address stops answering. Not built: whether Convex storage can retire an address
+      // is being proven on dev first. Until then a down photo is hidden from every read (the resolver,
+      // the feed, the counts), and an address someone already holds may still answer until the purge.
     } else {
       await ctx.db.patch(targetId, { moderationStatus: args.status });
       // Comments carry a denormalized contribution counter to keep exact; hazards do not. Note we
@@ -909,7 +941,7 @@ async function recordOnWithdrawn(
     keep = false,
   }: {
     targetType: ContentTargetType;
-    target: Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
+    target: WithdrawnTarget;
     status: 'hidden' | 'removed';
     reason: AuditReason | string;
     now: number;
@@ -918,6 +950,8 @@ async function recordOnWithdrawn(
   },
 ): Promise<Id<'moderationActions'>> {
   const subjectUserId = subjectOf(targetType, target);
+  // A photo's status is optional until the backfill narrows it: absent reads as visible.
+  const status_ = target.moderationStatus ?? 'visible';
   const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: ACTION_FOR_STATUS[status],
@@ -925,8 +959,8 @@ async function recordOnWithdrawn(
     targetId: target._id,
     reason,
     metadata: {
-      priorStatus: target.moderationStatus,
-      newStatus: target.moderationStatus,
+      priorStatus: status_,
+      newStatus: status_,
       onAuthorDeleted: true,
       ...(keep ? { keptOnRecord: true } : {}),
       // Whose record the verdict is on, kept with the action (D248: a verdict outlives its content,
@@ -1157,7 +1191,7 @@ async function everyMemberWithdrawn(ctx: QueryCtx, post: Doc<'posts'>): Promise<
 export const overturnVerdict = mutation({
   args: {
     // Only what an author can withdraw — and an alert its author retracted.
-    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert']),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert', 'photo']),
     targetId: v.string(),
     /** Optional: a give-back takes a reason only if there is one to give (the record sheet's dialog). */
     reason: v.optional(v.string()),
@@ -1188,7 +1222,7 @@ export async function overturnVerdictImpl(
   {
     const given = args.reason?.trim() ?? '';
     const reason = given.length > 0 ? typed(given) : null;
-    const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
+    const targetId = ctx.db.normalizeId(VERDICT_TABLE[args.targetType], args.targetId);
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!targetId || !target) throw new ConvexError('Target not found');
     // The record's one rule (`lib/recordRules`): withdrawn — its author's stamp, an alert they
@@ -1199,18 +1233,10 @@ export async function overturnVerdictImpl(
     const post =
       args.targetType === 'post' && authorDeletedAtOf(target as Doc<'posts'>) === undefined
         ? { everyWithdrawn: await everyMemberWithdrawn(ctx, target as Doc<'posts'>) }
-        : undefined;
-    const facts = recordFactsOf(
-      args.targetType,
-      target as
-        | Doc<'reports'>
-        | Doc<'posts'>
-        | Doc<'comments'>
-        | Doc<'hazards'>
-        | Doc<'accessAlerts'>,
-      held,
-      post,
-    );
+        : args.targetType === 'photo'
+          ? await photoMembersOf(ctx, target as Doc<'photos'>)
+          : undefined;
+    const facts = recordFactsOf(args.targetType, target as RecordDoc, held, post);
     // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
     const why = recordActorRefusal(actor, facts) ?? recordRefusal(facts, 'overturn');
     if (why !== null) throw new ConvexError(why);
@@ -1228,9 +1254,31 @@ export async function overturnVerdictImpl(
     await endVerdicts(ctx, args.targetType, args.targetId, { actionId, at: now });
     // When its words go now that nothing holds them (`lib/eraseClock`, moved by the verdict's end):
     // `null` while something else still holds it (an open flag) or its erasure is parked.
+    // A photo has no erasure clock: its bytes follow the purge (`purgeAt`), so `null` here.
     const after = await ctx.db.get(targetId);
-    return { targetId, actionId, eraseAt: after?.eraseAt ?? null };
+    return { targetId, actionId, eraseAt: (after as { eraseAt?: number } | null)?.eraseAt ?? null };
   }
+}
+
+/** Every document a verdict can be on (`lib/contentVerdicts.VERDICT_TABLE`). */
+type RecordDoc =
+  | Doc<'reports'>
+  | Doc<'posts'>
+  | Doc<'comments'>
+  | Doc<'hazards'>
+  | Doc<'accessAlerts'>
+  | Doc<'photos'>;
+
+/**
+ * A photo's facts beyond its row, for the record's rule (B01-5e): whether its uploader withdrew it
+ * (`lib/photoAccess.photoWithdrawnAt`, one point read). Every write building a photo's facts reads
+ * it, as the reads do, so a lever and its write agree.
+ */
+export async function photoMembersOf(
+  ctx: QueryCtx,
+  photo: Doc<'photos'>,
+): Promise<{ photoWithdrawn: boolean }> {
+  return { photoWithdrawn: (await photoWithdrawnAt(ctx, photo._id)) !== null };
 }
 
 /** Each kind as an audit reason names it. */
@@ -1240,6 +1288,7 @@ const KIND_WORD: Record<VerdictTargetType, string> = {
   comment: 'comment',
   hazard: 'hazard',
   accessAlert: 'access alert',
+  photo: 'photo',
 };
 
 /**
@@ -1251,7 +1300,7 @@ const KIND_WORD: Record<VerdictTargetType, string> = {
  */
 export const keepOnRecord = mutation({
   args: {
-    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert']),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert', 'photo']),
     targetId: v.string(),
     reason: v.string(),
   },
@@ -1273,17 +1322,17 @@ export async function keepOnRecordImpl(
   {
     const { reason } = reasonFor(args.reason, true, '');
     const kept = typed(reason);
-    const targetId = ctx.db.normalizeId(ERASABLE[args.targetType], args.targetId);
+    const targetId = ctx.db.normalizeId(VERDICT_TABLE[args.targetType], args.targetId);
     const target = targetId ? await ctx.db.get(targetId) : null;
     if (!targetId || !target) throw new ConvexError('Target not found');
     const held = await heldKindOn(ctx, args.targetType, args.targetId);
-    const doc = target as
-      | Doc<'reports'>
-      | Doc<'posts'>
-      | Doc<'comments'>
-      | Doc<'hazards'>
-      | Doc<'accessAlerts'>;
-    const keepFacts = recordFactsOf(args.targetType, doc, held);
+    const doc = target as RecordDoc;
+    const keepFacts = recordFactsOf(
+      args.targetType,
+      doc,
+      held,
+      args.targetType === 'photo' ? await photoMembersOf(ctx, doc as Doc<'photos'>) : undefined,
+    );
     // Their own content first (D269), then the item: the lever's one rule (`lib/recordRules`).
     const why = recordActorRefusal(actor, keepFacts) ?? recordRefusal(keepFacts, 'keep');
     if (why !== null) throw new ConvexError(why);
@@ -1295,7 +1344,7 @@ export async function keepOnRecordImpl(
           })
         : await recordOnWithdrawn(ctx, actor, {
             targetType: args.targetType,
-            target: doc as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>,
+            target: doc as WithdrawnTarget,
             status: 'removed',
             reason: kept,
             now,
@@ -1459,6 +1508,8 @@ const FLAG_TARGET_READERS = {
   photo: flagTargetFrom('photos', (doc) => ({
     author: doc.uploaderId,
     summary: snippet(doc.caption) || 'Photo',
+    // Absent reads as visible until the backfill narrows it (B01-5e, D222).
+    moderationStatus: doc.moderationStatus ?? 'visible',
   })),
   accessAlert: flagTargetFrom('accessAlerts', (doc) => ({
     author: doc.createdByUserId,

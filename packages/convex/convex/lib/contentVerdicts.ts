@@ -34,6 +34,7 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
+export { VERDICT_TABLE } from './verdictTargets';
 import { refreshWithdrawalHold } from './withdrawals';
 
 export type VerdictTargetType = Doc<'contentVerdicts'>['targetType'];
@@ -42,10 +43,12 @@ type ContentDoc =
   | Doc<'posts'>
   | Doc<'comments'>
   | Doc<'hazards'>
-  | Doc<'accessAlerts'>;
+  | Doc<'accessAlerts'>
+  | Doc<'photos'>;
 
-/** Whose content a moderated item is. */
+/** Whose content a moderated item is: an author, a filer, or a photo's uploader. */
 export function subjectOf(targetType: VerdictTargetType, target: ContentDoc): Id<'profiles'> {
+  if (targetType === 'photo') return (target as Doc<'photos'>).uploaderId;
   return targetType === 'hazard' || targetType === 'accessAlert'
     ? (target as Doc<'hazards'> | Doc<'accessAlerts'>).createdByUserId
     : (target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'>).authorId;
@@ -61,7 +64,7 @@ export const VERDICT_COUNT_CAP = 500;
 
 /** Each kind's count, every one zero — the record's counts by kind start here. */
 export function zeroByKind(): Record<VerdictTargetType, number> {
-  return { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+  return { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 };
 }
 
 /**

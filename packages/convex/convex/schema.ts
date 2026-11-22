@@ -3991,7 +3991,7 @@ export default defineSchema({
     subjectUserId: v.id('profiles'),
     // `accessAlert`: a moderator's retraction recorded on an alert its author already retracted —
     // the one alert verdict kept, as evidence of a pattern of bad claims (founder call, 2026-11-13).
-    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert'] as const),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert', 'photo'] as const),
     targetId: v.string(),
     actionId: v.id('moderationActions'),
     kind: literals(['hidden', 'removed', 'retracted'] as const),

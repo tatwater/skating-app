@@ -43,7 +43,7 @@ import {
   type UndoScope,
 } from './undoTypes';
 
-// ── Content: reports, posts, comments, hazards ────────────────────────────────────────────────────
+// ── Content: reports, posts, comments, hazards, photos ────────────────────────────────────────────────
 
 type ContentStatus = 'visible' | 'hidden' | 'removed';
 
@@ -380,6 +380,8 @@ function targetUndo(): Partial<Record<ModerationTargetType, TargetUndo>> {
     post: CONTENT,
     comment: CONTENT,
     hazard: CONTENT,
+    // B01-5e (D222): a photo's hide, removal and restore undo as content's do; its purge never does.
+    photo: CONTENT,
     ...BODY_TARGET_UNDO,
     ...CORPUS_TARGET_UNDO,
   };
