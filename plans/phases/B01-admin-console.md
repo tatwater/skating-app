@@ -922,6 +922,29 @@ Made on the design's engineering forks; the founder may overturn any of them.
 22. **D291: an inverse may restore from a recorded before-image** (2026-11-22, fork 5 (A)), through
     the forward paths' side effects. The unmerge takes the survivor's merged lists apart by
     difference.
+23. **B01-5e: an uploader's delete of a flagged or decided photo withdraws it** (2026-11-22, the
+    photos pack's fork 1). It hides the photo at once and starts the 30-day clock, instead of deleting
+    it: a verdict outlives the content, and an author can't drop evidence by deleting (D248). An
+    unflagged, unmoderated photo deletes as today.
+24. **B01-5f: with `SUPPORT_FROM_EMAIL` unset, a reply reads `failed`** (2026-11-22, the support
+    pack's fork 1), the skip logged, and it never falls back to the general address. Resend is
+    already set on dev, so once the founder sets the variable a reply really sends; the seed must
+    never cause one to.
+25. **B01-5f: the seed carries one reply**, stored `failed`, never sent, to a "Test-" person's ticket
+    (2026-11-22, the support pack's fork 2).
+26. **B01-5e and B01-5f build in parallel and ship as two sequential PRs, support first** (2026-11-22).
+    Photos follows its rotation proof and rebases onto support's merge. The letters stay as named
+    even though f ships before e.
+27. **Into B01-5e's scope, from the pack's design-versus-code read** (2026-11-22), each a requirement:
+    - the Inbox serves photo URLs only to a viewer with `content.read`, enforced on the server;
+    - the own-content rule (D269) knows a photo's `uploaderId`;
+    - `photos.remove` follows ruling 23;
+    - `listPhotos` matches URLs to rows by id, not position;
+    - every one of the seven photo deleters respects flags and verdicts, with a guard test that fails
+      when a new photo deleter appears without that check.
+28. **The rotation proof runs on dev after #173's rollout** (2026-11-22), by the deploy executor from
+    the photos pack's plan. The photos builders start at once on everything that doesn't depend on
+    its outcome; the rotation action is the last piece, built or dropped per the proof.
 
 ### The founder's calls of 2026-11-21
 
@@ -11017,6 +11040,35 @@ The design said ~3,000 lines over ~55 files. With the missed readers and deleter
 - **W7 at T0** on the seam's view types.
 - The rotation proof runs first, on the deploy executor (an hour, then two hours of fetches).
 
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings 23, 26, 27 and 28 (§7); the founder is told of them and may overturn any.
+- **Fork 1, ruled as recommended:** an uploader's delete of a photo that is flagged or under a
+  decision withdraws it — hidden at once, the 30-day clock started, the verdict kept. An unflagged,
+  unmoderated photo deletes as today.
+- **The five findings are requirements of this PR:**
+  - the Inbox's photo URLs only to `content.read`, on the server;
+  - D269 on `uploaderId`;
+  - `photos.remove` as fork 1 rules;
+  - `listPhotos` joined by id;
+  - all seven deleters asking `photoHeld`, with a guard test in `packages/guards` that fails when a
+    file deletes a photo row or blob (`deletePhotoAndBlobs`, `ctx.db.delete` on a `photos` id,
+    `deleteStoredBlob` on a photo's storage id) without going through `photoHeld`. The test lists
+    the known deleters, so a new one fails until it is added with its check.
+- **Order:** this PR ships second, after B01-5f merges, rebased onto it. The rotation proof runs on
+  dev after #173's rollout. S5a, W7 and S5b's purge, deleters and backfill start at once;
+  `rotateBlobs` comes last, built or dropped per the proof.
+- **What T0 landed for this slice:**
+  - the four photo fields and `by_purge_at`, widened only;
+  - `purge_photo` in `MODERATION_ACTIONS`, with its final undo rule (`none`);
+  - placeholder History words for `purge_photo` in the two web label maps.
+
+  **`contentVerdicts.targetType` gaining `photo` did not land at T0.** Widening it ripples through
+  six files S5a owns (`contentRecord.ts`, `lib/recordReads.ts`, `lib/withdrawals.ts`,
+  `lib/contentVerdicts.ts`, `moderation.ts`, `recordModel.test.ts`), each needing a decision S5a
+  makes: the photo's table, its rank, its words. It is S5a's first commit. The schema line is apart
+  from every line S6 touches.
+
 #### Briefs (B01-5f) — support (2026-11-22)
 
 The design's PR 6 (*Support: notes, replies, audit*, D284), read against the code at `71343e97f`. It
@@ -11144,9 +11196,36 @@ The design said ~2,500 lines over ~35 files. With the six verbs' round trips, th
 - **S6 and W8 at T0**, W8 on the seam's view types.
 - No dev proof gates the build; the send's dev proof follows the merge and the founder's variable.
 
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings 24, 25 and 26 (§7); the founder is told of them and may overturn any.
+- **Fork 1, ruled as recommended:** with `SUPPORT_FROM_EMAIL` unset, a reply reads `failed`
+  (`unconfigured`), the skip logged. It never falls back to `RESEND_FROM_EMAIL`. Resend is set on
+  dev, so once the founder sets the variable a reply really sends.
+- **Fork 2, ruled:** the seed carries one reply, stored `failed` (`seed`), never sent, on a "Test-"
+  person's ticket. The send refuses a seed ticket before it resolves any address, and a test drives
+  the seeded reply through `sendReply` with Resend stubbed and asserts no call.
+- **Order:** this PR ships first.
+- **What T0 landed for this slice:**
+  - `supportMessages`, as designed, plus `failedWhy` (`unconfigured`, `seed`, `noAddress`,
+    `sendFailed`): a class, never the provider's message or an address;
+  - the six verbs in `MODERATION_ACTIONS`, and `supportTicket` in `MODERATION_TARGET_TYPES`;
+  - `MAX_SUPPORT_NOTE_LENGTH` (2,000) and `MAX_SUPPORT_REPLY_LENGTH` (5,000) in core's `textCaps`;
+  - the register row for `SUPPORT_FROM_EMAIL` (⬜ owed), and the `06-data-model.md` row;
+  - a `supportTicket` audit row in the feed opens the ticket's Inbox item.
+
+  **Placeholders, each marked `PLACEHOLDER (B01-5f)`:**
+  - the six verbs' `UNDO_POLICY` rows are `later('§2 Inbox', …)`. `T0_INBOX_PLACEHOLDERS` in
+    `undoPolicy.test.ts` lists them and exempts them from "nothing in §2 is owed". S6 writes each real
+    rule and empties the list before the PR opens.
+  - The History words in `actionLabels.ts` and `overviewData.ts` are marked `T0 PLACEHOLDERS`, for
+    W8 to settle.
+
+  `sendEmail`'s `from?` is S6's, not T0's: photos sends no mail.
+
 #### B01-5e and B01-5f: in parallel, or one after the other
 
-They can be **built in parallel and shipped as two sequential PRs.**
+**Ruled (governor's ruling 26):** they are **built in parallel and shipped as two sequential PRs**, support first.
 - **Their territories are disjoint by file:**
   - photos: `photos.ts`, `lib/photoAccess`, the sweeps, erasure, `moderation.ts`, `recordRules`, `ownContent`, `contentRecord`, `handlers/Flag/PhotoSubject`;
   - support: `support.ts`, the new table, `lib/resend`, `handlers/Ticket`, the credentials register.
