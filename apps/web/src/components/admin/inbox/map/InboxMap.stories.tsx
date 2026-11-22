@@ -105,20 +105,17 @@ export const Access: Story = {
   },
 };
 
-/** 2.3 Requests · Admit: the catalog candidate, the skate, Ricker Pond and the rule to it. */
+/** 2.3 Requests · Admit: the catalog candidate, the skate, Ricker Pond and a leader to it. */
 export const Admit: Story = {
   args: { view: admitScene(ADMIT), width: 788, height: 318 },
   render: (args) => <Pair {...args} height={args.height ?? 318} />,
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       await expect(q.querySelectorAll('[data-slot="map-legend-item"]')).toHaveLength(3);
-      // The served distance to Ricker Pond, as the *Nearest* row says it.
-      await expect(must(q.querySelector('[data-style="measure"]')).textContent).toBe('0.8 mi');
-      // The distance rule is ticked at both ends, solid, over a dashed run.
-      const rule = must(q.querySelector('[data-slot="body-map-dimension"][data-style="gap"]'));
-      await expect(
-        must(rule.querySelector('[data-slot="body-map-dimension-ticks"]')).getAttribute('d'),
-      ).toMatch(/^M.* M/);
+      // Ricker Pond gets a plain leader, never a measured rule: the distance is the *Nearest* row's
+      // (the server measured from the ask's point, which this line doesn't run from).
+      await expect(q.querySelector('[data-style="measure"]')).toBeNull();
+      await expect(q.querySelector('[data-slot="body-map-dimension"]')).toBeNull();
       await expect(q.querySelector('[data-slot="inbox-map-caption"]')).toHaveTextContent(
         'Unnamed · 41 ac',
       );

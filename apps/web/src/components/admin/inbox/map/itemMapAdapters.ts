@@ -133,11 +133,11 @@ function flagMap(item: Extract<InboxItemView, { kind: 'flag' }>, map: ServerItem
 
 function requestMap(item: Extract<InboxItemView, { kind: 'request' }>, map: ServerItemMap) {
   const asks = map.points.map(point);
-  // The nearest body of ours is the one the item names (`candidate.nearestKnown`), measured as the
-  // server measured it — none named, none drawn, whatever outlines the answer holds.
+  // The nearest body of ours is the one the item names (`candidate.nearestKnown`) — none named, none
+  // drawn, whatever outlines the answer holds. Its distance is the *Nearest* row's, not the map's.
   const known = item.candidate?.nearestKnown ?? null;
   const ours = known === null ? null : (map.others.find((o) => o.id === known.waterBodyId) ?? null);
-  const nearest = known !== null && ours !== null ? { ...embed(ours), meters: known.meters } : null;
+  const nearest = ours === null ? null : embed(ours);
   if (map.candidate !== null) {
     const c = item.candidate;
     const fact = c === null ? undefined : `${c.name ?? W.unnamed} · ${acresText(c.areaSqM)} ac`;

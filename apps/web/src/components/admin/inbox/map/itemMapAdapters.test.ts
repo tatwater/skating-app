@@ -72,23 +72,25 @@ describe('each kind’s scene', () => {
 
   it('an admit: the candidate dashed, ours, the rule, the legend and the catalog’s fact', () => {
     const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ);
-    expect(ids(v)).toEqual([
-      'body:ricker',
-      'candidate:yq4k2',
-      'gap:nearest:ricker',
-      'gap:nearest:ricker:length',
-    ]);
+    expect(ids(v)).toEqual(['body:ricker', 'candidate:yq4k2', 'leader:nearest:ricker']);
     expect(v?.legend.map((r) => r.label)).toEqual(['Catalog outline · not ours yet', 'Ours']);
     expect(v?.caption).toBe('Unnamed · 41 ac');
   });
 
-  it('an admit’s rule runs to the body the item names, measured as served — none named, none drawn', () => {
-    const rule = (v: InboxMapView | null) =>
-      v?.scene.items.find((i) => i.id === 'gap:nearest:ricker:length');
-    // The served 1,300 m, in the console's one distance format: the *Nearest* row's own words.
-    expect(rule(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ))).toMatchObject({
-      text: '0.8 mi',
+  it('an admit’s leader runs to the body the item names, with no figure on it — none named, none drawn', () => {
+    const leader = (v: InboxMapView | null) =>
+      v?.scene.items.find((i) => i.id === 'leader:nearest:ricker');
+    // The distance is the *Nearest* row's alone (the server measured from a point the map doesn't
+    // draw): the leader carries no figure, and no label sits on it.
+    expect(leader(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ))).toMatchObject({
+      kind: 'line',
+      style: 'leader',
     });
+    expect(
+      itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ)?.scene.items.some(
+        (i) => i.kind === 'label',
+      ),
+    ).toBe(false);
     const withNearest = (nearestKnown: unknown) =>
       ({
         ...ADMIT_MATCH,
@@ -108,16 +110,16 @@ describe('each kind’s scene', () => {
       TZ,
     );
     expect(ids(other)).toEqual(['candidate:yq4k2']);
-    // The served distance, not the drawn rule's own: another figure, another label.
+    // Whatever distance is served, the leader is the same line, figure-free.
     expect(
-      rule(
+      leader(
         itemMapScene(
           withNearest({ waterBodyId: 'ricker', name: 'Ricker Pond', meters: 4_000 }),
           ADMIT_MAP_NO_TRACK,
           TZ,
         ),
       ),
-    ).toMatchObject({ text: '2.5 mi' });
+    ).toEqual(leader(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ)));
   });
 
   it('an admit with an ask’s skate: its track, named for its asker as the board does', () => {

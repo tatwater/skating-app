@@ -78,11 +78,11 @@ export const Admit: Story = {
       await expect(s.getByRole('region', { name: 'The catalog' })).toHaveTextContent(
         '3DHP · YQ4K2',
       );
-      // *Nearest* and the map's rule say one distance: the served one, in the console's format.
+      // *Nearest* says the served distance; the map draws a leader to the body, with no figure on it.
       await expect(s.getByRole('region', { name: 'The catalog' })).toHaveTextContent(
         'Ricker Pond · 0.8 mi',
       );
-      await expect(must(q.querySelector('[data-style="measure"]'))).toHaveTextContent('0.8 mi');
+      await expect(q.querySelector('[data-style="measure"]')).toBeNull();
       await expect(s.getByRole('region', { name: 'Admitting it' })).toHaveTextContent(
         '2 asks · both told',
       );
