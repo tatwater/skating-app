@@ -248,7 +248,7 @@ export const FLAG_WORDS = {
   reasonLabel: 'Reason',
 
   // ── Receipts and refusals ───────────────────────────────────────────────────────────────────
-  notChanged: (subject: string) => (subject === '' ? 'Not changed' : `Not changed · ${subject}`),
+  notSaved: (subject: string) => (subject === '' ? 'Not saved' : `Not saved · ${subject}`),
   receipt: {
     dismissed: 'Dismissed',
     hidden: 'Hidden',

@@ -9059,8 +9059,11 @@ The integration review fixed four things:
   decides this* with no bar. The server's `can` still allows that viewer *Decline*, so the bar
   hides a lever the item allows. The fix is on the server: `can.decline` refuses for that viewer,
   and the bar draws from `can` alone.
-- **Refusal titles.** The flag handler's refusals say "Not changed · ‹subject›"; Access and the
-  runner say "Not saved". One title wants choosing.
+- **Refusal titles — done (the governor, 2026-11-22: one word).** The flag handler and People's
+  person and record writes said "Not changed · ‹subject›"; `said.ts`, the Body console, Access and
+  the runner say "Not saved". Every refusal toast now says **Not saved**. For the founder's copy
+  pass: the one title, and that a refusal's body differs (the flag and People toasts give the
+  server's sentence alone; the Body console, Access and the runner lead with what wasn't saved).
 - **The place bar's *Approve*.** It also checks that a bay or landmark is drawn, beside
   `can.approve`. The server's `can` already says so, so the extra check is redundant, and harmless
   while the two agree.

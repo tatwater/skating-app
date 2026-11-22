@@ -417,7 +417,7 @@ export const Restoring: Story = {
     // The server's own words come back in the toast, naming the person; the sheet prints none.
     await waitFor(() =>
       expect(slot(canvasElement, 'toast')).toHaveTextContent(
-        'Not changed · Rob TremblayThis is already up.',
+        'Not saved · Rob TremblayThis is already up.',
       ),
     );
     await expect(slot(canvasElement, 'record-sheet')).not.toHaveTextContent('This is already up.');

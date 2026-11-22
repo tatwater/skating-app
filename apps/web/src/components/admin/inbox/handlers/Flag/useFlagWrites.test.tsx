@@ -129,7 +129,7 @@ describe('the write path', () => {
     expect(announce).not.toHaveBeenCalled();
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({
-      title: 'Not changed · Mascoma Lake',
+      title: 'Not saved · Mascoma Lake',
       description: sentence,
       // Held until dismissed (a refusal's toast).
       timeout: 0,
@@ -174,7 +174,7 @@ describe('the write path', () => {
       throw new Error('network');
     });
     expect(await write({ kind: 'dismiss' })).toBe(false);
-    expect(added[0]).toMatchObject({ title: 'Not changed · Mascoma Lake', timeout: 0 });
+    expect(added[0]).toMatchObject({ title: 'Not saved · Mascoma Lake', timeout: 0 });
   });
 });
 

@@ -458,7 +458,7 @@ describe('a moderator’s view', () => {
     expect(toasts.toast).toHaveBeenCalledTimes(1);
     expect(toasts.toast).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        title: 'Not changed · Paul Lacasse',
+        title: 'Not saved · Paul Lacasse',
         description: 'Not allowed.',
         tone: 'bad',
       }),

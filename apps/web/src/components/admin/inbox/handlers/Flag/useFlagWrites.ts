@@ -184,7 +184,7 @@ export function useFlagWrites({
               return server.restoreAndDismiss(call.args);
           }
         },
-        (why) => ({ title: W.notChanged(subject), description: why }),
+        (why) => ({ title: W.notSaved(subject), description: why }),
         { ...(manager !== undefined && { manager }) },
       );
       if (!sent.landed) return false;
