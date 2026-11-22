@@ -116,6 +116,7 @@ import { ListWritersProvider } from '../listWriter';
 import { MERGE_ANSWER, MERGE_HEAVY, MERGE_TO_CRYSTAL } from './mergeFixtures';
 import { MERGE_PREVIEW, MERGE_WRITE } from './mergeModel';
 import { MERGE_WORDS } from './mergeWords';
+import { ShapeTabRoute } from './ShapeTabRoute';
 
 type Ref = Parameters<typeof getFunctionName>[0];
 const set = (ref: Ref, value: unknown, args?: unknown) =>
@@ -340,6 +341,51 @@ describe('the Shape tab’s merge, through the route', () => {
       loserId: MASCOMA_ID,
       reason: 'Same pond',
     });
+  });
+
+  it('the map lights the survivor picked, however it was picked — never the one before', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    set(api.waterBodies.searchByName, [
+      { waterBodyId: POST_POND_ID, name: 'Post Pond', type: 'pond', states: ['NH'] },
+    ]);
+    const onLitChange = vi.fn();
+    // The frame owns `lit`: the tab is drawn again with what it last asked for.
+    let lit: string | null = null;
+    const Tab = () => (
+      <ListWritersProvider>
+        <KeysProvider>
+          <ShapeTabRoute
+            bodyId={MASCOMA_ID}
+            lit={lit}
+            onLitChange={(next) => {
+              lit = next;
+              onLitChange(next);
+            }}
+          />
+        </KeysProvider>
+      </ListWritersProvider>
+    );
+    const view = render(<Tab />);
+    // Crystal Lake touches Mascoma: pressed, it is picked and lit.
+    await user.click(within(region()).getByText('Crystal Lake'));
+    expect(onLitChange).toHaveBeenLastCalledWith(`neighbor:${NEIGHBOR_ID}`);
+    view.rerender(<Tab />);
+    // Post Pond, found by name, isn't drawn on the map: nothing is lit, never Crystal Lake.
+    await user.type(within(region()).getByRole('searchbox'), 'po');
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    const hits = within(region()).getByRole('table', { name: MERGE_WORDS.searchLabel });
+    await user.click(within(hits).getByText('Post Pond'));
+    expect(onLitChange).toHaveBeenLastCalledWith(null);
+    view.rerender(<Tab />);
+    // Crystal Lake again, then *Pick another*: nothing lit.
+    await user.click(within(region()).getByText('Crystal Lake'));
+    expect(onLitChange).toHaveBeenLastCalledWith(`neighbor:${NEIGHBOR_ID}`);
+    view.rerender(<Tab />);
+    await user.click(screen.getByRole('button', { name: MERGE_WORDS.clear }));
+    expect(onLitChange).toHaveBeenLastCalledWith(null);
   });
 
   it('once the record is the survivor’s, the console draws the merged page', async () => {

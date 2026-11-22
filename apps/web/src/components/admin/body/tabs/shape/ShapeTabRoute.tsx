@@ -23,6 +23,7 @@ import { MERGE_PREVIEW, MERGE_WRITE, type Survivor } from './mergeModel';
 import { MERGE_WORDS as MW } from './mergeWords';
 import { ShapeTabView } from './ShapeTab';
 import {
+  litForSurvivor,
   shapeBays,
   shapeMapScene,
   shapeMergeOf,
@@ -79,6 +80,17 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
   const navigate = useNavigate();
   const { from } = useSearch({ strict: false }) as { from?: string };
   const made = loaded(r.made);
+  const merge = canRead ? shapeMergeOf(readState(r.extras, touchingNotComputed)) : undefined;
+  const touching =
+    merge === undefined || merge === null || isFailed(merge) ? [] : (loaded(merge.touching) ?? []);
+  // **One piece of state for the survivor picked**: the map lights from it, whichever way it was
+  // picked (a touching row, a search hit, *Pick another*). A bay lit meanwhile is left alone unless
+  // a touching body takes its place.
+  const pick = (next: Survivor | null) => {
+    setSurvivor(next);
+    const litNext = litForSurvivor(next, touching);
+    if (litNext !== null || lit?.startsWith('neighbor:')) onLitChange?.(litNext);
+  };
   return (
     <ShapeTabView
       outline={mapLoadable(r.body, (result) =>
@@ -100,7 +112,7 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
       baysMadeFailed={isFailed(r.made) ? r.made : null}
       // Through the four answers: a settled zero is no block, never *not computed*; a failure is
       // said. Withheld, it is never asked — no block, and no claim that nothing touches it.
-      merge={canRead ? shapeMergeOf(readState(r.extras, touchingNotComputed)) : undefined}
+      merge={merge}
       // A neighbor opens with the same way back as this body: to the list the operator came from.
       bodyLink={(id) => (
         <Link to="/admin/body/$id" params={{ id }} search={from === undefined ? {} : { from }} />
@@ -109,7 +121,7 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
         ? {
             mergeFlow: {
               survivor,
-              onPick: setSurvivor,
+              onPick: pick,
               query,
               onQueryChange: setQuery,
               hits:

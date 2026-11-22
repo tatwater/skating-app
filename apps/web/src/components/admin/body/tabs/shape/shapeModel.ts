@@ -225,6 +225,19 @@ export function shapeMerge(
 }
 
 /**
+ * What the map lights for the survivor picked: its outline when it is one of the touching bodies the
+ * map draws; nothing for one found by name that the map doesn't draw, or none picked — never the
+ * body picked before.
+ */
+export function litForSurvivor(
+  survivor: { id: string } | null,
+  touching: readonly ShapeNeighbor[],
+): string | null {
+  if (survivor === null) return null;
+  return touching.find((n) => n.id === survivor.id)?.lit ?? null;
+}
+
+/**
  * The touching test hasn't run for this body: its settled nothing recorded (`readState`'s `none`).
  * A test that ran and found none is a value — no block — never this.
  */

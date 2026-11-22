@@ -236,7 +236,7 @@ describe('the merge itself', () => {
   });
   const region = () => screen.getByRole('region', { name: 'Merge into another body' });
 
-  it('picks a touching body as the survivor and lights it; pressed again, neither', async () => {
+  it('picks a touching body as the survivor; pressed again, none — the route lights the map from the pick', async () => {
     const user = userEvent.setup();
     const onLitChange = vi.fn();
     const onPick = vi.fn();
@@ -249,7 +249,8 @@ describe('the merge itself', () => {
     );
     await user.click(within(region()).getByText('Crystal Lake'));
     expect(onPick).toHaveBeenCalledWith({ id: 'k1', name: 'Crystal Lake' });
-    expect(onLitChange).toHaveBeenCalledWith('neighbor:k1');
+    // One piece of state: the pick. The view never lights a survivor itself.
+    expect(onLitChange).not.toHaveBeenCalled();
     rerender(
       view({
         merge: { touching: neighbors, note: null },
@@ -261,7 +262,7 @@ describe('the merge itself', () => {
     expect(region().querySelector('tr[data-id="neighbor:k1"]')).toHaveAttribute('data-selected');
     await user.click(within(region()).getAllByText('Crystal Lake')[0] as HTMLElement);
     expect(onPick).toHaveBeenLastCalledWith(null);
-    expect(onLitChange).toHaveBeenLastCalledWith(null);
+    expect(onLitChange).not.toHaveBeenCalled();
   });
 
   it('finds a survivor by name: the hits, none, the search failed; a hit pressed is picked', async () => {

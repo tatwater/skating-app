@@ -261,9 +261,8 @@ function MergeSection({
       onLitChange(n.lit === lit ? null : n.lit);
       return;
     }
-    const again = flow.survivor?.id === n.id;
-    flow.onPick(again ? null : { id: n.id, name: n.name });
-    onLitChange(again ? null : n.lit);
+    // The flow's pick lights the map (the route's one survivor state), never a second write here.
+    flow.onPick(flow.survivor?.id === n.id ? null : { id: n.id, name: n.name });
   };
   return (
     <Section title={MW.title} data-slot="shape-merge">
