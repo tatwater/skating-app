@@ -9538,6 +9538,34 @@ files):
   suite and the web unit project ran beside the storybook project, instead of only `yes` loops.
   This is the condition the earlier "starved" runs missed three times. All 10 runs passed.
 
+#### #172 merged (2026-11-22)
+
+- **The merge.** #172 is squash-merged to main as `6b39b107`. Its tree equals the PR's last head,
+  `f348fd83f`.
+- **The dev rollout.** Dev is deployed from `6b39b107`. Then `profiles:backfillNotificationPrefs`
+  ran to done:
+  - 15 of 15 profiles patched;
+  - 0 profiles now lack `notificationPrefs.moderatorDecision`;
+  - a re-run patched none.
+- **The notification's dev check.** The operator declined a seeded ask, and nothing was queued for
+  the fake asker: the enqueue-time gate (`recipientWants`, D287) held. Its undo restored the ask.
+- **The narrowing, and its precondition.** The rollout had widened `notificationPrefs.moderatorDecision` to optional
+  until every profile carried it. The backfill's 0 is that precondition.
+  - B01-5d narrows the field back: `notificationPrefs` is `boolFlags(NOTIFICATION_PREF_KEYS)`
+    whole.
+  - Before it, a mechanical commit gives every prefs literal in tests and fixtures
+    `moderatorDecision: false` (163 lines in 156 files), so each commit compiles.
+  - The runtime stays tolerant: `recipientWants` still reads `=== true`, so an absent key reads as
+    off.
+- **The seed's prefs.** S4a's last commit makes a seed re-apply reset any seed profile's prefs and
+  channels to all off. Dev's eight seed profiles got `moderatorDecision: true` from the backfill.
+  The fake-person gate held, and nothing leaked.
+- **The phase branch moved onto main.** It carried #172's round-one commits as its own
+  cherry-picks, with B01-5d's T0 commits between them, which #172 never had.
+  - T0 (`b50c3769a`, `acd803dce`) was cherry-picked onto `origin/main` first. That tree equals
+    `fd4844df0`'s.
+  - B01-5d was rebased from `fd4844df0` onto it, and its tree came out unchanged.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
