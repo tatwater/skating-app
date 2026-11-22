@@ -77,8 +77,10 @@ export function hourTicks(
   const ticks: number[] = [];
   /** A whole hour on that clock: the floor leaves it where it is. */
   const whole = (at: number) => floorHour(at) === at;
+  // The floor is never after its instant, so one that isn't a whole hour is before `from`; `next`
+  // finds the first whole hour on.
   let t = floorHour(from);
-  while (t < from || !whole(t)) t = next(t);
+  while (t < from) t = next(t);
   for (; t <= to; t = next(t)) ticks.push(t);
   return ticks;
 
