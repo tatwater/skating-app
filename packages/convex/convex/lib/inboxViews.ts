@@ -71,6 +71,7 @@ import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import {
   CHARGED_QUERY_BUDGET,
+  OverBudget,
   type ReadBudget,
   ROW_MAX,
   type RowKind,
@@ -126,6 +127,23 @@ export class InboxReader {
       this.memo.set(key, read);
     }
     return read;
+  }
+
+  /**
+   * **A single row the item can't do without** — an attribution, a fact a lever or a verdict rests on
+   * (B01-5c): read as `get` reads it, but a budget that can't hold it throws `OverBudget` (a plan
+   * error) instead of answering `null`, which would read as "no such row" — a ruling by no one, a
+   * moderator's shelving as the machine's. Such rows are read before any list that fills the budget,
+   * so on a fresh budget this never throws; a throw says the plan is wrong, loudly.
+   */
+  async must<T extends TableNames>(
+    kind: RowKind,
+    id: Id<T> | null | undefined,
+  ): Promise<Doc<T> | null> {
+    if (id && !this.memo.has(id as string) && !this.budget.affordsRead(kind)) {
+      throw new OverBudget(`inbox item: a required ${kind} row past the item's budget`);
+    }
+    return this.get<T>(kind, id);
   }
 
   /** Up to `n` rows of `kind`, charged at their worst — or none when they don't fit. */
@@ -864,7 +882,9 @@ async function drawnSkateOf(
   const none = { skate: null, fromReport: null };
   const drawer = water.createdByUserId;
   if (drawer === undefined) return none;
-  const [a] = await r.take('activity', 1, (k) =>
+  // A small page, the drawer's kept: another skater's activity synced late onto the body can be the
+  // latest before the drawing without hiding the drawer's own behind it.
+  const page = await r.take('activity', DRAWN_SKATE_PAGE, (k) =>
     r.ctx.db
       .query('gpsActivities')
       .withIndex('by_water_body_start_time', (q) =>
@@ -873,7 +893,8 @@ async function drawnSkateOf(
       .order('desc')
       .take(k),
   );
-  if (!a || a.userId !== drawer) return none;
+  const a = page.find((x) => x.userId === drawer);
+  if (!a) return none;
   const skate: DrawnSkateView = {
     activityId: a._id,
     startTime: a.startTime,
@@ -881,7 +902,7 @@ async function drawnSkateOf(
     elapsedSeconds: a.elapsedSeconds ?? null,
     hasTrack: a.path?.type === 'LineString',
   };
-  const report = a.linkedReportId ? await r.get<'reports'>('report', a.linkedReportId) : null;
+  const report = a.linkedReportId ? await r.must<'reports'>('report', a.linkedReportId) : null;
   if (!report) return { skate, fromReport: null };
   // Withdrawn by its author reads as taken down does: its words only to `content.read`.
   const text =
@@ -891,12 +912,15 @@ async function drawnSkateOf(
     fromReport: {
       reportId: report._id,
       skateEndTime: report.skateEndTime,
-      author: personRef(await r.get<'profiles'>('profile', report.authorId)),
+      author: personRef(await r.must<'profiles'>('profile', report.authorId)),
       observedFrom: report.observedFrom ?? null,
       excerpt: text?.trim() ? snippet(text) : null,
     },
   };
 }
+
+/** The drawn body's activities read to find the drawer's own skate: the latest few before it was drawn. */
+export const DRAWN_SKATE_PAGE = 3;
 
 /** Skates an item reads for its asks (B01-5c): each an activity row read whole, track and all. */
 export const VIEW_SKATES = 10;
@@ -941,6 +965,10 @@ async function withSkates(
 async function rulingOf(r: InboxReader, water: Doc<'waterBodies'>): Promise<RulingView | null> {
   const p = water.publicAccess;
   if (!p) return null;
+  // What the ruler cited, and who: required rows (`must`) — a miss must never read as "no one".
+  if (!r.budget.affordsRead('moderationAction')) {
+    throw new OverBudget("inbox item: a ruling's audit row past the item's budget");
+  }
   const audit = await r.take('moderationAction', 1, (k) =>
     r.ctx.db
       .query('moderationActions')
@@ -953,7 +981,7 @@ async function rulingOf(r: InboxReader, water: Doc<'waterBodies'>): Promise<Ruli
   return {
     verdict: p.verdict,
     ruledAt: p.decidedAt,
-    by: personRef(await r.get<'profiles'>('profile', p.decidedByUserId)),
+    by: personRef(await r.must<'profiles'>('profile', p.decidedByUserId)),
     note: p.note ?? null,
     reason: audit[0]?.reason ?? null,
   };
@@ -967,7 +995,7 @@ async function dormancyOf(r: InboxReader, water: Doc<'waterBodies'>): Promise<Do
     reason: d.reason,
     since: d.since,
     note: d.note ?? null,
-    by: personRef(await r.get<'profiles'>('profile', d.byUserId)),
+    by: personRef(await r.must<'profiles'>('profile', d.byUserId)),
   };
 }
 
@@ -1154,22 +1182,26 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
   switch (item.kind) {
     case 'flag': {
       const members = await oldestMembers();
-      const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
-        flagMember(r, m),
-      );
+      // The target (what the levers' facts are) and its author first, on a fresh budget; the flags,
+      // a list that fills what's left, after (B01-5c).
       const firstFlag = members[0]
-        ? await r.get<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
+        ? await r.must<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
         : null;
       if (!firstFlag) return null;
       const { view: target, facts } = await flagTargetView(r, firstFlag);
       const author =
         firstFlag.targetType === 'user' ? null : await authorBlock(r, item.subjectUserId);
+      const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
+        flagMember(r, m),
+      );
       return { view: { ...base, kind: 'flag', target, flags, flagsCut, author }, facts };
     }
     case 'access': {
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
+      // The standing ruling (its ruler, what they cited) first, on a fresh budget (B01-5c).
+      const ruling = await rulingOf(r, water);
       // Listed newest first, so read from the newest end: past `VIEW_MEMBERS` a report about changed
       // access would otherwise be the one left out (PR #170).
       const recent = [
@@ -1180,7 +1212,6 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const reports = read.rows.sort((a, b) => b.filedAt - a.filedAt);
       const reportsCut = read.cut;
       const p = water.publicAccess;
-      const ruling = await rulingOf(r, water);
       const contest = await r.take('waterBodyRequest', COUNT_CAP + 1, (k) =>
         r.ctx.db
           .query('waterBodyRequests')
@@ -1257,6 +1288,18 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
     }
     case 'request':
     case 'place': {
+      // The single rows the item rests on, first, on a fresh budget (B01-5c): its body, and for a
+      // contest-access ask the ruling it contests, for an activate ask the body's dormancy (each with
+      // who made it). The asks — a list that fills what's left — after.
+      const held = await r.must<'waterBodies'>('waterBody', item.waterBodyId);
+      const heldRuling =
+        item.kind === 'request' && item.facet === 'contest_access' && held
+          ? await rulingOf(r, held)
+          : null;
+      const heldDormancy =
+        item.kind === 'request' && item.facet === 'activate' && held
+          ? await dormancyOf(r, held)
+          : null;
       // Newest first, read from that end, as the Access item's reports (B01-5c): past the cap the
       // reader sees the latest asks, never the oldest fifty re-sorted.
       const recent = [
@@ -1274,7 +1317,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const primary = asks.find((a) => a.view.status === 'open') ?? asks[0];
       const first = primary?.doc;
       if (!first) return null;
-      const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId ?? first.waterBodyId);
+      // The item's body as read above; an admit's item has none until its ask names one.
+      const water = held ?? (await r.must<'waterBodies'>('waterBody', first.waterBodyId));
       const body = bodyRef(water);
       if (item.kind === 'request') {
         const withCandidate = asks.find((a) => a.doc.candidate !== undefined)?.doc;
@@ -1316,8 +1360,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
             asksCut,
             candidate,
             resolveError: first.resolveError ?? null,
-            ruling: first.kind === 'contest_access' && water ? await rulingOf(r, water) : null,
-            dormancy: first.kind === 'activate' && water ? await dormancyOf(r, water) : null,
+            ruling: first.kind === 'contest_access' ? heldRuling : null,
+            dormancy: first.kind === 'activate' ? heldDormancy : null,
           },
           facts,
         };
@@ -1392,7 +1436,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
-      const drawerProfile = await r.get<'profiles'>('profile', water.createdByUserId);
+      const drawerProfile = await r.must<'profiles'>('profile', water.createdByUserId);
       const drawer = personLockup(drawerProfile, r.now);
       const overlap = await overlapOf(r, water);
       const made = await drawnSkateOf(r, water);

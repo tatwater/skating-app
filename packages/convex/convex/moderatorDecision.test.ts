@@ -532,6 +532,20 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
     expect(await flushAllDue(w.t)).toHaveLength(1);
   });
 
+  test('an approved drawing merged into another body inside the window: no message about a body merged away', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    await w.admin.as.mutation(api.waterBodies.merge, {
+      survivorId: w.active,
+      loserId: body,
+      reason: 'The same pond',
+    });
+    expect((await w.t.run((ctx) => ctx.db.get(body)))?.dedupStatus).toBe('merged');
+    expect(await flushAllDue(w.t)).toEqual([]);
+  });
+
   test('a review undone and made again inside the window is one message, about the last review', async () => {
     const w = await world();
     const body = await drawn(w);
@@ -626,6 +640,51 @@ describe('a moderator’s retraction tells the alert’s author (D285)', () => {
     expect(await flushAllDue(w.t)).toHaveLength(1);
     await undo(w, (await decisionOf(w.t, 'retract_access_alert', accessAlertId))?._id);
     expect(await flushAllDue(w.t)).toHaveLength(1);
+  });
+
+  test('a row already due when its retraction is undone and made again: only the new retraction is told', async () => {
+    const w = await world();
+    const accessAlertId = await alert(w);
+    await w.mod.as.mutation(api.accessAlerts.retract, { accessAlertId, reason: 'False' });
+    // Due but not yet flushed: the next retraction can't join it, so it gets a row of its own.
+    await makeDue(w.t);
+    await undo(w, (await decisionOf(w.t, 'retract_access_alert', accessAlertId))?._id);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await w.mod.as.mutation(api.accessAlerts.retract, { accessAlertId, reason: 'False again' });
+    expect(await queueRows(w.t)).toHaveLength(2);
+    // Retracted again, by the same hand — but not by the first row's retraction: one message.
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+  });
+
+  test('a retraction recorded at the same instant by another hand is not this row’s', async () => {
+    const w = await world();
+    const accessAlertId = await alert(w);
+    // The alert retracted by the moderator at `at`; a queued message naming an audit row by the admin
+    // at that same instant — the actor check is all that tells them apart.
+    const at = NOW + 1_000;
+    await w.t.run(async (ctx) => {
+      await ctx.db.patch(accessAlertId, {
+        status: 'retracted',
+        retractedByUserId: w.mod.id,
+        retractedAt: at,
+        expiresAt: undefined,
+      });
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'retract_access_alert',
+        targetType: 'accessAlert',
+        targetId: accessAlertId,
+        reason: 'False',
+        createdAt: at,
+      });
+      await enqueueModeratorDecision(ctx, {
+        recipientId: w.asker.id,
+        deciderId: w.admin.id,
+        trigger: { kind: 'alert_retracted', accessAlertId, actionId },
+      });
+    });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    expect(await flushAllDue(w.t)).toEqual([]);
   });
 
   test('a pinned alert is live: its retraction tells its author too', async () => {

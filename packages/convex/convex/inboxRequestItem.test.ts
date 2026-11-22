@@ -20,6 +20,8 @@ import { type InboxItemView, MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inbox'
 import { fileMember, flagSource, requestSource } from './lib/inboxItems';
 import {
   DISMISSED_BY_RULING_READ,
+  DRAWN_SKATE_PAGE,
+  InboxReader,
   VIEW_ASKER_COUNTS,
   VIEW_MEMBERS,
   VIEW_SKATES,
@@ -519,23 +521,31 @@ describe('a drawn item serves its skate, the report it became, and the drawer’
     expect((await drawnItem(w, waterBodyId)).skate?.hasTrack).toBe(false);
   });
 
-  test('the latest skate on the body before it was drawn is someone else’s: no skate claimed', async () => {
+  test('another skater’s late-synced skate is the latest before the drawing: the drawer’s own is still found', async () => {
     const w = await world();
-    const { waterBodyId } = await draw(w, w.asker);
+    const { activityId, waterBodyId } = await draw(w, w.asker);
     const body = await w.t.run((ctx) => ctx.db.get(waterBodyId));
-    const other = await person(w.t, 'other');
-    await w.t.run((ctx) =>
-      ctx.db.insert('gpsActivities', {
-        userId: other.id,
-        provider: 'native',
-        providerActivityId: 'theirs',
-        sportType: 'IceSkate',
-        startTime: (body?.createdAt ?? NOW) - 1,
-        waterBodyId,
-        promptState: 'pending',
-        detectedAt: NOW,
-      } as never),
-    );
+    const interlopers = async (k: number) => {
+      for (let i = 0; i < k; i++) {
+        const other = await person(w.t, `other${i}-${Math.random()}`);
+        await w.t.run((ctx) =>
+          ctx.db.insert('gpsActivities', {
+            userId: other.id,
+            provider: 'native',
+            providerActivityId: `theirs-${i}-${Math.random()}`,
+            sportType: 'IceSkate',
+            startTime: (body?.createdAt ?? NOW) - 1 - i,
+            waterBodyId,
+            promptState: 'pending',
+            detectedAt: NOW,
+          } as never),
+        );
+      }
+    };
+    await interlopers(1);
+    expect((await drawnItem(w, waterBodyId)).skate?.activityId).toBe(activityId);
+    // Past the page it reads (the latest few before the drawing), none is claimed — never another's.
+    await interlopers(DRAWN_SKATE_PAGE);
     const item = await drawnItem(w, waterBodyId);
     expect(item.skate).toBeNull();
     expect(item.fromReport).toBeNull();
@@ -1195,7 +1205,7 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
     expect(map?.body?.simplified).toBe(false);
   });
 
-  test('a drawing whose skate has no track, and one whose skate isn’t the drawer’s: no track', async () => {
+  test('a drawing whose skate has no track: none; an interloper’s later skate: only the drawer’s track', async () => {
     const w = await world();
     const { activityId, waterBodyId } = await drawFrom(w, w.asker);
     await w.t.run((ctx) => ctx.db.patch(activityId, { path: undefined }));
@@ -1223,7 +1233,9 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
         detectedAt: NOW,
       } as never),
     );
-    expect((await mapOf(w.mod.as, `body:${second.waterBodyId}`))?.tracks).toEqual([]);
+    expect((await mapOf(w.mod.as, `body:${second.waterBodyId}`))?.tracks.map((t) => t.id)).toEqual([
+      second.activityId,
+    ]);
   });
 
   test('an oversized track: thinned to the embed’s points, first and last kept, said', async () => {
@@ -1332,5 +1344,159 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
     const { waterBodyId } = await drawFrom(w, w.asker);
     await expect(mapOf(w.asker.as, `body:${waterBodyId}`)).rejects.toThrow();
     expect((await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks).toHaveLength(1);
+  });
+});
+
+describe('what an item rests on is read before what fills its budget (B01-5c review)', () => {
+  /** Twelve asks of `kind` on the lake, each from its own ~900 KiB skate — more than the item holds. */
+  const heavyAsks = async (w: W, kind: 'contest_access' | 'activate') => {
+    const ids: Id<'waterBodyRequests'>[] = [];
+    for (let i = 0; i < 12; i++) {
+      const who = (await person(w.t, `${kind}${i}`)).id;
+      const activityId = await skate(w, who, 200 + i, 50_000);
+      ids.push(
+        await w.t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind,
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0.1, lng: 0.1 },
+            waterBodyId: w.lake,
+            activityId,
+            createdAt: NOW - 100_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        }),
+      );
+    }
+    return ids;
+  };
+
+  test('a contest-access item full of heavy skates: the ruling keeps its ruler and what they cited', async () => {
+    const w = await world();
+    await w.mod.as.mutation(api.waterBodies.setPublicAccess, {
+      waterBodyId: w.lake,
+      verdict: 'none',
+      reason: 'Owner called',
+    });
+    const ids = await heavyAsks(w, 'contest_access');
+    const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as RequestView;
+    // The skates did fill the budget: some asks carry none.
+    expect(item.asks.some((a) => a.activityId !== null && a.skate === null)).toBe(true);
+    expect(item.ruling?.by).toEqual(expect.objectContaining({ userId: w.mod.id }));
+    expect(item.ruling?.reason).toBe('Owner called');
+  }, 180_000);
+
+  test('an activate item full of heavy skates: a moderator’s shelving still names the moderator', async () => {
+    const w = await world();
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.lake, {
+        dormant: { since: NOW, reason: 'moderator', byUserId: w.admin.id, note: 'Drained' },
+      }),
+    );
+    const ids = await heavyAsks(w, 'activate');
+    const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as RequestView;
+    expect(item.dormancy?.by).toEqual(expect.objectContaining({ userId: w.admin.id }));
+  }, 180_000);
+
+  test('a flag and an Access item of heavy filers: the target, its author and the ruler are whole', async () => {
+    const w = await world();
+    const target = await person(w.t, 'flagged');
+    const heavy: Id<'profiles'>[] = [];
+    for (let i = 0; i < 14; i++) {
+      heavy.push(
+        await w.t.run((ctx) =>
+          ctx.db.insert('profiles', {
+            clerkUserId: `hv${i}`,
+            displayName: `${'W'.repeat(900 * 1024)} Test-Person`,
+            username: `hv${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public',
+            notificationPrefs: PREFS,
+            dateOfBirth: Date.UTC(1990, 0, 1),
+            reputationPoints: 0,
+            role: 'member',
+            status: 'active',
+            createdAt: NOW,
+          }),
+        ),
+      );
+    }
+    const reportId = await w.t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: target.id,
+        waterBodyId: w.lake,
+        point: { lat: 0.1, lng: 0.1 },
+        skateEndTime: NOW - 3_600_000,
+        reportTime: NOW,
+        source: 'native',
+        iceTypes: [],
+        surfaceTags: [],
+        photoIds: [],
+        notes: 'Held fine',
+        moderationStatus: 'visible',
+        hazardIdsCreated: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      }),
+    );
+    await w.mod.as.mutation(api.waterBodies.setPublicAccess, {
+      waterBodyId: w.lake,
+      verdict: 'open',
+      reason: 'Town lot',
+    });
+    await w.t.run(async (ctx) => {
+      for (const [i, flaggerId] of heavy.entries()) {
+        for (const [targetType, targetId, reason] of [
+          ['report', reportId, 'spam'],
+          ['waterbody', w.lake, 'no_public_access'],
+        ] as const) {
+          const id = await ctx.db.insert('contentFlags', {
+            flaggerId,
+            targetType,
+            targetId,
+            reason,
+            status: 'open',
+            origin: 'user',
+            ...(targetType === 'report' ? { subjectUserId: target.id } : {}),
+            createdAt: NOW - 1000 + i,
+          });
+          await fileMember(ctx, flagSource(id));
+        }
+      }
+    });
+    const items = await w.t.run((ctx) => ctx.db.query('inboxItems').collect());
+    const flag = (
+      await w.mod.as.query(api.inbox.item, {
+        ref: items.find((i) => i.kind === 'flag')?._id as string,
+      })
+    ).item as Extract<InboxItemView, { kind: 'flag' }>;
+    const access = (
+      await w.mod.as.query(api.inbox.item, {
+        ref: items.find((i) => i.kind === 'access')?._id as string,
+      })
+    ).item as Extract<InboxItemView, { kind: 'access' }>;
+    expect(flag.flagsCut).toBe(true);
+    expect(flag.target).toMatchObject({ targetType: 'report' });
+    expect((flag.target as { report?: { reportId: string } }).report?.reportId).toBe(reportId);
+    expect(flag.author?.person.userId).toBe(target.id);
+    expect(access.reportsCut).toBe(true);
+    expect(access.ruling?.by).toEqual(expect.objectContaining({ userId: w.mod.id }));
+    expect(access.ruling?.reason).toBe('Town lot');
+  }, 240_000);
+
+  test('a required row past the budget throws, never reading as a row that is gone', async () => {
+    const w = await world();
+    await w.t.run(async (ctx) => {
+      const tight = () =>
+        new InboxReader(ctx, new readBudget.ReadBudget(1024), NOW, w.mod.id, true);
+      // A list's read answers null past the budget — the same null as a row that's gone…
+      await expect(tight().get<'profiles'>('profile', w.admin.id)).resolves.toBeNull();
+      // …a required row's says so.
+      await expect(tight().must<'profiles'>('profile', w.admin.id)).rejects.toBeInstanceOf(
+        readBudget.OverBudget,
+      );
+    });
   });
 });
