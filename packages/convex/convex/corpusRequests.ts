@@ -30,6 +30,7 @@ import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   bodySearchTextFor,
   catalogQueryUrl,
+  distanceToPolygonMeters,
   externalIdFits,
   groupLandmarkAsks,
   isActive,
@@ -334,11 +335,25 @@ export const resolveAdmit = internalAction({
       return { resolved: 'error' };
     }
     const resolution = parseCatalogResponse(json, request.coord, now);
+    // The nearest body already on the map (board 2.3's *Nearest*, B01-5d), for a lookup that found
+    // water: a bounded geo read in a transaction of its own, so a dense shore can never cost the
+    // answer itself. A read that fails stamps nothing — the row reads `null`, as an old one does.
+    let nearestKnown: NearestKnown | null = null;
+    if (resolution.kind === 'found') {
+      try {
+        nearestKnown = await ctx.runQuery(internal.corpusRequests.nearestKnownForResolve, {
+          coord: request.coord,
+        });
+      } catch (err) {
+        console.warn(`resolveAdmit: nearest known body not read for ${requestId}: ${String(err)}`);
+      }
+    }
     try {
       await ctx.runMutation(internal.corpusRequests.recordResolution, {
         requestId,
         resolvedAt: now,
         ...(resolution.kind === 'found' ? { candidate: resolution.candidate } : {}),
+        ...(nearestKnown !== null ? { nearestKnown } : {}),
         ...(resolution.kind === 'error' ? { resolveError: resolution.message } : {}),
         ...(resolution.kind === 'none' ? { resolveError: 'No catalog water at this point' } : {}),
       });
@@ -354,6 +369,47 @@ export const resolveAdmit = internalAction({
     }
     return { resolved: resolution.kind };
   },
+});
+
+/** How far from an ask the lookup names the nearest body already on the map (B01-5d). */
+export const NEAREST_KNOWN_MARGIN_M = 2_000;
+
+/** The nearest listed body to an ask, as the ask stores it (`waterBodyRequests.nearestKnown`). */
+export type NearestKnown = { waterBodyId: Id<'waterBodies'>; name: string; meters: number };
+
+const nearestKnownValidator = v.object({
+  waterBodyId: v.id('waterBodies'),
+  name: v.string(),
+  meters: v.number(),
+});
+
+/**
+ * **The nearest body already on the map to `coord`** — within {@link NEAREST_KNOWN_MARGIN_M}, by the
+ * distance to its outline (0 inside it), `null` when none. Bounded: one `listedBodiesNearCoord` read
+ * with that margin (never the resolution-grade default, never a corpus scan — one unbounded read of
+ * this kind once spent 105 GB), and a body whose box falls inside the margin but whose water doesn't
+ * is passed over, so "within 2 km" means its water.
+ */
+export async function nearestKnownOf(
+  ctx: QueryCtx,
+  coord: { lat: number; lng: number },
+): Promise<NearestKnown | null> {
+  const nearby = await listedBodiesNearCoord(ctx, coord, NEAREST_KNOWN_MARGIN_M);
+  let best: NearestKnown | null = null;
+  for (const b of nearby.values()) {
+    if (!b.polygon) continue;
+    const meters = distanceToPolygonMeters(coord, b.polygon as unknown as Polygon | MultiPolygon);
+    if (meters > NEAREST_KNOWN_MARGIN_M) continue;
+    if (best === null || meters < best.meters) {
+      best = { waterBodyId: b._id, name: b.name, meters };
+    }
+  }
+  return best && { ...best, meters: Math.round(best.meters) };
+}
+
+export const nearestKnownForResolve = internalQuery({
+  args: { coord: latLng },
+  handler: (ctx, { coord }) => nearestKnownOf(ctx, coord),
 });
 
 export const getForResolve = internalQuery({
@@ -391,8 +447,10 @@ export const recordResolution = internalMutation({
     resolvedAt: v.number(),
     candidate: v.optional(candidateValidator),
     resolveError: v.optional(v.string()),
+    /** The nearest listed body to the ask (B01-5d), read beside a found candidate. */
+    nearestKnown: v.optional(nearestKnownValidator),
   },
-  handler: async (ctx, { requestId, resolvedAt, candidate, resolveError }) => {
+  handler: async (ctx, { requestId, resolvedAt, candidate, resolveError, nearestKnown }) => {
     const request = await ctx.db.get(requestId);
     if (!request) return;
     await ctx.db.patch(requestId, {
@@ -402,6 +460,9 @@ export const recordResolution = internalMutation({
         : undefined,
       candidateExternalId: candidate?.externalId,
       resolveError,
+      // Each lookup writes its own answer: a lookup that found no water, or no body near it, clears
+      // the last one's — never a stale neighbor beside a fresh candidate.
+      nearestKnown: candidate ? nearestKnown : undefined,
     });
     // Resolved to a catalog feature, the admit's question is that feature: its Inbox member moves to
     // the item every ask for the same water shares (B01-5).

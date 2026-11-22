@@ -18,8 +18,8 @@ import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { InboxVerb } from './inbox';
-import { fileMember, requestSource } from './lib/inboxItems';
-import { inboxVerbRefusal } from './lib/inboxRules';
+import { bodySource, fileMember, requestSource } from './lib/inboxItems';
+import { inboxCanWithCodes, inboxVerbRefusal } from './lib/inboxRules';
 import { InboxReader, itemOfRef, itemView } from './lib/inboxViews';
 import { ReadBudget } from './lib/readBudget';
 import schema from './schema';
@@ -144,6 +144,15 @@ type Setup = {
   landmarkId?: Id<'bodyLandmarks'>;
 };
 
+/** The survivor a Drawn item's bar shows — its overlap's body — as the lever sends it (B01-5d). */
+async function survivorShown(w: W, ref: string): Promise<Id<'waterBodies'>> {
+  const read = await w.viewer.as.query(api.inbox.item, { ref });
+  const item = read.item;
+  if (item?.kind === 'drawn' && item.overlap) return item.overlap.body.waterBodyId;
+  // No overlap: the bar draws no lever, and the rule refuses before any survivor is read.
+  return w.active;
+}
+
 async function itemIdOf(w: W, ref: string): Promise<Id<'inboxItems'>> {
   const item = await w.t.run((ctx) => itemOfRef(ctx, ref));
   if (!item) throw new Error(`no item for ${ref}`);
@@ -223,6 +232,12 @@ async function write(w: W, verb: InboxVerb, s: Setup): Promise<void> {
         waterBodyId: s.waterBodyId as Id<'waterBodies'>,
       });
       return;
+    case 'mergeDrawn':
+      await as.mutation(api.inboxWrites.mergeDrawn, {
+        itemId: await itemId(),
+        survivorId: await survivorShown(w, s.ref),
+      });
+      return;
     case 'resolve':
       await as.mutation(api.support.resolve, { ticketId: s.ticketId as Id<'supportTickets'> });
       return;
@@ -242,6 +257,21 @@ async function rule(w: W, verb: InboxVerb, s: Setup): Promise<string | null> {
     return inboxVerbRefusal(ctx, viewer, item, verb, built?.facts ?? {});
   });
 }
+
+/** The refusal code the item's read serves for the viewer (`canCode`, B01-5d). */
+async function codeOf(w: W, verb: InboxVerb, s: Setup): Promise<string | undefined> {
+  return w.t.run(async (ctx) => {
+    const item = await itemOfRef(ctx, s.ref);
+    if (!item) throw new Error(`no item for ${s.ref}`);
+    const viewer = (await ctx.db.get(w.viewer.id)) as Doc<'profiles'>;
+    const r = new InboxReader(ctx, new ReadBudget(), Date.now(), viewer._id, true);
+    const built = await itemView(r, item);
+    return (await inboxCanWithCodes(ctx, viewer, item, built?.facts)).canCode[verb];
+  });
+}
+
+/** A place ask's *Approve* refused because its bay or landmark isn't drawn yet — the write's words. */
+const AWAITS_DRAWING = / yet — (draw|add) it in the lake editor first, then approve\.$/;
 
 const sentence = (err: unknown) =>
   err instanceof ConvexError ? String(err.data) : `NOT A REFUSAL: ${(err as Error)?.message}`;
@@ -832,8 +862,76 @@ const drawn = async (_w: W, by: As, i: number) => {
   return { ref: `body:${waterBodyId}`, waterBodyId };
 };
 const DRAWN_VERBS: InboxVerb[] = ['approveDrawn', 'rejectDrawn'];
+
+/**
+ * A skater's drawing over known water (B01-5d): written as `waterBodies.create` leaves one whose
+ * dedup scan matched — pending, the matches ranked in `duplicateCandidateIds` — and filed. (A track
+ * over a known lake resolves to it, so `create` itself would refuse to draw one.) `candidates` are the
+ * known bodies in rank order; the drawing lies inside the first lake's water.
+ */
+async function drawnOver(
+  w: W,
+  by: Id<'profiles'>,
+  candidates: Id<'waterBodies'>[],
+): Promise<Setup & { waterBodyId: Id<'waterBodies'> }> {
+  const waterBodyId = await w.t.run(async (ctx) => {
+    const id = await ctx.db.insert('waterBodies', {
+      name: 'Drawn East Bay',
+      searchText: 'Drawn East Bay',
+      type: 'lakePond',
+      source: 'user',
+      reviewStatus: 'pending',
+      dedupStatus: 'suspected_duplicate',
+      duplicateCandidateIds: candidates,
+      createdByUserId: by,
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-0.2, -0.2],
+            [-0.2, 0.2],
+            [0.2, 0.2],
+            [0.2, -0.2],
+            [-0.2, -0.2],
+          ],
+        ],
+      },
+      bbox: { minLat: -0.2, minLng: -0.2, maxLat: 0.2, maxLng: 0.2 },
+      centroid: { lat: 0, lng: 0 },
+      surfaceAreaSqM: 40_000,
+      createdAt: NOW,
+    } as never);
+    await fileMember(ctx, bodySource(id as Id<'waterBodies'>));
+    return id as Id<'waterBodies'>;
+  });
+  return { ref: `body:${waterBodyId}`, waterBodyId };
+}
+/** A second known lake over the same water — the drawing's other candidate. */
+async function twinLake(w: W): Promise<Id<'waterBodies'>> {
+  return w.t.run((ctx) =>
+    ctx.db.insert('waterBodies', {
+      name: 'Pond twin',
+      searchText: 'Pond twin',
+      type: 'lakePond',
+      source: 'osm',
+      dedupStatus: 'clean',
+      polygon: square(0),
+      bbox: { minLat: -0.5, minLng: -0.5, maxLat: 0.5, maxLng: 0.5 },
+      centroid: { lat: 0, lng: 0 },
+      surfaceAreaSqM: 1_000_000,
+      createdAt: NOW,
+    } as never),
+  ) as Promise<Id<'waterBodies'>>;
+}
+const MERGE_VERBS: InboxVerb[] = ['approveDrawn', 'mergeDrawn', 'rejectDrawn'];
+
 const drawnCells: Cell[] = [
-  { kind: 'drawn', state: 'pending', verbs: DRAWN_VERBS, setup: (w) => drawn(w, w.author.as, 0) },
+  {
+    kind: 'drawn',
+    state: 'pending',
+    verbs: [...DRAWN_VERBS, 'mergeDrawn'],
+    setup: (w) => drawn(w, w.author.as, 0),
+  },
   {
     kind: 'drawn',
     state: 'already decided',
@@ -849,6 +947,71 @@ const drawnCells: Cell[] = [
     state: 'the viewer’s own filing',
     verbs: DRAWN_VERBS,
     setup: (w) => drawn(w, w.viewer.as, 0),
+  },
+  // Merge into a known body (B01-5d): the drawing's live survivor is the rule's fact and the write's.
+  {
+    kind: 'drawn (over a known body)',
+    state: 'pending',
+    verbs: MERGE_VERBS,
+    setup: (w) => drawnOver(w, w.author.id, [w.active]),
+  },
+  {
+    kind: 'drawn (over a known body)',
+    state: 'already decided',
+    verbs: ['mergeDrawn'],
+    setup: async (w) => {
+      const s = await drawnOver(w, w.author.id, [w.active]);
+      await w.other.as.mutation(api.waterBodies.reject, { waterBodyId: s.waterBodyId });
+      return s;
+    },
+  },
+  {
+    kind: 'drawn (over a known body)',
+    state: 'the viewer’s own filing',
+    verbs: ['mergeDrawn'],
+    setup: (w) => drawnOver(w, w.viewer.id, [w.active]),
+  },
+  {
+    kind: 'drawn (over a known body)',
+    state: 'its first candidate merged away since',
+    verbs: ['mergeDrawn'],
+    setup: async (w) => {
+      const twin = await twinLake(w);
+      const s = await drawnOver(w, w.author.id, [twin, w.active]);
+      await w.other.as.mutation(api.waterBodies.merge, { survivorId: w.active, loserId: twin });
+      return s;
+    },
+  },
+  {
+    kind: 'drawn (over a known body)',
+    state: 'its only candidate gone',
+    verbs: ['mergeDrawn'],
+    setup: async (w) => {
+      const twin = await twinLake(w);
+      const s = await drawnOver(w, w.author.id, [twin]);
+      await w.t.run((ctx) => ctx.db.delete(twin));
+      return s;
+    },
+  },
+  {
+    kind: 'drawn (over a known body)',
+    state: 'the lists together pass a cap',
+    verbs: ['mergeDrawn'],
+    setup: async (w) => {
+      const s = await drawnOver(w, w.author.id, [w.active]);
+      const links = (n: number, tag: string) =>
+        Array.from({ length: n }, (_, i) => ({
+          label: `${tag} ${i}`,
+          url: `https://example.org/${tag}/${i}`,
+        }));
+      await w.t.run(async (ctx) => {
+        await ctx.db.patch(w.active, { referenceLinks: links(5, 'lake') });
+        await ctx.db.patch(s.waterBodyId as Id<'waterBodies'>, {
+          referenceLinks: links(5, 'drawn'),
+        });
+      });
+      return s;
+    },
   },
 ];
 
@@ -952,6 +1115,7 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
       const w = await world();
       const s = await cell.setup(w);
       const said = await rule(w, verb, s);
+      const code = await codeOf(w, verb, s);
       let did: string | null = null;
       try {
         await write(w, verb, s);
@@ -961,6 +1125,13 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
       if (said !== did) {
         disagreements.push(
           `${cell.kind} · ${cell.state} · ${verb}: rule ${JSON.stringify(said)}, write ${JSON.stringify(did)}`,
+        );
+      }
+      // `awaitsDrawing` exactly where the write refuses an Approve for a drawing not made yet (B01-5d).
+      const awaits = verb === 'approve' && did !== null && AWAITS_DRAWING.test(did);
+      if ((code === 'awaitsDrawing') !== awaits) {
+        disagreements.push(
+          `${cell.kind} · ${cell.state} · ${verb}: canCode ${JSON.stringify(code)}, write ${JSON.stringify(did)}`,
         );
       }
     }
@@ -978,7 +1149,9 @@ const AWAITING_THE_WRITE: Record<string, string> = {};
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {
     // 141 through B01-5b; B01-5c added *Same place*'s ten and a restore's and a takedown's twelve.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(163);
+    // B01-5d added *Merge into*'s nine: the overlap, the drawer, decided, a first candidate merged
+    // away, a candidate gone, the lists' cap, and the drawing over new water.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(172);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {
