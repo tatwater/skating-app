@@ -98,6 +98,7 @@ import {
   QUEUE_CAP,
   requestKeyOf,
   requestNames,
+  sameAsRefusal,
 } from './lib/requestDecisions';
 import { scoreFields } from './lib/scoring';
 import { activateBody, registerWeatherMembership } from './lib/standing';
@@ -708,9 +709,6 @@ export const approve = mutation({
   handler: async (ctx, { requestId, note, sameAs }) => {
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
-    if (sameAs !== undefined && request.kind !== 'name_landmark') {
-      throw new ConvexError('Only a landmark request is answered by a landmark');
-    }
     // Restoring or taking down a body is the body.remove lever itself (D48), whoever asked for it.
     // The capability, then a decided ask — in the Inbox rule's order and words (`lib/inboxRules`),
     // so the item's levers and this write say one thing (D217, D268).
@@ -720,6 +718,12 @@ export const approve = mutation({
     );
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    // *Same place* only where something looks like it — the rule's precondition, in its words and
+    // its order (after the lever and the decided check), so the lever and this write agree (B01-5c).
+    if (sameAs !== undefined) {
+      const why = await sameAsRefusal(ctx, request);
+      if (why !== null) throw new ConvexError(why);
+    }
     const now = Date.now();
     const trimmedNote = note?.trim();
 

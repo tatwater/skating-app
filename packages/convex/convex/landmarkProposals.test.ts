@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { QUEUE_CAP } from './corpusRequests';
+import { SAME_AS_REFUSAL } from './lib/inboxRules';
 import schema from './schema';
 
 /**
@@ -765,14 +766,19 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     // request attached, so the ask is still open, and the dialog never showed it.
     const here = await seedLandmark(t, lake, 'Long Point', { point: at });
     const sameAsFar = { landmarkId: known, name: 'Long Point', point: far };
+    // Answered at its spot, nothing looks like it any more: *Same place* is refused in the Inbox
+    // rule's words (B01-5c), for the far one and the near one alike.
     await expect(
       mod.as.mutation(api.corpusRequests.approve, { requestId: ask, sameAs: sameAsFar }),
-    ).rejects.toThrow(/"Long Point" now stands at this spot/);
-    // The one at the spot answers it — named by the moderator or not.
-    await mod.as.mutation(api.corpusRequests.approve, {
-      requestId: ask,
-      sameAs: { landmarkId: here, name: 'Long Point', point: at },
-    });
+    ).rejects.toThrow(SAME_AS_REFUSAL);
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: here, name: 'Long Point', point: at },
+      }),
+    ).rejects.toThrow(SAME_AS_REFUSAL);
+    // The one at the spot answers it: a plain approval.
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: ask });
     expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
       status: 'approved',
       landmarkId: here,
@@ -797,7 +803,7 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
         requestId: activate,
         sameAs: { landmarkId: landmark, name: 'Long Point', point: at },
       }),
-    ).rejects.toThrow(/Only a landmark request/);
+    ).rejects.toThrow(SAME_AS_REFUSAL);
   });
 
   test('reviewState says what became of a review, and who did it', async () => {

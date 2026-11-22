@@ -973,19 +973,7 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
  * report, with its file and line. Listed so the table passes until each lands, and failing once one
  * agrees and is still here, so the list only shrinks.
  */
-const AWAITING_THE_WRITE: Record<string, string> = {
-  // B01-5c (S3's seam request): `corpusRequests.approve` takes `sameAs` past the rule. It approves on
-  // the landmark already answering at the ask's spot (the rule: nothing looks like it, so no *Same
-  // place*), and it refuses a bay or activate ask's `sameAs` in its own words, before its capability
-  // check. The fix: answer `sameAs` with the rule's sentence after the capability and decided checks
-  // whenever the item has no landmark lookalike (`preconditionRefusal`'s `sameAs`), in the rule's order.
-  'place (landmark, answered at its spot) · asked by Same place · sameAs':
-    'corpusRequests.ts approve: sameAs on an ask a landmark answers at its spot',
-  'place (bay, not drawn) · a landmark of its name on the lake · sameAs':
-    'corpusRequests.ts approve: sameAs on a bay ask',
-  'request (activate) · a landmark on the lake · sameAs':
-    'corpusRequests.ts approve: sameAs on a request ask',
-};
+const AWAITING_THE_WRITE: Record<string, string> = {};
 
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {

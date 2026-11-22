@@ -49,6 +49,7 @@ import {
   type AlongsideAnswer,
   assertInboxVerb,
   OWN_FILING_REFUSAL,
+  SAME_AS_REFUSAL,
 } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import { enqueueModeratorDecision } from './notificationQueue';
@@ -995,6 +996,23 @@ export async function namedByModerator(
     );
   }
   return landmark;
+}
+
+/**
+ * Why *Same place* (`approve` with `sameAs`) is refused on this ask, or `null` — the Inbox rule's
+ * precondition (`hasLookalike`), read as the item's read reads it: a landmark ask, with no live
+ * landmark answering it at its spot and a landmark by one of its names elsewhere on the lake
+ * (`landmarkProposalView`'s `similarLandmark`). One rule, so the lever and the write agree (B01-5c).
+ */
+export async function sameAsRefusal(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<string | null> {
+  if (request.kind !== 'name_landmark' || request.waterBodyId === undefined) return SAME_AS_REFUSAL;
+  const landmarks = await liveLandmarksForBody(ctx, request.waterBodyId);
+  return landmarkProposalView(landmarkAskOf(request), landmarks, []).similarLandmark
+    ? null
+    : SAME_AS_REFUSAL;
 }
 
 /** A landmark proposal as a moderator's row shows it (D202) — the queue's and the lake editor's. */

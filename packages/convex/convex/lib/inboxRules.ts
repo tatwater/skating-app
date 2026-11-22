@@ -116,6 +116,9 @@ export function capabilityRefusal(
   return null;
 }
 
+/** *Same place* asked of an ask no landmark looks like (`approve` with `sameAs` answers it too). */
+export const SAME_AS_REFUSAL = 'Nothing here looks like the same place.';
+
 /** The facts the preconditions read, as the item's read (or the write) holds them. */
 export type InboxRuleFacts = {
   /** A flag's target type, and its content's moderation status (`null`: gone or no such axis). */
@@ -404,9 +407,7 @@ export function preconditionRefusal(verb: InboxVerb, facts: InboxRuleFacts): str
         return facts.landmarkMissing;
       return null;
     case 'sameAs':
-      return facts.requestKind === 'name_landmark' && facts.hasLookalike
-        ? null
-        : 'Nothing here looks like the same place.';
+      return facts.requestKind === 'name_landmark' && facts.hasLookalike ? null : SAME_AS_REFUSAL;
     case 'lookUpAgain':
       return facts.requestKind === 'admit' ? null : 'Only an admit is looked up in the catalog.';
     case 'mergeDrawn':
