@@ -3,11 +3,21 @@ import { expect, within } from 'storybook/test';
 
 import { InspectorProvider } from '../../inspector/inspectorContext';
 import { AskList } from './AskList';
-import { ASKS_NOW, ASKS_TZ, BOARD_ASKS, GONE_ASK, MANY_ASKS, REPORT_ASK } from './askFixtures';
+import {
+  ASKS_NOW,
+  ASKS_TZ,
+  BOARD_ASKS,
+  GONE_ASK,
+  MANY_ASKS,
+  REPORT_ASK,
+  UNREAD_SKATE_ASK,
+  UNTIMED_SKATE_ASK,
+} from './askFixtures';
 
 /**
  * The shared ask list in all four themes: 2.3's two askers, newest first (one with a recorded
- * skate); a gone asker and an ask from a report; and a page the server cut short.
+ * skate, its day and length); a gone asker and an ask from a report; a skate with no length and one
+ * the read couldn't describe; and a page the server cut short.
  */
 function Lists() {
   return (
@@ -18,6 +28,11 @@ function Lists() {
         <AskList asks={BOARD_ASKS} now={ASKS_NOW} total={{ count: 2, floor: false, cut: false }} />
         <AskList
           asks={[REPORT_ASK, GONE_ASK]}
+          now={ASKS_NOW}
+          total={{ count: 2, floor: false, cut: false }}
+        />
+        <AskList
+          asks={[UNTIMED_SKATE_ASK, UNREAD_SKATE_ASK]}
           now={ASKS_NOW}
           total={{ count: 2, floor: false, cut: false }}
         />
@@ -46,14 +61,21 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
       const lists = [...q.querySelectorAll<HTMLElement>('[data-slot="ask-list"]')];
-      await expect(lists).toHaveLength(3);
-      const [board, odd, cut] = lists as [HTMLElement, HTMLElement, HTMLElement];
+      await expect(lists).toHaveLength(4);
+      const [board, odd, skates, cut] = lists as [
+        HTMLElement,
+        HTMLElement,
+        HTMLElement,
+        HTMLElement,
+      ];
       // Newest first: Luc's ask (12 Oct) over Kate's (11 Oct).
       const names = [...board.querySelectorAll('[data-slot="person-name"]')].map(
         (n) => n.textContent,
       );
       await expect(names).toEqual(['Luc Pelletier', 'Kate Donovan']);
-      await expect(within(board).getByText('With a recorded skate')).toBeVisible();
+      await expect(within(board).getByText('With a recorded skate · 10 Oct · 48m')).toBeVisible();
+      await expect(within(skates).getByText('With a recorded skate · 8 Oct')).toBeVisible();
+      await expect(within(skates).getByText('With a recorded skate')).toBeVisible();
       await expect(within(odd).getByText('A former skater')).toBeVisible();
       await expect(within(odd).getByText('From their report · 14 Oct')).toBeVisible();
       await expect(within(cut).getByText('Showing 3 of 500+ asks')).toBeVisible();

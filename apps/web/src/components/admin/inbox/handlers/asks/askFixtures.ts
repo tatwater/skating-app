@@ -94,3 +94,19 @@ export const MANY_ASKS: AskMemberView[] = Array.from({ length: 50 }, (_, i) => (
   askedAt: ASKS_NOW - (i + 1) * 3_600_000,
   note: null,
 }));
+
+/** A skate the provider sent no end or moving time for: its day alone. */
+export const UNTIMED_SKATE_ASK: AskMemberView = {
+  ...KATE_ASK,
+  requestId: id('rquntimed'),
+  note: null,
+  skate: { startTime: ASKS_NOW - 6 * D, endTime: null, elapsedSeconds: null },
+};
+
+/** An ask tied to a skate the read couldn't describe (its activity is gone). */
+export const UNREAD_SKATE_ASK: AskMemberView = {
+  ...KATE_ASK,
+  requestId: id('rqunread'),
+  note: null,
+  skate: null,
+};

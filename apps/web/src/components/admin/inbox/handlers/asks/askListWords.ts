@@ -9,6 +9,12 @@ export const ASK_LIST_WORDS = {
   when: (day: string, age: string) => `${day} · ${age} ago`,
   /** An ask filed with a recorded skate (the board adds "· 2.1 km · 48 min", which no read serves). */
   withSkate: 'With a recorded skate',
+  /**
+   * The skate's day and how long it ran ("With a recorded skate · 10 Oct · 48m"). The board adds the
+   * distance, which isn't stored; a skate with no length says its day alone.
+   */
+  skateWhen: (day: string, length: string | null) =>
+    `With a recorded skate · ${day}${length === null ? '' : ` · ${length}`}`,
 
   // ── Invented ────────────────────────────────────────────────────────────────────────────────
   /** An asker whose profile is gone: no name, no handle, never a made-up person. */

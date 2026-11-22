@@ -1,10 +1,19 @@
+import { zonedInstant } from '@skating/core';
 import { render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { InspectorProvider } from '../../inspector/inspectorContext';
-import { AskList, askWhen } from './AskList';
-import { ASKS_NOW, ASKS_TZ, BOARD_ASKS, GONE_ASK, MANY_ASKS, REPORT_ASK } from './askFixtures';
+import { AskList, askWhen, skateLine } from './AskList';
+import {
+  ASKS_NOW,
+  ASKS_TZ,
+  BOARD_ASKS,
+  GONE_ASK,
+  KATE_ASK,
+  MANY_ASKS,
+  REPORT_ASK,
+} from './askFixtures';
 
 /** Inside the inspector's context, in the board's zone. */
 const inPane = (ui: ReactElement) =>
@@ -31,9 +40,11 @@ describe('the ask list', () => {
     ).toBeInTheDocument();
     expect(within(second as HTMLElement).getByText('Kate Donovan')).toBeInTheDocument();
     expect(within(second as HTMLElement).getByText('11 Oct · 3 d ago')).toBeInTheDocument();
-    // Her ask came with a recorded skate; his didn't.
-    expect(within(second as HTMLElement).getByText('With a recorded skate')).toBeInTheDocument();
-    expect(within(first as HTMLElement).queryByText('With a recorded skate')).toBeNull();
+    // Her ask came with a recorded skate — its day and its moving time; his didn't.
+    expect(
+      within(second as HTMLElement).getByText('With a recorded skate · 10 Oct · 48m'),
+    ).toBeInTheDocument();
+    expect(within(first as HTMLElement).queryByText(/With a recorded skate/)).toBeNull();
     expect(screen.getByRole('list', { name: 'The asks' })).toBeInTheDocument();
   });
 
@@ -69,5 +80,38 @@ describe('its rules', () => {
   it('says how long ago from the clock it is given, never negative', () => {
     expect(askWhen(ASKS_NOW - 5 * 3_600_000, ASKS_NOW, ASKS_TZ)).toBe('14 Oct · 5 h ago');
     expect(askWhen(ASKS_NOW + 60_000, ASKS_NOW, ASKS_TZ)).toBe('14 Oct · 0 min ago');
+  });
+});
+
+describe('an ask’s recorded skate', () => {
+  const skate = KATE_ASK.skate as NonNullable<typeof KATE_ASK.skate>;
+  const at = (s: Partial<typeof skate> | null, activityId = KATE_ASK.activityId) =>
+    skateLine({ activityId, skate: s === null ? null : { ...skate, ...s } }, ASKS_TZ);
+
+  it('says its day and the provider’s moving time, which leaves out stops', () => {
+    expect(at({})).toBe('With a recorded skate · 10 Oct · 48m');
+  });
+
+  it('falls back to the window from start to end, then to the day alone', () => {
+    expect(at({ elapsedSeconds: null })).toBe('With a recorded skate · 10 Oct · 1h 15m');
+    expect(at({ elapsedSeconds: null, endTime: null })).toBe('With a recorded skate · 10 Oct');
+    expect(at({ elapsedSeconds: 0, endTime: null })).toBe('With a recorded skate · 10 Oct');
+  });
+
+  it('reads the skate’s day in the inspector’s zone, not the runner’s', () => {
+    // 00:30 on 10 Oct in New York is still the evening of 9 Oct at UTC−11.
+    const late = zonedInstant(2026, 10, 10, 30, ASKS_TZ);
+    const s = { startTime: late, endTime: null, elapsedSeconds: null };
+    expect(skateLine({ activityId: null, skate: s }, ASKS_TZ)).toBe(
+      'With a recorded skate · 10 Oct',
+    );
+    expect(skateLine({ activityId: null, skate: s }, 'Pacific/Pago_Pago')).toBe(
+      'With a recorded skate · 9 Oct',
+    );
+  });
+
+  it('still says a skate came with it when the read couldn’t describe it, and nothing without one', () => {
+    expect(at(null)).toBe('With a recorded skate');
+    expect(at(null, null)).toBeNull();
   });
 });

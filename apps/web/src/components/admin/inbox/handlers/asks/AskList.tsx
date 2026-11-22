@@ -1,5 +1,7 @@
+import { formatDurationLabel, formatSkateWindow } from '@skating/core';
 import { Quote } from '@/components/kit/note';
 import { PersonByline } from '@/components/kit/person-lockup';
+
 import { shortAge } from '@/lib/ages';
 
 import { dayMonth } from '../../../shell/consoleTime';
@@ -11,8 +13,8 @@ import { ASK_LIST_WORDS as W } from './askListWords';
 /**
  * **The ask list** (2.3's *The ask*; shared with 2.4's place asks): who asked, each on their own
  * byline — the kit's `PersonByline` (face, real name, @handle) with when at the line's end ("12 Oct ·
- * 2 d ago") — their note quoted under it, and a line for an ask filed with a recorded skate or from a
- * report. **In the server's order** — newest first, as the board lists them. A person whose profile
+ * 2 d ago") — their note quoted under it, and a line for an ask filed with a recorded skate (its day and length) or
+ * from a report. **In the server's order** — newest first, as the board lists them. A person whose profile
  * is gone is said as such, never named.
  *
  * `total` is the item's own count and whether the server cut the list short (`asksCut`): past a page
@@ -23,6 +25,26 @@ import { ASK_LIST_WORDS as W } from './askListWords';
 
 /** One ask an item holds (a request's or a place ask's), as `inbox.item` serves it. */
 export type AskMemberView = Extract<InboxItemView, { kind: 'request' }>['asks'][number];
+
+/**
+ * An ask's recorded skate as its line says it: the day it was skated and how long — the provider's
+ * moving time when it sent one (stops left out), else the window from start to end, else nothing.
+ * An ask tied to a skate the read couldn't describe still says it came with one.
+ */
+export function skateLine(
+  a: Pick<AskMemberView, 'activityId' | 'skate'>,
+  timeZone?: string,
+): string | null {
+  if (a.skate === null) return a.activityId !== null ? W.withSkate : null;
+  const { startTime, endTime, elapsedSeconds } = a.skate;
+  const length =
+    elapsedSeconds !== null && elapsedSeconds > 0
+      ? formatDurationLabel(elapsedSeconds / 60)
+      : endTime !== null
+        ? formatSkateWindow(endTime, startTime)
+        : null;
+  return W.skateWhen(dayMonth(startTime, timeZone), length);
+}
 
 /** "12 Oct · 2 d ago": the day it was asked and how long ago. */
 export function askWhen(askedAt: number, now: number, timeZone?: string): string {
@@ -63,9 +85,9 @@ export function AskList({
             {a.note !== null && a.note.trim() !== '' && (
               <Quote data-slot="ask-note">{a.note.trim()}</Quote>
             )}
-            {a.activityId !== null && (
+            {skateLine(a, timeZone) !== null && (
               <span data-slot="ask-skate" className="text-assist leading-body text-fg3">
-                {W.withSkate}
+                {skateLine(a, timeZone)}
               </span>
             )}
             {a.fromReport !== null && (
