@@ -9499,6 +9499,32 @@ fixed on `phase-b01-inbox-3` and carried onto `phase-b01-inbox`.
      deliberate feature that D226's undo tests pin, so S3's sibling branch `b01-5c-s3-5-pin` is not
      taken.
 
+**CI on the first head** (`2b50fb82f`). One story failed and everything else was green (603 of 604
+files):
+
+- **The failure:** `InboxView.handlers.stories.tsx` › *Flag At Desktop* waited its full 5 s for ⇧⏎
+  to put focus on the list.
+- **Late or never: never, and a product defect.** The action bar draws two toolbars, the board's
+  and the narrow one. Switching between them replaces every button, and so does the overflow
+  folding a button into *More*. On a slow runner a late web font can trigger such a switch. The
+  button that held focus then dropped it to the page, where no pane key reaches (⇧⏎ back to the
+  list, a lever's letter). A moderator could lose focus the same way.
+- **The fix:** `useKeepFocus` (the kit's `toolbar.tsx`). As the bar renders a layout change, it
+  notes which button held focus (`data-bar-item`, now on every bar button). After the commit it
+  puts focus back: on the same button where it is still drawn, else on *More*, else on the first
+  button. A story narrows and widens a pane under a focused button; with the hook removed, it
+  fails.
+- **The sweep** covered one-shot `toHaveFocus()`, `document.activeElement` and
+  `aria-activedescendant` reads after something asynchronous, in every Inbox story and every story
+  B01-5c changed:
+  - **moved into a retry:** RecordSheet's lever keeping focus while pending, and the action bar's
+    End key moving to *More*;
+  - **kept on purpose:** four one-shot reads after a single frame, each asserting that focus did
+    *not* move (a repeated key ignored), which a retry would weaken.
+- **Starving, strengthened.** The changed story files ran 10×. On every second run the full convex
+  suite and the web unit project ran beside the storybook project, instead of only `yes` loops.
+  This is the condition the earlier "starved" runs missed three times. All 10 runs passed.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
