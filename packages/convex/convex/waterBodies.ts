@@ -3796,12 +3796,52 @@ export interface MergeChangeSet {
     reviewStatus: Doc<'waterBodies'>['reviewStatus'] | null;
     decidedItem: boolean;
   };
-  /** The founding skates the merge moved (ruled in, B01-5d fork 2), with both of their body fields. */
+  /**
+   * The founding skates the merge moved (ruled in, B01-5d fork 2), with both of their body fields.
+   */
   movedActivities?: {
     id: Id<'gpsActivities'>;
     waterBodyId: Id<'waterBodies'> | null;
     waterBodyIds: Id<'waterBodies'>[];
   }[];
+  /**
+   * Each bay and landmark the merge changed, field by field (S4b, R10): the fields it wrote, with the
+   * values it left (`set`), and the fields it removed (`absent`). The unmerge puts back only these,
+   * from the before-images, and only while each still holds what the merge wrote — never the row.
+   */
+  rowsAfter?: MergeRowAfter[];
+}
+
+/** One row's fields as the merge left them (`MergeChangeSet.rowsAfter`). */
+export type MergeRowAfter = {
+  table: 'waterBodySubAreas' | 'bodyLandmarks';
+  id: string;
+  set: Record<string, unknown>;
+  absent: string[];
+};
+
+/** The fields `after` differs from `before` in — what a merge wrote to one row (S4b, R10). */
+function rowAfterOf(
+  table: MergeRowAfter['table'],
+  before: { _id: string } & object,
+  after: object | null,
+): MergeRowAfter | null {
+  if (after === null) return null;
+  const b = before as Record<string, unknown>;
+  const a = after as Record<string, unknown>;
+  const set: Record<string, unknown> = {};
+  const absent: string[] = [];
+  for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
+    if (k === '_id' || k === '_creationTime') continue;
+    if (a[k] === undefined) {
+      if (b[k] !== undefined) absent.push(k);
+    } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) {
+      set[k] = a[k];
+    }
+  }
+  return Object.keys(set).length > 0 || absent.length > 0
+    ? { table, id: before._id, set, absent }
+    : null;
 }
 
 function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {
@@ -4330,11 +4370,17 @@ export async function mergeBodyInto(
       survivorSubAreasBefore: [],
       loserReview: { reviewStatus: loser.reviewStatus ?? null, decidedItem },
       movedActivities,
+      rowsAfter: [],
+    };
+    // Each changed bay and landmark, field by field, as the merge left it (S4b, R10).
+    const noteAfter = (row: MergeRowAfter | null) => {
+      if (row !== null) changeSet.rowsAfter?.push(row);
     };
     for (const before of survivorSubAreasBefore) {
       const after = await ctx.db.get(before._id);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         changeSet.survivorSubAreasBefore?.push(snapshotDoc(before));
+        noteAfter(rowAfterOf('waterBodySubAreas', before, after));
       }
     }
     for (const before of subAreasBefore) {
@@ -4342,10 +4388,12 @@ export async function mergeBodyInto(
       if (before.removedAt === undefined && after?.removedAt !== undefined) {
         changeSet.subAreasDelisted.push(before._id);
       }
+      noteAfter(rowAfterOf('waterBodySubAreas', before, after));
     }
     for (const before of landmarksBefore) {
       const after = await ctx.db.get(before._id);
       if (after && JSON.stringify(after) !== JSON.stringify(before)) {
+        noteAfter(rowAfterOf('bodyLandmarks', before, after));
         changeSet.landmarksAfter.push({
           id: after._id,
           waterBodyId: after.waterBodyId,

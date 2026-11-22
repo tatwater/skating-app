@@ -28,6 +28,7 @@ import { refreshBodyNames } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bodySource, fileMember, flagSource, PAGE_SEAM, requestSource } from './lib/inboxItems';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
+import { noteLandmarksNamed } from './lib/landmarkRows';
 import { undoState } from './lib/undo';
 import { UNMERGING_REFUSAL } from './lib/unmergeState';
 import schema from './schema';
@@ -912,6 +913,24 @@ suite('the unmerge refuses at the body level, before any write', () => {
       says: async () => UNMERGE_PARTS_MISSING,
     },
     {
+      // R10: without which fields the merge wrote to each bay and label, the unmerge would have to
+      // write rows back whole — refused instead.
+      name: 'the field-by-field record (rowsAfter) missing',
+      setup: async (w, mergeId) => {
+        await w.t.run(async (ctx) => {
+          const row = await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .first();
+          if (row?.payload && !('chunk' in row.payload)) {
+            const { rowsAfter: _r, ...rest } = row.payload as MergeChangeSet;
+            await ctx.db.patch(row._id, { payload: rest });
+          }
+        });
+      },
+      says: async () => UNMERGE_PARTS_MISSING,
+    },
+    {
       name: 'overtaken by a later row on the loser',
       setup: async (w) => {
         await w.t.run((ctx) =>
@@ -1132,54 +1151,48 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
       },
     },
     {
-      name: 'a moved bay edited since',
+      // The merge wrote the bay's body; it has moved again since (no timestamp asked).
+      name: 'a moved bay moved again since',
       kinds: ['loserBays'],
       kind: 'waterBodySubAreas',
       edit: async (w) => {
         const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
-        await w.t.run((ctx) =>
-          ctx.db.patch(id, { name: 'Renamed Cove', updatedAt: Date.now() + 1_000 }),
-        );
+        await w.t.run((ctx) => ctx.db.patch(id, { waterBodyId: w.elsewhere }));
         return id;
       },
       stays: async (w, id) => {
         const row = await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodySubAreas'>));
-        expect(row?.name).toBe('Renamed Cove');
-        expect(row?.waterBodyId).toBe(w.survivor);
+        expect(row?.waterBodyId).toBe(w.elsewhere);
       },
     },
     {
-      name: 'a survivor bay edited since its re-clip',
+      // The merge's re-clip wrote the outline; a redraw has changed it again since.
+      name: 'a survivor bay redrawn since its re-clip',
       kinds: ['survivorBays'],
       kind: 'waterBodySubAreas',
       edit: async (w) => {
         const id = w.rows.survivorBays?.[0] as Id<'waterBodySubAreas'>;
-        await w.t.run((ctx) =>
-          ctx.db.patch(id, { name: 'West Reach', updatedAt: Date.now() + 1_000 }),
-        );
+        await w.t.run((ctx) => ctx.db.patch(id, { polygon: rect(0.1, 0.25, 0.25, 0.45).polygon }));
         return id;
       },
       stays: async (w, id) => {
-        expect((await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodySubAreas'>)))?.name).toBe(
-          'West Reach',
-        );
+        const row = await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodySubAreas'>));
+        expect(row?.polygon).toEqual(rect(0.1, 0.25, 0.25, 0.45).polygon);
       },
     },
     {
-      name: 'a landmark edited since',
+      // The merge wrote the label's body; it has moved again since.
+      name: 'a moved landmark moved again since',
       kinds: ['landmarks'],
       kind: 'bodyLandmarks',
       edit: async (w) => {
         const id = w.rows.landmarks?.[2] as Id<'bodyLandmarks'>;
-        await w.t.run((ctx) =>
-          ctx.db.patch(id, { name: 'Tern Island', updatedAt: Date.now() + 1_000 }),
-        );
+        await w.t.run((ctx) => ctx.db.patch(id, { waterBodyId: w.elsewhere }));
         return id;
       },
       stays: async (w, id) => {
         const row = await w.t.run((ctx) => ctx.db.get(id as Id<'bodyLandmarks'>));
-        expect(row?.name).toBe('Tern Island');
-        expect(row?.waterBodyId).toBe(w.survivor);
+        expect(row?.waterBodyId).toBe(w.elsewhere);
       },
     },
     {
@@ -1308,11 +1321,18 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
     ).rejects.toThrow();
   });
 
-  test('a delisted bay edited since stays delisted, and its side row is left live', async () => {
+  test('a delisted bay listed again since stays as it is, and its side row is left live', async () => {
     const w = await world(['clashingBay']);
     const mergeId = await mergeV2(w);
     const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
-    await w.t.run((ctx) => ctx.db.patch(id, { updatedAt: Date.now() + 1_000 }));
+    // Someone restored the merged copy by hand since: a field the merge wrote (its delisting) changed.
+    await w.t.run((ctx) =>
+      ctx.db.patch(id, {
+        removedAt: undefined,
+        removedByUserId: undefined,
+        systemDelistReason: undefined,
+      }),
+    );
     await unmerge(w, mergeId);
     const left = await leftOf(w.t, w.loser);
     expect(left.byKind).toEqual({ waterBodySubAreas: 1, sideActions: 1 });
@@ -1323,6 +1343,104 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
     });
     expect(side.remove).toBeDefined();
     expect(side.undone).toEqual([]);
+  });
+
+  // ── R10: a later write to a field the merge didn't touch survives; one to a field it did, leaves ──
+
+  test('a moved landmark a report names since: back on the drawing with its count (the reviewer’s case)', async () => {
+    const w = await world(['landmarks']);
+    const mergeId = await mergeV2(w);
+    const id = w.rows.landmarks?.[2] as Id<'bodyLandmarks'>;
+    // The real write a report makes (`reportWrite`): a count bumped, no timestamp.
+    await w.t.run(async (ctx) =>
+      noteLandmarksNamed(ctx, [(await ctx.db.get(id)) as Doc<'bodyLandmarks'>]),
+    );
+    await unmerge(w, mergeId);
+    const row = await w.t.run((ctx) => ctx.db.get(id));
+    expect(row?.waterBodyId).toBe(w.loser);
+    expect(row?.reportCount).toBe(1);
+    expect((await leftOf(w.t, w.loser)).count).toBe(0);
+  });
+
+  test('a folded twin a report names since: the merge wrote its count, so it is left and counted', async () => {
+    const w = await world(['landmarks']);
+    // The drawing's twin carries a count: the fold sums it into the survivor's label.
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.rows.landmarks?.[1] as Id<'bodyLandmarks'>, { reportCount: 2 }),
+    );
+    const mergeId = await mergeV2(w);
+    const twin = w.rows.landmarks?.[0] as Id<'bodyLandmarks'>;
+    expect((await w.t.run((ctx) => ctx.db.get(twin)))?.reportCount).toBe(2);
+    await w.t.run(async (ctx) =>
+      noteLandmarksNamed(ctx, [(await ctx.db.get(twin)) as Doc<'bodyLandmarks'>]),
+    );
+    await unmerge(w, mergeId);
+    const left = await leftOf(w.t, w.loser);
+    expect(left.rows).toEqual([{ kind: 'bodyLandmarks', id: twin }]);
+    // Left exactly as it is now, the later count included.
+    expect((await w.t.run((ctx) => ctx.db.get(twin)))?.reportCount).toBe(3);
+  });
+
+  test('a moved bay renamed since, and noted by a re-import: back on the drawing, both kept', async () => {
+    const w = await world(['loserBays']);
+    const mergeId = await mergeV2(w);
+    const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
+    await w.t.run((ctx) =>
+      ctx.db.patch(id, { name: 'Renamed Cove', updatedAt: Date.now() + 1_000 }),
+    );
+    // A re-import's note writes no timestamp (`noteRederivation`).
+    await w.t.run((ctx) => ctx.db.patch(id, { mouthStale: 'The shoreline moved' }));
+    await unmerge(w, mergeId);
+    const row = await w.t.run((ctx) => ctx.db.get(id));
+    expect(row?.waterBodyId).toBe(w.loser);
+    expect(row?.name).toBe('Renamed Cove');
+    expect(row?.mouthStale).toBe('The shoreline moved');
+    expect((await leftOf(w.t, w.loser)).count).toBe(0);
+  });
+
+  test('a survivor bay renamed since its re-clip: its outline back, its new name kept', async () => {
+    const w = await world(['survivorBays']);
+    const before = await w.t.run((ctx) =>
+      ctx.db.get(w.rows.survivorBays?.[0] as Id<'waterBodySubAreas'>),
+    );
+    const mergeId = await mergeV2(w);
+    const id = w.rows.survivorBays?.[0] as Id<'waterBodySubAreas'>;
+    await w.t.run((ctx) => ctx.db.patch(id, { name: 'West Reach' }));
+    await unmerge(w, mergeId);
+    const row = await w.t.run((ctx) => ctx.db.get(id));
+    expect(row?.polygon).toEqual(before?.polygon);
+    expect(row?.name).toBe('West Reach');
+    expect((await leftOf(w.t, w.loser)).count).toBe(0);
+  });
+
+  test('a moved report and hazard counted on since: back on the drawing, the counts kept', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    const hazard = w.rows.hazards?.[0] as Id<'hazards'>;
+    const report = w.rows.reports?.[0] as Id<'reports'>;
+    await w.t.run(async (ctx) => {
+      await ctx.db.patch(hazard, { confirmCount: 4 });
+      await ctx.db.patch(report, { notes: 'Seen again' });
+    });
+    await unmerge(w, mergeId);
+    const [h, r] = await w.t.run(async (ctx) => [
+      await ctx.db.get(hazard),
+      await ctx.db.get(report),
+    ]);
+    expect(h?.waterBodyId).toBe(w.loser);
+    expect(h?.confirmCount).toBe(4);
+    expect(r?.waterBodyId).toBe(w.loser);
+    expect((r as Doc<'reports'>).notes).toBe('Seen again');
+  });
+
+  test('a partner renamed since: its flags back, its name kept', async () => {
+    const w = await world(['partners']);
+    const mergeId = await mergeV2(w);
+    await w.t.run((ctx) => ctx.db.patch(w.partner, { name: 'Morey Pond (east)' }));
+    await unmerge(w, mergeId);
+    const p = await w.t.run((ctx) => ctx.db.get(w.partner));
+    expect(p?.name).toBe('Morey Pond (east)');
+    expect(p?.duplicateCandidateIds).toEqual([w.loser, w.elsewhere]);
   });
 });
 

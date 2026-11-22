@@ -3,8 +3,9 @@
  * from the change set the merge recorded (`MergeChangeSet` `version: 2`, in `auditSnapshots`).
  *
  * A merge has no forward verb to call back: the rows it moved, the bays it re-clipped and the flags it
- * cleared come back only from what it recorded. So the unmerge restores from those before-images, and
- * always **through the forward paths' side effects** (D291): each moved row is re-pointed the way the
+ * cleared come back only from what it recorded. So the unmerge restores **fields, never rows** (R10):
+ * each field the merge wrote goes back to its before-value while it still holds what the merge wrote,
+ * and every other field stays as it is now. Always **through the forward paths' side effects** (D291): each moved row is re-pointed the way the
  * merge re-pointed it (a report re-mirrors its bay join, an ask or a flag re-keys its Inbox item), and
  * everything derived — cells, summaries, library rows, name lists, stored counts, `inboxCounts` — is
  * recomputed by the paths that keep it, never patched.
@@ -38,7 +39,7 @@
 import { bodyLabel, bodySearchTextFor } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc, Id, TableNames } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
 import {
   type AuditContext,
@@ -74,7 +75,12 @@ import { DOC_MAX, ROW_MAX } from './lib/readBudget';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { zoomSortKey } from './lib/scoring';
 import { scheduleRestamp, syncCellsForParent } from './subAreas';
-import { type MergeChangeSet, regionStatesFields, ruleStatesOf } from './waterBodies';
+import {
+  type MergeChangeSet,
+  type MergeRowAfter,
+  regionStatesFields,
+  ruleStatesOf,
+} from './waterBodies';
 
 // ── The refusals: one function, one order, for the offer and the run ───────────────────────────────
 
@@ -126,7 +132,13 @@ function isWhole(cs: MergeChangeSet): boolean {
     Array.isArray(cs.landmarksAfter) &&
     cs.listsBefore !== undefined &&
     cs.loserReview !== undefined &&
-    (cs.dedupBefore.length === 1 || Array.isArray(cs.dedupAfter))
+    (cs.dedupBefore.length === 1 || Array.isArray(cs.dedupAfter)) &&
+    // Which fields the merge wrote to each bay and label it changed (R10): without them the unmerge
+    // could only write rows back whole, and wipe what was written to them since.
+    (Array.isArray(cs.rowsAfter) ||
+      (cs.subAreasBefore.length === 0 &&
+        (cs.survivorSubAreasBefore ?? []).length === 0 &&
+        cs.landmarksAfter.length === 0))
   );
 }
 
@@ -610,31 +622,18 @@ async function runPage(ctx: MutationCtx, state: PageState): Promise<void> {
           const f = cs.deletedFavorites[from] as MergeChangeSet['deletedFavorites'][number];
           if (!(await favoriteBack(ctx, f, loserId))) leave(state.left, 'deletedFavorites', f.id);
         }
-      } else if (phase === 'bays') {
-        const bays = baysOf(cs);
-        for (; from < bays.length; from++) {
+      } else if (phase === 'bays' || phase === 'landmarks') {
+        const table = phase === 'bays' ? 'waterBodySubAreas' : 'bodyLandmarks';
+        const rows = (cs.rowsAfter ?? []).filter((r) => r.table === table);
+        for (; from < rows.length; from++) {
           if (!(await room(SHAPE_COST))) {
             stopped = true;
             break;
           }
           done++;
-          const b = bays[from] as Snap;
-          if (!(await shapeBack(ctx, 'waterBodySubAreas', b, mergedAt))) {
-            leave(state.left, 'waterBodySubAreas', b.id);
-          }
-        }
-      } else if (phase === 'landmarks') {
-        const changed = landmarksOf(cs);
-        for (; from < changed.length; from++) {
-          if (!(await room(SHAPE_COST))) {
-            stopped = true;
-            break;
-          }
-          done++;
-          const b = changed[from] as Snap;
-          if (!(await shapeBack(ctx, 'bodyLandmarks', b, mergedAt))) {
-            leave(state.left, 'bodyLandmarks', b.id);
-          }
+          const after = rows[from] as MergeRowAfter;
+          if (!(await fieldsBack(ctx, after, beforeOf(cs, after))))
+            leave(state.left, table, after.id);
         }
       } else if (phase === 'sides') {
         const sides = cs.sideActions ?? [];
@@ -796,63 +795,69 @@ async function favoriteBack(
 }
 
 /** A row as a snapshot stores it (`snapshotDoc`): its id and creation time renamed. */
-type Snap = { id: string; creationTime: number; updatedAt?: number } & Record<string, unknown>;
+type Snap = { id: string; creationTime: number } & Record<string, unknown>;
 
-/** Every bay the merge could have changed — the loser's, and the survivor's the re-clip changed. */
-function baysOf(cs: MergeChangeSet): Snap[] {
-  const seen = new Set<string>();
-  const out: Snap[] = [];
-  for (const b of [
-    ...(cs.subAreasBefore as unknown as Snap[]),
-    ...((cs.survivorSubAreasBefore ?? []) as unknown as Snap[]),
-  ]) {
-    if (seen.has(b.id)) continue;
-    seen.add(b.id);
-    out.push(b);
+/** The before-image of a row the merge changed (`subAreasBefore`, `survivorSubAreasBefore`, `landmarksBefore`). */
+function beforeOf(cs: MergeChangeSet, after: MergeRowAfter): Snap | null {
+  const images = (after.table === 'waterBodySubAreas'
+    ? [...cs.subAreasBefore, ...(cs.survivorSubAreasBefore ?? [])]
+    : cs.landmarksBefore) as unknown as Snap[];
+  return images.find((b) => b.id === after.id) ?? null;
+}
+
+/** The fields the merge wrote to a row: those it set, and those it removed. */
+const fieldsWritten = (after: MergeRowAfter) => [...Object.keys(after.set), ...after.absent];
+
+/**
+ * Whether `row` still holds every field as the merge left it — the drift test, by value (R10). A
+ * timestamp is no evidence either way: a write that bumps a counter touches no `updatedAt`, and the
+ * merge's own `updatedAt` is put back only while it still stands. Fields the merge didn't write
+ * aren't asked: a later change to one survives the unmerge.
+ */
+function holdsMergeValues(row: Record<string, unknown>, after: MergeRowAfter): boolean {
+  for (const k of Object.keys(after.set)) {
+    if (k === 'updatedAt') continue;
+    if (!sameJson(row[k], after.set[k])) return false;
   }
-  return out;
-}
-
-/** The landmarks the merge changed (`landmarksAfter`), as they stood before it. */
-function landmarksOf(cs: MergeChangeSet): Snap[] {
-  const before = new Map((cs.landmarksBefore as unknown as Snap[]).map((b) => [b.id, b]));
-  return cs.landmarksAfter.flatMap((a) => {
-    const b = before.get(a.id);
-    return b ? [b] : [];
-  });
-}
-
-/** A snapshot's fields as a document's, its id and creation time dropped. */
-function fieldsOf(snap: Snap): Record<string, unknown> {
-  const { id: _id, creationTime: _created, ...rest } = snap;
-  return rest;
-}
-
-/** A document's fields, its system fields dropped. */
-function docFields(doc: { _id: string; _creationTime: number }): Record<string, unknown> {
-  const { _id, _creationTime, ...rest } = doc as Record<string, unknown>;
-  return rest;
+  for (const k of after.absent) {
+    if (k === 'updatedAt') continue;
+    if (row[k] !== undefined) return false;
+  }
+  return true;
 }
 
 /**
- * Rows 8–10: a bay or a landmark back to its before-image, when nothing has edited it since the
- * merge (its `updatedAt` no later than the merge's row). The derived facts — cells, the name lists,
- * the stamps — follow in the last page, through their own paths. `false` when it is left: gone, or
- * edited since (its edit stands).
+ * Rows 8–10: a bay or a landmark the merge changed, put back **field by field** (R10, D291): each
+ * field the merge wrote returns to its before-value; every other field stays exactly as it is now —
+ * a report's count of a label, a re-import's mouth note, anything written since that the merge never
+ * touched. A field the merge wrote that has changed again since leaves the whole row where it is, and
+ * it's counted. The derived facts — cells, the name lists, the stamps — follow in the last page,
+ * through their own paths. `false` when the row is left (gone, or changed again since).
  */
-async function shapeBack(
+async function fieldsBack(
   ctx: MutationCtx,
-  table: 'waterBodySubAreas' | 'bodyLandmarks',
-  before: Snap,
-  mergedAt: number,
+  after: MergeRowAfter,
+  before: Snap | null,
 ): Promise<boolean> {
-  const row = await ctx.db.get(before.id as Id<typeof table>);
-  if (!row) return false;
-  const fields = fieldsOf(before);
-  if (sameJson(docFields(row), fields)) return true;
-  if ((row.updatedAt ?? 0) > mergedAt) return false;
-  await ctx.db.replace(row._id, fields as never);
+  const id = ctx.db.normalizeId(after.table, after.id);
+  const row = id ? ((await ctx.db.get(id)) as Record<string, unknown> | null) : null;
+  if (!id || !row || !before) return false;
+  if (!holdsMergeValues(row, after)) return false;
+  const patch: Record<string, unknown> = {};
+  for (const k of fieldsWritten(after)) {
+    // The merge's `updatedAt` goes back only while it still stands; a later stamp is kept.
+    if (k === 'updatedAt' && !sameJson(row[k], after.set[k])) continue;
+    patch[k] = before[k];
+  }
+  await ctx.db.patch(id, patch as never);
   return true;
+}
+
+/** Whether a row stands, in every field the merge wrote, as it did before the merge. */
+function revertedNow(row: Record<string, unknown>, after: MergeRowAfter, before: Snap): boolean {
+  return fieldsWritten(after)
+    .filter((k) => k !== 'updatedAt')
+    .every((k) => sameJson(row[k], before[k]));
 }
 
 /**
@@ -874,18 +879,12 @@ async function sideUndone(
     .withIndex('by_undoes', (q) => q.eq('undoesActionId', sideId))
     .first();
   if (undone !== null) return true;
-  const before = [...baysOf(cs), ...(cs.landmarksBefore as unknown as Snap[])].find(
-    (b) => b.id === side.targetId,
-  );
-  const table: TableNames | null =
-    side.targetType === 'waterBodySubArea'
-      ? 'waterBodySubAreas'
-      : side.targetType === 'bodyLandmark'
-        ? 'bodyLandmarks'
-        : null;
-  const id = table ? ctx.db.normalizeId(table, side.targetId) : null;
-  const target = id ? await ctx.db.get(id) : null;
-  if (!before || !target || !sameJson(docFields(target), fieldsOf(before))) return false;
+  const after = (cs.rowsAfter ?? []).find((r) => r.id === side.targetId);
+  const before = after ? beforeOf(cs, after) : null;
+  const id = after ? ctx.db.normalizeId(after.table, side.targetId) : null;
+  const target = id ? ((await ctx.db.get(id)) as Record<string, unknown> | null) : null;
+  // Undone once its target stands, in every field the merge wrote, as before the merge.
+  if (!after || !before || !target || !revertedNow(target, after, before)) return false;
   await writeAudit(ctx, {
     ...(state.actorId !== undefined ? { actorId: state.actorId } : {}),
     action: 'unmerge_waterbody',
