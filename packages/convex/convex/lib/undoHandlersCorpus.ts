@@ -680,6 +680,26 @@ async function bodySideCapabilityRefusal(
 }
 
 /**
+ * Un-deciding a decline is the decision's own lever (B01-5c, ruled): an admin decides a restore or a
+ * takedown ask both ways, so reopening one's decline asks `body.remove`, by the Inbox's rule
+ * (`capabilitiesFor`); a decline of any other kind, `inbox.request` as before. An approval's undo is
+ * held by its body-side act's own capability (`bodySideCapabilityRefusal`). Asked in `refusal`, which
+ * the engine reads for the offer and again before every run (`runUndo`, the write's audience).
+ */
+function declineLeverRefusal(
+  row: Doc<'moderationActions'>,
+  request: Pick<Doc<'waterBodyRequests'>, 'kind'> | null,
+  viewer: UndoViewer,
+): string | null {
+  if (row.action !== 'decline_request' || !request) return null;
+  for (const cap of capabilitiesFor('decline', { requestKind: request.kind })) {
+    const refused = capabilityRefusal(viewer, cap);
+    if (refused !== null) return refused;
+  }
+  return null;
+}
+
+/**
  * approve_request / decline_request → reopened (`reopen_request`): an approval's body-side act undone
  * first — through the engine, with its capability and its "still current" (a restore or takedown
  * approval's undo needs `body.remove`, as the act did), or through {@link undoAdmission} — then the
@@ -720,6 +740,7 @@ const undoRequestDecision: UndoHandler = {
     const request = id ? await read.row('waterBodyRequest', id) : null;
     return (
       requestDecisionRefusal(request, row) ??
+      declineLeverRefusal(row, request, viewer) ??
       (await bodySideCapabilityRefusal(row, viewer, read)) ??
       (id && request
         ? await decisionActorRefusal(

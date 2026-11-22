@@ -386,6 +386,25 @@ const CASES: Case[] = [
     },
   },
   {
+    // B01-5c: un-deciding is deciding — reopening a takedown's decline is an admin's, as the decline was.
+    name: 'decline_request (a takedown, which only body.remove decides) → reopen_request',
+    viewers: ALL,
+    setup: async (w) => {
+      const first = await w.p.skater.as.mutation(api.corpusRequests.create, {
+        kind: 'takedown' as const,
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId: w.lake,
+        note: 'Mine',
+      });
+      await w.tick();
+      const out = await w.p.admin.as.mutation(api.corpusRequests.decline, {
+        requestId: first,
+        note: 'Not yours',
+      });
+      return out.actionId;
+    },
+  },
+  {
     // B01-5c: an admin decides a takedown both ways, so declining it again is an admin's too.
     name: 'reopen_request → declined again (a takedown, which only body.remove declines)',
     viewers: ALL,

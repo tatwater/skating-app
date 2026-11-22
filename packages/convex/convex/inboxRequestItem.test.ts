@@ -15,11 +15,12 @@ import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import type { InboxItemView } from './inbox';
 import { fileMember, requestSource } from './lib/inboxItems';
 import { VIEW_ASKER_COUNTS, VIEW_MEMBERS, VIEW_SKATES } from './lib/inboxViews';
 import * as readBudget from './lib/readBudget';
+import { undoState } from './lib/undo';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -755,7 +756,32 @@ describe('a restore or takedown ask is an admin’s to decide, both ways (B01-5c
     },
   );
 
-  test('every other kind stays a moderator’s to decline', async () => {
+  test('reopening a takedown’s decline is an admin’s too: the offer and the run refuse a moderator', async () => {
+    const w = await world();
+    const requestId = await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'takedown',
+      coord: { lat: 0.1, lng: 0.1 },
+      waterBodyId: w.lake,
+    });
+    const out = await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
+    const row = await w.t.run((ctx) => ctx.db.get(out.actionId));
+    const offer = await w.t.run(async (ctx) =>
+      undoState(
+        ctx,
+        (await ctx.db.get(w.mod.id)) as Doc<'profiles'>,
+        row as Doc<'moderationActions'>,
+        'one',
+      ),
+    );
+    expect(offer).toEqual({ state: 'unavailable', why: 'Requires admin role' });
+    await expect(
+      w.mod.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' }),
+    ).rejects.toThrow('Requires admin role');
+    await w.admin.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' });
+    expect((await w.t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
+  });
+
+  test('every other kind stays a moderator’s to decline, and to reopen', async () => {
     const w = await world();
     await w.t.run((ctx) =>
       ctx.db.patch(w.lake, { dormant: { since: NOW, reason: 'inactive' as const } }),
@@ -769,6 +795,8 @@ describe('a restore or takedown ask is an admin’s to decide, both ways (B01-5c
       can: Record<string, string | null>;
     };
     expect(item.can.decline).toBeNull();
-    await w.mod.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
+    const out = await w.mod.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
+    expect(out.undoable).toBe(true);
+    await w.mod.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' });
   });
 });
