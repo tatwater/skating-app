@@ -9078,6 +9078,474 @@ The integration review fixed four things:
 - **#171's stories.** Several Flag and Access layout reads are still one-shot, the shape the life
   strip's failure had.
 
+#### Briefs (B01-5d)
+
+This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
+`phase-b01-inbox` at `8f44cf029`: #170 and #171 on main, and B01-5c's web integrated, with S3 still
+building. Paste each brief whole. Every brief also carries §12.4's invariants verbatim. The forks at
+the end come first.
+
+##### What the design says, and what the code now has
+
+| Design says | Code has (file:line on the phase branch) | The brief says |
+|---|---|---|
+| `waterBodies.merge` runs `mergeBodyInto`, and its change set is in `auditSnapshots` | True (`waterBodies.ts:3560`, `:3800`). See the gaps below. `merge` answers only `survivorId`, with no undo offer. `merge_waterbody`'s undo is `later('§4 Corpus')` (`lib/undoPolicy.ts:185`, asserted owed at `undoPolicy.test.ts:101`). The registry's header rules out this unmerge as written: "Nothing here patches a row back from a snapshot" (`undoPolicy.ts:5`). | S4b flips the policy to `inverse: unmerge_waterbody`. `merge` answers the undo offer. The header is reworded (fork 5). |
+| The change set records every moved row | It records nine tables' moved rows, deleted favorites, the loser's bays and both lakes' landmarks before (plus which changed), `dedupBefore`, `pinsBefore` and `listsBefore`. **It does not record five things the merge changes** (*What the change set doesn't record*, below). | S4a adds them as change set `version: 2`. Every merge recorded before `version: 2` is refused, with the dialog's sentence. |
+| A merged drawing stays `pending`, so `listPendingReview` **and `console.overview`'s drawn count** mis-count it | `mergeBodyInto` never touches `reviewStatus` (`:3970`). But `console.overview` reads the Inbox's stored lane counts (`console.ts:69`), and the Inbox reconcile ranks `merged` over the review status (`lib/inboxItems.ts:303`). **Only `listPendingReview` mis-counts** (`waterBodies.ts:7347`). Its one caller is the legacy dashboard's *Bodies to review* tile. `bodyCompare.ts:328` prints the raw value. | `reviewStatus: 'merged'` is written by `mergeBodyInto` itself whenever the loser is a pending skater's drawing, so `mergeDrawn` and the Shape tab agree. The backfill gains a `drawn:merged` phase (`lib/inboxItems.ts:113`). |
+| `mergeDrawn`'s verb exists | `InboxVerb` has it (`inbox.ts:103`). The rule needs `inbox.drawnBody` and `corpus.duplicates` (`lib/inboxRules.ts:96`) and refuses "This drawing overlaps no known body." (`:408`). **There is no write.** The rule's `hasOverlap` is `duplicateCandidateIds.length > 0`, but the view's `overlap` (`lib/inboxViews.ts:1391`, `overlapOf`) can be `null`, so `can` and the bar can disagree. `bodyRef` doesn't follow `mergedIntoId`, so a tombstoned first candidate is offered as the survivor, and `merge` then refuses it. | S4a writes `inboxWrites.mergeDrawn`. One function, *the drawing's live survivor*, feeds the rule's fact, the view's `overlap` and the write's currency check: the first candidate that is neither merged nor gone. |
+| The merge decides the drawn item `merged` | It does (`waterBodies.ts:3991`), but **before** `writeAudit` and with **no `actionId`**. So the member's `closedByActionId` and the item's `decisionActionId` are unset, and `reopenItem(actionId)` (`lib/inboxItems.ts:1134`) can't find it. | S4a moves the `decideItem` call after the audit row and passes its `actionId`. The unmerge reopens the item by re-filing the drawing (`fileMember(bodySource)`, as `moveDrawnReview` does, `waterBodies.ts:3006`). |
+| Overlap and the suggested survivor come from `duplicateCandidateIds` and `scoreAgainstNearby` | `scoreAgainstNearby` (`:2899`) ranks matches with `classifyDedup`, but `create` stores **only the ranked ids**, with no score (`:2866`). The share is computed live by `overlapOf` (`coveredFraction`, `core/geometry.ts:516`), and *suggested* means at least `MERGE_SUGGEST_SHARE` (0.8, `core/inbox.ts:248`). | No new scorer. The suggested survivor is the drawing's live survivor; the share is `overlapOf`'s. |
+| Shape's *Merge into another body* | `MergeSection` (`body/tabs/shape/ShapeTab.tsx:216-303`): the touching bodies (pressing one lights it on the map; *Open →*) and an `UnavailableButton` *Choose a body*, "The duplicates queue merges bodies today". It is fed by `consoleExtras.touching` (`bodyConsole.ts:124-150`): listed bodies within 30 m, among the 12 most prominent, with rejected, merged and gone bodies dropped. There is no Shape stories file; Shape's stories are in `frame/BodyConsole.stories.tsx` (`Shape`, `Touching`). | W6 builds the flow in the Body console's conventions (*Territories*). |
+| A preview read, `bodyConsole.mergePreview` | Nothing like it exists. The nearest are `waterBodies.getDedupGroup` (`:7464`: outlines, overlap, attachment counts) and core's `mergedModeratorLists` (the union and its refusal). | S4a writes it (snippet below). |
+| The undo engine takes a new inverse | Policy is `UNDO_POLICY` (`lib/undoPolicy.ts:105`). Handlers are `UndoHandler` (`lib/undoTypes.ts:73`) in `CORPUS_UNDO_HANDLERS` (`lib/undoHandlersCorpus.ts:1149`). The offer is `undo.latestOwn` (`undo.ts:59`) or a write's `undoOfferAfterWrite` (`moderation.ts:1961`); the run is `runUndo` (`lib/undo.ts:361`). **Overtaken** means a later row on the same target (`lib/undo.ts:261`), and the merge's row targets the **loser**. The offer-versus-run `CASES` are curated by hand (`undoOfferVsRun.test.ts:187`). The nearest template is `merge_hazards` → `unmergeImpl` (`lib/undoHandlersCorpus.ts:1032`). | S4b adds the policy, the handler, and its offer-versus-run case by hand. |
+| S3's notification leaves `merged` for this PR | `merged` is an outcome in core (`core/src/notifications.ts:291`, "enqueued from the drawn merge (PR 4)"). Nothing on this branch enqueues any `moderator_decision`; S3 adds approve and reject. | S4a enqueues `merged` beside the `decideItem` call, only for a skater's drawing (the ETL calls `mergeBodyInto` too). The unmerge's tell is the drawer's message, as `return_to_review`'s: inside the window the re-check drops it. |
+| `MODERATION_ACTIONS` gains the inverse | It is defined in convex (`lib/enums.ts:279`). The schema unions follow automatically. `UNDO_POLICY` must cover it (`undoPolicy.test.ts:8`). Two web maps typed `Record<AuditAction, string>` stop type-checking without it: `shell/actionLabels.ts:35` (`VERB`) and `overview/overviewData.ts:329` (`ACTION_WORDS`). | A T0 seam (below). |
+| The `moderatorDecision` pref is narrowed in this PR | The key is optional (`schema.ts:146-160`). `profiles.backfillNotificationPrefs` (`profiles.ts:1218`) is paged and caller-looped, not self-scheduling, and nothing reads the count of rows lacking the key. **160 of the 163 files holding a prefs literal lack the key** (tests and fixtures, e.g. `undoOfferVsRun.test.ts:41`), and every one fails type-checking once it is required. | A T0 seam plus a mechanical commit; the PR's file count says why (fork 4). |
+| The dev proof: a merge and its unmerge on two seeded bodies | The seed has one pending drawing over a known body: *Morey East Bay* over Lake Morey (`inboxSeed.ts:1012-1024`). The drawing holds only its founding `gpsActivity`, which the merge doesn't move. Lake Morey has one report, which the seed removes. **Nothing a merge moves is on either body.** | S4a extends the seed (*The dev proof*). |
+| The Drawn handler's copy | `mergeNotHere` ("Coming soon · the old editor merges it") and `editorLink` (`Drawn/DrawnHandler.tsx:31`) point at the old editor, which **has no merge**. Only the legacy duplicates queue (`admin.water.index.tsx`, `DuplicateGroupCard`) merges today. | W6 replaces both with the live lever. |
+
+##### What the change set doesn't record
+
+Each of these is changed by `mergeBodyInto` today and missing from `MergeChangeSet`. S4a adds them,
+and the change set becomes `version: 2`. **Every merge recorded before `version: 2` is refused**,
+the dialog saying so before it runs: *"This merge was recorded before merges kept everything an
+unmerge needs, so it can't be undone here."*
+
+1. **The rows the merge writes beside its own (`sideActions`).**
+   - Each bay the merge delists writes a `remove` row marked automatic: by name clash, or by
+     re-clip (`subAreas.ts:820` `systemDelist`).
+   - Each landmark retired as a bay writes `promote_landmark` (`lib/landmarkRows.ts`
+     `retireRow`).
+   - The landmark folds and over-cap retirements write their own rows too (`landmarkRows.ts:489`,
+     `:509`).
+
+   An unmerge that puts those rows back leaves these audit rows live, and their undos (*restore*
+   the bay) still offered. Record their ids. The unmerge writes one row per side row with `undoes:`
+   that row, so History reads them as undone and the engine refuses them as *undone*.
+2. **The survivor's own bays, as the re-clip left them.** `repointSubAreasOnMerge` re-clips
+   **every** listed bay of the survivor (`reclipSubAreasToParent(ctx, survivor._id, …)`), not only
+   the moved ones. It also notes re-derivations for review (`noteRederivation`). But
+   `subAreasBefore` holds only the loser's bays. Against an unchanged outline this is a no-op,
+   except for a stale chord bay. Record before-images of every survivor bay the re-clip changed.
+3. **The partners' flags as the merge left them (`dedupAfter`).** `dedupBefore` says what to put
+   back. Without the after-image, a flag a moderator has since changed can't be told from one the
+   merge cleared.
+4. **The loser's review status, and the drawn item it decided.** The `reviewStatus` before
+   (`pending`) and whether `decideItem` decided an item. Today the item is decided with no action
+   id, so nothing ties it to the merge.
+5. **What stayed behind past the caps.** `retargetAsks` takes at most `RETARGET_CAP = 1_000` per
+   request kind and status (`:3658`). Asks past that stay on the loser, uncounted and unrecorded
+   (fork 3 makes this a refusal instead).
+
+**Recomputed, not recorded**, because each can be derived from the rows: cells (the body's and its
+bays'), summaries, library rows, geometry staleness, both bodies' name lists, region states and
+pinned facts (from the pins), `searchText` (from the aliases), the report–bay join, the restamp,
+recurrence and `inboxCounts` (moved by `rekey`, `decideItem` and `fileMember`). **Forward-only, not
+restored:** the survivor's `changedAt` (the unmerge stamps it again). **Not moved by the merge at
+all:** `gpsActivities`, `accessAlerts` and `parkingAreaBodies` (fork 2).
+
+##### The unmerge, row by row
+
+Each row gives what the merge does to that kind of row, what the change set records, what the
+unmerge does, and what makes it refuse or leave a row. **Body-level refusals** run in the first
+transaction, before any write. **A row that has drifted since** is left where it is and counted on
+the receipt and in History (fork 1).
+
+1. **The loser body.**
+   - *Merge:* `dedupStatus: merged`, `mergedIntoId`. Its pins and aliases are cleared (and its
+     region states and `searchText` with them). It is unlisted, and its cells dropped.
+   - *Recorded:* `dedupBefore[0]`, `listsBefore.loser`, `pinsBefore.loser`; **add**
+     `reviewStatusBefore`.
+   - *Unmerge:* restores those fields and recomputes region states, `searchText` and its cells.
+     `reviewStatus` goes back to `pending` for a drawing.
+   - *Refuses (body level):*
+     - no change set, or `version` < 2;
+     - snapshot parts missing;
+     - overtaken by a later row on the loser (the engine);
+     - the loser no longer `merged` into the recorded survivor.
+2. **The survivor body.**
+   - *Merge:* its lists become the union of both bodies' (pins with their states, aliases with
+     `searchText`, links).
+   - *Recorded:* `listsBefore.survivor`.
+   - *Unmerge:* takes the union apart by difference. It removes each entry that came only from
+     the loser and is still there, and keeps anything the survivor gained since (fork 5). Region
+     states and `searchText` are recomputed.
+   - *Refuses (body level):* the survivor since merged into another body ("Unmerge it from ‹X›
+     first"), or gone.
+3. **Partners' dedup flags.**
+   - *Merge:* `clearDuplicateFlag` on the survivor and each of the loser's candidates, and
+     `rekey`s each.
+   - *Recorded:* `dedupBefore[1…]`; **add** `dedupAfter`.
+   - *Unmerge:* puts each partner back to its before-image and rekeys it.
+   - *Left:* a partner whose flag no longer equals its after-image.
+4. **Reports, hazards, bounties, features, put-ins.**
+   - *Merge:* `waterBodyId` re-pointed to the survivor. Reports re-mirror their bay join, and a
+     restamp is scheduled.
+   - *Recorded:* `moved` (id and the loser's id).
+   - *Unmerge:* re-points each row whose `waterBodyId` is still the survivor, re-mirrors moved
+     reports, and schedules a restamp of both bodies.
+   - *Left:* a row now on another body, or gone (a hard delete under D33).
+5. **Favorites, re-pointed.**
+   - *Merge:* re-pointed to the survivor.
+   - *Recorded:* `moved`.
+   - *Unmerge:* re-points each favorite still on the survivor.
+   - *Left:* the same as row 4.
+6. **Favorites, deleted as duplicates.**
+   - *Merge:* the loser's row is deleted where the person already favorited the survivor.
+   - *Recorded:* `deletedFavorites` (the kept row's id and `createdAt`).
+   - *Unmerge:* re-creates a favorite on the loser for the kept row's owner and bay, with the
+     recorded `createdAt` (a new id).
+   - *Left:* the kept row is gone (unfavorited, or erased with the account under D33). There is
+     nothing to name, and the snapshot names no one.
+7. **Requests, open place names, open and in-review body flags.**
+   - *Merge:* re-targeted to the survivor and rekeyed into the survivor's items. A flag whose
+     flagger already flagged the survivor stays behind.
+   - *Recorded:* `moved`.
+   - *Unmerge:* re-targets each one still on the survivor and rekeys it, so it rejoins the
+     loser's item.
+   - *Left:* one decided since (it stands, on the survivor).
+8. **The loser's bays.**
+   - *Merge:* moved to the survivor and re-clipped; a name clash or a failed re-clip delists one
+     (a side row). Cells re-synced.
+   - *Recorded:* `subAreasBefore` (whole), `subAreasDelisted`.
+   - *Unmerge:* each bay whose `updatedAt` is no later than the merge's is put back to its
+     before-image, then cells re-synced and the name lists rebuilt. Each side row is marked undone.
+   - *Left:* a bay edited since (its edit stands, on the survivor).
+9. **The survivor's bays.**
+   - *Merge:* the re-clip may change one.
+   - *Recorded:* nothing today; **add** before-images of the changed ones.
+   - *Unmerge:* puts each changed bay back if it hasn't been edited since.
+   - *Left:* the same as row 8.
+10. **Landmarks, on both lakes.**
+    - *Merge:* moved, folded into twins, retired over the cap or as a bay (side rows).
+    - *Recorded:* `landmarksBefore` (whole), `landmarksAfter` (id, body, removed, fold target).
+    - *Unmerge:* each changed landmark whose `updatedAt` is no later than the merge's is put back
+      to its before-image, the name lists rebuilt, and each side row marked undone.
+    - *Left:* a landmark edited since.
+11. **The drawn item.**
+    - *Merge:* decided `merged`, with no action id today.
+    - *Recorded:* **add** whether one was decided.
+    - *Unmerge:* re-files the drawing (`fileMember(bodySource(loser))`), which reopens the item
+      and moves `inboxCounts`.
+12. **The notification.**
+    - *Merge:* `moderator_decision` `merged` to the drawer (new in this PR).
+    - *Recorded:* by its queue row.
+    - *Unmerge:* the drawer's message, as `return_to_review` sends one; inside the window the
+      re-check drops both.
+13. **Derived facts.**
+    - *Merge:* cells, summaries, library rows, geometry staleness, recurrence, restamp.
+    - *Recorded:* nothing; they are recomputed.
+    - *Unmerge:* re-runs each for both bodies, in its last page.
+
+**The budget.**
+
+- **The shape:** the unmerge pages as the request drains do.
+- **First transaction:**
+  - runs the body-level refusals;
+  - writes `unmerge_waterbody` on the loser, with its `undoes:` the merge row;
+  - restores the loser and the survivor (rows 1–2) and the partners (row 3), and reopens the item;
+  - starts on `moved`.
+- **Each later page:**
+  - is `internal.unmerge.unmergeRest({ actionId, from })`;
+  - re-reads the snapshot (one `readSnapshot`; a heavy change set is a few hundred KB, well inside
+    the read limit);
+  - takes `moved[from…]`, sized by `ctx.meta.getTransactionMetrics()` and `batchHasRoom`, at least
+    one row, as `closeSiblingPage` does;
+  - then does the bays, landmarks and favorites the same way, and schedules the next page.
+- **The last page** recomputes the derived facts and schedules both restamps.
+- **No `.paginate()` at all:** the snapshot is an array sliced by offset, so the harness's
+  one-paginate rule is met trivially, and its transaction limits bound each page.
+- **Nothing marks the run as draining:** each page first checks that the unmerge still stands
+  (no row `undoes:` the unmerge), as `closeRequestsRestPage` checks `by_undoes`.
+- **The unmerge's own undo is `none`:** "Merge it again", since a re-merge is a fresh merge with
+  its own change set.
+
+##### Territories (disjoint)
+
+| Builder | Owns | Must not touch |
+|---|---|---|
+| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
+| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts` | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
+| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
+
+**The Shape tab is the Body console's, with its own conventions, not the Inbox's.**
+
+- A write goes through `useTabAction(bodyId)` (`tabs/useTabAction.ts`): `sendFor` under
+  `useBodyHold`, the save rule D265, "Not saved · ‹body›".
+- The reason dialog is `tabs/access/ReasonAsk.tsx`, its cap from core.
+- The receipt is the shell's `Receipt` (`shell/undo.tsx:58`), and History follows the audit links.
+- The Drawn lever uses the Inbox's decision runner (`inbox/actions/useDecisionRunner`), taking Undo
+  from the write's answer.
+
+W6 starts at T0 against the snippets' types with fixtures, and wires to S4a's reads once they land.
+
+##### The seams (an executor commit at T0)
+
+1. **`lib/enums.ts`**: the review status widened, no backfill —
+   ```ts
+   export const REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const;
+   ```
+   The hand-typed copies follow in the same commit: `waterBodies.ts:2973` (`DrawnReviewStatus`),
+   `packages/core/src/standing.ts:97`, `lib/listing.ts:27`, `apps/web/…/ModeratorCard.tsx:197`, and
+   the web and mobile `waterMap.ts` (`:289`, `:301`). Each reads `merged` as a merged body already
+   does: `standingOf` and `isListed` rank `dedupStatus: 'merged'` first.
+2. **`lib/enums.ts`**: `MODERATION_ACTIONS` gains `'unmerge_waterbody'`. In the same commit:
+   - `UNDO_POLICY` gains `unmerge_waterbody: { undo: { kind: 'none', why: 'To put them back together,
+     merge them again.' }, takesAway: never, capability: 'corpus.duplicates' }`;
+   - the web's `VERB` gains `unmerge_waterbody: 'Unmerged'`;
+   - `ACTION_WORDS` gains `unmerge_waterbody: 'unmerged a body'`;
+   - `inboxItems.ts:201` lists it among a drawn body's review rows.
+3. **`waterBodies.ts`**: the change set's additions (the snippet below), as types only. S4a fills
+   them; S4b reads them.
+4. **`schema.ts`**: `moderatorDecision` required —
+   ```ts
+   const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
+   ```
+   - The 160 fixture files gain `moderatorDecision: <same as greatReportNearby>`: one mechanical
+     commit, no other change in it.
+   - `SettingsPage.tsx:290`'s cast and the stale backfill comment at `apps/mobile/app/(tabs)/you.tsx:493` go.
+   - **Its dev precondition**, before the deploy that carries it:
+     - `profiles:backfillNotificationPrefs` run to `isDone`;
+     - then the new internal query `profiles:prefsMissingKey`, paged with one `.paginate()` per
+       call and looped by the caller, reading **0** rows lacking the key.
+   - A deploy against a non-zero count fails schema validation, so the order is the executor's
+     after-merge step 1.
+
+##### Canonical snippets
+
+```ts
+// inboxWrites.ts — S4a
+export const mergeDrawn = mutation({
+  args: {
+    itemId: v.id('inboxItems'),
+    /** The survivor the bar showed; refused if the drawing's live survivor is now another body. */
+    survivorId: v.id('waterBodies'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<InboxWriteResult> => { /* … */ },
+});
+// Answers InboxWriteResult: { itemId, actionId (the merge_waterbody row), flagsClosed: 0,
+//   undoable, undoNeedsReason }. The Inbox's rule first, as every inboxWrites write asks it (D289's
+//   "not your own drawing" included), then mergeBodyInto. `waterBodies.merge` answers the same offer:
+//   { survivorId, actionId } & ({ undoable: true; undoNeedsReason: boolean } | { undoable: false }).
+
+// bodyConsole.ts — S4a
+export type MergePreview =
+  | { ok: false; refusal: string } // same body, loser or survivor merged, the lists' union refused
+  | {
+      ok: true;
+      survivor: BodyRefView;
+      loser: BodyRefView;
+      /** Rows that move, by kind, each `{ count, capped }` (a floor past the read's bound). */
+      moves: Record<
+        | 'reports' | 'hazards' | 'bounties' | 'bodyFeatures' | 'putIns' | 'favorites'
+        | 'requests' | 'placeNames' | 'flags' | 'subAreas' | 'landmarks' | 'gpsActivities',
+        { count: number; capped: boolean }
+      >;
+      favoritesDeduped: number;
+      /** Bays that would be delisted by a name the survivor already has. */
+      baysClashing: string[];
+      /** The union of the moderators' lists, against their caps. */
+      lists: { pins: number; aliases: number; links: number; caps: { pins: number; aliases: number; links: number } };
+      /** What stays on the loser (fork 2's remainder): access alerts and linked lots. */
+      staysBehind: { accessAlerts: number; parkingLots: number };
+      /** Past one transaction's budget the merge is refused here (fork 3). */
+      tooBig: boolean;
+    };
+export const mergePreview = query({
+  args: { loserId: v.id('waterBodies'), survivorId: v.id('waterBodies') },
+  returns: /* MergePreview */,
+  // corpus.duplicates; bounded reads (take(cap + 1)), never collect().
+});
+
+// waterBodies.ts — the change set's additions (seam 3)
+export interface MergeChangeSet {
+  /** 2 from B01-5d: everything an unmerge needs. Absent (1) is refused. */
+  version?: 2;
+  /** Rows the merge wrote beside its own: automatic bay delists, landmark folds and retirements. */
+  sideActions?: Id<'moderationActions'>[];
+  /** Each partner's dedup fields as the merge left them. */
+  dedupAfter?: MergeChangeSet['dedupBefore'];
+  /** The survivor's bays the re-clip changed, as they stood. */
+  survivorSubAreasBefore?: ReturnType<typeof snapshotDoc<Doc<'waterBodySubAreas'>>>[];
+  /** The loser's review status before, and whether the merge decided its Inbox item. */
+  loserReview?: { reviewStatus: Doc<'waterBodies'>['reviewStatus'] | null; decidedItem: boolean };
+  /** Fork 2: the founding skates moved, with both of their body fields. */
+  movedActivities?: { id: Id<'gpsActivities'>; waterBodyId: Id<'waterBodies'> | null; waterBodyIds: Id<'waterBodies'>[] }[];
+  // …the existing fields unchanged.
+}
+```
+
+##### Definitions of done
+
+**S4a**
+
+- [ ] `mergeDrawn` writes the merge, `reviewStatus: 'merged'`, the item decided with the merge's
+  `actionId`, and the `merged` notification to the drawer only. It answers the undo offer.
+- [ ] Rule-versus-write cells for `mergeDrawn` (every viewer × every refusal: no overlap, the
+  drawer, decided, the survivor changed).
+- [ ] The drawing's live survivor is one function for the rule's fact, `overlapOf` and the write.
+  Tests cover a tombstoned first candidate and a candidate that is gone.
+- [ ] `merge` answers its offer, and the legacy duplicates card still works.
+- [ ] `mergeBodyInto` fills change set `version: 2`. One test per addition: a delisted bay, a
+  retired landmark, a re-clipped survivor bay, a partner, a drawn loser, fork 2's skate.
+- [ ] `mergePreview`'s counts equal what the merge then moves, for every kind, over the round-trip
+  world. `tooBig` agrees with the merge's refusal (fork 3).
+- [ ] The heavy-rows matrix gains:
+  - a heavy survivor merge (fits);
+  - a heavy loser past the budget (refused by both the preview and the write, before any write);
+  - `mergeDrawn` on a heavy survivor.
+- [ ] The `drawn:merged` backfill phase and its drift repair.
+- [ ] The seed's merge pair (below); a second `--apply` files nothing new.
+
+**S4b**
+
+- [ ] **One round-trip `convex-test` per row kind**: build a world, merge, unmerge, and compare
+  state row by row with the world before.
+  - What is compared: the rows themselves, plus counts and stored facts (the body-names rows,
+    `inboxCounts`, People's stored counts, cells, library rows, summaries, region states,
+    `searchText`).
+  - Scheduled functions are run to completion first (restamp, library, recurrence).
+  - The comparison excludes, by name: re-created favorites' ids (compared by owner, body, bay and
+    `createdAt`), `updatedAt`, the survivor's `changedAt`, and the audit table. The audit table is
+    asserted separately: one unmerge row, and each side row undone.
+- [ ] Refusals: before `version: 2`, parts missing, overtaken, the loser re-pointed, the survivor
+  merged since, and the survivor gone. Each says its sentence and writes nothing.
+- [ ] Drift: each *Left* row in the table is left and counted on the receipt and in History. The
+  run still completes.
+- [ ] Paging: a heavy change set (past one page) drains, one page per execution, under the
+  harness's limits. An undone unmerge's later pages do nothing.
+- [ ] Offer versus run: the unmerge's case is in `CASES`, the offer and the run agree, and
+  `undoPolicy.test.ts`'s owed list loses `merge_waterbody`.
+- [ ] **`fast-check`, run at 20×** (20 seeds, 100 runs each):
+  - **the world:** 2–3 bodies as fixed rectangles, so there is no geometry generator;
+  - **the children:** random children of every moved kind, including a favorite of both bodies,
+    a twin landmark and a clashing bay;
+  - **the operations:** a merge, optionally an unrelated edit, then the unmerge;
+  - **the property:** the state equals the state before, modulo the same exclusions, or the edit's
+    row is reported *left*.
+
+**W6**
+
+- [ ] The Drawn bar's *Merge into ‹body›*:
+  - is drawn from `can.mergeDrawn` alone;
+  - one press sends `mergeDrawn` with the item's ids and the survivor it showed;
+  - the receipt names both bodies, with Undo from the answer;
+  - a refusal is a toast in the server's words.
+- [ ] The Shape tab's flow:
+  - the survivor is picked among the touching bodies, or found by search;
+  - the preview is `mergePreview` (counts, clashes, the union against its caps, what stays
+    behind, *too big*);
+  - the reason is required (its cap from core);
+  - the receipt names both bodies;
+  - the loser's console then shows the existing merged page.
+- [ ] A wiring test for each entry point through its real route: the Inbox's harness for Drawn, and
+  the Body console's route test for Shape.
+- [ ] Stories in both modes at 788 and 360. Layout reads wait for the layout to settle, run 5×
+  with half the runs starved.
+- [ ] No D#, § or phase token on screen, and nothing readable as a claim about the ice (D3).
+
+##### The dev proof
+
+**What it is:** a merge and its unmerge on two seeded bodies, compared row by row.
+
+**What the seed has today: not enough.** The one pair, Morey East Bay over Lake Morey, carries
+nothing a merge moves.
+
+**S4a adds a merge pair to `inboxSeed.ts`.** It uses the existing drawing, so the Inbox path is the
+one proved, and gives the drawing and Lake Morey:
+
+- on the drawing: a report, a hazard, a bounty and a put-in;
+- favorites: one person favoriting the drawing only, and one favoriting **both** bodies (the
+  `deletedFavorites` path);
+- on the drawing: an open request, an open place name, and an open body flag. A second flag on it
+  comes from a person who has already flagged Lake Morey (the flag left behind);
+- bays: one on the drawing, plus one on each body sharing a name (a clash, so the merge delists
+  it);
+- landmarks: a twin across the two bodies;
+- moderator lists: an alias, a pin and a link on each body;
+- dedup: a second candidate on the drawing (a partner).
+
+**The proof itself:**
+
+- **The census:** a new internal query, `waterBodies:mergeProofCensus({ ids })`, returns each
+  body's rows and stored facts as canonical JSON. It covers what the round-trip test compares.
+- **The run:** `convex run` it before the merge. Merge from the Inbox, then unmerge from the
+  toast or History. Wait for the scheduled jobs: `bodyLibraryQueue`, the restamp and recurrence
+  read empty. Run it again.
+- **The check:** `diff` the two with the same exclusions as the test.
+- **Who runs it:** the executor, as after-merge step 2. It is recorded in the roadmap.
+
+##### Forks (each needs a ruling before T0)
+
+1. **A row that has drifted since the merge.**
+   - **(A)** Refuse the whole unmerge up front. That needs a paged read-only scan before any write,
+     which races with writes anyway.
+   - **(B)** Run the cheap body-level refusals in the first transaction, then leave each drifted row
+     where it is, counted on the receipt and in History (as the merge's own *flags left* already is).
+
+   **Recommend (B).** The design's "refuse if any moved row has changed bodies again" can't be
+   checked in one transaction on a heavy body. The common drift, the survivor merged again, is
+   caught at the body level.
+2. **What the merge doesn't move: skates, access alerts, linked lots.**
+   - **(A)** All three to the register.
+   - **(B)** Move the `gpsActivities` in this PR, recorded in the change set and read back by the
+     unmerge; alerts and lots to the register.
+   - **(C)** All three now.
+
+   **Recommend (B).** A merged drawing's founding skate is the drawing's only evidence. Per-lake
+   tracks and dormancy retention read it, so the survivor loses it today. Alerts and lots each need
+   a reader census and an author or notification decision of their own.
+3. **A merge too heavy for one transaction.** `mergeBodyInto` `collect()`s every child, and asks
+   past 1,000 per kind and status stay behind silently.
+   - **(A)** Keep the merge atomic. The preview and the write refuse past the one-transaction
+     budget ("Too much moves for one merge here"), and the cap overflow becomes that refusal.
+   - **(B)** Page the merge too, with a *merging* state.
+
+   **Recommend (A).** A loser is normally a small duplicate, and an atomic merge never strands half
+   a body. The Shape tab is the only path that can pick a heavy loser, and its preview says so
+   first.
+4. **The pref narrowing's size.** It touches 160 fixture files, which takes the PR to about 230
+   files.
+   - **(A)** Keep it in this PR as its own mechanical commit, the PR body saying why.
+   - **(B)** Give it its own PR.
+
+   **Recommend (A).** A one-line-per-file mechanical diff reviews in seconds, and a separate PR costs
+   a Greptile request. As ruled, it rides here.
+5. **The survivor's lists, and the registry's rule.**
+   - **(A)** Take the union apart by difference: remove what came only from the loser and is still
+     there, and keep what the survivor gained since. Mint **D291**: "an inverse may restore from a
+     before-image, through the forward paths' side effects", rewording `undoPolicy.ts`'s header
+     (the bays and landmarks already restore that way through `redraw_sub_area`'s snapshot).
+   - **(B)** Refuse the unmerge if the survivor's lists changed since the merge.
+
+   **Recommend (A).** It never refuses for an unrelated edit. An alias added later that matches a
+   loser alias goes back to the loser, which is the right home for it.
+
+##### Size, honestly
+
+| Part | Estimate |
+|---|---|
+| S4a (with fork 2 (B) and fork 3 (A)) | ~2,400 lines |
+| S4b, its tests the bulk | ~2,600 lines |
+| W6 (Drawn ~600, Shape ~1,400 with stories and wiring) | ~2,000 lines |
+| The seams | ~250 lines |
+| The fixture commit | 160 one-line changes |
+| **Total** | **~7,000–7,500 lines across ~230 files** (~70 without the fixtures) |
+
+The design estimated ~3,500 lines and ~40 files. It is over in lines for the reason #170 and #171
+were (the round trips and their matrices), and over in files only by the mechanical commit. The PR
+body says both.
+
+**The split:**
+
+- S4 becomes two builders, disjoint by file: **S4a** (the merge side, the read and the seed) and
+  **S4b** (the unmerge). The change set's types are the seam between them.
+- **W6** is one builder for both entry points. It starts at T0 on the snippets' types and wires to
+  S4a's reads when they land.
+- S4b's round trips need S4a's `version: 2` writes. S4b builds against the seam with a fixture
+  writer, and the executor runs its suite against S4a's merge at integration.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
