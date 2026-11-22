@@ -583,6 +583,8 @@ export const NOTIFICATION_QUEUE_KINDS = [
   'bounty_request', // `bounty_request` — a bounty opened where you reported
   'bounty_answered', // `bounty_answered` — a report landed on your bounty
   'activity', // `activity_detected` — an unreported skate (A08 §2.4)
+  'request_decided', // `moderator_decision` — an ask you filed or a body you drew, decided (D285)
+  'alert_retracted', // `moderator_decision` — your live access alert, retracted by a moderator (D285)
 ] as const;
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
