@@ -24,6 +24,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { STAYS_BEHIND_CAP } from './bodyConsole';
 import { BACKFILL_PHASES, reviewAuditOf } from './inboxItems';
 import { readSnapshot } from './lib/audit';
 import { bodySource, fileMember } from './lib/inboxItems';
@@ -401,8 +402,74 @@ describe('the merge’s refusals (fork 3)', () => {
     if (!preview.ok) throw new Error(preview.refusal);
     expect(preview.moves.putIns).toEqual({ count: MERGE_ROWS_PER_KIND + 1, capped: true });
     expect(preview).toMatchObject({ tooBig: true, code: 'tooBig' });
+    // The kinds after the one that stopped the count were never read: said to be cut, not zeroed —
+    // and the ones before it, read whole, still split exactly.
+    expect(preview.favoritesDeduped).toEqual({ count: 0, capped: true });
+    expect(preview.baysClashing).toEqual({ names: [], capped: true });
+    expect(preview.moves.flags.capped).toBe(false);
     await expect(w.merge()).rejects.toThrow(MERGE_TOO_BIG);
     expect(MERGE_ROWS_PER_KIND).toBeLessThan(8_192);
+  });
+
+  test('what stays behind is counted to its cap, and one row past it says the count is a floor', async () => {
+    const w = await pair();
+    const stays = async (alerts: number, lots: number) => {
+      await w.t.run(async (ctx) => {
+        const putInId = await ctx.db.insert('putIns', {
+          waterBodyId: w.survivor,
+          coord: { lat: LAT, lng: LNG },
+          source: 'osm',
+          status: 'visible',
+          createdAt: NOW,
+        });
+        const parkingAreaId = await ctx.db.insert('parkingAreas', {
+          coord: { lat: LAT, lng: LNG },
+          source: 'osm',
+          status: 'visible',
+          amenities: [],
+          createdAt: NOW,
+        });
+        for (let i = 0; i < alerts; i++) {
+          await ctx.db.insert('accessAlerts', {
+            targetType: 'put_in',
+            putInId,
+            waterBodyId: w.loser,
+            reason: 'not_plowed',
+            kind: 'blocker',
+            createdByUserId: w.skater.id,
+            createdAt: NOW,
+            season: 2025,
+            status: 'expired',
+            confirmCount: 0,
+            denyCount: 0,
+          } as never);
+        }
+        for (let i = 0; i < lots; i++) {
+          await ctx.db.insert('parkingAreaBodies', {
+            parkingAreaId,
+            waterBodyId: w.loser,
+            inferred: true,
+            createdAt: NOW,
+          });
+        }
+      });
+      const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+        loserId: w.loser,
+        survivorId: w.survivor,
+      });
+      if (!preview.ok) throw new Error(preview.refusal);
+      return preview.staysBehind;
+    };
+    // At the cap: exact.
+    expect(await stays(STAYS_BEHIND_CAP, STAYS_BEHIND_CAP)).toEqual({
+      accessAlerts: { count: STAYS_BEHIND_CAP, capped: false },
+      parkingLots: { count: STAYS_BEHIND_CAP, capped: false },
+    });
+    // One past it: the count stops at the cap and says it is a floor.
+    expect(await stays(1, 1)).toEqual({
+      accessAlerts: { count: STAYS_BEHIND_CAP, capped: true },
+      parkingLots: { count: STAYS_BEHIND_CAP, capped: true },
+    });
   });
 
   test('the drawer never merges their own drawing (D289): one sentence and code on both entry points', async () => {
@@ -687,11 +754,14 @@ describe('the preview says what the merge moves', () => {
     // Every kind is in the world, so a count can't agree by both being zero.
     expect(Object.values(counted).every((n) => n > 0)).toBe(true);
     expect(Object.values(preview.moves).some((c) => c.capped)).toBe(false);
-    expect(preview.favoritesDeduped).toBe(cs.deletedFavorites.length);
-    expect(preview.favoritesDeduped).toBe(1);
-    expect(preview.baysClashing).toEqual(['North Bay']);
+    expect(preview.favoritesDeduped).toEqual({ count: cs.deletedFavorites.length, capped: false });
+    expect(preview.favoritesDeduped.count).toBe(1);
+    expect(preview.baysClashing).toEqual({ names: ['North Bay'], capped: false });
     expect(cs.subAreasDelisted).toHaveLength(1);
-    expect(preview.staysBehind).toEqual({ accessAlerts: 1, parkingLots: 0 });
+    expect(preview.staysBehind).toEqual({
+      accessAlerts: { count: 1, capped: false },
+      parkingLots: { count: 0, capped: false },
+    });
     expect(preview).toMatchObject({ tooBig: false, refusal: null, code: null });
     expect(preview.lists.caps).toEqual({ pins: 8, aliases: 20, links: 8 });
   });

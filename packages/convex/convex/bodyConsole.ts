@@ -923,7 +923,7 @@ export const depthChoices = query({
 
 // ── Merge into another body (B01-5d) ─────────────────────────────────────────────────────────────
 
-/** Rows that stay on the loser a preview counts, at most — a floor past it. */
+/** Rows of one kind that stay on the loser a preview counts — past it the count is a floor, flagged. */
 export const STAYS_BEHIND_CAP = 200;
 
 /**
@@ -939,19 +939,32 @@ export type MergePreview =
       loser: BodyRefView;
       /** Rows that move, by kind, each `{ count, capped }` (a floor once the read stopped). */
       moves: Record<MergeMoveKind, MergeCount>;
-      /** The loser's favorites dropped because their owner already favorited the survivor. */
-      favoritesDeduped: number;
-      /** The loser's bays the merge would delist for a name a survivor bay already has. */
-      baysClashing: string[];
-      /** The union of the moderators' lists, against their caps. */
+      /**
+       * The loser's favorites dropped because their owner already favorited the survivor. Counted
+       * whenever the favorites were (`moves.favorites` not capped) — then exact; else not counted:
+       * `{ count: 0, capped: true }`, a floor, never a zero passed off as exact.
+       */
+      favoritesDeduped: MergeCount;
+      /**
+       * The loser's bays the merge would delist for a name a survivor bay already has: every one when
+       * the loser's bays were all counted (`moves.subAreas` not capped); else not read — `capped`.
+       */
+      baysClashing: { names: string[]; capped: boolean };
+      /**
+       * The union of the moderators' lists, against their caps — exact always: read from the two
+       * bodies' own lists, each bounded at its writer by its cap, with no read that can cut it.
+       */
       lists: {
         pins: number;
         aliases: number;
         links: number;
         caps: { pins: number; aliases: number; links: number };
       };
-      /** What stays on the loser (B01-5d fork 2's remainder), each counted to `STAYS_BEHIND_CAP`. */
-      staysBehind: { accessAlerts: number; parkingLots: number };
+      /**
+       * What stays on the loser (B01-5d fork 2's remainder), each counted to `STAYS_BEHIND_CAP`:
+       * `capped` when a row past the cap was there, so the count is a floor ("200 or more").
+       */
+      staysBehind: { accessAlerts: MergeCount; parkingLots: MergeCount };
       /** Past one transaction's budget (or an ask group past its cap): the merge would be refused. */
       tooBig: boolean;
       /**
@@ -969,7 +982,8 @@ export type MergePreview =
  * (`lib/mergeLoad`'s `mergeLoadOf`, which `merge` asks before it writes) — never a second estimate.
  * Favorites a person already holds on the survivor are counted apart (dropped, not moved), as are
  * flags whose flagger already flagged the survivor (they stay). Bounded: the load stops at the
- * transaction's budget, and the follow-up reads run only when the merge fits.
+ * transaction's budget, and each follow-up read runs only over a kind the load counted whole. Every
+ * number a bound can cut carries `capped`; `lists` has no bound to cut it.
  */
 export const mergePreview = query({
   args: { loserId: v.id('waterBodies'), survivorId: v.id('waterBodies') },
@@ -994,10 +1008,11 @@ export const mergePreview = query({
     const moves = Object.fromEntries(
       MERGE_MOVE_KINDS.map((k) => [k, { ...load.moves[k] }]),
     ) as Record<MergeMoveKind, MergeCount>;
-    let favoritesDeduped = 0;
-    const baysClashing: string[] = [];
-    if (!load.tooBig) {
-      // Each split as the merge splits it — the read bounded by the load that just fit.
+    // Each split as the merge splits it, wherever the load counted that kind whole — the read is then
+    // bounded by what the load just read; a kind it stopped short of is said to be cut, not zeroed.
+    const favoritesDeduped: MergeCount = { count: 0, capped: moves.favorites.capped };
+    const baysClashing = { names: [] as string[], capped: moves.subAreas.capped };
+    if (!moves.favorites.capped) {
       for await (const fav of ctx.db
         .query('waterBodyFavorites')
         .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))) {
@@ -1007,9 +1022,11 @@ export const mergePreview = query({
             q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
           )
           .first();
-        if (twin) favoritesDeduped++;
+        if (twin) favoritesDeduped.count++;
       }
-      moves.favorites.count -= favoritesDeduped;
+      moves.favorites.count -= favoritesDeduped.count;
+    }
+    if (!moves.flags.capped) {
       let flagsLeft = 0;
       for (const status of OPEN_FLAG_STATUSES) {
         for await (const f of ctx.db
@@ -1021,6 +1038,8 @@ export const mergePreview = query({
         }
       }
       moves.flags.count -= flagsLeft;
+    }
+    if (!moves.subAreas.capped) {
       // A name clash with a live survivor bay — the merge's own rule (`namesMeet`), in its order: a
       // moved bay that clears joins the names a later one is held to.
       const taken = (await subAreasForBody(ctx, survivorId))
@@ -1029,7 +1048,7 @@ export const mergePreview = query({
       for (const bay of await subAreasForBody(ctx, loserId)) {
         if (bay.removedAt !== undefined) continue;
         const names = bayNames(bay);
-        if (taken.some((other) => namesMeet(names, other))) baysClashing.push(bay.name);
+        if (taken.some((other) => namesMeet(names, other))) baysClashing.names.push(bay.name);
         else taken.push(names);
       }
     }
@@ -1037,11 +1056,16 @@ export const mergePreview = query({
     const alerts = await ctx.db
       .query('accessAlerts')
       .withIndex('by_water_body_status_kind_expires_at', (q) => q.eq('waterBodyId', loserId))
-      .take(STAYS_BEHIND_CAP);
+      .take(STAYS_BEHIND_CAP + 1);
     const lots = await ctx.db
       .query('parkingAreaBodies')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
-      .take(STAYS_BEHIND_CAP);
+      .take(STAYS_BEHIND_CAP + 1);
+    // One row past the cap says there are more: the count stops at the cap and says it's a floor.
+    const upTo = (rows: unknown[]): MergeCount => ({
+      count: Math.min(rows.length, STAYS_BEHIND_CAP),
+      capped: rows.length > STAYS_BEHIND_CAP,
+    });
     return {
       ok: true,
       survivor: survivorRef,
@@ -1059,7 +1083,7 @@ export const mergePreview = query({
           links: MAX_REFERENCE_LINKS,
         },
       },
-      staysBehind: { accessAlerts: alerts.length, parkingLots: lots.length },
+      staysBehind: { accessAlerts: upTo(alerts), parkingLots: upTo(lots) },
       tooBig: load.tooBig,
       refusal: load.tooBig ? MERGE_TOO_BIG : null,
       code: load.tooBig ? 'tooBig' : null,

@@ -692,8 +692,8 @@ describe('the seed, end to end', () => {
       },
     );
     expect(preview).toMatchObject({
-      favoritesDeduped: 1,
-      baysClashing: ['Proof Bay'],
+      favoritesDeduped: { count: 1, capped: false },
+      baysClashing: { names: ['Proof Bay'], capped: false },
       lists: { pins: 1, aliases: 2, links: 2 },
       tooBig: false,
     });
