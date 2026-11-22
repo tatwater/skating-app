@@ -151,7 +151,7 @@ import {
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
-import { MERGE_TOO_BIG, mergeLoadOf, RETARGET_CAP } from './lib/mergeLoad';
+import { MERGE_TOO_BIG, type MergeCost, mergeLoadOf, RETARGET_CAP } from './lib/mergeLoad';
 import { enqueueModeratorDecision } from './lib/notificationQueue';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { reasonFor } from './lib/peopleCan';
@@ -4596,6 +4596,9 @@ export const retireAbsorbedBodies = internalMutation({
       };
     };
 
+    /** Pairs this call had no room left for (R10-C): sent back, as given, for the next call. */
+    const deferred: typeof pairs = [];
+    let mergedHere = 0;
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
       const absorbed = await byKey(pair.absorbed);
@@ -4648,6 +4651,31 @@ export const retireAbsorbedBodies = internalMutation({
         if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
         continue;
       }
+      // An unmerge still running on either body (R10-A): its later pages move rows back from the
+      // survivor, and an absorb in between would strand them — skipped and named, as a person's merge
+      // is refused. The next pass takes the pair once the unmerge is done.
+      if (unmergeRunningOn(survivor) !== null || unmergeRunningOn(absorbed) !== null) {
+        skip('an unmerge is still running on one of them', label);
+        continue;
+      }
+      // The merge's weight (R10-C), from the one function a person's merge asks (`lib/mergeLoad`): a
+      // body too heavy for one transaction is skipped, named and put in front of a person — never a
+      // batch that dies on it — in the dry run too, so the dry run predicts the apply.
+      const load = await mergeLoadOf(ctx, absorbed, survivor);
+      if (load.tooBig) {
+        skip('too much moves for one transaction, so a person merges them', label);
+        if (apply === true) await flagAsDuplicates(ctx, [survivor._id, absorbed._id]);
+        continue;
+      }
+      // And the batch as a whole stays inside one transaction: a merge starts only while this one's
+      // whole estimate still fits what the transaction has left (live metrics, as `inboxBatch`'s
+      // closers ask). Past that, this pair and the rest go back to the caller, untouched, to send
+      // again — never retired here, never counted as skipped. The call's first merge always runs: the
+      // weight check above already holds it to a whole transaction, so every call advances.
+      if (apply === true && mergedHere > 0 && !(await roomFor(ctx, load.cost))) {
+        deferred.push(...pairs.slice(pairs.indexOf(pair)));
+        break;
+      }
       // What the survivor holds now — merged under its own name, as the merge merges, so an alias
       // the merge drops for matching that name is never carried into a later cap check. The absorbed
       // row's lists live on in the survivor's; it is never a side of a pair again this pass.
@@ -4667,6 +4695,7 @@ export const retireAbsorbedBodies = internalMutation({
       });
       if (apply === true) {
         const campaign = campaignId ? ` (${campaignId})` : '';
+        mergedHere++;
         await mergeBodyInto(ctx, {
           survivor,
           loser: absorbed,
@@ -4691,9 +4720,26 @@ export const retireAbsorbedBodies = internalMutation({
       ),
       skipped,
       skippedSamples,
+      /**
+       * Pairs this call had no room left for in its transaction (R10-C), as given, untouched: the
+       * caller sends them again. Empty on a dry run, which merges nothing.
+       */
+      deferred,
     };
   },
 });
+
+/** Whether the transaction still has room for a cost on every axis Convex limits (live metrics). */
+async function roomFor(ctx: MutationCtx, cost: MergeCost): Promise<boolean> {
+  const m = await ctx.meta.getTransactionMetrics();
+  return (
+    m.bytesRead.remaining >= cost.bytesRead &&
+    m.bytesWritten.remaining >= cost.bytesWritten &&
+    m.documentsRead.remaining >= cost.documentsRead &&
+    m.documentsWritten.remaining >= cost.documentsWritten &&
+    m.databaseQueries.remaining >= cost.databaseQueries
+  );
+}
 
 /**
  * Public: a single water body for its detail view (D47). **Follows `mergedIntoId` to the survivor**

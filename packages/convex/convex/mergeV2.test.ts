@@ -1047,3 +1047,127 @@ describe('the backfill and the repair (drawn:merged)', () => {
     expect((await w.t.run((ctx) => reviewAuditOf(ctx, w.loser)))?._id).toBe(unmerged);
   });
 });
+
+describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () => {
+  /** A catalog lake with a key the pass resolves it by. */
+  const catalog = (t: T, key: string) =>
+    body(t, `Lake ${key}`, 0.01, { externalId: key, osmId: key } as Partial<Doc<'waterBodies'>>);
+  const pairOf = (survivor: string, absorbed: string) => ({
+    survivor: { source: 'osm', externalId: survivor },
+    absorbed: { source: 'osm', externalId: absorbed },
+  });
+  const retire = (t: T, pairs: ReturnType<typeof pairOf>[]) =>
+    t.mutation(internal.waterBodies.retireAbsorbedBodies, { pairs, apply: true });
+  const mergedAway = async (t: T, key: string) =>
+    (
+      await t.run((ctx) =>
+        ctx.db
+          .query('waterBodies')
+          .withIndex('by_external_id', (q) => q.eq('source', 'osm').eq('externalId', key))
+          .unique(),
+      )
+    )?.dedupStatus === 'merged';
+
+  test('one too-heavy body among ordinary ones: skipped, named and flagged; the rest retired', async () => {
+    const t = harness();
+    const ids: Record<string, Id<'waterBodies'>> = {};
+    for (const key of ['s1', 'a1', 's2', 'h2', 's3', 'a3']) ids[key] = await catalog(t, key);
+    // Past the rows of one kind a merge moves: too heavy, whatever the transaction has left.
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= MERGE_ROWS_PER_KIND; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: ids.h2 as Id<'waterBodies'>,
+          coord: { lat: LAT, lng: LNG },
+          source: 'osm',
+          status: 'visible',
+          createdAt: NOW,
+        });
+      }
+    });
+    const res = await retire(t, [pairOf('s1', 'a1'), pairOf('s2', 'h2'), pairOf('s3', 'a3')]);
+    expect(res.retired).toBe(2);
+    expect(res.deferred).toEqual([]);
+    expect(res.skipped).toEqual({
+      'too much moves for one transaction, so a person merges them': 1,
+    });
+    expect([
+      await mergedAway(t, 'a1'),
+      await mergedAway(t, 'h2'),
+      await mergedAway(t, 'a3'),
+    ]).toEqual([true, false, true]);
+    // Put in front of a person: the duplicate queue.
+    expect((await t.run((ctx) => ctx.db.get(ids.h2 as Id<'waterBodies'>)))?.dedupStatus).not.toBe(
+      'clean',
+    );
+    // The dry run predicts it the same way.
+    const dry = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [pairOf('s2', 'h2')],
+    });
+    expect(dry.skipped).toEqual({
+      'too much moves for one transaction, so a person merges them': 1,
+    });
+  });
+
+  test('a pair one of whose bodies is mid-unmerge is skipped and named, never absorbed', async () => {
+    const t = harness();
+    const survivor = await catalog(t, 'u-s');
+    await catalog(t, 'u-a');
+    const unmergeId = await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: survivor,
+        reason: 'Two lakes',
+        metadata: { done: false },
+        createdAt: NOW,
+      }),
+    );
+    await t.run((ctx) => ctx.db.patch(survivor, { unmergeActionId: unmergeId }));
+    const res = await retire(t, [pairOf('u-s', 'u-a')]);
+    expect(res).toMatchObject({
+      retired: 0,
+      skipped: { 'an unmerge is still running on one of them': 1 },
+    });
+    expect(await mergedAway(t, 'u-a')).toBe(false);
+  });
+
+  test('bodies that together pass one transaction: the rest come back, and the next calls take them', async () => {
+    const t = harness();
+    const keys = [1, 2, 3].map((i) => ({ s: `big-s${i}`, a: `big-a${i}` }));
+    for (const k of keys) {
+      await catalog(t, k.s);
+      const absorbed = await catalog(t, k.a);
+      // Four launches whose names no writer caps, each near the document limit: ~3.6 MiB a merge
+      // moves — one fits a transaction, two never do.
+      for (let start = 0; start < 4; start += 2) {
+        await t.run(async (ctx) => {
+          for (let i = start; i < start + 2; i++) {
+            await ctx.db.insert('putIns', {
+              waterBodyId: absorbed,
+              coord: { lat: LAT, lng: LNG },
+              source: 'osm',
+              status: 'visible',
+              name: `${i}${'P'.repeat(900 * 1024)}`,
+              createdAt: NOW,
+            });
+          }
+        });
+      }
+    }
+    let pending = keys.map((k) => pairOf(k.s, k.a));
+    let calls = 0;
+    let retired = 0;
+    while (pending.length > 0) {
+      calls++;
+      if (calls > 10) throw new Error('the pass never finished');
+      const res = await retire(t, pending);
+      // Each call advances, and none dies on the transaction's limits (the harness enforces them).
+      expect(res.retired).toBeGreaterThan(0);
+      retired += res.retired;
+      pending = res.deferred;
+    }
+    expect(retired).toBe(3);
+    expect(calls).toBeGreaterThan(1);
+    for (const k of keys) expect(await mergedAway(t, k.a)).toBe(true);
+  }, 120_000);
+});
