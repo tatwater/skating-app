@@ -383,7 +383,9 @@ export const Board26: Story = {
     await expect(slot(head, 'flag-head-sub')).toHaveTextContent('Other · 6 hours ago');
     const history = slot(head, 'flag-history');
     await expect(history).toHaveTextContent('Open in Body');
-    await expect(history).toHaveAttribute('href', '/admin/body/wb_morey');
+    // The handler's own router link, as the story board builds it (`storyLink`: a hash, no navigation).
+    await expect(history).toHaveAttribute('href', '#/admin/body/wb_morey');
+    await expect(history.tagName).toBe('A');
     await expect(slot(canvasElement, 'subject-name')).toHaveTextContent('“Fairlee launch closed”');
     const card = slot(canvasElement, 'alert-card');
     await expect(card).toHaveTextContent('Fairlee town launch');

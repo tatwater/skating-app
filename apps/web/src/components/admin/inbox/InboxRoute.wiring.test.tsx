@@ -1,8 +1,13 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { Toaster } from '@/components/kit/toast';
+import { KeysProvider } from '@/lib/keys';
 
 import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
 import { FAILED_READ } from '../reads/readFailureFixtures';
+import { UndoProvider } from '../shell/undo';
+import { ALERT_ITEM } from './handlers/Flag/flagFixtures';
 import { ALL_OPEN_ROWS, LANES } from './list/inboxFixtures';
 import type { InboxLanesView } from './list/inboxTypes';
 import {
@@ -20,6 +25,12 @@ import { ITEM_FAILED } from './words/inboxWords';
  * pieces' own tests couldn't see it — through the shared harness (`testing/routeHarness`), which
  * stands in only the router, the role and the read layer and records every read's arguments.
  */
+
+// A handler's writes (the flag handler's, opened below) are bound, never called, here.
+vi.doMock('convex/react', async (orig) => ({
+  ...(await orig<typeof import('convex/react')>()),
+  useMutation: () => async () => ({}),
+}));
 
 const { Route: InboxRoute, mount } = await installInboxRouteMocks();
 
@@ -151,5 +162,30 @@ describe('an item the server couldn’t read (R8: a required row past the budget
     expect(within(pane).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     // The list beside it still draws: one failed read takes down its own block, not the page.
     expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+  });
+});
+
+describe('the flag handler’s Open in Body', () => {
+  it('is the router’s link with the way back, as every handler builds it', () => {
+    h.lanes = LANES;
+    h.here = `/admin/inbox?lane=contentFlags&item=${ALERT_ITEM.itemId}`;
+    h.search = { lane: 'contentFlags', item: ALERT_ITEM.itemId };
+    h.answers['inbox:item'] = () => ({ item: ALERT_ITEM, pending: false });
+    render(
+      <Toaster>
+        <UndoProvider server={{ latestOwn: async () => null, run: async () => {} }}>
+          <InboxRoute />
+        </UndoProvider>
+      </Toaster>,
+      { wrapper: KeysProvider },
+    );
+    const link = must(
+      document.querySelector<HTMLElement>('[data-slot="flag-history"]'),
+      'the link',
+    );
+    expect(link).toHaveTextContent('Open in Body');
+    const to = new URL(must(link.getAttribute('href'), 'href'), 'https://gli.test');
+    expect(to.pathname).toBe('/admin/body/wb_morey');
+    expect(to.searchParams.get('from')).toBe(h.here);
   });
 });

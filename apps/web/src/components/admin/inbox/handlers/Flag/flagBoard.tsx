@@ -6,6 +6,7 @@ import { createToastManager, Toaster } from '@/components/kit/toast';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
 import type { AroundState } from '../../around/AroundLine';
 import { AroundSheet } from '../../around/AroundSheet';
+import { storyLink } from '../../inboxBoard';
 import { AuthorMenuView, type MenuLever } from '../../inspector/AuthorMenu';
 import type { HandlerKey, InboxHandler } from '../../inspector/handlerRegistry';
 import { InspectorFrame } from '../../inspector/InspectorFrame';
@@ -81,6 +82,7 @@ export function StoryFlagInspector({
       HAS_PLACE.has(item.target.targetType) && { map: mapSlot ?? <MapStandIn /> }),
     onWrite,
     pane,
+    bodyLink: (id) => storyLink(`/admin/body/${id}`),
     ...(author !== null &&
       !author.person.deleted && {
         authorMenu: (

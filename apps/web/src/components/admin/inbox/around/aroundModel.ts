@@ -5,12 +5,12 @@ import {
   type ObservedFrom,
   zonedInstantOnDayOf,
 } from '@skating/core';
+import { formatDistance } from '../../body/tabs/places/placesModel';
 import {
   dayKey,
   dayLabel,
   inchesFigure,
   measuredMeanCm,
-  milesWords,
   readingCm,
   skateTimes,
 } from '../handlers/Flag/flagFormat';
@@ -114,7 +114,8 @@ function rowOf(report: AroundReportView, isThis: boolean, timeZone?: string): Ar
     isThis,
     time: skateTimes(report.skateStartTime, report.skateEndTime, timeZone),
     vantage: report.observedFrom === null ? null : VANTAGE_WORDS[report.observedFrom],
-    distance: isThis || report.distanceMeters === null ? null : milesWords(report.distanceMeters),
+    distance:
+      isThis || report.distanceMeters === null ? null : formatDistance(report.distanceMeters),
     down: status === 'hidden' || status === 'removed' ? status : null,
   };
 }
