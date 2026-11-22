@@ -13,7 +13,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
-import { INBOX_LEAVE_COST, loopPath, offset, PREFS_OFF, prefsDrifted } from './inboxSeed';
+import {
+  INBOX_LEAVE_COST,
+  loopPath,
+  offset,
+  PREFS_OFF,
+  prefsDrifted,
+  seedSteps,
+} from './inboxSeed';
 import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
@@ -477,12 +484,53 @@ async function runSeed(t: T) {
   throw new Error('the seed did not settle in 20 waves');
 }
 
+/** A registered Convex function as its module exports it: its kind and visibility. */
+type Registered = {
+  isQuery?: boolean;
+  isMutation?: boolean;
+  isAction?: boolean;
+  isPublic?: boolean;
+  isInternal?: boolean;
+};
+
+/** The function a step names (`module:export`), from the deployment's own modules. */
+async function registered(fn: string): Promise<Registered | undefined> {
+  const [path, name] = fn.split(':') as [string, string];
+  const load = modules[`./${path}.ts`];
+  if (!load) return undefined;
+  const mod = (await load()) as Record<string, unknown>;
+  return mod[name] as Registered | undefined;
+}
+
+/**
+ * Why a step can't be made the way the script makes it, or `null`: a step made as a person goes out
+ * through `convex run --identity`, which reaches **public** functions only — an internal one is "Could
+ * not find function" on the deployment, though it resolves in-process (the `mp-bounty` step on #173).
+ */
+function unreachable(as: SeedCall['as'], fn: string, f: Registered | undefined) {
+  if (f === undefined) return `${fn} is not a function the deployment has`;
+  if (!(f.isQuery || f.isMutation || f.isAction)) return `${fn} is not a query, mutation or action`;
+  if (as !== 'bare' && (f.isInternal === true || f.isPublic !== true)) {
+    return `${fn} is internal, so a call as a person can't reach it`;
+  }
+  return null;
+}
+
+/**
+ * File one step as the script does: as its person (or bare), through the function's own kind — and
+ * only if the script could reach it, so a step the deployment would refuse fails here too. Its args
+ * meet the function's validator: convex-test checks them, as the deployment does.
+ */
 async function fileStep(t: T, call: SeedCall) {
-  const ref = makeFunctionReference<'mutation'>(call.fn);
-  if (call.as === 'bare') return t.mutation(ref, call.args);
-  const subject = call.as === 'operator' ? OPERATOR : call.clerkUserId;
-  if (!subject) throw new Error(`no subject for ${call.key}`);
-  return t.withIdentity({ subject, via: 'seed-inbox' }).mutation(ref, call.args);
+  const f = await registered(call.fn);
+  const why = unreachable(call.as, call.fn, f);
+  if (why !== null) throw new Error(why);
+  const subject = call.as === 'bare' ? null : call.as === 'operator' ? OPERATOR : call.clerkUserId;
+  if (subject === undefined) throw new Error(`no subject for ${call.key}`);
+  const as = subject === null ? t : t.withIdentity({ subject, via: 'seed-inbox' });
+  if (f?.isAction) return as.action(makeFunctionReference<'action'>(call.fn), call.args);
+  if (f?.isQuery) return as.query(makeFunctionReference<'query'>(call.fn), call.args);
+  return as.mutation(makeFunctionReference<'mutation'>(call.fn), call.args);
 }
 
 beforeEach(() => {
@@ -549,6 +597,40 @@ const lanesOf = async (t: T) => {
     lanes: Object.fromEntries(view.lanes.map((l) => [l.lane, { open: l.open, ...l.facets }])),
   };
 };
+
+describe('every step of the plan, as the script makes it', () => {
+  test('a step made as a person names a public function — never an internal one', async () => {
+    // Statically, over the whole plan — not only the steps a run here reaches: the script makes a
+    // person's step through `convex run --identity`, which finds public functions only.
+    const steps = seedSteps();
+    expect(steps).toHaveLength(121);
+    const refused: string[] = [];
+    for (const step of steps) {
+      const why = unreachable(step.as, step.fn, await registered(step.fn));
+      if (why !== null) refused.push(`${step.key}: ${why}`);
+    }
+    expect(refused).toEqual([]);
+    expect(steps.filter((s) => s.as !== 'bare').length).toBeGreaterThan(100);
+  });
+
+  test('the check refuses an internal function as a person, and a name the deployment lacks', async () => {
+    expect(
+      unreachable('elin', 'bounties:createChecked', await registered('bounties:createChecked')),
+    ).toBe("bounties:createChecked is internal, so a call as a person can't reach it");
+    expect(
+      unreachable('bare', 'bounties:createChecked', await registered('bounties:createChecked')),
+    ).toBeNull();
+    expect(unreachable('operator', 'bounties:nope', await registered('bounties:nope'))).toBe(
+      'bounties:nope is not a function the deployment has',
+    );
+    expect(unreachable('operator', 'nowhere:x', await registered('nowhere:x'))).toBe(
+      'nowhere:x is not a function the deployment has',
+    );
+    expect(
+      unreachable('operator', 'inboxSeed:seedKey', await registered('inboxSeed:seedKey')),
+    ).toBe('inboxSeed:seedKey is not a query, mutation or action');
+  });
+});
 
 describe('the seed, end to end', () => {
   test('files every step through the real mutations; the lanes hold the plan; a second run files nothing; the clear puts every table back', async () => {
@@ -629,6 +711,7 @@ describe('the seed, end to end', () => {
     expect(run.last.waiting).toEqual([]);
     expect(run.last.unavailable).toEqual([]);
     expect(run.last.ready).toEqual([]);
+    expect(run.last.done).toHaveLength(seedSteps().length);
 
     // The merge-proof pair (B01-5d) adds four open items — its drawing, an access report on each of
     // its two sides, its bay ask — and its two seed lakes' approvals to the decided.

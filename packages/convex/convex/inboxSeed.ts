@@ -1750,8 +1750,10 @@ function mergeProofSteps(): StepDef[] {
       key: 'mp-bounty',
       label: 'a bounty on the merge-proof drawing',
       as: 'elin',
-      fn: 'bounties:createChecked',
-      args: (r) => ({ waterBodyId: cove(r), weatherReopenedReports: [] }),
+      // The public action a person posts a bounty through (a call as a person reaches only public
+      // functions). On the fresh drawing there's no report to weigh, so it fetches no weather.
+      fn: 'bounties:create',
+      args: (r) => ({ waterBodyId: cove(r) }),
       find: (ctx, r) =>
         findOn(
           ctx,

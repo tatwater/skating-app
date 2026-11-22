@@ -24,6 +24,7 @@ import {
   applySeed,
   type Call,
   describePlan,
+  errorLine,
   planSeed,
   runLogName,
   serverSentence,
@@ -132,7 +133,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     process.exit(main());
   } catch (err) {
-    say(`failed: ${err instanceof Error ? err.message : String(err)}`);
+    say(`failed: ${errorLine(err)}`);
     process.exit(1);
   }
 }
