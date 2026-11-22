@@ -14,9 +14,11 @@
  * *too big*, so the check itself never reads more than a fraction of a transaction, however heavy the
  * loser. Counts read after a stop are floors (`capped`).
  *
- * **The asks' cap.** A merge re-targets at most `RETARGET_CAP` (1,000) asks of one kind and status.
- * Past that a group would stay behind on the loser, unrecorded — so a group past the cap is *too big*
- * too, the same refusal (fork 3).
+ * **The asks' cap.** A merge re-targets at most `RETARGET_CAP` (1,000) asks of one kind and status;
+ * past that a group would stay behind on the loser, unrecorded (fork 3). This check refuses long
+ * before: an ask's re-key costs its Inbox reconcile, so a few hundred asks already pass the queries
+ * a transaction allows. The merge itself refuses a group past the cap with the same sentence
+ * (`retargetAsks`' `refuse`), the guard for the ETL's merges, which don't ask this.
  *
  * The ETL's batch merges (`retireAbsorbedBodies`) don't ask this: several share a transaction, and
  * each absorbed duplicate is a bare catalog row. Their one guard is the asks' cap, inside the merge.
@@ -149,7 +151,7 @@ export type MergeLoad = {
   moves: Record<MergeMoveKind, MergeCount>;
   /** The projected spend, at the point the read stopped. */
   cost: MergeCost;
-  /** Past one transaction's budget, or an ask group past the cap: the merge is refused. */
+  /** Past one transaction's budget: the merge is refused. */
   tooBig: boolean;
 };
 
@@ -184,7 +186,6 @@ export async function mergeLoadOf(
     MERGE_MOVE_KINDS.map((k) => [k, { count: 0, capped: false }]),
   ) as Record<MergeMoveKind, MergeCount>;
   let stopped = false;
-  let overCap = false;
 
   /**
    * Stream `rows` into `kind`'s count, charging each. Returns false once the merge is too big (every
@@ -193,10 +194,8 @@ export async function mergeLoadOf(
   const tally = async (
     kind: MergeMoveKind | 'survivorSubAreas' | 'survivorLandmarks',
     rows: AsyncIterable<{ _id: string }>,
-    bound: { cap?: number; limit?: number } = {},
+    limit = Number.POSITIVE_INFINITY,
   ): Promise<boolean> => {
-    const cap = bound.cap ?? Number.POSITIVE_INFINITY;
-    const limit = bound.limit ?? Number.POSITIVE_INFINITY;
     const into = kind === 'survivorSubAreas' || kind === 'survivorLandmarks' ? null : moves[kind];
     if (stopped) {
       if (into) into.capped = true;
@@ -207,12 +206,6 @@ export async function mergeLoadOf(
       // Past the merge's own read of this range: rows it never touches.
       if (inGroup >= limit) break;
       inGroup++;
-      if (inGroup > cap) {
-        overCap = true;
-        stopped = true;
-        if (into) into.capped = true;
-        return false;
-      }
       charge(cost, PER_ROW[kind], getDocumentSize(row as never));
       if (into) into.count++;
       if (!fitsOneTransaction(cost)) {
@@ -225,7 +218,7 @@ export async function mergeLoadOf(
   };
 
   const db = ctx.db;
-  // The asks first: a group past the cap is the refusal whatever else moves.
+  // The asks first: their re-keys are the merge's most expensive rows.
   for (const kind of REQUEST_KINDS) {
     for (const status of REQUEST_STATUSES) {
       await tally(
@@ -235,7 +228,6 @@ export async function mergeLoadOf(
           .withIndex('by_water_body', (q) =>
             q.eq('waterBodyId', loserId).eq('kind', kind).eq('status', status),
           ),
-        { cap: RETARGET_CAP },
       );
     }
   }
@@ -244,7 +236,6 @@ export async function mergeLoadOf(
     db
       .query('corpusPlaceNames')
       .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', loserId).eq('status', 'open')),
-    { cap: RETARGET_CAP },
   );
   for (const status of OPEN_FLAG_STATUSES) {
     await tally(
@@ -254,7 +245,6 @@ export async function mergeLoadOf(
         .withIndex('by_target_status_reason', (q) =>
           q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
         ),
-      { cap: RETARGET_CAP },
     );
   }
   await tally(
@@ -308,7 +298,7 @@ export async function mergeLoadOf(
         .withIndex('by_water_body_removed', (q) =>
           q.eq('waterBodyId', id).eq('removedAt', undefined),
         ),
-      { limit: MAX_LANDMARKS_PER_BODY },
+      MAX_LANDMARKS_PER_BODY,
     );
     await tally(
       kind,
@@ -316,10 +306,10 @@ export async function mergeLoadOf(
         .query('bodyLandmarks')
         .withIndex('by_water_body_removed', (q) => q.eq('waterBodyId', id).gt('removedAt', 0))
         .order('desc'),
-      { limit: MAX_LANDMARKS_PER_BODY },
+      MAX_LANDMARKS_PER_BODY,
     );
   }
-  return { moves, cost, tooBig: stopped || overCap };
+  return { moves, cost, tooBig: stopped };
 }
 
 /** A merge's survivor and loser as the check and the write both name them. */

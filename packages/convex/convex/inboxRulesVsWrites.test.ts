@@ -638,6 +638,27 @@ const requestCells: Cell[] = [
     verbs: ['approve', 'decline'],
     setup: (w) => ask(w, w.author.as, 'name_bay'),
   },
+  // Waiting on a drawing, but decided already: the earlier rule answers, and no code rides with it.
+  {
+    kind: 'place (bay, not drawn)',
+    state: 'already decided',
+    verbs: ['approve'],
+    setup: async (w) => {
+      const s = await ask(w, w.author.as, 'name_bay');
+      await w.other.as.mutation(api.corpusRequests.decline, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      return s;
+    },
+  },
+  // Waiting on a drawing, but the viewer's own: the earlier rule answers, and no code rides with it.
+  {
+    kind: 'place (bay, not drawn)',
+    state: 'the viewer’s own filing',
+    verbs: ['approve'],
+    setup: (w) => ask(w, w.viewer.as, 'name_bay'),
+  },
   // An approval's bay closes the asks by every one of its names — past the ask's own item (PR #170).
   {
     kind: 'place (bay, drawn with an alias)',
@@ -1144,14 +1165,21 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
  * report, with its file and line. Listed so the table passes until each lands, and failing once one
  * agrees and is still here, so the list only shrinks.
  */
-const AWAITING_THE_WRITE: Record<string, string> = {};
+const AWAITING_THE_WRITE: Record<string, string> = {
+  // Found by B01-5d's canCode cells: `corpusRequests.approve` refuses a bay not drawn yet
+  // (`corpusRequests.ts:842`) before it asks the Inbox's rule (`assertMayDecide`, reached through
+  // `closeRequest`), so the viewer's own ask is told to draw the bay — the rule says another staffer
+  // decides it. The fix: ask `assertMayDecide` before the kind's own preconditions. A seam request.
+  'place (bay, not drawn) · the viewer’s own filing · approve': 'corpusRequests.ts:842',
+};
 
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {
     // 141 through B01-5b; B01-5c added *Same place*'s ten and a restore's and a takedown's twelve.
-    // B01-5d added *Merge into*'s nine: the overlap, the drawer, decided, a first candidate merged
-    // away, a candidate gone, the lists' cap, and the drawing over new water.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(172);
+    // B01-5d added *Merge into*'s nine — the overlap, the drawer, decided, a first candidate merged
+    // away, a candidate gone, the lists' cap, the drawing over new water — and a bay ask awaiting
+    // its drawing that is decided, or the viewer's own (its code must not ride an earlier refusal).
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(174);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {

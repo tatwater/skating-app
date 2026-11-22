@@ -16,6 +16,7 @@ import {
   DECIDED_REFUSAL,
   inboxCan,
   OWN_FILING_REFUSAL,
+  preconditionCode,
   preconditionRefusal,
   verbsOf,
   whoRefusal,
@@ -284,5 +285,22 @@ describe('the read’s answer is the write’s', () => {
       whoRefusal(viewer('moderator'), item({ kind: 'ticket' }), 'resolve', false) as string,
     );
     void mod;
+  });
+});
+
+describe('preconditionCode (B01-5d): awaitsDrawing only for an Approve waiting on a drawing', () => {
+  test('a bay or a landmark not drawn yet, on Approve; nothing else, on no other verb', () => {
+    const bay = { requestKind: 'name_bay' as const, bayMissing: 'No sub-area yet' };
+    const landmark = { requestKind: 'name_landmark' as const, landmarkMissing: 'No landmark yet' };
+    expect(preconditionCode('approve', bay)).toBe('awaitsDrawing');
+    expect(preconditionCode('approve', landmark)).toBe('awaitsDrawing');
+    expect(preconditionCode('sameAs', bay)).toBeUndefined();
+    expect(preconditionCode('decline', landmark)).toBeUndefined();
+    expect(
+      preconditionCode('approve', { requestKind: 'name_bay', bayMissing: null }),
+    ).toBeUndefined();
+    expect(
+      preconditionCode('approve', { requestKind: 'admit', hasCandidate: false, resolveError: 'x' }),
+    ).toBeUndefined();
   });
 });
