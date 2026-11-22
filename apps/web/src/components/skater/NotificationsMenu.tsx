@@ -1,4 +1,5 @@
 import { api } from '@skating/convex/api';
+import { NOTIFICATION_TYPES } from '@skating/core';
 import { useRouter } from '@tanstack/react-router';
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
@@ -24,6 +25,9 @@ import { panelLinkState } from './panels/panelNavigation';
  */
 const PAGE_SIZE = 20;
 
+/** Every type this build's core words, sent on each list read (one array, so the args stay equal). */
+const KNOWS: string[] = [...NOTIFICATION_TYPES];
+
 export function NotificationsMenu({ container }: { container?: HTMLElement | null } = {}) {
   const router = useRouter();
   const { capture } = useAnalytics();
@@ -32,7 +36,9 @@ export function NotificationsMenu({ container }: { container?: HTMLElement | nul
 
   const { results, status, loadMore } = usePaginatedQuery(
     api.notifications.list,
-    open ? {} : 'skip',
+    // The types this build words (B01-5): without it the server serves a type newer than every
+    // installed phone — a moderator's decision — as the `unknown` row.
+    open ? { knows: KNOWS } : 'skip',
     { initialNumItems: PAGE_SIZE },
   );
   const markRead = useMutation(api.notifications.markRead);

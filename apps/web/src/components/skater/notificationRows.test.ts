@@ -1,4 +1,4 @@
-import type { NotificationView } from '@skating/core';
+import { describeNotification, type NotificationView } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -90,6 +90,17 @@ describe('notificationMark', () => {
     expect(notificationMark(v({ type: 'content_flag_resolved', resolution: 'dismissed' }))).toEqual(
       { kind: 'icon', icon: 'flag' },
     );
+    // A moderator's decision: on an ask or a drawing, the filed page; on an alert, the flag.
+    for (const about of ['admit', 'name_landmark', 'name_bay', 'drawn'] as const) {
+      expect(
+        notificationMark(v({ type: 'moderator_decision', about, outcome: 'approved', body })),
+      ).toEqual({ kind: 'icon', icon: 'report' });
+    }
+    expect(
+      notificationMark(
+        v({ type: 'moderator_decision', about: 'accessAlert', outcome: 'retracted', body }),
+      ),
+    ).toEqual({ kind: 'icon', icon: 'flag' });
     expect(notificationMark(v({ type: 'favorite_report', target, body, count: 1 }))).toEqual({
       kind: 'icon',
       icon: 'report',
@@ -128,6 +139,38 @@ describe('notificationRowHref', () => {
     expect(
       notificationRowHref(v({ type: 'content_flag_resolved', resolution: 'actioned' })),
     ).toBeNull();
+  });
+});
+
+describe('a moderator’s decision', () => {
+  it('is worded by core, kept as its own kind, and goes to its body when there is one', () => {
+    const views = [
+      v({ type: 'moderator_decision', about: 'admit', outcome: 'approved', body }, { id: 'm1' }),
+      v(
+        {
+          type: 'moderator_decision',
+          about: 'name_landmark',
+          outcome: 'declined',
+          body,
+          note: 'Already on the map as The Narrows',
+        },
+        { id: 'm2' },
+      ),
+      v(
+        { type: 'moderator_decision', about: 'drawn', outcome: 'rejected', body: null },
+        { id: 'm3' },
+      ),
+    ];
+    const rows = notificationRows(views, new Set(), NOW, ZONE);
+    rows.forEach((row, i) => {
+      const words = describeNotification(views[i] as NotificationView, { timeZone: ZONE });
+      // The sentence is core's, word for word — this module adds none.
+      expect(row.title).toBe(words.title);
+      expect(row.detail).toBe(words.detail);
+      expect(row.kind).toBe('moderator_decision');
+    });
+    expect(rows[0]?.href).toBe(notificationRowHref(views[0] as NotificationView));
+    expect(rows[2]?.href).toBe(notificationRowHref(views[2] as NotificationView));
   });
 });
 
