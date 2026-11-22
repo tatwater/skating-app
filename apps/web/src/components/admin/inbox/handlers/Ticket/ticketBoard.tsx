@@ -17,7 +17,7 @@ import type { TicketAct } from './useTicketWrites';
  */
 
 /** What a story's writes record: which lever, and what it sent. */
-export type StoryWrite = { act: TicketAct | 'cancel'; text?: string; actionId?: string };
+export type StoryWrite = { act: TicketAct; text?: string; messageId?: string };
 
 // biome-ignore lint/a11y/useAnchorContent: the view renders its label into it
 const storyLink = (path: string) => <a href={`#${path}`} onClick={(e) => e.preventDefault()} />;
@@ -58,6 +58,7 @@ function Bound({
       timeZone={TICKET_TZ}
       personLink={(id) => storyLink(`/admin/people/${id}`)}
       inboxAboutLink={(id) => storyLink(`/admin/inbox?about=${id}`)}
+      itemLink={(ref) => storyLink(`/admin/inbox?item=${ref}`)}
       draft={draft}
       onDraftText={setText}
       onDraftMode={setMode}
@@ -65,7 +66,8 @@ function Bound({
       onNote={(text) => write('note', text)}
       onResolve={() => write('resolve')}
       onReopen={() => write('reopen')}
-      onCancelReply={(actionId) => void onWrite({ act: 'cancel', actionId })}
+      onCancelReply={(messageId) => void onWrite({ act: 'cancelReply', messageId })}
+      onRemoveNote={(messageId) => void onWrite({ act: 'removeNote', messageId })}
       pending={pending}
       pane={pane}
       narrow={narrow}

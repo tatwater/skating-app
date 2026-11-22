@@ -9,6 +9,7 @@ import { InspectorProvider } from '../../inspector/inspectorContext';
 import { TicketView, type TicketViewProps } from './TicketView';
 import type { TicketDraft } from './ticketDrafts';
 import {
+  CANCEL_REFUSED,
   COLLEAGUE_SETTLING,
   EVERY_STATE,
   GONE,
@@ -20,7 +21,9 @@ import {
   NO_SENDER,
   NOTES_ONLY,
   OWN_TICKET,
+  RELATED_CAPPED,
   ROB_APPEAL,
+  SEED_TICKET,
   SUPPORT_FROM,
   TICKET_NOW,
   TICKET_TZ,
@@ -73,6 +76,8 @@ function View({
           personLink={(id) => <a href={`/admin/people/${id}`} />}
           // biome-ignore lint/a11y/useAnchorContent: the view renders its label into it
           inboxAboutLink={(id) => <a href={`/admin/inbox?about=${id}`} />}
+          // biome-ignore lint/a11y/useAnchorContent: the view renders its label into it
+          itemLink={(ref) => <a href={`/admin/inbox?item=${ref}`} />}
           draft={draft}
           onDraftText={() => {}}
           onDraftMode={() => {}}
@@ -81,6 +86,7 @@ function View({
           onResolve={() => {}}
           onReopen={() => {}}
           onCancelReply={() => {}}
+          onRemoveNote={() => {}}
           pending={null}
           pane={pane}
           {...over}
@@ -133,18 +139,24 @@ describe('the thread', () => {
     expect(within(container).queryByRole('button', { name: 'Cancel' })).toBeNull();
   });
 
-  it('counts a settling reply down with its Cancel, and the colleague’s has none', () => {
+  it('counts a settling reply down with its Cancel from the server’s `cancel`, whoever wrote it', () => {
     const onCancelReply = vi.fn();
     const mine = draw({ item: WITH_SETTLING, onCancelReply });
     const reply = slots(mine.container, 'ticket-reply')[0] as HTMLElement;
     expect(reply).toHaveTextContent('Sending in 42 s');
     fireEvent.click(within(reply).getByRole('button', { name: 'Cancel' }));
-    expect(onCancelReply).toHaveBeenCalledWith('ma_reply_rob');
+    expect(onCancelReply).toHaveBeenCalledWith(WITH_SETTLING.messages[1]?.messageId);
     mine.unmount();
+    // A colleague's: anyone with support's write may cancel it (the founder's call).
     const theirs = draw({ item: COLLEAGUE_SETTLING });
-    expect(within(theirs.container).queryByRole('button', { name: 'Cancel' })).toBeNull();
-    expect(theirs.container).toHaveTextContent('Sending in 42 s');
+    expect(within(theirs.container).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     theirs.unmount();
+    // The server refuses this viewer: no Cancel, and no Remove on the note, whatever the state.
+    const refused = draw({ item: CANCEL_REFUSED });
+    expect(within(refused.container).queryByRole('button', { name: 'Cancel' })).toBeNull();
+    expect(within(refused.container).queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(refused.container).toHaveTextContent('Sending in 42 s');
+    refused.unmount();
     // Its minute is up but the send hasn't answered: no Cancel, and never "Sent".
     const late = draw({ item: WITH_SETTLING, clock: TICKET_NOW + 60_000 });
     expect(late.container).toHaveTextContent('Sending now');
@@ -154,7 +166,7 @@ describe('the thread', () => {
   it('says a cut thread from the server’s flag, never a long one that is whole', () => {
     const cut = draw({ item: LONG_THREAD });
     expect(slots(cut.container, 'ticket-cut')[0]).toHaveTextContent(
-      'Showing the newest 50 of 300+ messages',
+      'Showing the newest 100 of 100+ messages',
     );
     // Above the messages, under the ticket's words.
     const order = [
@@ -166,7 +178,7 @@ describe('the thread', () => {
     cut.unmount();
     const whole = draw({ item: MANY_WHOLE });
     expect(slots(whole.container, 'ticket-cut')).toHaveLength(0);
-    expect(slots(whole.container, 'ticket-note')).toHaveLength(50);
+    expect(slots(whole.container, 'ticket-note')).toHaveLength(100);
   });
 
   it('draws one message, and none', () => {
@@ -186,15 +198,27 @@ describe('the person', () => {
     expect(user).toHaveTextContent('Suspended');
     expect(user).toHaveTextContent('15 Oct · set by Matt Steinberg');
     expect(user).toHaveTextContent('14 · 2 counted by the contradiction check');
+    expect(user).toHaveTextContent('Tickets2 · 1 resolved');
     const related = slots(container, 'ticket-related')[0] as HTMLElement;
-    expect(within(related).getByRole('link', { name: /Inbox/ })).toHaveAttribute(
+    const links = within(related).getAllByRole('link', { name: /Inbox/ });
+    // Each flag opens its own Inbox item, by the flag's id from the read.
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      '/admin/inbox?item=flag:f_rob_open',
+      '/admin/inbox?item=flag:f_rob_actioned',
+    ]);
+    expect(related).toHaveTextContent('Unsafe false report flag');
+    expect(related).toHaveTextContent('Actioned 11 Oct');
+  });
+
+  it('says a Related list and a ticket count the server cut, as floors and a way to the rest', () => {
+    const { container } = draw({ item: RELATED_CAPPED });
+    const related = slots(container, 'ticket-related')[0] as HTMLElement;
+    expect(related).toHaveTextContent('More flags on them');
+    expect(within(related).getAllByRole('link').at(-1)).toHaveAttribute(
       'href',
       `/admin/inbox?about=${ROB_APPEAL.person?.person.userId}`,
     );
-    expect(within(related).getByRole('link', { name: /People/ })).toHaveAttribute(
-      'href',
-      `/admin/people/${ROB_APPEAL.person?.person.userId}`,
-    );
+    expect(slots(container, 'ticket-user')[0]).toHaveTextContent('Tickets50+ · 50+ resolved');
   });
 
   it('never names someone gone, links nothing about them, and says so', () => {
@@ -209,6 +233,7 @@ describe('the person', () => {
   it('a ticket filed before a profile: no one to name, nothing related', () => {
     const { container } = draw({ item: NO_PROFILE });
     expect(container).toHaveTextContent('Someone signed in, before their profile was made');
+    expect(container).not.toHaveTextContent('Tickets');
     expect(slots(container, 'ticket-related')).toHaveLength(0);
   });
 });
@@ -256,6 +281,21 @@ describe('the dock', () => {
       'No sending address is set up, so a reply won’t be sent',
     );
     expect(container).not.toHaveTextContent('Sent from');
+  });
+
+  it('on a test person’s ticket, says a reply is saved and never emailed, before it is written', () => {
+    const { container } = draw({ item: SEED_TICKET });
+    const foot = slots(container, 'ticket-no-sender')[0];
+    expect(foot).toHaveAttribute('data-blocked', 'seed');
+    expect(foot).toHaveTextContent('never emailed');
+    expect(container).not.toHaveTextContent('Sent from');
+  });
+
+  it('draws a note’s Remove from the server’s `remove`, by that note’s id', () => {
+    const onRemoveNote = vi.fn();
+    const { container } = draw({ item: ROB_APPEAL, onRemoveNote });
+    fireEvent.click(within(container).getByRole('button', { name: 'Remove' }));
+    expect(onRemoveNote).toHaveBeenCalledWith(ROB_APPEAL.messages[0]?.messageId);
   });
 
   it('takes each mode’s cap from core, and says words past it in place, the send held', () => {

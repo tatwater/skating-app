@@ -9,6 +9,7 @@ import type { DecidedState } from '../../inspector/InspectorFrame';
 import { StoryTicketInspector, type StoryWrite } from './ticketBoard';
 import { forgetTicketDrafts } from './ticketDrafts';
 import {
+  CANCEL_REFUSED,
   COLLEAGUE_SETTLING,
   EVERY_STATE,
   GONE,
@@ -17,8 +18,10 @@ import {
   NO_PROFILE,
   NO_SENDER,
   OWN_TICKET,
+  RELATED_CAPPED,
   RESOLVED,
   ROB_APPEAL,
+  SEED_TICKET,
   TICKET_NOW,
   UNANSWERED,
   WITH_SETTLING,
@@ -126,7 +129,7 @@ export const Unanswered: Story = {
   },
 };
 
-/** The viewer's reply settling: its countdown and Cancel, which is its Undo. */
+/** The viewer's reply settling: its countdown and Cancel (`support.cancelReply`). */
 export const Settling: Story = {
   render: () => inspector(WITH_SETTLING, { clock: TICKET_NOW }),
   play: async ({ canvasElement }) => {
@@ -135,19 +138,35 @@ export const Settling: Story = {
     await expect(reply).toHaveTextContent('Sending in 42 s');
     await userEvent.click(within(reply).getByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
-      expect(onWrite).toHaveBeenCalledWith({ act: 'cancel', actionId: 'ma_reply_rob' }),
+      expect(onWrite).toHaveBeenCalledWith({
+        act: 'cancelReply',
+        messageId: WITH_SETTLING.messages[1]?.messageId,
+      }),
     );
   },
 };
 
-/** A colleague's reply settling: the countdown, no Cancel for this viewer. */
+/** A colleague's reply settling: anyone with support's write may cancel it (anyone pitches in). */
 export const ColleagueSettling: Story = {
   render: () => inspector(COLLEAGUE_SETTLING, { clock: TICKET_NOW }),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
       await expect(reply).toHaveTextContent('Sending in 42 s');
-      await expect(within(reply).queryByRole('button', { name: 'Cancel' })).toBeNull();
+      await expect(within(reply).getByRole('button', { name: 'Cancel' })).toBeVisible();
+    }
+  },
+};
+
+/** The server refuses this viewer a cancel and a removal: the countdown, no Cancel, no Remove. */
+export const CancelRefused: Story = {
+  render: () => inspector(CANCEL_REFUSED, { clock: TICKET_NOW }),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
+      await expect(reply).toHaveTextContent('Sending in 42 s');
+      await expect(within(q).queryByRole('button', { name: 'Cancel' })).toBeNull();
+      await expect(within(q).queryByRole('button', { name: 'Remove' })).toBeNull();
     }
   },
 };
@@ -169,14 +188,14 @@ export const EveryState: Story = {
   },
 };
 
-/** A busy ticket: the newest 50 of 300+, said under the ticket; the thread scrolls, the dock stays. */
+/** A busy ticket: the newest 100 of 100+, said under the ticket; the thread scrolls, the dock stays. */
 export const LongThread: Story = {
   render: () => inspector(LONG_THREAD),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       await layoutOf(q, 'columns');
       await expect(
-        within(q).getByText('Showing the newest 50 of 300+ messages'),
+        within(q).getByText('Showing the newest 100 of 100+ messages'),
       ).toBeInTheDocument();
       await waitFor(() => {
         const scroller = must(q.querySelector<HTMLElement>('[data-slot="ticket-thread-scroll"]'));
@@ -196,6 +215,28 @@ export const NoSender: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       await expect(within(q).getByText(/No sending address is set up/)).toBeVisible();
+    }
+  },
+};
+
+/** A test person's ticket (the dev seed): a reply is saved here and never emailed, said up front. */
+export const SeedTicket: Story = {
+  render: () => inspector(SEED_TICKET),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(within(q).getByText(/never emailed/)).toBeVisible();
+      await expect(within(q).queryByText(/Sent from/)).toBeNull();
+    }
+  },
+};
+
+/** Related's list and the ticket count cut by the server: floors, and the way to the rest. */
+export const RelatedCapped: Story = {
+  render: () => inspector(RELATED_CAPPED),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(within(q).getByText('More flags on them')).toBeVisible();
+      await expect(within(q).getByText('50+ · 50+ resolved')).toBeVisible();
     }
   },
 };

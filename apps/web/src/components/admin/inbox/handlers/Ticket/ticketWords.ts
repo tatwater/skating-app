@@ -33,15 +33,12 @@ export const TICKET_WORDS = {
     `Showing the newest ${countOf(shown)} of ${countOf(total, floor)} ${
       total === 1 && !floor ? 'message' : 'messages'
     }`,
-  /** Coined: the server cut the thread without a count to set it against. */
-  shownNewest: (shown: number) =>
-    `Showing the newest ${countOf(shown)} ${shown === 1 ? 'message' : 'messages'}`,
 
   // ── A reply's state ────────────────────────────────────────────────────────────────────────
   /** Coined: "Sending in 42 s". */
   sendingIn: (seconds: number) => `Sending in ${seconds} s`,
   sendingNow: 'Sending now',
-  /** The reply's own cancel while it settles (its Undo, through the undo engine). */
+  /** A settling reply's cancel (`support.cancelReply`), drawn where the server's `cancel` is null. */
   cancel: 'Cancel',
   cancelWhat: 'Cancel this reply before it is sent',
   sent: 'Sent',
@@ -74,9 +71,10 @@ export const TICKET_WORDS = {
    * sending domain takes no mail; every reply's footer tells them to write back from the app).
    */
   sentFrom: (address: string) => `Sent from ${address}.`,
-  sentFromSupport: 'Sent from the support address.',
   /** Coined: the variable is unset, so a reply would read Not sent — said before it is written. */
   noSender: 'No sending address is set up, so a reply won’t be sent: it will read Not sent.',
+  /** Coined: a test person's ticket (`replyBlocked: 'seed'`) — the seed's people are never emailed. */
+  seedNoSend: 'A test person’s ticket: a reply is saved here and never emailed.',
   answersNotRead: 'Their answer by email isn’t read.',
   noteFoot: 'Seen only by staff who answer support.',
   /** A form's own check (D268: in place, never a toast). */
@@ -92,12 +90,20 @@ export const TICKET_WORDS = {
   until: (day: string, by: string) => `${day} · set by ${by}`,
   related: 'Related',
   /** Coined: Related's rows, from the person's own standing (the read serves no list of them yet). */
-  openFlagsOnThem: 'Open flags on them',
-  openFlagsCount: (n: string) => `${n} waiting in the Inbox`,
+  /** Coined: a flag on Related, by its reason ("Unsafe false report flag"). */
+  flagTitle: (reason: string) => `${reason} flag`,
+  /** Coined: an open flag's line ("report · 4 days ago"). */
+  openFlagSub: (target: string, age: string) => `${target} · ${age}`,
+  /** Coined: an actioned flag's line ("Actioned 11 Oct"). */
+  actionedSub: (when: string) => `Actioned ${when}`,
   inbox: 'Inbox',
-  earlierActioned: 'Earlier flags actioned',
-  earlierCount: (n: string, last: string | null) => (last === null ? n : `${n} · last ${last}`),
-  people: 'People',
+  /** Coined: the server cut Related's list. */
+  moreFlags: 'More flags on them',
+  moreFlagsSub: 'The rest are in the Inbox',
+  /** Board 2.8's *Tickets* row: "2 · 1 resolved", a floor past the server's bound. */
+  tickets: 'Tickets',
+  ticketsCount: (total: number, resolved: number, floor: boolean) =>
+    `${countOf(total, floor)} · ${countOf(resolved, floor)} resolved`,
   nothingRelated: 'Nothing else open on them',
   resolve: 'Resolve',
   resolveWhat: 'Close the ticket: it leaves the queue, and Undo or Reopen brings it back',
@@ -122,4 +128,15 @@ export const TICKET_WORDS = {
   resolvedDetail: 'It leaves the queue',
   reopened: 'Reopened',
   reopenedDetail: 'It is back in the queue',
+  /** Coined: a reply written while the server says it won't be sent (`replyBlocked`). */
+  replySaved: 'Reply saved, not sent',
+  replyWontSend: (why: string) => `It won’t be emailed: ${why}`,
+  /** Coined: a note's *Remove* (`support.removeNote`), drawn where the server's `remove` is null. */
+  remove: 'Remove',
+  removeWhat: 'Remove this note from the thread',
+  theRemoval: 'Removing the note',
+  theCancel: 'Canceling the reply',
+  noteRemovedReceipt: 'Note removed',
+  replyCanceled: 'Reply canceled',
+  replyCanceledDetail: 'It was never sent',
 } as const;

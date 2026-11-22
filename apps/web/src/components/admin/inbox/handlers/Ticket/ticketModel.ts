@@ -6,62 +6,29 @@ import { dayTime } from '../Flag/flagFormat';
 import { TICKET_WORDS as W } from './ticketWords';
 
 /**
- * **What board 2.8 draws, as data** — the ticket item the handler is handed, and the pure rules over
- * it: the thread in order, each reply's state, the cut line, the levers from `can`, the dock's modes.
+ * **What board 2.8 draws, as data** — the ticket item the handler is handed (`inbox.item`'s `ticket`
+ * variant, as S6 serves it), and the pure rules over it: the thread in order, each reply's state, the
+ * cut line, the levers from `can`, the dock's modes.
  *
- * **The item, as the server will serve it.** `inbox.item`'s `ticket` variant is the published
- * contract; S6 fills in its `messages` (B01-5f). Until that lands, what this handler reads past the
- * published type is typed here ({@link TicketItem}) and built on fixtures — each field a server ask
- * the integrator wires to the real read:
- *
- * - each message's `removedAt`, and for a reply its `failedWhy` (the stored class) and `undo` (its
- *   audit row, when this viewer may cancel it now — the undo engine's own answer);
- * - `messagesCut` and `messageCount`: the thread is bounded (the newest N), and the cut line says so
- *   from the server's flag and count, never from the list's length;
- * - `replyFrom`: the support address a reply is sent from, `null` while it is unset (then a reply
- *   reads *Not sent*, and the dock says so before it is written).
+ * Every lever on a message is the server's: a note's `remove` and a settling reply's `cancel` are
+ * `null` where this viewer may act now, else the sentence the write refuses with (D217) — drawn only
+ * where `null`. The cut line reads the server's `messagesCut` against its `messageCount`, never the
+ * list's length; the dock reads `replyFrom` and `replyBlocked`, never the environment.
  */
 
-type ServerTicket = Extract<InboxItemView, { kind: 'ticket' }>;
+/** The ticket item as the server serves it. */
+export type TicketItem = Extract<InboxItemView, { kind: 'ticket' }>;
 
 /** A person as the thread names them (the server's `PersonRefView`). */
-export type TicketPerson = NonNullable<ServerTicket['ticket']['resolvedBy']>;
-
-export type ReplyStatus = 'settling' | 'sent' | 'canceled' | 'failed';
-
-/** Why a reply wasn't sent — the stored class, never an address or the provider's words. */
-export type FailedWhy = 'unconfigured' | 'seed' | 'noAddress' | 'sendFailed';
+export type TicketPerson = NonNullable<TicketItem['ticket']['resolvedBy']>;
 
 /** A note or a reply on the ticket. */
-export type TicketMessage = {
-  messageId: string;
-  kind: 'note' | 'reply';
-  author: TicketPerson | null;
-  body: string;
-  createdAt: number;
-  /** Taken back (a note's Undo): drawn as a line, its words never shown. */
-  removedAt: number | null;
-  reply: {
-    status: ReplyStatus;
-    sendAfter: number;
-    sentAt: number | null;
-    failedWhy: FailedWhy | null;
-    /** The reply's audit row, when this viewer may cancel it now (the undo engine's rule). */
-    undo: { actionId: string } | null;
-  } | null;
-};
+export type TicketMessage = TicketItem['messages'][number];
 
-/** The ticket item as the handler draws it: the published variant, its thread filled in. */
-export type TicketItem = Omit<ServerTicket, 'messages'> & {
-  /** Oldest first: the newest the read holds, drawn oldest to newest. */
-  messages: TicketMessage[];
-  /** The read stopped short of the whole thread (the server's own word). */
-  messagesCut: boolean;
-  /** How many messages the thread holds; `capped` past the count's own bound ("300+"). */
-  messageCount: { count: number; capped: boolean };
-  /** The support address replies are sent from; `null` while none is set up. */
-  replyFrom: string | null;
-};
+export type ReplyStatus = NonNullable<TicketMessage['reply']>['status'];
+
+/** Why a reply wasn't sent — the stored class, never an address or the provider's words. */
+export type FailedWhy = NonNullable<NonNullable<TicketMessage['reply']>['failedWhy']>;
 
 // ── The head ─────────────────────────────────────────────────────────────────────────────────
 
@@ -119,7 +86,9 @@ export function threadOf(item: Pick<TicketItem, 'ticket' | 'messages'>): ThreadE
     .sort((a, b) => a.msg.createdAt - b.msg.createdAt || a.i - b.i)
     .map(
       ({ msg }): ThreadEntry =>
-        msg.removedAt !== null ? { kind: 'removed', msg } : { kind: 'message', msg },
+        msg.removedAt !== null || msg.body === null
+          ? { kind: 'removed', msg }
+          : { kind: 'message', msg },
     );
   return [{ kind: 'ticket', at: item.ticket.createdAt, body: item.ticket.body }, ...messages];
 }
@@ -131,12 +100,10 @@ export function threadOf(item: Pick<TicketItem, 'ticket' | 'messages'>): ThreadE
 export function cutLine(
   item: Pick<TicketItem, 'messages' | 'messagesCut' | 'messageCount'>,
 ): string | null {
-  if (item.messagesCut !== true) return null;
+  if (!item.messagesCut) return null;
   const shown = item.messages.length;
-  const total = item.messageCount;
-  return total === undefined || total === null
-    ? W.shownNewest(shown)
-    : W.shownOf(shown, Math.max(total.count, shown), total.capped);
+  // Cut: the thread holds more than it served, so the count is a floor ("100+").
+  return W.shownOf(shown, Math.max(item.messageCount, shown), true);
 }
 
 /** Who wrote in, as the thread names them: their name, or the words for someone gone. */
@@ -159,8 +126,8 @@ export function askerShown(item: Pick<TicketItem, 'person'>): string | null {
 // ── A reply's state ──────────────────────────────────────────────────────────────────────────
 
 export type ReplyState =
-  /** Waiting out its minute: the seconds left, and whether this viewer may cancel it. */
-  | { kind: 'settling'; seconds: number; cancel: { actionId: string } | null }
+  /** Waiting out its minute: the seconds left, and whether this viewer may cancel it (the server's). */
+  | { kind: 'settling'; seconds: number; canCancel: boolean }
   /** Its minute is up and the send hasn't answered yet: no cancel offered. */
   | { kind: 'sending' }
   | { kind: 'sent'; at: number | null }
@@ -173,7 +140,7 @@ export function replyState(reply: NonNullable<TicketMessage['reply']>, now: numb
     case 'settling': {
       const left = reply.sendAfter - now;
       return left > 0
-        ? { kind: 'settling', seconds: Math.ceil(left / 1000), cancel: reply.undo }
+        ? { kind: 'settling', seconds: Math.ceil(left / 1000), canCancel: reply.cancel === null }
         : { kind: 'sending' };
     }
     case 'sent':

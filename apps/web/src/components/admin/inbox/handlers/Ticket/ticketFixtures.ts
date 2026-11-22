@@ -6,7 +6,7 @@ import type { AuthorBlockData } from '../Flag/flagTypes';
 import type { TicketItem, TicketMessage, TicketPerson } from './ticketModel';
 
 /**
- * **Board 2.8's tickets, as `inbox.item` will return them** once S6 fills in the thread — for
+ * **Board 2.8's tickets, as `inbox.item` returns them** (S6's `ticket` variant) — for
  * stories and tests only (`fixturesStayInStories.test.ts`). The board's appeal from Rob Tremblay
  * with Matt's note, and every other state a ticket's thread and levers can be in, each with the
  * `can` its viewer would be answered.
@@ -47,6 +47,23 @@ export const ROB_USER: AuthorBlockData = {
 /** Every verb an open ticket's viewer with support's write is allowed. */
 export const OPEN_CAN = { reply: null, note: null, resolve: null };
 
+/** The server's sentences a message's levers refuse with (`lib/supportThread`). */
+export const NOT_A_NOTE = 'Only a note is removed; a reply is canceled while it settles.';
+export const SENT_REFUSAL = 'Sent replies can’t be unsent.';
+export const UNSENT_REFUSAL = 'This reply wasn’t sent, so there is nothing to cancel.';
+export const CANCELED_REFUSAL = 'This reply was already canceled.';
+export const OWN_FILING = 'You filed this ticket, so another staff member answers it.';
+
+/** What a reply's `cancel` says in each state: `null` only while it settles. */
+const cancelOf = (status: NonNullable<TicketMessage['reply']>['status']): string | null =>
+  status === 'settling'
+    ? null
+    : status === 'sent'
+      ? SENT_REFUSAL
+      : status === 'canceled'
+        ? CANCELED_REFUSAL
+        : UNSENT_REFUSAL;
+
 let n = 0;
 const message = (
   kind: 'note' | 'reply',
@@ -55,25 +72,51 @@ const message = (
   body: string,
   reply: Partial<NonNullable<TicketMessage['reply']>> | null = null,
   removedAt: number | null = null,
-): TicketMessage => ({
-  messageId: `m_${kind}_${++n}`,
-  kind,
-  author: ref(author),
-  body,
-  createdAt,
-  removedAt,
-  reply:
-    kind === 'note'
-      ? null
-      : {
-          status: 'sent',
-          sendAfter: createdAt + 60_000,
-          sentAt: createdAt + 61_000,
-          failedWhy: null,
-          undo: null,
-          ...reply,
-        },
-});
+): TicketMessage => {
+  const status = reply?.status ?? 'sent';
+  return {
+    messageId: id<'supportMessages'>(`m_${kind}_${++n}`),
+    kind,
+    author: ref(author),
+    // A removed note's words are never served (its undo puts them back).
+    body: removedAt === null ? body : null,
+    createdAt,
+    removedAt,
+    remove:
+      kind === 'note' ? (removedAt === null ? null : 'This note was already removed.') : NOT_A_NOTE,
+    reply:
+      kind === 'note'
+        ? null
+        : {
+            status,
+            sendAfter: createdAt + 60_000,
+            sentAt: createdAt + 61_000,
+            failedWhy: null,
+            cancel: cancelOf(status),
+            ...reply,
+          },
+  };
+};
+
+/** Rob's flags on 2.8's *Related*: the open one in Safety, and the one actioned on 11 Oct. */
+export const ROB_FLAGS: TicketItem['related']['flags'] = [
+  {
+    flagId: id<'contentFlags'>('f_rob_open'),
+    reason: 'unsafe_false_report',
+    targetType: 'report',
+    status: 'open',
+    createdAt: at(10, 13, 8),
+    resolvedAt: null,
+  },
+  {
+    flagId: id<'contentFlags'>('f_rob_actioned'),
+    reason: 'unsafe_false_report',
+    targetType: 'report',
+    status: 'actioned',
+    createdAt: at(10, 9, 8),
+    resolvedAt: at(10, 11, 9),
+  },
+];
 
 /** 2.8's note, as the board draws it. */
 export const MATT_NOTE = message(
@@ -108,19 +151,22 @@ export const ROB_APPEAL = {
   },
   messages: [MATT_NOTE],
   messagesCut: false,
-  messageCount: { count: 1, capped: false },
+  messageCount: 1,
   replyFrom: SUPPORT_FROM,
+  replyBlocked: null,
+  personTickets: { total: 2, resolved: 1, capped: false },
   person: ROB_USER,
-} as unknown as TicketItem;
+  related: { flags: ROB_FLAGS, capped: false },
+} satisfies TicketItem as TicketItem;
 
 /** A ticket nobody has answered yet: its words alone. */
 export const UNANSWERED = {
   ...ROB_APPEAL,
   messages: [],
-  messageCount: { count: 0, capped: false },
+  messageCount: 0,
 } as TicketItem;
 
-/** The viewer's own reply, 42 s from sending: its Cancel is its Undo. */
+/** The viewer's own reply, 42 s from sending: its Cancel (`support.cancelReply`). */
 export const SETTLING_REPLY = message(
   'reply',
   TEAGAN,
@@ -130,23 +176,40 @@ export const SETTLING_REPLY = message(
     status: 'settling',
     sendAfter: TICKET_NOW + 42_000,
     sentAt: null,
-    undo: { actionId: 'ma_reply_rob' },
   },
 );
 
 export const WITH_SETTLING = {
   ...ROB_APPEAL,
   messages: [MATT_NOTE, SETTLING_REPLY],
-  messageCount: { count: 2, capped: false },
+  messageCount: 2,
 } as TicketItem;
 
-/** A colleague's reply settling: no Cancel for this viewer (the undo engine's own rule). */
+/**
+ * A colleague's reply settling: anyone with support's write may cancel it (the founder's call:
+ * anyone pitches in), so its Cancel is drawn — from the server's `cancel`, never from who wrote it.
+ */
 export const COLLEAGUE_SETTLING = {
   ...ROB_APPEAL,
+  messages: [MATT_NOTE, { ...SETTLING_REPLY, author: ref(SARAH) }],
+  messageCount: 2,
+} as TicketItem;
+
+/** A settling reply this viewer may not cancel: the server's sentence, and no Cancel drawn. */
+export const CANCEL_REFUSED = {
+  ...ROB_APPEAL,
   messages: [
-    MATT_NOTE,
-    { ...SETTLING_REPLY, author: ref(SARAH), reply: { ...SETTLING_REPLY.reply, undo: null } },
+    { ...MATT_NOTE, remove: OWN_FILING },
+    {
+      ...SETTLING_REPLY,
+      author: ref(SARAH),
+      reply: {
+        ...(SETTLING_REPLY.reply as NonNullable<TicketMessage['reply']>),
+        cancel: OWN_FILING,
+      },
+    },
   ],
+  messageCount: 2,
 } as TicketItem;
 
 /** Every state a message can be in, in one thread (served out of order: the thread sorts it). */
@@ -184,13 +247,13 @@ export const EVERY_STATE = {
       sentAt: null,
     }),
   ],
-  messageCount: { count: 8, capped: false },
+  messageCount: 8,
 } as TicketItem;
 
-/** A busy ticket: the read served the newest 50 of 300+ and said it stopped short. */
+/** A busy ticket: the read served the newest 100 and said it stopped short (more than that). */
 export const LONG_THREAD = {
   ...ROB_APPEAL,
-  messages: Array.from({ length: 50 }, (_, i) =>
+  messages: Array.from({ length: 100 }, (_, i) =>
     message(
       'note',
       i % 2 === 0 ? MATT : SARAH,
@@ -199,18 +262,25 @@ export const LONG_THREAD = {
     ),
   ),
   messagesCut: true,
-  messageCount: { count: 300, capped: true },
+  messageCount: 100,
 } as TicketItem;
 
 /** Many messages served, the read not cut: no cut line, whatever the length. */
 export const MANY_WHOLE = {
   ...LONG_THREAD,
   messagesCut: false,
-  messageCount: { count: 50, capped: false },
+  messageCount: 100,
 } as TicketItem;
 
 /** No sending address is set up: the dock says a reply won't be sent, before it is written. */
-export const NO_SENDER = { ...ROB_APPEAL, replyFrom: null } as TicketItem;
+export const NO_SENDER = {
+  ...ROB_APPEAL,
+  replyFrom: null,
+  replyBlocked: 'unconfigured',
+} as TicketItem;
+
+/** A test person's ticket (the dev seed): a reply is saved and never emailed, said before writing. */
+export const SEED_TICKET = { ...ROB_APPEAL, replyBlocked: 'seed' } as TicketItem;
 
 /** Resolved by Matt: the lock, no dock, no Resolve; Reopen where `can` allows. */
 export const RESOLVED = {
@@ -251,7 +321,12 @@ export const NO_RESOLVE = {
 export const NOTES_ONLY = { ...ROB_APPEAL, can: { note: null, resolve: null } } as TicketItem;
 
 /** Filed before the person's profile was made: nobody to name, nothing related to list. */
-export const NO_PROFILE = { ...UNANSWERED, person: null } as TicketItem;
+export const NO_PROFILE = {
+  ...UNANSWERED,
+  person: null,
+  personTickets: null,
+  related: { flags: [], capped: false },
+} as TicketItem;
 
 /** Rob's account is being deleted: never named, nothing linked. */
 export const GONE = {
@@ -291,6 +366,15 @@ export const KATE_BUG = {
     openFlags: { count: 0, capped: false },
     priorActioned: { count: 0, capped: false, lastAt: null },
   },
+  personTickets: { total: 1, resolved: 0, capped: false },
+  related: { flags: [], capped: false },
+} as TicketItem;
+
+/** Related's list cut by the server: its last row says there are more, linking the Inbox. */
+export const RELATED_CAPPED = {
+  ...ROB_APPEAL,
+  related: { flags: ROB_FLAGS, capped: true },
+  personTickets: { total: 50, resolved: 50, capped: true },
 } as TicketItem;
 
 /** As the Inbox's list read hands the item (the published variant). */

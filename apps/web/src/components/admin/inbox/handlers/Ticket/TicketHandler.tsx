@@ -1,6 +1,5 @@
 import { type RefObject, useCallback, useEffect, useState } from 'react';
-
-import { useUndo } from '../../../shell/undo';
+import { type InboxQuery, inboxHref } from '../../inboxSearch';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import { TicketView } from './TicketView';
@@ -11,8 +10,8 @@ import { useTicketServer, useTicketWrites } from './useTicketWrites';
 /**
  * **The ticket handler** (board 2.8), registered for the `ticket` key (`register.tsx`): the item
  * drawn by `TicketView`, its writes bound (`useTicketWrites` → `support.reply`, `addNote`,
- * `resolve`, `reopen`), a settling reply's *Cancel* through the undo engine (its own audit row,
- * so a reply already sent is refused in the server's words), the draft kept by ticket
+ * `resolve`, `reopen`, `removeNote`, `cancelReply` — each drawn only where the server's answer
+ * allows it, a refusal in the server's words), the draft kept by ticket
  * (`ticketDrafts`), and the links through the inspector's router.
  *
  * **Focus after a write** (the console's rule: never left on the page's body). A resolve is a
@@ -21,14 +20,16 @@ import { useTicketServer, useTicketWrites } from './useTicketWrites';
  * is gone (*Cancel* once the reply is canceled, *Reopen* once reopened), the inspector pane takes
  * it, where the item's keys act.
  */
+/** The Inbox's All open list, the place a Related link starts from. */
+const ALL_OPEN: InboxQuery = { lane: 'all', facet: 'all', filter: null, item: null, from: null };
+
 export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
   // The registry hands this handler only `ticket` items (its one key).
-  const ticket = item as unknown as TicketItem;
+  const ticket = item as TicketItem;
   const { pane, timeZone, linkFor, narrow } = useInspectorContext();
   const server = useTicketServer();
   const writes = useTicketWrites(ticket, server);
   const { draft, setText, setMode, clear } = useTicketDraft(ticket.ticket.ticketId);
-  const { undo } = useUndo();
   const clock = useSecondClock(anySettling(ticket));
   const keepFocus = useKeepFocusIn(pane);
   const send = useCallback(
@@ -50,7 +51,8 @@ export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
       clock={clock}
       {...(timeZone !== undefined && { timeZone })}
       personLink={(id) => link(`/admin/people/${encodeURIComponent(id)}`)}
-      inboxAboutLink={(id) => link(`/admin/inbox?about=${encodeURIComponent(id)}`)}
+      itemLink={(ref) => link(inboxHref({ ...ALL_OPEN, item: ref }))}
+      inboxAboutLink={(id) => link(inboxHref({ ...ALL_OPEN, filter: { kind: 'about', id } }))}
       draft={draft}
       onDraftText={setText}
       onDraftMode={setMode}
@@ -58,10 +60,8 @@ export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
       onNote={(text) => void send(writes.note, text)}
       onResolve={() => void writes.resolve()}
       onReopen={() => void writes.reopen().then(keepFocus)}
-      onCancelReply={(actionId) => {
-        undo({ actionId, needsReason: false, action: 'support_reply' });
-        keepFocus();
-      }}
+      onCancelReply={(messageId) => void writes.cancelReply(messageId).then(keepFocus)}
+      onRemoveNote={(messageId) => void writes.removeNote(messageId).then(keepFocus)}
       pending={writes.pending}
       pane={pane}
       narrow={narrow === true}

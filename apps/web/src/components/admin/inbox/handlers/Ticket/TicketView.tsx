@@ -19,6 +19,7 @@ import { FactList } from '@/components/kit/fact-list';
 import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
+import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 import { reportsWords } from '../../blocks/AuthorBlock';
 import { LinkChip } from '../../blocks/LinkChip';
@@ -30,8 +31,9 @@ import {
   InspectorHeadEnd,
   InspectorHeadTitle,
 } from '../../inspector/InspectorFrame';
-import { countWords, dayMonth, dayTime } from '../Flag/flagFormat';
-import { FLAG_WORDS } from '../Flag/flagWords';
+import { TARGET_CHIP } from '../../words/inboxWords';
+import { dayMonth, dayTime } from '../Flag/flagFormat';
+import { FLAG_WORDS, REASON_HEAD } from '../Flag/flagWords';
 import { ReplyDock, type ReplyDockMode } from './ReplyDock';
 import { ThreadEvent, ThreadMessage } from './ThreadMessage';
 import type { TicketDraft } from './ticketDrafts';
@@ -91,9 +93,11 @@ export type TicketViewProps = {
   /** The second clock a settling reply counts down against. */
   clock: number;
   timeZone?: string;
-  /** *Open in People →* and Related's *People →*: the router's link to a person, unstyled. */
+  /** *Open in People →*: the router's link to a person, unstyled. */
   personLink: (userId: string) => ReactElement;
-  /** Related's *Inbox →*: the Inbox filtered to a person, unstyled. */
+  /** Related's *Inbox →* on one flag: the router's link to its Inbox item (`flag:<id>`), unstyled. */
+  itemLink: (ref: string) => ReactElement;
+  /** Related's last row when the server capped its list: the Inbox filtered to the person. */
   inboxAboutLink: (userId: string) => ReactElement;
   draft: TicketDraft;
   onDraftText: (text: string) => void;
@@ -102,8 +106,10 @@ export type TicketViewProps = {
   onNote: (text: string) => void;
   onResolve: () => void;
   onReopen: () => void;
-  /** A settling reply's *Cancel*: its Undo, by its audit row. */
-  onCancelReply: (actionId: string) => void;
+  /** A settling reply's *Cancel* (`support.cancelReply`), by its message. */
+  onCancelReply: (messageId: string) => void;
+  /** A note's *Remove* (`support.removeNote`), by its message. */
+  onRemoveNote: (messageId: string) => void;
   pending: TicketAct | null;
   /** The inspector pane: R acts only while focus is inside it. */
   pane?: RefObject<HTMLElement | null>;
@@ -275,7 +281,7 @@ function Entry({ entry, ...props }: TicketViewProps & { entry: ThreadEntry }) {
 }
 
 function Message({ message, ...props }: TicketViewProps & { message: TicketMessage }) {
-  const { timeZone, clock, onCancelReply } = props;
+  const { timeZone, clock, onCancelReply, onRemoveNote, pending } = props;
   const name = authorName(message.author);
   const face = shownName(message.author);
   const note = message.kind === 'note';
@@ -289,6 +295,21 @@ function Message({ message, ...props }: TicketViewProps & { message: TicketMessa
       kicker={note ? W.note : W.reply}
       at={dayTime(message.createdAt, timeZone)}
       staff={note}
+      {...(note &&
+        message.remove === null && {
+          status: (
+            <Button
+              data-slot="ticket-note-remove"
+              variant="outline"
+              size="xs"
+              title={W.removeWhat}
+              disabled={pending !== null}
+              onClick={() => onRemoveNote(message.messageId)}
+            >
+              {W.remove}
+            </Button>
+          ),
+        })}
       {...(state !== null && {
         status: (
           <>
@@ -301,13 +322,14 @@ function Message({ message, ...props }: TicketViewProps & { message: TicketMessa
             >
               {replyStateWords(state, timeZone)}
             </span>
-            {state.kind === 'settling' && state.cancel !== null && (
+            {state.kind === 'settling' && state.canCancel && (
               <Button
                 data-slot="ticket-reply-cancel"
                 variant="outline"
                 size="xs"
                 title={W.cancelWhat}
-                onClick={() => onCancelReply((state.cancel as { actionId: string }).actionId)}
+                disabled={pending !== null}
+                onClick={() => onCancelReply(message.messageId)}
               >
                 {W.cancel}
               </Button>
@@ -337,6 +359,7 @@ function Dock({
   if (mode === null) return null;
   const to = askerShown(item);
   const from = item.replyFrom;
+  const blocked = item.replyBlocked;
   const modes: ReplyDockMode<DockMode>[] = levers.modes.map((m) =>
     m === 'reply'
       ? {
@@ -345,13 +368,17 @@ function Dock({
           to: to === null ? W.toThem : W.to(to),
           field: W.replyLabel,
           foot:
-            from === null ? (
-              <span data-slot="ticket-no-sender" className="text-warn">
-                {W.noSender}
+            blocked !== null || from === null ? (
+              <span
+                data-slot="ticket-no-sender"
+                data-blocked={blocked ?? 'unconfigured'}
+                className="text-warn"
+              >
+                {blocked === 'seed' ? W.seedNoSend : W.noSender}
               </span>
             ) : (
               <>
-                {from === undefined ? W.sentFromSupport : W.sentFrom(from)} {W.answersNotRead}
+                {W.sentFrom(from)} {W.answersNotRead}
               </>
             ),
           send: W.sendReply,
@@ -423,6 +450,13 @@ function UserBlock({ item, timeZone }: TicketViewProps) {
   }
   if (!gone) {
     rows.push({ label: FLAG_WORDS.reports, value: reportsWords(author) });
+    const tickets = item.personTickets;
+    if (tickets !== null) {
+      rows.push({
+        label: W.tickets,
+        value: W.ticketsCount(tickets.total, tickets.resolved, tickets.capped),
+      });
+    }
     if (person.trustClass !== null) {
       rows.push({
         label: FLAG_WORDS.trust,
@@ -448,37 +482,31 @@ function UserBlock({ item, timeZone }: TicketViewProps) {
   );
 }
 
-function RelatedBlock({ item, timeZone, personLink, inboxAboutLink }: TicketViewProps) {
+function RelatedBlock({ item, timeZone, now, itemLink, inboxAboutLink }: TicketViewProps) {
   const author = item.person;
   if (author === null || author.person.deleted || author.standing.status === 'deleted') return null;
-  const id = author.person.userId;
-  const open = author.openFlags;
-  const prior = author.priorActioned;
-  const rows: { key: string; title: string; sub: string; link: ReactElement; label: string }[] = [];
-  if (open !== null && (open.count > 0 || open.capped)) {
+  const { flags, capped } = item.related;
+  const rows: { key: string; title: string; sub: string; link: ReactElement; label: string }[] =
+    flags.map((f) => ({
+      key: f.flagId,
+      title: W.flagTitle(REASON_HEAD[f.reason]),
+      sub:
+        f.status === 'open' || f.resolvedAt === null
+          ? W.openFlagSub(TARGET_CHIP[f.targetType], ageInWords(f.createdAt, now))
+          : W.actionedSub(dayMonth(f.resolvedAt, timeZone)),
+      link: itemLink(`flag:${f.flagId}`),
+      label: W.inbox,
+    }));
+  // A list the server cut says so, with the way to the rest: never read as all there is.
+  if (capped) {
     rows.push({
-      key: 'open',
-      title: W.openFlagsOnThem,
-      sub: W.openFlagsCount(countWords(open)),
-      link: inboxAboutLink(id),
+      key: 'more',
+      title: W.moreFlags,
+      sub: W.moreFlagsSub,
+      link: inboxAboutLink(author.person.userId),
       label: W.inbox,
     });
   }
-  if (prior.count > 0 || prior.capped) {
-    rows.push({
-      key: 'prior',
-      title: W.earlierActioned,
-      sub: W.earlierCount(
-        countWords(prior),
-        prior.lastAt === null ? null : dayMonth(prior.lastAt, timeZone),
-      ),
-      link: personLink(id),
-      label: W.people,
-    });
-  }
-  // A count the server couldn't give is not a "nothing": say nothing then.
-  const known = open !== null;
-  if (rows.length === 0 && !known) return null;
   return (
     <Section level={3} title={W.related} data-slot="ticket-related">
       {rows.length === 0 ? (

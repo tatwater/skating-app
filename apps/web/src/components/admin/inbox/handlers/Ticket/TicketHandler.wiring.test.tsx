@@ -31,8 +31,8 @@ import type { TicketItem } from './ticketModel';
  * role and the read layer stood in, plus the mutations and the undo server): a `ticket` item opens
  * this handler, not the placeholder; *Send reply* (and ⌘⏎), *Add note*, *Resolve* (and R) and
  * *Reopen* each call their write with the open item's ticket id — never the item's own id, the
- * person's, or the ticket opened before; a settling reply's *Cancel* runs the undo engine on that
- * reply's own audit row; a refusal reaches a toast in the server's words and keeps the draft; a
+ * person's, or the ticket opened before; a settling reply's *Cancel* and a note's *Remove* call
+ * `support.cancelReply` / `support.removeNote` with that message's own id; a refusal reaches a toast in the server's words and keeps the draft; a
  * resolved ticket drops the bar and the dock; a viewer without support's read sees no lever.
  */
 
@@ -288,13 +288,40 @@ describe('a ticket, through the route and the view', () => {
     await waitFor(() => expect(field()).toHaveValue('Half a thought'));
   });
 
-  it('a settling reply’s Cancel runs the undo engine on that reply’s own row', async () => {
+  it('a settling reply’s Cancel calls support.cancelReply with that reply’s own id', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: TICKET_NOW });
     open(WITH_SETTLING);
     mount();
     fireEvent.click(within(inspector()).getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(undos.run).toEqual([{ actionId: 'ma_reply_rob' }]));
-    expect(writes.calls).toEqual([]);
+    await waitFor(() =>
+      expect(called('support:cancelReply')).toEqual([
+        {
+          name: 'support:cancelReply',
+          args: { messageId: WITH_SETTLING.messages[1]?.messageId },
+        },
+      ]),
+    );
+    expect(undos.run).toEqual([]);
+  });
+
+  it('a note’s Remove calls support.removeNote with that note’s id; a refusal is a toast', async () => {
+    open(ROB_APPEAL);
+    writes.answer['support:removeNote'] = () => {
+      throw new ConvexError('This note was already removed.');
+    };
+    mount();
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Remove' }));
+    await waitFor(() =>
+      expect(called('support:removeNote')).toEqual([
+        { name: 'support:removeNote', args: { messageId: ROB_APPEAL.messages[0]?.messageId } },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Removing the note: This note was already removed.').length,
+      ).toBeGreaterThan(0),
+    );
+    expect(within(inspector()).queryByText(/already removed/)).toBeNull();
   });
 
   it('a resolved ticket drops the bar and the dock, and Reopen calls support.reopen', async () => {

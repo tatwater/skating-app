@@ -67,8 +67,8 @@ describe('the thread', () => {
   it('keeps the order served for messages written in the same instant', () => {
     const same = ROB_APPEAL.messages[0];
     if (same === undefined) throw new Error('fixture');
-    const a = { ...same, messageId: 'm_a' };
-    const b = { ...same, messageId: 'm_b' };
+    const a = { ...same, messageId: 'm_a' as typeof same.messageId };
+    const b = { ...same, messageId: 'm_b' as typeof same.messageId };
     const ids = threadOf({ ...ROB_APPEAL, messages: [a, b] }).flatMap((e) =>
       e.kind === 'ticket' ? [] : [e.msg.messageId],
     );
@@ -81,17 +81,13 @@ describe('the thread', () => {
   });
 
   it('says the thread was cut from the server’s flag and count, never from its length', () => {
-    expect(cutLine(LONG_THREAD)).toBe('Showing the newest 50 of 300+ messages');
-    // Fifty messages, the read whole: nothing said.
+    expect(cutLine(LONG_THREAD)).toBe('Showing the newest 100 of 100+ messages');
+    // A hundred messages, the read whole: nothing said.
     expect(cutLine(MANY_WHOLE)).toBeNull();
     expect(cutLine(ROB_APPEAL)).toBeNull();
-    // Cut with an exact count.
-    expect(cutLine({ ...LONG_THREAD, messageCount: { count: 51, capped: false } })).toBe(
-      'Showing the newest 50 of 51 messages',
-    );
-    // A count below what arrived never reads as fewer than shown.
-    expect(cutLine({ ...LONG_THREAD, messageCount: { count: 10, capped: false } })).toBe(
-      'Showing the newest 50 of 50 messages',
+    // A count below what arrived never reads as fewer than shown, and a cut count is a floor.
+    expect(cutLine({ ...LONG_THREAD, messageCount: 10 })).toBe(
+      'Showing the newest 100 of 100+ messages',
     );
   });
 });
@@ -126,7 +122,13 @@ describe('a reply’s state', () => {
     expect(replyState(reply, TICKET_NOW)).toEqual({
       kind: 'settling',
       seconds: 42,
-      cancel: { actionId: 'ma_reply_rob' },
+      canCancel: true,
+    });
+    // The server's sentence: no cancel for this viewer, whatever the countdown says.
+    expect(replyState({ ...reply, cancel: 'Sent replies can’t be unsent.' }, TICKET_NOW)).toEqual({
+      kind: 'settling',
+      seconds: 42,
+      canCancel: false,
     });
     expect(replyStateWords(replyState(reply, TICKET_NOW))).toBe('Sending in 42 s');
     expect(replyState(reply, reply.sendAfter)).toEqual({ kind: 'sending' });

@@ -1,6 +1,6 @@
+import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { type FunctionReference, makeFunctionReference } from 'convex/server';
 import { useCallback, useMemo } from 'react';
 
 import type { UndoTarget } from '../../../shell/undo';
@@ -15,57 +15,42 @@ import { TICKET_WORDS as W } from './ticketWords';
 
 /**
  * **The ticket handler's writes** (board 2.8, D284): *Send reply* is `support.reply` (⌘⏎), *Add
- * note* `support.addNote`, *Resolve* `support.resolve` (R), *Reopen* `support.reopen` — each with
- * the open item's ticket id, each through the Inbox's decision runner (`useDecisionRunner`): a
- * refusal is one toast in the server's words (D268), never printed in place; a landed write raises
- * the shell's receipt, its Undo from the write's own answer — a note's removes it, a reply's cancels
- * it while it settles (once sent, the server's undo refuses: "Sent replies can't be unsent"), a
- * resolve's reopens. Nothing optimistic: the thread draws what the read says.
- *
- * **The functions, by name.** S6 writes them beside this (B01-5f); until the published `api` has
- * them, each is referenced by its name with the argument and answer types the brief pack gives, and
- * the integrator swaps each for `api.support.*` (a type error then names any drift).
+ * note* `support.addNote`, *Resolve* `support.resolve` (R), *Reopen* `support.reopen`, a note's
+ * *Remove* `support.removeNote` and a settling reply's *Cancel* `support.cancelReply` — each with
+ * the open item's ids, each through the Inbox's decision runner (`useDecisionRunner`): a refusal is
+ * one toast in the server's words (D268), never printed in place; a landed write raises the shell's
+ * receipt, its Undo from the write's own answer. Nothing optimistic: the thread draws what the read
+ * says.
  */
-
-/** What a note or reply write answers: the message it wrote, its audit row and the Undo offer. */
-export type MessageAnswer = { messageId: string } & WriteAnswer;
-/** What a resolve or reopen answers: the ticket, its audit row and the Undo offer. */
-export type TicketAnswer = { ticketId: string } & WriteAnswer;
 
 type TicketArgs = { ticketId: Id<'supportTickets'> };
 type MessageArgs = TicketArgs & { body: string };
+type MessageIdArgs = { messageId: Id<'supportMessages'> };
 
-// INTEGRATOR: swap each for `api.support.reply` / `addNote` / `resolve` / `reopen` once S6 lands.
-export const TICKET_REPLY = makeFunctionReference<'mutation', MessageArgs, MessageAnswer>(
-  'support:reply',
-) as FunctionReference<'mutation', 'public', MessageArgs, MessageAnswer>;
-export const TICKET_NOTE = makeFunctionReference<'mutation', MessageArgs, MessageAnswer>(
-  'support:addNote',
-) as FunctionReference<'mutation', 'public', MessageArgs, MessageAnswer>;
-export const TICKET_RESOLVE = makeFunctionReference<'mutation', TicketArgs, TicketAnswer>(
-  'support:resolve',
-) as FunctionReference<'mutation', 'public', TicketArgs, TicketAnswer>;
-export const TICKET_REOPEN = makeFunctionReference<'mutation', TicketArgs, TicketAnswer>(
-  'support:reopen',
-) as FunctionReference<'mutation', 'public', TicketArgs, TicketAnswer>;
-
-/** The four writes, as the handler calls them (a story or a test fakes them). */
+/** The six writes, as the handler calls them (a story or a test fakes them). */
 export type TicketServer = {
-  reply: (args: MessageArgs) => Promise<MessageAnswer>;
-  addNote: (args: MessageArgs) => Promise<MessageAnswer>;
-  resolve: (args: TicketArgs) => Promise<TicketAnswer>;
-  reopen: (args: TicketArgs) => Promise<TicketAnswer>;
+  reply: (args: MessageArgs) => Promise<WriteAnswer>;
+  addNote: (args: MessageArgs) => Promise<WriteAnswer>;
+  resolve: (args: TicketArgs) => Promise<WriteAnswer>;
+  reopen: (args: TicketArgs) => Promise<WriteAnswer>;
+  removeNote: (args: MessageIdArgs) => Promise<WriteAnswer>;
+  cancelReply: (args: MessageIdArgs) => Promise<WriteAnswer>;
 };
 
 export function useTicketServer(): TicketServer {
-  const reply = useMutation(TICKET_REPLY);
-  const addNote = useMutation(TICKET_NOTE);
-  const resolve = useMutation(TICKET_RESOLVE);
-  const reopen = useMutation(TICKET_REOPEN);
-  return useMemo(() => ({ reply, addNote, resolve, reopen }), [reply, addNote, resolve, reopen]);
+  const reply = useMutation(api.support.reply);
+  const addNote = useMutation(api.support.addNote);
+  const resolve = useMutation(api.support.resolve);
+  const reopen = useMutation(api.support.reopen);
+  const removeNote = useMutation(api.support.removeNote);
+  const cancelReply = useMutation(api.support.cancelReply);
+  return useMemo(
+    () => ({ reply, addNote, resolve, reopen, removeNote, cancelReply }),
+    [reply, addNote, resolve, reopen, removeNote, cancelReply],
+  );
 }
 
-export type TicketAct = 'reply' | 'note' | 'resolve' | 'reopen';
+export type TicketAct = 'reply' | 'note' | 'resolve' | 'reopen' | 'removeNote' | 'cancelReply';
 
 /** Every write lands on the ticket: the receipt's Undo looks there, and History files it there. */
 const landedOn = (ticketId: string, answer: WriteAnswer): Landed => ({
@@ -79,11 +64,13 @@ export type TicketWrites = {
   note: (body: string) => Promise<boolean>;
   resolve: () => Promise<boolean>;
   reopen: () => Promise<boolean>;
+  removeNote: (messageId: string) => Promise<boolean>;
+  cancelReply: (messageId: string) => Promise<boolean>;
   pending: TicketAct | null;
 };
 
 export function useTicketWrites(
-  item: Pick<TicketItem, 'itemId' | 'ticket' | 'person'>,
+  item: Pick<TicketItem, 'itemId' | 'ticket' | 'person' | 'replyBlocked'>,
   server: TicketServer,
 ): TicketWrites {
   const { run, pending } = useDecisionRunner<TicketAct>({
@@ -91,15 +78,21 @@ export function useTicketWrites(
     subject: W.subject(askerShown(item)),
   });
   const ticketId = item.ticket.ticketId;
+  // A reply the server won't send (no sender set up, a test person's ticket) is saved, never "on its
+  // way": the receipt says what the read's `replyBlocked` says, as the dock did before it was written.
+  const blocked = item.replyBlocked;
   const reply = useCallback(
     (body: string) =>
       run({
         act: 'reply',
         what: W.theReply,
         write: async () => landedOn(ticketId, await server.reply({ ticketId, body })),
-        receipt: { title: W.replyQueued, description: W.replyQueuedDetail },
+        receipt:
+          blocked === null
+            ? { title: W.replyQueued, description: W.replyQueuedDetail }
+            : { title: W.replySaved, description: W.replyWontSend(W.notSentWhy[blocked]) },
       } satisfies Decision<TicketAct>),
-    [run, server, ticketId],
+    [run, server, ticketId, blocked],
   );
   const note = useCallback(
     (body: string) =>
@@ -131,5 +124,33 @@ export function useTicketWrites(
       } satisfies Decision<TicketAct>),
     [run, server, ticketId],
   );
-  return { reply, note, resolve, reopen, pending };
+  const removeNote = useCallback(
+    (messageId: string) =>
+      run({
+        act: 'removeNote',
+        what: W.theRemoval,
+        write: async () =>
+          landedOn(
+            ticketId,
+            await server.removeNote({ messageId: messageId as Id<'supportMessages'> }),
+          ),
+        receipt: { title: W.noteRemovedReceipt },
+      } satisfies Decision<TicketAct>),
+    [run, server, ticketId],
+  );
+  const cancelReply = useCallback(
+    (messageId: string) =>
+      run({
+        act: 'cancelReply',
+        what: W.theCancel,
+        write: async () =>
+          landedOn(
+            ticketId,
+            await server.cancelReply({ messageId: messageId as Id<'supportMessages'> }),
+          ),
+        receipt: { title: W.replyCanceled, description: W.replyCanceledDetail },
+      } satisfies Decision<TicketAct>),
+    [run, server, ticketId],
+  );
+  return { reply, note, resolve, reopen, removeNote, cancelReply, pending };
 }
