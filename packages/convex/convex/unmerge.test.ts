@@ -1431,7 +1431,9 @@ suite('a heavy unmerge pages', () => {
     expect(back.map((f) => f.createdAt).sort((x, y) => x - y)).toEqual(
       Array.from({ length: N }, (_, i) => i),
     );
-  }, 120_000);
+    // Its point is the real size, so it keeps the real limits and a timeout with 5x headroom over its
+    // time when every package's suite runs at once (CI's `pnpm test`, 60 s; 3.6 s alone).
+  }, 300_000);
 
   test('a loser merged again between pages: the later pages stop, its rows are that merge’s', async () => {
     const w = await world(['content']);

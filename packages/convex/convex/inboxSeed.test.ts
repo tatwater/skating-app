@@ -1189,7 +1189,9 @@ describe('the clear finds everything the seed made, whatever was merged since (B
     }
     expect((await w.t.run((ctx) => ctx.db.get(w.merged.cove)))?.reviewStatus).toBe('pending');
     await clearsEverything(w);
-  });
+    // A whole seed applied, merged, unmerged and cleared: 5x headroom over its time when every
+    // package's suite runs at once (CI's `pnpm test`, 6.9 s; under 1 s alone).
+  }, 60_000);
 });
 
 describe('the seed refuses any deployment that is not dev', () => {
