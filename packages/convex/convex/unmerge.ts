@@ -312,7 +312,7 @@ interface UnmergeMeta {
   /** The scheduled page carrying the run on — its state says whether the run is still moving. */
   nextPageId?: Id<'_scheduled_functions'>;
   /** A page found a state it couldn't carry on from, and said why. */
-  stalled?: { reason: string; at: number };
+  stalled?: { code: UnmergeStallCode; at: number };
 }
 
 /**
@@ -320,11 +320,11 @@ interface UnmergeMeta {
  * is owed, both bodies stay marked (so neither can be merged meanwhile), and `receipt` reads it stalled
  * until a moderator resumes it.
  */
-async function stall(ctx: MutationCtx, unmergeId: Id<'moderationActions'>, reason: string) {
+async function stall(ctx: MutationCtx, unmergeId: Id<'moderationActions'>, code: UnmergeStallCode) {
   const row = await ctx.db.get(unmergeId);
   if (!row) return;
   const metadata = (row.metadata ?? {}) as UnmergeMeta;
-  await ctx.db.patch(unmergeId, { metadata: { ...metadata, stalled: { reason, at: Date.now() } } });
+  await ctx.db.patch(unmergeId, { metadata: { ...metadata, stalled: { code, at: Date.now() } } });
 }
 
 // ── The run ────────────────────────────────────────────────────────────────────────────────────────
@@ -557,12 +557,13 @@ function movedCost(table: MergeChangeSet['moved'][number]['table']): TxCost {
       : table === 'waterBodyFavorites'
         ? ROW_MAX.small
         : DOC_MAX;
-  // A report re-mirrors its bay join: a small row per bay it lies in.
+  // A report re-mirrors its bay join: a small row per bay it lies in, each read (a range) and written.
   const join = table === 'reports' ? REPORT_JOIN_ROWS : 0;
   return {
     bytesRead: row + join * ROW_MAX.small + ROW_MAX.small,
     documentsRead: 2 + join,
-    databaseQueries: 3,
+    // The row's range (its patch reads within it), a twin's lookup or the join's query, one a join row.
+    databaseQueries: 3 + join,
     documentsWritten: 1 + join,
     bytesWritten: row + join * ROW_MAX.small,
   };
@@ -573,8 +574,9 @@ const REPORT_JOIN_ROWS = 50;
 
 /** A bay or a landmark put back: read whole, replaced whole. */
 const SHAPE_COST: TxCost = {
-  bytesRead: DOC_MAX,
-  documentsRead: 1,
+  // Read whole by its get, and again by its patch (the backend reads a row it patches); written whole.
+  bytesRead: 2 * DOC_MAX,
+  documentsRead: 2,
   databaseQueries: 1,
   documentsWritten: 1,
   bytesWritten: DOC_MAX,
@@ -582,11 +584,13 @@ const SHAPE_COST: TxCost = {
 
 /** A side row marked undone: it, its undone check, its target, and the row written. */
 const SIDE_COST: TxCost = {
-  bytesRead: 2 * DOC_MAX + ROW_MAX.small,
-  documentsRead: 4,
-  databaseQueries: 4,
-  documentsWritten: 3,
-  bytesWritten: 2 * ROW_MAX.small,
+  // Its audit row refreshes the body's library row in a nested call (`noteAuditedAction`): the body,
+  // its library rows and their counts, read and written — measured per kind (`unmerge.test.ts`).
+  bytesRead: 6 * DOC_MAX,
+  documentsRead: 80,
+  databaseQueries: 60,
+  documentsWritten: 30,
+  bytesWritten: 3 * DOC_MAX,
 };
 
 /** A skate or a re-created favorite: a row read and a row written. */
@@ -1039,16 +1043,16 @@ export const unmergeRest = internalMutation({
       .query('moderationActions')
       .withIndex('by_undoes', (q) => q.eq('undoesActionId', args.unmergeId))
       .first();
-    if (undone !== null) return stall(ctx, args.unmergeId, 'The unmerge was undone partway.');
+    if (undone !== null) return stall(ctx, args.unmergeId, 'undone');
     const mergeRow = await ctx.db.get(args.mergeActionId);
-    if (!mergeRow) return stall(ctx, args.unmergeId, 'The merge’s record is gone.');
+    if (!mergeRow) return stall(ctx, args.unmergeId, 'recordGone');
     const cs = await readChangeSet(ctx, mergeRow._id);
     if (cs === null || cs === 'missing') {
-      return stall(ctx, args.unmergeId, 'The merge’s record can’t be read whole.');
+      return stall(ctx, args.unmergeId, 'recordUnreadable');
     }
     const loser = await ctx.db.get(cs.loserId);
     if (!loser || loser.dedupStatus === 'merged') {
-      return stall(ctx, args.unmergeId, 'The body was merged again partway.');
+      return stall(ctx, args.unmergeId, 'mergedAgain');
     }
     await asContinuationOf(ctx, { undoOf: args.undoOf, via: args.via }, () =>
       runPage(ctx, {
@@ -1075,16 +1079,30 @@ export interface UnmergeReceipt {
   /** Every page has landed (the last recomputed the derived facts and cleared both bodies' marker). */
   done: boolean;
   /**
-   * Not done, and nothing is carrying it on: a page failed (scheduled pages aren't retried), or one
-   * found a state it couldn't carry on from — with why. `unmerge.resume` carries it on.
+   * Not done, and nothing is carrying it on — what happened, as a code the web words (never a guessed
+   * cause), with the scheduler's own error text when a page failed. `unmerge.resume` carries it on.
    */
-  stalled: { reason: string } | null;
+  stalled: UnmergeStall | null;
   /** What it left where it was, counted (by kind) and the first rows named — final once `done`. */
   left: UnmergeLeft;
 }
 
-/** Why a page that failed reads stalled. */
-export const UNMERGE_PAGE_FAILED = 'A page of the unmerge failed partway; resume it to finish.';
+/**
+ * What stopped an unmerge, as the scheduler's record of its next page says (`pageFailed`, with the
+ * scheduler's error text; `pageCanceled`; `pageMissing`, no record of it; `pageStopped`, it finished
+ * without carrying the run on), or as a page recorded on stopping itself (`undone`, `recordGone`,
+ * `recordUnreadable`, `mergedAgain`).
+ */
+export type UnmergeStallCode =
+  | 'pageFailed'
+  | 'pageCanceled'
+  | 'pageMissing'
+  | 'pageStopped'
+  | 'undone'
+  | 'recordGone'
+  | 'recordUnreadable'
+  | 'mergedAgain';
+export type UnmergeStall = { code: UnmergeStallCode; error?: string };
 
 /** The unmerge row of a merge, if one exists. */
 async function unmergeRowOfMerge(
@@ -1103,12 +1121,23 @@ async function unmergeRowOfMerge(
  * page, which is authoritative: a page pending or running carries it on; one that failed, was
  * canceled, or finished without moving the cursor on (it stalled itself, saying why) doesn't.
  */
-async function stalledOf(ctx: QueryCtx, metadata: UnmergeMeta): Promise<{ reason: string } | null> {
+async function stalledOf(ctx: QueryCtx, metadata: UnmergeMeta): Promise<UnmergeStall | null> {
   if (metadata.done === true) return null;
-  if (metadata.stalled) return { reason: metadata.stalled.reason };
+  if (metadata.stalled) return { code: metadata.stalled.code };
   const page = metadata.nextPageId ? await ctx.db.system.get(metadata.nextPageId) : null;
-  const state = page?.state.kind;
-  return state === 'pending' || state === 'inProgress' ? null : { reason: UNMERGE_PAGE_FAILED };
+  const state = page?.state;
+  if (!state) return { code: 'pageMissing' };
+  switch (state.kind) {
+    case 'pending':
+    case 'inProgress':
+      return null;
+    case 'failed':
+      return { code: 'pageFailed', ...(state.error ? { error: state.error } : {}) };
+    case 'canceled':
+      return { code: 'pageCanceled' };
+    default:
+      return { code: 'pageStopped' };
+  }
 }
 
 /**
@@ -1205,3 +1234,20 @@ export const resume = mutation({
     return { unmergeActionId: row._id };
   },
 });
+
+/**
+ * Test-only: each restored row's step and the cost its page reserves for it, so a test can measure a
+ * row of each kind against its reservation (`unmerge.test.ts`, "each restored row costs no more").
+ */
+export const UNMERGE_ROW_STEPS = {
+  moveBack,
+  activityBack,
+  favoriteBack,
+  fieldsBack,
+  beforeOf,
+  sideUndone,
+  movedCost,
+  SHAPE_COST,
+  SIDE_COST,
+  SMALL_COST,
+};

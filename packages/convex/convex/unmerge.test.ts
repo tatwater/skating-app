@@ -26,7 +26,16 @@ import { readSnapshot, writeAudit, writeSnapshot } from './lib/audit';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { refreshBodyNames } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
-import { bodySource, fileMember, flagSource, PAGE_SEAM, requestSource } from './lib/inboxItems';
+import {
+  bodySource,
+  fileMember,
+  flagSource,
+  inboxBatch,
+  PAGE_SEAM,
+  RECONCILE_COST,
+  requestSource,
+  type TxCost,
+} from './lib/inboxItems';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
 import { noteLandmarksNamed } from './lib/landmarkRows';
 import { undoState } from './lib/undo';
@@ -38,11 +47,11 @@ import {
   PHASES,
   UNMERGE_FAULT,
   UNMERGE_LOSER_MOVED,
-  UNMERGE_PAGE_FAILED,
   UNMERGE_PARTS_MISSING,
   UNMERGE_PREDATES,
   UNMERGE_RESUME_DONE,
   UNMERGE_RESUME_RUNNING,
+  UNMERGE_ROW_STEPS,
   UNMERGE_SURVIVOR_GONE,
   type UnmergeLeft,
   unmergeSurvivorMerged,
@@ -1526,10 +1535,11 @@ suite('a heavy unmerge pages', () => {
 
   test('under the harness’s real limits: a change set past one page drains, one page an execution', async () => {
     const w = await world([]);
-    // Two thousand favorites of the drawing: one merge moves them (an index range and a write each),
-    // and its change set is stored in parts. Putting each back takes two ranges (the row and its
-    // twin's lookup), so the unmerge's pages end on Convex's 4,096 ranges a transaction.
-    const N = 2_000;
+    // 1,800 favorites of the drawing: one merge moves them (two index ranges each — the lookup of a
+    // twin on the survivor and the row's patch — about 3,750 in all, as a real backend measured; 2,000
+    // could not merge at all), and its change set is stored in parts. Putting each back takes two
+    // ranges too, so with the unmerge's own reads its pages end on Convex's 4,096 ranges a transaction.
+    const N = 1_800;
     await w.t.run(async (ctx) => {
       for (let i = 0; i < N; i++) {
         const userId = await ctx.db.insert('profiles', {
@@ -1569,10 +1579,16 @@ suite('a heavy unmerge pages', () => {
             .collect(),
         )
       ).length;
-    const first = await onLoser();
-    expect(first).toBeGreaterThan(0);
-    expect(first).toBeLessThan(N);
-    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+    // A restored favorite costs what the merge spent moving it (two ranges), so the rows fit the first
+    // page as they fit the merge's one transaction; the recompute, which can't fit beside them, takes
+    // the next page (a real backend paged it the same way: two executions).
+    expect(await onLoser()).toBe(N);
+    const page1 = (await unmergeRowOf(w.t, w.loser))?.metadata as {
+      done?: boolean;
+      cursor?: unknown;
+    };
+    expect(page1?.done).toBe(false);
+    expect(page1?.cursor).toEqual({ phase: 'derived', from: 0 });
     await settle(w.t);
     expect(await onLoser()).toBe(N);
     const pages = await w.t.run((ctx) =>
@@ -1707,7 +1723,7 @@ suite('a heavy unmerge pages', () => {
     // Stopped, and said: never a silent return (R10).
     expect(
       (await w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId }))?.stalled,
-    ).toEqual({ reason: 'The unmerge was undone partway.' });
+    ).toEqual({ code: 'undone' });
   });
 });
 
@@ -1776,7 +1792,8 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
         }
         const stuck = await receiptOf(w, mergeId);
         expect(stuck?.done).toBe(false);
-        expect(stuck?.stalled).toEqual({ reason: UNMERGE_PAGE_FAILED });
+        expect(stuck?.stalled).toMatchObject({ code: 'pageFailed' });
+        // (`convex-test`'s scheduler records no error text; a deployment's does, and it rides along.)
         const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
         expect(await markers(w)).toEqual([lead._id, lead._id]);
         expect(await pendingPages(w)).toBe(0);
@@ -1872,6 +1889,112 @@ suite('the unmerge in both bodies’ History', () => {
       expect(row?.undoesActionId).toBe(mergeId);
       expect(row?.metadata).toMatchObject({ done: true, left: { count: 0 } });
     }
+  });
+});
+
+// ── Page room: each restored row costs no more than its page reserves for it ───────────────────────
+
+suite('each restored row costs no more than the page reserves for it, kind by kind', () => {
+  /** A row's step, run alone in a fresh transaction, measured on every axis a page's room asks. */
+  const measure = (t: T, step: (ctx: MutationCtx) => Promise<unknown>) =>
+    t.run(async (ctx) => {
+      const axes = [
+        'bytesRead',
+        'documentsRead',
+        'databaseQueries',
+        'documentsWritten',
+        'bytesWritten',
+      ] as const;
+      const at = async () => {
+        const m = await ctx.meta.getTransactionMetrics();
+        return Object.fromEntries(axes.map((k) => [k, m[k].used])) as Record<
+          (typeof axes)[number],
+          number
+        >;
+      };
+      let spent: Record<string, number> = {};
+      // In an Inbox batch, as a page runs it: an item's refresh is owed to the batch's end, which the
+      // page's room counts apart (`batchHasRoom`).
+      await inboxBatch(ctx, async () => {
+        const before = await at();
+        await step(ctx);
+        const after = await at();
+        spent = Object.fromEntries(axes.map((k) => [k, after[k] - before[k]]));
+      });
+      return spent as TxCost;
+    });
+  const within = (spent: TxCost, reserved: TxCost, kind: string) => {
+    for (const k of Object.keys(reserved) as (keyof TxCost)[]) {
+      expect(spent[k], `${kind}: ${k}`).toBeLessThanOrEqual(reserved[k]);
+    }
+  };
+  const plus = (a: TxCost, b: TxCost): TxCost =>
+    Object.fromEntries(
+      Object.keys(a).map((k) => [k, a[k as keyof TxCost] + b[k as keyof TxCost]]),
+    ) as TxCost;
+
+  test('moved rows of every table, skates, re-made favorites, bays, labels and side rows', async () => {
+    const w = await world();
+    const mergeId = await mergeV2(w);
+    const { cs, mergeRow } = await w.t.run(async (ctx) => ({
+      cs: (await readSnapshot<MergeChangeSet>(ctx, mergeId)) as MergeChangeSet,
+      mergeRow: (await ctx.db.get(mergeId)) as Doc<'moderationActions'>,
+    }));
+    const S = UNMERGE_ROW_STEPS;
+    const seen = new Set<string>();
+    for (const m of cs.moved) {
+      seen.add(m.table);
+      const spent = await measure(w.t, (ctx) =>
+        S.moveBack(ctx, m, w.survivor, w.loser, mergeRow.createdAt),
+      );
+      within(spent, plus(S.movedCost(m.table), RECONCILE_COST), m.table);
+    }
+    expect(seen.size).toBe(9);
+    const skate = cs.movedActivities?.[0];
+    if (!skate) throw new Error('no skate');
+    within(
+      await measure(w.t, (ctx) => S.activityBack(ctx, skate, w.survivor, w.loser)),
+      S.SMALL_COST,
+      'skate',
+    );
+    const fav = cs.deletedFavorites[0];
+    if (!fav) throw new Error('no dropped favorite');
+    within(
+      await measure(w.t, (ctx) => S.favoriteBack(ctx, fav, w.loser)),
+      S.SMALL_COST,
+      'favorite',
+    );
+    for (const table of ['waterBodySubAreas', 'bodyLandmarks'] as const) {
+      for (const after of (cs.rowsAfter ?? []).filter((r) => r.table === table)) {
+        within(
+          await measure(w.t, (ctx) => S.fieldsBack(ctx, after, S.beforeOf(cs, after))),
+          S.SHAPE_COST,
+          `${table} ${after.id}`,
+        );
+      }
+    }
+    const state = {
+      cs,
+      mergeRow,
+      unmergeId: mergeId,
+      actorId: w.actor.id,
+      cursor: { phase: 'sides' as const, from: 0 },
+      left: { count: 0, byKind: {}, rows: [] },
+    };
+    for (const side of cs.sideActions ?? []) {
+      within(
+        await measure(w.t, (ctx) => S.sideUndone(ctx, cs, side, state)),
+        S.SIDE_COST,
+        `side ${side}`,
+      );
+    }
+    // The side rows were written (their targets put back above), so each measured its whole path.
+    const undone = await w.t.run(async (ctx) =>
+      (await ctx.db.query('moderationActions').collect()).filter((r) =>
+        (cs.sideActions ?? []).includes(r.undoesActionId as Id<'moderationActions'>),
+      ),
+    );
+    expect(undone).toHaveLength(cs.sideActions?.length ?? 0);
   });
 });
 
