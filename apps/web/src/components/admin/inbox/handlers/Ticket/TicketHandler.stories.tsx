@@ -134,9 +134,13 @@ export const Settling: Story = {
   render: () => inspector(WITH_SETTLING, { clock: TICKET_NOW }),
   play: async ({ canvasElement }) => {
     const [q] = quads(canvasElement);
-    const reply = must(q?.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
-    await expect(reply).toHaveTextContent('Sending in 42 s');
-    await userEvent.click(within(reply).getByRole('button', { name: 'Cancel' }));
+    // One retry finds the reply counting down and its Cancel; the click takes that button.
+    const cancel = await waitFor(() => {
+      const reply = must(q?.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
+      expect(reply).toHaveTextContent('Sending in 42 s');
+      return within(reply).getByRole('button', { name: 'Cancel' });
+    });
+    await userEvent.click(cancel);
     await waitFor(() =>
       expect(onWrite).toHaveBeenCalledWith({
         act: 'cancelReply',
@@ -151,9 +155,11 @@ export const ColleagueSettling: Story = {
   render: () => inspector(COLLEAGUE_SETTLING, { clock: TICKET_NOW }),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
-      await expect(reply).toHaveTextContent('Sending in 42 s');
-      await expect(within(reply).getByRole('button', { name: 'Cancel' })).toBeVisible();
+      await waitFor(() => {
+        const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
+        expect(reply).toHaveTextContent('Sending in 42 s');
+        expect(within(reply).getByRole('button', { name: 'Cancel' })).toBeVisible();
+      });
     }
   },
 };
@@ -163,10 +169,14 @@ export const CancelRefused: Story = {
   render: () => inspector(CANCEL_REFUSED, { clock: TICKET_NOW }),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
-      await expect(reply).toHaveTextContent('Sending in 42 s');
-      await expect(within(q).queryByRole('button', { name: 'Cancel' })).toBeNull();
-      await expect(within(q).queryByRole('button', { name: 'Remove' })).toBeNull();
+      // Never: in the same retry as the reply drawn, so an absence can't pass before the render.
+      await waitFor(() => {
+        const reply = must(q.querySelector<HTMLElement>('[data-slot="ticket-reply"]'));
+        expect(reply).toHaveTextContent('Sending in 42 s');
+        expect(q.querySelector('[data-slot="ticket-note"]')).not.toBeNull();
+        expect(within(q).queryByRole('button', { name: 'Cancel' })).toBeNull();
+        expect(within(q).queryByRole('button', { name: 'Remove' })).toBeNull();
+      });
     }
   },
 };
@@ -181,9 +191,10 @@ export const EveryState: Story = {
           4,
         );
         expect(q.querySelectorAll('[data-slot="ticket-note-removed"]')).toHaveLength(1);
+        expect(within(q).getByText('Not sent · no sending address is set up')).toBeVisible();
+        // Never "Sent" alone where the server didn't say sent.
+        expect(within(q).queryByText(/^Sent$/)).toBeNull();
       });
-      await expect(within(q).getByText('Not sent · no sending address is set up')).toBeVisible();
-      await expect(within(q).queryByText(/^Sent$/)).toBeNull();
     }
   },
 };
@@ -229,8 +240,10 @@ export const SeedTicket: Story = {
   render: () => inspector(SEED_TICKET),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      await expect(within(q).getByText(/never emailed/)).toBeVisible();
-      await expect(within(q).queryByText(/Sent from/)).toBeNull();
+      await waitFor(() => {
+        expect(within(q).getByText(/never emailed/)).toBeVisible();
+        expect(within(q).queryByText(/Sent from/)).toBeNull();
+      });
     }
   },
 };
@@ -240,8 +253,10 @@ export const RelatedCapped: Story = {
   render: () => inspector(RELATED_CAPPED),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      await expect(within(q).getByText('More flags on them')).toBeVisible();
-      await expect(within(q).getByText('50+ · 50+ resolved')).toBeVisible();
+      await waitFor(() => {
+        expect(within(q).getByText('More flags on them')).toBeVisible();
+        expect(within(q).getByText('50+ · 50+ resolved')).toBeVisible();
+      });
     }
   },
 };
@@ -260,11 +275,13 @@ export const Resolved: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       const s = within(q);
-      await expect(q.querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
-      await expect(s.queryByRole('textbox')).toBeNull();
-      await expect(seenBar(q)).toBeUndefined();
-      await expect(s.getByRole('button', { name: 'Reopen' })).toBeVisible();
-      await expect(s.getByText(/Resolved by Matt Steinberg/)).toBeVisible();
+      await waitFor(() => {
+        expect(q.querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
+        expect(s.getByRole('button', { name: 'Reopen' })).toBeVisible();
+        expect(s.getByText(/Resolved by Matt Steinberg/)).toBeVisible();
+        expect(s.queryByRole('textbox')).toBeNull();
+        expect(seenBar(q)).toBeUndefined();
+      });
     }
   },
 };
@@ -274,9 +291,11 @@ export const OwnTicket: Story = {
   render: () => inspector(OWN_TICKET),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      await expect(q.querySelectorAll('[data-slot="ticket-refusal"]')).toHaveLength(1);
-      await expect(within(q).queryByRole('textbox')).toBeNull();
-      await expect(seenBar(q)).toBeUndefined();
+      await waitFor(() => {
+        expect(q.querySelectorAll('[data-slot="ticket-refusal"]')).toHaveLength(1);
+        expect(within(q).queryByRole('textbox')).toBeNull();
+        expect(seenBar(q)).toBeUndefined();
+      });
     }
   },
 };
@@ -286,8 +305,10 @@ export const Gone: Story = {
   render: () => inspector(GONE),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      await expect(q).not.toHaveTextContent('Rob Tremblay');
-      await expect(within(q).getAllByText('A former skater').length).toBeGreaterThan(0);
+      await waitFor(() => {
+        expect(within(q).getAllByText('A former skater').length).toBeGreaterThan(0);
+        expect(q).not.toHaveTextContent('Rob Tremblay');
+      });
     }
   },
 };
@@ -297,9 +318,13 @@ export const NoProfile: Story = {
   render: () => inspector(NO_PROFILE),
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
-      await expect(
-        within(q).getAllByText('Someone signed in, before their profile was made').length,
-      ).toBeGreaterThan(0);
+      await waitFor(() => {
+        expect(
+          within(q).getAllByText('Someone signed in, before their profile was made').length,
+        ).toBeGreaterThan(0);
+        expect(q.querySelector('[data-slot="ticket-related"]')).toBeNull();
+        expect(q.querySelector('[data-slot="ticket-user"]')).not.toHaveTextContent('Tickets');
+      });
     }
   },
 };

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect } from 'storybook/test';
+import { expect, waitFor } from 'storybook/test';
 
 import { must } from './storyKit';
 import { ThreadEvent, ThreadMessage } from './thread-message';
@@ -48,30 +48,32 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
-      const messages = [...q.querySelectorAll<HTMLElement>('[data-thread-message]')];
-      await expect(messages).toHaveLength(4);
-      // The staff note alone is boxed, dashed.
-      const staff = must(
-        q.querySelector<HTMLElement>('[data-staff] [data-slot="thread-message-body"]'),
-      );
-      await expect(getComputedStyle(staff).borderTopStyle).toBe('dashed');
-      const plain = must(
-        messages[0]?.querySelector<HTMLElement>('[data-slot="thread-message-body"]'),
-      );
-      await expect(getComputedStyle(plain).borderTopWidth).toBe('0px');
-      // Someone gone: a bare circle, no initials to read.
-      const gone = must(
-        messages[3]?.querySelector<HTMLElement>('[data-slot="thread-message-face"]'),
-      );
-      await expect(gone.textContent).toBe('');
-      // A long run wraps inside its column, never past it.
-      const body = must(
-        messages[3]?.querySelector<HTMLElement>('[data-slot="thread-message-body"]'),
-      );
-      await expect(body.scrollWidth).toBeLessThanOrEqual(body.clientWidth + 1);
-      await expect(q.querySelector('[data-slot="thread-event"]')).toHaveTextContent(
-        'A note was removed',
-      );
+      await waitFor(() => {
+        const messages = [...q.querySelectorAll<HTMLElement>('[data-thread-message]')];
+        expect(messages).toHaveLength(4);
+        // The staff note alone is boxed, dashed.
+        const staff = must(
+          q.querySelector<HTMLElement>('[data-staff] [data-slot="thread-message-body"]'),
+        );
+        expect(getComputedStyle(staff).borderTopStyle).toBe('dashed');
+        const plain = must(
+          messages[0]?.querySelector<HTMLElement>('[data-slot="thread-message-body"]'),
+        );
+        expect(getComputedStyle(plain).borderTopWidth).toBe('0px');
+        // Someone gone: a bare circle, no initials to read.
+        const gone = must(
+          messages[3]?.querySelector<HTMLElement>('[data-slot="thread-message-face"]'),
+        );
+        expect(gone.textContent).toBe('');
+        // A long run wraps inside its column, never past it.
+        const body = must(
+          messages[3]?.querySelector<HTMLElement>('[data-slot="thread-message-body"]'),
+        );
+        expect(body.scrollWidth).toBeLessThanOrEqual(body.clientWidth + 1);
+        expect(q.querySelector('[data-slot="thread-event"]')).toHaveTextContent(
+          'A note was removed',
+        );
+      });
     }
   },
 };

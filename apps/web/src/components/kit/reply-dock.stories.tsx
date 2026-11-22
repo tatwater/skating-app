@@ -66,11 +66,13 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
-      const field = within(q).getByRole('textbox', { name: 'Your reply' });
-      // The mode's cap, as the field's own.
-      await expect(field).toHaveAttribute('maxlength', '40');
-      // Nothing to send: the button waits.
-      await expect(within(q).getByRole('button', { name: /Send reply/ })).toBeDisabled();
+      await waitFor(() => {
+        const field = within(q).getByRole('textbox', { name: 'Your reply' });
+        // The mode's cap, as the field's own.
+        expect(field).toHaveAttribute('maxlength', '40');
+        // Nothing to send: the button waits.
+        expect(within(q).getByRole('button', { name: /Send reply/ })).toBeDisabled();
+      });
     }
   },
 };
@@ -85,12 +87,12 @@ export const OverTheCap: Story = {
     await userEvent.click(within(quad).getByRole('button', { name: 'Note' }));
     const field = await within(quad).findByRole('textbox', { name: 'Your note' });
     await expect(field).toHaveValue('Thirty characters of words, ok');
-    await waitFor(() =>
+    await waitFor(() => {
       expect(quad.querySelector('[data-slot="reply-dock-check"]')).toHaveTextContent(
         '10 characters over',
-      ),
-    );
-    await expect(within(quad).getByRole('button', { name: /Add note/ })).toBeDisabled();
-    await expect(onSend).not.toHaveBeenCalled();
+      );
+      expect(within(quad).getByRole('button', { name: /Add note/ })).toBeDisabled();
+      expect(onSend).not.toHaveBeenCalled();
+    });
   },
 };
