@@ -561,6 +561,8 @@ export type InboxItemView = ItemBase &
          * when the item's budget can't hold the next flag and its filer; `memberCount` is the total.
          */
         flags: FlagMemberView[];
+        /** The list ended because the item's budget couldn't hold the next flag whole (B01-5c). */
+        flagsCut: boolean;
         author: AuthorBlockView | null;
       }
     | {
@@ -571,9 +573,19 @@ export type InboxItemView = ItemBase &
          * when the item's budget can't hold the next report and its filer; `memberCount` is the total.
          */
         reports: FlagMemberView[];
+        /** The list ended because the item's budget couldn't hold the next report whole (B01-5c). */
+        reportsCut: boolean;
         ruling: RulingView | null;
-        /** The reports the standing ruling dismissed (2.2's timeline). */
+        /**
+         * The reports the standing ruling dismissed (2.2's timeline), found among the body's first
+         * `DISMISSED_BY_RULING_READ` (20) dismissed access reports, each with its filer.
+         */
         dismissedByRuling: FlagMemberView[];
+        /**
+         * The body has more dismissed reports than were read, or the budget ended the read: the list
+         * may be missing some the ruling dismissed (B01-5c).
+         */
+        dismissedByRulingCut: boolean;
         /**
          * People asking for the body back as accessible: its open `contest_access` asks — which a
          * skater can file only while it stands under a no-public-access ruling — counted to 200.

@@ -17,8 +17,13 @@ import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { InboxItemView } from './inbox';
-import { fileMember, requestSource } from './lib/inboxItems';
-import { VIEW_ASKER_COUNTS, VIEW_MEMBERS, VIEW_SKATES } from './lib/inboxViews';
+import { fileMember, flagSource, requestSource } from './lib/inboxItems';
+import {
+  DISMISSED_BY_RULING_READ,
+  VIEW_ASKER_COUNTS,
+  VIEW_MEMBERS,
+  VIEW_SKATES,
+} from './lib/inboxViews';
 import * as readBudget from './lib/readBudget';
 import { undoState } from './lib/undo';
 import schema from './schema';
@@ -930,4 +935,215 @@ describe('an item’s lists are read whole, member by member: never a silent dro
     expect(access.reports).toHaveLength(30);
     expect(access.reports.every((f) => f.filer !== null)).toBe(true);
   }, 120_000);
+});
+
+describe('every member list says when it is cut, beside its total', () => {
+  /** A person whose profile weighs ~900 KiB (a display name at that length) — a filer at its worst. */
+  const heavyPerson = (w: W, subject: string) =>
+    w.t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: subject,
+        displayName: `${'W'.repeat(900 * 1024)} Test-Person`,
+        username: subject,
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member',
+        status: 'active',
+        createdAt: NOW,
+      }),
+    );
+  /** `n` flags on one target, each by its own filer, filed raw (as the flag write files them). */
+  const flagsOn = async (
+    w: W,
+    n: number,
+    target: { targetType: 'user' | 'waterbody'; targetId: string },
+    reason: 'harassment' | 'no_public_access',
+    heavy = false,
+  ) => {
+    const filers: Id<'profiles'>[] = [];
+    for (let i = 0; i < n; i++) {
+      filers.push(heavy ? await heavyPerson(w, `hf${i}`) : (await person(w.t, `lf${i}`)).id);
+    }
+    for (let start = 0; start < n; start += 25) {
+      await w.t.run(async (ctx) => {
+        for (const [i, flaggerId] of filers.slice(start, start + 25).entries()) {
+          const id = await ctx.db.insert('contentFlags', {
+            flaggerId,
+            ...target,
+            reason,
+            status: 'open',
+            origin: 'user',
+            createdAt: NOW - 100_000 + start + i,
+          });
+          await fileMember(ctx, flagSource(id));
+        }
+      });
+    }
+  };
+  const itemOfKind = async (w: W, kind: 'flag' | 'access') => {
+    const item = (await w.t.run((ctx) => ctx.db.query('inboxItems').collect())).find(
+      (i) => i.kind === kind,
+    );
+    return (await w.mod.as.query(api.inbox.item, { ref: item?._id as string })).item;
+  };
+
+  test.each([1, VIEW_MEMBERS, VIEW_MEMBERS + 10])(
+    'a flag item and an Access item of %i: served to the cap, the total beside it, not cut',
+    async (n) => {
+      const w = await world();
+      const target = await person(w.t, 'flagged');
+      await flagsOn(w, n, { targetType: 'user', targetId: target.id }, 'harassment');
+      await flagsOn(w, n, { targetType: 'waterbody', targetId: w.lake }, 'no_public_access');
+      const flag = (await itemOfKind(w, 'flag')) as Extract<InboxItemView, { kind: 'flag' }>;
+      const access = (await itemOfKind(w, 'access')) as Extract<InboxItemView, { kind: 'access' }>;
+      expect([flag.flags.length, flag.memberCount, flag.flagsCut]).toEqual([
+        Math.min(n, VIEW_MEMBERS),
+        n,
+        false,
+      ]);
+      expect([access.reports.length, access.memberCount, access.reportsCut]).toEqual([
+        Math.min(n, VIEW_MEMBERS),
+        n,
+        false,
+      ]);
+    },
+    120_000,
+  );
+
+  test('heavy filers: each list ends where the budget does, says so, and keeps every filer it shows', async () => {
+    const w = await world();
+    const target = await person(w.t, 'flagged');
+    await flagsOn(w, 16, { targetType: 'user', targetId: target.id }, 'harassment', true);
+    await flagsOn(w, 16, { targetType: 'waterbody', targetId: w.lake }, 'no_public_access', true);
+    const flag = (await itemOfKind(w, 'flag')) as Extract<InboxItemView, { kind: 'flag' }>;
+    const access = (await itemOfKind(w, 'access')) as Extract<InboxItemView, { kind: 'access' }>;
+    for (const [list, cut] of [
+      [flag.flags, flag.flagsCut],
+      [access.reports, access.reportsCut],
+    ] as const) {
+      expect(cut).toBe(true);
+      expect(list.length).toBeGreaterThan(0);
+      expect(list.length).toBeLessThan(16);
+      expect(list.every((f) => f.filer !== null)).toBe(true);
+    }
+  }, 180_000);
+
+  test.each([1, DISMISSED_BY_RULING_READ, DISMISSED_BY_RULING_READ + 1])(
+    'the reports a ruling dismissed, %i of them: to the read’s cap, and cut past it',
+    async (n) => {
+      const w = await world();
+      await flagsOn(w, n, { targetType: 'waterbody', targetId: w.lake }, 'no_public_access');
+      await w.mod.as.mutation(api.waterBodies.setPublicAccess, {
+        waterBodyId: w.lake,
+        verdict: 'open',
+        reason: 'Town lot is public',
+      });
+      const access = (await itemOfKind(w, 'access')) as Extract<InboxItemView, { kind: 'access' }>;
+      expect(access.dismissedByRuling).toHaveLength(Math.min(n, DISMISSED_BY_RULING_READ));
+      expect(access.dismissedByRulingCut).toBe(n > DISMISSED_BY_RULING_READ);
+      expect(access.dismissedByRuling.every((f) => f.filer !== null)).toBe(true);
+    },
+    120_000,
+  );
+
+  test('a ruling’s dismissed reports by heavy filers: the list ends where the budget does, each filer whole', async () => {
+    const w = await world();
+    await flagsOn(w, 14, { targetType: 'waterbody', targetId: w.lake }, 'no_public_access', true);
+    await w.mod.as.mutation(api.waterBodies.setPublicAccess, {
+      waterBodyId: w.lake,
+      verdict: 'open',
+      reason: 'Town lot is public',
+    });
+    const access = (await itemOfKind(w, 'access')) as Extract<InboxItemView, { kind: 'access' }>;
+    expect(access.dismissedByRulingCut).toBe(true);
+    expect(access.dismissedByRuling.length).toBeLessThan(14);
+    expect(access.dismissedByRuling.every((f) => f.filer !== null)).toBe(true);
+  }, 180_000);
+
+  test('a flag row: its flags’ reasons read whole on a tight page budget, never dropped', async () => {
+    const w = await world();
+    const target = await person(w.t, 'flagged');
+    // One lane's reasons, so one item.
+    const reasons = ['harassment', 'spam', 'inappropriate', 'other'] as const;
+    await w.t.run(async (ctx) => {
+      for (const [i, reason] of reasons.entries()) {
+        const flaggerId = await ctx.db.insert('profiles', {
+          clerkUserId: `rf${i}`,
+          displayName: `rf${i} Test-Person`,
+          username: `rf${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public',
+          notificationPrefs: PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member',
+          status: 'active',
+          createdAt: NOW,
+        });
+        const id = await ctx.db.insert('contentFlags', {
+          flaggerId,
+          targetType: 'user',
+          targetId: target.id,
+          reason,
+          status: 'open',
+          origin: 'user',
+          createdAt: NOW - 1000 + i,
+        });
+        await fileMember(ctx, flagSource(id));
+      }
+    });
+    // Room for the page and two and a half flags at their bound: four flag reads started together
+    // held two; one at a time, each hands back what it didn't use.
+    const spy = vi
+      .spyOn(readBudget, 'requestBudget')
+      .mockImplementation(
+        () => new readBudget.ReadBudget(2.5 * readBudget.ROW_MAX.contentFlag + 2048),
+      );
+    const page = await w.mod.as.query(api.inbox.listPage, { lane: 'contentFlags', pageSize: 1 });
+    spy.mockRestore();
+    const row = page.rows.find((r) => r.kind === 'flag') as Extract<
+      (typeof page.rows)[number],
+      { kind: 'flag' }
+    >;
+    expect([...row.reasons].sort()).toEqual([...reasons].sort());
+  });
+
+  test('a place row: its other askers read whole on a tight page budget, never dropped', async () => {
+    const w = await world();
+    const ids: Id<'waterBodyRequests'>[] = [];
+    for (let i = 0; i < 3; i++) {
+      const who = (await person(w.t, `row${i}`)).id;
+      ids.push(
+        await w.t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_bay',
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0.2, lng: 0.2 },
+            waterBodyId: w.lake,
+            name: 'North Bay',
+            nameKey: requestNameKeyFor('name_bay', 'North Bay'),
+            createdAt: NOW - 10_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        }),
+      );
+    }
+    // A page budget of two and a half documents: three ask reads started together held three.
+    const spy = vi
+      .spyOn(readBudget, 'requestBudget')
+      .mockImplementation(() => new readBudget.ReadBudget(2.5 * readBudget.DOC_MAX));
+    const page = await w.mod.as.query(api.inbox.listPage, { lane: 'placesAsked', pageSize: 10 });
+    spy.mockRestore();
+    const row = page.rows.find((r) => r.kind === 'place') as Extract<
+      (typeof page.rows)[number],
+      { kind: 'place' }
+    >;
+    expect(row.askers).toBe(3);
+    expect(row.others).toHaveLength(2);
+  });
 });

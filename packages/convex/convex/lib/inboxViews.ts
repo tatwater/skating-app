@@ -713,6 +713,9 @@ async function readEach<T>(
   return { rows, cut: false };
 }
 
+/** The dismissed access reports an Access item reads to find those its ruling dismissed. */
+export const DISMISSED_BY_RULING_READ = 20;
+
 /** The most rows one member reads: its source, a related row (a report, a prior flag), a person. */
 const MEMBER_READS = 3;
 /** A flag member at its worst: the flag and the one it supersedes (capped notes), and its filer. */
@@ -1150,7 +1153,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
   switch (item.kind) {
     case 'flag': {
       const members = await oldestMembers();
-      const { rows: flags } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
+      const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
         flagMember(r, m),
       );
       const firstFlag = members[0]
@@ -1160,7 +1163,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const { view: target, facts } = await flagTargetView(r, firstFlag);
       const author =
         firstFlag.targetType === 'user' ? null : await authorBlock(r, item.subjectUserId);
-      return { view: { ...base, kind: 'flag', target, flags, author }, facts };
+      return { view: { ...base, kind: 'flag', target, flags, flagsCut, author }, facts };
     }
     case 'access': {
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
@@ -1174,6 +1177,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       ];
       const read = await readEach(r, recent, FLAG_MEMBER_WORST, (m) => flagMember(r, m));
       const reports = read.rows.sort((a, b) => b.filedAt - a.filedAt);
+      const reportsCut = read.cut;
       const p = water.publicAccess;
       const ruling = await rulingOf(r, water);
       const contest = await r.take('waterBodyRequest', COUNT_CAP + 1, (k) =>
@@ -1189,8 +1193,12 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         capped: contest.length > COUNT_CAP,
       };
       const dismissedByRuling: FlagMemberView[] = [];
+      let dismissedByRulingCut = false;
       if (p) {
-        const dismissed = await r.take('contentFlag', 20, (k) =>
+        // One past the cap, to know there are more; fewer when the budget holds fewer — either way
+        // the list says it's cut rather than reading as every dismissed report.
+        const room = r.budget.rows('contentFlag', DISMISSED_BY_RULING_READ + 1);
+        const dismissed = await r.take('contentFlag', DISMISSED_BY_RULING_READ + 1, (k) =>
           r.ctx.db
             .query('contentFlags')
             .withIndex('by_target_status_reason', (q) =>
@@ -1202,7 +1210,21 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
             )
             .take(k),
         );
-        for (const f of dismissed.filter((x) => x.resolvedAt === p.decidedAt)) {
+        if (
+          dismissed.length > DISMISSED_BY_RULING_READ ||
+          (room <= DISMISSED_BY_RULING_READ && dismissed.length >= room)
+        ) {
+          dismissedByRulingCut = true;
+        }
+        const ruled = dismissed
+          .slice(0, DISMISSED_BY_RULING_READ)
+          .filter((x) => x.resolvedAt === p.decidedAt);
+        for (const f of ruled) {
+          // Each with its filer whole, or the list ends here (`readEach`'s rule).
+          if (!r.budget.affords(ROW_MAX.profile) || !r.budget.affordsCalls(1, 1)) {
+            dismissedByRulingCut = true;
+            break;
+          }
           dismissedByRuling.push({
             flagId: f._id,
             reason: f.reason,
@@ -1223,8 +1245,10 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           kind: 'access',
           body,
           reports,
+          reportsCut,
           ruling,
           dismissedByRuling,
+          dismissedByRulingCut,
           contestAsks,
         },
         facts: { hasRuling: p !== undefined },
