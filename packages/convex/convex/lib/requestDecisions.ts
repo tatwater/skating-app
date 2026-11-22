@@ -51,6 +51,7 @@ import {
   OWN_FILING_REFUSAL,
 } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
+import { enqueueModeratorDecision } from './notificationQueue';
 import { ReadBudget, ROW_MAX } from './readBudget';
 import { literals } from './validators';
 
@@ -374,6 +375,17 @@ export async function closeRow(
         }
       : {}),
   });
+  // The asker hears the answer (D285) — every ask a decision closes, its siblings on every page of the
+  // drain, each once (keyed on the ask), held at the flush to this row (an undo inside the window drops
+  // it). Not an ask a script filed: its requester is staff, and nobody asked (D289).
+  if (row.origin !== 'seed') {
+    await enqueueModeratorDecision(ctx, {
+      recipientId: row.requesterId,
+      deciderId: actorId,
+      trigger: { kind: 'request_decided', requestId: row._id, outcome: status, actionId },
+      now,
+    });
+  }
   return actionId;
 }
 

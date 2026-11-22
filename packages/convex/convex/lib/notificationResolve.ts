@@ -27,6 +27,8 @@ import {
   type NotificationActors,
   type NotificationBodyRef,
   type NotificationView,
+  REQUEST_KINDS,
+  type RequestKind,
 } from '@skating/core';
 import type { Doc } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
@@ -61,9 +63,42 @@ type ParsedPayload =
       bodies: { waterBodyId: string; reportId: string; count: number }[];
       totalCount: number;
     }
-  | { kind: 'activity'; activityId: string; waterBodyId?: string; startTime: number };
+  | { kind: 'activity'; activityId: string; waterBodyId?: string; startTime: number }
+  | {
+      kind: 'request_decided';
+      about: RequestKind | 'drawn';
+      outcome: 'approved' | 'declined' | 'rejected';
+      waterBodyId?: string;
+      note?: string;
+    }
+  | { kind: 'alert_retracted'; accessAlertId: string; waterBodyId: string };
 
 const HAZARD_PHASES: ReadonlySet<string> = new Set(HAZARD_LIFECYCLE_PHASES);
+const ASK_KINDS: ReadonlySet<string> = new Set(REQUEST_KINDS);
+
+/**
+ * A moderator's decision as `settleTrigger` writes it (D285), or `null`: an ask approved or declined,
+ * a drawing approved or rejected — the pairs a writer gives, and no other.
+ */
+function parseDecision(p: Record<string, unknown>): ParsedPayload | null {
+  if (p.kind === 'alert_retracted') {
+    if (!isString(p.accessAlertId) || !isString(p.waterBodyId)) return null;
+    return { kind: 'alert_retracted', accessAlertId: p.accessAlertId, waterBodyId: p.waterBodyId };
+  }
+  if (p.kind !== 'request_decided' || !isString(p.about)) return null;
+  const drawn = p.about === 'drawn';
+  if (!drawn && !ASK_KINDS.has(p.about)) return null;
+  const outcomes = drawn ? ['approved', 'rejected'] : ['approved', 'declined'];
+  if (!isString(p.outcome) || !outcomes.includes(p.outcome)) return null;
+  return {
+    kind: 'request_decided',
+    about: p.about as RequestKind | 'drawn',
+    outcome: p.outcome as 'approved' | 'declined' | 'rejected',
+    ...(isString(p.waterBodyId) ? { waterBodyId: p.waterBodyId } : {}),
+    // An ask's note only: a drawing's reason never reaches the person who drew it.
+    ...(!drawn && isString(p.note) && p.note.length > 0 ? { note: p.note } : {}),
+  };
+}
 
 /** Narrow a stored payload by its row's type, or `null` when the shape isn't one this code writes. */
 export function parsePayload(
@@ -139,9 +174,7 @@ export function parsePayload(
       };
     }
     case 'moderator_decision':
-      // PLACEHOLDER (B01-5c T0): S3 parses the payload its queue kinds write. Until then nothing
-      // writes the type, and a row of it would read as the `unknown` notification every build words.
-      return null;
+      return parseDecision(p);
     case 'activity_detected':
       if (!isString(p.activityId) || !isNumber(p.startTime)) return null;
       return {
@@ -160,10 +193,18 @@ class Loader {
   private readonly memo = new Map<string, Promise<unknown>>();
   constructor(private readonly ctx: QueryCtx) {}
 
-  get<T extends 'profiles' | 'reports' | 'hazards' | 'bounties' | 'waterBodies' | 'gpsActivities'>(
-    table: T,
-    id: string,
-  ): Promise<Doc<T> | null> {
+  get<
+    T extends
+      | 'profiles'
+      | 'reports'
+      | 'hazards'
+      | 'bounties'
+      | 'waterBodies'
+      | 'gpsActivities'
+      | 'accessAlerts'
+      | 'putIns'
+      | 'parkingAreas',
+  >(table: T, id: string): Promise<Doc<T> | null> {
     const key = `${table}:${id}`;
     let pending = this.memo.get(key);
     if (!pending) {
@@ -347,5 +388,43 @@ async function resolveOne(
         body: await bodyRef(load, payload.waterBodyId),
         startTime: payload.startTime,
       };
+    case 'request_decided':
+      return {
+        ...base,
+        type: 'moderator_decision',
+        about: payload.about,
+        outcome: payload.outcome,
+        body: await bodyRef(load, payload.waterBodyId),
+        ...(payload.note !== undefined ? { note: payload.note } : {}),
+      };
+    case 'alert_retracted': {
+      const place = await alertPlace(load, payload.accessAlertId);
+      return {
+        ...base,
+        type: 'moderator_decision',
+        about: 'accessAlert',
+        outcome: 'retracted',
+        body: await bodyRef(load, payload.waterBodyId),
+        ...(place !== undefined ? { place } : {}),
+      };
+    }
   }
+}
+
+/**
+ * The spot a retracted alert was about — its put-in's or lot's own name, where it has one (a derived
+ * label isn't stored, and the sentence stands on the lake without it). Read now, not at the flush, so
+ * a renamed spot reads by its current name, as every other name here does.
+ */
+async function alertPlace(load: Loader, accessAlertId: string): Promise<string | undefined> {
+  const alert = await load.get('accessAlerts', accessAlertId);
+  if (!alert) return undefined;
+  const spot =
+    alert.putInId !== undefined
+      ? await load.get('putIns', alert.putInId)
+      : alert.parkingAreaId !== undefined
+        ? await load.get('parkingAreas', alert.parkingAreaId)
+        : null;
+  const name = spot?.name?.trim();
+  return name ? name : undefined;
 }
