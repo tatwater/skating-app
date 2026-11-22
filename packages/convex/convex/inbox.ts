@@ -23,6 +23,7 @@ import {
   aroundItPhrases,
   type Count,
   callerNow,
+  type DormancyReason,
   type HazardVerdict,
   INBOX_LANE_ORDER,
   INBOX_LANES,
@@ -389,6 +390,36 @@ export type AskMemberView = {
   /** A landmark ask filed from a report's `where` (D202). */
   fromReport: { reportId: Id<'reports'>; skateEndTime: number; where: string | null } | null;
   activityId: Id<'gpsActivities'> | null;
+  /**
+   * The recorded skate the ask came from, as its row stores it (B01-5c): when it started and ended
+   * and the provider's moving time. No distance — no activity row stores one. `null` with no
+   * `activityId`, for an activity gone, or for one the item's budget left unread (read after the
+   * item's rule, at most `VIEW_SKATES` an item, so a skate never costs a lever its check).
+   */
+  skate: SkateView | null;
+};
+
+/** A recorded skate's times, as `gpsActivities` stores them (B01-5c). */
+export type SkateView = {
+  startTime: number;
+  /** When it ended; `null` for a provider that sent none. */
+  endTime: number | null;
+  /** The provider's moving time, which leaves out stops (so not `endTime − startTime`); `null` when not sent. */
+  elapsedSeconds: number | null;
+};
+
+/**
+ * Why an activate ask's body is dormant (B01-5c): the body's own `dormant` record — `inactive` (nobody
+ * has been there in `INACTIVE_SEASONS`), `not_in_campaign` (the prunes), or `moderator` (a person,
+ * with a note the skater sees).
+ */
+export type DormancyView = {
+  reason: DormancyReason;
+  since: number;
+  /** The moderator's note, shown to skaters on the lake; `null` when none. */
+  note: string | null;
+  /** Who shelved it (a staffer, for `moderator`); `null` for the machine's own. */
+  by: PersonRefView | null;
 };
 
 /** An admit's catalog feature (2.3's catalog block). */
@@ -403,7 +434,11 @@ export type CandidateView = {
   matchedAt: number;
   /** How far the feature is from the first ask's point. */
   metersFromAsk: number | null;
-  /** The nearest body already on the map ("Ricker Pond · 1.3 km west"). */
+  /**
+   * The nearest body already on the map ("Ricker Pond · 1.3 km west"). **Not served yet: always
+   * `null`** (B01-5c) — a bounded geo read doesn't fit this item's budget; it is to be stamped when the
+   * catalog answers, which needs a schema field (a seam request).
+   */
   nearestKnown: { waterBodyId: Id<'waterBodies'>; name: string; meters: number } | null;
 };
 
@@ -521,16 +556,37 @@ export type InboxItemView = ItemBase &
         kind: 'request';
         requestKind: RequestKind;
         body: BodyRefView | null;
+        /**
+         * Newest first by when each was asked, open and closed together, as the Access item's
+         * reports: read from the newest `VIEW_MEMBERS` of each status, so past the cap the reader sees
+         * the latest asks (B01-5c). An ask the item's budget can't read (an admit near the document
+         * limit) ends the list there; `memberCount` still counts every ask.
+         */
         asks: AskMemberView[];
+        /**
+         * The ask a decision is sent for — the newest open one served (the first ask in `asks` that is
+         * open), whose reach the item's `can` was checked for. Any ask of the item closes the same group.
+         */
+        primaryRequestId: Id<'waterBodyRequests'>;
         candidate: CandidateView | null;
         /** Why no catalog feature matched — *Look up again* stands in for *Admit*. */
         resolveError: string | null;
+        /**
+         * A *contest access* ask's standing ruling — the one it contests, as the Access item serves its
+         * ruling event (B01-5c). `null` for every other kind, and for a body with no ruling.
+         */
+        ruling: RulingView | null;
+        /** An *activate* ask's body's dormancy, as the body stores it (B01-5c); `null` otherwise. */
+        dormancy: DormancyView | null;
       }
     | {
         kind: 'place';
         placeKind: 'name_bay' | 'name_landmark';
         body: BodyRefView;
+        /** Newest first, capped as a request's are (B01-5c). */
         asks: AskMemberView[];
+        /** The ask a decision is sent for, as a request's (B01-5c). */
+        primaryRequestId: Id<'waterBodyRequests'>;
         /** A bay by the asked name now drawn on the body — *Approve* is drawn only then. */
         drawnSubAreaId: Id<'waterBodySubAreas'> | null;
         /**
