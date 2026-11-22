@@ -10,6 +10,11 @@ import type { MoveKind } from './mergeModel';
 const n = (count: number, one: string, many: string) =>
   `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
 
+/** A count the preview may have cut short: a floor reads "200+" (the console's one wording). */
+type Counted = { count: number; capped: boolean };
+const nCounted = ({ count, capped }: Counted, one: string, many: string) =>
+  capped ? `${count.toLocaleString('en-US')}+ ${many}` : n(count, one, many);
+
 export const MERGE_WORDS = {
   // ── From the board ──────────────────────────────────────────────────────────────────────────
   title: 'Merge into another body',
@@ -45,11 +50,12 @@ export const MERGE_WORDS = {
     gpsActivities: 'Skates',
   } satisfies Record<MoveKind, string>,
   keptOnce: 'Kept once',
-  favoritesDeduped: (count: number, survivor: string) =>
-    `${n(count, 'favorite', 'favorites')} already on ${survivor}`,
+  favoritesDeduped: (deduped: Counted, survivor: string) =>
+    `${nCounted(deduped, 'favorite', 'favorites')} already on ${survivor}`,
   delisted: 'Delisted',
-  baysClash: (bays: readonly string[], survivor: string) =>
-    `${bays.join(', ')} · ${survivor} has a bay by ${bays.length === 1 ? 'that name' : 'each name'}`,
+  /** A capped list of names ends "…and more": the server stopped reading, never a whole list. */
+  baysClash: ({ names, capped }: { names: readonly string[]; capped: boolean }, survivor: string) =>
+    `${names.join(', ')}${capped ? ' …and more' : ''} · ${survivor} has a bay by ${names.length === 1 && !capped ? 'that name' : 'each name'}`,
   lists: 'Lists',
   listsAgainstCaps: (l: {
     pins: number;
@@ -59,8 +65,8 @@ export const MERGE_WORDS = {
   }) =>
     `Pins ${l.pins} of ${l.caps.pins} · Aliases ${l.aliases} of ${l.caps.aliases} · Links ${l.links} of ${l.caps.links}`,
   staysHere: 'Stays here',
-  alerts: (count: number) => n(count, 'access alert', 'access alerts'),
-  lots: (count: number) => n(count, 'linked lot', 'linked lots'),
+  alerts: (alerts: Counted) => nCounted(alerts, 'access alert', 'access alerts'),
+  lots: (lots: Counted) => nCounted(lots, 'linked lot', 'linked lots'),
   /** The confirm, and the reason dialog it opens. */
   mergeInto: (name: string) => `Merge into ${name}`,
   confirm: 'Merge',

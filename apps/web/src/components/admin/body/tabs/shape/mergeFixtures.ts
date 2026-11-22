@@ -51,10 +51,13 @@ export const MERGE_TO_CRYSTAL: Extract<MergePreview, { ok: true }> = {
     landmarks: 1,
     gpsActivities: 1,
   }),
-  favoritesDeduped: 1,
-  baysClashing: ['West cove'],
+  favoritesDeduped: { count: 1, capped: false },
+  baysClashing: { names: ['West cove'], capped: false },
   lists: { pins: 3, aliases: 4, links: 2, caps: { pins: 10, aliases: 20, links: 10 } },
-  staysBehind: { accessAlerts: 1, parkingLots: 2 },
+  staysBehind: {
+    accessAlerts: { count: 1, capped: false },
+    parkingLots: { count: 2, capped: false },
+  },
   tooBig: false,
   refusal: null,
   code: null,
@@ -64,9 +67,12 @@ export const MERGE_TO_CRYSTAL: Extract<MergePreview, { ok: true }> = {
 export const MERGE_NOTHING_MOVES: Extract<MergePreview, { ok: true }> = {
   ...MERGE_TO_CRYSTAL,
   moves: moves({}),
-  favoritesDeduped: 0,
-  baysClashing: [],
-  staysBehind: { accessAlerts: 0, parkingLots: 0 },
+  favoritesDeduped: { count: 0, capped: false },
+  baysClashing: { names: [], capped: false },
+  staysBehind: {
+    accessAlerts: { count: 0, capped: false },
+    parkingLots: { count: 0, capped: false },
+  },
 };
 
 /** Too much to move in one go: the counts past the read's bound, and the merge refused. */

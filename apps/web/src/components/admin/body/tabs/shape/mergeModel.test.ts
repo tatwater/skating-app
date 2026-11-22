@@ -47,10 +47,41 @@ describe('what the merge runs into', () => {
 
   it('says only what is there: the lists always, nothing else when nothing else applies', () => {
     expect(consequenceRows(MERGE_NOTHING_MOVES).map((r) => r.label)).toEqual(['Lists']);
-    const two = { ...MERGE_TO_CRYSTAL, baysClashing: ['West cove', 'North arm'] };
+    const two = {
+      ...MERGE_TO_CRYSTAL,
+      baysClashing: { names: ['West cove', 'North arm'], capped: false },
+    };
     expect(consequenceRows(two)[1]?.value).toBe(
       'West cove, North arm · Crystal Lake has a bay by each name',
     );
+  });
+
+  it('draws every value the server cut at its bound as a floor, a capped name list as “…and more”', () => {
+    const at = { count: 200, capped: true };
+    const capped = {
+      ...MERGE_TO_CRYSTAL,
+      favoritesDeduped: at,
+      baysClashing: { names: ['West cove'], capped: true },
+      staysBehind: { accessAlerts: at, parkingLots: at },
+    };
+    expect(consequenceRows(capped)).toEqual([
+      { label: 'Kept once', value: '200+ favorites already on Crystal Lake' },
+      { label: 'Delisted', value: 'West cove …and more · Crystal Lake has a bay by each name' },
+      { label: 'Lists', value: 'Pins 3 of 10 · Aliases 4 of 20 · Links 2 of 10' },
+      { label: 'Stays here', value: '200+ access alerts · 200+ linked lots' },
+    ]);
+    // A capped zero is a floor the read stopped at: drawn, never dropped; uncapped, exact.
+    const zero = { count: 0, capped: true };
+    const zeros = {
+      ...MERGE_NOTHING_MOVES,
+      favoritesDeduped: zero,
+      staysBehind: { accessAlerts: zero, parkingLots: { count: 200, capped: false } },
+    };
+    expect(consequenceRows(zeros)).toEqual([
+      { label: 'Kept once', value: '0+ favorites already on Crystal Lake' },
+      { label: 'Lists', value: 'Pins 3 of 10 · Aliases 4 of 20 · Links 2 of 10' },
+      { label: 'Stays here', value: '0+ access alerts · 200 linked lots' },
+    ]);
   });
 });
 

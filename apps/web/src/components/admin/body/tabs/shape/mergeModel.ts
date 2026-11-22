@@ -66,15 +66,17 @@ export function moveRows(moves: Record<MoveKind, { count: number; capped: boolea
  * the lists' union against their caps, and what stays here — each row only where it says something.
  */
 export function consequenceRows(p: Extract<MergePreview, { ok: true }>): Row[] {
+  const some = (m: { count: number; capped: boolean }) => m.count > 0 || m.capped;
+  const { accessAlerts, parkingLots } = p.staysBehind;
   const behind = [
-    p.staysBehind.accessAlerts > 0 ? W.alerts(p.staysBehind.accessAlerts) : null,
-    p.staysBehind.parkingLots > 0 ? W.lots(p.staysBehind.parkingLots) : null,
+    some(accessAlerts) ? W.alerts(accessAlerts) : null,
+    some(parkingLots) ? W.lots(parkingLots) : null,
   ].filter((x): x is string => x !== null);
   return [
-    ...(p.favoritesDeduped > 0
+    ...(some(p.favoritesDeduped)
       ? [{ label: W.keptOnce, value: W.favoritesDeduped(p.favoritesDeduped, p.survivor.name) }]
       : []),
-    ...(p.baysClashing.length > 0
+    ...(p.baysClashing.names.length > 0
       ? [{ label: W.delisted, value: W.baysClash(p.baysClashing, p.survivor.name) }]
       : []),
     { label: W.lists, value: W.listsAgainstCaps(p.lists) },
