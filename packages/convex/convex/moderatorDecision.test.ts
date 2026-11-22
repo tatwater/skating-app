@@ -33,7 +33,11 @@ import {
   requestSource,
   type TxCost,
 } from './lib/inboxItems';
-import { enqueueModeratorDecision, settleReadCost } from './lib/notificationQueue';
+import {
+  enqueueActorNotification,
+  enqueueModeratorDecision,
+  settleReadCost,
+} from './lib/notificationQueue';
 import { parsePayload } from './lib/notificationResolve';
 import { REQUEST_SIBLINGS_MAX, siblingCost } from './lib/requestDecisions';
 import { SEED_CLERK_PREFIX } from './lib/seedPeople';
@@ -776,6 +780,151 @@ describe('the stored payload, read back', () => {
       waterBodyId: 'b',
     });
   });
+});
+
+/** A ring of `n` points — about 18 bytes a point as Convex weighs it. */
+function ring(n: number): number[][] {
+  const pts: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    pts.push([30.5 + 0.4 * Math.cos(a), 0.4 * Math.sin(a)]);
+  }
+  pts.push(pts[0] as number[]);
+  return pts;
+}
+
+/**
+ * `n` askers each told of a declined admit whose ask carries an outline near the document limit (an
+ * admit's catalog polygon, ~860 KiB) — the heaviest row a decision's re-check reads — and `m` people
+ * told of a flag verdict (a re-check of one small row), every message due.
+ */
+async function heavyQueue(t: T, n: number, m: number, order: 'decisions first' | 'flags first') {
+  const outline = { type: 'Polygon' as const, coordinates: [ring(48_000)] };
+  const people: Id<'profiles'>[] = [];
+  for (let i = 0; i < n + m; i++) people.push((await person(t, `h${i}`)).id);
+  const admin = await person(t, 'deciding-admin', 'admin');
+  for (let start = 0; start < n; start += 4) {
+    await t.run(async (ctx) => {
+      for (const requesterId of people.slice(start, Math.min(start + 4, n))) {
+        const decidedAt = Date.now();
+        const requestId = await ctx.db.insert('waterBodyRequests', {
+          kind: 'admit',
+          status: 'declined',
+          requesterId,
+          coord: { lat: 0, lng: 30.5 },
+          candidate: {
+            source: '3dhp',
+            externalId: 'catalog/heavy',
+            name: 'Big Pond',
+            featureType: 390,
+            cls: 'lakePond',
+            polygon: outline as never,
+            bbox: { minLat: -0.5, minLng: 30, maxLat: 0.5, maxLng: 31 },
+            centroid: { lat: 0, lng: 30.5 },
+            surfaceAreaSqM: 5_000_000,
+            serviceUrl: 'https://example.invalid/3dhp',
+            fetchedAt: NOW,
+          },
+          candidateExternalId: 'catalog/heavy',
+          decidedAt,
+          decidedByUserId: admin.id,
+          decisionNote: 'Not a pond',
+          createdAt: NOW - 10_000,
+        });
+        const actionId = await ctx.db.insert('moderationActions', {
+          actorId: admin.id,
+          action: 'decline_request',
+          targetType: 'waterBodyRequest',
+          targetId: requestId,
+          reason: 'Not a pond',
+          createdAt: decidedAt,
+        });
+        await enqueueModeratorDecision(ctx, {
+          recipientId: requesterId,
+          deciderId: admin.id,
+          trigger: { kind: 'request_decided', requestId, outcome: 'declined', actionId },
+        });
+      }
+    });
+  }
+  await t.run(async (ctx) => {
+    for (const flaggerId of people.slice(n)) {
+      const flagId = await ctx.db.insert('contentFlags', {
+        flaggerId,
+        targetType: 'user',
+        targetId: admin.id,
+        reason: 'spam',
+        status: 'dismissed',
+        origin: 'user',
+        createdAt: NOW,
+      });
+      await enqueueActorNotification(ctx, {
+        recipientId: flaggerId,
+        targetId: flagId,
+        trigger: { kind: 'flag_resolved', flagId, resolution: 'dismissed' },
+      });
+    }
+    // Every message due, one kind queued before the other.
+    let k = 0;
+    const later = order === 'decisions first' ? 'flag_resolved' : 'request_decided';
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, {
+        flushAfter: Date.now() - 100_000 + (row.kind === later ? 50_000 : 0) + k++,
+      });
+    }
+  });
+}
+
+/**
+ * The flush run as the cron and its own continuations run it — one execution at a time, each its own
+ * transaction under Convex's limits — until the queue is empty: how many executions it took, and after
+ * which execution each recipient was told.
+ */
+async function drainFlush(t: T): Promise<{ executions: number; toldAt: Map<string, number> }> {
+  const toldAt = new Map<string, number>();
+  for (let executions = 1; executions <= 400; executions++) {
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    // Its continuation is this loop's next turn, not the scheduler's.
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (job.name === 'notifications:flushNotificationQueue' && job.state.kind === 'pending') {
+          await ctx.scheduler.cancel(job._id);
+        }
+      }
+    });
+    for (const n of await t.run((ctx) => ctx.db.query('notifications').collect())) {
+      if (!toldAt.has(n.userId)) toldAt.set(n.userId, executions);
+    }
+    if ((await t.run((ctx) => ctx.db.query('notificationQueue').collect())).length === 0) {
+      return { executions, toldAt };
+    }
+  }
+  throw new Error('the flush never drained');
+}
+
+describe('the flush under heavy decisions', () => {
+  /** Heavy re-checks a batch of 8 MiB holds, each read whole (~940 KiB) past a 2 MiB reserve. */
+  const PER_EXECUTION = 6;
+
+  test('heavy re-checks: as many a batch as its bytes hold, never rolled back to one by one; flags behind them told', async () => {
+    const t = harness();
+    const heavy = 40;
+    await heavyQueue(t, heavy, heavy, 'decisions first');
+    const { executions, toldAt } = await drainFlush(t);
+    expect(toldAt.size).toBe(2 * heavy);
+    // One at a time (a batch over its limit, rolled back) was five an execution: eight here.
+    expect(executions).toBeLessThanOrEqual(Math.ceil(heavy / PER_EXECUTION));
+    // The flags queued behind them are told by the execution that finishes the decisions.
+    expect(Math.max(...toldAt.values())).toBe(executions);
+  }, 300_000);
+
+  test('flags due before them are told in the first execution, whatever waits behind', async () => {
+    const t = harness();
+    await heavyQueue(t, 20, 20, 'flags first');
+    const { toldAt } = await drainFlush(t);
+    const firstTold = [...toldAt.values()].filter((e) => e === 1).length;
+    expect(firstTold).toBeGreaterThanOrEqual(20);
+  }, 300_000);
 });
 
 describe('what it costs', () => {

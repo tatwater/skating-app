@@ -58,6 +58,7 @@ import {
   dueClockOf,
   isStaleQueueRow,
   recipientWants,
+  settleByteCost,
   settleReadCost,
   settleTrigger,
 } from './lib/notificationQueue';
@@ -459,6 +460,9 @@ const BATCH_LIMITS = {
   documentsWritten: 4000,
 };
 
+/** A row's own handling past its re-check: its recipient, block set, delete and inbox insert. */
+const FLUSH_ROW_BYTES = 256 * 1024;
+
 /** The most the batch's own read of the queue takes by weight (`maximumBytesRead`). */
 const BATCH_PAGE_BYTES = 2 * MiB;
 
@@ -777,6 +781,18 @@ async function flushRows(
     if (i > 0 && reads >= FLUSH_READ_BUDGET) {
       stoppedEarly = true;
       break;
+    }
+    // And by bytes (B01-5c): an actor row's re-check is started only while the batch's live bytes
+    // left hold its worst case (`settleByteCost`) and the row's own handling. A batch of heavy
+    // re-checks — a declined admit's asks, each near the document limit — then ends here and goes on
+    // in its continuation, rather than reading past the batch's limit, rolling back whole, and
+    // falling to one row at a time.
+    if (i > 0 && row.trigger !== undefined) {
+      const left = (await ctx.meta.getTransactionMetrics()).bytesRead.remaining;
+      if (left < settleByteCost(row.trigger) + FLUSH_ROW_BYTES) {
+        stoppedEarly = true;
+        break;
+      }
     }
     // Past its window: expired, never delivered late as if fresh (D258).
     if (isStaleQueueRow(row, now)) {

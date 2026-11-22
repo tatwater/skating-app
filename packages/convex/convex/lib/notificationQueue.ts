@@ -41,6 +41,7 @@ import type { Infer } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { canReceiveNotifications } from './auth';
+import { DOC_MAX } from './readBudget';
 import { loadBlockedAuthorIds } from './reportVisibility';
 import { isSeedProfile, seedSideOf } from './seedPeople';
 import type { notificationTrigger } from './validators';
@@ -191,6 +192,24 @@ export function triggerCount(trigger: NotificationTrigger): number {
  */
 export function settleReadCost(trigger: NotificationTrigger): number {
   return 1 + triggerCount(trigger);
+}
+
+/**
+ * The most bytes `settleTrigger` may read for a row, for the flush's byte guard (B01-5c): checked
+ * against the batch's live bytes left before the row is touched, so a batch of heavy re-checks stops
+ * and continues instead of reading past its limit and rolling back. A moderator's decision reads the
+ * decided row whole — an admit ask can carry a catalog polygon near the document limit — and the
+ * decision's audit row: two documents at the limit. Every other kind reads its target whole (one
+ * document at the limit); its coalesced ids are small rows (ratings, comments).
+ */
+export function settleByteCost(trigger: NotificationTrigger): number {
+  switch (trigger.kind) {
+    case 'request_decided':
+    case 'alert_retracted':
+      return 2 * DOC_MAX;
+    default:
+      return DOC_MAX;
+  }
 }
 
 /**
