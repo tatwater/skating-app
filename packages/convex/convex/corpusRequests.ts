@@ -75,6 +75,7 @@ import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
+import { inboxDecisionResult } from './lib/decisionResult';
 import { refreshEraseClock } from './lib/eraseClock';
 import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
 import { DECIDED_REFUSAL } from './lib/inboxRules';
@@ -825,7 +826,7 @@ export const approve = mutation({
       );
     }
 
-    await decide(
+    const actionId = await decide(
       ctx,
       request,
       'approved',
@@ -837,7 +838,11 @@ export const approve = mutation({
       answeringLandmarkId,
       bodyActionId,
     );
-    return { requestId, ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}) };
+    return {
+      requestId,
+      ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
+      ...(await inboxDecisionResult(ctx, actor._id, requestSource(requestId), actionId)),
+    };
   },
 });
 
@@ -858,8 +863,11 @@ export const decline = mutation({
     if (trimmed.length > MAX_REQUEST_NOTE_LENGTH) {
       throw new ConvexError(`Keep the note under ${MAX_REQUEST_NOTE_LENGTH} characters.`);
     }
-    await decide(ctx, request, 'declined', actor._id, Date.now(), trimmed);
-    return requestId;
+    const actionId = await decide(ctx, request, 'declined', actor._id, Date.now(), trimmed);
+    return {
+      requestId,
+      ...(await inboxDecisionResult(ctx, actor._id, requestSource(requestId), actionId)),
+    };
   },
 });
 

@@ -119,6 +119,7 @@ import { setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
+import { inboxDecisionResult } from './lib/decisionResult';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import { isProdDeployment } from './lib/deployment';
 import {
@@ -2965,8 +2966,14 @@ export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    await reviewDrawnBodyImpl(ctx, actor, { waterBodyId: args.waterBodyId, verdict: 'approved' });
-    return args.waterBodyId;
+    const actionId = await reviewDrawnBodyImpl(ctx, actor, {
+      waterBodyId: args.waterBodyId,
+      verdict: 'approved',
+    });
+    return {
+      waterBodyId: args.waterBodyId,
+      ...(await inboxDecisionResult(ctx, actor._id, bodySource(args.waterBodyId), actionId)),
+    };
   },
 });
 
@@ -3549,12 +3556,15 @@ export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    await reviewDrawnBodyImpl(ctx, actor, {
+    const actionId = await reviewDrawnBodyImpl(ctx, actor, {
       waterBodyId: args.waterBodyId,
       verdict: 'rejected',
       ...(args.reason !== undefined ? { reason: args.reason } : {}),
     });
-    return args.waterBodyId;
+    return {
+      waterBodyId: args.waterBodyId,
+      ...(await inboxDecisionResult(ctx, actor._id, bodySource(args.waterBodyId), actionId)),
+    };
   },
 });
 

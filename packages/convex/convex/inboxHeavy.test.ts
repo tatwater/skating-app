@@ -374,10 +374,19 @@ describe.each(['pending', 'ready'] as const)(
       const asks = await heavyAdmits(w.t, askers, 'catalog/outline', { polygon: outline });
       await new Promise((resolve) => setTimeout(resolve, 25));
       const first = asks[0] as Id<'waterBodyRequests'>;
+      let answer: { actionId: Id<'moderationActions'>; undoable: boolean } | undefined;
       const approve = await matrix({
-        approve: () => w.admin.as.mutation(api.corpusRequests.approve, { requestId: first }),
+        approve: async () => {
+          answer = await w.admin.as.mutation(api.corpusRequests.approve, { requestId: first });
+          return answer;
+        },
       });
       expect(approve).toEqual({ approve: 'completed' });
+      // Its answer, computed after its first page filled the transaction: its own row, undoable.
+      expect(answer?.undoable).toBe(true);
+      expect(
+        (await w.t.run((ctx) => ctx.db.get(answer?.actionId as Id<'moderationActions'>)))?.targetId,
+      ).toBe(first);
       expect(await drainAll(w.t)).toBeGreaterThan(0);
       expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['approved']));
       // One body for the twenty, named on every ask the approval closed.

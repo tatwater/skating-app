@@ -784,7 +784,7 @@ export async function closeRequestsRestPage(
  * Close the request and every open sibling, with one audit row each. Siblings share the decision
  * because they share the question — and *every* sibling: the first page closes with the request,
  * and the rest follow in scheduled pages. Nothing is left open past a page boundary (Greptile,
- * PR #63).
+ * PR #63). Returns the primary's decision row.
  */
 export async function decide(
   ctx: MutationCtx,
@@ -797,7 +797,7 @@ export async function decide(
   subAreaId?: Id<'waterBodySubAreas'>,
   landmarkId?: Id<'bodyLandmarks'>,
   bodyActionId?: Id<'moderationActions'>,
-): Promise<void> {
+): Promise<Id<'moderationActions'>> {
   const decision: Decision = {
     requestId: request._id,
     status,
@@ -815,10 +815,14 @@ export async function decide(
     asOf: now,
   });
   // The primary and its first page, one batch: their items recounted once at its end.
+  let primary: Id<'moderationActions'> | undefined;
   await inboxBatch(ctx, async () => {
     const actionId = await closeRow(ctx, request, decision);
+    primary = actionId;
     await closeSiblingPage(ctx, request, { ...decision, actionId });
   });
+  // The primary's own row: the one its undo (`reopen_request`) undoes, every sibling with it.
+  return primary as Id<'moderationActions'>;
 }
 
 // ── Bays (D201) ────────────────────────────────────────────────────────────────────────────────

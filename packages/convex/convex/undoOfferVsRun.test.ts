@@ -385,6 +385,27 @@ const CASES: Case[] = [
       return w.newest('approve_waterbody');
     },
   },
+  // B01-5c: each decision write answers its own row; the table holds that row's offer to its run.
+  {
+    name: 'approve_request (the row its answer names) → reopen_request',
+    viewers: ALL,
+    setup: async (w) => (await ANSWERS.approveRequest(w)).actionId,
+  },
+  {
+    name: 'decline_request (the row its answer names; a sibling by the viewer) → reopen_request',
+    viewers: ALL,
+    setup: async (w) => (await ANSWERS.declineRequest(w)).actionId,
+  },
+  {
+    name: 'approve_waterbody (the row its answer names) → return_to_review',
+    viewers: ALL,
+    setup: async (w) => (await ANSWERS.approveDrawn(w)).actionId,
+  },
+  {
+    name: 'reject_waterbody (the row its answer names) → return_to_review',
+    viewers: ALL,
+    setup: async (w) => (await ANSWERS.rejectDrawn(w)).actionId,
+  },
   {
     name: 'return_to_review → reviewed again (the reproduction C)',
     viewers: ALL,
@@ -535,6 +556,45 @@ async function alertBy(w: W, author: Id<'profiles'>) {
   });
 }
 
+/**
+ * The four decisions that answer their own row (B01-5c), each by the actor — their answers read here
+ * by the table's cases and by the test below that holds each answer to the engine's offer.
+ */
+const ANSWERS = {
+  approveRequest: async (w: W) => {
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.lake, { dormant: { since: Date.now(), reason: 'inactive' as const } }),
+    );
+    const ask = { kind: 'activate' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: w.lake };
+    const first = await w.p.skater.as.mutation(api.corpusRequests.create, ask);
+    await w.p.siblingFiler.as.mutation(api.corpusRequests.create, ask);
+    await w.tick();
+    return w.p.actor.as.mutation(api.corpusRequests.approve, { requestId: first });
+  },
+  declineRequest: async (w: W) => {
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.lake, { dormant: { since: Date.now(), reason: 'inactive' as const } }),
+    );
+    const ask = { kind: 'activate' as const, coord: { lat: 0.5, lng: 0.5 }, waterBodyId: w.lake };
+    const first = await w.p.skater.as.mutation(api.corpusRequests.create, ask);
+    await w.p.siblingFiler.as.mutation(api.corpusRequests.create, ask);
+    await w.tick();
+    return w.p.actor.as.mutation(api.corpusRequests.decline, { requestId: first, note: 'No' });
+  },
+  approveDrawn: async (w: W) =>
+    w.p.actor.as.mutation(api.waterBodies.approve, {
+      waterBodyId: await drawnBy(w, w.p.drawer.id),
+    }),
+  rejectDrawn: async (w: W) =>
+    w.p.actor.as.mutation(api.waterBodies.reject, {
+      waterBodyId: await drawnBy(w, w.p.drawer.id),
+      reason: 'A puddle',
+    }),
+} satisfies Record<
+  string,
+  (w: W) => Promise<{ actionId: Id<'moderationActions'>; itemId: Id<'inboxItems'> | null }>
+>;
+
 /** Every case × viewer: the offer and the write. */
 async function runTable() {
   const disagreements: string[] = [];
@@ -576,6 +636,72 @@ describe('an undo’s offer and its write agree for every viewer (D217)', () => 
     expect(size).toBe(CASES.length * ALL.length);
     expect(disagreements).toEqual([]);
   }, 600_000);
+});
+
+describe('a decision answers its own row and the offer its undo makes (B01-5c)', () => {
+  test.each(Object.keys(ANSWERS) as (keyof typeof ANSWERS)[])('%s', async (name) => {
+    const w = await world();
+    const out = await ANSWERS[name](w);
+    const row = await w.t.run((ctx) => ctx.db.get(out.actionId));
+    // Its own row: the decision's, by the actor — the primary ask's, or the drawing's review.
+    expect(row).toMatchObject({
+      actorId: w.p.actor.id,
+      action: {
+        approveRequest: 'approve_request',
+        declineRequest: 'decline_request',
+        approveDrawn: 'approve_waterbody',
+        rejectDrawn: 'reject_waterbody',
+      }[name],
+    });
+    // The item it decided: the one its source's member names.
+    const member = await w.t.run((ctx) =>
+      ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) =>
+          q
+            .eq(
+              'sourceTable',
+              row?.targetType === 'waterbody' ? 'waterBodies' : 'waterBodyRequests',
+            )
+            .eq('sourceId', row?.targetId as string),
+        )
+        .first(),
+    );
+    expect(out.itemId).toBe(member?.itemId);
+    expect(out.itemId).not.toBeNull();
+    // The engine's offer for the actor, as the toast's scope reads it — and its run agrees.
+    const offer = await w.t.run(async (ctx) =>
+      undoState(
+        ctx,
+        (await ctx.db.get(w.p.actor.id)) as Doc<'profiles'>,
+        row as Doc<'moderationActions'>,
+        'one',
+      ),
+    );
+    expect(out).toMatchObject(
+      offer.state === 'available'
+        ? { undoable: true, undoNeedsReason: offer.needsReason }
+        : { undoable: false },
+    );
+    expect(out.undoable).toBe(true);
+    await w.p.actor.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' });
+  });
+
+  test('a drain writes its siblings’ rows after the primary’s: the answer names the primary’s', async () => {
+    const w = await world();
+    const out = await ANSWERS.declineRequest(w);
+    const rows = await w.t.run(async (ctx) =>
+      (await ctx.db.query('moderationActions').order('desc').collect()).filter(
+        (r) => r.action === 'decline_request',
+      ),
+    );
+    // "The latest action" is the sibling's row, which its undo refuses ("undo that one").
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?._id).not.toBe(out.actionId);
+    expect(rows[0]?.metadata?.withRequestId).toBeDefined();
+    expect(rows[1]?._id).toBe(out.actionId);
+    expect(rows[1]?.metadata?.withRequestId).toBeUndefined();
+  });
 });
 
 // ── Groups of every size the wave supports ─────────────────────────────────────────────────────
