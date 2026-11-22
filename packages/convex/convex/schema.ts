@@ -143,21 +143,7 @@ import {
 } from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
-const notificationPrefs = v.object({
-  ...boolFlags(
-    NOTIFICATION_PREF_KEYS.filter(
-      (k): k is Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'> =>
-        k !== 'moderatorDecision',
-    ) as unknown as readonly [
-      Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'>,
-      ...Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'>[],
-    ],
-  ).fields,
-  // Widened for the rollout (B01-5c, D285): optional until `profiles.backfillNotificationPrefs` has
-  // written it on every row, then narrowed back to required with B01-5d (the governor's ruling).
-  // Until then an absent key reads as off (`recipientWants` reads `=== true`).
-  moderatorDecision: v.optional(v.boolean()),
-});
+const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
 
 /** A People chained job (`lib/peopleRuns.PEOPLE_JOBS`): its run row and its progress row alike. */
 const peopleJob = v.union(

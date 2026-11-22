@@ -36,6 +36,7 @@ import {
 import {
   enqueueActorNotification,
   enqueueModeratorDecision,
+  recipientWants,
   settleReadCost,
 } from './lib/notificationQueue';
 import { parsePayload } from './lib/notificationResolve';
@@ -885,13 +886,25 @@ describe('who is never told', () => {
   test('the toggle off, or absent before the backfill, tells no one; on by default for a new profile', async () => {
     const w = await world();
     const off = await person(w.t, 'off', 'member', { ...PREFS, moderatorDecision: false });
-    const { moderatorDecision: _absent, ...beforeBackfill } = PREFS;
-    const absent = await person(w.t, 'absent', 'member', beforeBackfill);
-    for (const who of [off, absent]) {
-      const requestId = await activate(w, who.as);
-      await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
-    }
+    const requestId = await activate(w, off.as);
+    await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
     expect(await queueRows(w.t)).toEqual([]);
+    // A row from before the backfill can no longer be stored (the key is required since B01-5d's
+    // narrowing), but the gate stays tolerant: an absent key reads as off.
+    const { moderatorDecision: _absent, ...beforeBackfill } = PREFS;
+    const stored = (await w.t.run((ctx) => ctx.db.get(off.id))) as Doc<'profiles'>;
+    expect(
+      recipientWants(
+        { ...stored, notificationPrefs: beforeBackfill as Doc<'profiles'>['notificationPrefs'] },
+        'moderator_decision',
+      ),
+    ).toBe(false);
+    expect(
+      recipientWants(
+        { ...stored, notificationPrefs: { ...stored.notificationPrefs, moderatorDecision: true } },
+        'moderator_decision',
+      ),
+    ).toBe(true);
 
     // Onboarding writes every key from core's defaults (`upsertFromClerk`): this one on.
     const fresh = w.t.withIdentity({ subject: 'clerk_fresh' });

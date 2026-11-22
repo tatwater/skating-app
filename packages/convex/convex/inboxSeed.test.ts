@@ -1275,14 +1275,19 @@ describe('ensurePeople', () => {
     const [first, second, third] = await t.run((ctx) => ctx.db.query('profiles').collect());
     if (!first || !second || !third) throw new Error('no fake people');
     await t.run(async (ctx) => {
-      // A backfill's default (dev's eight, after #172), a channel switched on, a key never written.
+      // A backfill's default (dev's eight, after #172), a channel switched on, another toggle on.
       await ctx.db.patch(first._id, {
         notificationPrefs: { ...first.notificationPrefs, moderatorDecision: true },
       });
       await ctx.db.patch(second._id, { channelPrefs: { push: true, email: false } });
-      const { moderatorDecision: _gone, ...older } = third.notificationPrefs;
-      await ctx.db.patch(third._id, { notificationPrefs: older as never });
+      await ctx.db.patch(third._id, {
+        notificationPrefs: { ...third.notificationPrefs, reportRated: true },
+      });
     });
+    // A key never written can no longer be stored (required since B01-5d's narrowing); the check
+    // stays tolerant of one all the same.
+    const { moderatorDecision: _gone, ...older } = third.notificationPrefs;
+    expect(prefsDrifted({ ...third, notificationPrefs: older as never })).toBe(true);
     const dry = await t.mutation(internal.inboxSeed.ensurePeople, {});
     expect(dry.corrected).toEqual(
       [first.displayName, second.displayName, third.displayName].sort(
