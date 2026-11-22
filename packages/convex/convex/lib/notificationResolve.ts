@@ -67,7 +67,7 @@ type ParsedPayload =
   | {
       kind: 'request_decided';
       about: RequestKind | 'drawn';
-      outcome: 'approved' | 'declined' | 'rejected';
+      outcome: 'approved' | 'declined' | 'rejected' | 'merged';
       waterBodyId?: string;
       note?: string;
     }
@@ -78,7 +78,7 @@ const ASK_KINDS: ReadonlySet<string> = new Set(REQUEST_KINDS);
 
 /**
  * A moderator's decision as `settleTrigger` writes it (D285), or `null`: an ask approved or declined,
- * a drawing approved or rejected — the pairs a writer gives, and no other.
+ * a drawing approved, rejected or merged into a known body — the pairs a writer gives, and no other.
  */
 function parseDecision(p: Record<string, unknown>): ParsedPayload | null {
   if (p.kind === 'alert_retracted') {
@@ -88,12 +88,13 @@ function parseDecision(p: Record<string, unknown>): ParsedPayload | null {
   if (p.kind !== 'request_decided' || !isString(p.about)) return null;
   const drawn = p.about === 'drawn';
   if (!drawn && !ASK_KINDS.has(p.about)) return null;
-  const outcomes = drawn ? ['approved', 'rejected'] : ['approved', 'declined'];
+  // A drawing is approved, rejected or merged into a known body (B01-5d); an ask approved or declined.
+  const outcomes = drawn ? ['approved', 'rejected', 'merged'] : ['approved', 'declined'];
   if (!isString(p.outcome) || !outcomes.includes(p.outcome)) return null;
   return {
     kind: 'request_decided',
     about: p.about as RequestKind | 'drawn',
-    outcome: p.outcome as 'approved' | 'declined' | 'rejected',
+    outcome: p.outcome as 'approved' | 'declined' | 'rejected' | 'merged',
     ...(isString(p.waterBodyId) ? { waterBodyId: p.waterBodyId } : {}),
     // An ask's note only: a drawing's reason never reaches the person who drew it.
     ...(!drawn && isString(p.note) && p.note.length > 0 ? { note: p.note } : {}),

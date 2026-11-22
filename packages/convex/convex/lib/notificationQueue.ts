@@ -386,8 +386,12 @@ export type ActorPayload =
       kind: 'request_decided';
       /** The ask's kind, or `drawn` for a body the person drew. */
       about: RequestKind | 'drawn';
-      outcome: 'approved' | 'declined' | 'rejected';
-      /** The lake: an admit's new body, an ask's body, the drawing itself. Absent for a declined admit. */
+      /** `merged`: a drawing merged into a known body (B01-5d) — never an ask's outcome. */
+      outcome: 'approved' | 'declined' | 'rejected' | 'merged';
+      /**
+       * The lake: an admit's new body, an ask's body, the drawing itself — for a merged drawing, the
+       * body it was merged into. Absent for a declined admit.
+       */
       waterBodyId?: Id<'waterBodies'>;
       /** The moderator's note to the asker (D179) — an ask's only; a drawing's reason is audit-facing. */
       note?: string;
@@ -410,6 +414,7 @@ export type ActorPayload =
  * | activity | the activity exists and is still un-linked and un-dismissed |
  * | request_decided (an ask) | the ask is still closed by that decision: its status is the outcome, decided at the decision row's instant |
  * | request_decided (a drawing) | its review is still the outcome, unmerged, and the decision row has not been undone |
+ * | request_decided (a drawing merged) | it is still merged by that merge (`reviewStatus: 'merged'`), and the merge's row has not been undone |
  * | alert_retracted | the alert is still retracted by that row: by its actor, at its instant |
  *
  * `blocked` is the recipient's block set (either direction), loaded once per recipient per tick by
@@ -557,11 +562,16 @@ export async function settleTrigger(
       };
     }
     case 'request_decided':
-      return trigger.requestId !== undefined
-        ? settleAskDecision(ctx, trigger.requestId, trigger.outcome, trigger.actionId)
-        : trigger.waterBodyId !== undefined
-          ? settleDrawnDecision(ctx, trigger.waterBodyId, trigger.outcome, trigger.actionId)
-          : null;
+      if (trigger.requestId !== undefined) {
+        // An ask is never merged: only a drawing is.
+        return trigger.outcome === 'merged'
+          ? null
+          : settleAskDecision(ctx, trigger.requestId, trigger.outcome, trigger.actionId);
+      }
+      if (trigger.waterBodyId === undefined) return null;
+      return trigger.outcome === 'merged'
+        ? settleDrawnMerge(ctx, trigger.waterBodyId, trigger.actionId)
+        : settleDrawnDecision(ctx, trigger.waterBodyId, trigger.outcome, trigger.actionId);
     case 'alert_retracted': {
       const alert = await ctx.db.get(trigger.accessAlertId);
       const action = await ctx.db.get(trigger.actionId);
@@ -632,6 +642,34 @@ async function settleDrawnDecision(
     .first();
   if (undone !== null) return null;
   return { kind: 'request_decided', about: 'drawn', outcome, waterBodyId };
+}
+
+/**
+ * A drawing's merge into a known body (B01-5d), if it still stands: the drawing is still merged by
+ * this merge — `dedupStatus: 'merged'` with the review status the merge wrote — and the merge's row has
+ * not been undone (the unmerge's `unmerge_waterbody` names it). An unmerge inside the window drops the
+ * message; a merge made again is another row, with its own. The message names the body it was merged
+ * into, so the tap lands on the lake the drawing's reports moved to.
+ */
+async function settleDrawnMerge(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  actionId: Id<'moderationActions'>,
+): Promise<ActorPayload | null> {
+  const body = await ctx.db.get(waterBodyId);
+  if (body?.dedupStatus !== 'merged' || body.reviewStatus !== 'merged') return null;
+  if (body.mergedIntoId === undefined) return null;
+  const undone = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
+    .first();
+  if (undone !== null) return null;
+  return {
+    kind: 'request_decided',
+    about: 'drawn',
+    outcome: 'merged',
+    waterBodyId: body.mergedIntoId,
+  };
 }
 
 /** Moderation-visible, for the two thumb-able target tables. */

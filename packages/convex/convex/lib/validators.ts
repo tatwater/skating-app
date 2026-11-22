@@ -305,13 +305,19 @@ export const notificationTrigger = v.union(
    * declined) or a body they drew (`waterBodyId`, approved or rejected). Exactly one of the two ids;
    * `actionId` is the decision's own audit row, which the settle re-check holds the row to. No
    * `actorId`: the moderator is not the actor (`closeFlag`'s reasoning), so a block between asker and
-   * moderator never swallows an answer. `merged` joins `outcome` with the drawn merge (PR 4).
+   * moderator never swallows an answer. `merged` is a drawing merged into a known body (B01-5d), its
+   * `actionId` the merge's `merge_waterbody` row.
    */
   v.object({
     kind: v.literal('request_decided'),
     requestId: v.optional(v.id('waterBodyRequests')),
     waterBodyId: v.optional(v.id('waterBodies')),
-    outcome: v.union(v.literal('approved'), v.literal('declined'), v.literal('rejected')),
+    outcome: v.union(
+      v.literal('approved'),
+      v.literal('declined'),
+      v.literal('rejected'),
+      v.literal('merged'),
+    ),
     actionId: v.id('moderationActions'),
   }),
   /** A moderator retracted this person's live access alert (D285); `actionId` is the retraction's row. */

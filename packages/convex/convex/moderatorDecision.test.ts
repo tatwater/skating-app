@@ -561,6 +561,101 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
   });
 });
 
+describe('a drawing merged into a known body tells the person who drew it (B01-5d)', () => {
+  /**
+   * A pending drawing marked merged as `mergeBodyInto` leaves it, its merge row, and the merge's
+   * message queued — the queue's own contract, apart from the merge that writes it.
+   */
+  const mergedDrawing = async (w: W) => {
+    const drawing = await lake(w.t, 'osm/D', 6);
+    return w.t.run(async (ctx) => {
+      await ctx.db.patch(drawing, {
+        source: 'user',
+        createdByUserId: w.asker.id,
+        reviewStatus: 'merged',
+        dedupStatus: 'merged',
+        mergedIntoId: w.active,
+      });
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        targetId: drawing,
+        reason: 'The same pond',
+        createdAt: Date.now(),
+      });
+      await enqueueModeratorDecision(ctx, {
+        recipientId: w.asker.id,
+        deciderId: w.admin.id,
+        trigger: { kind: 'request_decided', waterBodyId: drawing, outcome: 'merged', actionId },
+      });
+      return { drawing, actionId };
+    });
+  };
+
+  test('the merge reaches the drawer once, naming the body it was merged into', async () => {
+    const w = await world();
+    await mergedDrawing(w);
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    const [merged] = await inboxOf(w.asker.as, KNOWS);
+    expect(merged).toMatchObject({ about: 'drawn', outcome: 'merged', body: { id: w.active } });
+    expect(describeNotification(merged as NotificationView).title).toBe(
+      'Your drawing was merged into Pond A — anything you reported there moved with it',
+    );
+  });
+
+  test('the merge undone inside the window drops it: a row undoing the merge row', async () => {
+    const w = await world();
+    const { actionId, drawing } = await mergedDrawing(w);
+    await w.t.run(async (ctx) => {
+      await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: drawing,
+        reason: 'Not the same pond',
+        undoesActionId: actionId,
+        createdAt: Date.now(),
+      });
+    });
+    expect(await flushAllDue(w.t)).toEqual([]);
+  });
+
+  test('a drawing no longer merged by it — unmerged, or merged without the review status — tells no one', async () => {
+    for (const patch of [
+      { dedupStatus: 'clean' as const, mergedIntoId: undefined, reviewStatus: 'pending' as const },
+      { reviewStatus: 'approved' as const },
+    ]) {
+      const w = await world();
+      const { drawing } = await mergedDrawing(w);
+      await w.t.run((ctx) => ctx.db.patch(drawing, patch));
+      expect(await flushAllDue(w.t), JSON.stringify(patch)).toEqual([]);
+    }
+  });
+
+  test('an ask is never merged: a merged outcome on an ask is dropped at the flush', async () => {
+    const w = await world();
+    const requestId = await activate(w);
+    await w.t.run(async (ctx) => {
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        targetId: w.dormant,
+        reason: 'x',
+        createdAt: Date.now(),
+      });
+      await enqueueModeratorDecision(ctx, {
+        recipientId: w.asker.id,
+        deciderId: w.admin.id,
+        trigger: { kind: 'request_decided', requestId, outcome: 'merged', actionId },
+      });
+    });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    expect(await flushAllDue(w.t)).toEqual([]);
+  });
+});
+
 describe('a moderator’s retraction tells the alert’s author (D285)', () => {
   const alert = async (w: W, extra: Partial<Doc<'accessAlerts'>> = {}) =>
     w.t.run(async (ctx) => {
@@ -863,6 +958,10 @@ describe('the stored payload, read back', () => {
     expect(
       read({ kind: 'request_decided', about: 'drawn', outcome: 'rejected', note: 'Duplicate' }),
     ).toEqual({ kind: 'request_decided', about: 'drawn', outcome: 'rejected' });
+    // A drawing merged into a known body (B01-5d), naming that body.
+    expect(
+      read({ kind: 'request_decided', about: 'drawn', outcome: 'merged', waterBodyId: 'w' }),
+    ).toEqual({ kind: 'request_decided', about: 'drawn', outcome: 'merged', waterBodyId: 'w' });
     expect(
       read({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' }),
     ).toEqual({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' });
@@ -874,6 +973,7 @@ describe('the stored payload, read back', () => {
       { kind: 'request_decided', about: 'drawn', outcome: 'declined' },
       { kind: 'request_decided', about: 'admit', outcome: 'rejected' },
       { kind: 'request_decided', about: 'admit', outcome: 'retracted' },
+      { kind: 'request_decided', about: 'admit', outcome: 'merged' },
       { kind: 'request_decided', about: 'photo', outcome: 'approved' },
       { kind: 'request_decided', outcome: 'approved' },
       { kind: 'alert_retracted', accessAlertId: 'a' },
