@@ -344,10 +344,10 @@ export const rotateBlobs = internalAction({
     try {
       const src = await ctx.runQuery(internal.photos.rotationSource, { photoId });
       if (src === null) return { outcome: 'skipped' };
-      const [full, thumb] = await Promise.all([
-        ctx.storage.get(src.storageId as Id<'_storage'>),
-        ctx.storage.get(src.thumbStorageId as Id<'_storage'>),
-      ]);
+      // In turn, never together: a read that throws would leave the other dangling past the run
+      // (the real backend warns of an unawaited `storage.get`).
+      const full = await ctx.storage.get(src.storageId as Id<'_storage'>);
+      const thumb = await ctx.storage.get(src.thumbStorageId as Id<'_storage'>);
       if ((full?.size ?? 0) + (thumb?.size ?? 0) > ROTATE_MAX_BYTES) {
         throw new RotationError('TooLarge');
       }
