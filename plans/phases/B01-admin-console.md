@@ -10758,6 +10758,64 @@ edits, merged without a textual conflict.
     (register Sh10).
 - **Still open for the founder:** the stall reason says "failed" even for a canceled page.
 
+#### Greptile on #173, round 1 (2026-11-22)
+
+The first review, on `e0b3454a7`, scored 3/5 with two findings. Both are fixed, with a test that
+fails without each fix.
+
+1. **"Flag scans break merge previews"** (`bodyConsole.ts`).
+   - *The bug:* the preview scanned the survivor's flags once per loser flag. 90 loser flags over
+     400 unrelated survivor flags read past 32,000 documents, so the Shape tab couldn't preview a
+     merge the write would accept.
+   - *The class:* a preview costing more than the write it previews. No fixture had a busy survivor.
+   - *The fix:* the preview splits each kind with the write's own functions, over the write's own
+     reads:
+     - `flaggedOnSurvivor`, a point read per open status;
+     - `favoriteTwinOn`;
+     - `bayClashes`, which reads the survivor's bays only once the load has counted them, else the
+       clash list is `capped`.
+
+     The web says a capped list with no names as "Not checked here", from the flag.
+   - *The sweep:* the seed's `flagBy` read a target's flags by `.filter`, and now bounds by the same
+     index. Busy-survivor tests now cover every kind the merge reads but doesn't move: 400
+     unrelated rows on the survivor, the preview against the write, the estimate's edge, the
+     Greptile case, `mergeDrawn` and the ETL path. Each fails on its mutant.
+2. **"Overlapping unmerges unlock bodies early"** (`unmerge.ts`).
+   - *The bug:* with A and B both merged into S, undoing B while A's unmerge ran overwrote S's
+     marker. B's last page then cleared it, with A's pages still owed.
+   - *The class:* a body's marker assumed one unmerge at a time.
+   - *The fix:* the refusal the undo's offer and run share now refuses a new unmerge while either
+     body carries another unmerge's marker: "let that finish — or resume or abandon it — first".
+     The last page and abandon each clear only their own marker.
+   - *The sweep:*
+     - a merge chain is refused in both orders (a survivor that is the loser of a running unmerge;
+       the reverse was already refused, as the survivor is merged);
+     - a stalled first unmerge holds the second until it is resumed or abandoned.
+   - *The web* says the refusal before anything runs:
+     - History's merge row shows the offer's `why`;
+     - a toast Undo is refused in "Not undone", in the server's sentence.
+
+#### CI on the first head (2026-11-22)
+
+CI was red on one test: the multi-page sibling decline (`moderatorDecision.test.ts`), with "Hook
+timed out in 10000ms". CI's runner took 952 s for the convex suite, where this machine takes about
+200 s.
+- **The hook's bound:** the setup's `afterEach` drains the test's scheduled work, and it ran under
+  vitest's 10 s hook default while the test itself is allowed 450 s. The drain now runs against the
+  test's own timeout, so a runaway still fails at that bound.
+- **The scheduler race:** zero-delay pages fired on real timers between the drain's reads. The
+  scheduler is now held on fake timers while the drain runs every page.
+- **The harness's cost:**
+  - *Before:* interval bookkeeping scanned every interval and sorted per read, and every patched
+    document was serialized twice for the no-op check.
+  - *Now:* sorted disjoint intervals, binary-searched; a set of rows read by id; the no-op check
+    compares only the fields set.
+  - *The effect:* on two workers, 112 s without counting, 136 s with the first cut, and 122 s now.
+    The 4,097-range test went from 7.4 s to under 1.7 s.
+- **The constrained run** on the second head: the workspace `pnpm test`, cold, at two workers
+  (`--concurrency=2`, vitest `--maxWorkers=2`). 18/18 tasks and 17,846 tests passed. The convex
+  suite took 203 s, and its slowest test 9 s (the heavy undo; limit 300 s).
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
