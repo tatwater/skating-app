@@ -1,3 +1,4 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
@@ -227,17 +228,18 @@ describe('the bar', () => {
     await waitFor(() => expect(onApprove).toHaveBeenCalledTimes(1));
   });
 
-  it('R asks the reason the drawer reads, and sends it', async () => {
+  it('R asks the reason kept in the audit log (the drawer is never sent it), and sends it', async () => {
     const user = userEvent.setup();
     const onReject = vi.fn(async () => true);
     inShell(<Pane item={OVER_CASPIAN} onReject={onReject} />);
     screen.getByTestId('pane').focus();
     await user.keyboard('r');
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText('Reason · the drawer reads it')).toBeInTheDocument();
+    expect(within(dialog).getByText('Reason · kept in the audit log')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent(/reads it/);
     const box = within(dialog).getByRole('textbox');
-    // Core's cap on a note an asker reads.
-    expect(box).toHaveAttribute('maxlength', '280');
+    // The audit log's cap: the reason is the audit row's.
+    expect(box).toHaveAttribute('maxlength', String(AUDIT_REASON_MAX));
     await user.type(box, 'Already on the map as Caspian Lake');
     await user.click(within(dialog).getByRole('button', { name: 'Reject' }));
     await waitFor(() =>

@@ -1,4 +1,4 @@
-import { MAX_REQUEST_NOTE_LENGTH, MERGE_SUGGEST_SHARE } from '@skating/core';
+import { AUDIT_REASON_MAX, MERGE_SUGGEST_SHARE } from '@skating/core';
 import {
   type ComponentProps,
   type ReactElement,
@@ -50,7 +50,7 @@ import type { DrawnAct } from './useDrawnWrites';
  *   server's share; the report it came from and who drew it; *If merged into ‹body›*, which says
  *   what a merge does and that it is not here yet — never an offer to do it.
  * - **Bar** — *Merge into ‹body›* drawn as *Coming soon* (D286), with no key until it does something, *Approve as new* (A),
- *   *Reject* (R, its reason asked: the drawer reads it). Each only where `can` allows its verb.
+ *   *Reject* (R, its reason asked: kept in the audit log, never sent to the drawer). Each only where `can` allows its verb.
  *
  * No reads, no writes: the container binds them. A refusal is the shell's toast (D268).
  */
@@ -274,8 +274,8 @@ export function DrawnActions({
           description={W.rejectDescription}
           confirm={W.reject}
           label={W.rejectLabel}
-          // The drawer reads it, as an asker reads a decline's note: core's cap on such a note.
-          maxLength={MAX_REQUEST_NOTE_LENGTH}
+          // Audit-only (the drawer is told of the rejection, never its reason): the audit log's cap.
+          maxLength={AUDIT_REASON_MAX}
           onConfirm={onReject}
         />
       )}

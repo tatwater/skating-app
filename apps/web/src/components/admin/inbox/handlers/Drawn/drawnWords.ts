@@ -52,13 +52,17 @@ export const DRAWN_WORDS = {
   /** Each button's tooltip (the bar has no explaining line). */
   whatMerge: 'Folds the drawing into the body it overlaps.',
   whatApprove: 'Lists the drawing as a new body; the drawer is told.',
-  whatReject: 'Takes the drawing off the map; the drawer is told. Asks a reason.',
+  whatReject: 'Takes the drawing off the map; the drawer is told. Asks a reason, kept for staff.',
   bar: 'Drawn body',
   /** The reject dialog. */
   rejectTitle: (name: string) => `Reject · ${name}`,
+  /**
+   * The drawer is told it was rejected, never why: the reason is the audit row's (the server's
+   * rejection carries none to the drawer), so the field says so in the console's words.
+   */
   rejectDescription:
-    'The drawing comes off the map and the drawer is told. Say why — they read it.',
-  rejectLabel: 'Reason · the drawer reads it',
+    'The drawing comes off the map and the drawer is told. Say why, for the record.',
+  rejectLabel: 'Reason · kept in the audit log',
   /** The receipts (what each does, present tense) and the refusal's subject. */
   approved: 'Approved as new',
   approvedDetail: 'Lists it on the map · tells the drawer',

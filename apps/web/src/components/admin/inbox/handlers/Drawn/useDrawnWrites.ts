@@ -15,7 +15,7 @@ import { DRAWN_WORDS as W } from './drawnWords';
 
 /**
  * **The drawn handler's writes** (board 2.5): *Approve as new* is `waterBodies.approve`, *Reject*
- * `waterBodies.reject` with the reason the drawer reads — each asks the Inbox's rule first (a
+ * `waterBodies.reject` with its reason (kept in the audit log; the drawer is told only that it was rejected) — each asks the Inbox's rule first (a
  * drawing the viewer drew is refused, and so is one a colleague already reviewed), so the lever and
  * the write say one thing. *Merge* has no write here yet (the next slice's `mergeDrawn`). Each runs
  * through `useDecisionRunner`: refusals to a toast, the receipt with Undo on the decision's row
