@@ -66,7 +66,11 @@ export const MODERATOR_VIEW = {
   can: { ...OPEN, mergeDrawn: 'Requires admin role' },
 } as unknown as DrawnItem;
 
-/** The viewer drew it (D289): every verb refused, so no bar — and the refusal said once. */
+/**
+ * The drawer's own seat (D289): every verb refused in the server's one sentence, so no bar — and
+ * the refusal said once. Its merge carries the code the server serves beside it (`ownDrawing`, the
+ * same rule `mergePreview` and `merge` refuse by).
+ */
 export const DRAWN_BY_VIEWER = {
   ...OVER_CASPIAN,
   can: {
@@ -74,6 +78,7 @@ export const DRAWN_BY_VIEWER = {
     mergeDrawn: 'You filed this, so another staff member decides it.',
     rejectDrawn: 'You filed this, so another staff member decides it.',
   },
+  canCode: { mergeDrawn: 'ownDrawing' },
 } as unknown as DrawnItem;
 
 /** The drawer's account is gone. */

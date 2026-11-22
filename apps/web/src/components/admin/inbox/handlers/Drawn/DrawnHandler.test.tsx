@@ -177,8 +177,11 @@ describe('the slots', () => {
   });
 
   it('says the refusal once when nothing can be drawn, never as a button', () => {
+    // The drawer's own seat: Merge refused with its code beside the server's sentence.
+    expect(DRAWN_BY_VIEWER.canCode).toEqual({ mergeDrawn: 'ownDrawing' });
     inShell(<Pane item={DRAWN_BY_VIEWER} />);
     expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Merge/ })).toBeNull();
     expect(screen.getByRole('note')).toHaveTextContent(
       'You filed this, so another staff member decides it.',
     );
