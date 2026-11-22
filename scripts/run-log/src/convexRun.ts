@@ -7,19 +7,18 @@
 
 import type { RunAs } from './runAs';
 
-import { spawnSync } from 'node:child_process';
-import process from 'node:process';
 import { parseConvexOutput } from './parseOutput';
 import { identityArgs } from './runAs';
 import { serverSentence } from './serverSentence';
+import { runTeed } from './tee';
 
 /**
  * Call a Convex function and parse its return value.
  *
  * `convex run` pretty-prints the return value on stdout as JSON and sends the function's own logs
- * to stderr, which is captured and shown (once the call returns), so a failed call throws **the
- * server's own sentence** (`serverSentence`) — never pnpm's `Command failed …` line, which a run log
- * would otherwise record as why it failed.
+ * to stderr, which is shown **live**, as it arrives, and kept (`runTeed`), so a failed call throws
+ * **the server's own sentence** (`serverSentence`) — never pnpm's `Command failed …` line, which a
+ * run log would otherwise record as why it failed.
  *
  * **`options.runAs` runs the call as a signed-in person, through this script.** Deployment
  * credentials carry no *user* identity, so a public mutation behind `requireContributorRole` —
@@ -40,22 +39,17 @@ export function convexRun<T>(
   options: { runAs?: RunAs } = {},
 ): T {
   const identity = identityArgs(options.runAs);
-  const res = spawnSync(
-    'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      functionName,
-      JSON.stringify(args),
-      ...identity,
-    ],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 },
-  );
-  if (res.stderr) process.stderr.write(res.stderr);
+  const res = runTeed('pnpm', [
+    '--filter',
+    '@skating/convex',
+    'exec',
+    'convex',
+    'run',
+    functionName,
+    JSON.stringify(args),
+    ...identity,
+  ]);
   if (res.error) throw res.error;
-  if (res.status !== 0) throw new Error(serverSentence(res.stderr ?? ''));
-  return parseConvexOutput<T>(res.stdout ?? '');
+  if (res.status !== 0) throw new Error(serverSentence(res.stderr));
+  return parseConvexOutput<T>(res.stdout);
 }

@@ -1,33 +1,17 @@
-import { spawnSync } from 'node:child_process';
-import process from 'node:process';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { convexRun } from './convexRun';
+import { runTeed } from './tee';
 
-vi.mock('node:child_process', () => ({ spawnSync: vi.fn() }));
-const spawn = vi.mocked(spawnSync);
-
-beforeEach(() => {
-  vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-  spawn.mockReset();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+vi.mock('./tee', () => ({ runTeed: vi.fn() }));
+const teed = vi.mocked(runTeed);
 
 describe('convexRun', () => {
-  it('runs the function as a person and parses what it returned, showing its logs', () => {
-    spawn.mockReturnValueOnce({
-      status: 0,
-      stdout: '{ "ok": true }\n',
-      stderr: 'a log line\n',
-    } as never);
+  it('runs the function as a person, through the tee, and parses what it returned', () => {
+    teed.mockReturnValueOnce({ status: 0, stdout: '{ "ok": true }\n', stderr: 'a log line\n' });
     expect(
       convexRun('inboxSeed:state', { a: 1 }, { runAs: { as: 'user_1', via: 'seed-inbox' } }),
-    ).toEqual({
-      ok: true,
-    });
-    expect(spawn.mock.calls[0]?.[1]).toEqual([
+    ).toEqual({ ok: true });
+    expect(teed).toHaveBeenLastCalledWith('pnpm', [
       '--filter',
       '@skating/convex',
       'exec',
@@ -38,11 +22,10 @@ describe('convexRun', () => {
       '--identity',
       '{"subject":"user_1","via":"seed-inbox"}',
     ]);
-    expect(process.stderr.write).toHaveBeenCalledWith('a log line\n');
   });
 
   it("a failed call throws the server's sentence, never pnpm's line", () => {
-    spawn.mockReturnValueOnce({
+    teed.mockReturnValueOnce({
       status: 1,
       stdout: '',
       stderr: [
@@ -54,21 +37,19 @@ describe('convexRun', () => {
         '• bounties:create',
         ' ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: convex run …',
       ].join('\n'),
-    } as never);
+    });
     expect(() => convexRun('bounties:createChecked', {})).toThrow(
       "Could not find function for 'bounties:createChecked'.",
     );
   });
 
-  it('a call that never started throws why; one with no stderr says it failed with no message', () => {
-    spawn.mockReturnValueOnce({
+  it('a call that never started throws why', () => {
+    teed.mockReturnValueOnce({
       status: null,
       stdout: '',
       stderr: '',
-      error: new Error('spawn pnpm ENOENT'),
-    } as never);
-    expect(() => convexRun('x:y', {})).toThrow('spawn pnpm ENOENT');
-    spawn.mockReturnValueOnce({ status: 1, stdout: null, stderr: null } as never);
-    expect(() => convexRun('x:y', {})).toThrow('convex run failed with no message');
+      error: new Error('spawn ENOENT'),
+    });
+    expect(() => convexRun('x:y', {})).toThrow('spawn ENOENT');
   });
 });
