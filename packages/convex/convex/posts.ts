@@ -116,9 +116,10 @@ export const remove = mutation({
  * **Filters stay per-Report (A10 §2.4).** An optional `filters` blob narrows each Post's members via
  * the shared `reportMatchesFeed` (include-unknown for optional attributes; distance is hard and
  * favorites are exempt). A Post appears with only its matching Reports under the header, and not at
- * all when none match; the `posts` indexes carry no filter columns. Favorites are **boosted to the
- * top of the page** (a stable per-page reorder) and carry `isFavorite: true` for the badge. With no
- * filters + no favorites the result is exactly the Phase 05 feed, one Post per Report.
+ * all when none match; the `posts` indexes carry no filter columns. Favorites carry `isFavorite: true`
+ * and the page stays **newest skate first**: the client lifts them to the top of their recency
+ * section (`groupFeedSections`, D292), since a page reordered here split "Today" around older
+ * favorites. With no filters the result is exactly the Phase 05 feed, one Post per Report.
  *
  * Narrowing runs *after* `paginate`, so a heavily filtered page can come back short (even empty)
  * with `isDone: false` — `usePaginatedQuery` keeps loading; the client requests the next page. (The
@@ -196,8 +197,6 @@ export const listFeed = query({
       const card = await toPostCard(ctx, post, viewer);
       if (card) page.push(card);
     }
-    // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
-    page.sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite));
     // `season` + `isPastSeason` are what let the client label the fallback instead of silently mixing
     // two winters. Sent on every page so a client that started mid-scroll still knows what it's showing.
     return { ...result, page, season: served, isPastSeason: served !== current };

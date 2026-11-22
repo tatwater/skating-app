@@ -8709,3 +8709,24 @@ setter (`redraw_sub_area`). This decision names that shape and its limit, so a r
 the side effects a forward write would run.
 
 **Related:** D15, D33, D226, D36, [`phase-B01`](./phases/B01-admin-console.md) *Briefs (B01-5d)*.
+
+## D292 — Favorites lead their own recency section, never the page; each section header is drawn once (amends Phase 04)
+
+**Decided (2026-11-22, founder).** The feed stays **newest skate first** from the server:
+`posts.listFeed` no longer reorders a page favorites-first. The client splits the list into
+recency sections (Today, Yesterday, Earlier this week, Earlier this month, Older than a month),
+each header at most once and the newest section first, and lifts the viewer's favorites (reports
+and matched lakes alike) to the top of **their own** section. Within a section, favorites come
+first, then the rest, each newest first. A favorite never moves above a newer section.
+`groupFeedSections` in `@skating/core` owns the rule for web and mobile, and buckets by key rather
+than by run, so no input order can repeat a header.
+
+**Why:** Phase 04 boosted favorites to the top of each page on the server, and the client then cut
+the page into sections by time, assuming it was still newest first. After the dev seed, one
+account's two favorites (one from today, one 128 days old) led the page, and Latest read "Today /
+Older than a month / Today / Older than a month". The per-page boost also put page 2's favorites in
+the middle of a scroll, and misplaced weather-matched lakes, which `interleaveLatest` slots in by
+time. The alternatives were dropping the boost (favorites keep only the badge) or a separate
+"Your lakes" block (new UI); the founder chose to keep the boost within each section.
+
+**Related:** D28, D165, [`phase-04`](./phases/04-drive-time-and-filtering.md).

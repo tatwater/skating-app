@@ -2188,7 +2188,7 @@ describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
     });
     expect(cards(filtered).map((c) => c.reportId)).toEqual([nearReport]);
 
-    // Favorite the far body → it's exempt from the distance filter and comes back (boosted).
+    // Favorite the far body → it's exempt from the distance filter and comes back, flagged.
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: far.id });
     const withFav = await asUser.query(api.posts.listFeed, {
       ...ALL,
@@ -2197,12 +2197,11 @@ describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
     const ids = cards(withFav).map((c) => c.reportId);
     expect(ids).toContain(nearReport);
     expect(ids).toContain(farReport);
-    // The favorite is boosted to the top of the page and flagged.
-    expect(cards(withFav)[0]?.reportId).toBe(farReport);
-    expect(cards(withFav)[0]?.isFavorite).toBe(true);
+    expect(cards(withFav).find((c) => c.reportId === farReport)?.isFavorite).toBe(true);
+    expect(cards(withFav).find((c) => c.reportId === nearReport)?.isFavorite).toBe(false);
   });
 
-  test('favorites boost to the top of the page without changing the unfiltered set', async () => {
+  test('a favorite is flagged but keeps its place: the page stays newest first (D292)', async () => {
     const t = convexTestWithGeo();
     const a = await seedBody(t, 'osm/a');
     const b = await seedBody(t, 'osm/b');
@@ -2220,9 +2219,10 @@ describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: b.id });
 
     const res = await asUser.query(api.posts.listFeed, ALL);
-    // Both present; the favorited (older) report is boosted above the newer non-favorite.
-    expect(cards(res).map((c) => c.reportId)).toEqual([oldestFav, newest]);
-    expect(cards(res)[0]?.isFavorite).toBe(true);
+    // Both present, newest skate first: the client lifts the favorite within its recency section
+    // (`groupFeedSections`); a server reorder would split one section around an older favorite.
+    expect(cards(res).map((c) => c.reportId)).toEqual([newest, oldestFav]);
+    expect(cards(res).map((c) => c.isFavorite)).toEqual([false, true]);
   });
 
   test('unfiltered feed for a viewer with no home/favorites is exactly Phase 05', async () => {

@@ -19,18 +19,31 @@ import { latestSearchSchema } from './latestSearch';
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2027, 0, 16, 17);
 
-function post(id: string, ageHours: number, reportIds = [`${id}-r`]): PostCardData {
+function post(
+  id: string,
+  ageHours: number,
+  reportIds = [`${id}-r`],
+  isFavorite = false,
+): PostCardData {
   const t = NOW - ageHours * HOUR;
   return {
     postId: id,
     latestSkateEndTime: t,
+    isFavorite,
     reports: reportIds.map((reportId) => ({ reportId, skateEndTime: t })),
   } as unknown as PostCardData;
 }
 
-function body(id: string, ageHours: number): BodyResultData {
-  return { waterBodyId: id, eventMs: NOW - ageHours * HOUR } as unknown as BodyResultData;
+function body(id: string, ageHours: number, isFavorite = false): BodyResultData {
+  return {
+    waterBodyId: id,
+    eventMs: NOW - ageHours * HOUR,
+    isFavorite,
+  } as unknown as BodyResultData;
 }
+
+const rowId = (r: { kind: string; data: unknown }) =>
+  r.kind === 'report' ? (r.data as PostCardData).postId : (r.data as BodyResultData).waterBodyId;
 
 describe('latestSections', () => {
   it('drops recommended reports, slots matched lakes in by time, and sections by recency', () => {
@@ -58,6 +71,29 @@ describe('latestSections', () => {
       (s) => s.items,
     );
     expect(rows).toHaveLength(2);
+  });
+
+  it('lifts favorites to the top of their own section, never above a newer section (D292)', () => {
+    // The seeded dev feed that read "Today / Older than a month / Today / Older than a month": the
+    // server sends newest first, two of the viewer's favorites among them, one of them months old.
+    const sections = latestSections(
+      [
+        post('t1', 1),
+        post('t2', 2, undefined, true),
+        post('t3', 3),
+        post('o1', 99 * 24),
+        post('o2', 128 * 24, undefined, true),
+      ],
+      new Set(),
+      [body('w', 5, true)],
+      true,
+      NOW,
+    );
+    expect(sections.map((s) => s.key)).toEqual(['today', 'older']);
+    expect(sections.map((s) => s.items.map(rowId))).toEqual([
+      ['t2', 'w', 't1', 't3'],
+      ['o2', 'o1'],
+    ]);
   });
 });
 

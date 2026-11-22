@@ -30,7 +30,8 @@ export type LatestRow = LatestItem<PostCardData>;
  * The feed column's sections — the old page's composition, unchanged: recommended reports come out
  * of the filtered feed (a permissive viewer never sees one twice, D50), matched lakes slot in among
  * the posts by the day each crossed the asked-for nights (`interleaveLatest`), and the list breaks
- * into recency sections. Core owns and tests each step; this only names the order they run in.
+ * into recency sections, favorites first in each (D292). Core owns and tests each step; this only
+ * names the order they run in.
  */
 export function latestSections(
   posts: readonly PostCardData[],
@@ -48,6 +49,7 @@ export function latestSections(
     ),
     (row) => (row.kind === 'report' ? row.data.latestSkateEndTime : row.data.eventMs),
     now,
+    (row) => row.data.isFavorite,
   );
 }
 

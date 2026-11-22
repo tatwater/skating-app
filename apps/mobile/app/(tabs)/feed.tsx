@@ -116,8 +116,9 @@ export default function NewsfeedScreen() {
   );
 
   // Interleave recency scroll-divider headers (Phase 04, decision #5) into the flat list — one header
-  // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
-  // pull-to-refresh keep working over a single `FlatList`. The recommended bundles lead the list.
+  // row per section ("Today / Yesterday / …"), then that section's cards, favorites first (D292), so
+  // infinite scroll + pull-to-refresh keep working over a single `FlatList`. The recommended bundles
+  // lead the list.
   const listItems: FeedListItem[] = [
     ...recommendedItems,
     ...groupFeedSections(
@@ -130,6 +131,7 @@ export default function NewsfeedScreen() {
       ),
       (item) => (item.kind === 'report' ? item.data.latestSkateEndTime : item.data.eventMs),
       now,
+      (item) => item.data.isFavorite,
     ).flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
       ...section.items.map((item) =>

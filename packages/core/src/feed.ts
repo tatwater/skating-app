@@ -201,7 +201,7 @@ export interface FeedCardData {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 04) — drives the feed badge + the per-page boost. */
+  /** Viewer has favorited this body (Phase 04) — the feed badge, and the in-section boost (D292). */
   isFavorite?: boolean;
   /**
    * The body's easiest known approach (A06d / D87), denormalized onto the row by the access join.
@@ -335,7 +335,10 @@ export interface PostCardData {
   latestSkateEndTime: number;
   author: FeedAuthor;
   blocked: boolean;
-  /** Any matched member is on a favorited body or bay (Phase 04 / A09) — the per-page boost. */
+  /**
+   * Any matched member is on a favorited body or bay (Phase 04 / A09) — the badge, and the boost
+   * to the top of its recency section (`groupFeedSections`, D292).
+   */
   isFavorite: boolean;
   /** Never empty: a Post with no matching Report is not in the page. */
   reports: FeedCardData[];
@@ -496,24 +499,50 @@ export interface FeedSection<T> {
 }
 
 /**
- * Partition an already newest-first feed list into contiguous recency sections (Phase 04, decision #5).
- * Each item keeps its position; a new section starts whenever the bucket changes, so an out-of-order
- * list can't produce a duplicate header for the same key. `getTime` extracts the skate-end time so this
- * works over raw `FeedCardData` or a built `FeedCardView` alike. Empty in → empty out.
+ * Where each section is drawn, newest first, whatever order the items came in. A `Record`, so a new
+ * key can't be added without a place in the order.
+ */
+const SECTION_RANK: Readonly<Record<FeedSectionMeta['key'], number>> = {
+  today: 0,
+  yesterday: 1,
+  'this-week': 2,
+  'this-month': 3,
+  older: 4,
+};
+
+/**
+ * Split a feed list into recency sections (Phase 04, decision #5), each key **once**, newest
+ * section first, with the viewer's favorites leading inside each section (D292). Within a section,
+ * favorites come before the rest, and each group runs newest first; ties keep their input order.
+ *
+ * The boost lives here, not on the server: a page reordered favorites-first is no longer newest
+ * first, and splitting it by time drew "Today / Older than a month / Today" (D292). Bucketing by key
+ * rather than by run means no input order can repeat a header. `getTime` extracts the skate-end
+ * time, so this works over raw `FeedCardData`, a built view or a Latest row alike. Empty in → empty out.
  */
 export function groupFeedSections<T>(
   items: readonly T[],
   getTime: (item: T) => number,
   now: number,
+  isFavorite: (item: T) => boolean,
 ): FeedSection<T>[] {
-  const sections: FeedSection<T>[] = [];
+  const byKey = new Map<FeedSectionMeta['key'], { meta: FeedSectionMeta; rows: T[] }>();
   for (const item of items) {
     const meta = feedSectionForTime(getTime(item), now);
-    const last = sections[sections.length - 1];
-    if (last && last.key === meta.key) last.items.push(item);
-    else sections.push({ key: meta.key, label: meta.label, items: [item] });
+    const bucket = byKey.get(meta.key);
+    if (bucket) bucket.rows.push(item);
+    else byKey.set(meta.key, { meta, rows: [item] });
   }
-  return sections;
+  return [...byKey.values()]
+    .sort((a, b) => SECTION_RANK[a.meta.key] - SECTION_RANK[b.meta.key])
+    .map(({ meta, rows }) => ({
+      key: meta.key,
+      label: meta.label,
+      // `Array.prototype.sort` is stable, so equal rows keep their input order.
+      items: rows.sort(
+        (a, b) => Number(isFavorite(b)) - Number(isFavorite(a)) || getTime(b) - getTime(a),
+      ),
+    }));
 }
 
 /**

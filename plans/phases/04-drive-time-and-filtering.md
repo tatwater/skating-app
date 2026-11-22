@@ -225,7 +225,9 @@ Applied in `packages/convex/convex/schema.ts`.
   see roadmap Later/deferred.)*
 - **`reports.listFeed` (extend, from Phase 05):** accept optional **`filters`** + the viewer's cached
   bands + favorite set; apply `matchesFilters` server-side; **boost favorites** to the top of the page.
-  Additive — unfiltered behavior is exactly Phase 05.
+  Additive — unfiltered behavior is exactly Phase 05. *(Amended by D292, 2026-11-22: the server keeps
+  the page newest first, and the client lifts favorites within their recency section; a per-page boost
+  repeated section headers.)*
 - **`putIns.ts` (new):** `listForBody` (derived cluster over visible report points via `clusterPutIns`,
   merged with `official` rows, minus `hidden`/suppressed); `setOfficial` + `hide` (admin/mod, writes
   `moderationActions`).
