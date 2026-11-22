@@ -29,6 +29,7 @@ const TARGET: Record<AuditTarget, string> = {
   waterBodyRequest: 'a request',
   bodyLandmark: 'a landmark',
   corpusPlaceName: 'a place name',
+  supportTicket: 'a support ticket',
 };
 
 /** `{t}` is the target's words; a verb with no `{t}` names its subject itself. */
@@ -92,6 +93,14 @@ const VERB: Record<AuditAction, string> = {
   reopen_request: 'Reopened a request',
   return_to_review: 'Put a drawn body back in review',
   unretract_access_alert: 'Put back an access alert',
+  // T0 PLACEHOLDERS (B01-5e/5f): words for the copy pass; each slice's web builder settles its own.
+  support_note: 'Added a note to {t}',
+  remove_support_note: 'Removed a note from {t}',
+  support_reply: 'Replied to {t}',
+  cancel_support_reply: 'Canceled a reply to {t}',
+  resolve_ticket: 'Resolved {t}',
+  reopen_ticket: 'Reopened {t}',
+  purge_photo: 'Deleted the file of {t}',
   // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
   // closed it and released the pin.
   author_resolve_access_alert: 'The reporter said “It’s open” on a pinned access alert',

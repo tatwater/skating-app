@@ -91,6 +91,9 @@ function auditPath(type: string, id: string): string | null {
     case 'waterBodyRequest':
       // The ask's own item in the Inbox (`inbox.item` resolves a `request:` ref).
       return inboxPath({ item: `request:${id}` });
+    case 'supportTicket':
+      // The ticket's own item in the Inbox (`inbox.item` resolves a `ticket:` ref).
+      return inboxPath({ item: `ticket:${id}` });
     case 'corpusPlaceName':
       return '/admin/water/place-names';
     case 'waterBodySubArea':

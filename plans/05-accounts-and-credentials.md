@@ -97,6 +97,7 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `RESEND_API_KEY` | ✅ | ⬜ prod key | **yes** |
 | `RESEND_FROM_EMAIL` | ✅ `Gli Updates <updates@skating.teaganatwater.com>` | ⬜ | no |
 | `OPERATOR_ALERT_EMAIL` | ✅ | ⬜ | no |
+| `SUPPORT_FROM_EMAIL` | ⬜ owed — the founder sets it (an address at the sending domain; B01-5f, D284); absent, a support reply reads `failed`, never sent from `RESEND_FROM_EMAIL` | ⬜ | no |
 | `STRAVA_CLIENT_ID` · `STRAVA_CLIENT_SECRET` | ✅ | ⬜ | id no · secret **yes** |
 | `GOOGLE_PHOTOS_CLIENT_ID` · `GOOGLE_PHOTOS_CLIENT_SECRET` | ✅ 2026-09-28 | ⬜ | id no · secret **yes** |
 | `WEB_APP_URL` | ✅ the Vercel deployment URL | ⬜ the prod URL | no |

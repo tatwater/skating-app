@@ -426,6 +426,51 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'body.places',
   },
+
+  // ── Support (B01-5f) ───────────────────────────────────────────────────────────────────────────
+  // T0 PLACEHOLDERS (B01-5f): `later` rows that keep the map compiling until S6 writes each verb's
+  // real rule (the design's undo table: note → `remove_support_note`; reply → `cancel_support_reply`
+  // only while it settles, then none, "Sent replies can't be unsent"; resolve → `reopen_ticket`).
+  // `T0_INBOX_PLACEHOLDERS` in the test lists them; S6 empties its part of that list.
+  support_note: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): remove the note (remove_support_note).'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  remove_support_note: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): the note back, as its row had it.'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  support_reply: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): cancel the reply while it settles.'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  cancel_support_reply: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): a canceled reply is written anew, not undone.'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  resolve_ticket: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): reopen the ticket (reopen_ticket).'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  reopen_ticket: {
+    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): resolve the ticket again.'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+
+  // ── Photos (B01-5e) ────────────────────────────────────────────────────────────────────────────
+  // The purge is permanent (§11's *Permanent* row): the bytes are gone, and the removal's dialog says
+  // so before it runs. Final, not a placeholder; S5b may refine the words.
+  purge_photo: {
+    undo: { kind: 'none', why: "The photo's file was deleted 30 days after its removal." },
+    takesAway: always,
+    capability: 'content.moderate',
+  },
 };
 
 /** The verbs whose undo is still owed by a later workstream — the register the build closes. */

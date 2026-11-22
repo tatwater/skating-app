@@ -4216,6 +4216,33 @@ export default defineSchema({
     .index('by_created_at', ['createdAt'])
     .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
+  /**
+   * **A staffer's note or email reply on a support ticket** (B01-5f, D284). Staff-only and PII: no
+   * read outside `inbox.support.read` returns one. A note is soft-removed (`removedAt`, its undo); a
+   * reply is written `settling` with `sendAfter` one settle window on, and the scheduled send re-reads
+   * the row and sends only while it still settles — so canceling inside the window is the undo, and
+   * a sent reply can't be unsent. The address is never stored: it is resolved at send from the
+   * person's profile, else from the ticket's Clerk subject (a ticket filed before provisioning).
+   */
+  supportMessages: defineTable({
+    ticketId: v.id('supportTickets'),
+    kind: literals(['note', 'reply'] as const),
+    authorId: v.id('profiles'),
+    body: v.string(), // capped at its writer: core's `MAX_SUPPORT_NOTE_LENGTH` / `MAX_SUPPORT_REPLY_LENGTH`
+    createdAt: v.number(),
+    removedAt: v.optional(v.number()),
+    // A reply's send, absent on a note.
+    sendAfter: v.optional(v.number()),
+    status: v.optional(literals(['settling', 'sent', 'canceled', 'failed'] as const)),
+    sentAt: v.optional(v.number()),
+    /**
+     * Why a reply wasn't sent, as a class, never the provider's message or an address:
+     * `unconfigured` (no `SUPPORT_FROM_EMAIL`), `seed` (a seeded ticket — the seed never sends),
+     * `noAddress` (no profile email and no Clerk address), `sendFailed` (the provider refused).
+     */
+    failedWhy: v.optional(literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const)),
+  }).index('by_ticket_created', ['ticketId', 'createdAt']),
+
   bounties: defineTable({
     requesterId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
@@ -4321,8 +4348,21 @@ export default defineSchema({
      * migration and no index.
      */
     seasonExpiryCandidate: v.optional(v.boolean()),
+    /**
+     * **The photo's moderation axis** (B01-5e, D222), widened optional: absent reads as `visible`
+     * until the backfill stamps every row, then it narrows to required. A photo that isn't visible is
+     * served to no skater-facing read; staff with `content.read` still see it.
+     */
+    moderationStatus: v.optional(literals(MODERATION_STATUSES)),
+    moderatedAt: v.optional(v.number()),
+    /** A removed photo's bytes go 30 days on (D222): when the purge is due, and when it ran. */
+    purgeAt: v.optional(v.number()),
+    purgedAt: v.optional(v.number()),
   })
     .index('by_uploader', ['uploaderId'])
+    // The purge's due rows. `purgeAt` is optional and the index not sparse — `undefined` sorts first,
+    // so a due range needs a lower bound (`gt('purgeAt', 0)`), never a bare `lte()`.
+    .index('by_purge_at', ['purgeAt'])
     // A Report's photos through their back-link, so erasing the Report unlinks them a page at a time
     // (D248). `eq()` only: the field is optional and the index not sparse.
     .index('by_report', ['reportId'])

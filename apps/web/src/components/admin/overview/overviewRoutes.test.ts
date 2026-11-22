@@ -25,6 +25,7 @@ const TARGET_TYPES = [
   'waterBodyRequest',
   'bodyLandmark',
   'corpusPlaceName',
+  'supportTicket',
 ] as const satisfies readonly ActionRow['targetType'][];
 const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]> extends never
   ? true
@@ -114,7 +115,8 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
-      else if (type === 'waterBodyRequest') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
+      else if (type === 'waterBodyRequest' || type === 'supportTicket')
+        expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );

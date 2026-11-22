@@ -386,6 +386,14 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   reopen_request: 'Reopened request',
   return_to_review: 'Returned drawn body to review',
   unretract_access_alert: 'Restored access alert',
+  // T0 PLACEHOLDERS (B01-5e/5f): words for the copy pass; each slice's web builder settles its own.
+  support_note: 'Noted on ticket',
+  remove_support_note: 'Removed ticket note',
+  support_reply: 'Replied to ticket',
+  cancel_support_reply: 'Canceled ticket reply',
+  resolve_ticket: 'Resolved ticket',
+  reopen_ticket: 'Reopened ticket',
+  purge_photo: 'Deleted photo file',
   author_resolve_access_alert: 'Said “It’s open” on their pinned alert',
   set_posted_access: 'Set posted rules',
   set_satellite_imagery: 'Set satellite link',
@@ -427,6 +435,7 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
   waterBodyRequest: 'Request',
   bodyLandmark: 'Landmark',
   corpusPlaceName: 'Place name',
+  supportTicket: 'Support ticket',
 };
 
 /**
