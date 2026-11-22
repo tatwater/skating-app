@@ -155,8 +155,10 @@ describe('a drawn item, through the route and the view', () => {
   it('Merge writes nothing: it says Coming soon', async () => {
     open(OVER_CASPIAN);
     mount();
+    // The merge block says it already; the press says it again, in a toast.
+    const before = screen.getAllByText('Coming soon').length;
     fireEvent.click(within(inspector()).getByRole('button', { name: /Merge into Caspian Lake/ }));
-    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(before));
     expect(writes.calls).toEqual([]);
   });
 

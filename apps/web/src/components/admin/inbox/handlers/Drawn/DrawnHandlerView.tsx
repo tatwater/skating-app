@@ -59,8 +59,6 @@ export type DrawnHandlerProps = {
   map: ReactNode;
   /** The link into the drawing's Body console: an anchor element (the router's `Link`), unstyled. */
   bodyLink: ReactElement;
-  /** The old editor, where a merge is done until the console's lands (`/admin/water/$id`). */
-  editorLink: ReactElement;
   onApprove: () => Promise<boolean>;
   /** Sends the rejection with its reason; resolves whether it landed (the dialog closes on `true`). */
   onReject: (reason: string) => Promise<boolean>;
@@ -131,9 +129,8 @@ function Part({ children, ...props }: ComponentProps<'div'>) {
 export function DrawnBody({
   item,
   map,
-  editorLink,
   timeZone,
-}: Pick<DrawnHandlerProps, 'item' | 'map' | 'editorLink' | 'timeZone'>) {
+}: Pick<DrawnHandlerProps, 'item' | 'map' | 'timeZone'>) {
   const said = refusalSaid(item);
   const drawer = item.drawer;
   const report = item.fromReport;
@@ -204,17 +201,7 @@ export function DrawnBody({
                 ...mergeRows(item.overlap.body.name),
                 {
                   label: W.rowHere,
-                  value: (
-                    <span className="inline-flex flex-wrap items-baseline gap-x-(--space-2)">
-                      <span>{W.mergeNotHere}</span>
-                      <LinkChip
-                        link={editorLink}
-                        label={W.oldEditor}
-                        slot="drawn-old-editor"
-                        newTab
-                      />
-                    </span>
-                  ),
+                  value: <span data-slot="drawn-merge-not-here">{W.mergeNotHere}</span>,
                 },
               ]}
             />
@@ -330,7 +317,6 @@ export function drawnSlots(props: DrawnHandlerProps): {
       <DrawnBody
         item={props.item}
         map={props.map}
-        editorLink={props.editorLink}
         {...(props.timeZone !== undefined ? { timeZone: props.timeZone } : {})}
       />
     ),

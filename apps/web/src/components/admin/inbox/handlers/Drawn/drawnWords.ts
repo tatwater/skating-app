@@ -38,10 +38,9 @@ export const DRAWN_WORDS = {
   /** *If merged into*: what a merge does, never an offer to do it here. */
   mergeReport: 'Re-homed · stays visible',
   mergePoints: (name: string) => `Points at ${name}`,
-  /** The merge block's last row: where the merge is, while it isn't here. */
+  /** The merge block's last row: a merge isn't built yet — and no page claims to do it. */
   rowHere: 'Here',
-  mergeNotHere: 'Coming soon · the old editor merges it',
-  oldEditor: 'Old editor',
+  mergeNotHere: 'Coming soon',
   /** Each button's tooltip (the bar has no explaining line). */
   whatMerge: 'Folds the drawing into the body it overlaps.',
   whatApprove: 'Lists the drawing as a new body; the drawer is told.',

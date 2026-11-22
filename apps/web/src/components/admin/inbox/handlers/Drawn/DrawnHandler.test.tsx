@@ -65,12 +65,7 @@ function Pane({
   return (
     <div ref={pane} tabIndex={-1} data-testid="pane">
       <DrawnHead item={item} now={DRAWN_NOW} bodyLink={<a href="/admin/body/wb">x</a>} />
-      <DrawnBody
-        item={item}
-        map={null}
-        editorLink={<a href="/admin/water/wb">x</a>}
-        timeZone="America/New_York"
-      />
+      <DrawnBody item={item} map={null} timeZone="America/New_York" />
       <DrawnActions
         item={item}
         onApprove={onApprove}
@@ -109,12 +104,11 @@ describe('the slots', () => {
     expect(within(report).getByText('11 Oct')).toBeInTheDocument();
     const merged = screen.getByRole('region', { name: 'If merged into Caspian Lake' });
     expect(merged).toHaveTextContent('Re-homed · stays visible');
-    expect(merged).toHaveTextContent('Coming soon · the old editor merges it');
-    // The old editor opens in a new tab: a page outside the console.
-    expect(within(merged).getByRole('link', { name: /Old editor/ })).toHaveAttribute(
-      'target',
-      '_blank',
-    );
+    // A merge isn't built anywhere yet: the block says so, links nowhere, and names no page that
+    // would do it (the old editor has no merge).
+    expect(within(merged).getByText('Coming soon')).toBeInTheDocument();
+    expect(within(merged).queryByRole('link')).toBeNull();
+    expect(merged.textContent).not.toMatch(/editor|elsewhere|merge it/i);
   });
 
   it('says a drawing over no body plainly, with no gauge and no merge block', () => {
@@ -175,11 +169,14 @@ describe('the bar', () => {
     const onApprove = vi.fn(async () => true);
     const onReject = vi.fn(async () => true);
     inShell(<Pane item={OVER_CASPIAN} onApprove={onApprove} onReject={onReject} />);
+    // The merge block already says *Coming soon*; a toast would say it again.
+    const said = () => screen.getAllByText('Coming soon').length;
+    const before = said();
     screen.getByTestId('pane').focus();
     await user.keyboard('m');
-    expect(screen.queryByText('Coming soon')).toBeNull();
+    expect(said()).toBe(before);
     await user.click(screen.getByRole('button', { name: /Merge into Caspian Lake/ }));
-    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0));
+    await waitFor(() => expect(said()).toBeGreaterThan(before));
     expect(onApprove).not.toHaveBeenCalled();
     expect(onReject).not.toHaveBeenCalled();
   });

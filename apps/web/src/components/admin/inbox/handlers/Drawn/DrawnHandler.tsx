@@ -11,8 +11,8 @@ import { useDrawnServer, useDrawnWrites } from './useDrawnWrites';
 /**
  * **The drawn handler** (board 2.5), registered for the `drawn` key (`register.tsx`): the item drawn
  * inside `InspectorFrame`, its writes bound (`useDrawnWrites` → `waterBodies.approve` / `reject`),
- * *Open in Body →* to the drawing's own console, the old editor for a merge (a new tab, the console's
- * rule for a page outside it), the bar's keys on the inspector pane, and the item's map (`ItemMap`).
+ * *Open in Body →* to the drawing's own console, the bar's keys on the inspector pane, and the
+ * item's map (`ItemMap`).
  */
 export function DrawnHandler({ item, locked, now }: InboxHandlerProps) {
   // The registry hands this handler only `drawn` items (its one key).
@@ -28,7 +28,6 @@ export function DrawnHandler({ item, locked, now }: InboxHandlerProps) {
     bodyLink: (
       <Link to="/admin/body/$id" params={{ id: drawn.body.waterBodyId }} search={{ from: here }} />
     ),
-    editorLink: <Link to="/admin/water/$id" params={{ id: drawn.body.waterBodyId }} />,
     onApprove: approve,
     onReject: reject,
     pending,

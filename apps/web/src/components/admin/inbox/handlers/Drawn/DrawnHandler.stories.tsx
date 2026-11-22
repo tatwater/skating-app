@@ -64,7 +64,6 @@ function Inspector({
       />
     ),
     bodyLink: <a href="/admin/body/wb_drawn">Open in Body</a>,
-    editorLink: <a href="/admin/water/wb_drawn">Old editor</a>,
     onApprove: async () => true,
     onReject: async () => true,
     pending: null,
