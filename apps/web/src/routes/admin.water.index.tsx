@@ -5,17 +5,15 @@ import { useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
 import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
-import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { useSaidMutation } from '../components/admin/said';
-import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 
 /**
- * Water-body review (D37) + dedup merge (D36) + the **curation list** (A02), and a search that routes
- * into the per-lake editor.
+ * Dedup merge (D36) + the **curation list** (A02), and a search that routes into the per-lake
+ * editor. The review of user-drawn bodies (D37) moved to the Inbox's Drawn bodies lane (B01-5c), so
+ * this page only points there.
  *
- * The two queues are unchanged. What's new is the third section, which exists because nothing in the
+ * The dedup queue is unchanged. What's new is the third section, which exists because nothing in the
  * app previously answered "which bodies have I curated?": `curatedBoost` was editable per body with
  * no index and no list, so the five Phase-02b seed mis-matches — four Champlain bays whose boost
  * landed on same-named lakes elsewhere — were invisible until someone happened to remember them.
@@ -23,7 +21,6 @@ import { Input } from '../components/ui/input';
 export const Route = createFileRoute('/admin/water/')({ component: AdminWater });
 
 function AdminWater() {
-  const pending = useQuery(api.waterBodies.listPendingReview, {});
   const dedup = useQuery(api.waterBodies.listDedupCandidates, {});
   const curated = useQuery(api.waterBodies.listCurated, {});
   const [lookup, setLookup] = useState('');
@@ -35,8 +32,6 @@ function AdminWater() {
     api.waterBodies.searchByName,
     lookupArg === 'skip' ? 'skip' : { ...lookupArg, bodiesOnly: true },
   );
-  const approve = useSaidMutation(api.waterBodies.approve);
-  const reject = useSaidMutation(api.waterBodies.reject);
   const merge = useSaidMutation(api.waterBodies.merge);
   const dismiss = useSaidMutation(api.waterBodies.dismissDuplicates);
 
@@ -44,8 +39,19 @@ function AdminWater() {
     <div className="flex flex-col gap-6">
       <AdminPageHeader
         title="Water bodies"
-        subtitle="Review user-drawn bodies, merge duplicates, and open a lake's editor."
+        subtitle="Merge duplicates, and open a lake's editor."
       />
+      <p className="text-foreground-muted text-sm">
+        User-drawn bodies are reviewed in the{' '}
+        <Link
+          to="/admin/inbox"
+          search={{ lane: 'drawnBodies' }}
+          className="text-foreground underline underline-offset-2"
+        >
+          Inbox’s Drawn bodies
+        </Link>
+        .
+      </p>
 
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
@@ -118,53 +124,6 @@ function AdminWater() {
               ))}
             </tbody>
           </Table>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Pending review{pending ? ` (${pending.length})` : ''}
-        </h2>
-        {pending === undefined ? (
-          <AdminEmpty>Loading…</AdminEmpty>
-        ) : pending.length === 0 ? (
-          <AdminEmpty>No user-drawn bodies awaiting review.</AdminEmpty>
-        ) : (
-          pending.map((body) => (
-            <Card key={body._id}>
-              <CardContent className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-foreground text-sm">{body.name}</p>
-                  <p className="text-foreground-muted text-xs">{body.type} · user-drawn</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    // Refused: said in its toast (the net).
-                    onClick={() => void approve({ waterBodyId: body._id }).catch(() => {})}
-                  >
-                    Approve
-                  </Button>
-                  <ReasonDialog
-                    trigger={
-                      <Button variant="outline" size="sm">
-                        Reject
-                      </Button>
-                    }
-                    title={`Reject “${body.name}”`}
-                    description="Removes it from the map (reversible-in-spirit; not a hard delete)."
-                    confirmLabel="Reject"
-                    requireReason={false}
-                    reasonPlaceholder="Optional note for the audit log"
-                    onConfirm={(reason) =>
-                      reject({ waterBodyId: body._id, ...(reason ? { reason } : {}) })
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))
         )}
       </section>
 
