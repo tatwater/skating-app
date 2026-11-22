@@ -130,8 +130,333 @@ ${ARRAY_CAP_WALKER}`,
   };
 }
 
+/**
+ * **The harness counts what the real backend counts** (B01-5d, measured on a real backend): the
+ * transaction limits `convex-test` enforces are only as true as what it counts, and it undercounted
+ * the two that fail real merges. Measured per operation on a local backend (100 of each, one
+ * transaction; `getTransactionMetrics`):
+ *
+ * | Operation | Index ranges | Documents read | Documents written |
+ * |---|---|---|---|
+ * | `get` | 1 | 1 | 0 |
+ * | `patch` / `replace` / `delete` | 1 (it reads the row) | 1 | 1 (0 when a patch changes nothing) |
+ * | `insert` | 0 | 0 | 1 |
+ * | the same row read again (`get` then `patch`, two patches) | 0 more | 1 more each | 1 each |
+ * | a query (`first`, `take`, `collect`) | 1 a distinct range; the same range again, 0 | each row scanned | 0 |
+ * | a `.filter` query | 1 | **every row scanned**, kept or not | 0 |
+ *
+ * `convex-test` charged a range for a `get` and every query, but none for a `patch`, `replace` or
+ * `delete`, charged the same range again each time it was read, and counted only the rows a filter
+ * kept. So a merge that patched 3,900 rows passed here and failed there ("Too many reads ... 4096").
+ * Now: a write's read takes its row's range; a range is charged once a transaction (a row by its id,
+ * a query by its index and bounds — not its order, limit or filter), through nested calls; a filter's
+ * rejected rows are read; and a patch or replace that changes nothing writes nothing.
+ *
+ * Calibrated against the real backend's own counts: a merge of 3,900 put-ins used 4,043 ranges and
+ * of 1,800 favorites 3,743 (`harnessLimits.test.ts` holds the per-operation table and those two
+ * merges' counts). **Not modeled:** the 1 s execution limit (no honest harness proxy), and a
+ * backend's coalescing of adjacent new ids' ranges (a patch of a row inserted in the same transaction
+ * measured 0.93 of a range; charged as 1 here, so the harness errs a hair conservative).
+ */
+/**
+ * Ranges a registered function is charged before its handler runs (measured on a local backend: the
+ * backend reads its module's code — 8 for a module importing nothing, 60 for one importing
+ * `waterBodies`, 61 `unmerge`, 64 `corpusRequests`, 88 `moderation`, 89 `inboxWrites`, 93 `undo`,
+ * 95 `inbox`). The harness can't see a bundle, so it charges the most measured, rounded up: never
+ * more than 88 ranges (2% of the cap) earlier than the backend would fail.
+ */
+const START_RANGES = 96;
+
+function realBackendCounts(): Plugin {
+  const exact = (code: string, from: string, to: string, file: string) => {
+    const n = code.split(from).length - 1;
+    if (n !== 1) {
+      throw new Error(
+        `convex-test changed (${file}): the harness's real-backend counts no longer apply; update them`,
+      );
+    }
+    return code.replace(from, to);
+  };
+  // **Read intervals, as the backend charges them** (measured): every read covers an interval of one
+  // index — a `get` (or a write's read) the point of its row's id; a query its bounds up to the last key
+  // it read, or its whole bounds once it runs out. A read is charged one range only where it reaches
+  // outside the union of the intervals this transaction has already read on that index — so the same
+  // row twice, a query repeated, or a narrower query inside a wider one costs nothing more.
+  const rangeKey = `const __START_RANGES = ${START_RANGES};
+function __chargeStart(tm) {
+  const t = tm.getMetricsTracker();
+  for (let i = 0; i < __START_RANGES; i++) t?.trackIndexRange();
+}
+const __QUERY_READS = new Map();
+function __cmpKey(a, b) {
+  const n = Math.max(a.vals.length, b.vals.length);
+  for (let i = 0; i < n; i++) {
+    const ai = i < a.vals.length, bi = i < b.vals.length;
+    if (ai && bi) { const c = compareValues(a.vals[i], b.vals[i]); if (c !== 0) return c; continue; }
+    if (!ai && !bi) break;
+    if (!ai) return a.tail === 0 ? -1 : a.tail;
+    return b.tail === 0 ? 1 : -b.tail;
+  }
+  return Math.sign(a.tail - b.tail);
+}
+function __indexFields(db, table, indexName) {
+  if (indexName === "by_creation_time") return ["_creationTime", "_id"];
+  if (indexName === "by_id") return ["_id"];
+  const index = db._schema?.tables.get(table)?.indexes?.find((i) => i.indexDescriptor === indexName);
+  return (index?.fields ?? []).concat(["_creationTime", "_id"]);
+}
+function __plan(db, query) {
+  const s = query?.source ?? {};
+  let table, indexName, range;
+  if (s.type === "IndexRange") { [table, indexName] = s.indexName.split("."); range = s.range ?? []; }
+  else { table = s.tableName ?? (s.indexName ?? "?").split(".")[0]; indexName = s.type === "Search" ? s.indexName : "by_creation_time"; range = []; }
+  const fields = __indexFields(db, table, indexName);
+  const eq = [];
+  let lo = null, hi = null;
+  for (const f of range) {
+    const v = evaluateQueryValue(f.value);
+    if (f.type === "Eq") eq.push(v);
+    else if (f.type === "Gt") lo = { v, tail: 1 };
+    else if (f.type === "Gte") lo = { v, tail: -1 };
+    else if (f.type === "Lt") hi = { v, tail: -1 };
+    else if (f.type === "Lte") hi = { v, tail: 1 };
+  }
+  return {
+    index: table + "." + indexName,
+    fields,
+    desc: (s.order ?? "asc") === "desc",
+    lower: lo ? { vals: [...eq, lo.v], tail: lo.tail } : { vals: eq, tail: -1 },
+    upper: hi ? { vals: [...eq, hi.v], tail: hi.tail } : { vals: eq, tail: 1 },
+  };
+}
+function __docKey(plan, doc) {
+  return { vals: plan.fields.map((f) => evaluateFieldPath(f, doc)), tail: 0 };
+}
+function __reads(tracker) {
+  const layer = tracker?._current?.();
+  if (!layer) return null;
+  layer.reads ??= new Map();
+  return layer.reads;
+}
+function __covered(reads, index, key) {
+  for (const [lo, hi] of reads.get(index) ?? []) {
+    if (__cmpKey(lo, key) <= 0 && __cmpKey(key, hi) <= 0) return true;
+  }
+  return false;
+}
+function __addInterval(reads, index, lo, hi) {
+  if (__cmpKey(lo, hi) > 0) return;
+  const list = [...(reads.get(index) ?? []), [lo, hi]].sort((x, y) => __cmpKey(x[0], y[0]));
+  const merged = [];
+  for (const iv of list) {
+    const last = merged[merged.length - 1];
+    if (last && __cmpKey(iv[0], last[1]) <= 0) { if (__cmpKey(iv[1], last[1]) > 0) last[1] = iv[1]; }
+    else merged.push([iv[0], iv[1]]);
+  }
+  reads.set(index, merged);
+}
+// A row read by id (a get, or a write's read): the point of its id on its table's by_id.
+function __readPoint(tracker, table, id) {
+  const reads = __reads(tracker);
+  if (!reads) return tracker?.trackIndexRange();
+  const index = table + ".by_id";
+  const key = { vals: [id], tail: 0 };
+  if (!__covered(reads, index, key)) tracker.trackIndexRange();
+  __addInterval(reads, index, key, key);
+}
+function __queryStart(tracker, db, queryId, query) {
+  const reads = __reads(tracker);
+  const plan = __plan(db, query);
+  const start = plan.desc ? plan.upper : plan.lower;
+  const st = { plan, charged: false, last: null };
+  if (!reads || !__covered(reads, plan.index, start)) { tracker.trackIndexRange(); st.charged = true; }
+  __QUERY_READS.set(queryId, st);
+}
+function __queryNext(tracker, queryId, doc) {
+  const st = __QUERY_READS.get(queryId);
+  const reads = __reads(tracker);
+  if (!st || !reads) return;
+  const { plan } = st;
+  const reached = doc ? __docKey(plan, doc) : plan.desc ? plan.lower : plan.upper;
+  if (!st.charged && !__covered(reads, plan.index, reached)) { tracker.trackIndexRange(); st.charged = true; }
+  const start = plan.desc ? plan.upper : plan.lower;
+  if (plan.desc) __addInterval(reads, plan.index, reached, start);
+  else __addInterval(reads, plan.index, start, reached);
+  if (!doc) __QUERY_READS.delete(queryId);
+}`;
+  return {
+    name: 'convex-real-backend-counts',
+    enforce: 'pre',
+    transform(code, id) {
+      if (/convex-test[\\/]dist[\\/]transactionMetrics\.js$/.test(id)) {
+        let out = code;
+        // A nested call reads through its caller's intervals (the backend charges a nested call's re-read
+        // of a range its caller read nothing more): the child layer shares the parent's read set.
+        out = exact(
+          out,
+          `    trackIndexRange() {
+        const layer = this._current();
+        if (layer === undefined) {
+            return;
+        }
+        layer.metrics.databaseQueries += 1;`,
+          `    trackIndexRange(key) {
+        const layer = this._current();
+        if (layer === undefined) {
+            return;
+        }
+        if (key !== undefined) {
+            layer.ranges ??= new Map();
+            if (layer.ranges.has(key)) return;
+            layer.ranges.set(key, true);
+        }
+        layer.metrics.databaseQueries += 1;`,
+          'transactionMetrics.js',
+        );
+        out = exact(
+          out,
+          `            metrics: { ...parent.metrics },
+            limits,`,
+          `            metrics: { ...parent.metrics },
+            reads: (parent.reads ??= new Map()),
+            limits,`,
+          'transactionMetrics.js',
+        );
+        out = exact(
+          out,
+          `            parent.metrics = { ...child.metrics };`,
+          `            parent.metrics = { ...child.metrics };`,
+          'transactionMetrics.js',
+        );
+        out = exact(
+          out,
+          `            for (const key of READ_METRIC_KEYS) {
+                parent.metrics[key] = child.metrics[key];
+            }`,
+          `            for (const key of READ_METRIC_KEYS) {
+                parent.metrics[key] = child.metrics[key];
+            }
+`,
+          'transactionMetrics.js',
+        );
+        return out;
+      }
+      if (!/convex-test[\\/]dist[\\/]index\.js$/.test(id)) return null;
+      let out = code;
+      out = exact(
+        out,
+        `const MAX_SEARCH_CANDIDATE_REVISIONS = 1024;`,
+        `const MAX_SEARCH_CANDIDATE_REVISIONS = 1024;
+${rangeKey}`,
+        'index.js',
+      );
+      // A registered function's start: the backend loads its module's code before the handler runs,
+      // charging ranges for it (inline \`t.run\` handlers are fixtures, not functions).
+      {
+        const begin = `        await transactionManager.begin(isNested, transactionLimits);`;
+        if (out.split(begin).length - 1 !== 2) {
+          throw new Error(
+            "convex-test changed (index.js): the harness's start cost no longer applies; update it",
+          );
+        }
+        out = out.replaceAll(
+          begin,
+          `${begin}
+        if (!isNested && functionPath.udfPath !== "inline") __chargeStart(transactionManager);`,
+        );
+      }
+      // A filter's rejected rows are scanned, so read.
+      out = exact(
+        out,
+        `        const filterFn = (doc) => filters.every((f) => evaluateFilter(doc, f));`,
+        `        const filterFn = (doc) => {
+            const kept = filters.every((f) => evaluateFilter(doc, f));
+            if (!kept) getTransactionManager().getMetricsTracker()?.trackRead(getDocumentSize(doc));
+            return kept;
+        };`,
+        'index.js',
+      );
+      // A query's range, once a transaction.
+      out = exact(
+        out,
+        `                tracker?.trackIndexRange();
+                const queryId = db.startQuery(query);
+                return JSON.stringify({ queryId });`,
+        `                const queryId = db.startQuery(query);
+                if (tracker) __queryStart(tracker, db, queryId, query);
+                return JSON.stringify({ queryId });`,
+        'index.js',
+      );
+      out = exact(
+        out,
+        `                    tracker.trackIndexRange();
+                    for (const doc of page) {`,
+        `                    tracker.trackIndexRange();
+                    for (const doc of page) {`,
+        'index.js',
+      );
+      out = exact(
+        out,
+        `                const { value, done } = db.queryNext(args.queryId);`,
+        `                const { value, done } = db.queryNext(args.queryId);
+                if (tracker) __queryNext(tracker, args.queryId, done ? null : value);`,
+        'index.js',
+      );
+      // A row's range, once a transaction — by a read or by a write's read.
+      out = exact(
+        out,
+        `                tracker?.trackIndexRange();
+                const doc = getAndTrack(table, id);`,
+        `                if (tracker) __readPoint(tracker, table, id);
+                const doc = getAndTrack(table, id);`,
+        'index.js',
+      );
+      out = exact(
+        out,
+        `                const { table, id, value } = args;
+                getAndTrack(table, id);
+                db.patch(table, id, value);
+                tracker?.trackWrite(getConvexSize(db.get(table, id)));`,
+        `                const { table, id, value } = args;
+                if (tracker) __readPoint(tracker, table, id);
+                const __before = JSON.stringify(convexToJson(getAndTrack(table, id)));
+                db.patch(table, id, value);
+                const __after = db.get(table, id);
+                if (JSON.stringify(convexToJson(__after)) !== __before) tracker?.trackWrite(getConvexSize(__after));`,
+        'index.js',
+      );
+      out = exact(
+        out,
+        `                const { table, id, value } = args;
+                getAndTrack(table, id);
+                db.replace(table, id, value);
+                tracker?.trackWrite(getConvexSize(db.get(table, id)));`,
+        `                const { table, id, value } = args;
+                if (tracker) __readPoint(tracker, table, id);
+                const __before = JSON.stringify(convexToJson(getAndTrack(table, id)));
+                db.replace(table, id, value);
+                const __after = db.get(table, id);
+                if (JSON.stringify(convexToJson(__after)) !== __before) tracker?.trackWrite(getConvexSize(__after));`,
+        'index.js',
+      );
+      out = exact(
+        out,
+        `                const { table, id } = args;
+                getAndTrack(table, id);
+                db.delete(table, id);`,
+        `                const { table, id } = args;
+                if (tracker) __readPoint(tracker, table, id);
+                getAndTrack(table, id);
+                db.delete(table, id);`,
+        'index.js',
+      );
+      return out;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [singlePaginatePerMutation()],
+  plugins: [singlePaginatePerMutation(), realBackendCounts()],
   test: {
     /**
      * 20s, not vitest's 5s default.
