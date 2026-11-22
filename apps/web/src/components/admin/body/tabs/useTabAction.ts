@@ -15,9 +15,19 @@ import { LANDED, type PickOutcome, REFUSED } from './latestPick';
  * - **`attempt`**, a press-to-save control's write (`useLatestPick`): its outcome in the store's one
  *   shape; **`words`** are the page's for a sender that threw, which the store says.
  */
+/**
+ * A write's receipt: fixed, or built from the write's own answer (a write that answers its audit row
+ * and undo offer — the merge — hands its Undo to the receipt so the toast looks nothing up).
+ */
+export type TabReceipt<T> = Receipt | ((answer: T) => Receipt);
+
 export function useTabAction(bodyId: string): {
-  act: (write: () => Promise<unknown>, receipt: Receipt) => Promise<boolean>;
-  attempt: (write: () => Promise<unknown>, receipt: Receipt, what: string) => Promise<PickOutcome>;
+  act: <T>(write: () => Promise<T>, receipt: TabReceipt<T>) => Promise<boolean>;
+  attempt: <T>(
+    write: () => Promise<T>,
+    receipt: TabReceipt<T>,
+    what: string,
+  ) => Promise<PickOutcome>;
   words: (what: string) => (why: string) => RefusalWords;
 } {
   const { announce } = useUndo();
@@ -25,23 +35,35 @@ export function useTabAction(bodyId: string): {
   // `bodyId`, and every result names the body wherever it shows.
   const hold = useBodyHold();
   const run = useCallback(
-    (
-      write: () => Promise<unknown>,
-      receipt: Receipt,
+    <T>(
+      write: () => Promise<T>,
+      receipt: TabReceipt<T>,
       /** What it was, for its refusal; else the receipt's title. */
       what?: string,
-    ): Promise<boolean> =>
-      sendFor(hold, {
+    ): Promise<boolean> => {
+      // The write's answer, kept for a receipt built from it.
+      let answer: T | undefined;
+      const fixed = typeof receipt === 'function' ? null : receipt;
+      return sendFor(hold, {
         body: bodyId,
-        write,
-        receipt: (subject) => announce({ ...receipt, subject }),
-        what: what ?? (typeof receipt.title === 'string' ? receipt.title : 'The change'),
-      }),
+        write: async () => {
+          answer = await write();
+          return answer;
+        },
+        receipt: (subject) =>
+          announce({ ...(fixed ?? (receipt as (a: T) => Receipt)(answer as T)), subject }),
+        what:
+          what ?? (fixed !== null && typeof fixed.title === 'string' ? fixed.title : 'The change'),
+      });
+    },
     [announce, hold, bodyId],
   );
   const attempt = useCallback(
-    async (write: () => Promise<unknown>, receipt: Receipt, what: string): Promise<PickOutcome> =>
-      (await run(write, receipt, what)) ? LANDED : REFUSED,
+    async <T>(
+      write: () => Promise<T>,
+      receipt: TabReceipt<T>,
+      what: string,
+    ): Promise<PickOutcome> => ((await run(write, receipt, what)) ? LANDED : REFUSED),
     [run],
   );
   const words = useCallback((what: string) => notSavedWords(hold, what), [hold]);

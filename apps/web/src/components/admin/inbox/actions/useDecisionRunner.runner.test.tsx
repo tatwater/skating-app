@@ -146,3 +146,24 @@ describe('a decision the server answers after the moderator moved on', () => {
     expect(screen.queryByText(/Admitted/)).toBeNull();
   });
 });
+
+describe('a merge’s receipt', () => {
+  it('carries its verb to the Undo, so the Undone toast says what the unmerge left', async () => {
+    const write = held();
+    const decision: Decision<'approve'> = {
+      act: 'approve',
+      write: () => write.promise,
+      what: 'The decision',
+      receipt: { title: 'Merged into Crystal Lake', action: 'merge_waterbody' },
+    };
+    const undoneLine = vi.fn(({ actionId }: { actionId: string }) => `left by ${actionId}`);
+    const server = { ...undoServer(), undoneLine };
+    shell(<Runner itemId="item:a" decision={decision} onDone={vi.fn()} />, server);
+    await act(async () => write.release({ target, answer: ANSWER }));
+    const [undo] = await screen.findAllByRole('button', { name: /Undo/ });
+    await act(async () => undo?.click());
+    await waitFor(() => expect(server.run).toHaveBeenCalledWith({ actionId: 'ma_late' }));
+    expect((await screen.findAllByText('left by ma_late')).length).toBeGreaterThan(0);
+    expect(undoneLine).toHaveBeenCalledWith({ actionId: 'ma_late', action: 'merge_waterbody' });
+  });
+});

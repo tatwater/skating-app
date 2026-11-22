@@ -82,4 +82,6 @@ export const MERGE_WORDS = {
     count === 1
       ? '1 row had changed since the merge and stays where it is'
       : `${count.toLocaleString('en-US')} rows had changed since the merge and stay where they are`,
+  /** The unmerge's pages still landing: said until its last one, then the count above, if any. */
+  unmerging: 'Moving rows back…',
 } as const;

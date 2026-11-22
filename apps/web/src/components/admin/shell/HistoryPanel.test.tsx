@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOARD_NOW_NH } from '../../../test/boardNow';
+import type { HistoryEntry } from './HistoryPanel';
 import { HISTORY_ROWS } from './historyFixtures';
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,10 @@ vi.mock('convex/react', () => ({
   },
 }));
 vi.mock('./undo', () => ({ useUndo: () => ({ undo: mocks.undo, announce: vi.fn() }) }));
+// The unmerge's live line reads the server; here it says which merge it would read.
+vi.mock('./UnmergeLeft', () => ({
+  UnmergeLeft: ({ mergeActionId }: { mergeActionId: string }) => `left by ${mergeActionId}`,
+}));
 
 const { HistoryPanel, HistoryPanelView } = await import('./HistoryPanel');
 
@@ -123,6 +128,48 @@ describe('HistoryPanelView', () => {
     expect(rowOf(/Restored a comment/)).toHaveTextContent('· an undo');
   });
 
+  it('says why a merge can’t be undone on its row, and never a verb’s own reason', () => {
+    const rows: HistoryEntry[] = [
+      {
+        ...(HISTORY_ROWS[0] as HistoryEntry),
+        id: 'm1' as HistoryEntry['id'],
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        reason: '',
+        undo: {
+          state: 'unavailable',
+          why: 'This merge was recorded before merges kept everything.',
+        },
+      },
+      {
+        ...(HISTORY_ROWS[0] as HistoryEntry),
+        id: 'h1' as HistoryEntry['id'],
+        reason: '',
+        undo: { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' },
+      },
+    ];
+    render(<HistoryPanelView rows={rows} now={BOARD_NOW_NH} timeZone={NY} onUndo={vi.fn()} />);
+    expect(rowOf(/Merged/)).toHaveTextContent(
+      'This merge was recorded before merges kept everything.',
+    );
+    expect(within(rowOf(/Merged/)).queryByRole('button')).toBeNull();
+    expect(screen.queryByText('Undoing this takes a role you do not hold.')).toBeNull();
+  });
+
+  it('draws a row’s second line where it has one', () => {
+    render(
+      <HistoryPanelView
+        rows={HISTORY_ROWS}
+        now={BOARD_NOW_NH}
+        timeZone={NY}
+        onUndo={vi.fn()}
+        lineOf={(row) => (row.id === HISTORY_ROWS[0]?.id ? '3 rows stay where they are' : null)}
+      />,
+    );
+    expect(rowOf('Hid a report')).toHaveTextContent('3 rows stay where they are');
+    expect(screen.getAllByText('3 rows stay where they are')).toHaveLength(1);
+  });
+
   it('holds its place while loading, and counts an empty trail as 0', () => {
     const { rerender } = render(
       <HistoryPanelView rows={undefined} now={BOARD_NOW_NH} onUndo={vi.fn()} />,
@@ -143,6 +190,7 @@ describe('HistoryPanel', () => {
       actionId: HISTORY_ROWS[0]?.id,
       needsReason: false,
       what: 'Hid a report',
+      action: 'hide',
     });
   });
 
@@ -151,5 +199,21 @@ describe('HistoryPanel', () => {
     expect(mocks.args).toEqual({});
     await userEvent.click(within(rowOf('Restored a report')).getByRole('button', { name: 'Undo' }));
     expect(mocks.undo).toHaveBeenCalledWith(expect.objectContaining({ needsReason: true }));
+  });
+
+  it('reads an unmerge row’s line from the merge it undid', () => {
+    mocks.rows = [
+      {
+        ...(HISTORY_ROWS[0] as HistoryEntry),
+        id: 'u1' as HistoryEntry['id'],
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        undoesActionId: 'm1' as HistoryEntry['id'],
+        undo: { state: 'unavailable', why: 'An unmerge is not undone.' },
+      },
+      HISTORY_ROWS[0],
+    ];
+    render(<HistoryPanel />);
+    expect(screen.getAllByText('left by m1')).toHaveLength(1);
   });
 });

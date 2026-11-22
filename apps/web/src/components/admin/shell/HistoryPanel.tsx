@@ -1,12 +1,14 @@
 import { api } from '@skating/convex/api';
 import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
+import type { ReactNode } from 'react';
 import { Avatar } from '@/components/kit/avatar';
 import { Button } from '@/components/kit/button';
 import { HistoryList, HistoryRow } from '@/components/kit/grid-list';
 import { Section } from '@/components/kit/section-slug';
 import { actionLabel } from './actionLabels';
 import { historyWhen } from './consoleTime';
+import { UnmergeLeft } from './UnmergeLeft';
 import { type UndoTarget, useUndo } from './undo';
 
 /**
@@ -38,7 +40,19 @@ export type HistoryPanelViewProps = {
   /** The section's name. */
   title?: string;
   className?: string;
+  /**
+   * A row's second line, when it has more to say — an unmerge's: what it left where it was, read
+   * live (`UnmergeLeft`). Nothing when left out.
+   */
+  lineOf?: (row: HistoryEntry) => ReactNode;
 };
+
+/**
+ * Why a row can't be undone, said on the row before anything runs — only where the reason is the
+ * row's own rather than the verb's (a merge recorded before its change set kept everything an
+ * unmerge needs); a verb that never undoes says nothing, as before.
+ */
+const SAYS_WHY: ReadonlySet<string> = new Set(['merge_waterbody']);
 
 /** The id a row is reachable by, so "changed since" can take the reader to the row that did. */
 const rowId = (id: string) => `history-${id}`;
@@ -79,6 +93,7 @@ export function HistoryPanelView({
   onUndo,
   title = 'History',
   className,
+  lineOf,
 }: HistoryPanelViewProps) {
   const byId = new Map((rows ?? []).map((r) => [r.id, r]));
 
@@ -142,6 +157,9 @@ export function HistoryPanelView({
         <HistoryList>
           {rows.map((row) => {
             const reason = row.reason.trim();
+            const why =
+              row.undo.state === 'unavailable' && SAYS_WHY.has(row.action) ? row.undo.why : null;
+            const line = lineOf?.(row) ?? null;
             return (
               <HistoryRow
                 key={row.id}
@@ -156,6 +174,16 @@ export function HistoryPanelView({
                 {actionLabel(row.action, row.targetType)}
                 {row.undoesActionId !== undefined && ' · an undo'}
                 {reason.length > 0 && <span className="text-fg3"> · “{reason}”</span>}
+                {why !== null && (
+                  <span data-slot="history-why" className="block text-assist text-fg3">
+                    {why}
+                  </span>
+                )}
+                {line !== null && (
+                  <span data-slot="history-line" className="block text-assist text-fg3">
+                    {line}
+                  </span>
+                )}
               </HistoryRow>
             );
           })}
@@ -194,7 +222,13 @@ export function HistoryPanel({
           actionId: row.id,
           needsReason: row.undo.state === 'available' && row.undo.needsReason,
           what: actionLabel(row.action, row.targetType),
+          action: row.action,
         })
+      }
+      lineOf={(row) =>
+        row.action === 'unmerge_waterbody' && row.undoesActionId !== undefined ? (
+          <UnmergeLeft mergeActionId={row.undoesActionId} />
+        ) : null
       }
       {...(title !== undefined ? { title } : {})}
       {...(className !== undefined ? { className } : {})}

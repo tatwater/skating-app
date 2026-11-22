@@ -122,24 +122,23 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
                 if (survivor === null) return false;
                 const into = survivor;
                 // The receipt names both bodies — the survivor here, this body as its subject — and
-                // takes its Undo (the unmerge) from the write's own answer: filled in as the answer
-                // lands, before the write path raises it.
-                const receipt: Receipt = {
-                  title: MW.merged(into.name),
-                  description: MW.mergedDetail,
-                  target: { targetType: 'waterbody', targetId: bodyId },
-                };
+                // takes its Undo (the unmerge) from the write's own answer.
+                const target = { targetType: 'waterbody', targetId: bodyId } as const;
                 const sent = await attempt(
-                  async () => {
-                    const answer = await mergeWrite({
+                  () =>
+                    mergeWrite({
                       survivorId: into.id as Id<'waterBodies'>,
                       loserId: waterBodyId,
                       reason,
-                    });
-                    Object.assign(receipt, undoOf({ target: receipt.target, answer }));
-                    return answer;
-                  },
-                  receipt,
+                    }),
+                  (answer): Receipt => ({
+                    title: MW.merged(into.name),
+                    description: MW.mergedDetail,
+                    target,
+                    // Its Undo is the unmerge: the Undone toast says what stayed where it was.
+                    action: 'merge_waterbody',
+                    ...undoOf({ target, answer }),
+                  }),
                   MW.what,
                 );
                 return sent.landed;

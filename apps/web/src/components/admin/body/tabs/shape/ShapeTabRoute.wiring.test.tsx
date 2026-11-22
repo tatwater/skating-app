@@ -239,6 +239,8 @@ describe('the Shape tab’s merge, through the route', () => {
       subject: 'Mascoma Lake',
       actionId: MERGE_ANSWER.actionId,
       undoNeedsReason: true,
+      // Its Undo is the unmerge: the Undone toast reads what stayed where it was.
+      action: 'merge_waterbody',
     });
   });
 

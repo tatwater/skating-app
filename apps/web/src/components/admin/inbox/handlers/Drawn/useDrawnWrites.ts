@@ -92,7 +92,12 @@ export function useDrawnWrites(
             await server.mergeDrawn({ itemId, survivorId: survivor.waterBodyId }),
           ),
         // Both bodies named: the survivor here, the drawing as the receipt's subject.
-        receipt: { title: W.mergedInto(survivor.name), description: W.mergedDetail },
+        // Its Undo is the unmerge: the Undone toast says what stayed where it was.
+        receipt: {
+          title: W.mergedInto(survivor.name),
+          description: W.mergedDetail,
+          action: 'merge_waterbody',
+        },
       } satisfies Decision<DrawnAct>),
     [run, server, itemId, waterBodyId],
   );

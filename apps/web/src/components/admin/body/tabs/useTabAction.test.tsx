@@ -87,6 +87,29 @@ describe('useTabAction', () => {
     expect(mocks.announce).not.toHaveBeenCalled();
   });
 
+  it('builds a receipt from the write’s own answer, and words a refusal from “The change”', async () => {
+    const { result } = renderHook(() => useTabAction('wb1'));
+    const fromAnswer = (answer: { actionId: string }) => ({
+      ...RECEIPT,
+      actionId: answer.actionId,
+    });
+    await expect(result.current.act(async () => ({ actionId: 'ma1' }), fromAnswer)).resolves.toBe(
+      true,
+    );
+    expect(mocks.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ ...RECEIPT, actionId: 'ma1' }),
+    );
+    await expect(
+      result.current.act(async (): Promise<{ actionId: string }> => {
+        throw new ConvexError('Water body not found');
+      }, fromAnswer),
+    ).resolves.toBe(false);
+    expect(toasts).toEqual([
+      expect.objectContaining({ description: 'The change: Water body not found' }),
+    ]);
+    expect(mocks.announce).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a landed write landed when its receipt can’t be shown', async () => {
     mocks.announce.mockImplementation(async () => {
       throw new Error('the toast queue is gone');

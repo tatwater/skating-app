@@ -198,6 +198,46 @@ describe('the receipt toast', () => {
   });
 });
 
+describe('the Undone toast’s line', () => {
+  /** A merge's receipt: its own row, and the verb whose Undo has more to say. */
+  const merged: Receipt = {
+    title: 'Merged into Crystal Lake',
+    target: { targetType: 'waterbody', targetId: 'wb1' },
+    actionId: 'ma1',
+    undoNeedsReason: false,
+    action: 'merge_waterbody',
+  };
+
+  it('says what the server’s line says for the verb undone — a merge’s unmerge', async () => {
+    const undoneLine = vi.fn(({ actionId }: { actionId: string }) => `left by ${actionId}`);
+    render(<Harness server={{ ...server, undoneLine }} receipt={merged} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    await toastNamed('Undone');
+    expect(undoneLine).toHaveBeenCalledWith({ actionId: 'ma1', action: 'merge_waterbody' });
+    expect(screen.getByText('left by ma1')).toBeInTheDocument();
+    expect(screen.queryByText('Both rows stay in the audit log')).toBeNull();
+  });
+
+  it('says the usual line when the server has nothing more, or the verb isn’t known', async () => {
+    const undoneLine = vi.fn(() => null);
+    render(<Harness server={{ ...server, undoneLine }} receipt={receipt} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    await toastNamed('Both rows stay in the audit log');
+    expect(undoneLine).not.toHaveBeenCalled();
+  });
+
+  it('says the usual line for a verb whose line is nothing more', async () => {
+    const undoneLine = vi.fn(() => null);
+    render(<Harness server={{ ...server, undoneLine }} receipt={merged} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    await toastNamed('Both rows stay in the audit log');
+    expect(undoneLine).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a receipt that names its own row', () => {
   it('needs no lookup, and undoes that row', async () => {
     const own = { ...receipt, actionId: 'w1', undoNeedsReason: false };
