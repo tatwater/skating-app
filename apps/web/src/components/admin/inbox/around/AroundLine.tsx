@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import type { AroundItData } from '../handlers/Flag/flagTypes';
 import { AROUND_WORDS as W } from '../handlers/Flag/flagWords';
 import { type Retry, SubHead } from '../handlers/Flag/parts';
-import { aroundLine, aroundSummary } from './aroundModel';
+import { aroundLine, aroundSummary, isCapped } from './aroundModel';
 
 /** What the *Around it* read came to. */
 export type AroundState = AroundItData | null | 'loading' | 'failed';
@@ -38,7 +38,7 @@ export function AroundLine({
   ...props
 }: AroundLineProps) {
   const ready = typeof state === 'object' && state !== null;
-  const summary = ready ? aroundSummary(state.phrases) : null;
+  const summary = ready ? aroundSummary(state.phrases, undefined, isCapped(state)) : null;
   return (
     <section
       data-slot="around-it"

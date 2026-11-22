@@ -1,4 +1,5 @@
 import { api } from '@skating/convex/api';
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { Fragment, useRef, useState } from 'react';
 
@@ -232,6 +233,8 @@ export function AuthorMenu({
           description={shown.ask.description}
           confirm={shown.ask.confirm}
           reason
+          // The server's cap on an audit reason: an over-long one is stopped here, not refused.
+          maxLength={AUDIT_REASON_MAX}
           destructive={shown.ask.destructive === true}
           onConfirm={(reason) => run(shown.id, shown.ask.action(reason), false)}
         />

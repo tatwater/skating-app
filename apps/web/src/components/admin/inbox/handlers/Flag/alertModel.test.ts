@@ -2,13 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 
 import { alertCardFoot, alertLife, foldConfirmations, lastedWords } from './alertModel';
-import { at, BOARD_NOW, MOREY_ALERT } from './flagFixtures';
+import { at, BOARD_NOW, BOARD_ZONE, MOREY_ALERT } from './flagFixtures';
 
 const DAY = 86_400_000;
 
 describe("an alert's life", () => {
   test('board 2.6: posted, pinned, confirmed, flagged today, would lapse', () => {
-    const { stations, lines } = alertLife(MOREY_ALERT, BOARD_NOW);
+    const { stations, lines } = alertLife(MOREY_ALERT, BOARD_NOW, BOARD_ZONE);
     expect(
       stations.map((s) => [s.when, s.title, s.mark, s.next ?? null, s.lasted ?? null]),
     ).toEqual([
@@ -22,7 +22,7 @@ describe("an alert's life", () => {
   });
   test('nothing today: a Today station is added', () => {
     const life = MOREY_ALERT.life.slice(0, 3);
-    const { stations } = alertLife({ ...MOREY_ALERT, life }, BOARD_NOW);
+    const { stations } = alertLife({ ...MOREY_ALERT, life }, BOARD_NOW, BOARD_ZONE);
     expect(stations.map((s) => s.title)).toEqual([
       'Posted',
       'Pinned official',
@@ -36,7 +36,11 @@ describe("an alert's life", () => {
       ...MOREY_ALERT.life,
       { at: at(10, 14, 11), event: 'retracted' as const, by: null },
     ];
-    const { stations, lines } = alertLife({ ...MOREY_ALERT, life, status: 'retracted' }, BOARD_NOW);
+    const { stations, lines } = alertLife(
+      { ...MOREY_ALERT, life, status: 'retracted' },
+      BOARD_NOW,
+      BOARD_ZONE,
+    );
     expect(stations.at(-1)?.title).toBe('Retracted');
     expect(stations.at(-1)?.mark).toBe('square');
     expect(lines.some((l) => l.line === 'dashed')).toBe(false);
@@ -47,7 +51,11 @@ describe("an alert's life", () => {
       { at: at(10, 5, 9), event: 'unpinned' as const, by: null },
       { at: at(10, 7, 9), event: 'denied' as const, by: null },
     ];
-    const { stations } = alertLife({ ...MOREY_ALERT, life, status: 'active' }, BOARD_NOW);
+    const { stations } = alertLife(
+      { ...MOREY_ALERT, life, status: 'active' },
+      BOARD_NOW,
+      BOARD_ZONE,
+    );
     expect(stations.map((s) => s.next ?? null).slice(0, 4)).toEqual([
       'thin',
       'heavy',
@@ -71,9 +79,13 @@ describe("an alert's life", () => {
     expect(stations[2]?.title).toBe('Still so ×4');
   });
   test('the card’s foot', () => {
-    expect(alertCardFoot(MOREY_ALERT)).toBe('Pinned · since 3 Oct');
-    expect(alertCardFoot({ ...MOREY_ALERT, status: 'active' })).toBe('Active · lapses 8 Nov');
-    expect(alertCardFoot({ ...MOREY_ALERT, status: 'expired', expiresAt: null })).toBe('Lapsed');
+    expect(alertCardFoot(MOREY_ALERT, BOARD_ZONE)).toBe('Pinned · since 3 Oct');
+    expect(alertCardFoot({ ...MOREY_ALERT, status: 'active' }, BOARD_ZONE)).toBe(
+      'Active · lapses 8 Nov',
+    );
+    expect(alertCardFoot({ ...MOREY_ALERT, status: 'expired', expiresAt: null }, BOARD_ZONE)).toBe(
+      'Lapsed',
+    );
   });
   test('property: stations are evenly one per event (plus today and the lapse), lines between only', () => {
     fc.assert(
@@ -94,7 +106,11 @@ describe("an alert's life", () => {
         ),
         (events) => {
           const life = events.map((e) => ({ ...e, by: null }));
-          const { stations } = alertLife({ ...MOREY_ALERT, life, status: 'active' }, BOARD_NOW);
+          const { stations } = alertLife(
+            { ...MOREY_ALERT, life, status: 'active' },
+            BOARD_NOW,
+            BOARD_ZONE,
+          );
           expect(stations.at(-1)?.next).toBeUndefined();
           for (const s of stations.slice(0, -1)) expect(s.next).toBeDefined();
           for (const s of stations)

@@ -12,7 +12,7 @@ import { InspectorFrame } from '../../inspector/InspectorFrame';
 import { InspectorProvider, useInspectorContext } from '../../inspector/inspectorContext';
 import { decidedStateOf } from '../../inspector/lockModel';
 import { flagSlots } from './FlagView';
-import { BOARD_NOW } from './flagFixtures';
+import { BOARD_NOW, BOARD_ZONE } from './flagFixtures';
 import type { FlagItem } from './flagTypes';
 import type { WeatherState } from './parts';
 import type { FlagWrite } from './useFlagWrites';
@@ -67,7 +67,9 @@ export function StoryFlagInspector({
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState<number>(AROUND_IT_DEFAULT_DAYS);
   const author = item.author;
+  // The boards' zone, whatever zone the story runs in (the fixtures are absolute instants in it).
   const { head, actions, body } = flagSlots({
+    timeZone: BOARD_ZONE,
     item,
     now,
     ...(weather !== undefined && { weather }),
@@ -109,6 +111,7 @@ export function StoryFlagInspector({
           days={days}
           onDays={setDays}
           safety={item.lane === 'safety'}
+          timeZone={BOARD_ZONE}
           onRetry={onRetry}
         />
       )}
@@ -126,7 +129,7 @@ export function FlagBoard({ item, now = BOARD_NOW, ...reads }: FlagBoardProps) {
   const [manager] = useState(createToastManager);
   return (
     <UndoProvider server={NO_UNDO} manager={manager}>
-      <InspectorProvider value={{ pane, decidedOnOpen: false, now }}>
+      <InspectorProvider value={{ pane, decidedOnOpen: false, now, timeZone: BOARD_ZONE }}>
         <section
           ref={pane}
           tabIndex={-1}

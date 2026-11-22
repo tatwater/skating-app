@@ -1,4 +1,5 @@
 import type { Id, TableNames } from '@skating/convex/dataModel';
+import { zonedInstant } from '@skating/core';
 
 import type {
   AlertSubjectData,
@@ -21,11 +22,14 @@ import type {
 
 const id = <T extends TableNames>(s: string) => s as Id<T>;
 
-/** A local moment in 2026 (`month` 1-based) — the reader's zone, as the page draws it. */
-export const at = (month: number, day: number, hour: number, minute = 0) =>
-  new Date(2026, month - 1, day, hour, minute).getTime();
+/** The boards' zone: every fixture moment is an absolute instant in it, whatever zone runs. */
+export const BOARD_ZONE = 'America/New_York';
 
-/** The boards' "now": Wed 14 Oct 2026, local midday. */
+/** A moment in 2026 (`month` 1-based), the boards' wall clock, as an absolute instant. */
+export const at = (month: number, day: number, hour: number, minute = 0) =>
+  zonedInstant(2026, month, day, hour * 60 + minute, BOARD_ZONE);
+
+/** The boards' "now": Wed 14 Oct 2026, midday in the boards' zone. */
 export const BOARD_NOW = at(10, 14, 12);
 
 const cm = (inches: number) => inches * 2.54;
@@ -556,7 +560,8 @@ export const HAZARD_AUTO_ITEM: FlagItem = {
     {
       ...SARAH_FLAG,
       flagId: id<'contentFlags'>('f_auto'),
-      note: null,
+      // The hazard vote's note as production writes it (`hazardConfirmations`): the rule's own count.
+      note: '2 skaters reported that nothing was ever at this pin.',
       filer: null,
       autoFiled: true,
       occurrences: 4,
@@ -569,6 +574,10 @@ export const HAZARD_AUTO_ITEM: FlagItem = {
 };
 
 /** The contradiction check against a person (an app flag on a user). */
+/** What production writes on every contradiction-check flag (`contradictions.ts`). */
+export const CONTRADICTION_NOTE =
+  'Auto: repeated weather-unexplained contradictions against corroborated reports. Review the good-vs-bad trend.';
+
 /** The contradiction check's subject: the reports the rule counted, his reports past the cap. */
 export const CONTRADICTED_AUTHOR: AuthorBlockData = {
   ...ROB_AUTHOR,
@@ -620,6 +629,8 @@ export const PERSON_ITEM: FlagItem = {
     {
       ...HAZARD_AUTO_ITEM.flags[0],
       flagId: id<'contentFlags'>('f_contra'),
+      // The contradiction check's note as production writes it (`contradictions.ts`): fixed prose.
+      note: CONTRADICTION_NOTE,
       occurrences: 2,
       prior: null,
     } as FlagMember,

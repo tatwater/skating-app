@@ -135,6 +135,28 @@ export function historyLinkOf(target: FlagTarget, author: FlagItem['author']): H
   }
 }
 
+/**
+ * The Safety lane's head says whose claim it is and what it claims, per subject — never a finding of
+ * the console's: every flag in this lane is an `unsafe_false_report`, which over a report means "it
+ * says the ice is better than it is" and over a hazard means the warning is false; the hazard vote's
+ * own flag (every member the app's) says the warning was never there.
+ */
+export function safetyTitle(item: Pick<FlagItem, 'target' | 'flags'>): string {
+  switch (item.target.targetType) {
+    case 'report':
+    case 'post':
+      return W.flaggedAs.report;
+    case 'hazard': {
+      const live = liveFlags(item.flags);
+      return live.length > 0 && live.every((f) => f.autoFiled)
+        ? W.flaggedAs.hazardNeverThere
+        : W.flaggedAs.hazard;
+    }
+    default:
+      return W.flaggedAs.other;
+  }
+}
+
 export function flagHead(
   item: Pick<FlagItem, 'lane' | 'target' | 'flags' | 'filedAt' | 'author'>,
   now: number,
@@ -143,7 +165,7 @@ export function flagHead(
   const age = ageInWords(item.filedAt, now);
   const reasons = reasonsOf(liveFlags(item.flags));
   const what = item.target.targetType;
-  const title = safety && what !== 'user' ? W.flaggedAs : W.flagOn(W.flagOnWhat[what]);
+  const title = safety && what !== 'user' ? safetyTitle(item) : W.flagOn(W.flagOnWhat[what]);
   const reasonWords = reasons.map((r) => REASON_HEAD[r]).join(' · ');
   const sub = safety || reasonWords === '' ? age : `${reasonWords} · ${age}`;
   return { title, safety, sub, link: historyLinkOf(item.target, item.author) };

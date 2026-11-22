@@ -17,3 +17,11 @@ test('here while the item is open; not once another is, nor once the handler has
   // The answer for i_two lands after the handler went: no receipt over whatever stands there now.
   expect(second()).toBe(false);
 });
+
+test('under StrictMode (an effect set up, torn down and set up again) it is here after mount', () => {
+  const { result } = renderHook(({ id }) => useStillHere(id), {
+    initialProps: { id: 'i_one' },
+    reactStrictMode: true,
+  });
+  expect(result.current()).toBe(true);
+});

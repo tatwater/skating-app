@@ -44,10 +44,12 @@ export function linePhrases(
 export function aroundSummary(
   phrases: readonly AroundItPhrase[],
   max: number = AROUND_IT_LINE_PHRASES,
+  /** The read was cut short: each phrase's count is a floor ("2+ measured less"). */
+  capped = false,
 ): string | null {
   const shown = linePhrases(phrases, max);
   if (shown.length === 0) return null;
-  return shown.map((p) => W.phrase[p.key](p.count)).join(' · ');
+  return shown.map((p) => W.phrase[p.key](`${p.count}${capped ? '+' : ''}`)).join(' · ');
 }
 
 /** The line's first line: how many more reports, at which body, within how many days. */
@@ -61,6 +63,10 @@ export function aroundLine(view: AroundItView, bodyName: string): string {
 /** The read stopped short on either side: every count of the window's reports is a floor. */
 export const isCapped = (view: Pick<AroundItView, 'cappedBefore' | 'cappedAfter'>): boolean =>
   view.cappedBefore || view.cappedAfter;
+
+/** A count over the window as written: a floor ("2+") when the read was cut short. */
+export const windowCount = (view: Pick<AroundItView, 'cappedBefore' | 'cappedAfter'>, n: number) =>
+  `${n}${isCapped(view) ? '+' : ''}`;
 
 /** The window's reports, this one included, as a count that says when it is a floor ("101+"). */
 export const reportsCount = (view: AroundItView): string =>

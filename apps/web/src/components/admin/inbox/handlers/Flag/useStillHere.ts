@@ -9,11 +9,14 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 export function useStillHere(itemId: string): () => boolean {
   const current = useRef<string | null>(itemId);
   current.current = itemId;
-  useLayoutEffect(
-    () => () => {
+  // Set in the effect's setup as well as its render: StrictMode (or an `<Activity>` hidden and shown
+  // again) tears an effect down and sets it up again, and a cleanup that only clears would leave a
+  // mounted handler reading "gone".
+  useLayoutEffect(() => {
+    current.current = itemId;
+    return () => {
       current.current = null;
-    },
-    [],
-  );
+    };
+  }, [itemId]);
   return useCallback(() => current.current === itemId, [itemId]);
 }

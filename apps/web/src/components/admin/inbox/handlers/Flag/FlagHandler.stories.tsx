@@ -101,7 +101,7 @@ export const Board21: Story = {
   args: SAFETY_ARGS,
   play: async ({ canvasElement }) => {
     const head = slot(canvasElement, 'flag-head');
-    await expect(head).toHaveTextContent('Flagged as unsafe');
+    await expect(head).toHaveTextContent('Flagged: false safety report');
     await expect(slot(head, 'flag-head-safety')).toHaveTextContent('Safety');
     // Filed 10 Oct 18:02, read at noon on the 14th: three whole days (the board rounds it to 4).
     await expect(slot(head, 'flag-head-sub')).toHaveTextContent('3 days ago');
@@ -161,7 +161,7 @@ export const Board21: Story = {
     await expect(slot(author, 'author-standing')).toHaveTextContent('Suspended');
     await expect(slot(author, 'author-standing')).toHaveTextContent('until 15 Oct');
     await expect(slot(author, 'author-standing-by')).toHaveTextContent('Matt Steinberg');
-    await expect(author).toHaveTextContent('14 · 2 flagged by the contradiction check');
+    await expect(author).toHaveTextContent('14 · 2 counted by the contradiction check');
     await expect(author).toHaveTextContent('1 · this one');
     await expect(slot(author, 'author-trust')).toHaveTextContent('Trusted');
     await expect(author).not.toHaveTextContent('41 pts');
@@ -288,6 +288,9 @@ export const AroundWindow: Story = {
       'Open all 4+ in Reports',
     );
     await expect(slot(must(sheet()), 'around-stats')).toHaveTextContent('4+ incl. this one');
+    // Every tile over the cut-short read is a floor, and the range says whose it is.
+    await expect(slot(must(sheet()), 'around-stats')).toHaveTextContent('On the ice2+');
+    await expect(slot(must(sheet()), 'around-stats')).toHaveTextContent('Of the reports read');
   },
 };
 
@@ -494,6 +497,11 @@ export const AppFlagOnHazard: Story = {
   play: async ({ canvasElement }) => {
     const app = slot(canvasElement, 'flag-app');
     await expect(app).toHaveTextContent('Filed by the app');
+    await expect(slot(canvasElement, 'flag-head')).toHaveTextContent('Flagged: never there');
+    // The hazard vote's note is the rule's own count, as filed: drawn.
+    await expect(slot(app, 'flag-app-note')).toHaveTextContent(
+      '2 skaters reported that nothing was ever at this pin.',
+    );
     await expect(app).toHaveTextContent('Filed by the app');
     await expect(slot(app, 'flag-occurrences')).toHaveTextContent(
       '4th occurrence · last dismissed 6 d ago',
@@ -526,11 +534,14 @@ export const PersonFlag: Story = {
     );
     await expect(slot(canvasElement, 'author-block')).toHaveTextContent('The person');
     await expect(slot(canvasElement, 'flag-app')).toHaveTextContent(
-      'The contradiction check filed this: 3 of their recent reports differed from the weather records',
+      'The contradiction check filed this: 3 of their reports, with no corroboration of their own, disagreed with a more-corroborated report at the same body by more than the weather since explains',
     );
+    // Production's note on this flag is fixed server prose, not the rule's count: never drawn.
+    await expect(canvasElement.querySelector('[data-slot="flag-app-note"]')).toBeNull();
+    await expect(slot(canvasElement, 'flag-app')).not.toHaveTextContent('Auto:');
     // Their reports, counted among their newest 100: a floor, never an exact figure it isn't.
     await expect(slot(canvasElement, 'author-block')).toHaveTextContent(
-      '100+ · 3 flagged by the contradiction check',
+      '100+ · 3 counted by the contradiction check',
     );
     await expect(slot(canvasElement, 'author-prior')).toHaveTextContent(
       '50+ earlier flags on them were actioned',
@@ -626,7 +637,9 @@ export const Board21Light: Story = {
   args: SAFETY_ARGS,
   globals: { surface: 'admin', mode: 'light' },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'flag-head')).toHaveTextContent('Flagged as unsafe');
+    await expect(slot(canvasElement, 'flag-head')).toHaveTextContent(
+      'Flagged: false safety report',
+    );
   },
 };
 

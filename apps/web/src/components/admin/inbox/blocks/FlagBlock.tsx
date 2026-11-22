@@ -172,6 +172,20 @@ function PersonFlag({
   );
 }
 
+/** Whether an app flag's note is the rule's own count (the hazard vote's), the only one drawn. */
+export function appNoteShown(
+  flag: Pick<FlagMember, 'reason' | 'note' | 'autoFiled'>,
+  targetType: FlagTarget['targetType'],
+): boolean {
+  return (
+    flag.autoFiled &&
+    flag.reason === 'unsafe_false_report' &&
+    targetType === 'hazard' &&
+    flag.note !== null &&
+    flag.note.trim() !== ''
+  );
+}
+
 function AppFlag({
   flag,
   targetType,
@@ -190,9 +204,11 @@ function AppFlag({
     <Note data-slot="flag-app">
       <strong>{W.filedByApp}</strong>
       <span className="block">{appRuleOf(flag.reason, targetType, counted, hazardType)}</span>
-      {/* The rule's own count, as it filed it ("2 skaters reported that nothing was ever at this
-          pin") — each person's latest vote, the reporter's left out. */}
-      {flag.note !== null && flag.note.trim() !== '' && (
+      {/* Only the hazard vote's note is the rule's own count, as it filed it ("2 skaters reported that
+          nothing was ever at this pin" — each person's latest vote, the reporter's left out). The
+          contradiction check's note is fixed server prose and the unhelpful rating writes none: no
+          other app note is drawn. */}
+      {appNoteShown(flag, targetType) && flag.note !== null && (
         <span data-slot="flag-app-note" className="block">
           {flag.note}
         </span>

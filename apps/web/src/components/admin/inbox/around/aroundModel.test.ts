@@ -1,8 +1,15 @@
-import { AROUND_IT_PHRASE_KEYS, type AroundItPhrase } from '@skating/core';
+import { AROUND_IT_PHRASE_KEYS, type AroundItPhrase, zonedInstant } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 
-import { AROUND, AROUND_CAPPED, AROUND_EMPTY, AROUND_ROB, at } from '../handlers/Flag/flagFixtures';
+import {
+  AROUND,
+  AROUND_CAPPED,
+  AROUND_EMPTY,
+  AROUND_ROB,
+  at,
+  BOARD_ZONE,
+} from '../handlers/Flag/flagFixtures';
 import { dayKey } from '../handlers/Flag/flagFormat';
 import { AROUND_WORDS } from '../handlers/Flag/flagWords';
 import {
@@ -15,12 +22,13 @@ import {
   linePhrases,
   newestFirst,
   reportsCount,
+  windowCount,
   windowSpan,
 } from './aroundModel';
 
 /** Every word a phrase may say: the counts aside, only these (the founder's call; D3). */
 const PHRASE_TEXTS = new Set(
-  AROUND_IT_PHRASE_KEYS.map((k) => AROUND_WORDS.phrase[k](0).replace(/^0 /, '')),
+  AROUND_IT_PHRASE_KEYS.map((k) => AROUND_WORDS.phrase[k]('0').replace(/^0 /, '')),
 );
 
 const phrase = fc.record({
@@ -109,7 +117,7 @@ describe('the drawer', () => {
     expect(order.filter((o) => o.isThis)).toHaveLength(1);
   });
   test('days: a quiet run after the newest, each day with its rows, gaps between', () => {
-    const days = aroundDays(AROUND);
+    const days = aroundDays(AROUND, BOARD_ZONE);
     expect(days.map((d) => (d.kind === 'none' ? `none:${d.label}` : d.label))).toEqual([
       'none:Mon 12 Oct – Tue 13 Oct',
       'Sun 11 Oct',
@@ -135,7 +143,7 @@ describe('the drawer', () => {
         { ...AROUND.reports[0], moderationStatus: 'hidden' } as (typeof AROUND.reports)[number],
       ],
     };
-    const rows = aroundDays(view).flatMap((d) => (d.kind === 'day' ? d.rows : []));
+    const rows = aroundDays(view, BOARD_ZONE).flatMap((d) => (d.kind === 'day' ? d.rows : []));
     expect(rows.find((r) => r.isThis)?.distance).toBeNull();
     expect(rows.find((r) => !r.isThis)?.down).toBe('hidden');
   });
@@ -145,7 +153,7 @@ describe('the drawer', () => {
       reportId: 'r_late',
       skateEndTime: at(10, 20, 12),
     } as (typeof AROUND.reports)[number];
-    const rows = aroundDays({ ...AROUND, reports: [late] }).flatMap((d) =>
+    const rows = aroundDays({ ...AROUND, reports: [late] }, BOARD_ZONE).flatMap((d) =>
       d.kind === 'day' ? d.rows : [],
     );
     expect(rows.map((r) => r.report.reportId)).toContain('r_late');
@@ -166,9 +174,12 @@ describe('the drawer', () => {
     expect(aroundStats(none).measured).toBeNull();
   });
   test('the window on one line', () => {
-    expect(windowSpan(AROUND)).toBe('7–13 Oct');
+    expect(windowSpan(AROUND, BOARD_ZONE)).toBe('7–13 Oct');
     expect(
-      windowSpan({ ...AROUND, window: { from: at(9, 28, 12), to: at(10, 4, 12), days: 3 } }),
+      windowSpan(
+        { ...AROUND, window: { from: at(9, 28, 12), to: at(10, 4, 12), days: 3 } },
+        BOARD_ZONE,
+      ),
     ).toBe('28 Sep – 4 Oct');
     expect(AROUND_CAPPED.cappedBefore).toBe(true);
   });
@@ -179,6 +190,16 @@ describe('the drawer', () => {
 });
 
 describe('a window the read cut short is a floor wherever it is counted', () => {
+  test('the summary’s phrases and the drawer’s tiles', () => {
+    expect(aroundSummary(AROUND.phrases, undefined, true)).toBe(
+      '1+ measured less · 1+ saw open water · 1+ saw skim ice',
+    );
+    expect(aroundSummary(AROUND.phrases)).toBe(
+      '1 measured less · 1 saw open water · 1 saw skim ice',
+    );
+    expect(windowCount(AROUND_CAPPED, 2)).toBe('2+');
+    expect(windowCount(AROUND, 2)).toBe('2');
+  });
   test('the line, the drawer’s count and Open all', () => {
     expect(aroundLine(AROUND_CAPPED, 'Mascoma Lake')).toBe(
       '3+ more reports at Mascoma Lake, within 3 days of this one',
@@ -197,6 +218,30 @@ describe('the drawer’s days across a clock change', () => {
   // The two US changes of the season and a plain week.
   const ANCHORS = [Date.UTC(2026, 10, 1, 6), Date.UTC(2027, 2, 14, 7), Date.UTC(2026, 11, 9, 5)];
   const HOUR = 3_600_000;
+  test('pinned: a window ending just after local midnight on the spring change covers its day', () => {
+    // 00:30 EDT on Mon 15 Mar 2027, the night after the clocks went forward: a 24-hour step back
+    // lands on Sat 13 Mar and skips Sun 14 Mar. The walk by calendar day must not.
+    const to = zonedInstant(2027, 3, 15, 30, ZONE);
+    const from = to - 24 * HOUR;
+    const view = {
+      ...AROUND,
+      flagged: { ...AROUND.flagged, skateEndTime: to - 60_000 },
+      reports: [],
+      window: { from, to, days: 1 },
+    };
+    const next = (key: string) => {
+      const [y, m, d] = key.split('-').map(Number);
+      return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) + 1)).toISOString().slice(0, 10);
+    };
+    const covered = aroundDays(view, ZONE).flatMap((d) => {
+      if (d.kind === 'day') return [d.key];
+      const run: string[] = [];
+      for (let k = d.span[0]; k <= d.span[1]; k = next(k)) run.push(k);
+      return run;
+    });
+    // The 24 hours back from 00:30 EDT reach 23:30 EST on Sat 13 Mar: three calendar days.
+    expect(covered.sort()).toEqual(['2027-03-13', '2027-03-14', '2027-03-15']);
+  });
   test('property: every report in exactly one day, the days newest first, none twice', () => {
     fc.assert(
       fc.property(

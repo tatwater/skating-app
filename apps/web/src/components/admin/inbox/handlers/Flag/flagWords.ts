@@ -39,7 +39,17 @@ export const FLAG_WORDS = {
   /** "Flag on an access alert" (2.6), "Flag on a comment" — a content flag's head. */
   flagOn: (what: string) => `Flag on ${what}`,
   /** The Safety lane's head: whose claim it is — the flaggers' reason, not the console's finding. */
-  flaggedAs: 'Flagged as unsafe',
+  /** The Safety lane's head, per subject: whose claim it is (a flagger's) and what it claims. */
+  flaggedAs: {
+    /** A report or a Post: the flagger says it claims the ice is better than it is. */
+    report: 'Flagged: false safety report',
+    /** The hazard vote's own flag: the warning was never there. */
+    hazardNeverThere: 'Flagged: never there',
+    /** A person's flag on a hazard: they say the warning is false. */
+    hazard: 'Flagged: false hazard',
+    /** A comment, an alert, a photo, a body: a false safety claim. */
+    other: 'Flagged: false safety claim',
+  },
   flagOnWhat: {
     report: 'a report',
     post: 'a Post',
@@ -145,9 +155,7 @@ export const FLAG_WORDS = {
       `The app files this when ${people} people vote “${verdict}”`,
     /** What the rule counted, never what it concluded: the weather records aren't a judge. */
     contradiction: (counted: string | null) =>
-      counted === null
-        ? 'The contradiction check filed this: some of their recent reports differed from the weather records'
-        : `The contradiction check filed this: ${counted} of their recent reports differed from the weather records`,
+      `The contradiction check filed this: ${counted ?? 'some'} of their reports, with no corroboration of their own, disagreed with a more-corroborated report at the same body by more than the weather since explains`,
     lowQuality: 'Enough people rated it unhelpful',
     other: 'A rule in the app filed it',
   },
@@ -167,7 +175,8 @@ export const FLAG_WORDS = {
   openFlags: 'Open flags',
   canPost: 'Can post',
   /** A count of the reports the check flagged, not a verdict on them. */
-  contradicted: (n: string) => `${n} flagged by the contradiction check`,
+  /** The check's own tally: reports it counted against a better-corroborated one — no verdict on them. */
+  contradicted: (n: string) => `${n} counted by the contradiction check`,
   priorActioned: (n: string, one: boolean, day: string | null) =>
     one
       ? `An earlier flag on them was actioned${day === null ? '' : ` on ${day}`}`
@@ -275,14 +284,17 @@ export const AROUND_WORDS = {
   missing: 'The reports around it couldn’t be read',
   gone: 'This report is gone, so there is nothing around it to read',
   /** Each phrase, from the reports' own claims — never a class they didn't choose (D3). */
+  /** `n` is the count as written: "2", or "2+" over a read cut short (a floor, never a full count). */
   phrase: {
-    measured_less: (n: number) => `${n} measured less`,
-    measured_more: (n: number) => `${n} measured more`,
-    open_water: (n: number) => `${n} saw open water`,
-    skim_ice: (n: number) => `${n} saw skim ice`,
-    dont_go: (n: number) => `${n} said don't go`,
-    wet_or_slushy: (n: number) => `${n} surface wet or slushy`,
-  } satisfies Record<AroundItPhraseKey, (n: number) => string>,
+    measured_less: (n: string) => `${n} measured less`,
+    measured_more: (n: string) => `${n} measured more`,
+    open_water: (n: string) => `${n} saw open water`,
+    skim_ice: (n: string) => `${n} saw skim ice`,
+    dont_go: (n: string) => `${n} said don't go`,
+    wet_or_slushy: (n: string) => `${n} surface wet or slushy`,
+  } satisfies Record<AroundItPhraseKey, (n: string) => string>,
+  /** Under the drawer's figures over a read cut short: they count only the reports read. */
+  statsCapped: 'Of the reports read; more lie past the window’s cut',
 
   // ── The drawer ──────────────────────────────────────────────────────────────────────────────
   sheetTitle: 'Reports around this one',

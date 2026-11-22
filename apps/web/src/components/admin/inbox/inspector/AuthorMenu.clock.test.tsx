@@ -1,3 +1,4 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -66,4 +67,17 @@ test('the suspend dialog keeps a typed reason through a re-read that answers not
   state.answer = undefined;
   act(() => rerender(<Menu now={NOW + MINUTE} />));
   await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('A second unsafe report'));
+});
+
+test('the reason dialog caps the reason at the server’s audit cap', async () => {
+  render(<Menu now={NOW} />);
+  fireEvent.click(screen.getByRole('button', { name: /Rob Tremblay/ }));
+  // Rob may still post reports: the reports row's Restrict asks a reason.
+  const lever = await waitFor(() => {
+    const el = document.querySelector<HTMLElement>('[data-lever="reports-restrict"]');
+    expect(el).not.toBeNull();
+    return el as HTMLElement;
+  });
+  fireEvent.click(lever);
+  expect(await screen.findByRole('textbox')).toHaveAttribute('maxlength', String(AUDIT_REASON_MAX));
 });

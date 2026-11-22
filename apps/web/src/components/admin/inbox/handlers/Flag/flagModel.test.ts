@@ -6,6 +6,7 @@ import {
   ALERT_ITEM,
   AROUND,
   BOARD_NOW,
+  BOARD_ZONE,
   CAN_ALL,
   COMMENT_ITEM,
   DOWN_ITEM,
@@ -38,6 +39,7 @@ import {
   occurrenceLine,
   reasonsOf,
   reportKicker,
+  safetyTitle,
   standingMeta,
   subjectOf,
   targetNoun,
@@ -135,10 +137,32 @@ describe('can is the law', () => {
   });
 });
 
+describe('the Safety head says whose claim it is and what it claims, per subject', () => {
+  test('a report and a Post; a hazard by the app, by a person; anything else', () => {
+    expect(safetyTitle(SAFETY_ITEM)).toBe('Flagged: false safety report');
+    expect(safetyTitle(POST_ITEM)).toBe('Flagged: false safety report');
+    expect(safetyTitle(HAZARD_AUTO_ITEM)).toBe('Flagged: never there');
+    const personOnHazard = {
+      ...HAZARD_AUTO_ITEM,
+      flags: [{ ...SAFETY_ITEM.flags[0], autoFiled: false }] as FlagItem['flags'],
+    };
+    expect(safetyTitle(personOnHazard)).toBe('Flagged: false hazard');
+    expect(safetyTitle(COMMENT_ITEM)).toBe('Flagged: false safety claim');
+    // The pane head reads it per subject.
+    expect(flagHead(HAZARD_AUTO_ITEM, BOARD_NOW).title).toBe('Flagged: never there');
+    expect(flagHead({ ...COMMENT_ITEM, lane: 'safety' }, BOARD_NOW).title).toBe(
+      'Flagged: false safety claim',
+    );
+    expect(flagHead({ ...COMMENT_ITEM, lane: 'contentFlags' }, BOARD_NOW).title).toBe(
+      'Flag on a comment',
+    );
+  });
+});
+
 describe('the head', () => {
   test('2.1: the reason, the age written out, Reports', () => {
     expect(flagHead(SAFETY_ITEM, BOARD_NOW)).toEqual({
-      title: 'Flagged as unsafe',
+      title: 'Flagged: false safety report',
       safety: true,
       sub: '3 days ago',
       link: { kind: 'reports' },
@@ -204,8 +228,10 @@ describe('the report', () => {
     expect(chips.at(-1)?.key).toBe('n');
   });
   test('the kicker: place, span, vantage', () => {
-    expect(reportKicker(ROB_REPORT)).toBe('Report · Enfield, NH · 10 Oct 15:40–17:05 · on the ice');
-    expect(reportKicker({ ...ROB_REPORT, place: null, observedFrom: null })).toBe(
+    expect(reportKicker(ROB_REPORT, BOARD_ZONE)).toBe(
+      'Report · Enfield, NH · 10 Oct 15:40–17:05 · on the ice',
+    );
+    expect(reportKicker({ ...ROB_REPORT, place: null, observedFrom: null }, BOARD_ZONE)).toBe(
       'Report · Enfield, NH · 10 Oct 15:40–17:05',
     );
   });
@@ -293,12 +319,15 @@ describe('the flags', () => {
     expect(appRuleOf('unsafe_false_report', 'hazard', null, 'ridge_crossing')).toMatch(
       /“No crossing here”/,
     );
+    // What the check counts, attributed to it: no comparison with "the weather records", no "recent".
     expect(appRuleOf('unsafe_false_report', 'user')).toMatch(
-      /some of their recent reports differed/,
+      /^The contradiction check filed this: some of their reports/,
     );
-    expect(appRuleOf('unsafe_false_report', 'user', { count: 50, capped: true })).toBe(
-      'The contradiction check filed this: 50+ of their recent reports differed from the weather records',
+    const fifty = appRuleOf('unsafe_false_report', 'user', { count: 50, capped: true });
+    expect(fifty).toBe(
+      'The contradiction check filed this: 50+ of their reports, with no corroboration of their own, disagreed with a more-corroborated report at the same body by more than the weather since explains',
     );
+    expect(fifty).not.toMatch(/recent|weather records/);
     expect(appRuleOf('auto_low_quality', 'report')).toMatch(/unhelpful/);
     expect(appRuleOf('spam', 'report')).toMatch(/rule/);
   });

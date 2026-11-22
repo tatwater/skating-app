@@ -32,7 +32,9 @@ import {
   type AroundRow,
   aroundDays,
   aroundStats,
+  isCapped,
   reportsCount,
+  windowCount,
   windowSpan,
 } from './aroundModel';
 
@@ -118,13 +120,17 @@ export function AroundSheet({
               value={view === null ? stats.reports : reportsCount(view)}
               unit={W.inclThis}
             />
-            <StatTile key="ice" label={W.onIce} value={stats.onIce} />
+            <StatTile
+              key="ice"
+              label={W.onIce}
+              value={view === null ? stats.onIce : windowCount(view, stats.onIce)}
+            />
             <StatTile
               key="shore"
               label={W.fromShore}
-              value={stats.shore}
+              value={view === null ? stats.shore : windowCount(view, stats.shore)}
               {...(stats.secondhand > 0 && {
-                sub: `${stats.secondhand} ${W.secondhand.toLowerCase()}`,
+                sub: `${view === null ? stats.secondhand : windowCount(view, stats.secondhand)} ${W.secondhand.toLowerCase()}`,
               })}
             />
             <StatTile
@@ -133,6 +139,8 @@ export function AroundSheet({
               value={stats.measured ?? W.measuredNone}
               {...(stats.measured !== null && { unit: 'in' })}
               {...(stats.measured === null && { tone: 'dim' as const })}
+              // Over a read cut short the range is of the reports read, not the window's.
+              {...(view !== null && isCapped(view) && { sub: W.statsCapped })}
             />
           </StatGrid>
         )}

@@ -49,7 +49,9 @@ export const Safety: Story = {
   play: async ({ canvasElement }) => {
     const pane = detail(canvasElement);
     await waitFor(() =>
-      expect(pane.querySelector('[data-slot="flag-head"]')).toHaveTextContent('Flagged as unsafe'),
+      expect(pane.querySelector('[data-slot="flag-head"]')).toHaveTextContent(
+        'Flagged: false safety report',
+      ),
     );
     // A letter acts only with the inspector focused.
     pane.focus();

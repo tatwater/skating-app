@@ -1,6 +1,7 @@
 import { roundTo } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
+import { at, BOARD_ZONE } from './flagFixtures';
 
 import {
   clock,
@@ -17,7 +18,8 @@ import {
   utcDayMonth,
 } from './flagFormat';
 
-const at = (m: number, d: number, h: number, min = 0) => new Date(2026, m - 1, d, h, min).getTime();
+// Absolute instants in the boards' zone, formatted in it: the same answers in every zone that runs.
+const Z = BOARD_ZONE;
 
 describe('milesWords', () => {
   test('one decimal, with its unit', () => {
@@ -91,16 +93,16 @@ describe('countWords', () => {
 
 describe('times', () => {
   test('a skate span: its day, then start–end', () => {
-    expect(skateSpan(at(10, 10, 15, 40), at(10, 10, 17, 5))).toBe('10 Oct 15:40–17:05');
-    expect(skateTimes(null, at(10, 11, 8, 40))).toBe('08:40');
+    expect(skateSpan(at(10, 10, 15, 40), at(10, 10, 17, 5), Z)).toBe('10 Oct 15:40–17:05');
+    expect(skateTimes(null, at(10, 11, 8, 40), Z)).toBe('08:40');
     // A start at or after the end is no span.
-    expect(skateTimes(at(10, 11, 9), at(10, 11, 8, 40))).toBe('08:40');
+    expect(skateTimes(at(10, 11, 9), at(10, 11, 8, 40), Z)).toBe('08:40');
   });
   test('labels', () => {
-    expect(clock(at(10, 10, 18, 2))).toBe('18:02');
-    expect(dayTime(at(10, 10, 18, 2))).toBe('10 Oct 18:02');
-    expect(dayLabel(at(10, 11, 12))).toBe('Sun 11 Oct');
-    expect(dayKey(at(10, 11, 12))).toBe('2026-10-11');
+    expect(clock(at(10, 10, 18, 2), Z)).toBe('18:02');
+    expect(dayTime(at(10, 10, 18, 2), Z)).toBe('10 Oct 18:02');
+    expect(dayLabel(at(10, 11, 12), Z)).toBe('Sun 11 Oct');
+    expect(dayKey(at(10, 11, 12), Z)).toBe('2026-10-11');
     expect(utcDayMonth(Date.UTC(2026, 9, 9))).toBe('9 Oct');
   });
 });
