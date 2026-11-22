@@ -14,6 +14,7 @@ import type { Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
 import { INBOX_LEAVE_COST } from './inboxSeed';
 import { DEV_DEPLOYMENT, SEED_DEV_ONLY } from './lib/seedPeople';
+import { UNDO_POLICY } from './lib/undoPolicy';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1090,6 +1091,109 @@ describe('real people and real bodies, left exactly as they were found', () => {
     expect(after.morey).toBe('open');
     expect(after.sleepyAsks.every((n) => n === 0)).toBe(true);
   });
+});
+
+/** The merge-proof pair merged from the Inbox, as the operator would: the drawing's own lever. */
+async function mergeProofPair(t: T) {
+  const { itemId, survivorId, cove } = await t.run(async (ctx) => {
+    const cove = (await ctx.db.query('waterBodies').collect()).find(
+      (b) => b.name === 'Merge Proof Cove',
+    );
+    if (!cove) throw new Error('no merge-proof drawing');
+    const member = await ctx.db
+      .query('inboxItemMembers')
+      .withIndex('by_source', (q) => q.eq('sourceTable', 'waterBodies').eq('sourceId', cove._id))
+      .first();
+    return {
+      cove: cove._id,
+      itemId: member?.itemId as Id<'inboxItems'>,
+      survivorId: cove.duplicateCandidateIds?.[0] as Id<'waterBodies'>,
+    };
+  });
+  const out = await t
+    .withIdentity({ subject: OPERATOR })
+    .mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  return { ...out, cove };
+}
+
+/** The tables the clear owns, against `before`: every one back (the anonymous counters aside). */
+async function leftAfterClear(t: T, before: Record<string, number>) {
+  const end = await counts(t);
+  return Object.fromEntries(
+    Object.entries(end)
+      .filter(([k, n]) => n !== before[k] && !UNATTRIBUTED.has(k) && !COUNTS.has(k))
+      .map(([k, n]) => [k, n - (before[k] ?? 0)]),
+  );
+}
+
+/** The seed's whole life on dev with a merge in it, from a world of real people and bodies. */
+async function mergedWorld() {
+  const t = harness();
+  await devWorld(t);
+  const { people } = await realAround(t);
+  await crons(t);
+  const before = {
+    counts: await counts(t),
+    real: await realRows(t, people),
+    tallies: await tallies(t),
+  };
+  const run = await runSeed(t);
+  expect(run.failed).toEqual([]);
+  await crons(t);
+  const merged = await mergeProofPair(t);
+  expect((await t.run((ctx) => ctx.db.get(merged.cove)))?.reviewStatus).toBe('merged');
+  return { t, people, before, merged };
+}
+
+/** Clear to done, let dev's crons re-derive, and hold that nothing of the seed is left. */
+async function clearsEverything(w: Awaited<ReturnType<typeof mergedWorld>>) {
+  await runClear(w.t);
+  await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+  await crons(w.t);
+  expect(await leftAfterClear(w.t, w.before.counts)).toEqual({});
+  expect(await tallies(w.t)).toEqual(w.before.tallies);
+  expect(diffPaths(w.before.real, await realRows(w.t, w.people))).toEqual([]);
+  expect((await runClear(w.t)).removed).toEqual({});
+}
+
+describe('the clear finds everything the seed made, whatever was merged since (B01-5d)', () => {
+  test('apply, merge the proof pair from the Inbox, clear: nothing of the seed remains', async () => {
+    await clearsEverything(await mergedWorld());
+  });
+
+  test('apply, merge, apply again: nothing new is filed; then the clear takes it all', async () => {
+    const w = await mergedWorld();
+    const again = await runSeed(w.t);
+    expect(again.failed).toEqual([]);
+    expect(again.filed).toEqual([]);
+    expect(again.last.ready).toEqual([]);
+    // Every step still finds its row: none waits, none reads as impossible here.
+    expect(again.last.waiting).toEqual([]);
+    expect(again.last.unavailable).toEqual([]);
+    await clearsEverything(w);
+  });
+
+  // The unmerge is the undo of the merge's row once its inverse is registered (B01-5d's S4b).
+  test.skipIf(UNDO_POLICY.merge_waterbody.undo.kind !== 'inverse')(
+    'apply, merge, unmerge, clear: nothing of the seed remains',
+    async () => {
+      const w = await mergedWorld();
+      await w.t
+        .withIdentity({ subject: OPERATOR })
+        .mutation(api.undo.run, { actionId: w.merged.actionId, reason: 'Not the same water' });
+      await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+      for (let pages = 0; pages < 50; pages++) {
+        const next = (
+          await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+        ).find((j) => j.state.kind === 'pending');
+        if (!next) break;
+        await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+      }
+      expect((await w.t.run((ctx) => ctx.db.get(w.merged.cove)))?.reviewStatus).toBe('pending');
+      await clearsEverything(w);
+    },
+  );
 });
 
 describe('the seed refuses any deployment that is not dev', () => {

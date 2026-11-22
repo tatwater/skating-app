@@ -328,6 +328,33 @@ async function activityByKey(ctx: QueryCtx, stepKey: string) {
     .first();
 }
 
+/**
+ * A body this fake person drew, by its name — found through the Inbox member its drawing filed (its
+ * filer is the drawer, and no decision, merge or unmerge moves it), never through the skate it was
+ * drawn from, which a merge moves to the survivor (B01-5d).
+ */
+async function drawnBy(
+  ctx: QueryCtx,
+  personId: Id<'profiles'>,
+  name: string,
+): Promise<string | null> {
+  for (const m of await drawingMembers(ctx, personId)) {
+    const body = await ctx.db.get(m.sourceId as Id<'waterBodies'>);
+    if (body?.name === name && body.createdByUserId === personId) return body._id;
+  }
+  return null;
+}
+
+/** The Inbox members a person's drawings filed — a fake person draws a handful. */
+function drawingMembers(ctx: QueryCtx, personId: Id<'profiles'>) {
+  return ctx.db
+    .query('inboxItemMembers')
+    .withIndex('by_filer_source_status', (q) =>
+      q.eq('filedByUserId', personId).eq('sourceTable', 'waterBodies'),
+    )
+    .take(50);
+}
+
 // ── The steps ────────────────────────────────────────────────────────────────────────────────────
 
 const report = (
@@ -988,7 +1015,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-beach'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-beach'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('elin'), 'Town Beach Pond'),
     },
     {
       key: 'track-dormant',
@@ -1014,7 +1041,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-dormant'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-dormant'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('cleo'), 'Quiet Hollow Pond'),
     },
     {
       key: 'track-closed',
@@ -1040,7 +1067,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-closed'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-closed'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('dev'), 'Posted Farm Pond'),
     },
     {
       key: 'track-reject',
@@ -1066,7 +1093,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-reject'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-reject'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('hana'), 'Trailhead Lot Pond'),
     },
     {
       key: 'drawn-overlap',
@@ -1079,7 +1106,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-overlap'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-overlap'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('finn'), 'Morey East Bay'),
     },
     {
       key: 'drawn-new',
@@ -1092,7 +1119,7 @@ export function seedSteps(): StepDef[] {
         activityId: r.out('track-new'),
         confirmedNew: true,
       }),
-      find: async (ctx) => (await activityByKey(ctx, 'track-new'))?.waterBodyId ?? null,
+      find: (ctx, r) => drawnBy(ctx, r.person('gus'), 'Beaver Flowage'),
     },
   ];
 
@@ -1549,7 +1576,7 @@ function mergeProofSteps(): StepDef[] {
     fn: 'waterBodies:create',
     ...(after ? { after } : {}),
     args: (r) => ({ name, type: 'lakePond', activityId: r.out(trackKey), confirmedNew: true }),
-    find: async (ctx) => (await activityByKey(ctx, trackKey))?.waterBodyId ?? null,
+    find: (ctx, r) => drawnBy(ctx, r.person(as), name),
   });
   const approve = (key: string, drawnKey: string): StepDef => ({
     key,
@@ -1563,6 +1590,29 @@ function mergeProofSteps(): StepDef[] {
   type Side = 'cove' | 'survivor';
   const on = async (r: Refs, side: Side): Promise<Id<'waterBodies'>> =>
     side === 'cove' ? (r.out('mp-cove') as Id<'waterBodies'>) : r.survivor('mp-cove');
+  /**
+   * Where a side's row is found: the cove's own rows on the cove, or — once the cove is merged — on
+   * the body it went into, so a seed applied again after a merge finds them all (B01-5d).
+   */
+  const sidesOf = async (ctx: QueryCtx, r: Refs, side: Side): Promise<Id<'waterBodies'>[]> => {
+    const id = await on(r, side);
+    if (side !== 'cove') return [id];
+    const merged = (await ctx.db.get(id))?.mergedIntoId;
+    return merged === undefined ? [id] : [id, merged];
+  };
+  /** The first id `look` finds on any of a side's bodies. */
+  const findOn = async (
+    ctx: QueryCtx,
+    r: Refs,
+    side: Side,
+    look: (waterBodyId: Id<'waterBodies'>) => Promise<string | null>,
+  ): Promise<string | null> => {
+    for (const id of await sidesOf(ctx, r, side)) {
+      const found = await look(id);
+      if (found !== null) return found;
+    }
+    return null;
+  };
   const bay = (key: string, side: Side, name: string, north: number, east: number): StepDef => ({
     key,
     label: `a bay "${name}" on the merge-proof ${side}`,
@@ -1574,7 +1624,7 @@ function mergeProofSteps(): StepDef[] {
       name,
       polygon: squareAround(offset(proofCenter(r), north, east), 50),
     }),
-    find: async (ctx, r) => namedOn(ctx, 'waterBodySubAreas', await on(r, side), name),
+    find: (ctx, r) => findOn(ctx, r, side, (id) => namedOn(ctx, 'waterBodySubAreas', id, name)),
   });
   const landmark = (key: string, side: Side): StepDef => ({
     key,
@@ -1588,7 +1638,7 @@ function mergeProofSteps(): StepDef[] {
       kind: 'point',
       point: offset(proofCenter(r), 120, 0),
     }),
-    find: async (ctx, r) => namedOn(ctx, 'bodyLandmarks', await on(r, side), 'Proof Rock'),
+    find: (ctx, r) => findOn(ctx, r, side, (id) => namedOn(ctx, 'bodyLandmarks', id, 'Proof Rock')),
   });
   const alias = (key: string, side: Side, alias: string): StepDef => ({
     key,
@@ -1597,8 +1647,10 @@ function mergeProofSteps(): StepDef[] {
     fn: 'waterBodies:setAliases',
     after: ['mp-cove'],
     args: async (r) => ({ waterBodyId: await on(r, side), aliases: [alias] }),
-    find: async (ctx, r) =>
-      (await ctx.db.get(await on(r, side)))?.moderatorAliases?.includes(alias) ? 'done' : null,
+    find: (ctx, r) =>
+      findOn(ctx, r, side, async (id) =>
+        (await ctx.db.get(id))?.moderatorAliases?.includes(alias) ? 'done' : null,
+      ),
   });
   const pin = (key: string, side: Side): StepDef => ({
     key,
@@ -1610,8 +1662,10 @@ function mergeProofSteps(): StepDef[] {
       waterBodyId: await on(r, side),
       townKeys: [await r.townAt(proofCenter(r))],
     }),
-    find: async (ctx, r) =>
-      ((await ctx.db.get(await on(r, side)))?.moderatorTownKeys?.length ?? 0) > 0 ? 'done' : null,
+    find: (ctx, r) =>
+      findOn(ctx, r, side, async (id) =>
+        ((await ctx.db.get(id))?.moderatorTownKeys?.length ?? 0) > 0 ? 'done' : null,
+      ),
   });
   const link = (key: string, side: Side): StepDef => ({
     key,
@@ -1623,12 +1677,12 @@ function mergeProofSteps(): StepDef[] {
       waterBodyId: await on(r, side),
       links: [{ label: `Merge proof ${side}`, url: `https://example.org/seed-inbox/${side}` }],
     }),
-    find: async (ctx, r) =>
-      (await ctx.db.get(await on(r, side)))?.referenceLinks?.some((l) =>
-        l.url.endsWith(`/seed-inbox/${side}`),
-      )
-        ? 'done'
-        : null,
+    find: (ctx, r) =>
+      findOn(ctx, r, side, async (id) =>
+        (await ctx.db.get(id))?.referenceLinks?.some((l) => l.url.endsWith(`/seed-inbox/${side}`))
+          ? 'done'
+          : null,
+      ),
   });
   const favorite = (key: string, as: SeedPersonKey, side: Side): StepDef => ({
     key,
@@ -1637,7 +1691,7 @@ function mergeProofSteps(): StepDef[] {
     fn: 'waterBodyFavorites:toggle',
     after: ['mp-cove'],
     args: async (r) => ({ waterBodyId: await on(r, side) }),
-    find: async (ctx, r) => favoriteOf(ctx, r.person(as), await on(r, side)),
+    find: (ctx, r) => findOn(ctx, r, side, (id) => favoriteOf(ctx, r.person(as), id)),
   });
   const accessReport = (
     key: string,
@@ -1656,8 +1710,8 @@ function mergeProofSteps(): StepDef[] {
       reason: 'no_public_access',
       note: 'A new gate across the only road in.',
     }),
-    find: async (ctx, r) =>
-      flagBy(ctx, r.person(as), 'waterbody', await on(r, side), 'no_public_access'),
+    find: (ctx, r) =>
+      findOn(ctx, r, side, (id) => flagBy(ctx, r.person(as), 'waterbody', id, 'no_public_access')),
   });
   const cove = (r: Refs) => r.out('mp-cove') as Id<'waterBodies'>;
 
@@ -1680,13 +1734,19 @@ function mergeProofSteps(): StepDef[] {
       as: 'elin',
       fn: 'bounties:createChecked',
       args: (r) => ({ waterBodyId: cove(r), weatherReopenedReports: [] }),
-      find: async (ctx, r) =>
-        (
-          await ctx.db
-            .query('bounties')
-            .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove(r)))
-            .first()
-        )?._id ?? null,
+      find: (ctx, r) =>
+        findOn(
+          ctx,
+          r,
+          'cove',
+          async (id) =>
+            (
+              await ctx.db
+                .query('bounties')
+                .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', id))
+                .first()
+            )?._id ?? null,
+        ),
     },
     {
       key: 'mp-report',
@@ -1736,23 +1796,40 @@ function mergeProofSteps(): StepDef[] {
         coord: offset(proofCenter(r), 0, 240),
         name: 'Proof Launch',
       }),
-      find: async (ctx, r) =>
-        (
-          await ctx.db
-            .query('putIns')
-            .withIndex('by_water_body', (q) => q.eq('waterBodyId', cove(r)))
-            .take(20)
-        ).find((p) => p.name === 'Proof Launch')?._id ?? null,
+      find: (ctx, r) =>
+        findOn(
+          ctx,
+          r,
+          'cove',
+          async (id) =>
+            (
+              await ctx.db
+                .query('putIns')
+                .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+                .take(20)
+            ).find((p) => p.name === 'Proof Launch')?._id ?? null,
+        ),
     },
-    ask(
-      'mp-ask-bay',
-      'elin',
-      'name_bay',
-      'a bay ask on the merge-proof drawing',
-      (r) => ({ waterBodyId: cove(r), coord: offset(proofCenter(r), 0, -150) }),
-      { name: 'Proof Narrows' },
-      ['mp-cove'],
-    ),
+    {
+      ...ask(
+        'mp-ask-bay',
+        'elin',
+        'name_bay',
+        'a bay ask on the merge-proof drawing',
+        (r) => ({ waterBodyId: cove(r), coord: offset(proofCenter(r), 0, -150) }),
+        { name: 'Proof Narrows' },
+        ['mp-cove'],
+      ),
+      // A merge re-targets the ask to the survivor: found by its asker and name, wherever it is.
+      find: (ctx, r) =>
+        findOn(ctx, r, 'cove', (id) =>
+          requestBy(
+            ctx,
+            r.person('elin'),
+            (q) => q.kind === 'name_bay' && q.waterBodyId === id && q.name === 'Proof Narrows',
+          ),
+        ),
+    },
     {
       key: 'mp-place-name',
       label: 'an open place name on the merge-proof drawing',
@@ -1772,13 +1849,19 @@ function mergeProofSteps(): StepDef[] {
         ],
         dryRun: false,
       }),
-      find: async (ctx, r) =>
-        (
-          await ctx.db
-            .query('corpusPlaceNames')
-            .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove(r)))
-            .take(20)
-        ).find((n) => n.name === 'Proof Point')?._id ?? null,
+      find: (ctx, r) =>
+        findOn(
+          ctx,
+          r,
+          'cove',
+          async (id) =>
+            (
+              await ctx.db
+                .query('corpusPlaceNames')
+                .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', id))
+                .take(20)
+            ).find((n) => n.name === 'Proof Point')?._id ?? null,
+        ),
     },
     favorite('mp-fav-cove', 'elin', 'cove'),
     favorite('mp-fav-both-cove', 'cleo', 'cove'),
@@ -2177,6 +2260,11 @@ export const state = internalQuery({
  * covers one such row and its own side rows, so every call removes something or finishes.
  */
 export const INBOX_LEAVE_COST = (2 * MAX_MEMBERS + 24) * ROW_MAX.small + 2 * DOC_MAX;
+/**
+ * A drawing's leave from its item: the item (`drawn:<id>`, keyed by the drawing alone) holds that one
+ * member, so the writer re-derives it from a handful of rows and reads the drawing's facts.
+ */
+const DRAWN_LEAVE_COST = 24 * ROW_MAX.small + 2 * DOC_MAX;
 /** What the library writer's isolated refresh reads in the caller's own transaction (its queue row). */
 const LIBRARY_REFRESH_RESERVE = 16 * ROW_MAX.small;
 /**
@@ -2461,6 +2549,13 @@ async function dropBodyChildren(s: Sweep, body: Doc<'waterBodies'>): Promise<voi
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
       .first(),
   );
+  // A pattern the recurrence pass clustered on the body (a merge re-clusters its survivor's).
+  await s.drain('hazardRecurrence', 'hazardRecurrence', () =>
+    db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .first(),
+  );
   await s.drain('waterBodyFavorites', 'small', () =>
     db
       .query('waterBodyFavorites')
@@ -2487,7 +2582,6 @@ async function dropBodyChildren(s: Sweep, body: Doc<'waterBodies'>): Promise<voi
 /** A body a fake person drew, and everything its write made: cells, facts, library rows, item. */
 async function dropDrawnBody(s: Sweep, body: Doc<'waterBodies'>): Promise<void> {
   const db = s.ctx.db;
-  await leave(s, bodySource(body._id));
   await dropBodyChildren(s, body);
   await dropAuditsOf(s, 'waterbody', body._id);
   await s.drain('auditBodyLinks', 'small', () =>
@@ -2511,7 +2605,19 @@ async function dropDrawnBody(s: Sweep, body: Doc<'waterBodies'>): Promise<void> 
   // Reserved before the body goes, so a call that can't afford the library's writer stops with the
   // body still there to find. The writer runs isolated (its own limits), and on a failure queues the
   // body for the library's drain, which removes its rows and moves the counts.
-  s.need(LIBRARY_REFRESH_RESERVE + GEO_GONE_RESERVE);
+  // Out of its Inbox item last, in one reserved step with the body's delete: the member is how the
+  // clear finds a drawing a merge took the skate from (B01-5d), so a call that stops earlier leaves it
+  // there to find the body by again. A drawing's item is keyed by the drawing alone, so it holds this
+  // one member: its leave is reserved at that size, not at the generic worst of `MAX_MEMBERS`.
+  s.need(LIBRARY_REFRESH_RESERVE + GEO_GONE_RESERVE + DRAWN_LEAVE_COST);
+  const member = await db
+    .query('inboxItemMembers')
+    .withIndex('by_source', (q) => q.eq('sourceTable', 'waterBodies').eq('sourceId', body._id))
+    .first();
+  if (member) {
+    await leaveMember(s.ctx, bodySource(body._id));
+    s.removed.inboxItemMembers = (s.removed.inboxItemMembers ?? 0) + 1;
+  }
   await s.delete('waterBodies', body._id);
   await refreshBodyLibrary(s.ctx, body._id);
   // Geometry's own "gone" path: its facts and links go, every neighbor whose facts list it is marked
@@ -2693,6 +2799,24 @@ async function sweepPeople(s: Sweep, people: Doc<'profiles'>[]): Promise<void> {
         if (drawn && drawn.createdByUserId === p._id) await dropDrawnBody(s, drawn);
       },
     );
+    // Every body the person drew, through the Inbox member its drawing filed — its filer is the
+    // drawer, and no decision, merge or unmerge moves it, where a merge moves the skate above to the
+    // survivor (B01-5d). Each pass removes the member (`dropDrawnBody` leaves first), so it ends.
+    for (;;) {
+      const member = await s.first('inboxMember', () =>
+        db
+          .query('inboxItemMembers')
+          .withIndex('by_filer_source_status', (q) =>
+            q.eq('filedByUserId', p._id).eq('sourceTable', 'waterBodies'),
+          )
+          .first(),
+      );
+      if (!member) break;
+      const id = member.sourceId as Id<'waterBodies'>;
+      const drawn = await s.first('waterBody', () => db.get(id));
+      if (drawn && drawn.createdByUserId === p._id) await dropDrawnBody(s, drawn);
+      else await leave(s, bodySource(id));
+    }
     await s.drain('pointEvents', 'small', () =>
       db
         .query('pointEvents')
