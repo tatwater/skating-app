@@ -8727,3 +8727,189 @@ export const listNamedForSeeding = internalQuery({
     return { bodies, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
+
+// ── The merge's dev proof (B01-5d) ───────────────────────────────────────────────────────────────
+
+/** Rows of one kind the census reads for one body, at most — past it, the kind says so. */
+const CENSUS_CAP = 500;
+
+/** `value` with every object's keys sorted, so two reads of the same state serialize identically. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((k) => [k, canonical((value as Record<string, unknown>)[k])]),
+    );
+  }
+  return value;
+}
+
+/**
+ * **The dev proof's census** (B01-5d, *The dev proof*): each body's own row and every row that hangs
+ * off it — the children a merge moves (reports, hazards, bounties, known features, launches,
+ * favorites, asks, place names, flags, bays, landmarks, skates) and the stored facts it recomputes
+ * (cells, the bays' cells, the name list, the library rows, the geometry facts, the report–bay join,
+ * its Inbox items) — as one canonical JSON string: rows sorted by id, keys sorted. Run before a merge
+ * and after its unmerge, the two are `diff`ed with the round-trip test's exclusions (`updatedAt`,
+ * `changedAt`, re-created favorites' ids). Read-only and bounded: each kind to `CENSUS_CAP` rows a
+ * body, a kind past it marked `capped` — a census of a body that big proves nothing, and says so.
+ */
+export const mergeProofCensus = internalQuery({
+  args: { ids: v.array(v.id('waterBodies')) },
+  handler: async (ctx, { ids }): Promise<string> => {
+    const db = ctx.db;
+    const out: Record<string, unknown> = {};
+    for (const id of ids) {
+      const kinds: Record<string, { rows: unknown[]; capped: boolean }> = {};
+      const put = (name: string, rows: { _id: string }[]) => {
+        kinds[name] = {
+          rows: [...rows].sort((a, b) => (a._id < b._id ? -1 : 1)).slice(0, CENSUS_CAP),
+          capped: rows.length > CENSUS_CAP,
+        };
+      };
+      const n = CENSUS_CAP + 1;
+      const reports = await db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', id))
+        .take(n);
+      put('reports', reports);
+      put(
+        'hazards',
+        await db
+          .query('hazards')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'bounties',
+        await db
+          .query('bounties')
+          .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'bodyFeatures',
+        await db
+          .query('bodyFeatures')
+          .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'putIns',
+        await db
+          .query('putIns')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'waterBodyFavorites',
+        await db
+          .query('waterBodyFavorites')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'waterBodyRequests',
+        await db
+          .query('waterBodyRequests')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'corpusPlaceNames',
+        await db
+          .query('corpusPlaceNames')
+          .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'contentFlags',
+        await db
+          .query('contentFlags')
+          .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', id))
+          .take(n),
+      );
+      const bays = await db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', id))
+        .take(n);
+      put('waterBodySubAreas', bays);
+      const bayCells: { _id: string }[] = [];
+      for (const bay of bays.slice(0, CENSUS_CAP)) {
+        bayCells.push(
+          ...(await db
+            .query('waterBodySubAreaCells')
+            .withIndex('by_sub_area', (q) => q.eq('subAreaId', bay._id))
+            .take(64)),
+        );
+      }
+      put('waterBodySubAreaCells', bayCells);
+      put(
+        'bodyLandmarks',
+        await db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'gpsActivities',
+        await db
+          .query('gpsActivities')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      const joins: { _id: string }[] = [];
+      for (const r of reports.slice(0, CENSUS_CAP)) {
+        joins.push(
+          ...(await db
+            .query('reportSubAreas')
+            .withIndex('by_report', (q) => q.eq('reportId', r._id))
+            .take(16)),
+        );
+      }
+      put('reportSubAreas', joins);
+      put(
+        'waterBodyCells',
+        await db
+          .query('waterBodyCells')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'bodyNameLists',
+        await db
+          .query('bodyNameLists')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'bodyLibraryRows',
+        await db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      put(
+        'bodyGeoFacts',
+        await db
+          .query('bodyGeoFacts')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+          .take(n),
+      );
+      const items: { _id: string }[] = [];
+      for (const key of [`drawn:${id}`, `access:${id}`]) {
+        items.push(
+          ...(await db
+            .query('inboxItems')
+            .withIndex('by_key', (q) => q.eq('key', key))
+            .take(16)),
+        );
+      }
+      put('inboxItems', items);
+      out[id] = { body: await db.get(id), ...kinds };
+    }
+    return JSON.stringify(canonical(out));
+  },
+});

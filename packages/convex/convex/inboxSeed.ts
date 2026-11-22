@@ -28,9 +28,12 @@
  */
 
 import {
+  allLevels,
+  cellForPoint,
   type LatLng,
   NOTIFICATION_PREF_KEYS,
   nameSortKey,
+  pointInPolygon,
   RISK_ACK_VERSION,
   representativePoint,
   SCOPE_ALL,
@@ -48,6 +51,7 @@ import {
 } from './_generated/server';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import { queueSummaryRefresh } from './lib/bodySummary';
+import { ADMIN_AREA_LADDER } from './lib/cellIndex';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import {
   bodySource,
@@ -58,6 +62,7 @@ import {
   requestSource,
   ticketSource,
 } from './lib/inboxItems';
+import { liveSurvivorOf } from './lib/inboxRules';
 import { isListed } from './lib/listing';
 import { refreshPersonRow } from './lib/peopleRows';
 import { DOC_MAX, ReadBudget, ROW_MAX, type RowKind, TX_BUDGET } from './lib/readBudget';
@@ -128,6 +133,14 @@ interface Refs {
   launch(): Id<'putIns'>;
   /** The Inbox item an earlier step's flag is a member of, for the Inbox's own writes. */
   item(flagStepKey: string): Promise<string>;
+  /**
+   * The merge-proof drawing's live survivor (B01-5d) — read from the drawing
+   * `waterBodies.create` ranked, as the Inbox reads it (`liveSurvivorOf`), so the survivor side's
+   * rows land on the body a merge would keep.
+   */
+  survivor(drawnStepKey: string): Promise<Id<'waterBodies'>>;
+  /** The loaded town under a point, by its boundary key — what a moderator's pin names. */
+  townAt(point: LatLng): Promise<string>;
 }
 
 interface StepDef {
@@ -176,10 +189,55 @@ export function loopPath(center: LatLng, radius: number): LineString {
   return { type: 'LineString', coordinates };
 }
 
+/** A square of half-side `half` meters around `p`, as an operator draws a bay. */
+function squareAround(p: LatLng, half: number): Polygon {
+  const corner = (n: number, e: number) => {
+    const c = offset(p, n, e);
+    return [c.lng, c.lat];
+  };
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        corner(-half, -half),
+        corner(half, -half),
+        corner(half, half),
+        corner(-half, half),
+        corner(-half, -half),
+      ],
+    ],
+  };
+}
+
+/** The town boundary containing `point`, by the boundary index, as a report's place is found. */
+async function townContaining(ctx: QueryCtx, point: LatLng): Promise<Doc<'adminAreas'> | null> {
+  for (const z of allLevels(ADMIN_AREA_LADDER)) {
+    const cell = cellForPoint(point, z);
+    const rows = await ctx.db
+      .query('adminAreaCells')
+      .withIndex('by_cell', (q) =>
+        q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y).eq('level', 'town'),
+      )
+      .take(16);
+    for (const row of rows) {
+      const area = await ctx.db.get(row.adminAreaId);
+      if (
+        area?.polygon &&
+        pointInPolygon(point, area.polygon as unknown as Polygon | MultiPolygon)
+      ) {
+        return area;
+      }
+    }
+  }
+  return null;
+}
+
 /** Where each of the seed's own drawn bodies sits — the track and every ask about it share it. */
 const newCenter = (r: Refs) => offset(pointOf(r.body('newfound')), 7_000, 7_000);
 const dormantCenter = (r: Refs) => offset(pointOf(r.body('caspian')), 6_000, -6_000);
 const closedCenter = (r: Refs) => offset(pointOf(r.body('caspian')), -6_000, -9_000);
+/** The merge-proof pair's water (B01-5d): two seed lakes and a drawing inside both. */
+const proofCenter = (r: Refs) => offset(pointOf(r.body('caspian')), 6_000, 6_000);
 
 // ── The finders: each step's stable seed key ────────────────────────────────────────────────────
 
@@ -1053,7 +1111,16 @@ export function seedSteps(): StepDef[] {
     ticket('t-other', 'hana', 'other', 'Is there a way to export my reports as a spreadsheet?'),
   ];
 
-  const filed = [...content, ...flags, ...automatic, ...access, ...requests, ...drawn, ...tickets];
+  const filed = [
+    ...content,
+    ...flags,
+    ...automatic,
+    ...access,
+    ...requests,
+    ...drawn,
+    ...mergeProofSteps(),
+    ...tickets,
+  ];
 
   const moderated: StepDef[] = [
     {
@@ -1401,6 +1468,338 @@ export function seedSteps(): StepDef[] {
   return [...filed, ...moderated, ...discipline];
 }
 
+// ── The merge-proof pair (B01-5d) ───────────────────────────────────────────────────────────────
+
+/** A seed body read by its step: the row `drawn` filed. */
+const bodyOf = (ctx: QueryCtx, r: Refs, stepKey: string) =>
+  ctx.db.get(r.out(stepKey) as Id<'waterBodies'>);
+
+/** A merge-proof row found by its body and name, in a table read by body. */
+async function namedOn<T extends 'waterBodySubAreas' | 'bodyLandmarks'>(
+  ctx: QueryCtx,
+  table: T,
+  waterBodyId: Id<'waterBodies'>,
+  name: string,
+): Promise<string | null> {
+  const rows =
+    table === 'waterBodySubAreas'
+      ? await ctx.db
+          .query('waterBodySubAreas')
+          .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+          .take(50)
+      : await ctx.db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .take(50);
+  return rows.find((row) => row.name === name)?._id ?? null;
+}
+
+async function favoriteOf(ctx: QueryCtx, userId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
+  const row = await ctx.db
+    .query('waterBodyFavorites')
+    .withIndex('by_user_water_body_sub_area', (q) =>
+      q.eq('userId', userId).eq('waterBodyId', waterBodyId).eq('subAreaId', undefined),
+    )
+    .first();
+  return row?._id ?? null;
+}
+
+/**
+ * **The merge-proof pair** (B01-5d, *The dev proof*; the governor's ruling (3), 2026-11-22): a
+ * skater's drawing — *Merge Proof Cove* — inside two lakes the seed drew and approved itself, *Merge
+ * Proof Pond* and *Merge Proof Pond West*, so the drawing's live survivor is one and the other is its
+ * partner, and every row a merge moves sits on one side or the other — never on a real body (D287):
+ *
+ * - on the drawing: a report, a hazard, a bounty, a put-in, an open bay ask, an open place name, an
+ *   open access report, and a second from a person who already reported the survivor (the flag a
+ *   merge leaves behind);
+ * - favorites: one person favoriting the drawing only, and one favoriting both (the dropped twin);
+ * - bays: one of its own on the drawing, and one on each body sharing a name (the merge delists it);
+ * - landmarks: a twin across the two (the merge folds it);
+ * - moderator lists: an alias, a pin and a link on each.
+ *
+ * The seed leaves it unmerged: the proof merges it from the Inbox and unmerges it from History.
+ * *Morey East Bay* over Lake Morey stays as it was — the item that looks like board 2.5.
+ */
+function mergeProofSteps(): StepDef[] {
+  const track = (key: string, person: SeedPersonKey, radius: number, east = 0): StepDef => ({
+    key,
+    label: `a recorded loop for the merge-proof pair (${key})`,
+    as: 'bare',
+    fn: 'inboxSeed:ensureActivity',
+    args: (r) => ({
+      person,
+      key,
+      path: loopPath(offset(proofCenter(r), 0, east), radius),
+      startTime: r.now - 40 * HOUR,
+    }),
+    find: async (ctx) => (await activityByKey(ctx, key))?._id ?? null,
+  });
+  const draw = (
+    key: string,
+    as: SeedPersonKey,
+    trackKey: string,
+    name: string,
+    after?: readonly string[],
+  ): StepDef => ({
+    key,
+    label: `${name} drawn (the merge-proof pair)`,
+    as,
+    fn: 'waterBodies:create',
+    ...(after ? { after } : {}),
+    args: (r) => ({ name, type: 'lakePond', activityId: r.out(trackKey), confirmedNew: true }),
+    find: async (ctx) => (await activityByKey(ctx, trackKey))?.waterBodyId ?? null,
+  });
+  const approve = (key: string, drawnKey: string): StepDef => ({
+    key,
+    label: `${drawnKey} approved`,
+    as: 'operator',
+    fn: 'waterBodies:approve',
+    args: (r) => ({ waterBodyId: r.out(drawnKey) }),
+    find: async (ctx, r) =>
+      (await bodyOf(ctx, r, drawnKey))?.reviewStatus === 'approved' ? 'done' : null,
+  });
+  type Side = 'cove' | 'survivor';
+  const on = async (r: Refs, side: Side): Promise<Id<'waterBodies'>> =>
+    side === 'cove' ? (r.out('mp-cove') as Id<'waterBodies'>) : r.survivor('mp-cove');
+  const bay = (key: string, side: Side, name: string, north: number, east: number): StepDef => ({
+    key,
+    label: `a bay "${name}" on the merge-proof ${side}`,
+    as: 'operator',
+    fn: 'subAreas:create',
+    after: ['mp-cove'],
+    args: async (r) => ({
+      waterBodyId: await on(r, side),
+      name,
+      polygon: squareAround(offset(proofCenter(r), north, east), 50),
+    }),
+    find: async (ctx, r) => namedOn(ctx, 'waterBodySubAreas', await on(r, side), name),
+  });
+  const landmark = (key: string, side: Side): StepDef => ({
+    key,
+    label: `the twin landmark on the merge-proof ${side}`,
+    as: 'operator',
+    fn: 'landmarks:create',
+    after: ['mp-cove'],
+    args: async (r) => ({
+      waterBodyId: await on(r, side),
+      name: 'Proof Rock',
+      kind: 'point',
+      point: offset(proofCenter(r), 120, 0),
+    }),
+    find: async (ctx, r) => namedOn(ctx, 'bodyLandmarks', await on(r, side), 'Proof Rock'),
+  });
+  const alias = (key: string, side: Side, alias: string): StepDef => ({
+    key,
+    label: `an alias on the merge-proof ${side}`,
+    as: 'operator',
+    fn: 'waterBodies:setAliases',
+    after: ['mp-cove'],
+    args: async (r) => ({ waterBodyId: await on(r, side), aliases: [alias] }),
+    find: async (ctx, r) =>
+      (await ctx.db.get(await on(r, side)))?.moderatorAliases?.includes(alias) ? 'done' : null,
+  });
+  const pin = (key: string, side: Side): StepDef => ({
+    key,
+    label: `a pinned town on the merge-proof ${side}`,
+    as: 'operator',
+    fn: 'waterBodies:setModeratorTowns',
+    after: ['mp-cove'],
+    args: async (r) => ({
+      waterBodyId: await on(r, side),
+      townKeys: [await r.townAt(proofCenter(r))],
+    }),
+    find: async (ctx, r) =>
+      ((await ctx.db.get(await on(r, side)))?.moderatorTownKeys?.length ?? 0) > 0 ? 'done' : null,
+  });
+  const link = (key: string, side: Side): StepDef => ({
+    key,
+    label: `a reference link on the merge-proof ${side}`,
+    as: 'operator',
+    fn: 'waterBodies:setReferenceLinks',
+    after: ['mp-cove'],
+    args: async (r) => ({
+      waterBodyId: await on(r, side),
+      links: [{ label: `Merge proof ${side}`, url: `https://example.org/seed-inbox/${side}` }],
+    }),
+    find: async (ctx, r) =>
+      (await ctx.db.get(await on(r, side)))?.referenceLinks?.some((l) =>
+        l.url.endsWith(`/seed-inbox/${side}`),
+      )
+        ? 'done'
+        : null,
+  });
+  const favorite = (key: string, as: SeedPersonKey, side: Side): StepDef => ({
+    key,
+    label: `a favorite of the merge-proof ${side}`,
+    as,
+    fn: 'waterBodyFavorites:toggle',
+    after: ['mp-cove'],
+    args: async (r) => ({ waterBodyId: await on(r, side) }),
+    find: async (ctx, r) => favoriteOf(ctx, r.person(as), await on(r, side)),
+  });
+  const accessReport = (
+    key: string,
+    as: SeedPersonKey,
+    side: Side,
+    after: readonly string[] = ['mp-cove'],
+  ): StepDef => ({
+    key,
+    label: `an access report on the merge-proof ${side}`,
+    as,
+    fn: 'contentFlags:flag',
+    after,
+    args: async (r) => ({
+      targetType: 'waterbody',
+      targetId: await on(r, side),
+      reason: 'no_public_access',
+      note: 'A new gate across the only road in.',
+    }),
+    find: async (ctx, r) =>
+      flagBy(ctx, r.person(as), 'waterbody', await on(r, side), 'no_public_access'),
+  });
+  const cove = (r: Refs) => r.out('mp-cove') as Id<'waterBodies'>;
+
+  return [
+    track('mp-track-pond', 'ada', 420),
+    draw('mp-pond', 'ada', 'mp-track-pond', 'Merge Proof Pond'),
+    approve('mp-approve-pond', 'mp-pond'),
+    track('mp-track-west', 'gus', 380, -40),
+    draw('mp-west', 'gus', 'mp-track-west', 'Merge Proof Pond West', ['mp-approve-pond']),
+    approve('mp-approve-west', 'mp-west'),
+    track('mp-track-cove', 'hana', 240),
+    draw('mp-cove', 'hana', 'mp-track-cove', 'Merge Proof Cove', [
+      'mp-approve-pond',
+      'mp-approve-west',
+    ]),
+    // The bounty first: a fresh report on the drawing would answer it before it was asked.
+    {
+      key: 'mp-bounty',
+      label: 'a bounty on the merge-proof drawing',
+      as: 'elin',
+      fn: 'bounties:createChecked',
+      args: (r) => ({ waterBodyId: cove(r), weatherReopenedReports: [] }),
+      find: async (ctx, r) =>
+        (
+          await ctx.db
+            .query('bounties')
+            .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove(r)))
+            .first()
+        )?._id ?? null,
+    },
+    {
+      key: 'mp-report',
+      label: 'a report on the merge-proof drawing',
+      as: 'ada',
+      fn: 'reports:create',
+      after: ['mp-bounty'],
+      args: (r) => ({
+        waterBodyId: cove(r),
+        idempotencyKey: seedKey('mp-report'),
+        skateEndTime: r.now - 6 * HOUR,
+        conditions: { airTempC: -9, windSpeedKph: 5 },
+        surfaceTags: ['smooth'],
+        skateQuality: 'good',
+        notes: 'Smooth gray ice across the cove; skated the east shore loop twice.',
+      }),
+      find: (ctx) => reportByKey(ctx, 'mp-report'),
+    },
+    {
+      key: 'mp-hazard',
+      label: 'a hazard on the merge-proof drawing',
+      as: 'gus',
+      fn: 'hazards:create',
+      after: ['mp-cove'],
+      args: (r) => {
+        const p = offset(proofCenter(r), -100, 0);
+        return {
+          waterBodyId: cove(r),
+          idempotencyKey: seedKey('mp-hazard'),
+          type: 'open_water',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+          radiusMeters: 25,
+          description: 'An open lead off the inlet.',
+        };
+      },
+      find: (ctx) => hazardByKey(ctx, 'mp-hazard'),
+    },
+    {
+      key: 'mp-put-in',
+      label: 'a launch on the merge-proof drawing',
+      as: 'operator',
+      fn: 'putIns:setOfficial',
+      after: ['mp-cove'],
+      args: (r) => ({
+        waterBodyId: cove(r),
+        coord: offset(proofCenter(r), 0, 240),
+        name: 'Proof Launch',
+      }),
+      find: async (ctx, r) =>
+        (
+          await ctx.db
+            .query('putIns')
+            .withIndex('by_water_body', (q) => q.eq('waterBodyId', cove(r)))
+            .take(20)
+        ).find((p) => p.name === 'Proof Launch')?._id ?? null,
+    },
+    ask(
+      'mp-ask-bay',
+      'elin',
+      'name_bay',
+      'a bay ask on the merge-proof drawing',
+      (r) => ({ waterBodyId: cove(r), coord: offset(proofCenter(r), 0, -150) }),
+      { name: 'Proof Narrows' },
+      ['mp-cove'],
+    ),
+    {
+      key: 'mp-place-name',
+      label: 'an open place name on the merge-proof drawing',
+      as: 'bare',
+      fn: 'corpusPlaceNames:importBatch',
+      after: ['mp-cove'],
+      args: (r) => ({
+        names: [
+          {
+            name: 'Proof Point',
+            aliases: [],
+            messages: 2,
+            skatedMessages: 1,
+            states: ['VT'],
+            waterBodyId: cove(r),
+          },
+        ],
+        dryRun: false,
+      }),
+      find: async (ctx, r) =>
+        (
+          await ctx.db
+            .query('corpusPlaceNames')
+            .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove(r)))
+            .take(20)
+        ).find((n) => n.name === 'Proof Point')?._id ?? null,
+    },
+    favorite('mp-fav-cove', 'elin', 'cove'),
+    favorite('mp-fav-both-cove', 'cleo', 'cove'),
+    favorite('mp-fav-both-pond', 'cleo', 'survivor'),
+    accessReport('mp-flag-cove', 'ada', 'cove'),
+    accessReport('mp-flag-pond', 'gus', 'survivor'),
+    // Gus reported the survivor first: on a merge this one stays behind.
+    accessReport('mp-flag-cove-gus', 'gus', 'cove', ['mp-flag-pond']),
+    bay('mp-bay-cove', 'cove', 'Proof Inlet', 0, -150),
+    bay('mp-bay-clash-cove', 'cove', 'Proof Bay', 0, 150),
+    bay('mp-bay-clash-pond', 'survivor', 'Proof Bay', 0, 150),
+    landmark('mp-landmark-cove', 'cove'),
+    landmark('mp-landmark-pond', 'survivor'),
+    alias('mp-alias-cove', 'cove', 'Proof Cove Test-Alias'),
+    alias('mp-alias-pond', 'survivor', 'Proof Pond Test-Alias'),
+    pin('mp-pin-cove', 'cove'),
+    pin('mp-pin-pond', 'survivor'),
+    link('mp-link-cove', 'cove'),
+    link('mp-link-pond', 'survivor'),
+  ];
+}
+
 // ── The bodies ───────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1658,6 +2057,17 @@ export const state = internalQuery({
       launch: () => {
         if (!launch) throw new Missing('a live launch on Caspian Lake', false);
         return launch;
+      },
+      survivor: async (drawnStepKey) => {
+        const drawn = await ctx.db.get(refs.out(drawnStepKey) as Id<'waterBodies'>);
+        const live = drawn ? await liveSurvivorOf(drawn, (id) => ctx.db.get(id)) : null;
+        if (!live) throw new Missing(`${drawnStepKey}'s overlap with a known body`, false);
+        return live._id;
+      },
+      townAt: async (point) => {
+        const town = await townContaining(ctx, point);
+        if (!town) throw new Missing('a loaded town under the merge-proof pair', false);
+        return town.externalId;
       },
       item: async (flagStepKey) => {
         const flagId = refs.out(flagStepKey);
@@ -1992,10 +2402,93 @@ async function dropContentSides(
   await dropPointsFor(s, id);
 }
 
+/**
+ * What the operator and the fake people put on a body the seed drew (the merge-proof pair, B01-5d):
+ * its bays (their cells and rows), its landmarks (their rows), its launches, bounties, favorites and
+ * place names, and its short list of names — every one on the seed's own body, so it goes with it.
+ */
+async function dropBodyChildren(s: Sweep, body: Doc<'waterBodies'>): Promise<void> {
+  const db = s.ctx.db;
+  await s.drain(
+    'waterBodySubAreas',
+    'waterBody',
+    () =>
+      db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    async (bay) => {
+      await s.drain('waterBodySubAreaCells', 'small', () =>
+        db
+          .query('waterBodySubAreaCells')
+          .withIndex('by_sub_area', (q) => q.eq('subAreaId', bay._id))
+          .first(),
+      );
+      await dropAuditsOf(s, 'waterBodySubArea', bay._id);
+    },
+  );
+  await s.drain(
+    'bodyLandmarks',
+    'landmark',
+    () =>
+      db
+        .query('bodyLandmarks')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    (row) => dropAuditsOf(s, 'bodyLandmark', row._id),
+  );
+  await s.drain(
+    'putIns',
+    'putIn',
+    () =>
+      db
+        .query('putIns')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    (row) => dropAuditsOf(s, 'putIn', row._id),
+  );
+  await s.drain('bounties', 'report', () =>
+    db
+      .query('bounties')
+      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', body._id))
+      .first(),
+  );
+  // The bounty's gate record (the attempt, allowed): about the seed's body and its fake asker.
+  await s.drain('bountyGateEvents', 'gateEvent', () =>
+    db
+      .query('bountyGateEvents')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .first(),
+  );
+  await s.drain('waterBodyFavorites', 'small', () =>
+    db
+      .query('waterBodyFavorites')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .first(),
+  );
+  await s.drain(
+    'corpusPlaceNames',
+    'landmark',
+    () =>
+      db
+        .query('corpusPlaceNames')
+        .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', body._id))
+        .first(),
+    (row) => dropAuditsOf(s, 'corpusPlaceName', row._id),
+  );
+  await s.drain('bodyNameLists', 'bodyNames', () =>
+    db
+      .query('bodyNameLists')
+      .withIndex('by_body', (q) => q.eq('waterBodyId', body._id))
+      .first(),
+  );
+}
+
 /** A body a fake person drew, and everything its write made: cells, facts, library rows, item. */
 async function dropDrawnBody(s: Sweep, body: Doc<'waterBodies'>): Promise<void> {
   const db = s.ctx.db;
   await leave(s, bodySource(body._id));
+  await dropBodyChildren(s, body);
   await dropAuditsOf(s, 'waterbody', body._id);
   await s.drain('auditBodyLinks', 'small', () =>
     db

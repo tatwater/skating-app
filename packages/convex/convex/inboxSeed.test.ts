@@ -119,6 +119,31 @@ async function devWorld(t: T) {
       createdAt: Date.now(),
     });
   });
+  // Dev's towns are loaded: one under the merge-proof pair, whose pins name it (B01-5d).
+  await t.mutation(internal.adminAreas.importCanonical, {
+    areas: [
+      {
+        externalId: 'tiger/5000912345',
+        name: 'Proofton',
+        level: 'town',
+        state: 'VT',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-72.3, 44.62],
+              [-72.3, 44.75],
+              [-72.12, 44.75],
+              [-72.12, 44.62],
+              [-72.3, 44.62],
+            ],
+          ],
+        },
+        bbox: { minLat: 44.62, minLng: -72.3, maxLat: 44.75, maxLng: -72.12 },
+        centroid: { lat: 44.685, lng: -72.21 },
+      },
+    ],
+  });
   // Dev's cards are computed: every body has its summary before the seed touches it.
   for (const b of await t.run((ctx) => ctx.db.query('waterBodies').collect())) {
     await t.mutation(internal.waterBodies.refreshOneBodySummary, {
@@ -236,7 +261,10 @@ async function realState(t: T, people: Id<'profiles'>[]) {
       hazards: (await ctx.db.query('hazards').collect())
         .filter((h) => h.createdByUserId !== undefined && people.includes(h.createdByUserId))
         .map((h) => [h.status, h.mergedIntoHazardId, h.moderationStatus]),
-      bounties: (await ctx.db.query('bounties').collect()).map((b) => b.fulfillingReportIds),
+      // A real person's bounties (the merge-proof pair's is a fake person's, on the seed's body).
+      bounties: (await ctx.db.query('bounties').collect())
+        .filter((b) => people.includes(b.requesterId))
+        .map((b) => b.fulfillingReportIds),
       pointEvents: mine(await ctx.db.query('pointEvents').collect()),
       queued: mine(await ctx.db.query('notificationQueue').collect()),
       notified: mine(await ctx.db.query('notifications').collect()),
@@ -374,6 +402,7 @@ async function realRows(t: T, people: Id<'profiles'>[]) {
     const links = await ctx.db.query('bodyGeoLinks').collect();
     const mine = (id: string | undefined) =>
       id !== undefined && people.includes(id as Id<'profiles'>);
+    const real = (id: string) => bodies.some((b) => b._id === id);
     const flags = (await ctx.db.query('contentFlags').collect()).filter((f) => mine(f.flaggerId));
     const members = await ctx.db.query('inboxItemMembers').collect();
     const items = await ctx.db.query('inboxItems').collect();
@@ -400,8 +429,9 @@ async function realRows(t: T, people: Id<'profiles'>[]) {
       reports: (await ctx.db.query('reports').collect()).filter((r) => mine(r.authorId)),
       comments: (await ctx.db.query('comments').collect()).filter((c) => mine(c.authorId)),
       hazards: (await ctx.db.query('hazards').collect()).filter((h) => mine(h.createdByUserId)),
-      bounties: await ctx.db.query('bounties').collect(),
-      putIns: await ctx.db.query('putIns').collect(),
+      // Those on real bodies: the merge-proof pair's launch and bounty sit on the seed's own (B01-5d).
+      bounties: (await ctx.db.query('bounties').collect()).filter((x) => real(x.waterBodyId)),
+      putIns: (await ctx.db.query('putIns').collect()).filter((x) => real(x.waterBodyId)),
       queued: (await ctx.db.query('notificationQueue').collect()).filter((q) => mine(q.userId)),
       notified: (await ctx.db.query('notifications').collect()).filter((q) => mine(q.userId)),
       points: (await ctx.db.query('pointEvents').collect()).filter((e) => mine(e.userId)),
@@ -597,12 +627,14 @@ describe('the seed, end to end', () => {
     expect(run.last.unavailable).toEqual([]);
     expect(run.last.ready).toEqual([]);
 
+    // The merge-proof pair (B01-5d) adds four open items — its drawing, an access report on each of
+    // its two sides, its bay ask — and its two seed lakes' approvals to the decided.
     expect(await lanesOf(t)).toEqual({
-      allOpen: 23,
-      decided: 12,
+      allOpen: 27,
+      decided: 14,
       lanes: {
         safety: { open: 2, all: 2, reports: 1, hazards: 1, people: 0 },
-        accessReports: { open: 2, all: 2, disputes: 1, new: 1 },
+        accessReports: { open: 4, all: 4, disputes: 1, new: 3 },
         requests: {
           open: 6,
           all: 6,
@@ -612,12 +644,63 @@ describe('the seed, end to end', () => {
           contest_access: 1,
           takedown: 1,
         },
-        placesAsked: { open: 3, all: 3, bays: 1, landmarks: 2 },
-        drawnBodies: { open: 1, all: 1, overlap: 1, newWater: 0 },
+        placesAsked: { open: 4, all: 4, bays: 2, landmarks: 2 },
+        drawnBodies: { open: 2, all: 2, overlap: 2, newWater: 0 },
         contentFlags: { open: 5, all: 5, reports: 2, comments: 1, alerts: 1, photos: 0, people: 1 },
         support: { open: 4, all: 4, account: 1, bug: 1, safety: 1, other: 1 },
       },
     });
+    // The merge-proof pair (B01-5d), as the proof finds it: the drawing over two of the seed's own
+    // lakes, and a preview of every row a merge would move, none of it on a real body (D287).
+    const pair = await t.run(async (ctx) => {
+      const bodies = await ctx.db.query('waterBodies').collect();
+      const named = (name: string) => bodies.find((b) => b.name === name);
+      return {
+        cove: named('Merge Proof Cove'),
+        pond: named('Merge Proof Pond')?._id,
+        west: named('Merge Proof Pond West')?._id,
+        morey: named('Morey East Bay')?.duplicateCandidateIds,
+      };
+    });
+    expect(pair.cove?.reviewStatus).toBe('pending');
+    expect([...(pair.cove?.duplicateCandidateIds ?? [])].sort()).toEqual(
+      [pair.pond, pair.west].sort(),
+    );
+    const survivorId = pair.cove?.duplicateCandidateIds?.[0] as Id<'waterBodies'>;
+    const operatorAs = t.withIdentity({ subject: OPERATOR });
+    const preview = await operatorAs.query(api.bodyConsole.mergePreview, {
+      loserId: pair.cove?._id as Id<'waterBodies'>,
+      survivorId,
+    });
+    if (!preview.ok) throw new Error(preview.refusal);
+    expect(Object.fromEntries(Object.entries(preview.moves).map(([k, c]) => [k, c.count]))).toEqual(
+      {
+        reports: 1,
+        hazards: 1,
+        bounties: 1,
+        bodyFeatures: 0,
+        putIns: 1,
+        favorites: 1, // the drawing only; the other person's is dropped as a twin
+        requests: 1,
+        placeNames: 1,
+        flags: 1, // the second report stays: its reporter already reported the survivor
+        subAreas: 2,
+        landmarks: 1,
+        gpsActivities: 1,
+      },
+    );
+    expect(preview).toMatchObject({
+      favoritesDeduped: 1,
+      baysClashing: ['Proof Bay'],
+      lists: { pins: 1, aliases: 2, links: 2 },
+      tooBig: false,
+    });
+    // The census reads the same state the same way twice.
+    const census = { ids: [pair.cove?._id as Id<'waterBodies'>, survivorId] };
+    const first = await t.query(internal.waterBodies.mergeProofCensus, census);
+    expect(await t.query(internal.waterBodies.mergeProofCensus, census)).toBe(first);
+    expect(first).toContain('Proof Inlet');
+
     // The Decided lane holds every decision word, each made by the operator on what a fake person
     // filed (D289), every one through the Inbox's writes or the ask's and drawing's own mutations.
     const decided = await t.run(async (ctx) => {
@@ -640,6 +723,8 @@ describe('the seed, end to end', () => {
         'contentFlags:removed',
         'contentFlags:restored',
         'contentFlags:unpinned',
+        'drawnBodies:approved',
+        'drawnBodies:approved',
         'drawnBodies:approved',
         'drawnBodies:approved',
         'drawnBodies:approved',
@@ -745,7 +830,8 @@ describe('the seed, end to end', () => {
 
     // The dry run of the clear says what it would remove, and removes nothing.
     const plan = await t.query(internal.inboxSeed.clearPlan, {});
-    expect(plan).toMatchObject({ profiles: 8, reports: 9, supportTickets: 4, gpsActivities: 6 });
+    // The merge-proof pair adds its report and its three tracks (B01-5d).
+    expect(plan).toMatchObject({ profiles: 8, reports: 10, supportTickets: 4, gpsActivities: 9 });
 
     const beforeClear = urls.length;
     const cleared = await runClear(t);
@@ -767,6 +853,23 @@ describe('the seed, end to end', () => {
     expect(left).toEqual({});
     expect(await tallies(t)).toEqual(beforeTallies);
     expect(await lanesOf(t)).toMatchObject({ allOpen: 0, decided: 0 });
+
+    // Nothing of the merge-proof pair survives the clear.
+    expect(
+      await t.run(async (ctx) => ({
+        bodies: (await ctx.db.query('waterBodies').collect()).filter((b) =>
+          b.name.startsWith('Merge Proof'),
+        ).length,
+        bays: (await ctx.db.query('waterBodySubAreas').collect()).length,
+        landmarks: (await ctx.db.query('bodyLandmarks').collect()).filter((l) =>
+          l.name.startsWith('Proof'),
+        ).length,
+        placeNames: (await ctx.db.query('corpusPlaceNames').collect()).length,
+        favorites: (await ctx.db.query('waterBodyFavorites').collect()).filter(
+          (f) => String(f.waterBodyId) === String(pair.cove?._id),
+        ).length,
+      })),
+    ).toEqual({ bodies: 0, bays: 0, landmarks: 0, placeNames: 0, favorites: 0 });
 
     // A second clear has nothing to do.
     const twice = await runClear(t);
