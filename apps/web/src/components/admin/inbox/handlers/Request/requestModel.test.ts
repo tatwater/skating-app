@@ -4,15 +4,21 @@ import {
   ADMIN_ROLE,
   activate,
   activateMany,
+  activateNoDormancy,
   admit,
   admitFlowing,
   admitNoMatch,
+  contest,
   FLOWING,
   KINDS,
   MODERATOR_ROLE,
   OWN_FILING,
+  POST_POND_SHELVED,
   REQUEST_NOW,
+  REQUEST_TZ,
   restore,
+  SPECTACLE_RULING,
+  TARLETON_DORMANCY,
   takedown,
   UNNAMED_POND,
   VIEWERS,
@@ -22,6 +28,7 @@ import {
   bodyKicker,
   bodyRows,
   catalogRows,
+  dormancyRows,
   headAge,
   headTitle,
   ifBlocks,
@@ -30,6 +37,7 @@ import {
   receiptOf,
   refusalNote,
   requestBar,
+  rulingEvent,
   subjectOf,
 } from './requestModel';
 
@@ -80,7 +88,7 @@ const BARS: Record<Kind, Record<Viewer, string[]>> = {
   },
   restore: {
     admin: ['Restore', 'Decline'],
-    // Its approval is an admin's: a moderator's item draws no bar at all, though Decline is allowed.
+    // An admin's both ways: the server refuses a moderator both levers, so no bar at all.
     moderator: [],
     filer: [],
     noRole: [],
@@ -297,5 +305,54 @@ describe('the flowing-water admit', () => {
     const item = admitFlowing();
     expect(refusalNote(item)).toEqual([FLOWING]);
     expect(requestBar(item).map((b) => b.verb)).toEqual(['decline']);
+  });
+});
+
+describe('an activate’s dormancy (in Activating it)', () => {
+  it('says why the body is dormant and since when, in the Body console’s words', () => {
+    expect(dormancyRows(TARLETON_DORMANCY, REQUEST_TZ)).toEqual([
+      { label: 'Dormant', value: 'Inactive · since 18 Dec 2025' },
+    ]);
+    expect(ifBlocks(activate(), REQUEST_TZ).first.rows[0]).toEqual({
+      label: 'Dormant',
+      value: 'Inactive · since 18 Dec 2025',
+    });
+  });
+
+  it('adds the moderator’s note and who set it, by first name, only when served', () => {
+    expect(dormancyRows(POST_POND_SHELVED, REQUEST_TZ)).toEqual([
+      { label: 'Dormant', value: 'Moderator · since 24 Sep 2026' },
+      { label: 'Note', value: '“Shelved while the town rebuilds the launch.”' },
+      { label: 'Set by', value: 'Matt' },
+    ]);
+    expect(dormancyRows({ ...POST_POND_SHELVED, note: '  ', by: null }, REQUEST_TZ)).toHaveLength(
+      1,
+    );
+  });
+
+  it('draws nothing when the read serves none — never an invented reason', () => {
+    const labels = ifBlocks(activateNoDormancy(), REQUEST_TZ).first.rows.map((r) => r.label);
+    expect(labels).not.toContain('Dormant');
+    expect(labels[0]).toBe('Returns');
+    // And no other kind draws one.
+    for (const k of [admit, restore, takedown, contest]) {
+      expect(ifBlocks(k(), REQUEST_TZ).first.rows.map((r) => r.label)).not.toContain('Dormant');
+    }
+  });
+});
+
+describe('contest access’s standing ruling', () => {
+  it('is the Access handler’s ruling event, its source trimmed (blank reads as none)', () => {
+    expect(rulingEvent(SPECTACLE_RULING)).toEqual({
+      kind: 'ruling',
+      key: 'ruling',
+      at: SPECTACLE_RULING.ruledAt,
+      verdict: 'none',
+      by: SPECTACLE_RULING.by,
+      note: 'Posted private by the landowner.',
+      reason: 'The landowner wrote in; the only access is across their field.',
+    });
+    expect(rulingEvent({ ...SPECTACLE_RULING, reason: '   ' }).reason).toBeNull();
+    expect(rulingEvent({ ...SPECTACLE_RULING, reason: null }).reason).toBeNull();
   });
 });

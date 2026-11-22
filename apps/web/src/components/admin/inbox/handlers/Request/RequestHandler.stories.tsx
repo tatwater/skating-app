@@ -8,11 +8,14 @@ import { StoryRequestInspector } from './requestBoard';
 import {
   activate,
   activateMany,
+  activateNoDormancy,
+  activateShelved,
   admit,
   admitFlowing,
   admitNoMatch,
   admitPending,
   contest,
+  contestNoRuling,
   REQUEST_NOW,
   restore,
   takedown,
@@ -22,8 +25,9 @@ import type { RequestItem } from './requestModel';
 /**
  * Board 2.3 and every request kind derived from it, at the board's inspector size (788 × 874 of the
  * 1440 × 900 board), in both modes: the admit with a catalog match, with none and with a lookup not
- * yet answered, a match the catalog calls flowing water; activate, restore, contest access and
- * takedown (as an admin, and as a moderator, for whom restore and takedown are an admin's); the
+ * yet answered, a match the catalog calls flowing water; activate (dormant by the season rule, shelved
+ * by a moderator, or with no dormancy served), restore, contest access (with its standing ruling, and
+ * without one) and takedown (as an admin, and as a moderator, for whom restore and takedown are an admin's); the
  * viewer's own filing; a decided one; a question past the read's page of asks; and a phone's width.
  */
 const meta = {
@@ -130,7 +134,7 @@ export const AdmitFlowing: Story = {
   },
 };
 
-/** An activate: the body, what activating brings back. */
+/** An activate: the body, why it is dormant and since when, what activating brings back. */
 export const Activate: Story = {
   render: () => one(activate()),
   play: async ({ canvasElement }) => {
@@ -140,11 +144,36 @@ export const Activate: Story = {
       await expect(s.getByText('Activation')).toBeVisible();
       await expect(s.getByRole('heading', { name: 'Lake Tarleton' })).toBeVisible();
       await expect(s.getByText('Lake or pond · Piermont, NH · 329 ac')).toBeVisible();
-      await expect(s.getByRole('region', { name: 'Activating it' })).toHaveTextContent(
-        'Enrichment queues it if it has none',
-      );
+      const activating = s.getByRole('region', { name: 'Activating it' });
+      await expect(activating).toHaveTextContent('Enrichment queues it if it has none');
+      await expect(activating).toHaveTextContent('Inactive · since 18 Dec 2025');
       await expect(must(q.querySelector('[data-slot="open-in-body"]'))).toHaveTextContent(
         'Open in Body',
+      );
+    }
+  },
+};
+
+/** An activate whose body a moderator shelved: the reason, the note skaters read, who set it. */
+export const ActivateShelved: Story = {
+  render: () => one(activateShelved()),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const activating = within(q).getByRole('region', { name: 'Activating it' });
+      await expect(activating).toHaveTextContent('Moderator · since 24 Sep 2026');
+      await expect(activating).toHaveTextContent('“Shelved while the town rebuilds the launch.”');
+      await expect(activating).toHaveTextContent('Matt');
+    }
+  },
+};
+
+/** An activate with no dormancy served: no reason drawn, never an invented one. */
+export const ActivateNoDormancy: Story = {
+  render: () => one(activateNoDormancy()),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(within(q).getByRole('region', { name: 'Activating it' })).not.toHaveTextContent(
+        'Dormant',
       );
     }
   },
@@ -174,7 +203,7 @@ export const RestoreForModerator: Story = {
   },
 };
 
-/** Contest access: confirming it accessible closes the asks. */
+/** Contest access: the standing ruling it contests (the Access handler's event); confirming it accessible. */
 export const Contest: Story = {
   render: () => one(contest()),
   play: async ({ canvasElement }) => {
@@ -184,6 +213,24 @@ export const Contest: Story = {
       await expect(
         within(q).getByRole('region', { name: 'Confirming it accessible' }),
       ).toHaveTextContent('The ruling, to accessible');
+      const ruling = within(q).getByRole('region', { name: 'The ruling' });
+      await expect(within(ruling).getByText('Standing ruling')).toBeVisible();
+      await expect(ruling).toHaveTextContent('Ruled no public access');
+      await expect(ruling).toHaveTextContent('Sarah Berman');
+      await expect(ruling).toHaveTextContent(
+        'Source: The landowner wrote in; the only access is across their field.',
+      );
+    }
+  },
+};
+
+/** Contest access on a body whose ruling has since been cleared: the body, no ruling drawn. */
+export const ContestNoRuling: Story = {
+  render: () => one(contestNoRuling()),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(within(q).queryByRole('region', { name: 'The ruling' })).toBeNull();
+      await expect(within(q).getByRole('region', { name: 'The body' })).toBeVisible();
     }
   },
 };

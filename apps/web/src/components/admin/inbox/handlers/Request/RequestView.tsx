@@ -12,18 +12,22 @@ import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
 import { buttonVariants } from '@/components/kit/button';
 import { DisplayWord } from '@/components/kit/display-word';
 import { FactList } from '@/components/kit/fact-list';
+import { ItemTimeline } from '@/components/kit/item-timeline';
 import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 
 import { AskDialog } from '../../../people/person/AskDialog';
+import { dayMonth } from '../../../shell/consoleTime';
 import { listTotalOf } from '../../blocks/listCut';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
   InspectorHeadTitle,
 } from '../../inspector/InspectorFrame';
+import { useInspectorContext } from '../../inspector/inspectorContext';
+import { eventBody } from '../Access/AccessHandlerView';
 import { AskList } from '../asks/AskList';
 import {
   bodyKicker,
@@ -40,6 +44,7 @@ import {
   type Row,
   refusalNote,
   requestBar,
+  rulingEvent,
   subjectOf,
 } from './requestModel';
 import { REQUEST_HANDLER_WORDS as W } from './requestWords';
@@ -165,8 +170,22 @@ function Refusals({ item }: { item: RequestItem }) {
   );
 }
 
+/** Contest access's standing ruling: the Access handler's ruling event, one event long. */
+function StandingRuling({ ruling }: { ruling: NonNullable<RequestItem['ruling']> }) {
+  const { timeZone } = useInspectorContext();
+  const e = rulingEvent(ruling);
+  return (
+    <ItemTimeline
+      events={[
+        { key: e.key, date: dayMonth(e.at, timeZone), mark: 'bright', children: eventBody(e) },
+      ]}
+    />
+  );
+}
+
 export function RequestBody({ item, now, map }: Pick<RequestViewProps, 'item' | 'now' | 'map'>) {
-  const ifs = ifBlocks(item);
+  const { timeZone } = useInspectorContext();
+  const ifs = ifBlocks(item, timeZone);
   const body = item.body;
   return (
     <div data-slot="request-handler" data-kind={item.requestKind} className="@container">
@@ -206,6 +225,10 @@ export function RequestBody({ item, now, map }: Pick<RequestViewProps, 'item' | 
             <Facts
               rows={item.candidate !== null ? catalogRows(item.candidate, now) : noMatchRows(item)}
             />
+          </Section>
+        ) : item.ruling !== null ? (
+          <Section title={W.theRuling} data-slot="request-ruling">
+            <StandingRuling ruling={item.ruling} />
           </Section>
         ) : body !== null ? (
           <Section title={W.theBody} data-slot="request-body">

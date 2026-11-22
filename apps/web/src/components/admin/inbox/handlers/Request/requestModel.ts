@@ -1,11 +1,18 @@
-import { type RequestKind, WATER_BODY_CLASS_LABELS, waterBodyClassLabel } from '@skating/core';
+import {
+  type RequestKind,
+  standingReasonLabel,
+  WATER_BODY_CLASS_LABELS,
+  waterBodyClassLabel,
+} from '@skating/core';
 
 import { shortAge } from '@/lib/ages';
 
+import { firstName, statusDate } from '../../../body/frame/bodyModel';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { acres } from '../../list/inboxModel';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { askedBy } from '../../words/inboxWords';
+import type { TimelineEvent } from '../Access/accessModel';
 import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
 
 /**
@@ -26,6 +33,8 @@ import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
 export type RequestItem = Extract<InboxItemView, { kind: 'request' }>;
 export type RequestCandidate = NonNullable<RequestItem['candidate']>;
 export type RequestBody = NonNullable<RequestItem['body']>;
+export type RequestDormancy = NonNullable<RequestItem['dormancy']>;
+export type RequestRuling = NonNullable<RequestItem['ruling']>;
 
 /** The verbs a request item's bar can send. */
 export type RequestVerb = 'approve' | 'decline' | 'lookUpAgain';
@@ -115,8 +124,47 @@ export function bodyRows(body: RequestBody): Row[] {
   ];
 }
 
+/**
+ * Why an activate's body is dormant, and since when — the reason in the Body console's own words
+ * (core's `standingReasonLabel`, its Standing tab's), the date as a status date carries it — then the
+ * moderator's note and who set it, each only when the read serves it. Never a reason it didn't send.
+ */
+export function dormancyRows(d: RequestDormancy, timeZone?: string): Row[] {
+  return [
+    {
+      label: W.dormant,
+      value: W.dormantSince(standingReasonLabel(d.reason), statusDate(d.since, timeZone)),
+    },
+    ...(d.note !== null && d.note.trim() !== ''
+      ? [{ label: W.note, value: `“${d.note.trim()}”` }]
+      : []),
+    // Staff are named by first name on the console.
+    ...(d.by !== null ? [{ label: W.setBy, value: firstName(d.by.displayName) }] : []),
+  ];
+}
+
+/**
+ * Contest access's standing ruling as the Access handler's timeline draws its ruling event (its own
+ * `eventBody` renders it): the verdict, who ruled, the public note and the cited source.
+ */
+export function rulingEvent(r: RequestRuling): Extract<TimelineEvent, { kind: 'ruling' }> {
+  return {
+    kind: 'ruling',
+    key: 'ruling',
+    at: r.ruledAt,
+    verdict: r.verdict,
+    by: r.by,
+    note: r.note,
+    reason: r.reason?.trim() || null,
+  };
+}
+
 /** The two futures: what approving (or looking up again) does, and what declining does. */
-export function ifBlocks(item: RequestItem): {
+export function ifBlocks(
+  item: RequestItem,
+  /** The inspector's zone, for the dormancy's date. */
+  timeZone?: string,
+): {
   first: { title: string; rows: Row[] };
   declined: { title: string; rows: Row[] };
 } {
@@ -153,6 +201,7 @@ export function ifBlocks(item: RequestItem): {
         ];
       case 'activate':
         return [
+          ...(item.dormancy !== null ? dormancyRows(item.dormancy, timeZone) : []),
           { label: W.bringsBack, value: W.activeMap },
           closes,
           { label: W.thenRow, value: W.enrichmentIfMissing },

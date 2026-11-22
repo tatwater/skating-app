@@ -217,7 +217,12 @@ export const activate = (viewer: Viewer = 'admin'): RequestItem =>
     requestKind: 'activate',
     body: TARLETON,
     asks: [
-      { ...KATE_ASK, note: 'The club skated it every weekend last winter.', activityId: null },
+      {
+        ...KATE_ASK,
+        note: 'The club skated it every weekend last winter.',
+        activityId: null,
+        skate: null,
+      },
       { ...LUC_ASK, note: null },
     ],
     candidate: null,
@@ -248,7 +253,9 @@ export const contest = (viewer: Viewer = 'admin'): RequestItem =>
     kind: 'request',
     requestKind: 'contest_access',
     body: SPECTACLE,
-    asks: [{ ...KATE_ASK, note: 'The town plows the beach lot now.', activityId: null }],
+    asks: [
+      { ...KATE_ASK, note: 'The town plows the beach lot now.', activityId: null, skate: null },
+    ],
     candidate: null,
     resolveError: null,
     ruling: SPECTACLE_RULING,
@@ -323,3 +330,41 @@ export function rowOf(item: RequestItem): InboxRowView {
     resolveError: item.resolveError,
   } as InboxRowView;
 }
+
+// ── The served facts, present and absent ─────────────────────────────────────────────────────
+
+/** A body a moderator shelved by hand, with the note skaters read. */
+export const POST_POND_SHELVED: NonNullable<RequestItem['dormancy']> = {
+  reason: 'moderator',
+  since: REQUEST_NOW - 20 * D,
+  note: 'Shelved while the town rebuilds the launch.',
+  by: {
+    userId: id('prmatt') as never,
+    displayName: 'Matt Steinberg',
+    username: 'matt',
+    deleted: false,
+    isStaff: true,
+  },
+};
+
+/** An activate whose body a moderator shelved: why, the note, and who. */
+export const activateShelved = (viewer: Viewer = 'admin'): RequestItem => ({
+  ...activate(viewer),
+  itemId: id('itrqshelved') as RequestItem['itemId'],
+  body: POST_POND,
+  dormancy: POST_POND_SHELVED,
+});
+
+/** An activate whose body the read found no dormancy on (it is active again, or never was). */
+export const activateNoDormancy = (viewer: Viewer = 'admin'): RequestItem => ({
+  ...activate(viewer),
+  itemId: id('itrqnodormancy') as RequestItem['itemId'],
+  dormancy: null,
+});
+
+/** A contest whose body has no standing ruling any more (cleared since it was asked). */
+export const contestNoRuling = (viewer: Viewer = 'admin'): RequestItem => ({
+  ...contest(viewer),
+  itemId: id('itrqnoruling') as RequestItem['itemId'],
+  ruling: null,
+});

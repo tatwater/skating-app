@@ -1,3 +1,4 @@
+import { zonedInstant } from '@skating/core';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
@@ -18,7 +19,19 @@ import {
   must,
   resetHarness,
 } from '../../testing/routeHarness';
-import { activate, admit, admitNoMatch, REQUEST_NOW, restore, takedown } from './requestFixtures';
+import {
+  activate,
+  activateNoDormancy,
+  activateShelved,
+  admit,
+  admitNoMatch,
+  contest,
+  contestNoRuling,
+  POST_POND_SHELVED,
+  REQUEST_NOW,
+  restore,
+  takedown,
+} from './requestFixtures';
 import type { RequestItem } from './requestModel';
 
 /**
@@ -156,6 +169,69 @@ describe('a request opens its handler, not the placeholder', () => {
     const to = new URL(must(link.getAttribute('href'), 'href'), 'https://gli.test');
     expect(to.pathname).toBe(`/admin/body/${id}`);
     expect(to.searchParams.get('from')).toBe(h.here);
+  });
+});
+
+describe('what the read serves reaches the page', () => {
+  it('draws contest access’s standing ruling as the Access handler draws it, and the body without one', () => {
+    const { unmount } = open(contest());
+    const ruling = within(inspector()).getByRole('region', { name: 'The ruling' });
+    expect(within(ruling).getByText('Standing ruling')).toBeInTheDocument();
+    expect(within(ruling).getByText('Sarah Berman')).toBeInTheDocument();
+    expect(within(ruling).getByText('“Posted private by the landowner.”')).toBeInTheDocument();
+    // The decision it sends is unchanged: the bar still confirms the body accessible.
+    expect(button('Confirm accessible')).toBeInTheDocument();
+    unmount();
+    open(contestNoRuling());
+    expect(within(inspector()).queryByRole('region', { name: 'The ruling' })).toBeNull();
+    expect(within(inspector()).getByRole('region', { name: 'The body' })).toBeInTheDocument();
+  });
+
+  it('says why an activate’s body is dormant, and nothing when the read serves no dormancy', () => {
+    const { unmount } = open(activate());
+    expect(within(inspector()).getByRole('region', { name: 'Activating it' })).toHaveTextContent(
+      'Inactive · since 18 Dec 2025',
+    );
+    unmount();
+    open(activateNoDormancy());
+    expect(
+      within(inspector()).getByRole('region', { name: 'Activating it' }),
+    ).not.toHaveTextContent('Dormant');
+  });
+
+  it('says when an ask’s recorded skate was, and how long', () => {
+    open(admit());
+    expect(
+      within(inspector()).getByText('With a recorded skate · 10 Oct · 48m'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the inspector’s zone', () => {
+  it('reads the dormancy’s date in it, not the runner’s', async () => {
+    const { RequestBody } = await import('./RequestView');
+    const { InspectorProvider } = await import('../../inspector/inspectorContext');
+    // 00:30 on 25 Sep in New York is still 24 Sep at UTC−11.
+    const item = {
+      ...activateShelved(),
+      dormancy: { ...POST_POND_SHELVED, since: zonedInstant(2026, 9, 25, 30, 'America/New_York') },
+    };
+    const at = (timeZone: string) =>
+      render(
+        <InspectorProvider
+          value={{ pane: { current: null }, decidedOnOpen: false, now: REQUEST_NOW, timeZone }}
+        >
+          <RequestBody item={item} now={REQUEST_NOW} map={null} />
+        </InspectorProvider>,
+      );
+    const ny = at('America/New_York');
+    expect(ny.getByRole('region', { name: 'Activating it' })).toHaveTextContent(
+      'Moderator · since 25 Sep 2026',
+    );
+    ny.unmount();
+    expect(
+      at('Pacific/Pago_Pago').getByRole('region', { name: 'Activating it' }),
+    ).toHaveTextContent('Moderator · since 24 Sep 2026');
   });
 });
 

@@ -86,6 +86,13 @@ export const REQUEST_HANDLER_WORDS = {
   place: 'Place',
   standing: 'Standing',
   removed: 'Removed',
+  /** An activate's dormancy, in *Activating it* (the reason in the Body console's words). */
+  dormant: 'Dormant',
+  dormantSince: (reason: string, since: string) => `${reason} · since ${since}`,
+  note: 'Note',
+  setBy: 'Set by',
+  /** Contest access: the standing ruling it contests (drawn as the Access handler draws it). */
+  theRuling: 'The ruling',
   /** The no-match catalog block. */
   lookup: 'Lookup',
   notAnsweredYet: 'Not answered yet',
