@@ -101,7 +101,7 @@ export const create = mutation({
  *
  * **An author can't drop evidence** (D248; the B01-5e fork 1 ruling): a photo that is **held** —
  * moderated, under an open flag, or under a standing verdict (`photoHeld`) — is not deleted. Its
- * uploader's delete **withdraws** it: hidden at once (removed, if it was up), the 30-day purge clock
+ * uploader's delete **withdraws** it: down at once (removed, whatever it was), the 30-day purge clock
  * started (an earlier one kept), the verdict kept, and an `author_delete` row naming them — final, as
  * every author's deletion is: no restore brings it back. The purge (`photoPurge`) deletes its bytes on
  * the clock and keeps the row as a tombstone. An unheld photo is deleted at once, row and blobs,
@@ -143,8 +143,10 @@ async function withdrawHeldPhoto(
   now: number,
 ): Promise<void> {
   if ((await photoWithdrawnAt(ctx, photo._id)) !== null) return;
+  // Always removed: the purge clock stands only on a removed photo (a hidden one's would read as
+  // stale, and its bytes would never go). A moderator's verdict on it stands as it was.
   const priorStatus = photo.moderationStatus ?? 'visible';
-  const newStatus = priorStatus === 'visible' ? 'removed' : priorStatus;
+  const newStatus = 'removed' as const;
   await ctx.db.patch(photo._id, {
     moderationStatus: newStatus,
     ...(newStatus !== priorStatus ? { moderatedAt: now } : {}),

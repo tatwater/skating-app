@@ -330,7 +330,7 @@ describe('the uploader’s delete (photos.remove, fork 1)', () => {
     ).rejects.toThrow(AUTHOR_DELETED_RESTORE);
   });
 
-  test('a hidden photo stays hidden, its verdict standing, its clock started; an earlier clock is kept', async () => {
+  test('a hidden photo goes to removed, its verdict standing, its clock started; an earlier clock is kept', async () => {
     const { t, uploader, mod, photoId } = await world();
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'photo',
@@ -341,7 +341,7 @@ describe('the uploader’s delete (photos.remove, fork 1)', () => {
     vi.setSystemTime(T0 + 5_000);
     await uploader.as.mutation(api.photos.remove, { photoId });
     const row = await photoRow(t, photoId);
-    expect(row?.moderationStatus).toBe('hidden');
+    expect(row?.moderationStatus).toBe('removed');
     expect(row?.purgeAt).toBeGreaterThanOrEqual(T0 + 5_000 + PHOTO_PURGE_DELAY_MS);
     expect(row?.purgeAt).toBeLessThan(T0 + 6_000 + PHOTO_PURGE_DELAY_MS);
     expect((await verdictsOn(t, photoId)).filter((v) => v.standing)).toHaveLength(1);
