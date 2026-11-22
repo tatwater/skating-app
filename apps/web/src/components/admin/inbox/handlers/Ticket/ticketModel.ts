@@ -106,8 +106,8 @@ function platformWord(s: string): string {
 /** One entry of the thread, oldest first: the ticket's own words, then each message. */
 export type ThreadEntry =
   | { kind: 'ticket'; at: number; body: string }
-  | { kind: 'message'; message: TicketMessage }
-  | { kind: 'removed'; message: TicketMessage };
+  | { kind: 'message'; msg: TicketMessage }
+  | { kind: 'removed'; msg: TicketMessage };
 
 /**
  * The thread in the order it is read: the ticket's body first, then every message oldest to newest
@@ -115,11 +115,11 @@ export type ThreadEntry =
  */
 export function threadOf(item: Pick<TicketItem, 'ticket' | 'messages'>): ThreadEntry[] {
   const messages = item.messages
-    .map((message, i) => ({ message, i }))
-    .sort((a, b) => a.message.createdAt - b.message.createdAt || a.i - b.i)
+    .map((msg, i) => ({ msg, i }))
+    .sort((a, b) => a.msg.createdAt - b.msg.createdAt || a.i - b.i)
     .map(
-      ({ message }): ThreadEntry =>
-        message.removedAt !== null ? { kind: 'removed', message } : { kind: 'message', message },
+      ({ msg }): ThreadEntry =>
+        msg.removedAt !== null ? { kind: 'removed', msg } : { kind: 'message', msg },
     );
   return [{ kind: 'ticket', at: item.ticket.createdAt, body: item.ticket.body }, ...messages];
 }

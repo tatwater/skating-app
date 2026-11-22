@@ -59,9 +59,7 @@ describe('the thread', () => {
   it('reads the ticket first, then every message oldest to newest, whatever order it came in', () => {
     const entries = threadOf(EVERY_STATE);
     expect(entries[0]).toMatchObject({ kind: 'ticket', body: ROB_APPEAL.ticket.body });
-    const times = entries
-      .slice(1)
-      .map((e) => (e.kind === 'ticket' ? Number.NaN : e.message.createdAt));
+    const times = entries.slice(1).map((e) => (e.kind === 'ticket' ? Number.NaN : e.msg.createdAt));
     expect(times).toEqual([...times].sort((a, b) => a - b));
     expect(entries).toHaveLength(EVERY_STATE.messages.length + 1);
   });
@@ -72,7 +70,7 @@ describe('the thread', () => {
     const a = { ...same, messageId: 'm_a' };
     const b = { ...same, messageId: 'm_b' };
     const ids = threadOf({ ...ROB_APPEAL, messages: [a, b] }).flatMap((e) =>
-      e.kind === 'ticket' ? [] : [e.message.messageId],
+      e.kind === 'ticket' ? [] : [e.msg.messageId],
     );
     expect(ids).toEqual(['m_a', 'm_b']);
   });

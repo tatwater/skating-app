@@ -240,8 +240,8 @@ function Thread(props: TicketViewProps) {
         )}
         {rest.map((entry) => (
           <li
-            key={entry.kind === 'ticket' ? 'ticket' : entry.message.messageId}
-            data-message={entry.kind === 'ticket' ? undefined : entry.message.messageId}
+            key={entry.kind === 'ticket' ? 'ticket' : entry.msg.messageId}
+            data-message={entry.kind === 'ticket' ? undefined : entry.msg.messageId}
           >
             <Entry entry={entry} {...props} />
           </li>
@@ -270,7 +270,7 @@ function Entry({ entry, ...props }: TicketViewProps & { entry: ThreadEntry }) {
     case 'removed':
       return <ThreadEvent data-slot="ticket-note-removed">{W.noteRemoved}</ThreadEvent>;
     case 'message':
-      return <Message message={entry.message} {...props} />;
+      return <Message message={entry.msg} {...props} />;
   }
 }
 
