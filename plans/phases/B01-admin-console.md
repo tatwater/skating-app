@@ -9318,6 +9318,51 @@ Nothing is pushed or deployed.
 | The web unit project in seven zones (UTC, New York, St John's, Kathmandu, Lord Howe, GMT−14, GMT+11) | 5,917 each |
 
 
+#### B01-5c: the server review (R8) and its fixes (2026-11-22)
+
+An independent review of the server half at `0d02cd89d` found nothing blocking and four things to
+fix. S3 fixed them on `b01-5c-s3-3` (`60b3b58e7`), cherry-picked with no conflicts.
+
+**The findings and their fixes:**
+
+1. **A required row could read as "no one".** An item's own rows were read after the lists that
+   fill its budget:
+   - the body;
+   - a contest's ruling and a dormancy, with who made them;
+   - a flag's target and author;
+   - an Access item's ruling.
+
+   A miss past the budget answered `null`, so the page could read "no one ruled". They are now read
+   first, through `InboxReader.must`, which throws past the budget. Flag, access, request and place
+   were reordered; drawn reads only single rows.
+   - **On the web:** the throw reaches the inspector as its ordinary failed read, with *Try again*,
+     and the list beside it still draws. A route wiring test holds this; the read layer's tests
+     already held that a thrown query becomes that failure.
+2. **The alert's settle re-check was untested** in two cases, now held:
+   - undone and made again after its row was due: the author is told once;
+   - a same-instant retraction by another moderator: the message is dropped.
+3. **The merged-drawing drop was untested.** A test now holds that an approved drawing merged away
+   inside the window tells no one.
+4. **`drawnSkateOf` read one activity**, so another skater's late-synced activity could hide the
+   drawer's. It now reads three (`DRAWN_SKATE_PAGE`) and keeps the drawer's own.
+
+**Clean, per the reviewer:**
+- Who is told is told exactly once: across pages, through undo, and through a decision made again.
+- Eight guards are mutation-held: each fails with its rule broken.
+
+**Two proofs on a throwaway local backend** (S3's; never dev):
+- **The flush:** 40 heavy messages plus 10 flags were delivered once each in 6 executions. Each
+  batch held 8–9 heavy messages (about 6.8 MB), with no limit failure.
+- **The decisions:** a heavy admit's approval and a 500-ask decline each returned its
+  `InboxDecisionResult`, and 670 askers were told once each.
+
+**What the real backend did that the harness doesn't** (owed, on the register's shared rows):
+1. **Convex rejects arrays over 8,192 items.** The heavy-rows matrix's 24,000- and 48,000-point ring
+   fixtures can't exist on a deployment; heavy rows still can, built from several rings. The
+   harness should enforce the array limit and the fixtures be rebuilt, in B01-5d.
+2. **Scheduled heavy drain pages waited 13–270 s** on the local backend, where a direct run took
+   about 9 s. To watch on dev after the merge.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
