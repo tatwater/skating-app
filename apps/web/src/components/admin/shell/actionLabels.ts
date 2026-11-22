@@ -43,6 +43,7 @@ const VERB: Record<AuditAction, string> = {
   suspend: 'Suspended an account',
   unban: 'Lifted a ban or suspension',
   merge_waterbody: 'Merged a body into another',
+  unmerge_waterbody: 'Unmerged a body',
   approve_waterbody: 'Approved a drawn body',
   reject_waterbody: 'Rejected a drawn body',
   set_curated_boost: 'Set the curated boost',

@@ -3,7 +3,9 @@
  *
  * An undo runs the verb's **inverse through the same internal path the forward action uses**, so the
  * side effects run again too (a post's restore brings back the reports it hid; a sub-area redraw
- * re-stamps; a lifted ban unlocks Clerk). Nothing here patches a row back from a snapshot.
+ * re-stamps; a lifted ban unlocks Clerk). An inverse may restore from a before-image the forward
+ * write recorded (`auditSnapshots`), but only through the forward paths' side effects — never a bare
+ * patch of a row back to its snapshot (D291: a redraw's outline, a merge's moved rows).
  *
  * Each rule says:
  * - `undo`: how the action is undone —
@@ -185,6 +187,17 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   merge_waterbody: {
     undo: later('§4 Corpus', 'Unmerge from the moved-row change set recorded in auditSnapshots.'),
     takesAway: always,
+    capability: 'corpus.duplicates',
+  },
+  // PLACEHOLDER (B01-5d T0): S4b's rule replaces this — the unmerge's own undo is none ("merge it
+  // again" is a fresh merge with its own change set), and `merge_waterbody` above becomes
+  // `inverse('unmerge_waterbody')`.
+  unmerge_waterbody: {
+    undo: {
+      kind: 'none',
+      why: 'To put them back together, merge them again.',
+    },
+    takesAway: never,
     capability: 'corpus.duplicates',
   },
   dismiss_duplicate: {

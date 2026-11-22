@@ -40,6 +40,8 @@ describe('standingOf — one precedence order', () => {
   test('rejected and merged are unlisted — no standing of their own', () => {
     expect(standingOf(clean({ reviewStatus: 'rejected' }))).toEqual({ standing: 'unlisted' });
     expect(standingOf({ dedupStatus: 'merged' })).toEqual({ standing: 'unlisted' });
+    // A drawing merged into a known body (B01-5d), read as merged by either field.
+    expect(standingOf(clean({ reviewStatus: 'merged' }))).toEqual({ standing: 'unlisted' });
     expect(isReachable({ dedupStatus: 'merged' })).toBe(false);
   });
 

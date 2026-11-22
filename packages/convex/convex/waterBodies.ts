@@ -3671,6 +3671,32 @@ export interface MergeChangeSet {
     'survivor' | 'loser',
     { pins: string[]; aliases: string[]; links: { label: string; url: string }[] }
   >;
+
+  // ── Version 2 (B01-5d): everything the unmerge needs. The seam S4a writes and S4b reads; a
+  // change set without `version: 2` is refused by the unmerge, said in its dialog first. ──────────
+
+  /** 2 from B01-5d. Absent: a merge recorded before it, which the unmerge refuses. */
+  version?: 2;
+  /**
+   * The rows the merge wrote beside its own: automatic bay delists (`remove`), landmarks retired as
+   * bays (`promote_landmark`), folds and over-cap retirements. The unmerge marks each undone.
+   */
+  sideActions?: Id<'moderationActions'>[];
+  /** Each partner's dedup fields as the merge left them, so a flag changed since is told apart. */
+  dedupAfter?: MergeChangeSet['dedupBefore'];
+  /** The survivor's own bays the merge's re-clip changed, as they stood before it. */
+  survivorSubAreasBefore?: ReturnType<typeof snapshotDoc<Doc<'waterBodySubAreas'>>>[];
+  /** The loser's review status before (a drawing's `pending`), and whether its Inbox item was decided. */
+  loserReview?: {
+    reviewStatus: Doc<'waterBodies'>['reviewStatus'] | null;
+    decidedItem: boolean;
+  };
+  /** The founding skates the merge moved (ruled in, B01-5d fork 2), with both of their body fields. */
+  movedActivities?: {
+    id: Id<'gpsActivities'>;
+    waterBodyId: Id<'waterBodies'> | null;
+    waterBodyIds: Id<'waterBodies'>[];
+  }[];
 }
 
 function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][number] {

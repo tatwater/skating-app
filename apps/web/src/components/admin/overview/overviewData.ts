@@ -337,6 +337,7 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   suspend: 'Suspended',
   unban: 'Reinstated',
   merge_waterbody: 'Merged body',
+  unmerge_waterbody: 'Unmerged body',
   approve_waterbody: 'Approved drawn body',
   reject_waterbody: 'Rejected drawn body',
   set_curated_boost: 'Set curated boost',

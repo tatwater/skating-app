@@ -3735,6 +3735,15 @@ export default defineSchema({
     resolvedAt: v.optional(v.number()),
     resolveError: v.optional(v.string()),
     /**
+     * The nearest listed body to the ask, as the catalog resolve found it (B01-5d): stamped by the
+     * resolve's write through `listedBodiesNearCoord` with a bounded `marginMeters` (never a corpus
+     * read), served as `candidate.nearestKnown` (board 2.3's *Nearest*). Optional, no backfill: a row
+     * resolved before it reads `null` until *Look up again*.
+     */
+    nearestKnown: v.optional(
+      v.object({ waterBodyId: v.id('waterBodies'), name: v.string(), meters: v.number() }),
+    ),
+    /**
      * `candidate.externalId`, lifted to the row so it can be indexed: two people tapping the same
      * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalog id is the
      * one identity they share once resolved. Written with `candidate`, never on its own.

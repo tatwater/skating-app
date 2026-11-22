@@ -94,7 +94,7 @@ export interface Dormancy {
 
 /** The subset of a `waterBodies` row standing is derived from. */
 export interface StandingInput {
-  reviewStatus?: 'pending' | 'approved' | 'rejected' | undefined;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | 'merged' | undefined;
   dedupStatus: 'clean' | 'suspected_duplicate' | 'near_certain' | 'merged';
   removedAt?: number | undefined;
   removalReason?: RemovalReason | undefined;
@@ -127,7 +127,12 @@ export type BodyStanding =
  * way in" is the stronger statement and the one a skater most needs first.
  */
 export function standingOf(body: StandingInput): BodyStanding {
-  if (body.reviewStatus === 'rejected' || body.dedupStatus === 'merged') {
+  // A merged drawing reads as a merged body, whichever of its two fields says so (B01-5d).
+  if (
+    body.reviewStatus === 'rejected' ||
+    body.reviewStatus === 'merged' ||
+    body.dedupStatus === 'merged'
+  ) {
     return { standing: 'unlisted' };
   }
   if (body.removedAt !== undefined) {

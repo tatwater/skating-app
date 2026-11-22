@@ -113,6 +113,16 @@ export type InboxVerb =
  */
 export type InboxCan = Partial<Record<InboxVerb, string | null>>;
 
+/**
+ * Why a verb is refused, where a client must tell one refusal from another without reading its
+ * words (B01-5d): `awaitsDrawing` — a place ask's *Approve* waits on a bay or landmark not drawn
+ * yet, so the handler offers *Draw in Body →*. Only refusals a client acts on have a code.
+ */
+export type InboxRefusalCode = 'awaitsDrawing';
+
+/** Each refused verb's code, where it has one (absent for a verb allowed or a refusal with none). */
+export type InboxCanCode = Partial<Record<InboxVerb, InboxRefusalCode>>;
+
 /** Who decided an item, when and what (the Decided rows and the colleague lock, D283). */
 export type InboxDecidedState = {
   at: number;
@@ -547,6 +557,11 @@ type ItemBase = {
    */
   memberCountIsFloor: boolean;
   can: InboxCan;
+  /**
+   * PLACEHOLDER (B01-5d T0): the refusal codes beside `can`; optional until S4a serves them on every
+   * item, then required.
+   */
+  canCode?: InboxCanCode;
   decided: InboxDecidedState | null;
 };
 
