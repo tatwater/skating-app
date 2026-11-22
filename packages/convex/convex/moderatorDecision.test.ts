@@ -22,7 +22,7 @@ import {
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
@@ -695,6 +695,53 @@ describe('a moderator’s retraction tells the alert’s author (D285)', () => {
     expect((await queueRows(w.t)).map((r) => [r.userId, r.kind])).toEqual([
       [w.asker.id, 'alert_retracted'],
     ]);
+  });
+
+  test('an alert past its expiry the sweep hasn’t reached is over: its retraction tells no one; the boundary is the reads’', async () => {
+    const at = Date.UTC(2026, 11, 1, 12);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(at);
+    try {
+      const w = await world();
+      // Each still stored `active`: its term ended a minute ago, ends about now, or has time to run.
+      const terms = [at - 60_000, at, at + 1, at + 2, at + 60_000];
+      const told: string[] = [];
+      const expected: string[] = [];
+      let edge: string | null = null;
+      for (const expiresAt of terms) {
+        const accessAlertId = await alert(w, { expiresAt });
+        await w.mod.as.mutation(api.accessAlerts.retract, { accessAlertId, reason: 'False' });
+        const row = await w.t.run((ctx) => ctx.db.get(accessAlertId));
+        expect(row?.status).toBe('retracted');
+        // Live as every read decides it, at the retraction's own instant: `expiresAt > now`.
+        if (expiresAt > (row?.retractedAt as number)) expected.push(accessAlertId);
+        if (expiresAt === row?.retractedAt) edge = accessAlertId;
+        const queued = await queueRows(w.t);
+        if (
+          queued.some(
+            (r) => (r.trigger as { accessAlertId?: string }).accessAlertId === accessAlertId,
+          )
+        )
+          told.push(accessAlertId);
+      }
+      expect(told).toEqual(expected);
+      // The rule bit both ways, and at the boundary: a term ending at the retraction's very instant
+      // is over (the harness's clock, held, moves a millisecond a transaction — so one term lands on it).
+      expect(edge).not.toBeNull();
+      expect(told).not.toContain(edge);
+      expect(expected.length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('an alert live when retracted, its term ending before the flush: its author is told once', async () => {
+    const w = await world();
+    const accessAlertId = await alert(w, { expiresAt: Date.now() + 30_000 });
+    await w.mod.as.mutation(api.accessAlerts.retract, { accessAlertId, reason: 'False' });
+    // The retraction cleared its term; the old one passing changes nothing at the flush.
+    await w.t.run((ctx) => ctx.db.patch(accessAlertId, { expiresAt: Date.now() - 1 }));
+    expect(await flushAllDue(w.t)).toHaveLength(1);
   });
 
   test('no message for an alert its author already withdrew, nor for one already over', async () => {

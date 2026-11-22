@@ -569,8 +569,10 @@ export async function retractAlertImpl(
   });
   // Its author hears that a live alert of theirs was taken down (D285) — never the reason, which is
   // audit-facing — held at the flush to this row, so an undo inside the window drops it. A claim
-  // already over (expired, resolved) was live for nobody, so its retraction tells no one.
-  if (alert.status === 'active' || alert.status === 'official') {
+  // already over (expired, resolved) was live for nobody, so its retraction tells no one — "live" as
+  // every read decides it (`accessAlertIsLive`): an `active` row past its `expiresAt` that the sweep
+  // hasn't reached yet is over too, whatever its stored status still says.
+  if (accessAlertIsLive(alert, now)) {
     await enqueueModeratorDecision(ctx, {
       recipientId: alert.createdByUserId,
       deciderId: actor._id,
