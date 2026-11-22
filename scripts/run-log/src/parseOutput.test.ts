@@ -7,6 +7,41 @@ import { failureReason, MAX_FAILURE_REASON_CHARS, parseConvexOutput } from './pa
  * back as though it were the whole list.
  */
 describe('parseConvexOutput', () => {
+  // pnpm's own warning, as the seed's first dev run met it: JSON inside a line of text.
+  const WARN =
+    '[WARN] Unsupported engine for /repo/apps/web: wanted: {"node":"26.x"} (current: {"node":"24.19.0"})';
+  const RESULT = { done: false, ready: [{ key: 'r1', args: { a: [1, 2] } }], counts: { n: 2 } };
+  const PRETTY = JSON.stringify(RESULT, null, 2);
+
+  it('takes the result, not the JSON inside a warning before it', () => {
+    expect(parseConvexOutput(`${WARN}\n${PRETTY}\n`)).toEqual(RESULT);
+  });
+
+  it('takes the result with the warning after it, and on both sides', () => {
+    expect(parseConvexOutput(`${PRETTY}\n${WARN}\n`)).toEqual(RESULT);
+    expect(parseConvexOutput(`${WARN}\n${PRETTY}\n${WARN}\n`)).toEqual(RESULT);
+  });
+
+  it('strips ANSI codes and carriage returns', () => {
+    const colored = `\x1b[33m${WARN}\x1b[39m\r\n\x1b[1m${PRETTY.replace(/\n/g, '\r\n')}\x1b[22m\r\n`;
+    expect(parseConvexOutput(colored)).toEqual(RESULT);
+  });
+
+  it('takes a multi-line array whole, never one of its one-line elements', () => {
+    const list = JSON.stringify(['a', 'b', 'c'], null, 2);
+    expect(parseConvexOutput(`${WARN}\n${list}`)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('takes a one-line string, number or null beside a warning', () => {
+    expect(parseConvexOutput(`${WARN}\n"j57abc"\n`)).toBe('j57abc');
+    expect(parseConvexOutput(`${WARN}\n42`)).toBe(42);
+    expect(parseConvexOutput(`${WARN}\nnull\n${WARN}`)).toBeNull();
+  });
+
+  it('refuses output that holds JSON only inside lines of text', () => {
+    expect(() => parseConvexOutput(`${WARN}\n`)).toThrow(/unparseable/);
+  });
+
   it('parses an array return without mistaking an element for the whole', () => {
     const rows = [
       { kind: 'raw_archive', label: 'VT', startedAt: 1 },

@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
  * - **`solid`** — a state: mono caps on a filled square (`size-badge` tall). The primary state is
  *   the bright fill; a fading state (Stale) is `dim`; amber, red and ice by meaning only.
  * - **`outline`** — a claim beside a value: sans caps in a hairline box (`size-pill` tall). `lit`
- *   is the current value (Now); the default gray is the suggested one; `dim` is dashed.
+ *   is the current value (Now); `bright` a standing fact (*Standing ruling*), outlined in the bright
+ *   ink itself; the default gray is the suggested one; `dim` is dashed.
  * - **`live`** — a running state: no box; its LED glows and breathes (still under reduced motion).
  *   Its `off` tone is the state that stopped being live (*Not live*): the LED goes hollow — no fill,
  *   a hairline ring in the faint ink, no halo, no breath — and the words step back to that ink.
@@ -44,6 +45,7 @@ const badgeVariants = cva(
         default: '',
         dim: '',
         lit: '',
+        bright: '',
         warn: '',
         bad: '',
         acc: '',
@@ -53,7 +55,7 @@ const badgeVariants = cva(
     compoundVariants: [
       // Solid: the fill is the meaning; the ink is the field's, so it passes on every fill.
       { variant: 'solid', tone: 'default', className: 'bg-fg1 text-bg' },
-      { variant: 'solid', tone: 'lit', className: 'bg-fg text-bg' },
+      { variant: 'solid', tone: ['lit', 'bright'], className: 'bg-fg text-bg' },
       { variant: 'solid', tone: 'dim', className: 'bg-line2 text-fg1' },
       { variant: 'solid', tone: 'warn', className: 'bg-warn text-bg' },
       { variant: 'solid', tone: 'bad', className: 'bg-bad text-bg' },
@@ -61,6 +63,8 @@ const badgeVariants = cva(
       // Outline: the hairline and the ink share the meaning.
       { variant: 'outline', tone: 'default', className: 'border-line2 text-fg2' },
       { variant: 'outline', tone: 'lit', className: 'border-fg2 text-fg' },
+      // A standing fact (the Inbox's *Standing ruling*): outlined in the bright ink itself.
+      { variant: 'outline', tone: 'bright', className: 'border-fg text-fg' },
       { variant: 'outline', tone: 'dim', className: 'border-dashed border-line2 text-fg3' },
       { variant: 'outline', tone: 'warn', className: 'border-warn text-warn' },
       { variant: 'outline', tone: 'bad', className: 'border-bad text-bad' },
@@ -68,7 +72,7 @@ const badgeVariants = cva(
       // Live: the LED takes the tone; its glow follows.
       {
         variant: 'live',
-        tone: ['default', 'lit'],
+        tone: ['default', 'lit', 'bright'],
         className: '[--led:var(--fg)] [--led-glow:var(--glow)]',
       },
       // A dim LED is idle: no halo, no breath.

@@ -19,10 +19,18 @@ import {
  * AlertDialog: the reason box, any extra fields, and the action inert until there's a reason to send
  * (or, with `optional`, not). A refusal is a toast (D268); the dialog stays open over the kept reason,
  * so it can be corrected and sent again. Shared by Access and Places.
+ *
+ * Uncontrolled, its `trigger` opens it. Controlled (`open` and `onOpenChange`), the caller opens it —
+ * from a bar button or a key — and `trigger` may be left out; a fresh opening always starts with an
+ * empty reason, and a send's answer still closes only the opening that sent it.
  */
 export type ReasonAskProps = {
-  /** The button that opens it. */
-  trigger: ReactElement;
+  /** The button that opens it; optional when the caller holds `open`. */
+  trigger?: ReactElement;
+  /** Open, held by the caller. Leave it out and the trigger opens it. */
+  open?: boolean;
+  /** Asked to open or close (a press, Esc, a landed send). */
+  onOpenChange?: (open: boolean) => void;
   title: ReactNode;
   description?: ReactNode;
   /** The action's label ("Hide", "Decline"). */
@@ -45,6 +53,8 @@ export type ReasonAskProps = {
 
 export function ReasonAsk({
   trigger,
+  open: openProp,
+  onOpenChange,
   title,
   description,
   confirm,
@@ -55,7 +65,13 @@ export function ReasonAsk({
   maxLength,
   onConfirm,
 }: ReasonAskProps) {
-  const [open, setOpen] = useState(false);
+  const [openInner, setOpenInner] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openInner;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOpenInner(next);
+    onOpenChange?.(next);
+  };
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   // This opening of the dialog: a send's answer closes only the opening that sent it. The dialog
@@ -68,20 +84,30 @@ export function ReasonAsk({
     },
     [],
   );
+  // Controlled, the caller opens it without a word to us: each opening it makes starts fresh here.
+  const wasOpen = useRef(open);
+  useLayoutEffect(() => {
+    if (controlled && open && !wasOpen.current) {
+      opening.current++;
+      setReason('');
+    }
+    wasOpen.current = open;
+  }, [controlled, open]);
   const trimmed = reason.trim();
   return (
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
-        if (next) {
+        // (A controlled opening starts fresh in the effect above, once the caller opens it.)
+        if (next && !controlled) {
           opening.current++;
           setReason('');
         }
         setOpen(next);
       }}
     >
-      <AlertDialogTrigger render={trigger} />
+      {trigger !== undefined && <AlertDialogTrigger render={trigger} />}
       <AlertDialogContent data-slot="reason-ask">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

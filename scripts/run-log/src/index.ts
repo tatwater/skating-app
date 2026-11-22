@@ -11,7 +11,7 @@ export {
   type Normalized,
   rejected,
 } from './ledger';
-export { failureReason } from './parseOutput';
+export { failureReason, parseConvexOutput } from './parseOutput';
 export {
   derivedFileStage,
   type ExtractManifest,

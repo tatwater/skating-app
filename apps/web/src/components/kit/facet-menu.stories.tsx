@@ -43,6 +43,15 @@ const FACETS = [
       { id: 'drawn', label: 'Drawn by staff', disabled: true },
     ],
   },
+  {
+    id: 'age',
+    label: 'Age',
+    options: [
+      // A count the read stopped short on: a floor, "200+".
+      { id: '1d', label: '1 day or more', count: { count: 200, capped: true } },
+      { id: '7d', label: '7 days or more', count: { count: 41, capped: false } },
+    ],
+  },
 ];
 
 function Menu({ onToggle }: { onToggle: (facet: string, option: string) => void }) {
@@ -90,6 +99,24 @@ export const TwoWayKeys: Story = {
     ).toHaveAttribute('aria-pressed', 'true');
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(within(document.body).queryByRole('dialog')).toBeNull());
+  },
+};
+
+/** A capped count is a floor: "200+", marked; an exact one reads as the number. */
+export const CappedCount: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Filter' }));
+    const menu = await within(document.body).findByRole('dialog', { name: 'Filter' });
+    const count = (name: RegExp) =>
+      within(menu)
+        .getByRole('button', { name })
+        .querySelector<HTMLElement>('[data-slot="facet-menu-count"]');
+    await expect(count(/^1 day or more/)).toHaveTextContent('200+');
+    await expect(count(/^1 day or more/)).toHaveAttribute('data-capped');
+    await expect(count(/^7 days or more/)).toHaveTextContent('41');
+    await expect(count(/^7 days or more/)).not.toHaveAttribute('data-capped');
+    await expect(count(/^Bay/)).toHaveTextContent('10');
+    await userEvent.keyboard('{Escape}');
   },
 };
 

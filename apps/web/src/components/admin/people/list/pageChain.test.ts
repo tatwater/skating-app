@@ -2,9 +2,14 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { assertSeeded } from '@/test/seeded';
-
+import {
+  type ChainLink,
+  extendChain,
+  FIRST_CHAIN,
+  type PageEnd,
+  settleChain,
+} from '../../reads/pageChain';
 import { type FakePage, fakeListPage } from './listPageFake';
-import { type ChainLink, extendChain, FIRST_CHAIN, type PageEnd, settleChain } from './pageChain';
 import type { PeoplePage } from './peopleModel';
 import { joinPages } from './peopleReads';
 

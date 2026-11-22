@@ -38,6 +38,12 @@ describe('validateBodySearch', () => {
       from: '/admin/bodies?q=mascoma&sort=area',
     });
     expect(validateBodySearch({ from: '/admin/water' })).toEqual({ from: '/admin/water' });
+    // An Inbox item's way back keeps the lane and the open item.
+    const inbox = '/admin/inbox?lane=accessReports&item=access%3Awb_tomhannock';
+    expect(validateBodySearch({ from: inbox })).toEqual({ from: inbox });
+    expect(returnPathOf({ from: inbox })).toBe(inbox);
+    // Only the Inbox itself: a look-alike prefix is not a way back.
+    expect(validateBodySearch({ from: '/admin/inboxes' })).toEqual({});
   });
 
   it('opens on Shape and goes back to the default list without a param', () => {

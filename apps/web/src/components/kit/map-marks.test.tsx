@@ -3,11 +3,15 @@ import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
   HazardMark,
+  KEY_GLYPH,
+  LookalikeMark,
   LotMark,
+  MARK_BOX,
   PhotoMark,
   PLACE_KEY_LABELS,
   PlaceMark,
   PutInMark,
+  ReticleMark,
 } from './map-marks';
 
 const slot = (container: HTMLElement, name: string) =>
@@ -118,5 +122,52 @@ describe('place marks', () => {
     const hazard = slot(container, 'hazard-mark')?.getAttribute('class') ?? '';
     expect(hazard).toContain('opacity-55');
     expect(hazard).not.toContain('opacity-fade');
+  });
+});
+
+describe('ReticleMark', () => {
+  it('draws in the kit marks’ box, red with a glowing dot for a safety point', () => {
+    const { container } = render(<ReticleMark tone="bad" />);
+    const svg = container.querySelector('svg[data-slot="reticle-mark"]');
+    expect(svg).toHaveAttribute('width', String(MARK_BOX));
+    expect(svg).toHaveAttribute('data-tone', 'bad');
+    const [ring, ticks, dot] = [...(svg?.children ?? [])];
+    expect(ring?.getAttribute('class')).toBe('stroke-bad');
+    expect(ticks?.getAttribute('class')).toBe('stroke-bad');
+    expect((dot as SVGElement | undefined)?.style.filter).toContain('var(--bad-glow)');
+  });
+
+  it('is the bright ink by default, with no glow and no halo', () => {
+    const { container } = render(<ReticleMark />);
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('data-tone', 'fg');
+    const dot = svg?.querySelectorAll('circle')[1] as SVGElement;
+    expect(dot.getAttribute('class')).toBe('fill-fg');
+    expect(dot.style.filter).toBe('');
+    expect(svg?.querySelector('rect')).toBeNull();
+  });
+
+  it('takes the kit states: dim, fade, the brackets, and the key glyph', () => {
+    const dim = render(<ReticleMark dim fade />).container.querySelector('svg');
+    expect(dim).toHaveAttribute('data-dim');
+    expect(dim?.getAttribute('class')).toContain('opacity-55');
+    expect(dim?.getAttribute('class')).not.toContain('opacity-(--opacity-fade)');
+    const faded = render(<ReticleMark fade />).container.querySelector('svg');
+    expect(faded?.getAttribute('class')).toContain('opacity-(--opacity-fade)');
+    const lit = render(<ReticleMark highlight />).container;
+    expect(lit.querySelector('[data-slot="reticle-mark-brackets"]')).not.toBeNull();
+    const glyph = render(<ReticleMark glyph />).container.querySelector('svg');
+    expect(glyph).toHaveAttribute('width', String(KEY_GLYPH));
+    expect(glyph).not.toHaveAttribute('data-highlight');
+  });
+});
+
+describe('LookalikeMark', () => {
+  it('is a dashed amber ring and a dot', () => {
+    const { container } = render(<LookalikeMark />);
+    const [ring, dot] = [...container.querySelectorAll('circle')];
+    expect(ring).toHaveAttribute('stroke-dasharray', '2 2');
+    expect(ring?.getAttribute('class')).toBe('stroke-warn');
+    expect(dot?.getAttribute('class')).toBe('fill-warn');
   });
 });

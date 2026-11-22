@@ -14,17 +14,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { identityArgs, type RunAs, resolveDeployment } from '@skating/run-log';
-import { parseArgs } from './args';
+import { identityArgs, parseConvexOutput, type RunAs, resolveDeployment } from '@skating/run-log';
+import { nodeVersionRefusal, parseArgs } from './args';
 import {
   applyClear,
   applySeed,
   type Call,
   describePlan,
-  parseRunOutput,
   planSeed,
   runLogName,
   serverSentence,
@@ -56,7 +55,8 @@ const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T => {
   if (res.stderr) process.stderr.write(res.stderr);
   if (res.error) throw res.error;
   if (res.status !== 0) throw new Error(serverSentence(res.stderr ?? ''));
-  return parseRunOutput<T>(res.stdout ?? '');
+  // `@skating/run-log`'s parser: the result is the one whole JSON block, never JSON inside a warning.
+  return parseConvexOutput<T>(res.stdout ?? '');
 };
 
 function writeLog(mode: string, record: unknown): string {
@@ -67,7 +67,21 @@ function writeLog(mode: string, record: unknown): string {
   return fileURLToPath(file);
 }
 
+/** The repo's pinned Node (`.node-version` at the root); empty when it can't be read. */
+function pinnedNode(): string {
+  try {
+    return readFileSync(new URL('../../../.node-version', import.meta.url), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 function main(): number {
+  const wrongNode = nodeVersionRefusal(pinnedNode(), process.version);
+  if (wrongNode !== null) {
+    say(wrongNode);
+    return 2;
+  }
   const target = resolveDeployment();
   const parsed = parseArgs(process.argv.slice(2), process.env, target);
   if (!parsed.ok) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseArgs, USAGE } from './args';
+import { nodeVersionRefusal, parseArgs, USAGE } from './args';
 
 const DEV = { label: 'dev:agile-bee-397', isDev: true };
 
@@ -47,5 +47,15 @@ describe('parseArgs', () => {
       ok: false,
       message: expect.stringContaining(USAGE),
     });
+  });
+});
+
+describe('nodeVersionRefusal', () => {
+  test('the repo’s major runs; another major is refused plainly', () => {
+    expect(nodeVersionRefusal('26.13.1\n', 'v26.0.0')).toBeNull();
+    expect(nodeVersionRefusal('26.13.1', 'v24.19.0')).toMatch(/needs Node 26 .* runs v24\.19\.0/);
+  });
+  test('an empty pin asks nothing', () => {
+    expect(nodeVersionRefusal('  ', 'v24.19.0')).toBeNull();
   });
 });

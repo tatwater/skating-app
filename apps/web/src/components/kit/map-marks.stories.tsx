@@ -2,7 +2,15 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { CSSProperties, ReactNode } from 'react';
 import { expect } from 'storybook/test';
 
-import { HazardMark, LotMark, MARK_BOX, PhotoMark, PutInMark } from './map-marks';
+import {
+  HazardMark,
+  LookalikeMark,
+  LotMark,
+  MARK_BOX,
+  PhotoMark,
+  PutInMark,
+  ReticleMark,
+} from './map-marks';
 import { computedColor, sameColor } from './measure';
 import { must, StateMatrix } from './storyKit';
 
@@ -130,6 +138,103 @@ export const FourUp: Story = {
       await expect(getComputedStyle(must(lot.querySelectorAll('rect')[1])).fill).toEqual(
         sameColor(computedColor(q, 'var(--fg2)')),
       );
+    }
+  },
+};
+
+// ── Marks that point at a place (the Inbox's reticle and lookalike) ──────────────────────────
+
+const TARGETS = [
+  { key: 'reticle', label: 'Reticle · safety' },
+  { key: 'asked', label: 'Reticle · asked' },
+  { key: 'lookalike', label: 'Lookalike' },
+] as const;
+type TargetKey = (typeof TARGETS)[number]['key'];
+
+const TARGET_STATES = [
+  { key: 'rest', label: 'Rest' },
+  { key: 'dim', label: 'Dim' },
+  { key: 'fade', label: 'Fade' },
+  { key: 'highlight', label: 'Highlight' },
+  { key: 'glyph', label: 'Glyph' },
+] as const;
+type TargetState = (typeof TARGET_STATES)[number]['key'];
+
+function Target({ mark, state }: { mark: TargetKey; state: TargetState }) {
+  const props = {
+    dim: state === 'dim',
+    fade: state === 'fade',
+    highlight: state === 'highlight',
+    glyph: state === 'glyph',
+  };
+  const drawn: Record<TargetKey, ReactNode> = {
+    reticle: <ReticleMark tone="bad" {...props} />,
+    asked: <ReticleMark tone="fg" {...props} />,
+    lookalike: <LookalikeMark {...props} />,
+  };
+  return (
+    <span data-mark={mark} data-state={state} className="inline-grid place-items-center">
+      {drawn[mark]}
+    </span>
+  );
+}
+
+const target = (root: ParentNode, mark: TargetKey, state: TargetState) =>
+  must(root.querySelector<HTMLElement>(`[data-mark="${mark}"][data-state="${state}"] svg`));
+
+function Targets() {
+  return (
+    <div
+      className="w-fit bg-map-earth p-(--space-3)"
+      style={{ '--map-ground': 'var(--map-earth)' } as CSSProperties}
+    >
+      <StateMatrix
+        rows={TARGETS}
+        states={TARGET_STATES}
+        cell={(mark, state) => <Target mark={mark} state={state} />}
+      />
+    </div>
+  );
+}
+
+/** The reticle (safety red, asked bright) and the lookalike, in every state. */
+export const TargetMarks: Story = {
+  render: () => <Targets />,
+  play: async ({ canvasElement }) => {
+    for (const { key } of TARGETS) {
+      const rest = target(canvasElement, key, 'rest');
+      await expect(rest.getBoundingClientRect().width).toBe(MARK_BOX);
+      await expect(rest.querySelector('[data-slot$="-brackets"]')).toBeNull();
+      await expect(
+        target(canvasElement, key, 'highlight').querySelector('[data-slot$="-brackets"]'),
+      ).not.toBeNull();
+      await expect(target(canvasElement, key, 'glyph').getBoundingClientRect().width).toBe(12);
+    }
+    const stroke = (mark: TargetKey) =>
+      getComputedStyle(must(target(canvasElement, mark, 'rest').querySelector('circle'))).stroke;
+    const [bad, fg, warn] = ['var(--bad)', 'var(--fg)', 'var(--warn)'].map((c) =>
+      computedColor(canvasElement, c),
+    ) as [string, string, string];
+    await expect(stroke('reticle')).toEqual(sameColor(bad));
+    await expect(stroke('asked')).toEqual(sameColor(fg));
+    await expect(stroke('lookalike')).toEqual(sameColor(warn));
+  },
+};
+
+/** The pointing marks in all four maps: each ink its map's token. */
+export const TargetMarksFourUp: Story = {
+  render: () => <Targets />,
+  parameters: { fourUp: true },
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const ring = must(target(q, 'lookalike', 'rest').querySelector('circle'));
+      await expect(getComputedStyle(ring).stroke).toEqual(
+        sameColor(computedColor(q, 'var(--warn)')),
+      );
+      const red = must(target(q, 'reticle', 'rest').querySelector('circle'));
+      await expect(getComputedStyle(red).stroke).toEqual(sameColor(computedColor(q, 'var(--bad)')));
     }
   },
 };

@@ -62,7 +62,7 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`; the button is owed in B01-5b), so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`) and its *Pin* button on 2.6 built for B01-5b (key P, a required reason), so retiring `/admin/flags` loses nothing — closed; the facts are in B01-5, *What the build found*, under *Pin as official* |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
@@ -881,6 +881,15 @@ Made on the design's engineering forks; the founder may overturn any of them.
 9. **A request decision's drain closes at most 499 siblings** (`REQUEST_SIBLINGS_MAX`; 2026-11-21,
    round five). Any past that stay open in their item for another decision, as a ruling already leaves
    reports past its cap.
+10. **B01-5b doesn't retire `/admin/flags`** (2026-11-21, after #170 merged). A flag on a photo has no
+    handler until the photos PR, and the frame draws it read-only, so retiring the old page now would
+    leave photo flags undecidable. The old flags, requests and support pages all stay in the Legacy
+    group, untouched, with `OLD_SHELL_TREES` unchanged; the Inbox is added beside them. **Each old page
+    retires with the PR that lands the last handler it still serves:** flags with photos, requests with
+    the request handlers, support with support (*Legacy retirement*, in the design). **Owed before
+    B01-5b opens:** the read-only placeholder (a photo flag, a request, a place ask, a drawn body, a
+    ticket) draws only the item's facts. Neither its row nor its pane says the item is decided on the
+    old page, and neither links there.
 
 ### The founder's calls of 2026-11-21
 
@@ -891,7 +900,8 @@ Asked by the governor as the Inbox's first PR was cut. **The calls:**
    enough) that we get 5/5 first time on all seven, vs going round and round with the two PRs. I'll
    leave it to you." The governor's slicing: **B01-5a**, the Inbox's server and its seed; **B01-5b**,
    the Inbox's web so far — the kit additions, the frame, the embedded map, the Access and flag
-   handlers, and `/admin/flags` retired; then the remaining slices as designed (requests, places,
+   handlers (and `/admin/flags` retired — overturned by the governor's ruling 10: the old page stays
+   until the photos PR); then the remaining slices as designed (requests, places,
    drawn bodies and telling askers; merge and unmerge; photos; support), bundled where they review as
    one unit. The design's *The slices* and *The phase branch for this wave* say how each is cut.
 2. **Pin as official is offered on the Inbox's alert item** (board 2.6), so retiring the old flags
@@ -907,7 +917,7 @@ Asked by the governor as the Inbox's first PR was cut. **The calls:**
 | The life strip's dashed line | 1 px (board 2.6) | the kit's 2 px (from People 8.3) | the kit stays |
 | The candidate outline on Inbox maps | ice | neutral, bright and dashed | the console map's rule is no accent strokes |
 | The skate track | white | the console's gray | changing it recolors the Body console's tracks |
-| The map scale bar | KM and M (the kit's) | **miles and feet** — a change, done in B01-5b's kit pass | D25: stored metric, shown imperial; the kit's KM/M contradicts a decision |
+| The map scale bar | KM and M (the kit's) | **miles and feet** — **done** (W3, 2026-11-21): feet up to 500 ft, then miles from a tenth, on the Body console's map and every Inbox embed (no skater or mobile map uses the component). For the copy pass: whole miles read "1.0 MI", because the bar takes the console's distance formatter verbatim | D25: stored metric, shown imperial; the kit's KM/M contradicted a decision |
 | Five values drawn without tokens: the `.08em` tracking, an 11 px sans step, the 204 \| 384 px columns, a 36 px pane head, the 26 px display title | as drawn | the build's values stay; no token minted | until the founder has seen them |
 
 ### A governor's ruling the founder has been told of (2026-11-21)
@@ -1126,6 +1136,12 @@ count above):
 | ClaimChip (`claim-chip`) | ✅ | Promoted from the flag handler: a report's claim as a chip, the claim under question marked | The flag handler's report subject |
 | FactList (`fact-list`) | ✅ | Promoted from the flag handler: a compact, unruled near-twin of `LabelRows` | The author block, 2.6's alert facts |
 | FacetMenu — a floor count (`facet-menu`) | ✅ | An option's count may be `{ count, capped }`, drawn "200+" and marked, the shape `Section` already uses; a number draws as before | The Inbox's age options |
+| Pane and global keys — once per press (`lib/keys`) | ✅ | `usePaneKeys` and the two global keys (⌘K, ?) register with `requireReset`, as go mode's G already did: a held key acts once and again only after its release; a busy bar button's key is held inert. A list's ↑↓ is its own handling and still repeats | Every pane, the shell |
+| LockBanner — announced (`note`) | ✅ | Its polite live region is in the page before its words, which go into a reader-only slot a frame after mount (`RetryNote`'s rule), so a screen reader announces the lock | `DecidedLock` |
+| LifeStrip — re-measured after every commit (`life-strip`) | ✅ | Re-decides its narrow layout when its words change, not only its count or box: its unseen copy is measured after every commit, and its observer set up once; the strip seen is never remounted | The flag and Access handlers |
+| Keys — a held key swallows its own repeats (`lib/keys`) | ✅ | A bound key that acted swallows its own repeat keydowns, and the text they would type, until it is released, wherever focus has gone. So holding an action letter no longer types into the reason dialog it opens. A fresh press, any other key, a held ⇧ or ⌘, and IME composition pass through; it lets go on keyup, window blur or a hidden page | Every pane, the shell |
+| LockBanner — its live region is its words only (`note`) | ✅ | The reader-only status region holds the banner's line alone, never its buttons | `DecidedLock` |
+| StepRugChart — the caller's ticks (`step-rug-chart`) | ✅ | Takes its tick instants from the caller (`ticks`), and `hourTicks(from, to, floor)` makes whole hours by the caller's own floor, so a chart's ticks fall on the reader's clock in any zone | Inbox zero |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -6945,9 +6961,13 @@ console's territory), specified by the canonical snippet below.
 
 ##### Legacy retirement
 
+Each old page retires with the PR that lands the **last** handler it still serves (§7, the governor's
+ruling 10, 2026-11-21): B01-5b (the list and the flag handlers but a photo's) retires nothing, and the
+flags row below moves to the photos PR.
+
 | PR | Redirects | `OLD_SHELL_TREES` loses | Links fixed |
 |---|---|---|---|
-| 2 (the list and flags) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
+| 5 (photos; was 2 — the photo flag is the old flags page's last kind without a handler) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
 | 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest`; the record sheet's flag links (Pe25, by the item's open flag ids — a server ask: `contentRecord.item` returns them) |
 | 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
 | 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
@@ -7002,7 +7022,9 @@ internal read (`inboxSeed.state`: what each fake person already authored), and s
 tickets, messages, reports, Posts, comments, hazards, alerts, photos and their blobs, drawn bodies and
 their activities, inbox items and members, verdicts, the audit rows targeting any of them, notification
 rows — then the profiles and their People rows; the counts move with the rows through their writers.
-After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspended and banned rows.
+After the seed, on dev: `peopleJobs:preparation '{}'` reading `ready: true` is the check (corrected after
+the first dev run, 2026-11-21). The People procedure re-runs `peopleJobs:backfillRows` only in the
+situation its step 6 names — steps 2–5 having run before B01-4b or B01-4f deployed — not after every seed.
 
 #### The build plan
 
@@ -7011,8 +7033,9 @@ After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspe
 **As shipped** (§7, *The founder's calls of 2026-11-21*: fewer PRs, Greptile being metered per
 request): **B01-5a** is PR 1 below with the seed — the Inbox's server, its seed, and the least of the
 web the server forces (the audit-verb words, the Overview's Inbox card and heading); **B01-5b** is the
-Inbox's web so far — PR 2's kit additions, frame, embedded map, the Access and flag handlers, and
-`/admin/flags` retired; PRs 3–6 follow as designed, bundled where two review as one unit. The table
+Inbox's web so far — PR 2's kit additions, frame, embedded map, and the Access and flag handlers with
+*Pin*; **it does not retire `/admin/flags`** (§7, the governor's ruling 10; *Legacy retirement*
+below); PRs 3–6 follow as designed, bundled where two review as one unit. The table
 is the design's six, kept for what each holds.
 
 
@@ -7096,8 +7119,9 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 1. `convex dev --once` from main by the named executor (codegen committed first).
 2. PR 1: `corpusRequests:backfillOrigin` dry, paged (repeat with `{"cursor": <continueCursor>}` until
    `isDone`), its candidates confirmed, then applied the same way (before the
-   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then `seed-inbox --apply` with `CONVEX_RUN_AS`; then
-   `peopleJobs:backfillRows` (Pe26); confirm the Overview's Inbox card equals the lanes.
+   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then, on Node 26, `seed-inbox --apply` with `CONVEX_RUN_AS`; then
+   `peopleJobs:preparation '{}'` reading `ready: true`; confirm the Overview's Inbox card equals the
+   lanes (`inbox:lanes` from the CLI takes the console's local midnight: `convex run inbox:lanes '{"now":<ms>,"dayStart":<ms>}' --identity '{"subject":"<your Clerk user id>"}'`, with `dayStart` within the 36 hours before `now`).
 3. PR 3: the `notificationPrefs` canonicalize backfill, then the narrowing commit's deploy; an EAS
    `preview` build installed on the Pixel.
 4. PR 4: a merge and its unmerge on two seeded bodies, compared row by row.
@@ -7222,7 +7246,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   to `inboxItemMembers.by_item_filer`, which the deploy rebuilds); `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
-  call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
+  call may read nothing and only say `isDone`; on an empty `waterBodyRequests` the first call answers
+  done), then `'{"apply":true}'` the same way;
   `inboxItems:backfill '{}'`, which chains
   itself (its later passes' answers never reach the logs): its scan's end is told by its
   `inboxJobRuns` row (`job: "backfill"`) reading `done: true` — from then a direct run answers
@@ -7231,7 +7256,7 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   Overview's Inbox card says "Still being prepared". A failing source is retried by the drift repair, a
   parked one by the daily retry; Machinery's "repair inbox items drift" shows both counts. One that
   should never be filed: `recurringJobs:forgetBefore '{"job":"inboxBackfill","before":<ms>}'`. Then
-  the card checked equal to `inbox.lanes`.
+  the card checked equal to `inbox.lanes` (`inbox:lanes` from the CLI takes the console's local midnight: `convex run inbox:lanes '{"now":<ms>,"dayStart":<ms>}' --identity '{"subject":"<your Clerk user id>"}'`, with `dayStart` within the 36 hours before `now`).
 - ~~**Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage~~ — closed: on the
   PR 1 branch it is at 98.9% of lines (95.6% of statements).
 - **Where the server met the web** (the integration, 2026-11-21): the frame's words map labels the five
@@ -7435,14 +7460,16 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     Inbox's own writes.
   - **Where the design was wrong:** the hazard "never existed" auto flag never counts repeats (it has no
     occurrences to seed); a `name_landmark` ask can't be filed through `corpusRequests.create` (only a
-    report's `where` files one); a `contest_access` ask needs a body ruled closed and an `activate` ask a
-    dormant body — each picked from dev by index, and shown as unavailable in the plan if dev lacks one.
-  - **On dev, in order** (`CONVEX_RUN_AS` must be an **admin**: the takedown approval needs
-    `body.remove`; the package README says so): `pnpm --filter @skating/seed-inbox seed` (the plan,
-    dry); `CONVEX_RUN_AS=<your Clerk id> pnpm --filter @skating/seed-inbox seed --apply`, ending
-    `filed 82 · failed 0 · still ready 0` (after the seed's third review; 23 open and 10 decided); a
-    second `--apply` filing 0; `peopleJobs:backfillRows` (Pe26); and, to undo it all, `seed
-    --clear` then `seed --clear --apply`.
+    report's `where` files one). ~~A `contest_access` ask needs a body ruled closed and an `activate` ask a
+    dormant body, each picked from dev~~ — since the follow-up of 2026-11-21 the contest, activate and
+    restore asks land on bodies the seed itself draws, approves and then closes, shelves or removes.
+  - **On dev, in order, on Node 26** (the repo's `.node-version`; the seed and its dry run stop on
+    another major), with `CONVEX_RUN_AS` an **admin** (the takedown approval needs `body.remove`; the
+    package README says so): `pnpm --filter @skating/seed-inbox seed` (the plan, dry);
+    `CONVEX_RUN_AS=<your Clerk id> pnpm --filter @skating/seed-inbox seed --apply`, ending
+    `filed 90 · failed 0 · still ready 0` (since the follow-up of 2026-11-21: 23 open and 12 decided,
+    none unavailable on any dev); a second `--apply` filing 0; `peopleJobs:preparation '{}'` reading
+    `ready: true`; and, to undo it all, `seed --clear` then `seed --clear --apply`.
   - **Owed:** an `importRuns` kind `seed_inbox`; until then each writing run's log is a JSON file under
     `scripts/seed-inbox/runs/` (gitignored). **Not verified, for the first dev run:** `--identity` with
     a seed subject, whether dev's bodies match the plan, and the admit resolver's network call.
@@ -7563,7 +7590,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     ruling refreshes the body's open access item's tab (`refreshItemTab`), and the repair compares the
     tab with its open member's facts.
   - **`today`** says the Access lane is capped past what it reads, and `openAtStart` is `null` when the
-    day's filings or decisions were capped — the frame works the start back from the day's events.
+    day's filings or decisions were capped — the page then says the start isn't known (W1's third
+    pass; it first worked a figure back, which overstated when the filed list was the capped one).
   - **`backfillOrigin`** is bounded on bytes and walks by creation time, always advancing (paged by
     `cursor`).
   - **The Support cut is tested for a moderator** against every read and filter (`inboxSupportCut.test.ts`).
@@ -7578,7 +7606,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     fallback, now gone — all four answer through the one rule (a decided one with "This has already been
     decided.").
 - **Web, after the review:** Inbox zero's `ZeroDayStartUnknown` story draws the day with
-  `openAtStart: null` (the start worked back; `InboxZero.test.ts` holds the figure).
+  `openAtStart: null`; since W1's third pass it asserts the page says the start isn't known and draws
+  no line, the day's own line still reading.
 - **The independent review of the seed, and its fixes** (D, fourth turn). The reviewer reproduced four
   defects, and four mutations of the clear had left the suite green:
   1. **The seed's ruling on a real body dismissed real people's access reports and notified them.** Now
@@ -7612,7 +7641,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   | Imagery plans, season rollups | a run while the seed is loaded counts its active body or its reports | **not verified** |
   | Badges | a badge a real person earns from a vote on seeded content isn't taken back | known leftover |
 
-  **External calls:** a full apply makes 3 USGS 3DHP calls (the admit resolver) and no Open-Meteo call;
+  **External calls:** a full apply's USGS 3DHP calls (the admit resolver) are unmeasured — three
+  `admit` asks each schedule a catalog lookup — and it makes no Open-Meteo call (0 on dev, 2026-11-21);
   a second apply, a dry run and the clear make none. The run log stores the server's own sentence for a
   failed step, and the counts add the steps still ready.
 - **`ItemMap({ item })`, the one map every handler drops into its slot** (W3, third piece;
@@ -7669,10 +7699,178 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   and the filter come back with it.
 - **Left for the founder's look** (W3): the candidate outline is drawn bright and dashed where boards
   2.3 and 2.5 draw ice (a palette test forbids accent strokes on the console map); the skate track is
-  in the console's gray where the boards draw white; the kit's scale bar reads KM/M against D25; and on
+  in the console's gray where the boards draw white; ~~the kit's scale bar reads KM/M against D25~~
+  (ruled and done 2026-11-21: feet, then miles, §7); and on
   2.2 there is no *Say accessible* figure, evidence photo or ruling source (no data holds them),
   `LabelRows` sits at 76 px where the board draws 96, and there are no posted or gate marks (access
   reports carry no coordinates).
+- **The web review's fixes, Access and the map** (W3, fifth piece):
+  - **A ruling's receipt keeps to its item:** shown only while the handler still draws the item it came
+    from, and released when the handler unmounts.
+  - **The receipt says only what's true:** with no report open it no longer says reporters were told;
+    one closed reads "the reporter told", several "reporters told".
+  - **An alert embed's caption** keeps the put-in's or lot's name first; a simplified outline's note
+    follows it rather than replacing it. A test also holds that no item's map draws the Aerial switch
+    this wave (no answer carries a pass).
+  - **Instants in the board's zone** (W3, sixth piece, 2026-11-21): the Access and map fixtures are
+    absolute instants pinned in the board's zone with core's `zonedInstant`, never a local `new Date`,
+    so the tests read the same in every zone CI runs (all four failures under `TZ=Etc/GMT-14` were
+    fixture bugs). `ItemMap` now reads the inspector's zone, so its legend's date falls on the same day
+    as the timeline's. Calendar days on the Inbox's panes are the reader's own zone, through
+    `consoleTime`; "N days ago" is elapsed time.
+- **The web review's fixes, the frame** (W1, third pass), one line each:
+  1. The rail's Inbox count reads through the console's read layer, held through the minute tick; it
+     no longer blinks out each minute, and a failed read no longer throws into the layout.
+  2. A colleague's decision on the open item moves lost focus to the inspector, never `<body>`.
+  3. The viewer's own decision moves focus to the next row, or on a narrow page to the inspector.
+  4. No end tab ("All N") while more pages are coming or one is on its way.
+  5. A row's `aria-setsize` is `-1` (unknown) at the scan's budget stop, until every row is in.
+  6. The open item follows the rule below on a lane, tab or filter change.
+  7. An unknown day start is said as unknown, with no line drawn; a real 0 is drawn as one.
+  8. Decided today, by lane, draws no Support column for a viewer without its read, and lane names
+     wrap rather than truncate at a phone's width.
+  9. The filter's body and person searches stop when the menu closes and say when they fail, with
+     *Try again*.
+  10. A held ⏎ or ⇧⏎ acts once: the list's open, the lock's *Back to the queue* and the inspector's
+      ⇧⏎ and Esc each ignore key-repeat.
+
+  **The open item's rule, now built:** another lane, tab or filter closes an item the operator opened
+  from the list, and keeps one that arrived by a direct `?item=` link (from People, a body, the audit
+  feed), since that link was about the item.
+
+  **Owed, outside this wave's grants:** the shell's own profile, season-tape and colleagues reads are
+  raw queries that can throw into the layout — a shell fix for every mode. **Left for the founder's
+  look:** the states board offers to copy an unsent reason when a colleague's decision locks the item;
+  the build closes the dialog and drops what was typed. **For the copy pass,** two new coined
+  sentences: "How many were open as the day began isn’t known: more was filed or decided today than
+  this page reads." and "The search didn’t load."
+- **The web review's fixes, the flag handlers** (W2, third turn). **The verdict:** nothing sends a wrong
+  write; two important defects. The fixes, one line each:
+  1. The author menu reads People on the minute the person was opened and keeps its last answer
+     through a re-read; an open suspend dialog keeps what it needs, so a minute tick no longer empties
+     a reason being typed.
+  2. Missing weather reads "Not recorded", never 0 beside a thickness claim; a season with days missing
+     says how many days its figure covers; the degree-days are drawn with their unit, °F·days.
+  3. Only open flags are counted and acted on: a closed member is left out of the block, the author's
+     count, the dismiss dialog and the receipt alike.
+  4. A failed weather or *Around it* read says so, with *Try again*.
+  5. A capped *Around it* window is drawn as a floor wherever it is counted (the line, the drawer's
+     count, *Open all*).
+  6. A receipt is bound to its item and released when the handler unmounts (`useStillHere`).
+  7. The flag dialogs cap the reason at the server's `AUDIT_REASON_MAX` (`AskDialog` gains
+     `maxLength`).
+  8. The drawer walks calendar days at local noon, in order, each day of the window once across a
+     clock change (fast-check). It uses the console's zone, as every time on the pane does; the view
+     doesn't carry the body's zone. **Owed** if a body's local night ever matters here.
+  9. The four Inbox mutations are pinned by name.
+
+  **The *Pin* button, as built** (2.6): drawn only when `can.pin` allows (the alert not pinned or
+  retracted, not the viewer's, no flag of theirs on it); key P; a required reason, in the dialog
+  *Retract* uses. The dialog and the receipt say the pin decides the item: every open flag on the
+  alert, in every lane, is dismissed, each flagger told once; the receipt says "Pinned" and how many
+  flags were dismissed, in other lanes too. Undo is the write's own row; refusals stay toasts. §1's
+  lose-nothing row for *Pin as official* is closed.
+
+  **For the founder's copy pass**, the changed and new words:
+  - The Safety head: "Flagged as unsafe". The fuller "Flagged as an unsafe false report" overflowed the
+    head at 360 px; the short form could be misread as a claim about the ice and wants his eye.
+  - The contradiction flag: "The contradiction check filed this: N of their recent reports differed
+    from the weather records" (without a count: "some of their recent reports").
+  - The author's count: "N flagged by the contradiction check".
+  - "Not recorded"; "°F·days since 1 Oct"; "From N of the M days since 1 Oct; the rest weren’t
+    recorded".
+  - The failed reads: "The weather for that night couldn’t be read" and "The reports around it
+    couldn’t be read".
+  - The pin: the button "Pin"; its line "Pins it as official: it stops lapsing, and every open flag on
+    it is dismissed"; the dialog "Pin this alert as official?" with "It stops lapsing and carries your
+    name. This decides it: every open flag on it, in every lane, is dismissed, and each flagger is told
+    once."; the receipt "Pinned", "N flags dismissed, N in other lanes"; the decision's words
+    "Official · stops lapsing · the flags dismissed".
+- **The web review's fixes, the kit** (the kit builder's fourth pass):
+  1. A bound key acts once per press: pane keys and the two global keys use `requireReset`, and a busy
+     bar button's key stays inert. W1's own ⏎ repeat guards stay too; its *Held Enter* story passes
+     with both.
+  2. `LockBanner` announces: its live region is in the page before its words.
+  3. `LifeStrip` re-decides its layout when its words change in place.
+
+  **The intermittent `UserMenuView` failure, found:** "Chooses Sign out with Enter" waited only for the
+  menu to be in the page. Base UI moves focus into a menu a beat after it mounts, so on some runs End
+  and Enter went to the trigger and shut the menu. The test now waits for focus inside the menu, then
+  for Sign out to light, then for the call. It failed 3 of 80 runs before and 0 of 85 after; the time
+  zone was a coincidence. The test is on main's code, so the fix also rides on PR 1's branch.
+- **The placeholder points at the page that still decides it** (W1, fourth pass, 2026-11-21). Each
+  kind with no handler yet says so in one line and links there, same tab:
+
+  | Kind | The line | Links |
+  |---|---|---|
+  | A photo flag | "A flag on a photo is decided on the Flags page for now." | *Flags* (`/admin/flags`) |
+  | A request | "Requests are decided on the Requests page for now." | *Requests* (`/admin/water/requests`) |
+  | A place ask | "Place asks are decided on the Requests page for now, or answered by drawing in the body’s editor." | *Requests*, and *Body editor* (`/admin/water/<body>`) |
+  | A drawn body | "Drawn bodies are decided in the Water bodies list for now." | *Water bodies* (`/admin/water`) |
+  | A ticket | "Support tickets are answered on the Support page for now." | *Support* (`/admin/support`), for a viewer who reads support |
+
+  A test holds every handler key to a registered handler or one of these destinations. **None of the
+  old pages reads a search param,** so no link opens the item there or carries a way back; the
+  browser's Back returns to the Inbox. Deep links are owed with each old page's retirement, not
+  before. A member count the server capped draws as "500+". People's *Handle* on a flag opens its
+  Inbox item (Pe6, closed for flags; an appeal keeps the Support page).
+
+  **What a part-finished decision looks like** (read in `refreshItem` and the lock's model). The server
+  decides an item only once no member of it is open: while a large decision's later pages run, the
+  item stays `open`, and its `memberCount` (open members only) falls page by page. Its read carries
+  `decided: null` meanwhile, so the lock stays `live` for everyone watching it — no banner, and the
+  verbs stand on what is still open — and becomes `locked` (or `quiet` for the person who decided)
+  only when the last page closes the last member. The item counts in its lane until then, so Inbox
+  zero waits for it too.
+
+  **For the copy pass,** the new words: the five lines above, and the link labels "Body editor" and
+  "Water bodies".
+- **For the founder's copy pass, from the re-check's fixes:**
+  - the four Safety heads above;
+  - the contradiction sentence, and "N counted by the contradiction check";
+  - "Of the reports read; more lie past the window’s cut";
+  - the scale bar and the distance rule read "1.0 MI" for whole miles, because the console's
+    `formatDistance` returns one decimal (`miles.toFixed(1)` from 0.095 mi up, rounded feet below) and
+    the scale bar sets it in caps. The same formatter writes Places' "Possibly X, 0.4 mi away". The
+    boards draw metric scale bars and "0.4 mi apart".
+- **The re-check of the web fix rounds** (2026-11-21): 19 of the 22 claimed fixes closed, two only
+  in part, and one — the wording — not; no code defect blocking. **The blocker it named was the
+  wording:** the contradiction check's sentence named the wrong comparison, with the server's own note
+  drawn under it. **What the check counts,** as W2 read it in `contradictions.ts`: the author's running
+  tally of reports with no corroboration of their own that disagreed with a more-corroborated report
+  at the same body by more than the weather since explains (not "recent" reports). **The fixes:**
+  - **The contradiction sentence** now says exactly that, attributed to the check: "N of their
+    reports, with no corroboration of their own, disagreed with a more-corroborated report at the same
+    body by more than the weather since explains". The author's row reads "N counted by the
+    contradiction check".
+  - **An app flag's note is drawn only where it is the rule's own count** (the hazard vote's); the
+    contradiction check's fixed server prose is not.
+  - **The Safety heads say whose claim it is, per subject,** in a colon form: "Flagged: false safety
+    report" (a report or Post), "Flagged: never there" (a hazard the app flagged by vote), "Flagged:
+    false hazard" (a hazard a person flagged), "Flagged: false safety claim" (anything else). The
+    longer phrasing overflowed the head at 360 px.
+  - **A held key no longer types into the dialog it opens** (the kit's fifth pass): held past the
+    repeat delay, an action letter opened its reason dialog once and its repeats then typed into the
+    field, so for *Dismiss* (whose reason is optional) ⌘⏎ could send "dddd" to the audit log and the
+    flagger. A key that acted now swallows its own repeats until released.
+  - **Smaller fixes:**
+    - capped *Around it* tiles and phrases are floors ("2+");
+    - the author menu's reason dialog and the suspend dialog it opens are capped at the server's
+      `AUDIT_REASON_MAX`;
+    - `useStillHere` sets its item in setup, so StrictMode never reads a mounted handler as gone;
+    - the day walk's DST case is pinned, and the flag fixtures are absolute instants;
+    - `LockBanner`'s live region holds its words only.
+
+  Two more of its fixes (W1, fifth pass):
+  - **Inbox zero's chart starts on a whole hour of the reader's clock.** It had floored to a UTC hour,
+    so in a half-hour zone it started at :30 and a test failed under `TZ=America/St_Johns`. A property
+    over eight zones across DST changes now holds it. Its ticks fall on the reader's whole hours too
+    (passed to `StepRugChart` through `hourTicks`). W1's sixth pass made the floor exact:
+    `floorLocalHour` finds the latest whole local hour by the zone's own offsets, where subtracting
+    minutes landed on :30 just after Lord Howe Island's half-hour clock change. The web unit project
+    now passes under `TZ=Australia/Lord_Howe` too.
+  - **The two filter-search stories wait for the popover's own animation and for focus** before
+    typing; one had failed 2 of 40 repeats under load, and fails 0 of 160 now.
 - **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
   handler draws no map. **Owed to the kit:** an `ActionBar` narrow layout (three buttons run to
   471 px at 360), a controlled `open` on `ReasonAsk`, and the promotion of `ReticleMark`,
@@ -7730,7 +7928,8 @@ asked), and because a pin sides with the alert every open flag on it, in every l
 pinned alert with open flags against it would be an item nobody could finish. **Its refusals:** the
 moderator's own alert (D269), "This alert is already pinned.", "This alert has been retracted, so it
 can't be pinned." (D248). **Its undo** releases the alert and reopens the flags it closed. §1's
-lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is owed in B01-5b.
+lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is built (W2, below) and
+ships in B01-5b.
 
 **For the founder's record:**
 
@@ -7812,6 +8011,61 @@ clearing its failure in one transaction. Machinery's health read (`recurringJobs
 inbox items drift") counts both, failing and parked, with their error classes. A source that should
 never be filed has its failure forgotten by hand: `recurringJobs:forgetBefore` with
 `job: "inboxBackfill"`, which forgets every such failure last seen before the given time.
+
+**The hazard's verdicts as the web now draws them** (W2, fourth turn). Each of core's four verdicts
+gets its own row, labelled by core's `verdictLabel` for the hazard's type and in core's order. There is
+no net figure and no color per verdict, and every count carries a "+" when the read was capped.
+**Zeros are drawn too, dimmed:** in ruling on "never existed", a moderator needs to see that nobody
+said it is still there as plainly as that two said it never was. **The counts are ballots, not
+people:** every vote cast is counted, a changed vote and the reporter's own included, while the flag
+rule counts each person's latest vote. The pane says so under the counts.
+
+**The receipts speak in the present tense:** "Closes 3 flags, 2 in other lanes", "Dismisses 3 flags".
+A large decision's later flags close moments after the toast, so a receipt says what the decision
+does, not what has finished.
+
+**For the founder's copy pass,** the new words:
+- "Votes, as skaters cast them"
+- "No one has voted on it yet"
+- "Every vote cast, a changed vote and the reporter’s own included"
+- "The app files this when N people vote “…”" (the verdict in its own words for the hazard's type)
+- "Closes N flags, M in other lanes"
+- "Dismisses N flags"
+- "Dismissed"
+
+**PR 1's CI went red on `f7fb7863`, and its fix.** Three tests in `convex/inboxBatch.test.ts` timed out
+at 20 s on the runner. They were 500 asks; 450 plus 50 flags with an undo; and 500 access reports with
+an undo, and took 6.2, 7.3 and 12.8 s here under coverage. The runner is several times slower and
+instrumented for coverage — the same cause as the stored-facts PR's CI timeout. The 500-member repair
+test (4.4 s) had the same shape. **The fix** (S1):
+
+- **The seam:** the member bound is now a test seam, `MEMBER_BOUND`, read by the recount, the reopen,
+  the derive, the repair's member reads and `refreshCost`.
+- **Measured per source:** the cost of each additional source, measured at 10 and 30 in one
+  transaction, must not exceed what its closer declares to the room check. That covers a decline's
+  sibling, a ruling's and a takedown's flag, and an undo's reopened flag (the new `FLAG_REOPEN_COST`).
+  A recount per source would add about N a source and fail it. Measuring found a decline's declared
+  sibling cost too low (18 documents read against 12 declared), so it was raised.
+- **The real-scale arithmetic,** from the same constants at `MAX_MEMBERS` against Convex's real limits:
+  - each closer fits a source and its refreshes in a fresh transaction, so a page always advances;
+  - a 200-sibling page of one 500-member item fits;
+  - an undo of `FLAGS_READ` flags fits;
+  - a recount per source over 201 closes of 500 would exceed 32,000 documents.
+- **Paging** is exercised at a bound of 60 with the document limit cut to 700.
+- **The repair's** cost per member, measured at 10 and 40, keeps twice `MAX_MEMBERS` inside its
+  limits.
+- **The long tables and property runs** are split into tests of a few seconds each, and two raised
+  timeouts are gone. No test of this wave runs over about 2.5 s under coverage here; the slowest are
+  the property test's first draw (2.6 s) and the offer-versus-run table (2.4 s).
+
+**What is no longer proven at true scale:** that convex-test's accounting at 500 rows matches its
+accounting at 10 to 60 (the costs were measured linear across 10, 30, 50 and 100), and real rows'
+sizes at the bound (the byte axis rests on the declared worst cases).
+
+**Owed, not this wave's:** three tests owned by earlier phases still run 3 to 3.5 s under coverage here,
+and are at risk on the runner. Two are in `recurringChains`, which use near-maximum-size documents by
+design; the third is `erasure`'s property test. Getting them under needs a byte seam in their owners'
+code.
 
 **Owed, or known:**
 
@@ -8109,6 +8363,89 @@ scope.
 **Also changed:** the reopen's per-flag cost (`FLAG_REOPEN_COST`) now counts the rule's reads. A flag
 decision's own undo now refuses whole only on its lead flag (see the undo policy above).
 
+#### Greptile on #171, round 1 (2026-11-21)
+
+**The score:** 4/5 on `9efea7c27`, with three P2s. All three are real and share one class: a behavior
+that exists and is tested at its own level, with the live wiring not reaching it.
+
+- **Today included yesterday.** `InboxRoute` took the day from the list's frozen clock, so a list
+  left open past midnight kept counting "decided today" and Inbox zero's day from yesterday.
+  **Fix:** the day is `localMidnight` of the live minute clock. That changes only when the day does,
+  so no read re-subscribes on a minute tick. The server holds a `dayStart` within
+  `[now − 1.5 days, now]` (`heldDayStart`, in `inbox.lanes` and `inbox.today`), so the day reads are
+  asked with `{ now: max(listClock, dayStart), dayStart }`: today's pair until midnight passes the
+  list's clock, then moving once. The pages keep the list's clock, so the paging never restarts.
+- **Changing lanes closed a linked item.** `InboxView` forced `item: null` on a lane select,
+  defeating the route's `placeAfter`. **Fix:** removed. The tabs, the filters and clearing a filter
+  already left the item to the route.
+- **Phone maps caught scrolling gestures.** `ItemMap` never passed `viewOnly`. **Fix:** the view's
+  one narrow signal (`useColumnsFit`) reaches the inspector's context as `narrow`, and `ItemMap`
+  draws the map view-only there.
+
+**The tests that now hold each, at the level where it broke** (each fails with its bug put back):
+- `InboxRoute.wiring.test.tsx` renders the real route around the real view, with only the router,
+  the role and the read layer stood in, and records every read's arguments. In it, the day crosses
+  midnight with the list open: the day reads move to the new midnight, the pages' clock and chain
+  don't, and an ordinary minute re-asks nothing. And a linked item is kept, and a list-opened one
+  closed, through a lane, a tab and a filter.
+- `ItemMap` on a narrow page draws the view-only map, and on a wide page doesn't.
+- A `localMidnight` property, with New York's two change days and Lord Howe's half-hour ones pinned,
+  runs in all seven zones.
+
+**What the sweep found:**
+- **A capability with no live caller:** `FlagView`'s optional `peopleHref` and `bodyHref`, which no
+  caller, story or test overrode, are deleted. `InboxView`'s `timeZone` and `registry` are deliberate
+  seams (a pinned zone, a story's handlers), and their docs now say the live page passes neither.
+  Ten optional kit props have no live caller (`LifeStrip`'s and `LifeList`'s `showKey`,
+  `MapLayerRack.collapsed`, `MapScaleBar.maxWidth`, `SizedMark.big`, four of `SearchLane`'s, and
+  `ToolbarOverflow.moreLabel`). All predate this PR, on main's kit or carried in with People's
+  candidates, and stay as library options.
+- **Clocks:** each reads the one it needs. The pages, a lane's tail and the zero page's decided list
+  read the list's clock. Ages, "ago" words, the lock's time, the chart's span and the day read the
+  live minute. The author menu reads People on the minute the person opened, and the item's map on
+  the minute the item opened. *Around it* and *That night* take no clock (their window is relative
+  to the report). The context's `Date.now()` is only the default outside a provider (a handler's own
+  story).
+- **A child deciding the route's place:** the lane select was the only one.
+- **Phones:** besides the map, everything narrow is self-measuring (`ActionBar`'s and `LifeStrip`'s
+  narrow forms) or switched by the view's own rule (the hidden panes). No other prop waits on a narrow
+  caller.
+
+**CI on the first head.** `9efea7c27` went red on one test: Inbox zero's span property, on seed
+396754415, with the counterexample `["Australia/Lord_Howe", 1791070200000, []]`. Nine local runs had
+passed because the property draws a fresh seed each run and none drew that input. **The bound was
+wrong, not the code.** With nothing decided, the chart reaches back to 02:30 LHDT on 4 Oct 2026, the
+first instant after Lord Howe's clocks jumped from 02:00 to 02:30. Local 02:00 never happened, so the
+latest whole local hour is 01:00 LHST, a full real hour before; the property wanted "less than an
+hour". Across a half-hour change forward, two consecutive whole local hours are 90 real minutes
+apart. The span and floor properties now say the start is the latest whole local hour and under 90
+minutes before; the counterexample is pinned.
+
+**The higher-run pass.** Every `fast-check` property this PR adds or changes under `apps/web` (19
+test files) ran at 20× its configured runs, or 5,000 where none was set, under `TZ=Australia/Lord_Howe`,
+`TZ=Asia/Kathmandu` and `TZ=UTC`. It found one more, and **this time the code was wrong**: at
+01:00:00.001 LHST that morning, the chart's end, "an hour on, floored", fell back to 01:00, before
+now, because the next whole hour is 03:00 LHDT, 90 minutes on. `ceilLocalHour` (the floor's mirror)
+now gives the end, the same as before wherever clocks move by whole hours; the counterexample is
+pinned and a property holds the ceiling. After the fix, the hot pass ran clean in all three zones,
+and twice more in Lord Howe. Only `InboxZero`'s and `StepRugChart`'s properties take zones from a
+list; the rest read the process's zone.
+
+**CI on the second head.** `aceb5e261` went red on one story, `RecordSheet.stories.tsx` › *At Rest*:
+`life-station` counted 0 of 5, on a slow runner (805 s against 533 s for the first head). The count
+is 0 exactly when the strip has stacked: it draws `life-station` only across, and its narrow form
+(`LifeList`) draws `life-list-station`. The strip decides from a measure of its unseen copy after
+every commit, whenever its box changes, and once web faces are ready. So a measure taken with a slow
+runner's fallback face (wider than the faces) stacks it until the faces land and it re-decides.
+**Late, not never**: mounted at zero width or hidden and then shown, it runs across the moment it can
+(the new `FromZeroWidth` and `FromHidden` stories), and a box that widens already did
+(`NarrowThenWide`). Not reproduced locally in ten runs, five of them with the machine starved. **What
+a reader sees** on a cold load whose faces arrive late: the life stacked for that moment, then
+running across — a jump in the pane, gone once the faces are cached. The fix is the read: every
+one-shot read of the strip's across form now waits for it (the record sheet's, three flag-handler
+stories, four of the strip's own). `LifeList`, `RecordRow` and `ItemTimeline` aren't measured, so
+their reads can't land early. The changed stories passed ten times each, half of them starved.
+
 #### How the forks were ruled (2026-11-20)
 
 The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
@@ -8143,8 +8480,10 @@ function writes no audit row and no marker, so the rows it wrote are told apart 
 — a `name_bay` ask carrying `aliases` (`corpusRequests.create` never writes them) — or a `name_bay`
 ask whose requester is staff and whose `coord` is a real place rather than the lake's own point
 (`isLakePoint` false: a skater's drawer ask carries the lake's point). The dry run lists every
-candidate with its requester and date for the operator to confirm before `apply`; D201 says sixteen
-were filed, and whether dev holds them, and whether any skater's ask could match the second test, is
+candidate with its requester and date for the operator to confirm before `apply`; D201's text says the
+corpus's sixteen destination bays were filed this way (`plans/01-decisions.md`, D201: "The corpus's
+sixteen destination bays were filed the same way"). On dev (2026-11-21) `waterBodyRequests` was
+empty, so none were found there; whether another deployment holds them, and whether any skater's ask could match the second test, is
 **not verified** without a dev read. No other path
 routes a staff change through an item: the approvals perform the act a skater asked for, and every
 direct lever (the Body console's tabs, merge from the Shape tab, the ruling, People's levers) writes
@@ -8492,7 +8831,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe3 | A person write that answers `{undoable: false}` still did the undo lookup | `person/usePersonWrites.ts` | done in #145 | performance/polish | S | — |
 | Pe4 | The People list didn't pass `endCursor`, so a change in an earlier page dropped the deeper pages | `list/peopleReads.ts` | done in #142 (B01-4i) | correctness | S–M | — |
 | Pe5 | The record sheet's three lists take no `endCursor` | `contentRecord.ts` `personVerdicts`, `personReversed`, `personDeleted` | done in #145 | correctness | M | — |
-| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. Its *Handle* links still go to the old flags and support lists: blocked on the Inbox | missing | S | — |
+| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. **Closed for flags in B01-5b** (2026-11-21): a flag's *Handle* opens its Inbox item; an appeal's still goes to the Support page until the ticket handler lands | done for flags; appeals wait | S | — |
 | Pe7 | The lever facts the server sends: since when a right is off, ledger "since", the bounty season line, each lever's own `can`, the profile-opens link | `person/LeverBlock.tsx`, `PersonView.tsx` | done in #145 | missing | M | — |
 | Pe8 | The staff strip didn't name who undid a staffer's decisions | `person/personModel.ts` | done in #142 | missing | S | — |
 | Pe9 | A Post restored with chosen Reports: those Reports left Standing with no row for the sitting | `record/RecordSheet.tsx` | done in #145 | polish | S | — |

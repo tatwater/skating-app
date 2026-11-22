@@ -40,6 +40,9 @@ export const OUTLINE_STYLES: Readonly<Record<MapOutlineStyle, StrokeSpec>> = {
   bay: { fill: null, line: 'fg2', width: HAIR, dash: [2, 3] },
   neighbor: { fill: null, line: 'fg3', width: HAIR, dash: [4, 3] },
   footprint: { fill: 'lift-08', line: 'fg2', width: HAIR, dash: null },
+  // Not ours yet (the Inbox's catalog candidate, a skater's drawing): the bright ink, dashed, a step
+  // heavier than the shore it is weighed against. No fill: the shore under it stays readable.
+  candidate: { fill: null, line: 'fg', width: 1.5, dash: [3, 2] },
 };
 
 export const LINE_STYLES: Readonly<Record<MapLineStyle, StrokeSpec>> = {
@@ -53,6 +56,8 @@ export const LINE_STYLES: Readonly<Record<MapLineStyle, StrokeSpec>> = {
   approach: { fill: null, line: 'fg1', width: 1.5, dash: [2, 2] },
   // A survey's dimension line, quiet: drawn over the map in pixels, its ticks a fixed length.
   dimension: { fill: null, line: 'fg3', width: HAIR, dash: null },
+  // A distance the Inbox weighs (asked to lookalike, candidate to ours): a quiet dashed rule.
+  gap: { fill: null, line: 'fg2', width: HAIR, dash: [2, 3] },
 };
 
 /**

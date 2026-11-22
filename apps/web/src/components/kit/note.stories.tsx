@@ -6,7 +6,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { Button } from './button';
 import { Kbd } from './kbd';
 import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
-import { LockBanner, Note } from './note';
+import { LockBanner, Note, Quote } from './note';
 import { KICKER, must } from './storyKit';
 
 const meta = {
@@ -140,21 +140,6 @@ export const Wrapping: Story = {
 
 // ── The lock banner ──────────────────────────────────────────────────────────────────────────
 
-function Held() {
-  return (
-    <LockBanner
-      state="held"
-      actions={
-        <Button size="xs" variant="outline">
-          Take over
-        </Button>
-      }
-    >
-      <strong>Sarah</strong> has this open · 2 min
-    </LockBanner>
-  );
-}
-
 function DecidedActions() {
   return (
     <>
@@ -178,35 +163,6 @@ function Decided() {
 }
 
 /**
- * Held: a colleague has it open. A hairline box on the panel ground, the line left, *Take over*
- * right; the button is the row's tallest content, so it sits exactly the inset from the border.
- */
-export const LockHeld: Story = {
-  render: () => <Held />,
-  play: async ({ canvasElement }) => {
-    const banner = part(canvasElement, 'lock-banner');
-    await expect(banner).not.toHaveAttribute('role');
-    const s = getComputedStyle(banner);
-    await expect(s.borderTopWidth).toBe('1px');
-    await expect(s.borderTopColor).toEqual(sameColor(computedColor(banner, 'var(--line2)')));
-    await expect(s.backgroundColor).toEqual(sameColor(computedColor(banner, 'var(--panel)')));
-    await expect(s.borderRadius).toBe('0px');
-    const box = banner.getBoundingClientRect();
-    const button = within(banner)
-      .getByRole('button', { name: 'Take over' })
-      .getBoundingClientRect();
-    const inset = resolvePx(banner, 'var(--space-2_5)');
-    await near(button.top - (box.top + 1), inset, 'border → button');
-    await near(box.bottom - 1 - button.bottom, inset, 'button → border');
-    await near(box.right - 1 - button.right, resolvePx(banner, 'var(--space-3_5)'), 'right inset');
-    // The line centers on the button: one row.
-    const line = part(banner, 'lock-banner-line').getBoundingClientRect();
-    const mid = (r: DOMRect) => r.top + r.height / 2;
-    await expect(Math.abs(mid(line) - mid(button))).toBeLessThanOrEqual(0.5);
-  },
-};
-
-/**
  * Decided while it was open here: the hairline brightens, the line takes the whole row, and the
  * way on sits under it — `space-2_5` from the line's baseline to the buttons, ink to box. It is
  * announced politely.
@@ -214,7 +170,10 @@ export const LockHeld: Story = {
 export const LockDecided: Story = {
   render: () => <Decided />,
   play: async ({ canvasElement }) => {
-    const banner = within(canvasElement).getByRole('status');
+    // The live region is the words' slot; the banner is the box around it and its buttons.
+    const region = within(canvasElement).getByRole('status');
+    const banner = must(region.closest<HTMLElement>('[data-slot="lock-banner"]'));
+    await expect(region).not.toContainElement(within(banner).getAllByRole('button')[0] ?? null);
     await expect(banner).toHaveAttribute('data-state', 'decided');
     await expect(getComputedStyle(banner).borderTopColor).toEqual(
       sameColor(computedColor(banner, 'var(--fg2)')),
@@ -236,49 +195,34 @@ export const LockDecided: Story = {
   },
 };
 
-function Flips() {
-  const [state, setState] = useState<'held' | 'decided'>('held');
+function Arrives() {
+  const [decided, setDecided] = useState(false);
   return (
     <div className="flex flex-col gap-heading">
-      <button type="button" onClick={() => setState('decided')}>
+      <button type="button" onClick={() => setDecided(true)}>
         Decide elsewhere
       </button>
-      <LockBanner
-        state={state}
-        actions={state === 'held' ? <Button size="xs">Take over</Button> : <DecidedActions />}
-      >
-        {state === 'held' ? (
-          <>
-            <strong>Sarah</strong> has this open · 2 min
-          </>
-        ) : (
-          <>
-            <strong>Decided by Sarah</strong> · 14:42 · approved, the bay drawn
-          </>
-        )}
-      </LockBanner>
+      {decided && (
+        <LockBanner actions={<DecidedActions />}>
+          <strong>Decided by Sarah</strong> · 14:42 · approved, the bay drawn
+        </LockBanner>
+      )}
     </div>
   );
 }
 
-/**
- * The flip: held turns to decided in place. The banner keeps its top edge, becomes a polite live
- * region, and its border changes on the base motion token (zero under reduced motion).
- */
+/** Decided elsewhere while it was open here: the banner arrives as a polite live region, lit. */
 export const DecidedWhileYouLooked: Story = {
-  render: () => <Flips />,
+  render: () => <Arrives />,
   play: async ({ canvasElement }) => {
-    const banner = part(canvasElement, 'lock-banner');
-    const top = banner.getBoundingClientRect().top;
-    await expect(parseFloat(getComputedStyle(banner).transitionDuration) * 1000).toBe(
-      tokens.duration.base,
-    );
-    await expect(getComputedStyle(banner).transitionProperty).toBe('border-color');
-    const lit = computedColor(banner, 'var(--fg2)');
+    await expect(within(canvasElement).queryByRole('status')).toBeNull();
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Decide elsewhere' }));
-    await expect(within(canvasElement).getByRole('status')).toBe(banner);
+    const region = await within(canvasElement).findByRole('status');
+    const banner = must(region.closest<HTMLElement>('[data-slot="lock-banner"]'));
+    await expect(banner).toHaveAttribute('data-state', 'decided');
+    const lit = computedColor(banner, 'var(--fg2)'); // (a probe: never inside waitFor)
     await waitFor(() => expect(getComputedStyle(banner).borderTopColor).toEqual(sameColor(lit)));
-    await expect(banner.getBoundingClientRect().top).toBe(top);
+    await expect(within(banner).queryByRole('button', { name: 'Take over' })).toBeNull();
   },
 };
 
@@ -297,14 +241,13 @@ function Board() {
       </div>
       <div className="flex flex-col gap-heading">
         <span className={KICKER}>Lock banner</span>
-        <Held />
         <Decided />
       </div>
     </div>
   );
 }
 
-/** Every tone and both banners in all four maps: the rule reads on every ground. */
+/** Every tone and the banner in all four maps: the rule reads on every ground. */
 export const FourUp: Story = {
   render: () => <Board />,
   parameters: { fourUp: true },
@@ -319,6 +262,41 @@ export const FourUp: Story = {
         await expect(getComputedStyle(n).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
       }
       await expect(within(q).getAllByRole('status')).toHaveLength(1);
+    }
+  },
+};
+
+/**
+ * A quote (`.q`): someone's own words, a hairline rule in the faint ink — lighter than a note's —
+ * the words in italics a gap inside it.
+ */
+export const Quoted: Story = {
+  parameters: { fourUp: true },
+  render: () => (
+    <div className="flex w-[22rem] flex-col gap-(--space-3)">
+      <Quote>“Same pond. Everyone in town calls it Lot Pond.”</Quote>
+      <Note>
+        From the where of Luc Pelletier’s report: <strong>“through the Narrows”</strong>
+      </Note>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const quote = must(q.querySelector<HTMLElement>('[data-slot="quote"]'));
+      const note = must(q.querySelector<HTMLElement>('[data-slot="note"]'));
+      const qs = getComputedStyle(quote);
+      await expect(quote.tagName).toBe('BLOCKQUOTE');
+      await expect(qs.fontStyle).toBe('italic');
+      await expect(qs.borderLeftColor).toEqual(sameColor(computedColor(q, 'var(--fg3)')));
+      await expect(qs.color).toEqual(sameColor(computedColor(q, 'var(--fg2)')));
+      // Lighter than a note's rule: the hairline, not the note's 2 px.
+      await expect(parseFloat(qs.borderLeftWidth)).toBeLessThan(
+        parseFloat(getComputedStyle(note).borderLeftWidth),
+      );
+      // The words sit the same gap inside the rule as a note's.
+      await expect(qs.paddingLeft).toBe(getComputedStyle(note).paddingLeft);
     }
   },
 };

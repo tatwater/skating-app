@@ -39,6 +39,8 @@ export type SuspendDialogProps = {
   /** The clock the ends are read from. */
   now: number;
   timeZone?: string;
+  /** The reason's cap, passed to the dialog's field (the Inbox passes the server's); none by default. */
+  maxLength?: number;
   /** Runs the write; resolves what it came to (the dialog closes once it landed). */
   onConfirm: (args: {
     until: number;
@@ -76,6 +78,7 @@ export function SuspendDialog({
   replacesBan = false,
   now,
   timeZone,
+  maxLength,
   onConfirm,
 }: SuspendDialogProps) {
   const [choice, setChoice] = useState<string>(SUSPEND_DURATIONS[0].id);
@@ -101,6 +104,7 @@ export function SuspendDialog({
       description={words.body}
       confirm={words.confirm}
       reason
+      {...(maxLength !== undefined && { maxLength })}
       onConfirm={(reason) => onConfirm({ until: liftsAt(ms, now, from), reason, shape })}
     >
       <RadioGroup

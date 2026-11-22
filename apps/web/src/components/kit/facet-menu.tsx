@@ -20,11 +20,22 @@ import { FootKey } from './search-parts';
  *   `disabled` (its fact isn't recorded) is inert and skipped.
  */
 
+/**
+ * An option's count: a whole number, or one a read stopped short on — a floor, drawn "200+", as a
+ * section's capped count is (`section-slug`).
+ */
+export type FacetMenuCount = number | { count: number; capped: boolean };
+
+const countWords = (count: FacetMenuCount) =>
+  typeof count === 'number'
+    ? count.toLocaleString('en-US')
+    : `${count.count.toLocaleString('en-US')}${count.capped ? '+' : ''}`;
+
 export interface FacetMenuOption {
   id: string;
   label: string;
-  /** How many it would leave; absent when the read doesn't count. */
-  count?: number;
+  /** How many it would leave (a floor when capped); absent when the read doesn't count. */
+  count?: FacetMenuCount;
   /** Inert, and skipped by the keys. */
   disabled?: boolean;
 }
@@ -204,9 +215,12 @@ function FacetMenu({
                     {option.count !== undefined && (
                       <b
                         data-slot="facet-menu-count"
+                        data-capped={
+                          typeof option.count === 'object' && option.count.capped ? '' : undefined
+                        }
                         className="font-(family-name:--family-mono) text-kick leading-none font-medium text-fg3 tabular-nums group-aria-pressed/option:text-bg"
                       >
-                        {option.count.toLocaleString('en-US')}
+                        {countWords(option.count)}
                       </b>
                     )}
                   </button>

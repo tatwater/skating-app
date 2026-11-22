@@ -1,11 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useState } from 'react';
+import { type CSSProperties, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
-
+// The console's one distance formatter, as the Body console's map passes it (the bar picks the round
+// stop; the words are the caller's).
+import { formatDistance } from '../admin/body/tabs/places/placesModel';
 import {
   MapDock,
   MapHoverPlate,
   MapLayerRack,
+  MapLegend,
   MapModeBar,
   MapPane,
   MapScaleBar,
@@ -341,7 +344,7 @@ function Board({
       )}
       <Rack collapsed={collapsed} />
       <MapDock>
-        <MapScaleBar metersPerPixel={STILL_MPP} />
+        <MapScaleBar metersPerPixel={STILL_MPP} format={formatDistance} />
         <MapZoom {...(onZoomIn ? { onZoomIn } : {})} {...(onZoomOut ? { onZoomOut } : {})} />
       </MapDock>
       <MapHoverPlate
@@ -520,28 +523,69 @@ export const Zoom: Story = {
   },
 };
 
+/**
+ * The hover plate keeps inside its pane: a mark in the top right corner gets its plate to the left
+ * and below; one with room keeps it up and right.
+ */
+export const HoverPlateFlips: Story = {
+  render: () => (
+    <div className="flex gap-(--space-4) p-(--space-4)">
+      <MapPane data-corner="" style={{ width: 300, height: 200 }}>
+        <MapHoverPlate at={{ x: 285, y: 15 }} title="Put-in · this alert">
+          Fairlee town launch
+        </MapHoverPlate>
+      </MapPane>
+      <MapPane data-room="" style={{ width: 300, height: 200 }}>
+        <MapHoverPlate at={{ x: 40, y: 150 }} title="Island · OSM">
+          Relham Island
+        </MapHoverPlate>
+      </MapPane>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const sel of ['[data-corner]', '[data-room]']) {
+      await waitFor(() => {
+        const p = must(canvasElement.querySelector<HTMLElement>(sel));
+        const plate = slot(p, 'map-hover-plate').getBoundingClientRect();
+        const box = p.getBoundingClientRect();
+        expect(plate.left).toBeGreaterThanOrEqual(box.left);
+        expect(plate.right).toBeLessThanOrEqual(box.right);
+        expect(plate.top).toBeGreaterThanOrEqual(box.top);
+        expect(plate.bottom).toBeLessThanOrEqual(box.bottom);
+      });
+    }
+    const room = slot(
+      must(canvasElement.querySelector<HTMLElement>('[data-room]')),
+      'map-hover-plate',
+    );
+    await expect(room).not.toHaveAttribute('data-flip-x');
+    await expect(room).not.toHaveAttribute('data-flip-y');
+  },
+};
+
 const MPPS = [0.6, 2.4, 9, 26, 60] as const;
 
 /**
- * The scale bar at five zooms: the longest round distance (1, 2 or 5 × 10ⁿ m) that fits 96 px.
- * A hairline bracket, its mono label over it.
+ * The scale bar at five zooms: the longest round distance that fits 96 px, in the app's units
+ * (feet to 500, then miles from a tenth), worded by the console's formatter and set in caps. A
+ * hairline bracket, its mono label over it.
  */
 export const ScaleSteps: Story = {
   render: () => (
     <div className="flex flex-col items-end gap-(--space-4) p-(--space-4)">
       {MPPS.map((mpp) => (
-        <MapScaleBar key={mpp} metersPerPixel={mpp} />
+        <MapScaleBar key={mpp} metersPerPixel={mpp} format={formatDistance} />
       ))}
     </div>
   ),
   play: async ({ canvasElement }) => {
     const bars = [...canvasElement.querySelectorAll<HTMLElement>('[data-slot="map-scale"]')];
     await expect(bars.map((b) => slot(b, 'map-scale-label').textContent)).toEqual([
-      '50 M',
-      '200 M',
-      '500 M',
-      '2 KM',
-      '5 KM',
+      '100 ft',
+      '0.1 mi',
+      '0.5 mi',
+      '1.0 mi',
+      '2.0 mi',
     ]);
     const hair = resolvePx(canvasElement, 'var(--stroke-hair)');
     for (const [i, bar] of bars.entries()) {
@@ -556,7 +600,12 @@ export const ScaleSteps: Story = {
         /Martian Mono/,
       );
     }
-    await expect(bars[3]).toHaveAccessibleName('Scale: 2 kilometers');
+    await expect(bars[3]).toHaveAccessibleName('Scale: 1.0 miles');
+    await expect(bars[0]).toHaveAccessibleName('Scale: 100 feet');
+    // Set in the bar's caps.
+    await expect(getComputedStyle(slot(must(bars[0]), 'map-scale-label')).textTransform).toBe(
+      'uppercase',
+    );
   },
 };
 
@@ -577,7 +626,7 @@ export const FourUp: Story = {
         <SwitchRow label="Bathy" kbd="⌥B" disabled />
       </MapLayerRack>
       <MapDock>
-        <MapScaleBar metersPerPixel={9} />
+        <MapScaleBar metersPerPixel={9} format={formatDistance} />
         <MapZoom />
       </MapDock>
       <MapHoverPlate at={{ x: 180, y: 250 }} title="Island · OSM" caption="Named by OSM">
@@ -623,7 +672,7 @@ export const Live: Story = {
         <MapStill />
         <Rack />
         <MapDock>
-          <MapScaleBar metersPerPixel={mpp} />
+          <MapScaleBar metersPerPixel={mpp} format={formatDistance} />
           <MapZoom
             onZoomIn={() => setZ((v) => v + 1)}
             onZoomOut={() => setZ((v) => v - 1)}
@@ -640,5 +689,41 @@ export const Live: Story = {
     const before = label();
     await userEvent.click(canvas.getByRole('button', { name: 'Zoom in' }));
     await waitFor(() => expect(label()).not.toBe(before));
+  },
+};
+
+// ── The legend plate (the Inbox's map embeds, 2.3 and 2.5) ──────────────────────────────────
+
+const LEGEND = [
+  { label: 'Catalog outline · not ours yet', ink: 'var(--fg)', width: 1.5, dash: [4.5, 3] },
+  { label: 'Kate Donovan’s skate', ink: 'var(--fg2)', width: 1.5 },
+  { label: 'Ours', ink: 'var(--fg3)', width: 1, dash: [4, 3] },
+];
+
+function LegendOnMap() {
+  return (
+    <div
+      className="w-fit bg-map-earth p-(--space-3)"
+      style={{ '--map-ground': 'var(--map-earth)' } as CSSProperties}
+    >
+      <MapLegend items={LEGEND} />
+    </div>
+  );
+}
+
+/** The legend in all four maps: each swatch drawn in the ink it names, on the map plate. */
+export const LegendFourUp: Story = {
+  render: () => <LegendOnMap />,
+  parameters: { fourUp: true },
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const swatch = must(q.querySelector('[data-slot="map-legend-swatch"] path'));
+      await expect(getComputedStyle(swatch).stroke).toEqual(
+        sameColor(computedColor(q, 'var(--fg)')),
+      );
+      await expect(q.querySelectorAll('[data-slot="map-legend-item"]')).toHaveLength(3);
+    }
   },
 };

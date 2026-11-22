@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { PEOPLE_PAGE_MAX, PEOPLE_PAGE_SIZE, type PeopleLane } from '@skating/core';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import {
   isFailed,
@@ -10,10 +10,10 @@ import {
   read,
   useConsoleReadSet,
 } from '../../reads/consoleReads';
+import { type ChainStatus, joinChain, useJoinedPages } from '../../reads/joinChain';
+import { useChainedPages } from '../../reads/useChainedPages';
 import { useHeldRead } from '../../shell/presence';
-import { mustSplit } from './pageChain';
 import type { Backfill, LanesRead, PartialReason, PeoplePage, PersonListRow } from './peopleModel';
-import { useChainedPages } from './useChainedPages';
 
 /**
  * The People list's reads, through the console's one read layer (`reads/consoleReads`): each read
@@ -27,10 +27,11 @@ import { useChainedPages } from './useChainedPages';
  *   before it ended on. `listPage` takes a cursor and a page size and answers with its rows and the
  *   page's own `partial`, `reasons` and `pending` — not Convex's paginated contract, so it can't go
  *   through `usePaginatedQuery`, which would drop those three anyway. Each page is a subscription,
- *   and the chain is stitched as Convex's own is (`pageChain`): a page read past is pinned to where
- *   it ended (`endCursor`), so a person joining or leaving it moves nothing on the pages after it.
- *   While a page is pinned its rows stand from its last answer, which covered exactly that range
- *   (`useChainedPages`, which the record sheet's lists read too).
+ *   and the chain is stitched as Convex's own is (`reads/pageChain`): a page read past is pinned to
+ *   where it ended (`endCursor`), so a person joining or leaving it moves nothing on the pages after
+ *   it. While a page is pinned its rows stand from its last answer, which covered exactly that range
+ *   (`reads/useChainedPages`, which the record sheet's and the Inbox's lists read too), and the
+ *   pages are joined by the rule every such list shares (`reads/joinChain`).
  */
 
 // ── The lanes ────────────────────────────────────────────────────────────────────────────────
@@ -69,19 +70,8 @@ export function startingPageSize(memoryKey: string): number {
   return Math.min(PEOPLE_PAGE_MAX, Math.max(PEOPLE_PAGE_SIZE, shownMemory.get(memoryKey) ?? 0));
 }
 
-export type ListStatus =
-  /** No read is made: the viewer can't read people. */
-  | 'unread'
-  /** The first page is on its way. */
-  | 'loading'
-  /** A page failed (the first: no rows; a later one: the rows so far). */
-  | 'error'
-  /** A next page is on its way. */
-  | 'fetching'
-  /** More to come, not yet asked for. */
-  | 'more'
-  /** Every row is in. */
-  | 'done';
+/** Where the list stands — the shared chain's statuses (`reads/joinChain`). */
+export type ListStatus = ChainStatus;
 
 export interface PagesState {
   status: ListStatus;
@@ -129,7 +119,7 @@ export function usePeoplePages(args: PagesArgs | null): PagesState {
 
   // Joined once per change of a page, so the rows (and the list drawn from them) keep their
   // identity through every render that changes no page — a minute's tick, a registry emit.
-  const joined = useJoined(args === null ? null : pages);
+  const joined = useJoinedPages(args === null ? null : pages, joinPages);
   const { rows } = joined;
   const failure: ReadFailure | null = joined.failed
     ? { failed: true, pending: retrying, retry }
@@ -157,64 +147,22 @@ type Joined = {
   failed: boolean;
 };
 
-/** The pages joined into one list — recomputed only when a page itself changed. */
-function useJoined(pages: readonly Loadable<PeoplePage>[] | null): Joined {
-  const cache = useRef<{ pages: readonly Loadable<PeoplePage>[] | null; value: Joined } | null>(
-    null,
-  );
-  const last = cache.current;
-  if (last !== null && samePages(last.pages, pages)) return last.value;
-  const value = joinPages(pages);
-  cache.current = { pages, value };
-  return value;
-}
-
-function samePages(
-  a: readonly Loadable<PeoplePage>[] | null,
-  b: readonly Loadable<PeoplePage>[] | null,
-): boolean {
-  if (a === null || b === null) return a === b;
-  return a.length === b.length && a.every((p, i) => p === b[i]);
-}
-
 /**
  * The chain's rows in order, each person once (a page re-read from a new start can still hold a
  * row the next page holds), what every page read says it may be missing, and where the chain stops:
  * a failed page (the rows before it stand), a page on its way or to be split, or the last page's end.
  */
 export function joinPages(pages: readonly Loadable<PeoplePage>[] | null): Joined {
-  if (pages === null)
-    return { status: 'unread', rows: [], reasons: [], pending: [], failed: false };
-  const rows: PersonListRow[] = [];
-  const seen = new Set<string>();
+  const { status, rows, read, failed } = joinChain(
+    pages,
+    (page) => page.rows,
+    (row) => row.userId,
+  );
   const reasons = new Set<PartialReason>();
   const pending = new Set<Backfill>();
-  let status: ListStatus = 'done';
-  let failed = false;
-  for (const [i, page] of pages.entries()) {
-    if (isFailed(page)) {
-      status = 'error';
-      failed = true;
-      break;
-    }
-    if (page === undefined) {
-      status = i === 0 ? 'loading' : 'fetching';
-      break;
-    }
-    for (const row of page.rows) {
-      if (seen.has(row.userId)) continue;
-      seen.add(row.userId);
-      rows.push(row);
-    }
+  for (const page of read) {
     for (const r of page.reasons) reasons.add(r);
     for (const b of page.pending) pending.add(b);
-    // A page the server says must be split holds only the start of its range: its rows stand, and
-    // nothing after them is drawn until the split pages land (a gap would read as a lost row).
-    if (mustSplit(page)) {
-      status = 'fetching';
-      break;
-    }
-    if (i === pages.length - 1) status = page.isDone ? 'done' : 'more';
   }
   return {
     status,

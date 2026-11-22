@@ -10,7 +10,6 @@ import {
   MAX_CLEAR_CALLS,
   MAX_WAVES,
   operatorRefusal,
-  parseRunOutput,
   planSeed,
   runAsFor,
   runLogName,
@@ -351,14 +350,6 @@ describe('the small pieces', () => {
       '✖ Could not reach the deployment',
     );
     expect(serverSentence('Command failed: pnpm …')).toBe('convex run failed with no message');
-  });
-
-  test('what convex run printed is parsed: a value, nothing, or the last JSON block', () => {
-    expect(parseRunOutput('{\n  "done": true\n}\n')).toEqual({ done: true });
-    expect(parseRunOutput('"j57abc"')).toBe('j57abc');
-    expect(parseRunOutput('')).toBeUndefined();
-    expect(parseRunOutput('a log line\n{"ok": 1}')).toEqual({ ok: 1 });
-    expect(() => parseRunOutput('not json at all')).toThrow(/unparseable/);
   });
 
   test('tally prints what moved, or nothing', () => {

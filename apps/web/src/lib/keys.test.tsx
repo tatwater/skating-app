@@ -1,9 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode, useRef, useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ReasonAsk } from '@/components/admin/body/tabs/access/ReasonAsk';
+import { AskDialog } from '@/components/admin/people/person/AskDialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
+import { Sheet, SheetContent, SheetTitle } from '@/components/kit/sheet';
 
 import {
   assertBindable,
@@ -16,6 +20,7 @@ import {
   KeysProvider,
   modKey,
   type PaneKey,
+  releaseHeldKeys,
   useGlobalKey,
   useGoMode,
   useGoTarget,
@@ -398,6 +403,282 @@ describe('the layer, end to end (jsdom)', () => {
     await user.keyboard('g');
     expect(screen.getByLabelText('Go')).toHaveTextContent('closed');
     expect(screen.getByLabelText('Note')).toHaveValue('g');
+  });
+});
+
+describe('a held key', () => {
+  /** A key held down: its press, the browser's key-repeat presses, then its release. */
+  function hold(target: Element, init: KeyboardEventInit, repeats: number) {
+    act(() => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { ...init, bubbles: true }));
+      for (let i = 0; i < repeats; i++) {
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', { ...init, repeat: true, bubbles: true }),
+        );
+      }
+      target.dispatchEvent(new KeyboardEvent('keyup', { ...init, bubbles: true }));
+    });
+  }
+
+  function Pane({
+    onAct,
+    onBack,
+    onPalette,
+  }: {
+    onAct: () => void;
+    onBack: () => void;
+    onPalette: () => void;
+  }) {
+    const pane = useRef<HTMLElement>(null);
+    const [at, setAt] = useState(0);
+    usePaneKeys(pane, [
+      { key: 'H', run: onAct, label: 'Hide' },
+      { key: 'Shift+Enter', run: onBack, label: 'Back' },
+    ]);
+    useGlobalKey('Mod+K', onPalette);
+    const rows = ['Mascoma', 'Crystal', 'Morey', 'Sunapee', 'Newfound'];
+    return (
+      <section ref={pane} aria-label="Detail">
+        <button type="button">Hide</button>
+        {/* A list's own ↑↓ (its roving cursor), as the kit's lists keep them. */}
+        <div
+          role="listbox"
+          tabIndex={0}
+          aria-label="Bodies"
+          aria-activedescendant={`row-${at}`}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') setAt((n) => Math.min(n + 1, rows.length - 1));
+          }}
+        >
+          {rows.map((r, i) => (
+            <div key={r} id={`row-${i}`} role="option" tabIndex={-1} aria-selected={i === at}>
+              {r}
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function setup() {
+    const calls = { act: 0, back: 0, palette: 0 };
+    render(
+      <KeysProvider>
+        <Pane
+          onAct={() => calls.act++}
+          onBack={() => calls.back++}
+          onPalette={() => calls.palette++}
+        />
+      </KeysProvider>,
+    );
+    const list = screen.getByRole('listbox', { name: 'Bodies' });
+    act(() => list.focus());
+    return { calls, list };
+  }
+
+  it('an action letter acts once however long it is held, and again on the next press', () => {
+    const { calls } = setup();
+    // (On a button in the pane: a listbox keeps printable keys for its own type-ahead.)
+    const button = screen.getByRole('button', { name: 'Hide' });
+    act(() => button.focus());
+    hold(button, { key: 'h', code: 'KeyH' }, 6);
+    expect(calls.act).toBe(1);
+    hold(button, { key: 'h', code: 'KeyH' }, 6);
+    expect(calls.act).toBe(2);
+  });
+
+  it('⏎ as an action and ⌘K act once per press too', () => {
+    const { calls, list } = setup();
+    hold(list, { key: 'Enter', code: 'Enter', shiftKey: true }, 5);
+    expect(calls.back).toBe(1);
+    const mod = modKey() === 'Meta' ? { metaKey: true } : { ctrlKey: true };
+    hold(list, { key: 'k', code: 'KeyK', ...mod }, 5);
+    expect(calls.palette).toBe(1);
+  });
+
+  it('a held ↓ still walks the list, a row per repeat', () => {
+    const { list } = setup();
+    hold(list, { key: 'ArrowDown', code: 'ArrowDown' }, 3);
+    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('Newfound');
+  });
+});
+
+describe('a held key does not type into what it opened', () => {
+  /** A key pressed (fresh): its keydown at whatever has focus. */
+  const press = (init: KeyboardEventInit) =>
+    act(() => {
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true }),
+      );
+    });
+  /** Its key-repeat keydowns, at whatever has focus by then; each, whether it was swallowed. */
+  const repeat = (init: KeyboardEventInit, n = 4) =>
+    Array.from({ length: n }, () => {
+      const e = new KeyboardEvent('keydown', {
+        ...init,
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        (document.activeElement ?? document.body).dispatchEvent(e);
+      });
+      return e.defaultPrevented;
+    });
+  const release = (init: KeyboardEventInit) =>
+    act(() => {
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keyup', { ...init, bubbles: true }),
+      );
+    });
+
+  type Dialog = 'field' | 'reason-ask' | 'ask-dialog' | 'popover' | 'sheet';
+  function Opener({ dialog, typed }: { dialog: Dialog; typed: (key: string) => void }) {
+    const pane = useRef<HTMLElement>(null);
+    const [open, setOpen] = useState(false);
+    usePaneKeys(pane, [
+      { key: 'D', run: () => setOpen(true), label: 'Dismiss' },
+      { key: 'Shift+Enter', run: () => typed('back'), label: 'Back' },
+    ]);
+    return (
+      <section ref={pane} aria-label="Detail">
+        <button type="button">Dismiss</button>
+        {open && dialog === 'field' && (
+          // biome-ignore lint/a11y/noAutofocus: a dialog's field takes focus as it opens
+          <input aria-label="Reason" autoFocus onKeyDown={(e) => typed(e.key)} />
+        )}
+        {dialog === 'reason-ask' && (
+          <ReasonAsk
+            open={open}
+            onOpenChange={setOpen}
+            title="Dismiss the flag"
+            confirm="Dismiss"
+            optional
+            maxLength={500}
+            onConfirm={async () => true}
+          />
+        )}
+        {dialog === 'popover' && (
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger render={<button type="button" />}>Filter</PopoverTrigger>
+            <PopoverContent>
+              {/* biome-ignore lint/a11y/noAutofocus: the popover's field takes focus as it opens */}
+              <input aria-label="Body" autoFocus />
+            </PopoverContent>
+          </Popover>
+        )}
+        {dialog === 'sheet' && (
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetContent>
+              <SheetTitle>Reports around it</SheetTitle>
+              {/* biome-ignore lint/a11y/noAutofocus: the sheet's field takes focus as it opens */}
+              <input aria-label="Note" autoFocus />
+            </SheetContent>
+          </Sheet>
+        )}
+        {dialog === 'ask-dialog' && (
+          <AskDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Dismiss the flag"
+            description="The flag closes."
+            confirm="Dismiss"
+            reason="optional"
+            onConfirm={async () => 'done' as never}
+          />
+        )}
+      </section>
+    );
+  }
+
+  function setup(dialog: Dialog) {
+    const typed: string[] = [];
+    render(
+      <KeysProvider>
+        <Opener dialog={dialog} typed={(k) => typed.push(k)} />
+      </KeysProvider>,
+    );
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus());
+    return typed;
+  }
+  const D = { key: 'd', code: 'KeyD' };
+
+  afterEach(() => releaseHeldKeys());
+
+  it('held D opens the reason once; its repeats never reach the field, and are kept from typing', () => {
+    const typed = setup('field');
+    press(D);
+    const field = screen.getByRole('textbox', { name: 'Reason' });
+    expect(field).toHaveFocus();
+    expect(repeat(D)).toEqual([true, true, true, true]);
+    expect(typed).toEqual([]);
+    expect(field).toHaveValue('');
+  });
+
+  it('released, the same letter typed into the field types', async () => {
+    setup('field');
+    press(D);
+    repeat(D);
+    release(D);
+    // Let go: nothing of the hold is left listening.
+    expect(repeat(D, 1)).toEqual([false]);
+    await userEvent.keyboard('d');
+    expect(screen.getByRole('textbox', { name: 'Reason' })).toHaveValue('d');
+  });
+
+  it.each([
+    ['ReasonAsk', 'reason-ask'],
+    ['AskDialog', 'ask-dialog'],
+    ['the kit popover', 'popover'],
+    ['the kit sheet', 'sheet'],
+  ] as const)(
+    '%s: the held key’s repeats are swallowed in the field it focuses',
+    async (_, dialog) => {
+      setup(dialog);
+      press(D);
+      const field = await screen.findByRole('textbox');
+      await waitFor(() => expect(field).toHaveFocus());
+      expect(repeat(D)).toEqual([true, true, true, true]);
+      release(D);
+      await userEvent.keyboard('d');
+      expect(field).toHaveValue('d');
+    },
+  );
+
+  it('a fresh press ends a hold whose release was missed', () => {
+    setup('field');
+    press(D);
+    // No keyup came (the window lost it): the next press is fresh, and is let through.
+    const fresh = new KeyboardEvent('keydown', { ...D, bubbles: true, cancelable: true });
+    act(() => {
+      screen.getByRole('textbox', { name: 'Reason' }).dispatchEvent(fresh);
+    });
+    expect(repeat(D, 1)).toEqual([false]);
+  });
+
+  it('leaves an IME composition, other keys and a held modifier alone; a held ⇧⏎ acts once', () => {
+    const typed = setup('field');
+    press(D);
+    expect(repeat({ ...D, isComposing: true }, 2)).toEqual([false, false]);
+    expect(repeat({ key: 'e', code: 'KeyE' }, 1)).toEqual([false]);
+    release(D);
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus());
+    const enter = { key: 'Enter', code: 'Enter', shiftKey: true };
+    press(enter);
+    expect(repeat(enter)).toEqual([true, true, true, true]);
+    // ⇧ itself, held through the chord, repeats as it would.
+    expect(repeat({ key: 'Shift', code: 'ShiftLeft', shiftKey: true }, 2)).toEqual([false, false]);
+    release(enter);
+    expect(typed.filter((t) => t === 'back')).toEqual(['back']);
+  });
+
+  it('a window blur lets go of a hold', () => {
+    setup('field');
+    press(D);
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    expect(repeat(D, 1)).toEqual([false]);
   });
 });
 

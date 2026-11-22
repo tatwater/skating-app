@@ -35,9 +35,10 @@ export type BodyConsoleSearch = {
 
 /**
  * Where `from` may point. The Bodies list is the console's own home for bodies; the old find-a-lake
- * page still links here while it stands, and a link from there returns there.
+ * page still links here while it stands, and a link from there returns there; an Inbox item's
+ * *Open in Body →* returns to the item, its lane and filter in its search (`?lane=…&item=…`).
  */
-export const RETURN_PATHS = ['/admin/bodies', '/admin/water'] as const;
+export const RETURN_PATHS = ['/admin/bodies', '/admin/water', '/admin/inbox'] as const;
 
 /** Where the place control and ⇧⏎ go when no `from` came with the link: the Bodies list. */
 export const DEFAULT_RETURN = '/admin/bodies';

@@ -1,9 +1,12 @@
 import { render } from '@testing-library/react';
+import fc from 'fast-check';
 import { useMemo } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freezeUpLaneIds } from '@/components/useFreezeUpFrame';
+import { type BBoxLike, fitCamera, type Padding } from '@/lib/mapSurface';
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
+import { floorZoom, ZOOM_OUT_ROOM } from './bodyMapFraming';
 import { adminToken } from './bodyMapPalette';
 import { DEFAULT_LAYERS, type DrawnScene, drawScene } from './bodyScene';
 import { DOT_SOURCE, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
@@ -137,12 +140,14 @@ const shell = vi.hoisted(() => ({
   map: null as FakeMap | null,
   live: false,
   onLoad: null as ((m: FakeMap) => void) | null,
+  maxBounds: null as unknown,
 }));
 
 vi.mock('@/lib/mapCanvas', () => ({
   MAP_CONTAINER_CLASS: 'size-full',
-  useMapCanvas: (opts: { onLoad: (m: FakeMap) => void }) => {
+  useMapCanvas: (opts: { onLoad: (m: FakeMap) => void; maxBounds?: unknown }) => {
     shell.onLoad = opts.onLoad;
+    shell.maxBounds = opts.maxBounds;
     const live = shell.live;
     const map = shell.map;
     // A fresh identity per readiness, as the real accessor has.
@@ -164,7 +169,7 @@ vi.mock('@/lib/env', async (importOriginal) => {
   };
 });
 
-const { useBodyMapCanvas } = await import('./useBodyMapCanvas');
+const { FIT_PADDING: FIT_PADDING_FOR_TEST, useBodyMapCanvas } = await import('./useBodyMapCanvas');
 
 /** Imagery's lit pass, as its scene hands it to the frame. */
 const PASS: NonNullable<DrawnScene['raster']> = {
@@ -182,13 +187,17 @@ function Harness({
   mode,
   bbox = MASCOMA_BOUNDS,
   raster = null,
+  padding,
+  reach,
 }: {
   mode: 'dark' | 'light';
   bbox?: typeof MASCOMA_BOUNDS;
   raster?: DrawnScene['raster'];
+  padding?: Padding;
+  reach?: BBoxLike | null;
 }) {
   const drawn = useMemo(() => ({ ...drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), raster }), [raster]);
-  const canvas = useBodyMapCanvas({ bbox, mode, drawn });
+  const canvas = useBodyMapCanvas({ bbox, mode, drawn, padding, reach });
   return <div data-testid="zoom">{canvas.surface ? 'live' : 'waiting'}</div>;
 }
 
@@ -429,5 +438,77 @@ describe('useBodyMapCanvas', () => {
       // Framed once, at the size it was shown at.
       expect(map.jumps).toBe(1);
     });
+  });
+});
+
+/** Loads the harness's map and makes it live; returns the map. */
+function loadLive(props: Parameters<typeof Harness>[0]) {
+  const map = shell.map as FakeMap;
+  const { rerender } = render(<Harness {...props} />);
+  map.loaded = true;
+  shell.onLoad?.(map);
+  shell.live = true;
+  rerender(<Harness {...props} />);
+  return map;
+}
+
+describe('an embed’s own room and reach (the Inbox)', () => {
+  it('frames inside the padding it is given, the console’s by default', () => {
+    const consoleZoom = loadLive({ mode: 'dark' }).zoom;
+    shell.map = new FakeMap();
+    const none = { top: 0, right: 0, bottom: 0, left: 0 };
+    const bare = loadLive({ mode: 'dark', padding: none });
+    // No chrome to leave room for: the same body frames closer.
+    expect(bare.zoom).toBeGreaterThan(consoleZoom);
+    expect(bare.zoom).toBeCloseTo(fitCamera(MASCOMA_BOUNDS, 656, 830, none).zoom, 6);
+  });
+
+  it('fences to the reach and lets the floor see it whole, when the reach is wider', () => {
+    const w = MASCOMA_BOUNDS.maxLng - MASCOMA_BOUNDS.minLng;
+    const h = MASCOMA_BOUNDS.maxLat - MASCOMA_BOUNDS.minLat;
+    const reach = {
+      minLng: MASCOMA_BOUNDS.minLng - 4 * w,
+      maxLng: MASCOMA_BOUNDS.maxLng + 4 * w,
+      minLat: MASCOMA_BOUNDS.minLat - 4 * h,
+      maxLat: MASCOMA_BOUNDS.maxLat + 4 * h,
+    };
+    const map = loadLive({ mode: 'dark', reach });
+    const reachZoom = fitCamera(reach, 656, 830, FIT_PADDING_FOR_TEST).zoom;
+    expect(map.minZoom).toBeCloseTo(reachZoom, 6);
+    expect(map.minZoom).toBeLessThan(map.zoom - ZOOM_OUT_ROOM);
+    expect(shell.maxBounds).toEqual([
+      [reach.minLng - (reach.maxLng - reach.minLng), reach.minLat - (reach.maxLat - reach.minLat)],
+      [reach.maxLng + (reach.maxLng - reach.minLng), reach.maxLat + (reach.maxLat - reach.minLat)],
+    ]);
+  });
+
+  it('keeps the frame’s own fence and floor with no reach', () => {
+    const map = loadLive({ mode: 'dark', reach: null });
+    expect(map.minZoom).toBeCloseTo(map.zoom - ZOOM_OUT_ROOM, 6);
+    const b = MASCOMA_BOUNDS;
+    const dx = b.maxLng - b.minLng;
+    const dy = b.maxLat - b.minLat;
+    expect(shell.maxBounds).toEqual([
+      [b.minLng - dx, b.minLat - dy],
+      [b.maxLng + dx, b.maxLat + dy],
+    ]);
+  });
+});
+
+describe('floorZoom', () => {
+  it('is a step and a half out, or the reach’s own zoom when that is further out', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        fc.option(fc.double({ min: 0, max: 20, noNaN: true })),
+        (framing, reachZoom) => {
+          const floor = floorZoom(framing, reachZoom);
+          expect(floor).toBeLessThanOrEqual(framing - ZOOM_OUT_ROOM);
+          if (reachZoom !== null) expect(floor).toBeLessThanOrEqual(reachZoom);
+          expect([framing - ZOOM_OUT_ROOM, reachZoom]).toContain(floor);
+        },
+      ),
+    );
+    expect(floorZoom(12)).toBe(12 - ZOOM_OUT_ROOM);
   });
 });

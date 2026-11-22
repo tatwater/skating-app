@@ -20,7 +20,10 @@ const meta = {
   args: { children: 'Open' },
   argTypes: {
     variant: { control: 'inline-radio', options: ['solid', 'outline', 'live'] },
-    tone: { control: 'inline-radio', options: ['default', 'lit', 'dim', 'warn', 'bad', 'acc'] },
+    tone: {
+      control: 'inline-radio',
+      options: ['default', 'lit', 'bright', 'dim', 'warn', 'bad', 'acc'],
+    },
   },
 } satisfies Meta<typeof Badge>;
 
@@ -70,6 +73,20 @@ export const OutlineNow: Story = {
 };
 
 /** The alternative the queue suggests: the gray hairline. */
+/**
+ * Outlined in the bright ink: a fact that stands until someone changes it — the access dispute's
+ * *Standing ruling* (2.2). Brighter than `lit`, whose hairline is a step down.
+ */
+export const OutlineBright: Story = {
+  args: { variant: 'outline', tone: 'bright', children: 'Standing ruling' },
+  play: async ({ canvasElement }) => {
+    const el = must(canvasElement.querySelector<HTMLElement>('[data-slot="badge"]'));
+    const fg = computedColor(el, 'var(--fg)');
+    await expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(fg));
+    await expect(getComputedStyle(el).color).toEqual(sameColor(fg));
+  },
+};
+
 export const OutlineSuggested: Story = { args: { variant: 'outline', children: 'Suggested' } };
 
 /** A muted claim: dashed. */
@@ -163,10 +180,11 @@ export const Tags: Story = {
 
 // ── Matrix and four-up ────────────────────────────────────────────────────────────────────────
 
-const TONES = ['default', 'lit', 'dim', 'warn', 'bad', 'acc'] as const;
+const TONES = ['default', 'lit', 'bright', 'dim', 'warn', 'bad', 'acc'] as const;
 const LABEL = {
   default: 'Open',
   lit: 'Known',
+  bright: 'Standing ruling',
   dim: 'Stale',
   warn: 'Waiting',
   bad: 'Failed',

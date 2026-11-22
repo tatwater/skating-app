@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { PersonName, personNameClass } from '@/components/PersonName';
 import { cn } from '@/lib/utils';
 import { Avatar, type AvatarProps } from './avatar';
@@ -146,4 +146,35 @@ function PersonLockup({
   );
 }
 
-export { PersonLockup, type PersonLockupProps };
+type PersonBylineProps = Omit<PersonLockupProps, 'size' | 'nameAs'> & {
+  /** Their standing, and when ("Trusted · 58 pts", "Trusted · 22 pts · 14 Oct 08:52"). */
+  meta?: ReactNode;
+};
+
+/**
+ * **A byline** (the Inbox's `.byline`, under a flag's quote on 2.1, 2.6 and 2.7): who said it — the
+ * person lockup at the body step (face, real name, @handle) — and, at the line's far end, their
+ * standing and when, as a mono micro line. The two share the text's baseline; the lockup truncates
+ * before the standing does.
+ */
+function PersonByline({ meta, className, ...lockup }: PersonBylineProps) {
+  return (
+    <div
+      data-slot="person-byline"
+      className={cn('flex min-w-0 items-baseline justify-between gap-(--space-3)', className)}
+    >
+      {/* On the text's baseline (the face alone centers), so the name and the standing share it. */}
+      <PersonLockup size="md" {...lockup} className="items-baseline" />
+      {meta != null && (
+        <span
+          data-slot="person-byline-meta"
+          className="shrink-0 font-(family-name:--family-mono) text-kick leading-none tracking-micro whitespace-nowrap text-fg3 uppercase"
+        >
+          {meta}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export { PersonByline, type PersonBylineProps, PersonLockup, type PersonLockupProps };

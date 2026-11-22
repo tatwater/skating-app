@@ -80,8 +80,11 @@ export const Reorder: Story = {
     await userEvent.keyboard(' ');
     const association = { label: 'Mascoma Lake Association', url: 'https://mascomalake.org' };
     const dam = { label: 'Lake level at Mascoma Lake Dam', url: 'https://des.nh.gov/dams' };
-    // The new order, and the list it was built on (the server refuses it if that moved).
-    await expect(args.onSave).toHaveBeenCalledWith([dam, association], [association, dam]);
+    // The new order, and the list it was built on (the server refuses it if that moved) — waited
+    // for: the drop sends it after its own state update, not inside the key press.
+    await waitFor(() =>
+      expect(args.onSave).toHaveBeenCalledWith([dam, association], [association, dam]),
+    );
   },
 };
 

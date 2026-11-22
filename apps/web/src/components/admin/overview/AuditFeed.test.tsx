@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { stubJsdomAnimations } from '@/components/admin/body/tabs/jsdomStubs';
 import { AuditFeed } from './AuditFeed';
 import type { FeedRow } from './overviewData';
+
+// The feed scrolls in the kit's ScrollArea, whose viewport asks for the Web Animations jsdom lacks
+// (`getAnimations`, from a timer after the render): without the shared stub that timer throws.
+beforeAll(stubJsdomAnimations);
 
 const row = (over: Partial<FeedRow>): FeedRow => ({
   id: 'a',

@@ -43,11 +43,18 @@ import { WORDS } from './personWords';
  */
 
 /** Where a feed can send the operator; the route hands the router's link. */
-export type PersonTarget = { kind: 'flags' } | { kind: 'support' } | { kind: 'people' };
+export type PersonTarget =
+  /** An open flag's item in the Inbox: the Inbox resolves a source ref to the item that holds it. */
+  | { kind: 'inboxFlag'; flagId: string }
+  | { kind: 'flags' }
+  | { kind: 'support' }
+  | { kind: 'people' };
 
 /** The console's routes for each target, when no router is handed in. */
 export function personHref(to: PersonTarget): string {
   switch (to.kind) {
+    case 'inboxFlag':
+      return `/admin/inbox?item=${encodeURIComponent(`flag:${to.flagId}`)}`;
     case 'flags':
       return '/admin/flags';
     case 'support':
@@ -188,7 +195,9 @@ export function OpenAbout({
                 when={<Tag>Inbox</Tag>}
                 who={ageInWords(f.createdAt, now)}
                 action={
-                  <GoLink to={{ kind: 'flags' }} linkTo={linkTo}>
+                  // The flag's item in the Inbox; an appeal (a ticket) keeps the old Support page
+                  // until the Inbox's ticket handler lands.
+                  <GoLink to={{ kind: 'inboxFlag', flagId: f.flagId }} linkTo={linkTo}>
                     Handle
                   </GoLink>
                 }

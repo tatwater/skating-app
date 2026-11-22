@@ -8,7 +8,11 @@ mutations a skater's app calls**, signed as themselves; the moderator acts a see
 row goes through the real writers, audit rows and Inbox hooks.
 
 **Nothing real is decided, closed or changed.** Every moderator act lands on something the seed
-itself filed — the dispute's ruling is on a body the seed drew and approved, never a real one. Real
+itself filed. The bodies an ask or a ruling needs in a particular state are the seed's own drawings,
+approved and put in that state by the operator: *Town Beach Pond* ruled accessible (then disputed),
+*Posted Farm Pond* ruled to have no public access (then contested), *Quiet Hollow Pond* shelved by
+hand (then asked back), and *Beaver Flowage* removed by an approved takedown (then asked to be
+restored) — so the plan never depends on dev holding a real body in any state. Real
 bodies are only the *subject* of fake people's filings (a report, an access report, an ask), which
 store nothing on the body itself; the derived figures those filings move — a body's card, its Bodies
 library row and counts, its geometry neighbors — are re-derived by dev's crons after the clear.
@@ -26,6 +30,9 @@ which can't be filed on this deployment. This script files what is ready and ask
 
 ## Running it
 
+**Node 26** (the repo's `.node-version`). On another major the script says so and stops — pnpm prints
+an *Unsupported engine* warning on every `convex run`, and the seed refuses to guess past it.
+
 ```bash
 # 1. The plan, against dev. Writes nothing.
 pnpm --filter @skating/seed-inbox seed
@@ -41,8 +48,24 @@ pnpm --filter @skating/seed-inbox seed --clear
 pnpm --filter @skating/seed-inbox seed --clear --apply
 ```
 
-Each writing run leaves a run log in `runs/` (gitignored): what it filed, each step's result or
-error, and the plan as it ended.
+Each writing run leaves a run log in `runs/` (gitignored): what it filed, each step's result (or the
+server's own sentence when a step was refused), and the plan as it ended.
+
+**What a full apply leaves** (90 steps, `unavailable 0`): 23 open Inbox items — Safety 2, Access
+reports 2, Requests 6, Places asked 3, Drawn bodies 1, Content flags 5, Support 4 — and 12 decided,
+every decision word among them (hidden, removed, dismissed, unpinned, restored; an ask approved and one
+declined; four drawings approved and one rejected).
+
+**Reading the dry run.** `body <role>` lines name the five real bodies the seed files *about* — Mascoma
+Lake, Caspian Lake, Lake Morey, Tomhannock Reservoir, Newfound Lake — found by name in the Bodies
+library. A blank name means this deployment holds no listed, active body by that name; the steps
+filed about it show as `unavailable`, and nothing else is affected. Every other body the plan needs is
+its own.
+
+**Checking the lanes from the CLI** (after an apply): `inbox:lanes` takes the console's local
+midnight, so pass one — `pnpm --filter @skating/convex exec convex run inbox:lanes
+'{"now":<ms>,"dayStart":<ms>}' --identity '{"subject":"<your Clerk user id>"}'`, with `dayStart`
+within the 36 hours before `now`.
 
 **What the clear deletes that a real person wrote:** anything on seeded content — a comment on a fake
 report, a flag on one, a thumb, a hazard vote — goes with that content, by design, as the author's own
@@ -54,8 +77,8 @@ The clear leaves three anonymous counters as they are (`textLengthEvents`, `exte
 
 ## What it costs in metered calls
 
-- **A full apply:** 3 calls to USGS 3DHP (`hydro.nationalmap.gov`, the catalog lookup each of the three
-  `admit` asks schedules) — no quota of ours, a public service. **No Open-Meteo call:** every seeded
+- **A full apply:** USGS 3DHP calls unmeasured (`hydro.nationalmap.gov`: each of the three `admit` asks
+  schedules a catalog lookup) — no quota of ours, a public service. **No Open-Meteo call:** every seeded
   report carries the skater's own conditions, so none schedules the weather auto-fill, and the
   contradiction settle reads stored weather only. While the seed is loaded, its one approved body that
   stays (*Town Beach Pond*) is an active body, so dev's weather crons may fetch its cell like any

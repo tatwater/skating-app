@@ -98,7 +98,14 @@ export interface DrawnScene {
 }
 
 /** Draw order for outlines: fills under lines, bays under the shore, so the shore wins. */
-export const OUTLINE_ORDER: readonly MapOutlineStyle[] = ['bay', 'neighbor', 'footprint', 'body'];
+export const OUTLINE_ORDER: readonly MapOutlineStyle[] = [
+  'bay',
+  'neighbor',
+  'footprint',
+  'body',
+  // Over the shore: a candidate is weighed against the body it lies on.
+  'candidate',
+];
 export const LINE_ORDER: readonly MapLineStyle[] = [
   'townLine',
   'divider',
@@ -107,6 +114,12 @@ export const LINE_ORDER: readonly MapLineStyle[] = [
   'track',
   'leader',
 ];
+
+/**
+ * Lines drawn over the map in pixels, a tick across each end that keeps its length at every zoom —
+ * never as map layers: a survey's dimension, and the Inbox's distance rule (`gap`).
+ */
+export const PIXEL_RULES: readonly MapLineStyle[] = ['dimension', 'gap'];
 
 /** Lit points draw last, so nothing covers the one the operator asked for. */
 function byLitLast<T extends { id: string }>(items: readonly T[], lit: string | null): T[] {
@@ -120,8 +133,8 @@ export function drawScene(scene: BodyMapScene, layers: LayerSwitches): DrawnScen
 
   const outlines = shown.filter((i): i is MapOutline => i.kind === 'outline');
   const allLines = shown.filter((i): i is MapLine => i.kind === 'line' && i.path.length >= 2);
-  const lines = allLines.filter((l) => l.style !== 'dimension');
-  const dimensions = allLines.filter((l) => l.style === 'dimension');
+  const lines = allLines.filter((l) => !PIXEL_RULES.includes(l.style));
+  const dimensions = allLines.filter((l) => PIXEL_RULES.includes(l.style));
   const raster = shown.find((i): i is MapRaster => i.kind === 'raster') ?? null;
   const points = shown.filter((i): i is MapPoint => i.kind === 'point');
   const labels = shown.filter((i): i is MapLabel => i.kind === 'label');

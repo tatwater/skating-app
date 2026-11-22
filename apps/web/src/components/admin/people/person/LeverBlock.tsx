@@ -10,13 +10,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/kit/dropdown-menu';
+import { LeverList, LeverRow } from '@/components/kit/lever-row';
 import { Section } from '@/components/kit/section-slug';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
-
 import { AskDialog } from './AskDialog';
 import { BountyDialog } from './BountyDialog';
 import { useSectionLevel } from './headingLevel';
-import { LeverList, LeverRow } from './kit-candidates/lever-row';
 import type {
   LeverButton,
   LeverRow as LeverRowModel,

@@ -1,5 +1,12 @@
 import { Toolbar as ToolbarPrimitive } from '@base-ui/react/toolbar';
-import { type ComponentProps, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -11,6 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './dropdown-menu';
+import { Kbd } from './kbd';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 
 /**
  * The kit's Toolbar: Base UI's Toolbar (shadcn doesn't wrap it), re-skinned to the console's
@@ -32,7 +41,10 @@ import {
  *   rest into a "More" menu at the end when the bar runs out of room. It measures, so nothing
  *   jumps as the pane is resized.
  * - **No explaining line and no reason input in a bar**: what a button does is its tooltip, and a
- *   reason is asked in the dialog that taking something away opens.
+ *   reason is asked in the dialog that taking something away opens. `ToolbarKeyButton` is that
+ *   button: its label, its key as a dim key chip, and its tooltip (the label as the title, what it
+ *   does under it) on hover and on focus. `ActionBar` (`action-bar.tsx`) draws a whole bar from
+ *   data and binds each key.
  */
 
 type ToolbarProps = Omit<ToolbarPrimitive.Root.Props, 'orientation'> & {
@@ -147,6 +159,36 @@ function ToolbarButton({
   );
 }
 
+type ToolbarKeyButtonProps = Omit<ToolbarButtonProps, 'children'> & {
+  /** What the button says ("Dismiss"). */
+  label: string;
+  /** Its key, shown as a dim key chip after the label ("D"); the page binds it. `null`: none. */
+  hotkey: string | null;
+  /** What it does, in a sentence: the tooltip under the label, on hover and on focus. */
+  what: ReactNode;
+};
+
+/**
+ * An action-bar button: the label, its key as a key chip, and its tooltip. The key is announced as
+ * the button's shortcut (`aria-keyshortcuts`); the chip itself is hidden from a reader, so the
+ * button's name is its label alone.
+ */
+function ToolbarKeyButton({ label, hotkey, what, ...props }: ToolbarKeyButtonProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<ToolbarButton aria-keyshortcuts={hotkey ?? undefined} {...props} />}>
+        {label}
+        {hotkey !== null && (
+          <Kbd variant="dim" aria-hidden="true">
+            {hotkey}
+          </Kbd>
+        )}
+      </TooltipTrigger>
+      <TooltipContent title={label}>{what}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /**
  * Any other control in the bar's arrow keys: pass the control as `render` — a kit
  * `SelectTrigger`, or a `DropdownMenuTrigger` rendering a `Button`.
@@ -165,12 +207,24 @@ type ToolbarAction = {
   /** Destructive: outlined at rest, red only when highlighted in the menu or armed. */
   danger?: boolean;
   disabled?: boolean;
+  /**
+   * What it does, in a sentence: given, the button is a `ToolbarKeyButton` — its key shown as a
+   * chip beside the label and its tooltip on hover and focus (the action bar's buttons).
+   */
+  what?: ReactNode;
+  armed?: boolean;
+  loading?: boolean;
 };
 
 type ToolbarOverflowProps = {
   actions: readonly ToolbarAction[];
   /** The menu button's label. */
   moreLabel?: string;
+  /**
+   * Take the bar's room rather than the actions' natural width, the buttons that fit sharing it
+   * equally (the phone's bar, `mobile-v5`'s `.pact`).
+   */
+  grow?: boolean;
   className?: string;
 };
 
@@ -180,12 +234,19 @@ type ToolbarOverflowProps = {
  * and never oscillates: the group keeps the natural width of all its actions, and shrinks only
  * when the bar is out of room.
  */
-function ToolbarOverflow({ actions, moreLabel = 'More', className }: ToolbarOverflowProps) {
+function ToolbarOverflow({
+  actions,
+  moreLabel = 'More',
+  grow = false,
+  className,
+}: ToolbarOverflowProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(actions.length);
   const [natural, setNatural] = useState<number>();
-  const shape = actions.map((a) => `${a.id}:${a.label}:${a.kbd ?? ''}`).join('|');
+  const shape = actions
+    .map((a) => `${a.id}:${a.label}:${a.kbd ?? ''}:${a.what === undefined ? '' : 'k'}`)
+    .join('|');
 
   const compute = useCallback(() => {
     const box = boxRef.current;
@@ -230,14 +291,32 @@ function ToolbarOverflow({ actions, moreLabel = 'More', className }: ToolbarOver
       ref={boxRef}
       data-slot="toolbar-overflow"
       data-folded={folded.length > 0 ? folded.length : undefined}
-      style={natural === undefined ? undefined : { width: natural }}
-      className={cn('relative flex min-w-0 shrink items-center gap-(--space-2)', className)}
+      data-grow={grow ? '' : undefined}
+      style={natural === undefined || grow ? undefined : { width: natural }}
+      className={cn(
+        'relative flex min-w-0 shrink items-center gap-(--space-2)',
+        grow && 'flex-1 [&>*]:flex-1',
+        className,
+      )}
     >
-      {shown.map((a) => (
-        <ToolbarButton key={a.id} variant={a.danger ? 'danger' : 'outline'} {...buttonProps(a)}>
-          {a.label}
-        </ToolbarButton>
-      ))}
+      {shown.map((a) =>
+        a.what !== undefined ? (
+          <ToolbarKeyButton
+            key={a.id}
+            label={a.label}
+            hotkey={a.kbd ?? null}
+            what={a.what}
+            variant={a.danger ? 'danger' : 'outline'}
+            armed={a.armed}
+            loading={a.loading}
+            {...buttonProps(a)}
+          />
+        ) : (
+          <ToolbarButton key={a.id} variant={a.danger ? 'danger' : 'outline'} {...buttonProps(a)}>
+            {a.label}
+          </ToolbarButton>
+        ),
+      )}
       {folded.length > 0 && (
         <DropdownMenu>
           <ToolbarItem
@@ -255,7 +334,7 @@ function ToolbarOverflow({ actions, moreLabel = 'More', className }: ToolbarOver
                 kbd={a.kbd}
                 aria-keyshortcuts={a.kbd}
                 variant={a.danger ? 'danger' : 'default'}
-                disabled={a.disabled}
+                disabled={a.disabled === true || a.loading === true}
                 onClick={a.onClick}
               >
                 {a.label}
@@ -273,6 +352,7 @@ function ToolbarOverflow({ actions, moreLabel = 'More', className }: ToolbarOver
           {actions.map((a) => (
             <Button key={a.id} tabIndex={-1}>
               {a.label}
+              {a.what !== undefined && a.kbd !== undefined && <Kbd variant="dim">{a.kbd}</Kbd>}
             </Button>
           ))}
           <Button tabIndex={-1}>
@@ -296,6 +376,8 @@ export {
   type ToolbarButtonProps,
   ToolbarGroup,
   ToolbarItem,
+  ToolbarKeyButton,
+  type ToolbarKeyButtonProps,
   ToolbarLabel,
   ToolbarOverflow,
   type ToolbarOverflowProps,
