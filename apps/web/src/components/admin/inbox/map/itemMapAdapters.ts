@@ -30,7 +30,7 @@ import { ITEM_MAP_WORDS as W } from './inboxMapWords';
  * | `flag` on an access alert | `alertScene` (its put-in or lot lit) |
  * | `flag` on a body | the body alone |
  * | `access` | `accessScene` (the body, its put-ins and lots) |
- * | `request` | `admitScene` for a catalog candidate, with the asks' skates; the body and its asks for a body we hold |
+ * | `request` | `admitScene` for a catalog candidate; the body and its asks for a body we hold — each with the asks' skates |
  * | `place` | `lookalikeScene` (the asked points, each lookalike, the rule to the nearest) |
  * | `drawn` | `drawnScene` (the drawing over the body it overlaps, the share on the shore, its skate) |
  *
@@ -151,10 +151,17 @@ function requestMap(item: Extract<InboxItemView, { kind: 'request' }>, map: Serv
       ...captioned(join(answerNotes(map, [map.candidate, nearest], map.tracks))),
     });
   }
-  const caption = join(answerNotes(map, [map.body]));
   if (map.body !== null) {
-    return requestOnBodyScene({ body: embed(map.body), asks, ...captioned(caption) });
+    const skates = skatesLegend(item, map.tracks);
+    return requestOnBodyScene({
+      body: embed(map.body),
+      asks,
+      tracks: map.tracks.map(path),
+      ...(skates ? { legend: { track: skates } } : {}),
+      ...captioned(join(answerNotes(map, [map.body], map.tracks))),
+    });
   }
+  const caption = join(answerNotes(map, [map.body]));
   // No body and no candidate: the asked points alone, if any.
   if (asks.length === 0) return null;
   return admitScene({ candidate: null, asks, ...captioned(join([W.noCandidate, caption])) });

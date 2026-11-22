@@ -8,6 +8,8 @@ import {
   ACCESS_REPORTS,
   ACTIVATE,
   ACTIVATE_MAP,
+  ACTIVATE_MAP_TRACK,
+  ACTIVATE_SKATED,
   ADMIT_MAP,
   ADMIT_MAP_NO_TRACK,
   ADMIT_MATCH,
@@ -128,6 +130,17 @@ describe('each kind’s scene', () => {
   it('a request on a body we hold: the body and the asked points', () => {
     const v = itemMapScene(ACTIVATE, ACTIVATE_MAP, TZ);
     expect(ids(v)).toEqual(['body:mascoma', 'ask:rq9']);
+    // No skate served: no line, and no legend for one.
+    expect(v?.legend).toEqual([]);
+  });
+
+  it('a request on a body we hold with an ask’s skate: its track, named for its asker', () => {
+    const v = itemMapScene(ACTIVATE_SKATED, ACTIVATE_MAP_TRACK, TZ);
+    expect(lines(v)).toEqual(['track:ac_mascoma']);
+    expect(v?.legend.map((r) => r.label)).toEqual(['Kate Donovan’s skate']);
+    expect(itemMapScene(ACTIVATE_SKATED, TRACKS_SIMPLIFIED(ACTIVATE_MAP_TRACK), TZ)?.caption).toBe(
+      'Skate simplified',
+    );
   });
 
   it('an admit no catalog feature matched: the asked points, said so', () => {

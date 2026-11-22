@@ -7,6 +7,10 @@ import { retryAll } from '../../reads/consoleReads';
 import { InboxMapStill } from './InboxMap';
 import { ItemMapView } from './ItemMap';
 import {
+  ACTIVATE,
+  ACTIVATE_MAP,
+  ACTIVATE_MAP_TRACK,
+  ACTIVATE_SKATED,
   ADMIT_MAP,
   ADMIT_MAP_NO_TRACK,
   ADMIT_MATCH,
@@ -99,8 +103,9 @@ export const States: Story = {
 };
 
 /**
- * The skates behind 2.3 and 2.5 (`tracks`): an admit with its asker's skate and without one, and a
- * drawing with the skate it was drawn from and without one — the track gray, named on the legend as
+ * The skates behind 2.3 and 2.5 (`tracks`): an admit with its asker's skate and without one, a
+ * drawing with the skate it was drawn from and without one, and an activate (a body we hold) with
+ * its asker's skate and without one — the track gray, named on the legend as
  * the board names it, and nothing drawn where the server sent none.
  */
 export const Tracks: Story = {
@@ -114,6 +119,8 @@ export const Tracks: Story = {
               ['admit-none', ADMIT_MATCH, ADMIT_MAP_NO_TRACK],
               ['drawn-track', DRAWN, DRAWN_MAP],
               ['drawn-none', DRAWN, DRAWN_MAP_NO_TRACK],
+              ['activate-track', ACTIVATE_SKATED, ACTIVATE_MAP_TRACK],
+              ['activate-none', ACTIVATE, ACTIVATE_MAP],
             ] as const
           ).map(([key, item, map]) => (
             <div key={key} data-case={key}>
@@ -140,6 +147,11 @@ export const Tracks: Story = {
       await expect(box('drawn-track')).toHaveTextContent('The recorded skate · 11 Oct');
       await expect(box('drawn-none').querySelector('[data-id^="track:"]')).toBeNull();
       await expect(box('drawn-none')).not.toHaveTextContent('recorded skate');
+      await expect(
+        box('activate-track').querySelector('[data-id="track:ac_mascoma"]'),
+      ).not.toBeNull();
+      await expect(box('activate-track')).toHaveTextContent('Kate Donovan’s skate');
+      await expect(box('activate-none').querySelector('[data-id^="track:"]')).toBeNull();
     }
   },
 };

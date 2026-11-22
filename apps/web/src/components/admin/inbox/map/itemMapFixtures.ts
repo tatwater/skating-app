@@ -99,6 +99,26 @@ export const ACTIVATE_MAP: ServerItemMap = {
   body: sent(MASCOMA),
   points: [{ id: 'rq9', at: [-72.16, 43.63] }],
 };
+/** An activate asked with a recorded skate: the asker's track over the body we hold. */
+export const ACTIVATE_SKATED = {
+  ...ACTIVATE,
+  asks: ADMIT_ASK ? [{ ...ADMIT_ASK, activityId: 'ac_mascoma' }] : [],
+} as unknown as InboxItemView;
+export const ACTIVATE_MAP_TRACK: ServerItemMap = {
+  ...ACTIVATE_MAP,
+  tracks: [
+    {
+      id: 'ac_mascoma',
+      path: [
+        [-72.166, 43.627],
+        [-72.161, 43.629],
+        [-72.157, 43.632],
+        [-72.152, 43.634],
+      ],
+      simplified: false,
+    },
+  ],
+};
 
 // ── 2.4: a landmark ask with a lookalike ────────────────────────────────────────────────────
 export const PLACE = {

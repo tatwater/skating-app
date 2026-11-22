@@ -6,7 +6,7 @@ import { InspectorProvider, useInspectorContext } from '../../inspector/inspecto
 import { InboxMapStill } from '../../map/InboxMap';
 import { ItemMapView } from '../../map/ItemMap';
 import type { ServerItemMap } from '../../map/itemMapAdapters';
-import { ACTIVATE_MAP, ADMIT_MAP } from '../../map/itemMapFixtures';
+import { ACTIVATE_MAP_TRACK, ADMIT_MAP } from '../../map/itemMapFixtures';
 import { requestSlots } from './RequestView';
 import { REQUEST_NOW, REQUEST_TZ } from './requestFixtures';
 import type { RequestItem, RequestWrite } from './requestModel';
@@ -23,8 +23,12 @@ import type { RequestItem, RequestWrite } from './requestModel';
  * ask's skate as the server ties it, by the ask's own `activityId` (none when no ask has one).
  */
 export function mapFor(item: RequestItem): ServerItemMap {
-  if (item.requestKind !== 'admit') return ACTIVATE_MAP;
-  const map = item.candidate === null ? { ...ADMIT_MAP, candidate: null, others: [] } : ADMIT_MAP;
+  const map =
+    item.requestKind !== 'admit'
+      ? ACTIVATE_MAP_TRACK
+      : item.candidate === null
+        ? { ...ADMIT_MAP, candidate: null, others: [] }
+        : ADMIT_MAP;
   const skated = item.asks.find((a) => a.activityId !== null)?.activityId ?? null;
   return {
     ...map,
