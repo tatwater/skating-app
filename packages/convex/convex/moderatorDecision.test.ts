@@ -348,12 +348,22 @@ describe('an ask’s decision tells its asker (D285)', () => {
     }
     const asks = await bayAsks(w.t, w.active, askers);
     await settle();
-    await w.admin.as.mutation(api.corpusRequests.decline, {
-      requestId: asks[0] as Id<'waterBodyRequests'>,
-      note: 'Not its own place',
-    });
+    // The scheduler held: its pages run only as the drain runs them, so the drain counts every one.
+    // On real timers a zero-delay page fires by itself between the drain's reads, and the count
+    // depends on how loaded the machine is (alone, the whole chain ran before the drain looked: 0).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let pages: number;
+    try {
+      await w.admin.as.mutation(api.corpusRequests.decline, {
+        requestId: asks[0] as Id<'waterBodyRequests'>,
+        note: 'Not its own place',
+      });
+      pages = await drainAll(w.t);
+    } finally {
+      vi.useRealTimers();
+    }
     // More than one page: the drain's continuations, each its own transaction.
-    expect(await drainAll(w.t)).toBeGreaterThanOrEqual(2);
+    expect(pages).toBeGreaterThanOrEqual(2);
     const queued = await queueRows(w.t);
     expect(queued).toHaveLength(n);
     expect(new Set(queued.map((r) => r.userId))).toEqual(new Set(askers));

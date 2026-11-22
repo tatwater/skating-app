@@ -238,22 +238,43 @@ function __reads(tracker) {
   layer.reads ??= new Map();
   return layer.reads;
 }
-function __covered(reads, index, key) {
-  for (const [lo, hi] of reads.get(index) ?? []) {
-    if (__cmpKey(lo, key) <= 0 && __cmpKey(key, hi) <= 0) return true;
+// Each index's read intervals, sorted and disjoint (binary-searched: a read costs O(log n), not a
+// scan of every interval read before), and the rows read by id as a set of points.
+function __entry(reads, index) {
+  let e = reads.get(index);
+  if (!e) { e = { ivs: [], points: new Set() }; reads.set(index, e); }
+  return e;
+}
+// The last interval starting at or before key, or -1.
+function __floor(ivs, key) {
+  let lo = 0, hi = ivs.length - 1, at = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (__cmpKey(ivs[mid][0], key) <= 0) { at = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  return false;
+  return at;
+}
+function __covered(reads, index, key) {
+  const e = reads.get(index);
+  if (!e) return false;
+  if (key.tail === 0 && key.vals.length === 1 && e.points.has(key.vals[0])) return true;
+  const i = __floor(e.ivs, key);
+  return i >= 0 && __cmpKey(key, e.ivs[i][1]) <= 0;
 }
 function __addInterval(reads, index, lo, hi) {
   if (__cmpKey(lo, hi) > 0) return;
-  const list = [...(reads.get(index) ?? []), [lo, hi]].sort((x, y) => __cmpKey(x[0], y[0]));
-  const merged = [];
-  for (const iv of list) {
-    const last = merged[merged.length - 1];
-    if (last && __cmpKey(iv[0], last[1]) <= 0) { if (__cmpKey(iv[1], last[1]) > 0) last[1] = iv[1]; }
-    else merged.push([iv[0], iv[1]]);
+  const ivs = __entry(reads, index).ivs;
+  // Merge with every interval it touches: from the one at or before lo, through those starting by hi.
+  let start = __floor(ivs, lo);
+  if (start < 0 || __cmpKey(ivs[start][1], lo) < 0) start += 1;
+  let end = start;
+  let nlo = lo, nhi = hi;
+  while (end < ivs.length && __cmpKey(ivs[end][0], hi) <= 0) {
+    if (__cmpKey(ivs[end][0], nlo) < 0) nlo = ivs[end][0];
+    if (__cmpKey(ivs[end][1], nhi) > 0) nhi = ivs[end][1];
+    end++;
   }
-  reads.set(index, merged);
+  ivs.splice(start, end - start, [nlo, nhi]);
 }
 // A row read by id (a get, or a write's read): the point of its id on its table's by_id.
 function __readPoint(tracker, table, id) {
@@ -262,7 +283,14 @@ function __readPoint(tracker, table, id) {
   const index = table + ".by_id";
   const key = { vals: [id], tail: 0 };
   if (!__covered(reads, index, key)) tracker.trackIndexRange();
-  __addInterval(reads, index, key, key);
+  __entry(reads, index).points.add(id);
+}
+// Whether a write changed the row: only the fields it set are compared (a patch), never the whole
+// document serialized twice — the backend writes nothing for a write that changes nothing.
+function __changed(before, after, keys) {
+  if (!before || !after) return true;
+  for (const k of keys) if (compareValues(before[k], after[k]) !== 0) return true;
+  return false;
 }
 function __queryStart(tracker, db, queryId, query) {
   const reads = __reads(tracker);
@@ -419,10 +447,10 @@ ${rangeKey}`,
                 tracker?.trackWrite(getConvexSize(db.get(table, id)));`,
         `                const { table, id, value } = args;
                 if (tracker) __readPoint(tracker, table, id);
-                const __before = JSON.stringify(convexToJson(getAndTrack(table, id)));
+                const __before = getAndTrack(table, id);
                 db.patch(table, id, value);
                 const __after = db.get(table, id);
-                if (JSON.stringify(convexToJson(__after)) !== __before) tracker?.trackWrite(getConvexSize(__after));`,
+                if (__changed(__before, __after, Object.keys(value))) tracker?.trackWrite(getConvexSize(__after));`,
         'index.js',
       );
       out = exact(
@@ -433,10 +461,10 @@ ${rangeKey}`,
                 tracker?.trackWrite(getConvexSize(db.get(table, id)));`,
         `                const { table, id, value } = args;
                 if (tracker) __readPoint(tracker, table, id);
-                const __before = JSON.stringify(convexToJson(getAndTrack(table, id)));
+                const __before = getAndTrack(table, id);
                 db.replace(table, id, value);
                 const __after = db.get(table, id);
-                if (JSON.stringify(convexToJson(__after)) !== __before) tracker?.trackWrite(getConvexSize(__after));`,
+                if (__changed(__before, __after, new Set([...Object.keys(__before ?? {}), ...Object.keys(__after ?? {})]))) tracker?.trackWrite(getConvexSize(__after));`,
         'index.js',
       );
       out = exact(
@@ -472,8 +500,10 @@ export default defineConfig({
      * stops is a green suite reporting red for reasons that have nothing to do with the code.
      *
      * 60 s since the harness counts index ranges and documents read as the real backend does
-     * (B01-5d): its bookkeeping took the suite from 131 s to 192-221 s in the workspace's `pnpm test`,
-     * and a test that runs in 1.9 s alone (1.1 s before) took 19.9 s there, then timed out at 20 s.
+     * (B01-5d). Its bookkeeping is cheap now — intervals binary-searched, a patch compared on the
+     * fields it set: two workers with the web unit tests beside them, the suite took 112 s without
+     * it, 136 s with the first cut, 122 s now. The limit stays for the heavy approvals the counting
+     * made testable: 4–7 s each on that constrained run, so the slowest stays under a fifth of 60 s.
      */
     testTimeout: 60_000,
     // convex-test runs functions in a simulated Convex backend; the edge-runtime

@@ -41,18 +41,44 @@ beforeEach(() => {
   stubOfflineFetch();
 });
 
-afterEach(async () => {
+/**
+ * The drain finishes the test's own scheduled work — a decline's sibling pages, their deliveries —
+ * so it runs on the test's own budget, not vitest's 10 s hook default: a heavy test given minutes
+ * gives its continuations minutes too (one timed out at 10 s on CI while the test had 450 s). The
+ * hook's own timeout is off (`0`) and the drain races the test's timeout instead, so a runaway
+ * still fails, at the bound its test declared.
+ */
+afterEach(async (ctx) => {
   // Offline again first: a test's own teardown may have unstubbed its fetch.
   stubOfflineFetch();
   // A test file's own afterEach (which restores real timers) runs before this setup hook, so there
   // is no fake clock to advance: the drain yields real event-loop turns until the zero-delay chains
   // settle, and anything scheduled further out lapses with the test, as it always has.
-  // A drain that throws (a runaway chain past convex-test's iteration cap) fails this test, but must
-  // not leave its harness behind to fail every later test in the file the same way.
+  // A drain that throws (a runaway chain past convex-test's iteration cap, or past the test's
+  // timeout) fails this test, but must not leave its harness behind to fail every later test in the
+  // file the same way.
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    for (const t of harnesses) await t.finishAllScheduledFunctions(() => {});
+    const budget = ctx.task.timeout;
+    const drain = (async () => {
+      for (const t of harnesses) await t.finishAllScheduledFunctions(() => {});
+    })();
+    // A test with no timeout (`0`) gives its drain none either.
+    if (!(budget > 0 && Number.isFinite(budget))) await drain;
+    else
+      await Promise.race([
+        drain,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new Error(`Draining this test's scheduled work passed its own ${budget} ms.`)),
+            budget,
+          );
+        }),
+      ]);
   } finally {
+    clearTimeout(timer);
     harnesses.clear();
     vi.unstubAllGlobals();
   }
-});
+}, 0);
