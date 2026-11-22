@@ -319,18 +319,32 @@ describe('D258 chains under real limits', () => {
   }, 180_000);
 });
 
-/** An outline near the document limit: a ring of tens of thousands of points around the unit square. */
+/**
+ * An outline near the document limit: forty thousand points around the unit square, as a deployment
+ * can store them — a shore of 8,000 and four islands of 8,000 each, since an array caps at 8,192 items.
+ */
 let heavyRing: { type: 'Polygon'; coordinates: [number, number][][] } | undefined;
 function heavyPolygon() {
   if (heavyRing) return heavyRing;
-  const n = 40_000;
-  const ring: [number, number][] = [];
-  for (let i = 0; i < n; i++) {
-    const a = (2 * Math.PI * i) / n;
-    ring.push([0.5 + 0.4 * Math.cos(a), 0.5 + 0.4 * Math.sin(a)]);
-  }
-  ring.push(ring[0] as [number, number]);
-  heavyRing = { type: 'Polygon' as const, coordinates: [ring] };
+  const loop = (cx: number, cy: number, r: number, n = 8_000) => {
+    const ring: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * i) / n;
+      ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    ring.push(ring[0] as [number, number]);
+    return ring;
+  };
+  heavyRing = {
+    type: 'Polygon' as const,
+    coordinates: [
+      loop(0.5, 0.5, 0.4),
+      loop(0.4, 0.4, 0.05),
+      loop(0.6, 0.4, 0.05),
+      loop(0.4, 0.6, 0.05),
+      loop(0.6, 0.6, 0.05),
+    ],
+  };
   return heavyRing;
 }
 

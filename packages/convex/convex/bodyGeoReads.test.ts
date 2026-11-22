@@ -454,15 +454,29 @@ describe('the plan fits a query on any outline in the region', () => {
 
 // ── The touching bodies: summaries, and only the tested outlines ──────────────────────────────
 
-/** An ellipse of `n` vertices. */
+/** The most vertices one ring here takes: a deployment caps an array at 8,192 items. */
+const RING_MAX = 8_000;
+
+/**
+ * An ellipse of `n` vertices. Past {@link RING_MAX} its shore stops there and the rest are islands —
+ * small holes near the middle, each a ring under the cap — so a lake heavier than one array can hold
+ * is still one a deployment stores.
+ */
 function ellipse(cx: number, cy: number, rx: number, ry: number, n: number): Polygon {
-  const ring: number[][] = [];
-  for (let i = 0; i < n; i++) {
-    const a = (2 * Math.PI * i) / n;
-    ring.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+  const loop = (x: number, y: number, ax: number, ay: number, k: number) => {
+    const ring: number[][] = [];
+    for (let i = 0; i < k; i++) {
+      const a = (2 * Math.PI * i) / k;
+      ring.push([x + ax * Math.cos(a), y + ay * Math.sin(a)]);
+    }
+    ring.push(ring[0] as number[]);
+    return ring;
+  };
+  const rings = [loop(cx, cy, rx, ry, Math.min(n, RING_MAX))];
+  for (let left = n - RING_MAX, k = 0; left > 0; left -= RING_MAX, k++) {
+    rings.push(loop(cx + rx * 0.1 * (k - 1), cy, rx * 0.04, ry * 0.04, Math.min(left, RING_MAX)));
   }
-  ring.push(ring[0] as number[]);
-  return { type: 'Polygon', coordinates: [ring] };
+  return { type: 'Polygon', coordinates: rings };
 }
 
 type Pond = { at: [number, number]; r: [number, number]; n: number; zoom: number; score: number };

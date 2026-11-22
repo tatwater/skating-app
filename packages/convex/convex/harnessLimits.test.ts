@@ -49,3 +49,41 @@ test('every transaction runs under Convex’s own limits: index ranges past 4,09
     }),
   ).rejects.toThrow(/index ranges|limit: 4096/);
 });
+
+test('an array past Convex’s 8,192 items is refused, as the backend refuses it, wherever it is a value', async () => {
+  const t = convexTest(schema, modules);
+  const items = (n: number) => Array.from({ length: n }, (_, i) => `k${i}`);
+  // A document at the cap stands; one item more is refused — inserted, patched, nested at any depth.
+  const row = {
+    action: 'hide' as const,
+    targetType: 'report' as const,
+    targetId: 'r',
+    reason: 'x',
+  };
+  const metadata = (n: number) => ({ keys: items(n) });
+  const id = await t.run((ctx) =>
+    ctx.db.insert('moderationActions', { ...row, metadata: metadata(8_192), createdAt: 0 }),
+  );
+  await expect(
+    t.run((ctx) =>
+      ctx.db.insert('moderationActions', { ...row, metadata: metadata(8_193), createdAt: 0 }),
+    ),
+  ).rejects.toThrow(/Array length is too long \(8193 > maximum length 8192\)/);
+  await expect(
+    t.run((ctx) => ctx.db.patch(id, { metadata: { deep: [{ keys: items(8_193) }] } })),
+  ).rejects.toThrow(/Array length is too long/);
+  await expect(
+    t.run((ctx) => ctx.db.replace(id, { ...row, metadata: metadata(8_193), createdAt: 0 })),
+  ).rejects.toThrow(/Array length is too long/);
+  // A registered function's arguments are a value too (checked before its own validator).
+  await expect(
+    t.mutation(internal.inboxItems.backfill, { pad: items(8_193) } as never),
+  ).rejects.toThrow(/Array length is too long/);
+  // And a scheduled function's arguments are stored (in a harness of their own: a throw inside the
+  // scheduler leaves its transaction unusable).
+  await expect(
+    convexTest(schema, modules).run((ctx) =>
+      ctx.scheduler.runAfter(0, internal.inboxItems.backfill, { pad: items(8_193) } as never),
+    ),
+  ).rejects.toThrow(/Array length is too long/);
+});

@@ -19,7 +19,41 @@ import { defineConfig, type Plugin } from 'vitest/config';
  * fresh `next_journal` (`environment/udf/mod.rs`; a nested call runs at `reactor_depth > 0`) — and
  * names the function in the error. Test-only: it rewrites the inlined `convex-test` bundle, never
  * production code. Its own test: `harnessLimits.test.ts`.
+ * - Convex's **8,192-item array cap** (B01-5d). The backend refuses any Convex value holding an array
+ *   longer than 8,192 items — a document written (inserted, patched or replaced), a scheduled
+ *   function's arguments, a function's arguments and its return value — "Array length is too long".
+ *   `convex-test` checks none of them, so a fixture or a writer past it passed here and could never
+ *   exist on a deployment (B01-5c's real-backend proof found heavy rings and tracks that couldn't).
+ *   Every value is walked where `convex-test` writes a document (`_validate`, run before its schema
+ *   check, so the system tables — `_scheduled_functions`' stored arguments — are walked too) and
+ *   where it checks a registered function's arguments and its return value (a test's call and a
+ *   nested `runQuery`/`runMutation` alike; `t.run`'s inline handler is neither, so it isn't walked).
  */
+/** Convex's largest array, in items (`@skating/core`'s `CONVEX_ARRAY_LIMIT` says the same). */
+const CONVEX_ARRAY_MAX = 8_192;
+
+/**
+ * The array-cap walker the transform puts in the bundle: every array in a Convex value, at any depth,
+ * at most {@link CONVEX_ARRAY_MAX} items, else it throws the backend's words. Returns the value, so a
+ * call site wraps an expression. A `Uint8Array`/`ArrayBuffer` is bytes, not a Convex array.
+ */
+const ARRAY_CAP_WALKER = `function __convexArrayCap(value, where) {
+  const stack = [value];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (v === null || typeof v !== "object" || v instanceof ArrayBuffer || ArrayBuffer.isView(v)) continue;
+    if (Array.isArray(v)) {
+      if (v.length > ${CONVEX_ARRAY_MAX}) {
+        throw new Error("Array length is too long (" + v.length + " > maximum length ${CONVEX_ARRAY_MAX}), in " + where + " (the harness's array cap, vitest.config.ts)");
+      }
+      for (const x of v) stack.push(x);
+    } else {
+      for (const k in v) stack.push(v[k]);
+    }
+  }
+  return value;
+}`;
+
 function singlePaginatePerMutation(): Plugin {
   const MUTATION_CTX = `udfType: "mutation",
             depth: (parentCtx?.depth ?? 0) + 1,
@@ -31,17 +65,55 @@ function singlePaginatePerMutation(): Plugin {
   const LIMITS_ON = `export function convexTest(schemaOrOptions, modules) {
     let schema = undefined;
     let limitsConfig = true;`;
+  // The array cap: a walker defined once beside the bundle's imports, called where a document is
+  // validated and where a test's function call crosses the boundary (arguments in, result out).
+  const IMPORTS_END = `import { TransactionMetricsTracker, } from "./transactionMetrics.js";`;
+  const VALIDATE = `    _validate(tableName, doc) {
+        if (this._schema === null || !this._schema.schemaValidation) {`;
+  const ARGS =
+    'function validateFunctionArgs(argsValidator, args, functionPath, allowPendingValues) {';
+  const RESULT =
+    'function validateReturnValue(returnsValidator, result, functionType, functionPath) {';
   return {
     name: 'convex-single-paginate-per-mutation',
     enforce: 'pre',
     transform(code, id) {
       if (!/convex-test[\\/]dist[\\/]index\.js$/.test(id)) return null;
-      if (!code.includes(MUTATION_CTX) || !code.includes(THROW) || !code.includes(LIMITS_OFF)) {
+      if (
+        !code.includes(MUTATION_CTX) ||
+        !code.includes(THROW) ||
+        !code.includes(LIMITS_OFF) ||
+        !code.includes(IMPORTS_END) ||
+        !code.includes(VALIDATE) ||
+        !code.includes(ARGS) ||
+        !code.includes(RESULT)
+      ) {
         throw new Error(
-          'convex-test changed: the one-paginated-query harness rule no longer applies; update it',
+          'convex-test changed: the harness rules (one paginated query, the limits, the array cap) no longer apply; update them',
         );
       }
       return code
+        .replace(
+          IMPORTS_END,
+          `${IMPORTS_END}
+${ARRAY_CAP_WALKER}`,
+        )
+        .replace(
+          VALIDATE,
+          `    _validate(tableName, doc) {
+        __convexArrayCap(doc, "a document in " + tableName);
+        if (this._schema === null || !this._schema.schemaValidation) {`,
+        )
+        .replace(
+          ARGS,
+          `${ARGS}
+    __convexArrayCap(args, "the arguments of " + functionPath.udfPath);`,
+        )
+        .replace(
+          RESULT,
+          `${RESULT}
+    __convexArrayCap(result, "the return value of " + functionPath.udfPath);`,
+        )
         .replace(LIMITS_OFF, LIMITS_ON)
         .replace(
           MUTATION_CTX,
