@@ -67,8 +67,17 @@ function AdminDashboard() {
         <Link to="/admin/flags" className="text-primary hover:underline">
           Go to flag queue →
         </Link>
+        {/* Drawn bodies are decided in the Inbox, as the Overview's lane opens them; the water
+            list keeps the duplicates. */}
+        <Link
+          to="/admin/inbox"
+          search={{ lane: 'drawnBodies' }}
+          className="text-primary hover:underline"
+        >
+          Review drawn bodies →
+        </Link>
         <Link to="/admin/water" className="text-primary hover:underline">
-          Review water bodies →
+          Merge duplicates →
         </Link>
       </div>
 
