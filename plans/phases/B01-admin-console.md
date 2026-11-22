@@ -9300,10 +9300,31 @@ Nothing is pushed or deployed.
 
 - **Codegen-verify** on a throwaway anonymous backend found S3's new `lib/inboxMapBounds` missing
   from `_generated/api.d.ts`, the same shape as #108's red CI. It is committed.
-- **The heavy admit's approval test** (`inboxHeavy.test.ts`, S3's) takes 16.7 s alone but **103 s
-  under the full parallel `pnpm test`**, past its 90 s limit. It failed once there and passed alone
-  with coverage. CI runs every package at once, so it can go red there. **Owed:** a longer limit
-  for that one test, or a lighter world.
+- **The heavy admit's approval test** (`inboxHeavy.test.ts`, S3's) took 16.7 s alone but **103 s
+  under the full parallel `pnpm test`**, past its 90 s limit. CI runs every package at once, so
+  it could go red there. **Fixed by S3** (`b01-5c-s3-4`; the governor ruled CI green part of
+  done):
+  - The approval runs in 7–9 s alone and **18.5 s under contention**. Its undo is split into a
+    test of its own (13.2 s contended). Both have a 240 s timeout, because their point is the
+    real size.
+  - The flush tests run 12 heavy messages batch by batch and require each batch to complete.
+  - The 24,000-, 48,000- and 48,001-point ring fixtures are rebuilt from legal 8,000-point rings.
+  - S3 measured its slowest contended test at 18.5 s, with at least 5× timeout headroom.
+  - **The integration's own full parallel `pnpm test`** (all packages, cold, as CI runs it)
+    passed. Its slowest three tests, against their limits:
+
+    | Test | Time | Limit | Headroom |
+    |---|---|---|---|
+    | The heavy admit's approval | 47.0 s | 240 s | 5.1× |
+    | The flush's heavy re-checks (`moderatorDecision.test.ts`) | 24.7 s | 60 s | **2.4×** |
+    | A contest item full of heavy skates | 23.0 s | 180 s | 7.8× |
+
+    The flush test's headroom is the thinnest, to watch on CI's slower runner.
+- **Owed to B01-5d:**
+  - **The heavy-skate tracks.** The 25,000–50,000-point fixtures exceed the real backend's
+    8,192-item array cap.
+  - **A refusal code on `can`**, so Place's *Draw in Body →* can read `can` alone rather than the
+    item's served `drawnSubAreaId` and `answeringLandmarkId`.
 
 **The gate:**
 
