@@ -17,7 +17,7 @@ import { requestNameKeyFor } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { fileMember, flagSource, requestSource, ticketSource } from './lib/inboxItems';
 import { ALONGSIDE_UNCHECKED } from './lib/inboxRules';
@@ -395,6 +395,18 @@ describe.each(['pending', 'ready'] as const)(
           .map((r) => r.userId)
           .sort(),
       ).toEqual([...askers].sort());
+      // And delivered: each message's re-check reads its ask whole (~860 KiB), so a batch of them
+      // passes the flush's batch limit and it delivers them one at a time — every one, once.
+      for (let pass = 0; pass < 30; pass++) {
+        const due = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
+        if (due.length === 0) break;
+        await w.t.run(async (ctx) => {
+          for (const r of due) await ctx.db.patch(r._id, { flushAfter: Date.now() - 1 });
+        });
+        await w.t.mutation(internal.notifications.flushNotificationQueue, {});
+      }
+      const told = await w.t.run((ctx) => ctx.db.query('notifications').collect());
+      expect(told.map((n) => n.userId).sort()).toEqual([...askers].sort());
       // Its undo completes, page by page: every ask open again.
       const decision = await w.t.run(async (ctx) =>
         (await ctx.db.query('moderationActions').collect()).find(
