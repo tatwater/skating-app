@@ -1,3 +1,5 @@
+import { countOf } from '../../words/inboxWords';
+
 /**
  * Board 2.2's words, and every word the board did not supply (marked *invented* for the copy
  * pass). A ruling says *accessible*, never *open* (the board's rule); nothing here says anything
@@ -53,6 +55,8 @@ export const ACCESS_WORDS = {
   by: 'By',
   /** The ruling event when the person who ruled is gone. */
   someoneGone: 'A former moderator',
+  /** A reporter who is gone or leaving: never named. */
+  formerSkater: 'A former skater',
   /** The two *If* blocks with no standing ruling, or after a no-access one. */
   newRuling: 'The first on this body',
   replaces: (date: string) => `Replaces ${date}’s`,
@@ -60,8 +64,8 @@ export const ACCESS_WORDS = {
   stillOff: 'Stays off the active map',
   clearNoAccess: 'Clear the no-access ruling',
   /** The reports a ruling dismissed, as one timeline event. */
-  reportsDismissed: (n: number) =>
-    `${n === 1 ? '1 report' : `${n} reports`} · dismissed by that ruling`,
+  reportsDismissed: (n: number, capped = false) =>
+    `${n === 1 && !capped ? '1 report' : `${countOf(n, capped)} reports`} · dismissed by that ruling`,
   /** Each button's tooltip (the bar has no explaining line). */
   whatNoAccess: 'Takes the body off the active map and closes these reports. Asks a reason.',
   whatAccessible: 'Rules the body accessible and dismisses these reports.',

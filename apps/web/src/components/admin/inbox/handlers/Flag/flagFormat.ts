@@ -1,4 +1,4 @@
-import { cmToInches, metersToMiles, roundTo } from '@skating/core';
+import { cmToInches, roundTo } from '@skating/core';
 
 /**
  * **How the flag handler and *Around it* write a time, a distance, a thickness and a count** — pure,
@@ -94,16 +94,6 @@ export function skateTimes(start: number | null, end: number, timeZone?: string)
 /** A skate's day and time, for a head: "10 Oct 15:40–17:05". */
 export const skateSpan = (start: number | null, end: number, timeZone?: string): string =>
   `${dayMonth(end, timeZone)} ${skateTimes(start, end, timeZone)}`;
-
-/**
- * A distance in miles, one decimal: "0.8 mi". Under a twentieth of a mile it never rounds to
- * nothing: "<0.1 mi" — two reports at the same spot are near, not zero apart. Never negative.
- */
-export function milesWords(meters: number): string {
-  const miles = Math.max(0, metersToMiles(Number.isFinite(meters) ? meters : 0));
-  const shown = roundTo(miles, 1);
-  return shown < 0.1 ? '<0.1 mi' : `${shown.toFixed(1)} mi`;
-}
 
 /** A thickness in inches, one decimal, no unit: "3.5" (the unit sits in its own slot). */
 export const inchesFigure = (cm: number): string => String(roundTo(cmToInches(cm), 1));

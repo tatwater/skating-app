@@ -16,6 +16,7 @@ import {
 } from '../handlers/Flag/flagModel';
 import type { FlagMember, FlagTarget, HazardSubjectData } from '../handlers/Flag/flagTypes';
 import { REASON_HEAD, FLAG_WORDS as W } from '../handlers/Flag/flagWords';
+import { countedLike, isWhole, ListCutLine, type ListTotal, listCount } from './listCut';
 
 /**
  * **The flags on an item** (boards 2.1, 2.6, 2.7): each flagger's own words as a quote, the flagger
@@ -32,6 +33,11 @@ import { REASON_HEAD, FLAG_WORDS as W } from '../handlers/Flag/flagWords';
 
 export type FlagBlockProps = Omit<ComponentProps<'section'>, 'title' | 'children'> & {
   flags: readonly FlagMember[];
+  /**
+   * The item's own count of its flags and whether the read cut the list short (`flagsCut`): past a
+   * page the rule ends in the item's count and a line says how many of how many are shown.
+   */
+  total: ListTotal;
   /** What was flagged: names an app flag's rule. */
   targetType: FlagTarget['targetType'];
   now: number;
@@ -51,6 +57,7 @@ export type FlagBlockProps = Omit<ComponentProps<'section'>, 'title' | 'children
 
 export function FlagBlock({
   flags,
+  total,
   targetType,
   now,
   timeZone,
@@ -65,6 +72,9 @@ export function FlagBlock({
   const many = ordered.length > 1;
   const showReason = reasonsOf(ordered).length > 1;
   const only = ordered[0];
+  const shown = countedLike(flags);
+  const whole = isWhole(shown, total);
+  const cutLine = <ListCutLine members={flags} total={total} noun="flags" />;
   const list = (
     <ol className="m-0 flex list-none flex-col gap-(--space-4) p-0">
       {ordered.map((flag) => (
@@ -105,6 +115,7 @@ export function FlagBlock({
         {...props}
       >
         {list}
+        {cutLine}
         {children}
       </section>
     );
@@ -113,9 +124,9 @@ export function FlagBlock({
     <Section
       data-slot="flag-block"
       level={3}
-      title={many ? W.flags : W.flag}
-      {...(many
-        ? { count: ordered.length }
+      title={many || !whole ? W.flags : W.flag}
+      {...(many || !whole
+        ? { count: listCount(shown, total) }
         : only !== undefined && {
             end: (
               <span
@@ -130,6 +141,7 @@ export function FlagBlock({
       {...props}
     >
       {list}
+      {cutLine}
       {children}
     </Section>
   );

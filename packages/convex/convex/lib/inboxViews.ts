@@ -33,10 +33,13 @@ import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import type {
   AlertSubjectView,
+  AskerLandmarksView,
   AskMemberView,
   AuthorBlockView,
   BodyRefView,
   CandidateView,
+  DormancyView,
+  DrawnSkateView,
   FlagMemberView,
   FlagTargetView,
   HazardSubjectView,
@@ -45,6 +48,7 @@ import type {
   InboxMapAccessPoint,
   InboxMapBody,
   InboxMapLngLat,
+  InboxMapTrack,
   InboxMapView,
   InboxRowView,
   LookalikeView,
@@ -58,15 +62,16 @@ import type {
   RulingView,
   TicketView,
 } from '../inbox';
-import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from '../inbox';
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
+import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
 import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import {
   CHARGED_QUERY_BUDGET,
+  OverBudget,
   type ReadBudget,
   ROW_MAX,
   type RowKind,
@@ -122,6 +127,23 @@ export class InboxReader {
       this.memo.set(key, read);
     }
     return read;
+  }
+
+  /**
+   * **A single row the item can't do without** — an attribution, a fact a lever or a verdict rests on
+   * (B01-5c): read as `get` reads it, but a budget that can't hold it throws `OverBudget` (a plan
+   * error) instead of answering `null`, which would read as "no such row" — a ruling by no one, a
+   * moderator's shelving as the machine's. Such rows are read before any list that fills the budget,
+   * so on a fresh budget this never throws; a throw says the plan is wrong, loudly.
+   */
+  async must<T extends TableNames>(
+    kind: RowKind,
+    id: Id<T> | null | undefined,
+  ): Promise<Doc<T> | null> {
+    if (id && !this.memo.has(id as string) && !this.budget.affordsRead(kind)) {
+      throw new OverBudget(`inbox item: a required ${kind} row past the item's budget`);
+    }
+    return this.get<T>(kind, id);
   }
 
   /** Up to `n` rows of `kind`, charged at their worst — or none when they don't fit. */
@@ -683,6 +705,43 @@ async function flagTargetView(
   }
 }
 
+/**
+ * **Members read one at a time, each whole or not at all** (B01-5c). A member's reads go through the
+ * reader's budget, which starts a read only while that row's worst case fits and otherwise reads
+ * nothing (`ReadBudget.measured` — `null`, as for a row that's gone). Started together, each read
+ * reserves its worst case at once, so past about a budget's worth of documents the rest read nothing
+ * and their members vanished without a word; and a member whose row fit but whose person didn't came
+ * back half-read. So each member is started only while its whole worst case (`worst`: every row it
+ * reads, at its bound) fits, one after another; when the next doesn't, the list ends there and says
+ * `cut`. A member whose row is really gone is still left out, as before.
+ */
+async function readEach<T>(
+  r: InboxReader,
+  members: readonly Doc<'inboxItemMembers'>[],
+  worst: number,
+  member: (m: Doc<'inboxItemMembers'>) => Promise<T | null>,
+): Promise<{ rows: T[]; cut: boolean }> {
+  const rows: T[] = [];
+  for (const m of members) {
+    if (!r.budget.affords(worst) || !r.budget.affordsCalls(MEMBER_READS, MEMBER_READS)) {
+      return { rows, cut: true };
+    }
+    const row = await member(m);
+    if (row !== null) rows.push(row);
+  }
+  return { rows, cut: false };
+}
+
+/** The dismissed access reports an Access item reads to find those its ruling dismissed. */
+export const DISMISSED_BY_RULING_READ = 20;
+
+/** The most rows one member reads: its source, a related row (a report, a prior flag), a person. */
+const MEMBER_READS = 3;
+/** A flag member at its worst: the flag and the one it supersedes (capped notes), and its filer. */
+const FLAG_MEMBER_WORST = 2 * ROW_MAX.contentFlag + ROW_MAX.profile;
+/** An ask member at its worst: the ask (an admit's catalog polygon), its report, and its asker. */
+const ASK_MEMBER_WORST = ROW_MAX.waterBodyRequest + ROW_MAX.report + ROW_MAX.profile;
+
 async function flagMember(
   r: InboxReader,
   m: Doc<'inboxItemMembers'>,
@@ -738,7 +797,205 @@ async function askMember(
           }
         : null,
       activityId: a.activityId ?? null,
+      // Read after the item's rule (`withSkates`, `withAskerLandmarks`), never before it.
+      skate: null,
+      landmarkAsks: null,
     },
+  };
+}
+
+/** Askers whose landmark counts an item reads (B01-5c), newest asks first. */
+export const VIEW_ASKER_COUNTS = 3;
+
+/** Of one person's open and of their closed request filings, the most read to count their landmark asks. */
+export const LANDMARK_FILINGS_READ = 50;
+
+/**
+ * A person's landmark asks, from their own Inbox filings (`by_filer_source_status`, rows of 1 KiB):
+ * the newest `LANDMARK_FILINGS_READ` open and closed, each one's item read (a small row) for its kind
+ * and decision. One past the read says `capped`.
+ */
+async function askerLandmarksOf(
+  r: InboxReader,
+  userId: Id<'profiles'>,
+): Promise<AskerLandmarksView> {
+  let capped = false;
+  const filings: Doc<'inboxItemMembers'>[] = [];
+  for (const status of ['open', 'closed'] as const) {
+    const rows = await r.take('inboxMember', LANDMARK_FILINGS_READ + 1, (k) =>
+      r.ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_filer_source_status', (q) =>
+          q.eq('filedByUserId', userId).eq('sourceTable', 'waterBodyRequests').eq('status', status),
+        )
+        .order('desc')
+        .take(k),
+    );
+    if (rows.length > LANDMARK_FILINGS_READ) capped = true;
+    filings.push(...rows.slice(0, LANDMARK_FILINGS_READ));
+  }
+  let asked = 0;
+  let added = 0;
+  for (const itemId of new Set(filings.map((m) => m.itemId))) {
+    const item = await r.get<'inboxItems'>('small', itemId);
+    // Past what the budget holds, what is counted is a floor.
+    if (!item) {
+      capped = true;
+      continue;
+    }
+    if (item.kind !== 'place' || item.facet !== 'landmarks') continue;
+    asked++;
+    if (item.decision === 'approved') added++;
+  }
+  return { asked, added, capped };
+}
+
+/** Each landmark ask's asker's counts — after the item's rule, at most `VIEW_ASKER_COUNTS` asks. */
+async function withAskerLandmarks(
+  r: InboxReader,
+  asks: readonly AskMemberView[],
+): Promise<AskMemberView[]> {
+  if (await inboxPending(r.ctx)) return [...asks];
+  const out: AskMemberView[] = [];
+  for (const [i, a] of asks.entries()) {
+    const id = a.asker?.userId;
+    out.push(
+      i < VIEW_ASKER_COUNTS && id ? { ...a, landmarkAsks: await askerLandmarksOf(r, id) } : a,
+    );
+  }
+  return out;
+}
+
+/**
+ * A drawn body's creating skate and the report it became (2.5): the drawer's own activity bound to
+ * the body that started before the body was drawn — the latest such, one row by index
+ * (`by_water_body_start_time`, an `eq` on the body and a bounded range on the start), checked to be
+ * the drawer's — and its `linkedReportId`.
+ */
+async function drawnSkateOf(
+  r: InboxReader,
+  water: Doc<'waterBodies'>,
+): Promise<{
+  skate: DrawnSkateView | null;
+  fromReport: (ReportRefView & { excerpt: string | null }) | null;
+}> {
+  const none = { skate: null, fromReport: null };
+  const drawer = water.createdByUserId;
+  if (drawer === undefined) return none;
+  // A small page, the drawer's kept: another skater's activity synced late onto the body can be the
+  // latest before the drawing without hiding the drawer's own behind it.
+  const page = await r.take('activity', DRAWN_SKATE_PAGE, (k) =>
+    r.ctx.db
+      .query('gpsActivities')
+      .withIndex('by_water_body_start_time', (q) =>
+        q.eq('waterBodyId', water._id).lte('startTime', water.createdAt),
+      )
+      .order('desc')
+      .take(k),
+  );
+  const a = page.find((x) => x.userId === drawer);
+  if (!a) return none;
+  const skate: DrawnSkateView = {
+    activityId: a._id,
+    startTime: a.startTime,
+    endTime: a.endTime ?? null,
+    elapsedSeconds: a.elapsedSeconds ?? null,
+    hasTrack: a.path?.type === 'LineString',
+  };
+  const report = a.linkedReportId ? await r.must<'reports'>('report', a.linkedReportId) : null;
+  if (!report) return { skate, fromReport: null };
+  // Withdrawn by its author reads as taken down does: its words only to `content.read`.
+  const text =
+    report.authorDeletedAt !== undefined && !r.canReadContent ? null : r.text(report, report.notes);
+  return {
+    skate,
+    fromReport: {
+      reportId: report._id,
+      skateEndTime: report.skateEndTime,
+      author: personRef(await r.must<'profiles'>('profile', report.authorId)),
+      observedFrom: report.observedFrom ?? null,
+      excerpt: text?.trim() ? snippet(text) : null,
+    },
+  };
+}
+
+/** The drawn body's activities read to find the drawer's own skate: the latest few before it was drawn. */
+export const DRAWN_SKATE_PAGE = 3;
+
+/** Skates an item reads for its asks (B01-5c): each an activity row read whole, track and all. */
+export const VIEW_SKATES = 10;
+
+/**
+ * Each ask's recorded skate, as its activity row stores it — read only after the item's rule has had
+ * its reads (a skate is context, never a reason a lever's check went unfinished), at most
+ * `VIEW_SKATES`, each started only while its worst case fits (`r.get`); one past that reads `null`.
+ */
+async function withSkates(
+  r: InboxReader,
+  asks: readonly AskMemberView[],
+): Promise<AskMemberView[]> {
+  const out: AskMemberView[] = [];
+  let read = 0;
+  for (const a of asks) {
+    if (a.activityId === null || read >= VIEW_SKATES) {
+      out.push(a);
+      continue;
+    }
+    read++;
+    const activity = await r.get<'gpsActivities'>('activity', a.activityId);
+    out.push({
+      ...a,
+      skate: activity
+        ? {
+            startTime: activity.startTime,
+            endTime: activity.endTime ?? null,
+            elapsedSeconds: activity.elapsedSeconds ?? null,
+          }
+        : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * A body's standing access ruling as 2.2's ruling event (the Access item's, and a *contest access*
+ * ask's): the verdict, when and by whom, its public note, and what the ruler cited — the ruling's own
+ * audit row, the latest `set_public_access` (a lookup, one row). `null` for a body with no ruling.
+ */
+async function rulingOf(r: InboxReader, water: Doc<'waterBodies'>): Promise<RulingView | null> {
+  const p = water.publicAccess;
+  if (!p) return null;
+  // What the ruler cited, and who: required rows (`must`) — a miss must never read as "no one".
+  if (!r.budget.affordsRead('moderationAction')) {
+    throw new OverBudget("inbox item: a ruling's audit row past the item's budget");
+  }
+  const audit = await r.take('moderationAction', 1, (k) =>
+    r.ctx.db
+      .query('moderationActions')
+      .withIndex('by_target_action', (q) =>
+        q.eq('targetType', 'waterbody').eq('targetId', water._id).eq('action', 'set_public_access'),
+      )
+      .order('desc')
+      .take(k),
+  );
+  return {
+    verdict: p.verdict,
+    ruledAt: p.decidedAt,
+    by: personRef(await r.must<'profiles'>('profile', p.decidedByUserId)),
+    note: p.note ?? null,
+    reason: audit[0]?.reason ?? null,
+  };
+}
+
+/** An activate ask's body's dormancy, as the body stores it; `null` for a body not dormant. */
+async function dormancyOf(r: InboxReader, water: Doc<'waterBodies'>): Promise<DormancyView | null> {
+  const d = water.dormant;
+  if (!d) return null;
+  return {
+    reason: d.reason,
+    since: d.since,
+    note: d.note ?? null,
+    by: personRef(await r.must<'profiles'>('profile', d.byUserId)),
   };
 }
 
@@ -782,13 +1039,10 @@ export async function rowLabel(
   };
   switch (item.kind) {
     case 'flag': {
-      const flags = (
-        await Promise.all(
-          members.map((m) =>
-            r.get<'contentFlags'>('contentFlag', m.sourceId as Id<'contentFlags'>),
-          ),
-        )
-      ).filter((f): f is Doc<'contentFlags'> => f !== null);
+      // One at a time, each whole (`readEach`): a row's first flag is never one a budget skipped.
+      const { rows: flags } = await readEach(r, members, ROW_MAX.contentFlag, (m) =>
+        r.get<'contentFlags'>('contentFlag', m.sourceId as Id<'contentFlags'>),
+      );
       const oldest = flags[0];
       const label = oldest ? await targetLabel(r, oldest.targetType, oldest.targetId) : null;
       const target = {
@@ -839,13 +1093,9 @@ export async function rowLabel(
     }
     case 'request':
     case 'place': {
-      const asks = (
-        await Promise.all(
-          members.map((m) =>
-            r.get<'waterBodyRequests'>('waterBodyRequest', m.sourceId as Id<'waterBodyRequests'>),
-          ),
-        )
-      ).filter((a): a is Doc<'waterBodyRequests'> => a !== null);
+      const { rows: asks } = await readEach(r, members, ROW_MAX.waterBodyRequest, (m) =>
+        r.get<'waterBodyRequests'>('waterBodyRequest', m.sourceId as Id<'waterBodyRequests'>),
+      );
       const a = asks[0];
       const firstAsker = personRef(await r.get<'profiles'>('profile', a?.requesterId));
       if (item.kind === 'request') {
@@ -913,9 +1163,13 @@ type ItemFacts = { view: DistOmit<InboxItemView, 'can' | 'decided'>; facts: Inbo
 
 /** An item as its handler draws it, and the facts its verbs' preconditions read. */
 export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise<ItemFacts | null> {
-  const open = await r.members(item._id, 'open');
-  const closed = await r.members(item._id, 'closed');
-  const members = [...open, ...closed].sort((a, b) => a.filedAt - b.filedAt);
+  // Oldest first, read by the kinds that list from that end (a flag's, a ticket's); an access item
+  // and an ask's list read from the newest end themselves.
+  const oldestMembers = async () => {
+    const open = await r.members(item._id, 'open');
+    const closed = await r.members(item._id, 'closed');
+    return [...open, ...closed].sort((a, b) => a.filedAt - b.filedAt);
+  };
   const base = {
     itemId: item._id,
     lane: item.lane,
@@ -927,56 +1181,37 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
   };
   switch (item.kind) {
     case 'flag': {
-      const flags = (await Promise.all(members.map((m) => flagMember(r, m)))).filter(
-        (f): f is FlagMemberView => f !== null,
-      );
+      const members = await oldestMembers();
+      // The target (what the levers' facts are) and its author first, on a fresh budget; the flags,
+      // a list that fills what's left, after (B01-5c).
       const firstFlag = members[0]
-        ? await r.get<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
+        ? await r.must<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
         : null;
       if (!firstFlag) return null;
       const { view: target, facts } = await flagTargetView(r, firstFlag);
       const author =
         firstFlag.targetType === 'user' ? null : await authorBlock(r, item.subjectUserId);
-      return { view: { ...base, kind: 'flag', target, flags, author }, facts };
+      const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
+        flagMember(r, m),
+      );
+      return { view: { ...base, kind: 'flag', target, flags, flagsCut, author }, facts };
     }
     case 'access': {
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
+      // The standing ruling (its ruler, what they cited) first, on a fresh budget (B01-5c).
+      const ruling = await rulingOf(r, water);
       // Listed newest first, so read from the newest end: past `VIEW_MEMBERS` a report about changed
       // access would otherwise be the one left out (PR #170).
       const recent = [
         ...(await r.members(item._id, 'open', VIEW_MEMBERS, 'newest')),
         ...(await r.members(item._id, 'closed', VIEW_MEMBERS, 'newest')),
       ];
-      const reports = (await Promise.all(recent.map((m) => flagMember(r, m))))
-        .filter((f): f is FlagMemberView => f !== null)
-        .sort((a, b) => b.filedAt - a.filedAt);
+      const read = await readEach(r, recent, FLAG_MEMBER_WORST, (m) => flagMember(r, m));
+      const reports = read.rows.sort((a, b) => b.filedAt - a.filedAt);
+      const reportsCut = read.cut;
       const p = water.publicAccess;
-      // What the ruler cited: the ruling's own audit row (the latest `set_public_access`).
-      const audit = p
-        ? await r.take('moderationAction', 1, (k) =>
-            r.ctx.db
-              .query('moderationActions')
-              .withIndex('by_target_action', (q) =>
-                q
-                  .eq('targetType', 'waterbody')
-                  .eq('targetId', water._id)
-                  .eq('action', 'set_public_access'),
-              )
-              .order('desc')
-              .take(k),
-          )
-        : [];
-      const ruling: RulingView | null = p
-        ? {
-            verdict: p.verdict,
-            ruledAt: p.decidedAt,
-            by: personRef(await r.get<'profiles'>('profile', p.decidedByUserId)),
-            note: p.note ?? null,
-            reason: audit[0]?.reason ?? null,
-          }
-        : null;
       const contest = await r.take('waterBodyRequest', COUNT_CAP + 1, (k) =>
         r.ctx.db
           .query('waterBodyRequests')
@@ -990,8 +1225,12 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         capped: contest.length > COUNT_CAP,
       };
       const dismissedByRuling: FlagMemberView[] = [];
+      let dismissedByRulingCut = false;
       if (p) {
-        const dismissed = await r.take('contentFlag', 20, (k) =>
+        // One past the cap, to know there are more; fewer when the budget holds fewer — either way
+        // the list says it's cut rather than reading as every dismissed report.
+        const room = r.budget.rows('contentFlag', DISMISSED_BY_RULING_READ + 1);
+        const dismissed = await r.take('contentFlag', DISMISSED_BY_RULING_READ + 1, (k) =>
           r.ctx.db
             .query('contentFlags')
             .withIndex('by_target_status_reason', (q) =>
@@ -1003,7 +1242,21 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
             )
             .take(k),
         );
-        for (const f of dismissed.filter((x) => x.resolvedAt === p.decidedAt)) {
+        if (
+          dismissed.length > DISMISSED_BY_RULING_READ ||
+          (room <= DISMISSED_BY_RULING_READ && dismissed.length >= room)
+        ) {
+          dismissedByRulingCut = true;
+        }
+        const ruled = dismissed
+          .slice(0, DISMISSED_BY_RULING_READ)
+          .filter((x) => x.resolvedAt === p.decidedAt);
+        for (const f of ruled) {
+          // Each with its filer whole, or the list ends here (`readEach`'s rule).
+          if (!r.budget.affords(ROW_MAX.profile) || !r.budget.affordsCalls(1, 1)) {
+            dismissedByRulingCut = true;
+            break;
+          }
           dismissedByRuling.push({
             flagId: f._id,
             reason: f.reason,
@@ -1019,18 +1272,53 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         }
       }
       return {
-        view: { ...base, kind: 'access', body, reports, ruling, dismissedByRuling, contestAsks },
+        view: {
+          ...base,
+          kind: 'access',
+          body,
+          reports,
+          reportsCut,
+          ruling,
+          dismissedByRuling,
+          dismissedByRulingCut,
+          contestAsks,
+        },
         facts: { hasRuling: p !== undefined },
       };
     }
     case 'request':
     case 'place': {
-      const asks = (await Promise.all(members.map((m) => askMember(r, m)))).filter(
-        (a): a is { view: AskMemberView; doc: Doc<'waterBodyRequests'> } => a !== null,
+      // The single rows the item rests on, first, on a fresh budget (B01-5c): its body, and for a
+      // contest-access ask the ruling it contests, for an activate ask the body's dormancy (each with
+      // who made it). The asks — a list that fills what's left — after.
+      const held = await r.must<'waterBodies'>('waterBody', item.waterBodyId);
+      const heldRuling =
+        item.kind === 'request' && item.facet === 'contest_access' && held
+          ? await rulingOf(r, held)
+          : null;
+      const heldDormancy =
+        item.kind === 'request' && item.facet === 'activate' && held
+          ? await dormancyOf(r, held)
+          : null;
+      // Newest first, read from that end, as the Access item's reports (B01-5c): past the cap the
+      // reader sees the latest asks, never the oldest fifty re-sorted.
+      const recent = [
+        ...(await r.members(item._id, 'open', VIEW_MEMBERS, 'newest')),
+        ...(await r.members(item._id, 'closed', VIEW_MEMBERS, 'newest')),
+      ];
+      // One at a time, each whole (`readEach`): past what the budget holds the list ends, and says so.
+      const { rows: read, cut: asksCut } = await readEach(r, recent, ASK_MEMBER_WORST, (m) =>
+        askMember(r, m),
       );
-      const first = asks[0]?.doc;
+      const asks = read.sort(
+        (a, b) => b.doc.createdAt - a.doc.createdAt || b.doc._creationTime - a.doc._creationTime,
+      );
+      // The ask a decision is sent for: the newest open one served — the facts below are its reach.
+      const primary = asks.find((a) => a.view.status === 'open') ?? asks[0];
+      const first = primary?.doc;
       if (!first) return null;
-      const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId ?? first.waterBodyId);
+      // The item's body as read above; an admit's item has none until its ask names one.
+      const water = held ?? (await r.must<'waterBodies'>('waterBody', first.waterBodyId));
       const body = bodyRef(water);
       if (item.kind === 'request') {
         const withCandidate = asks.find((a) => a.doc.candidate !== undefined)?.doc;
@@ -1049,24 +1337,33 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
               nearestKnown: null,
             }
           : null;
+        const facts: InboxRuleFacts = {
+          requestKind: first.kind,
+          hasCandidate: candidate !== null,
+          resolveError: first.resolveError ?? null,
+          candidateFlowing: c !== undefined && c.cls === undefined,
+          // Its siblings are its own question's asks either way: one answer for both verbs.
+          askedAlongside: await alongsideOf(r, first, {}, {}),
+        };
+        // Context after the rule's reads, so none of it can leave a lever's check unfinished.
         return {
           view: {
             ...base,
             kind: 'request',
             requestKind: first.kind,
             body,
-            asks: asks.map((a) => a.view),
+            asks: await withSkates(
+              r,
+              asks.map((a) => a.view),
+            ),
+            primaryRequestId: first._id,
+            asksCut,
             candidate,
             resolveError: first.resolveError ?? null,
+            ruling: first.kind === 'contest_access' ? heldRuling : null,
+            dormancy: first.kind === 'activate' ? heldDormancy : null,
           },
-          facts: {
-            requestKind: first.kind,
-            hasCandidate: candidate !== null,
-            resolveError: first.resolveError ?? null,
-            candidateFlowing: c !== undefined && c.cls === undefined,
-            // Its siblings are its own question's asks either way: one answer for both verbs.
-            askedAlongside: await alongsideOf(r, first, {}, {}),
-          },
+          facts,
         };
       }
       if (!body || !water) return null;
@@ -1092,7 +1389,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           ? null
           : `No landmark called "${first.name}" near that spot on ${water.name} yet — add it in the lake editor first, then approve.`;
         facts.askedAlongside = await alongsideOf(r, first, { landmark: answering ?? null }, {});
-        const others = asks.slice(1).map((a) => a.doc);
+        const others = asks.filter((a) => a !== primary).map((a) => a.doc);
         const found = landmarkProposalView(ask, landmarks, others);
         if (found.similarLandmark) {
           const l = landmarks.find((x) => x._id === found.similarLandmark?.landmarkId);
@@ -1117,7 +1414,17 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           kind: 'place',
           placeKind: first.kind === 'name_bay' ? 'name_bay' : 'name_landmark',
           body,
-          asks: asks.map((a) => a.view),
+          asks: await withSkates(
+            r,
+            first.kind === 'name_landmark'
+              ? await withAskerLandmarks(
+                  r,
+                  asks.map((a) => a.view),
+                )
+              : asks.map((a) => a.view),
+          ),
+          primaryRequestId: first._id,
+          asksCut,
           drawnSubAreaId,
           answeringLandmarkId,
           lookalikes,
@@ -1129,20 +1436,26 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
+      const drawerProfile = await r.must<'profiles'>('profile', water.createdByUserId);
+      const drawer = personLockup(drawerProfile, r.now);
+      const overlap = await overlapOf(r, water);
+      const made = await drawnSkateOf(r, water);
       return {
         view: {
           ...base,
           kind: 'drawn',
           body,
-          drawer: personLockup(await r.get<'profiles'>('profile', water.createdByUserId), r.now),
-          overlap: await overlapOf(r, water),
-          fromReport: null,
+          drawer,
+          drawerReports: drawer && !drawer.deleted ? (drawerProfile?.reportCount ?? null) : null,
+          overlap,
+          fromReport: made.fromReport,
+          skate: made.skate,
         },
         facts: { hasOverlap: (water.duplicateCandidateIds?.length ?? 0) > 0 },
       };
     }
     case 'ticket': {
-      const m = members[0];
+      const m = (await oldestMembers())[0];
       const t = m
         ? await r.get<'supportTickets'>('supportTicket', m.sourceId as Id<'supportTickets'>)
         : null;
@@ -1435,14 +1748,42 @@ class OutlineBudget {
   capped = false;
   take(outline: InboxMapBody | null): InboxMapBody | null {
     if (!outline) return null;
-    const bytes = getDocumentSize(outline.outline as never);
+    return this.fits(getDocumentSize(outline.outline as never)) ? outline : null;
+  }
+  /** A track, from the same bound as the outlines (B01-5c). */
+  takeTrack(track: InboxMapTrack | null): InboxMapTrack | null {
+    if (!track) return null;
+    return this.fits(getDocumentSize(track.path as never)) ? track : null;
+  }
+  private fits(bytes: number): boolean {
     if (bytes > this.left) {
       this.capped = true;
-      return null;
+      return false;
     }
     this.left -= bytes;
-    return outline;
+    return true;
   }
+}
+
+/**
+ * A skate's track for an embed: sent whole up to `MAP_OUTLINE_BYTES`, as an outline is; past it,
+ * thinned evenly to `MAP_RING_POINTS` points with its first and last kept (`simplified`). `null` for a
+ * skate with no LineString track.
+ */
+export function embedTrack(id: string, path: unknown): InboxMapTrack | null {
+  const line = path as { type?: string; coordinates?: number[][] } | undefined;
+  if (line?.type !== 'LineString' || !Array.isArray(line.coordinates)) return null;
+  const coords = line.coordinates.filter((c) => c.length >= 2);
+  if (coords.length < 2) return null;
+  const at = (c: number[]): InboxMapLngLat => [c[0] as number, c[1] as number];
+  if (getDocumentSize(line as never) <= MAP_BOUNDS.outlineBytes) {
+    return { id, path: coords.map(at), simplified: false };
+  }
+  const max = MAP_BOUNDS.ringPoints;
+  const step = (coords.length - 1) / (max - 1);
+  const out: InboxMapLngLat[] = [];
+  for (let k = 0; k < max; k++) out.push(at(coords[Math.round(k * step)] as number[]));
+  return { id, path: out, simplified: true };
 }
 
 /** The body's own outline (sent whole up to `MAP_OUTLINE_BYTES`). */
@@ -1529,11 +1870,23 @@ export async function itemMapOf(
     points: [],
     access: [],
     lookalikes: [],
+    tracks: [],
     overlapShare: null,
     capped: false,
   };
   const bodyDoc = (id: Id<'waterBodies'> | null | undefined) =>
     r.get<'waterBodies'>('waterBody', id);
+  /** A skate the item read serves, as a track — or, past the answer's bound or the budget, `capped`. */
+  const addTrack = async (activityId: Id<'gpsActivities'>) => {
+    const activity = await r.get<'gpsActivities'>('activity', activityId);
+    if (!activity) {
+      // Served by the item read a moment ago, so a miss here is the budget's: say the answer is short.
+      map.capped = true;
+      return;
+    }
+    const track = outlines.takeTrack(embedTrack(activity._id, activity.path));
+    if (track) map.tracks.push(track);
+  };
   switch (view.kind) {
     case 'flag': {
       const target = view.target;
@@ -1584,6 +1937,10 @@ export async function itemMapOf(
         );
       }
       for (const ask of view.asks) map.points.push({ id: ask.requestId, at: toLngLat(ask.coord) });
+      // Each asker's recorded skate the item read serves (at most `VIEW_SKATES`), never another.
+      for (const ask of view.asks) {
+        if (ask.skate !== null && ask.activityId !== null) await addTrack(ask.activityId);
+      }
       if (view.candidate?.nearestKnown) {
         const near = outlines.take(
           neighborOutline(await bodyDoc(view.candidate.nearestKnown.waterBodyId)),
@@ -1618,6 +1975,8 @@ export async function itemMapOf(
         if (known) map.others.push(known);
         map.overlapShare = view.overlap.share;
       }
+      // The drawer's own skate the drawing came from, as the item read found it.
+      if (view.skate?.hasTrack) await addTrack(view.skate.activityId);
       break;
     }
     case 'ticket':

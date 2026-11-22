@@ -10,7 +10,6 @@ import {
   dayLabel,
   dayTime,
   measuredMeanCm,
-  milesWords,
   ordinal,
   readingCm,
   skateSpan,
@@ -20,35 +19,6 @@ import {
 
 // Absolute instants in the boards' zone, formatted in it: the same answers in every zone that runs.
 const Z = BOARD_ZONE;
-
-describe('milesWords', () => {
-  test('one decimal, with its unit', () => {
-    expect(milesWords(1290)).toBe('0.8 mi');
-    expect(milesWords(1930)).toBe('1.2 mi');
-  });
-  test('near is never nothing', () => {
-    expect(milesWords(0)).toBe('<0.1 mi');
-    expect(milesWords(50)).toBe('<0.1 mi');
-  });
-  test('a bad number reads as near, never NaN', () => {
-    expect(milesWords(Number.NaN)).toBe('<0.1 mi');
-    expect(milesWords(-500)).toBe('<0.1 mi');
-  });
-  test('property: always "<0.1 mi" or one decimal ≥ 0.1, and monotone', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: -1e3, max: 1e7, noNaN: true }),
-        fc.double({ min: 0, max: 1e5, noNaN: true }),
-        (m, more) => {
-          const w = milesWords(m);
-          expect(w).toMatch(/^(<0\.1|\d+\.\d) mi$/);
-          const n = (s: string) => (s.startsWith('<') ? 0 : Number.parseFloat(s));
-          expect(n(milesWords(m + more))).toBeGreaterThanOrEqual(n(w));
-        },
-      ),
-    );
-  });
-});
 
 describe('ordinal', () => {
   test.each([

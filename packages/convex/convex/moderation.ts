@@ -16,7 +16,13 @@ import { disputesReview, effectiveBountyLimitOf } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalQuery,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { recordAlertVerdict } from './accessAlerts';
 import {
   type AuditReason,
@@ -1959,7 +1965,7 @@ export async function personWriteResult(
  * `undo.latestOwn` reads it). Its reads are the write's own, uncharged (see `personWriteResult`).
  */
 export async function undoOfferAfterWrite(
-  ctx: MutationCtx,
+  ctx: QueryCtx | MutationCtx,
   actorId: Id<'profiles'>,
   actionId: Id<'moderationActions'>,
 ): Promise<{ undoable: true; undoNeedsReason: boolean } | { undoable: false }> {
@@ -1970,6 +1976,18 @@ export async function undoOfferAfterWrite(
     ? { undoable: true, undoNeedsReason: state.needsReason }
     : { undoable: false };
 }
+
+/**
+ * {@link undoOfferAfterWrite} for a write in a module the undo engine itself imports (B01-5c): the
+ * drawn review lives in `waterBodies.ts`, which the engine's body handlers import, so a static
+ * import of the engine from there would close a cycle. Such a write asks this through
+ * `ctx.runQuery` instead — a function reference, no import edge — inside its own transaction, so
+ * the offer reads the write it follows (`lib/decisionResult`).
+ */
+export const undoOfferForRow = internalQuery({
+  args: { actorId: v.id('profiles'), actionId: v.id('moderationActions') },
+  handler: (ctx, { actorId, actionId }) => undoOfferAfterWrite(ctx, actorId, actionId),
+});
 
 async function auditUser(
   ctx: MutationCtx,

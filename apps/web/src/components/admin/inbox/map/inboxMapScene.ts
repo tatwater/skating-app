@@ -347,17 +347,31 @@ export function admitScene({
   });
 }
 
-/** A request on a body we hold (activate, restore, contest access, takedown): the body, the asks. */
+/**
+ * A request on a body we hold (activate, restore, contest access, takedown): the body, the asks, and
+ * the asks' recorded skates — named on the legend as the admit scene names them.
+ */
 export interface RequestOnBodyInput extends Captioned {
   body: EmbedBody;
   asks: readonly EmbedPoint[];
+  tracks?: readonly EmbedPath[];
+  legend?: { track?: string };
 }
 
-export function requestOnBodyScene({ body, asks, caption }: RequestOnBodyInput): InboxMapView {
+export function requestOnBodyScene({
+  body,
+  asks,
+  tracks = [],
+  legend = {},
+  caption,
+}: RequestOnBodyInput): InboxMapView {
   return view(
-    [bodyItem(body, 'body'), ...asks.map(askedItem)],
-    [...outlineCoords(body.outline), ...asks.map((a) => a.at)],
-    { caption },
+    [bodyItem(body, 'body'), ...tracks.map(trackItem), ...asks.map(askedItem)],
+    [...outlineCoords(body.outline), ...asks.map((a) => a.at), ...tracks.flatMap((t) => t.path)],
+    {
+      caption,
+      legend: legendRows([[legend.track, tracks.length > 0, { kind: 'line', style: 'track' }]]),
+    },
   );
 }
 

@@ -6,22 +6,14 @@ import { must } from '@/components/kit/storyKit';
 import { KeysProvider } from '@/lib/keys';
 
 import { storyLink } from '../inboxBoard';
-import {
-  ADMIT_ITEM,
-  DRAWN_ITEM,
-  NEWFOUND,
-  NOW,
-  PHOTO_ITEM,
-  PLACE_ITEM,
-  TICKET_ITEM,
-} from '../list/inboxFixtures';
+import { NOW, PHOTO_ITEM, TICKET_ITEM } from '../list/inboxFixtures';
 import type { InboxItemView } from '../list/inboxTypes';
 import { InboxInspector } from './InboxInspector';
 
 /**
- * The placeholder for each kind the Inbox can't decide yet — a photo flag, a request, a place ask, a
- * drawn body, a support ticket: its facts, read only, and one line saying where that kind is decided
- * for now, with a link there (same tab; the old pages take no params, so a plain link).
+ * The placeholder for each kind the Inbox can't decide yet — a photo flag, a support ticket: its
+ * facts, read only, and one line saying where that kind is decided for now, with a link there (same
+ * tab; the old pages take no params, so a plain link).
  */
 function Pane({ item, canReadSupport = true }: { item: InboxItemView; canReadSupport?: boolean }) {
   const pane = useRef<HTMLElement | null>(null);
@@ -78,29 +70,6 @@ async function expectElsewhere(root: HTMLElement, line: RegExp, targets: string[
 export const PhotoFlag: Story = {
   play: ({ canvasElement }) =>
     expectElsewhere(canvasElement, /decided on the Flags page for now/, ['/admin/flags']),
-};
-
-export const Request: Story = {
-  args: { item: ADMIT_ITEM },
-  play: ({ canvasElement }) =>
-    expectElsewhere(canvasElement, /decided on the Requests page for now/, [
-      '/admin/water/requests',
-    ]),
-};
-
-export const PlaceAsk: Story = {
-  args: { item: PLACE_ITEM },
-  play: ({ canvasElement }) =>
-    expectElsewhere(canvasElement, /answered by drawing in the body’s editor/, [
-      '/admin/water/requests',
-      `/admin/water/${NEWFOUND.waterBodyId}`,
-    ]),
-};
-
-export const DrawnBody: Story = {
-  args: { item: DRAWN_ITEM },
-  play: ({ canvasElement }) =>
-    expectElsewhere(canvasElement, /decided in the Water bodies list for now/, ['/admin/water']),
 };
 
 export const Ticket: Story = {

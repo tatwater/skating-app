@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import { AROUND_IT_DEFAULT_DAYS } from '@skating/core';
+import { Link, useRouterState } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 
 import { isFailed, read, useConsoleReadSet } from '../../../reads/consoleReads';
@@ -67,8 +68,10 @@ function FlagInspector({
   });
   const { announce } = useUndo();
   const server = useFlagServer();
-  const here = useStillHere(item.itemId);
-  const onWrite = useFlagWrites({ item, server, announce, here });
+  const stillHere = useStillHere(item.itemId);
+  const onWrite = useFlagWrites({ item, server, announce, here: stillHere });
+  // Where the console is, for the Body console's way back (`from`), as every handler builds it.
+  const here = useRouterState({ select: (s) => s.location.href });
 
   const weather: WeatherState | undefined =
     reportId === null ? undefined : stateOf<ClaimWeatherData>(reads.weather);
@@ -89,6 +92,7 @@ function FlagInspector({
     ...(map !== undefined && { map }),
     onWrite,
     pane,
+    bodyLink: (id) => <Link to="/admin/body/$id" params={{ id }} search={{ from: here }} />,
     ...(author !== null &&
       !author.person.deleted && {
         authorMenu: (

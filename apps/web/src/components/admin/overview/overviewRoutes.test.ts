@@ -30,6 +30,9 @@ const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]>
   ? true
   : false = true;
 
+/** The lanes the Inbox decides now (B01-5c): their old pages retire with it. */
+const INBOX_DECIDES = new Set(['requests', 'placesAsked', 'drawnBodies']);
+
 const PEOPLE_LISTS = ['staff', 'new', 'suspended', 'banned', 'leaving'] as const;
 
 describe('Home’s links, until the new modes land', () => {
@@ -48,6 +51,8 @@ describe('Home’s links, until the new modes land', () => {
       const path = consolePathFor(target) as string;
       expect(path).not.toBeNull();
       if (target.kind === 'body') expect(modeAt(path)?.id).toBe('bodies');
+      else if (target.kind === 'inbox' && INBOX_DECIDES.has(target.lane ?? ''))
+        expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -77,7 +82,13 @@ describe('Home’s links, until the new modes land', () => {
   it('sends the lanes to the pages that work them', () => {
     expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/flags');
     expect(consolePathFor({ kind: 'inbox', lane: 'support' })).toBe('/admin/support');
-    expect(consolePathFor({ kind: 'inbox', lane: 'placesAsked' })).toBe('/admin/water/requests');
+    expect(consolePathFor({ kind: 'inbox', lane: 'placesAsked' })).toBe(
+      '/admin/inbox?lane=placesAsked',
+    );
+    expect(consolePathFor({ kind: 'inbox', lane: 'requests' })).toBe('/admin/inbox?lane=requests');
+    expect(consolePathFor({ kind: 'inbox', lane: 'drawnBodies' })).toBe(
+      '/admin/inbox?lane=drawnBodies',
+    );
     expect(consolePathFor({ kind: 'corpus', task: 'placeNames' })).toBe('/admin/water/place-names');
     expect(consolePathFor({ kind: 'corpus', task: 'duplicates' })).toBe('/admin/water/review');
   });
@@ -103,6 +114,7 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
+      else if (type === 'waterBodyRequest') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -112,6 +124,16 @@ describe('the audit feed’s rows', () => {
       '/admin/body/k1%2F7',
     );
     expect(feedTargetPath({ type: 'user', id: 'k1/7', label: 'Rob' })).toBe('/admin/people/k1%2F7');
+  });
+
+  it('opens an ask on its own Inbox item', () => {
+    expect(
+      feedTargetPath({ type: 'waterBodyRequest', id: 'jd7abc123', label: '“Shaker cove”' }),
+    ).toBe('/admin/inbox?item=request%3Ajd7abc123');
+    expect(routerTarget('/admin/inbox?item=request%3Ajd7abc123')).toEqual({
+      to: '/admin/inbox',
+      search: { item: 'request:jd7abc123' },
+    });
   });
 
   it('opens nothing for a type the trail doesn’t write', () => {

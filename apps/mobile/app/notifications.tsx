@@ -14,6 +14,7 @@ import {
   recordPendingReads,
 } from '../src/lib/notificationCache';
 import { applyReadOverlay } from '../src/lib/notificationCacheModel';
+import { NOTIFICATION_LIST_ARGS } from '../src/lib/notificationList';
 import { notificationRoute } from '../src/lib/notificationRoutes';
 
 const PAGE_SIZE = 30;
@@ -24,6 +25,9 @@ const PAGE_SIZE = 30;
  * once it has actually been on screen, and a row whose target is gone renders degraded and
  * untappable rather than vanishing (A08 #5).
  *
+ * **What it asks for (B01-5c):** the types this build's core words (`NOTIFICATION_LIST_ARGS`), so a
+ * type it can describe is served as itself and one added after it reads as the `unknown` row.
+ *
  * **Offline (A08 PR 3):** the last page is cached on device, so on the ice with no signal the list
  * still reads back; opening it there marks the rows read locally and the mark is replayed the next
  * time the live query answers. A tap on a cached row navigates like normal — the lake screen does
@@ -32,7 +36,7 @@ const PAGE_SIZE = 30;
 export default function NotificationsScreen() {
   const { results, status, loadMore } = usePaginatedQuery(
     api.notifications.list,
-    {},
+    NOTIFICATION_LIST_ARGS,
     { initialNumItems: PAGE_SIZE },
   );
   const markRead = useMutation(api.notifications.markRead);

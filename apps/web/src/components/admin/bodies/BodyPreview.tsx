@@ -52,6 +52,11 @@ type BodyPreviewProps = {
   now: number;
   /** The router's link to the body's console (`<Link to="/admin/body/$id" … />`). */
   bodyLink?: (id: string) => ReactElement;
+  /**
+   * The router's link to an ask's Inbox item (`?item=request:<id>`): an ask the Inbox decides is
+   * drawn as a link to it. Absent (a story), asks are text.
+   */
+  askLink?: (item: string) => ReactElement;
   /** Opens the body's console (⏎ in the pane; the route says where). */
   onOpen?: (id: string) => void;
   /** The action's words: where it opens the body. */
@@ -66,6 +71,7 @@ export function BodyPreview({
   data,
   now,
   bodyLink,
+  askLink,
   onOpen,
   onRetry,
   pending = false,
@@ -109,7 +115,13 @@ export function BodyPreview({
             pending={pending}
           />
         ) : (
-          <PreviewBody data={data} now={now} onRetry={onRetry} pending={pending} />
+          <PreviewBody
+            data={data}
+            now={now}
+            onRetry={onRetry}
+            pending={pending}
+            askLink={askLink}
+          />
         )}
       </div>
       {data != null && data !== 'error' && !('unavailable' in data) && (
@@ -376,11 +388,13 @@ function PreviewBody({
   now,
   onRetry,
   pending,
+  askLink,
 }: {
   data: BodyPreviewData;
   now: number;
   onRetry: (() => void) | undefined;
   pending: boolean;
+  askLink: ((item: string) => ReactElement) | undefined;
 }) {
   const depth = depthText(
     data.meanDepthM,
@@ -537,7 +551,17 @@ function PreviewBody({
                     'before:absolute before:-start-(--space-4_5) before:top-1/2 before:size-(--space-2) before:-translate-y-1/2 before:rounded-full before:border before:border-solid before:border-fg3 before:content-[""]',
                   )}
                 >
-                  {ask.title}
+                  {ask.item !== undefined && askLink !== undefined
+                    ? // An ask the Inbox decides opens its item there.
+                      cloneElement(
+                        askLink(ask.item) as ReactElement<ComponentProps<'a'>>,
+                        {
+                          'data-slot': 'preview-ask-link',
+                          className: 'text-inherit underline-offset-2 hover:underline',
+                          children: ask.title,
+                        } as ComponentProps<'a'>,
+                      )
+                    : ask.title}
                 </span>
                 {ask.sub !== null && (
                   <span className="text-assist leading-list text-fg3">{ask.sub}</span>

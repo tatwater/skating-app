@@ -119,6 +119,7 @@ import { setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
+import { inboxDecisionResult } from './lib/decisionResult';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import { isProdDeployment } from './lib/deployment';
 import {
@@ -145,6 +146,7 @@ import { assertInboxVerb, DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './lib/inbo
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
+import { enqueueModeratorDecision } from './lib/notificationQueue';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { reasonFor } from './lib/peopleCan';
 import { ReadBudget } from './lib/readBudget';
@@ -2964,8 +2966,14 @@ export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    await reviewDrawnBodyImpl(ctx, actor, { waterBodyId: args.waterBodyId, verdict: 'approved' });
-    return args.waterBodyId;
+    const actionId = await reviewDrawnBodyImpl(ctx, actor, {
+      waterBodyId: args.waterBodyId,
+      verdict: 'approved',
+    });
+    return {
+      waterBodyId: args.waterBodyId,
+      ...(await inboxDecisionResult(ctx, actor._id, bodySource(args.waterBodyId), actionId)),
+    };
   },
 });
 
@@ -3091,15 +3099,32 @@ export async function reviewDrawnBodyImpl(
   if (reviewedAlready(body)) throw new ConvexError(DECIDED_REFUSAL);
   await assertMayReview(ctx, actor, body, args.verdict);
   const approved = args.verdict === 'approved';
-  return moveDrawnReview(ctx, actor, body, args.verdict, {
+  const now = Date.now();
+  const actionId = await moveDrawnReview(ctx, actor, body, args.verdict, {
     action: approved ? 'approve_waterbody' : 'reject_waterbody',
     reason:
       args.reason?.trim() ||
       (approved ? 'Approved user-created water body' : 'Rejected user-created water body'),
     // When it was drawn, for a staffer's time to decide (People).
     metadata: { filedAt: body.createdAt },
-    createdAt: Date.now(),
+    createdAt: now,
   });
+  // The person who drew it hears the review (D285), held at the flush to this row: a return to review
+  // inside the window drops it. The rejection's reason stays audit-facing.
+  if (body.createdByUserId !== undefined) {
+    await enqueueModeratorDecision(ctx, {
+      recipientId: body.createdByUserId,
+      deciderId: actor._id,
+      trigger: {
+        kind: 'request_decided',
+        waterBodyId: body._id,
+        outcome: args.verdict,
+        actionId,
+      },
+      now,
+    });
+  }
+  return actionId;
 }
 
 /**
@@ -3531,12 +3556,15 @@ export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    await reviewDrawnBodyImpl(ctx, actor, {
+    const actionId = await reviewDrawnBodyImpl(ctx, actor, {
       waterBodyId: args.waterBodyId,
       verdict: 'rejected',
       ...(args.reason !== undefined ? { reason: args.reason } : {}),
     });
-    return args.waterBodyId;
+    return {
+      waterBodyId: args.waterBodyId,
+      ...(await inboxDecisionResult(ctx, actor._id, bodySource(args.waterBodyId), actionId)),
+    };
   },
 });
 

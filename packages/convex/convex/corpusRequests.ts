@@ -75,9 +75,10 @@ import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
+import { inboxDecisionResult } from './lib/decisionResult';
 import { refreshEraseClock } from './lib/eraseClock';
 import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
-import { DECIDED_REFUSAL } from './lib/inboxRules';
+import { capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
@@ -97,6 +98,7 @@ import {
   QUEUE_CAP,
   requestKeyOf,
   requestNames,
+  sameAsRefusal,
 } from './lib/requestDecisions';
 import { scoreFields } from './lib/scoring';
 import { activateBody, registerWeatherMembership } from './lib/standing';
@@ -707,9 +709,6 @@ export const approve = mutation({
   handler: async (ctx, { requestId, note, sameAs }) => {
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
-    if (sameAs !== undefined && request.kind !== 'name_landmark') {
-      throw new ConvexError('Only a landmark request is answered by a landmark');
-    }
     // Restoring or taking down a body is the body.remove lever itself (D48), whoever asked for it.
     // The capability, then a decided ask — in the Inbox rule's order and words (`lib/inboxRules`),
     // so the item's levers and this write say one thing (D217, D268).
@@ -719,6 +718,12 @@ export const approve = mutation({
     );
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    // *Same place* only where something looks like it — the rule's precondition, in its words and
+    // its order (after the lever and the decided check), so the lever and this write agree (B01-5c).
+    if (sameAs !== undefined) {
+      const why = await sameAsRefusal(ctx, request);
+      if (why !== null) throw new ConvexError(why);
+    }
     const now = Date.now();
     const trimmedNote = note?.trim();
 
@@ -825,7 +830,7 @@ export const approve = mutation({
       );
     }
 
-    await decide(
+    const actionId = await decide(
       ctx,
       request,
       'approved',
@@ -837,7 +842,11 @@ export const approve = mutation({
       answeringLandmarkId,
       bodyActionId,
     );
-    return { requestId, ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}) };
+    return {
+      requestId,
+      ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
+      ...(await inboxDecisionResult(ctx, actor._id, requestSource(requestId), actionId)),
+    };
   },
 });
 
@@ -845,9 +854,16 @@ export const approve = mutation({
 export const decline = mutation({
   args: { requestId: v.id('waterBodyRequests'), note: v.string() },
   handler: async (ctx, { requestId, note }) => {
-    const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
+    // The decision's lever, in the Inbox rule's order and words (`capabilitiesFor`): a restore or a
+    // takedown is an admin's both ways (`body.remove`), the rest `inbox.request` — asked before the
+    // ask's state, as `approve` asks it, so the item's levers and this write say one thing (D268).
+    let actor: Doc<'profiles'> | undefined;
+    for (const cap of capabilitiesFor('decline', { requestKind: request.kind })) {
+      actor = await requireCapability(ctx, cap);
+    }
+    if (!actor) throw new ConvexError('Not signed in');
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     // In the Inbox rule's words, so the item's levers and this write say one thing (D268).
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
@@ -858,8 +874,11 @@ export const decline = mutation({
     if (trimmed.length > MAX_REQUEST_NOTE_LENGTH) {
       throw new ConvexError(`Keep the note under ${MAX_REQUEST_NOTE_LENGTH} characters.`);
     }
-    await decide(ctx, request, 'declined', actor._id, Date.now(), trimmed);
-    return requestId;
+    const actionId = await decide(ctx, request, 'declined', actor._id, Date.now(), trimmed);
+    return {
+      requestId,
+      ...(await inboxDecisionResult(ctx, actor._id, requestSource(requestId), actionId)),
+    };
   },
 });
 

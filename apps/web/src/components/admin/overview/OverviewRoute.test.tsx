@@ -222,7 +222,8 @@ describe('the Overview at /admin', () => {
         'a',
       );
     expect(row('Safety')).toHaveAttribute('href', '/admin/flags');
-    expect(row('Requests')).toHaveAttribute('href', '/admin/water/requests');
+    // Requests are decided in the Inbox now (B01-5c).
+    expect(row('Requests')).toHaveAttribute('href', '/admin/inbox?lane=requests');
     expect(row('Duplicates')).toHaveAttribute('href', '/admin/water/review');
     // People has landed: its lists open as its lanes.
     expect(row('Banned')).toHaveAttribute('href', '/admin/people?lane=banned');

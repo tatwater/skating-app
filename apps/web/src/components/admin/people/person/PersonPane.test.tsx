@@ -295,7 +295,7 @@ describe('one person at a time', () => {
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Not changed · Rob Tremblay',
+          title: 'Not saved · Rob Tremblay',
           description: 'Refused for this one',
         }),
       ),
@@ -373,7 +373,7 @@ describe('the writes', () => {
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Not changed · Rob Tremblay',
+          title: 'Not saved · Rob Tremblay',
           description: 'Staff can’t be restricted.',
         }),
       ),
@@ -396,7 +396,7 @@ describe('the writes', () => {
     await user.click(within(lever('suspension')).getByRole('button', { name: 'Lift' }));
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'This account is being deleted, so its suspension or ban can’t be lifted.',
         tone: 'bad',
         timeout: 0,
@@ -430,7 +430,7 @@ describe('the writes', () => {
     });
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'This account is being deleted.',
         tone: 'bad',
         timeout: 0,
@@ -504,7 +504,7 @@ describe('the writes', () => {
         await waitFor(() =>
           expect(mocks.toast).toHaveBeenCalledWith(
             expect.objectContaining({
-              title: 'Not changed · Rob Tremblay',
+              title: 'Not saved · Rob Tremblay',
               description: how.refused,
             }),
           ),
@@ -722,7 +722,7 @@ describe('the write hook', () => {
     expect(await none({ kind: 'lift' })).toBe(false);
     expect(mocks.toast).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        title: 'Not changed',
+        title: 'Not saved',
         description: 'This person couldn’t be read',
       }),
     );
@@ -735,7 +735,7 @@ describe('the write hook', () => {
     expect(await hook()({ kind: 'lift' })).toBe(false);
     expect(mocks.toast).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'Something went wrong — check your connection and try again.',
       }),
     );

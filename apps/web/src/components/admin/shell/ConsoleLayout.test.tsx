@@ -340,9 +340,11 @@ describe('the rail', () => {
     render(<ConsoleLayout />);
     await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
     const menu = await screen.findByRole('menu');
-    // Every old page still standing: Users left the menu when People landed.
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(14);
+    // Every old page still standing: Users left the menu when People landed, Requests when the
+    // Inbox's request handlers did.
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(13);
     expect(within(menu).queryByRole('menuitem', { name: 'Users' })).toBeNull();
+    expect(within(menu).queryByRole('menuitem', { name: 'Requests' })).toBeNull();
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Imports' }));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/imports' });
   });

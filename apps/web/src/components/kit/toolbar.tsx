@@ -2,6 +2,7 @@ import { Toolbar as ToolbarPrimitive } from '@base-ui/react/toolbar';
 import {
   type ComponentProps,
   type ReactNode,
+  type RefObject,
   useCallback,
   useLayoutEffect,
   useRef,
@@ -229,6 +230,40 @@ type ToolbarOverflowProps = {
 };
 
 /**
+ * **Focus survives a toolbar changing its layout** (CI on #172). A bar that redraws its buttons — the
+ * action bar switching to its narrow form, an overflow folding a button into *More* — replaces the
+ * button that held focus, and the focus would drop to the page, where no pane key (⇧⏎ back to the
+ * list, a lever's letter) reaches. So as it renders a change of `key`, the bar notes which of its
+ * buttons held focus (from the layout still on screen, by its `data-bar-item`), and after the commit
+ * puts focus back: on the same button where it is still drawn, else on *More*, else on the first
+ * button there is.
+ */
+export function useKeepFocus(ref: RefObject<HTMLElement | null>, key: unknown) {
+  const was = useRef(key);
+  const carry = useRef<string | null>(null);
+  if (!Object.is(was.current, key)) {
+    was.current = key;
+    const box = ref.current;
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    carry.current =
+      box !== null && active !== null && box.contains(active)
+        ? (active.closest<HTMLElement>('[data-bar-item]')?.dataset.barItem ?? '')
+        : null;
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs after each commit that changed the layout (`key`)
+  useLayoutEffect(() => {
+    const id = carry.current;
+    carry.current = null;
+    const box = ref.current;
+    if (id === null || box === null || box.contains(document.activeElement)) return;
+    const same =
+      id === '' ? null : box.querySelector<HTMLElement>(`[data-bar-item="${CSS.escape(id)}"]`);
+    const more = box.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+    (same ?? more ?? box.querySelector<HTMLElement>('button:not([disabled])'))?.focus();
+  }, [key, ref]);
+}
+
+/**
  * As many of `actions` as fit, in order; the rest fold into a "More" menu at the end. The widths
  * come from a hidden copy of every button (and of "More"), so what shows is decided before paint
  * and never oscillates: the group keeps the natural width of all its actions, and shrinks only
@@ -284,6 +319,8 @@ function ToolbarOverflow({
     return () => observer.disconnect();
   }, [compute, shape]);
 
+  // A button folded into More while it held focus hands its focus on (to More), never to the page.
+  useKeepFocus(boxRef, fit);
   const shown = actions.slice(0, fit);
   const folded = actions.slice(fit);
   return (
@@ -366,7 +403,14 @@ function ToolbarOverflow({
 }
 
 function buttonProps(a: ToolbarAction): Partial<ButtonProps> {
-  return { onClick: a.onClick, disabled: a.disabled, 'aria-keyshortcuts': a.kbd };
+  return {
+    onClick: a.onClick,
+    disabled: a.disabled,
+    'aria-keyshortcuts': a.kbd,
+    // The action's id, as the bar's own buttons carry it: focus finds the same button after the bar
+    // changes its layout (`ActionBar`'s `useFocusAcrossLayouts`).
+    ...({ 'data-bar-item': a.id } as Partial<ButtonProps>),
+  };
 }
 
 export {

@@ -403,7 +403,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
 
     const returned = await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId });
-    expect(returned).toEqual(bodyId);
+    expect(returned.waterBodyId).toEqual(bodyId);
 
     const body = await t.run((ctx) => ctx.db.get(bodyId));
     expect(body?.reviewStatus).toBe('approved');
@@ -422,7 +422,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
 
     await expect(
       asAdmin.mutation(api.waterBodies.approve, { waterBodyId: bodyId }),
-    ).resolves.toEqual(bodyId);
+    ).resolves.toMatchObject({ waterBodyId: bodyId });
   });
 
   test('cannot approve a body that is not pending (no rejection-reversal, no dup audit)', async () => {

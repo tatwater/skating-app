@@ -509,7 +509,7 @@ describe('the writes', () => {
     });
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'This is already up.',
         tone: 'bad',
         timeout: 0,
@@ -530,7 +530,7 @@ describe('the writes', () => {
     });
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'This is already up.',
         tone: 'bad',
         timeout: 0,
@@ -589,7 +589,7 @@ describe('the writes', () => {
     await userEvent.click(lever() as HTMLElement);
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: 'Not changed · Rob Tremblay',
+        title: 'Not saved · Rob Tremblay',
         description: 'This is already up.',
         tone: 'bad',
         timeout: 0,

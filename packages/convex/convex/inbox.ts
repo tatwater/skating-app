@@ -23,6 +23,7 @@ import {
   aroundItPhrases,
   type Count,
   callerNow,
+  type DormancyReason,
   type HazardVerdict,
   INBOX_LANE_ORDER,
   INBOX_LANES,
@@ -389,6 +390,57 @@ export type AskMemberView = {
   /** A landmark ask filed from a report's `where` (D202). */
   fromReport: { reportId: Id<'reports'>; skateEndTime: number; where: string | null } | null;
   activityId: Id<'gpsActivities'> | null;
+  /**
+   * The recorded skate the ask came from, as its row stores it (B01-5c): when it started and ended
+   * and the provider's moving time. No distance — no activity row stores one. `null` with no
+   * `activityId`, for an activity gone, or for one the item's budget left unread (read after the
+   * item's rule, at most `VIEW_SKATES` an item, so a skate never costs a lever its check).
+   */
+  skate: SkateView | null;
+  /**
+   * On a landmark ask: how many landmarks this asker has asked for and had added, from their own
+   * Inbox filings (small rows), at most `VIEW_ASKER_COUNTS` asks an item (B01-5c). `null` on every
+   * other kind, past that cap, or while the Inbox backfill is pending (its filings aren't all stored).
+   */
+  landmarkAsks: AskerLandmarksView | null;
+};
+
+/**
+ * A person's landmark asks (2.4's counts by the byline): the landmark items they filed into, open or
+ * decided (this one included), and how many of those were approved — the landmark added. Read from
+ * the newest `LANDMARK_FILINGS_READ` of their open and of their closed filings; `capped` past either,
+ * when both counts are floors. A withdrawn ask has left its item and isn't counted.
+ */
+export type AskerLandmarksView = { asked: number; added: number; capped: boolean };
+
+/** A drawn body's creating skate (2.5): its times, and whether it left a track for the map. */
+export type DrawnSkateView = SkateView & {
+  activityId: Id<'gpsActivities'>;
+  /** The activity stores a GPS track (a LineString) — the map's skate. */
+  hasTrack: boolean;
+};
+
+/** A recorded skate's times, as `gpsActivities` stores them (B01-5c). */
+export type SkateView = {
+  startTime: number;
+  /** When it ended; `null` for a provider that sent none. */
+  endTime: number | null;
+  /** The provider's moving time, which leaves out stops (so not `endTime − startTime`); `null` when not sent. */
+  elapsedSeconds: number | null;
+};
+
+/**
+ * Why an activate ask's body is dormant (B01-5c): the body's own `dormant` record — `inactive` (nobody
+ * has been there in `INACTIVE_SEASONS`), `not_in_campaign` (the prunes), or `moderator` (a person,
+ * with a note the skater sees).
+ */
+export type DormancyView = {
+  reason: DormancyReason;
+  since: number;
+  /** The moderator's note, shown to skaters on the lake; `null` when none. */
+  note: string | null;
+  /** Who shelved it (a staffer, for `moderator`); `null` for the machine's own. */
+  by: PersonRefView | null;
 };
 
 /** An admit's catalog feature (2.3's catalog block). */
@@ -403,7 +455,11 @@ export type CandidateView = {
   matchedAt: number;
   /** How far the feature is from the first ask's point. */
   metersFromAsk: number | null;
-  /** The nearest body already on the map ("Ricker Pond · 1.3 km west"). */
+  /**
+   * The nearest body already on the map ("Ricker Pond · 1.3 km west"). **Not served yet: always
+   * `null`** (B01-5c) — a bounded geo read doesn't fit this item's budget; it is to be stamped when the
+   * catalog answers, which needs a schema field (a seam request).
+   */
   nearestKnown: { waterBodyId: Id<'waterBodies'>; name: string; meters: number } | null;
 };
 
@@ -500,17 +556,36 @@ export type InboxItemView = ItemBase &
     | {
         kind: 'flag';
         target: FlagTargetView;
+        /**
+         * Oldest first: the oldest `VIEW_MEMBERS` of each status, each read whole (B01-5c) — fewer
+         * when the item's budget can't hold the next flag and its filer; `memberCount` is the total.
+         */
         flags: FlagMemberView[];
+        /** The list ended because the item's budget couldn't hold the next flag whole (B01-5c). */
+        flagsCut: boolean;
         author: AuthorBlockView | null;
       }
     | {
         kind: 'access';
         body: BodyRefView;
-        /** Newest first. */
+        /**
+         * Newest first: the newest `VIEW_MEMBERS` of each status, each read whole (B01-5c) — fewer
+         * when the item's budget can't hold the next report and its filer; `memberCount` is the total.
+         */
         reports: FlagMemberView[];
+        /** The list ended because the item's budget couldn't hold the next report whole (B01-5c). */
+        reportsCut: boolean;
         ruling: RulingView | null;
-        /** The reports the standing ruling dismissed (2.2's timeline). */
+        /**
+         * The reports the standing ruling dismissed (2.2's timeline), found among the body's first
+         * `DISMISSED_BY_RULING_READ` (20) dismissed access reports, each with its filer.
+         */
         dismissedByRuling: FlagMemberView[];
+        /**
+         * The body has more dismissed reports than were read, or the budget ended the read: the list
+         * may be missing some the ruling dismissed (B01-5c).
+         */
+        dismissedByRulingCut: boolean;
         /**
          * People asking for the body back as accessible: its open `contest_access` asks — which a
          * skater can file only while it stands under a no-public-access ruling — counted to 200.
@@ -521,16 +596,43 @@ export type InboxItemView = ItemBase &
         kind: 'request';
         requestKind: RequestKind;
         body: BodyRefView | null;
+        /**
+         * Newest first by when each was asked, open and closed together, as the Access item's
+         * reports: the newest `VIEW_MEMBERS` (50) of each status, by count, each read whole (B01-5c).
+         * Fewer when the item's budget can't hold the next ask at its worst (an admit carrying a
+         * catalog polygon near the document limit): the list ends there and `asksCut` says so. The
+         * true total is `memberCount` (`memberCountIsFloor` past 500): the web draws "Showing
+         * `asks.length` of `memberCount`".
+         */
         asks: AskMemberView[];
+        /** The list ended because the item's budget couldn't hold the next ask whole. */
+        asksCut: boolean;
+        /**
+         * The ask a decision is sent for — the newest open one served (the first ask in `asks` that is
+         * open), whose reach the item's `can` was checked for. Any ask of the item closes the same group.
+         */
+        primaryRequestId: Id<'waterBodyRequests'>;
         candidate: CandidateView | null;
         /** Why no catalog feature matched — *Look up again* stands in for *Admit*. */
         resolveError: string | null;
+        /**
+         * A *contest access* ask's standing ruling — the one it contests, as the Access item serves its
+         * ruling event (B01-5c). `null` for every other kind, and for a body with no ruling.
+         */
+        ruling: RulingView | null;
+        /** An *activate* ask's body's dormancy, as the body stores it (B01-5c); `null` otherwise. */
+        dormancy: DormancyView | null;
       }
     | {
         kind: 'place';
         placeKind: 'name_bay' | 'name_landmark';
         body: BodyRefView;
+        /** Newest first, capped as a request's are (B01-5c). */
         asks: AskMemberView[];
+        /** As a request's. */
+        asksCut: boolean;
+        /** The ask a decision is sent for, as a request's (B01-5c). */
+        primaryRequestId: Id<'waterBodyRequests'>;
         /** A bay by the asked name now drawn on the body — *Approve* is drawn only then. */
         drawnSubAreaId: Id<'waterBodySubAreas'> | null;
         /**
@@ -544,8 +646,23 @@ export type InboxItemView = ItemBase &
         kind: 'drawn';
         body: BodyRefView;
         drawer: PersonLockupView | null;
+        /**
+         * The drawer's visible reports, as their profile counts them (the public profile's figure,
+         * a stored count — B01-5c); `null` for a drawer gone or a profile the count hasn't reached.
+         */
+        drawerReports: number | null;
         overlap: OverlapView | null;
-        fromReport: ReportRefView | null;
+        /**
+         * The report the drawing's skate became (B01-5c): the skate's `linkedReportId`, with a
+         * capped excerpt of its text — `null` text for one hidden, removed or withdrawn by its author,
+         * to a viewer without `content.read`. `null` when the skate has no report.
+         */
+        fromReport: (ReportRefView & { excerpt: string | null }) | null;
+        /**
+         * The skate the drawing was made from (B01-5c): the drawer's own activity bound to this body
+         * that started before it was drawn — one row, the latest such. `null` when none is found.
+         */
+        skate: DrawnSkateView | null;
       }
     | {
         kind: 'ticket';
@@ -808,6 +925,14 @@ export type InboxMapBody = {
 /** A point somebody filed, or a place (the web's `EmbedPoint`). */
 export type InboxMapPoint = { id: string; at: InboxMapLngLat; name?: string };
 
+/**
+ * A recorded skate's GPS track for an embed (the web's `EmbedPath`: `id`, `path` as `[lng, lat]`),
+ * B01-5c. `id` is the activity's. `simplified`: the stored track was larger than an embed is sent
+ * ({@link MAP_OUTLINE_BYTES}), so this is it thinned evenly to at most {@link MAP_RING_POINTS}
+ * points, its first and last kept — enough to draw, not to measure.
+ */
+export type InboxMapTrack = { id: string; path: InboxMapLngLat[]; simplified: boolean };
+
 /** A put-in or a lot (the web's `EmbedAccessPoint`). */
 export type InboxMapAccessPoint = InboxMapPoint & { kind: 'putIn' | 'lot' };
 
@@ -831,6 +956,13 @@ export type InboxMapView = {
   points: InboxMapPoint[];
   access: InboxMapAccessPoint[];
   lookalikes: InboxMapPoint[];
+  /**
+   * The skates behind the item, as tracks (B01-5c): on a `request`, each ask's recorded skate the
+   * item read serves (`AskMemberView.skate`); on a `drawn` item, the skate it was drawn from
+   * (`skate`, when `hasTrack`). Empty for every other kind. One left out for the answer's bound sets
+   * `capped`.
+   */
+  tracks: InboxMapTrack[];
   overlapShare: number | null;
   capped: boolean;
 };
@@ -838,10 +970,8 @@ export type InboxMapView = {
 /** `inbox.itemMap`'s answer: the map, or `null` for no such item (`pending` as `inbox.item`'s). */
 export type InboxMapRead = { map: InboxMapView | null; pending: boolean };
 
-/** The most an embed's own outline weighs as stored before it is sent simplified. */
-export const MAP_OUTLINE_BYTES = 256 * 1024;
-/** Points a simplified outline keeps. */
-export const MAP_RING_POINTS = 512;
+// The map's bounds live in a leaf module both this and `lib/inboxViews.ts` import (B01-5c).
+export { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './lib/inboxMapBounds';
 
 // ── Args ───────────────────────────────────────────────────────────────────────────────────────
 

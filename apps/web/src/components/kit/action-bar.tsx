@@ -10,6 +10,7 @@ import {
   ToolbarOverflow,
   type ToolbarProps,
   ToolbarSeparator,
+  useKeepFocus,
 } from './toolbar';
 
 /**
@@ -138,6 +139,8 @@ function ActionBar({ groups, pane, floating = true, ...props }: ActionBarProps) 
   const items = groups.flatMap((g) => g.items);
   const full = groups.length === 1 && groups[0]?.label === undefined && items.length === 1;
   const narrow = useNarrow(full, floating);
+  // The boards' bar and the narrow one are two toolbars: a switch keeps the focused button's focus.
+  useKeepFocus(narrow.ref, narrow.on);
   /** A control, in a box the bar measures (its width stands in for it in the boards' copy). */
   const control = (item: ActionBarControl) => (
     <span key={item.id} data-bar-control={item.id} className="inline-flex min-w-0">
@@ -174,6 +177,7 @@ function ActionBar({ groups, pane, floating = true, ...props }: ActionBarProps) 
                 loading={item.loading}
                 disabled={item.disabled}
                 onClick={copy ? undefined : item.onPress}
+                {...(!copy && { 'data-bar-item': item.id })}
               />
             ),
           )}

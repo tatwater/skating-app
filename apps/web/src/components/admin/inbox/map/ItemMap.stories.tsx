@@ -7,8 +7,16 @@ import { retryAll } from '../../reads/consoleReads';
 import { InboxMapStill } from './InboxMap';
 import { ItemMapView } from './ItemMap';
 import {
+  ACTIVATE,
+  ACTIVATE_MAP,
+  ACTIVATE_MAP_TRACK,
+  ACTIVATE_SKATED,
+  ADMIT_MAP,
+  ADMIT_MAP_NO_TRACK,
+  ADMIT_MATCH,
   DRAWN,
   DRAWN_MAP,
+  DRAWN_MAP_NO_TRACK,
   EMPTY_MAP,
   PERSON_FLAG,
   SAFETY,
@@ -90,6 +98,60 @@ export const States: Story = {
       ).toBeCloseTo(300, 0);
       await expect(within(box('failed')).getByRole('button', { name: /Try again/ })).toBeVisible();
       await expect(box('none')).toBeEmptyDOMElement();
+    }
+  },
+};
+
+/**
+ * The skates behind 2.3 and 2.5 (`tracks`): an admit with its asker's skate and without one, a
+ * drawing with the skate it was drawn from and without one, and an activate (a body we hold) with
+ * its asker's skate and without one — the track gray, named on the legend as
+ * the board names it, and nothing drawn where the server sent none.
+ */
+export const Tracks: Story = {
+  render: () => (
+    <ThemePair surface="admin" columns="one">
+      {() => (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-(--space-4) p-(--space-4)">
+          {(
+            [
+              ['admit-track', ADMIT_MATCH, ADMIT_MAP],
+              ['admit-none', ADMIT_MATCH, ADMIT_MAP_NO_TRACK],
+              ['drawn-track', DRAWN, DRAWN_MAP],
+              ['drawn-none', DRAWN, DRAWN_MAP_NO_TRACK],
+              ['activate-track', ACTIVATE_SKATED, ACTIVATE_MAP_TRACK],
+              ['activate-none', ACTIVATE, ACTIVATE_MAP],
+            ] as const
+          ).map(([key, item, map]) => (
+            <div key={key} data-case={key}>
+              <ItemMapView
+                item={item}
+                state={{ map, pending: false }}
+                timeZone="America/New_York"
+                renderMap={still(320)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </ThemePair>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const q of canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
+      const box = (c: string) => must(q.querySelector<HTMLElement>(`[data-case="${c}"]`));
+      await expect(box('admit-track').querySelector('[data-id="track:kd"]')).not.toBeNull();
+      await expect(box('admit-track')).toHaveTextContent('Kate Donovan’s skate');
+      await expect(box('admit-none').querySelector('[data-id^="track:"]')).toBeNull();
+      await expect(box('admit-none')).not.toHaveTextContent('skate');
+      await expect(box('drawn-track').querySelector('[data-id="track:kd-11oct"]')).not.toBeNull();
+      await expect(box('drawn-track')).toHaveTextContent('The recorded skate · 11 Oct');
+      await expect(box('drawn-none').querySelector('[data-id^="track:"]')).toBeNull();
+      await expect(box('drawn-none')).not.toHaveTextContent('recorded skate');
+      await expect(
+        box('activate-track').querySelector('[data-id="track:ac_mascoma"]'),
+      ).not.toBeNull();
+      await expect(box('activate-track')).toHaveTextContent('Kate Donovan’s skate');
+      await expect(box('activate-none').querySelector('[data-id^="track:"]')).toBeNull();
     }
   },
 };

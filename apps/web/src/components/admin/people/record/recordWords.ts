@@ -288,6 +288,6 @@ export const RECORD_WORDS = {
   withReports: (n: number) =>
     `${n.toLocaleString('en-US')} ${n === 1 ? 'report' : 'reports'} came back with it`,
   /** A refusal's toast, naming whose it is — as a receipt does. */
-  refusalOf: (name: string) => (name === '' ? 'Not changed' : `Not changed · ${name}`),
+  refusalOf: (name: string) => (name === '' ? 'Not saved' : `Not saved · ${name}`),
   cameBackReceipt: (what: string) => `Its ${what} came back with it`,
 } as const;

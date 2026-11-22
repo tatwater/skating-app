@@ -50,6 +50,10 @@ export function notificationMark(view: NotificationView): NotificationMark {
       return { kind: 'icon', icon: 'bounty' };
     case 'content_flag_resolved':
       return { kind: 'icon', icon: 'flag' };
+    case 'moderator_decision':
+      // A moderator's word on something the skater posted (an access alert taken down) wears the
+      // flag ruling's mark; on something they filed (an ask, a drawing), the filed page's.
+      return { kind: 'icon', icon: view.about === 'accessAlert' ? 'flag' : 'report' };
     case 'favorite_report':
     case 'great_report_nearby':
     case 'nearby_report_digest':

@@ -49,8 +49,10 @@ import {
   type AlongsideAnswer,
   assertInboxVerb,
   OWN_FILING_REFUSAL,
+  SAME_AS_REFUSAL,
 } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
+import { enqueueModeratorDecision } from './notificationQueue';
 import { ReadBudget, ROW_MAX } from './readBudget';
 import { literals } from './validators';
 
@@ -374,6 +376,17 @@ export async function closeRow(
         }
       : {}),
   });
+  // The asker hears the answer (D285) — every ask a decision closes, its siblings on every page of the
+  // drain, each once (keyed on the ask), held at the flush to this row (an undo inside the window drops
+  // it). Not an ask a script filed: its requester is staff, and nobody asked (D289).
+  if (row.origin !== 'seed') {
+    await enqueueModeratorDecision(ctx, {
+      recipientId: row.requesterId,
+      deciderId: actorId,
+      trigger: { kind: 'request_decided', requestId: row._id, outcome: status, actionId },
+      now,
+    });
+  }
   return actionId;
 }
 
@@ -772,7 +785,7 @@ export async function closeRequestsRestPage(
  * Close the request and every open sibling, with one audit row each. Siblings share the decision
  * because they share the question — and *every* sibling: the first page closes with the request,
  * and the rest follow in scheduled pages. Nothing is left open past a page boundary (Greptile,
- * PR #63).
+ * PR #63). Returns the primary's decision row.
  */
 export async function decide(
   ctx: MutationCtx,
@@ -785,7 +798,7 @@ export async function decide(
   subAreaId?: Id<'waterBodySubAreas'>,
   landmarkId?: Id<'bodyLandmarks'>,
   bodyActionId?: Id<'moderationActions'>,
-): Promise<void> {
+): Promise<Id<'moderationActions'>> {
   const decision: Decision = {
     requestId: request._id,
     status,
@@ -803,10 +816,14 @@ export async function decide(
     asOf: now,
   });
   // The primary and its first page, one batch: their items recounted once at its end.
+  let primary: Id<'moderationActions'> | undefined;
   await inboxBatch(ctx, async () => {
     const actionId = await closeRow(ctx, request, decision);
+    primary = actionId;
     await closeSiblingPage(ctx, request, { ...decision, actionId });
   });
+  // The primary's own row: the one its undo (`reopen_request`) undoes, every sibling with it.
+  return primary as Id<'moderationActions'>;
 }
 
 // ── Bays (D201) ────────────────────────────────────────────────────────────────────────────────
@@ -979,6 +996,23 @@ export async function namedByModerator(
     );
   }
   return landmark;
+}
+
+/**
+ * Why *Same place* (`approve` with `sameAs`) is refused on this ask, or `null` — the Inbox rule's
+ * precondition (`hasLookalike`), read as the item's read reads it: a landmark ask, with no live
+ * landmark answering it at its spot and a landmark by one of its names elsewhere on the lake
+ * (`landmarkProposalView`'s `similarLandmark`). One rule, so the lever and the write agree (B01-5c).
+ */
+export async function sameAsRefusal(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<string | null> {
+  if (request.kind !== 'name_landmark' || request.waterBodyId === undefined) return SAME_AS_REFUSAL;
+  const landmarks = await liveLandmarksForBody(ctx, request.waterBodyId);
+  return landmarkProposalView(landmarkAskOf(request), landmarks, []).similarLandmark
+    ? null
+    : SAME_AS_REFUSAL;
 }
 
 /** A landmark proposal as a moderator's row shows it (D202) — the queue's and the lake editor's. */

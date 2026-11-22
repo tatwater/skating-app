@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REQUEST_KINDS } from './corpusRequests';
 import { hazardLifecyclePhase } from './hazardLifecycle';
 import {
   describeActors,
@@ -207,6 +208,147 @@ describe('describeNotification', () => {
     expect(describeNotification({ ...view, body: null }).title).toBe(
       'You recorded a skate. Add a report?',
     );
+  });
+});
+
+describe('describeNotification — a moderator’s decision (D285)', () => {
+  type Decision = Extract<NotificationView, { type: 'moderator_decision' }>;
+  const decision = (over: Omit<Partial<Decision>, 'type'>): Decision => ({
+    ...base,
+    type: 'moderator_decision',
+    about: 'admit',
+    outcome: 'approved',
+    body: lake,
+    ...over,
+  });
+  const ABOUTS: Decision['about'][] = [...REQUEST_KINDS, 'drawn', 'accessAlert'];
+  const OUTCOMES: Decision['outcome'][] = [
+    'approved',
+    'declined',
+    'merged',
+    'rejected',
+    'retracted',
+  ];
+  /** The pairs a writer gives: an ask is approved or declined, a drawing approved, rejected or merged. */
+  const written = (about: Decision['about'], outcome: Decision['outcome']) =>
+    about === 'accessAlert'
+      ? outcome === 'retracted'
+      : about === 'drawn'
+        ? outcome === 'approved' || outcome === 'rejected' || outcome === 'merged'
+        : outcome === 'approved' || outcome === 'declined';
+  // D3: what was decided, never a word on the ice.
+  const ICE_WORDS = /\b(safe|unsafe|skateable|skatable|good to go|thick|solid|ice|clear)\b/i;
+
+  it('words an approved ask by what it did, with the lake', () => {
+    const titles = Object.fromEntries(
+      REQUEST_KINDS.map((about) => [about, describeNotification(decision({ about })).title]),
+    );
+    expect(titles).toEqual({
+      activate: 'Gli added Lake Morey to the map',
+      admit: 'Gli added Lake Morey to the map',
+      restore: 'Gli put Lake Morey back on the map',
+      contest_access: 'Gli marked Lake Morey as having public access',
+      takedown: 'Gli took Lake Morey off the map, as you asked',
+      name_bay: 'Gli added the bay you named on Lake Morey',
+      name_landmark: 'Gli added the place you named on Lake Morey',
+    });
+    expect(describeNotification(decision({ about: 'activate' })).target).toEqual({
+      kind: 'water',
+      id: 'b1',
+    });
+    // A takedown took the lake off the map: the tap goes nowhere.
+    expect(describeNotification(decision({ about: 'takedown' })).target).toBeNull();
+  });
+
+  it('a decline says what was asked and carries the moderator’s note as its second line (D179)', () => {
+    const d = describeNotification(
+      decision({
+        about: 'name_bay',
+        outcome: 'declined',
+        note: '  Already on the map as Long Bay  ',
+      }),
+    );
+    expect(d).toEqual({
+      title: 'Your request to name a bay on Lake Morey was declined',
+      detail: 'Already on the map as Long Bay',
+      target: { kind: 'water', id: 'b1' },
+    });
+    // An admit has no lake yet; the sentence stands without one.
+    expect(
+      describeNotification(
+        decision({ about: 'admit', outcome: 'declined', body: null, note: 'No' }),
+      ),
+    ).toEqual({ title: 'Your request to add a lake was declined', detail: 'No', target: null });
+    // A blank note is no second line.
+    expect(
+      describeNotification(decision({ about: 'restore', outcome: 'declined', note: '  ' })).detail,
+    ).toBeUndefined();
+    // An approval's note, when the moderator left one, is read the same way.
+    expect(describeNotification(decision({ about: 'activate', note: 'Welcome back' })).detail).toBe(
+      'Welcome back',
+    );
+  });
+
+  it('a drawing approved, rejected or merged; a rejection carries no reason and no tap', () => {
+    expect(describeNotification(decision({ about: 'drawn' }))).toEqual({
+      title: 'Gli added Lake Morey, the lake you drew, to the map',
+      target: { kind: 'water', id: 'b1' },
+    });
+    expect(
+      describeNotification(decision({ about: 'drawn', outcome: 'rejected', note: 'Duplicate' })),
+    ).toEqual({ title: 'Gli didn’t add Lake Morey, the lake you drew, to the map', target: null });
+    expect(describeNotification(decision({ about: 'drawn', outcome: 'merged' })).title).toBe(
+      'Your drawing was merged into Lake Morey — anything you reported there moved with it',
+    );
+  });
+
+  it('a retraction names the alert’s spot and lake, never the moderator’s reason', () => {
+    const alert = (over: Omit<Partial<Decision>, 'type'>) =>
+      describeNotification(decision({ about: 'accessAlert', outcome: 'retracted', ...over }));
+    expect(alert({ place: 'Route 5 lot', note: 'Spam' })).toEqual({
+      title: 'A moderator took down your access alert at Route 5 lot, Lake Morey',
+      target: { kind: 'water', id: 'b1' },
+    });
+    expect(alert({}).title).toBe('A moderator took down your access alert on Lake Morey');
+    expect(alert({ body: null, place: 'Route 5 lot' })).toEqual({
+      title: 'A moderator took down your access alert at Route 5 lot',
+      target: null,
+    });
+    expect(alert({ body: null }).title).toBe('A moderator took down your access alert');
+  });
+
+  it('a kind this build has no words for reads as the plain sentence, never a throw', () => {
+    for (const about of ['photo', 'toString', '__proto__', undefined]) {
+      for (const outcome of OUTCOMES) {
+        const view = decision({ outcome, about: about as never });
+        expect(describeNotification(view)).toEqual({
+          title: 'A moderator made a decision on something you sent',
+          target: { kind: 'water', id: 'b1' },
+        });
+      }
+    }
+  });
+
+  it('every about × outcome is a sentence, with and without its lake, and never a word on the ice', () => {
+    for (const about of ABOUTS) {
+      for (const outcome of OUTCOMES) {
+        for (const body of [lake, null]) {
+          for (const extra of [{}, { note: 'Thin and unsafe — stay off' }, { place: 'The ramp' }]) {
+            const d = describeNotification(decision({ about, outcome, body, ...extra }));
+            expect(d.title.length, `${about} × ${outcome}`).toBeGreaterThan(0);
+            expect(d.title, `${about} × ${outcome}`).not.toMatch(ICE_WORDS);
+            // A pair no writer gives reads as a plain decision, never another pair's words.
+            if (!written(about, outcome)) {
+              expect(d.title).toBe('A moderator made a decision on something you sent');
+            }
+            // Only a request's note reaches the asker; a retraction's or rejection's reason never.
+            if (about === 'accessAlert' || about === 'drawn') expect(d.detail).toBeUndefined();
+            if (d.target !== null) expect(d.target).toEqual({ kind: 'water', id: 'b1' });
+            if (body === null) expect(d.target).toBeNull();
+          }
+        }
+      }
+    }
   });
 });
 

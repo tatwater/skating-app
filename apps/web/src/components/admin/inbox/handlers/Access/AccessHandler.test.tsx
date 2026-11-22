@@ -17,6 +17,7 @@ import {
 import {
   ACCESS_NOW,
   AFTER_NO_ACCESS,
+  CUT,
   DISPUTE,
   FIRST_REPORT,
   READ_ONLY,
@@ -138,6 +139,26 @@ describe('the slots', () => {
   it('words Clear for the ruling it clears', () => {
     inShell(<Pane item={AFTER_NO_ACCESS} onRule={vi.fn(async () => true)} />);
     expect(screen.getByRole('button', { name: 'Clear the no-access ruling' })).toBeInTheDocument();
+  });
+});
+
+describe('a list served short of the item’s count', () => {
+  it('says how many of how many, and counts nothing on the page as the whole', () => {
+    inShell(<Pane item={CUT} onRule={vi.fn(async () => true)} />);
+    // The shared line, as the ask and flag lists say it.
+    expect(screen.getByText('Showing 6 of 500+ reports')).toBeInTheDocument();
+    // The reporters counted on the page are a floor; the ruling's dismissals too.
+    expect(screen.getByText('6+')).toBeInTheDocument();
+    expect(screen.getByText('2+ reports · dismissed by that ruling')).toBeInTheDocument();
+    // A ruling closes every open report the item counts, not the page served.
+    expect(screen.getByRole('region', { name: 'If no public access' })).toHaveTextContent(
+      'All 500+ closed',
+    );
+  });
+
+  it('draws no line while the list is whole', () => {
+    inShell(<Pane item={DISPUTE} onRule={vi.fn(async () => true)} />);
+    expect(screen.queryByText(/^Showing/)).toBeNull();
   });
 });
 

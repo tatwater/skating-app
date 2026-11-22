@@ -122,7 +122,7 @@ export const Dispute: Story = {
       await expect(q.querySelector('[data-slot="body-map"]')).not.toBeNull();
       // Nothing runs off the pane sideways.
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
-      await expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
+      await waitFor(() => expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth));
     }
   },
 };
@@ -227,12 +227,15 @@ export const Narrow: Story = {
     const pane = must(canvasElement.querySelector<HTMLElement>('[data-pane="inspector"]'));
     // The head, the body and the action bar keep to the page: the kit's bar takes its narrow layout
     // when the boards' bar is wider than the pane, and folds what doesn't fit under More.
+    // Layout throughout, read until it settles: a measure taken before the fonts land is a fallback's.
     const right = pane.getBoundingClientRect().right + 0.5;
-    for (const slot of ['inbox-inspector-head', 'access-handler'])
-      await expect(
-        must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
-          .right,
-      ).toBeLessThanOrEqual(right);
+    await waitFor(() => {
+      for (const slot of ['inbox-inspector-head', 'access-handler'])
+        expect(
+          must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
+            .right,
+        ).toBeLessThanOrEqual(right);
+    });
     // The bar that is seen, not the kit's unseen measuring copy of the boards' bar.
     const bar = await waitFor(() =>
       must(
@@ -241,32 +244,39 @@ export const Narrow: Story = {
         ),
       ),
     );
-    await waitFor(() => expect(bar.getBoundingClientRect().right).toBeLessThanOrEqual(right));
-    await expect(bar.getBoundingClientRect().left).toBeGreaterThanOrEqual(
-      pane.getBoundingClientRect().left - 0.5,
-    );
+    await waitFor(() => {
+      expect(bar.getBoundingClientRect().right).toBeLessThanOrEqual(right);
+      expect(bar.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        pane.getBoundingClientRect().left - 0.5,
+      );
+    });
     // The map's zoom pair sits clear of the floating bar.
     const zoom = must(within(pane).queryByRole('button', { name: 'Zoom out' }));
-    await expect(zoom.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      bar.getBoundingClientRect().top,
+    await waitFor(() =>
+      expect(zoom.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        bar.getBoundingClientRect().top,
+      ),
     );
     // *Disputes a ruling* is never truncated: with no room for it in the head, the head drops it
     // and the body shows it whole, over the body's line.
-    const shown = [
-      ...pane.querySelectorAll<HTMLElement>(
-        '[data-slot="access-head-badge"], [data-slot="access-body-badge"]',
-      ),
-    ].filter((b) => b.getClientRects().length > 0);
-    await expect(shown).toHaveLength(1);
-    const pill = must(shown[0]);
-    await expect(pill.dataset.slot).toBe('access-body-badge');
-    await expect(pill.scrollWidth).toBeLessThanOrEqual(pill.clientWidth);
-    await expect(pill.getBoundingClientRect().right).toBeLessThanOrEqual(right);
+    const pill = await waitFor(() => {
+      const shown = [
+        ...pane.querySelectorAll<HTMLElement>(
+          '[data-slot="access-head-badge"], [data-slot="access-body-badge"]',
+        ),
+      ].filter((b) => b.getClientRects().length > 0);
+      expect(shown).toHaveLength(1);
+      const only = must(shown[0]);
+      expect(only.dataset.slot).toBe('access-body-badge');
+      expect(only.scrollWidth).toBeLessThanOrEqual(only.clientWidth);
+      expect(only.getBoundingClientRect().right).toBeLessThanOrEqual(right);
+      return only;
+    });
     await expect(pill).toHaveTextContent('Disputes a ruling');
     const map = must(canvasElement.querySelector<HTMLElement>('[data-slot="access-map"]'));
     const timeline = must(canvasElement.querySelector<HTMLElement>('[data-slot="item-timeline"]'));
-    await expect(map.getBoundingClientRect().top).toBeGreaterThan(
-      timeline.getBoundingClientRect().top,
+    await waitFor(() =>
+      expect(map.getBoundingClientRect().top).toBeGreaterThan(timeline.getBoundingClientRect().top),
     );
   },
 };

@@ -124,6 +124,12 @@ export function allRows(list: BodiesListData): BodyRow[] {
 
 export interface PreviewAsk {
   id: string;
+  /**
+   * The Inbox item that decides it, by its source ref (`request:<id>`) — a request's. A flag gets
+   * its link with the photos slice (the old Flags page still decides one); a place name is a corpus
+   * task, which the Inbox doesn't hold.
+   */
+  item?: string;
   /** What kind and from where ("name_bay · asked by 3 · inbox"). */
   kicker: string;
   /** The ask itself ("“Shaker cove”"). */

@@ -35,11 +35,13 @@ import {
   isPassageMarker,
   NOTIFICATION_PREF_KEY_FOR,
   type NotificationType,
+  type RequestKind,
 } from '@skating/core';
 import type { Infer } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { canReceiveNotifications } from './auth';
+import { DOC_MAX } from './readBudget';
 import { loadBlockedAuthorIds } from './reportVisibility';
 import { isSeedProfile, seedSideOf } from './seedPeople';
 import type { notificationTrigger } from './validators';
@@ -63,6 +65,8 @@ export const TYPE_FOR_KIND: Record<ActorQueueKind, NotificationType> = {
   bounty_request: 'bounty_request',
   bounty_answered: 'bounty_answered',
   activity: 'activity_detected',
+  request_decided: 'moderator_decision',
+  alert_retracted: 'moderator_decision',
 };
 
 /**
@@ -141,6 +145,10 @@ export function mergeTriggers(
     case 'flag_resolved':
     case 'bounty_request':
     case 'activity':
+    // A decision is scalar: a decline, its undo and a second decline inside one window are news about
+    // where it ended up — the latest decision's row, which the re-check holds the message to.
+    case 'request_decided':
+    case 'alert_retracted':
       return incoming;
   }
 }
@@ -167,19 +175,41 @@ export function triggerCount(trigger: NotificationTrigger): number {
     case 'flag_resolved':
     case 'bounty_request':
     case 'activity':
+    case 'request_decided':
+    case 'alert_retracted':
       return 1;
   }
 }
 
 /**
  * What `settleTrigger` spends in document reads, for the flush's per-transaction tally: the target
- * (report, hazard, bounty, flag, activity), then one read per coalesced id. Charged whether or not
+ * (report, hazard, bounty, flag, activity), then one read per coalesced id — for a moderator's
+ * decision, the decided row (the ask, the drawing, the alert) and then the decision's own audit row,
+ * or (a drawing) the one undo row that could name it. Charged whether or not
  * the settle short-circuits before it gets there — a burst is priced by what it *could* read, so
  * the tally is a floor on headroom. Lives beside `settleTrigger` rather than at its call site so a
  * kind whose re-check grows (a second read per id, say) changes both in one place.
  */
 export function settleReadCost(trigger: NotificationTrigger): number {
   return 1 + triggerCount(trigger);
+}
+
+/**
+ * The most bytes `settleTrigger` may read for a row, for the flush's byte guard (B01-5c): checked
+ * against the batch's live bytes left before the row is touched, so a batch of heavy re-checks stops
+ * and continues instead of reading past its limit and rolling back. A moderator's decision reads the
+ * decided row whole — an admit ask can carry a catalog polygon near the document limit — and the
+ * decision's audit row: two documents at the limit. Every other kind reads its target whole (one
+ * document at the limit); its coalesced ids are small rows (ratings, comments).
+ */
+export function settleByteCost(trigger: NotificationTrigger): number {
+  switch (trigger.kind) {
+    case 'request_decided':
+    case 'alert_retracted':
+      return 2 * DOC_MAX;
+    default:
+      return DOC_MAX;
+  }
 }
 
 /**
@@ -252,6 +282,50 @@ export async function enqueueActorNotification(
   return true;
 }
 
+/** The two queue kinds a moderator's decision enqueues (D285). */
+export type ModeratorDecisionTrigger = Extract<
+  NotificationTrigger,
+  { kind: 'request_decided' | 'alert_retracted' }
+>;
+
+/**
+ * **Tell a person a moderator's decision** (D285): an ask of theirs approved or declined, a body they
+ * drew approved or rejected, their live access alert retracted — through the settle queue, so an undo
+ * inside the window drops it (`settleTrigger`). Keyed on the decided row, so one ask, drawing or alert
+ * is one message however often it is decided inside a window (the latest decision's).
+ *
+ * No actor is passed on (as `closeFlag` reasons: a block between the person and the moderator must not
+ * swallow an answer), so the self gate is here: the decider is never told their own decision. Every
+ * other gate is `enqueueActorNotification`'s — the recipient can receive, wants the type, and is not a
+ * fake person from the dev seed. Costs one profile read, one coalesce query and one write; the callers
+ * on a heavy path count it in their budget (`siblingCost`).
+ */
+export function enqueueModeratorDecision(
+  ctx: MutationCtx,
+  args: {
+    recipientId: Id<'profiles'>;
+    /** Who decided — never told their own decision. */
+    deciderId: Id<'profiles'>;
+    trigger: ModeratorDecisionTrigger;
+    now?: number;
+  },
+): Promise<boolean> {
+  const { trigger } = args;
+  const targetId =
+    trigger.kind === 'alert_retracted'
+      ? trigger.accessAlertId
+      : (trigger.requestId ?? trigger.waterBodyId);
+  if (targetId === undefined || args.recipientId === args.deciderId) {
+    return Promise.resolve(false);
+  }
+  return enqueueActorNotification(ctx, {
+    recipientId: args.recipientId,
+    targetId,
+    trigger,
+    ...(args.now !== undefined ? { now: args.now } : {}),
+  });
+}
+
 /**
  * Active, not departing, not a fake person from the dev seed (D287 — whatever their toggles say), and
  * the type's toggle is on. Shared by enqueue and flush.
@@ -307,7 +381,18 @@ export type ActorPayload =
       activityId: Id<'gpsActivities'>;
       waterBodyId?: Id<'waterBodies'>;
       startTime: number;
-    };
+    }
+  | {
+      kind: 'request_decided';
+      /** The ask's kind, or `drawn` for a body the person drew. */
+      about: RequestKind | 'drawn';
+      outcome: 'approved' | 'declined' | 'rejected';
+      /** The lake: an admit's new body, an ask's body, the drawing itself. Absent for a declined admit. */
+      waterBodyId?: Id<'waterBodies'>;
+      /** The moderator's note to the asker (D179) — an ask's only; a drawing's reason is audit-facing. */
+      note?: string;
+    }
+  | { kind: 'alert_retracted'; accessAlertId: Id<'accessAlerts'>; waterBodyId: Id<'waterBodies'> };
 
 /**
  * Re-read a settled trigger and return the payload to deliver, or `null` to drop the row (A08 §5.2). The
@@ -323,6 +408,9 @@ export type ActorPayload =
  * | bounty_request | the bounty is still open and the requester is unblocked |
  * | bounty_answered | the bounty is still open and ≥1 listed report still visible |
  * | activity | the activity exists and is still un-linked and un-dismissed |
+ * | request_decided (an ask) | the ask is still closed by that decision: its status is the outcome, decided at the decision row's instant |
+ * | request_decided (a drawing) | its review is still the outcome, unmerged, and the decision row has not been undone |
+ * | alert_retracted | the alert is still retracted by that row: by its actor, at its instant |
  *
  * `blocked` is the recipient's block set (either direction), loaded once per recipient per tick by
  * the flush; an actor in it drops out of the list exactly as a retracted thumb does. Every kind
@@ -468,7 +556,82 @@ export async function settleTrigger(
         startTime: activity.startTime,
       };
     }
+    case 'request_decided':
+      return trigger.requestId !== undefined
+        ? settleAskDecision(ctx, trigger.requestId, trigger.outcome, trigger.actionId)
+        : trigger.waterBodyId !== undefined
+          ? settleDrawnDecision(ctx, trigger.waterBodyId, trigger.outcome, trigger.actionId)
+          : null;
+    case 'alert_retracted': {
+      const alert = await ctx.db.get(trigger.accessAlertId);
+      const action = await ctx.db.get(trigger.actionId);
+      // Still retracted by this row: an undo (`unretract_access_alert`) puts it back, and a later
+      // retraction is another row, with its own message.
+      if (
+        !alert ||
+        !action ||
+        alert.status !== 'retracted' ||
+        alert.retractedAt !== action.createdAt ||
+        alert.retractedByUserId !== action.actorId
+      ) {
+        return null;
+      }
+      return {
+        kind: 'alert_retracted',
+        accessAlertId: trigger.accessAlertId,
+        waterBodyId: alert.waterBodyId,
+      };
+    }
   }
+}
+
+/**
+ * An ask's decision, if it still stands: the ask's status is the outcome and it was decided at the
+ * decision row's instant — the undo's own test (`requestDecisionRefusal`). A reopen clears both; a
+ * decision since has its own instant, and its own message.
+ */
+async function settleAskDecision(
+  ctx: MutationCtx,
+  requestId: Id<'waterBodyRequests'>,
+  outcome: 'approved' | 'declined' | 'rejected',
+  actionId: Id<'moderationActions'>,
+): Promise<ActorPayload | null> {
+  const request = await ctx.db.get(requestId);
+  const action = await ctx.db.get(actionId);
+  if (!request || !action || request.status !== outcome) return null;
+  if (request.decidedAt !== action.createdAt) return null;
+  const waterBodyId = request.admittedWaterBodyId ?? request.waterBodyId;
+  const note = request.decisionNote?.trim();
+  return {
+    kind: 'request_decided',
+    about: request.kind,
+    outcome,
+    ...(waterBodyId !== undefined ? { waterBodyId } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
+/**
+ * A drawing's review, if it still stands: the body is still reviewed as the outcome, not merged away,
+ * and the review's row has not been undone (`return_to_review` names it). A drawing keeps no review
+ * instant of its own, so the undo row is the fact read; a review since is another row, with its own
+ * message.
+ */
+async function settleDrawnDecision(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  outcome: 'approved' | 'declined' | 'rejected',
+  actionId: Id<'moderationActions'>,
+): Promise<ActorPayload | null> {
+  if (outcome === 'declined') return null;
+  const body = await ctx.db.get(waterBodyId);
+  if (!body || body.reviewStatus !== outcome || body.dedupStatus === 'merged') return null;
+  const undone = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))
+    .first();
+  if (undone !== null) return null;
+  return { kind: 'request_decided', about: 'drawn', outcome, waterBodyId };
 }
 
 /** Moderation-visible, for the two thumb-able target tables. */

@@ -457,7 +457,8 @@ export const NarrowThree: Story = {
     first.focus();
     await userEvent.keyboard('{End}');
     const more = within(el).getByRole('button', { name: 'More actions' });
-    await expect(more).toHaveFocus();
+    // The roving focus moves on the key's handling: read in a retry, never one-shot after a press.
+    await waitFor(() => expect(more).toHaveFocus());
     await userEvent.keyboard('{Enter}');
     // The menu fades in: wait for the item to be visible, never read it mid-fade.
     await waitFor(() =>
@@ -505,5 +506,39 @@ export const NarrowFive: Story = {
     must(canvasElement.querySelector<HTMLElement>('[data-pane]')).focus();
     await userEvent.keyboard('w');
     await waitFor(() => expect(pressed).toHaveBeenCalledWith('warn'));
+  },
+};
+
+/**
+ * **Focus survives the bar changing its layout** (CI on #172): the boards' bar and the narrow one
+ * are two toolbars, so a switch replaces every button. The focus a button held stays in the bar — on
+ * the same button where it is still drawn, else on More or the first — never dropped to the page,
+ * where no pane key (⇧⏎ back to the list, a lever's letter) reaches.
+ */
+export const FocusSurvivesALayoutChange: Story = {
+  args: NarrowThree.args,
+  render: (args) => <Pane bar={(pane) => <ActionBar {...args} pane={pane} />} />,
+  play: async ({ canvasElement }) => {
+    const pane = must(canvasElement.querySelector<HTMLElement>('[data-pane]'));
+    const el = bar(canvasElement);
+    await waitFor(() => expect(el).not.toHaveAttribute('data-narrow'));
+    const confirm = within(el).getByRole('button', { name: /Confirm accessible/ });
+    confirm.focus();
+    await waitFor(() => expect(confirm).toHaveFocus());
+    // The pane narrows under the focused button: the bar switches, and focus stays in it.
+    pane.style.width = '360px';
+    await waitFor(() => {
+      const now = bar(canvasElement);
+      expect(now).toHaveAttribute('data-narrow');
+      expect(now.contains(document.activeElement)).toBe(true);
+    });
+    // And widens again: focus stays in the bar (on More's button, or the first, since the button
+    // it held folded into More), never dropped to the page.
+    pane.style.width = '';
+    await waitFor(() => {
+      const now = bar(canvasElement);
+      expect(now).not.toHaveAttribute('data-narrow');
+      expect(now.contains(document.activeElement)).toBe(true);
+    });
   },
 };

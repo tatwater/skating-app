@@ -2,7 +2,10 @@ import { TRUST_CLASS_LABELS, waterBodyClassLabel } from '@skating/core';
 
 import { acresText } from '../../../bodies/bodiesModel';
 import { dayMonth } from '../../../shell/consoleTime';
+import { countedLike, isWhole, listTotalOf } from '../../blocks/listCut';
+import { rulingEvent } from '../../blocks/rulingEvent';
 import type { InboxItemView } from '../../list/inboxTypes';
+import { countOf } from '../../words/inboxWords';
 import { ACCESS_WORDS as W } from './accessWords';
 
 /**
@@ -88,11 +91,13 @@ export function daysBetween(from: number, to: number): number {
  */
 export function accessStats(item: AccessItem, now: number): AccessStat[] {
   const n = reporterCount(item);
+  // Counted from the reports served: a floor when the list isn't the item's whole count.
+  const floor = !isWhole(countedLike(item.reports), listTotalOf(item, item.reportsCut));
   const say: AccessStat = {
     id: 'noAccess',
     label: W.sayNoAccess,
-    value: String(n),
-    unit: n === 1 ? W.skater : W.skaters,
+    value: floor ? `${n}+` : String(n),
+    unit: n === 1 && !floor ? W.skater : W.skaters,
     // Red only while they dispute an accessible ruling: the board's red is the disagreement.
     ...(item.ruling?.verdict === 'open' ? { tone: 'bad' as const } : {}),
     ...(item.ruling !== null ? { sub: W.sinceRuling } : {}),
@@ -155,6 +160,8 @@ export type TimelineEvent =
       filers: Person[];
       notes: string[];
       count: number;
+      /** The body has more dismissed reports than were read: the count is a floor. */
+      capped: boolean;
     };
 
 /**
@@ -170,17 +177,7 @@ export function accessTimeline(item: AccessItem): TimelineEvent[] {
     autoFiled: r.autoFiled,
     note: r.note,
   }));
-  if (item.ruling !== null) {
-    events.push({
-      kind: 'ruling',
-      key: 'ruling',
-      at: item.ruling.ruledAt,
-      verdict: item.ruling.verdict,
-      by: item.ruling.by,
-      note: item.ruling.note,
-      reason: item.ruling.reason?.trim() || null,
-    });
-  }
+  if (item.ruling !== null) events.push(rulingEvent(item.ruling));
   const dismissed = item.dismissedByRuling;
   if (dismissed.length > 0) {
     events.push({
@@ -191,6 +188,7 @@ export function accessTimeline(item: AccessItem): TimelineEvent[] {
       // One quote per distinct note: two reporters saying the same words read once.
       notes: [...new Set(dismissed.flatMap((d) => (d.note === null ? [] : [d.note.trim()])))],
       count: dismissed.length,
+      capped: item.dismissedByRulingCut,
     });
   }
   return events
@@ -209,10 +207,19 @@ export function standingLine(p: Person): string | null {
 
 export type IfRow = { label: string; value: string };
 
-/** "Both closed", "The report closed", "All 3 closed" — the reports a ruling would close. */
-function reportsClosed(n: number): string {
-  const which = n === 1 ? 'The report' : n === 2 ? 'Both' : `All ${n}`;
-  return `${which} ${W.closed} · ${n === 1 ? 'the reporter told' : W.reportersTold}`;
+/**
+ * "Both closed", "The report closed", "All 3 closed", "All 500+ closed" — the reports a ruling would
+ * close: the item's own count of its open reports, a floor past where the server stopped counting.
+ */
+function reportsClosed(n: number, floor: boolean): string {
+  const which = floor
+    ? `All ${countOf(n, true)}`
+    : n === 1
+      ? 'The report'
+      : n === 2
+        ? 'Both'
+        : `All ${countOf(n)}`;
+  return `${which} ${W.closed} · ${n === 1 && !floor ? 'the reporter told' : W.reportersTold}`;
 }
 
 /**
@@ -224,7 +231,9 @@ export function ifBlocks(
   timeZone?: string,
 ): { noAccess: IfRow[]; accessible: IfRow[] } {
   const r = item.ruling;
-  const n = item.reports.length;
+  // The item's own count, not the page of reports served (a floor past the server's count).
+  const n = item.memberCount;
+  const floor = item.memberCountIsFloor;
   const ruling = (to: AccessVerdict) =>
     r === null
       ? W.newRuling
@@ -234,7 +243,7 @@ export function ifBlocks(
   return {
     noAccess: [
       { label: W.body, value: r?.verdict === 'none' ? W.unchanged : W.dimmedOffMap },
-      { label: W.reports, value: reportsClosed(n) },
+      { label: W.reports, value: reportsClosed(n, floor) },
       { label: W.ruling, value: ruling('none') },
       { label: W.reason, value: W.askedWhenChosen },
     ],
@@ -242,7 +251,7 @@ export function ifBlocks(
       { label: W.body, value: r?.verdict === 'none' ? W.backOnMap : W.unchanged },
       {
         label: W.reports,
-        value: `${W.dismissed} · ${n === 1 ? 'the reporter told' : W.reportersTold}`,
+        value: `${W.dismissed} · ${n === 1 && !floor ? 'the reporter told' : W.reportersTold}`,
       },
       { label: W.ruling, value: ruling('open') },
     ],

@@ -115,24 +115,27 @@ export function must<T>(el: T | null | undefined): T {
  * (`data-pane`), and every scroller inside them (a box that scrolls one way scrolls the other too, so
  * their overflow stays inside them, out of the panes' measure). What isn't drawn is skipped, and so
  * is a part that scrolls its own row sideways by design (`except`, by `data-slot`: the map key's
- * row on a phone).
+ * row on a phone). Read until the layout settles: a measure taken before the fonts land is a
+ * fallback's.
  */
 export async function expectNoSidewaysScroll(
   root: HTMLElement,
   { except = [] }: { except?: readonly string[] } = {},
 ): Promise<void> {
-  const boxes = [root, ...root.querySelectorAll<HTMLElement>('*')].filter((el) => {
-    if (except.includes(el.dataset.slot ?? '')) return false;
-    if (el === root || el.dataset.pane !== undefined) return true;
-    const { overflowX } = getComputedStyle(el);
-    return overflowX === 'auto' || overflowX === 'scroll';
+  await waitFor(() => {
+    const boxes = [root, ...root.querySelectorAll<HTMLElement>('*')].filter((el) => {
+      if (except.includes(el.dataset.slot ?? '')) return false;
+      if (el === root || el.dataset.pane !== undefined) return true;
+      const { overflowX } = getComputedStyle(el);
+      return overflowX === 'auto' || overflowX === 'scroll';
+    });
+    for (const el of boxes) {
+      if (el.getClientRects().length === 0) continue;
+      expect(el.scrollWidth, el.dataset.pane ?? el.dataset.slot ?? 'page').toBeLessThanOrEqual(
+        el.clientWidth + 1,
+      );
+    }
   });
-  for (const el of boxes) {
-    if (el.getClientRects().length === 0) continue;
-    await expect(el.scrollWidth, el.dataset.pane ?? el.dataset.slot ?? 'page').toBeLessThanOrEqual(
-      el.clientWidth + 1,
-    );
-  }
 }
 
 /**

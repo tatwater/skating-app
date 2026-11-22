@@ -78,6 +78,7 @@ import {
   ACCESS_REASONS,
 } from './lib/enums';
 import { authorRetracted, refreshClockOf, refreshEraseClock } from './lib/eraseClock';
+import { enqueueModeratorDecision } from './lib/notificationQueue';
 import { ownContentRefusal } from './lib/ownContent';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { literals } from './lib/validators';
@@ -557,7 +558,7 @@ export async function retractAlertImpl(
   };
   const now = Date.now();
   await applyRetraction(ctx, alert, actor._id, now);
-  return writeAudit(ctx, {
+  const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: 'retract_access_alert',
     targetType: 'accessAlert',
@@ -566,6 +567,20 @@ export async function retractAlertImpl(
     metadata: { waterBodyId: alert.waterBodyId, alertReason: alert.reason, prev },
     createdAt: now,
   });
+  // Its author hears that a live alert of theirs was taken down (D285) — never the reason, which is
+  // audit-facing — held at the flush to this row, so an undo inside the window drops it. A claim
+  // already over (expired, resolved) was live for nobody, so its retraction tells no one — "live" as
+  // every read decides it (`accessAlertIsLive`): an `active` row past its `expiresAt` that the sweep
+  // hasn't reached yet is over too, whatever its stored status still says.
+  if (accessAlertIsLive(alert, now)) {
+    await enqueueModeratorDecision(ctx, {
+      recipientId: alert.createdByUserId,
+      deciderId: actor._id,
+      trigger: { kind: 'alert_retracted', accessAlertId, actionId },
+      now,
+    });
+  }
+  return actionId;
 }
 
 /**

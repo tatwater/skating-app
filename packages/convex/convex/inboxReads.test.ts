@@ -535,9 +535,12 @@ describe('inbox.item', () => {
     });
     const forAdmin = (await admin.as.query(api.inbox.item, { ref: `flag:${flag}` })).item;
     expect(forAdmin?.can).toEqual({ dismiss: null, hide: null, remove: null });
-    // A request item: its asks and the admin-only approval for a takedown.
+    // A request item: a takedown is an admin's to decide, both ways (B01-5c, ruled).
     const req = (await mod.as.query(api.inbox.item, { ref: `request:${request}` })).item;
-    expect(req?.can).toMatchObject({ approve: 'Requires admin role', decline: null });
+    expect(req?.can).toMatchObject({
+      approve: 'Requires admin role',
+      decline: 'Requires admin role',
+    });
   });
 });
 

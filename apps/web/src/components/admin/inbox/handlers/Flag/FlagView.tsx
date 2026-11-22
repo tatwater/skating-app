@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react';
+import type { ReactElement, ReactNode, RefObject } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -7,6 +7,8 @@ import { ComingSoonLink } from '@/components/kit/unavailable-button';
 import type { AroundState } from '../../around/AroundLine';
 import { AuthorBlock } from '../../blocks/AuthorBlock';
 import { FlagBlock } from '../../blocks/FlagBlock';
+import { LinkChip } from '../../blocks/LinkChip';
+import { listTotalOf } from '../../blocks/listCut';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
@@ -68,11 +70,15 @@ export type FlagViewProps = {
   pane?: RefObject<HTMLElement | null>;
   /** The author menu control (`inspector/AuthorMenu`), drawn in the bar. */
   authorMenu?: ReactNode;
+  /**
+   * The Body console's link for a body, as the handler builds it — the router's, with the way back
+   * (every handler's *Open in Body →* is built so, and drawn through `blocks/LinkChip`).
+   */
+  bodyLink: (waterBodyId: string) => ReactElement;
 };
 
-/** The People page's address for a person, and the Body console's for a body. */
+/** The People page's address for a person. */
 const peopleHref = (userId: string) => `/admin/people/${userId}`;
-const bodyHref = (waterBodyId: string) => `/admin/body/${waterBodyId}`;
 
 /** The frame's slots. A decided item's bar is dropped by the frame itself (D283). */
 export function flagSlots(props: FlagViewProps): FlagSlots {
@@ -95,7 +101,7 @@ export function flagSlots(props: FlagViewProps): FlagSlots {
 }
 
 /** The pane head: what kind of flag, the Safety badge, the age written out, the history link. */
-export function FlagHeadView({ item, now }: FlagViewProps) {
+export function FlagHeadView({ item, now, bodyLink }: FlagViewProps) {
   const head = flagHead(item, now);
   return (
     <span data-slot="flag-head" className="contents">
@@ -110,14 +116,20 @@ export function FlagHeadView({ item, now }: FlagViewProps) {
       </span>
       {head.link !== null && (
         <InspectorHeadEnd>
-          <HistoryLinkView link={head.link} />
+          <HistoryLinkView link={head.link} bodyLink={bodyLink} />
         </InspectorHeadEnd>
       )}
     </span>
   );
 }
 
-function HistoryLinkView({ link }: { link: HistoryLink }) {
+function HistoryLinkView({
+  link,
+  bodyLink,
+}: {
+  link: HistoryLink;
+  bodyLink: FlagViewProps['bodyLink'];
+}) {
   switch (link.kind) {
     case 'reports':
       return <ComingSoonLink data-slot="flag-history">{W.openInReports}</ComingSoonLink>;
@@ -135,15 +147,7 @@ function HistoryLinkView({ link }: { link: HistoryLink }) {
       );
     case 'body':
       return (
-        <Button
-          variant="link"
-          size="xs"
-          data-slot="flag-history"
-          nativeButton={false}
-          render={<a href={bodyHref(link.waterBodyId)} />}
-        >
-          {W.openInBody}
-        </Button>
+        <LinkChip link={bodyLink(link.waterBodyId)} label={W.openInBody} slot="flag-history" />
       );
   }
 }
@@ -172,6 +176,7 @@ export function FlagBodyView({
     <FlagBlock
       bare={bare}
       flags={item.flags}
+      total={listTotalOf(item, item.flagsCut)}
       targetType={target.targetType}
       now={now}
       {...(target.exists && target.targetType === 'hazard' && { hazardType: target.hazard.type })}
@@ -326,6 +331,7 @@ export function FlagBodyView({
           <div className="px-gutter pt-(--space-5)">
             <FlagBlock
               flags={item.flags}
+              total={listTotalOf(item, item.flagsCut)}
               targetType={target.targetType}
               now={now}
               counted={target.person.contradicted}

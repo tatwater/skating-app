@@ -11,6 +11,7 @@ import {
 } from '../handlers/Flag/flagFixtures';
 import { AuthorBlock } from './AuthorBlock';
 import { FlagBlock } from './FlagBlock';
+import { listTotalOf } from './listCut';
 
 /**
  * The flag handler's two shared blocks, which every handler that decides a flag imports: the flags
@@ -20,11 +21,32 @@ import { FlagBlock } from './FlagBlock';
 function Blocks() {
   return (
     <div className="grid w-[46rem] max-w-full grid-cols-2 gap-x-(--space-7) gap-y-(--space-6)">
-      <FlagBlock flags={SAFETY_ITEM.flags} targetType="report" now={BOARD_NOW} />
+      <FlagBlock
+        flags={SAFETY_ITEM.flags}
+        total={listTotalOf(SAFETY_ITEM, SAFETY_ITEM.flagsCut)}
+        targetType="report"
+        now={BOARD_NOW}
+      />
       <AuthorBlock author={ROB_AUTHOR} ownFlags={1} />
-      <FlagBlock flags={SAFETY_MANY.flags} targetType="report" now={BOARD_NOW} />
-      <FlagBlock flags={HAZARD_AUTO_ITEM.flags} targetType="hazard" now={BOARD_NOW} />
-      <FlagBlock bare flags={ALERT_ITEM.flags} targetType="accessAlert" now={BOARD_NOW} />
+      <FlagBlock
+        flags={SAFETY_MANY.flags}
+        total={listTotalOf(SAFETY_MANY, SAFETY_MANY.flagsCut)}
+        targetType="report"
+        now={BOARD_NOW}
+      />
+      <FlagBlock
+        flags={HAZARD_AUTO_ITEM.flags}
+        total={listTotalOf(HAZARD_AUTO_ITEM, HAZARD_AUTO_ITEM.flagsCut)}
+        targetType="hazard"
+        now={BOARD_NOW}
+      />
+      <FlagBlock
+        bare
+        flags={ALERT_ITEM.flags}
+        total={listTotalOf(ALERT_ITEM, ALERT_ITEM.flagsCut)}
+        targetType="accessAlert"
+        now={BOARD_NOW}
+      />
       <AuthorBlock
         author={{
           ...ROB_AUTHOR,

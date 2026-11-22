@@ -89,6 +89,9 @@ export const DISPUTE: AccessItem = {
   can: ALLOWED,
   decided: null,
   body: BODY,
+  // Neither list was cut short of its count.
+  reportsCut: false,
+  dismissedByRulingCut: false,
   reports: [
     report(
       'f_luc',
@@ -161,6 +164,18 @@ export const MANY: AccessItem = {
     ),
     report('m6', null, null, on(10, 11, 10, 0)),
   ],
+};
+
+/**
+ * More reports than the read holds whole: 500+ counted, six served, the list cut by the item's
+ * budget — and more dismissed reports than were read, so the ruling's count is a floor too.
+ */
+export const CUT: AccessItem = {
+  ...MANY,
+  memberCount: 500,
+  memberCountIsFloor: true,
+  reportsCut: true,
+  dismissedByRulingCut: true,
 };
 
 /** A viewer whose `can` refuses every verb: no bar at all. */

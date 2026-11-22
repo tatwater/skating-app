@@ -890,6 +890,25 @@ Made on the design's engineering forks; the founder may overturn any of them.
     B01-5b opens:** the read-only placeholder (a photo flag, a request, a place ask, a drawn body, a
     ticket) draws only the item's facts. Neither its row nor its pane says the item is decided on the
     old page, and neither links there.
+11. **Pe25 (the record sheet's cross-links) is out of B01-5c** (2026-11-21): it stays on the
+    register, blocked on its board.
+12. **A moderator's retraction tells the author with no reason** (2026-11-21): the reason is
+    audit-facing, and the payload carries none.
+13. **B01-5c's builders**: S3 (the notification, with the phone's `knows`), W5a (the request
+    handler), W5b (places, drawn bodies, both kit candidates, the retirement's links, the bell)
+    (2026-11-21).
+14. **The life strip may show stacked, then run across once late web fonts land** (2026-11-21):
+    accepted for now and owed on the register (Sh9).
+15. **`moderatorDecision` is narrowed back to required with B01-5d** (2026-11-21), after its dev
+    backfill.
+16. **An admin decides a restore or a takedown, both ways** (2026-11-22): a viewer without
+    `body.remove` can neither approve nor decline one, **nor undo a decline of one** (un-deciding is
+    deciding). The server says so (S3, ask 11: `can.decline` refuses that viewer, as `can.approve`
+    already does, and the reopen's offer and run ask the same lever), and the request bar draws from
+    `can` alone.
+17. **A request's nearest known body moves to B01-5d** (2026-11-22): `candidate.nearestKnown` stays
+    `null`. A bounded geographic read doesn't fit the item's budget; the merge PR's preview read is
+    where a body's neighbors are read.
 
 ### The founder's calls of 2026-11-21
 
@@ -1111,7 +1130,7 @@ B01-3, and what the Overview adopted:
 
 **Kit extensions (B01-5, 2026-11-20)** — what the Inbox's boards needed, and People's candidates
 promoted, built on `b01-inbox-w4-kit` and integrated on `phase-b01-inbox` (ten new pieces join the
-count above):
+count above; B01-5c's `OverlapGauge` and `CompareTable` make twelve):
 
 | Piece | Status | What it is | Adopted by |
 |---|---|---|---|
@@ -1142,6 +1161,8 @@ count above):
 | Keys — a held key swallows its own repeats (`lib/keys`) | ✅ | A bound key that acted swallows its own repeat keydowns, and the text they would type, until it is released, wherever focus has gone. So holding an action letter no longer types into the reason dialog it opens. A fresh press, any other key, a held ⇧ or ⌘, and IME composition pass through; it lets go on keyup, window blur or a hidden page | Every pane, the shell |
 | LockBanner — its live region is its words only (`note`) | ✅ | The reader-only status region holds the banner's line alone, never its buttons | `DecidedLock` |
 | StepRugChart — the caller's ticks (`step-rug-chart`) | ✅ | Takes its tick instants from the caller (`ticks`), and `hourTicks(from, to, floor)` makes whole hours by the caller's own floor, so a chart's ticks fall on the reader's clock in any zone | Inbox zero |
+| OverlapGauge (`overlap-gauge`) | ✅ | Promoted from the Drawn handler: a share of a drawing as a bar, with its threshold's tick and label, the label bright at or past it (2.5) | The Drawn handler |
+| CompareTable (`compare-table`) | ✅ | Promoted from the Place handler: two things side by side, row by row, the second's head in the warn ink (2.4's *Same place?*) | The Place handler, `placeModel` |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -6968,7 +6989,7 @@ flags row below moves to the photos PR.
 | PR | Redirects | `OLD_SHELL_TREES` loses | Links fixed |
 |---|---|---|---|
 | 5 (photos; was 2 — the photo flag is the old flags page's last kind without a handler) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
-| 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest`; the record sheet's flag links (Pe25, by the item's open flag ids — a server ask: `contentRecord.item` returns them) |
+| 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest` (Pe25, the record sheet's links, is out of this PR: the governor's ruling, 2026-11-21) |
 | 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
 | 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
 
@@ -8446,6 +8467,15 @@ one-shot read of the strip's across form now waits for it (the record sheet's, t
 stories, four of the strip's own). `LifeList`, `RecordRow` and `ItemTimeline` aren't measured, so
 their reads can't land early. The changed stories passed ten times each, half of them starved.
 
+#### #171 merged (2026-11-22)
+
+B01-5b squash-merged to main as `dc27ff6e0`, its tree equal to the PR's last head (`a8addd1e6`), at
+Greptile 5/5 on `aceb5e261` and CI green on `a8addd1e6`, with the founder's authority to merge. The last
+head's change was the life-strip CI fix (`CI on the second head`, above): stories and the phase doc
+only, no source, so it merged without a further Greptile review — the governor's call, told to the
+founder. The phase branch was then rebased onto main at `dc27ff6e0` (§12.2: only the B01-5c brief and
+its three T0 commits replayed), and the local PR branch `phase-b01-inbox-2` retired.
+
 #### How the forks were ruled (2026-11-20)
 
 The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
@@ -8754,6 +8784,1215 @@ The `…View` helpers are S1's to define beside it, from the reads they come fro
 - [ ] Every fake person's surname starts with "Test-" (a test over the seed's cast).
 - [ ] Run against a local `convex-test` world end to end: the lanes' counts match the seed's plan.
 
+#### Briefs (B01-5c)
+
+The design's PR 3: *Requests, places, drawn bodies, and telling askers*. Written 2026-11-21 against
+the code as merged: #170's server (`97ce98dc`) and #171's web (`aceb5e261`, at Greptile 5/5). Paste a
+brief whole; every brief also carries §12.4's invariants verbatim.
+
+##### What the design says, and what the code now has
+
+#170 built far more of this slice's server than the design assumed. Every read, rule and write the
+three handlers need already exists and is tested; what is missing is the notification and the web.
+
+| Design says | Code has | The brief says |
+|---|---|---|
+| S3 builds the request, place and drawn reads | `inbox.item` already returns all three kinds: `request` (`requestKind`, `body`, `asks: AskMemberView[]`, `candidate: CandidateView \| null`, `resolveError`), `place` (`placeKind`, `body`, `asks`, `drawnSubAreaId`, `answeringLandmarkId`, `lookalikes: LookalikeView[]`) and `drawn` (`body`, `drawer`, `overlap: OverlapView \| null`, `fromReport`) | W5 draws from these as they are; a field W5 finds missing is a server ask to S3, never a web-side derivation |
+| The rule for these verbs, to be written | `InboxVerb` already has `approve`, `decline`, `sameAs`, `lookUpAgain`, `approveDrawn`, `rejectDrawn`, `mergeDrawn`; `capabilitiesFor` and `inboxVerbRefusal` answer each (restore and takedown asks need `body.remove`; a bay's *Approve* waits on `bayMissing`; a landmark's on `landmarkMissing`) | W5 draws each lever only from `item.can`; no web rule |
+| Writes: `corpusRequests.approve` / `decline`, `waterBodies.approve` / `reject` | All exist and ask the Inbox's rule (`approve` takes `sameAs` for a landmark lookalike); `corpusRequests.reresolve` is *Look up again*. Drains page through `closeSiblingPage` and `lib/requestDecisions.closeRow`, inside `inboxBatch` | No new write in this PR; `mergeDrawn` stays for PR 4 and its bar slot is *Coming soon* |
+| The undo verbs `reopen_request`, `return_to_review` are new | Both exist with their offer-versus-run cases; the request undo pages through `reopenRequestsRest` | Nothing to add; W5's toasts use the writes' existing undo |
+| The rule-versus-write table | 141 cells; `approve`, `decline`, `lookUpAgain`, `approveDrawn`, `rejectDrawn` covered; **`sameAs` is not** | S3 adds the `sameAs` cells |
+| The heavy-rows matrix | Covers decline with its drain, a landmark decline, drawn approve and reject; **approving a heavy admit is owed** | S3 adds the heavy admit's approval |
+| `notifications.list` gains `knows` (PR 3) | **Built in #170**: `knows?: string[]`, absent → `NOTIFICATION_TYPES_EVERY_BUILD_KNOWS` (frozen, `packages/core/src/inbox.ts`) | **Neither client passes it yet.** The web bell (`components/skater/NotificationsMenu.tsx`) runs current core, so without `knows` it would read `moderator_decision` as `unknown`: W5 passes `knows: NOTIFICATION_TYPES`; the phone passes it from its own core |
+| A new pref key rolls out widen → deploy → backfill → narrow | `notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS)` in `schema.ts`, so adding the key to core makes it **required at once**; `profiles.backfillNotificationPrefs` exists and fills missing keys from `NOTIFICATION_PREF_DEFAULTS`; **`recipientWants` reads `=== true`, so an absent key reads as off** | The widening seam below keeps the key optional in the schema; until the backfill runs, nobody is told, which on dev means running the backfill in the same after-merge step as the deploy |
+| Handlers register in the registry | `handlers/<Kind>/register.tsx` exporting `registration` (or `registrations`), `{ keys: HandlerKey[], Handler }`; `HandlerKey` is `` `flag:${FlagSubject}` `` or the kind (`'request' \| 'place' \| 'drawn'`); `inspector/elsewhere.test.ts` holds every key to a handler or a placeholder destination | W5 registers `request`, `place`, `drawn` and removes their rows from `inspector/elsewhere.ts` (photo and ticket stay) |
+| The map for 2.3–2.5 is W5's | `inbox/map/itemMapAdapters.ts` already turns `admit`, `activate`, `place` and `drawn` answers into scenes (fixtures `ADMIT_MAP`, `PLACE_MAP`, `DRAWN_MAP`, `ACTIVATE_MAP`), and `ItemMap` draws any kind with a map | W5 drops `<ItemMap item={item} />` into each handler's map slot; no map work |
+| `CompareTable`, `OverlapGauge` | Do not exist | W5 builds them as kit candidates beside the handlers; the executor promotes them at integration |
+| Pe25: the record sheet's flag links, "a server ask: `contentRecord.item` returns them" | `contentRecord.item` returns no flag ids; Pe25's register row is still "blocked on a board", and that board's four questions are open | **Out of B01-5c** (ruled below) |
+| Retire `/admin/water/requests`; `admin.water.index.tsx` loses its pending card | Both pages stand; the pending card offers approve and reject only (merge lives in the old body editor, which stays) | Retiring both loses nothing once 2.3–2.5 land; `OLD_SHELL_TREES` is unchanged (the `/admin/water` tree stays for the editor) |
+| 2.6's *What each does* gains "· author told" | The alert handler's words are W2's (`handlers/Flag/flagWords.ts`) | W5 makes the one-line change, granted |
+
+##### Territories (disjoint)
+
+| Builder | Owns | Must not touch |
+|---|---|---|
+| **S3 — the notification** | `packages/core/src/notifications.ts` (the type, the pref key, its label, order and default, the view variant, `describeNotification`'s cases); `packages/convex`: `lib/validators.ts` (`notificationTrigger`'s two kinds), `lib/notificationQueue.ts` (`TYPE_FOR_KIND`, `settleReadCost`, `settleTrigger`'s two cases, the enqueue helper), `lib/notificationResolve.ts` (the view), `notificationDelivery.ts` if it needs the case, the enqueue calls in `lib/requestDecisions.ts` (`closeRow`), `waterBodies.ts` (`approve`, `reject`) and `accessAlerts.ts` (the moderator's retraction); the `sameAs` cells and the heavy admit's approval in the existing tables; `apps/mobile/app/notifications.tsx`'s `knows` and its offline cache's test (folded in from M, below) | `schema.ts` (the seam); `contentRecord.ts` (Pe25 is out); the web; the Inbox's reads, rules and writes beyond the enqueue calls |
+| **W5a — the request handler** | `apps/web/src/components/admin/inbox/handlers/Request/` (new, with `register.tsx`): the six request kinds and the admit with no match; its wiring test beside it, through `inbox/testing/routeHarness.tsx` | `packages/*`; the route tree and `consoleNav.ts`; `components/kit/`; every other handler; `inspector/elsewhere.ts` (W5b's) |
+| **W5b — places, drawn bodies and the links** | `inbox/handlers/Place/` and `Drawn/` (new, each with `register.tsx`, each with its wiring test); the kit candidates `CompareTable` and `OverlapGauge` beside them; `inspector/elsewhere.ts` (the request, place and drawn rows out, once W5a's handler is in); `handlers/Flag/flagWords.ts` (the one *author told* line); `components/skater/NotificationsMenu.tsx` (`knows`) and `skater/notificationRows.ts` (the bell's mark); the links the retirement table names (`overview/overviewRoutes.ts` audit `waterBodyRequest`, the Bodies preview's ask links); `routes/admin.water.index.tsx` (the pending card out) | `packages/*`; the route tree and `consoleNav.ts`; `components/kit/`; `Request/`; the record sheet (Pe25 is out) |
+
+**M is folded into S3.** The phone's toggle and its words come from core (`NOTIFICATION_PREF_ORDER`,
+`NOTIFICATION_PREF_LABELS`, `describeNotification`), so a build carrying S3's core shows them with no
+mobile code; what is left is one argument (`knows`) and its test. The EAS `preview` build and its
+device pass are the executor's after-merge step.
+
+##### The seams (an executor commit at T0)
+
+1. **`schema.ts`**: the pref key optional while it rolls out —
+   ```ts
+   const notificationPrefs = v.object({
+     ...boolFlags(NOTIFICATION_PREF_KEYS.filter((k) => k !== 'moderatorDecision')).fields,
+     // Widened for the rollout (B01-5c): narrowed back to required in its own later commit, after
+     // `profiles.backfillNotificationPrefs` has written it on every row.
+     moderatorDecision: v.optional(v.boolean()),
+   });
+   ```
+   (`boolFlags` returns a `v.object`, whose `.fields` this spreads); `notifications.type` takes `NOTIFICATION_TYPES` from
+   core, so the new type needs no schema line; `notificationQueue.trigger` is `notificationTrigger`
+   (S3's, in `lib/validators.ts`).
+2. **Core, at T0, so S3 and W5 build against the same names**: `'moderator_decision'` in
+   `NOTIFICATION_TYPES` (never in `NOTIFICATION_TYPES_EVERY_BUILD_KNOWS`), `'moderatorDecision'` in
+   `NOTIFICATION_PREF_KEYS`, `NOTIFICATION_PREF_KEY_FOR`, `NOTIFICATION_PREF_DEFAULTS` (`true`),
+   `NOTIFICATION_PREF_ORDER` and `NOTIFICATION_PREF_LABELS` (the design's invented label, for the
+   copy pass); the `NotificationView` variant below. `describeNotification`'s case is S3's.
+3. **The route**: `routes/admin.water.requests.tsx` becomes a redirect to `/admin/inbox?lane=requests`
+   (the old component stays on disk until B01's close, §12.7); its test follows. **Landed as the
+   slice's last commit, not at T0** (below): until the request handlers are in, the placeholder's link
+   to that page is how a request is decided.
+4. **`consoleNav.ts`, `OLD_SHELL_TREES`, `lib/theme.ts`**: no change.
+5. **Kit**: none at T0; `CompareTable` and `OverlapGauge` are promoted at integration.
+
+##### Canonical snippets
+
+**The view** (S3 lands it in core; the web bell, the phone page, push and email all read it):
+
+```ts
+| {
+    type: 'moderator_decision';
+    /** What was decided: an ask (its kind), a drawing, or an access alert. */
+    about: RequestKind | 'drawn' | 'accessAlert';
+    outcome: 'approved' | 'declined' | 'merged' | 'rejected' | 'retracted';
+    body: NotificationBodyRef | null;
+    /** A decline's note, which the asker reads (D179). A retraction carries no reason. */
+    note?: string;
+  }
+```
+
+`describeNotification`'s cases (invented, for the copy pass; never a word about the ice, D3): "Gli
+added ‹body› to the map", "Your request for ‹body› was declined — ‹note›", "Your drawing was merged
+into ‹body› — your report moved with it" (the variant exists now; PR 4 enqueues it), "A moderator
+took down your access alert at ‹place›, ‹body›"; the target is the body (`{ kind: 'water', id }`),
+or none when the body is gone.
+
+**The queue kinds** (`notificationTrigger`): `{ kind: 'request_decided'; requestId?:
+Id<'waterBodyRequests'>; waterBodyId?: Id<'waterBodies'>; outcome; actionId:
+Id<'moderationActions'> }` and `{ kind: 'alert_retracted'; accessAlertId: Id<'accessAlerts'>;
+actionId: Id<'moderationActions'> }`; both map to `moderator_decision` in `TYPE_FOR_KIND`. No
+`actorId`.
+
+**A handler** (W5): `export const registration: InboxHandlerRegistration = { keys: ['request'],
+Handler: RequestHandler }`, where `Handler` takes `{ item, locked, now }` (`InboxHandlerProps`) and
+returns `<InspectorFrame head actions locked>{body}</InspectorFrame>` — `actions` drawn from
+`item.can` (a verb absent is not drawn; a sentence is a refusal, never drawn as a button), `locked`
+passed through, the map slot `<ItemMap item={item} />`, every refusal a toast (D268), the receipt in
+the present tense ("Closes 3 asks"), its Undo the write's own row. The kinds a handler draws:
+`request` — admit (with a catalog match; without one, *Look up again* in *Admit*'s place and
+`resolveError` said), activate, restore, contest access, takedown; `place` — a landmark ask (with
+lookalikes in `CompareTable`: *Same place* is `approve` with `sameAs`) and a bay ask (*Approve* only
+with `drawnSubAreaId`, else *Draw in Body →* to `/admin/water/$id`); `drawn` — approve and reject,
+`OverlapGauge` from `overlap`, *Merge* drawn as *Coming soon* (D286).
+
+##### Definitions of done
+
+**S3 — the notification:**
+- [ ] The type end to end: core's case and words (`describeNotification` exhaustive, its test); the
+  view in `notificationResolve`; push and email composed from it (`notificationDelivery`'s test).
+- [ ] Enqueued exactly where D285 says: `closeRow` for each closed ask's requester (every page of a
+  drain, so a 499-sibling decline tells all of them, once each); `waterBodies.approve` / `reject` for
+  the drawer; a moderator's retraction of someone else's live alert. **Not** for an ask a script
+  filed (`origin: 'seed'`: the requester is staff, and nobody asked) nor a retraction recorded on an
+  alert its author already withdrew.
+- [ ] The settle re-check: the decision is still that `actionId` (the ask still closed by it; the
+  alert still retracted by it). **An undo inside the window drops it** — a `convex-test` that decides,
+  undoes before the flush and flushes (no notification), and one that undoes after (the notification
+  stands, as for flags).
+- [ ] `knows`: an absent `knows` serves `moderator_decision` as `unknown`; a phone passing its core's
+  types gets the view; the phone page's offline cache stores and reads it.
+- [ ] The pref: on by default for a new profile (`upsertFromClerk`); off once toggled off; absent
+  (before the backfill) reads as off and the rollout below closes that window.
+- [ ] The `sameAs` cells in the rule-versus-write table; the heavy admit's approval in the heavy-rows
+  matrix; both tables' sizes said in the report.
+- [ ] Any `fast-check` property added or changed run at 20× its runs before report, and under
+  `TZ=Australia/Lord_Howe`, `TZ=Asia/Kathmandu` and `TZ=UTC` where a clock is involved; its
+  counterexamples pinned.
+
+**W5a and W5b — the handlers** (each for its own kinds and files):
+- [ ] Each kind's handler draws from `item` and `item.can` alone; each board (2.3, 2.4, 2.5) and each
+  undrawn kind (activate, restore, contest, takedown, the admit with no match, the bay ask) beside its
+  mock at 1440 × 900 and 360 px, both modes (§12.5).
+- [ ] **A route-and-view wiring test per handler** — the real `InboxRoute` around the real `InboxView`
+  with only the router, role and read layer stood in (`InboxRoute.wiring.test.tsx`'s harness): the
+  item opens its handler (not the placeholder), its levers call the write with the item's ids, a
+  refusal reaches a toast, and a decided item drops the bar.
+- [ ] `inspector/elsewhere.test.ts` still holds every `HandlerKey` to a handler or a destination,
+  with the three rows gone; a story per new kind; the narrow layout's map view-only through the inspector's
+  `narrow`.
+- [ ] The web bell passes `knows: NOTIFICATION_TYPES` and words the new type (its test).
+- [ ] The redirect and the retired pending card; the links the retirement table names, each to the
+  Inbox item.
+- [ ] Every optional prop W5 adds has a live caller, or a one-line note saying which later slice it
+  waits for (the class #171's first review found).
+
+##### The pref rollout, on dev
+
+1. **This PR**: the widening seam (`moderatorDecision` optional) and core's key.
+2. **After merge**: `convex dev --once` (the deploy).
+3. **Then at once**: `convex run profiles:backfillNotificationPrefs '{}'`, repeated with
+   `'{"cursor":"<cursor>"}'` until it answers `isDone: true` (a direct call's answer, which
+   `convex run` prints), so no profile reads the new toggle as off for long.
+4. **A later commit, its own PR or the next slice's**: narrow `moderatorDecision` back to required
+   (`boolFlags(NOTIFICATION_PREF_KEYS)` whole) and deploy; `convex dev --once` fails loudly if any
+   row still lacks it.
+5. **The phone**: an EAS `preview` build carrying the new core, installed on the Pixel; the in-app
+   page and the toggle checked (the executor; the founder's device pass).
+
+##### How the forks were ruled (2026-11-21)
+
+The governor's rulings; the founder has been told of them and may overturn any (§7, rulings 11–16).
+
+1. **Pe25 is out of B01-5c.** It stays on the register, blocked on its board. S3 does not touch
+   `contentRecord.item`; W5 builds no record-sheet links.
+2. **A retraction's message carries no reason**, as designed; the payload has no reason field.
+3. **The split is as revised**: S3 (with the phone's `knows`), W5a (`Request/`), and W5b (`Place/`,
+   `Drawn/`, both kit candidates, the retirement's links, the bell, the *author told* line). The
+   redirect's route file is a seam.
+4. **The life strip showing stacked, then running across once late fonts land, is accepted for now**
+   and owed on the register's shared rows (Sh9), in the family of the Saira preload already owed.
+5. **The narrowing of `moderatorDecision` back to required ships with B01-5d**, not its own PR.
+6. **Restore and takedown are an admin's both ways** (2026-11-22, §7 ruling 16), found integrating
+   W5a: the board drew no bar for a viewer without `body.remove`, but the server's `can` still
+   allowed that viewer *Decline*. S3 makes `can.decline` a refusal for that viewer (ask 11). The web
+   stays as built; its kind check (`requestBar`'s early return, `refusalNote`'s lead) is marked
+   `S3-REMOVE` and goes at S3's integration, once `can` alone empties the bar. **Done at S3's
+   integration (2026-11-22):** both checks are gone, and the reopen of such a decline is an admin's
+   too.
+7. **`nearestKnown` moves to B01-5d** (2026-11-22, §7 ruling 17).
+
+**What landed at T0** (on `phase-b01-inbox`): the type, the pref key and the view in core; the
+schema's widening; and placeholders that S3 and W5b replace — core's `describeNotification` case
+(one sentence for every outcome), convex's `notificationResolve.parsePayload` (`null`, read as the
+`unknown` row), the web bell's mark (`skater/notificationRows`, the flag icon), the settings page's
+group (`skater/settings/NotificationsSection`, beside the flag ruling), and the phone's toggle reading
+an absent key as off. Each is marked `PLACEHOLDER` or explained where it sits. The route-and-view
+harness is importable from `inbox/testing/routeHarness.tsx` (`installInboxRouteMocks`, `harness`,
+`resetHarness`, `lastArgs`, `argSets`, `must`). **The redirect is the slice's last commit**, not a T0
+seam: the Inbox's placeholder for requests links to `/admin/water/requests`, so a redirect landed
+before the request handlers would send that link back into the Inbox and leave requests undecidable
+on the branch.
+
+##### Size, honestly
+
+The design estimated PR 3 at ~4,200 lines and ~70 files. #170 and #171 each ran about five times
+their estimates, but this slice's server is mostly built: S3 is the notification (about 1,500 lines
+with its tests, plus the two table additions). W5 is three handlers covering nine kinds, two kit
+candidates, wiring tests and stories, the size of #171's two handlers: about 9,000–12,000 lines.
+**About 11,000–14,000 lines and 90–120 files** — over the guideline for the reasons #171 was, and
+the PR body says so.
+
+**The split, revised:** M folds into S3 (one argument and its test; the build is the executor's).
+W5 is the slice's weight and should be two builders, disjoint by directory: **W5a** (`Request/`,
+the six request kinds and the admit with no match) and **W5b** (`Place/` with `CompareTable`,
+`Drawn/` with `OverlapGauge`, the redirect, the links, the bell, the *author told* line).
+
+#### B01-5c: the web builders integrated (2026-11-22)
+
+On `phase-b01-inbox`, unpushed, after `#171 merged`. W5a and W5b were cherry-picked; W5b's copy
+of the shared seam commit was dropped as a duplicate. One conflict: `inspector/elsewhere.ts`, where
+each builder removed only their own kinds' rows. All three rows go, along with their imports.
+
+**What each built.**
+
+- **W5a** built `handlers/Request/`: one handler for the `request` key covering 2.3's admit
+  (and the admit the catalog found no match for, with *Look up again* in *Admit*'s place) plus
+  activate, restore, contest access and takedown, derived from it. It also built
+  `handlers/asks/AskList`, the shared ask list (newest first, each byline with its time and note,
+  and *Showing n of m asks* past a page).
+- **W5b** built:
+  - `handlers/Place/`: 2.4's landmark ask, with *Same place?* in `CompareTable`, and the bay ask;
+  - `handlers/Drawn/`: 2.5, with `OverlapGauge`;
+  - the bell's `moderator_decision` (its `knows`, its mark, core's sentence);
+  - the links from the Overview, the audit feed and the Bodies preview into the Inbox;
+  - the water list without its pending-review card;
+  - the pin on 2.6's *author told*.
+
+**Integration seams.**
+
+1. The route harness stands in `useRouterState`, and its `Link` renders the real `href`. Every
+   handler builds its console link the router's way (`useHereHref` is gone).
+2. `OverlapGauge` and `CompareTable` were promoted to the kit (their rows are under *Kit
+   extensions (B01-5)*).
+3. **One decision runner**, `inbox/actions/useDecisionRunner`, used by every request, place and
+   drawn write. A refusal reads the same on all three: "Not saved · ‹item›" over "The decision:
+   ‹the server's words›". A write lands as `{ target, answer? }`. When S3's writes answer with their
+   `actionId` and undo offer, the receipt takes Undo from them, and the marked `latestOwn` fallback
+   in `undoOf` is deleted in one place.
+4. The Drawn bar's *Merge* takes no key. It is still drawn as *Coming soon*.
+5. The Inbox words no caller read are deleted.
+6. The legacy dashboard's pending-review link opens the Inbox's drawn lane. A separate link to the
+   water list keeps the duplicates.
+7. `AskList`'s newest-first re-sort is marked temporary.
+8. The `/admin/water/requests` redirect is held as the slice's last commit.
+
+The integration review fixed four things:
+
+- The place handler wrote on the item's first ask even when it was closed; it now asks
+  `decidedAsk`, as the request handler does.
+- The new stories' layout reads now wait for the layout to settle.
+- A place ask's counts are written by `countOf`.
+- The writers' guard now inventories the three write hooks.
+
+**Board against build.**
+
+- **2.3:**
+  - distances are in feet and miles;
+  - the class reads *Lake or pond*;
+  - the handle is on bylines;
+  - the catalog outline is white;
+  - there is no skate track (the read serves none).
+- **2.4 and 2.5:** what the item read doesn't serve yet (below) is left out rather than invented,
+  not drawn as empty.
+
+**Choices invented for the founder's look:**
+
+- the four request kinds' heads;
+- the keys R, C, T and L;
+- the amber refusal note;
+- the approve and decline rows;
+- one-press approve, and a takedown that asks its reason;
+- *Draw in Body →* only when *Approve* is refused while it waits on a drawing;
+- the bell's marks;
+- the Overview's three lanes now opening the Inbox.
+
+**Open: the server asks the builders filed (S3), ten of them, and an eleventh from integration (`can.decline` on a restore or takedown, below):**
+
+- the request, place and drawn writes answering with their `actionId` and undo offer;
+- on the request item: its ruling, the dormancy reason, `nearestKnown` and the skate stats;
+- the asks' one order, decided on the server;
+- on the drawn item: `fromReport` and its counts.
+
+**Found integrating, listed rather than fixed (not this slice's to change):**
+
+- **Restore and takedown — ruled (§7 ruling 16; S3's ask 11).** The plan's 2.3 row (*Requests: activate, restore, contest access, takedown*) has a viewer without `body.remove` see *An admin
+  decides this* with no bar. The server's `can` still allows that viewer *Decline*, so the bar
+  hides a lever the item allows. The fix is on the server: `can.decline` refuses for that viewer,
+  and the bar draws from `can` alone.
+- **Refusal titles — done (the governor, 2026-11-22: one word).** The flag handler and People's
+  person and record writes said "Not changed · ‹subject›"; `said.ts`, the Body console, Access and
+  the runner say "Not saved". Every refusal toast now says **Not saved**. For the founder's copy
+  pass: the one title, and that a refusal's body differs (the flag and People toasts give the
+  server's sentence alone; the Body console, Access and the runner lead with what wasn't saved).
+- **The place bar's *Approve*.** It also checks that a bay or landmark is drawn, beside
+  `can.approve`. The server's `can` already says so, so the extra check is redundant, and harmless
+  while the two agree.
+- **#171's stories.** Several Flag and Access layout reads are still one-shot, the shape the life
+  strip's failure had.
+
+#### B01-5c: the server integrated (2026-11-22)
+
+S3 (`b01-5c-s3` at `44240f07f`, 17 commits) was cherry-picked onto `phase-b01-inbox` with no
+conflicts, its seam request (`lib/enums.ts`, the queue's two kinds) included. A fresh anonymous push
+left `convex/_generated` unchanged: S3 had committed the missing `lib/decisionResult` entry.
+
+**Who is told, and where each message is queued.**
+
+- **Where each is queued** (two trigger kinds, `request_decided` and `alert_retracted`, both
+  flushing to `moderator_decision`):
+  - every ask a decision closes, on every page of a drain, once each (`closeRow`);
+  - a drawing's approval, its rejection, and an undo's re-review (`reviewDrawnBodyImpl`);
+  - a live alert's retraction (`retractAlertImpl`).
+
+  Each is keyed on the decided row, with the self gate held.
+- **The settle re-check** holds each message to its decision row. When the queue drains:
+  - an ask must still be closed at that row's instant;
+  - a drawing must still be reviewed that way, with its row not undone;
+  - an alert must still be retracted by that row.
+
+  So an undo inside the window drops the message, an undo after it leaves the message, and a
+  decision made again inside the window is one message.
+- **Never told:**
+  - an ask a script filed, or a seed ask;
+  - fake people, checked both at enqueue and at the flush;
+  - anyone with the toggle off, or absent before the backfill;
+  - the decider;
+  - the author of an expired or resolved alert, or one who had already withdrawn it.
+- **The words** are core's `describeNotification`: per kind and outcome, a decline's note as its
+  second line, and a retraction naming the alert's spot (`place`) and lake but never the reason.
+  Nothing in them says anything about the ice (D3).
+- **The flush**:
+  - costs each re-check in bytes before it starts it;
+  - drains 40 heavy messages (an admit's ask near the document limit) in at most 7 executions
+    (measured 6), none rolled back;
+  - drains 499 in about 72 continuations, each scheduled immediately: about 30–70 seconds of wall
+    clock.
+
+**The member lists.**
+
+- An item's asks, flags and access reports are read **member by member**, each whole.
+- At most 50 of each status are served (`VIEW_MEMBERS`), fewer when heavy.
+- The order is newest first, except a flag item's, which is oldest first.
+- The cut flag sits beside `memberCount`: `asksCut`, `flagsCut`, `reportsCut`, and
+  `dismissedByRulingCut` for the 20 dismissed reports read.
+- **What this fixed:** read together, each member had reserved a whole document, so past about
+  eleven the rest silently read nothing.
+- **The web:** one shared line, *Showing N of M+* (`blocks/listCut`), under the ask, flag and
+  access lists. FlagBlock's count, the access reporter count, its dismissals and its two futures now
+  read the item's count, or a floor, never a page's length.
+
+**The asks, and how each ended:**
+
+1. **A decision's own row and undo offer: done.**
+   - `corpusRequests.approve` and `decline`, and `waterBodies.approve` and `reject`, answer
+     `InboxDecisionResult` (`{ itemId, actionId } & (undoable…)`), read by the undo engine's own
+     rule through a function reference (no import cycle). A new uncached guard,
+     `packages/guards` `importCycles`, holds the graph.
+   - The web's decision runner takes Undo from that answer. The marked "latest action" fallback is
+     deleted.
+2. **A contest's standing ruling (`request.ruling`): done.**
+3. **An activate's dormancy (`request.dormancy`: reason, since, note, by): done.**
+4. **Each ask's skate (`AskMemberView.skate`): done.** It carries the start and end times and the
+   moving time. There is no distance: no row stores one.
+5. **The ask order: done.**
+   - Asks are newest first, open and closed together.
+   - `primaryRequestId` names the ask a decision is sent for.
+   - The web's re-sort and its own ask inference are deleted.
+6. **The nearest known body (`candidate.nearestKnown`): moved to B01-5d** (§7 ruling 17).
+7. **A drawing's skate (`drawn.skate`, with `hasTrack`): done.**
+8. **The report a drawing became, with an excerpt (`drawn.fromReport`): done.** The excerpt is
+   `null` for content hidden, removed or withdrawn, to a viewer without `content.read`.
+9. **The drawer's count (`drawn.drawerReports`) and a landmark asker's asks
+   (`AskMemberView.landmarkAsks`): done.**
+10. **Nearby drawings, and a drawing's distance: not served.** The only spatial read loads whole
+    body documents, which the item's budget can't hold.
+11. **Restore and takedown, an admin's both ways, and their reopen: done** (§7 ruling 16).
+    - The web's `S3-REMOVE` kind checks are gone. The bar draws from `can` alone and says the
+      server's sentence.
+    - The fixtures were brought to what the server answers.
+- *Same place* is refused in the rule's words where nothing looks like it.
+
+**The tables:**
+
+| Table | Before | After |
+|---|---|---|
+| Rule-versus-write | 141 cells | 163, none awaiting |
+| Offer-versus-run | 16 cases × 8 viewers | 22 cases × 8 viewers |
+| Heavy-rows matrix | 5 rows | 7 (the heavy admit's approval, its messages delivered) |
+
+**Not served, owed:**
+- the nearest known body (B01-5d);
+- nearby drawings;
+- a drawing's distance;
+- a skate's distance (no row stores one).
+
+**The web doesn't draw yet** (the web follow-up's brief):
+
+- **Request:**
+  - a contest's `ruling` (as 2.2's ruling event);
+  - an activate's `dormancy`;
+  - each ask's `skate` times and moving time, beside *With a recorded skate*.
+- **Place:** the byline's `landmarkAsks` (2.4's counts).
+- **Drawn:**
+  - `fromReport.excerpt`;
+  - the `skate`'s times;
+  - its track on the map (`itemMapAdapters` draws no skate);
+  - `drawerReports`.
+- **The bell:** nothing. A retraction's `place` is already worded by core's `describeNotification`,
+  which the bell calls.
+
+#### B01-5c: the follow-ups integrated (2026-11-22)
+
+The follow-ups were cut from `0d02cd89d` and cherry-picked onto `phase-b01-inbox` with no conflicts:
+- **S3** (`b01-5c-s3-2`, `8459cb385`);
+- **W5a** (`b01-5c-w5a-2`, three commits);
+- **W5b** (`b01-5c-w5b-2`, four commits).
+
+Nothing is pushed or deployed.
+
+**The map's tracks, and the bug they uncovered.**
+
+- **What `inbox.itemMap` now serves:** `tracks: { id, path, simplified }[]`:
+  - on a request, each served ask's recorded skate;
+  - on a drawing, the drawer's skate when it left a track.
+
+  A track goes whole up to 256 KiB, else thinned to 512 points. Tracks share the map's 1 MiB with
+  the outlines, and one left out sets `capped`.
+- **The bug:** the map's size limits read `undefined` depending on module load order, so **every
+  outline was thinned to 48 points**. S3 moved the limits to a leaf module
+  (`lib/inboxMapBounds`).
+- **The web:**
+  - It draws the tracks as the console's gray `track` lines on the admit and drawn scenes.
+  - The legend names the skate where the board does: "Kate Donovan's skate" on 2.3, "The recorded
+    skate · 11 Oct" on 2.5. Several skates read "Recorded skates".
+  - A thinned track says *Skate simplified* on the caption, as a simplified outline already says.
+  - An item with no track draws no line and no legend for one.
+  - 2.3 and 2.5 were rendered beside their mocks: the track sits where the board's does.
+
+**What each follow-up drew:**
+- **Request:**
+  - each ask's skate on its row;
+  - a contest's standing ruling, through the Access item's ruling event;
+  - an activate's dormancy.
+- **Place:** the asker's landmark history on the *Trust* row.
+- **Drawn:**
+  - the report it came from, with its excerpt, and *Open in Reports* under the quote;
+  - the skate;
+  - the drawer's report count;
+  - *If merged* says only "Coming soon" (the old editor has no merge).
+
+**The seams:**
+
+1. **The map adapter draws the tracks**, as above.
+2. **One home** for a timeline event and a standing ruling: `blocks/TimelineEventBody` and
+   `blocks/rulingEvent`. Access and Request both import them, and the bare export is gone.
+3. **`AskList`'s `rowMeta`.** The place handler passes each asker's landmark history, so several
+   askers each show theirs; Request passes nothing.
+4. **One skate format** (`blocks/skateWords`): "1h 36m · 11 Oct 09:00–11:00". An ask's row
+   prefixes it with *With a recorded skate*.
+5. **The redirect.**
+   - `/admin/water/requests` now redirects to `/admin/inbox?lane=requests` (replace), and it is
+     tested.
+   - The page leaves the Legacy menu and the old sidebar.
+   - Its component stays on disk, unrouted, as `components/admin/RequestQueue.tsx`.
+   - The generated route tree is unchanged, since the path still stands. This is the slice's last
+     code commit.
+
+**What boards 2.3–2.5 still don't draw, and why:**
+
+- **Distances:**
+  - a skate's distance (2.3's "2.1 km", 2.5's "4.2 km"): no activity row stores one;
+  - a drawing's distance.
+- **The nearest known body** (2.3's *Nearest*): it moved to B01-5d (§7 ruling 17). A bounded
+  geographic read doesn't fit the item's budget.
+- **Nearby drawings** (2.5's *Nearby*): the only spatial read loads whole body documents.
+- **Wording, for the copy pass:**
+  - 2.4's "3 landmarks named" is built as the asker's landmark-ask history ("2 of 3 landmark asks
+    added", "first landmark ask"): the read serves their filings, not the landmarks named after
+    them;
+  - "48m" is core's duration label, against the board's "48 min".
+- **2.5's *If merged* rows** (*Track*, *Skater*): *Coming soon* until B01-5d's merge.
+
+**The web review** of everything B01-5c added, on the final code:
+
+- **Fixed:**
+  - **(g)** Access and Request each kept a copy of *Open in Body →*, and Place borrowed Drawn's
+    chip. There is now one `blocks/LinkChip`.
+  - **(g)** Place said distances with `milesWords` ("<0.1 mi") beside the map rule's "394 ft".
+    It now uses `formatDistance`, as Request and the map do.
+  - **(g)** Seams 2–4 above: one ruling event, one skate format, one cut-list line.
+  - **(f)** Two Drawn story overflow reads now wait for the layout.
+  - **(f)** Zones: the request wiring test's skate line and dormancy date held only in New York.
+    They now read the runner's zone, as the route does.
+- **Listed, then fixed on the governor's rulings (2026-11-22):**
+  - **(a)** The place bar's *Approve* checked that the bay or landmark is drawn, beside `can`.
+    It now draws from `can.approve` alone.
+    - *Draw in Body →* still has to tell the missing-drawing refusal from any other. `can` carries
+      only the sentence, so it reads the item's own served facts (`drawnSubAreaId`,
+      `answeringLandmarkId`), never the words.
+    - **A server ask:** a refusal code on `can` would let *Draw in Body* read `can` alone.
+  - **(g)** B01-5b's flag handler:
+    - *Open in Body* was a plain `href`. It is now the router's link with its way back, through
+      `LinkChip`, and a route test holds it.
+    - Its *Around it* distances are `formatDistance`, and `milesWords` is gone.
+  - **(g)** A request on a known body (activate, restore, contest access, takedown) now draws its
+    asks' skates. `corpusRequests.create` takes an `activityId` for every kind, so any of them can
+    carry one. The legend names the asker, as the admit scene does.
+- **Clean:** (b), (c), (d), (e), (h), (i).
+
+**Found at the gate:**
+
+- **Codegen-verify** on a throwaway anonymous backend found S3's new `lib/inboxMapBounds` missing
+  from `_generated/api.d.ts`, the same shape as #108's red CI. It is committed.
+- **The heavy admit's approval test** (`inboxHeavy.test.ts`, S3's) took 16.7 s alone but **103 s
+  under the full parallel `pnpm test`**, past its 90 s limit. CI runs every package at once, so
+  it could go red there. **Fixed by S3** (`b01-5c-s3-4`; the governor ruled CI green part of
+  done):
+  - The approval runs in 7–9 s alone and **18.5 s under contention**. Its undo is split into a
+    test of its own (13.2 s contended). Both have a 240 s timeout, because their point is the
+    real size.
+  - The flush tests run 12 heavy messages batch by batch and require each batch to complete.
+  - The 24,000-, 48,000- and 48,001-point ring fixtures are rebuilt from legal 8,000-point rings.
+  - S3 measured its slowest contended test at 18.5 s, with at least 5× timeout headroom.
+  - **The integration's own full parallel `pnpm test`** (all packages, cold, as CI runs it)
+    passed. Its slowest three tests, against their limits:
+
+    | Test | Time | Limit | Headroom |
+    |---|---|---|---|
+    | The heavy admit's approval | 47.0 s | 240 s | 5.1× |
+    | The flush's heavy re-checks (`moderatorDecision.test.ts`) | 24.7 s | 60 s | **2.4×** |
+    | A contest item full of heavy skates | 23.0 s | 180 s | 7.8× |
+
+    The flush test's headroom is the thinnest, to watch on CI's slower runner.
+- **Owed to B01-5d:**
+  - **The heavy-skate tracks.** The 25,000–50,000-point fixtures exceed the real backend's
+    8,192-item array cap.
+  - **A refusal code on `can`**, so Place's *Draw in Body →* can read `can` alone rather than the
+    item's served `drawnSubAreaId` and `answeringLandmarkId`.
+
+**The gate:**
+
+| Check | Result |
+|---|---|
+| Types | 18/18 |
+| Lint | clean |
+| Guards | 108 |
+| Core | 3,670 |
+| Convex, with coverage | 4,070, alone (see above) |
+| Mobile | 136 |
+| The scripts' suites | email 5, run-log 97, design 818, wind-climate 61, admin-areas 47, archive-io 11, seed-inbox 32, lake-depth 167, seed-destinations 90, etl 552, extraction 44, imagery 20, bathymetry 432 |
+| Web, both projects, twice | 7,181 each |
+| The three `fast-check` property files, at 20× (5,000 where none was set) | 102 in each of Lord Howe, Kathmandu and UTC |
+| The 18 new or changed story files, 10× with half starved | 187 every run |
+| The web unit project in seven zones (UTC, New York, St John's, Kathmandu, Lord Howe, GMT−14, GMT+11) | 5,917 each |
+
+
+#### B01-5c: the server review (R8) and its fixes (2026-11-22)
+
+An independent review of the server half at `0d02cd89d` found nothing blocking and four things to
+fix. S3 fixed them on `b01-5c-s3-3` (`60b3b58e7`), cherry-picked with no conflicts.
+
+**The findings and their fixes:**
+
+1. **A required row could read as "no one".** An item's own rows were read after the lists that
+   fill its budget:
+   - the body;
+   - a contest's ruling and a dormancy, with who made them;
+   - a flag's target and author;
+   - an Access item's ruling.
+
+   A miss past the budget answered `null`, so the page could read "no one ruled". They are now read
+   first, through `InboxReader.must`, which throws past the budget. Flag, access, request and place
+   were reordered; drawn reads only single rows.
+   - **On the web:** the throw reaches the inspector as its ordinary failed read, with *Try again*,
+     and the list beside it still draws. A route wiring test holds this; the read layer's tests
+     already held that a thrown query becomes that failure.
+2. **The alert's settle re-check was untested** in two cases, now held:
+   - undone and made again after its row was due: the author is told once;
+   - a same-instant retraction by another moderator: the message is dropped.
+3. **The merged-drawing drop was untested.** A test now holds that an approved drawing merged away
+   inside the window tells no one.
+4. **`drawnSkateOf` read one activity**, so another skater's late-synced activity could hide the
+   drawer's. It now reads three (`DRAWN_SKATE_PAGE`) and keeps the drawer's own.
+
+**Clean, per the reviewer:**
+- Who is told is told exactly once: across pages, through undo, and through a decision made again.
+- Eight guards are mutation-held: each fails with its rule broken.
+
+**Two proofs on a throwaway local backend** (S3's; never dev):
+- **The flush:** 40 heavy messages plus 10 flags were delivered once each in 6 executions. Each
+  batch held 8–9 heavy messages (about 6.8 MB), with no limit failure.
+- **The decisions:** a heavy admit's approval and a 500-ask decline each returned its
+  `InboxDecisionResult`, and 670 askers were told once each.
+
+**What the real backend did that the harness doesn't** (owed, on the register's shared rows):
+1. **Convex rejects arrays over 8,192 items.** The heavy-rows matrix's 24,000- and 48,000-point ring
+   fixtures can't exist on a deployment; heavy rows still can, built from several rings. The
+   harness should enforce the array limit and the fixtures be rebuilt, in B01-5d.
+2. **Scheduled heavy drain pages waited 13–270 s** on the local backend, where a direct run took
+   about 9 s. To watch on dev after the merge.
+
+#### B01-5c: the web review (R9) and its fixes (2026-11-22)
+
+An independent review of the web half at `04e5cf9fa` found nothing blocking. Each fix below landed
+with a test that fails without it.
+
+**Clean, per the reviewer:**
+- No write is sent with another item's ids.
+- No lever is drawn against `item.can`.
+- No copy says or implies anything about the ice (D3).
+
+**The findings and their fixes:**
+
+1. **The Reject dialog told the moderator the drawer reads their reason.** The server keeps a
+   rejection's reason audit-only: the resolver drops a drawing's note, and core's sentence has no
+   line for it.
+   - The dialog now says *Reason · kept in the audit log* (People's words) and takes the audit
+     log's cap.
+   - A test pins every reason dialog's words against what the server sends. A request's decline,
+     a takedown and a place decline reach the asker; a drawing's rejection never reaches the drawer.
+2. **The drawn map's legend named a drawer whose account is being deleted**, while the inspector
+   said "A former skater". `blocks/shownName` is now the one rule for every name the Inbox draws.
+   - **The sweep fixed:**
+     - the drawn legend;
+     - the timeline's ruler and filers, in a contest's standing ruling and in Access ("A former
+       moderator", "A former skater");
+     - an activate's dormancy *Set by*.
+   - **Already right, now through the helper:**
+     - the skate legend's asker;
+     - the ask list's bylines;
+     - the place asker and its *Trust* row's history (`rowMeta`);
+     - the drawn *User* row.
+   - **Nothing to name:** receipts and toasts name a body or an ask, never a person.
+3. **A skate that crossed midnight was labeled with its end day only.** One rule now
+   (`skateWhen`):
+   - within a day, the start's day and its two times;
+   - across a day, both days ("10 Oct 23:00 – 11 Oct 01:00");
+   - with no end, the start.
+
+   The map's legend names the start's day, so the two agree. Tests run in New York, Kathmandu and
+   Lord Howe (same day, across midnight, across a clock change), with a property that the label's
+   days are the start's and the end's local days.
+4. **Two lines that pick what gets written were held by no test.**
+   - **(a) Sending `primaryRequestId`.** New fixtures serve a newer, closed ask first, and the
+     request and place wiring tests assert the id sent. With `asks[0]` swapped in, both fail.
+   - **(b) The runner's "receipt only while its item is open" check.** The runner's own tests now
+     hold the console's rule:
+     - a write that lands after the moderator opened another item draws no receipt there; it
+       landed, and its row's Undo is in History, with no window (the toast's ten seconds are the
+       only window);
+     - one that lands with its item still open draws the receipt and its Undo;
+     - a late refusal still reaches a toast.
+
+     With the check removed, the first test fails.
+5. **Comments:** the request and place writes now say they send the newest open ask, as the server
+   names it.
+6. **The Drawn and Place `Narrow` stories** read layout inside one retry, as Access's does.
+
+**Slow tests, under the governor's rule** (a test's contended time is at most a fifth of its limit;
+CI's runners are about 1.5× slower than this machine). From the workspace run:
+
+| Test | Contended time | Limit was | Limit now |
+|---|---|---|---|
+| `moderatorDecision` *heavy re-checks* | 24.7 s | 60 s | 240 s |
+| `moderatorDecision` *flags due before them* | 22.4 s | 60 s | 240 s |
+| `inboxRequestItem` *tracks share the answer's bound* | 7.7 s | 20 s | 60 s |
+
+The flush byte guard's mutation was re-run: with the guard removed, *heavy re-checks* still fails.
+
+#### Greptile on #172, round 1 (2026-11-22)
+
+Greptile reviewed #172 at `2b50fb82f` and scored it 4/5, with two non-blocking findings. Both are
+fixed on `phase-b01-inbox-3` and carried onto `phase-b01-inbox`.
+
+1. **"Single asks hide useful context"**, of the class *a compact or single-member layout drops what
+   the list layout shows*.
+   - **The miss:** the place handler's compact layout (one ask served) drew the asker's note and
+     recorded skate only through `AskList`, behind `several`. So one ask showed neither, and the
+     "Showing 1 of N" line was hidden when that row came from a larger group.
+   - **The fix:** `AskWords` is now the one way an ask's note and skate are drawn. `AskList`'s rows
+     and the compact layout both use it, with the shared cut line under it. Tests and a story cover
+     one ask with a note and a skate, one ask served of four, and one with neither.
+   - **The sweep:**
+     - the request handler always draws `AskList`;
+     - the flag block's single flag keeps its quote and byline (its time moves to the rule's end)
+       and draws the cut line in both forms;
+     - the Access timeline draws every report and the cut line;
+     - one place asker's landmark history is on the *Trust* row.
+
+     Only the place compact layout dropped anything.
+2. **"Expired alerts still send notices"** (S3's fix, `6d1d2a5e1`), of the class *a stored status
+   used where the reads use a time-based liveness predicate*.
+   - **The fix:** `retractAlertImpl` now tells the author only if `accessAlertIsLive`, the predicate
+     every read uses, said the alert was live at the retraction's instant. Tests through
+     `accessAlerts.retract`:
+     - a term already over, or ending at that exact instant: not told;
+     - a running term: told;
+     - live when retracted but expired before the flush: told once.
+   - Nothing changes in what `can` answers, so no web fixture moves.
+   - **S3's sweep:**
+
+     | Place | Result |
+     |---|---|
+     | The retraction notice | fixed (above) |
+     | The settle re-check, the retraction's undo, the flush window | already agree with the reads |
+     | *Pin as official* on a lapsed alert | **kept on purpose** (below) |
+     | A lapsed suspension blocks notifications until the flip runs (`canReceiveNotifications`, older code) | to the register |
+
+   - **The governor's ruling (2026-11-22):** pinning a lapsed alert as official stays. It is a
+     deliberate feature that D226's undo tests pin, so S3's sibling branch `b01-5c-s3-5-pin` is not
+     taken.
+
+**CI on the first head** (`2b50fb82f`). One story failed and everything else was green (603 of 604
+files):
+
+- **The failure:** `InboxView.handlers.stories.tsx` › *Flag At Desktop* waited its full 5 s for ⇧⏎
+  to put focus on the list.
+- **Late or never: never, and a product defect.** The action bar draws two toolbars, the board's
+  and the narrow one. Switching between them replaces every button, and so does the overflow
+  folding a button into *More*. On a slow runner a late web font can trigger such a switch. The
+  button that held focus then dropped it to the page, where no pane key reaches (⇧⏎ back to the
+  list, a lever's letter). A moderator could lose focus the same way.
+- **The fix:** `useKeepFocus` (the kit's `toolbar.tsx`). As the bar renders a layout change, it
+  notes which button held focus (`data-bar-item`, now on every bar button). After the commit it
+  puts focus back: on the same button where it is still drawn, else on *More*, else on the first
+  button. A story narrows and widens a pane under a focused button; with the hook removed, it
+  fails.
+- **The sweep** covered one-shot `toHaveFocus()`, `document.activeElement` and
+  `aria-activedescendant` reads after something asynchronous, in every Inbox story and every story
+  B01-5c changed:
+  - **moved into a retry:** RecordSheet's lever keeping focus while pending, and the action bar's
+    End key moving to *More*;
+  - **kept on purpose:** four one-shot reads after a single frame, each asserting that focus did
+    *not* move (a repeated key ignored), which a retry would weaken.
+- **Starving, strengthened.** The changed story files ran 10×. On every second run the full convex
+  suite and the web unit project ran beside the storybook project, instead of only `yes` loops.
+  This is the condition the earlier "starved" runs missed three times. All 10 runs passed.
+
+#### Briefs (B01-5d)
+
+This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
+`phase-b01-inbox` at `8f44cf029`: #170 and #171 on main, and B01-5c's web integrated, with S3 still
+building. Paste each brief whole. Every brief also carries §12.4's invariants verbatim. The forks at
+the end come first.
+
+##### What the design says, and what the code now has
+
+| Design says | Code has (file:line on the phase branch) | The brief says |
+|---|---|---|
+| `waterBodies.merge` runs `mergeBodyInto`, and its change set is in `auditSnapshots` | True (`waterBodies.ts:3560`, `:3800`). See the gaps below. `merge` answers only `survivorId`, with no undo offer. `merge_waterbody`'s undo is `later('§4 Corpus')` (`lib/undoPolicy.ts:185`, asserted owed at `undoPolicy.test.ts:101`). The registry's header rules out this unmerge as written: "Nothing here patches a row back from a snapshot" (`undoPolicy.ts:5`). | S4b flips the policy to `inverse: unmerge_waterbody`. `merge` answers the undo offer. The header is reworded (fork 5). |
+| The change set records every moved row | It records nine tables' moved rows, deleted favorites, the loser's bays and both lakes' landmarks before (plus which changed), `dedupBefore`, `pinsBefore` and `listsBefore`. **It does not record five things the merge changes** (*What the change set doesn't record*, below). | S4a adds them as change set `version: 2`. Every merge recorded before `version: 2` is refused, with the dialog's sentence. |
+| A merged drawing stays `pending`, so `listPendingReview` **and `console.overview`'s drawn count** mis-count it | `mergeBodyInto` never touches `reviewStatus` (`:3970`). But `console.overview` reads the Inbox's stored lane counts (`console.ts:69`), and the Inbox reconcile ranks `merged` over the review status (`lib/inboxItems.ts:303`). **Only `listPendingReview` mis-counts** (`waterBodies.ts:7347`). Its one caller is the legacy dashboard's *Bodies to review* tile. `bodyCompare.ts:328` prints the raw value. | `reviewStatus: 'merged'` is written by `mergeBodyInto` itself whenever the loser is a pending skater's drawing, so `mergeDrawn` and the Shape tab agree. The backfill gains a `drawn:merged` phase (`lib/inboxItems.ts:113`). |
+| `mergeDrawn`'s verb exists | `InboxVerb` has it (`inbox.ts:103`). The rule needs `inbox.drawnBody` and `corpus.duplicates` (`lib/inboxRules.ts:96`) and refuses "This drawing overlaps no known body." (`:408`). **There is no write.** The rule's `hasOverlap` is `duplicateCandidateIds.length > 0`, but the view's `overlap` (`lib/inboxViews.ts:1391`, `overlapOf`) can be `null`, so `can` and the bar can disagree. `bodyRef` doesn't follow `mergedIntoId`, so a tombstoned first candidate is offered as the survivor, and `merge` then refuses it. | S4a writes `inboxWrites.mergeDrawn`. One function, *the drawing's live survivor*, feeds the rule's fact, the view's `overlap` and the write's currency check: the first candidate that is neither merged nor gone. |
+| The merge decides the drawn item `merged` | It does (`waterBodies.ts:3991`), but **before** `writeAudit` and with **no `actionId`**. So the member's `closedByActionId` and the item's `decisionActionId` are unset, and `reopenItem(actionId)` (`lib/inboxItems.ts:1134`) can't find it. | S4a moves the `decideItem` call after the audit row and passes its `actionId`. The unmerge reopens the item by re-filing the drawing (`fileMember(bodySource)`, as `moveDrawnReview` does, `waterBodies.ts:3006`). |
+| Overlap and the suggested survivor come from `duplicateCandidateIds` and `scoreAgainstNearby` | `scoreAgainstNearby` (`:2899`) ranks matches with `classifyDedup`, but `create` stores **only the ranked ids**, with no score (`:2866`). The share is computed live by `overlapOf` (`coveredFraction`, `core/geometry.ts:516`), and *suggested* means at least `MERGE_SUGGEST_SHARE` (0.8, `core/inbox.ts:248`). | No new scorer. The suggested survivor is the drawing's live survivor; the share is `overlapOf`'s. |
+| Shape's *Merge into another body* | `MergeSection` (`body/tabs/shape/ShapeTab.tsx:216-303`): the touching bodies (pressing one lights it on the map; *Open →*) and an `UnavailableButton` *Choose a body*, "The duplicates queue merges bodies today". It is fed by `consoleExtras.touching` (`bodyConsole.ts:124-150`): listed bodies within 30 m, among the 12 most prominent, with rejected, merged and gone bodies dropped. There is no Shape stories file; Shape's stories are in `frame/BodyConsole.stories.tsx` (`Shape`, `Touching`). | W6 builds the flow in the Body console's conventions (*Territories*). |
+| A preview read, `bodyConsole.mergePreview` | Nothing like it exists. The nearest are `waterBodies.getDedupGroup` (`:7464`: outlines, overlap, attachment counts) and core's `mergedModeratorLists` (the union and its refusal). | S4a writes it (snippet below). |
+| The undo engine takes a new inverse | Policy is `UNDO_POLICY` (`lib/undoPolicy.ts:105`). Handlers are `UndoHandler` (`lib/undoTypes.ts:73`) in `CORPUS_UNDO_HANDLERS` (`lib/undoHandlersCorpus.ts:1149`). The offer is `undo.latestOwn` (`undo.ts:59`) or a write's `undoOfferAfterWrite` (`moderation.ts:1961`); the run is `runUndo` (`lib/undo.ts:361`). **Overtaken** means a later row on the same target (`lib/undo.ts:261`), and the merge's row targets the **loser**. The offer-versus-run `CASES` are curated by hand (`undoOfferVsRun.test.ts:187`). The nearest template is `merge_hazards` → `unmergeImpl` (`lib/undoHandlersCorpus.ts:1032`). | S4b adds the policy, the handler, and its offer-versus-run case by hand. |
+| S3's notification leaves `merged` for this PR | `merged` is an outcome in core (`core/src/notifications.ts:291`, "enqueued from the drawn merge (PR 4)"). Nothing on this branch enqueues any `moderator_decision`; S3 adds approve and reject. | S4a enqueues `merged` beside the `decideItem` call, only for a skater's drawing (the ETL calls `mergeBodyInto` too). The unmerge's tell is the drawer's message, as `return_to_review`'s: inside the window the re-check drops it. |
+| `MODERATION_ACTIONS` gains the inverse | It is defined in convex (`lib/enums.ts:279`). The schema unions follow automatically. `UNDO_POLICY` must cover it (`undoPolicy.test.ts:8`). Two web maps typed `Record<AuditAction, string>` stop type-checking without it: `shell/actionLabels.ts:35` (`VERB`) and `overview/overviewData.ts:329` (`ACTION_WORDS`). | A T0 seam (below). |
+| The `moderatorDecision` pref is narrowed in this PR | The key is optional (`schema.ts:146-160`). `profiles.backfillNotificationPrefs` (`profiles.ts:1218`) is paged and caller-looped, not self-scheduling, and nothing reads the count of rows lacking the key. **160 of the 163 files holding a prefs literal lack the key** (tests and fixtures, e.g. `undoOfferVsRun.test.ts:41`), and every one fails type-checking once it is required. | A T0 seam plus a mechanical commit; the PR's file count says why (fork 4). |
+| The dev proof: a merge and its unmerge on two seeded bodies | The seed has one pending drawing over a known body: *Morey East Bay* over Lake Morey (`inboxSeed.ts:1012-1024`). The drawing holds only its founding `gpsActivity`, which the merge doesn't move. Lake Morey has one report, which the seed removes. **Nothing a merge moves is on either body.** | S4a extends the seed (*The dev proof*). |
+| The Drawn handler's copy | `mergeNotHere` ("Coming soon · the old editor merges it") and `editorLink` (`Drawn/DrawnHandler.tsx:31`) point at the old editor, which **has no merge**. Only the legacy duplicates queue (`admin.water.index.tsx`, `DuplicateGroupCard`) merges today. | W6 replaces both with the live lever. |
+
+##### What the change set doesn't record
+
+Each of these is changed by `mergeBodyInto` today and missing from `MergeChangeSet`. S4a adds them,
+and the change set becomes `version: 2`. **Every merge recorded before `version: 2` is refused**,
+the dialog saying so before it runs: *"This merge was recorded before merges kept everything an
+unmerge needs, so it can't be undone here."*
+
+1. **The rows the merge writes beside its own (`sideActions`).**
+   - Each bay the merge delists writes a `remove` row marked automatic: by name clash, or by
+     re-clip (`subAreas.ts:820` `systemDelist`).
+   - Each landmark retired as a bay writes `promote_landmark` (`lib/landmarkRows.ts`
+     `retireRow`).
+   - The landmark folds and over-cap retirements write their own rows too (`landmarkRows.ts:489`,
+     `:509`).
+
+   An unmerge that puts those rows back leaves these audit rows live, and their undos (*restore*
+   the bay) still offered. Record their ids. The unmerge writes one row per side row with `undoes:`
+   that row, so History reads them as undone and the engine refuses them as *undone*.
+2. **The survivor's own bays, as the re-clip left them.** `repointSubAreasOnMerge` re-clips
+   **every** listed bay of the survivor (`reclipSubAreasToParent(ctx, survivor._id, …)`), not only
+   the moved ones. It also notes re-derivations for review (`noteRederivation`). But
+   `subAreasBefore` holds only the loser's bays. Against an unchanged outline this is a no-op,
+   except for a stale chord bay. Record before-images of every survivor bay the re-clip changed.
+3. **The partners' flags as the merge left them (`dedupAfter`).** `dedupBefore` says what to put
+   back. Without the after-image, a flag a moderator has since changed can't be told from one the
+   merge cleared.
+4. **The loser's review status, and the drawn item it decided.** The `reviewStatus` before
+   (`pending`) and whether `decideItem` decided an item. Today the item is decided with no action
+   id, so nothing ties it to the merge.
+5. **What stayed behind past the caps.** `retargetAsks` takes at most `RETARGET_CAP = 1_000` per
+   request kind and status (`:3658`). Asks past that stay on the loser, uncounted and unrecorded
+   (fork 3 makes this a refusal instead).
+
+**Recomputed, not recorded**, because each can be derived from the rows: cells (the body's and its
+bays'), summaries, library rows, geometry staleness, both bodies' name lists, region states and
+pinned facts (from the pins), `searchText` (from the aliases), the report–bay join, the restamp,
+recurrence and `inboxCounts` (moved by `rekey`, `decideItem` and `fileMember`). **Forward-only, not
+restored:** the survivor's `changedAt` (the unmerge stamps it again). **Not moved by the merge at
+all:** `gpsActivities`, `accessAlerts` and `parkingAreaBodies` (fork 2).
+
+##### The unmerge, row by row
+
+Each row gives what the merge does to that kind of row, what the change set records, what the
+unmerge does, and what makes it refuse or leave a row. **Body-level refusals** run in the first
+transaction, before any write. **A row that has drifted since** is left where it is and counted on
+the receipt and in History (fork 1).
+
+1. **The loser body.**
+   - *Merge:* `dedupStatus: merged`, `mergedIntoId`. Its pins and aliases are cleared (and its
+     region states and `searchText` with them). It is unlisted, and its cells dropped.
+   - *Recorded:* `dedupBefore[0]`, `listsBefore.loser`, `pinsBefore.loser`; **add**
+     `reviewStatusBefore`.
+   - *Unmerge:* restores those fields and recomputes region states, `searchText` and its cells.
+     `reviewStatus` goes back to `pending` for a drawing.
+   - *Refuses (body level):*
+     - no change set, or `version` < 2;
+     - snapshot parts missing;
+     - overtaken by a later row on the loser (the engine);
+     - the loser no longer `merged` into the recorded survivor.
+2. **The survivor body.**
+   - *Merge:* its lists become the union of both bodies' (pins with their states, aliases with
+     `searchText`, links).
+   - *Recorded:* `listsBefore.survivor`.
+   - *Unmerge:* takes the union apart by difference. It removes each entry that came only from
+     the loser and is still there, and keeps anything the survivor gained since (fork 5). Region
+     states and `searchText` are recomputed.
+   - *Refuses (body level):* the survivor since merged into another body ("Unmerge it from ‹X›
+     first"), or gone.
+3. **Partners' dedup flags.**
+   - *Merge:* `clearDuplicateFlag` on the survivor and each of the loser's candidates, and
+     `rekey`s each.
+   - *Recorded:* `dedupBefore[1…]`; **add** `dedupAfter`.
+   - *Unmerge:* puts each partner back to its before-image and rekeys it.
+   - *Left:* a partner whose flag no longer equals its after-image.
+4. **Reports, hazards, bounties, features, put-ins.**
+   - *Merge:* `waterBodyId` re-pointed to the survivor. Reports re-mirror their bay join, and a
+     restamp is scheduled.
+   - *Recorded:* `moved` (id and the loser's id).
+   - *Unmerge:* re-points each row whose `waterBodyId` is still the survivor, re-mirrors moved
+     reports, and schedules a restamp of both bodies.
+   - *Left:* a row now on another body, or gone (a hard delete under D33).
+5. **Favorites, re-pointed.**
+   - *Merge:* re-pointed to the survivor.
+   - *Recorded:* `moved`.
+   - *Unmerge:* re-points each favorite still on the survivor.
+   - *Left:* the same as row 4.
+6. **Favorites, deleted as duplicates.**
+   - *Merge:* the loser's row is deleted where the person already favorited the survivor.
+   - *Recorded:* `deletedFavorites` (the kept row's id and `createdAt`).
+   - *Unmerge:* re-creates a favorite on the loser for the kept row's owner and bay, with the
+     recorded `createdAt` (a new id).
+   - *Left:* the kept row is gone (unfavorited, or erased with the account under D33). There is
+     nothing to name, and the snapshot names no one.
+7. **Requests, open place names, open and in-review body flags.**
+   - *Merge:* re-targeted to the survivor and rekeyed into the survivor's items. A flag whose
+     flagger already flagged the survivor stays behind.
+   - *Recorded:* `moved`.
+   - *Unmerge:* re-targets each one still on the survivor and rekeys it, so it rejoins the
+     loser's item.
+   - *Left:* one decided since (it stands, on the survivor).
+8. **The loser's bays.**
+   - *Merge:* moved to the survivor and re-clipped; a name clash or a failed re-clip delists one
+     (a side row). Cells re-synced.
+   - *Recorded:* `subAreasBefore` (whole), `subAreasDelisted`.
+   - *Unmerge:* each bay whose `updatedAt` is no later than the merge's is put back to its
+     before-image, then cells re-synced and the name lists rebuilt. Each side row is marked undone.
+   - *Left:* a bay edited since (its edit stands, on the survivor).
+9. **The survivor's bays.**
+   - *Merge:* the re-clip may change one.
+   - *Recorded:* nothing today; **add** before-images of the changed ones.
+   - *Unmerge:* puts each changed bay back if it hasn't been edited since.
+   - *Left:* the same as row 8.
+10. **Landmarks, on both lakes.**
+    - *Merge:* moved, folded into twins, retired over the cap or as a bay (side rows).
+    - *Recorded:* `landmarksBefore` (whole), `landmarksAfter` (id, body, removed, fold target).
+    - *Unmerge:* each changed landmark whose `updatedAt` is no later than the merge's is put back
+      to its before-image, the name lists rebuilt, and each side row marked undone.
+    - *Left:* a landmark edited since.
+11. **The drawn item.**
+    - *Merge:* decided `merged`, with no action id today.
+    - *Recorded:* **add** whether one was decided.
+    - *Unmerge:* re-files the drawing (`fileMember(bodySource(loser))`), which reopens the item
+      and moves `inboxCounts`.
+12. **The notification.**
+    - *Merge:* `moderator_decision` `merged` to the drawer (new in this PR).
+    - *Recorded:* by its queue row.
+    - *Unmerge:* the drawer's message, as `return_to_review` sends one; inside the window the
+      re-check drops both.
+13. **Derived facts.**
+    - *Merge:* cells, summaries, library rows, geometry staleness, recurrence, restamp.
+    - *Recorded:* nothing; they are recomputed.
+    - *Unmerge:* re-runs each for both bodies, in its last page.
+
+**The budget.**
+
+- **The shape:** the unmerge pages as the request drains do.
+- **First transaction:**
+  - runs the body-level refusals;
+  - writes `unmerge_waterbody` on the loser, with its `undoes:` the merge row;
+  - restores the loser and the survivor (rows 1–2) and the partners (row 3), and reopens the item;
+  - starts on `moved`.
+- **Each later page:**
+  - is `internal.unmerge.unmergeRest({ actionId, from })`;
+  - re-reads the snapshot (one `readSnapshot`; a heavy change set is a few hundred KB, well inside
+    the read limit);
+  - takes `moved[from…]`, sized by `ctx.meta.getTransactionMetrics()` and `batchHasRoom`, at least
+    one row, as `closeSiblingPage` does;
+  - then does the bays, landmarks and favorites the same way, and schedules the next page.
+- **The last page** recomputes the derived facts and schedules both restamps.
+- **No `.paginate()` at all:** the snapshot is an array sliced by offset, so the harness's
+  one-paginate rule is met trivially, and its transaction limits bound each page.
+- **Nothing marks the run as draining:** each page first checks that the unmerge still stands
+  (no row `undoes:` the unmerge), as `closeRequestsRestPage` checks `by_undoes`.
+- **The unmerge's own undo is `none`:** "Merge it again", since a re-merge is a fresh merge with
+  its own change set.
+
+##### Territories (disjoint)
+
+| Builder | Owns | Must not touch |
+|---|---|---|
+| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
+| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts` | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
+| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
+
+**The Shape tab is the Body console's, with its own conventions, not the Inbox's.**
+
+- A write goes through `useTabAction(bodyId)` (`tabs/useTabAction.ts`): `sendFor` under
+  `useBodyHold`, the save rule D265, "Not saved · ‹body›".
+- The reason dialog is `tabs/access/ReasonAsk.tsx`, its cap from core.
+- The receipt is the shell's `Receipt` (`shell/undo.tsx:58`), and History follows the audit links.
+- The Drawn lever uses the Inbox's decision runner (`inbox/actions/useDecisionRunner`), taking Undo
+  from the write's answer.
+
+W6 starts at T0 against the snippets' types with fixtures, and wires to S4a's reads once they land.
+
+##### The seams (an executor commit at T0)
+
+1. **`lib/enums.ts`**: the review status widened, no backfill —
+   ```ts
+   export const REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const;
+   ```
+   The hand-typed copies follow in the same commit: `waterBodies.ts:2973` (`DrawnReviewStatus`),
+   `packages/core/src/standing.ts:97`, `lib/listing.ts:27`, `apps/web/…/ModeratorCard.tsx:197`, and
+   the web and mobile `waterMap.ts` (`:289`, `:301`). Each reads `merged` as a merged body already
+   does: `standingOf` and `isListed` rank `dedupStatus: 'merged'` first.
+2. **`lib/enums.ts`**: `MODERATION_ACTIONS` gains `'unmerge_waterbody'`. In the same commit:
+   - `UNDO_POLICY` gains `unmerge_waterbody: { undo: { kind: 'none', why: 'To put them back together,
+     merge them again.' }, takesAway: never, capability: 'corpus.duplicates' }`;
+   - the web's `VERB` gains `unmerge_waterbody: 'Unmerged'`;
+   - `ACTION_WORDS` gains `unmerge_waterbody: 'unmerged a body'`;
+   - `inboxItems.ts:201` lists it among a drawn body's review rows.
+3. **`waterBodies.ts`**: the change set's additions (the snippet below), as types only. S4a fills
+   them; S4b reads them.
+4. **`schema.ts`**: `moderatorDecision` required —
+   ```ts
+   const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
+   ```
+   - The 160 fixture files gain `moderatorDecision: <same as greatReportNearby>`: one mechanical
+     commit, no other change in it.
+   - `SettingsPage.tsx:290`'s cast and the stale backfill comment at `apps/mobile/app/(tabs)/you.tsx:493` go.
+   - **Its dev precondition**, before the deploy that carries it:
+     - `profiles:backfillNotificationPrefs` run to `isDone`;
+     - then the new internal query `profiles:prefsMissingKey`, paged with one `.paginate()` per
+       call and looped by the caller, reading **0** rows lacking the key.
+   - A deploy against a non-zero count fails schema validation, so the order is the executor's
+     after-merge step 1.
+
+##### Canonical snippets
+
+```ts
+// inboxWrites.ts — S4a
+export const mergeDrawn = mutation({
+  args: {
+    itemId: v.id('inboxItems'),
+    /** The survivor the bar showed; refused if the drawing's live survivor is now another body. */
+    survivorId: v.id('waterBodies'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<InboxWriteResult> => { /* … */ },
+});
+// Answers InboxWriteResult: { itemId, actionId (the merge_waterbody row), flagsClosed: 0,
+//   undoable, undoNeedsReason }. The Inbox's rule first, as every inboxWrites write asks it (D289's
+//   "not your own drawing" included), then mergeBodyInto. `waterBodies.merge` answers the same offer:
+//   { survivorId, actionId } & ({ undoable: true; undoNeedsReason: boolean } | { undoable: false }).
+
+// bodyConsole.ts — S4a
+export type MergePreview =
+  | { ok: false; refusal: string } // same body, loser or survivor merged, the lists' union refused
+  | {
+      ok: true;
+      survivor: BodyRefView;
+      loser: BodyRefView;
+      /** Rows that move, by kind, each `{ count, capped }` (a floor past the read's bound). */
+      moves: Record<
+        | 'reports' | 'hazards' | 'bounties' | 'bodyFeatures' | 'putIns' | 'favorites'
+        | 'requests' | 'placeNames' | 'flags' | 'subAreas' | 'landmarks' | 'gpsActivities',
+        { count: number; capped: boolean }
+      >;
+      favoritesDeduped: number;
+      /** Bays that would be delisted by a name the survivor already has. */
+      baysClashing: string[];
+      /** The union of the moderators' lists, against their caps. */
+      lists: { pins: number; aliases: number; links: number; caps: { pins: number; aliases: number; links: number } };
+      /** What stays on the loser (fork 2's remainder): access alerts and linked lots. */
+      staysBehind: { accessAlerts: number; parkingLots: number };
+      /** Past one transaction's budget the merge is refused here (fork 3). */
+      tooBig: boolean;
+    };
+export const mergePreview = query({
+  args: { loserId: v.id('waterBodies'), survivorId: v.id('waterBodies') },
+  returns: /* MergePreview */,
+  // corpus.duplicates; bounded reads (take(cap + 1)), never collect().
+});
+
+// waterBodies.ts — the change set's additions (seam 3)
+export interface MergeChangeSet {
+  /** 2 from B01-5d: everything an unmerge needs. Absent (1) is refused. */
+  version?: 2;
+  /** Rows the merge wrote beside its own: automatic bay delists, landmark folds and retirements. */
+  sideActions?: Id<'moderationActions'>[];
+  /** Each partner's dedup fields as the merge left them. */
+  dedupAfter?: MergeChangeSet['dedupBefore'];
+  /** The survivor's bays the re-clip changed, as they stood. */
+  survivorSubAreasBefore?: ReturnType<typeof snapshotDoc<Doc<'waterBodySubAreas'>>>[];
+  /** The loser's review status before, and whether the merge decided its Inbox item. */
+  loserReview?: { reviewStatus: Doc<'waterBodies'>['reviewStatus'] | null; decidedItem: boolean };
+  /** Fork 2: the founding skates moved, with both of their body fields. */
+  movedActivities?: { id: Id<'gpsActivities'>; waterBodyId: Id<'waterBodies'> | null; waterBodyIds: Id<'waterBodies'>[] }[];
+  // …the existing fields unchanged.
+}
+```
+
+##### Definitions of done
+
+**S4a**
+
+- [ ] `mergeDrawn` writes the merge, `reviewStatus: 'merged'`, the item decided with the merge's
+  `actionId`, and the `merged` notification to the drawer only. It answers the undo offer.
+- [ ] Rule-versus-write cells for `mergeDrawn` (every viewer × every refusal: no overlap, the
+  drawer, decided, the survivor changed).
+- [ ] The drawing's live survivor is one function for the rule's fact, `overlapOf` and the write.
+  Tests cover a tombstoned first candidate and a candidate that is gone.
+- [ ] `merge` answers its offer, and the legacy duplicates card still works.
+- [ ] `mergeBodyInto` fills change set `version: 2`. One test per addition: a delisted bay, a
+  retired landmark, a re-clipped survivor bay, a partner, a drawn loser, fork 2's skate.
+- [ ] `mergePreview`'s counts equal what the merge then moves, for every kind, over the round-trip
+  world. `tooBig` agrees with the merge's refusal (fork 3).
+- [ ] The heavy-rows matrix gains:
+  - a heavy survivor merge (fits);
+  - a heavy loser past the budget (refused by both the preview and the write, before any write);
+  - `mergeDrawn` on a heavy survivor.
+- [ ] The `drawn:merged` backfill phase and its drift repair.
+- [ ] The seed's merge pair (below); a second `--apply` files nothing new.
+
+**S4b**
+
+- [ ] **One round-trip `convex-test` per row kind**: build a world, merge, unmerge, and compare
+  state row by row with the world before.
+  - What is compared: the rows themselves, plus counts and stored facts (the body-names rows,
+    `inboxCounts`, People's stored counts, cells, library rows, summaries, region states,
+    `searchText`).
+  - Scheduled functions are run to completion first (restamp, library, recurrence).
+  - The comparison excludes, by name: re-created favorites' ids (compared by owner, body, bay and
+    `createdAt`), `updatedAt`, the survivor's `changedAt`, and the audit table. The audit table is
+    asserted separately: one unmerge row, and each side row undone.
+- [ ] Refusals: before `version: 2`, parts missing, overtaken, the loser re-pointed, the survivor
+  merged since, and the survivor gone. Each says its sentence and writes nothing.
+- [ ] Drift: each *Left* row in the table is left and counted on the receipt and in History. The
+  run still completes.
+- [ ] Paging: a heavy change set (past one page) drains, one page per execution, under the
+  harness's limits. An undone unmerge's later pages do nothing.
+- [ ] Offer versus run: the unmerge's case is in `CASES`, the offer and the run agree, and
+  `undoPolicy.test.ts`'s owed list loses `merge_waterbody`.
+- [ ] **`fast-check`, run at 20×** (20 seeds, 100 runs each):
+  - **the world:** 2–3 bodies as fixed rectangles, so there is no geometry generator;
+  - **the children:** random children of every moved kind, including a favorite of both bodies,
+    a twin landmark and a clashing bay;
+  - **the operations:** a merge, optionally an unrelated edit, then the unmerge;
+  - **the property:** the state equals the state before, modulo the same exclusions, or the edit's
+    row is reported *left*.
+
+**W6**
+
+- [ ] The Drawn bar's *Merge into ‹body›*:
+  - is drawn from `can.mergeDrawn` alone;
+  - one press sends `mergeDrawn` with the item's ids and the survivor it showed;
+  - the receipt names both bodies, with Undo from the answer;
+  - a refusal is a toast in the server's words.
+- [ ] The Shape tab's flow:
+  - the survivor is picked among the touching bodies, or found by search;
+  - the preview is `mergePreview` (counts, clashes, the union against its caps, what stays
+    behind, *too big*);
+  - the reason is required (its cap from core);
+  - the receipt names both bodies;
+  - the loser's console then shows the existing merged page.
+- [ ] A wiring test for each entry point through its real route: the Inbox's harness for Drawn, and
+  the Body console's route test for Shape.
+- [ ] Stories in both modes at 788 and 360. Layout reads wait for the layout to settle, run 5×
+  with half the runs starved.
+- [ ] No D#, § or phase token on screen, and nothing readable as a claim about the ice (D3).
+
+##### The dev proof
+
+**What it is:** a merge and its unmerge on two seeded bodies, compared row by row.
+
+**What the seed has today: not enough.** The one pair, Morey East Bay over Lake Morey, carries
+nothing a merge moves.
+
+**S4a adds a merge pair to `inboxSeed.ts`.** It uses the existing drawing, so the Inbox path is the
+one proved, and gives the drawing and Lake Morey:
+
+- on the drawing: a report, a hazard, a bounty and a put-in;
+- favorites: one person favoriting the drawing only, and one favoriting **both** bodies (the
+  `deletedFavorites` path);
+- on the drawing: an open request, an open place name, and an open body flag. A second flag on it
+  comes from a person who has already flagged Lake Morey (the flag left behind);
+- bays: one on the drawing, plus one on each body sharing a name (a clash, so the merge delists
+  it);
+- landmarks: a twin across the two bodies;
+- moderator lists: an alias, a pin and a link on each body;
+- dedup: a second candidate on the drawing (a partner).
+
+**The proof itself:**
+
+- **The census:** a new internal query, `waterBodies:mergeProofCensus({ ids })`, returns each
+  body's rows and stored facts as canonical JSON. It covers what the round-trip test compares.
+- **The run:** `convex run` it before the merge. Merge from the Inbox, then unmerge from the
+  toast or History. Wait for the scheduled jobs: `bodyLibraryQueue`, the restamp and recurrence
+  read empty. Run it again.
+- **The check:** `diff` the two with the same exclusions as the test.
+- **Who runs it:** the executor, as after-merge step 2. It is recorded in the roadmap.
+
+##### Forks (each needs a ruling before T0)
+
+1. **A row that has drifted since the merge.**
+   - **(A)** Refuse the whole unmerge up front. That needs a paged read-only scan before any write,
+     which races with writes anyway.
+   - **(B)** Run the cheap body-level refusals in the first transaction, then leave each drifted row
+     where it is, counted on the receipt and in History (as the merge's own *flags left* already is).
+
+   **Recommend (B).** The design's "refuse if any moved row has changed bodies again" can't be
+   checked in one transaction on a heavy body. The common drift, the survivor merged again, is
+   caught at the body level.
+2. **What the merge doesn't move: skates, access alerts, linked lots.**
+   - **(A)** All three to the register.
+   - **(B)** Move the `gpsActivities` in this PR, recorded in the change set and read back by the
+     unmerge; alerts and lots to the register.
+   - **(C)** All three now.
+
+   **Recommend (B).** A merged drawing's founding skate is the drawing's only evidence. Per-lake
+   tracks and dormancy retention read it, so the survivor loses it today. Alerts and lots each need
+   a reader census and an author or notification decision of their own.
+3. **A merge too heavy for one transaction.** `mergeBodyInto` `collect()`s every child, and asks
+   past 1,000 per kind and status stay behind silently.
+   - **(A)** Keep the merge atomic. The preview and the write refuse past the one-transaction
+     budget ("Too much moves for one merge here"), and the cap overflow becomes that refusal.
+   - **(B)** Page the merge too, with a *merging* state.
+
+   **Recommend (A).** A loser is normally a small duplicate, and an atomic merge never strands half
+   a body. The Shape tab is the only path that can pick a heavy loser, and its preview says so
+   first.
+4. **The pref narrowing's size.** It touches 160 fixture files, which takes the PR to about 230
+   files.
+   - **(A)** Keep it in this PR as its own mechanical commit, the PR body saying why.
+   - **(B)** Give it its own PR.
+
+   **Recommend (A).** A one-line-per-file mechanical diff reviews in seconds, and a separate PR costs
+   a Greptile request. As ruled, it rides here.
+5. **The survivor's lists, and the registry's rule.**
+   - **(A)** Take the union apart by difference: remove what came only from the loser and is still
+     there, and keep what the survivor gained since. Mint **D291**: "an inverse may restore from a
+     before-image, through the forward paths' side effects", rewording `undoPolicy.ts`'s header
+     (the bays and landmarks already restore that way through `redraw_sub_area`'s snapshot).
+   - **(B)** Refuse the unmerge if the survivor's lists changed since the merge.
+
+   **Recommend (A).** It never refuses for an unrelated edit. An alias added later that matches a
+   loser alias goes back to the loser, which is the right home for it.
+
+##### Size, honestly
+
+| Part | Estimate |
+|---|---|
+| S4a (with fork 2 (B) and fork 3 (A)) | ~2,400 lines |
+| S4b, its tests the bulk | ~2,600 lines |
+| W6 (Drawn ~600, Shape ~1,400 with stories and wiring) | ~2,000 lines |
+| The seams | ~250 lines |
+| The fixture commit | 160 one-line changes |
+| **Total** | **~7,000–7,500 lines across ~230 files** (~70 without the fixtures) |
+
+The design estimated ~3,500 lines and ~40 files. It is over in lines for the reason #170 and #171
+were (the round trips and their matrices), and over in files only by the mechanical commit. The PR
+body says both.
+
+**The split:**
+
+- S4 becomes two builders, disjoint by file: **S4a** (the merge side, the read and the seed) and
+  **S4b** (the unmerge). The change set's types are the seam between them.
+- **W6** is one builder for both entry points. It starts at T0 on the snippets' types and wires to
+  S4a's reads when they land.
+- S4b's round trips need S4a's `version: 2` writes. S4b builds against the seam with a fixture
+  writer, and the executor runs its suite against S4a's merge at integration.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
@@ -8867,6 +10106,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh6 | Two `InsetCard`s for one idea: the skater one and the kit one | `skater/panels/InsetCard.tsx`, `kit/inset-card.tsx` | open | polish (kit) | M | A kit pass |
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
 | Sh8 | The verdicts backfill (`peopleJobs:backfillVerdicts`, walking `contentRecord.backfillVerdicts`) walks the whole moderation audit table 4 rows a pass (each row's worst case is sized at 1 MiB), so its length follows the audit log's size: 7,951 passes (about 5.5 minutes) on dev, which holds no moderated content | `contentRecord.ts` `backfillVerdicts`, its page table under §12.8 | open: look at the page sizing before it runs on a large log | performance (engine) | S–M | A page sized by the rows' real weight, or a narrower walk; not designed |
+| Sh9 | The life strip re-lays out when web fonts arrive late: drawn stacked with a fallback face, then across once the faces land | `kit/life-strip.tsx` | open (accepted for now: the governor's ruling 14, 2026-11-21) | polish | S | A preload of the faces, or a font-ready gate before the first measure — the same family as the Saira preload already owed |
 
 #### The boards to make in Paper (founder call 1)
 

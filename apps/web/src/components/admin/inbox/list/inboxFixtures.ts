@@ -569,10 +569,16 @@ export const ADMIT_ITEM = {
       status: 'open',
       fromReport: null,
       activityId: null,
+      skate: null,
+      landmarkAsks: null,
     },
   ],
+  asksCut: false,
+  primaryRequestId: id('rq1'),
   candidate: null,
   resolveError: null,
+  ruling: null,
+  dormancy: null,
 } as unknown as InboxItemView;
 
 /** 2.8's item: a support ticket. */
@@ -642,7 +648,10 @@ export const PLACE_ITEM = {
   placeKind: 'name_landmark',
   body: NEWFOUND,
   asks: [],
+  asksCut: false,
+  primaryRequestId: id('rqplace'),
   drawnSubAreaId: null,
+  answeringLandmarkId: null,
   lookalikes: [],
 } as unknown as InboxItemView;
 
@@ -652,8 +661,10 @@ export const DRAWN_ITEM = {
   kind: 'drawn',
   body: body('drawn', 'User-drawn body', null),
   drawer: lockup(KATE),
+  drawerReports: null,
   overlap: null,
   fromReport: null,
+  skate: null,
 } as unknown as InboxItemView;
 
 /** An item decided by a colleague. */

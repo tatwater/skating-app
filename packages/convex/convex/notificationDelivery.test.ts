@@ -18,6 +18,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: false,
+  moderatorDecision: true,
 };
 
 async function seedUser(
@@ -49,7 +50,12 @@ async function seedUser(
 async function seedNotification(
   t: ReturnType<typeof harness>,
   userId: Id<'profiles'>,
-  type: 'content_flag_resolved' | 'report_rated' | 'nearby_report_digest' | 'activity_detected',
+  type:
+    | 'content_flag_resolved'
+    | 'report_rated'
+    | 'nearby_report_digest'
+    | 'activity_detected'
+    | 'moderator_decision',
   payload: Record<string, unknown>,
 ) {
   return t.run((ctx) =>
@@ -284,6 +290,65 @@ describe('notificationDelivery', () => {
       notificationIds: [flag, thumb],
     });
     expect(again).toMatchObject({ pushMessages: 0, pushed: 0, emailed: 0 });
+  });
+
+  test('a moderator’s decision is pushed and emailed in core’s words, its note escaped, its tap the lake (D285)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me', { email: 'me@example.test' });
+    await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[phone]',
+      platform: 'android',
+    });
+    const lake = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        searchText: 'Lake Morey',
+        type: 'lakePond',
+        source: 'osm',
+        dedupStatus: 'clean',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [0, 0],
+            ],
+          ],
+        },
+        centroid: { lat: 0.5, lng: 0.5 },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        createdAt: Date.now(),
+      } as never),
+    )) as Id<'waterBodies'>;
+    const decision = await seedNotification(t, me.id, 'moderator_decision', {
+      kind: 'request_decided',
+      about: 'name_bay',
+      outcome: 'declined',
+      waterBodyId: lake,
+      note: 'Already on the map as <Long Bay>',
+      coalesceKey: 'k-decision',
+    });
+    const calls = stubFetch([
+      { match: /exp\.host.*push\/send/, body: () => ({ data: [{ status: 'ok', id: 't1' }] }) },
+      { match: /api\.resend\.com/, body: { id: 'email-1' } },
+    ]);
+    const result = await t.action(internal.notificationDelivery.deliverBatch, {
+      notificationIds: [decision],
+    });
+    expect(result).toMatchObject({ rows: 1, pushed: 1, emailed: 1 });
+    const messages = calls.find((c) => /push\/send/.test(c.url))?.body as
+      | { title: string; body?: string; data: { target: unknown; url?: string } }[]
+      | undefined;
+    const message = messages?.[0];
+    expect(message?.title).toBe('Your request to name a bay on Lake Morey was declined');
+    expect(message?.body).toBe('Already on the map as <Long Bay>');
+    expect(message?.data.target).toEqual({ kind: 'water', id: lake });
+    const sent = calls.find((c) => /resend/.test(c.url))?.body as { subject: string; html: string };
+    expect(sent.subject).toBe('Your request to name a bay on Lake Morey was declined');
+    expect(sent.html).toContain('Already on the map as &lt;Long Bay&gt;');
+    expect(sent.html).not.toContain('<Long Bay>');
   });
 
   test('channel switches and a dead unsubscribe path: off means nothing goes out', async () => {

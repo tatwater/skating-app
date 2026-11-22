@@ -1,3 +1,4 @@
+import { describeNotification, NOTIFICATION_TYPES, type NotificationView } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -82,6 +83,26 @@ describe('NotificationsMenu', () => {
     render(<NotificationsMenu />);
     expect(markRead).not.toHaveBeenCalled();
     expect(screen.getByText('Nothing yet')).toBeInTheDocument();
+  });
+
+  it('asks for the list with every type this build words, and draws a moderator’s decision', async () => {
+    const decision = {
+      id: 'n3',
+      createdAt: now - 5 * 60_000,
+      type: 'moderator_decision',
+      about: 'admit',
+      outcome: 'approved',
+      body,
+    };
+    fakes.paginated = { results: [decision], status: 'Exhausted', loadMore: vi.fn() };
+    fakes.mutations.set('notifications:markRead', vi.fn().mockResolvedValue([]));
+    act(() => useChromeStore.getState().setOverlay('notifications'));
+    render(<NotificationsMenu />);
+    // Without `knows` the server would serve the new type as the unknown row.
+    expect(fakes.paginatedArgs.at(-1)).toEqual({ knows: [...NOTIFICATION_TYPES] });
+    expect(NOTIFICATION_TYPES).toContain('moderator_decision');
+    const { title } = describeNotification(decision as NotificationView);
+    expect(await screen.findByText(title)).toBeInTheDocument();
   });
 
   it('opens a row, records its kind, and closes', async () => {

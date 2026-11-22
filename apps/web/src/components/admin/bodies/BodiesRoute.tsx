@@ -15,7 +15,7 @@ import {
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
-
+import { searchFor as inboxSearchFor } from '../inbox/inboxSearch';
 import {
   isFailed,
   type Loadable,
@@ -26,7 +26,6 @@ import {
 } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 import { ID_SHAPE, useClockFor } from '../reads/readArgs';
-
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
 import {
@@ -125,6 +124,19 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
       ...(how?.replace === true && { replace: true }),
     });
   const bodyLink = (id: string): ReactElement => <Link to={bodyPath(id)} search={{ from }} />;
+  // An ask the Inbox decides opens its item there, with the way back to this list.
+  const askLink = (item: string): ReactElement => (
+    <Link
+      to="/admin/inbox"
+      search={inboxSearchFor({
+        lane: 'all',
+        facet: 'all',
+        filter: null,
+        item,
+        from,
+      })}
+    />
+  );
 
   // A body merged away (a stale link, or back from merging it) opens as its survivor: the URL moves
   // there, so every read in the preview — and the row the list marks — is the survivor's.
@@ -154,6 +166,7 @@ export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProp
     previewPending: preview.pending,
     now,
     bodyLink,
+    askLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id), search: { from } }),
     ...(openLabel !== undefined && { openLabel }),
     // Mounted whatever the counts' state, so its words are announced when they come; at the

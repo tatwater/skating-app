@@ -1,75 +1,41 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { getFunctionName } from 'convex/server';
-import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Toaster } from '@/components/kit/toast';
 import { KeysProvider } from '@/lib/keys';
 
 import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
-import { ALL_OPEN_ROWS, LANES, page } from './list/inboxFixtures';
+import { FAILED_READ } from '../reads/readFailureFixtures';
+import { UndoProvider } from '../shell/undo';
+import { ALERT_ITEM } from './handlers/Flag/flagFixtures';
+import { ALL_OPEN_ROWS, LANES } from './list/inboxFixtures';
 import type { InboxLanesView } from './list/inboxTypes';
+import {
+  argSets,
+  harness as h,
+  installInboxRouteMocks,
+  lastArgs,
+  must,
+  resetHarness,
+} from './testing/routeHarness';
+import { ITEM_FAILED } from './words/inboxWords';
 
 /**
  * **The route and the view together** (Greptile on #171, round 1): what the wiring does, where the
- * pieces' own tests couldn't see it — the real `InboxRoute` around the real `InboxView`, with only
- * the router, the role and the read layer underneath them stood in. Every read the page asks for is
- * recorded by name with its arguments, so a test reads what the server would have been asked.
+ * pieces' own tests couldn't see it — through the shared harness (`testing/routeHarness`), which
+ * stands in only the router, the role and the read layer and records every read's arguments.
  */
 
-const h = vi.hoisted(() => ({
-  search: {} as Record<string, unknown>,
-  navigate: (() => {}) as (opts: { search: Record<string, unknown> }) => void,
-  lanes: undefined as unknown,
-  asked: [] as { name: string; args: Record<string, unknown> }[],
+// A handler's writes (the flag handler's, opened below) are bound, never called, here.
+vi.doMock('convex/react', async (orig) => ({
+  ...(await orig<typeof import('convex/react')>()),
+  useMutation: () => async () => ({}),
 }));
 
-vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => h.search,
-  useNavigate: () => h.navigate,
-  Link: ({ children, ...p }: { children?: ReactNode }) => <a {...p}>{children}</a>,
-}));
-vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: () => true }) }));
-vi.mock('../reads/consoleReads', async (orig) => {
-  const actual = await orig<typeof import('../reads/consoleReads')>();
-  return {
-    ...actual,
-    useConsoleReadSet: (specs: Record<string, { query: never; args: never } | null>) => {
-      const reads: Record<string, unknown> = {};
-      for (const [k, spec] of Object.entries(specs)) {
-        if (spec === null) continue;
-        const name = getFunctionName(spec.query);
-        h.asked.push({ name, args: spec.args });
-        reads[k] =
-          name === 'inbox:lanes'
-            ? h.lanes
-            : name === 'inbox:listPage'
-              ? page(ALL_OPEN_ROWS)
-              : name === 'inbox:item'
-                ? { item: null, pending: false }
-                : undefined;
-      }
-      return { reads, retry: () => {}, live: true, failed: false, pending: false };
-    },
-  };
-});
-
-const { InboxRoute } = await import('./InboxRoute');
+const { Route: InboxRoute, mount } = await installInboxRouteMocks();
 
 beforeAll(stubJsdomAnimations);
-
-/** The arguments the newest read of `name` was asked with. */
-const lastArgs = (name: string) => [...h.asked].reverse().find((a) => a.name === name)?.args;
-/** The value, or a failed test saying what was missing. */
-const must = <T,>(x: T | null | undefined, what: string): T => {
-  if (x == null) throw new Error(`missing: ${what}`);
-  return x;
-};
-/** Every distinct argument set `name` was asked with, in order. */
-const argSets = (name: string) => [
-  ...new Set(h.asked.filter((a) => a.name === name).map((a) => JSON.stringify(a.args))),
-];
-
-const mount = () => render(<InboxRoute />, { wrapper: KeysProvider });
+beforeEach(resetHarness);
 
 describe('the day rolls over with the list open (finding 1)', () => {
   beforeEach(() => {
@@ -181,5 +147,45 @@ describe('another lane, tab or filter keeps a linked item and closes a list-open
     lane('Safety');
     expect(lastPlace()).toMatchObject({ lane: 'safety' });
     expect(lastPlace()?.item).toBeUndefined();
+  });
+});
+
+describe('an item the server couldn’t read (R8: a required row past the budget throws)', () => {
+  it('draws the inspector’s failed read with Try again — never a crash or a blank pane', () => {
+    h.lanes = LANES;
+    h.search = { lane: 'requests', item: 'request:rq_heavy' };
+    // The read layer turns the query's throw into its failure (`consoleReads`' own tests hold that).
+    h.answers['inbox:item'] = () => FAILED_READ;
+    mount();
+    const pane = must(document.querySelector<HTMLElement>('[data-pane="detail"]'), 'the inspector');
+    expect(within(pane).getAllByText(ITEM_FAILED).length).toBeGreaterThan(0);
+    expect(within(pane).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // The list beside it still draws: one failed read takes down its own block, not the page.
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+  });
+});
+
+describe('the flag handler’s Open in Body', () => {
+  it('is the router’s link with the way back, as every handler builds it', () => {
+    h.lanes = LANES;
+    h.here = `/admin/inbox?lane=contentFlags&item=${ALERT_ITEM.itemId}`;
+    h.search = { lane: 'contentFlags', item: ALERT_ITEM.itemId };
+    h.answers['inbox:item'] = () => ({ item: ALERT_ITEM, pending: false });
+    render(
+      <Toaster>
+        <UndoProvider server={{ latestOwn: async () => null, run: async () => {} }}>
+          <InboxRoute />
+        </UndoProvider>
+      </Toaster>,
+      { wrapper: KeysProvider },
+    );
+    const link = must(
+      document.querySelector<HTMLElement>('[data-slot="flag-history"]'),
+      'the link',
+    );
+    expect(link).toHaveTextContent('Open in Body');
+    const to = new URL(must(link.getAttribute('href'), 'href'), 'https://gli.test');
+    expect(to.pathname).toBe('/admin/body/wb_morey');
+    expect(to.searchParams.get('from')).toBe(h.here);
   });
 });

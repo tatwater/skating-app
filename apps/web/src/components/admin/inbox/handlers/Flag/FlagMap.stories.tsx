@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, fn } from 'storybook/test';
+import { expect, fn, waitFor } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 import { InboxMapStill } from '../../map/InboxMap';
@@ -62,17 +62,22 @@ const mapSlotOf = (root: HTMLElement) =>
 const subjectOf = (root: HTMLElement) =>
   must(root.querySelector<HTMLElement>('[data-slot="flag-subject"]'));
 
-/** At 788 the map sits beside the subject; at 360 under it, full width. */
+/**
+ * At 788 the map sits beside the subject; at 360 under it, full width. Read until the layout
+ * settles: a measure taken before the fonts land is a fallback's.
+ */
 async function expectPlaced(root: HTMLElement) {
   for (const box of each(root)) {
-    const subject = subjectOf(box).getBoundingClientRect();
-    const map = mapSlotOf(box).getBoundingClientRect();
-    await expect(map.height).toBeGreaterThan(0);
-    if (box.dataset.width === '788') {
-      await expect(map.left).toBeGreaterThan(subject.left + subject.width / 2);
-    } else {
-      await expect(map.width).toBeCloseTo(subject.width, 0);
-    }
+    await waitFor(() => {
+      const subject = subjectOf(box).getBoundingClientRect();
+      const map = mapSlotOf(box).getBoundingClientRect();
+      expect(map.height).toBeGreaterThan(0);
+      if (box.dataset.width === '788') {
+        expect(map.left).toBeGreaterThan(subject.left + subject.width / 2);
+      } else {
+        expect(map.width).toBeCloseTo(subject.width, 0);
+      }
+    });
   }
 }
 
@@ -140,9 +145,11 @@ export const EmptyAnswerCollapses: Story = {
       await expect(getComputedStyle(slot).display).toBe('none');
       const subject = subjectOf(box);
       const content = must(subject.firstElementChild as HTMLElement | null);
-      await expect(content.getBoundingClientRect().width).toBeCloseTo(
-        subject.getBoundingClientRect().width,
-        0,
+      await waitFor(() =>
+        expect(content.getBoundingClientRect().width).toBeCloseTo(
+          subject.getBoundingClientRect().width,
+          0,
+        ),
       );
     }
   },

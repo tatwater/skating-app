@@ -140,7 +140,6 @@ export const LEGACY_PAGES: readonly LegacyPage[] = [
   { label: 'Water bodies', to: '/admin/water', capability: 'body.read' },
   { label: 'Intake review', to: '/admin/water/review', capability: 'corpus.read' },
   { label: 'Standing', to: '/admin/water/standing', capability: 'corpus.read' },
-  { label: 'Requests', to: '/admin/water/requests', capability: 'inbox.read' },
   { label: 'Place names', to: '/admin/water/place-names', capability: 'corpus.read' },
   { label: 'Body features', to: '/admin/features', capability: 'corpus.read' },
   { label: 'Hazard identity', to: '/admin/recurrence', capability: 'corpus.read' },
