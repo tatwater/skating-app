@@ -1457,6 +1457,13 @@ export default defineSchema({
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
     mergedIntoId: v.optional(v.id('waterBodies')), // reads follow the survivor (D36)
+    /**
+     * An unmerge still running on this body, as loser or survivor (B01-5d, R10-A): its
+     * `unmerge_waterbody` row, set on both bodies by the unmerge's first transaction and cleared on
+     * both when it is done. While set, neither body takes a merge (`lib/unmergeState`). Optional, no
+     * backfill: absent reads as no unmerge running.
+     */
+    unmergeActionId: v.optional(v.id('moderationActions')),
     duplicateCandidateIds: v.optional(v.array(v.id('waterBodies'))),
     /**
      * Soft-delist (D48); reversible, cleared on restore.
