@@ -7,6 +7,7 @@ import { useTheme } from '@/components/theme-provider';
 import { useRole } from '@/lib/useRole';
 import { isFailed, type Loadable, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { useClockFor } from '../../reads/readArgs';
+import { useInspectorContext } from '../inspector/inspectorContext';
 import type { InboxItemView } from '../list/inboxTypes';
 import { EMBED_HEIGHT, InboxMap } from './InboxMap';
 import type { InboxMapView } from './inboxMapScene';
@@ -33,6 +34,9 @@ export function ItemMap({ item }: { item: InboxItemView }): ReactNode {
     map: hasMap ? read(api.inbox.itemMap, { ref, now }) : null,
   });
   const { resolvedTheme } = useTheme();
+  // The inspector's zone (the console's: the reader's own unless the page pins one), so a date on
+  // the map reads on the same day as every date beside it.
+  const { timeZone } = useInspectorContext();
   const mode = resolvedTheme === 'light' ? 'light' : 'dark';
   if (!hasMap) return null;
   return (
@@ -42,6 +46,7 @@ export function ItemMap({ item }: { item: InboxItemView }): ReactNode {
       onRetry={retry}
       retrying={pending}
       renderMap={(view) => <InboxMap view={view} mode={mode} height={EMBED_HEIGHT} />}
+      {...(timeZone !== undefined ? { timeZone } : {})}
     />
   );
 }

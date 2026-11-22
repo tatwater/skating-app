@@ -1,14 +1,25 @@
+import { zonedInstant } from '@skating/core';
+
 import type { AccessItem, AccessReport } from './accessModel';
 
 /**
  * Board 2.2's item as `inbox.item` would hand it over — Tomhannock Reservoir, a standing
  * *accessible* ruling of 12 Sep disputed by two reports — and the other states the item can be in.
- * The board's day: 14 Oct 2026, at local noon. Story and test support only.
+ * The board's day: 14 Oct 2026, at noon in the board's zone. Story and test support only.
+ *
+ * **Every time is an absolute instant** — a wall-clock time in the board's zone (`BOARD_ZONE`, the
+ * zone the tests and stories read dates in), never the runner's local clock: a fixture built with a
+ * local `new Date(…)` moves a day under a runner far east or west (CI runs `Etc/GMT-14`).
  */
 
-export const ACCESS_NOW = new Date(2026, 9, 14, 12, 0).getTime();
+/** The boards' zone: their bodies are in New England, and the tests read dates there. */
+export const BOARD_ZONE = 'America/New_York';
+
+/** A wall-clock time in the board's zone, as an instant. */
 const on = (month: number, day: number, h = 12, m = 0) =>
-  new Date(2026, month - 1, day, h, m).getTime();
+  zonedInstant(2026, month, day, h * 60 + m, BOARD_ZONE);
+
+export const ACCESS_NOW = on(10, 14);
 
 type Lockup = NonNullable<AccessReport['filer']>;
 const person = (id: string, displayName: string, username: string, points: number): Lockup => ({

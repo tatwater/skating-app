@@ -1,4 +1,6 @@
+import { zonedInstant } from '@skating/core';
 import { ACCESS_ITEM, ADMIT_ITEM, SAFETY_ITEM, TICKET_ITEM } from '../list/inboxFixtures';
+
 import type { InboxItemView } from '../list/inboxTypes';
 import {
   ACCESS,
@@ -106,7 +108,8 @@ export const PLACE_MAP: ServerItemMap = {
 export const DRAWN = {
   ...ADMIT_ITEM,
   kind: 'drawn',
-  filedAt: new Date(2026, 9, 12, 12).getTime(),
+  // Noon on 12 Oct in the board's zone (an absolute instant, whatever the runner's zone).
+  filedAt: zonedInstant(2026, 10, 12, 12 * 60, 'America/New_York'),
   drawer: { displayName: 'Kate Donovan' },
   overlap: {
     share: 0.92,

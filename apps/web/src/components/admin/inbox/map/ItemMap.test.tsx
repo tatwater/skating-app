@@ -135,3 +135,51 @@ describe('ItemMap', () => {
     vi.doUnmock('./InboxMap');
   });
 });
+
+describe('ItemMap’s dates', () => {
+  it('reads a date on the map in the inspector’s zone, as every date beside it does', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/useRole', () => ({ useRole: () => ({ can: () => true }) }));
+    vi.doMock('@/components/theme-provider', () => ({
+      useTheme: () => ({ resolvedTheme: 'dark' }),
+    }));
+    const { DRAWN, DRAWN_MAP } = await import('./itemMapFixtures');
+    vi.doMock('../../reads/consoleReads', async (orig) => ({
+      ...(await orig<typeof import('../../reads/consoleReads')>()),
+      useConsoleReadSet: () => ({
+        reads: { map: { map: DRAWN_MAP, pending: false } },
+        retry: () => {},
+        pending: false,
+      }),
+    }));
+    const legends: string[][] = [];
+    vi.doMock('./InboxMap', async (orig) => ({
+      ...(await orig<typeof import('./InboxMap')>()),
+      InboxMap: ({ view }: { view: { legend: { label: string }[] } }) => {
+        legends.push(view.legend.map((r) => r.label));
+        return null;
+      },
+    }));
+    const { ItemMap } = await import('./ItemMap');
+    const { InspectorProvider } = await import('../inspector/inspectorContext');
+    const at = (timeZone: string) =>
+      render(
+        <InspectorProvider
+          value={{ pane: { current: null }, decidedOnOpen: false, now: 0, timeZone }}
+        >
+          <ItemMap item={DRAWN} />
+        </InspectorProvider>,
+      ).unmount();
+    // Noon on 12 Oct in New York is already the 13th at UTC+14.
+    at('America/New_York');
+    at('Pacific/Kiritimati');
+    expect(legends.map((l) => l[1])).toEqual([
+      'Drawn 12 Oct · Kate Donovan',
+      'Drawn 13 Oct · Kate Donovan',
+    ]);
+    vi.doUnmock('@/lib/useRole');
+    vi.doUnmock('@/components/theme-provider');
+    vi.doUnmock('../../reads/consoleReads');
+    vi.doUnmock('./InboxMap');
+  });
+});

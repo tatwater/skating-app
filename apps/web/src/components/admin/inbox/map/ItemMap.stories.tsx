@@ -49,6 +49,8 @@ export const States: Story = {
             <ItemMapView
               item={DRAWN}
               state={{ map: SIMPLIFIED(DRAWN_MAP), pending: false }}
+              // The board's zone: a date on the map reads the same in every runner.
+              timeZone="America/New_York"
               renderMap={still(320)}
             />
           </div>
