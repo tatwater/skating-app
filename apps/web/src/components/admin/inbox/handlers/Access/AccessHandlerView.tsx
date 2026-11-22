@@ -142,7 +142,7 @@ function Said({ text }: { text: string }) {
   );
 }
 
-function eventBody(e: TimelineEvent): ReactNode {
+export function eventBody(e: TimelineEvent): ReactNode {
   switch (e.kind) {
     case 'report': {
       const standing = e.filer === null ? null : standingLine(e.filer);
