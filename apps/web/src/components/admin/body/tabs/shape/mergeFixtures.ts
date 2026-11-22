@@ -1,0 +1,90 @@
+import { MASCOMA_ID, NEIGHBOR_ID } from '../../frame/bodyFixtures';
+import type { MergeAnswer, MergeBodyRef, MergePreview, MoveKind } from './mergeModel';
+
+/**
+ * **`bodyConsole.mergePreview`'s answers, as the brief's snippet types them** — for stories and tests
+ * only. Mascoma Lake (the console's body) merging into Crystal Lake (the body that touches it), and
+ * the other answers the preview can give. **PLACEHOLDER (B01-5d)**: built on the snippet while S4a
+ * writes the read; the integrator checks these against its real answers.
+ */
+
+const ref = (waterBodyId: string, name: string, place: string): MergeBodyRef => ({
+  waterBodyId: waterBodyId as MergeBodyRef['waterBodyId'],
+  name,
+  place,
+  type: 'lake',
+  areaSqM: 4_400_000,
+  removed: false,
+  point: null,
+});
+
+export const CRYSTAL = ref(NEIGHBOR_ID, 'Crystal Lake', 'Enfield, NH');
+export const MASCOMA = ref(MASCOMA_ID, 'Mascoma Lake', 'Enfield, NH');
+
+const none = { count: 0, capped: false };
+const moves = (m: Partial<Record<MoveKind, number>>): Record<MoveKind, typeof none> => ({
+  reports: { count: m.reports ?? 0, capped: false },
+  hazards: { count: m.hazards ?? 0, capped: false },
+  bounties: { count: m.bounties ?? 0, capped: false },
+  bodyFeatures: { count: m.bodyFeatures ?? 0, capped: false },
+  putIns: { count: m.putIns ?? 0, capped: false },
+  favorites: { count: m.favorites ?? 0, capped: false },
+  requests: { count: m.requests ?? 0, capped: false },
+  placeNames: { count: m.placeNames ?? 0, capped: false },
+  flags: { count: m.flags ?? 0, capped: false },
+  subAreas: { count: m.subAreas ?? 0, capped: false },
+  landmarks: { count: m.landmarks ?? 0, capped: false },
+  gpsActivities: { count: m.gpsActivities ?? 0, capped: false },
+});
+
+/** Mascoma into Crystal: a few of each, a favorite kept once, a bay by a name Crystal has. */
+export const MERGE_TO_CRYSTAL: Extract<MergePreview, { ok: true }> = {
+  ok: true,
+  survivor: CRYSTAL,
+  loser: MASCOMA,
+  moves: moves({
+    reports: 3,
+    hazards: 1,
+    putIns: 1,
+    favorites: 2,
+    requests: 1,
+    subAreas: 2,
+    landmarks: 1,
+    gpsActivities: 1,
+  }),
+  favoritesDeduped: 1,
+  baysClashing: ['West cove'],
+  lists: { pins: 3, aliases: 4, links: 2, caps: { pins: 10, aliases: 20, links: 10 } },
+  staysBehind: { accessAlerts: 1, parkingLots: 2 },
+  tooBig: false,
+};
+
+/** A duplicate with nothing on it: only the lists to say. */
+export const MERGE_NOTHING_MOVES: Extract<MergePreview, { ok: true }> = {
+  ...MERGE_TO_CRYSTAL,
+  moves: moves({}),
+  favoritesDeduped: 0,
+  baysClashing: [],
+  staysBehind: { accessAlerts: 0, parkingLots: 0 },
+};
+
+/** Too much to move in one go: the counts past the read's bound, and the merge refused. */
+export const MERGE_HEAVY: Extract<MergePreview, { ok: true }> = {
+  ...MERGE_TO_CRYSTAL,
+  moves: { ...MERGE_TO_CRYSTAL.moves, reports: { count: 1_000, capped: true } },
+  tooBig: true,
+};
+
+/** The server refuses it outright (`merge`'s own sentence). */
+export const MERGE_REFUSED: MergePreview = {
+  ok: false,
+  refusal: 'Survivor is itself merged — pick the canonical body',
+};
+
+/** The merge's answer: its own audit row, and the unmerge offered with a reason asked. */
+export const MERGE_ANSWER: MergeAnswer = {
+  survivorId: NEIGHBOR_ID as MergeAnswer['survivorId'],
+  actionId: 'ma_merge_mascoma',
+  undoable: true,
+  undoNeedsReason: true,
+};
