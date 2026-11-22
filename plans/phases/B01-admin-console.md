@@ -9197,6 +9197,127 @@ left `convex/_generated` unchanged: S3 had committed the missing `lib/decisionRe
 - **The bell:** nothing. A retraction's `place` is already worded by core's `describeNotification`,
   which the bell calls.
 
+#### B01-5c: the follow-ups integrated (2026-11-22)
+
+The follow-ups were cut from `0d02cd89d` and cherry-picked onto `phase-b01-inbox` with no conflicts:
+- **S3** (`b01-5c-s3-2`, `8459cb385`);
+- **W5a** (`b01-5c-w5a-2`, three commits);
+- **W5b** (`b01-5c-w5b-2`, four commits).
+
+Nothing is pushed or deployed.
+
+**The map's tracks, and the bug they uncovered.**
+
+- **What `inbox.itemMap` now serves:** `tracks: { id, path, simplified }[]`:
+  - on a request, each served ask's recorded skate;
+  - on a drawing, the drawer's skate when it left a track.
+
+  A track goes whole up to 256 KiB, else thinned to 512 points. Tracks share the map's 1 MiB with
+  the outlines, and one left out sets `capped`.
+- **The bug:** the map's size limits read `undefined` depending on module load order, so **every
+  outline was thinned to 48 points**. S3 moved the limits to a leaf module
+  (`lib/inboxMapBounds`).
+- **The web:**
+  - It draws the tracks as the console's gray `track` lines on the admit and drawn scenes.
+  - The legend names the skate where the board does: "Kate Donovan's skate" on 2.3, "The recorded
+    skate · 11 Oct" on 2.5. Several skates read "Recorded skates".
+  - A thinned track says *Skate simplified* on the caption, as a simplified outline already says.
+  - An item with no track draws no line and no legend for one.
+  - 2.3 and 2.5 were rendered beside their mocks: the track sits where the board's does.
+
+**What each follow-up drew:**
+- **Request:**
+  - each ask's skate on its row;
+  - a contest's standing ruling, through the Access item's ruling event;
+  - an activate's dormancy.
+- **Place:** the asker's landmark history on the *Trust* row.
+- **Drawn:**
+  - the report it came from, with its excerpt, and *Open in Reports* under the quote;
+  - the skate;
+  - the drawer's report count;
+  - *If merged* says only "Coming soon" (the old editor has no merge).
+
+**The seams:**
+
+1. **The map adapter draws the tracks**, as above.
+2. **One home** for a timeline event and a standing ruling: `blocks/TimelineEventBody` and
+   `blocks/rulingEvent`. Access and Request both import them, and the bare export is gone.
+3. **`AskList`'s `rowMeta`.** The place handler passes each asker's landmark history, so several
+   askers each show theirs; Request passes nothing.
+4. **One skate format** (`blocks/skateWords`): "1h 36m · 11 Oct 09:00–11:00". An ask's row
+   prefixes it with *With a recorded skate*.
+5. **The redirect.**
+   - `/admin/water/requests` now redirects to `/admin/inbox?lane=requests` (replace), and it is
+     tested.
+   - The page leaves the Legacy menu and the old sidebar.
+   - Its component stays on disk, unrouted, as `components/admin/RequestQueue.tsx`.
+   - The generated route tree is unchanged, since the path still stands. This is the slice's last
+     code commit.
+
+**What boards 2.3–2.5 still don't draw, and why:**
+
+- **Distances:**
+  - a skate's distance (2.3's "2.1 km", 2.5's "4.2 km"): no activity row stores one;
+  - a request on a known body's tracks: the server sends them, but its scene has no legend to
+    name a line, so they wait for one;
+  - a drawing's distance.
+- **The nearest known body** (2.3's *Nearest*): it moved to B01-5d (§7 ruling 17). A bounded
+  geographic read doesn't fit the item's budget.
+- **Nearby drawings** (2.5's *Nearby*): the only spatial read loads whole body documents.
+- **Wording, for the copy pass:**
+  - 2.4's "3 landmarks named" is built as the asker's landmark-ask history ("2 of 3 landmark asks
+    added", "first landmark ask"): the read serves their filings, not the landmarks named after
+    them;
+  - "48m" is core's duration label, against the board's "48 min".
+- **2.5's *If merged* rows** (*Track*, *Skater*): *Coming soon* until B01-5d's merge.
+
+**The web review** of everything B01-5c added, on the final code:
+
+- **Fixed:**
+  - **(g)** Access and Request each kept a copy of *Open in Body →*, and Place borrowed Drawn's
+    chip. There is now one `blocks/LinkChip`.
+  - **(g)** Place said distances with `milesWords` ("<0.1 mi") beside the map rule's "394 ft".
+    It now uses `formatDistance`, as Request and the map do.
+  - **(g)** Seams 2–4 above: one ruling event, one skate format, one cut-list line.
+  - **(f)** Two Drawn story overflow reads now wait for the layout.
+  - **(f)** Zones: the request wiring test's skate line and dormancy date held only in New York.
+    They now read the runner's zone, as the route does.
+- **Listed:**
+  - **(a)** The place bar's *Approve* still checks that the bay or landmark is drawn, beside
+    `can` (redundant while the two agree).
+  - **(g)** B01-5b's:
+    - the flag handler's *Open in Body* is a plain `href` (`bodyHref`), not the router's link with
+      its way back;
+    - its *Around it* distances use `milesWords`.
+  - **(g)** A request on a known body's tracks aren't drawn (above).
+- **Clean:** (b), (c), (d), (e), (h), (i).
+
+**Found at the gate:**
+
+- **Codegen-verify** on a throwaway anonymous backend found S3's new `lib/inboxMapBounds` missing
+  from `_generated/api.d.ts`, the same shape as #108's red CI. It is committed.
+- **The heavy admit's approval test** (`inboxHeavy.test.ts`, S3's) takes 16.7 s alone but **103 s
+  under the full parallel `pnpm test`**, past its 90 s limit. It failed once there and passed alone
+  with coverage. CI runs every package at once, so it can go red there. **Owed:** a longer limit
+  for that one test, or a lighter world.
+
+**The gate:**
+
+| Check | Result |
+|---|---|
+| Types | 18/18 |
+| Lint | clean |
+| Guards | 108 |
+| Core | 3,670 |
+| Convex, with coverage | 4,070, alone (see above) |
+| Mobile | 136 |
+| The scripts' suites | email 5, run-log 97, design 818, wind-climate 61, admin-areas 47, archive-io 11, seed-inbox 32, lake-depth 167, seed-destinations 90, etl 552, extraction 44, imagery 20, bathymetry 432 |
+| Web, both projects, twice | 7,181 each |
+| The three `fast-check` property files, at 20× (5,000 where none was set) | 102 in each of Lord Howe, Kathmandu and UTC |
+| The 18 new or changed story files, 10× with half starved | 187 every run |
+| The web unit project in seven zones (UTC, New York, St John's, Kathmandu, Lord Howe, GMT−14, GMT+11) | 5,917 each |
+
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
