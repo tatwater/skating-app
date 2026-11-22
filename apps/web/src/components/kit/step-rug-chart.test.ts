@@ -67,7 +67,6 @@ describe('the step chart’s model', () => {
   });
 });
 
-
 /**
  * A zoned hour floor for the property — the test's stand-in for the caller's (Inbox zero passes its
  * own `floorLocalHour`): the local minutes and seconds taken off.
