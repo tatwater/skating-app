@@ -4,14 +4,61 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The nightly full run: the backstop for a push to main that skipped as already tested (below),
+  # and for anything that rots on main between merges (a dependency's release, the date line).
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # A push to main whose tree is byte-for-byte a PR head that already passed this workflow skips the
+  # full run: a squash merge of an up-to-date branch is that tree, and its run tested it. "The same
+  # tree" is decided by git's own hashes — the pushed commit's tree id against the tree id of the
+  # head commit of the PR GitHub associates with it — and "passed" by this workflow's successful
+  # pull_request run on that head sha. Any doubt (no PR, a different tree, no green run, an API
+  # error) runs everything. Pull requests, the nightly run and a manual run never skip.
+  already-tested:
+    name: already tested?
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+    steps:
+      - name: Compare the pushed tree with its PR's tested head
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -u
+          skip=false
+          tree=$(gh api "repos/$REPO/git/commits/$SHA" --jq .tree.sha 2>/dev/null || true)
+          head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].head.sha // empty' 2>/dev/null || true)
+          if [ -n "$tree" ] && [ -n "$head" ]; then
+            headTree=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha 2>/dev/null || true)
+            passed=$(gh run list --repo "$REPO" --workflow ci.yml --event pull_request --commit "$head" --status success --json databaseId --jq length 2>/dev/null || echo 0)
+            echo "pushed tree $tree; PR head $head, tree ${headTree:-?}; green PR runs on it: $passed"
+            if [ "$headTree" = "$tree" ] && [ "${passed:-0}" -gt 0 ]; then skip=true; fi
+          else
+            echo "no merged PR or no tree for $SHA: running everything"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip"
+
   verify:
     name: lint · typecheck · test
+    needs: already-tested
+    # `already-tested` runs only on a push; elsewhere it is skipped and its output is empty.
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
