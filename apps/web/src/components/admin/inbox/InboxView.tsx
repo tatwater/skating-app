@@ -408,6 +408,7 @@ export function InboxView({
           pane={pane}
           onBack={backToList}
           linkFor={linkFor}
+          canReadSupport={canReadSupport}
           {...(registry !== undefined && { registry })}
           {...(atZero &&
             zero !== null && {

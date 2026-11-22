@@ -1,4 +1,10 @@
-import { createContext, type ReactNode, type RefObject, useContext } from 'react';
+import {
+  createContext,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useContext,
+} from 'react';
 
 /**
  * What the inspector column hands every frame and handler drawn in it, so `InspectorFrame` keeps
@@ -26,6 +32,10 @@ export type InspectorContextValue = {
   decidedOnOpen: boolean;
   now: number;
   timeZone?: string | undefined;
+  /** The router's link for a console path (an anchor in a story); none outside the inspector. */
+  linkFor?: ((path: string) => ReactElement) | undefined;
+  /** The viewer may read Support (D37): what the inspector draws about tickets follows it. */
+  canReadSupport?: boolean | undefined;
 };
 
 const NO_PANE: RefObject<HTMLElement | null> = { current: null };

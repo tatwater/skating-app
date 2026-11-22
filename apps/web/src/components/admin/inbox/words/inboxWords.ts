@@ -136,6 +136,13 @@ export const TAIL_FAILED = 'This week’s decisions didn’t load.';
 export const NOTHING_MATCHES = 'Nothing open matches';
 export const NOTHING_DECIDED = 'Nothing decided yet';
 
+/**
+ * A count as the Inbox writes it: "1,204", or "500+" when the server's count stopped at its bound
+ * (`memberCountIsFloor`) — a floor is never passed off as a total.
+ */
+export const countOf = (n: number, floor = false) =>
+  `${n.toLocaleString('en-US')}${floor ? '+' : ''}`;
+
 // ── Row chips ────────────────────────────────────────────────────────────────────────────────
 
 /** A flag's reason as a row's chip — the boards' short words. */
@@ -165,7 +172,8 @@ export const TARGET_CHIP: Readonly<Record<Doc<'contentFlags'>['targetType'], str
 export const requestChip = (kind: RequestKind): string => REQUEST_WORDS[kind].toLowerCase();
 
 /** "2 reports", "1 report". */
-export const reportsChip = (n: number) => plural(n, 'report', 'reports');
+export const reportsChip = (n: number, floor = false) =>
+  floor ? `${countOf(n, true)} reports` : plural(n, 'report', 'reports');
 /** "disputes 12 Sep". */
 export const disputesChip = (when: string) => `disputes ${when}`;
 /** "catalog match · 41 ac". */
@@ -234,13 +242,13 @@ export function occurrence(n: number): string {
   return `${n.toLocaleString('en-US')}${suffix} occurrence`;
 }
 /** "Asked by 2". */
-export const askedBy = (n: number) => `Asked by ${n.toLocaleString('en-US')}`;
+export const askedBy = (n: number, floor = false) => `Asked by ${countOf(n, floor)}`;
 /** "From a report's where". */
 export const FROM_REPORT = 'From a report’s where';
 export const FROM_SKATE = 'From a recorded skate';
 /** "Luc Pelletier and 2 more". */
-export const andMore = (name: string, more: number) =>
-  more > 0 ? `${name} and ${more.toLocaleString('en-US')} more` : name;
+export const andMore = (name: string, more: number, floor = false) =>
+  more > 0 ? `${name} and ${countOf(more, floor)} more` : name;
 /** A decided row's sub-line: who decided it ("Sarah"), then what it says. */
 export const SOMEONE = 'A staff member';
 /** A row whose label facts are gone (coined). */
@@ -296,6 +304,21 @@ export const KIND_HEAD: Readonly<Record<string, string>> = {
   drawn: 'Drawn body',
   ticket: 'Support ticket',
 };
+/**
+ * The placeholder's line: a kind the Inbox can't decide yet, and the page that still decides it
+ * (coined). The link words wear the link chip's arrow.
+ */
+export const ELSEWHERE_PHOTO = 'A flag on a photo is decided on the Flags page for now.';
+export const ELSEWHERE_REQUEST = 'Requests are decided on the Requests page for now.';
+export const ELSEWHERE_PLACE =
+  'Place asks are decided on the Requests page for now, or answered by drawing in the body’s editor.';
+export const ELSEWHERE_DRAWN = 'Drawn bodies are decided in the Water bodies list for now.';
+export const ELSEWHERE_TICKET = 'Support tickets are answered on the Support page for now.';
+export const ELSEWHERE_FLAGS = 'Flags';
+export const ELSEWHERE_REQUESTS = 'Requests';
+export const ELSEWHERE_BODY_EDITOR = 'Body editor';
+export const ELSEWHERE_WATER = 'Water bodies';
+export const ELSEWHERE_SUPPORT = 'Support';
 export const FACT_LANE = 'Lane';
 export const FACT_FILED = 'Filed';
 export const FACT_MEMBERS = 'Filed by';
@@ -304,7 +327,8 @@ export const FACT_SUBJECT = 'About';
 export const FACT_DECIDED = 'Decided';
 export const FACT_REASONS = 'Reasons';
 export const FACT_NOTE = 'Note';
-export const people = (n: number) => plural(n, 'person', 'people');
+export const people = (n: number, floor = false) =>
+  floor ? `${countOf(n, true)} people` : plural(n, 'person', 'people');
 
 // ── Inbox zero (2.9) ─────────────────────────────────────────────────────────────────────────
 

@@ -593,6 +593,69 @@ export const TICKET_ITEM = {
   person: null,
 } as unknown as InboxItemView;
 
+/** A flag on a photo (2.7's kind; its handler isn't here yet). */
+export const PHOTO_ITEM = {
+  ...itemBase(PHOTO_ROW),
+  kind: 'flag',
+  target: {
+    targetType: 'photo',
+    targetId: 'ph1',
+    exists: true,
+    summary: 'A photo on a Crystal Lake report',
+    moderationStatus: 'visible',
+    withdrawnAt: null,
+    withdrawal: null,
+    photo: {
+      photoId: id('ph1'),
+      caption: null,
+      takenAt: null,
+      createdAt: NOW - 3 * H,
+      url: null,
+      thumbUrl: null,
+      reportId: null,
+      body: null,
+      siblings: [],
+      indexOnReport: null,
+    },
+  },
+  flags: [
+    {
+      flagId: id('fl9'),
+      reason: 'inappropriate',
+      note: null,
+      filedAt: NOW - 2 * H,
+      status: 'open',
+      filer: lockup(SARAH, 58),
+      autoFiled: false,
+      occurrences: 1,
+      lastOccurrenceAt: null,
+      prior: null,
+    },
+  ],
+  author: null,
+} as unknown as InboxItemView;
+
+/** A landmark ask (2.4's kind) on Newfound Lake. */
+export const PLACE_ITEM = {
+  ...itemBase(PLACE_ROW),
+  kind: 'place',
+  placeKind: 'name_landmark',
+  body: NEWFOUND,
+  asks: [],
+  drawnSubAreaId: null,
+  lookalikes: [],
+} as unknown as InboxItemView;
+
+/** A drawn body over Caspian Lake (2.5's kind). */
+export const DRAWN_ITEM = {
+  ...itemBase(DRAWN_ROW),
+  kind: 'drawn',
+  body: body('drawn', 'User-drawn body', null),
+  drawer: lockup(KATE),
+  overlap: null,
+  fromReport: null,
+} as unknown as InboxItemView;
+
 /** An item decided by a colleague. */
 export function decidedItem(
   item: InboxItemView,

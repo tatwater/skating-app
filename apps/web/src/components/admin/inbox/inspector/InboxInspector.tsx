@@ -59,6 +59,8 @@ export type InboxInspectorProps = {
   zero?: ReactNode;
   /** The handlers by key; the builders' registry unless a story passes its own. */
   registry?: ReadonlyMap<HandlerKey, InboxHandler>;
+  /** The viewer may read Support: the placeholder points at the Support page only then. */
+  canReadSupport?: boolean;
 };
 
 export function InboxInspector({
@@ -70,6 +72,7 @@ export function InboxInspector({
   linkFor,
   zero,
   registry = HANDLERS,
+  canReadSupport = false,
 }: InboxInspectorProps) {
   const item = state.kind === 'item' ? state.item : null;
   const decidedOnOpen = state.kind === 'item' && state.phase === 'onOpen';
@@ -82,6 +85,8 @@ export function InboxInspector({
         decidedOnOpen,
         now,
         timeZone,
+        linkFor,
+        canReadSupport,
       }}
     >
       <Contents state={state} now={now} zero={zero} registry={registry} />
