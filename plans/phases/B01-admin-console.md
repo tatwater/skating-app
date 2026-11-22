@@ -890,6 +890,17 @@ Made on the design's engineering forks; the founder may overturn any of them.
     B01-5b opens:** the read-only placeholder (a photo flag, a request, a place ask, a drawn body, a
     ticket) draws only the item's facts. Neither its row nor its pane says the item is decided on the
     old page, and neither links there.
+11. **Pe25 (the record sheet's cross-links) is out of B01-5c** (2026-11-21): it stays on the
+    register, blocked on its board.
+12. **A moderator's retraction tells the author with no reason** (2026-11-21): the reason is
+    audit-facing, and the payload carries none.
+13. **B01-5c's builders**: S3 (the notification, with the phone's `knows`), W5a (the request
+    handler), W5b (places, drawn bodies, both kit candidates, the retirement's links, the bell)
+    (2026-11-21).
+14. **The life strip may show stacked, then run across once late web fonts land** (2026-11-21):
+    accepted for now and owed on the register (Sh9).
+15. **`moderatorDecision` is narrowed back to required with B01-5d** (2026-11-21), after its dev
+    backfill.
 
 ### The founder's calls of 2026-11-21
 
@@ -6968,7 +6979,7 @@ flags row below moves to the photos PR.
 | PR | Redirects | `OLD_SHELL_TREES` loses | Links fixed |
 |---|---|---|---|
 | 5 (photos; was 2 — the photo flag is the old flags page's last kind without a handler) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
-| 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest`; the record sheet's flag links (Pe25, by the item's open flag ids — a server ask: `contentRecord.item` returns them) |
+| 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest` (Pe25, the record sheet's links, is out of this PR: the governor's ruling, 2026-11-21) |
 | 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
 | 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
 
@@ -8778,7 +8789,7 @@ three handlers need already exists and is tested; what is missing is the notific
 | Handlers register in the registry | `handlers/<Kind>/register.tsx` exporting `registration` (or `registrations`), `{ keys: HandlerKey[], Handler }`; `HandlerKey` is `` `flag:${FlagSubject}` `` or the kind (`'request' \| 'place' \| 'drawn'`); `inspector/elsewhere.test.ts` holds every key to a handler or a placeholder destination | W5 registers `request`, `place`, `drawn` and removes their rows from `inspector/elsewhere.ts` (photo and ticket stay) |
 | The map for 2.3–2.5 is W5's | `inbox/map/itemMapAdapters.ts` already turns `admit`, `activate`, `place` and `drawn` answers into scenes (fixtures `ADMIT_MAP`, `PLACE_MAP`, `DRAWN_MAP`, `ACTIVATE_MAP`), and `ItemMap` draws any kind with a map | W5 drops `<ItemMap item={item} />` into each handler's map slot; no map work |
 | `CompareTable`, `OverlapGauge` | Do not exist | W5 builds them as kit candidates beside the handlers; the executor promotes them at integration |
-| Pe25: the record sheet's flag links, "a server ask: `contentRecord.item` returns them" | `contentRecord.item` returns no flag ids; Pe25's register row is still "blocked on a board", and that board's four questions are open | A fork (below) |
+| Pe25: the record sheet's flag links, "a server ask: `contentRecord.item` returns them" | `contentRecord.item` returns no flag ids; Pe25's register row is still "blocked on a board", and that board's four questions are open | **Out of B01-5c** (ruled below) |
 | Retire `/admin/water/requests`; `admin.water.index.tsx` loses its pending card | Both pages stand; the pending card offers approve and reject only (merge lives in the old body editor, which stays) | Retiring both loses nothing once 2.3–2.5 land; `OLD_SHELL_TREES` is unchanged (the `/admin/water` tree stays for the editor) |
 | 2.6's *What each does* gains "· author told" | The alert handler's words are W2's (`handlers/Flag/flagWords.ts`) | W5 makes the one-line change, granted |
 
@@ -8786,8 +8797,9 @@ three handlers need already exists and is tested; what is missing is the notific
 
 | Builder | Owns | Must not touch |
 |---|---|---|
-| **S3 — the notification** | `packages/core/src/notifications.ts` (the type, the pref key, its label, order and default, the view variant, `describeNotification`'s cases); `packages/convex`: `lib/validators.ts` (`notificationTrigger`'s two kinds), `lib/notificationQueue.ts` (`TYPE_FOR_KIND`, `settleReadCost`, `settleTrigger`'s two cases, the enqueue helper), `lib/notificationResolve.ts` (the view), `notificationDelivery.ts` if it needs the case, the enqueue calls in `lib/requestDecisions.ts` (`closeRow`), `waterBodies.ts` (`approve`, `reject`) and `accessAlerts.ts` (the moderator's retraction); `contentRecord.ts` (`item`'s open flag ids, only if the Pe25 fork is ruled in); the `sameAs` cells and the heavy admit's approval in the existing tables; `apps/mobile/app/notifications.tsx`'s `knows` and its offline cache's test (folded in from M, below) | `schema.ts` (the seam); the web; the Inbox's reads, rules and writes beyond the enqueue calls |
-| **W5 — the handlers** | `apps/web/src/components/admin/inbox/handlers/Request/`, `Place/`, `Drawn/` (new, each with `register.tsx`); the kit candidates `CompareTable` and `OverlapGauge` beside them; `inspector/elsewhere.ts` (the three rows out); `handlers/Flag/flagWords.ts` (the one *author told* line); `components/skater/NotificationsMenu.tsx` (`knows`); the links the retirement table names (`overview/overviewRoutes.ts` audit `waterBodyRequest`, the Bodies preview's ask links); `routes/admin.water.index.tsx` (the pending card out); Pe25's web half if ruled in | `packages/*`; the route tree and `consoleNav.ts` (the seam); `components/kit/` (candidates live beside the handlers until promoted); every other handler |
+| **S3 — the notification** | `packages/core/src/notifications.ts` (the type, the pref key, its label, order and default, the view variant, `describeNotification`'s cases); `packages/convex`: `lib/validators.ts` (`notificationTrigger`'s two kinds), `lib/notificationQueue.ts` (`TYPE_FOR_KIND`, `settleReadCost`, `settleTrigger`'s two cases, the enqueue helper), `lib/notificationResolve.ts` (the view), `notificationDelivery.ts` if it needs the case, the enqueue calls in `lib/requestDecisions.ts` (`closeRow`), `waterBodies.ts` (`approve`, `reject`) and `accessAlerts.ts` (the moderator's retraction); the `sameAs` cells and the heavy admit's approval in the existing tables; `apps/mobile/app/notifications.tsx`'s `knows` and its offline cache's test (folded in from M, below) | `schema.ts` (the seam); `contentRecord.ts` (Pe25 is out); the web; the Inbox's reads, rules and writes beyond the enqueue calls |
+| **W5a — the request handler** | `apps/web/src/components/admin/inbox/handlers/Request/` (new, with `register.tsx`): the six request kinds and the admit with no match; its wiring test beside it, through `inbox/testing/routeHarness.tsx` | `packages/*`; the route tree and `consoleNav.ts`; `components/kit/`; every other handler; `inspector/elsewhere.ts` (W5b's) |
+| **W5b — places, drawn bodies and the links** | `inbox/handlers/Place/` and `Drawn/` (new, each with `register.tsx`, each with its wiring test); the kit candidates `CompareTable` and `OverlapGauge` beside them; `inspector/elsewhere.ts` (the request, place and drawn rows out, once W5a's handler is in); `handlers/Flag/flagWords.ts` (the one *author told* line); `components/skater/NotificationsMenu.tsx` (`knows`) and `skater/notificationRows.ts` (the bell's mark); the links the retirement table names (`overview/overviewRoutes.ts` audit `waterBodyRequest`, the Bodies preview's ask links); `routes/admin.water.index.tsx` (the pending card out) | `packages/*`; the route tree and `consoleNav.ts`; `components/kit/`; `Request/`; the record sheet (Pe25 is out) |
 
 **M is folded into S3.** The phone's toggle and its words come from core (`NOTIFICATION_PREF_ORDER`,
 `NOTIFICATION_PREF_LABELS`, `describeNotification`), so a build carrying S3's core shows them with no
@@ -8814,7 +8826,9 @@ device pass are the executor's after-merge step.
    `NOTIFICATION_PREF_ORDER` and `NOTIFICATION_PREF_LABELS` (the design's invented label, for the
    copy pass); the `NotificationView` variant below. `describeNotification`'s case is S3's.
 3. **The route**: `routes/admin.water.requests.tsx` becomes a redirect to `/admin/inbox?lane=requests`
-   (the old component stays on disk until B01's close, §12.7); its test follows.
+   (the old component stays on disk until B01's close, §12.7); its test follows. **Landed as the
+   slice's last commit, not at T0** (below): until the request handlers are in, the placeholder's link
+   to that page is how a request is decided.
 4. **`consoleNav.ts`, `OLD_SHELL_TREES`, `lib/theme.ts`**: no change.
 5. **Kit**: none at T0; `CompareTable` and `OverlapGauge` are promoted at integration.
 
@@ -8882,7 +8896,7 @@ with `drawnSubAreaId`, else *Draw in Body →* to `/admin/water/$id`); `drawn` �
   `TZ=Australia/Lord_Howe`, `TZ=Asia/Kathmandu` and `TZ=UTC` where a clock is involved; its
   counterexamples pinned.
 
-**W5 — the handlers:**
+**W5a and W5b — the handlers** (each for its own kinds and files):
 - [ ] Each kind's handler draws from `item` and `item.can` alone; each board (2.3, 2.4, 2.5) and each
   undrawn kind (activate, restore, contest, takedown, the admit with no match, the bay ask) beside its
   mock at 1440 × 900 and 360 px, both modes (§12.5).
@@ -8912,23 +8926,31 @@ with `drawnSubAreaId`, else *Draw in Body →* to `/admin/water/$id`); `drawn` �
 5. **The phone**: an EAS `preview` build carrying the new core, installed on the Pixel; the in-app
    page and the toggle checked (the executor; the founder's device pass).
 
-##### Forks for the founder
+##### How the forks were ruled (2026-11-21)
 
-1. **Pe25 (the record sheet's cross-links) has no board.** Its register row reads "blocked on a
-   board", and four questions are open (does a link close the sheet; one Inbox link per flag or per
-   item; does erased content link anywhere; does a Post link to its first Report). *Options:* (a) take
-   it out of B01-5c and draw the board first; (b) build a minimal version now from the console's link
-   rule — the body and the skater page per item, one *Open in Inbox →* per item with open flags (the
-   server's open flag ids), the sheet left open on desktop, nothing for erased content but its body,
-   no Post link. *Recommendation:* (a). *If he says nothing:* (a), and Pe25 stays on the register.
-2. **A retraction's message carries no reason.** The design marked it invented: the moderator's
-   reason is audit-facing. It decides the payload, not just the words. *Options:* no reason (as
-   designed); or the reason, as a decline's note is shown. *Recommendation:* no reason. *If he says
-   nothing:* no reason.
+The governor's rulings; the founder has been told of them and may overturn any (§7, rulings 11–15).
 
-Found and ruled in the brief, not forks: the web bell must pass `knows` or it reads the new type as
-`unknown`; a script's seeded asks tell no one; `recipientWants` reads an absent key as off, so the
-backfill runs right after the deploy.
+1. **Pe25 is out of B01-5c.** It stays on the register, blocked on its board. S3 does not touch
+   `contentRecord.item`; W5 builds no record-sheet links.
+2. **A retraction's message carries no reason**, as designed; the payload has no reason field.
+3. **The split is as revised**: S3 (with the phone's `knows`), W5a (`Request/`), and W5b (`Place/`,
+   `Drawn/`, both kit candidates, the retirement's links, the bell, the *author told* line). The
+   redirect's route file is a seam.
+4. **The life strip showing stacked, then running across once late fonts land, is accepted for now**
+   and owed on the register's shared rows (Sh9), in the family of the Saira preload already owed.
+5. **The narrowing of `moderatorDecision` back to required ships with B01-5d**, not its own PR.
+
+**What landed at T0** (on `phase-b01-inbox`): the type, the pref key and the view in core; the
+schema's widening; and placeholders that S3 and W5b replace — core's `describeNotification` case
+(one sentence for every outcome), convex's `notificationResolve.parsePayload` (`null`, read as the
+`unknown` row), the web bell's mark (`skater/notificationRows`, the flag icon), the settings page's
+group (`skater/settings/NotificationsSection`, beside the flag ruling), and the phone's toggle reading
+an absent key as off. Each is marked `PLACEHOLDER` or explained where it sits. The route-and-view
+harness is importable from `inbox/testing/routeHarness.tsx` (`installInboxRouteMocks`, `harness`,
+`resetHarness`, `lastArgs`, `argSets`, `must`). **The redirect is the slice's last commit**, not a T0
+seam: the Inbox's placeholder for requests links to `/admin/water/requests`, so a redirect landed
+before the request handlers would send that link back into the Inbox and leave requests undecidable
+on the branch.
 
 ##### Size, honestly
 
@@ -9057,6 +9079,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh6 | Two `InsetCard`s for one idea: the skater one and the kit one | `skater/panels/InsetCard.tsx`, `kit/inset-card.tsx` | open | polish (kit) | M | A kit pass |
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
 | Sh8 | The verdicts backfill (`peopleJobs:backfillVerdicts`, walking `contentRecord.backfillVerdicts`) walks the whole moderation audit table 4 rows a pass (each row's worst case is sized at 1 MiB), so its length follows the audit log's size: 7,951 passes (about 5.5 minutes) on dev, which holds no moderated content | `contentRecord.ts` `backfillVerdicts`, its page table under §12.8 | open: look at the page sizing before it runs on a large log | performance (engine) | S–M | A page sized by the rows' real weight, or a narrower walk; not designed |
+| Sh9 | The life strip re-lays out when web fonts arrive late: drawn stacked with a fallback face, then across once the faces land | `kit/life-strip.tsx` | open (accepted for now: the governor's ruling 14, 2026-11-21) | polish | S | A preload of the faces, or a font-ready gate before the first measure — the same family as the Saira preload already owed |
 
 #### The boards to make in Paper (founder call 1)
 
