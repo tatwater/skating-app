@@ -88,10 +88,13 @@ export const Board21Narrow: Story = {
   play: async ({ canvasElement }) => {
     const how = slot(canvasElement, 'stefan-how');
     const cell = must(how.closest<HTMLElement>('[data-slot="weather-stefan"]'));
-    await expect(how.getBoundingClientRect().right).toBeLessThanOrEqual(
-      cell.getBoundingClientRect().right + 0.5,
-    );
-    await expect(how.scrollWidth).toBeLessThanOrEqual(how.clientWidth + 0.5);
+    // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+    await waitFor(() => {
+      expect(how.getBoundingClientRect().right).toBeLessThanOrEqual(
+        cell.getBoundingClientRect().right + 0.5,
+      );
+      expect(how.scrollWidth).toBeLessThanOrEqual(how.clientWidth + 0.5);
+    });
     await expectNoSidewaysScroll(pane(canvasElement));
   },
 };
@@ -440,9 +443,11 @@ export const Board26Narrow: Story = {
       );
     await waitFor(() => expect(must(seen())).toHaveAttribute('data-narrow'));
     await expect(canvasElement.querySelector('[data-slot="alert-life-scroll"]')).toBeNull();
-    const life = must(seen());
-    const paneBox = pane(canvasElement).getBoundingClientRect();
-    await expect(life.getBoundingClientRect().right).toBeLessThanOrEqual(paneBox.right + 0.5);
+    await waitFor(() =>
+      expect(must(seen()).getBoundingClientRect().right).toBeLessThanOrEqual(
+        pane(canvasElement).getBoundingClientRect().right + 0.5,
+      ),
+    );
     await expectNoSidewaysScroll(pane(canvasElement));
   },
 };
