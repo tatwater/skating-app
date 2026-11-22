@@ -11281,6 +11281,221 @@ The governor's rulings 24, 25 and 26 (§7); the founder is told of them and may 
 - **How:** one executor commit at T0 lands both slices' seams together. The builders then work on disjoint files, and the integration resolves only those appends.
 - **Support first:** it has no dev proof gating its build, no schema rollout across merges, and is the smaller review. Photos goes second, because its build waits on the rotation proof's outcome and its schema needs the widen → deploy → backfill → narrow sequence after merge. The photos PR rebases onto support's merge, touching only the shared appends.
 
+#### B01-5f: the builders integrated (2026-11-22)
+
+Integrated onto `phase-b01-inbox` in this order:
+1. the seed fix (`b01-5f-seedfix`, cut from `origin/main`);
+2. S6 (`b01-5f-s6`, from T0);
+3. W8 (`b01-5f-w8`, from T0).
+
+The cherry-picks had no textual conflicts. Six seams follow them, then the web review and the two CI
+savings. Support is the first PR of the pair; the photos commits come after it.
+
+##### What each built
+
+- **The seed fix:**
+  - the merge-proof bounty now goes through the public `bounties:create`. Dev's apply had failed that
+    step: an internal function can't be called as a person from the CLI. A plan test now holds that
+    every step run as a person names a public function;
+  - the run log keeps the server's sentence;
+  - `convexRun` tees its output live while it captures it;
+  - `inboxItems:repairAll`: a self-paging sweep that records itself in `inboxJobRuns` (`examined`,
+    `fixed`, `changed`, `failures`; a schema widening);
+  - the census compares derived facts by meaning.
+- **S6 (server):**
+  - `supportMessages` writes: `support.addNote`, `.reply`, `.removeNote`, `.cancelReply`, `.resolve`,
+    `.reopen`. Each goes through the Inbox's one rule and is audited with the verb's default reason,
+    never the text. Each answers its item, its row and its undo offer;
+  - `support.sendReply`: claims the row at `sendAfter`, then:
+    - with `SUPPORT_FROM_EMAIL` unset, the reply reads `failed` (`unconfigured`), logged, and never
+      goes from the general sender;
+    - on a seed ticket, `failed` (`seed`) before any address is looked up;
+    - otherwise it sends to the profile's email, else the ticket's Clerk subject, with the footer;
+  - `sendEmail` gains `from?`;
+  - the six undo rows, so T0's placeholder list is empty;
+  - the `ticket` item read;
+  - the export and erasure (below);
+  - the seed's note and its `failed` reply on `t-bug`;
+  - `lib/supportWrites` (the impls an undo runs, which avoids an import cycle);
+  - the tables: rule versus write (198 cells), offer versus run (272 cells), heavy rows (a ticket with
+    240 messages at the cap), and a settle property.
+- **W8 (web):**
+  - `handlers/Ticket/`: board 2.8's thread, dock and side;
+  - the stories, including a whole-page render beside the board;
+  - History's words for the six verbs. A reply's line says it was *written*, never that it reached
+    anyone;
+  - `/admin/support` redirecting to the Support lane, with every link opening the Inbox.
+
+##### The seams
+
+1. **W8 onto S6's real read and `api.support.*`.**
+   - The handler's item is the published `ticket` variant, with no local extension.
+   - *Remove* on a note and *Cancel* on a settling reply are drawn only where the server's `remove` /
+     `cancel` is `null`. They call `support.removeNote` / `support.cancelReply` by the message's own
+     id, no longer the undo engine by audit row.
+   - A colleague's settling reply shows *Cancel* (the founder's call: anyone pitches in).
+   - The dock reads `replyFrom` and `replyBlocked`. A blocked reply's receipt says "Reply saved, not
+     sent", never "on its way".
+   - The *Tickets* row is `personTickets`. Board 2.8 draws it in the User block, not the head, so it
+     is there, as floors when capped.
+   - *Related* lists `related.flags`, each opening its own Inbox item (`flag:<id>`), with a "More
+     flags on them" row when the list is capped.
+   - The cut line reads `messagesCut` against `messageCount`, as a floor.
+2. **The guards' inventories.** Each new writer was read first:
+   - `adminWriters` gains `useTicketWrites`, which goes through `useDecisionRunner`.
+   - `bodyNameWriters` gains `removeNoteImpl` and `restoreNoteImpl`: they write a note's `removedAt`,
+     nothing a body's name list holds.
+   - `inboxWriters`: `support.ts#resolve` becomes `resolveTicketImpl` (status, then `decideItem`) and
+     `reopenTicketImpl` (status, then `fileMember`, reopening the one member in place).
+   - The account's ticket erase moved to `lib/supportThread#eraseTicketsOf`. It still leaves each
+     item through `leaveMember`.
+   - `consoleTextCaps` gains the Inbox root. `ReplyDock` is a pass-through whose caps ride in its
+     modes' `max:`. The filter menu's search is a read.
+3. **The retirement's shared files** lose `/admin/support` together:
+   - `OLD_SHELL_TREES` and the theme script's copy;
+   - `LEGACY_PAGES`;
+   - `consoleNav.test`;
+   - the ConsoleShell story;
+   - ConsoleLayout's Legacy count (13 → 12).
+4. **`ThreadMessage` (with `ThreadEvent`) and `ReplyDock` are in the kit** (`kit/thread-message`,
+   `kit/reply-dock`), each with a four-up story. `InspectorFrame` gains `fill`, the board's own word,
+   which replaces W8's negative-margin workaround.
+5. **`supportMessages.actionId` was taken.** It is a pure widening, stamped only by `addNote` and
+   `reply` in the same transaction. `cancelReply` reads the row by id. The bounded look-up and
+   `THREAD_CANCELS` (unread) are gone.
+6. **The check order already matches the house order.** `lib/inboxRules.whoRefusal` asks:
+   1. the capability;
+   2. a decided item;
+   3. the viewer's own filing;
+   4. the verb's own state (rule 5).
+
+   The ticket writes and `supportUndoRefusal` ask in that order. B01-5d moved own filing ahead of the
+   *ask's state* (rule 5), not ahead of a decided item, so tickets need no change.
+
+##### Who can read a ticket's words (staff-only, PII)
+
+| Words | Who reads them | Where |
+| --- | --- | --- |
+| The ticket's text | Admins (`inbox.support.read`). The filer, in their own data export | `inbox.item` (every ref), the Support lane's rows. Never a moderator's list, People's record, the audit feed or the overview |
+| A staff note | Admins (`inbox.support.read`) only | `inbox.item`. Never the export, an audit row (default reason and id only), People or the feed |
+| A reply | Admins (`inbox.support.read`). The person, by email once `sent`, and in their export (sent replies only, with no staff author) | `inbox.item`. Never an audit row, People or the feed |
+| The address a reply went to | Nobody: resolved at send, never stored | — |
+| `replyFrom` (the support sender) | Admins (`inbox.support.read`), on the ticket item | The dock's foot |
+
+A test holds each "never" for a moderator: every item ref, the audit feed, All open and Decided, and
+People's record.
+
+**Export:**
+- the person's newest 200 tickets, with their words, category, status, times and context;
+- on each, the replies **sent** to them;
+- never a note, an unsent reply, or who on staff wrote one;
+- bounded by its own byte budget and 400 messages read, with `capped` saying so.
+
+**Erasure** (account finalization, bucket 1):
+- each ticket goes with every message on it, its messages first, so a busy ticket takes several
+  passes and never orphans a note;
+- each leaves its Inbox item;
+- a settling reply goes with its row, and its send finds nothing;
+- the audit rows stay, holding only default reasons and message ids.
+
+##### Board 2.8 versus the build, and the invented words, for the founder's look
+
+- **The User block's *Tickets* row** is built from `personTickets` ("2 · 1 resolved"; floors past
+  50).
+- ***Related***:
+  - The board draws two hand-picked rows: *Unsafe flag → Safety*, and *The hidden report → Reports*.
+  - The build lists the person's flags, open first, each linking to its own Inbox item. The words are
+    invented: "‹Reason› flag", "‹report› · 4 days ago", "Actioned 11 Oct", and "More flags on them ·
+    The rest are in the Inbox" when capped.
+  - A *Reports →* row isn't drawn: Reports isn't built.
+- **The reply's foot:**
+  - The board says "Sent from support@gli.app. The reply lands on this ticket."
+  - The build says "Sent from ‹the configured address›. Their answer by email isn't read." (the
+    footer call).
+  - Unset, it says "No sending address is set up, so a reply won't be sent: it will read Not sent."
+  - On a test person's ticket: "A test person's ticket: a reply is saved here and never emailed."
+- **A reply's states (invented):**
+  - "Sending in 42 s" with *Cancel*;
+  - "Sending now";
+  - "Sent · 13 Oct 12:06";
+  - "Canceled · never sent";
+  - "Not sent · ‹why›", for:
+    - no sending address is set up;
+    - a test person's ticket: test people are never emailed;
+    - there is no email address for them;
+    - the email service didn't take it.
+- **A note's *Remove*** (invented, not on the board), and "A note was removed" as a line across the
+  thread.
+- **Invented names:** "A former skater", "A former staffer", and "Someone signed in, before their
+  profile was made".
+- **The cut line:** "Showing the newest 100 of 100+ messages".
+- **Receipts:**
+  - "Reply on its way · It sends in about a minute";
+  - "Reply saved, not sent · It won't be emailed: …";
+  - "Note added · Seen only by staff";
+  - "Note removed";
+  - "Reply canceled · It was never sent";
+  - "Resolved · It leaves the queue";
+  - "Reopened · It is back in the queue".
+- **History:**
+  - "Added a staff note to a support ticket";
+  - "Removed a staff note from…";
+  - "Wrote an email reply on…";
+  - "Canceled an email reply on… before it was sent";
+  - "Resolved…" and "Reopened…".
+
+##### The server asks, and how each ended
+
+| W8 asked | S6 answered |
+| --- | --- |
+| A note's removal from the thread (W8 drew none) | `support.removeNote`, a forward removal whose undo puts the note back; `remove: null` or the sentence |
+| Whether this viewer may cancel a reply | `reply.cancel: null` or the sentence, by the undo's own rule. Anyone with `inbox.support` may cancel a colleague's |
+| The thread's count and cut | `messageCount` and `messagesCut` (the newest 100) |
+| The sender for the dock | `replyFrom` (`SUPPORT_FROM_EMAIL` or `null`) and `replyBlocked` (`unconfigured`, `seed`) |
+| The person's ticket counts | `personTickets` from the person's ticket members, each status counted to 50 |
+| Related's rows | `related: { flags, capped }` |
+| A reply's failure class | `failedWhy` |
+
+##### The web review by class, and what is listed
+
+- **Fixed:** every "never" in the ticket's stories and the two kit stories now sits in the same retry
+  as a presence that proves the render landed. *Gone*'s absence check had run before its presence.
+  *Settling* clicks the button its retry found.
+- **Held on reading:**
+  - levers from the server's answer only;
+  - refusals as toasts in the server's words (a `can` sentence said in the body, as every handler
+    does);
+  - ids from the item;
+  - no optional prop without a caller;
+  - links through the inspector's router;
+  - capped values as floors;
+  - no staff-only text for a viewer the server wouldn't serve;
+  - nobody departed named;
+  - no plan tokens on screen;
+  - nothing about ice;
+  - a reply never drawn as sent unless the server says `sent`.
+- **Listed, not fixed:**
+  - **The export's `capped` over-reports.** Once the export's 400-message read is spent, every later
+    ticket reads `capped`, even one with no messages: a floor said where none was needed, never a cut
+    left unsaid. S6's to tighten (ask one message past zero room).
+  - **`SupportQueue.tsx` (the old page) stays on disk, unrouted,** until B01's close deletes the old
+    components.
+
+##### #173 on dev
+
+- **The drift repair** re-derived 0 of 35 items.
+- **The dev proof:**
+  - the merge took 637 ms in total, 115 ms of it in user code;
+  - the unmerge took two pages and was done in 1.5 s;
+  - the census came back equal except the survivor's summary: `null` before, computed over nothing
+    after. That was ruled a pass, and the census now compares such facts by meaning (the seed fix).
+- **The seed step that failed:** the merge-proof bounty, created through an internal function, which
+  a person can't call from the CLI. It now goes through the public `bounties:create`, and a plan test
+  holds every person's step to a public function.
+- **The photo storage proof:** a deleted blob's address answered 404 at once. So `photos.rotateBlobs`
+  is built, and the removal dialog says the photo is off its address at once: the first row of the
+  pack's outcome table, with no CDN lag to word.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
