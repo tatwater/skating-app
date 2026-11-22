@@ -111,7 +111,9 @@ const PHASES: Phase[] = [
           .paginate({ cursor, numItems: n }),
     }),
   ),
-  ...(['pending', 'approved', 'rejected'] as const).map(
+  // `merged`: a drawing a merge decided (B01-5d) — written `merged` by the merge itself, so its
+  // decided item is filed from its own phase, not missed by the three review statuses.
+  ...(['pending', 'approved', 'rejected', 'merged'] as const).map(
     (reviewStatus): Phase => ({
       name: `drawn:${reviewStatus}`,
       table: 'waterBodies',
@@ -195,10 +197,22 @@ export const retryBackfillSource = internalMutation({
     }),
 });
 
-/** A drawn body's latest review row (approve, reject or merge), if it has one. */
-async function reviewAuditOf(ctx: QueryCtx, id: string): Promise<Doc<'moderationActions'> | null> {
+/**
+ * A drawn body's latest review row (approve, reject, merge, or the unmerge that took a merge back —
+ * B01-5d), if it has one: an unmerged drawing is in review again, so a merge row older than its
+ * unmerge never dates its decision.
+ */
+export async function reviewAuditOf(
+  ctx: QueryCtx,
+  id: string,
+): Promise<Doc<'moderationActions'> | null> {
   let latest: Doc<'moderationActions'> | null = null;
-  for (const action of ['approve_waterbody', 'reject_waterbody', 'merge_waterbody'] as const) {
+  for (const action of [
+    'approve_waterbody',
+    'reject_waterbody',
+    'merge_waterbody',
+    'unmerge_waterbody',
+  ] as const) {
     const row = await ctx.db
       .query('moderationActions')
       .withIndex('by_target_action', (q) =>

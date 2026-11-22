@@ -156,7 +156,12 @@ describe('waterBodies.merge (D36)', () => {
       loserId: loser,
       reason: 'same pond',
     });
-    expect(returned).toBe(survivor);
+    // The survivor and the merge's own row, with the undo on offer (B01-5d) — whatever the registry
+    // says of it today.
+    expect(returned.survivorId).toBe(survivor);
+    const row = await t.run((ctx) => ctx.db.get(returned.actionId));
+    expect(row).toMatchObject({ action: 'merge_waterbody', targetId: loser });
+    expect(typeof returned.undoable).toBe('boolean');
 
     // Children now point at the survivor.
     const after = await t.run(async (ctx) => ({

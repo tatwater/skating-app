@@ -146,6 +146,7 @@ import { assertInboxVerb, DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './lib/inbo
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
+import { MERGE_TOO_BIG, mergeLoadOf, RETARGET_CAP } from './lib/mergeLoad';
 import { enqueueModeratorDecision } from './lib/notificationQueue';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { reasonFor } from './lib/peopleCan';
@@ -3593,25 +3594,93 @@ export const merge = mutation({
   },
   handler: async (ctx, { survivorId, loserId, reason }) => {
     const actor = await requireCapability(ctx, 'corpus.duplicates');
-    if (survivorId === loserId) throw new ConvexError('Cannot merge a water body into itself');
+    if (survivorId === loserId) throw new ConvexError(MERGE_SELF_REFUSAL);
     const survivor = await ctx.db.get(survivorId);
     const loser = await ctx.db.get(loserId);
     if (!survivor || !loser) throw new ConvexError('Water body not found');
-    // Don't merge into a tombstone, and don't re-merge an already-merged loser — the operator must
-    // pick a live canonical survivor, which also keeps the merge chain a single hop.
-    if (survivor.mergedIntoId !== undefined) {
-      throw new ConvexError('Survivor is itself merged — pick the canonical body');
-    }
-    if (loser.dedupStatus === 'merged') throw new ConvexError('Water body is already merged');
-    await mergeBodyInto(ctx, {
+    const refused = mergePairRefusal(survivor, loser, actor._id);
+    if (refused !== null) throw new ConvexError(refused);
+    // Past one transaction it is refused here, before any write, by the preview's own answer (fork 3).
+    await assertMergeFits(ctx, loser, survivor);
+    const { actionId } = await mergeBodyInto(ctx, {
       survivor,
       loser,
       actorId: actor._id,
       reason: reason?.trim() || composed`Merged into ${survivor.name}`,
     });
-    return survivorId;
+    return {
+      survivorId,
+      ...(await mergeResult(ctx, actor._id, actionId)),
+    };
   },
 });
+
+/**
+ * What a merge answers (B01-5d): the merge's own row, the one the toast's Undo undoes, and whether
+ * this viewer can undo it now, read by the undo engine's own rule — as every decision answers.
+ */
+export type MergeResult = { actionId: Id<'moderationActions'> } & (
+  | { undoable: true; undoNeedsReason: boolean }
+  | { undoable: false }
+);
+
+async function mergeResult(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  actionId: Id<'moderationActions'>,
+): Promise<MergeResult> {
+  // A nested query in this transaction (as `lib/decisionResult` asks it): it reads the row just written.
+  const offer = await ctx.runQuery(internal.moderation.undoOfferForRow, { actorId, actionId });
+  return { actionId, ...offer };
+}
+
+/** Refuse a merge past one transaction's budget, in the preview's words (`lib/mergeLoad`). */
+export async function assertMergeFits(
+  ctx: MutationCtx,
+  loser: Doc<'waterBodies'>,
+  survivor: Doc<'waterBodies'>,
+): Promise<void> {
+  if ((await mergeLoadOf(ctx, loser, survivor)).tooBig) throw new ConvexError(MERGE_TOO_BIG);
+}
+
+/** A merge of a body into itself. */
+export const MERGE_SELF_REFUSAL = 'Cannot merge a water body into itself';
+
+/**
+ * **Why this pair can't be merged by this viewer, or `null`** — the one rule `merge` refuses by and
+ * the Shape tab's preview (`bodyConsole.mergePreview`) answers with, so the preview never offers a
+ * merge the write refuses. In order:
+ *
+ * - a survivor that is itself merged: the operator picks the live canonical body, which also keeps
+ *   the merge chain a single hop; and a loser merged already;
+ * - D289: a drawing still in review is the Inbox's item, and the staffer who drew it doesn't decide
+ *   it — by merging it from here either — in the Inbox rule's words;
+ * - the lists: the survivor holds the union of both bodies' moderator-held lists, or the merge does
+ *   not happen (B01-3g, `mergedModeratorLists`).
+ *
+ * The weight is the other refusal, asked after this one (`assertMergeFits`, `lib/mergeLoad`).
+ */
+export function mergePairRefusal(
+  survivor: Doc<'waterBodies'>,
+  loser: Doc<'waterBodies'>,
+  viewerId: Id<'profiles'>,
+): string | null {
+  if (survivor._id === loser._id) return MERGE_SELF_REFUSAL;
+  if (survivor.mergedIntoId !== undefined || survivor.dedupStatus === 'merged') {
+    return 'Survivor is itself merged — pick the canonical body';
+  }
+  if (loser.dedupStatus === 'merged' || loser.mergedIntoId !== undefined) {
+    return 'Water body is already merged';
+  }
+  if (
+    loser.source === 'user' &&
+    loser.reviewStatus === 'pending' &&
+    loser.createdByUserId === viewerId
+  ) {
+    return OWN_FILING_REFUSAL;
+  }
+  return mergedModeratorLists(survivor, [loser]).refusal;
+}
 
 /**
  * What a body merge changed, row by row — written to `auditSnapshots` beside its `merge_waterbody`
@@ -3708,9 +3777,6 @@ function dedupFieldsOf(body: Doc<'waterBodies'>): MergeChangeSet['dedupBefore'][
   };
 }
 
-/** The most rows of one kind a merge re-targets — far past any body's asks. */
-const RETARGET_CAP = 1_000;
-
 /**
  * Re-target what was asked of a merged-away body to its survivor: every request on it, its open place
  * names, and its open and in-review flags. A flag whose flagger already has an open or in-review flag
@@ -3721,6 +3787,11 @@ export async function retargetAsks(
   ctx: MutationCtx,
   loserId: Id<'waterBodies'>,
   survivorId: Id<'waterBodies'>,
+  /**
+   * A merge refuses a group past the cap rather than leave its rest behind (B01-5d, fork 3); the
+   * repair of old merges takes what it can and runs again.
+   */
+  overCap: 'refuse' | 'leave' = 'leave',
 ): Promise<{
   requests: Id<'waterBodyRequests'>[];
   placeNames: Id<'corpusPlaceNames'>[];
@@ -3728,28 +3799,37 @@ export async function retargetAsks(
   flagsLeft: number;
 }> {
   // One batch: each item the moved asks and reports leave or join is recounted once.
-  return inboxBatch(ctx, () => retargetEach(ctx, loserId, survivorId));
+  return inboxBatch(ctx, () => retargetEach(ctx, loserId, survivorId, overCap));
 }
 
 async function retargetEach(
   ctx: MutationCtx,
   loserId: Id<'waterBodies'>,
   survivorId: Id<'waterBodies'>,
+  overCap: 'refuse' | 'leave',
 ): Promise<{
   requests: Id<'waterBodyRequests'>[];
   placeNames: Id<'corpusPlaceNames'>[];
   flags: Id<'contentFlags'>[];
   flagsLeft: number;
 }> {
+  // One past the cap, so a merge knows a group would leave some behind and refuses instead.
+  const n = overCap === 'refuse' ? RETARGET_CAP + 1 : RETARGET_CAP;
+  const within = <T>(rows: T[]): T[] => {
+    if (rows.length > RETARGET_CAP) throw new ConvexError(MERGE_TOO_BIG);
+    return rows;
+  };
   const requests: Id<'waterBodyRequests'>[] = [];
   for (const kind of REQUEST_KINDS) {
     for (const status of REQUEST_STATUSES) {
-      const rows = await ctx.db
-        .query('waterBodyRequests')
-        .withIndex('by_water_body', (q) =>
-          q.eq('waterBodyId', loserId).eq('kind', kind).eq('status', status),
-        )
-        .take(RETARGET_CAP);
+      const rows = within(
+        await ctx.db
+          .query('waterBodyRequests')
+          .withIndex('by_water_body', (q) =>
+            q.eq('waterBodyId', loserId).eq('kind', kind).eq('status', status),
+          )
+          .take(n),
+      );
       for (const r of rows) {
         await ctx.db.patch(r._id, { waterBodyId: survivorId });
         // An open ask's question is now the survivor's: it joins that item (B01-5).
@@ -3758,10 +3838,12 @@ async function retargetEach(
       }
     }
   }
-  const names = await ctx.db
-    .query('corpusPlaceNames')
-    .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', loserId).eq('status', 'open'))
-    .take(RETARGET_CAP);
+  const names = within(
+    await ctx.db
+      .query('corpusPlaceNames')
+      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', loserId).eq('status', 'open'))
+      .take(n),
+  );
   for (const n of names) await ctx.db.patch(n._id, { waterBodyId: survivorId });
   const flags: Id<'contentFlags'>[] = [];
   let flagsLeft = 0;
@@ -3781,12 +3863,14 @@ async function retargetEach(
     return false;
   };
   for (const status of OPEN_FLAG_STATUSES) {
-    const rows = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target_status_reason', (q) =>
-        q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
-      )
-      .take(RETARGET_CAP);
+    const rows = within(
+      await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
+        )
+        .take(n),
+    );
     for (const f of rows) {
       if (await flaggedSurvivor(f.flaggerId)) {
         flagsLeft++;
@@ -3864,9 +3948,15 @@ export async function mergeBodyInto(
     actorId?: Id<'profiles'>;
     reason: AuditReasonOrText;
   },
-): Promise<{ repointed: Record<string, number> }> {
+): Promise<{ repointed: Record<string, number>; actionId: Id<'moderationActions'> }> {
   const survivorId = survivor._id;
   const loserId = loser._id;
+  // The instant the merge began: its side rows (a bay it delisted, a label it retired) are found by
+  // their targets among rows written from here on (`sideActionsOf`).
+  const startedAt = Date.now();
+  // A skater's drawing still in review is decided by this merge (B01-5d): `reviewStatus: 'merged'`,
+  // its Inbox item decided with this merge's row, the drawer told. Any other loser keeps its status.
+  const decidesDrawing = loser.source === 'user' && loser.reviewStatus === 'pending';
   // A merge reads both bodies' children whole: its names rebuilds add no reads to it — both bodies'
   // rows are made `capped` now and rebuilt in transactions of their own (`lib/bodyNames`).
   setNamesAllowance(ctx, 0);
@@ -3909,7 +3999,7 @@ export async function mergeBodyInto(
     // What was asked of the loser moves with it (B01-3b): every request (the founder's ruling), and
     // the open place names and open flags — so a later decision refreshes the survivor's row, and its
     // History shows them. Recorded in the change set, for the unmerge.
-    const asks = await retargetAsks(ctx, loserId, survivorId);
+    const asks = await retargetAsks(ctx, loserId, survivorId, 'refuse');
     // The bay join mirrors the report's body (A09); the bays themselves move to the survivor below,
     // so the `subAreaId` on each row stays valid and only the body needs following.
     for (const report of reports) {
@@ -3951,12 +4041,46 @@ export async function mergeBodyInto(
       }
     }
 
+    // The skates recorded on the loser move too (B01-5d, fork 2 ruled (B)): a merged drawing's founding
+    // skate is its only evidence, and the per-lake tracks and dormancy read it by its body. Both of its
+    // body fields, as they stood, for the unmerge; the loser in a multi-body skate's list becomes the
+    // survivor, once. (A skate whose primary body is another lake, with the loser only in its list,
+    // can't be found by index and stays as it is.)
+    const activities = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    const movedActivities: NonNullable<MergeChangeSet['movedActivities']> = [];
+    for (const a of activities) {
+      movedActivities.push({
+        id: a._id,
+        waterBodyId: a.waterBodyId ?? null,
+        waterBodyIds: a.waterBodyIds ?? [],
+      });
+      await ctx.db.patch(a._id, {
+        waterBodyId: survivorId,
+        ...(a.waterBodyIds !== undefined
+          ? {
+              waterBodyIds: [
+                ...new Set(a.waterBodyIds.map((id) => (id === loserId ? survivorId : id))),
+              ],
+            }
+          : {}),
+      });
+    }
+
     // What the bay and landmark moves are about to change, as it stood — the unmerge's starting
     // point (D226). The loser's bays all move (and some are re-clipped or delisted on the way); the
     // landmarks of *both* lakes can change, since a moved label folds into the survivor's twin.
     const subAreasBefore = await ctx.db
       .query('waterBodySubAreas')
       .withIndex('by_parent', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    // The survivor's own bays too: the re-clip below holds **every** listed bay of the survivor to its
+    // outline, not only the moved ones (B01-5d), so a changed one is put back by the unmerge.
+    const survivorSubAreasBefore = await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', survivorId))
       .collect();
     const landmarksBefore = [
       ...(await landmarksForBody(ctx, loserId)),
@@ -3993,6 +4117,7 @@ export async function mergeBodyInto(
       landmarksOverCap: landmarks.overCap,
       landmarksRetiredAsBay: landmarks.retiredAsBay,
       landmarkIdsTrimmed: landmarks.idsTrimmed,
+      gpsActivities: activities.length,
     };
 
     // A moderator's lists move to the survivor (B01-3g): each the union, the survivor's own first —
@@ -4038,6 +4163,8 @@ export async function mergeBodyInto(
     await ctx.db.patch(loserId, {
       dedupStatus: 'merged',
       mergedIntoId: survivorId,
+      // A drawing in review is decided by the merge, so the legacy list and the Shape tab agree.
+      ...(decidesDrawing ? { reviewStatus: 'merged' as const } : {}),
       ...(pinsBefore.loser.length > 0
         ? { moderatorTownKeys: undefined, ...regionStatesFields(ruleStatesOf(loser), []) }
         : {}),
@@ -4050,12 +4177,6 @@ export async function mergeBodyInto(
             searchText: bodySearchTextFor({ ...loser, moderatorAliases: undefined }),
           }
         : {}),
-    });
-    // A skater's drawing merged into a known body is decided `merged` in the Inbox (B01-5); any other
-    // loser was never an Inbox item, and the reconcile files nothing for it.
-    await decideItem(ctx, bodySource(loserId), {
-      decision: 'merged',
-      ...(actorId ? { actorId } : {}),
     });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
@@ -4071,6 +4192,12 @@ export async function mergeBodyInto(
       if (!partner) continue;
       partnersBefore.push(dedupFieldsOf(partner));
       await clearDuplicateFlag(ctx, partner, resolved);
+    }
+    // Each partner as the merge left it, so the unmerge tells a flag changed since from one it cleared.
+    const dedupAfter: MergeChangeSet['dedupBefore'] = [];
+    for (const before of partnersBefore) {
+      const after = await ctx.db.get(before.id);
+      if (after) dedupAfter.push(dedupFieldsOf(after));
     }
     await syncWaterBodyCells(ctx, loserId, {
       bbox: loser.bbox,
@@ -4110,6 +4237,25 @@ export async function mergeBodyInto(
       },
       createdAt: Date.now(),
     });
+    // A skater's drawing merged into a known body is decided `merged` in the Inbox (B01-5), **after**
+    // the merge's row and with it, so the item's decision and its member's close name the merge — the
+    // unmerge reopens it by re-filing the drawing. Any other loser was never an Inbox item, and the
+    // reconcile files nothing for it.
+    const decided = await decideItem(ctx, bodySource(loserId), {
+      decision: 'merged',
+      actionId,
+      ...(actorId ? { actorId } : {}),
+    });
+    const decidedItem = decided === 'closed' || decided === 'filed';
+    // The person who drew it hears it (D285), held at the flush to this row: an unmerge inside the
+    // window drops it. A person's merge only — the ETL's merges decide no drawing a person is owed word of.
+    if (decidesDrawing && actorId !== undefined && loser.createdByUserId !== undefined) {
+      await enqueueModeratorDecision(ctx, {
+        recipientId: loser.createdByUserId,
+        deciderId: actorId,
+        trigger: { kind: 'request_decided', waterBodyId: loserId, outcome: 'merged', actionId },
+      });
+    }
     // **Every row this merge moved or deleted, in the same transaction (D226, B01 §11).** The counts
     // above say how much; this says which, so the unmerge §4 owes can put each row back. A merge
     // recorded before this existed has only the counts, and the merge dialog says so.
@@ -4135,7 +4281,20 @@ export async function mergeBodyInto(
       landmarksAfter: [],
       ...(pinsBefore.survivor.length > 0 || pinsBefore.loser.length > 0 ? { pinsBefore } : {}),
       listsBefore,
+      // Version 2 (B01-5d): what the unmerge needs that version 1 left out.
+      version: 2,
+      sideActions: [],
+      dedupAfter,
+      survivorSubAreasBefore: [],
+      loserReview: { reviewStatus: loser.reviewStatus ?? null, decidedItem },
+      movedActivities,
     };
+    for (const before of survivorSubAreasBefore) {
+      const after = await ctx.db.get(before._id);
+      if (JSON.stringify(after) !== JSON.stringify(before)) {
+        changeSet.survivorSubAreasBefore?.push(snapshotDoc(before));
+      }
+    }
     for (const before of subAreasBefore) {
       const after = await ctx.db.get(before._id);
       if (before.removedAt === undefined && after?.removedAt !== undefined) {
@@ -4153,6 +4312,21 @@ export async function mergeBodyInto(
         });
       }
     }
+    changeSet.sideActions = await sideActionsOf(ctx, {
+      startedAt,
+      actorId,
+      subAreas: [
+        ...changeSet.subAreasDelisted,
+        ...survivorSubAreasBefore
+          .filter((b) => b.removedAt === undefined)
+          .map((b) => b._id)
+          .filter((id) => changeSet.survivorSubAreasBefore?.some((x) => x.id === id) ?? false),
+      ],
+      landmarks: changeSet.landmarksAfter
+        .filter((a) => a.removed)
+        .map((a) => a.id)
+        .filter((id) => landmarksBefore.some((b) => b._id === id && b.removedAt === undefined)),
+    });
     await writeSnapshot(ctx, actionId, changeSet);
     // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
     // recomputed against the survivor's bays — the old stamps were resolved against a different set.
@@ -4167,8 +4341,48 @@ export async function mergeBodyInto(
     // The Bodies library moved with the two summary recomputes above: they run after every row the
     // merge moves and after the loser's tombstone, so the loser left the library and the survivor
     // was re-read with the loser's reports, put-ins and landmarks.
-    return { repointed };
+    return { repointed, actionId };
   }
+}
+
+/** The audit rows a side write leaves on one target in one merge: a delist, or a fold and a retirement. */
+const SIDE_ROWS_PER_TARGET = 3;
+
+/**
+ * **The rows a merge wrote beside its own** (B01-5d, change set `version: 2`): each bay it delisted
+ * (`remove`, automatic — a name clash or a failed re-clip) and each label it folded, retired over the
+ * cap or retired as a bay (`remove` / `promote_landmark`). The helpers that write them are shared
+ * with every other bay and label write, so they're found here by target, not threaded back: the newest
+ * rows on each target this merge changed, written from the merge's own start by its actor. Bounded by
+ * the targets the merge already read whole, a few rows each.
+ */
+async function sideActionsOf(
+  ctx: MutationCtx,
+  args: {
+    startedAt: number;
+    actorId: Id<'profiles'> | undefined;
+    subAreas: Id<'waterBodySubAreas'>[];
+    landmarks: Id<'bodyLandmarks'>[];
+  },
+): Promise<Id<'moderationActions'>[]> {
+  const out: Id<'moderationActions'>[] = [];
+  const targets = [
+    ...args.subAreas.map((id) => ({ targetType: 'waterBodySubArea' as const, targetId: id })),
+    ...args.landmarks.map((id) => ({ targetType: 'bodyLandmark' as const, targetId: id })),
+  ];
+  for (const { targetType, targetId } of targets) {
+    const rows = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
+      .order('desc')
+      .take(SIDE_ROWS_PER_TARGET);
+    for (const row of rows) {
+      if (row.createdAt < args.startedAt || row.actorId !== args.actorId) continue;
+      if (row.action !== 'remove' && row.action !== 'promote_landmark') continue;
+      out.push(row._id);
+    }
+  }
+  return out;
 }
 
 /** One survivor's moderator-held lists as they stand by now in a retire pass, merges included. */

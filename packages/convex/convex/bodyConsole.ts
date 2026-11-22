@@ -14,6 +14,8 @@
  *   asked for each open landmark (Places).
  * - {@link dailyHazards} — how many hazards were on the lake each day of a winter, and when the
  *   season's watch opened (Hazards' winters).
+ * - {@link mergePreview} — what merging this body into another would move, the union of their lists
+ *   against the caps, and whether the merge would be refused (Shape's *Merge into another body*).
  */
 
 import {
@@ -23,6 +25,10 @@ import {
   hoursToMs,
   isPassageMarker,
   libraryStandingOf,
+  MAX_MODERATOR_ALIASES,
+  MAX_MODERATOR_TOWNS,
+  MAX_REFERENCE_LINKS,
+  mergedModeratorLists,
   PASSAGE_EXPIRY_H,
   resolveSeason,
   type Season,
@@ -33,6 +39,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
+import type { BodyRefView } from './inbox';
 import type { ModerationAction } from './lib/audit';
 import { auditLinksOnBody } from './lib/auditReads';
 import { requireCapability } from './lib/auth';
@@ -40,13 +47,22 @@ import { resolveSurvivor } from './lib/bodies';
 import { geoFactsOf, placesOf, townNamesOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
 import { MODERATION_ACTIONS } from './lib/enums';
+import { capabilityRefusal } from './lib/inboxRules';
+import { bodyRef } from './lib/inboxViews';
 import { landmarksForBody } from './lib/landmarkRows';
-import { QUEUE_CAP } from './lib/requestDecisions';
+import {
+  MERGE_MOVE_KINDS,
+  type MergeCount,
+  type MergeMoveKind,
+  mergeLoadOf,
+} from './lib/mergeLoad';
+import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { bayNames, namesMeet, QUEUE_CAP } from './lib/requestDecisions';
 import { type UndoState, undoStates } from './lib/undo';
 import type { UndoViewer } from './lib/undoTypes';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
-import { depthChoicesOf } from './waterBodies';
+import { depthChoicesOf, MERGE_SELF_REFUSAL, mergePairRefusal } from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
 type PersonView = { userId: Id<'profiles'>; username: string; displayName: string } | null;
@@ -897,3 +913,158 @@ export const depthChoices = query({
     return { mean: side('mean'), max: side('max'), recorded: body.depthCandidates !== undefined };
   },
 });
+
+// ── Merge into another body (B01-5d) ─────────────────────────────────────────────────────────────
+
+/** Rows that stay on the loser a preview counts, at most — a floor past it. */
+export const STAYS_BEHIND_CAP = 200;
+
+/**
+ * What the Shape tab's *Merge into another body* shows before the merge runs: the refusal the write
+ * would give, or what would move.
+ */
+export type MergePreview =
+  | { ok: false; refusal: string }
+  | {
+      ok: true;
+      survivor: BodyRefView;
+      loser: BodyRefView;
+      /** Rows that move, by kind, each `{ count, capped }` (a floor once the read stopped). */
+      moves: Record<MergeMoveKind, MergeCount>;
+      /** The loser's favorites dropped because their owner already favorited the survivor. */
+      favoritesDeduped: number;
+      /** The loser's bays the merge would delist for a name a survivor bay already has. */
+      baysClashing: string[];
+      /** The union of the moderators' lists, against their caps. */
+      lists: {
+        pins: number;
+        aliases: number;
+        links: number;
+        caps: { pins: number; aliases: number; links: number };
+      };
+      /** What stays on the loser (B01-5d fork 2's remainder), each counted to `STAYS_BEHIND_CAP`. */
+      staysBehind: { accessAlerts: number; parkingLots: number };
+      /** Past one transaction's budget: the merge would be refused, in the write's words. */
+      tooBig: boolean;
+    };
+
+/**
+ * **What merging `loserId` into `survivorId` would do** (B01-5d, the Shape tab's preview). The
+ * refusal is the write's own rule (`mergePairRefusal`: the same body, either merged, the viewer's own
+ * drawing, the lists' union over a cap), and the counts and *too big* are the write's own check
+ * (`lib/mergeLoad`'s `mergeLoadOf`, which `merge` asks before it writes) — never a second estimate.
+ * Favorites a person already holds on the survivor are counted apart (dropped, not moved), as are
+ * flags whose flagger already flagged the survivor (they stay). Bounded: the load stops at the
+ * transaction's budget, and the follow-up reads run only when the merge fits.
+ */
+export const mergePreview = query({
+  args: { loserId: v.id('waterBodies'), survivorId: v.id('waterBodies') },
+  handler: async (ctx, { loserId, survivorId }): Promise<MergePreview> => {
+    // A read, gated as the console's reads are; the merge's own capability is the first refusal, in
+    // its words, so the preview never offers a merge its write refuses (D217).
+    const viewer = await requireCapability(ctx, 'body.read');
+    const noRight = capabilityRefusal(viewer, 'corpus.duplicates');
+    if (noRight !== null) return { ok: false, refusal: noRight };
+    if (loserId === survivorId) return { ok: false, refusal: MERGE_SELF_REFUSAL };
+    const loser = await ctx.db.get(loserId);
+    const survivor = await ctx.db.get(survivorId);
+    if (!loser || !survivor) return { ok: false, refusal: 'Water body not found' };
+    const refusal = mergePairRefusal(survivor, loser, viewer._id);
+    if (refusal !== null) return { ok: false, refusal };
+    const survivorRef = bodyRef(survivor);
+    const loserRef = bodyRef(loser);
+    if (!survivorRef || !loserRef) return { ok: false, refusal: 'Water body not found' };
+
+    const load = await mergeLoadOf(ctx, loser, survivor);
+    const moves = Object.fromEntries(
+      MERGE_MOVE_KINDS.map((k) => [k, { ...load.moves[k] }]),
+    ) as Record<MergeMoveKind, MergeCount>;
+    let favoritesDeduped = 0;
+    const baysClashing: string[] = [];
+    if (!load.tooBig) {
+      // Each split as the merge splits it — the read bounded by the load that just fit.
+      for await (const fav of ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))) {
+        const twin = await ctx.db
+          .query('waterBodyFavorites')
+          .withIndex('by_user_water_body_sub_area', (q) =>
+            q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
+          )
+          .first();
+        if (twin) favoritesDeduped++;
+      }
+      moves.favorites.count -= favoritesDeduped;
+      let flagsLeft = 0;
+      for (const status of OPEN_FLAG_STATUSES) {
+        for await (const f of ctx.db
+          .query('contentFlags')
+          .withIndex('by_target_status_reason', (q) =>
+            q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
+          )) {
+          if (await flaggedAlready(ctx, survivorId, f.flaggerId)) flagsLeft++;
+        }
+      }
+      moves.flags.count -= flagsLeft;
+      // A name clash with a live survivor bay — the merge's own rule (`namesMeet`), in its order: a
+      // moved bay that clears joins the names a later one is held to.
+      const taken = (await subAreasForBody(ctx, survivorId))
+        .filter((b) => b.removedAt === undefined)
+        .map(bayNames);
+      for (const bay of await subAreasForBody(ctx, loserId)) {
+        if (bay.removedAt !== undefined) continue;
+        const names = bayNames(bay);
+        if (taken.some((other) => namesMeet(names, other))) baysClashing.push(bay.name);
+        else taken.push(names);
+      }
+    }
+    const lists = mergedModeratorLists(survivor, [loser]);
+    const alerts = await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_water_body_status_kind_expires_at', (q) => q.eq('waterBodyId', loserId))
+      .take(STAYS_BEHIND_CAP);
+    const lots = await ctx.db
+      .query('parkingAreaBodies')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+      .take(STAYS_BEHIND_CAP);
+    return {
+      ok: true,
+      survivor: survivorRef,
+      loser: loserRef,
+      moves,
+      favoritesDeduped,
+      baysClashing,
+      lists: {
+        pins: lists.pins.length,
+        aliases: lists.aliases.length,
+        links: lists.links.length,
+        caps: {
+          pins: MAX_MODERATOR_TOWNS,
+          aliases: MAX_MODERATOR_ALIASES,
+          links: MAX_REFERENCE_LINKS,
+        },
+      },
+      staysBehind: { accessAlerts: alerts.length, parkingLots: lots.length },
+      tooBig: load.tooBig,
+    };
+  },
+});
+
+/** Whether `flaggerId` already has an open or in-review flag on the survivor — the merge's own test. */
+async function flaggedAlready(
+  ctx: QueryCtx,
+  survivorId: Id<'waterBodies'>,
+  flaggerId: Id<'profiles'>,
+): Promise<boolean> {
+  for (const status of OPEN_FLAG_STATUSES) {
+    const hit = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target_status_reason', (q) =>
+        q.eq('targetType', 'waterbody').eq('targetId', survivorId).eq('status', status),
+      )
+      .filter((q) => q.eq(q.field('flaggerId'), flaggerId))
+      .first();
+    if (hit !== null) return true;
+  }
+  return false;
+}
