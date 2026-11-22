@@ -29,6 +29,7 @@ import {
   resolvePhotoUrls,
   staffPhotoRead,
 } from './lib/photoAccess';
+import { ROTATION_RETRY_MS, scheduleRotation } from './lib/photoRotation';
 import { errorClassOf } from './lib/readBudget';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
@@ -163,7 +164,7 @@ async function withdrawHeldPhoto(
   });
   // A withdrawal that takes the photo down moves its bytes, as a takedown does (`rotateBlobs`).
   if (priorStatus === 'visible') {
-    await ctx.scheduler.runAfter(0, internal.photos.rotateBlobs, { photoId: photo._id });
+    await scheduleRotation(ctx, photo);
   }
 }
 
@@ -252,31 +253,82 @@ export const getHazardUrls = query({
  */
 export const ROTATE_MAX_BYTES = 24 * 1024 * 1024;
 
-/** Retries after the first failures (1 min, 10 min, 1 h); parked after `MAX_ATTEMPTS`, then daily. */
-export const ROTATION_RETRY_MS = [60_000, 10 * 60_000, 60 * 60_000] as const;
+export { ROTATION_RETRY_MS } from './lib/photoRotation';
 const ROTATION_PARKED_RETRY_MS = 24 * 60 * 60 * 1000;
 
-/** What one rotation did. */
-export type RotationOutcome = 'rotated' | 'stale' | 'skipped' | 'retrying';
+/** What one rotation run did. */
+export type RotationOutcome = 'rotated' | 'stale' | 'skipped' | 'failed';
 
 /**
- * **`photos.rotateBlobs` — a takedown moves the bytes** (B01-5e, D222). Scheduled by a photo's move from
- * up to down — a hide, a removal, an undo that takes it back down, an uploader's withdrawal — never by a
- * move between two down states (a hide then a removal rotates once). An action, because a mutation
- * can't read stored bytes: it reads the full image and the thumbnail (`ctx.storage.get`), stores each
- * as a new object (`ctx.storage.store`), then swaps the row's ids through {@link swapRotated} — only
- * while the row is **still moderated and still holds the old ids** — which deletes the old blobs in the
- * same transaction. The old address answers 404 from that moment (proven on dev: no edge cache), and a
- * restore serves the new copy, whose address no skater has seen; the restore never rotates back.
+ * **The rotation's watch** — a mutation, so it runs exactly once however the action fared (Convex never
+ * retries an action, and one the runtime kills never reaches its own `catch`). If the row is no longer
+ * down, is purged, or no longer holds the old blob, the rotation landed (or no longer matters) and the
+ * watch ends. Otherwise the action didn't land: one more failure by the attempts rule
+ * (`lib/attempts`), the action scheduled again at once and the watch again at the next delay — 1 min,
+ * 10 min, 1 h, then parked and daily, never dropped. The photo stays hidden from every read meanwhile.
+ * The attempts ride on the watch's arguments (Machinery can't list a parked rotation until it has a
+ * `jobFailures` job of its own — a seam this PR asks for).
+ */
+export const rotationWatch = internalMutation({
+  args: {
+    photoId: v.id('photos'),
+    oldStorageId: v.string(),
+    attempts: v.optional(v.number()),
+    parkedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<'landed' | 'retrying'> => {
+    const photo = await ctx.db.get(args.photoId);
+    if (
+      !photo ||
+      photoVisible(photo) ||
+      photo.purgedAt !== undefined ||
+      photo.storageId !== args.oldStorageId
+    ) {
+      return 'landed';
+    }
+    const now = Date.now();
+    const { next } = failedAttempt(
+      {
+        ...(args.attempts !== undefined ? { attempts: args.attempts } : {}),
+        ...(args.parkedAt !== undefined ? { parkedAt: args.parkedAt } : {}),
+      },
+      'NotRotated',
+      now,
+    );
+    const delay =
+      next.parkedAt !== undefined
+        ? ROTATION_PARKED_RETRY_MS
+        : (ROTATION_RETRY_MS[next.attempts ?? 1] ?? ROTATION_PARKED_RETRY_MS);
+    await ctx.scheduler.runAfter(0, internal.photos.rotateBlobs, { photoId: args.photoId });
+    await ctx.scheduler.runAfter(delay, internal.photos.rotationWatch, {
+      photoId: args.photoId,
+      oldStorageId: args.oldStorageId,
+      ...(next.attempts !== undefined ? { attempts: next.attempts } : {}),
+      ...(next.parkedAt !== undefined ? { parkedAt: next.parkedAt } : {}),
+    });
+    console.warn(
+      `photos.rotationWatch: ${args.photoId} not rotated yet, attempt ${next.attempts ?? 1}${next.parkedAt !== undefined ? ', parked' : ''}; scheduled again`,
+    );
+    return 'retrying';
+  },
+});
+
+/**
+ * **`photos.rotateBlobs` — a takedown moves the bytes** (B01-5e, D222). Started by
+ * `lib/photoRotation.scheduleRotation` on a photo's move from up to down (a hide, a removal, an undo
+ * back down, an uploader's withdrawal) — never a move between two down states, so a hide then a
+ * removal rotates once. An action, because a mutation can't read stored bytes: it reads the full image
+ * and the thumbnail (`ctx.storage.get`), stores each as a new object (`ctx.storage.store`), then swaps
+ * the row's ids through {@link swapRotated} — only while the row is **still moderated and still holds
+ * the old ids** — which deletes the old blobs in the same transaction. The old address answers 404
+ * from that moment (proven on dev: no edge cache), and a restore serves the new copy, whose address no
+ * skater has seen; the restore never rotates back.
  *
  * - **Not audited on its own**: a system effect of the takedown.
  * - **A stale swap** (restored, purged, or rotated by another run meanwhile) writes nothing, and the
  *   copies this run stored are deleted — no orphan, no double delete of the old blobs.
- * - **A failure** (a read, a store, the swap) deletes the copies this run stored and retries by the
- *   attempts rule (`lib/attempts`): 1 min, 10 min, 1 h, then parked and retried daily — never dropped.
- *   The photo stays hidden from every read meanwhile (`photoVisible`). The attempts ride on the
- *   scheduled call; Machinery can't list a parked rotation until it has a `jobFailures` job of its own
- *   (a seam this PR asks for).
+ * - **A failure** (a read, a store, the swap) deletes the copies this run stored and ends; the watch
+ *   ({@link rotationWatch}) sees the row unchanged and runs it again, by the attempts rule.
  * - **No sweep takes a blob mid-rotation**: the photo is moderated, so every deleter refuses it
  *   (`photoHeld`), and a copy not yet swapped in is on no row for any sweep to find. The purge reads the
  *   row's ids when it runs, so after a rotation it deletes the new blobs.
@@ -286,15 +338,8 @@ export type RotationOutcome = 'rotated' | 'stale' | 'skipped' | 'retrying';
  * `getUrl` gives no way to set. Nothing server-side reaches a viewer's cache; the console says so.
  */
 export const rotateBlobs = internalAction({
-  args: {
-    photoId: v.id('photos'),
-    /** The attempts rule's state, carried on the retry (absent on the first). */
-    attempts: v.optional(v.number()),
-    errorClass: v.optional(v.string()),
-    parkedAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<{ outcome: RotationOutcome; errorClass?: string }> => {
-    const { photoId } = args;
+  args: { photoId: v.id('photos') },
+  handler: async (ctx, { photoId }): Promise<{ outcome: RotationOutcome; errorClass?: string }> => {
     const fresh: Id<'_storage'>[] = [];
     try {
       const src = await ctx.runQuery(internal.photos.rotationSource, { photoId });
@@ -333,29 +378,8 @@ export const rotateBlobs = internalAction({
           console.error(`photos.rotateBlobs: could not drop ${photoId}'s copies`, dropErr);
         }
       }
-      const now = Date.now();
-      const { next } = failedAttempt(
-        {
-          ...(args.attempts !== undefined ? { attempts: args.attempts } : {}),
-          ...(args.parkedAt !== undefined ? { parkedAt: args.parkedAt } : {}),
-        },
-        errorClass,
-        now,
-      );
-      const delay =
-        next.parkedAt !== undefined
-          ? ROTATION_PARKED_RETRY_MS
-          : (ROTATION_RETRY_MS[(next.attempts ?? 1) - 1] ?? ROTATION_PARKED_RETRY_MS);
-      await ctx.scheduler.runAfter(delay, internal.photos.rotateBlobs, {
-        photoId,
-        ...(next.attempts !== undefined ? { attempts: next.attempts } : {}),
-        errorClass,
-        ...(next.parkedAt !== undefined ? { parkedAt: next.parkedAt } : {}),
-      });
-      console.warn(
-        `photos.rotateBlobs: ${photoId} failed (${errorClass}), attempt ${next.attempts ?? 1}${next.parkedAt !== undefined ? ', parked' : ''}; retried`,
-      );
-      return { outcome: 'retrying', errorClass };
+      console.warn(`photos.rotateBlobs: ${photoId} failed (${errorClass}); its watch retries`);
+      return { outcome: 'failed', errorClass };
     }
   },
 });

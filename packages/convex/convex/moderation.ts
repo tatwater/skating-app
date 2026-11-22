@@ -59,6 +59,7 @@ import { closeFlag } from './lib/flagResolution';
 import { flagSubject, flagSubjectOf } from './lib/flagSubject';
 import { flagSource, itemToDecide } from './lib/inboxItems';
 import { PHOTO_PURGE_DELAY_MS, photoWithdrawnAt } from './lib/photoAccess';
+import { scheduleRotation } from './lib/photoRotation';
 import { assertInboxVerb } from './lib/inboxRules';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { ownContentRefusal } from './lib/ownContent';
@@ -846,7 +847,7 @@ export async function setContentStatus(
       // once `photos.rotateBlobs` swaps in fresh copies. A move between two down states (a hide, then
       // a removal) rotates once; a restore serves the new copy and never rotates back.
       if (priorStatus === 'visible' && args.status !== 'visible') {
-        await ctx.scheduler.runAfter(0, internal.photos.rotateBlobs, { photoId: targetId as Id<'photos'> });
+        await scheduleRotation(ctx, target as Doc<'photos'>);
       }
     } else {
       await ctx.db.patch(targetId, { moderationStatus: args.status });
