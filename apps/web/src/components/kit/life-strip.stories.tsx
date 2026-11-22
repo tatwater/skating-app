@@ -119,6 +119,17 @@ const all = (root: ParentNode, slot: string) => [
   ...root.querySelectorAll<HTMLElement>(`[data-slot="${slot}"]`),
 ];
 const middle = (r: DOMRect) => r.left + r.width / 2;
+/**
+ * Every strip on the page runs across. The strip decides its layout from a measure of its unseen
+ * copy, and re-decides when its box changes or a late web face lands (a fallback face can be wider),
+ * so what it draws across is read once that decision has settled, never sampled once.
+ */
+const runsAcross = (root: ParentNode) =>
+  waitFor(() => {
+    const strips = all(root, 'life-strip');
+    expect(strips.length).toBeGreaterThan(0);
+    for (const s of strips) expect(s).not.toHaveAttribute('data-narrow');
+  });
 
 /**
  * 8.3: stations evenly spaced; each line runs from one mark's middle to the next one's, in its
@@ -126,6 +137,7 @@ const middle = (r: DOMRect) => r.left + r.width / 2;
  */
 export const HiddenContent: Story = {
   play: async ({ canvasElement }) => {
+    await runsAcross(canvasElement);
     const list = within(canvasElement).getByRole('list', { name: 'Its life' });
     await expect(within(list).getAllByRole('listitem')).toHaveLength(5);
     const lasted = all(canvasElement, 'life-lasted');
@@ -226,6 +238,7 @@ export const AccessAlert: Story = {
 export const ThreeStations: Story = {
   args: { stations: HIDDEN.slice(2), showKey: false },
   play: async ({ canvasElement }) => {
+    await runsAcross(canvasElement);
     await expect(canvasElement.querySelector('[data-slot="life-key"]')).toBeNull();
     await expect(all(canvasElement, 'life-station')).toHaveLength(3);
   },
@@ -240,6 +253,7 @@ export const FourUp: Story = {
   ),
   parameters: { fourUp: true },
   play: async ({ canvasElement }) => {
+    await runsAcross(canvasElement);
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
@@ -304,9 +318,9 @@ export const NarrowTwo: Story = {
   args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
   render: () => <Phone n={2} />,
   play: async ({ canvasElement }) => {
+    await runsAcross(canvasElement);
     await fitsThePhone(canvasElement, 2);
     const strip = must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
-    await expect(strip).not.toHaveAttribute('data-narrow');
     await expect(strip.querySelectorAll('[data-slot="life-station"]')).toHaveLength(2);
   },
 };
@@ -333,6 +347,55 @@ export const NarrowTwenty: Story = {
     await waitFor(() => expect(strip).toHaveAttribute('data-narrow'));
     await fitsThePhone(canvasElement, 20);
   },
+};
+
+/**
+ * Mounted where it has no width — a pane not laid out yet, a sheet's content before it opens — or
+ * hidden outright, then shown: the strip stacks while it can't fit, and runs across the moment it
+ * can. Never stuck: the decision follows its box, measured on the unseen copy.
+ */
+function ShownLater({ how }: { how: 'zero' | 'hidden' }) {
+  const [shown, setShown] = useState(false);
+  const before = how === 'zero' ? 'w-0 overflow-hidden' : 'hidden';
+  return (
+    <div className="flex flex-col gap-heading">
+      <button type="button" onClick={() => setShown(true)}>
+        Show
+      </button>
+      <div data-box="" className={shown ? 'w-[47rem]' : before}>
+        <LifeStrip stations={ALERT} lines={ALERT_LINES} aria-label="The alert's life" />
+      </div>
+    </div>
+  );
+}
+
+const runsAcrossOnceShown: Story['play'] = async ({ canvasElement }) => {
+  const strip = () => must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+  await userEvent.click(within(canvasElement).getByRole('button', { name: 'Show' }));
+  await waitFor(() => {
+    expect(strip()).not.toHaveAttribute('data-narrow');
+    expect(strip().querySelectorAll('[data-slot="life-station"]')).toHaveLength(5);
+  });
+};
+
+export const FromZeroWidth: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <ShownLater how="zero" />,
+  play: async (ctx) => {
+    // At zero width nothing fits: it stacks.
+    await waitFor(() =>
+      expect(
+        must(ctx.canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]')),
+      ).toHaveAttribute('data-narrow'),
+    );
+    await runsAcrossOnceShown(ctx);
+  },
+};
+
+export const FromHidden: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <ShownLater how="hidden" />,
+  play: runsAcrossOnceShown,
 };
 
 function Resizable() {

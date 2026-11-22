@@ -364,13 +364,17 @@ export const ManyFlaggers: Story = {
 export const Board26: Story = {
   args: { item: ALERT_ITEM },
   play: async ({ canvasElement }) => {
-    // At the boards' width the alert's life runs across, as drawn (not the kit's stacked form).
-    const life = must(
-      [...canvasElement.querySelectorAll<HTMLElement>('[data-slot="life-strip"]')].find(
-        (el) => el.closest('[data-slot="life-strip-measure"]') === null,
-      ),
+    // At the boards' width the alert's life runs across, as drawn (not the kit's stacked form) —
+    // once the strip's measure settles (a late face re-measures), never sampled once.
+    await waitFor(() =>
+      expect(
+        must(
+          [...canvasElement.querySelectorAll<HTMLElement>('[data-slot="life-strip"]')].find(
+            (el) => el.closest('[data-slot="life-strip-measure"]') === null,
+          ),
+        ),
+      ).not.toHaveAttribute('data-narrow'),
     );
-    await expect(life).not.toHaveAttribute('data-narrow');
     const head = slot(canvasElement, 'flag-head');
     await expect(head).toHaveTextContent('Flag on an access alert');
     await expect(slot(head, 'flag-head-sub')).toHaveTextContent('Other · 6 hours ago');
@@ -648,7 +652,7 @@ export const Board26Light: Story = {
   args: { item: ALERT_ITEM },
   globals: { surface: 'admin', mode: 'light' },
   play: async ({ canvasElement }) => {
-    await expect(slots(canvasElement, 'life-station')).toHaveLength(5);
+    await waitFor(() => expect(slots(canvasElement, 'life-station')).toHaveLength(5));
   },
 };
 
@@ -694,8 +698,9 @@ export const RetractedAlert: Story = {
   play: async ({ canvasElement }) => {
     await expect(slot(canvasElement, 'subject-retracted')).toHaveTextContent('Retracted on 14 Oct');
     await expect(barButtons(canvasElement)).toEqual(['Dismiss']);
-    const stations = slots(canvasElement, 'life-station');
-    await expect(stations.at(-1)).toHaveTextContent('Retracted');
+    await waitFor(() =>
+      expect(slots(canvasElement, 'life-station').at(-1)).toHaveTextContent('Retracted'),
+    );
   },
 };
 

@@ -95,8 +95,10 @@ export const AtRest: Story = {
     const lever = slot(canvasElement, 'record-lever');
     await expect(lever).toHaveTextContent('Overturn');
     await expect(lever).toHaveAttribute('data-action', 'overturn');
-    // Its life: posted, hidden, deleted, today, and what an overturn would do (dashed).
-    await expect(slots(canvasElement, 'life-station')).toHaveLength(5);
+    // Its life: posted, hidden, deleted, today, and what an overturn would do (dashed) — read once
+    // the strip's measure settles: it draws across only after deciding the stations fit, and a late
+    // face (a slow runner's) re-decides it, so a one-shot read can land on the stacked form.
+    await waitFor(() => expect(slots(canvasElement, 'life-station')).toHaveLength(5));
   },
 };
 
