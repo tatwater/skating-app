@@ -909,6 +909,19 @@ Made on the design's engineering forks; the founder may overturn any of them.
 17. **A request's nearest known body moves to B01-5d** (2026-11-22): `candidate.nearestKnown` stays
     `null`. A bounded geographic read doesn't fit the item's budget; the merge PR's preview read is
     where a body's neighbors are read.
+18. **B01-5d: a drifted row is left and counted** (2026-11-22, fork 1 (B)). The unmerge's body-level
+    refusals run first; a row that has moved again since the merge stays where it is, counted on the
+    receipt and named in History, as ruling 8 does for a flag's undo.
+19. **B01-5d moves the drawing's skates** (2026-11-22, fork 2 (B)). `gpsActivities` move with a merge,
+    recorded and read back by the unmerge. Access alerts and linked lots go to the register, each
+    with its reader census.
+20. **B01-5d's merge stays atomic** (2026-11-22, fork 3 (A)). The preview and the write refuse past
+    one transaction's budget with one sentence, and so does a question past 1,000 asks.
+21. **The pref narrowing is B01-5d's last commit** (2026-11-22, fork 4 (A)), after #172 has merged,
+    dev is deployed, and the backfill has left zero rows lacking the key. This sharpens ruling 15.
+22. **D291: an inverse may restore from a recorded before-image** (2026-11-22, fork 5 (A)), through
+    the forward paths' side effects. The unmerge takes the survivor's merged lists apart by
+    difference.
 
 ### The founder's calls of 2026-11-21
 
@@ -9711,9 +9724,9 @@ the receipt and in History (fork 1).
 
 | Builder | Owns | Must not touch |
 |---|---|---|
-| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
-| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts` | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
-| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
+| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge; **added by the rulings:** `inboxItems.ts` (`reviewAuditOf` and the `drawn:merged` backfill phase); the gpsActivities move in `mergeBodyInto` (fork 2); the over-budget refusal and the 1,000-ask cap as that refusal (fork 3); **`waterBodyRequests.nearestKnown`** stamped by the catalog resolve's write (`corpusRequests.ts`' resolve) through `listedBodiesNearCoord` with a bounded `marginMeters` (~2 km), served as `candidate.nearestKnown`; **`canCode`** served on every item (`lib/inboxRules.ts`, `lib/inboxViews.ts`: `awaitsDrawing` on a place ask's *Approve*), then made required | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
+| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts`; **added by the rulings:** `packages/convex/vitest.config.ts`'s transform enforces Convex's **8,192-item array cap** (beside the paginate and transaction-limit rules), the heavy-skate track fixtures (25,000–50,000 points) rebuilt legally, and a `CLAUDE.md` line under *Things that bite*; D291's header already landed at T0 | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
+| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one; **added by the rulings:** `handlers/Request/` (board 2.3's *Nearest* row from `candidate.nearestKnown`, and nothing else there) and `inbox/map/` (the map's distance rule to the nearest known body, and nothing else there); Place's *Draw in Body →* read from `canCode.approve === 'awaitsDrawing'` instead of the served drawing facts | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
 
 **The Shape tab is the Body console's, with its own conventions, not the Inbox's.**
 
@@ -9728,35 +9741,48 @@ W6 starts at T0 against the snippets' types with fixtures, and wires to S4a's re
 
 ##### The seams (an executor commit at T0)
 
-1. **`lib/enums.ts`**: the review status widened, no backfill —
-   ```ts
-   export const REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const;
-   ```
-   The hand-typed copies follow in the same commit: `waterBodies.ts:2973` (`DrawnReviewStatus`),
-   `packages/core/src/standing.ts:97`, `lib/listing.ts:27`, `apps/web/…/ModeratorCard.tsx:197`, and
-   the web and mobile `waterMap.ts` (`:289`, `:301`). Each reads `merged` as a merged body already
-   does: `standingOf` and `isListed` rank `dedupStatus: 'merged'` first.
-2. **`lib/enums.ts`**: `MODERATION_ACTIONS` gains `'unmerge_waterbody'`. In the same commit:
-   - `UNDO_POLICY` gains `unmerge_waterbody: { undo: { kind: 'none', why: 'To put them back together,
-     merge them again.' }, takesAway: never, capability: 'corpus.duplicates' }`;
-   - the web's `VERB` gains `unmerge_waterbody: 'Unmerged'`;
-   - `ACTION_WORDS` gains `unmerge_waterbody: 'unmerged a body'`;
-   - `inboxItems.ts:201` lists it among a drawn body's review rows.
-3. **`waterBodies.ts`**: the change set's additions (the snippet below), as types only. S4a fills
-   them; S4b reads them.
-4. **`schema.ts`**: `moderatorDecision` required —
-   ```ts
-   const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
-   ```
-   - The 160 fixture files gain `moderatorDecision: <same as greatReportNearby>`: one mechanical
-     commit, no other change in it.
-   - `SettingsPage.tsx:290`'s cast and the stale backfill comment at `apps/mobile/app/(tabs)/you.tsx:493` go.
-   - **Its dev precondition**, before the deploy that carries it:
-     - `profiles:backfillNotificationPrefs` run to `isDone`;
-     - then the new internal query `profiles:prefsMissingKey`, paged with one `.paginate()` per
-       call and looped by the caller, reading **0** rows lacking the key.
-   - A deploy against a non-zero count fails schema validation, so the order is the executor's
-     after-merge step 1.
+**What landed at T0** (on `phase-b01-inbox`), each placeholder marked `PLACEHOLDER`:
+
+1. **The review status widened** (`lib/enums.ts`), with no backfill: `REVIEW_STATUSES` gains
+   `merged`.
+   - The hand-typed copies that exist follow: core's `standing.ts` (whose `standingOf` reads a
+     merged review status as unlisted, as it reads `dedupStatus: 'merged'`) and the web's
+     `ModeratorCard.tsx`.
+   - `lib/listing.ts` derives its type from the array.
+   - `DrawnReviewStatus` stays the three statuses a review moves between.
+   - There is no web or mobile `waterMap.ts` copy, despite what the pack first said.
+2. **`unmerge_waterbody`** joins `MODERATION_ACTIONS`, with:
+   - the web's two label maps (`VERB` "Unmerged a body", `ACTION_WORDS` "Unmerged body");
+   - a **placeholder** `UNDO_POLICY` rule (`none`, "To put them back together, merge them
+     again."), which S4b replaces, with `merge_waterbody` becoming
+     `inverse('unmerge_waterbody')`;
+   - `undoPolicy.ts`'s header reworded for D291.
+
+   Listing the unmerge among a drawn body's review rows (`inboxItems.ts`' `reviewAuditOf`) changes
+   what the backfill decides, so it is **S4a's**, with the `drawn:merged` phase, not a T0 seam.
+3. **The change set's `version: 2` fields** (`waterBodies.ts`' `MergeChangeSet`), as types only:
+   `version`, `sideActions`, `dedupAfter`, `survivorSubAreasBefore`, `loserReview`, and
+   `movedActivities` (fork 2's skates). S4a fills them; S4b reads them.
+4. **`waterBodyRequests.nearestKnown`** (`schema.ts`), optional: `{ waterBodyId, name, meters }`.
+5. **The refusal code's types** (`inbox.ts`):
+   - `InboxRefusalCode` (`'awaitsDrawing'`);
+   - `InboxCanCode`;
+   - a **placeholder** optional `canCode` on every item, which S4a serves and then makes required.
+
+**Not at T0, and the slice's last commit:** the `moderatorDecision` pref narrowed to required
+(fork 4). It lands only after:
+- #172 has merged;
+- dev is deployed;
+- `profiles:backfillNotificationPrefs` has run to done;
+- the new `profiles:prefsMissingKey`, paged with one `.paginate()` per call and looped by the
+  caller, reads **0** rows lacking the key.
+
+The commit itself:
+- `notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS)`;
+- the 160 fixture files gain `moderatorDecision`, in one mechanical commit;
+- `SettingsPage.tsx:290`'s cast and `apps/mobile/app/(tabs)/you.tsx:493`'s stale comment go.
+
+A deploy against a non-zero count fails schema validation.
 
 ##### Canonical snippets
 
@@ -9823,6 +9849,23 @@ export interface MergeChangeSet {
 }
 ```
 
+**Added by the rulings** (types at T0 where marked):
+
+```ts
+// schema.ts — T0: the resolve's nearest listed body (S4a stamps it; served as candidate.nearestKnown)
+nearestKnown: v.optional(
+  v.object({ waterBodyId: v.id('waterBodies'), name: v.string(), meters: v.number() }),
+),
+
+// inbox.ts — T0: refusal codes beside `can` (S4a serves them, then makes `canCode` required)
+export type InboxRefusalCode = 'awaitsDrawing';
+export type InboxCanCode = Partial<Record<InboxVerb, InboxRefusalCode>>;
+// ItemBase: canCode?: InboxCanCode;   // W6: Draw in Body → ⇔ canCode.approve === 'awaitsDrawing'
+
+// waterBodies.ts — T0: MergeChangeSet's movedActivities (fork 2: the founding skates move)
+movedActivities?: { id: Id<'gpsActivities'>; waterBodyId: Id<'waterBodies'> | null; waterBodyIds: Id<'waterBodies'>[] }[];
+```
+
 ##### Definitions of done
 
 **S4a**
@@ -9844,6 +9887,15 @@ export interface MergeChangeSet {
   - `mergeDrawn` on a heavy survivor.
 - [ ] The `drawn:merged` backfill phase and its drift repair.
 - [ ] The seed's merge pair (below); a second `--apply` files nothing new.
+
+- [ ] **Ruled in:** the gpsActivities move recorded and its round trip; the over-budget refusal
+  (one sentence, preview and write alike) and a question past 1,000 asks refused instead of left
+  behind; `reviewAuditOf` reading the unmerge with the `drawn:merged` phase.
+- [ ] `nearestKnown` stamped by the resolve (a bounded `listedBodiesNearCoord` read, tested at the
+  bound: a body just past the margin isn't named), served as `candidate.nearestKnown`; an old row
+  reads `null` until *Look up again*.
+- [ ] `canCode.approve === 'awaitsDrawing'` exactly where a place ask's *Approve* waits on a drawing,
+  and nowhere else (rule-versus-write cells); `canCode` required once served.
 
 **S4b**
 
@@ -9872,6 +9924,10 @@ export interface MergeChangeSet {
   - **the property:** the state equals the state before, modulo the same exclusions, or the edit's
     row is reported *left*.
 
+- [ ] **Ruled in:** the harness enforces the 8,192-item array cap (a test that a 8,193-item array
+  is refused, beside `harnessLimits.test.ts`'s), the heavy-skate track fixtures rebuilt within it,
+  and the `CLAUDE.md` line.
+
 **W6**
 
 - [ ] The Drawn bar's *Merge into ‹body›*:
@@ -9891,6 +9947,10 @@ export interface MergeChangeSet {
 - [ ] Stories in both modes at 788 and 360. Layout reads wait for the layout to settle, run 5×
   with half the runs starved.
 - [ ] No D#, § or phase token on screen, and nothing readable as a claim about the ice (D3).
+
+- [ ] **Ruled in:** 2.3's *Nearest* row and the map's distance rule from `candidate.nearestKnown`
+  (none drawn for `null`); Place's *Draw in Body →* from `canCode` alone, with a test that it
+  follows the code and not the served drawing facts.
 
 ##### The dev proof
 
@@ -9968,6 +10028,43 @@ one proved, and gives the drawing and Lake Morey:
 
    **Recommend (A).** It never refuses for an unrelated edit. An alias added later that matches a
    loser alias goes back to the loser, which is the right home for it.
+
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings. The founder is told of them and may overturn any (§7, rulings 18–22).
+
+1. **A drifted row: (B).**
+   - The body-level refusals run in the first transaction.
+   - After that, each row that has moved again since the merge is left where it is: counted on the
+     receipt and named in History, as ruling 8 does for a flag's undo.
+2. **What the merge doesn't move: (B).**
+   - The `gpsActivities` move in this PR, recorded in the change set (`movedActivities`) and read
+     back by the unmerge.
+   - Access alerts and linked lots go to the register as a row of their own, with the reader census
+     each needs.
+3. **A merge too heavy for one transaction: (A).**
+   - The merge stays atomic.
+   - The preview and the write refuse past the budget with one sentence.
+   - The 1,000-ask cap's overflow becomes that refusal, instead of asks left behind silently.
+4. **The pref narrowing: (A), in this PR, as its own mechanical commit and the slice's last.** It is
+   made only after:
+   - #172 has merged;
+   - dev is deployed;
+   - `profiles:backfillNotificationPrefs` has run to done, with a zero count of rows lacking the
+     key.
+
+   Not at T0.
+5. **The survivor's lists, and the registry's rule: (A), and D291 is minted.** An inverse may
+   restore from a before-image the forward write recorded, through the forward paths' side effects.
+   `undoPolicy.ts`'s header says so as of T0.
+
+**Added to this pack from what #172 left owed:**
+- `waterBodyRequests.nearestKnown`:
+  - S4a stamps it, bounded by `marginMeters`;
+  - W6 draws it as 2.3's *Nearest* row and the map's distance rule.
+- The harness enforces Convex's 8,192-item array cap, and the heavy-skate track fixtures are rebuilt
+  within it (S4b).
+- A refusal code on `can` (`canCode`): S4a serves it, and W6's *Draw in Body →* reads it.
 
 ##### Size, honestly
 
