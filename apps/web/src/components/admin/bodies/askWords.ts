@@ -68,7 +68,14 @@ export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
         sub: null,
       };
     case 'flag':
-      return { id: ask.id, kicker: 'Flag · Inbox', title: FLAG_WORDS[ask.reason], sub: null };
+      return {
+        id: ask.id,
+        // The flag's own item in the Inbox (B01-5e: the Inbox decides every flag, a photo's too).
+        item: `flag:${ask.id}`,
+        kicker: 'Flag · Inbox',
+        title: FLAG_WORDS[ask.reason],
+        sub: null,
+      };
   }
 }
 

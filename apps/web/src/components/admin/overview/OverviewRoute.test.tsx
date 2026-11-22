@@ -221,8 +221,8 @@ describe('the Overview at /admin', () => {
       (screen.getByText(label).closest('[data-slot="count-row"]') as HTMLElement).querySelector(
         'a',
       );
-    expect(row('Safety')).toHaveAttribute('href', '/admin/flags');
-    // Requests are decided in the Inbox now (B01-5c).
+    // Flags (B01-5e) and requests (B01-5c) are decided in the Inbox now.
+    expect(row('Safety')).toHaveAttribute('href', '/admin/inbox?lane=safety');
     expect(row('Requests')).toHaveAttribute('href', '/admin/inbox?lane=requests');
     expect(row('Duplicates')).toHaveAttribute('href', '/admin/water/review');
     // People has landed: its lists open as its lanes.
@@ -235,7 +235,11 @@ describe('the Overview at /admin', () => {
     await userEvent.click(screen.getByText('Body'));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/body/w1' });
     await userEvent.click(screen.getByText('Comment'));
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/flags' });
+    // A decision on a comment: the Inbox's Decided lane (B01-5e).
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/admin/inbox',
+      search: { lane: 'decided' },
+    });
   });
 
   it('opens Metrics from the URL, every figure unread', () => {

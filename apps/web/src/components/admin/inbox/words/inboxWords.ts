@@ -308,8 +308,6 @@ export const KIND_HEAD: Readonly<Record<string, string>> = {
  * The placeholder's line: a kind the Inbox can't decide yet, and the page that still decides it
  * (coined). The link words wear the link chip's arrow.
  */
-export const ELSEWHERE_PHOTO = 'A flag on a photo is decided on the Flags page for now.';
-export const ELSEWHERE_FLAGS = 'Flags';
 export const FACT_LANE = 'Lane';
 export const FACT_FILED = 'Filed';
 export const FACT_MEMBERS = 'Filed by';

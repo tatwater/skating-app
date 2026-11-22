@@ -64,8 +64,13 @@ function AdminDashboard() {
       </div>
 
       <div className="flex flex-wrap gap-2 text-sm">
-        <Link to="/admin/flags" className="text-primary hover:underline">
-          Go to flag queue →
+        {/* Flags are decided in the Inbox (B01-5e); the old flag queue redirects there. */}
+        <Link
+          to="/admin/inbox"
+          search={{ lane: 'safety' }}
+          className="text-primary hover:underline"
+        >
+          Go to the flags in the Inbox →
         </Link>
         {/* Drawn bodies are decided in the Inbox, as the Overview's lane opens them; the water
             list keeps the duplicates. */}

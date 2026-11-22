@@ -13,9 +13,10 @@ describe('where an item without its handler is decided', () => {
     }
   });
 
-  it('points a photo flag at the old Flags page', () => {
+  it('says nothing for a photo flag: its handler has landed (the old Flags page redirects)', () => {
     expect(handlerKeyOf(PHOTO_ITEM)).toBe('flag:photo');
-    expect(targets(elsewhereFor('flag:photo', PHOTO_ITEM, true))).toEqual(['/admin/flags']);
+    expect(HANDLERS.has('flag:photo')).toBe(true);
+    expect(elsewhereFor('flag:photo', PHOTO_ITEM, true)).toBeNull();
   });
 
   it('says nothing for a request: its handler has landed', () => {

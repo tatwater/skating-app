@@ -57,7 +57,8 @@ export function personHref(to: PersonTarget): string {
     case 'inboxFlag':
       return `/admin/inbox?item=${encodeURIComponent(`flag:${to.flagId}`)}`;
     case 'flags':
-      return '/admin/flags';
+      // Flags are decided in the Inbox (B01-5e): its Safety lane, where the old Flags page now goes.
+      return '/admin/inbox?lane=safety';
     case 'inboxTicket':
       return `/admin/inbox?item=${encodeURIComponent(`ticket:${to.ticketId}`)}`;
     case 'people':

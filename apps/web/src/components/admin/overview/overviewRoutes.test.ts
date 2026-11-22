@@ -31,8 +31,17 @@ const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]>
   ? true
   : false = true;
 
-/** The lanes the Inbox decides now (B01-5c): their old pages retire with it. */
-const INBOX_DECIDES = new Set(['requests', 'placesAsked', 'drawnBodies', 'support']);
+/** The audit targets the Inbox opens: an ask, a ticket, a flag's item, a decision on content. */
+const INBOX_TARGETS = new Set([
+  'waterBodyRequest',
+  'supportTicket',
+  'contentFlag',
+  'report',
+  'post',
+  'comment',
+  'photo',
+  'hazard',
+]);
 
 const PEOPLE_LISTS = ['staff', 'new', 'suspended', 'banned', 'leaving'] as const;
 
@@ -52,8 +61,8 @@ describe('Home’s links, until the new modes land', () => {
       const path = consolePathFor(target) as string;
       expect(path).not.toBeNull();
       if (target.kind === 'body') expect(modeAt(path)?.id).toBe('bodies');
-      else if (target.kind === 'inbox' && INBOX_DECIDES.has(target.lane ?? ''))
-        expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
+      // Every Inbox lane is the Inbox's now (B01-5e and B01-5f retired the last old pages).
+      else if (target.kind === 'inbox') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -81,7 +90,14 @@ describe('Home’s links, until the new modes land', () => {
   });
 
   it('sends the lanes to the pages that work them', () => {
-    expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/flags');
+    expect(consolePathFor({ kind: 'inbox' })).toBe('/admin/inbox');
+    expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/inbox?lane=safety');
+    expect(consolePathFor({ kind: 'inbox', lane: 'contentFlags' })).toBe(
+      '/admin/inbox?lane=contentFlags',
+    );
+    expect(consolePathFor({ kind: 'inbox', lane: 'accessReports' })).toBe(
+      '/admin/inbox?lane=accessReports',
+    );
     expect(consolePathFor({ kind: 'inbox', lane: 'support' })).toBe('/admin/inbox?lane=support');
     expect(consolePathFor({ kind: 'inbox', lane: 'placesAsked' })).toBe(
       '/admin/inbox?lane=placesAsked',
@@ -115,8 +131,7 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
-      else if (type === 'waterBodyRequest' || type === 'supportTicket')
-        expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
+      else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -126,6 +141,14 @@ describe('the audit feed’s rows', () => {
       '/admin/body/k1%2F7',
     );
     expect(feedTargetPath({ type: 'user', id: 'k1/7', label: 'Rob' })).toBe('/admin/people/k1%2F7');
+  });
+
+  it('opens a flag on its own Inbox item, and a decision on content in the Decided lane', () => {
+    expect(feedTargetPath({ type: 'contentFlag', id: 'jd7flag1', label: 'x' })).toBe(
+      '/admin/inbox?item=flag%3Ajd7flag1',
+    );
+    for (const type of ['report', 'post', 'comment', 'photo', 'hazard'] as const)
+      expect(feedTargetPath({ type, id: 'jd7c1', label: 'x' })).toBe('/admin/inbox?lane=decided');
   });
 
   it('opens an ask on its own Inbox item', () => {

@@ -17,28 +17,18 @@ function bodyConsolePath(id: string): string {
  * (the same rule as the palette, which opens a body in its Body console and a person in People).
  * Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
  *
- * Every Inbox lane and Corpus task lands on the old page that does that work; the old pages take no
- * filter, so the lane is the page, not a preset on it. People has landed, so its lists open as its
+ * Every Inbox lane lands on its lane in the Inbox; every Corpus task on the old page that does that
+ * work (the old pages take no filter, so the task is the page, not a preset on it). People has landed, so its lists open as its
  * lanes and a person on their own page. `null` is a target with no page yet — the caller draws it
  * as text, never a link to a page that 404s.
  */
 export function consolePathFor(to: OverviewTarget): string | null {
   switch (to.kind) {
     case 'inbox':
-      switch (to.lane) {
-        // Requests, places asked and drawn bodies are decided in the Inbox (B01-5c): their old pages
-        // retire with it (the requests page redirects, the water list loses its pending card).
-        case 'requests':
-        case 'placesAsked':
-        case 'drawnBodies':
-          return inboxPath({ lane: to.lane });
-        // Support tickets are answered in the Inbox (B01-5f): the old page redirects there.
-        case 'support':
-          return inboxPath({ lane: 'support' });
-        default:
-          // Safety, access reports and content flags are all flags.
-          return '/admin/flags';
-      }
+      // Every lane is decided in the Inbox: requests, places asked and drawn bodies since B01-5c,
+      // support since B01-5f, the flag lanes (safety, access reports, content flags) since B01-5e —
+      // each old page redirects there.
+      return inboxPath(to.lane === undefined ? {} : { lane: to.lane });
     case 'corpus':
       switch (to.task) {
         case 'placeNames':
@@ -67,8 +57,9 @@ export function consolePathFor(to: OverviewTarget): string | null {
 }
 
 /**
- * A feed row's target: the thing's own page where one opens it by id (a body, a person), else
- * the old page where that kind of thing is worked — a hidden report on the flag queue, a landmark
+ * A feed row's target: the thing's own page where one opens it by id (a body, a person, a flag's
+ * item), else the page where that kind of thing is worked — a hidden report in the Inbox's Decided
+ * lane, a landmark
  * or a put-in from the water bodies, whose editor holds them. Every type the audit trail writes has
  * one; `null` only for a type it doesn't write.
  */
@@ -78,13 +69,18 @@ function auditPath(type: string, id: string): string | null {
       return bodyConsolePath(id);
     case 'user':
       return `/admin/people/${encodeURIComponent(id)}`;
+    case 'contentFlag':
+      // The flag's own item in the Inbox (`inbox.item` resolves a `flag:` ref).
+      return inboxPath({ item: `flag:${id}` });
     case 'report':
     case 'post':
     case 'comment':
     case 'photo':
-    case 'contentFlag':
     case 'hazard':
-      return '/admin/flags';
+      // A decision on content: the Inbox's Decided lane holds it. The Inbox can't open an item by
+      // the content's own id (no `report:` ref), and Reports, which would show the content, isn't
+      // built.
+      return inboxPath({ lane: 'decided' });
     case 'bodyFeature':
       return '/admin/features';
     case 'hazardRecurrence':

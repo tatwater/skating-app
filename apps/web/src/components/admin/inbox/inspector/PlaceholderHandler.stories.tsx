@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useRef } from 'react';
-import { expect, within } from 'storybook/test';
+import { expect, waitFor, within } from 'storybook/test';
 
-import { must } from '@/components/kit/storyKit';
 import { KeysProvider } from '@/lib/keys';
 
 import { storyLink } from '../inboxBoard';
@@ -11,7 +10,9 @@ import type { InboxItemView } from '../list/inboxTypes';
 import { InboxInspector } from './InboxInspector';
 
 /**
- * The placeholder for each kind the Inbox can't decide yet — a photo flag: its
+ * The placeholder for a kind this build has no handler for (a newer server's, here a photo flag
+ * with the registry emptied): its facts, read only — and, while an old page still decided a kind,
+ * one line saying where, with a link there. Every old page has retired, so it says nothing more.
  * facts, read only, and one line saying where that kind is decided for now, with a link there (same
  * tab; the old pages take no params, so a plain link).
  */
@@ -49,27 +50,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The line, and each link's label and where it goes. */
-async function expectElsewhere(root: HTMLElement, line: RegExp, targets: string[]) {
-  const block = must(root.querySelector<HTMLElement>('[data-slot="inbox-placeholder-elsewhere"]'));
-  await expect(block).toHaveTextContent(line);
-  const links = [...block.querySelectorAll<HTMLElement>('[data-slot="inbox-placeholder-link"]')];
-  await expect(links.map((l) => l.dataset.to)).toEqual(targets);
-  for (const [i, link] of links.entries()) {
-    // A link that looks like one: the link chip, its arrow, the console's own path, same tab.
-    await expect(link.tagName).toBe('A');
-    await expect(link).toHaveAttribute('href', `#${targets[i]}`);
-    await expect(link).not.toHaveAttribute('target');
-    await expect(link.textContent).toMatch(/→$/);
-  }
-  // The facts still read under it; no action bar.
-  await expect(root.querySelector('[data-slot="inbox-placeholder-facts"]')).not.toBeNull();
-  await expect(within(root).queryByRole('toolbar')).toBeNull();
-}
-
-export const PhotoFlag: Story = {
-  play: ({ canvasElement }) =>
-    expectElsewhere(canvasElement, /decided on the Flags page for now/, ['/admin/flags']),
+export const NoHandler: Story = {
+  play: async ({ canvasElement }) => {
+    await waitFor(() => {
+      expect(canvasElement.querySelector('[data-slot="inbox-placeholder-facts"]')).not.toBeNull();
+      expect(canvasElement.querySelector('[data-slot="inbox-placeholder-elsewhere"]')).toBeNull();
+      expect(within(canvasElement).queryByRole('toolbar')).toBeNull();
+    });
+  },
 };
 
-export const PhotoFlagLight: Story = { globals: { surface: 'admin', mode: 'light' } };
+export const NoHandlerLight: Story = { globals: { surface: 'admin', mode: 'light' } };
