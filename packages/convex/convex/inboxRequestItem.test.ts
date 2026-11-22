@@ -16,7 +16,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import type { InboxItemView } from './inbox';
+import { type InboxItemView, MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inbox';
 import { fileMember, flagSource, requestSource } from './lib/inboxItems';
 import {
   DISMISSED_BY_RULING_READ,
@@ -1145,5 +1145,192 @@ describe('every member list says when it is cut, beside its total', () => {
     >;
     expect(row.askers).toBe(3);
     expect(row.others).toHaveLength(2);
+  });
+});
+
+describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
+  let n = 0;
+  /** A skate of `by`'s with a `points`-long track, drawn into a new body. */
+  const drawFrom = async (_w: W, by: { as: As }, points = 20) => {
+    const i = n++;
+    const T0 = NOW - (6 + i) * 3_600_000;
+    const activityId = await by.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: `map-${i}`,
+      path: {
+        type: 'LineString',
+        coordinates: Array.from({ length: points }, (_, k) => [50 + i + k * 1e-4, 40.5]),
+      },
+      startTime: T0,
+      endTime: T0 + 45 * 60_000,
+    });
+    const waterBodyId = await by.as.mutation(api.waterBodies.create, {
+      name: 'Hidden Pond',
+      type: 'lakePond',
+      activityId,
+      confirmedNew: true,
+    });
+    return { activityId, waterBodyId };
+  };
+  const mapOf = async (as: As, ref: string) => (await as.query(api.inbox.itemMap, { ref })).map;
+
+  test('the map’s bounds are whole whichever module loads first (this file loads inbox.ts first)', async () => {
+    const { MAP_BOUNDS } = await import('./lib/inboxViews');
+    expect(MAP_BOUNDS).toMatchObject({
+      outlineBytes: MAP_OUTLINE_BYTES,
+      ringPoints: MAP_RING_POINTS,
+    });
+    expect(MAP_RING_POINTS).toBe(512);
+  });
+
+  test('a drawing’s own skate: its track, whole', async () => {
+    const w = await world();
+    const { activityId, waterBodyId } = await drawFrom(w, w.asker);
+    const map = await mapOf(w.mod.as, `body:${waterBodyId}`);
+    expect(map?.tracks).toHaveLength(1);
+    expect(map?.tracks[0]).toMatchObject({ id: activityId, simplified: false });
+    expect(map?.tracks[0]?.path).toHaveLength(20);
+    expect(map?.tracks[0]?.path[0]).toEqual([expect.any(Number), 40.5]);
+    expect(map?.capped).toBe(false);
+    // A small drawing's outline is sent whole, not thinned (the bounds read as numbers).
+    expect(map?.body?.simplified).toBe(false);
+  });
+
+  test('a drawing whose skate has no track, and one whose skate isn’t the drawer’s: no track', async () => {
+    const w = await world();
+    const { activityId, waterBodyId } = await drawFrom(w, w.asker);
+    await w.t.run((ctx) => ctx.db.patch(activityId, { path: undefined }));
+    expect((await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks).toEqual([]);
+
+    const second = await drawFrom(w, w.asker);
+    const body = await w.t.run((ctx) => ctx.db.get(second.waterBodyId));
+    const other = await person(w.t, 'other');
+    await w.t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'native',
+        providerActivityId: 'theirs',
+        sportType: 'IceSkate',
+        startTime: (body?.createdAt ?? NOW) - 1,
+        waterBodyId: second.waterBodyId,
+        path: {
+          type: 'LineString',
+          coordinates: [
+            [1, 1],
+            [2, 2],
+          ],
+        },
+        promptState: 'pending',
+        detectedAt: NOW,
+      } as never),
+    );
+    expect((await mapOf(w.mod.as, `body:${second.waterBodyId}`))?.tracks).toEqual([]);
+  });
+
+  test('an oversized track: thinned to the embed’s points, first and last kept, said', async () => {
+    const w = await world();
+    const { activityId, waterBodyId } = await drawFrom(w, w.asker);
+    const coordinates = Array.from({ length: 30_000 }, (_, k) => [50 + k * 1e-6, 40 + k * 1e-6]);
+    await w.t.run((ctx) => ctx.db.patch(activityId, { path: { type: 'LineString', coordinates } }));
+    const track = (await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks[0];
+    expect(track?.simplified).toBe(true);
+    expect(track?.path).toHaveLength(MAP_RING_POINTS);
+    expect(track?.path[0]).toEqual(coordinates[0]);
+    expect(track?.path.at(-1)).toEqual(coordinates.at(-1));
+  });
+
+  test('an admit ask from a recorded skate: its track beside the asked point', async () => {
+    const w = await world();
+    const activityId = await skate(w, w.asker.id, 0);
+    const requestId = await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: { lat: 30, lng: 30 },
+      activityId,
+    });
+    const map = await mapOf(w.mod.as, `request:${requestId}`);
+    expect(map?.points.map((p) => p.id)).toEqual([requestId]);
+    expect(map?.tracks.map((t) => [t.id, t.path.length, t.simplified])).toEqual([
+      [activityId, 20, false],
+    ]);
+    // An ask with no skate draws none.
+    const plain = await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: { lat: 35, lng: 35 },
+    });
+    expect((await mapOf(w.mod.as, `request:${plain}`))?.tracks).toEqual([]);
+  });
+
+  test('tracks share the answer’s bound with the outlines: past it, one is left out and the map says capped', async () => {
+    const w = await world();
+    const ids: Id<'waterBodyRequests'>[] = [];
+    // Five askers, each from a skate whose track is just under what an embed sends whole (~230 KiB):
+    // more than the answer's 1 MiB together.
+    for (let i = 0; i < 5; i++) {
+      const who = (await person(w.t, `trk${i}`)).id;
+      const activityId = await skate(w, who, 100 + i, 12_000);
+      ids.push(
+        await w.t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_bay',
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0.2, lng: 0.2 },
+            waterBodyId: w.lake,
+            name: 'North Bay',
+            nameKey: requestNameKeyFor('name_bay', 'North Bay'),
+            activityId,
+            createdAt: NOW - 10_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        }),
+      );
+    }
+    const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as PlaceView;
+    expect(item.asks.filter((a) => a.skate !== null)).toHaveLength(5);
+    // A place's map draws its asks' points, not their skates: the bound is held on a request's.
+    const request = await w.t.run(async (ctx) => {
+      const admits: Id<'waterBodyRequests'>[] = [];
+      for (const [i, ask] of ids.entries()) {
+        const row = await ctx.db.get(ask);
+        const id = await ctx.db.insert('waterBodyRequests', {
+          kind: 'admit',
+          status: 'open',
+          requesterId: row?.requesterId as Id<'profiles'>,
+          coord: { lat: 30, lng: 30 },
+          candidate: {
+            source: '3dhp',
+            externalId: 'catalog/tracks',
+            name: 'Track Pond',
+            featureType: 390,
+            cls: 'lakePond',
+            polygon: SQUARE as never,
+            bbox: { minLat: -0.5, minLng: -0.5, maxLat: 0.5, maxLng: 0.5 },
+            centroid: { lat: 0, lng: 0 },
+            surfaceAreaSqM: 1_000_000,
+            serviceUrl: 'https://example.invalid/3dhp',
+            fetchedAt: NOW,
+          },
+          candidateExternalId: 'catalog/tracks',
+          resolvedAt: NOW,
+          activityId: row?.activityId,
+          createdAt: NOW - 5_000 + i,
+        });
+        await fileMember(ctx, requestSource(id));
+        admits.push(id);
+      }
+      return admits;
+    });
+    const map = await mapOf(w.mod.as, `request:${request[0]}`);
+    expect(map?.tracks.length).toBeGreaterThan(0);
+    expect(map?.tracks.length).toBeLessThan(5);
+    expect(map?.tracks.every((t) => !t.simplified)).toBe(true);
+    expect(map?.capped).toBe(true);
+  });
+
+  test('the drawer and any skater are refused the map, track and all', async () => {
+    const w = await world();
+    const { waterBodyId } = await drawFrom(w, w.asker);
+    await expect(mapOf(w.asker.as, `body:${waterBodyId}`)).rejects.toThrow();
+    expect((await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks).toHaveLength(1);
   });
 });

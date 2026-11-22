@@ -925,6 +925,14 @@ export type InboxMapBody = {
 /** A point somebody filed, or a place (the web's `EmbedPoint`). */
 export type InboxMapPoint = { id: string; at: InboxMapLngLat; name?: string };
 
+/**
+ * A recorded skate's GPS track for an embed (the web's `EmbedPath`: `id`, `path` as `[lng, lat]`),
+ * B01-5c. `id` is the activity's. `simplified`: the stored track was larger than an embed is sent
+ * ({@link MAP_OUTLINE_BYTES}), so this is it thinned evenly to at most {@link MAP_RING_POINTS}
+ * points, its first and last kept — enough to draw, not to measure.
+ */
+export type InboxMapTrack = { id: string; path: InboxMapLngLat[]; simplified: boolean };
+
 /** A put-in or a lot (the web's `EmbedAccessPoint`). */
 export type InboxMapAccessPoint = InboxMapPoint & { kind: 'putIn' | 'lot' };
 
@@ -948,6 +956,13 @@ export type InboxMapView = {
   points: InboxMapPoint[];
   access: InboxMapAccessPoint[];
   lookalikes: InboxMapPoint[];
+  /**
+   * The skates behind the item, as tracks (B01-5c): on a `request`, each ask's recorded skate the
+   * item read serves (`AskMemberView.skate`); on a `drawn` item, the skate it was drawn from
+   * (`skate`, when `hasTrack`). Empty for every other kind. One left out for the answer's bound sets
+   * `capped`.
+   */
+  tracks: InboxMapTrack[];
   overlapShare: number | null;
   capped: boolean;
 };
@@ -955,10 +970,8 @@ export type InboxMapView = {
 /** `inbox.itemMap`'s answer: the map, or `null` for no such item (`pending` as `inbox.item`'s). */
 export type InboxMapRead = { map: InboxMapView | null; pending: boolean };
 
-/** The most an embed's own outline weighs as stored before it is sent simplified. */
-export const MAP_OUTLINE_BYTES = 256 * 1024;
-/** Points a simplified outline keeps. */
-export const MAP_RING_POINTS = 512;
+// The map's bounds live in a leaf module both this and `lib/inboxViews.ts` import (B01-5c).
+export { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './lib/inboxMapBounds';
 
 // ── Args ───────────────────────────────────────────────────────────────────────────────────────
 

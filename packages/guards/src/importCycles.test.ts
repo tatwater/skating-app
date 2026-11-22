@@ -19,7 +19,7 @@ const CONVEX = resolve(__dirname, '../../convex/convex');
 
 /** Every module in a cycle today, by its path under `convex/` — each an existing, older cycle. */
 const KNOWN_CYCLES: readonly (readonly string[])[] = [
-  ['inbox.ts', 'lib/inboxViews.ts'],
+  // `inbox.ts` ↔ `lib/inboxViews.ts` left with the map's bounds (`lib/inboxMapBounds.ts`, B01-5c).
   ['lib/inboxItems.ts', 'lib/requestDecisions.ts'],
   ['lib/undo.ts', 'lib/undoHandlers.ts', 'lib/undoHandlersCorpus.ts'],
 ];

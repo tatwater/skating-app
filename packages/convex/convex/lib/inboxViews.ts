@@ -48,6 +48,7 @@ import type {
   InboxMapAccessPoint,
   InboxMapBody,
   InboxMapLngLat,
+  InboxMapTrack,
   InboxMapView,
   InboxRowView,
   LookalikeView,
@@ -61,11 +62,11 @@ import type {
   RulingView,
   TicketView,
 } from '../inbox';
-import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from '../inbox';
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
+import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
 import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import {
@@ -1703,14 +1704,42 @@ class OutlineBudget {
   capped = false;
   take(outline: InboxMapBody | null): InboxMapBody | null {
     if (!outline) return null;
-    const bytes = getDocumentSize(outline.outline as never);
+    return this.fits(getDocumentSize(outline.outline as never)) ? outline : null;
+  }
+  /** A track, from the same bound as the outlines (B01-5c). */
+  takeTrack(track: InboxMapTrack | null): InboxMapTrack | null {
+    if (!track) return null;
+    return this.fits(getDocumentSize(track.path as never)) ? track : null;
+  }
+  private fits(bytes: number): boolean {
     if (bytes > this.left) {
       this.capped = true;
-      return null;
+      return false;
     }
     this.left -= bytes;
-    return outline;
+    return true;
   }
+}
+
+/**
+ * A skate's track for an embed: sent whole up to `MAP_OUTLINE_BYTES`, as an outline is; past it,
+ * thinned evenly to `MAP_RING_POINTS` points with its first and last kept (`simplified`). `null` for a
+ * skate with no LineString track.
+ */
+export function embedTrack(id: string, path: unknown): InboxMapTrack | null {
+  const line = path as { type?: string; coordinates?: number[][] } | undefined;
+  if (line?.type !== 'LineString' || !Array.isArray(line.coordinates)) return null;
+  const coords = line.coordinates.filter((c) => c.length >= 2);
+  if (coords.length < 2) return null;
+  const at = (c: number[]): InboxMapLngLat => [c[0] as number, c[1] as number];
+  if (getDocumentSize(line as never) <= MAP_BOUNDS.outlineBytes) {
+    return { id, path: coords.map(at), simplified: false };
+  }
+  const max = MAP_BOUNDS.ringPoints;
+  const step = (coords.length - 1) / (max - 1);
+  const out: InboxMapLngLat[] = [];
+  for (let k = 0; k < max; k++) out.push(at(coords[Math.round(k * step)] as number[]));
+  return { id, path: out, simplified: true };
 }
 
 /** The body's own outline (sent whole up to `MAP_OUTLINE_BYTES`). */
@@ -1797,11 +1826,23 @@ export async function itemMapOf(
     points: [],
     access: [],
     lookalikes: [],
+    tracks: [],
     overlapShare: null,
     capped: false,
   };
   const bodyDoc = (id: Id<'waterBodies'> | null | undefined) =>
     r.get<'waterBodies'>('waterBody', id);
+  /** A skate the item read serves, as a track — or, past the answer's bound or the budget, `capped`. */
+  const addTrack = async (activityId: Id<'gpsActivities'>) => {
+    const activity = await r.get<'gpsActivities'>('activity', activityId);
+    if (!activity) {
+      // Served by the item read a moment ago, so a miss here is the budget's: say the answer is short.
+      map.capped = true;
+      return;
+    }
+    const track = outlines.takeTrack(embedTrack(activity._id, activity.path));
+    if (track) map.tracks.push(track);
+  };
   switch (view.kind) {
     case 'flag': {
       const target = view.target;
@@ -1852,6 +1893,10 @@ export async function itemMapOf(
         );
       }
       for (const ask of view.asks) map.points.push({ id: ask.requestId, at: toLngLat(ask.coord) });
+      // Each asker's recorded skate the item read serves (at most `VIEW_SKATES`), never another.
+      for (const ask of view.asks) {
+        if (ask.skate !== null && ask.activityId !== null) await addTrack(ask.activityId);
+      }
       if (view.candidate?.nearestKnown) {
         const near = outlines.take(
           neighborOutline(await bodyDoc(view.candidate.nearestKnown.waterBodyId)),
@@ -1886,6 +1931,8 @@ export async function itemMapOf(
         if (known) map.others.push(known);
         map.overlapShare = view.overlap.share;
       }
+      // The drawer's own skate the drawing came from, as the item read found it.
+      if (view.skate?.hasTrack) await addTrack(view.skate.activityId);
       break;
     }
     case 'ticket':
