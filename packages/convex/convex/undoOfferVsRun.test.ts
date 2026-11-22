@@ -32,6 +32,7 @@ import { undoState } from './lib/undo';
 import { undoHandlers } from './lib/undoHandlers';
 import { REOPEN_ASK_COST, REOPEN_RESERVE } from './lib/undoHandlersCorpus';
 import schema from './schema';
+import { mergeV2 } from './unmerge.test';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -532,6 +533,40 @@ const CASES: Case[] = [
         );
       void out;
       return w.newest('set_public_access');
+    },
+  },
+  // B01-5d: a body merge → unmerged, from its change set. The drawer of a merged drawing is refused
+  // (D289), offer and run alike; everyone on staff holds the merge's lever.
+  {
+    name: 'merge_waterbody (a skater’s drawing into a known body) → unmerge_waterbody',
+    viewers: ALL,
+    setup: async (w) =>
+      mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      }),
+  },
+  {
+    name: 'merge_waterbody (a catalog duplicate) → unmerge_waterbody',
+    viewers: ALL,
+    setup: async (w) => {
+      const dup = await w.t.run((ctx) =>
+        ctx.db.insert('waterBodies', {
+          name: 'Lake Morey (duplicate)',
+          searchText: 'Lake Morey (duplicate)',
+          type: 'lakePond' as const,
+          source: 'osm' as const,
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          dedupStatus: 'suspected_duplicate' as const,
+          duplicateCandidateIds: [w.lake],
+          createdAt: Date.now(),
+        }),
+      );
+      return mergeV2({ t: w.t, survivor: w.lake, loser: dup, actor: { id: w.p.actor.id } });
     },
   },
   {

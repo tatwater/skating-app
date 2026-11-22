@@ -1,0 +1,1523 @@
+/**
+ * **The unmerge of a body merge, row by row** (B01-5d, `unmerge.ts`). For every kind of row a merge
+ * moves, deletes, unions or rewrites (the brief's *The unmerge, row by row*): build a world, merge,
+ * unmerge, run every scheduled job to its end, and compare the whole database with the world before —
+ * the rows themselves and every stored fact (the body-names rows, `inboxCounts`, People's stored
+ * counts, cells, library rows, summaries, region states, `searchText`).
+ *
+ * **The comparison excludes, by name** ({@link census}): the audit table and its snapshots (asserted
+ * apart: one unmerge row, each side row undone), the queues the jobs drain, re-created favorites' ids
+ * (compared by owner, body, bay and `createdAt`), every `updatedAt`, and the survivor's `changedAt`
+ * (forward only: the unmerge stamps it again) — plus the timestamps a recompute writes as it runs
+ * ({@link VOLATILE}), each named with why.
+ *
+ * **The merge here is the fixture writer** ({@link mergeV2}) until S4a's `version: 2` merge lands: it
+ * runs the real `mergeBodyInto`, and — only where the change set it wrote lacks `version: 2` — does
+ * what the brief says the merge will (fork 2's skates moved, the drawing's review `merged`, its item
+ * decided under the merge's row, the side rows, the partners' after-images and the survivor's
+ * re-clipped bays recorded). Once the real merge writes `version: 2`, the writer adds nothing and these
+ * tests run on it unchanged.
+ */
+
+import { bodySearchTextFor } from '@skating/core';
+import { convexTest } from 'convex-test';
+import { describe, expect, test } from 'vitest';
+import { api, internal } from './_generated/api';
+import type { Doc, Id, TableNames } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
+import { readSnapshot, writeAudit, writeSnapshot } from './lib/audit';
+import { queueLibraryRefresh } from './lib/bodyLibrary';
+import { refreshBodyNames } from './lib/bodyNames';
+import { recomputeBodySummary } from './lib/bodySummary';
+import { bodySource, fileMember, flagSource, PAGE_SEAM, requestSource } from './lib/inboxItems';
+import { OWN_FILING_REFUSAL } from './lib/inboxRules';
+import { undoState } from './lib/undo';
+import schema from './schema';
+import { scheduleRestamp, syncCellsForParent } from './subAreas';
+import {
+  type LeftKind,
+  UNMERGE_LOSER_MOVED,
+  UNMERGE_PARTS_MISSING,
+  UNMERGE_PREDATES,
+  UNMERGE_SURVIVOR_GONE,
+  type UnmergeLeft,
+  unmergeSurvivorMerged,
+} from './unmerge';
+import { type MergeChangeSet, mergeBodyInto } from './waterBodies';
+
+const modules = import.meta.glob('./**/*.*s');
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
+
+/**
+ * Whether this file is the one vitest is running (the property test imports this world, and must not
+ * run these tests a second time).
+ */
+const ENTRY = expect.getState().testPath?.endsWith('unmerge.test.ts') ?? true;
+/** A suite registered only when this file is the one running. */
+const suite = (name: string, fn: () => void) => {
+  if (ENTRY) describe(name, fn);
+};
+
+const PREFS = {
+  activityDetected: true,
+  bountyRequest: true,
+  hazardConfirmation: true,
+  bountyAnswered: true,
+  reportRated: true,
+  reportCommented: true,
+  contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
+  moderatorDecision: true,
+};
+
+/** A rectangle as a body's or a bay's outline. */
+function rect(minLng: number, minLat: number, maxLng: number, maxLat: number) {
+  return {
+    polygon: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [minLng, minLat],
+          [minLng, maxLat],
+          [maxLng, maxLat],
+          [maxLng, minLat],
+          [minLng, minLat],
+        ],
+      ],
+    },
+    bbox: { minLat, minLng, maxLat, maxLng },
+    centroid: { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 },
+  };
+}
+
+/** The kinds of row a world can carry, one round trip each (the brief's table, rows 3–12). */
+const KINDS = [
+  'partners',
+  'content',
+  'favorites',
+  'favoritesBoth',
+  'asks',
+  'loserBays',
+  'clashingBay',
+  'survivorBays',
+  'landmarks',
+  'skates',
+  'lists',
+] as const;
+type Kind = (typeof KINDS)[number];
+
+interface World {
+  t: T;
+  actor: { id: Id<'profiles'>; as: ReturnType<T['withIdentity']> };
+  colleague: { id: Id<'profiles'>; as: ReturnType<T['withIdentity']> };
+  drawer: { id: Id<'profiles'>; as: ReturnType<T['withIdentity']> };
+  skater: { id: Id<'profiles'>; as: ReturnType<T['withIdentity']> };
+  survivor: Id<'waterBodies'>;
+  loser: Id<'waterBodies'>;
+  partner: Id<'waterBodies'>;
+  /** A body that has nothing to do with the merge — where an unrelated edit moves a row. */
+  elsewhere: Id<'waterBodies'>;
+  rows: Partial<Record<string, string[]>>;
+}
+
+/** A person, staff or not. */
+async function person(t: T, subject: string, role: 'member' | 'moderator' | 'admin') {
+  const id = await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: `${subject} Test-Person`,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: PREFS,
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+const now = () => Date.now();
+
+/** A bay on `waterBodyId` with `outline`'s shape. */
+function bay(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  name: string,
+  shape: ReturnType<typeof rect>,
+  by: Id<'profiles'>,
+) {
+  return ctx.db.insert('waterBodySubAreas', {
+    waterBodyId,
+    name,
+    aliases: [],
+    searchText: name,
+    ...shape,
+    surfaceAreaSqM: 40_000,
+    displayScore: 1,
+    minVisibleZoom: 10,
+    createdByUserId: by,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+}
+
+function landmark(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  name: string,
+  point: { lat: number; lng: number },
+) {
+  return ctx.db.insert('bodyLandmarks', {
+    waterBodyId,
+    name,
+    kind: 'island' as const,
+    point,
+    source: 'osm' as const,
+    externalIds: [`osm/${name}/${waterBodyId}`],
+    aliases: [],
+    createdAt: now(),
+    updatedAt: now(),
+  });
+}
+
+/**
+ * **A world for a merge**: the survivor (Lake Morey), the loser (a skater's pending drawing over its
+ * east half, duplicate-flagged against the survivor and a partner), the partner, and a body elsewhere;
+ * with the rows of each kind asked for on them. Every scheduled job is run to its end, so the world
+ * stands as a deployment would hold it.
+ */
+async function world(kinds: readonly Kind[] = KINDS): Promise<World> {
+  const t = harness();
+  const has = (k: Kind) => kinds.includes(k);
+  const actor = await person(t, 'actor', 'moderator');
+  const colleague = await person(t, 'colleague', 'moderator');
+  const drawer = await person(t, 'drawer', 'moderator');
+  const skater = await person(t, 'skater', 'member');
+  const fan = await person(t, 'fan', 'member');
+  const rows: World['rows'] = {};
+  const add = (key: string, id: string) => {
+    rows[key] = [...(rows[key] ?? []), id];
+  };
+  const ids = await t.run(async (ctx) => {
+    const base = {
+      type: 'lakePond' as const,
+      createdAt: now(),
+    };
+    const survivor = await ctx.db.insert('waterBodies', {
+      ...base,
+      name: 'Lake Morey',
+      searchText: has('lists')
+        ? bodySearchTextFor({ name: 'Lake Morey', moderatorAliases: ['Morey', 'Fairlee Lake'] })
+        : 'Lake Morey',
+      source: 'osm' as const,
+      ...rect(0, 0, 1, 1),
+      dedupStatus: 'clean' as const,
+      ...(has('lists')
+        ? {
+            moderatorAliases: ['Morey', 'Fairlee Lake'],
+            referenceLinks: [{ label: 'Town', url: 'https://example.invalid/town' }],
+          }
+        : {}),
+    });
+    const loser = await ctx.db.insert('waterBodies', {
+      ...base,
+      name: 'Morey East Bay',
+      searchText: has('lists')
+        ? bodySearchTextFor({
+            name: 'Morey East Bay',
+            moderatorAliases: ['East Morey', 'fairlee lake'],
+          })
+        : 'Morey East Bay',
+      source: 'user' as const,
+      reviewStatus: 'pending' as const,
+      createdByUserId: drawer.id,
+      ...rect(0.5, 0, 1, 1),
+      dedupStatus: 'clean' as const,
+      ...(has('lists')
+        ? {
+            moderatorAliases: ['East Morey', 'fairlee lake'],
+            referenceLinks: [
+              { label: 'Town', url: 'https://example.invalid/town' },
+              { label: 'Club', url: 'https://example.invalid/club' },
+            ],
+          }
+        : {}),
+    });
+    const partner = await ctx.db.insert('waterBodies', {
+      ...base,
+      name: 'Morey Pond',
+      searchText: 'Morey Pond',
+      source: 'osm' as const,
+      ...rect(0.9, 0.9, 1.4, 1.4),
+      dedupStatus: 'clean' as const,
+    });
+    const elsewhere = await ctx.db.insert('waterBodies', {
+      ...base,
+      name: 'Far Pond',
+      searchText: 'Far Pond',
+      source: 'osm' as const,
+      ...rect(5, 5, 6, 6),
+      dedupStatus: 'clean' as const,
+    });
+    // The duplicate flags: the drawing names the survivor (and the partner, with `partners`); each
+    // names it back, as the reconciliation flags a group mutually.
+    await ctx.db.patch(loser, {
+      dedupStatus: 'suspected_duplicate',
+      duplicateCandidateIds: has('partners') ? [survivor, partner] : [survivor],
+    });
+    await ctx.db.patch(survivor, {
+      dedupStatus: 'suspected_duplicate',
+      duplicateCandidateIds: [loser],
+    });
+    if (has('partners')) {
+      await ctx.db.patch(partner, {
+        dedupStatus: 'suspected_duplicate',
+        duplicateCandidateIds: [loser, elsewhere],
+      });
+    }
+    return { survivor, loser, partner, elsewhere };
+  });
+  const { survivor, loser, partner, elsewhere } = ids;
+  await t.mutation(internal.waterBodies.backfillCells, {});
+  await t.run(async (ctx) => {
+    // The Bodies library holds every body, as on a deployment.
+    await queueLibraryRefresh(ctx, [survivor, loser, partner, elsewhere]);
+    await fileMember(ctx, bodySource(loser));
+    if (has('content')) {
+      add(
+        'reports',
+        await ctx.db.insert('reports', {
+          authorId: skater.id,
+          waterBodyId: loser,
+          point: { lat: 0.5, lng: 0.75 },
+          skateEndTime: now(),
+          reportTime: now(),
+          source: 'native',
+          iceTypes: [{ type: 'black_ice' }],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          createdAt: now(),
+          updatedAt: now(),
+        }),
+      );
+      add(
+        'hazards',
+        await ctx.db.insert('hazards', {
+          waterBodyId: loser,
+          type: 'open_water',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point', coordinates: [0.75, 0.5] },
+          radiusMeters: 30,
+          bbox: { minLat: 0.49, minLng: 0.74, maxLat: 0.51, maxLng: 0.76 },
+          createdByUserId: skater.id,
+          photoIds: [],
+          status: 'active',
+          moderationStatus: 'visible',
+          firstReportedAt: now(),
+          lastConfirmedAt: now(),
+          confirmCount: 0,
+          goneCount: 0,
+          createdAt: now(),
+        }),
+      );
+      add(
+        'bounties',
+        await ctx.db.insert('bounties', {
+          requesterId: skater.id,
+          waterBodyId: loser,
+          windowHours: 48,
+          status: 'open',
+          rewardPoints: 10,
+          fulfillingReportIds: [],
+          createdAt: now(),
+          expiresAt: now() + 86_400_000,
+        }),
+      );
+      add(
+        'bodyFeatures',
+        await ctx.db.insert('bodyFeatures', {
+          waterBodyId: loser,
+          type: 'spring_current',
+          geometryKind: 'point_radius',
+          geometry: { type: 'Point', coordinates: [0.8, 0.5] },
+          bbox: { minLat: 0.49, minLng: 0.79, maxLat: 0.51, maxLng: 0.81 },
+          addedByUserId: actor.id,
+          active: true,
+          createdAt: now(),
+        }),
+      );
+      add(
+        'putIns',
+        await ctx.db.insert('putIns', {
+          waterBodyId: loser,
+          coord: { lat: 0.1, lng: 0.9 },
+          source: 'official',
+          status: 'visible',
+          createdAt: now(),
+        }),
+      );
+    }
+    if (has('favorites')) {
+      add(
+        'favorites',
+        await ctx.db.insert('waterBodyFavorites', {
+          userId: skater.id,
+          waterBodyId: loser,
+          createdAt: now() - 5_000,
+        }),
+      );
+    }
+    if (has('favoritesBoth')) {
+      // The fan holds both: the merge drops the drawing's row, the unmerge makes it again.
+      add(
+        'deletedFavorites',
+        await ctx.db.insert('waterBodyFavorites', {
+          userId: fan.id,
+          waterBodyId: loser,
+          createdAt: now() - 9_000,
+        }),
+      );
+      add(
+        'keptFavorites',
+        await ctx.db.insert('waterBodyFavorites', {
+          userId: fan.id,
+          waterBodyId: survivor,
+          createdAt: now() - 8_000,
+        }),
+      );
+    }
+    if (has('asks')) {
+      const ask = await ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay',
+        status: 'open',
+        requesterId: skater.id,
+        coord: { lat: 0.5, lng: 0.75 },
+        waterBodyId: loser,
+        name: 'Sunny Cove',
+        createdAt: now(),
+      });
+      await fileMember(ctx, requestSource(ask));
+      add('requests', ask);
+      add(
+        'placeNames',
+        await ctx.db.insert('corpusPlaceNames', {
+          name: 'Sunny Cove',
+          askKey: 'sunny cove',
+          aliases: [],
+          messages: 3,
+          skatedMessages: 1,
+          states: ['VT'],
+          status: 'open',
+          waterBodyId: loser,
+          createdAt: now(),
+          updatedAt: now(),
+        }),
+      );
+      const flag = await ctx.db.insert('contentFlags', {
+        flaggerId: fan.id,
+        targetType: 'waterbody',
+        targetId: loser,
+        reason: 'no_public_access',
+        status: 'open',
+        origin: 'user',
+        createdAt: now(),
+      });
+      await fileMember(ctx, flagSource(flag));
+      add('flags', flag);
+    }
+    if (has('loserBays')) {
+      add('loserBays', await bay(ctx, loser, 'East Cove', rect(0.8, 0.1, 0.95, 0.3), actor.id));
+    }
+    if (has('clashingBay')) {
+      add(
+        'survivorBays',
+        await bay(ctx, survivor, 'North Bay', rect(0.1, 0.7, 0.4, 0.95), actor.id),
+      );
+      // Its namesake on the drawing: the merge delists it by the clash (a side row).
+      add('loserBays', await bay(ctx, loser, 'North Bay', rect(0.6, 0.7, 0.9, 0.95), actor.id));
+    }
+    if (has('survivorBays')) {
+      // A bay whose stored outline spills past the survivor's (as after a refined shoreline): the
+      // merge's re-clip changes it, and the change set keeps it as it stood.
+      add(
+        'survivorBays',
+        await bay(ctx, survivor, 'West Arm', rect(-0.2, 0.2, 0.3, 0.5), actor.id),
+      );
+    }
+    if (has('landmarks')) {
+      // A twin across the two lakes: the drawing's folds into the survivor's.
+      add('landmarks', await landmark(ctx, survivor, 'Big Rock', { lat: 0.5, lng: 0.7 }));
+      add('landmarks', await landmark(ctx, loser, 'Big Rock', { lat: 0.5, lng: 0.7001 }));
+      add('landmarks', await landmark(ctx, loser, 'Gull Island', { lat: 0.3, lng: 0.85 }));
+    }
+    if (has('skates')) {
+      add(
+        'gpsActivities',
+        await ctx.db.insert('gpsActivities', {
+          userId: drawer.id,
+          provider: 'native',
+          providerActivityId: 'founding',
+          sportType: 'IceSkate',
+          startTime: now() - 7_200_000,
+          endTime: now() - 3_600_000,
+          elapsedSeconds: 3_000,
+          path: {
+            type: 'LineString',
+            coordinates: [
+              [0.6, 0.5],
+              [0.9, 0.5],
+            ],
+          },
+          waterBodyId: loser,
+          waterBodyIds: [loser],
+          promptState: 'pending',
+          detectedAt: now(),
+        }),
+      );
+    }
+  });
+  // Every derived fact built by the path that keeps it — summaries, name lists, recurrence — so the
+  // world stands as a deployment holds it.
+  await t.run(async (ctx) => {
+    for (const id of [survivor, loser, partner, elsewhere]) {
+      await syncCellsForParent(ctx, id, (await ctx.db.get(id)) as Doc<'waterBodies'>);
+      await recomputeBodySummary(ctx, id);
+      await refreshBodyNames(ctx, id);
+      await scheduleRestamp(ctx, id);
+      await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: id });
+    }
+  });
+  await settle(t);
+  return { t, actor, colleague, drawer, skater, survivor, loser, partner, elsewhere, rows };
+}
+
+/**
+ * Every scheduled job run to its end (restamps, recurrence, name rebuilds, the unmerge's own pages),
+ * then the Bodies library's queue drained — as a deployment's crons would leave it.
+ */
+async function settle(t: T): Promise<void> {
+  for (let round = 0; round < 50; round++) {
+    await t.finishAllScheduledFunctions(() => {});
+    const queued = await t.run((ctx) => ctx.db.query('bodyLibraryQueue').first());
+    if (queued === null) return;
+    await t.mutation(internal.bodyLibrary.drainQueue, {});
+  }
+  throw new Error('the library queue never drained');
+}
+
+// ── The merge (the fixture writer until S4a's merge writes version 2) ─────────────────────────────
+
+/** Whether the real merge wrote `version: 2` itself (S4a landed) — set by the first {@link mergeV2}. */
+const realMerge = { v2: false };
+
+/**
+ * **Merge `loser` into `survivor` as the B01-5d merge does**, returning the merge's row. The real
+ * `mergeBodyInto` runs; where the change set it wrote lacks `version: 2`, this writes what the brief
+ * says the merge will, in the same transaction: fork 2's founding skates moved (recorded), a pending
+ * drawing's review `merged`, its Inbox member and item stamped with the merge's row, and the change
+ * set's version-2 fields (`sideActions`, `dedupAfter`,
+ * `survivorSubAreasBefore`, `loserReview`, `movedActivities`).
+ */
+async function mergeV2(
+  w: Pick<World, 't' | 'survivor' | 'loser'> & { actor: { id: Id<'profiles'> } },
+  opts: { chunked?: boolean } = {},
+): Promise<Id<'moderationActions'>> {
+  const id = await w.t.run(async (ctx) => {
+    const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
+    const loser = (await ctx.db.get(w.loser)) as Doc<'waterBodies'>;
+    const survivorBays = await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', w.survivor))
+      .collect();
+    const skates = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
+      .collect();
+    const marker = Date.now();
+    await mergeBodyInto(ctx, {
+      survivor,
+      loser,
+      actorId: w.actor.id,
+      reason: `Merged into ${survivor.name}`,
+    });
+    const mergeRow = (await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', w.loser))
+      .order('desc')
+      .first()) as Doc<'moderationActions'>;
+    const cs = (await readSnapshot<MergeChangeSet>(ctx, mergeRow._id)) as MergeChangeSet;
+    if (cs.version === 2) {
+      realMerge.v2 = true;
+      return mergeRow._id;
+    }
+    // ── What the B01-5d merge adds (S4a's), written here until it lands ──
+    const movedActivities: NonNullable<MergeChangeSet['movedActivities']> = [];
+    for (const s of skates) {
+      movedActivities.push({
+        id: s._id,
+        waterBodyId: s.waterBodyId ?? null,
+        waterBodyIds: s.waterBodyIds ?? [],
+      });
+      const ids = [...new Set((s.waterBodyIds ?? []).map((b) => (b === w.loser ? w.survivor : b)))];
+      await ctx.db.patch(s._id, { waterBodyId: w.survivor, waterBodyIds: ids });
+    }
+    const drawing = loser.source === 'user' && loser.reviewStatus === 'pending';
+    if (drawing) {
+      await ctx.db.patch(w.loser, { reviewStatus: 'merged' });
+      const member = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) => q.eq('sourceTable', 'waterBodies').eq('sourceId', w.loser))
+        .first();
+      if (member) {
+        await ctx.db.patch(member._id, { closedByActionId: mergeRow._id });
+        await ctx.db.patch(member.itemId, { decisionActionId: mergeRow._id });
+      }
+      // The `merged` message to the drawer is S4a's (the queue's schema takes the outcome with it).
+    }
+    const written = await ctx.db.query('moderationActions').order('desc').take(200);
+    const sideActions = written
+      .filter(
+        (r) =>
+          r._id !== mergeRow._id &&
+          r._creationTime >= marker &&
+          r._creationTime <= mergeRow._creationTime,
+      )
+      .map((r) => r._id)
+      .reverse();
+    const dedupAfter: MergeChangeSet['dedupBefore'] = [];
+    for (const before of cs.dedupBefore.slice(1)) {
+      const p = (await ctx.db.get(before.id)) as Doc<'waterBodies'>;
+      dedupAfter.push({
+        id: p._id,
+        dedupStatus: p.dedupStatus,
+        duplicateCandidateIds: p.duplicateCandidateIds ?? null,
+        mergedIntoId: p.mergedIntoId ?? null,
+      });
+    }
+    const survivorSubAreasBefore: NonNullable<MergeChangeSet['survivorSubAreasBefore']> = [];
+    for (const b of survivorBays) {
+      const after = await ctx.db.get(b._id);
+      if (JSON.stringify(after) !== JSON.stringify(b)) {
+        const { _id, _creationTime, ...rest } = b;
+        survivorSubAreasBefore.push({ ...rest, id: _id, creationTime: _creationTime });
+      }
+    }
+    const v2: MergeChangeSet = {
+      ...cs,
+      version: 2,
+      sideActions,
+      dedupAfter,
+      survivorSubAreasBefore,
+      loserReview: { reviewStatus: loser.reviewStatus ?? null, decidedItem: drawing },
+      movedActivities,
+    };
+    for (const row of await ctx.db
+      .query('auditSnapshots')
+      .withIndex('by_action', (q) => q.eq('actionId', mergeRow._id))
+      .collect()) {
+      await ctx.db.delete(row._id);
+    }
+    if (opts.chunked) {
+      // As a busy body's merge stores it: split in parts.
+      const json = JSON.stringify(v2);
+      const size = Math.ceil(json.length / 3);
+      for (let part = 0; part < 3; part++) {
+        await ctx.db.insert('auditSnapshots', {
+          actionId: mergeRow._id,
+          part,
+          payload: { chunk: json.slice(part * size, (part + 1) * size), of: 3 },
+          createdAt: Date.now(),
+        });
+      }
+    } else {
+      await writeSnapshot(ctx, mergeRow._id, v2);
+    }
+    return mergeRow._id;
+  });
+  await settle(w.t);
+  return id;
+}
+
+// ── The census: the database as the comparison reads it ───────────────────────────────────────────
+
+/** Tables the census leaves out, each with why. */
+const SKIPPED: Partial<Record<TableNames, string>> = {
+  moderationActions: 'the audit table: asserted apart (one unmerge row, each side row undone)',
+  auditSnapshots: 'the merge’s change set: what the unmerge reads, not what it restores',
+  auditBodyLinks: 'the audit table’s index by body: a row per audit row, the unmerge’s among them',
+  bodyLibraryQueue: 'drained by `settle`',
+  notificationQueue: 'the merged message: asserted apart (told once, or dropped inside the window)',
+  peopleJobRuns: 'job bookkeeping',
+  inboxJobRuns: 'job bookkeeping',
+  jobPositions: 'job bookkeeping',
+  bodySummaryRefreshes: 'a recompute’s log of itself',
+  geoInputMarks: 'a recompute’s log of itself',
+};
+
+/**
+ * Fields a recompute writes as of the moment it runs, never restored, by name — each the time of a
+ * write, not a fact about the body: `updatedAt` everywhere; the survivor's `changedAt` (forward only)
+ * and a library row's copies of it (`changedAsc`, `changedDesc`); an Inbox item's `refreshedAt` and
+ * `lastActivityAt` (the time its reconcile ran); a library row's `refreshedAt`; the geometry facts'
+ * marks (`staleAt`, `staleSince`, `computedAt`, `markedAt`).
+ */
+const VOLATILE = new Set([
+  'updatedAt',
+  'changedAt',
+  'refreshedAt',
+  'lastActivityAt',
+  'staleSince',
+  'computedAt',
+  'markedAt',
+  'staleAt',
+  'summaryUpdatedAt',
+  // A library row's copy of `changedAt`, the survivor's forward-only stamp.
+  'changedAsc',
+  'changedDesc',
+]);
+
+/**
+ * Tables whose rows come back with new ids, compared without them: a favorite the merge dropped is
+ * made again (the brief's row 6); and what is recomputed, not restored, is deleted and made again by
+ * the path that keeps it: the library's rows and counts as a body leaves and rejoins it, a body's
+ * and its bays' cells as it is delisted and listed again, the recurrence clusters as they are
+ * re-clustered.
+ */
+const REMADE: Partial<Record<TableNames, true>> = {
+  waterBodyFavorites: true,
+  bodyLibraryRows: true,
+  bodyLibraryCounts: true,
+  waterBodyCells: true,
+  waterBodySubAreaCells: true,
+  hazardRecurrence: true,
+  // An Inbox item is its key's question: one left with no member is deleted, and a member re-keyed to
+  // it makes it again. Its members are compared by their item's key (below).
+  inboxItems: true,
+};
+
+function strip(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(strip);
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : 1,
+    )) {
+      if (VOLATILE.has(k) || k === '_creationTime') continue;
+      out[k] = strip(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Tables of counters, whose rows at zero read as absent. */
+const COUNTERS: Partial<Record<TableNames, true>> = {
+  inboxCounts: true,
+  bodyLibraryCounts: true,
+  peopleCounts: true,
+  imageryCounts: true,
+};
+
+/** Every table but {@link SKIPPED}, each row stripped of the volatile fields, in a stable order. */
+async function census(t: T): Promise<Record<string, unknown[]>> {
+  return t.run(async (ctx) => {
+    const out: Record<string, unknown[]> = {};
+    const keyOf = new Map(
+      (await ctx.db.query('inboxItems').collect()).map((item) => [item._id as string, item.key]),
+    );
+    for (const table of Object.keys(schema.tables) as TableNames[]) {
+      if (SKIPPED[table]) continue;
+      const rows = (await ctx.db.query(table).collect()).map((row) => {
+        const s = strip(row) as Record<string, unknown>;
+        if (REMADE[table]) delete s._id;
+        if (table === 'inboxItemMembers') s.itemId = keyOf.get(s.itemId as string) ?? s.itemId;
+        return s;
+      });
+      // A counter at zero reads as no counter: a count row is made at its first count and kept.
+      const counted = COUNTERS[table] ? rows.filter((r) => r.count !== 0) : rows;
+      if (counted.length === 0) continue;
+      out[table] = counted
+        .map((r) => JSON.stringify(r))
+        .sort()
+        .map((r) => JSON.parse(r));
+    }
+    return out;
+  });
+}
+
+/** The unmerge's row (`unmerge_waterbody` on the loser), as it stands. */
+async function unmergeRowOf(
+  t: T,
+  loser: Id<'waterBodies'>,
+): Promise<Doc<'moderationActions'> | null> {
+  return t.run(async (ctx) => {
+    const rows = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', loser))
+      .collect();
+    return rows.find((r) => r.action === 'unmerge_waterbody') ?? null;
+  });
+}
+
+/** What the unmerge says it left. */
+async function leftOf(t: T, loser: Id<'waterBodies'>): Promise<UnmergeLeft> {
+  const row = await unmergeRowOf(t, loser);
+  return (row?.metadata?.left ?? { count: 0, byKind: {}, rows: [] }) as UnmergeLeft;
+}
+
+/** Undo the merge as `as` (the engine's own `undo.run`), then run every job to its end. */
+async function unmerge(
+  w: World,
+  mergeId: Id<'moderationActions'>,
+  as: ReturnType<T['withIdentity']> = w.colleague.as,
+): Promise<void> {
+  await as.mutation(api.undo.run, { actionId: mergeId, reason: 'Not the same water' });
+  await settle(w.t);
+}
+
+/** The refusal the run gives, in words (or `null` when it ran). */
+async function refusalOf(
+  _w: World,
+  mergeId: Id<'moderationActions'>,
+  as: ReturnType<T['withIdentity']>,
+): Promise<string | null> {
+  try {
+    await as.mutation(api.undo.run, { actionId: mergeId, reason: 'Checked' });
+    return null;
+  } catch (err) {
+    const data = (err as { data?: unknown }).data;
+    return data !== undefined ? String(data) : String((err as Error).message);
+  }
+}
+
+/** The audit side of a round trip: one unmerge row, and every side row the merge wrote undone. */
+async function assertAudit(w: World, mergeId: Id<'moderationActions'>): Promise<void> {
+  const { unmerges, sides, cs } = await w.t.run(async (ctx) => {
+    const all = await ctx.db.query('moderationActions').collect();
+    const cs = (await readSnapshot<MergeChangeSet>(ctx, mergeId)) as MergeChangeSet;
+    return { unmerges: all.filter((r) => r.action === 'unmerge_waterbody'), sides: all, cs };
+  });
+  const lead = unmerges.filter((r) => r.targetType === 'waterbody');
+  expect(lead).toHaveLength(1);
+  expect(lead[0]?.undoesActionId).toBe(mergeId);
+  expect(lead[0]?.metadata?.done).toBe(true);
+  for (const side of cs.sideActions ?? []) {
+    const undone = sides.filter((r) => r.undoesActionId === side);
+    expect(undone, `side row ${side}`).toHaveLength(1);
+    expect(undone[0]?.action).toBe('unmerge_waterbody');
+  }
+}
+
+// ── The round trips ────────────────────────────────────────────────────────────────────────────────
+
+suite('a merge and its unmerge: the state equals the state before', () => {
+  test.each([...KINDS.map((k) => [k, [k]] as const), ['every kind at once', KINDS] as const])(
+    '%s',
+    async (_name, kinds) => {
+      const w = await world(kinds as readonly Kind[]);
+      const before = await census(w.t);
+      const mergeId = await mergeV2(w);
+      // The merge moved something (else the comparison proves nothing): the drawing is merged.
+      expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.dedupStatus).toBe('merged');
+      await unmerge(w, mergeId);
+      expect(await leftOf(w.t, w.loser)).toEqual({ count: 0, byKind: {}, rows: [] });
+      expect(await census(w.t)).toEqual(before);
+      await assertAudit(w, mergeId);
+    },
+  );
+
+  test('the change set split in parts unmerges the same', async () => {
+    const w = await world();
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w, { chunked: true });
+    await unmerge(w, mergeId);
+    expect(await census(w.t)).toEqual(before);
+  });
+
+  test('the merge moved what the world holds, and the side rows exist (the table is not vacuous)', async () => {
+    const w = await world();
+    const mergeId = await mergeV2(w);
+    const cs = await w.t.run(
+      async (ctx) => (await readSnapshot<MergeChangeSet>(ctx, mergeId)) as MergeChangeSet,
+    );
+    const tables = new Set(cs.moved.map((m) => m.table));
+    for (const table of [
+      'reports',
+      'hazards',
+      'bounties',
+      'bodyFeatures',
+      'putIns',
+      'waterBodyFavorites',
+      'waterBodyRequests',
+      'corpusPlaceNames',
+      'contentFlags',
+    ] as const) {
+      expect(tables.has(table), table).toBe(true);
+    }
+    expect(cs.deletedFavorites).toHaveLength(1);
+    expect(cs.subAreasDelisted).toHaveLength(1);
+    expect(cs.survivorSubAreasBefore?.length).toBeGreaterThan(0);
+    expect(cs.landmarksAfter.length).toBeGreaterThan(0);
+    expect(cs.sideActions?.length).toBeGreaterThanOrEqual(2);
+    expect(cs.movedActivities).toHaveLength(1);
+    expect(cs.dedupAfter?.length).toBe(2);
+    expect(cs.loserReview).toEqual({ reviewStatus: 'pending', decidedItem: true });
+  });
+});
+
+// ── The refusals: each says its sentence and writes nothing ────────────────────────────────────────
+
+/** The audit rows and the census together: what "writes nothing" compares. */
+async function everything(t: T) {
+  return {
+    census: await census(t),
+    audit: await t.run((ctx) => ctx.db.query('moderationActions').collect()),
+  };
+}
+
+suite('the unmerge refuses at the body level, before any write', () => {
+  const cases: {
+    name: string;
+    setup: (w: World, mergeId: Id<'moderationActions'>) => Promise<void>;
+    says: (w: World) => Promise<string | RegExp>;
+  }[] = [
+    {
+      name: 'a merge recorded before version 2',
+      setup: async (w, mergeId) => {
+        await w.t.run(async (ctx) => {
+          const cs = (await readSnapshot<MergeChangeSet>(ctx, mergeId)) as MergeChangeSet;
+          const { version: _v, ...old } = cs;
+          for (const r of await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .collect()) {
+            await ctx.db.delete(r._id);
+          }
+          await writeSnapshot(ctx, mergeId, old);
+        });
+      },
+      says: async () => UNMERGE_PREDATES,
+    },
+    {
+      name: 'a merge with no change set at all',
+      setup: async (w, mergeId) => {
+        await w.t.run(async (ctx) => {
+          for (const r of await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .collect()) {
+            await ctx.db.delete(r._id);
+          }
+        });
+      },
+      says: async () => UNMERGE_PREDATES,
+    },
+    {
+      name: 'a part of the change set missing',
+      setup: async (w, mergeId) => {
+        await w.t.run(async (ctx) => {
+          const part = await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId).eq('part', 1))
+            .first();
+          if (part) await ctx.db.delete(part._id);
+        });
+      },
+      says: async () => UNMERGE_PARTS_MISSING,
+    },
+    {
+      name: 'a version-2 field missing',
+      setup: async (w, mergeId) => {
+        await w.t.run(async (ctx) => {
+          const row = await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .first();
+          if (row?.payload && !('chunk' in row.payload)) {
+            const { loserReview: _r, ...rest } = row.payload as MergeChangeSet;
+            await ctx.db.patch(row._id, { payload: rest });
+          }
+        });
+      },
+      says: async () => UNMERGE_PARTS_MISSING,
+    },
+    {
+      name: 'overtaken by a later row on the loser',
+      setup: async (w) => {
+        await w.t.run((ctx) =>
+          writeAudit(ctx, {
+            actorId: w.actor.id,
+            action: 'set_public_access',
+            targetType: 'waterbody',
+            targetId: w.loser,
+            reason: 'A later write',
+            createdAt: Date.now(),
+          }),
+        );
+      },
+      says: async () => 'Something changed this since; open its history to see what',
+    },
+    {
+      name: 'the loser re-pointed since',
+      setup: async (w) => {
+        await w.t.run((ctx) => ctx.db.patch(w.loser, { mergedIntoId: w.partner }));
+      },
+      says: async () => UNMERGE_LOSER_MOVED,
+    },
+    {
+      name: 'the survivor merged into another body since',
+      setup: async (w) => {
+        await w.t.run(async (ctx) => {
+          const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
+          const into = (await ctx.db.get(w.elsewhere)) as Doc<'waterBodies'>;
+          await mergeBodyInto(ctx, { survivor: into, loser: survivor, reason: 'Again' });
+        });
+      },
+      says: async () => unmergeSurvivorMerged('Lake Morey', 'Far Pond'),
+    },
+    {
+      name: 'the survivor gone',
+      setup: async (w) => {
+        await w.t.run((ctx) => ctx.db.delete(w.survivor));
+      },
+      says: async () => UNMERGE_SURVIVOR_GONE,
+    },
+  ];
+
+  test.each(cases)('$name', async (c) => {
+    const w = await world();
+    const mergeId = await mergeV2(w, { chunked: c.name === 'a part of the change set missing' });
+    await c.setup(w, mergeId);
+    await settle(w.t);
+    const before = await everything(w.t);
+    const offer = await w.t.run(async (ctx) =>
+      undoState(
+        ctx,
+        (await ctx.db.get(w.colleague.id)) as Doc<'profiles'>,
+        (await ctx.db.get(mergeId)) as Doc<'moderationActions'>,
+        'one',
+      ),
+    );
+    const said = await refusalOf(w, mergeId, w.colleague.as);
+    const expected = await c.says(w);
+    expect(said).toEqual(expected);
+    // The offer says the same, before anything runs.
+    expect(offer.state).not.toBe('available');
+    if (offer.state === 'unavailable') expect(offer.why).toBe(expected);
+    expect(await everything(w.t)).toEqual(before);
+  });
+
+  test('the drawer of a merged drawing, and anyone without the capability, are refused', async () => {
+    const w = await world();
+    const mergeId = await mergeV2(w);
+    const before = await everything(w.t);
+    expect(await refusalOf(w, mergeId, w.drawer.as)).toBe(OWN_FILING_REFUSAL);
+    // A skater holds no corpus lever: the mutation refuses before the engine.
+    expect(await refusalOf(w, mergeId, w.skater.as)).not.toBeNull();
+    const offer = await w.t.run(async (ctx) =>
+      undoState(
+        ctx,
+        (await ctx.db.get(w.skater.id)) as Doc<'profiles'>,
+        (await ctx.db.get(mergeId)) as Doc<'moderationActions'>,
+        'one',
+      ),
+    );
+    expect(offer).toEqual({
+      state: 'unavailable',
+      why: 'Undoing this takes a role you do not hold.',
+    });
+    expect(await everything(w.t)).toEqual(before);
+  });
+
+  test('an unmerge has no undo of its own: merge them again', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    await unmerge(w, mergeId);
+    const row = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+    expect(await refusalOf(w, row._id, w.actor.as)).toBe(
+      'To put them back together, merge them again.',
+    );
+  });
+});
+
+// ── Drift: a row that moved again since the merge is left, counted, and named ──────────────────────
+
+suite('a row that has drifted since the merge is left where it is, and said', () => {
+  const cases: {
+    name: string;
+    kinds: Kind[];
+    kind: LeftKind;
+    edit: (w: World, mergeId: Id<'moderationActions'>) => Promise<string>;
+    /** What the left row still reads after the unmerge. */
+    stays: (w: World, id: string) => Promise<void>;
+  }[] = [
+    {
+      name: 'a report moved to another body since',
+      kinds: ['content'],
+      kind: 'reports',
+      edit: async (w) => {
+        const id = w.rows.reports?.[0] as Id<'reports'>;
+        await w.t.run((ctx) => ctx.db.patch(id, { waterBodyId: w.elsewhere }));
+        return id;
+      },
+      stays: async (w, id) => {
+        expect((await w.t.run((ctx) => ctx.db.get(id as Id<'reports'>)))?.waterBodyId).toBe(
+          w.elsewhere,
+        );
+      },
+    },
+    {
+      name: 'a hazard gone since',
+      kinds: ['content'],
+      kind: 'hazards',
+      edit: async (w) => {
+        const id = w.rows.hazards?.[0] as Id<'hazards'>;
+        await w.t.run((ctx) => ctx.db.delete(id));
+        return id;
+      },
+      stays: async (w, id) => {
+        expect(await w.t.run((ctx) => ctx.db.get(id as Id<'hazards'>))).toBeNull();
+      },
+    },
+    {
+      name: 'a re-pointed favorite moved since',
+      kinds: ['favorites'],
+      kind: 'waterBodyFavorites',
+      edit: async (w) => {
+        const id = w.rows.favorites?.[0] as Id<'waterBodyFavorites'>;
+        await w.t.run((ctx) => ctx.db.patch(id, { waterBodyId: w.elsewhere }));
+        return id;
+      },
+      stays: async (w, id) => {
+        expect(
+          (await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodyFavorites'>)))?.waterBodyId,
+        ).toBe(w.elsewhere);
+      },
+    },
+    {
+      name: 'a dropped favorite whose kept row is gone (unfavorited)',
+      kinds: ['favoritesBoth'],
+      kind: 'deletedFavorites',
+      edit: async (w) => {
+        await w.t.run((ctx) =>
+          ctx.db.delete(w.rows.keptFavorites?.[0] as Id<'waterBodyFavorites'>),
+        );
+        return w.rows.deletedFavorites?.[0] as string;
+      },
+      stays: async (w) => {
+        const onLoser = await w.t.run((ctx) =>
+          ctx.db
+            .query('waterBodyFavorites')
+            .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
+            .collect(),
+        );
+        expect(onLoser).toEqual([]);
+      },
+    },
+    {
+      name: 'an ask decided since',
+      kinds: ['asks'],
+      kind: 'waterBodyRequests',
+      edit: async (w) => {
+        const id = w.rows.requests?.[0] as Id<'waterBodyRequests'>;
+        await w.t.run((ctx) =>
+          ctx.db.patch(id, { status: 'declined', decidedAt: Date.now() + 1_000 }),
+        );
+        return id;
+      },
+      stays: async (w, id) => {
+        expect(
+          (await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodyRequests'>)))?.waterBodyId,
+        ).toBe(w.survivor);
+      },
+    },
+    {
+      name: 'a flag decided since',
+      kinds: ['asks'],
+      kind: 'contentFlags',
+      edit: async (w) => {
+        const id = w.rows.flags?.[0] as Id<'contentFlags'>;
+        await w.t.run((ctx) => ctx.db.patch(id, { status: 'dismissed' }));
+        return id;
+      },
+      stays: async (w, id) => {
+        expect((await w.t.run((ctx) => ctx.db.get(id as Id<'contentFlags'>)))?.targetId).toBe(
+          w.survivor,
+        );
+      },
+    },
+    {
+      name: 'a place name placed since',
+      kinds: ['asks'],
+      kind: 'corpusPlaceNames',
+      edit: async (w) => {
+        const id = w.rows.placeNames?.[0] as Id<'corpusPlaceNames'>;
+        await w.t.run((ctx) => ctx.db.patch(id, { status: 'placed' }));
+        return id;
+      },
+      stays: async (w, id) => {
+        expect(
+          (await w.t.run((ctx) => ctx.db.get(id as Id<'corpusPlaceNames'>)))?.waterBodyId,
+        ).toBe(w.survivor);
+      },
+    },
+    {
+      name: 'a moved bay edited since',
+      kinds: ['loserBays'],
+      kind: 'waterBodySubAreas',
+      edit: async (w) => {
+        const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
+        await w.t.run((ctx) =>
+          ctx.db.patch(id, { name: 'Renamed Cove', updatedAt: Date.now() + 1_000 }),
+        );
+        return id;
+      },
+      stays: async (w, id) => {
+        const row = await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodySubAreas'>));
+        expect(row?.name).toBe('Renamed Cove');
+        expect(row?.waterBodyId).toBe(w.survivor);
+      },
+    },
+    {
+      name: 'a survivor bay edited since its re-clip',
+      kinds: ['survivorBays'],
+      kind: 'waterBodySubAreas',
+      edit: async (w) => {
+        const id = w.rows.survivorBays?.[0] as Id<'waterBodySubAreas'>;
+        await w.t.run((ctx) =>
+          ctx.db.patch(id, { name: 'West Reach', updatedAt: Date.now() + 1_000 }),
+        );
+        return id;
+      },
+      stays: async (w, id) => {
+        expect((await w.t.run((ctx) => ctx.db.get(id as Id<'waterBodySubAreas'>)))?.name).toBe(
+          'West Reach',
+        );
+      },
+    },
+    {
+      name: 'a landmark edited since',
+      kinds: ['landmarks'],
+      kind: 'bodyLandmarks',
+      edit: async (w) => {
+        const id = w.rows.landmarks?.[2] as Id<'bodyLandmarks'>;
+        await w.t.run((ctx) =>
+          ctx.db.patch(id, { name: 'Tern Island', updatedAt: Date.now() + 1_000 }),
+        );
+        return id;
+      },
+      stays: async (w, id) => {
+        const row = await w.t.run((ctx) => ctx.db.get(id as Id<'bodyLandmarks'>));
+        expect(row?.name).toBe('Tern Island');
+        expect(row?.waterBodyId).toBe(w.survivor);
+      },
+    },
+    {
+      name: 'a partner whose flag a moderator changed since',
+      kinds: ['partners'],
+      kind: 'partners',
+      edit: async (w) => {
+        await w.t.run((ctx) =>
+          ctx.db.patch(w.partner, {
+            dedupStatus: 'suspected_duplicate',
+            duplicateCandidateIds: [w.elsewhere, w.survivor],
+          }),
+        );
+        return w.partner;
+      },
+      stays: async (w) => {
+        expect((await w.t.run((ctx) => ctx.db.get(w.partner)))?.duplicateCandidateIds).toEqual([
+          w.elsewhere,
+          w.survivor,
+        ]);
+      },
+    },
+    {
+      name: 'a founding skate moved since',
+      kinds: ['skates'],
+      kind: 'gpsActivities',
+      edit: async (w) => {
+        const id = w.rows.gpsActivities?.[0] as Id<'gpsActivities'>;
+        await w.t.run((ctx) =>
+          ctx.db.patch(id, { waterBodyId: w.elsewhere, waterBodyIds: [w.elsewhere] }),
+        );
+        return id;
+      },
+      stays: async (w, id) => {
+        expect((await w.t.run((ctx) => ctx.db.get(id as Id<'gpsActivities'>)))?.waterBodyId).toBe(
+          w.elsewhere,
+        );
+      },
+    },
+  ];
+
+  test.each(cases)('$name', async (c) => {
+    const w = await world(c.kinds);
+    const mergeId = await mergeV2(w);
+    const id = await c.edit(w, mergeId);
+    await settle(w.t);
+    await unmerge(w, mergeId);
+    const left = await leftOf(w.t, w.loser);
+    // Counted once, named on the unmerge's row; the run still completed.
+    expect(left.count).toBe(1);
+    expect(left.byKind).toEqual({ [c.kind]: 1 });
+    expect(left.rows).toEqual([{ kind: c.kind, id }]);
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
+    // The body itself came back.
+    expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.dedupStatus).not.toBe('merged');
+    await c.stays(w, id);
+  });
+
+  test('a delisted bay edited since stays delisted, and its side row is left live', async () => {
+    const w = await world(['clashingBay']);
+    const mergeId = await mergeV2(w);
+    const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
+    await w.t.run((ctx) => ctx.db.patch(id, { updatedAt: Date.now() + 1_000 }));
+    await unmerge(w, mergeId);
+    const left = await leftOf(w.t, w.loser);
+    expect(left.byKind).toEqual({ waterBodySubAreas: 1, sideActions: 1 });
+    const side = await w.t.run(async (ctx) => {
+      const all = await ctx.db.query('moderationActions').collect();
+      const remove = all.find((r) => r.action === 'remove' && r.targetId === id);
+      return { remove, undone: all.filter((r) => r.undoesActionId === remove?._id) };
+    });
+    expect(side.remove).toBeDefined();
+    expect(side.undone).toEqual([]);
+  });
+});
+
+// ── Paging: a change set past one page drains, one page an execution ───────────────────────────────
+
+suite('a heavy unmerge pages', () => {
+  test('past one page (the page seam at two rows): every page its own execution, the state as before', async () => {
+    const w = await world();
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w);
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 2;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      // The first transaction stopped after its page and scheduled the rest.
+      const pending = await w.t.run((ctx) =>
+        ctx.db.system
+          .query('_scheduled_functions')
+          .filter((q) => q.eq(q.field('name'), 'unmerge:unmergeRest'))
+          .collect(),
+      );
+      expect(pending.length).toBe(1);
+      await settle(w.t);
+      const pages = await w.t.run((ctx) =>
+        ctx.db.system
+          .query('_scheduled_functions')
+          .filter((q) => q.eq(q.field('name'), 'unmerge:unmergeRest'))
+          .collect(),
+      );
+      // Ten moved rows, a skate, a favorite, three bays, three landmarks, two side rows, the derive.
+      expect(pages.length).toBeGreaterThanOrEqual(8);
+      expect(pages.every((p) => p.state.kind === 'success')).toBe(true);
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+    expect(await census(w.t)).toEqual(before);
+    await assertAudit(w, mergeId);
+  });
+
+  test('under the harness’s real limits: a change set past one page drains, one page an execution', async () => {
+    const w = await world([]);
+    // Two thousand favorites of the drawing: one merge moves them (an index range and a write each),
+    // and its change set is stored in parts. Putting each back takes two ranges (the row and its
+    // twin's lookup), so the unmerge's pages end on Convex's 4,096 ranges a transaction.
+    const N = 2_000;
+    await w.t.run(async (ctx) => {
+      for (let i = 0; i < N; i++) {
+        const userId = await ctx.db.insert('profiles', {
+          clerkUserId: `fav${i}`,
+          displayName: `fav${i} Test-Person`,
+          username: `fav${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'active' as const,
+          createdAt: 1,
+        });
+        await ctx.db.insert('waterBodyFavorites', { userId, waterBodyId: w.loser, createdAt: i });
+      }
+    });
+    const mergeId = await mergeV2(w);
+    const parts = await w.t.run(
+      async (ctx) =>
+        (
+          await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .collect()
+        ).length,
+    );
+    expect(parts).toBeGreaterThan(1);
+    await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    const onLoser = async () =>
+      (
+        await w.t.run((ctx) =>
+          ctx.db
+            .query('waterBodyFavorites')
+            .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
+            .collect(),
+        )
+      ).length;
+    const first = await onLoser();
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(N);
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+    await settle(w.t);
+    expect(await onLoser()).toBe(N);
+    const pages = await w.t.run((ctx) =>
+      ctx.db.system
+        .query('_scheduled_functions')
+        .filter((q) => q.eq(q.field('name'), 'unmerge:unmergeRest'))
+        .collect(),
+    );
+    expect(pages.length).toBeGreaterThanOrEqual(1);
+    expect(pages.every((p) => p.state.kind === 'success')).toBe(true);
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
+    // Each back as it was: on the drawing, with its own first instant.
+    const back = await w.t.run((ctx) =>
+      ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
+        .collect(),
+    );
+    expect(back.map((f) => f.createdAt).sort((x, y) => x - y)).toEqual(
+      Array.from({ length: N }, (_, i) => i),
+    );
+  }, 120_000);
+
+  test('an undone unmerge’s later pages do nothing', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+      // Something undoes the unmerge between its pages.
+      await w.t.run((ctx) =>
+        writeAudit(ctx, {
+          actorId: w.actor.id,
+          action: 'merge_waterbody',
+          targetType: 'waterbody',
+          targetId: w.loser,
+          reason: 'Undone',
+          undoesActionId: lead._id,
+          createdAt: Date.now(),
+        }),
+      );
+      await settle(w.t);
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+    const still = await w.t.run((ctx) =>
+      ctx.db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', w.survivor))
+        .collect(),
+    );
+    // The first page moved one row (the report, first in the change set); nothing after it ran.
+    expect(still).toHaveLength(0);
+    const hazards = await w.t.run((ctx) =>
+      ctx.db
+        .query('hazards')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.survivor))
+        .collect(),
+    );
+    expect(hazards).toHaveLength(1);
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+  });
+});
+
+// ── The drawer's message ───────────────────────────────────────────────────────────────────────────
+
+suite('the drawer is told of the merge once, or not at all', () => {
+  const flushAll = async (t: T) => {
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    await settle(t);
+  };
+  const toldDrawer = async (w: World) =>
+    (
+      await w.t.run((ctx) =>
+        ctx.db
+          .query('notifications')
+          .filter((q) => q.eq(q.field('userId'), w.drawer.id))
+          .collect(),
+      )
+    ).length;
+
+  /** The drawer's queued message, if the merge queued one (S4a's enqueue). */
+  const queued = (w: World) =>
+    w.t.run((ctx) =>
+      ctx.db
+        .query('notificationQueue')
+        .filter((q) => q.eq(q.field('userId'), w.drawer.id))
+        .collect(),
+    );
+  const dueNow = (w: World) =>
+    w.t.run(async (ctx) => {
+      for (const row of await ctx.db.query('notificationQueue').collect()) {
+        await ctx.db.patch(row._id, { flushAfter: 0 });
+      }
+    });
+
+  test('an unmerge inside the window drops the merged message', async (ctx) => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    // The `merged` message is S4a's enqueue: until the merge queues one there is nothing to drop.
+    if ((await queued(w)).length === 0) ctx.skip();
+    await unmerge(w, mergeId);
+    await dueNow(w);
+    await flushAll(w.t);
+    expect(await toldDrawer(w)).toBe(0);
+  });
+
+  test('a merge that stands is told once, and an unmerge after it tells nothing more', async (ctx) => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    if ((await queued(w)).length === 0) ctx.skip();
+    await dueNow(w);
+    await flushAll(w.t);
+    expect(await toldDrawer(w)).toBe(1);
+    await unmerge(w, mergeId);
+    await dueNow(w);
+    await flushAll(w.t);
+    expect(await toldDrawer(w)).toBe(1);
+  });
+});
+
+// biome-ignore lint/suspicious/noExportsInTest: the property test and the offer-versus-run table build on this world and its merge; its own suites register only when this file runs.
+export {
+  census,
+  harness,
+  KINDS,
+  type Kind,
+  leftOf,
+  mergeV2,
+  realMerge,
+  rect,
+  settle,
+  type T,
+  unmerge,
+  unmergeRowOf,
+  VOLATILE,
+  type World,
+  world,
+};

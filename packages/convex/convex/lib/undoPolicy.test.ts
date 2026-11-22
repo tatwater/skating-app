@@ -81,7 +81,7 @@ describe('the undo registry (D226)', () => {
     for (const o of owed) expect(o.plan.length).toBeGreaterThan(10);
   });
 
-  test('the Inbox’s inverses are built: none of its §2 rows is still owed, the merge and §3/§4 are', () => {
+  test('the Inbox’s inverses are built: none of its §2 rows is still owed, nor the merge (B01-5d)', () => {
     const owed = new Set(undoOwed().map((o) => o.action));
     for (const action of [
       'resolve_flag',
@@ -98,7 +98,17 @@ describe('the undo registry (D226)', () => {
     ] as const) {
       expect(owed.has(action), action).toBe(false);
     }
-    expect(owed.has('merge_waterbody')).toBe(true);
+    // The unmerge is built (B01-5d): the merge's undo is its inverse, and the unmerge's own is none.
+    expect(owed.has('merge_waterbody')).toBe(false);
+    expect(UNDO_POLICY.merge_waterbody.undo).toEqual({
+      kind: 'inverse',
+      inverse: 'unmerge_waterbody',
+    });
+    expect(UNDO_POLICY.unmerge_waterbody.undo).toEqual({
+      kind: 'none',
+      why: 'To put them back together, merge them again.',
+    });
+    expect(UNDO_POLICY.unmerge_waterbody.capability).toBe('corpus.duplicates');
     expect(undoOwed().every((o) => o.workstream !== '§2 Inbox')).toBe(true);
   });
 });

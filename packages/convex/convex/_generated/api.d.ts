@@ -201,6 +201,7 @@ import type * as strava from "../strava.js";
 import type * as subAreas from "../subAreas.js";
 import type * as support from "../support.js";
 import type * as undo from "../undo.js";
+import type * as unmerge from "../unmerge.js";
 import type * as waterBodies from "../waterBodies.js";
 import type * as waterBodyFavorites from "../waterBodyFavorites.js";
 import type * as weather from "../weather.js";
@@ -408,6 +409,7 @@ declare const fullApi: ApiFromModules<{
   subAreas: typeof subAreas;
   support: typeof support;
   undo: typeof undo;
+  unmerge: typeof unmerge;
   waterBodies: typeof waterBodies;
   waterBodyFavorites: typeof waterBodyFavorites;
   weather: typeof weather;
