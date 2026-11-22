@@ -10090,6 +10090,153 @@ body says both.
 - S4b's round trips need S4a's `version: 2` writes. S4b builds against the seam with a fixture
   writer, and the executor runs its suite against S4a's merge at integration.
 
+#### B01-5d: the builders integrated (2026-11-22)
+
+The three builders were cherry-picked onto `phase-b01-inbox` from `fd4844df0` with no conflicts:
+- **S4a** (`b01-5d-s4a`, through `92e6ff77a`, three follow-ups included);
+- **S4b** (`b01-5d-s4b`, `c01dd24d6`);
+- **W6** (`b01-5d-w6`, `3ccd89896`).
+
+Nothing is pushed or deployed. The pref narrowing is not in this integration: it waits for #172's
+merge and the backfill.
+
+**What each built:**
+
+- **S4a, the merge:**
+  - The merge records its change set at `version: 2` (fields below).
+  - It refuses a merge too heavy for one transaction (`MERGE_TOO_BIG`), and moves at most 8,000
+    rows of one kind.
+  - `bodyConsole.mergePreview` serves the write's own refusal and its code.
+  - `inboxWrites.mergeDrawn` merges a drawing from the Inbox into its one live survivor.
+  - `canCode` is required on every Inbox item. Two codes are served:
+    - `approve: 'awaitsDrawing'`, a place ask waiting on a bay or landmark;
+    - `mergeDrawn: 'ownDrawing'`, a drawer's own drawing. One `ownDrawingRefusal` feeds the
+      preview, the merge and the code.
+  - `candidate.nearestKnown` names the nearest body of ours.
+  - The drawer is told `moderator_decision` `merged`.
+  - The seed has a merge-proof pair and `waterBodies:mergeProofCensus`.
+  - The harness enforces Convex's 8,192-item array cap (heavy fixtures were rebuilt within it).
+  - The follow-ups:
+    - `approve` and `decline` ask who decides before their own preconditions;
+    - `reresolve` asks the rule (it had not refused a staffer's own admit);
+    - the seed's clear finds what it made, whatever was merged since.
+- **S4b, the unmerge:**
+  - `unmerge_waterbody`, the merge's inverse (D291), runs from the version-2 change set, through
+    the forward paths, in pages.
+  - Its receipt is `unmerge.receipt`.
+  - Tests: its property test, its mutation-held cases, and a pre-version-2 merge in the
+    offer-versus-run table.
+- **W6, the web:**
+  - Place's *Draw in Body →* reads `canCode`.
+  - Board 2.3's *Nearest* row and the map's rule come from `nearestKnown`.
+  - The Drawn handler's live *Merge into ‹body›* lever (2.5).
+  - The Shape tab's *Merge into another body*: search or press a touching body, the server's
+    preview, a reason, the write.
+  - Stories at the board's size and a phone's.
+  - The unmerge's left-rows sentence.
+
+**The change set's version-2 fields** (`MergeChangeSet`, beside the version-1 record):
+
+| Field | What it holds |
+| --- | --- |
+| `version` | `2`. Absent means a merge recorded before B01-5d, which the unmerge refuses. |
+| `sideActions` | The rows the merge wrote beside its own (bay delists, landmarks retired as bays, folds, over-cap retirements). The unmerge marks each one undone. |
+| `dedupAfter` | Each partner's dedup fields as the merge left them, so a flag changed since can be told apart. |
+| `survivorSubAreasBefore` | The survivor's own bays that the re-clip changed, as they stood before. |
+| `loserReview` | The loser's review status before the merge (a drawing's `pending`), and whether its Inbox item was decided. The brief called this `reviewStatusBefore`. |
+| `movedActivities` | The founding skates the merge moved (fork 2), with both of their body fields. |
+
+**The unmerge's row table, as built.**
+
+The unmerge **refuses**, before any write, in one order shared by the offer and the run:
+1. no change set, or one before `version: 2` (the pre-v2 sentence);
+2. a part of the record is missing;
+3. the loser is no longer merged into the recorded survivor;
+4. the survivor is gone;
+5. the survivor has since been merged into another body ("Unmerge it from ‹X› first");
+6. the viewer drew the merged drawing (D289).
+
+The engine refuses the rest: already undone, overtaken by a later row on the loser, or the
+capability (`corpus.duplicates`).
+
+It **leaves** a row where it is, counted on its own audit row by kind with the first 20 named:
+
+| Kind | Left when |
+| --- | --- |
+| Reports, hazards, bounties, features, put-ins, re-pointed favorites | The row is on another body now, or gone. |
+| Requests, place names, body flags | The row was decided since (it stands, on the survivor). |
+| Partners' dedup flags | The flag no longer equals its after-image. |
+| Re-created favorites | The kept row is gone. |
+| The loser's bays and the survivor's re-clipped bays | The bay was edited since. |
+| Landmarks | The landmark was edited since. |
+| Founding skates | The skate's body is no longer what the merge made it. |
+| Side rows | Their target was left (edited since). |
+
+**The receipt**, wired in this integration:
+- **The Undone toast** after a merge's Undo, and **the unmerge's History row**, read
+  `unmerge.receipt` live. They say "Moving rows back…" while the pages land. Then they say
+  "N rows had changed since the merge and stay where they are", or nothing more when every row
+  went back.
+- **A pre-v2 merge's History row** says its sentence before anything runs.
+
+**The seed's new numbers:**
+- 121 steps;
+- 27 open, 14 decided;
+- by lane: access 4, places 4, drawn 2.
+
+**Boards, and the words the founder hasn't seen** (W6's, unless marked):
+- **The Shape tab's merge flow has no board.** It is built in the Body console's conventions.
+- **2.5:** "Told it was merged" (*If merged into*'s drawer row) and "Kept · moves with it".
+- **2.3:** "0.8 mi" is said without a direction.
+- **The receipt's** "Moving rows back…" is this integration's own.
+
+**Owed:**
+- Access alerts and linked lots don't move with a merge.
+- Old merged drawings keep `pending`: there is no backfill.
+- A skate that names the loser only in its list (`waterBodyIds`) stays where it is.
+- The ETL path skips the weight check.
+
+**What the integration found:**
+- **The fixture writer would have hidden the real merge.**
+  - Once S4a's merge wrote `version: 2`, `unmerge.test.ts`' writer returned early. Its `chunked`
+    option was skipped silently, so "the change set split in parts" and "a part of the change
+    set missing" ran on a single-part snapshot.
+  - The writer is now deleted. `mergeV2` is the real merge and throws on anything but
+    version 2, and `chunked` re-stores the real change set in three parts.
+- **The real merge and the unmerge agree.** On the real merge, these all pass:
+  - all of `unmerge.test.ts` and `unmerge.property.test.ts`;
+  - the `merge_waterbody` offer-versus-run cases;
+  - the three tests un-skipped here: S4b's two drawer-message tests, and S4a's seed
+    apply → merge → unmerge → clear.
+- **The break is caught.** With the real merge's `loserReview` recorded as `reviewStatus: null`,
+  18 tests fail.
+- **`canCode` fixtures.**
+  - 13 fixture lines took `canCode: {}`, and every item fixture now serves the field.
+  - The drawer's own seat on the Drawn handler carries `mergeDrawn: 'ownDrawing'`, with no lever
+    and the server's sentence.
+- **W6's placeholders** became the real `api.*`. Its fixtures now match the server's answers
+  (`lakePond`, `refusal`/`code` on every preview, `flagsClosed` and `survivorId`). *Too big* is
+  the server's sentence; the tab words no refusal itself.
+- **`useTabAction`** takes a receipt built from the write's answer (W6's request), so the Shape
+  tab's merge no longer mutates its receipt.
+- **Four guards** flagged the builders' code, and each was checked and listed:
+  - the unmerge's two Inbox writers (both call `rekey`);
+  - the Shape tab's direct mutation;
+  - the survivor search's uncapped field (a read);
+  - the property test's two environment knobs.
+- **`MergeSearch` stays in `MergeFlow`.** It is a search box and a pick-one table, built from kit
+  parts and bound to the console's read layer (`Loadable`, `ReadNote`). It has one use, so there is
+  nothing new for the kit.
+- **The array cap caught one more fixture**, in the workspace run: `bodyGeo.test.ts`' two
+  largest-lake tests (B01-3g) stored a single 14,152-point ring, which Convex would refuse too.
+  - The fixture now keeps the 14,151 vertices with no ring past the cap: an 8,151-vertex shore and
+    six islands.
+  - The convex suite's failure had also stopped turbo's web task partway.
+- **Two slow B01-5d tests** got the R9 rule's 5x headroom over their time in CI's `pnpm test`:
+  - the unmerge's real-limits paging test: 60 s there (3.6 s alone), now 300 s;
+  - the seed's unmerge → clear: 6.9 s there, now 60 s.
+- **The codegen check** on a throwaway anonymous backend matched the committed `_generated`.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
