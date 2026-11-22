@@ -2,6 +2,7 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
+import { FAILED_READ } from '../reads/readFailureFixtures';
 import { ALL_OPEN_ROWS, LANES } from './list/inboxFixtures';
 import type { InboxLanesView } from './list/inboxTypes';
 import {
@@ -12,6 +13,7 @@ import {
   must,
   resetHarness,
 } from './testing/routeHarness';
+import { ITEM_FAILED } from './words/inboxWords';
 
 /**
  * **The route and the view together** (Greptile on #171, round 1): what the wiring does, where the
@@ -134,5 +136,20 @@ describe('another lane, tab or filter keeps a linked item and closes a list-open
     lane('Safety');
     expect(lastPlace()).toMatchObject({ lane: 'safety' });
     expect(lastPlace()?.item).toBeUndefined();
+  });
+});
+
+describe('an item the server couldn’t read (R8: a required row past the budget throws)', () => {
+  it('draws the inspector’s failed read with Try again — never a crash or a blank pane', () => {
+    h.lanes = LANES;
+    h.search = { lane: 'requests', item: 'request:rq_heavy' };
+    // The read layer turns the query's throw into its failure (`consoleReads`' own tests hold that).
+    h.answers['inbox:item'] = () => FAILED_READ;
+    mount();
+    const pane = must(document.querySelector<HTMLElement>('[data-pane="detail"]'), 'the inspector');
+    expect(within(pane).getAllByText(ITEM_FAILED).length).toBeGreaterThan(0);
+    expect(within(pane).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // The list beside it still draws: one failed read takes down its own block, not the page.
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
   });
 });
