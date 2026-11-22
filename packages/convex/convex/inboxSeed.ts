@@ -89,13 +89,13 @@ export const SEED_NAMED_BODIES = {
 } as const;
 type NamedRole = keyof typeof SEED_NAMED_BODIES;
 /**
- * `dormant`: a body asleep for want of reports (an `activate` ask); `closed`: one ruled to have no
- * public access (a `contest_access` ask); `removed`: one taken off the map (a `restore` ask). The
- * dispute's ruling is never on a real body: it goes on a body the seed drew and approved. Each role is
- * pinned to the body the seed's own first row on it names, so a role whose body later moves (an
- * activate ask approved) is never filed again on another body.
+ * The real bodies the seed files *about* — reports, a pin, access reports, a bay and a takedown ask,
+ * landmark asks — and nothing more: every body an ask or an operator act needs in some state (dormant,
+ * ruled closed, removed, ruled accessible) is one the seed drew, approved and put in that state
+ * itself, so the plan is complete on any dev. Each role is pinned to the body the seed's own first row
+ * on it names, so a role is never filed again on another body.
  */
-export type SeedBodyRole = NamedRole | 'dormant' | 'closed' | 'removed';
+export type SeedBodyRole = NamedRole;
 
 /** One step ready to file: the public function, its resolved arguments and who it is filed as. */
 export interface SeedCall {
@@ -175,6 +175,11 @@ export function loopPath(center: LatLng, radius: number): LineString {
   }
   return { type: 'LineString', coordinates };
 }
+
+/** Where each of the seed's own drawn bodies sits — the track and every ask about it share it. */
+const newCenter = (r: Refs) => offset(pointOf(r.body('newfound')), 7_000, 7_000);
+const dormantCenter = (r: Refs) => offset(pointOf(r.body('caspian')), 6_000, -6_000);
+const closedCenter = (r: Refs) => offset(pointOf(r.body('caspian')), -6_000, -9_000);
 
 // ── The finders: each step's stable seed key ────────────────────────────────────────────────────
 
@@ -315,11 +320,13 @@ const ask = (
   label: string,
   where: (r: Refs) => { waterBodyId?: Id<'waterBodies'>; coord: LatLng },
   extra: { note?: string; name?: string } = {},
+  after?: readonly string[],
 ): StepDef => ({
   key,
   label,
   as,
   fn: 'corpusRequests:create',
+  ...(after ? { after } : {}),
   args: (r) => ({ kind, ...where(r), ...extra }),
   find: (ctx, r) => {
     const w = where(r);
@@ -800,19 +807,31 @@ export function seedSteps(): StepDef[] {
     coord: offset(pointOf(r.body('mascoma')), 1_200, -300),
   });
   const admitHere = (r: Refs) => ({ coord: offset(pointOf(r.body('mascoma')), 5_500, 2_500) });
+  // The seed's own bodies each ask is about — drawn, approved and put in the state the ask needs by
+  // the operator, so no ask depends on dev holding a real body in that state.
+  const onSeedBody = (step: string, center: (r: Refs) => LatLng) => (r: Refs) => ({
+    waterBodyId: r.out(step) as Id<'waterBodies'>,
+    coord: center(r),
+  });
   const requests: StepDef[] = [
     ask(
       'req-activate-ada',
       'ada',
       'activate',
-      'an ask to bring a body back',
-      (r) => ({ waterBodyId: r.body('dormant')._id, coord: pointOf(r.body('dormant')) }),
+      'an ask to bring back a body the seed drew and shelved',
+      onSeedBody('drawn-dormant', dormantCenter),
       { note: 'Skated it every weekend last winter.' },
+      ['shelve-dormant'],
     ),
-    ask('req-activate-ben', 'ben', 'activate', 'a sibling ask on the same body', (r) => ({
-      waterBodyId: r.body('dormant')._id,
-      coord: pointOf(r.body('dormant')),
-    })),
+    ask(
+      'req-activate-ben',
+      'ben',
+      'activate',
+      'a sibling ask on the same body',
+      onSeedBody('drawn-dormant', dormantCenter),
+      {},
+      ['shelve-dormant'],
+    ),
     ask('req-admit-cleo', 'cleo', 'admit', 'an ask to add water we do not know', admitHere, {
       note: 'Beaver pond behind the trailhead lot.',
     }),
@@ -828,17 +847,19 @@ export function seedSteps(): StepDef[] {
       'req-restore-finn',
       'finn',
       'restore',
-      'an ask to put a removed body back',
-      (r) => ({ waterBodyId: r.body('removed')._id, coord: pointOf(r.body('removed')) }),
+      'an ask to put back the drawing the approved takedown removed',
+      onSeedBody('drawn-new', newCenter),
       { note: 'People still skate here every winter.' },
+      ['approve-takedown'],
     ),
     ask(
       'req-contest-gus',
       'gus',
       'contest_access',
-      'an ask contesting a no-access ruling',
-      (r) => ({ waterBodyId: r.body('closed')._id, coord: pointOf(r.body('closed')) }),
+      'an ask contesting a no-access ruling on a body the seed drew',
+      onSeedBody('drawn-closed', closedCenter),
       { note: 'There is a public launch on the east side now.' },
+      ['rule-closed'],
     ),
     ask(
       'req-takedown-hana',
@@ -879,7 +900,7 @@ export function seedSteps(): StepDef[] {
       args: (r) => ({
         person: 'gus',
         key: 'track-new',
-        path: loopPath(offset(pointOf(r.body('newfound')), 7_000, 7_000), 160),
+        path: loopPath(newCenter(r), 160),
         startTime: r.now - 28 * HOUR,
       }),
       find: async (ctx) => (await activityByKey(ctx, 'track-new'))?._id ?? null,
@@ -909,6 +930,58 @@ export function seedSteps(): StepDef[] {
         confirmedNew: true,
       }),
       find: async (ctx) => (await activityByKey(ctx, 'track-beach'))?.waterBodyId ?? null,
+    },
+    {
+      key: 'track-dormant',
+      label: 'a recorded loop on a quiet pond',
+      as: 'bare',
+      fn: 'inboxSeed:ensureActivity',
+      args: (r) => ({
+        person: 'cleo',
+        key: 'track-dormant',
+        path: loopPath(dormantCenter(r), 140),
+        startTime: r.now - 34 * HOUR,
+      }),
+      find: async (ctx) => (await activityByKey(ctx, 'track-dormant'))?._id ?? null,
+    },
+    {
+      key: 'drawn-dormant',
+      label: 'a body drawn on a quiet pond (approved, then shelved, then asked back)',
+      as: 'cleo',
+      fn: 'waterBodies:create',
+      args: (r) => ({
+        name: 'Quiet Hollow Pond',
+        type: 'lakePond',
+        activityId: r.out('track-dormant'),
+        confirmedNew: true,
+      }),
+      find: async (ctx) => (await activityByKey(ctx, 'track-dormant'))?.waterBodyId ?? null,
+    },
+    {
+      key: 'track-closed',
+      label: 'a recorded loop on a posted pond',
+      as: 'bare',
+      fn: 'inboxSeed:ensureActivity',
+      args: (r) => ({
+        person: 'dev',
+        key: 'track-closed',
+        path: loopPath(closedCenter(r), 140),
+        startTime: r.now - 36 * HOUR,
+      }),
+      find: async (ctx) => (await activityByKey(ctx, 'track-closed'))?._id ?? null,
+    },
+    {
+      key: 'drawn-closed',
+      label: 'a body drawn on a posted pond (approved, ruled no public access, then contested)',
+      as: 'dev',
+      fn: 'waterBodies:create',
+      args: (r) => ({
+        name: 'Posted Farm Pond',
+        type: 'lakePond',
+        activityId: r.out('track-closed'),
+        confirmedNew: true,
+      }),
+      find: async (ctx) => (await activityByKey(ctx, 'track-closed'))?.waterBodyId ?? null,
     },
     {
       key: 'track-reject',
@@ -1112,6 +1185,56 @@ export function seedSteps(): StepDef[] {
           : null,
     },
     {
+      key: 'approve-dormant',
+      label: 'the quiet-pond drawing approved',
+      as: 'operator',
+      fn: 'waterBodies:approve',
+      args: (r) => ({ waterBodyId: r.out('drawn-dormant') }),
+      find: async (ctx, r) =>
+        (await ctx.db.get(r.out('drawn-dormant') as Id<'waterBodies'>))?.reviewStatus === 'approved'
+          ? 'done'
+          : null,
+    },
+    {
+      key: 'shelve-dormant',
+      label:
+        'the quiet pond shelved by hand (dormant), so an activate ask has a body of the seed’s',
+      as: 'operator',
+      fn: 'standing:setStanding',
+      after: ['approve-dormant'],
+      args: (r) => ({
+        waterBodyId: r.out('drawn-dormant'),
+        standing: 'dormant',
+        note: 'Shelved until someone reports it again.',
+      }),
+      find: (ctx, r) => actionOn(ctx, 'waterbody', r.out('drawn-dormant'), 'set_standing'),
+    },
+    {
+      key: 'approve-closed',
+      label: 'the posted-pond drawing approved',
+      as: 'operator',
+      fn: 'waterBodies:approve',
+      args: (r) => ({ waterBodyId: r.out('drawn-closed') }),
+      find: async (ctx, r) =>
+        (await ctx.db.get(r.out('drawn-closed') as Id<'waterBodies'>))?.reviewStatus === 'approved'
+          ? 'done'
+          : null,
+    },
+    {
+      key: 'rule-closed',
+      label:
+        'the posted pond ruled to have no public access — a body the seed drew, never a real one',
+      as: 'operator',
+      fn: 'waterBodies:setPublicAccess',
+      after: ['approve-closed'],
+      args: (r) => ({
+        waterBodyId: r.out('drawn-closed'),
+        verdict: 'none',
+        note: 'Farm land on every side; posted.',
+      }),
+      find: (ctx, r) => actionOn(ctx, 'waterbody', r.out('drawn-closed'), 'set_public_access'),
+    },
+    {
       key: 'reject-drawn',
       label: 'a drawing rejected',
       as: 'operator',
@@ -1288,21 +1411,11 @@ export function seedSteps(): StepDef[] {
  */
 async function pinnedBodies(
   ctx: QueryCtx,
-  people: Partial<Record<SeedPersonKey, Doc<'profiles'>>>,
 ): Promise<Partial<Record<SeedBodyRole, Id<'waterBodies'>>>> {
   const out: Partial<Record<SeedBodyRole, Id<'waterBodies'>>> = {};
   const reportBody = async (stepKey: string) => {
     const id = await reportByKey(ctx, stepKey);
     return id ? (await ctx.db.get(id))?.waterBodyId : undefined;
-  };
-  const askBody = async (who: SeedPersonKey, kind: Doc<'waterBodyRequests'>['kind']) => {
-    const person = people[who];
-    if (!person) return undefined;
-    const rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_requester_created', (q) => q.eq('requesterId', person._id))
-      .take(50);
-    return rows.find((r) => r.kind === kind)?.waterBodyId;
   };
   const pins: [SeedBodyRole, () => Promise<Id<'waterBodies'> | undefined>][] = [
     ['mascoma', () => reportBody('r-black-ice')],
@@ -1316,9 +1429,6 @@ async function pinnedBodies(
         return id ? (await ctx.db.get(id))?.waterBodyId : undefined;
       },
     ],
-    ['dormant', () => askBody('ada', 'activate')],
-    ['closed', () => askBody('gus', 'contest_access')],
-    ['removed', () => askBody('finn', 'restore')],
   ];
   for (const [role, read] of pins) {
     const id = await read();
@@ -1354,10 +1464,9 @@ async function libraryPick(
  */
 async function seedBodies(
   ctx: QueryCtx,
-  people: Partial<Record<SeedPersonKey, Doc<'profiles'>>>,
 ): Promise<Partial<Record<SeedBodyRole, Doc<'waterBodies'>>>> {
   const out: Partial<Record<SeedBodyRole, Doc<'waterBodies'>>> = {};
-  const pins = await pinnedBodies(ctx, people);
+  const pins = await pinnedBodies(ctx);
   for (const [role, id] of Object.entries(pins) as [SeedBodyRole, Id<'waterBodies'>][]) {
     const body = await ctx.db.get(id);
     if (body) out[role] = body;
@@ -1375,33 +1484,6 @@ async function seedBodies(
       (b) => standingOf(b).standing === 'active',
     );
     if (body) out[role] = body;
-  }
-  const byLane = (lane: Doc<'bodyLibraryRows'>['lane']) =>
-    ctx.db
-      .query('bodyLibraryRows')
-      .withIndex('by_scope_lane_name', (q) => q.eq('scope', SCOPE_ALL).eq('lane', lane))
-      .take(LIBRARY_PROBE);
-  if (!out.dormant) {
-    const body = await libraryPick(ctx, byLane('inactive'), (b) => {
-      const st = standingOf(b);
-      return st.standing === 'dormant' && st.reason === 'inactive';
-    });
-    if (body) out.dormant = body;
-  }
-  if (!out.closed) {
-    const body = await libraryPick(ctx, byLane('no_public_access'), (b) => {
-      const st = standingOf(b);
-      return st.standing === 'dormant' && st.reason === 'no_public_access';
-    });
-    if (body) out.closed = body;
-  }
-  if (!out.removed) {
-    const body = await libraryPick(
-      ctx,
-      byLane('removed'),
-      (b) => standingOf(b).standing === 'removed',
-    );
-    if (body) out.removed = body;
   }
   return out;
 }
@@ -1553,7 +1635,7 @@ export const state = internalQuery({
     assertSeedDeployment();
     const now = Date.now();
     const people = await seedProfiles(ctx);
-    const bodies = await seedBodies(ctx, people);
+    const bodies = await seedBodies(ctx);
     const outs = new Map<string, string>();
     let launch: Id<'putIns'> | null | undefined;
     const refs: Refs = {
@@ -1605,9 +1687,6 @@ export const state = internalQuery({
       bodies: (
         Object.keys({
           ...SEED_NAMED_BODIES,
-          dormant: 1,
-          closed: 1,
-          removed: 1,
         }) as SeedBodyRole[]
       ).map((role) => ({ role, name: bodies[role]?.name ?? null })),
       done: [],

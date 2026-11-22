@@ -599,7 +599,7 @@ describe('the seed, end to end', () => {
 
     expect(await lanesOf(t)).toEqual({
       allOpen: 23,
-      decided: 10,
+      decided: 12,
       lanes: {
         safety: { open: 2, all: 2, reports: 1, hazards: 1, people: 0 },
         accessReports: { open: 2, all: 2, disputes: 1, new: 1 },
@@ -640,6 +640,8 @@ describe('the seed, end to end', () => {
         'contentFlags:removed',
         'contentFlags:restored',
         'contentFlags:unpinned',
+        'drawnBodies:approved',
+        'drawnBodies:approved',
         'drawnBodies:approved',
         'drawnBodies:approved',
         'drawnBodies:rejected',
@@ -743,7 +745,7 @@ describe('the seed, end to end', () => {
 
     // The dry run of the clear says what it would remove, and removes nothing.
     const plan = await t.query(internal.inboxSeed.clearPlan, {});
-    expect(plan).toMatchObject({ profiles: 8, reports: 9, supportTickets: 4, gpsActivities: 4 });
+    expect(plan).toMatchObject({ profiles: 8, reports: 9, supportTickets: 4, gpsActivities: 6 });
 
     const beforeClear = urls.length;
     const cleared = await runClear(t);
