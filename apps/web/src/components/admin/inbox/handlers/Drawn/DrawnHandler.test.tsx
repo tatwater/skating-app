@@ -50,7 +50,9 @@ beforeAll(() => {
 });
 
 /** A decision's answer, as the server writes it: its own row and this viewer's undo offer. */
-const ANSWER = { actionId: 'ma_drawn', undoable: true as const, undoNeedsReason: false };
+const ANSWER = { actionId: 'ma_drawn' as never, undoable: true as const, undoNeedsReason: false };
+/** `mergeDrawn`'s answer beyond the offer: the item, nothing in other lanes, and the survivor. */
+const MERGED = { flagsClosed: 0, survivorId: 'wbcaspian' as never };
 
 const undoServer = (): UndoServer & { latestOwn: ReturnType<typeof vi.fn> } => ({
   latestOwn: vi.fn(async () => null),
@@ -292,7 +294,7 @@ describe('the writes', () => {
     const user = userEvent.setup();
     const u = undoServer();
     const server: DrawnServer = {
-      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, flagsClosed: 0, ...ANSWER })),
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
       reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
@@ -314,8 +316,8 @@ describe('the writes', () => {
     const server: DrawnServer = {
       mergeDrawn: vi.fn(async ({ itemId }) => ({
         itemId,
-        flagsClosed: 0,
-        actionId: 'ma_merge',
+        ...MERGED,
+        actionId: 'ma_merge' as never,
         undoable: true as const,
         undoNeedsReason: true,
       })),
@@ -367,7 +369,7 @@ describe('the writes', () => {
   it('rejects with the reason trimmed', async () => {
     const user = userEvent.setup();
     const server: DrawnServer = {
-      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, flagsClosed: 0, ...ANSWER })),
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
       reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
@@ -407,7 +409,7 @@ describe('the writes', () => {
     const user = userEvent.setup();
     let release: (v: string) => void = () => {};
     const server: DrawnServer = {
-      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, flagsClosed: 0, ...ANSWER })),
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(
         () =>
           new Promise((r) => {

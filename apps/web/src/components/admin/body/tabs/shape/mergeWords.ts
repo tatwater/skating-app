@@ -61,12 +61,6 @@ export const MERGE_WORDS = {
   staysHere: 'Stays here',
   alerts: (count: number) => n(count, 'access alert', 'access alerts'),
   lots: (count: number) => n(count, 'linked lot', 'linked lots'),
-  /**
-   * The refusal a merge too heavy for one transaction gets (fork 3). **The server's sentence is owed
-   * on the preview** (a server ask): until it is served, these are the design's words, and the
-   * write's own refusal reaches its toast in the server's.
-   */
-  tooBig: 'Too much moves for one merge here.',
   /** The confirm, and the reason dialog it opens. */
   mergeInto: (name: string) => `Merge into ${name}`,
   confirm: 'Merge',

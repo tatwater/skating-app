@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { makeFunctionReference } from 'convex/server';
+import type { FunctionReturnType } from 'convex/server';
 import { useCallback, useMemo } from 'react';
 
 import type { UndoTarget } from '../../../shell/undo';
@@ -27,7 +27,8 @@ import { DRAWN_WORDS as W } from './drawnWords';
 export type DrawnAct = 'merge' | 'approve' | 'reject';
 
 /** What `mergeDrawn` answers: the Inbox writes' shape (`InboxWriteResult`): the merge's own row. */
-export type MergeDrawnAnswer = { itemId: Id<'inboxItems'>; flagsClosed: number } & WriteAnswer;
+/** What `inboxWrites.mergeDrawn` answers, as the server types it. */
+export type MergeDrawnAnswer = FunctionReturnType<typeof api.inboxWrites.mergeDrawn>;
 
 /** The three writes, as the handler calls them (a story or a test fakes them). */
 export type DrawnServer = {
@@ -45,17 +46,8 @@ export type DrawnServer = {
   }) => Promise<{ waterBodyId: Id<'waterBodies'> } & WriteAnswer>;
 };
 
-/**
- * The mutations the handler decides through (a test holds the handler to them).
- *
- * `DRAWN_MERGE` is **PLACEHOLDER (B01-5d)**: the write by its name, typed as the brief's snippet,
- * until S4a's `inboxWrites.mergeDrawn` is in the generated api — then `api.inboxWrites.mergeDrawn`.
- */
-export const DRAWN_MERGE = makeFunctionReference<
-  'mutation',
-  Parameters<DrawnServer['mergeDrawn']>[0],
-  MergeDrawnAnswer
->('inboxWrites:mergeDrawn');
+/** The mutations the handler decides through (a test holds the handler to them). */
+export const DRAWN_MERGE = api.inboxWrites.mergeDrawn;
 export const DRAWN_APPROVE = api.waterBodies.approve;
 export const DRAWN_REJECT = api.waterBodies.reject;
 

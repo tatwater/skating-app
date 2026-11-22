@@ -67,7 +67,7 @@ describe('whether it may be confirmed', () => {
   });
 
   it('says a merge too heavy for one go, and offers no confirm', () => {
-    expect(mergeVerdict(MERGE_HEAVY)).toEqual({ confirm: false, said: W.tooBig });
+    expect(mergeVerdict(MERGE_HEAVY)).toEqual({ confirm: false, said: MERGE_HEAVY.refusal });
   });
 
   it('offers no confirm while the preview is on its way, and says nothing', () => {

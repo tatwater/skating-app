@@ -118,20 +118,23 @@ const decidedState = (viewer: Viewer): RequestItem['decided'] =>
     : null;
 
 /** What the read adds to every request item: the ask it names for the decision, and the cut. */
-type Served = 'primaryRequestId' | 'asksCut' | 'ruling' | 'dormancy';
+type Served = 'primaryRequestId' | 'asksCut' | 'ruling' | 'dormancy' | 'canCode';
 
 /**
  * A request item as served: `primaryRequestId` is the newest open ask (the first open one in `asks`,
  * served newest first), else the newest; nothing cut; no ruling or dormancy unless the kind has one.
  */
 function served(
-  item: Omit<RequestItem, Served> & Partial<Pick<RequestItem, 'ruling' | 'dormancy' | 'asksCut'>>,
+  item: Omit<RequestItem, Served> &
+    Partial<Pick<RequestItem, 'ruling' | 'dormancy' | 'asksCut' | 'canCode'>>,
 ): RequestItem {
   const named = item.asks.find((a) => a.status === 'open') ?? item.asks[0];
   return {
     ruling: null,
     dormancy: null,
     asksCut: false,
+    // No request verb's refusal has a code (the server codes only a place ask's waiting Approve).
+    canCode: {},
     ...item,
     primaryRequestId: (named?.requestId ?? id('rqnone')) as RequestItem['primaryRequestId'],
   };

@@ -87,6 +87,8 @@ export const DISPUTE: AccessItem = {
   memberCount: 2,
   memberCountIsFloor: false,
   can: ALLOWED,
+  // No ruling verb's refusal has a code (the server codes only a place ask's waiting Approve).
+  canCode: {},
   decided: null,
   body: BODY,
   // Neither list was cut short of its count.

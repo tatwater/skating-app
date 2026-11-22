@@ -284,7 +284,7 @@ describe('the Shape tab’s merge, through the route', () => {
     const confirm = screen.getByRole('button', { name: 'Merge into Crystal Lake' });
     expect(confirm).toBeDisabled();
     expect(screen.getByRole('region', { name: 'Into Crystal Lake' })).toHaveTextContent(
-      MERGE_WORDS.tooBig,
+      MERGE_HEAVY.refusal as string,
     );
     await user.click(confirm);
     expect(screen.queryByRole('alertdialog')).toBeNull();

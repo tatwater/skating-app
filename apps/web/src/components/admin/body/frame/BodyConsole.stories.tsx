@@ -15,7 +15,6 @@ import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
 import { FIT_PADDING } from '../map/useBodyMapCanvas';
 import type { MergeFlowProps } from '../tabs/shape/MergeFlow';
 import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL } from '../tabs/shape/mergeFixtures';
-import { MERGE_WORDS } from '../tabs/shape/mergeWords';
 import { BodyBoard } from './bodyBoard';
 import { CAPPED_HISTORY, MASCOMA_BOUNDS, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
@@ -388,7 +387,9 @@ export const MergeTooHeavy: Story = {
   play: async ({ canvasElement }) => {
     const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
     await expect(preview).toHaveTextContent('Reports 1,000+');
-    await expect(within(preview).getByRole('note')).toHaveTextContent(MERGE_WORDS.tooBig);
+    await expect(within(preview).getByRole('note')).toHaveTextContent(
+      MERGE_HEAVY.refusal as string,
+    );
     await expect(
       within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
     ).toBeDisabled();

@@ -9,7 +9,6 @@ import { expectKeyboardOperable } from '@/test/keyboardAudit';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import type { MergeFlowProps } from './MergeFlow';
 import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL } from './mergeFixtures';
-import { MERGE_WORDS } from './mergeWords';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_COMPUTED_YET, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
 
@@ -325,7 +324,7 @@ describe('the merge itself', () => {
       }),
     );
     const preview = screen.getByRole('region', { name: 'Into Crystal Lake' });
-    expect(within(preview).getByRole('note')).toHaveTextContent(MERGE_WORDS.tooBig);
+    expect(within(preview).getByRole('note')).toHaveTextContent(MERGE_HEAVY.refusal as string);
     expect(preview).toHaveTextContent('Reports 1,000+');
     const confirm = within(preview).getByRole('button', { name: 'Merge into Crystal Lake' });
     expect(confirm).toBeDisabled();

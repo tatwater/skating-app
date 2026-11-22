@@ -94,9 +94,6 @@ describe('the bar, from the item’s can alone', () => {
         canCode: {},
       }).draw,
     ).toBe(false);
-    // A code not yet served (the field optional until the server serves it): nothing drawn.
-    const { canCode: _, ...unserved } = BAY_UNDRAWN;
-    expect(placeBar(unserved).draw).toBe(false);
   });
 
   it('follows the code, never the drawing facts the item also serves', () => {

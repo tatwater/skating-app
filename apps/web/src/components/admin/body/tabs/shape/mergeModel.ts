@@ -1,5 +1,5 @@
-import type { Id } from '@skating/convex/dataModel';
-import { makeFunctionReference } from 'convex/server';
+import { api } from '@skating/convex/api';
+import type { FunctionReturnType } from 'convex/server';
 
 import { MERGE_WORDS as W } from './mergeWords';
 
@@ -11,16 +11,12 @@ import { MERGE_WORDS as W } from './mergeWords';
  * the read's bound is drawn as the floor it is.
  */
 
+/** `bodyConsole.mergePreview`'s answer, as the server types it (`MergePreview` in `bodyConsole.ts`). */
+export type MergePreview = FunctionReturnType<typeof api.bodyConsole.mergePreview>;
+type PreviewOk = Extract<MergePreview, { ok: true }>;
+
 /** A body as the preview names it (the Inbox's `BodyRefView`). */
-export type MergeBodyRef = {
-  waterBodyId: Id<'waterBodies'>;
-  name: string;
-  place: string | null;
-  type: string;
-  areaSqM: number | null;
-  removed: boolean;
-  point: { lat: number; lng: number } | null;
-};
+export type MergeBodyRef = PreviewOk['survivor'];
 
 /** The kinds of row a merge moves, in the order the preview lists them. */
 export const MOVE_KINDS = [
@@ -36,55 +32,15 @@ export const MOVE_KINDS = [
   'subAreas',
   'landmarks',
   'gpsActivities',
-] as const;
+] as const satisfies readonly (keyof PreviewOk['moves'])[];
 export type MoveKind = (typeof MOVE_KINDS)[number];
 
-/** `bodyConsole.mergePreview`'s answer, as the brief's snippet types it. */
-export type MergePreview =
-  | { ok: false; refusal: string }
-  | {
-      ok: true;
-      survivor: MergeBodyRef;
-      loser: MergeBodyRef;
-      /** Rows that move, by kind, each `{ count, capped }` (a floor past the read's bound). */
-      moves: Record<MoveKind, { count: number; capped: boolean }>;
-      favoritesDeduped: number;
-      /** Bays that would be delisted by a name the survivor already has. */
-      baysClashing: string[];
-      /** The union of the moderators' lists, against their caps. */
-      lists: {
-        pins: number;
-        aliases: number;
-        links: number;
-        caps: { pins: number; aliases: number; links: number };
-      };
-      /** What stays on the loser: access alerts and linked lots. */
-      staysBehind: { accessAlerts: number; parkingLots: number };
-      /** Past one transaction's budget the merge is refused here. */
-      tooBig: boolean;
-    };
+/** What `waterBodies.merge` answers: the survivor, its own row and this viewer's undo offer. */
+export type MergeAnswer = FunctionReturnType<typeof api.waterBodies.merge>;
 
-/** What `waterBodies.merge` answers once it offers its undo (the brief's snippet). */
-export type MergeAnswer = { survivorId: Id<'waterBodies'>; actionId: string } & (
-  | { undoable: true; undoNeedsReason: boolean }
-  | { undoable: false }
-);
-
-/**
- * **PLACEHOLDER (B01-5d)**: the preview read and the merge write by name, typed as the brief's
- * snippets, until S4a's `bodyConsole.mergePreview` and `merge`'s new answer are in the generated
- * api — then `api.bodyConsole.mergePreview` and `api.waterBodies.merge`.
- */
-export const MERGE_PREVIEW = makeFunctionReference<
-  'query',
-  { loserId: Id<'waterBodies'>; survivorId: Id<'waterBodies'> },
-  MergePreview
->('bodyConsole:mergePreview');
-export const MERGE_WRITE = makeFunctionReference<
-  'mutation',
-  { survivorId: Id<'waterBodies'>; loserId: Id<'waterBodies'>; reason?: string },
-  MergeAnswer
->('waterBodies:merge');
+/** The preview read and the merge write the Shape tab calls. */
+export const MERGE_PREVIEW = api.bodyConsole.mergePreview;
+export const MERGE_WRITE = api.waterBodies.merge;
 
 /** The body picked to survive: by id and name, from the touching list or the search. */
 export type Survivor = { id: string; name: string };
@@ -128,8 +84,8 @@ export function consequenceRows(p: Extract<MergePreview, { ok: true }>): Row[] {
 
 /**
  * Whether the merge may be confirmed, and what is said where it may not: on its way or failed, no
- * confirm (the read says so); refused, the server's sentence; too big, the sentence a too-heavy merge
- * is refused with. Only a preview that is `ok` and not too big confirms.
+ * confirm (the read says so); refused — outright, or too big with its counts — the server's own
+ * sentence, never one worded here. Only a preview the server would run confirms.
  */
 export function mergeVerdict(preview: MergePreview | undefined | null): {
   confirm: boolean;
@@ -137,6 +93,6 @@ export function mergeVerdict(preview: MergePreview | undefined | null): {
 } {
   if (preview == null) return { confirm: false, said: null };
   if (!preview.ok) return { confirm: false, said: preview.refusal };
-  if (preview.tooBig) return { confirm: false, said: W.tooBig };
+  if (preview.refusal !== null) return { confirm: false, said: preview.refusal };
   return { confirm: true, said: null };
 }

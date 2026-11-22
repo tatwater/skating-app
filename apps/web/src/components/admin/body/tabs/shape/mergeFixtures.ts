@@ -2,17 +2,16 @@ import { MASCOMA_ID, NEIGHBOR_ID } from '../../frame/bodyFixtures';
 import type { MergeAnswer, MergeBodyRef, MergePreview, MoveKind } from './mergeModel';
 
 /**
- * **`bodyConsole.mergePreview`'s answers, as the brief's snippet types them** — for stories and tests
- * only. Mascoma Lake (the console's body) merging into Crystal Lake (the body that touches it), and
- * the other answers the preview can give. **PLACEHOLDER (B01-5d)**: built on the snippet while S4a
- * writes the read; the integrator checks these against its real answers.
+ * **`bodyConsole.mergePreview`'s answers, as the server types them** — for stories and tests only.
+ * Mascoma Lake (the console's body) merging into Crystal Lake (the body that touches it), and the
+ * other answers the preview can give, each in the server's own words and codes.
  */
 
 const ref = (waterBodyId: string, name: string, place: string): MergeBodyRef => ({
   waterBodyId: waterBodyId as MergeBodyRef['waterBodyId'],
   name,
   place,
-  type: 'lake',
+  type: 'lakePond',
   areaSqM: 4_400_000,
   removed: false,
   point: null,
@@ -57,6 +56,8 @@ export const MERGE_TO_CRYSTAL: Extract<MergePreview, { ok: true }> = {
   lists: { pins: 3, aliases: 4, links: 2, caps: { pins: 10, aliases: 20, links: 10 } },
   staysBehind: { accessAlerts: 1, parkingLots: 2 },
   tooBig: false,
+  refusal: null,
+  code: null,
 };
 
 /** A duplicate with nothing on it: only the lists to say. */
@@ -73,18 +74,23 @@ export const MERGE_HEAVY: Extract<MergePreview, { ok: true }> = {
   ...MERGE_TO_CRYSTAL,
   moves: { ...MERGE_TO_CRYSTAL.moves, reports: { count: 1_000, capped: true } },
   tooBig: true,
+  // The write's own sentence and code (`MERGE_TOO_BIG`, `lib/mergeLoad`).
+  refusal:
+    'Too much moves for one merge here. Merge it from the duplicates queue in parts, or ask an admin.',
+  code: 'tooBig',
 };
 
 /** The server refuses it outright (`merge`'s own sentence). */
 export const MERGE_REFUSED: MergePreview = {
   ok: false,
   refusal: 'Survivor is itself merged — pick the canonical body',
+  code: 'survivorMerged',
 };
 
 /** The merge's answer: its own audit row, and the unmerge offered with a reason asked. */
 export const MERGE_ANSWER: MergeAnswer = {
   survivorId: NEIGHBOR_ID as MergeAnswer['survivorId'],
-  actionId: 'ma_merge_mascoma',
+  actionId: 'ma_merge_mascoma' as MergeAnswer['actionId'],
   undoable: true,
   undoNeedsReason: true,
 };
