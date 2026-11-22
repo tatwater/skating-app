@@ -950,8 +950,8 @@ describe('the seed, end to end', () => {
       ['reply', 'failed', 'seed'],
     ]);
     const sends = await t.run(async (ctx) =>
-      (await ctx.db.system.query('_scheduled_functions').collect()).filter(
-        (j) => j.name === 'support:sendReply',
+      (await ctx.db.system.query('_scheduled_functions').collect()).filter((j) =>
+        /^support(\.js)?:sendReply$/.test(j.name),
       ),
     );
     expect(sends).toEqual([]);

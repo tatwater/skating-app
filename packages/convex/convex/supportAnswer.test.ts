@@ -300,6 +300,9 @@ describe('support.reply and its send', () => {
     expect(out.sendAfter - Date.now()).toBeGreaterThan(SETTLE_MS - 10);
     expect(out.sendAfter - Date.now()).toBeLessThanOrEqual(SETTLE_MS + 10);
     expect((await w.message(out.messageId))?.status).toBe('settling');
+    // Its send is scheduled once (so the seed's "none scheduled" below reads a real name).
+    const jobs = await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.filter((j) => /^support(\.js)?:sendReply$/.test(j.name))).toHaveLength(1);
     await settle(w);
     const sent = mail.sent();
     expect(sent).toHaveLength(1);
@@ -434,7 +437,7 @@ describe('support.reply and its send', () => {
     });
     await settle(w);
     expect(mail.calls.some((c) => c.url.endsWith('/users/user_early'))).toBe(true);
-    expect((mail.sent()[0]?.body as { to: string }).to).toBe('early@example.test');
+    expect((mail.sent()[0]?.body as { to: string } | undefined)?.to).toBe('early@example.test');
     expect((await w.message(out.messageId))?.status).toBe('sent');
   });
 
@@ -477,7 +480,7 @@ describe('support.reply and its send', () => {
     );
     await w.admin.as.mutation(api.support.reply, { ticketId, body: 'It lifts on Friday.' });
     await settle(w);
-    expect((mail.sent()[0]?.body as { to: string }).to).toBe('finn@example.test');
+    expect((mail.sent()[0]?.body as { to: string } | undefined)?.to).toBe('finn@example.test');
   });
 
   test('the reply’s cap is 5,000 characters', async () => {
@@ -524,7 +527,7 @@ describe('a seeded ticket is never mailed (D287)', () => {
     expect(out).toMatchObject({ status: 'failed', failedWhy: 'seed' });
     expect(await w.message(out.messageId)).toMatchObject({ status: 'failed', failedWhy: 'seed' });
     const jobs = await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
-    expect(jobs.filter((j) => j.name === 'support:sendReply')).toEqual([]);
+    expect(jobs.filter((j) => /^support(\.js)?:sendReply$/.test(j.name))).toEqual([]);
     // Driven through the send anyway — as a row a later bug left settling would be.
     await w.t.action(internal.support.sendReply, { messageId: out.messageId });
     await w.t.run((ctx) =>
