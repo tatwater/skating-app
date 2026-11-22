@@ -559,7 +559,10 @@ export async function photoSiblings(
     if (!sib) continue;
     siblings.push({
       photoId: sib._id,
-      thumbUrl: r.canReadContent ? await r.ctx.storage.getUrl(sib.thumbStorageId) : null,
+      thumbUrl:
+        r.canReadContent && sib.purgedAt === undefined
+          ? await r.ctx.storage.getUrl(sib.thumbStorageId)
+          : null,
       moderationStatus: sib.moderationStatus ?? 'visible',
     });
   }
@@ -733,15 +736,17 @@ async function flagTargetView(
         ? bodyRef(await r.must<'waterBodies'>('waterBody', report.waterBodyId))
         : null;
       const withdrawnAt = await photoWithdrawnOf(r, p._id);
+      // A purged photo's tombstone serves no address, whatever storage still holds (D222).
       const staff = r.canReadContent;
+      const bytes = staff && p.purgedAt === undefined;
       const status = p.moderationStatus ?? 'visible';
       const photo: PhotoSubjectView = {
         photoId: p._id,
         caption: staff || status === 'visible' ? (p.caption ?? null) : null,
         takenAt: p.takenAt ?? null,
         createdAt: p.createdAt,
-        url: staff ? await r.ctx.storage.getUrl(p.storageId) : null,
-        thumbUrl: staff ? await r.ctx.storage.getUrl(p.thumbStorageId) : null,
+        url: bytes ? await r.ctx.storage.getUrl(p.storageId) : null,
+        thumbUrl: bytes ? await r.ctx.storage.getUrl(p.thumbStorageId) : null,
         reportId: p.reportId ?? null,
         body,
         siblings: [],

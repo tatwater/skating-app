@@ -210,11 +210,15 @@ export async function resolvePhotoUrls(
     if (!photo) continue;
     const shown = photoVisible(photo);
     if (!shown && opts.staff !== true) continue;
-    // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`.
-    const [url, thumbUrl] = await Promise.all([
-      ctx.storage.getUrl(photo.storageId as Id<'_storage'>),
-      ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>),
-    ]);
+    // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`. A purged
+    // photo's tombstone serves no address, whatever storage still holds (D222).
+    const [url, thumbUrl] =
+      photo.purgedAt !== undefined
+        ? [null, null]
+        : await Promise.all([
+            ctx.storage.getUrl(photo.storageId as Id<'_storage'>),
+            ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>),
+          ]);
     results.push({
       photoId,
       url,

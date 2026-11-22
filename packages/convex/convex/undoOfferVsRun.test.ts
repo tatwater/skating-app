@@ -187,6 +187,94 @@ const ALL: Viewer[] = [
   'admin',
 ];
 
+/** A photo of `uploader`'s on a report of theirs, flagged by `by` (B01-5e). */
+const flaggedPhoto = async (w: W, uploader: P, by: P) => {
+  const r = await w.report(uploader.id);
+  const photoId = await w.t.run(async (ctx) => {
+    const id = await ctx.db.insert('photos', {
+      storageId: await ctx.storage.store(new Blob(['full'])),
+      thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
+      uploaderId: uploader.id,
+      placeOnMap: false,
+      reportId: r,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(r, { photoIds: [id] });
+    return id;
+  });
+  const flagId = await by.as.mutation(api.contentFlags.flag, {
+    targetType: 'photo',
+    targetId: photoId,
+    reason: 'inappropriate',
+  });
+  return { photoId, flagId };
+};
+
+/** The photo verbs' cases (B01-5e): their undos weighed by the uploader, a filer, every role. */
+const PHOTO_CASES: Case[] = [
+  {
+    name: 'photo hide (an Inbox takedown) → restore',
+    viewers: ALL,
+    setup: async (w) => {
+      const { flagId } = await flaggedPhoto(w, w.p.subject, w.p.filer);
+      const out = await w.p.actor.as.mutation(api.inboxWrites.takeDown, {
+        itemId: await w.itemOfFlag(flagId),
+        status: 'hidden',
+        reason: 'A face in frame',
+      });
+      return out.actionId;
+    },
+  },
+  {
+    name: 'photo removal (the record write) → restore',
+    viewers: ALL,
+    setup: async (w) => {
+      const { photoId } = await flaggedPhoto(w, w.p.subject, w.p.filer);
+      const out = await w.p.actor.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'photo',
+        targetId: photoId,
+        status: 'removed',
+        reason: 'Not ice',
+      });
+      return out.actionId;
+    },
+  },
+  {
+    name: 'photo restore → back down',
+    viewers: ALL,
+    setup: async (w) => {
+      const { photoId } = await flaggedPhoto(w, w.p.subject, w.p.filer);
+      await w.p.colleague.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'photo',
+        targetId: photoId,
+        status: 'hidden',
+        reason: 'x',
+      });
+      const out = await w.p.actor.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'photo',
+        targetId: photoId,
+        status: 'visible',
+      });
+      return out.actionId;
+    },
+  },
+  {
+    name: 'photo hide, then withdrawn by its uploader (the undo refused for everyone)',
+    viewers: ALL,
+    setup: async (w) => {
+      const { photoId } = await flaggedPhoto(w, w.p.subject, w.p.filer);
+      const out = await w.p.actor.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'photo',
+        targetId: photoId,
+        status: 'hidden',
+        reason: 'x',
+      });
+      await w.p.subject.as.mutation(api.photos.remove, { photoId });
+      return out.actionId;
+    },
+  },
+];
+
 const CASES: Case[] = [
   {
     name: 'hide (an Inbox takedown) → restore',
@@ -710,6 +798,8 @@ const CASES: Case[] = [
     },
   },
 ];
+// B01-5e: the photo verbs, four cases × every viewer kind.
+CASES.push(...PHOTO_CASES);
 
 /** A skater's ticket, and what a note or reply on it sends (B01-5f). */
 async function noteOn(w: W) {
