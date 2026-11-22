@@ -10265,6 +10265,65 @@ It **leaves** a row where it is, counted on its own audit row by kind with the f
   - the seed's unmerge → clear: 6.9 s there, now 60 s.
 - **The codegen check** on a throwaway anonymous backend matched the committed `_generated`.
 
+#### B01-5d: the web review (R11) and its fixes (2026-11-22)
+
+An independent web review of `257dd098f`. Each fix is its own commit with a test that fails
+without it.
+
+**The reviewer's clean areas:**
+- no write sends a wrong id;
+- no privacy gap;
+- no crash.
+
+**The findings and their fixes:**
+
+1. **The History half of the unmerge couldn't be reached.**
+   - *The finding:* `shell/HistoryPanel` has been mounted nowhere since B01-2 built it (#109). The
+     History the console shows is the Body console's `BodyHistorySection`, read-only.
+   - *The fix:*
+     - `bodyHistory` now gives each row a second line from the row itself, a read that already
+       served `metadata` and the undo state the web dropped. An unmerge says "Moving rows back…",
+       "Every row went back", or "N rows had changed since the merge and stay where they are". A
+       pre-version-2 merge says why it can't be undone.
+     - `shell/unmergeLine` is the one wording, shared with the Undone toast.
+     - The unmerge's row is now also linked to the survivor, so both bodies' History show it.
+   - *Not done unasked:* mounting `HistoryPanel`.
+2. **The lit body stopped matching the picked survivor.** The route's one `pick` now lights the map
+   from the survivor (`litForSurvivor`):
+   - a touching body lights its outline;
+   - a body found by name that the map doesn't draw lights nothing, as does *Pick another* —
+     never the body picked before.
+3. **The *Nearest* rule's label wasn't its line's length.** The server measures from the ask's
+   point to the outline, which the map read doesn't serve. The nearest body now gets a plain
+   `leader`, with no figure; the distance is the *Nearest* row's alone.
+4. **The reason dialog reopened by itself.** A refusal arriving mid-dialog now closes it for good,
+   with a toast in the server's words. The moderator opens it again.
+5. **"Stays behind" counts were drawn as exact.** S4a's `06e53d868` flags each preview bound
+   `{ count, capped }`. Capped counts read "N+", including "0+", and a capped bay-name list ends
+   "…and more".
+6. **Copy and leftovers:**
+   - the dialog says what Undo does, including that rows changed in the meantime stay where they
+     are;
+   - the unused `searchPlaceholder` is gone;
+   - the survivor search asks for seven, lists six, and says "More bodies match · type more of the
+     name";
+   - `useDrawnWrites`' stale doc comment is gone.
+
+**The gate's story runs:** *Merge | Preview* failed once in ten starved runs and didn't reproduce in
+eight more. Its dialog waits now get 5 s (`a29d303fb`), and ten runs, half starved, then passed.
+
+**What the reviewer couldn't review, checked in a real-browser story** (a temporary probe, deleted):
+- **Focus after the frame swaps to the merged page:** it falls to `<body>`. Nothing on the merged
+  page takes it. Not fixed here: it waits for a ruling on where focus should land.
+- **The Undone toast as its line changes:**
+  - The line updates in place, as the same node, inside Base UI's toast viewport: a
+    `role="region"` with `aria-live="polite"`, `aria-atomic="false"` and
+    `aria-relevant="additions text"`.
+  - The toast itself is `role="dialog"`, described by its description.
+  - So the change from "Moving rows back…" to the count is a text change inside a polite live
+    region. Whether a screen reader speaks it depends on its support for `text` changes; no screen
+    reader was run.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
