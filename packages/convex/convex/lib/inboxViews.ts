@@ -65,8 +65,6 @@ import type {
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
-import { OPEN_FLAG_STATUSES } from './openFlags';
-import { photoVisible, photoWithdrawalRow } from './photoAccess';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
 import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
 import {
@@ -78,6 +76,8 @@ import {
   liveSurvivorOf,
 } from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
+import { OPEN_FLAG_STATUSES } from './openFlags';
+import { photoVisible, photoWithdrawalRow } from './photoAccess';
 import {
   CHARGED_QUERY_BUDGET,
   OverBudget,
@@ -1359,7 +1359,10 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       // A photo's *On the same report* is a list: filled once the required rows are read.
       const target =
         targetRead.exists && targetRead.targetType === 'photo'
-          ? { ...targetRead, photo: { ...targetRead.photo, ...(await photoSiblings(r, targetRead.photo)) } }
+          ? {
+              ...targetRead,
+              photo: { ...targetRead.photo, ...(await photoSiblings(r, targetRead.photo)) },
+            }
           : targetRead;
       const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
         flagMember(r, m),

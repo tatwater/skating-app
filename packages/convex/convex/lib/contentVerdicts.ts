@@ -34,7 +34,9 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
+
 export { VERDICT_TABLE } from './verdictTargets';
+
 import { refreshWithdrawalHold } from './withdrawals';
 
 export type VerdictTargetType = Doc<'contentVerdicts'>['targetType'];

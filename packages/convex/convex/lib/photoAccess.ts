@@ -228,7 +228,10 @@ export async function resolvePhotoUrls(
       placeOnMap: photo.placeOnMap,
       ...(shown
         ? {}
-        : { down: true as const, moderationStatus: photo.moderationStatus as 'hidden' | 'removed' }),
+        : {
+            down: true as const,
+            moderationStatus: photo.moderationStatus as 'hidden' | 'removed',
+          }),
     });
   }
   return results;

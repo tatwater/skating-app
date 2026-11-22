@@ -24,4 +24,3 @@ export async function scheduleRotation(ctx: MutationCtx, photo: Doc<'photos'>): 
     oldStorageId: photo.storageId,
   });
 }
-

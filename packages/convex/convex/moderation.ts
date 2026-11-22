@@ -54,12 +54,10 @@ import {
 } from './lib/contentVerdicts';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
-import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
+import { refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { flagSubject, flagSubjectOf } from './lib/flagSubject';
 import { flagSource, itemToDecide } from './lib/inboxItems';
-import { PHOTO_PURGE_DELAY_MS, photoWithdrawnAt } from './lib/photoAccess';
-import { scheduleRotation } from './lib/photoRotation';
 import { assertInboxVerb } from './lib/inboxRules';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { ownContentRefusal } from './lib/ownContent';
@@ -72,6 +70,8 @@ import {
   statusTermsOf,
 } from './lib/peopleCan';
 import { refreshPersonRow } from './lib/peopleRows';
+import { PHOTO_PURGE_DELAY_MS, photoWithdrawnAt } from './lib/photoAccess';
+import { scheduleRotation } from './lib/photoRotation';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import {
   ERASED_ALREADY,

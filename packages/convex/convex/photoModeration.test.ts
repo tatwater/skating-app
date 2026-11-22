@@ -371,7 +371,10 @@ describe('the record sheet sees a photo', () => {
       status: 'hidden',
       reason: 'x',
     });
-    let pane = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
+    let pane = await mod.as.query(api.contentRecord.item, {
+      targetType: 'photo',
+      targetId: photoId,
+    });
     expect(pane?.can).toEqual({ restore: { ok: true, needsReason: false } });
     await uploader.as.mutation(api.photos.remove, { photoId });
     pane = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
@@ -388,16 +391,24 @@ describe('the record sheet sees a photo', () => {
       status: 'removed',
       reason: 'x',
     });
-    const pane = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
-    expect((pane?.content as { thumbUrl?: string | null }).thumbUrl).toEqual(expect.any(String));
+    const pane = await mod.as.query(api.contentRecord.item, {
+      targetType: 'photo',
+      targetId: photoId,
+    });
+    expect((pane?.content as { thumbUrl?: string | null } | undefined)?.thumbUrl).toEqual(
+      expect.any(String),
+    );
     const counts = await t.run(async (ctx) => {
       const { readVerdictCounts } = await import('./lib/contentVerdicts');
       return readVerdictCounts(ctx, uploader.id);
     });
     expect(counts.byKind.photo).toBe(1);
     await t.run((ctx) => ctx.db.patch(photoId, { purgedAt: T0, caption: undefined }));
-    const tomb = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
-    expect((tomb?.content as { thumbUrl?: string | null }).thumbUrl).toBeNull();
+    const tomb = await mod.as.query(api.contentRecord.item, {
+      targetType: 'photo',
+      targetId: photoId,
+    });
+    expect((tomb?.content as { thumbUrl?: string | null } | undefined)?.thumbUrl).toBeNull();
   });
 
   test('a list row that didn’t read the withdrawal points Restore at the item', async () => {
@@ -481,7 +492,11 @@ async function photoItem(t: T, flagId: Id<'contentFlags'>): Promise<Id<'inboxIte
 describe('the Inbox photo item', () => {
   test('serves the stage, the strip in order, the flag and the uploader; a takedown and its undo', async () => {
     const { t, uploader, skater, mod, mod2, waterBodyId } = await world();
-    const ids = [await photo(t, uploader.id), await photo(t, uploader.id), await photo(t, uploader.id)];
+    const ids = [
+      await photo(t, uploader.id),
+      await photo(t, uploader.id),
+      await photo(t, uploader.id),
+    ];
     await reportWith(t, uploader.id, waterBodyId, ids);
     const target = ids[1] as Id<'photos'>;
     const flagId = await skater.as.mutation(api.contentFlags.flag, {

@@ -175,7 +175,11 @@ const clientOf = (t: T, v: Viewer) => (v === 'anonymous' ? t : t.withIdentity({ 
 /** Each skater-facing reader as one function: the photos it returns, by caption (= status). */
 const READERS: Record<
   string,
-  (w: W, v: Viewer, staff: boolean) => Promise<{ caption?: string; down?: true; url: string | null }[]>
+  (
+    w: W,
+    v: Viewer,
+    staff: boolean,
+  ) => Promise<{ caption?: string; down?: true; url: string | null }[]>
 > = {
   getUrls: (w, v, staff) =>
     clientOf(w.t, v).query(api.photos.getUrls, { reportId: w.reportId, staff }),
@@ -254,11 +258,19 @@ describe('the privacy table: reader × viewer × status', () => {
           .withIndex('by_source', (q) => q.eq('sourceTable', 'contentFlags').eq('sourceId', flagId))
           .first();
         const item = (await ctx.db.get(m?.itemId as Id<'inboxItems'>)) as Doc<'inboxItems'>;
-        const r = new InboxReader(ctx, new ReadBudget(), T0, mod?._id as Id<'profiles'>, canReadContent);
+        const r = new InboxReader(
+          ctx,
+          new ReadBudget(),
+          T0,
+          mod?._id as Id<'profiles'>,
+          canReadContent,
+        );
         return itemView(r, item);
       });
-      const target = (view?.view as { target: { report?: { photoCount: number } } }).target;
-      expect(target.report?.photoCount).toBe(canReadContent ? STATUS_KEYS.length : SHOWN.size);
+      const target = (
+        view?.view as unknown as { target: { report?: { photoCount: number } } } | undefined
+      )?.target;
+      expect(target?.report?.photoCount).toBe(canReadContent ? STATUS_KEYS.length : SHOWN.size);
     }
   });
 
@@ -291,8 +303,9 @@ describe('the privacy table: reader × viewer × status', () => {
         );
         return itemView(r, item);
       });
+      if (!view) throw new Error('no item view');
       const photo = (
-        view?.view as unknown as {
+        view.view as unknown as {
           target: {
             photo: {
               thumbUrl: string | null;

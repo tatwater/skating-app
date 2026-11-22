@@ -89,10 +89,17 @@ async function photo(t: T, uploaderId: Id<'profiles'>, over: Partial<Doc<'photos
 }
 
 /** The ways a photo is held, each made as the app makes it (or as its rows stand). */
-const HOLDS: Record<string, (t: T, photoId: Id<'photos'>, flagger: Id<'profiles'>) => Promise<void>> = {
-  hidden: (t, id) => t.run(async (ctx) => void (await ctx.db.patch(id, { moderationStatus: 'hidden' }))),
+const HOLDS: Record<
+  string,
+  (t: T, photoId: Id<'photos'>, flagger: Id<'profiles'>) => Promise<void>
+> = {
+  hidden: (t, id) =>
+    t.run(async (ctx) => void (await ctx.db.patch(id, { moderationStatus: 'hidden' }))),
   removed: (t, id) =>
-    t.run(async (ctx) => void (await ctx.db.patch(id, { moderationStatus: 'removed', purgeAt: T0 + DAY }))),
+    t.run(
+      async (ctx) =>
+        void (await ctx.db.patch(id, { moderationStatus: 'removed', purgeAt: T0 + DAY })),
+    ),
   'open flag': (t, id, flagger) => flag(t, id, flagger, 'open'),
   'reviewing flag': (t, id, flagger) => flag(t, id, flagger, 'reviewing'),
   'standing verdict': (t, id) =>
@@ -118,7 +125,12 @@ const HOLDS: Record<string, (t: T, photoId: Id<'photos'>, flagger: Id<'profiles'
     }),
 };
 
-async function flag(t: T, photoId: Id<'photos'>, flaggerId: Id<'profiles'>, status: 'open' | 'reviewing') {
+async function flag(
+  t: T,
+  photoId: Id<'photos'>,
+  flaggerId: Id<'profiles'>,
+  status: 'open' | 'reviewing',
+) {
   await t.run(async (ctx) => {
     await ctx.db.insert('contentFlags', {
       targetType: 'photo',
@@ -313,7 +325,11 @@ describe('the purge', () => {
     const out = await t.mutation(internal.photoPurge.purgeDuePhotos, { now: T0 });
     expect(out).toMatchObject({ purged: 1, more: false });
     const after = await t.run((ctx) => ctx.db.get(id) as Promise<Doc<'photos'>>);
-    expect(after).toMatchObject({ uploaderId: uploader, purgedAt: T0, moderationStatus: 'removed' });
+    expect(after).toMatchObject({
+      uploaderId: uploader,
+      purgedAt: T0,
+      moderationStatus: 'removed',
+    });
     expect(after.caption).toBeUndefined();
     expect(after.purgeAt).toBeUndefined();
     expect(await t.run((ctx) => ctx.storage.getUrl(before.storageId as Id<'_storage'>))).toBeNull();
@@ -390,9 +406,9 @@ describe('the purge', () => {
     });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const at = (await t.run((ctx) => ctx.db.get(id)))?.purgeAt as number;
-    expect(
-      await t.mutation(internal.photoPurge.purgeDuePhotos, { now: at - 1 }),
-    ).toMatchObject({ purged: 0 });
+    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: at - 1 })).toMatchObject({
+      purged: 0,
+    });
     expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: at })).toMatchObject({
       purged: 1,
     });

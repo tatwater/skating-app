@@ -58,7 +58,10 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
     status: fc.constantFrom('hidden' as const, 'removed' as const, 'visible' as const),
     by: fc.constantFrom('mod' as const, 'mod2' as const),
   }),
-  fc.record({ kind: fc.constant('undoLast' as const), by: fc.constantFrom('mod' as const, 'mod2' as const) }),
+  fc.record({
+    kind: fc.constant('undoLast' as const),
+    by: fc.constantFrom('mod' as const, 'mod2' as const),
+  }),
   fc.record({ kind: fc.constant('flag' as const) }),
   fc.record({ kind: fc.constant('withdraw' as const) }),
   fc.record({ kind: fc.constant('purge' as const), daysOn: fc.integer({ min: 0, max: 40 }) }),

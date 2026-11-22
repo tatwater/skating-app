@@ -62,7 +62,12 @@ async function person(t: T, subject: string, role: Doc<'profiles'>['role'] = 'me
 const CAPTION = 'c'.repeat(500); // at the caption cap: every photo row at its worst
 
 /** `n` photos sharing two blobs (the reads weigh rows, not bytes), `down` of them hidden. */
-async function manyPhotos(t: T, uploaderId: Id<'profiles'>, n: number, over: (i: number) => Partial<Doc<'photos'>>) {
+async function manyPhotos(
+  t: T,
+  uploaderId: Id<'profiles'>,
+  n: number,
+  over: (i: number) => Partial<Doc<'photos'>>,
+) {
   return t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob(['full']));
     const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
@@ -143,8 +148,12 @@ describe('a report with hundreds of photos, most of them down', () => {
     const mod = t.withIdentity({ subject: 'mod' });
 
     expect(await skater.query(api.photos.getUrls, { reportId })).toHaveLength(BUSY_REPORT / 4);
-    expect(await mod.query(api.photos.getUrls, { reportId, staff: true })).toHaveLength(BUSY_REPORT);
-    const cards = await skater.query(api.reports.recentCardsForBodies, { waterBodyIds: [waterBodyId] });
+    expect(await mod.query(api.photos.getUrls, { reportId, staff: true })).toHaveLength(
+      BUSY_REPORT,
+    );
+    const cards = await skater.query(api.reports.recentCardsForBodies, {
+      waterBodyIds: [waterBodyId],
+    });
     expect(cards[0]?.photoThumbUrls).toHaveLength(BUSY_REPORT / 4);
 
     const target = ids[1] as Id<'photos'>; // a hidden one; flag the first visible instead
@@ -162,12 +171,20 @@ describe('a report with hundreds of photos, most of them down', () => {
       return m?.itemId as Id<'inboxItems'>;
     });
     const read = await mod.query(api.inbox.item, { ref: itemId });
-    const photo = (read.item as unknown as { target: { photo: { siblings: unknown[]; siblingsCut: boolean; photoCount: number } } }).target.photo;
+    const photo = (
+      read.item as unknown as {
+        target: { photo: { siblings: unknown[]; siblingsCut: boolean; photoCount: number } };
+      }
+    ).target.photo;
     expect(photo.siblings).toHaveLength(PHOTO_SIBLINGS_READ);
     expect(photo.siblingsCut).toBe(true);
     expect(photo.photoCount).toBe(BUSY_REPORT);
 
-    const out = await mod.mutation(api.inboxWrites.takeDown, { itemId, status: 'removed', reason: 'x' });
+    const out = await mod.mutation(api.inboxWrites.takeDown, {
+      itemId,
+      status: 'removed',
+      reason: 'x',
+    });
     expect(out.status).toBe('removed');
     void target;
   }, 60_000);
@@ -218,7 +235,9 @@ describe('an uploader with hundreds of removed photos: the purge’s pages', () 
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const rows = await t.run(async (ctx) => Promise.all(ids.map((id) => ctx.db.get(id))));
     expect(rows.filter((r) => r?.purgedAt !== undefined)).toHaveLength(n);
-    expect(await t.run(async (ctx) => (await ctx.db.system.query('_storage').collect()).length)).toBe(2);
+    expect(
+      await t.run(async (ctx) => (await ctx.db.system.query('_storage').collect()).length),
+    ).toBe(2);
   }, 60_000);
 });
 

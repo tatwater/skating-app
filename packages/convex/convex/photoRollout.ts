@@ -88,7 +88,10 @@ export const countUnstamped = internalAction({
     let scanned = 0;
     for (;;) {
       const page: { scanned: number; unstamped: number; continueCursor: string; isDone: boolean } =
-        await ctx.runQuery(internal.photoRollout.unstampedPage, { cursor, ...(pageSize !== undefined ? { pageSize } : {}) });
+        await ctx.runQuery(internal.photoRollout.unstampedPage, {
+          cursor,
+          ...(pageSize !== undefined ? { pageSize } : {}),
+        });
       unstamped += page.unstamped;
       scanned += page.scanned;
       if (page.isDone) return { unstamped, scanned };

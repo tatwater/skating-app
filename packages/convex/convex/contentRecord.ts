@@ -23,7 +23,7 @@ import {
   type VerdictTargetType,
   zeroByKind,
 } from './lib/contentVerdicts';
-import { clockOf, ERASABLE, type ErasableDoc, HOLD_COST, holdMoved } from './lib/eraseClock';
+import { clockOf, type ErasableDoc, HOLD_COST, holdMoved } from './lib/eraseClock';
 import {
   chainedLease,
   handOn,
@@ -34,6 +34,7 @@ import {
   readPending,
   VERDICTS_DONE,
 } from './lib/peopleRuns';
+import { photoWithdrawalRow } from './lib/photoAccess';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -74,7 +75,6 @@ import {
   recordFactsOf,
   recordLevers,
 } from './lib/recordRules';
-import { photoWithdrawalRow } from './lib/photoAccess';
 import { type UndoState, undoStates } from './lib/undo';
 import { literals } from './lib/validators';
 import {
@@ -484,7 +484,11 @@ export async function standingPage(
   const inRange = found.filter((v) => within(end.at, { key: v.at, ct: v._creationTime }));
   const verdicts = inRange.slice(0, RECORD_PAGE_ROWS.n);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
-  const thumbs = await photoThumbs(ctx, viewer, rows.map((l) => l.target));
+  const thumbs = await photoThumbs(
+    ctx,
+    viewer,
+    rows.map((l) => l.target),
+  );
   const page = rows.map((l) => {
     const { verdict, decision, target } = l;
     // A comment the sweep reduced to its placeholder keeps no words: `null`, as Reversed and the pane.
@@ -573,7 +577,11 @@ export async function reversedPage(
   // the page (`read`: the last-editor sentence for a holder only).
   const states = await undoStates(ctx, viewer, endings, 'list', 'read');
   const undoOf = new Map(endings.map((e, i) => [e._id as string, states[i] as UndoState]));
-  const thumbs = await photoThumbs(ctx, viewer, rows.map((l) => l.target));
+  const thumbs = await photoThumbs(
+    ctx,
+    viewer,
+    rows.map((l) => l.target),
+  );
   const page = rows.map((l) => {
     const { verdict, decision, ending, target, erase } = l;
     const erasedComment =

@@ -29,9 +29,9 @@ import {
   resolvePhotoUrls,
   staffPhotoRead,
 } from './lib/photoAccess';
+import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { ROTATION_RETRY_MS, scheduleRotation } from './lib/photoRotation';
 import { errorClassOf } from './lib/readBudget';
-import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
 import { deleteStoredBlob } from './lib/storageBlobs';
 import { recordTextLength } from './lib/textLengths';
@@ -90,6 +90,8 @@ export const create = mutation({
       ...(args.takenAt !== undefined ? { takenAt: args.takenAt } : {}),
       ...(coord !== undefined ? { coord } : {}),
       placeOnMap: args.placeOnMap,
+      // Stamped at birth (B01-5e), so the rollout's count of rows lacking it reaches zero and stays.
+      moderationStatus: 'visible',
       createdAt: Date.now(),
     });
   },
@@ -254,6 +256,7 @@ export const getHazardUrls = query({
 export const ROTATE_MAX_BYTES = 24 * 1024 * 1024;
 
 export { ROTATION_RETRY_MS } from './lib/photoRotation';
+
 const ROTATION_PARKED_RETRY_MS = 24 * 60 * 60 * 1000;
 
 /** What one rotation run did. */

@@ -243,7 +243,9 @@ describe('the rotation through the public writes', () => {
     expect(await rotationsScheduled(t)).toHaveLength(0);
     const [watch] = await watches(t);
     expect(watch?.args[0]).toMatchObject({ photoId, oldStorageId: before.storageId });
-    expect(Math.abs((watch?.scheduledTime ?? 0) - (T0 + (ROTATION_RETRY_MS[0] as number)))).toBeLessThan(10);
+    expect(
+      Math.abs((watch?.scheduledTime ?? 0) - (T0 + (ROTATION_RETRY_MS[0] as number))),
+    ).toBeLessThan(10);
     // Storage lets go: the watch finds it unrotated and runs it again, which lands.
     failing.ids.clear();
     // Run everything to its end: the watch runs it again, it lands, the next watch ends the chain.
@@ -281,7 +283,9 @@ describe('the rotation through the public writes', () => {
     }
     const [parked] = await watches(t);
     expect(parked?.args[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
-    expect(Math.abs((parked?.scheduledTime ?? 0) - (Date.now() + 24 * 60 * 60 * 1000))).toBeLessThan(10);
+    expect(
+      Math.abs((parked?.scheduledTime ?? 0) - (Date.now() + 24 * 60 * 60 * 1000)),
+    ).toBeLessThan(10);
     expect(await storedCount(t)).toBe(2);
   });
 
