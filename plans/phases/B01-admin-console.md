@@ -8431,6 +8431,21 @@ pinned and a property holds the ceiling. After the fix, the hot pass ran clean i
 and twice more in Lord Howe. Only `InboxZero`'s and `StepRugChart`'s properties take zones from a
 list; the rest read the process's zone.
 
+**CI on the second head.** `aceb5e261` went red on one story, `RecordSheet.stories.tsx` › *At Rest*:
+`life-station` counted 0 of 5, on a slow runner (805 s against 533 s for the first head). The count
+is 0 exactly when the strip has stacked: it draws `life-station` only across, and its narrow form
+(`LifeList`) draws `life-list-station`. The strip decides from a measure of its unseen copy after
+every commit, whenever its box changes, and once web faces are ready. So a measure taken with a slow
+runner's fallback face (wider than the faces) stacks it until the faces land and it re-decides.
+**Late, not never**: mounted at zero width or hidden and then shown, it runs across the moment it can
+(the new `FromZeroWidth` and `FromHidden` stories), and a box that widens already did
+(`NarrowThenWide`). Not reproduced locally in ten runs, five of them with the machine starved. **What
+a reader sees** on a cold load whose faces arrive late: the life stacked for that moment, then
+running across — a jump in the pane, gone once the faces are cached. The fix is the read: every
+one-shot read of the strip's across form now waits for it (the record sheet's, three flag-handler
+stories, four of the strip's own). `LifeList`, `RecordRow` and `ItemTimeline` aren't measured, so
+their reads can't land early. The changed stories passed ten times each, half of them starved.
+
 #### How the forks were ruled (2026-11-20)
 
 The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
