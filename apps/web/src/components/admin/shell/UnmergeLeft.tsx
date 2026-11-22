@@ -44,8 +44,22 @@ export function unmergeLeftLine(receipt: UnmergeReceipt | undefined): string | n
 /** *Resume*, as a viewer the server lets resume holds it: `null` for anyone else. */
 export type ResumeLever = { onResume: () => void; pending: boolean };
 
-/** The stalled unmerge's reason and its *Resume*, under the line that says it stopped. */
-function Stalled({ reason, resume }: { reason: string; resume: ResumeLever | null }) {
+/** What stopped an unmerge, as the server says it (`stalled`): a code, and a failed page's error. */
+type Stall = NonNullable<UnmergeReceipt>['stalled'] & {};
+
+/** The quieter line: the code in plain words, then the server's own error verbatim when it has one. */
+export function stallWhy(stall: Stall): string {
+  const why = MW.stallWhy[stall.code];
+  return stall.error !== undefined && stall.error !== '' ? `${why} ${stall.error}` : why;
+}
+
+/**
+ * The stalled unmerge's reason and its *Resume*, under the line that says it stopped. *Resume* is
+ * offered for every stall `unmerge.resume` accepts — today, every one: the server names no stall a
+ * resume can't help, so the web draws none apart.
+ */
+function Stalled({ stall, resume }: { stall: Stall; resume: ResumeLever | null }) {
+  const reason = stallWhy(stall);
   return (
     <>
       <span data-slot="unmerge-stalled-why" className="block text-assist text-fg3">
@@ -84,7 +98,7 @@ export function UnmergeLeftView({
   return (
     <span data-slot="unmerge-left" className="inline-flex flex-col items-start">
       <span>{line}</span>
-      {stalled !== null && <Stalled reason={stalled.reason} resume={resume} />}
+      {stalled !== null && <Stalled stall={stalled} resume={resume} />}
     </span>
   );
 }
@@ -164,7 +178,7 @@ export function UnmergingNoteView({
       {stalled !== null && (
         <>
           <span className="block">{MW.unmergeStalled}</span>
-          <Stalled reason={stalled.reason} resume={resume} />
+          <Stalled stall={stalled} resume={resume} />
         </>
       )}
     </Note>

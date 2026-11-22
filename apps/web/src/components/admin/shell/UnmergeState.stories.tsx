@@ -27,11 +27,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const FAILED = 'A page of the unmerge failed partway; resume it to finish.';
+/** A failed page's error text, as the scheduler records it on a deployment. */
+const FAILED = 'Uncaught Error: Too many reads in a single function execution';
 const at = (done: boolean, count: number, stalled: string | null = null): UnmergeReceipt => ({
   unmergeActionId: 'u1' as never,
   done,
-  stalled: stalled === null ? null : { reason: stalled },
+  stalled: stalled === null ? null : { code: 'pageFailed' as const, error: stalled },
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
 
@@ -79,7 +80,7 @@ export const StalledThenResumed: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     await expect(page.getByText(MW.unmergeStalled)).toBeVisible();
-    await expect(page.getByText(FAILED)).toBeVisible();
+    await expect(page.getByText(`${MW.stallWhy.pageFailed} ${FAILED}`)).toBeVisible();
     await userEvent.click(page.getByRole('button', { name: MW.resume }));
     await expect(page.getByText(`${MW.unmerging} · ${MW.leftSince(1)}`)).toBeVisible();
     await expect(await page.findByText(MW.leftSince(1))).toBeVisible();
@@ -151,6 +152,31 @@ export const RefusedWhileStalled: Story = {
     await expect(note).toHaveTextContent(MW.unmergeStalled);
     await waitFor(() =>
       expect(within(note).getByRole('button', { name: MW.resume })).toBeVisible(),
+    );
+  },
+};
+
+/** Each way an unmerge can stop, by the server's code: the headline, then the code in plain words. */
+export const StallCodes: Story = {
+  name: 'Stall codes',
+  render: () => (
+    <div className="flex w-(--size-inspector) flex-col gap-(--space-3)">
+      {(Object.keys(MW.stallWhy) as (keyof typeof MW.stallWhy)[]).map((code) => (
+        <UnmergeLeftView
+          key={code}
+          receipt={{ ...(at(false, 0) as NonNullable<UnmergeReceipt>), stalled: { code } }}
+          resume={{ pending: false, onResume: () => {} }}
+        />
+      ))}
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    for (const words of Object.values(MW.stallWhy)) {
+      await expect(page.getByText(words)).toBeVisible();
+    }
+    await expect(page.getAllByText(MW.unmergeStalled)).toHaveLength(
+      Object.keys(MW.stallWhy).length,
     );
   },
 };

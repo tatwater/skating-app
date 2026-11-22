@@ -39,17 +39,18 @@ vi.mock('@/components/kit/toast', async (original) => ({
   toast: (t: unknown) => mocks.toasts.push(t),
 }));
 
-const { UnmergeLeft, UnmergeLeftView, UnmergingNote, unmergeLeftLine } = await import(
+const { UnmergeLeft, UnmergeLeftView, UnmergingNote, stallWhy, unmergeLeftLine } = await import(
   './UnmergeLeft'
 );
 
 const answer = (done: boolean, count: number, stalled: string | null = null) => ({
   unmergeActionId: 'u1' as never,
   done,
-  stalled: stalled === null ? null : { reason: stalled },
+  stalled: stalled === null ? null : { code: 'pageFailed' as const, error: stalled },
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
-const FAILED = 'A page of the unmerge failed partway; resume it to finish.';
+/** A failed page's error text, as the scheduler records it on a deployment. */
+const FAILED = 'Uncaught Error: Too many reads in a single function execution';
 
 beforeEach(() => {
   mocks.reads = {};
@@ -98,12 +99,36 @@ describe('UnmergeLeftView', () => {
     const onResume = vi.fn();
     const { rerender } = render(<UnmergeLeftView receipt={answer(false, 0, FAILED)} />);
     expect(screen.getByText(MW.unmergeStalled)).toBeInTheDocument();
-    expect(screen.getByText(FAILED)).toBeInTheDocument();
+    // The code in plain words, then the scheduler's error verbatim.
+    expect(screen.getByText(`${MW.stallWhy.pageFailed} ${FAILED}`)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: MW.resume })).toBeNull();
     rerender(
       <UnmergeLeftView receipt={answer(false, 0, FAILED)} resume={{ onResume, pending: true }} />,
     );
     expect(screen.getByRole('button', { name: MW.resume })).toBeDisabled();
+  });
+});
+
+describe('stallWhy', () => {
+  it('says each stall code in plain words, and a failed page’s error after it', () => {
+    expect(stallWhy({ code: 'pageCanceled' })).toBe(MW.stallWhy.pageCanceled);
+    expect(stallWhy({ code: 'mergedAgain' })).toBe('The body was merged again while it ran.');
+    expect(stallWhy({ code: 'pageFailed', error: 'boom' })).toBe(`${MW.stallWhy.pageFailed} boom`);
+    expect(stallWhy({ code: 'pageFailed', error: '' })).toBe(MW.stallWhy.pageFailed);
+  });
+
+  it('offers Resume for a stall of any code — the server names none a resume can’t help', () => {
+    const onResume = vi.fn();
+    for (const code of ['undone', 'recordGone', 'mergedAgain', 'pageMissing'] as const) {
+      const { unmount } = render(
+        <UnmergeLeftView
+          receipt={{ ...answer(false, 0), stalled: { code } }}
+          resume={{ onResume, pending: false }}
+        />,
+      );
+      expect(screen.getByRole('button', { name: MW.resume })).toBeInTheDocument();
+      unmount();
+    }
   });
 });
 

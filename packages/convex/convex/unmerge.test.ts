@@ -1860,7 +1860,7 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
         expect(await on(ids)).toMatchObject({
           mergeActionId: mergeId,
           done: false,
-          stalled: { reason: UNMERGE_PAGE_FAILED },
+          stalled: expect.objectContaining({ code: 'pageFailed' }),
         });
       }
       // Bounded to the first two ids passed: a marked body third in the list is never read.

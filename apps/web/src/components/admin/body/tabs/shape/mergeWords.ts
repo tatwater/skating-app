@@ -1,4 +1,11 @@
+import type { api } from '@skating/convex/api';
+import type { FunctionReturnType } from 'convex/server';
 import type { MoveKind } from './mergeModel';
+
+/** The server's codes for what stopped an unmerge (`unmerge.receipt`'s `stalled.code`). */
+type UnmergeStallCode = NonNullable<
+  NonNullable<FunctionReturnType<typeof api.unmerge.receipt>>['stalled']
+>['code'];
 
 /**
  * **The Shape tab's merge flow, in words** — no board draws this flow yet (the register owes one
@@ -95,6 +102,20 @@ export const MERGE_WORDS = {
   unmergedAll: 'Every row went back',
   /** Not done, and nothing carrying it on: a page failed or stopped. Its reason is the detail. */
   unmergeStalled: 'The unmerge stopped before it finished',
+  /**
+   * What stopped it, by the server's code — the quieter line under the headline; a failed page's
+   * own error follows it verbatim when the server has one.
+   */
+  stallWhy: {
+    pageFailed: 'A page of it failed partway.',
+    pageCanceled: 'Its next page was canceled.',
+    pageMissing: 'Its next page has no record.',
+    pageStopped: 'A page finished without carrying it on.',
+    undone: 'It was undone while it ran.',
+    recordGone: 'The merge’s record is gone.',
+    recordUnreadable: 'The merge’s record couldn’t be read.',
+    mergedAgain: 'The body was merged again while it ran.',
+  } satisfies Record<UnmergeStallCode, string>,
   /** Carries a stalled unmerge on from where it stopped. */
   resume: 'Resume',
   /** A resume the server refused: the toast's title, the server's words after it. */
