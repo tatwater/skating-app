@@ -25,8 +25,9 @@ describe('where an item without its handler is decided', () => {
     expect(targets(elsewhereFor('flag:photo', PHOTO_ITEM, true))).toEqual(['/admin/flags']);
   });
 
-  it('points a request at the old Requests page', () => {
-    expect(targets(elsewhereFor('request', ADMIT_ITEM, true))).toEqual(['/admin/water/requests']);
+  it('says nothing for a request: its handler has landed', () => {
+    expect(HANDLERS.has('request')).toBe(true);
+    expect(elsewhereFor('request', ADMIT_ITEM, true)).toBeNull();
   });
 
   it('points a place ask at the Requests page and the body’s old editor, where it is drawn', () => {

@@ -5,7 +5,6 @@ import {
   ELSEWHERE_FLAGS,
   ELSEWHERE_PHOTO,
   ELSEWHERE_PLACE,
-  ELSEWHERE_REQUEST,
   ELSEWHERE_REQUESTS,
   ELSEWHERE_SUPPORT,
   ELSEWHERE_TICKET,
@@ -57,10 +56,6 @@ export const ELSEWHERE: Partial<
   'flag:photo': () => ({
     line: ELSEWHERE_PHOTO,
     links: [{ to: '/admin/flags', label: ELSEWHERE_FLAGS }],
-  }),
-  request: () => ({
-    line: ELSEWHERE_REQUEST,
-    links: [{ to: '/admin/water/requests', label: ELSEWHERE_REQUESTS }],
   }),
   place: (item) => ({
     line: ELSEWHERE_PLACE,
