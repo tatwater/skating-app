@@ -397,6 +397,27 @@ export type AskMemberView = {
    * item's rule, at most `VIEW_SKATES` an item, so a skate never costs a lever its check).
    */
   skate: SkateView | null;
+  /**
+   * On a landmark ask: how many landmarks this asker has asked for and had added, from their own
+   * Inbox filings (small rows), at most `VIEW_ASKER_COUNTS` asks an item (B01-5c). `null` on every
+   * other kind, past that cap, or while the Inbox backfill is pending (its filings aren't all stored).
+   */
+  landmarkAsks: AskerLandmarksView | null;
+};
+
+/**
+ * A person's landmark asks (2.4's counts by the byline): the landmark items they filed into, open or
+ * decided (this one included), and how many of those were approved — the landmark added. Read from
+ * the newest `LANDMARK_FILINGS_READ` of their open and of their closed filings; `capped` past either,
+ * when both counts are floors. A withdrawn ask has left its item and isn't counted.
+ */
+export type AskerLandmarksView = { asked: number; added: number; capped: boolean };
+
+/** A drawn body's creating skate (2.5): its times, and whether it left a track for the map. */
+export type DrawnSkateView = SkateView & {
+  activityId: Id<'gpsActivities'>;
+  /** The activity stores a GPS track (a LineString) — the map's skate. */
+  hasTrack: boolean;
 };
 
 /** A recorded skate's times, as `gpsActivities` stores them (B01-5c). */
@@ -600,8 +621,23 @@ export type InboxItemView = ItemBase &
         kind: 'drawn';
         body: BodyRefView;
         drawer: PersonLockupView | null;
+        /**
+         * The drawer's visible reports, as their profile counts them (the public profile's figure,
+         * a stored count — B01-5c); `null` for a drawer gone or a profile the count hasn't reached.
+         */
+        drawerReports: number | null;
         overlap: OverlapView | null;
-        fromReport: ReportRefView | null;
+        /**
+         * The report the drawing's skate became (B01-5c): the skate's `linkedReportId`, with a
+         * capped excerpt of its text — `null` text for one hidden, removed or withdrawn by its author,
+         * to a viewer without `content.read`. `null` when the skate has no report.
+         */
+        fromReport: (ReportRefView & { excerpt: string | null }) | null;
+        /**
+         * The skate the drawing was made from (B01-5c): the drawer's own activity bound to this body
+         * that started before it was drawn — one row, the latest such. `null` when none is found.
+         */
+        skate: DrawnSkateView | null;
       }
     | {
         kind: 'ticket';

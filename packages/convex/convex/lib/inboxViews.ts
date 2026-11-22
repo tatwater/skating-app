@@ -33,11 +33,13 @@ import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import type {
   AlertSubjectView,
+  AskerLandmarksView,
   AskMemberView,
   AuthorBlockView,
   BodyRefView,
   CandidateView,
   DormancyView,
+  DrawnSkateView,
   FlagMemberView,
   FlagTargetView,
   HazardSubjectView,
@@ -739,8 +741,121 @@ async function askMember(
           }
         : null,
       activityId: a.activityId ?? null,
-      // Read after the item's rule (`withSkates`), never before it.
+      // Read after the item's rule (`withSkates`, `withAskerLandmarks`), never before it.
       skate: null,
+      landmarkAsks: null,
+    },
+  };
+}
+
+/** Askers whose landmark counts an item reads (B01-5c), newest asks first. */
+export const VIEW_ASKER_COUNTS = 3;
+
+/** Of one person's open and of their closed request filings, the most read to count their landmark asks. */
+export const LANDMARK_FILINGS_READ = 50;
+
+/**
+ * A person's landmark asks, from their own Inbox filings (`by_filer_source_status`, rows of 1 KiB):
+ * the newest `LANDMARK_FILINGS_READ` open and closed, each one's item read (a small row) for its kind
+ * and decision. One past the read says `capped`.
+ */
+async function askerLandmarksOf(
+  r: InboxReader,
+  userId: Id<'profiles'>,
+): Promise<AskerLandmarksView> {
+  let capped = false;
+  const filings: Doc<'inboxItemMembers'>[] = [];
+  for (const status of ['open', 'closed'] as const) {
+    const rows = await r.take('inboxMember', LANDMARK_FILINGS_READ + 1, (k) =>
+      r.ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_filer_source_status', (q) =>
+          q.eq('filedByUserId', userId).eq('sourceTable', 'waterBodyRequests').eq('status', status),
+        )
+        .order('desc')
+        .take(k),
+    );
+    if (rows.length > LANDMARK_FILINGS_READ) capped = true;
+    filings.push(...rows.slice(0, LANDMARK_FILINGS_READ));
+  }
+  let asked = 0;
+  let added = 0;
+  for (const itemId of new Set(filings.map((m) => m.itemId))) {
+    const item = await r.get<'inboxItems'>('small', itemId);
+    // Past what the budget holds, what is counted is a floor.
+    if (!item) {
+      capped = true;
+      continue;
+    }
+    if (item.kind !== 'place' || item.facet !== 'landmarks') continue;
+    asked++;
+    if (item.decision === 'approved') added++;
+  }
+  return { asked, added, capped };
+}
+
+/** Each landmark ask's asker's counts — after the item's rule, at most `VIEW_ASKER_COUNTS` asks. */
+async function withAskerLandmarks(
+  r: InboxReader,
+  asks: readonly AskMemberView[],
+): Promise<AskMemberView[]> {
+  if (await inboxPending(r.ctx)) return [...asks];
+  const out: AskMemberView[] = [];
+  for (const [i, a] of asks.entries()) {
+    const id = a.asker?.userId;
+    out.push(
+      i < VIEW_ASKER_COUNTS && id ? { ...a, landmarkAsks: await askerLandmarksOf(r, id) } : a,
+    );
+  }
+  return out;
+}
+
+/**
+ * A drawn body's creating skate and the report it became (2.5): the drawer's own activity bound to
+ * the body that started before the body was drawn — the latest such, one row by index
+ * (`by_water_body_start_time`, an `eq` on the body and a bounded range on the start), checked to be
+ * the drawer's — and its `linkedReportId`.
+ */
+async function drawnSkateOf(
+  r: InboxReader,
+  water: Doc<'waterBodies'>,
+): Promise<{
+  skate: DrawnSkateView | null;
+  fromReport: (ReportRefView & { excerpt: string | null }) | null;
+}> {
+  const none = { skate: null, fromReport: null };
+  const drawer = water.createdByUserId;
+  if (drawer === undefined) return none;
+  const [a] = await r.take('activity', 1, (k) =>
+    r.ctx.db
+      .query('gpsActivities')
+      .withIndex('by_water_body_start_time', (q) =>
+        q.eq('waterBodyId', water._id).lte('startTime', water.createdAt),
+      )
+      .order('desc')
+      .take(k),
+  );
+  if (!a || a.userId !== drawer) return none;
+  const skate: DrawnSkateView = {
+    activityId: a._id,
+    startTime: a.startTime,
+    endTime: a.endTime ?? null,
+    elapsedSeconds: a.elapsedSeconds ?? null,
+    hasTrack: a.path?.type === 'LineString',
+  };
+  const report = a.linkedReportId ? await r.get<'reports'>('report', a.linkedReportId) : null;
+  if (!report) return { skate, fromReport: null };
+  // Withdrawn by its author reads as taken down does: its words only to `content.read`.
+  const text =
+    report.authorDeletedAt !== undefined && !r.canReadContent ? null : r.text(report, report.notes);
+  return {
+    skate,
+    fromReport: {
+      reportId: report._id,
+      skateEndTime: report.skateEndTime,
+      author: personRef(await r.get<'profiles'>('profile', report.authorId)),
+      observedFrom: report.observedFrom ?? null,
+      excerpt: text?.trim() ? snippet(text) : null,
     },
   };
 }
@@ -1200,7 +1315,12 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           body,
           asks: await withSkates(
             r,
-            asks.map((a) => a.view),
+            first.kind === 'name_landmark'
+              ? await withAskerLandmarks(
+                  r,
+                  asks.map((a) => a.view),
+                )
+              : asks.map((a) => a.view),
           ),
           primaryRequestId: first._id,
           drawnSubAreaId,
@@ -1214,14 +1334,20 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
       const body = bodyRef(water);
       if (!body || !water) return null;
+      const drawerProfile = await r.get<'profiles'>('profile', water.createdByUserId);
+      const drawer = personLockup(drawerProfile, r.now);
+      const overlap = await overlapOf(r, water);
+      const made = await drawnSkateOf(r, water);
       return {
         view: {
           ...base,
           kind: 'drawn',
           body,
-          drawer: personLockup(await r.get<'profiles'>('profile', water.createdByUserId), r.now),
-          overlap: await overlapOf(r, water),
-          fromReport: null,
+          drawer,
+          drawerReports: drawer && !drawer.deleted ? (drawerProfile?.reportCount ?? null) : null,
+          overlap,
+          fromReport: made.fromReport,
+          skate: made.skate,
         },
         facts: { hasOverlap: (water.duplicateCandidateIds?.length ?? 0) > 0 },
       };

@@ -18,7 +18,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { InboxItemView } from './inbox';
 import { fileMember, requestSource } from './lib/inboxItems';
-import { VIEW_MEMBERS, VIEW_SKATES } from './lib/inboxViews';
+import { VIEW_ASKER_COUNTS, VIEW_MEMBERS, VIEW_SKATES } from './lib/inboxViews';
 import * as readBudget from './lib/readBudget';
 import schema from './schema';
 
@@ -436,5 +436,290 @@ describe('who reads it', () => {
     }
     const item = (await itemOf(w, requestId)) as RequestView;
     expect(item.ruling?.reason).toBe('Owner called');
+  });
+});
+
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+describe('a drawn item serves its skate, the report it became, and the drawer’s count', () => {
+  let tracks = 0;
+  /** A skate recorded by `by`, drawn into a new body. */
+  const draw = async (_w: W, by: { as: As }) => {
+    const i = tracks++;
+    // Hours ago, so its report is in time (a week at most).
+    const T0 = NOW - (6 + i) * 3_600_000;
+    const activityId = await by.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: `draw-${i}`,
+      path: {
+        type: 'LineString',
+        coordinates: Array.from({ length: 20 }, (_, k) => [40 + i + k * 0.01, 40.5]),
+      },
+      startTime: T0,
+      endTime: T0 + 45 * 60_000,
+    });
+    const waterBodyId = await by.as.mutation(api.waterBodies.create, {
+      name: 'Hidden Pond',
+      type: 'lakePond',
+      activityId,
+      confirmedNew: true,
+    });
+    return { activityId, waterBodyId, T0 };
+  };
+  const drawnItem = async (w: W, waterBodyId: Id<'waterBodies'>) =>
+    (await w.mod.as.query(api.inbox.item, { ref: `body:${waterBodyId}` })).item as Extract<
+      InboxItemView,
+      { kind: 'drawn' }
+    >;
+
+  test('the creating skate with its track, the report it became excerpted, the drawer’s stored count', async () => {
+    const w = await world();
+    const { activityId, waterBodyId, T0 } = await draw(w, w.asker);
+    const notes = `Black ice from the north cove. ${'Long note. '.repeat(30)}`;
+    const reportId = await w.asker.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      activityId,
+      notes,
+    } as never);
+    const item = await drawnItem(w, waterBodyId);
+    expect(item.skate).toEqual({
+      activityId,
+      startTime: T0,
+      endTime: T0 + 45 * 60_000,
+      elapsedSeconds: null,
+      hasTrack: true,
+    });
+    expect(item.fromReport).toMatchObject({
+      reportId,
+      skateEndTime: T0 + 45 * 60_000,
+      author: expect.objectContaining({ userId: w.asker.id }),
+    });
+    expect(item.fromReport?.excerpt?.startsWith('Black ice from the north cove.')).toBe(true);
+    expect(item.fromReport?.excerpt?.length).toBeLessThanOrEqual(101);
+    const profile = await w.t.run((ctx) => ctx.db.get(w.asker.id));
+    expect(item.drawerReports).toBe(profile?.reportCount ?? null);
+    expect(item.drawerReports).toBe(1);
+  });
+
+  test('a skate with no report: the skate, and no report; its track gone, no track for the map', async () => {
+    const w = await world();
+    const { activityId, waterBodyId } = await draw(w, w.asker);
+    const item = await drawnItem(w, waterBodyId);
+    expect(item.skate?.activityId).toBe(activityId);
+    expect(item.skate?.hasTrack).toBe(true);
+    expect(item.fromReport).toBeNull();
+    await w.t.run((ctx) => ctx.db.patch(activityId, { path: undefined }));
+    expect((await drawnItem(w, waterBodyId)).skate?.hasTrack).toBe(false);
+  });
+
+  test('the latest skate on the body before it was drawn is someone else’s: no skate claimed', async () => {
+    const w = await world();
+    const { waterBodyId } = await draw(w, w.asker);
+    const body = await w.t.run((ctx) => ctx.db.get(waterBodyId));
+    const other = await person(w.t, 'other');
+    await w.t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'native',
+        providerActivityId: 'theirs',
+        sportType: 'IceSkate',
+        startTime: (body?.createdAt ?? NOW) - 1,
+        waterBodyId,
+        promptState: 'pending',
+        detectedAt: NOW,
+      } as never),
+    );
+    const item = await drawnItem(w, waterBodyId);
+    expect(item.skate).toBeNull();
+    expect(item.fromReport).toBeNull();
+  });
+
+  test('a skate begun after the drawing is never its skate', async () => {
+    const w = await world();
+    const { activityId, waterBodyId } = await draw(w, w.asker);
+    const body = await w.t.run((ctx) => ctx.db.get(waterBodyId));
+    await w.t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: w.asker.id,
+        provider: 'native',
+        providerActivityId: 'later',
+        sportType: 'IceSkate',
+        startTime: (body?.createdAt ?? NOW) + 60_000,
+        waterBodyId,
+        promptState: 'pending',
+        detectedAt: NOW,
+      } as never),
+    );
+    expect((await drawnItem(w, waterBodyId)).skate?.activityId).toBe(activityId);
+  });
+
+  test('a drawer who has left: no count claimed', async () => {
+    const w = await world();
+    const { waterBodyId } = await draw(w, w.asker);
+    expect((await drawnItem(w, waterBodyId)).drawerReports).toBeNull();
+    await w.t.run((ctx) => ctx.db.patch(w.asker.id, { reportCount: 4 }));
+    expect((await drawnItem(w, waterBodyId)).drawerReports).toBe(4);
+    await w.t.run((ctx) => ctx.db.patch(w.asker.id, { deletionRequestedAt: NOW }));
+    expect((await drawnItem(w, waterBodyId)).drawerReports).toBeNull();
+  });
+});
+
+describe('a landmark ask’s byline carries its asker’s landmark asks', () => {
+  const ready = (t: T) =>
+    t.run((ctx) =>
+      ctx.db.insert('inboxJobRuns', {
+        job: 'backfill',
+        phase: 'done',
+        cursor: null,
+        done: true,
+        startedAt: 1,
+        updatedAt: 1,
+      }),
+    );
+  /** A landmark ask by `who` on the lake, at its own spot (another place per `i`), filed. */
+  const landmarkAsk = (w: W, who: Id<'profiles'>, i: number, name = `Point ${i}`) =>
+    w.t.run(async (ctx) => {
+      const id = await ctx.db.insert('waterBodyRequests', {
+        kind: 'name_landmark',
+        status: 'open',
+        requesterId: who,
+        coord: { lat: -0.4 + i * 0.01, lng: -0.4 },
+        waterBodyId: w.lake,
+        name,
+        nameKey: requestNameKeyFor('name_landmark', name),
+        createdAt: NOW - 100_000 + i,
+      });
+      await fileMember(ctx, requestSource(id));
+      return id;
+    });
+  const placeItem = async (w: W, requestId: Id<'waterBodyRequests'>) =>
+    (await itemOf(w, requestId)) as PlaceView;
+
+  test('the landmarks they asked for, this one counted, and how many were added', async () => {
+    const w = await world();
+    await ready(w.t);
+    const decided = await landmarkAsk(w, w.asker.id, 1);
+    await landmarkAsk(w, w.asker.id, 2);
+    // A bay ask is not a landmark ask.
+    await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: { lat: 0.2, lng: 0.2 },
+      waterBodyId: w.lake,
+      name: 'Shaker Cove',
+    });
+    // One of them added: its item decided approved.
+    await w.t.run(async (ctx) => {
+      const m = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) =>
+          q.eq('sourceTable', 'waterBodyRequests').eq('sourceId', decided),
+        )
+        .first();
+      if (!m) throw new Error('no member');
+      await ctx.db.patch(m._id, { status: 'closed' });
+      await ctx.db.patch(m.itemId, { status: 'decided', decision: 'approved', decidedAt: NOW });
+    });
+    const asked = await landmarkAsk(w, w.asker.id, 3);
+    const item = await placeItem(w, asked);
+    expect(item.asks[0]?.landmarkAsks).toEqual({ asked: 3, added: 1, capped: false });
+  });
+
+  test('past the filings it reads, the counts are floors and say so', async () => {
+    const w = await world();
+    await ready(w.t);
+    let last: Id<'waterBodyRequests'> | undefined;
+    for (let i = 0; i <= 51; i++) last = await landmarkAsk(w, w.asker.id, i);
+    const item = await placeItem(w, last as Id<'waterBodyRequests'>);
+    expect(item.asks[0]?.landmarkAsks).toMatchObject({ asked: 50, capped: true });
+  });
+
+  test('at most VIEW_ASKER_COUNTS askers an item, newest first; while the backfill runs, none', async () => {
+    const w = await world();
+    const askers: Id<'profiles'>[] = [];
+    for (let i = 0; i < VIEW_ASKER_COUNTS + 1; i++) askers.push((await person(w.t, `a${i}`)).id);
+    const ids: Id<'waterBodyRequests'>[] = [];
+    // One place, four people: one item.
+    for (const [i, who] of askers.entries()) {
+      ids.push(
+        await w.t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_landmark',
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0.3, lng: 0.3 },
+            waterBodyId: w.lake,
+            name: 'Long Point',
+            nameKey: requestNameKeyFor('name_landmark', 'Long Point'),
+            createdAt: NOW - 10_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        }),
+      );
+    }
+    const pending = await placeItem(w, ids[0] as Id<'waterBodyRequests'>);
+    expect(pending.asks.map((a) => a.landmarkAsks)).toEqual([null, null, null, null]);
+    await ready(w.t);
+    const item = await placeItem(w, ids[0] as Id<'waterBodyRequests'>);
+    expect(item.asks.map((a) => a.landmarkAsks)).toEqual([
+      ...Array.from({ length: VIEW_ASKER_COUNTS }, () => ({ asked: 1, added: 0, capped: false })),
+      null,
+    ]);
+  });
+
+  test('a bay ask’s byline carries none', async () => {
+    const w = await world();
+    await ready(w.t);
+    const id = await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: { lat: 0.2, lng: 0.2 },
+      waterBodyId: w.lake,
+      name: 'Shaker Cove',
+    });
+    expect((await placeItem(w, id)).asks[0]?.landmarkAsks).toBeNull();
+  });
+});
+
+describe('Same place answers its own row and undo offer', () => {
+  test('approve with sameAs: the primary’s approve_request, undoable by the moderator', async () => {
+    const w = await world();
+    const landmarkId = await w.t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: w.lake,
+        name: 'Long Point',
+        kind: 'point',
+        point: { lat: -0.3, lng: -0.3 },
+        source: 'moderator',
+        externalIds: [],
+        aliases: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      }),
+    );
+    const requestId = await w.t.run(async (ctx) => {
+      const id = await ctx.db.insert('waterBodyRequests', {
+        kind: 'name_landmark',
+        status: 'open',
+        requesterId: w.asker.id,
+        coord: { lat: 0.2, lng: 0.2 },
+        waterBodyId: w.lake,
+        name: 'Long Point',
+        nameKey: requestNameKeyFor('name_landmark', 'Long Point'),
+        createdAt: NOW - 1000,
+      });
+      await fileMember(ctx, requestSource(id));
+      return id;
+    });
+    const out = await w.mod.as.mutation(api.corpusRequests.approve, {
+      requestId,
+      sameAs: { landmarkId, name: 'Long Point', point: { lat: -0.3, lng: -0.3 } },
+    });
+    expect(out).toMatchObject({ requestId, undoable: true, undoNeedsReason: false });
+    expect(out.itemId).not.toBeNull();
+    const row = await w.t.run((ctx) => ctx.db.get(out.actionId));
+    expect(row).toMatchObject({ action: 'approve_request', targetId: requestId });
+    await w.mod.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' });
+    expect((await w.t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
   });
 });
