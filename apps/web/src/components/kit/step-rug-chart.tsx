@@ -60,6 +60,44 @@ export function scaleTop(start: number, events: readonly StepEvent[]): number {
 
 const HOUR = 3_600_000;
 
+/** A UTC whole hour: the default floor, for a caller that names no clock. */
+const utcHour = (at: number) => Math.floor(at / HOUR) * HOUR;
+
+/**
+ * The whole hours from `from` to `to`, on the clock `floorHour` reads (it returns the whole hour at
+ * or before an instant): pass a zoned floor and the ticks fall on the reader's :00 in any zone —
+ * a half-hour or 45-minute one, and across a DST change (each next tick is floored again, never
+ * stepped blind). The kit holds no zone: the caller's floor is the clock.
+ */
+export function hourTicks(
+  from: number,
+  to: number,
+  floorHour: (at: number) => number = utcHour,
+): number[] {
+  const ticks: number[] = [];
+  /** A whole hour on that clock: the floor leaves it where it is. */
+  const whole = (at: number) => floorHour(at) === at;
+  let t = floorHour(from);
+  while (t < from || !whole(t)) t = next(t);
+  for (; t <= to; t = next(t)) ticks.push(t);
+  return ticks;
+
+  /**
+   * The next whole hour after `at` on that clock: the first of half-hour steps on whose floor is a
+   * whole hour after `at` — an hour on, except where the clock itself moves (by an hour, or by half
+   * of one, as Lord Howe's does), where a floor taken across the change can land on a :30.
+   */
+  function next(at: number): number {
+    for (let k = 1; k <= 6; k++) {
+      const n = floorHour(at + (k * HOUR) / 2);
+      if (n > at && whole(n)) return n;
+    }
+    // (No clock goes two hours without a whole hour; the guard keeps the loop finite regardless.)
+    /* v8 ignore next */
+    return at + HOUR;
+  }
+}
+
 type StepRugChartProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** The count at `from`. */
   start: number;
@@ -72,6 +110,11 @@ type StepRugChartProps = Omit<ComponentProps<'div'>, 'children'> & {
   zeroLabel?: (at: number) => string;
   /** What the chart shows, for a reader. */
   label: string;
+  /**
+   * Where the hour ticks fall: instants, from `hourTicks` with the reader's zoned floor. Absent,
+   * the whole UTC hours of the span.
+   */
+  ticks?: readonly number[];
 };
 
 const PAD = { l: 30, r: 6, t: 8, b: 40 };
@@ -84,6 +127,7 @@ function StepRugChart({
   formatTime,
   zeroLabel,
   label,
+  ticks,
   className,
   ...props
 }: StepRugChartProps) {
@@ -128,6 +172,7 @@ function StepRugChart({
           zero={zero}
           formatTime={formatTime}
           zeroLabel={zeroLabel}
+          hours={(ticks ?? hourTicks(from, to)).filter((t) => t >= from && t <= to)}
         />
       )}
     </div>
@@ -145,6 +190,7 @@ function Drawing({
   zero,
   formatTime,
   zeroLabel,
+  hours,
 }: {
   w: number;
   h: number;
@@ -156,6 +202,7 @@ function Drawing({
   zero: number | null;
   formatTime: (at: number) => string;
   zeroLabel: ((at: number) => string) | undefined;
+  hours: readonly number[];
 }) {
   const X = (t: number) => PAD.l + ((t - from) / (to - from)) * (w - PAD.l - PAD.r);
   const Y = (v: number) => PAD.t + (1 - v / top) * (h - PAD.t - PAD.b);
@@ -164,8 +211,6 @@ function Drawing({
   for (const s of steps) d += ` H${X(s.at).toFixed(1)} V${Y(s.value).toFixed(1)}`;
   d += ` H${X(to)}`;
   const grid = gridOf(top);
-  const hours: number[] = [];
-  for (let t = Math.ceil(from / HOUR) * HOUR; t <= to; t += HOUR) hours.push(t);
   const base = Y(0);
   return (
     <svg
@@ -191,7 +236,7 @@ function Drawing({
         </g>
       ))}
       {hours.map((t, i) => (
-        <g key={t} data-slot="step-rug-hour">
+        <g key={t} data-slot="step-rug-hour" data-at={t}>
           <line x1={X(t)} x2={X(t)} y1={base} y2={base + (i % 2 ? 4 : 7)} className="stroke-fg3" />
           {i % 2 === 0 && (
             <text x={X(t)} y={base + 19} textAnchor="middle" className="fill-fg3 text-[0.625rem]">

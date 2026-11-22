@@ -1,7 +1,8 @@
+import { zonedParts } from '@skating/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor } from 'storybook/test';
 
-import { type StepEvent, StepRugChart } from './step-rug-chart';
+import { hourTicks, type StepEvent, StepRugChart } from './step-rug-chart';
 
 /**
  * A running count's steps over a rug (Inbox zero's *Open, today*, 2.9). Twenty open
@@ -70,5 +71,59 @@ export const StillOpen: Story = {
       expect(canvasElement.querySelector('[data-slot="step-rug-line"]')).not.toBeNull(),
     );
     expect(canvasElement.querySelector('[data-slot="step-rug-zero"]')).toBeNull();
+  },
+};
+
+const KOLKATA = 'Asia/Kolkata';
+/** Kolkata's clock (UTC+5:30), where a whole UTC hour reads :30. A story's floor, as a caller's. */
+const kolkataHour = (t: number) => {
+  const p = zonedParts(t, KOLKATA);
+  return t - (p.minute * 60 + p.second) * 1000 - (((t % 1000) + 1000) % 1000);
+};
+const kolkataTime = (t: number) =>
+  new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: KOLKATA,
+  }).format(t);
+// 08:00 to 16:00 on Kolkata's clock.
+const K_FROM = Date.UTC(2026, 9, 14, 2, 30);
+const K_TO = Date.UTC(2026, 9, 14, 10, 30);
+
+/**
+ * A reader in a half-hour zone: the span starts on a whole hour of their clock, and so do the
+ * ticks — the caller's `ticks` (from `hourTicks` with its zoned floor), not the UTC hours that
+ * would read 08:30, 09:30 there.
+ */
+export const HalfHourZone: Story = {
+  args: {
+    events: [],
+    start: 4,
+    from: K_FROM,
+    to: K_TO,
+    formatTime: kolkataTime,
+    zeroLabel: undefined,
+    ticks: hourTicks(K_FROM, K_TO, kolkataHour),
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('[data-slot="step-rug-hour"]').length).toBeGreaterThan(
+        0,
+      ),
+    );
+    for (const quad of canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
+      const ticks = [...quad.querySelectorAll<SVGElement>('[data-slot="step-rug-hour"]')];
+      const instants = ticks.map((g) => Number(g.dataset.at));
+      // Every tick a whole hour on the reader's clock: 08:00 … 16:00, nine of them.
+      await expect(instants.map((t) => kolkataTime(t))).toEqual(
+        Array.from({ length: 9 }, (_, i) => `${String(8 + i).padStart(2, '0')}:00`),
+      );
+      // Every other one labeled, in the reader's words.
+      const labels = [...quad.querySelectorAll('[data-slot="step-rug-hour"] text')].map(
+        (t) => t.textContent,
+      );
+      await expect(labels.every((l) => l?.endsWith(':00'))).toBe(true);
+    }
   },
 };
