@@ -1,7 +1,7 @@
 import { zonedInstantOnDayOf, zonedParts } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { byLane, dayLine, eventsOf, floorLocalHour, span } from './InboxZero';
+import { byLane, ceilLocalHour, dayLine, eventsOf, floorLocalHour, span } from './InboxZero';
 import { NOW, ZERO_TODAY } from './inboxFixtures';
 
 const H = 3_600_000;
@@ -155,6 +155,35 @@ describe('the chart’s span on the reader’s clock (fast-check)', () => {
     expect(from).toBe(floored);
     // A quarter-hour on, the floor is still 01:00: an hour and a quarter of real time.
     expect(floorLocalHour(first + 15 * 60_000, zone)).toBe(floored);
+  });
+
+  it('Lord Howe, a millisecond past 01:00 the morning its clocks go forward: the chart ends at 03:00', () => {
+    // The higher-run pass's counterexample (seed -1048228078): now 01:00:00.001 LHST on 4 Oct 2026,
+    // nothing decided. The next whole local hour is 03:00 LHDT, 90 minutes on (02:00 is skipped), so
+    // "an hour on, floored" fell back to 01:00 — an end before now.
+    const zone = 'Australia/Lord_Howe';
+    const now = 1_791_037_800_001;
+    expect(zonedParts(now, zone)).toMatchObject({ hour: 1, minute: 0 });
+    const since = zonedInstantOnDayOf(now, 0, zone);
+    const { to } = span({ ...ZERO_TODAY, since, filed: [], decided: [] }, now, zone);
+    expect(to).toBeGreaterThanOrEqual(now);
+    expect(zonedParts(to, zone)).toMatchObject({ hour: 3, minute: 0 });
+    expect(to - (now - 1)).toBe(1.5 * H);
+  });
+
+  it('ceils an instant to the first whole local hour at or after it', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...ZONES), instant, (zone, at) => {
+        const ceiled = ceilLocalHour(at, zone);
+        expect(ceiled).toBeGreaterThanOrEqual(at);
+        expect(ceiled - at).toBeLessThan(LONGEST_HOUR);
+        expect(zonedParts(ceiled, zone)).toMatchObject({ minute: 0, second: 0 });
+        expect(ceiled % 1000).toBe(0);
+        // The earliest such instant: no whole local hour lies between `at` and it.
+        if (ceiled > at) noWholeHourBetween(at - 1, ceiled, zone);
+      }),
+      { numRuns: 400 },
+    );
   });
 
   it('floors an instant to the whole local hour that holds it', () => {

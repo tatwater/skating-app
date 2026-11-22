@@ -43,6 +43,8 @@ import type { InboxTodayView } from './inboxTypes';
  */
 
 const HOUR = 3_600_000;
+/** The longest two whole local hours in a row are apart: 90 minutes, across a half-hour change. */
+const LONGEST_LOCAL_HOUR = 1.5 * HOUR;
 
 export type ZeroToday =
   | { kind: 'loading' }
@@ -190,8 +192,19 @@ export function floorLocalHour(at: number, timeZone: string): number {
 }
 
 /**
+ * The earliest instant at or after `at` whose clock in `timeZone` reads a whole hour — the floor's
+ * mirror. Two whole local hours in a row are an hour apart, but 90 real minutes across Lord Howe's
+ * half-hour changes (01:00, then 03:00 the morning 02:00 is skipped), so "an hour on, floored" can
+ * fall short of `at`; the next whole hour after a floor is the latest one within 90 minutes of it.
+ */
+export function ceilLocalHour(at: number, timeZone: string): number {
+  const floor = floorLocalHour(at, timeZone);
+  return floor === at ? at : floorLocalHour(floor + LONGEST_LOCAL_HOUR, timeZone);
+}
+
+/**
  * The chart's span: from the local hour of the day's first event (or eight hours back), never before
- * the day began, to the next local hour.
+ * the day began, to the first whole local hour at or after now that is at least an hour on.
  */
 export function span(
   today: InboxTodayView,
@@ -200,7 +213,7 @@ export function span(
 ): { from: number; to: number } {
   const first = Math.min(now - 8 * HOUR, ...eventsOf(today).map((e) => e.at));
   const from = Math.max(today.since, floorLocalHour(first, timeZone));
-  const to = Math.max(from + HOUR, floorLocalHour(now + HOUR - 1, timeZone));
+  const to = ceilLocalHour(Math.max(now, from + HOUR), timeZone);
   return { from, to };
 }
 
