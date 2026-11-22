@@ -9258,8 +9258,6 @@ Nothing is pushed or deployed.
 
 - **Distances:**
   - a skate's distance (2.3's "2.1 km", 2.5's "4.2 km"): no activity row stores one;
-  - a request on a known body's tracks: the server sends them, but its scene has no legend to
-    name a line, so they wait for one;
   - a drawing's distance.
 - **The nearest known body** (2.3's *Nearest*): it moved to B01-5d (§7 ruling 17). A bounded
   geographic read doesn't fit the item's budget.
@@ -9282,14 +9280,20 @@ Nothing is pushed or deployed.
   - **(f)** Two Drawn story overflow reads now wait for the layout.
   - **(f)** Zones: the request wiring test's skate line and dormancy date held only in New York.
     They now read the runner's zone, as the route does.
-- **Listed:**
-  - **(a)** The place bar's *Approve* still checks that the bay or landmark is drawn, beside
-    `can` (redundant while the two agree).
-  - **(g)** B01-5b's:
-    - the flag handler's *Open in Body* is a plain `href` (`bodyHref`), not the router's link with
-      its way back;
-    - its *Around it* distances use `milesWords`.
-  - **(g)** A request on a known body's tracks aren't drawn (above).
+- **Listed, then fixed on the governor's rulings (2026-11-22):**
+  - **(a)** The place bar's *Approve* checked that the bay or landmark is drawn, beside `can`.
+    It now draws from `can.approve` alone.
+    - *Draw in Body →* still has to tell the missing-drawing refusal from any other. `can` carries
+      only the sentence, so it reads the item's own served facts (`drawnSubAreaId`,
+      `answeringLandmarkId`), never the words.
+    - **A server ask:** a refusal code on `can` would let *Draw in Body* read `can` alone.
+  - **(g)** B01-5b's flag handler:
+    - *Open in Body* was a plain `href`. It is now the router's link with its way back, through
+      `LinkChip`, and a route test holds it.
+    - Its *Around it* distances are `formatDistance`, and `milesWords` is gone.
+  - **(g)** A request on a known body (activate, restore, contest access, takedown) now draws its
+    asks' skates. `corpusRequests.create` takes an `activityId` for every kind, so any of them can
+    carry one. The legend names the asker, as the admit scene does.
 - **Clean:** (b), (c), (d), (e), (h), (i).
 
 **Found at the gate:**
