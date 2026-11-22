@@ -7709,6 +7709,12 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   - **An alert embed's caption** keeps the put-in's or lot's name first; a simplified outline's note
     follows it rather than replacing it. A test also holds that no item's map draws the Aerial switch
     this wave (no answer carries a pass).
+  - **Instants in the board's zone** (W3, sixth piece, 2026-11-21): the Access and map fixtures are
+    absolute instants pinned in the board's zone with core's `zonedInstant`, never a local `new Date`,
+    so the tests read the same in every zone CI runs (all four failures under `TZ=Etc/GMT-14` were
+    fixture bugs). `ItemMap` now reads the inspector's zone, so its legend's date falls on the same day
+    as the timeline's. Calendar days on the Inbox's panes are the reader's own zone, through
+    `consoleTime`; "N days ago" is elapsed time.
 - **The web review's fixes, the frame** (W1, third pass), one line each:
   1. The rail's Inbox count reads through the console's read layer, held through the minute tick; it
      no longer blinks out each minute, and a failed read no longer throws into the layout.
