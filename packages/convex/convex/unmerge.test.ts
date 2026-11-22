@@ -1538,13 +1538,14 @@ suite('a heavy unmerge pages', () => {
     await assertAudit(w, mergeId);
   });
 
-  test('under the harness’s real limits: a change set past one page drains, one page an execution', async () => {
+  test('under the harness’s real limits: the unmerge of a merge at the estimate’s edge completes, every row back', async () => {
     const w = await world([]);
-    // 1,800 favorites of the drawing: one merge moves them (two index ranges each — the lookup of a
-    // twin on the survivor and the row's patch — about 3,750 in all, as a real backend measured; 2,000
-    // could not merge at all), and its change set is stored in parts. Putting each back takes two
-    // ranges too, so with the unmerge's own reads its pages end on Convex's 4,096 ranges a transaction.
-    const N = 1_800;
+    // 500 favorites of the drawing — at the corrected estimate's edge for them (S4a's time axis: the
+    // pinned ceiling for two small bodies is 511; 1,800 merged before it and can't now). One merge
+    // moves them at two index ranges each, and putting each back costs the same, so the unmerge's
+    // pages hold them under Convex's real limits; whether that takes one execution or more is the
+    // page's own call (pages past one are held by "past one page", below).
+    const N = 500;
     await w.t.run(async (ctx) => {
       for (let i = 0; i < N; i++) {
         const userId = await ctx.db.insert('profiles', {
@@ -1563,17 +1564,15 @@ suite('a heavy unmerge pages', () => {
         await ctx.db.insert('waterBodyFavorites', { userId, waterBodyId: w.loser, createdAt: i });
       }
     });
+    // A merge the estimate accepts: the fixture stays inside what a real merge may do.
+    const preview = await w.actor.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    expect(preview).toMatchObject({ ok: true, tooBig: false });
+    // (At the estimate's edge the change set fits one part; a change set stored in parts unmerges
+    // the same — "the change set split in parts" holds that.)
     const mergeId = await mergeV2(w);
-    const parts = await w.t.run(
-      async (ctx) =>
-        (
-          await ctx.db
-            .query('auditSnapshots')
-            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
-            .collect()
-        ).length,
-    );
-    expect(parts).toBeGreaterThan(1);
     // The boundary this test reads is the metrics' alone: the page's time cap off (a contended runner
     // could otherwise end a page sooner).
     const wasTime = PAGE_TIME.ms;
@@ -1593,15 +1592,8 @@ suite('a heavy unmerge pages', () => {
         )
       ).length;
     // A restored favorite costs what the merge spent moving it (two ranges), so the rows fit the first
-    // page as they fit the merge's one transaction; the recompute, which can't fit beside them, takes
-    // the next page (a real backend paged it the same way: two executions).
+    // page as they fit the merge's one transaction.
     expect(await onLoser()).toBe(N);
-    const page1 = (await unmergeRowOf(w.t, w.loser))?.metadata as {
-      done?: boolean;
-      cursor?: unknown;
-    };
-    expect(page1?.done).toBe(false);
-    expect(page1?.cursor).toEqual({ phase: 'derived', from: 0 });
     await settle(w.t);
     expect(await onLoser()).toBe(N);
     const pages = await w.t.run((ctx) =>
@@ -1610,7 +1602,6 @@ suite('a heavy unmerge pages', () => {
         .filter((q) => q.eq(q.field('name'), 'unmerge:unmergeRest'))
         .collect(),
     );
-    expect(pages.length).toBeGreaterThanOrEqual(1);
     expect(pages.every((p) => p.state.kind === 'success')).toBe(true);
     expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
     // Each back as it was: on the drawing, with its own first instant.
