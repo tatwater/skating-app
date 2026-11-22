@@ -34,6 +34,13 @@ import { OPEN_FLAG_STATUSES } from './openFlags';
 export const MERGE_TOO_BIG =
   'Too much moves for one merge here. Merge it from the duplicates queue in parts, or ask an admin.';
 
+/**
+ * The most rows of one kind a merge moves (B01-5d): under Convex's 8,192-item array limit, so no list a
+ * merge holds or records of one kind can reach it. Rows that cost no index range of their own (a
+ * launch, a skate) could otherwise pass the transaction's other limits in their thousands.
+ */
+export const MERGE_ROWS_PER_KIND = 8_000;
+
 /** The most asks of one kind and status a merge re-targets — far past any body's asks. */
 export const RETARGET_CAP = 1_000;
 
@@ -208,7 +215,7 @@ export async function mergeLoadOf(
       inGroup++;
       charge(cost, PER_ROW[kind], getDocumentSize(row as never));
       if (into) into.count++;
-      if (!fitsOneTransaction(cost)) {
+      if (!fitsOneTransaction(cost) || (into !== null && into.count > MERGE_ROWS_PER_KIND)) {
         stopped = true;
         if (into) into.capped = true;
         return false;

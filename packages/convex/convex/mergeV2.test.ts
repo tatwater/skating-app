@@ -28,7 +28,7 @@ import { BACKFILL_PHASES, reviewAuditOf } from './inboxItems';
 import { readSnapshot } from './lib/audit';
 import { bodySource, fileMember } from './lib/inboxItems';
 import { DRAWN_SURVIVOR_READ, drawnSurvivorOf, SURVIVOR_CHANGED_REFUSAL } from './lib/inboxRules';
-import { MERGE_TOO_BIG, RETARGET_CAP } from './lib/mergeLoad';
+import { MERGE_ROWS_PER_KIND, MERGE_TOO_BIG, RETARGET_CAP } from './lib/mergeLoad';
 import schema from './schema';
 import type { MergeChangeSet } from './waterBodies';
 
@@ -374,6 +374,30 @@ describe('the merge’s refusals (fork 3)', () => {
       })
       .catch((e: unknown) => e);
     expect((etl as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
+  });
+
+  test('more rows of one kind than the cap: refused, preview and write alike, under the array limit', async () => {
+    const w = await pair();
+    await w.t.run(async (ctx) => {
+      for (let i = 0; i <= MERGE_ROWS_PER_KIND; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: w.loser,
+          coord: { lat: LAT, lng: LNG },
+          source: 'osm',
+          status: 'visible',
+          createdAt: NOW,
+        });
+      }
+    });
+    const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    if (!preview.ok) throw new Error(preview.refusal);
+    expect(preview.moves.putIns).toEqual({ count: MERGE_ROWS_PER_KIND + 1, capped: true });
+    expect(preview).toMatchObject({ tooBig: true, code: 'tooBig' });
+    await expect(w.merge()).rejects.toThrow(MERGE_TOO_BIG);
+    expect(MERGE_ROWS_PER_KIND).toBeLessThan(8_192);
   });
 
   test('the drawer never merges their own drawing (D289); the preview says so first', async () => {
