@@ -451,7 +451,7 @@ interface FlushResult {
  * A whole batch's limits as one nested transaction. A batch whose real reads pass them — a burst of
  * heavy rows — fails as a batch and is delivered a row at a time, which costs a pass, not a row.
  */
-const BATCH_LIMITS = {
+export const BATCH_LIMITS = {
   bytesRead: 8 * MiB,
   documentsRead: 8000,
   // Above the batch's own soft stop (`FLUSH_READ_BUDGET`, reads), so a healthy batch stops itself

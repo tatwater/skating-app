@@ -60,6 +60,14 @@ function ring(n: number): number[][] {
  */
 const HEAVY_NAME = 'W'.repeat(900 * 1024);
 const SQUARE = { type: 'Polygon' as const, coordinates: [ring(4)] };
+/**
+ * An outline near the document limit (~860 KiB) as a deployment can store it: six rings of 8,000
+ * points, since a deployment caps an array at 8,192 items (`convex-test` doesn't).
+ */
+const HEAVY_OUTLINE = {
+  type: 'Polygon' as const,
+  coordinates: Array.from({ length: 6 }, () => ring(8_000)),
+};
 
 /** A note at its cap, in four-byte characters (the writer counts characters). */
 const maxText = (chars: number) => '\u{1F9CA}'.repeat(chars);
@@ -177,6 +185,13 @@ async function heavyWorld() {
   await new Promise((resolve) => setTimeout(resolve, 25));
   return { t, mod, admin, people, lake, asks };
 }
+
+/**
+ * The heavy approval tests' timeout: their point is the real size, so they keep it, with 5x headroom
+ * over their time when every package's suite runs at once (CI's `pnpm test`, measured ~6x their time
+ * alone): about 8 s alone, 48 s contended.
+ */
+const HEAVY_TIMEOUT = 240_000;
 
 /** Every continuation a decision or undo scheduled, run to its end — each its own execution. */
 async function drainAll(t: T) {
@@ -350,72 +365,119 @@ describe.each(['pending', 'ready'] as const)(
 describe.each(['pending', 'ready'] as const)(
   'heavy rows: approving a heavy admit question — the Inbox %s',
   (mode) => {
-    test('a heavy name refuses with its sentence; a heavy outline’s approval completes, every asker told once', async () => {
-      // The question ten asks deep for the outline: the twenty-deep one carries the heavy name.
-      const w = await heavyWorld();
-      if (mode === 'ready') await markReady(w.t);
-      // The name near the document limit is past the corpus's name cap: an honest refusal, nothing
-      // written, every ask still open.
-      expect(
-        await outcomeOf(() =>
-          w.admin.as.mutation(api.corpusRequests.approve, {
-            requestId: w.asks[0] as Id<'waterBodyRequests'>,
-          }),
-        ),
-      ).toEqual({
-        kind: 'refused',
-        why: 'The catalog’s name for this water is 921600 characters; keep it to 200. Decline this, or name it from the lake editor.',
-      });
-      expect(new Set(await statusesOf(w.t, w.asks))).toEqual(new Set(['open']));
-      // The outline near the limit is admitted: ten asks of it, each ~860 KiB, for other water — more
-      // than a page holds (a page reads into a quarter of what the transaction has left).
-      const outline = { type: 'Polygon' as const, coordinates: [ring(48_000)] };
-      const askers = w.people.slice(0, 10);
-      const asks = await heavyAdmits(w.t, askers, 'catalog/outline', { polygon: outline });
+    test(
+      'a heavy name refuses with its sentence; a heavy outline’s approval completes, every asker told once',
+      async () => {
+        // Its own small world: staff, five people, one ask carrying the heavy name and four carrying
+        // the heavy outline — the fewest that page at the real limit (an approval's own reads take
+        // about 7 MiB of it, and a page plans each sibling at its worst: two a page here). Its point is
+        // the real size, so it keeps the real limits and a timeout with 5x headroom over its time when
+        // every package's suite runs at once (CI's `pnpm test`), rather than a smaller stand-in.
+        const t = harness();
+        const admin = await person(t, 'admin', 'admin');
+        const people: Id<'profiles'>[] = [];
+        for (let i = 0; i < 5; i++) people.push((await person(t, `p${i}`)).id);
+        const w = { t, admin };
+        if (mode === 'ready') await markReady(w.t);
+        // The name near the document limit is past the corpus's name cap: an honest refusal, nothing
+        // written, the ask still open.
+        const named = await heavyAdmits(w.t, people.slice(0, 1), 'catalog/big');
+        expect(
+          await outcomeOf(() =>
+            w.admin.as.mutation(api.corpusRequests.approve, {
+              requestId: named[0] as Id<'waterBodyRequests'>,
+            }),
+          ),
+        ).toEqual({
+          kind: 'refused',
+          why: 'The catalog’s name for this water is 921600 characters; keep it to 200. Decline this, or name it from the lake editor.',
+        });
+        expect(await statusesOf(w.t, named)).toEqual(['open']);
+        // The outline near the limit is admitted: four asks of it, each ~860 KiB in six rings of 8,000
+        // points (a deployment caps an array at 8,192), for other water.
+        const askers = people.slice(1);
+        const asks = await heavyAdmits(w.t, askers, 'catalog/outline', { polygon: HEAVY_OUTLINE });
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const first = asks[0] as Id<'waterBodyRequests'>;
+        let answer: { actionId: Id<'moderationActions'>; undoable: boolean } | undefined;
+        const approve = await matrix({
+          approve: async () => {
+            answer = await w.admin.as.mutation(api.corpusRequests.approve, { requestId: first });
+            return answer;
+          },
+        });
+        expect(approve).toEqual({ approve: 'completed' });
+        // Its answer, computed after its first page filled the transaction: its own row, undoable.
+        expect(answer?.undoable).toBe(true);
+        expect(
+          (await w.t.run((ctx) => ctx.db.get(answer?.actionId as Id<'moderationActions'>)))
+            ?.targetId,
+        ).toBe(first);
+        // The harness may have started a page on its own timer: let it end, then run the rest.
+        await w.t.finishInProgressScheduledFunctions();
+        await drainAll(w.t);
+        // It paged: the drain scheduled pages past the first, whoever ran them.
+        const pages = await w.t.run(
+          async (ctx) =>
+            (await ctx.db.system.query('_scheduled_functions').collect()).filter(
+              (j) => j.name === 'corpusRequests:closeSiblings',
+            ).length,
+        );
+        expect(pages).toBeGreaterThan(0);
+        expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['approved']));
+        // One body for the twenty, named on every ask the approval closed.
+        const admitted = new Set<string>();
+        for (const id of asks) {
+          const ask = await w.t.run((ctx) => ctx.db.get(id));
+          admitted.add(String(ask?.admittedWaterBodyId));
+        }
+        expect(admitted.size).toBe(1);
+        // Every asker's message queued once, by the drain's every page.
+        const queued = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
+        expect(
+          queued
+            .filter((r) => r.kind === 'request_decided')
+            .map((r) => r.userId)
+            .sort(),
+        ).toEqual([...askers].sort());
+        // And delivered: each message's re-check reads its ask whole (~860 KiB), so a batch of them
+        // passes the flush's batch limit and it delivers them one at a time — every one, once.
+        for (let pass = 0; pass < 30; pass++) {
+          const due = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
+          if (due.length === 0) break;
+          await w.t.run(async (ctx) => {
+            for (const r of due) await ctx.db.patch(r._id, { flushAfter: Date.now() - 1 });
+          });
+          await w.t.mutation(internal.notifications.flushNotificationQueue, {});
+        }
+        const told = await w.t.run((ctx) => ctx.db.query('notifications').collect());
+        expect(told.map((n) => n.userId).sort()).toEqual([...askers].sort());
+        // Four outlines near the limit, written, approved across pages and delivered.
+      },
+      HEAVY_TIMEOUT,
+    );
+  },
+);
+
+describe('heavy rows: undoing a heavy admit’s approval', () => {
+  test(
+    'the approval of four outlines near the limit is undone page by page: every ask open again',
+    async () => {
+      // Four asks, at the real limit: each ask reopened is budgeted at its worst (read whole, read
+      // again, written back), so even four page.
+      const t = harness();
+      const admin = await person(t, 'admin', 'admin');
+      const askers: Id<'profiles'>[] = [];
+      for (let i = 0; i < 4; i++) askers.push((await person(t, `p${i}`)).id);
+      const w = { t, admin };
+      await markReady(w.t);
+      const asks = await heavyAdmits(w.t, askers, 'catalog/outline', { polygon: HEAVY_OUTLINE });
       await new Promise((resolve) => setTimeout(resolve, 25));
       const first = asks[0] as Id<'waterBodyRequests'>;
-      let answer: { actionId: Id<'moderationActions'>; undoable: boolean } | undefined;
-      const approve = await matrix({
-        approve: async () => {
-          answer = await w.admin.as.mutation(api.corpusRequests.approve, { requestId: first });
-          return answer;
-        },
-      });
-      expect(approve).toEqual({ approve: 'completed' });
-      // Its answer, computed after its first page filled the transaction: its own row, undoable.
-      expect(answer?.undoable).toBe(true);
-      expect(
-        (await w.t.run((ctx) => ctx.db.get(answer?.actionId as Id<'moderationActions'>)))?.targetId,
-      ).toBe(first);
-      expect(await drainAll(w.t)).toBeGreaterThan(0);
+      await w.admin.as.mutation(api.corpusRequests.approve, { requestId: first });
+      await w.t.finishInProgressScheduledFunctions();
+      await drainAll(w.t);
       expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['approved']));
-      // One body for the twenty, named on every ask the approval closed.
-      const admitted = new Set<string>();
-      for (const id of asks) {
-        const ask = await w.t.run((ctx) => ctx.db.get(id));
-        admitted.add(String(ask?.admittedWaterBodyId));
-      }
-      expect(admitted.size).toBe(1);
-      // Every asker's message queued once, by the drain's every page.
-      const queued = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
-      expect(
-        queued
-          .filter((r) => r.kind === 'request_decided')
-          .map((r) => r.userId)
-          .sort(),
-      ).toEqual([...askers].sort());
-      // And delivered: each message's re-check reads its ask whole (~860 KiB), so a batch of them
-      // passes the flush's batch limit and it delivers them one at a time — every one, once.
-      for (let pass = 0; pass < 30; pass++) {
-        const due = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
-        if (due.length === 0) break;
-        await w.t.run(async (ctx) => {
-          for (const r of due) await ctx.db.patch(r._id, { flushAfter: Date.now() - 1 });
-        });
-        await w.t.mutation(internal.notifications.flushNotificationQueue, {});
-      }
-      const told = await w.t.run((ctx) => ctx.db.query('notifications').collect());
-      expect(told.map((n) => n.userId).sort()).toEqual([...askers].sort());
       // Its undo completes, page by page: every ask open again.
       const decision = await w.t.run(async (ctx) =>
         (await ctx.db.query('moderationActions').collect()).find(
@@ -432,12 +494,21 @@ describe.each(['pending', 'ready'] as const)(
           )
         ).kind,
       ).toBe('completed');
+      await w.t.finishInProgressScheduledFunctions();
       await drainAll(w.t);
       expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['open']));
-      // Ten outlines near the limit, written, approved, drained and reopened: ~10 s on a laptop.
-    }, 90_000);
-  },
-);
+      // It paged: the reopen scheduled a page past its first, whoever ran it.
+      const pages = await w.t.run(
+        async (ctx) =>
+          (await ctx.db.system.query('_scheduled_functions').collect()).filter(
+            (j) => j.name === 'inboxWrites:reopenRequestsRest',
+          ).length,
+      );
+      expect(pages).toBeGreaterThan(0);
+    },
+    HEAVY_TIMEOUT,
+  );
+});
 
 /** `n` flags on one target, each with its longest note, each filed. */
 async function heavyFlags(
@@ -590,7 +661,11 @@ describe('heavy rows: drawn bodies with outlines near the document limit', () =>
   test('every read answers; an approval, its undo and a rejection complete', async () => {
     const w = await heavyWorld();
     await markReady(w.t);
-    const outline = { type: 'Polygon' as const, coordinates: [ring(24_000)] };
+    // Three rings of 8,000 points (a deployment caps an array at 8,192): ~430 KiB, as before.
+    const outline = {
+      type: 'Polygon' as const,
+      coordinates: Array.from({ length: 3 }, () => ring(8_000)),
+    };
     const drawn: Id<'waterBodies'>[] = [];
     for (const [i, by] of w.people.slice(0, 3).entries()) {
       drawn.push(

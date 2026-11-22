@@ -862,14 +862,14 @@ describe('an item’s lists are read whole, member by member: never a silent dro
 
   test('heavy asks: the list ends where the budget does, says so, and no ask is half-read', async () => {
     const w = await world();
+    // Six rings of 8,000 points (a deployment caps an array at 8,192): ~860 KiB.
+    const ring = Array.from({ length: 8_001 }, (_, i) => {
+      const a = (2 * Math.PI * (i % 8_000)) / 8_000;
+      return [30.5 + 0.4 * Math.cos(a), 0.4 * Math.sin(a)];
+    });
     const outline = {
       type: 'Polygon' as const,
-      coordinates: [
-        Array.from({ length: 48_001 }, (_, i) => {
-          const a = (2 * Math.PI * (i % 48_000)) / 48_000;
-          return [30.5 + 0.4 * Math.cos(a), 0.4 * Math.sin(a)];
-        }),
-      ],
+      coordinates: Array.from({ length: 6 }, () => ring),
     };
     const n = 16;
     const ids: Id<'waterBodyRequests'>[] = [];

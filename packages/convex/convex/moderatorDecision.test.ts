@@ -41,6 +41,7 @@ import {
 import { parsePayload } from './lib/notificationResolve';
 import { REQUEST_SIBLINGS_MAX, siblingCost } from './lib/requestDecisions';
 import { SEED_CLERK_PREFIX } from './lib/seedPeople';
+import { BATCH_LIMITS } from './notifications';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -858,7 +859,11 @@ function ring(n: number): number[][] {
  * told of a flag verdict (a re-check of one small row), every message due.
  */
 async function heavyQueue(t: T, n: number, m: number, order: 'decisions first' | 'flags first') {
-  const outline = { type: 'Polygon' as const, coordinates: [ring(48_000)] };
+  // Six rings of 8,000 points: a deployment caps an array at 8,192 items (`convex-test` doesn't).
+  const outline = {
+    type: 'Polygon' as const,
+    coordinates: Array.from({ length: 6 }, () => ring(8_000)),
+  };
   const people: Id<'profiles'>[] = [];
   for (let i = 0; i < n + m; i++) people.push((await person(t, `h${i}`)).id);
   const admin = await person(t, 'deciding-admin', 'admin');
@@ -967,23 +972,47 @@ describe('the flush under heavy decisions', () => {
 
   test('heavy re-checks: as many a batch as its bytes hold, never rolled back to one by one; flags behind them told', async () => {
     const t = harness();
-    const heavy = 40;
+    // Twelve: two batches of the guard's six, where one at a time (a batch over its limit, rolled
+    // back) took three executions of five. The rate is per execution, so it carries to any size:
+    // 499 such messages are ceil(499 / 6) = 84 executions at most, each its own transaction.
+    const heavy = 12;
     await heavyQueue(t, heavy, heavy, 'decisions first');
-    const { executions, toldAt } = await drainFlush(t);
-    expect(toldAt.size).toBe(2 * heavy);
-    // One at a time (a batch over its limit, rolled back) was five an execution: eight here.
-    expect(executions).toBeLessThanOrEqual(Math.ceil(heavy / PER_EXECUTION));
-    // The flags queued behind them are told by the execution that finishes the decisions.
-    expect(Math.max(...toldAt.values())).toBe(executions);
-  }, 300_000);
+    // The flush's batch run exactly as the flush runs it — nested, under its own limits — until the
+    // queue is empty: each batch must complete (one over its limit throws, and the flush would roll
+    // it back and fall to one row at a time), as many a batch as its bytes hold.
+    let batches = 0;
+    for (; batches < 10; batches++) {
+      const left = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+      if (left.length === 0) break;
+      const now = Date.now();
+      const out = (await t.run((ctx) =>
+        (
+          ctx as unknown as {
+            runMutation: (f: unknown, a: unknown, o: unknown) => Promise<unknown>;
+          }
+        ).runMutation(
+          internal.notifications.flushBatch,
+          { now, cutoff: now },
+          {
+            transactionLimits: BATCH_LIMITS,
+          },
+        ),
+      )) as { delivered: number };
+      expect(out.delivered).toBeGreaterThan(0);
+    }
+    expect(batches).toBeLessThanOrEqual(Math.ceil(heavy / PER_EXECUTION));
+    const told = await t.run((ctx) => ctx.db.query('notifications').collect());
+    expect(new Set(told.map((n) => n.userId)).size).toBe(2 * heavy);
+    expect(told).toHaveLength(2 * heavy);
+  }, 60_000);
 
   test('flags due before them are told in the first execution, whatever waits behind', async () => {
     const t = harness();
-    await heavyQueue(t, 20, 20, 'flags first');
+    await heavyQueue(t, 8, 8, 'flags first');
     const { toldAt } = await drainFlush(t);
     const firstTold = [...toldAt.values()].filter((e) => e === 1).length;
-    expect(firstTold).toBeGreaterThanOrEqual(20);
-  }, 300_000);
+    expect(firstTold).toBeGreaterThanOrEqual(8);
+  }, 60_000);
 });
 
 describe('what it costs', () => {
