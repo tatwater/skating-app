@@ -76,7 +76,7 @@ export const FourUp: Story = {
       await expect(
         within(board).getByText('With a recorded skate · 48m · 10 Oct 12:00–13:15'),
       ).toBeVisible();
-      await expect(within(skates).getByText('With a recorded skate · 8 Oct')).toBeVisible();
+      await expect(within(skates).getByText('With a recorded skate · 8 Oct 12:00')).toBeVisible();
       await expect(within(skates).getByText('With a recorded skate')).toBeVisible();
       await expect(within(odd).getByText('A former skater')).toBeVisible();
       await expect(within(odd).getByText('From their report · 14 Oct')).toBeVisible();

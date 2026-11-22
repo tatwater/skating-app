@@ -19,6 +19,7 @@ import {
   must,
   resetHarness,
 } from '../../testing/routeHarness';
+import { skateLine } from '../asks/AskList';
 import {
   activate,
   activateNoDormancy,
@@ -32,7 +33,7 @@ import {
   restore,
   takedown,
 } from './requestFixtures';
-import type { RequestItem } from './requestModel';
+import { dormancyRows, type RequestItem } from './requestModel';
 
 /**
  * **The request handler in the real route and view** (the shared harness, `testing/routeHarness`:
@@ -188,9 +189,13 @@ describe('what the read serves reaches the page', () => {
   });
 
   it('says why an activate’s body is dormant, and nothing when the read serves no dormancy', () => {
-    const { unmount } = open(activate());
+    const item = activate();
+    const { unmount } = open(item);
+    // The route reads the date in the runner's zone, as the model does with none given.
+    const [row] = dormancyRows(must(item.dormancy, 'the dormancy'));
+    expect(row?.value).toMatch(/^Inactive · since \d+ [A-Z][a-z]{2} 2025$/);
     expect(within(inspector()).getByRole('region', { name: 'Activating it' })).toHaveTextContent(
-      'Inactive · since 18 Dec 2025',
+      must(row, 'the dormancy row').value,
     );
     unmount();
     open(activateNoDormancy());
@@ -200,10 +205,17 @@ describe('what the read serves reaches the page', () => {
   });
 
   it('says when an ask’s recorded skate was, and how long', () => {
-    open(admit());
-    expect(
-      within(inspector()).getByText('With a recorded skate · 48m · 10 Oct 12:00–13:15'),
-    ).toBeInTheDocument();
+    const item = admit();
+    open(item);
+    // The one skate format, read in the runner's zone as the route reads it (the zone-pinned
+    // wording is AskList's own test).
+    const skated = must(
+      item.asks.find((a) => a.skate !== null),
+      'an ask with a skate',
+    );
+    const line = must(skateLine(skated), 'its line');
+    expect(line).toMatch(/^With a recorded skate · 48m · \d+ [A-Z][a-z]{2} \d\d:\d\d–\d\d:\d\d$/);
+    expect(within(inspector()).getByText(line)).toBeInTheDocument();
   });
 });
 
