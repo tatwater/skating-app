@@ -370,7 +370,11 @@ describe('the merge’s refusals (fork 3)', () => {
     });
     const err = await w.merge().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ConvexError);
-    expect((err as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
+    // The sentence, with its code (R10-D): a Drawn lever's `can` never asks the weight.
+    expect((err as ConvexError<{ message: string; code: string }>).data).toEqual({
+      message: MERGE_TOO_BIG,
+      code: 'tooBig',
+    });
     expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.dedupStatus).toBe('suspected_duplicate');
     // The ETL's path asks no preview: the merge itself refuses the group past the cap.
     const etl = await w.t
@@ -409,6 +413,18 @@ describe('the merge’s refusals (fork 3)', () => {
     expect(preview.baysClashing).toEqual({ names: [], capped: true });
     expect(preview.moves.flags.capped).toBe(false);
     await expect(w.merge()).rejects.toThrow(MERGE_TOO_BIG);
+    // From the Inbox: the lever's can never asks the weight, so the write's refusal carries the code
+    // the web needs to say it properly (R10-D).
+    const { item } = await w.mod.as.query(api.inbox.item, { ref: `body:${w.loser}` });
+    if (item?.kind !== 'drawn') throw new Error('no drawn item');
+    expect(item.can.mergeDrawn).toBeNull();
+    const err = await w.mod.as
+      .mutation(api.inboxWrites.mergeDrawn, { itemId: item.itemId, survivorId: w.survivor })
+      .catch((e: unknown) => e);
+    expect((err as ConvexError<{ message: string; code: string }>).data).toEqual({
+      message: MERGE_TOO_BIG,
+      code: 'tooBig',
+    });
     expect(MERGE_ROWS_PER_KIND).toBeLessThan(8_192);
   });
 

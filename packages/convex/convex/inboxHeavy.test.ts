@@ -85,6 +85,9 @@ async function outcomeOf(op: () => Promise<unknown>): Promise<Outcome> {
   } catch (err) {
     const data = (err as { data?: unknown }).data;
     if (typeof data === 'string' && data.length > 0) return { kind: 'refused', why: data };
+    // A refusal that carries a code beside its sentence (the merge's `tooBig`, B01-5d R10-D).
+    const message = (data as { message?: unknown } | null)?.message;
+    if (typeof message === 'string' && message.length > 0) return { kind: 'refused', why: message };
     throw err;
   }
 }

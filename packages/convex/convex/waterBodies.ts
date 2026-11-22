@@ -3646,7 +3646,11 @@ export async function assertMergeFits(
   loser: Doc<'waterBodies'>,
   survivor: Doc<'waterBodies'>,
 ): Promise<void> {
-  if ((await mergeLoadOf(ctx, loser, survivor)).tooBig) throw new ConvexError(MERGE_TOO_BIG);
+  // With its code beside the sentence (R10-D): a Drawn lever never asks the weight (its `can` stays
+  // cheap), so this refusal is the one place the web learns the merge is too heavy.
+  if ((await mergeLoadOf(ctx, loser, survivor)).tooBig) {
+    throw new ConvexError({ message: MERGE_TOO_BIG, code: 'tooBig' as MergeRefusalCode });
+  }
 }
 
 /** A merge of a body into itself. */
