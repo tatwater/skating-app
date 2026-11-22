@@ -11,6 +11,7 @@ import {
   drawnScene,
   type EmbedAccessPoint,
   type EmbedBody,
+  type EmbedPath,
   type EmbedPoint,
   type InboxMapView,
   lookalikeScene,
@@ -29,13 +30,13 @@ import { ITEM_MAP_WORDS as W } from './inboxMapWords';
  * | `flag` on an access alert | `alertScene` (its put-in or lot lit) |
  * | `flag` on a body | the body alone |
  * | `access` | `accessScene` (the body, its put-ins and lots) |
- * | `request` | `admitScene` for a catalog candidate; the body and its asks for a body we hold |
+ * | `request` | `admitScene` for a catalog candidate, with the asks' skates; the body and its asks for a body we hold |
  * | `place` | `lookalikeScene` (the asked points, each lookalike, the rule to the nearest) |
- * | `drawn` | `drawnScene` (the drawing over the body it overlaps, the share on the shore) |
+ * | `drawn` | `drawnScene` (the drawing over the body it overlaps, the share on the shore, its skate) |
  *
  * **What it says when the answer is short.** An outline the server sent simplified (larger than an
- * embed is sent) is drawn with *Outline simplified* on the caption — never as if exact; an answer
- * the server capped says *Not everything is shown*. **No map at all** (`null`) where there is
+ * embed is sent) is drawn with *Outline simplified* on the caption — never as if exact — and a
+ * thinned skate with *Skate simplified*; an answer the server capped says *Not everything is shown*. **No map at all** (`null`) where there is
  * nothing to place: a flag on a person, a comment or a Post, a ticket, an answer that holds no
  * outline and no point — the slot collapses rather than drawing an empty frame.
  */
@@ -44,6 +45,7 @@ import { ITEM_MAP_WORDS as W } from './inboxMapWords';
 export type ItemMapRead = FunctionReturnType<typeof api.inbox.itemMap>;
 export type ServerItemMap = NonNullable<ItemMapRead['map']>;
 type ServerBody = NonNullable<ServerItemMap['body']>;
+type ServerTrack = ServerItemMap['tracks'][number];
 
 const embed = (b: ServerBody): EmbedBody => ({ id: b.id, name: b.name, outline: b.outline });
 const point = (p: ServerItemMap['points'][number]): EmbedPoint => ({
@@ -56,12 +58,37 @@ const accessPoint = (p: ServerItemMap['access'][number]): EmbedAccessPoint => ({
   kind: p.kind,
 });
 
-/** The caption's honest notes about the answer: a simplified outline, a capped answer. */
-export function answerNotes(map: ServerItemMap, drawn: readonly (ServerBody | null)[]): string[] {
+/**
+ * The caption's honest notes about the answer: a simplified outline, a thinned track (on the scenes
+ * that draw tracks), a capped answer.
+ */
+export function answerNotes(
+  map: ServerItemMap,
+  drawn: readonly (ServerBody | null)[],
+  tracks: readonly ServerTrack[] = [],
+): string[] {
   const notes: string[] = [];
   if (drawn.some((b) => b?.simplified === true)) notes.push(W.simplified);
+  if (tracks.some((t) => t.simplified)) notes.push(W.trackSimplified);
   if (map.capped) notes.push(W.capped);
   return notes;
+}
+
+/** A track as the embed draws it (the server's `simplified` is said on the caption, not here). */
+const path = (t: ServerTrack): EmbedPath => ({ id: t.id, path: t.path });
+
+/**
+ * 2.3's legend for the asks' skates: one names its asker ("Kate Donovan's skate"), as the board
+ * does; several, or one whose asker isn't named, say what they are.
+ */
+function skatesLegend(
+  item: Extract<InboxItemView, { kind: 'request' }>,
+  tracks: readonly ServerTrack[],
+): string | undefined {
+  if (tracks.length === 0) return undefined;
+  if (tracks.length > 1) return W.skates;
+  const asker = item.asks.find((a) => a.activityId === tracks[0]?.id)?.asker;
+  return asker && !asker.deleted ? W.skateOf(asker.displayName) : W.aSkate;
 }
 
 /** A caption from its parts, or none. */
@@ -109,13 +136,19 @@ function requestMap(item: Extract<InboxItemView, { kind: 'request' }>, map: Serv
   if (map.candidate !== null) {
     const c = item.candidate;
     const fact = c === null ? undefined : `${c.name ?? W.unnamed} · ${acresText(c.areaSqM)} ac`;
+    const skates = skatesLegend(item, map.tracks);
     return admitScene({
       candidate: embed(map.candidate),
       asks,
+      tracks: map.tracks.map(path),
       nearest: nearest ? embed(nearest) : null,
-      legend: { candidate: W.candidateLegend, ...(nearest ? { nearest: W.oursLegend } : {}) },
+      legend: {
+        candidate: W.candidateLegend,
+        ...(skates ? { track: skates } : {}),
+        ...(nearest ? { nearest: W.oursLegend } : {}),
+      },
       ...(fact ? { candidateFact: fact } : {}),
-      ...captioned(join(answerNotes(map, [map.candidate, nearest]))),
+      ...captioned(join(answerNotes(map, [map.candidate, nearest], map.tracks))),
     });
   }
   const caption = join(answerNotes(map, [map.body]));
@@ -157,9 +190,13 @@ function drawnMap(
   const ours = item.overlap?.body;
   const drawer = item.drawer?.displayName;
   const fact = shoreFact(map.overlapShare);
+  // The skate the drawing was made from: one track at most (the server sends it only with a track).
+  const track = map.tracks[0] ?? null;
+  const skateDay = item.skate === null ? null : dayMonth(item.skate.startTime, timeZone);
   return drawnScene({
     body: known ? embed(known) : null,
     drawing: embed(map.body),
+    track: track ? path(track) : null,
     legend: {
       ...(known
         ? {
@@ -171,9 +208,10 @@ function drawnMap(
           }
         : {}),
       drawing: join([`${W.drawn} ${dayMonth(item.filedAt, timeZone)}`, drawer]),
+      ...(track ? { track: join([W.recordedSkate, skateDay]) } : {}),
     },
     ...(fact ? { drawingFact: fact } : {}),
-    ...captioned(join(answerNotes(map, [map.body, known]))),
+    ...captioned(join(answerNotes(map, [map.body, known], track ? [track] : []))),
   });
 }
 

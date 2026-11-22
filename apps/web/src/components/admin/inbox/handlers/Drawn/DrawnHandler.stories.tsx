@@ -59,7 +59,13 @@ function Inspector({
       <ItemMapView
         item={item}
         state={{
-          map: item.overlap === null ? { ...DRAWN_MAP, others: [], overlapShare: null } : DRAWN_MAP,
+          map: {
+            ...(item.overlap === null
+              ? { ...DRAWN_MAP, others: [], overlapShare: null }
+              : DRAWN_MAP),
+            // The skate's track only where the item serves a skate that left one, as the server sends it.
+            tracks: item.skate?.hasTrack === true ? DRAWN_MAP.tracks : [],
+          },
           pending: false,
         }}
         renderMap={(view) => <InboxMapStill view={view} width={width} viewOnly={narrow} />}

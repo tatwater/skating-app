@@ -24,10 +24,19 @@ export const ITEM_MAP_WORDS = {
   ours: 'ours',
   drawn: 'Drawn',
   onTheShore: 'on the shore',
+  /** 2.3's legend: the asker's skate ("Kate Donovan's skate"). */
+  skateOf: (name: string) => `${name}’s skate`,
+  /** 2.5's legend: the skate the drawing was made from ("The recorded skate · 11 Oct"). */
+  recordedSkate: 'The recorded skate',
   // Invented.
   unnamed: 'Unnamed',
   noCandidate: 'No catalog feature',
   simplified: 'Outline simplified',
+  /** A track the server thinned to fit the map: drawn, never as if every point were there. */
+  trackSimplified: 'Skate simplified',
+  /** 2.3's legend for several asks' skates, or one whose asker isn't named. */
+  skates: 'Recorded skates',
+  aSkate: 'A recorded skate',
   capped: 'Not everything is shown',
   failed: 'The map didn’t load',
   loading: 'Loading the map',

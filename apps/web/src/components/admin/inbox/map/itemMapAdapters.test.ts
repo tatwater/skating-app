@@ -9,12 +9,14 @@ import {
   ACTIVATE,
   ACTIVATE_MAP,
   ADMIT_MAP,
+  ADMIT_MAP_NO_TRACK,
   ADMIT_MATCH,
   ALERT_FLAG,
   ALERT_MAP,
   CAPPED,
   DRAWN,
   DRAWN_MAP,
+  DRAWN_MAP_NO_TRACK,
   EMPTY_MAP,
   GONE_FLAG,
   PERSON_FLAG,
@@ -24,10 +26,14 @@ import {
   SAFETY_MAP,
   SIMPLIFIED,
   TICKET,
+  TRACKS_SIMPLIFIED,
 } from './itemMapFixtures';
 
 const TZ = 'America/New_York';
 const ids = (v: InboxMapView | null) => v?.scene.items.map((i) => i.id) ?? null;
+/** The skates drawn: the scene's track lines (a rule to the nearest body is a line too). */
+const lines = (v: InboxMapView | null) =>
+  v?.scene.items.flatMap((i) => (i.id.startsWith('track:') ? [i.id] : [])) ?? [];
 const marks = (v: InboxMapView | null) =>
   v?.scene.items.flatMap((i) => (i.kind === 'point' ? [i.mark] : [])) ?? [];
 
@@ -63,7 +69,7 @@ describe('each kind’s scene', () => {
   });
 
   it('an admit: the candidate dashed, ours, the rule, the legend and the catalog’s fact', () => {
-    const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP, TZ);
+    const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ);
     expect(ids(v)).toEqual([
       'body:ricker',
       'candidate:yq4k2',
@@ -72,6 +78,51 @@ describe('each kind’s scene', () => {
     ]);
     expect(v?.legend.map((r) => r.label)).toEqual(['Catalog outline · not ours yet', 'Ours']);
     expect(v?.caption).toBe('Unnamed · 41 ac');
+  });
+
+  it('an admit with an ask’s skate: its track, named for its asker as the board does', () => {
+    const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP, TZ);
+    expect(lines(v)).toContain('track:kd');
+    expect(v?.legend.map((r) => r.label)).toEqual([
+      'Catalog outline · not ours yet',
+      'Kate Donovan’s skate',
+      'Ours',
+    ]);
+  });
+
+  it('several skates, or one whose asker isn’t named, say what they are', () => {
+    const two = {
+      ...ADMIT_MAP,
+      tracks: [
+        ...ADMIT_MAP.tracks,
+        { ...(ADMIT_MAP.tracks[0] as (typeof ADMIT_MAP.tracks)[number]), id: 'other' },
+      ],
+    };
+    expect(itemMapScene(ADMIT_MATCH, two, TZ)?.legend.map((r) => r.label)).toContain(
+      'Recorded skates',
+    );
+    const unmatched = {
+      ...ADMIT_MAP,
+      tracks: [{ ...(ADMIT_MAP.tracks[0] as (typeof ADMIT_MAP.tracks)[number]), id: 'x' }],
+    };
+    expect(itemMapScene(ADMIT_MATCH, unmatched, TZ)?.legend.map((r) => r.label)).toContain(
+      'A recorded skate',
+    );
+  });
+
+  it('a thinned skate is said on the caption, never drawn as if whole', () => {
+    expect(itemMapScene(ADMIT_MATCH, TRACKS_SIMPLIFIED(ADMIT_MAP), TZ)?.caption).toContain(
+      'Skate simplified',
+    );
+    expect(itemMapScene(DRAWN, TRACKS_SIMPLIFIED(DRAWN_MAP), TZ)?.caption).toContain(
+      'Skate simplified',
+    );
+  });
+
+  it('draws no line for an item the server sent no skate for', () => {
+    expect(lines(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ))).toEqual([]);
+    expect(lines(itemMapScene(DRAWN, DRAWN_MAP_NO_TRACK, TZ))).toEqual([]);
+    expect(itemMapScene(DRAWN, DRAWN_MAP_NO_TRACK, TZ)?.caption).not.toContain('Skate');
   });
 
   it('a request on a body we hold: the body and the asked points', () => {
@@ -103,13 +154,23 @@ describe('each kind’s scene', () => {
   });
 
   it('a drawing: ours, the drawing over it, its legend and the share on the shore', () => {
-    const v = itemMapScene(DRAWN, DRAWN_MAP, TZ);
+    const v = itemMapScene(DRAWN, DRAWN_MAP_NO_TRACK, TZ);
     expect(ids(v)).toEqual(['body:caspian', 'drawn:drawn-kd']);
     expect(v?.legend.map((r) => r.label)).toEqual([
       'Caspian Lake · ours · 789 ac',
       'Drawn 12 Oct · Kate Donovan',
     ]);
     expect(v?.caption).toBe('8 % on the shore');
+  });
+
+  it('a drawing with its skate: the track, and the board’s legend with the skate’s day', () => {
+    const v = itemMapScene(DRAWN, DRAWN_MAP, TZ);
+    expect(lines(v)).toEqual(['track:kd-11oct']);
+    expect(v?.legend.map((r) => r.label)).toEqual([
+      'Caspian Lake · ours · 789 ac',
+      'Drawn 12 Oct · Kate Donovan',
+      'The recorded skate · 11 Oct',
+    ]);
   });
 });
 
@@ -200,7 +261,7 @@ describe('no map at all — the slot collapses', () => {
   });
 
   it('a drawing over open land draws the drawing alone, with no shore fact', () => {
-    const v = itemMapScene(DRAWN, { ...DRAWN_MAP, others: [], overlapShare: null }, TZ);
+    const v = itemMapScene(DRAWN, { ...DRAWN_MAP_NO_TRACK, others: [], overlapShare: null }, TZ);
     expect(ids(v)).toEqual(['drawn:drawn-kd']);
     expect(v?.caption).toBeNull();
   });

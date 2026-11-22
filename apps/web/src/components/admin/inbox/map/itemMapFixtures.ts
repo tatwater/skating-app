@@ -8,6 +8,7 @@ import {
   ALERT,
   CASPIAN_DRAWING,
   CASPIAN_LAKE,
+  DRAWN as DRAWN_SCENE,
   LOOKALIKE,
   MASCOMA,
   REPORT_POINT,
@@ -40,6 +41,7 @@ const EMPTY: Omit<ServerItemMap, 'kind'> = {
   points: [],
   access: [],
   lookalikes: [],
+  tracks: [],
   overlapShare: null,
   capped: false,
 };
@@ -65,17 +67,29 @@ export const ACCESS_MAP: ServerItemMap = {
 };
 
 // ── 2.3: an admit with a catalog match ──────────────────────────────────────────────────────
+const ADMIT_ASK = (ADMIT_ITEM as Extract<InboxItemView, { kind: 'request' }>).asks[0];
 export const ADMIT_MATCH = {
   ...ADMIT_ITEM,
   candidate: { name: null, areaSqM: 41 * 4046.8564224 },
+  // Kate Donovan's ask came with her recorded skate: the track the map draws is hers.
+  asks: ADMIT_ASK ? [{ ...ADMIT_ASK, activityId: ADMIT.tracks?.[0]?.id ?? null }] : [],
 } as unknown as InboxItemView;
+/** The asks' skates as the server sends them: whole (not thinned). */
+const ADMIT_TRACKS: ServerItemMap['tracks'] = (ADMIT.tracks ?? []).map((t) => ({
+  id: t.id,
+  path: t.path.map(lngLat),
+  simplified: false,
+}));
 export const ADMIT_MAP: ServerItemMap = {
   ...EMPTY,
   kind: 'request',
   candidate: sent(UNNAMED_POND),
   others: [sent(RICKER_POND)],
   points: ADMIT.asks.map((a) => ({ id: a.id, at: lngLat(a.at) })),
+  tracks: ADMIT_TRACKS,
 };
+/** The same admit with no skate behind it: no line, and no legend for one. */
+export const ADMIT_MAP_NO_TRACK: ServerItemMap = { ...ADMIT_MAP, tracks: [] };
 
 /** A request on a body we hold (an activate): the body and the asks. */
 export const ACTIVATE = { ...ADMIT_ITEM, requestKind: 'activate' } as unknown as InboxItemView;
@@ -116,6 +130,14 @@ export const DRAWN = {
     suggested: true,
     body: { name: 'Caspian Lake', areaSqM: 789 * 4046.8564224 },
   },
+  // The skate it was drawn from: 11 Oct, late morning in the board's zone.
+  skate: {
+    activityId: 'kd-11oct',
+    startTime: zonedInstant(2026, 10, 11, 9 * 60, 'America/New_York'),
+    endTime: zonedInstant(2026, 10, 11, 11 * 60, 'America/New_York'),
+    elapsedSeconds: 96 * 60,
+    hasTrack: true,
+  },
 } as unknown as InboxItemView;
 export const DRAWN_MAP: ServerItemMap = {
   ...EMPTY,
@@ -123,7 +145,12 @@ export const DRAWN_MAP: ServerItemMap = {
   body: sent(CASPIAN_DRAWING),
   others: [sent(CASPIAN_LAKE)],
   overlapShare: 0.92,
+  tracks: DRAWN_SCENE.track
+    ? [{ id: DRAWN_SCENE.track.id, path: DRAWN_SCENE.track.path.map(lngLat), simplified: false }]
+    : [],
 };
+/** The same drawing whose skate left no track: no line, and no legend for one. */
+export const DRAWN_MAP_NO_TRACK: ServerItemMap = { ...DRAWN_MAP, tracks: [] };
 
 // ── 2.6: a flag on an access alert ──────────────────────────────────────────────────────────
 export const ALERT_FLAG = {
@@ -161,5 +188,10 @@ export const EMPTY_MAP = (kind: ServerItemMap['kind']): ServerItemMap => ({ ...E
 export const SIMPLIFIED = (m: ServerItemMap): ServerItemMap => ({
   ...m,
   ...(m.body ? { body: { ...m.body, simplified: true } } : {}),
+});
+/** The answer with its skates thinned to fit. */
+export const TRACKS_SIMPLIFIED = (m: ServerItemMap): ServerItemMap => ({
+  ...m,
+  tracks: m.tracks.map((t) => ({ ...t, simplified: true })),
 });
 export const CAPPED = (m: ServerItemMap): ServerItemMap => ({ ...m, capped: true });

@@ -18,10 +18,18 @@ import type { RequestItem, RequestWrite } from './requestModel';
  * fixture answers. Only stories import this.
  */
 
-/** The map's fixture answer for an item: the catalog outline for an admit, the body else. */
+/**
+ * The map's fixture answer for an item: the catalog outline for an admit, the body else — and the
+ * ask's skate as the server ties it, by the ask's own `activityId` (none when no ask has one).
+ */
 export function mapFor(item: RequestItem): ServerItemMap {
   if (item.requestKind !== 'admit') return ACTIVATE_MAP;
-  return item.candidate === null ? { ...ADMIT_MAP, candidate: null, others: [] } : ADMIT_MAP;
+  const map = item.candidate === null ? { ...ADMIT_MAP, candidate: null, others: [] } : ADMIT_MAP;
+  const skated = item.asks.find((a) => a.activityId !== null)?.activityId ?? null;
+  return {
+    ...map,
+    tracks: skated === null ? [] : map.tracks.slice(0, 1).map((t) => ({ ...t, id: skated })),
+  };
 }
 
 /** The map slot over its still, at the width it is drawn. */
