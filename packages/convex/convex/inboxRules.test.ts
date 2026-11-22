@@ -210,6 +210,7 @@ describe('the read’s answer is the write’s', () => {
             favoriteReport: true,
             nearbyReportDigest: false,
             greatReportNearby: false,
+            moderatorDecision: false,
           },
           dateOfBirth: Date.UTC(1990, 0, 1),
           reputationPoints: 0,

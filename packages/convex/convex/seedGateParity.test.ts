@@ -27,6 +27,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 const QUALITIES = ['great', 'good', 'fair', 'poor'] as const;

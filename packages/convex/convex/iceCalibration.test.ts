@@ -68,6 +68,7 @@ async function seedProfile(
         favoriteReport: true,
         nearbyReportDigest: true,
         greatReportNearby: true,
+        moderatorDecision: false,
       },
       dateOfBirth: Date.UTC(1990, 0, 1),
       role,

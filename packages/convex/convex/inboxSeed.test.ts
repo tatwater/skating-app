@@ -34,6 +34,7 @@ const PREFS = {
   favoriteReport: false,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** A square body of `km` a side at `(lat, lng)`, through the canonical import as dev's came. */

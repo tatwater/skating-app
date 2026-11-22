@@ -43,6 +43,7 @@ const PREFS_ON = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 /**

@@ -27,6 +27,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 const square = (x: number, side = 0.02) => ({
   type: 'Polygon' as const,

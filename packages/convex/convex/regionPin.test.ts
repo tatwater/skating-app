@@ -49,6 +49,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 function rect(x0: number, y0: number, x1: number, y1: number): Polygon {

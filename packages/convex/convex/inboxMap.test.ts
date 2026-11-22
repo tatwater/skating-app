@@ -29,6 +29,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 async function person(t: T, subject: string, role: 'member' | 'moderator' | 'admin' = 'member') {

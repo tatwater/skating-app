@@ -27,6 +27,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);

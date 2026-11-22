@@ -35,6 +35,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 async function seedUser(t: T, subject: string, role: 'member' | 'moderator' | 'admin') {

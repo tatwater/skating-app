@@ -72,6 +72,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 const square = (x: number, y: number): Polygon => ({

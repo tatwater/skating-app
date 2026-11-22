@@ -30,6 +30,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** Source rows written raw, as before the hooks: nothing files an item for them. */

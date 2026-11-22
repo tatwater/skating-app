@@ -32,6 +32,7 @@ const BASE_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** Covers the seeded body centroid (0.5, 0.5) — used as a viewer's 30-min band. */

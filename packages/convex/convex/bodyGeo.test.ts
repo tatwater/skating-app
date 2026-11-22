@@ -48,6 +48,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** An ellipse of `n` vertices centred at (cx, cy). */

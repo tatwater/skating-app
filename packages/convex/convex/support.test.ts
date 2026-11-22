@@ -41,6 +41,7 @@ async function seed(
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,

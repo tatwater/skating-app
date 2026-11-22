@@ -43,6 +43,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 function ring(minLng: number, minLat: number, maxLng: number, maxLat: number) {

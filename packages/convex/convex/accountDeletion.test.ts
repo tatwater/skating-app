@@ -67,6 +67,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 const ADULT_DOB = Date.UTC(1990, 0, 1);

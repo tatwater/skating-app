@@ -53,6 +53,7 @@ async function admin(t: T) {
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       reputationPoints: 0,
       role: 'admin',

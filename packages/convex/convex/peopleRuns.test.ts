@@ -63,6 +63,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 function profile(subject: string, over: Partial<Doc<'profiles'>> = {}) {

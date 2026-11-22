@@ -29,6 +29,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 const SQUARE = {
   type: 'Polygon' as const,

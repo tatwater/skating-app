@@ -27,6 +27,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 async function as(t: ReturnType<typeof convexTest>, subject: string, role: 'moderator' | 'admin') {
