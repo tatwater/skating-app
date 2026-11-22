@@ -39,8 +39,17 @@ const SEEDS = Number(process.env.UNMERGE_PROPERTY_SEEDS ?? 1);
 /** An edit between the merge and the unmerge: what it needs, what it does, what it leaves. */
 interface Edit {
   needs: Kind | null;
-  /** Makes the edit; returns the row it changed and, if the merge recorded that row, its kind. */
-  apply: (w: World) => Promise<{ table: string; id: string; left: LeftKind | null }>;
+  /**
+   * Makes the edit; returns the row it changed and, if it changed a field the merge wrote, that row's
+   * kind (it is left). An edit only to fields the merge didn't write names them in `keeps`: the row
+   * goes back, and stands as before but for exactly those fields, as the edit wrote them (D291).
+   */
+  apply: (w: World) => Promise<{
+    table: string;
+    id: string;
+    left: LeftKind | null;
+    keeps?: Record<string, unknown>;
+  }>;
 }
 
 const EDITS: Record<string, Edit> = {
@@ -52,14 +61,15 @@ const EDITS: Record<string, Edit> = {
       return { table: 'reports', id, left: 'reports' };
     },
   },
+  // A name the merge never writes (it moves a bay, or delists a clashing copy): the bay goes back to
+  // the drawing with its new name, and nothing is left.
   renameBay: {
     needs: 'loserBays',
     apply: async (w) => {
       const id = w.rows.loserBays?.[0] as Id<'waterBodySubAreas'>;
-      await w.t.run((ctx) =>
-        ctx.db.patch(id, { name: 'Renamed Cove', updatedAt: Date.now() + 1_000 }),
-      );
-      return { table: 'waterBodySubAreas', id, left: 'waterBodySubAreas' };
+      const keeps = { name: 'Renamed Cove', updatedAt: Date.now() + 1_000 };
+      await w.t.run((ctx) => ctx.db.patch(id, keeps));
+      return { table: 'waterBodySubAreas', id, left: null, keeps };
     },
   },
   declineAsk: {
@@ -140,11 +150,44 @@ const BODY_FIELDS = [
 ];
 
 /**
- * A row's bay stamps (`subAreaId`, `subAreaIds`, `leftSubArea`): derived by the restamp from the bays
- * the body holds, so a bay left on the survivor takes the stamps of the rows inside it with it — the
- * edit's consequence, not a row the unmerge failed to put back.
+ * A row's bay stamps (`subAreaId`, `subAreaIds`, `leftSubArea`, and the names the feed card carries,
+ * `subAreaName`, `subAreaNames`): derived by the restamp from the bays the body holds, so a bay left
+ * on the survivor, or renamed, takes the stamps of the rows inside it with it — the edit's
+ * consequence, not a row the unmerge failed to put back. Left out of the before/after comparison, and
+ * held instead by {@link stampsNameTheirBays}: whatever they are, they name the bays as they stand.
  */
-const STAMPS = new Set(['subAreaId', 'subAreaIds', 'leftSubArea']);
+const STAMPS = new Set(['subAreaId', 'subAreaIds', 'leftSubArea', 'subAreaName', 'subAreaNames']);
+
+/** Every stamped row's names are its bays' names as they stand (a rename's stamps followed it). */
+function stampsNameTheirBays(all: Record<string, unknown[]>): string[] {
+  const names = new Map(
+    (all.waterBodySubAreas ?? []).map((b) => {
+      const bay = b as { _id: string; name: string };
+      return [bay._id, bay.name];
+    }),
+  );
+  const holes: string[] = [];
+  for (const [table, rows] of Object.entries(all)) {
+    for (const r of rows) {
+      const row = r as {
+        _id?: string;
+        subAreaId?: string;
+        subAreaName?: string;
+        subAreaIds?: string[];
+        subAreaNames?: string[];
+      };
+      if (row.subAreaId !== undefined && 'subAreaName' in row) {
+        if (row.subAreaName !== names.get(row.subAreaId)) holes.push(`${table} ${row._id}: label`);
+      }
+      if (row.subAreaIds !== undefined && row.subAreaNames !== undefined) {
+        const want = row.subAreaIds.map((id) => names.get(id));
+        if (JSON.stringify(row.subAreaNames) !== JSON.stringify(want))
+          holes.push(`${table} ${row._id}: members`);
+      }
+    }
+  }
+  return holes;
+}
 
 function primaryOf(all: Record<string, unknown[]>, except: ReadonlySet<string>) {
   const out: Record<string, unknown[]> = {};
@@ -219,6 +262,22 @@ async function check(s: typeof scenario extends fc.Arbitrary<infer S> ? S : neve
   // Every other row is back as it stood.
   const except = new Set([edited.id]);
   expect(primaryOf(after, except)).toEqual(primaryOf(before, except));
+  expect(stampsNameTheirBays(after)).toEqual([]);
+  if (edited.keeps) {
+    // Back, as before but for exactly what the edit wrote.
+    const rowOf = (all: Record<string, unknown[]>) =>
+      primaryOf({ [edited.table]: all[edited.table] ?? [] }, new Set())[edited.table]?.find(
+        (r) => (r as { _id: string })._id === edited.id,
+      );
+    // (The census reads no timestamps, so a kept `updatedAt` is asked of the row itself below.)
+    const was = rowOf(before) as Record<string, unknown>;
+    const kept = Object.fromEntries(Object.entries(edited.keeps).filter(([k]) => k in was));
+    expect(rowOf(after)).toEqual({ ...was, ...kept });
+    const row = await w.t.run((ctx) =>
+      ctx.db.get(ctx.db.normalizeId(edited.table as 'waterBodySubAreas', edited.id) as never),
+    );
+    expect(row).toMatchObject(edited.keeps);
+  }
   if (edited.left === null) {
     expect(left.count).toBe(0);
   } else {
@@ -239,3 +298,12 @@ describe('a merge, an optional edit, the unmerge: the state comes back, or the e
     }, 120_000);
   }
 });
+
+/**
+ * Pinned from the hot run (every seed at 50×, shrunk): a drawing's bay renamed between the merge and
+ * the unmerge, with a report inside it. The rename is a field the merge never wrote, so the bay goes
+ * back to the drawing under its new name and nothing is left — and the report's bay stamps name it
+ * as renamed, since the restamp derives them from the bay.
+ */
+test('pinned: a bay renamed between the merge and the unmerge goes back renamed, its stamps with it', () =>
+  check({ kinds: ['favoritesBoth', 'landmarks'], extraReports: 1, edit: 'renameBay' }));
