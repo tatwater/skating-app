@@ -58,7 +58,10 @@ export type PlaceBar = {
 };
 
 export function placeBar(
-  item: Pick<PlaceItem, 'can' | 'canCode' | 'placeKind' | 'lookalikes' | 'asks' | 'primaryRequestId'>,
+  item: Pick<
+    PlaceItem,
+    'can' | 'canCode' | 'placeKind' | 'lookalikes' | 'asks' | 'primaryRequestId'
+  >,
 ): PlaceBar {
   const lookalike = item.placeKind === 'name_landmark' ? landmarkLookalike(item) : null;
   const samePlace = allowed(item, 'sameAs') && lookalike !== null ? lookalike : null;
