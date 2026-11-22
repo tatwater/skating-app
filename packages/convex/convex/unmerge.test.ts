@@ -1758,7 +1758,11 @@ suite('a heavy unmerge pages', () => {
     // Stopped, and said: never a silent return (R10).
     expect(
       (await w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId }))?.stalled,
-    ).toEqual({ code: 'undone', resumable: false });
+    ).toEqual({
+      code: 'undone',
+      resumable: false,
+      notReached: { phase: 'moved', from: 1, remaining: { moved: 4 } },
+    });
   });
 });
 
@@ -1966,7 +1970,12 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
     await paged(async () => {
       const { lead, next } = await midRun(w, mergeId);
       await stop(w, next, lead);
-      expect((await receiptOf(w, mergeId))?.stalled).toEqual({ code, resumable: true });
+      // While stalled, how much is still as the merge left it: the first page put one row back.
+      expect((await receiptOf(w, mergeId))?.stalled).toEqual({
+        code,
+        resumable: true,
+        notReached: { phase: 'moved', from: 1, remaining: { moved: 4 } },
+      });
       await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
       await settle(w.t);
     });
@@ -2046,7 +2055,14 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
         await settle(w.t);
         return lead;
       });
-      expect((await receiptOf(w, mergeId))?.stalled).toEqual({ code, resumable: false });
+      // How much is still un-moved, as the abandon would record it — unknown when the record can't
+      // be read.
+      expect((await receiptOf(w, mergeId))?.stalled).toEqual({
+        code,
+        resumable: false,
+        notReached:
+          code === 'recordUnreadable' ? null : { phase: 'moved', from: 1, remaining: { moved: 4 } },
+      });
       await expect(
         w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
       ).rejects.toThrow(UNMERGE_CANT_RESUME[code as keyof typeof UNMERGE_CANT_RESUME]);
@@ -2055,10 +2071,13 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
       await expect(
         w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: '  ' }),
       ).rejects.toThrow(UNMERGE_ABANDON_REASON);
+      const shown = (await receiptOf(w, mergeId))?.stalled?.notReached;
       const { actionId } = await w.actor.as.mutation(api.unmerge.abandon, {
         mergeActionId: mergeId,
         reason: 'It can’t finish',
       });
+      // The dialog showed what the abandon then records.
+      expect((await w.t.run((ctx) => ctx.db.get(actionId)))?.metadata?.notReached).toEqual(shown);
       expect(await markers(w)).toEqual([null, null]);
       const after = await receiptOf(w, mergeId);
       expect(after).toMatchObject({ done: false, stalled: null, abandoned: { actionId } });

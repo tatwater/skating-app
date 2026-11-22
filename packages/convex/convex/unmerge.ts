@@ -1100,7 +1100,7 @@ export interface UnmergeReceipt {
    * Not done, and nothing is carrying it on — what happened, as a code the web words (never a guessed
    * cause), with the scheduler's own error text when a page failed. `unmerge.resume` carries it on.
    */
-  stalled: UnmergeStall | null;
+  stalled: (UnmergeStall & { notReached: UnmergeNotReached | null }) | null;
   /** Ended by a moderator before it finished (`unmerge.abandon`): when, and the abandoning row. */
   abandoned: { at: number; actionId: Id<'moderationActions'> } | null;
   /** What it left where it was, counted (by kind) and the first rows named — final once `done`. */
@@ -1110,10 +1110,23 @@ export interface UnmergeReceipt {
 /** The receipt's fields from an unmerge's row. */
 async function receiptOf(ctx: QueryCtx, row: Doc<'moderationActions'>): Promise<UnmergeReceipt> {
   const metadata = (row.metadata ?? {}) as UnmergeMeta;
+  const stall = await stalledOf(ctx, metadata);
   return {
     unmergeActionId: row._id,
     done: metadata.done === true,
-    stalled: await stalledOf(ctx, metadata),
+    // While stalled, what the choice between Resume and Abandon turns on: how much is still as the
+    // merge left it, in the shape the abandon records — read only then, the change set bounded at
+    // `CHANGE_SET_PARTS_MAX` parts; `null` when it can't be read.
+    stalled:
+      stall === null
+        ? null
+        : {
+            ...stall,
+            notReached:
+              row.undoesActionId === undefined
+                ? null
+                : notReachedOf(await readChangeSet(ctx, row.undoesActionId), metadata.cursor),
+          },
     abandoned: metadata.abandoned
       ? { at: metadata.abandoned.at, actionId: metadata.abandoned.actionId }
       : null,
@@ -1317,7 +1330,16 @@ export const UNMERGE_ABANDON_REASON = 'Say why this unmerge is abandoned.';
  * What an abandoned unmerge never reached: the phase and offset it stopped at, and how many rows of
  * each phase from there on stay as the merge left them — `null` when the merge's record can't be read.
  */
-function notReachedOf(cs: MergeChangeSet | null | 'missing', cursor: UnmergeCursor | undefined) {
+export type UnmergeNotReached = {
+  phase: Phase;
+  from: number;
+  remaining: Partial<Record<Exclude<Phase, 'derived'>, number>>;
+};
+
+function notReachedOf(
+  cs: MergeChangeSet | null | 'missing',
+  cursor: UnmergeCursor | undefined,
+): UnmergeNotReached | null {
   if (cs === null || cs === 'missing') return null;
   const at = cursor ?? { phase: 'moved' as const, from: 0 };
   const lists: Record<Exclude<Phase, 'derived'>, number> = {
