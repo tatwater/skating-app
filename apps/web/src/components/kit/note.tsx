@@ -26,9 +26,10 @@ import { cn } from '@/lib/utils';
  * announced politely, once — by `RetryNote`'s rule: a live region mounted already holding its words
  * is often not announced, so the region is in the page first and the words are put into it. The
  * banner draws at once (its visible line kept from readers), and a frame later the line's words go
- * into a reader-only slot inside the region — the change a screen reader announces. Its copy stays
- * the operator's: who and when, never blame and never "you". (The lock is decided-only: no one claims an item, so there is no "has this
- * open" banner and no *Take over*.)
+ * into its live region — a reader-only slot holding the words alone, so the buttons beside them are
+ * never announced with them; they stay ordinary controls in the banner. Its copy stays the
+ * operator's: who and when, never blame and never "you". (The lock is decided-only: no one claims
+ * an item, so there is no "has this open" banner and no *Take over*.)
  */
 
 type NoteTone = 'default' | 'warn' | 'bad';
@@ -85,8 +86,6 @@ function LockBanner({
   }, []);
   return (
     <div
-      role="status"
-      aria-live="polite"
       data-slot="lock-banner"
       data-state={state}
       className={cn(
@@ -106,7 +105,8 @@ function LockBanner({
       >
         {children}
       </span>
-      <span data-slot="lock-banner-said" className="sr-only">
+      {/* The live region: the words alone, never the buttons beside them. */}
+      <span role="status" aria-live="polite" data-slot="lock-banner-said" className="sr-only">
         {said ? children : null}
       </span>
       {actions != null && (

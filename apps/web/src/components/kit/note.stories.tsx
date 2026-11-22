@@ -170,7 +170,10 @@ function Decided() {
 export const LockDecided: Story = {
   render: () => <Decided />,
   play: async ({ canvasElement }) => {
-    const banner = within(canvasElement).getByRole('status');
+    // The live region is the words' slot; the banner is the box around it and its buttons.
+    const region = within(canvasElement).getByRole('status');
+    const banner = must(region.closest<HTMLElement>('[data-slot="lock-banner"]'));
+    await expect(region).not.toContainElement(within(banner).getAllByRole('button')[0] ?? null);
     await expect(banner).toHaveAttribute('data-state', 'decided');
     await expect(getComputedStyle(banner).borderTopColor).toEqual(
       sameColor(computedColor(banner, 'var(--fg2)')),
@@ -214,7 +217,8 @@ export const DecidedWhileYouLooked: Story = {
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).queryByRole('status')).toBeNull();
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Decide elsewhere' }));
-    const banner = await within(canvasElement).findByRole('status');
+    const region = await within(canvasElement).findByRole('status');
+    const banner = must(region.closest<HTMLElement>('[data-slot="lock-banner"]'));
     await expect(banner).toHaveAttribute('data-state', 'decided');
     const lit = computedColor(banner, 'var(--fg2)'); // (a probe: never inside waitFor)
     await waitFor(() => expect(getComputedStyle(banner).borderTopColor).toEqual(sameColor(lit)));
