@@ -15,15 +15,15 @@
  */
 
 import type { Doc, Id } from '../_generated/dataModel';
+import { ROW_MAX } from './readBudget';
+import { type SupportUndoVerb, supportUndoRefusal } from './supportThread';
 import {
   cancelReplyImpl,
   removeNoteImpl,
   reopenTicketImpl,
   resolveTicketImpl,
   restoreNoteImpl,
-} from '../support';
-import { ROW_MAX } from './readBudget';
-import { type SupportUndoVerb, supportUndoRefusal } from './supportThread';
+} from './supportWrites';
 import { UNDO_POLICY } from './undoPolicy';
 import { meta, type UndoCall, type UndoHandler } from './undoTypes';
 

@@ -9,8 +9,8 @@
  * - a reply canceled is never mailed; one not canceled is mailed **once**;
  * - each ends `canceled` or `sent`, never both, never still settling.
  *
- * Runs: `SUPPORT_SETTLE_RUNS` a seed (default 12) over three pinned seeds and fast-check's own;
- * `SUPPORT_SETTLE_SEED` replays one.
+ * Runs: {@link RUNS} a seed over three pinned seeds and fast-check's own (a failure prints its seed:
+ * pin it in {@link SEEDS} to replay). The 50× run sets `RUNS` to 600 for one go.
  */
 
 import { convexTest } from 'convex-test';
@@ -23,8 +23,7 @@ import { SENT_REPLY_REFUSAL } from './lib/supportThread';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-const RUNS = Math.max(1, Math.trunc(Number(process.env.SUPPORT_SETTLE_RUNS)) || 12);
-const REPLAY = process.env.SUPPORT_SETTLE_SEED;
+const RUNS = 12;
 const START = Date.parse('2026-12-01T12:00:00Z');
 /** The harness steps its clock a millisecond a transaction: moments are kept clear of the edge. */
 const EDGE = 200;
@@ -194,8 +193,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const SEEDS: (number | undefined)[] =
-  REPLAY !== undefined ? [Number(REPLAY)] : [20261122, 3, 7_777, undefined];
+const SEEDS: (number | undefined)[] = [20261122, 3, 7_777, undefined];
 
 describe('a reply settles to canceled or sent, once, whatever the interleaving', () => {
   for (const seed of SEEDS) {
