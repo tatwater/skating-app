@@ -283,10 +283,13 @@ async function flagBy(
   targetId: string,
   reason: Doc<'contentFlags'>['reason'],
 ) {
+  // One person's flags on one target, by the index's three-field prefix — never a scan of the
+  // target's other flags (a filter on `by_target` read every one until it found 20 of theirs).
   const rows = await ctx.db
     .query('contentFlags')
-    .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-    .filter((q) => q.eq(q.field('flaggerId'), flaggerId))
+    .withIndex('by_target_flagger_status_origin', (q) =>
+      q.eq('targetType', targetType).eq('targetId', targetId).eq('flaggerId', flaggerId),
+    )
     .take(20);
   return rows.find((f) => f.reason === reason)?._id ?? null;
 }

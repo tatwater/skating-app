@@ -24,10 +24,11 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
 import { STAYS_BEHIND_CAP } from './bodyConsole';
 import { BACKFILL_PHASES, reviewAuditOf } from './inboxItems';
 import { readSnapshot } from './lib/audit';
-import { bodySource, fileMember } from './lib/inboxItems';
+import { bodySource, fileMember, flagSource, inboxBatch, requestSource } from './lib/inboxItems';
 import {
   DRAWN_SURVIVOR_READ,
   drawnSurvivorOf,
@@ -714,202 +715,409 @@ describe('the merge’s refusals (fork 3)', () => {
   });
 });
 
-describe('the preview says what the merge moves', () => {
-  test('every kind, counted before, equals what the merge moved', async () => {
-    const w = await pair();
-    const { t, loser, survivor, skater, mod } = w;
-    const both = await person(t, 'both');
-    const twice = await person(t, 'twice');
-    await bay(t, survivor, 'North Bay', 0.002, mod.id);
-    await bay(t, loser, 'North Bay', 0.002, mod.id);
-    await bay(t, loser, 'Cove', 0.001, mod.id, LNG - 0.004);
-    await landmark(t, survivor, 'Apple Island');
-    await landmark(t, loser, 'Apple Island');
-    await landmark(t, loser, 'Gull Rock', LAT + 0.003);
-    await t.run(async (ctx) => {
-      await ctx.db.insert('reports', {
-        authorId: skater.id,
-        waterBodyId: loser,
-        point: { lat: LAT, lng: LNG },
-        skateEndTime: NOW,
-        reportTime: NOW,
-        source: 'native',
-        iceTypes: [],
-        surfaceTags: [],
-        photoIds: [],
-        moderationStatus: 'visible',
-        hazardIdsCreated: [],
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
-      await ctx.db.insert('hazards', {
-        waterBodyId: loser,
-        type: 'open_water',
-        geometryKind: 'point_radius',
-        geometry: { type: 'Point', coordinates: [LNG, LAT] },
-        radiusMeters: 30,
-        bbox: boxOf(LNG, LAT, 0.001),
-        createdByUserId: skater.id,
-        photoIds: [],
-        status: 'active',
-        moderationStatus: 'visible',
-        firstReportedAt: NOW,
-        lastConfirmedAt: NOW,
-        confirmCount: 0,
-        goneCount: 0,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('bounties', {
-        requesterId: skater.id,
-        waterBodyId: loser,
-        windowHours: 48,
-        status: 'open',
-        rewardPoints: 10,
-        fulfillingReportIds: [],
-        createdAt: NOW,
-        expiresAt: NOW + 1000,
-      });
-      await ctx.db.insert('bodyFeatures', {
-        waterBodyId: loser,
-        type: 'spring_current',
-        geometryKind: 'point_radius',
-        geometry: { type: 'Point', coordinates: [LNG, LAT] },
-        radiusMeters: 20,
-        bbox: boxOf(LNG, LAT, 0.001),
-        addedByUserId: mod.id,
-        active: true,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('putIns', {
-        waterBodyId: loser,
-        coord: { lat: LAT, lng: LNG },
-        source: 'osm',
-        status: 'visible',
-        createdAt: NOW,
-      });
-      // One person favorites the drawing only; another favorites both (dropped, not moved).
-      await ctx.db.insert('waterBodyFavorites', {
-        userId: skater.id,
-        waterBodyId: loser,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('waterBodyFavorites', {
-        userId: both.id,
-        waterBodyId: loser,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('waterBodyFavorites', {
-        userId: both.id,
-        waterBodyId: survivor,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('waterBodyRequests', {
-        kind: 'contest_access',
-        status: 'open',
-        requesterId: skater.id,
-        coord: { lat: LAT, lng: LNG },
-        waterBodyId: loser,
-        createdAt: NOW,
-      });
-      await ctx.db.insert('corpusPlaceNames', {
-        name: 'The Narrows',
-        askKey: 'the narrows',
-        aliases: [],
-        messages: 3,
-        skatedMessages: 1,
-        states: ['VT'],
-        waterBodyId: loser,
-        status: 'open',
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
-      // A flag that moves, and one whose flagger already flagged the survivor (it stays).
-      for (const [flaggerId, targetId] of [
-        [skater.id, loser],
-        [twice.id, survivor],
-        [twice.id, loser],
-      ] as const) {
-        await ctx.db.insert('contentFlags', {
-          flaggerId,
-          targetType: 'waterbody',
-          targetId,
-          reason: 'no_public_access',
-          status: 'open',
+/** `n` people outside the pair, `tag`-named. */
+async function crowd(t: T, n: number, tag: string): Promise<Id<'profiles'>[]> {
+  return t.run(async (ctx) => {
+    const ids: Id<'profiles'>[] = [];
+    for (let i = 0; i < n; i++) {
+      ids.push(
+        await ctx.db.insert('profiles', {
+          clerkUserId: `${tag}${i}`,
+          displayName: `${tag}${i} Test-Person`,
+          username: `${tag}${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public',
+          notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member',
+          status: 'active',
           createdAt: NOW,
-        });
-      }
-      await ctx.db.insert('gpsActivities', {
-        userId: skater.id,
-        provider: 'native',
-        providerActivityId: 'founding',
-        sportType: 'IceSkate',
-        startTime: NOW - 3_600_000,
-        detectedAt: NOW,
-        promptState: 'converted',
-        waterBodyId: loser,
-      });
-      const putInId = await ctx.db.insert('putIns', {
-        waterBodyId: survivor,
-        coord: { lat: LAT, lng: LNG },
-        source: 'osm',
-        status: 'visible',
-        createdAt: NOW,
-      });
-      // An alert stays where it was raised (fork 2: alerts and lots don't move in this PR).
-      await ctx.db.insert('accessAlerts', {
-        targetType: 'put_in',
-        putInId,
-        waterBodyId: loser,
-        reason: 'not_plowed',
-        kind: 'blocker',
-        createdByUserId: skater.id,
-        createdAt: NOW,
-        season: 2025,
-        status: 'expired',
-        confirmCount: 0,
-        denyCount: 0,
-      } as never);
-    });
-    const preview = await mod.as.query(api.bodyConsole.mergePreview, {
-      loserId: loser,
-      survivorId: survivor,
-    });
-    if (!preview.ok) throw new Error(preview.refusal);
-    const { actionId } = await w.merge();
-    const cs = await changeSetOf(t, actionId);
-    const moved = (table: MergeChangeSet['moved'][number]['table']) =>
-      cs.moved.filter((m) => m.table === table).length;
-    const audit = await t.run((ctx) => ctx.db.get(actionId));
-    const repointed = audit?.metadata?.repointed as Record<string, number>;
-    const counted = Object.fromEntries(Object.entries(preview.moves).map(([k, c]) => [k, c.count]));
-    expect(counted).toEqual({
-      reports: moved('reports'),
-      hazards: moved('hazards'),
-      bounties: moved('bounties'),
-      bodyFeatures: moved('bodyFeatures'),
-      putIns: moved('putIns'),
-      favorites: moved('waterBodyFavorites'),
-      requests: moved('waterBodyRequests'),
-      placeNames: moved('corpusPlaceNames'),
-      flags: moved('contentFlags'),
-      subAreas: cs.subAreasBefore.length,
-      landmarks: repointed.landmarks,
-      gpsActivities: cs.movedActivities?.length,
-    });
-    // Every kind is in the world, so a count can't agree by both being zero.
-    expect(Object.values(counted).every((n) => n > 0)).toBe(true);
-    expect(Object.values(preview.moves).some((c) => c.capped)).toBe(false);
-    expect(preview.favoritesDeduped).toEqual({ count: cs.deletedFavorites.length, capped: false });
-    expect(preview.favoritesDeduped.count).toBe(1);
-    expect(preview.baysClashing).toEqual({ names: ['North Bay'], capped: false });
-    expect(cs.subAreasDelisted).toHaveLength(1);
-    expect(preview.staysBehind).toEqual({
-      accessAlerts: { count: 1, capped: false },
-      parkingLots: { count: 0, capped: false },
-    });
-    expect(preview).toMatchObject({ tooBig: false, refusal: null, code: null });
-    expect(preview.lists.caps).toEqual({ pins: 8, aliases: 20, links: 8 });
+        }),
+      );
+    }
+    return ids;
   });
+}
+
+/** `n` rows inserted by `make`, `CHUNK` a transaction, so the fixture never meets the limits itself. */
+async function inChunks(t: T, n: number, make: (ctx: MutationCtx, i: number) => Promise<unknown>) {
+  const CHUNK = 100;
+  for (let from = 0; from < n; from += CHUNK) {
+    // One Inbox batch a chunk, as a writer files many: each item recounted once, at its end.
+    await t.run((ctx) =>
+      inboxBatch(ctx, async () => {
+        for (let i = from; i < Math.min(n, from + CHUNK); i++) await make(ctx, i);
+      }),
+    );
+  }
+}
+
+/**
+ * **A busy survivor** (Greptile on #173): `n` rows of every kind the merge reads beside but doesn't
+ * move. On the survivor, from people outside the pair: open flags (filed into the survivor's access
+ * item, so a moved flag joins an item of `n` members), closed flags, favorites, open asks (filed), open
+ * place names, recent reports, active hazards, open bounties, launches, skates and live landmarks. On
+ * the loser, its rows the merge leaves: closed flags, placed and dismissed names, and access alerts.
+ * A read or estimate that scans the survivor's rows — once, or once per loser row — reads thousands
+ * of documents here; one that reads by the loser's rows and point reads reads none of them.
+ */
+async function busy(t: T, survivor: Id<'waterBodies'>, loser: Id<'waterBodies'>, n: number) {
+  const others = await crowd(t, n, `busy-${survivor}-`);
+  const who = (i: number) => others[i] as Id<'profiles'>;
+  const flag = (targetId: Id<'waterBodies'>, i: number, status: Doc<'contentFlags'>['status']) => ({
+    flaggerId: who(i),
+    targetType: 'waterbody' as const,
+    targetId,
+    reason: 'no_public_access' as const,
+    status,
+    createdAt: NOW,
+  });
+  await inChunks(t, n, async (ctx, i) => {
+    await fileMember(
+      ctx,
+      flagSource(await ctx.db.insert('contentFlags', flag(survivor, i, 'open'))),
+    );
+    await ctx.db.insert('contentFlags', { ...flag(survivor, i, 'dismissed'), reason: 'spam' });
+    await ctx.db.insert('contentFlags', flag(loser, i, i % 2 === 0 ? 'actioned' : 'dismissed'));
+  });
+  await inChunks(t, n, async (ctx, i) => {
+    await ctx.db.insert('waterBodyFavorites', {
+      userId: who(i),
+      waterBodyId: survivor,
+      createdAt: NOW,
+    });
+    await fileMember(
+      ctx,
+      requestSource(
+        await ctx.db.insert('waterBodyRequests', {
+          kind: 'activate',
+          status: 'open',
+          requesterId: who(i),
+          coord: { lat: LAT + i * 1e-6, lng: LNG },
+          waterBodyId: survivor,
+          createdAt: NOW,
+        }),
+      ),
+    );
+    for (const [waterBodyId, status] of [
+      [survivor, 'open'],
+      [loser, i % 2 === 0 ? 'placed' : 'dismissed'],
+    ] as const) {
+      await ctx.db.insert('corpusPlaceNames', {
+        name: `Busy Point ${i}`,
+        askKey: `busy point ${i}`,
+        aliases: [],
+        messages: 1,
+        skatedMessages: 0,
+        states: ['VT'],
+        waterBodyId,
+        status,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+    }
+  });
+  await inChunks(t, n, async (ctx, i) => {
+    await ctx.db.insert('reports', {
+      authorId: who(i),
+      waterBodyId: survivor,
+      point: { lat: LAT, lng: LNG },
+      skateEndTime: NOW - i,
+      reportTime: NOW,
+      source: 'native',
+      iceTypes: [],
+      surfaceTags: [],
+      photoIds: [],
+      moderationStatus: 'visible',
+      hazardIdsCreated: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert('hazards', {
+      waterBodyId: survivor,
+      type: 'open_water',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [LNG, LAT] },
+      radiusMeters: 30,
+      bbox: boxOf(LNG, LAT, 0.001),
+      createdByUserId: who(i),
+      photoIds: [],
+      status: 'active',
+      moderationStatus: 'visible',
+      firstReportedAt: NOW,
+      lastConfirmedAt: NOW,
+      confirmCount: 0,
+      goneCount: 0,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('bounties', {
+      requesterId: who(i),
+      waterBodyId: survivor,
+      windowHours: 48,
+      status: 'open',
+      rewardPoints: 10,
+      fulfillingReportIds: [],
+      createdAt: NOW,
+      expiresAt: NOW + 1000,
+    });
+  });
+  await inChunks(t, n, async (ctx, i) => {
+    const putInId = await ctx.db.insert('putIns', {
+      waterBodyId: survivor,
+      coord: { lat: LAT, lng: LNG },
+      source: 'osm',
+      status: 'visible',
+      createdAt: NOW,
+    });
+    await ctx.db.insert('gpsActivities', {
+      userId: who(i),
+      provider: 'native',
+      providerActivityId: `busy-${i}`,
+      sportType: 'IceSkate',
+      startTime: NOW - 3_600_000,
+      detectedAt: NOW,
+      promptState: 'converted',
+      waterBodyId: survivor,
+    });
+    await ctx.db.insert('bodyLandmarks', {
+      waterBodyId: survivor,
+      name: `Busy Isle ${i}`,
+      kind: 'island',
+      point: { lat: LAT + 0.004 + i * 1e-6, lng: LNG },
+      source: 'gnis',
+      externalIds: [`gnis:busy:${i}`],
+      aliases: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert('accessAlerts', {
+      targetType: 'put_in',
+      putInId,
+      waterBodyId: loser,
+      reason: 'not_plowed',
+      kind: 'blocker',
+      createdByUserId: who(i),
+      createdAt: NOW,
+      season: 2025,
+      status: 'expired',
+      confirmCount: 0,
+      denyCount: 0,
+    } as never);
+  });
+}
+
+/**
+ * A world of every kind a merge moves; the preview's counts and splits, then the merge, compared kind
+ * by kind. `busyRows`: over a {@link busy} survivor and loser too — the counts the same, every read
+ * inside the harness's limits.
+ */
+async function everyKind(busyRows = 0) {
+  const w = await pair();
+  if (busyRows > 0) await busy(w.t, w.survivor, w.loser, busyRows);
+  const { t, loser, survivor, skater, mod } = w;
+  const both = await person(t, 'both');
+  const twice = await person(t, 'twice');
+  await bay(t, survivor, 'North Bay', 0.002, mod.id);
+  await bay(t, loser, 'North Bay', 0.002, mod.id);
+  await bay(t, loser, 'Cove', 0.001, mod.id, LNG - 0.004);
+  await landmark(t, survivor, 'Apple Island');
+  await landmark(t, loser, 'Apple Island');
+  await landmark(t, loser, 'Gull Rock', LAT + 0.003);
+  await t.run(async (ctx) => {
+    await ctx.db.insert('reports', {
+      authorId: skater.id,
+      waterBodyId: loser,
+      point: { lat: LAT, lng: LNG },
+      skateEndTime: NOW,
+      reportTime: NOW,
+      source: 'native',
+      iceTypes: [],
+      surfaceTags: [],
+      photoIds: [],
+      moderationStatus: 'visible',
+      hazardIdsCreated: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert('hazards', {
+      waterBodyId: loser,
+      type: 'open_water',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [LNG, LAT] },
+      radiusMeters: 30,
+      bbox: boxOf(LNG, LAT, 0.001),
+      createdByUserId: skater.id,
+      photoIds: [],
+      status: 'active',
+      moderationStatus: 'visible',
+      firstReportedAt: NOW,
+      lastConfirmedAt: NOW,
+      confirmCount: 0,
+      goneCount: 0,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('bounties', {
+      requesterId: skater.id,
+      waterBodyId: loser,
+      windowHours: 48,
+      status: 'open',
+      rewardPoints: 10,
+      fulfillingReportIds: [],
+      createdAt: NOW,
+      expiresAt: NOW + 1000,
+    });
+    await ctx.db.insert('bodyFeatures', {
+      waterBodyId: loser,
+      type: 'spring_current',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [LNG, LAT] },
+      radiusMeters: 20,
+      bbox: boxOf(LNG, LAT, 0.001),
+      addedByUserId: mod.id,
+      active: true,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('putIns', {
+      waterBodyId: loser,
+      coord: { lat: LAT, lng: LNG },
+      source: 'osm',
+      status: 'visible',
+      createdAt: NOW,
+    });
+    // One person favorites the drawing only; another favorites both (dropped, not moved).
+    await ctx.db.insert('waterBodyFavorites', {
+      userId: skater.id,
+      waterBodyId: loser,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('waterBodyFavorites', {
+      userId: both.id,
+      waterBodyId: loser,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('waterBodyFavorites', {
+      userId: both.id,
+      waterBodyId: survivor,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('waterBodyRequests', {
+      kind: 'contest_access',
+      status: 'open',
+      requesterId: skater.id,
+      coord: { lat: LAT, lng: LNG },
+      waterBodyId: loser,
+      createdAt: NOW,
+    });
+    await ctx.db.insert('corpusPlaceNames', {
+      name: 'The Narrows',
+      askKey: 'the narrows',
+      aliases: [],
+      messages: 3,
+      skatedMessages: 1,
+      states: ['VT'],
+      waterBodyId: loser,
+      status: 'open',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    // A flag that moves, and one whose flagger already flagged the survivor (it stays).
+    for (const [flaggerId, targetId] of [
+      [skater.id, loser],
+      [twice.id, survivor],
+      [twice.id, loser],
+    ] as const) {
+      await ctx.db.insert('contentFlags', {
+        flaggerId,
+        targetType: 'waterbody',
+        targetId,
+        reason: 'no_public_access',
+        status: 'open',
+        createdAt: NOW,
+      });
+    }
+    await ctx.db.insert('gpsActivities', {
+      userId: skater.id,
+      provider: 'native',
+      providerActivityId: 'founding',
+      sportType: 'IceSkate',
+      startTime: NOW - 3_600_000,
+      detectedAt: NOW,
+      promptState: 'converted',
+      waterBodyId: loser,
+    });
+    const putInId = await ctx.db.insert('putIns', {
+      waterBodyId: survivor,
+      coord: { lat: LAT, lng: LNG },
+      source: 'osm',
+      status: 'visible',
+      createdAt: NOW,
+    });
+    // An alert stays where it was raised (fork 2: alerts and lots don't move in this PR).
+    await ctx.db.insert('accessAlerts', {
+      targetType: 'put_in',
+      putInId,
+      waterBodyId: loser,
+      reason: 'not_plowed',
+      kind: 'blocker',
+      createdByUserId: skater.id,
+      createdAt: NOW,
+      season: 2025,
+      status: 'expired',
+      confirmCount: 0,
+      denyCount: 0,
+    } as never);
+  });
+  const preview = await mod.as.query(api.bodyConsole.mergePreview, {
+    loserId: loser,
+    survivorId: survivor,
+  });
+  if (!preview.ok) throw new Error(preview.refusal);
+  const { actionId } = await w.merge();
+  const cs = await changeSetOf(t, actionId);
+  const moved = (table: MergeChangeSet['moved'][number]['table']) =>
+    cs.moved.filter((m) => m.table === table).length;
+  const audit = await t.run((ctx) => ctx.db.get(actionId));
+  const repointed = audit?.metadata?.repointed as Record<string, number>;
+  const counted = Object.fromEntries(Object.entries(preview.moves).map(([k, c]) => [k, c.count]));
+  expect(counted).toEqual({
+    reports: moved('reports'),
+    hazards: moved('hazards'),
+    bounties: moved('bounties'),
+    bodyFeatures: moved('bodyFeatures'),
+    putIns: moved('putIns'),
+    favorites: moved('waterBodyFavorites'),
+    requests: moved('waterBodyRequests'),
+    placeNames: moved('corpusPlaceNames'),
+    flags: moved('contentFlags'),
+    subAreas: cs.subAreasBefore.length,
+    landmarks: repointed.landmarks,
+    gpsActivities: cs.movedActivities?.length,
+  });
+  // Every kind is in the world, so a count can't agree by both being zero.
+  expect(Object.values(counted).every((n) => n > 0)).toBe(true);
+  expect(Object.values(preview.moves).some((c) => c.capped)).toBe(false);
+  expect(preview.favoritesDeduped).toEqual({ count: cs.deletedFavorites.length, capped: false });
+  expect(preview.favoritesDeduped.count).toBe(1);
+  expect(preview.baysClashing).toEqual({ names: ['North Bay'], capped: false });
+  expect(cs.subAreasDelisted).toHaveLength(1);
+  const alerts = 1 + busyRows;
+  expect(preview.staysBehind).toEqual({
+    accessAlerts: { count: Math.min(alerts, STAYS_BEHIND_CAP), capped: alerts > STAYS_BEHIND_CAP },
+    parkingLots: { count: 0, capped: false },
+  });
+  expect(preview).toMatchObject({ tooBig: false, refusal: null, code: null });
+  expect(preview.lists.caps).toEqual({ pins: 8, aliases: 20, links: 8 });
+}
+
+describe('the preview says what the merge moves', () => {
+  test('every kind, counted before, equals what the merge moved', () => everyKind());
+
+  test(
+    'over a busy survivor and loser: the same counts, every read inside its limits',
+    () => everyKind(400),
+    600_000,
+  );
 });
 
 /** A survivor lake, a second lake over the same water, and a drawing whose candidates are both. */
@@ -1397,17 +1605,42 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
     kind: keyof typeof TABLE,
     insert: (w: W, from: number, n: number) => Promise<void>,
     extra: (w: W) => Promise<MergeCost | null> = async () => null,
+    /** Over a {@link busy} survivor and loser: the same edge, since none of their rows move. */
+    busyRows = 0,
   ): Promise<number> => {
     const probe = await pair();
     await insert(probe, 0, 1);
     const sample = await sampleOf(probe, kind);
     const more = await extra(probe);
-    const base = more ? plus(await baseOf(probe), more) : await baseOf(probe);
+    let base = more ? plus(await baseOf(probe), more) : await baseOf(probe);
+    if (busyRows > 0) {
+      // Of a busy survivor's rows, the estimate charges only what the merge reads of them: its
+      // labels (every one, to the cap, checked for a twin). Nothing else of it may matter.
+      await busy(probe.t, probe.survivor, probe.loser, 1);
+      const label = await probe.t.run((ctx) =>
+        ctx.db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', probe.survivor))
+          .first(),
+      );
+      base = plus(
+        base,
+        scaled(
+          rowCost('survivorLandmarks', label as unknown as Record<string, unknown>, 5),
+          busyRows,
+        ),
+      );
+    }
     const edge = largestFitting(base, (n) => scaled(rowCost(kind, sample, 5), n));
-    const under = await pair();
+    const busied = async () => {
+      const w = await pair();
+      if (busyRows > 0) await busy(w.t, w.survivor, w.loser, busyRows);
+      return w;
+    };
+    const under = await busied();
     await insert(under, 0, edge - 1);
     expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
-    const over = await pair();
+    const over = await busied();
     await insert(over, 0, edge + 1);
     expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
     return edge;
@@ -1440,20 +1673,26 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
     expect(edge).toBeLessThan(Math.floor(THRESHOLDS.databaseQueries));
   }, 120_000);
 
-  test('favorites at their edge', async () => {
-    await atTheEdge('favorites', async (w, from, n) => {
-      const fans = await people(w, from, n, 'fan');
-      await w.t.run(async (ctx) => {
-        for (const userId of fans) {
-          await ctx.db.insert('waterBodyFavorites', {
-            userId,
-            waterBodyId: w.loser,
-            createdAt: NOW,
-          });
-        }
-      });
+  const fansOn = async (w: W, from: number, n: number) => {
+    const fans = await people(w, from, n, 'fan');
+    await w.t.run(async (ctx) => {
+      for (const userId of fans) {
+        await ctx.db.insert('waterBodyFavorites', {
+          userId,
+          waterBodyId: w.loser,
+          createdAt: NOW,
+        });
+      }
     });
+  };
+
+  test('favorites at their edge', async () => {
+    await atTheEdge('favorites', fansOn);
   }, 120_000);
+
+  test('favorites at their edge, over a busy survivor: the twin test is a point read a favorite', async () => {
+    await atTheEdge('favorites', fansOn, undefined, 400);
+  }, 600_000);
 
   const asks = (kind: 'activate' | 'name_landmark') => (w: W, from: number, n: number) =>
     w.t.run(async (ctx) => {
@@ -1478,23 +1717,69 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
     await atTheEdge('requests', asks('name_landmark'));
   }, 120_000);
 
-  test('flags at their edge', async () => {
-    await atTheEdge('flags', async (w, from, n) => {
-      const flaggers = await people(w, from, n, 'flagger');
-      await w.t.run(async (ctx) => {
-        for (const flaggerId of flaggers) {
-          await ctx.db.insert('contentFlags', {
-            flaggerId,
-            targetType: 'waterbody',
-            targetId: w.loser,
-            reason: 'no_public_access',
-            status: 'open',
-            createdAt: NOW,
-          });
-        }
-      });
+  const flagsOn = async (w: W, from: number, n: number) => {
+    const flaggers = await people(w, from, n, 'flagger');
+    await w.t.run(async (ctx) => {
+      for (const flaggerId of flaggers) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId,
+          targetType: 'waterbody',
+          targetId: w.loser,
+          reason: 'no_public_access',
+          status: 'open',
+          createdAt: NOW,
+        });
+      }
     });
+  };
+
+  test('flags at their edge', async () => {
+    await atTheEdge('flags', flagsOn);
   }, 120_000);
+
+  test('flags at their edge, over a busy survivor: the preview and the write read a point a flag (Greptile on #173)', async () => {
+    await atTheEdge('flags', flagsOn, undefined, 400);
+  }, 600_000);
+
+  test('a heavy survivor: its own bays at their edge — the estimate refuses before the transaction would fail', async () => {
+    // Every listed survivor bay is re-clipped to its outline, so the survivor's bays are the
+    // merge's own rows, counted by the estimate (`survivorSubAreas`): one fewer than the edge merges
+    // inside every limit; one more is refused by the preview and the write alike, never by the backend.
+    const bays = (w: W, n: number) =>
+      inChunks(w.t, n, (ctx, i) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: w.survivor,
+          name: `Survivor Bay ${i}`,
+          searchText: `Survivor Bay ${i}`,
+          polygon: square(LNG + 0.0001 * (i % 50), LAT + 0.0001 * Math.floor(i / 50), 0.00004),
+          bbox: boxOf(LNG + 0.0001 * (i % 50), LAT + 0.0001 * Math.floor(i / 50), 0.00004),
+          centroid: { lat: LAT, lng: LNG },
+          surfaceAreaSqM: 100,
+          displayScore: 0,
+          minVisibleZoom: 10,
+          createdByUserId: w.mod.id,
+          createdAt: NOW,
+          updatedAt: NOW,
+        }),
+      );
+    const probe = await pair();
+    await bays(probe, 1);
+    const sample = (await probe.t.run((ctx) =>
+      ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', probe.survivor))
+        .first(),
+    )) as unknown as Record<string, unknown>;
+    const edge = largestFitting(await baseOf(probe), (n) =>
+      scaled(rowCost('survivorSubAreas', sample, 5), n),
+    );
+    const under = await pair();
+    await bays(under, edge - 1);
+    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
+    const over = await pair();
+    await bays(over, edge + 1);
+    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
+  }, 600_000);
 
   test('reports each in two bays at their edge', async () => {
     // By the world itself: separate harnesses hand out the same ids.
@@ -1728,4 +2013,115 @@ describe('the time ceilings, pinned (R12)', () => {
       reportsInTwoBays: 311,
     });
   });
+});
+
+describe('a busy survivor: the reads beside the merge stay bounded (Greptile on #173)', () => {
+  test('90 loser flags over 400 unrelated survivor flags: the preview reads a point a flag, and agrees', async () => {
+    const w = await pair();
+    await busy(w.t, w.survivor, w.loser, 400);
+    const flaggers = await crowd(w.t, 90, 'loser-flagger');
+    await w.t.run(async (ctx) => {
+      for (const flaggerId of flaggers) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId,
+          targetType: 'waterbody',
+          targetId: w.loser,
+          reason: 'no_public_access',
+          status: 'open',
+          createdAt: NOW,
+        });
+      }
+    });
+    const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    if (!preview.ok) throw new Error(preview.refusal);
+    expect(preview.tooBig).toBe(false);
+    expect(preview.moves.flags).toEqual({ count: 90, capped: false });
+    const { actionId } = await w.merge();
+    const cs = await changeSetOf(w.t, actionId);
+    expect(cs.moved.filter((m) => m.table === 'contentFlags')).toHaveLength(90);
+  }, 600_000);
+
+  test('from the Inbox: the Drawn item reads and mergeDrawn merges over a busy survivor', async () => {
+    const w = await pair();
+    await busy(w.t, w.survivor, w.loser, 400);
+    const { item } = await itemOf(w);
+    if (item?.kind !== 'drawn') throw new Error('no drawn item');
+    expect(item.overlap?.body.waterBodyId).toBe(w.survivor);
+    await w.mod.as.mutation(api.inboxWrites.mergeDrawn, {
+      itemId: item.itemId,
+      survivorId: w.survivor,
+      reason: 'The same east bay',
+    });
+    expect(await w.t.run((ctx) => ctx.db.get(w.loser))).toMatchObject({
+      reviewStatus: 'merged',
+      mergedIntoId: w.survivor,
+    });
+  }, 600_000);
+
+  test('a survivor with more bays than any merge reads: too big, and the preview reads no more than the load', async () => {
+    // 400 bays of 2,000 points each — some 20 MB, past one read's 16 MiB: the load stops at its
+    // threshold and says too big, and the clash check (the survivor's bays whole) is not read.
+    const w = await pair();
+    const ring = (cx: number, cy: number) => {
+      const pts = Array.from({ length: 2_000 }, (_, k) => {
+        const a = (2 * Math.PI * k) / 2_000;
+        return [cx + 0.00004 * Math.cos(a), cy + 0.00004 * Math.sin(a)];
+      });
+      return { type: 'Polygon' as const, coordinates: [[...pts, pts[0] as number[]]] };
+    };
+    const SIDE = 20;
+    await inChunks(w.t, 400, (ctx, i) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: w.survivor,
+        name: `Survivor Bay ${i}`,
+        searchText: `Survivor Bay ${i}`,
+        polygon: ring(LNG + 0.0001 * (i % SIDE), LAT + 0.0001 * Math.floor(i / SIDE)),
+        bbox: boxOf(LNG + 0.0001 * (i % SIDE), LAT + 0.0001 * Math.floor(i / SIDE), 0.00004),
+        centroid: { lat: LAT, lng: LNG },
+        surfaceAreaSqM: 100,
+        displayScore: 0,
+        minVisibleZoom: 10,
+        createdByUserId: w.mod.id,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }),
+    );
+    await bay(w.t, w.loser, 'Survivor Bay 3', 0.001, w.mod.id);
+    const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    if (!preview.ok) throw new Error(preview.refusal);
+    expect(preview).toMatchObject({ tooBig: true, refusal: MERGE_TOO_BIG, code: 'tooBig' });
+    expect(preview.baysClashing).toEqual({ names: [], capped: true });
+    await expect(w.merge()).rejects.toThrow(MERGE_TOO_BIG);
+  }, 600_000);
+
+  test('the ETL’s absorb retires into a busy survivor', async () => {
+    const t = harness();
+    const ids: Record<string, Id<'waterBodies'>> = {};
+    for (const key of ['busy-s', 'busy-a']) {
+      ids[key] = await body(t, `Lake ${key}`, 0.01, {
+        externalId: key,
+        osmId: key,
+      } as Partial<Doc<'waterBodies'>>);
+    }
+    await busy(t, ids['busy-s'] as Id<'waterBodies'>, ids['busy-a'] as Id<'waterBodies'>, 400);
+    const out = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [
+        {
+          survivor: { source: 'osm', externalId: 'busy-s' },
+          absorbed: { source: 'osm', externalId: 'busy-a' },
+        },
+      ],
+      apply: true,
+    });
+    expect(out.retired).toBe(1);
+    expect(
+      (await t.run((ctx) => ctx.db.get(ids['busy-a'] as Id<'waterBodies'>)))?.mergedIntoId,
+    ).toBe(ids['busy-s']);
+  }, 600_000);
 });

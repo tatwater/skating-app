@@ -58,13 +58,15 @@ import {
   mergeLoadOf,
 } from './lib/mergeLoad';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
-import { bayNames, namesMeet, QUEUE_CAP } from './lib/requestDecisions';
+import { QUEUE_CAP } from './lib/requestDecisions';
 import { type UndoState, undoStates } from './lib/undo';
 import type { UndoViewer } from './lib/undoTypes';
 import { literals } from './lib/validators';
-import { subAreasForBody } from './subAreas';
+import { bayClashes, subAreasForBody } from './subAreas';
 import {
   depthChoicesOf,
+  favoriteTwinOn,
+  flaggedOnSurvivor,
   MERGE_GONE_REFUSAL,
   MERGE_SELF_REFUSAL,
   type MergeRefusalCode,
@@ -1008,21 +1010,19 @@ export const mergePreview = query({
     const moves = Object.fromEntries(
       MERGE_MOVE_KINDS.map((k) => [k, { ...load.moves[k] }]),
     ) as Record<MergeMoveKind, MergeCount>;
-    // Each split as the merge splits it, wherever the load counted that kind whole — the read is then
-    // bounded by what the load just read; a kind it stopped short of is said to be cut, not zeroed.
+    // Each split as the merge splits it — by the merge's own functions over the merge's own reads
+    // (`favoriteTwinOn`, `flaggedOnSurvivor`, `bayClashes`), so the two can't differ in verdict or
+    // cost. Only over a kind the load counted whole: each read is then a point read a row the load
+    // just charged (a favorite's twin, a flagger's flag per open status — never a scan of the
+    // survivor's rows), or, for the bays, the two ranges the load charged whole — read only when the
+    // load finished, since the survivor's bays are counted after the loser's. A kind it stopped short
+    // of is said to be cut, not zeroed.
     const favoritesDeduped: MergeCount = { count: 0, capped: moves.favorites.capped };
-    const baysClashing = { names: [] as string[], capped: moves.subAreas.capped };
     if (!moves.favorites.capped) {
       for await (const fav of ctx.db
         .query('waterBodyFavorites')
         .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))) {
-        const twin = await ctx.db
-          .query('waterBodyFavorites')
-          .withIndex('by_user_water_body_sub_area', (q) =>
-            q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
-          )
-          .first();
-        if (twin) favoritesDeduped.count++;
+        if (await favoriteTwinOn(ctx, fav, survivorId)) favoritesDeduped.count++;
       }
       moves.favorites.count -= favoritesDeduped.count;
     }
@@ -1034,23 +1034,17 @@ export const mergePreview = query({
           .withIndex('by_target_status_reason', (q) =>
             q.eq('targetType', 'waterbody').eq('targetId', loserId).eq('status', status),
           )) {
-          if (await flaggedAlready(ctx, survivorId, f.flaggerId)) flagsLeft++;
+          if (await flaggedOnSurvivor(ctx, survivorId, f.flaggerId)) flagsLeft++;
         }
       }
       moves.flags.count -= flagsLeft;
     }
-    if (!moves.subAreas.capped) {
-      // A name clash with a live survivor bay — the merge's own rule (`namesMeet`), in its order: a
-      // moved bay that clears joins the names a later one is held to.
-      const taken = (await subAreasForBody(ctx, survivorId))
-        .filter((b) => b.removedAt === undefined)
-        .map(bayNames);
-      for (const bay of await subAreasForBody(ctx, loserId)) {
-        if (bay.removedAt !== undefined) continue;
-        const names = bayNames(bay);
-        if (taken.some((other) => namesMeet(names, other))) baysClashing.names.push(bay.name);
-        else taken.push(names);
-      }
+    const baysCounted = !moves.subAreas.capped && !load.tooBig;
+    const baysClashing = { names: [] as string[], capped: !baysCounted };
+    if (baysCounted) {
+      const loserBays = await subAreasForBody(ctx, loserId);
+      const clashes = bayClashes(await subAreasForBody(ctx, survivorId), loserBays);
+      baysClashing.names = loserBays.filter((b) => clashes.has(b._id)).map((b) => b.name);
     }
     const lists = mergedModeratorLists(survivor, [loser]);
     const alerts = await ctx.db
@@ -1090,22 +1084,3 @@ export const mergePreview = query({
     };
   },
 });
-
-/** Whether `flaggerId` already has an open or in-review flag on the survivor — the merge's own test. */
-async function flaggedAlready(
-  ctx: QueryCtx,
-  survivorId: Id<'waterBodies'>,
-  flaggerId: Id<'profiles'>,
-): Promise<boolean> {
-  for (const status of OPEN_FLAG_STATUSES) {
-    const hit = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_target_status_reason', (q) =>
-        q.eq('targetType', 'waterbody').eq('targetId', survivorId).eq('status', status),
-      )
-      .filter((q) => q.eq(q.field('flaggerId'), flaggerId))
-      .first();
-    if (hit !== null) return true;
-  }
-  return false;
-}

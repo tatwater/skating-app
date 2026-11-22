@@ -3888,6 +3888,54 @@ export async function retargetAsks(
   return inboxBatch(ctx, () => retargetEach(ctx, loserId, survivorId, overCap));
 }
 
+/**
+ * Whether `flaggerId` already has an open flag on the survivor — of any reason, open or in review: the
+ * table's rule is one open flag per (flagger, target), whatever it says, so a loser's flag by them
+ * stays where it is. A point read per open status (`by_target_flagger_status_origin`'s four-field
+ * prefix), never a scan of the survivor's flags — which grew with every flag moved onto it, so N flags
+ * read N² rows (R11), and a survivor's unrelated flags were read once per loser flag. The merge's own
+ * test, which the Shape tab's preview asks too.
+ */
+export async function flaggedOnSurvivor(
+  ctx: QueryCtx,
+  survivorId: Id<'waterBodies'>,
+  flaggerId: Id<'profiles'>,
+): Promise<boolean> {
+  for (const status of OPEN_FLAG_STATUSES) {
+    const hit = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target_flagger_status_origin', (q) =>
+        q
+          .eq('targetType', 'waterbody')
+          .eq('targetId', survivorId)
+          .eq('flaggerId', flaggerId)
+          .eq('status', status),
+      )
+      .first();
+    if (hit !== null) return true;
+  }
+  return false;
+}
+
+/**
+ * The survivor's favorite that a loser favorite duplicates — the same person, the same bay (or the
+ * lake itself) — or `null`. Favorites are one row per user × body × bay, so the merge drops the loser's
+ * copy rather than move it. One point read on the uniqueness key; the merge's own test, which the
+ * Shape tab's preview asks too.
+ */
+export async function favoriteTwinOn(
+  ctx: QueryCtx,
+  fav: Pick<Doc<'waterBodyFavorites'>, 'userId' | 'subAreaId'>,
+  survivorId: Id<'waterBodies'>,
+): Promise<Doc<'waterBodyFavorites'> | null> {
+  return ctx.db
+    .query('waterBodyFavorites')
+    .withIndex('by_user_water_body_sub_area', (q) =>
+      q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
+    )
+    .unique();
+}
+
 async function retargetEach(
   ctx: MutationCtx,
   loserId: Id<'waterBodies'>,
@@ -3933,26 +3981,6 @@ async function retargetEach(
   for (const n of names) await ctx.db.patch(n._id, { waterBodyId: survivorId });
   const flags: Id<'contentFlags'>[] = [];
   let flagsLeft = 0;
-  // Whether this flagger already has an open flag on the survivor — of any reason, open or in review:
-  // the table's rule is one open flag per (flagger, target), whatever it says. A point read per open
-  // status (`by_target_flagger_status_origin`'s four-field prefix), never a scan of the survivor's
-  // flags — which grew with every flag moved onto it, so N flags read N² rows (R11).
-  const flaggedSurvivor = async (flaggerId: Id<'profiles'>) => {
-    for (const status of OPEN_FLAG_STATUSES) {
-      const hit = await ctx.db
-        .query('contentFlags')
-        .withIndex('by_target_flagger_status_origin', (q) =>
-          q
-            .eq('targetType', 'waterbody')
-            .eq('targetId', survivorId)
-            .eq('flaggerId', flaggerId)
-            .eq('status', status),
-        )
-        .first();
-      if (hit !== null) return true;
-    }
-    return false;
-  };
   for (const status of OPEN_FLAG_STATUSES) {
     const rows = within(
       await ctx.db
@@ -3963,7 +3991,7 @@ async function retargetEach(
         .take(n),
     );
     for (const f of rows) {
-      if (await flaggedSurvivor(f.flaggerId)) {
+      if (await flaggedOnSurvivor(ctx, survivorId, f.flaggerId)) {
         flagsLeft++;
         continue;
       }
@@ -4121,12 +4149,7 @@ export async function mergeBodyInto(
     const repointedFavoriteIds: Id<'waterBodyFavorites'>[] = [];
     const deletedFavorites: MergeChangeSet['deletedFavorites'] = [];
     for (const fav of favorites) {
-      const existing = await ctx.db
-        .query('waterBodyFavorites')
-        .withIndex('by_user_water_body_sub_area', (q) =>
-          q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
-        )
-        .unique();
+      const existing = await favoriteTwinOn(ctx, fav, survivorId);
       if (existing) {
         await ctx.db.delete(fav._id);
         deletedFavorites.push({
