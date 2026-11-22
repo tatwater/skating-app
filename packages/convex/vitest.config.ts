@@ -470,8 +470,12 @@ export default defineConfig({
      *
      * This does not hide a hang: a hang is unbounded and still fails, 15 seconds later. What it
      * stops is a green suite reporting red for reasons that have nothing to do with the code.
+     *
+     * 60 s since the harness counts index ranges and documents read as the real backend does
+     * (B01-5d): its bookkeeping took the suite from 131 s to 192-221 s in the workspace's `pnpm test`,
+     * and a test that runs in 1.9 s alone (1.1 s before) took 19.9 s there, then timed out at 20 s.
      */
-    testTimeout: 20_000,
+    testTimeout: 60_000,
     // convex-test runs functions in a simulated Convex backend; the edge-runtime
     // environment matches Convex's V8 isolate more closely than jsdom/node.
     environment: 'edge-runtime',

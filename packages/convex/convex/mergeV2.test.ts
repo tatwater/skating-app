@@ -1189,7 +1189,7 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     expect(first.deferred).toEqual([pairOf(keys[1]?.s as string, keys[1]?.a as string)]);
     const second = await retire(t, first.deferred);
     expect(second).toMatchObject({ retired: 1, deferred: [] });
-  }, 60_000);
+  }, 300_000);
 
   test('bodies that together pass one transaction: the rest come back, and the next calls take them', async () => {
     const t = harness();
@@ -1269,7 +1269,7 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
     const over = await pair();
     await launches(over, LAUNCH_CEILING + 1);
     expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
-  }, 60_000);
+  }, 300_000);
 
   test('index ranges: favorites at two calls each — under merges, over refused', async () => {
     const fans = async (w: Awaited<ReturnType<typeof pair>>, n: number) =>

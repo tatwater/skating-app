@@ -18,7 +18,7 @@
 
 import { bodySearchTextFor } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
@@ -1611,8 +1611,9 @@ suite('a heavy unmerge pages', () => {
       Array.from({ length: N }, (_, i) => i),
     );
     // Its point is the real size, so it keeps the real limits and a timeout with 5x headroom over its
-    // time when every package's suite runs at once (CI's `pnpm test`, 60 s; 3.6 s alone).
-  }, 300_000);
+    // time when every package's suite runs at once (CI's `pnpm test`: 129 s under the range-counting
+    // harness, 60 s before it; 3.6 s alone).
+  }, 650_000);
 
   // R10-A: a second merge between pages once stranded the rows the later pages had still to move. A
   // body mid-unmerge takes no merge — as loser or as survivor — preview and write alike, until done.
@@ -1622,6 +1623,9 @@ suite('a heavy unmerge pages', () => {
     const mergeId = await mergeV2(w);
     const was = PAGE_SEAM.sources;
     PAGE_SEAM.sources = 1;
+    // The scheduler held still: a later page runs only when the test lets it (convex-test's scheduler
+    // runs on the clock), so "mid-unmerge" is a state, not a race the next page can win.
+    vi.useFakeTimers();
     try {
       await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
       // The real unmerge's first transaction marks both bodies (`unmergeActionId`), nothing here.
@@ -1656,8 +1660,12 @@ suite('a heavy unmerge pages', () => {
           loserId: w.survivor,
         }),
       ).rejects.toThrow(UNMERGING_REFUSAL);
+      // Now the later pages run, to the end.
+      await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+      vi.useRealTimers();
       await settle(w.t);
     } finally {
+      vi.useRealTimers();
       PAGE_SEAM.sources = was;
     }
     // The later pages ran to the end: every row back, nothing left.

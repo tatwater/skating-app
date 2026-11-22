@@ -55,7 +55,8 @@ test('every transaction runs under Convex’s own limits: index ranges past 4,09
       for (let i = 0; i < 4_097; i++) await first(ctx, i);
     }),
   ).rejects.toThrow(/index ranges|limit: 4096/);
-});
+  // 5x its time when every package's suite runs at once (108 s there; 4.8 s alone).
+}, 600_000);
 
 /**
  * **Each operation costs what the real backend charges** (`vitest.config.ts`, `realBackendCounts`):
