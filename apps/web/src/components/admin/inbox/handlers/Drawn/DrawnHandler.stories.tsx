@@ -128,7 +128,8 @@ export const OverCaspian: Story = {
           .getByRole('region', { name: 'The report it came from' })
           .querySelector<HTMLElement>('h2, h3, h4'),
       );
-      await expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
+      // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+      await waitFor(() => expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1));
       const merge = s.getByRole('button', { name: /Merge into Caspian Lake/ });
       await expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
       await expect(s.getByRole('button', { name: 'Approve as new' })).toBeVisible();
@@ -162,7 +163,7 @@ export const LongReport: Story = {
       const quote = within(q).getByRole('blockquote');
       await expect(quote.textContent?.endsWith('…”')).toBe(true);
       // Never clipped sideways: it wraps inside its column.
-      await expect(quote.scrollWidth).toBeLessThanOrEqual(quote.clientWidth + 1);
+      await waitFor(() => expect(quote.scrollWidth).toBeLessThanOrEqual(quote.clientWidth + 1));
     }
   },
 };

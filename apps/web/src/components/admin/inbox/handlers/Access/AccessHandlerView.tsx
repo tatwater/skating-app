@@ -1,24 +1,16 @@
 import { AUDIT_REASON_MAX } from '@skating/core';
-import {
-  type ComponentProps,
-  cloneElement,
-  type ReactElement,
-  type ReactNode,
-  type RefObject,
-  useState,
-} from 'react';
+import { type ReactElement, type ReactNode, type RefObject, useState } from 'react';
 
 import { ActionBar } from '@/components/kit/action-bar';
 import { Badge } from '@/components/kit/badge';
-import { buttonVariants } from '@/components/kit/button';
 import { DisplayWord } from '@/components/kit/display-word';
 import { ItemTimeline, type ItemTimelineEvent } from '@/components/kit/item-timeline';
 import { LabelRows } from '@/components/kit/label-rows';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
-import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { LinkChip } from '../../blocks/LinkChip';
 import { ListCutLine, listTotalOf } from '../../blocks/listCut';
 import { TimelineEventBody } from '../../blocks/TimelineEventBody';
 import { InspectorHeadEnd, InspectorHeadTitle } from '../../inspector/InspectorFrame';
@@ -76,25 +68,6 @@ const KICK = 'text-kick leading-none font-semibold tracking-kick uppercase text-
 
 // ── Head ─────────────────────────────────────────────────────────────────────────────────────
 
-/** *Open in Body →*: the router's link in the kit's link face. */
-function OpenInBody({ link }: { link: ReactElement }) {
-  return cloneElement(
-    link as ReactElement<ComponentProps<'a'>>,
-    {
-      'data-slot': 'open-in-body',
-      className: cn(buttonVariants({ variant: 'link', size: 'xs' }), 'no-underline'),
-      children: (
-        <span data-slot="label" className="inline-flex items-center gap-[inherit]">
-          {W.openInBody}
-          <span aria-hidden="true" className="-mr-[3px]">
-            →
-          </span>
-        </span>
-      ),
-    } as ComponentProps<'a'>,
-  );
-}
-
 export function AccessHead({ item, bodyLink }: Pick<AccessHandlerProps, 'item' | 'bodyLink'>) {
   const badge = headBadge(item);
   return (
@@ -118,7 +91,7 @@ export function AccessHead({ item, bodyLink }: Pick<AccessHandlerProps, 'item' |
         )}
       </span>
       <InspectorHeadEnd>
-        <OpenInBody link={bodyLink} />
+        <LinkChip link={bodyLink} label={W.openInBody} slot="open-in-body" />
       </InspectorHeadEnd>
     </>
   );

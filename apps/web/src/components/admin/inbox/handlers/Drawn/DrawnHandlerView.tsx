@@ -1,7 +1,6 @@
 import { MAX_REQUEST_NOTE_LENGTH, MERGE_SUGGEST_SHARE } from '@skating/core';
 import {
   type ComponentProps,
-  cloneElement,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -9,7 +8,6 @@ import {
 } from 'react';
 
 import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
-import { buttonVariants } from '@/components/kit/button';
 import { LabelRows } from '@/components/kit/label-rows';
 import { Note, Quote } from '@/components/kit/note';
 import { OverlapGauge } from '@/components/kit/overlap-gauge';
@@ -21,9 +19,9 @@ import {
   ComingSoonLink,
   UnavailableButton,
 } from '@/components/kit/unavailable-button';
-import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { LinkChip } from '../../blocks/LinkChip';
 import { skateWords } from '../../blocks/skateWords';
 import {
   InspectorHeadAge,
@@ -72,36 +70,6 @@ export type DrawnHandlerProps = {
   pane?: RefObject<HTMLElement | null>;
   timeZone?: string;
 };
-
-/** A router link drawn in the kit's link face, its arrow after the label. */
-export function LinkChip({
-  link,
-  label,
-  slot,
-  newTab = false,
-}: {
-  link: ReactElement;
-  label: string;
-  slot: string;
-  newTab?: boolean;
-}) {
-  return cloneElement(
-    link as ReactElement<ComponentProps<'a'>>,
-    {
-      'data-slot': slot,
-      className: cn(buttonVariants({ variant: 'link', size: 'xs' }), 'no-underline'),
-      ...(newTab ? { target: '_blank', rel: 'noopener' } : {}),
-      children: (
-        <span data-slot="label" className="inline-flex items-center gap-[inherit]">
-          {label}
-          <span aria-hidden="true" className="-mr-[3px]">
-            →
-          </span>
-        </span>
-      ),
-    } as ComponentProps<'a'>,
-  );
-}
 
 // ── Head ─────────────────────────────────────────────────────────────────────────────────────
 

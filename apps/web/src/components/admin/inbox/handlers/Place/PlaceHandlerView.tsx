@@ -17,6 +17,8 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
+import { formatDistance } from '../../../body/tabs/places/placesModel';
+import { LinkChip } from '../../blocks/LinkChip';
 import { listTotalOf } from '../../blocks/listCut';
 import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import {
@@ -25,9 +27,8 @@ import {
   InspectorHeadTitle,
 } from '../../inspector/InspectorFrame';
 import { AskList } from '../asks/AskList';
-import { LinkChip } from '../Drawn/DrawnHandlerView';
 import { trustLine } from '../Drawn/drawnModel';
-import { dayTime, milesWords } from '../Flag/flagFormat';
+import { dayTime } from '../Flag/flagFormat';
 import {
   askedName,
   askerStanding,
@@ -267,7 +268,7 @@ export function PlaceBody({
               )}
               {proposal !== null && (
                 <p data-slot="place-proposal" className="m-0 text-row leading-body text-fg2">
-                  {W.anotherAsk(proposal.name, milesWords(proposal.meters))}
+                  {W.anotherAsk(proposal.name, formatDistance(proposal.meters))}
                 </p>
               )}
             </div>

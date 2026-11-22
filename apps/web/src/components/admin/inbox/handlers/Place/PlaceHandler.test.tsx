@@ -147,7 +147,7 @@ describe('the slots', () => {
     expect(screen.getByText('Nothing on this body looks like the same place.')).toBeInTheDocument();
     unmount();
     inShell(<Pane item={LANDMARK_PROPOSAL} />);
-    expect(screen.getByText('Another open ask nearby: “The Narrows” · 0.1 mi')).toBeInTheDocument();
+    expect(screen.getByText('Another open ask nearby: “The Narrows” · 394 ft')).toBeInTheDocument();
   });
 
   it('draws a bay ask with no compare table, the askers as the shared list, Open in Body live', () => {

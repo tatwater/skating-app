@@ -1,8 +1,8 @@
 import { LANDMARK_KIND_LABELS, type LandmarkKind, landmarkNameKey } from '@skating/core';
 import type { CompareRow } from '@/components/kit/compare-table';
 import { ageInWords } from '@/lib/ages';
+import { formatDistance } from '../../../body/tabs/places/placesModel';
 import type { InboxItemView } from '../../list/inboxTypes';
-import { milesWords } from '../Flag/flagFormat';
 import { PLACE_WORDS as W } from './placeWords';
 
 /**
@@ -186,7 +186,7 @@ export function matchChips(
 ): { text: string; tone: 'lit' | 'warn' }[] {
   return [
     ...(sameName(ask.name ?? '', l.name) ? [{ text: W.sameName, tone: 'lit' as const }] : []),
-    { text: W.apart(milesWords(l.meters)), tone: 'warn' },
+    { text: W.apart(formatDistance(l.meters)), tone: 'warn' },
   ];
 }
 

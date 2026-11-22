@@ -1,7 +1,6 @@
 import { MAX_REQUEST_NOTE_LENGTH } from '@skating/core';
 import {
   type ComponentProps,
-  cloneElement,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -9,7 +8,6 @@ import {
 } from 'react';
 
 import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
-import { buttonVariants } from '@/components/kit/button';
 import { DisplayWord } from '@/components/kit/display-word';
 import { FactList } from '@/components/kit/fact-list';
 import { ItemTimeline } from '@/components/kit/item-timeline';
@@ -20,6 +18,7 @@ import { cn } from '@/lib/utils';
 
 import { AskDialog } from '../../../people/person/AskDialog';
 import { dayMonth } from '../../../shell/consoleTime';
+import { LinkChip } from '../../blocks/LinkChip';
 import { listTotalOf } from '../../blocks/listCut';
 import { rulingEvent } from '../../blocks/rulingEvent';
 import { TimelineEventBody } from '../../blocks/TimelineEventBody';
@@ -86,25 +85,6 @@ const MICRO =
 
 // ── Head ─────────────────────────────────────────────────────────────────────────────────────
 
-/** *Open in Body →*: the router's link in the kit's link face. */
-function OpenInBody({ link }: { link: ReactElement }) {
-  return cloneElement(
-    link as ReactElement<ComponentProps<'a'>>,
-    {
-      'data-slot': 'open-in-body',
-      className: cn(buttonVariants({ variant: 'link', size: 'xs' }), 'no-underline'),
-      children: (
-        <span data-slot="label" className="inline-flex items-center gap-[inherit]">
-          {W.openInBody}
-          <span aria-hidden="true" className="-mr-[3px]">
-            →
-          </span>
-        </span>
-      ),
-    } as ComponentProps<'a'>,
-  );
-}
-
 export function RequestHead({
   item,
   now,
@@ -116,7 +96,7 @@ export function RequestHead({
       <InspectorHeadAge>{headAge(item, ageInWords(item.filedAt, now))}</InspectorHeadAge>
       {bodyLink !== null && (
         <InspectorHeadEnd>
-          <OpenInBody link={bodyLink} />
+          <LinkChip link={bodyLink} label={W.openInBody} slot="open-in-body" />
         </InspectorHeadEnd>
       )}
     </>
