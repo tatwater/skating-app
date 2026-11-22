@@ -20,6 +20,7 @@ import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { ListCutLine, listTotalOf } from '../../blocks/listCut';
 import { InspectorHeadEnd, InspectorHeadTitle } from '../../inspector/InspectorFrame';
 import {
   type AccessAct,
@@ -191,7 +192,7 @@ function eventBody(e: TimelineEvent): ReactNode {
     case 'dismissed':
       return (
         <>
-          <span className="text-row text-fg2">{W.reportsDismissed(e.count)}</span>
+          <span className="text-row text-fg2">{W.reportsDismissed(e.count, e.capped)}</span>
           {e.filers.length > 0 && (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-(--space-1_5) gap-y-(--space-1)">
               {e.filers.map((f, i) => (
@@ -268,6 +269,11 @@ export function AccessBody({
           </StatGrid>
           <Section title={W.claimsAndRuling}>
             <ItemTimeline events={events} />
+            <ListCutLine
+              members={item.reports}
+              total={listTotalOf(item, item.reportsCut)}
+              noun="reports"
+            />
           </Section>
         </div>
         <div className="flex min-w-0 flex-col border-0 border-t-(length:--stroke-hair) border-solid border-line @[45rem]:border-t-0 @[45rem]:border-l-(length:--stroke-hair)">

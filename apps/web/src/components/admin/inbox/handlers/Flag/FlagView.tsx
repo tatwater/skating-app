@@ -7,6 +7,7 @@ import { ComingSoonLink } from '@/components/kit/unavailable-button';
 import type { AroundState } from '../../around/AroundLine';
 import { AuthorBlock } from '../../blocks/AuthorBlock';
 import { FlagBlock } from '../../blocks/FlagBlock';
+import { listTotalOf } from '../../blocks/listCut';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
@@ -172,6 +173,7 @@ export function FlagBodyView({
     <FlagBlock
       bare={bare}
       flags={item.flags}
+      total={listTotalOf(item, item.flagsCut)}
       targetType={target.targetType}
       now={now}
       {...(target.exists && target.targetType === 'hazard' && { hazardType: target.hazard.type })}
@@ -326,6 +328,7 @@ export function FlagBodyView({
           <div className="px-gutter pt-(--space-5)">
             <FlagBlock
               flags={item.flags}
+              total={listTotalOf(item, item.flagsCut)}
               targetType={target.targetType}
               now={now}
               counted={target.person.contradicted}
