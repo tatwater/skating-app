@@ -88,6 +88,12 @@ interface Tile {
   preview: string | null;
   /** On the published Report already (an edit's kept photo). */
   kept: boolean;
+  /**
+   * A kept photo the read answered without — one a moderator took down. The sheet keeps its id (the
+   * server keeps it on the Report whatever an edit sends) and draws a quiet placeholder in its place,
+   * with nothing to press.
+   */
+  withheld: boolean;
 }
 
 function PhotoStrip({
@@ -127,6 +133,8 @@ function PhotoStrip({
           n: i + 1,
           preview: found?.thumbUrl ?? null,
           kept: true,
+          // Only once the read has answered: while it loads, every kept tile waits blank.
+          withheld: keptUrls !== undefined && found === undefined,
         };
       }),
       ...r.photos.map((photo) => ({
@@ -135,6 +143,7 @@ function PhotoStrip({
         n: i + 1,
         preview: sheetPhotoPreview(photo.id),
         kept: false,
+        withheld: false,
       })),
     ]),
     ...(post.photos ?? []).map((photo) => ({
@@ -143,6 +152,7 @@ function PhotoStrip({
       n: null,
       preview: sheetPhotoPreview(photo.id),
       kept: false,
+      withheld: false,
     })),
   ];
 
@@ -238,6 +248,10 @@ function PhotoStrip({
   );
 }
 
+/** A kept photo the read no longer serves (invented words, for the founder's look). */
+const WITHHELD = 'Not shown';
+const WITHHELD_LABEL = 'A photo that isn’t shown with this report; it stays with it';
+
 function PhotoTile({
   tile,
   many,
@@ -266,7 +280,17 @@ function PhotoTile({
         unassigned ? 'border-warn' : 'border-line',
       )}
     >
-      {tile.preview ? (
+      {tile.withheld ? (
+        <span
+          role="img"
+          aria-label={WITHHELD_LABEL}
+          title={WITHHELD_LABEL}
+          data-slot="photo-tile-withheld"
+          className="flex size-full items-center justify-center text-center text-assist text-fg3"
+        >
+          {WITHHELD}
+        </span>
+      ) : tile.preview ? (
         <img src={tile.preview} alt="" className="size-full object-cover" />
       ) : (
         <span className="flex size-full items-center justify-center text-center text-assist text-fg3">
@@ -305,7 +329,7 @@ function PhotoTile({
           <FontAwesomeIcon icon={placed ? faLocationDot : faLocationCrosshairs} />
         </span>
       )}
-      {editing ? (
+      {editing && !tile.withheld ? (
         <Tooltip>
           <TooltipTrigger
             render={

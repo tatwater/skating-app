@@ -150,6 +150,65 @@ describe('SheetWords — the words and photos', () => {
     expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(0);
   });
 
+  it('keeps a kept photo the read no longer serves as a quiet placeholder, its id kept', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    // The read serves the first and the third; the second (a moderator took it down) is skipped.
+    h.queries.set('photos:getUrls', [
+      { photoId: 'kept-1', thumbUrl: 'https://t/1.jpg' },
+      { photoId: 'kept-3', thumbUrl: 'https://t/3.jpg' },
+    ]);
+    setSheet({
+      ...post,
+      mode: { kind: 'edit', reportId: first.id },
+      reports: [{ ...first, keptPhotoIds: ['kept-1', 'kept-2', 'kept-3'] }],
+    });
+    let sheet: PostSheet | null = null;
+    function Probe() {
+      sheet = useSheet();
+      return null;
+    }
+    render(
+      <>
+        <Connected editing />
+        <Probe />
+      </>,
+    );
+    const tiles = [...document.querySelectorAll<HTMLElement>('[data-slot="photo-tile"]')];
+    expect(tiles).toHaveLength(3);
+    // Each served photo by its own id — never paired by position.
+    expect(tiles[0]?.querySelector('img')?.getAttribute('src')).toBe('https://t/1.jpg');
+    expect(tiles[2]?.querySelector('img')?.getAttribute('src')).toBe('https://t/3.jpg');
+    // The withheld one: words, no image, nothing to press.
+    const withheld = tiles[1];
+    expect(withheld?.querySelector('img')).toBeNull();
+    expect(withheld?.querySelector('[data-slot="photo-tile-withheld"]')).toHaveTextContent(
+      'Not shown',
+    );
+    expect(withheld?.querySelector('button')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Remove this photo' })).toHaveLength(2);
+    // Its id stays on the draft.
+    expect((sheet as PostSheet | null)?.reports[0]?.keptPhotoIds).toEqual([
+      'kept-1',
+      'kept-2',
+      'kept-3',
+    ]);
+  });
+
+  it('draws no placeholder while the read is on its way', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    setSheet({
+      ...post,
+      mode: { kind: 'edit', reportId: first.id },
+      reports: [{ ...first, keptPhotoIds: ['kept-1'] }],
+    });
+    render(<Connected editing />);
+    expect(document.querySelector('[data-slot="photo-tile-withheld"]')).toBeNull();
+  });
+
   it('hands a tile’s mark to the photo menu when the second half mounts one', async () => {
     const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
     setSheet({
