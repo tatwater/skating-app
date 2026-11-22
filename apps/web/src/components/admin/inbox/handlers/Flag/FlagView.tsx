@@ -68,13 +68,11 @@ export type FlagViewProps = {
   pane?: RefObject<HTMLElement | null>;
   /** The author menu control (`inspector/AuthorMenu`), drawn in the bar. */
   authorMenu?: ReactNode;
-  /** The People page's address for a person, and the Body console's for a body. */
-  peopleHref?: (userId: string) => string;
-  bodyHref?: (waterBodyId: string) => string;
 };
 
-export const defaultPeopleHref = (userId: string) => `/admin/people/${userId}`;
-export const defaultBodyHref = (waterBodyId: string) => `/admin/body/${waterBodyId}`;
+/** The People page's address for a person, and the Body console's for a body. */
+const peopleHref = (userId: string) => `/admin/people/${userId}`;
+const bodyHref = (waterBodyId: string) => `/admin/body/${waterBodyId}`;
 
 /** The frame's slots. A decided item's bar is dropped by the frame itself (D283). */
 export function flagSlots(props: FlagViewProps): FlagSlots {
@@ -97,12 +95,7 @@ export function flagSlots(props: FlagViewProps): FlagSlots {
 }
 
 /** The pane head: what kind of flag, the Safety badge, the age written out, the history link. */
-export function FlagHeadView({
-  item,
-  now,
-  peopleHref = defaultPeopleHref,
-  bodyHref = defaultBodyHref,
-}: FlagViewProps) {
+export function FlagHeadView({ item, now }: FlagViewProps) {
   const head = flagHead(item, now);
   return (
     <span data-slot="flag-head" className="contents">
@@ -117,22 +110,14 @@ export function FlagHeadView({
       </span>
       {head.link !== null && (
         <InspectorHeadEnd>
-          <HistoryLinkView link={head.link} peopleHref={peopleHref} bodyHref={bodyHref} />
+          <HistoryLinkView link={head.link} />
         </InspectorHeadEnd>
       )}
     </span>
   );
 }
 
-function HistoryLinkView({
-  link,
-  peopleHref,
-  bodyHref,
-}: {
-  link: HistoryLink;
-  peopleHref: (id: string) => string;
-  bodyHref: (id: string) => string;
-}) {
+function HistoryLinkView({ link }: { link: HistoryLink }) {
   switch (link.kind) {
     case 'reports':
       return <ComingSoonLink data-slot="flag-history">{W.openInReports}</ComingSoonLink>;

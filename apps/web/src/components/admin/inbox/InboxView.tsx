@@ -95,6 +95,7 @@ export type InboxViewProps = {
    */
   onReturn?: () => void;
   now: number;
+  /** A pinned zone, for stories and tests; the live page reads the reader's own (absent here). */
   timeZone?: string;
   /** The router's link for a console path (an anchor in a story). */
   linkFor: (path: string) => ReactElement;
@@ -107,7 +108,7 @@ export type InboxViewProps = {
   countsNote?: ReactNode;
   /** The inspector column, for the route to move focus into when an item opens from the keys. */
   inspectorRef?: RefObject<HTMLElement | null>;
-  /** The handlers by key (a story's own); the builders' registry by default. */
+  /** The handlers by key: a story's own seam; the live page always takes the builders' registry. */
   registry?: ReadonlyMap<HandlerKey, InboxHandler>;
   className?: string;
 };
