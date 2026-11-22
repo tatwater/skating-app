@@ -2,8 +2,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The `-` prefix keeps this file out of the generated route tree (`routeFileIgnorePrefix`).
-
 /** Each query's answer by the name the mocked `api` gives it; the queue's rows by tab. */
 const { queryResults, reviewArgs, useMutation, useQuery } = vi.hoisted(() => {
   const queryResults: Record<string, unknown> = {};
@@ -44,7 +42,6 @@ vi.mock('@skating/convex/api', () => ({
   },
 }));
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (options: unknown) => ({ options }),
   Link: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <a href="/admin/water" className={className}>
       {children}
@@ -52,15 +49,13 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 // The canvas is MapLibre; here it says what it was handed.
-vi.mock('../components/admin/RequestPreviewMap', () => ({
+vi.mock('./RequestPreviewMap', () => ({
   RequestPreviewMap: ({ review }: { review: unknown }) => (
     <div data-testid="map">{JSON.stringify(review)}</div>
   ),
 }));
 
-const { Route } = await import('./admin.water.requests');
-const RequestQueue = (Route as unknown as { options: { component: () => React.ReactNode } }).options
-  .component;
+const { RequestQueue } = await import('./RequestQueue');
 
 const lakeSpot = { lat: 44.2, lng: -73.1 };
 const near = { lat: 44.31, lng: -73.21 };

@@ -7,20 +7,20 @@ import {
   requestKindTitle,
   waterBodyClassLabel,
 } from '@skating/core';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
-import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
-import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
-import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
-import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
-import { useRefusalClears, useSaidMutation } from '../components/admin/said';
-import { useReviewWatch } from '../components/admin/useReviewWatch';
-import { Button, buttonVariants } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
-import { useRowReview } from '../lib/reviewMarkers';
-import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../lib/reviewWatch';
+import { useRowReview } from '../../lib/reviewMarkers';
+import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../../lib/reviewWatch';
+import { Button, buttonVariants } from '../ui/button';
+import { Card, CardContent } from '../ui/card';
+import { AdminEmpty, AdminPageHeader } from './adminUi';
+import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
+import { ReasonDialog } from './ReasonDialog';
+import { RequestPreviewMap } from './RequestPreviewMap';
+import { ReviewClosedNotice } from './ReviewClosedNotice';
+import { useRefusalClears, useSaidMutation } from './said';
+import { useReviewWatch } from './useReviewWatch';
 
 /**
  * The request queue (A07b PR 2 / D107) — **a skater asked; a moderator answers.**
@@ -40,10 +40,11 @@ import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../lib
  * moderator picks (the first, until they pick), and the coordinate links out to Google Maps for a
  * second look. A landmark proposal that shares its name with a landmark or another proposal elsewhere
  * on the lake says so, and *Show both* draws the pair (D202).
+ *
+ * **Retired (B01-5c):** requests are decided in the Inbox, and `/admin/water/requests` redirects
+ * there. The page stays on disk, unrouted, until the Legacy group's last page goes.
  */
-export const Route = createFileRoute('/admin/water/requests')({ component: RequestQueue });
-
-function RequestQueue() {
+export function RequestQueue() {
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
   const rows = useQuery(api.corpusRequests.listQueue, { status });
   const count = useQuery(api.corpusRequests.queueCount, {});
