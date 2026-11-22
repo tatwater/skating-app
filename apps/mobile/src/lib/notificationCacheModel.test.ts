@@ -1,4 +1,4 @@
-import type { NotificationView } from '@skating/core';
+import { describeNotification, type NotificationView } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import {
   applyReadOverlay,
@@ -50,6 +50,51 @@ describe('notificationCacheModel (A08 PR 3)', () => {
         toCachedRow(view('b', 3)),
       ]).map((n) => n.id),
     ).toEqual(['b', 'a']);
+  });
+
+  it('stores and reads a moderator’s decision, and words one in a shape this core doesn’t know (D285)', () => {
+    const decision: NotificationView = {
+      id: 'md',
+      createdAt: 200,
+      type: 'moderator_decision',
+      about: 'name_landmark',
+      outcome: 'declined',
+      body: { id: 'b1', name: 'Lake Morey' },
+      note: 'Already on the map',
+    };
+    expect(fromCachedRow(toCachedRow(decision))).toEqual(decision);
+    expect(
+      fromCachedRow({
+        data: JSON.stringify({
+          id: 'retracted',
+          createdAt: 201,
+          type: 'moderator_decision',
+          about: 'accessAlert',
+          outcome: 'retracted',
+          body: null,
+          place: 'North Ramp',
+        }),
+      }),
+    ).toMatchObject({ type: 'moderator_decision', place: 'North Ramp' });
+    // An `about` this core has no words for (cached by a later build, say) still reads: core words it
+    // as a plain decision rather than throwing, so the row is kept as it came.
+    const later = {
+      id: 'later',
+      createdAt: 202,
+      type: 'moderator_decision',
+      about: 'photo',
+      outcome: 'approved',
+      body: null,
+    };
+    expect(fromCachedRow({ data: JSON.stringify(later) })).toEqual(later);
+    // Even a row drifted past its fields (no `about`, no body) is worded, never a throw in the list.
+    const drift = fromCachedRow({
+      data: JSON.stringify({ id: 'drift', createdAt: 203, type: 'moderator_decision' }),
+    });
+    expect(describeNotification(drift as NotificationView)).toEqual({
+      title: 'A moderator made a decision on something you sent',
+      target: null,
+    });
   });
 
   it('the overlay fills read gaps but never overrides a server stamp', () => {
