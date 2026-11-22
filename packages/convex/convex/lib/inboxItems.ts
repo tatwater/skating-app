@@ -812,16 +812,22 @@ async function refreshItemNow(
     return;
   }
   const memberCount = await countOf('closed');
-  const decision: Decided | null =
-    decided ??
-    (item.status === 'decided' && item.decision !== undefined
+  // The item's stored decision stands only while a member of it still records that decision: an
+  // undo that reopens the deciding member into a newer open item on the key leaves this item decided
+  // by its other members — and its decision is then theirs, never a row none of them carries.
+  const stored =
+    item.status === 'decided' &&
+    item.decision !== undefined &&
+    (await decisionHeld(ctx, reads, item))
       ? {
           decision: item.decision,
           decidedAt: item.decidedAt ?? now,
           ...(item.decidedByUserId ? { decidedByUserId: item.decidedByUserId } : {}),
           ...(item.decisionActionId ? { decisionActionId: item.decisionActionId } : {}),
         }
-      : await decisionOfMember(ctx, reads, firstClosed, now));
+      : null;
+  const decision: Decided | null =
+    decided ?? stored ?? (await decisionOfMember(ctx, reads, firstClosed, now));
   const next = {
     ...facetFields,
     status: 'decided' as const,
@@ -837,6 +843,28 @@ async function refreshItemNow(
   };
   await ctx.db.patch(itemId, next);
   await moveCounts(ctx, before, { ...item, ...next });
+}
+
+/**
+ * Whether a decided item's stored decision is still recorded by one of its members — the member a
+ * decision closed carries its row (`closedByActionId`). An item with no decision row (decided before
+ * the Inbox stamped them) holds by default. One point range on the decision's members, bounded as
+ * every member read is (a decision closes at most that many).
+ */
+export async function decisionHeld(
+  ctx: QueryCtx,
+  reads: InboxReads,
+  item: Pick<Doc<'inboxItems'>, '_id' | 'decisionActionId'>,
+): Promise<boolean> {
+  const actionId = item.decisionActionId;
+  if (actionId === undefined) return true;
+  const closed = await reads.take('small', MEMBER_BOUND.members, (n) =>
+    ctx.db
+      .query('inboxItemMembers')
+      .withIndex('by_closed_by', (q) => q.eq('closedByActionId', actionId))
+      .take(n),
+  );
+  return closed.some((m) => m.itemId === item._id);
 }
 
 /** The decision a closed member's source records (an item whose deciding member left). */

@@ -16,6 +16,7 @@ import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import {
   asksSameQuestion,
+  decisionHeld,
   deriveItem,
   factsOf,
   type InboxReads,
@@ -108,6 +109,10 @@ async function examine(ctx: QueryCtx, item: Doc<'inboxItems'>): Promise<Examinat
     derived.filedAt !== item.filedAt ||
     derived.rankKey !== item.rankKey
   ) {
+    kinds.add('fields');
+  } else if (item.status === 'decided' && !(await decisionHeld(ctx, reads, item))) {
+    // Decided by a row none of its members records any more (its deciding member reopened into a
+    // newer item on the key before the writer re-derived the decision): re-derived from them.
     kinds.add('fields');
   }
   // The tab follows the source's facts (a body's ruling, a drawing's overlap) — a write with no hook
