@@ -563,7 +563,7 @@ type ItemBase = {
    * refusal it is — `approve: 'awaitsDrawing'` exactly where a place ask's *Approve* waits on a bay or
    * landmark not drawn yet (the handler's *Draw in Body →*). Empty when no refusal has a code.
    */
-  canCode?: InboxCanCode;
+  canCode: InboxCanCode;
   decided: InboxDecidedState | null;
 };
 
