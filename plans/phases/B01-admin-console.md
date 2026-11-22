@@ -10324,6 +10324,53 @@ eight more. Its dialog waits now get 5 s (`a29d303fb`), and ten runs, half starv
     region. Whether a screen reader speaks it depends on its support for `text` changes; no screen
     reader was run.
 
+#### B01-5d: the server review (R10) — S4a's fixes (2026-11-22)
+
+S4a's commits past `06e53d868` were cherry-picked with no conflicts, through `9c6024a91`.
+
+- **The blocker: merging during an unmerge (R10-A).**
+  - *The gap:* an unmerge's first page makes the loser live and reopens its Inbox item, so Merge
+    was offered again. A merge between the unmerge's pages stranded on the survivor every row the
+    later pages still had to move, and the unmerge read `done: false` for good.
+  - *The marker:* the bodies now carry `waterBodies.unmergeActionId` (optional, the seam). An
+    unmerge's first transaction sets it on both bodies and its last clears it; S4b's commit does
+    the setting.
+  - *The reader:* `lib/unmergeState` is the one reader, and every merge path asks it of both bodies:
+    `merge`, `inboxWrites.mergeDrawn`, the preview and `can.mergeDrawn`. They refuse with "This body
+    is still being unmerged. Merge it once that finishes." (code `unmerging`). A stand-in sets the
+    marker in tests until S4b's commit lands.
+  - *The web side:* the Drawn handler holds Merge back by `can`, and says the sentence from
+    `canCode.mergeDrawn` even beside Approve and Reject. The Shape flow draws the preview's refusal
+    with no confirm. Fixtures and a story for each.
+- **The drawer is told whatever the review status (R10-B).** A drawing merged away tells its drawer
+  whether it was pending or approved. This is the governor's ruling, which the founder may
+  overturn.
+- **A merge too heavy for one transaction (R10-D)** is refused with
+  `{ message, code: 'tooBig' }`. The web's `said` reads the message, so the toast says the server's
+  sentence, from both merge writes (tested).
+- **The ETL path (R10-C).**
+  - The absorb skips and names a pair too heavy to merge, or one mid-unmerge, and never dies
+    mid-batch.
+  - It returns pairs a transaction can't hold as `deferred`.
+  - `scripts/etl`'s retire pass re-sends deferred pairs, bounded, and names its skips.
+- **The seed's two guards (R10-E):**
+  - the proof drawing's survivor must be the seed's own lake, never a real body;
+  - the clear stops with "Unmerge X from Y first" before removing anything, never half-clearing.
+
+**Also in this round:**
+- **Focus after a merge swaps in the merged page.**
+  - *The bug:* focus fell to `<body>`.
+  - *The convention:* the console's rule (`BodyConsoleView`) is that arriving at a body with nothing
+    focused, its pane takes focus.
+  - *The fix:* the merged page is now a focusable pane, "The body". It takes focus when focus is
+    lost, checking again on the next frame after the dialog closes. A real-focus story,
+    *Merge | Lands · focus*, holds it.
+- **Two flaky story reads, each late, never "never":**
+  - *Kit EntryTile, Tiles:* the tooltip's 600 ms `OPEN_DELAY` raced a 1 s retry. The story now
+    renders with no delay.
+  - *Merge | Preview:* its clock waits on the dialog's fade are now waits on the fade's frames and
+    the transition's `finished`; the 5 s guess is gone.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
@@ -10438,6 +10485,8 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
 | Sh8 | The verdicts backfill (`peopleJobs:backfillVerdicts`, walking `contentRecord.backfillVerdicts`) walks the whole moderation audit table 4 rows a pass (each row's worst case is sized at 1 MiB), so its length follows the audit log's size: 7,951 passes (about 5.5 minutes) on dev, which holds no moderated content | `contentRecord.ts` `backfillVerdicts`, its page table under §12.8 | open: look at the page sizing before it runs on a large log | performance (engine) | S–M | A page sized by the rows' real weight, or a narrower walk; not designed |
 | Sh9 | The life strip re-lays out when web fonts arrive late: drawn stacked with a fallback face, then across once the faces land | `kit/life-strip.tsx` | open (accepted for now: the governor's ruling 14, 2026-11-21) | polish | S | A preload of the faces, or a font-ready gate before the first measure — the same family as the Saira preload already owed |
+| Sh10 | A cross-console History with Undo: built in B01-2 (#109), mounted nowhere. The History the console shows is the Body console's read-only `BodyHistorySection` (B01-5d's R11 puts the unmerge's outcome there) | `shell/HistoryPanel.tsx` | open: no slice owes it | missing planned | M | A home in the console, and its Undo wired through `useUndo` (B01-5d added `action` and the unmerge's `lineOf`) |
+| Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
 
 #### The boards to make in Paper (founder call 1)
 
