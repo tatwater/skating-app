@@ -637,6 +637,10 @@ describe('the seed, end to end', () => {
     const t = harness();
     const urls: string[] = [];
     vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+    // Mail configured (placeholders only), so a seed path that reached the sender would show up as a
+    // Resend call below (B01-5f: the seed must be incapable of sending mail).
+    vi.stubEnv('RESEND_API_KEY', 're_test_placeholder');
+    vi.stubEnv('SUPPORT_FROM_EMAIL', 'Gli Support <support@example.test>');
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
@@ -928,6 +932,36 @@ describe('the seed, end to end', () => {
       ]),
     );
     expect(urls.filter((u) => u.includes('clerk.com'))).toEqual([]);
+    // Support's thread on the bug ticket (B01-5f): the note, and the reply stored failed (seed) with
+    // no send scheduled — and driven through the send anyway, still no mail and no address lookup.
+    const thread = await t.run(async (ctx) => {
+      const ada = (await ctx.db.query('profiles').collect()).find((p) =>
+        p.displayName.startsWith('Ada'),
+      );
+      const ticket = (await ctx.db.query('supportTickets').collect()).find(
+        (tk) => tk.userId === ada?._id && tk.category === 'bug',
+      );
+      return (await ctx.db.query('supportMessages').collect()).filter(
+        (m) => m.ticketId === ticket?._id,
+      );
+    });
+    expect(thread.map((m) => [m.kind, m.status ?? null, m.failedWhy ?? null])).toEqual([
+      ['note', null, null],
+      ['reply', 'failed', 'seed'],
+    ]);
+    const sends = await t.run(async (ctx) =>
+      (await ctx.db.system.query('_scheduled_functions').collect()).filter(
+        (j) => j.name === 'support:sendReply',
+      ),
+    );
+    expect(sends).toEqual([]);
+    const reply = thread[1] as Doc<'supportMessages'>;
+    const beforeSend = urls.length;
+    await t.action(internal.support.sendReply, { messageId: reply._id });
+    await t.run((ctx) => ctx.db.patch(reply._id, { status: 'settling', failedWhy: undefined }));
+    await t.action(internal.support.sendReply, { messageId: reply._id });
+    expect(urls.slice(beforeSend)).toEqual([]);
+    expect((await t.run((ctx) => ctx.db.get(reply._id)))?.failedWhy).toBe('seed');
 
     // A second run files nothing new: every step's seed key finds its row.
     const beforeAgain = urls.length;

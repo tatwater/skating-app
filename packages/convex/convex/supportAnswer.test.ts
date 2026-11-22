@@ -49,6 +49,8 @@ const PREFS = {
 /** Placeholders only: no real key, no real address (the brief's rule). */
 const FAKE_KEY = 're_test_placeholder';
 const FROM = 'Gli Support <support@example.test>';
+/** A character three bytes long: text at a length cap as heavy as it can be. */
+const HEAVY = '\u6c34';
 
 type P = { id: Id<'profiles'>; as: As; subject: string };
 
@@ -673,7 +675,7 @@ describe('inbox.item’s ticket: the thread, the person, related flags — staff
 
   test('a busy ticket: hundreds of messages at the cap, the newest served, newest last, the cut said — inside the limits', async () => {
     const w = await world();
-    const ticketId = await w.ticket(w.skater, 'z'.repeat(5000));
+    const ticketId = await w.ticket(w.skater, HEAVY.repeat(5000));
     const N = 320;
     await w.t.run(async (ctx) => {
       for (let i = 0; i < N; i++) {
@@ -681,7 +683,7 @@ describe('inbox.item’s ticket: the thread, the person, related flags — staff
           ticketId,
           kind: i % 2 ? 'note' : 'reply',
           authorId: i % 3 ? w.admin.id : w.colleague.id,
-          body: `${String(i).padStart(4, '0')}${'w'.repeat(MAX_SUPPORT_REPLY_LENGTH - 4)}`,
+          body: `${String(i).padStart(4, '0')}${HEAVY.repeat(MAX_SUPPORT_REPLY_LENGTH - 4)}`,
           createdAt: Date.now() + i,
           ...(i % 2 ? {} : { status: 'sent' as const, sendAfter: Date.now(), sentAt: Date.now() }),
         });
@@ -768,7 +770,7 @@ describe('a person’s data export and erasure', () => {
           userId: w.skater.id,
           clerkUserId: w.skater.subject,
           category: 'bug',
-          body: 'q'.repeat(5000),
+          body: HEAVY.repeat(5000),
           status: 'open',
           createdAt: Date.now() + i,
         });
@@ -778,7 +780,7 @@ describe('a person’s data export and erasure', () => {
               ticketId: id,
               kind: 'reply',
               authorId: w.admin.id,
-              body: 'r'.repeat(MAX_SUPPORT_REPLY_LENGTH),
+              body: HEAVY.repeat(MAX_SUPPORT_REPLY_LENGTH),
               createdAt: Date.now() + i,
               status: 'sent',
               sendAfter: Date.now(),
@@ -805,7 +807,7 @@ describe('a person’s data export and erasure', () => {
           ticketId,
           kind: 'note',
           authorId: w.admin.id,
-          body: 'n'.repeat(MAX_SUPPORT_NOTE_LENGTH),
+          body: HEAVY.repeat(MAX_SUPPORT_NOTE_LENGTH),
           createdAt: Date.now() + i,
         });
       }

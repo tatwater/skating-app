@@ -637,7 +637,88 @@ const CASES: Case[] = [
       return w.newest('grant_role');
     },
   },
+  // ── Support (B01-5f): only an admin holds `inbox.support`; the filer refused by D289 ──
+  {
+    name: 'support_note → remove_support_note',
+    viewers: ALL,
+    setup: async (w) =>
+      (await w.p.admin.as.mutation(api.support.addNote, await noteOn(w))).actionId,
+  },
+  {
+    name: 'remove_support_note → the note back',
+    viewers: ALL,
+    setup: async (w) => {
+      const out = await w.p.admin.as.mutation(api.support.addNote, await noteOn(w));
+      await w.p.admin.as.mutation(api.undo.run, { actionId: out.actionId });
+      return w.newest('remove_support_note');
+    },
+  },
+  {
+    name: 'support_reply (settling) → cancel_support_reply',
+    viewers: ALL,
+    setup: async (w) => (await w.p.admin.as.mutation(api.support.reply, await noteOn(w))).actionId,
+  },
+  {
+    name: 'support_reply (settling, a colleague’s note since) → cancel_support_reply',
+    viewers: ALL,
+    setup: async (w) => {
+      const on = await noteOn(w);
+      const out = await w.p.admin.as.mutation(api.support.reply, on);
+      await w.t.run((ctx) => ctx.db.patch(w.p.colleague.id, { role: 'admin' }));
+      await w.p.colleague.as.mutation(api.support.addNote, on);
+      return out.actionId;
+    },
+  },
+  {
+    name: 'support_reply (sent) → refused: sent replies can’t be unsent',
+    viewers: ALL,
+    setup: async (w) => {
+      const out = await w.p.admin.as.mutation(api.support.reply, await noteOn(w));
+      await w.t.run((ctx) => ctx.db.patch(out.messageId, { status: 'sent', sentAt: Date.now() }));
+      return out.actionId;
+    },
+  },
+  {
+    name: 'resolve_ticket → reopen_ticket',
+    viewers: ALL,
+    setup: async (w) => {
+      const { ticketId } = await noteOn(w);
+      return (await w.p.admin.as.mutation(api.support.resolve, { ticketId })).actionId;
+    },
+  },
+  {
+    name: 'reopen_ticket → resolved again',
+    viewers: ALL,
+    setup: async (w) => {
+      const { ticketId } = await noteOn(w);
+      await w.p.admin.as.mutation(api.support.resolve, { ticketId });
+      return (await w.p.admin.as.mutation(api.support.reopen, { ticketId })).actionId;
+    },
+  },
+  {
+    // The filer is an admin too: their own ticket's undo is refused to them, run by a colleague.
+    name: 'support_note on a ticket an admin filed → refused to that admin',
+    viewers: ALL,
+    setup: async (w) => {
+      await w.t.run((ctx) => ctx.db.patch(w.p.colleague.id, { role: 'admin' }));
+      const ticketId = await w.p.admin.as.mutation(api.support.create, {
+        category: 'account',
+        body: 'Mine',
+      });
+      return (await w.p.colleague.as.mutation(api.support.addNote, { ticketId, body: 'Checked' }))
+        .actionId;
+    },
+  },
 ];
+
+/** A skater's ticket, and what a note or reply on it sends (B01-5f). */
+async function noteOn(w: W) {
+  const ticketId = await w.p.skater.as.mutation(api.support.create, {
+    category: 'bug',
+    body: 'Broken',
+  });
+  return { ticketId, body: 'Checked' };
+}
 
 async function drawnBy(w: W, drawer: Id<'profiles'>) {
   return w.t.run(async (ctx) => {
