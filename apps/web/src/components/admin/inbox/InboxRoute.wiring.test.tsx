@@ -1,75 +1,28 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { getFunctionName } from 'convex/server';
-import type { ReactNode } from 'react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { KeysProvider } from '@/lib/keys';
-
 import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
-import { ALL_OPEN_ROWS, LANES, page } from './list/inboxFixtures';
+import { ALL_OPEN_ROWS, LANES } from './list/inboxFixtures';
 import type { InboxLanesView } from './list/inboxTypes';
+import {
+  argSets,
+  harness as h,
+  installInboxRouteMocks,
+  lastArgs,
+  must,
+  resetHarness,
+} from './testing/routeHarness';
 
 /**
  * **The route and the view together** (Greptile on #171, round 1): what the wiring does, where the
- * pieces' own tests couldn't see it — the real `InboxRoute` around the real `InboxView`, with only
- * the router, the role and the read layer underneath them stood in. Every read the page asks for is
- * recorded by name with its arguments, so a test reads what the server would have been asked.
+ * pieces' own tests couldn't see it — through the shared harness (`testing/routeHarness`), which
+ * stands in only the router, the role and the read layer and records every read's arguments.
  */
 
-const h = vi.hoisted(() => ({
-  search: {} as Record<string, unknown>,
-  navigate: (() => {}) as (opts: { search: Record<string, unknown> }) => void,
-  lanes: undefined as unknown,
-  asked: [] as { name: string; args: Record<string, unknown> }[],
-}));
-
-vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => h.search,
-  useNavigate: () => h.navigate,
-  Link: ({ children, ...p }: { children?: ReactNode }) => <a {...p}>{children}</a>,
-}));
-vi.mock('@/lib/useRole', () => ({ useRole: () => ({ can: () => true }) }));
-vi.mock('../reads/consoleReads', async (orig) => {
-  const actual = await orig<typeof import('../reads/consoleReads')>();
-  return {
-    ...actual,
-    useConsoleReadSet: (specs: Record<string, { query: never; args: never } | null>) => {
-      const reads: Record<string, unknown> = {};
-      for (const [k, spec] of Object.entries(specs)) {
-        if (spec === null) continue;
-        const name = getFunctionName(spec.query);
-        h.asked.push({ name, args: spec.args });
-        reads[k] =
-          name === 'inbox:lanes'
-            ? h.lanes
-            : name === 'inbox:listPage'
-              ? page(ALL_OPEN_ROWS)
-              : name === 'inbox:item'
-                ? { item: null, pending: false }
-                : undefined;
-      }
-      return { reads, retry: () => {}, live: true, failed: false, pending: false };
-    },
-  };
-});
-
-const { InboxRoute } = await import('./InboxRoute');
+const { Route: InboxRoute, mount } = await installInboxRouteMocks();
 
 beforeAll(stubJsdomAnimations);
-
-/** The arguments the newest read of `name` was asked with. */
-const lastArgs = (name: string) => [...h.asked].reverse().find((a) => a.name === name)?.args;
-/** The value, or a failed test saying what was missing. */
-const must = <T,>(x: T | null | undefined, what: string): T => {
-  if (x == null) throw new Error(`missing: ${what}`);
-  return x;
-};
-/** Every distinct argument set `name` was asked with, in order. */
-const argSets = (name: string) => [
-  ...new Set(h.asked.filter((a) => a.name === name).map((a) => JSON.stringify(a.args))),
-];
-
-const mount = () => render(<InboxRoute />, { wrapper: KeysProvider });
+beforeEach(resetHarness);
 
 describe('the day rolls over with the list open (finding 1)', () => {
   beforeEach(() => {
