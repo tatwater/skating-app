@@ -1,4 +1,4 @@
-import { INBOX_LANES, type InboxLane, zonedParts } from '@skating/core';
+import { INBOX_LANES, type InboxLane, zoneOffsetMs } from '@skating/core';
 import type { ReactNode } from 'react';
 
 import { DisplayWord } from '@/components/kit/display-word';
@@ -157,15 +157,36 @@ export function eventsOf(today: InboxTodayView): StepEvent[] {
 /** The viewer's own zone, when the page names none. */
 const ownZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+/** The zone's offset at `ms`, read at the whole second (core's `zoneOffsetMs` carries ms' remainder). */
+const offsetAt = (ms: number, timeZone: string) =>
+  zoneOffsetMs(Math.floor(ms / 1000) * 1000, timeZone);
+
 /**
- * The whole local hour at or before `at`, in `timeZone`: the local minutes and seconds taken off.
- * Floored on the reader's clock, never UTC's — in a half-hour or 45-minute zone (St John's, India,
- * Kathmandu) a UTC hour is a local :30 or :15. Within one local hour the offset holds, so what is
- * left reads :00 locally on either side of a DST change.
+ * The latest instant at or before `at` whose clock in `timeZone` reads a whole hour (:00:00) —
+ * resolved by the zone's own offsets, never by taking the local minutes off: just after a clock
+ * change the minutes taken off would straddle it, and a change of half an hour (Lord Howe Island)
+ * would land on a local :30. In a half-hour or 45-minute zone (St John's, India, Kathmandu) a UTC
+ * hour is a local :30 or :15, so the floor is the reader's clock's, never UTC's.
+ *
+ * The local reading at `at` is floored to its hour; every offset in force within three hours either
+ * side gives a candidate instant for that reading, and the latest one that does read it and lies at
+ * or before `at` wins. A reading a change skipped (the clocks jumped over it) has no instant: the
+ * hour before it is tried.
  */
 export function floorLocalHour(at: number, timeZone: string): number {
-  const p = zonedParts(at, timeZone);
-  return at - (p.minute * 60 + p.second) * 1000 - (((at % 1000) + 1000) % 1000);
+  const offsets = [
+    ...new Set([0, -3, -2, -1, 1, 2, 3].map((h) => offsetAt(at + h * HOUR, timeZone))),
+  ];
+  let wall = Math.floor((at + offsetAt(at, timeZone)) / HOUR) * HOUR;
+  for (let tries = 0; tries < 4; tries++) {
+    const instants = offsets
+      .map((off) => wall - off)
+      .filter((t) => t <= at && t + offsetAt(t, timeZone) === wall);
+    if (instants.length > 0) return Math.max(...instants);
+    wall -= HOUR;
+  }
+  /* v8 ignore next 2 — no zone skips four hours in a row */
+  return Math.floor(at / HOUR) * HOUR;
 }
 
 /**

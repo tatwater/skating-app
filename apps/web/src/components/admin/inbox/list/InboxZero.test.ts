@@ -66,8 +66,9 @@ describe('the lanes a viewer sees on the zero page', () => {
 });
 
 describe('the chart’s span on the reader’s clock (fast-check)', () => {
-  // Whole-hour, half-hour and 45-minute offsets, a far-east and a far-west one, and two zones whose
-  // DST changes fall inside the instants drawn (New York 8 Mar and 1 Nov 2026; Adelaide 5 Apr).
+  // Whole-hour, half-hour and 45-minute offsets, a far-east and a far-west one, and zones whose
+  // changes fall inside the instants drawn: New York (8 Mar, 1 Nov 2026), Adelaide (5 Apr, 4 Oct)
+  // and Lord Howe Island, whose clocks move by half an hour (5 Apr, 4 Oct).
   const ZONES = [
     'UTC',
     'America/New_York',
@@ -75,6 +76,7 @@ describe('the chart’s span on the reader’s clock (fast-check)', () => {
     'Asia/Kolkata',
     'Asia/Kathmandu',
     'Australia/Adelaide',
+    'Australia/Lord_Howe',
     'Etc/GMT-14',
     'Etc/GMT+11',
   ] as const;
@@ -129,9 +131,33 @@ describe('the chart’s span on the reader’s clock (fast-check)', () => {
         expect(floored).toBeLessThanOrEqual(at);
         expect(at - floored).toBeLessThan(H);
         expect(zonedParts(floored, zone).minute).toBe(0);
-        expect(zonedParts(floored, zone).hour).toBe(zonedParts(at, zone).hour);
+        expect(zonedParts(floored, zone).second).toBe(0);
+        // The latest such instant: no whole local hour lies between it and `at`.
+        for (let t = floored + 60_000; t <= at; t += 15 * 60_000) {
+          const p = zonedParts(t, zone);
+          expect(p.minute === 0 && p.second === 0 && t % 1000 === 0, String(t)).toBe(false);
+        }
       }),
       { numRuns: 400 },
     );
+  });
+
+  // Lord Howe's changes, minute by minute through the hours either side: 5 Apr 2026 (02:00 +11:00
+  // back to 01:30 +10:30) and 4 Oct 2026 (02:00 +10:30 on to 02:30 +11:00).
+  it.each([
+    ['5 Apr 2026', Date.UTC(2026, 3, 4, 13, 0)],
+    ['4 Oct 2026', Date.UTC(2026, 9, 3, 13, 0)],
+  ])('is exact on every minute around Lord Howe’s half-hour change of %s', (_label, start) => {
+    const zone = 'Australia/Lord_Howe';
+    for (let at = start; at < start + 4 * H; at += 60_000) {
+      const floored = floorLocalHour(at, zone);
+      const p = zonedParts(floored, zone);
+      expect([p.minute, p.second], new Date(at).toISOString()).toEqual([0, 0]);
+      expect(floored).toBeLessThanOrEqual(at);
+      // No later whole local hour at or before `at` was missed.
+      for (let t = floored + 60_000; t <= at; t += 60_000) {
+        expect(zonedParts(t, zone).minute, new Date(t).toISOString()).not.toBe(0);
+      }
+    }
   });
 });
