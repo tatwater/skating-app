@@ -65,6 +65,7 @@ import type {
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
+import { OPEN_FLAG_STATUSES } from './openFlags';
 import { photoVisible, photoWithdrawalRow } from './photoAccess';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
 import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
@@ -539,7 +540,7 @@ export const PHOTO_SIBLINGS_READ = 12;
 
 /**
  * **Board 2.7's *On the same report*** — the report's other photos, in its order, at most
- * {@link PHOTO_SIBLINGS_READ} (`siblingsCapped` past it): there is no cap on a report's photos but
+ * {@link PHOTO_SIBLINGS_READ} (`siblingsCut` past it): there is no cap on a report's photos but
  * Convex's array limit, so the strip is bounded on its own. Each photo row is read through the item's
  * budget; a thumbnail URL only to a viewer with `content.read`, as the stage's. Filled after the
  * item's required rows (the target, its author), so it can't crowd them out.
@@ -547,18 +548,35 @@ export const PHOTO_SIBLINGS_READ = 12;
 export async function photoSiblings(
   r: InboxReader,
   photo: PhotoSubjectView,
-): Promise<Pick<PhotoSubjectView, 'siblings' | 'siblingsCapped'>> {
-  if (photo.reportId === null) return { siblings: [], siblingsCapped: false };
+): Promise<Pick<PhotoSubjectView, 'siblings' | 'siblingsCut'>> {
+  if (photo.reportId === null) return { siblings: [], siblingsCut: false };
   const report = await r.get<'reports'>('report', photo.reportId);
-  if (!report) return { siblings: [], siblingsCapped: false };
+  if (!report) return { siblings: [], siblingsCut: false };
   const others = report.photoIds.filter((id) => id !== photo.photoId);
   const siblings: PhotoSubjectView['siblings'] = [];
   for (const id of others.slice(0, PHOTO_SIBLINGS_READ)) {
     if (!r.budget.affordsRead('photo')) break;
     const sib = await r.get<'photos'>('photo', id);
     if (!sib) continue;
+    // An open flag on it, by point reads per open status (the ref `flag:<id>` opens its item).
+    let openFlagId: Id<'contentFlags'> | null = null;
+    for (const status of OPEN_FLAG_STATUSES) {
+      const [open] = await r.take('contentFlag', 1, (k) =>
+        r.ctx.db
+          .query('contentFlags')
+          .withIndex('by_target_status_reason', (q) =>
+            q.eq('targetType', 'photo').eq('targetId', sib._id).eq('status', status),
+          )
+          .take(k),
+      );
+      if (open) {
+        openFlagId = open._id;
+        break;
+      }
+    }
     siblings.push({
       photoId: sib._id,
+      openFlagId,
       thumbUrl:
         r.canReadContent && sib.purgedAt === undefined
           ? await r.ctx.storage.getUrl(sib.thumbStorageId)
@@ -568,7 +586,7 @@ export async function photoSiblings(
   }
   return {
     siblings,
-    siblingsCapped: others.length > siblings.length,
+    siblingsCut: others.length > siblings.length,
   };
 }
 
@@ -745,15 +763,15 @@ async function flagTargetView(
         caption: staff || status === 'visible' ? (p.caption ?? null) : null,
         takenAt: p.takenAt ?? null,
         createdAt: p.createdAt,
-        url: bytes ? await r.ctx.storage.getUrl(p.storageId) : null,
         thumbUrl: bytes ? await r.ctx.storage.getUrl(p.thumbStorageId) : null,
         reportId: p.reportId ?? null,
         body,
         siblings: [],
-        siblingsCapped: false,
+        siblingsCut: false,
         indexOnReport: report ? report.photoIds.indexOf(p._id) : null,
         photoCount: report ? report.photoIds.length : null,
         moderationStatus: status,
+        moderatedAt: p.moderatedAt ?? null,
         canReveal: staff,
         withdrawnAt,
         purgeAt: p.purgeAt ?? null,

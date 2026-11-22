@@ -162,9 +162,9 @@ describe('a report with hundreds of photos, most of them down', () => {
       return m?.itemId as Id<'inboxItems'>;
     });
     const read = await mod.query(api.inbox.item, { ref: itemId });
-    const photo = (read.item as { target: { photo: { siblings: unknown[]; siblingsCapped: boolean; photoCount: number } } }).target.photo;
+    const photo = (read.item as unknown as { target: { photo: { siblings: unknown[]; siblingsCut: boolean; photoCount: number } } }).target.photo;
     expect(photo.siblings).toHaveLength(PHOTO_SIBLINGS_READ);
-    expect(photo.siblingsCapped).toBe(true);
+    expect(photo.siblingsCut).toBe(true);
     expect(photo.photoCount).toBe(BUSY_REPORT);
 
     const out = await mod.mutation(api.inboxWrites.takeDown, { itemId, status: 'removed', reason: 'x' });

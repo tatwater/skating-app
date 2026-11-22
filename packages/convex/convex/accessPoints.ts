@@ -69,6 +69,7 @@ import {
   assertOwnedPhotos,
   PHOTO_HELD_DETACH,
   photoHeld,
+  photoVisible,
   resolvePhotoUrls,
   staffPhotoRead,
 } from './lib/photoAccess';
@@ -632,7 +633,14 @@ export const attachPhoto = mutation({
     const existing = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
     if (existing.some((row) => row.photoId === photoId))
       return existing.find((r) => r.photoId === photoId)?._id;
-    if (existing.length >= MAX_ACCESS_PHOTOS) {
+    // The cap counts the photos a skater sees (B01-5e): a hidden or removed one holds no slot, as
+    // `listPhotos` shows it to no one — the writer and the reader count the same set.
+    let shown = 0;
+    for (const row of existing) {
+      const attached = await ctx.db.get(row.photoId);
+      if (attached && photoVisible(attached)) shown++;
+    }
+    if (shown >= MAX_ACCESS_PHOTOS) {
       throw new ConvexError(`An access point carries at most ${MAX_ACCESS_PHOTOS} photos`);
     }
 

@@ -341,7 +341,7 @@ describe('each other subject', () => {
     const pt = targetOf(ph);
     if (pt.targetType !== 'photo') throw new Error('photo');
     expect(pt.photo).toMatchObject({ caption: 'The crack', reportId: r, indexOnReport: 0 });
-    expect(pt.photo.url).toEqual(expect.any(String));
+    expect(pt.photo.thumbUrl).toEqual(expect.any(String));
     // A photo has its moderation axis (B01-5e): a takedown is offered by the record's rule.
     expect(ph?.can.hide).toBeNull();
     expect(pt.photo).toMatchObject({ moderationStatus: 'visible', canReveal: true });

@@ -290,27 +290,35 @@ export type PhotoSubjectView = {
   caption: string | null;
   takenAt: number | null;
   createdAt: number;
-  /** Staff-only URLs (`content.read`); `null` without it, and when the blob is gone (purged). */
-  url: string | null;
+  /**
+   * The **thumbnail** only — the stage pixelates from it. `null` without `content.read` (then no URL
+   * of any size is served) and on a purged tombstone. The full image is never in the item read: it
+   * comes from `inbox.photoReveal`, a staff-only read keyed by the photo, called on *Show the photo*,
+   * so it stays out of the page's data, not only its markup.
+   */
   thumbUrl: string | null;
   reportId: Id<'reports'> | null;
   body: BodyRefView | null;
   /**
-   * *On the same report*: the report's other photos, in its order, at most twelve
-   * (`siblingsCapped` past them). A thumbnail only with `content.read`; each with its status, so a
-   * down one can be drawn as down.
+   * *On the same report*: the report's **other** photos — never the flagged one itself — in the
+   * report's order, at most twelve (`siblingsCut` past them, or when the item's budget ran out). A
+   * thumbnail only with `content.read` (never on a purged one); each with its status, and the id of
+   * an open flag on it (`null` with none) — the Inbox ref `flag:<openFlagId>` opens its item.
    */
   siblings: {
     photoId: Id<'photos'>;
     thumbUrl: string | null;
     moderationStatus: ModerationStatus;
+    openFlagId: Id<'contentFlags'> | null;
   }[];
-  siblingsCapped: boolean;
+  siblingsCut: boolean;
   /** Its place on the report (0-based; "1 of 4" is `indexOnReport + 1` of `photoCount`). */
   indexOnReport: number | null;
   photoCount: number | null;
-  /** The photo's moderation axis; absent on the row reads as `visible`. */
+  /** The photo's moderation axis, as staff see it; absent on the row reads as `visible`. */
   moderationStatus: ModerationStatus;
+  /** When its status last moved (a takedown, a restore, its uploader's withdrawal); `null` never. */
+  moderatedAt: number | null;
   /** The viewer may see the bytes (`content.read`): the reveal is drawn only then. */
   canReveal: boolean;
   /** When its uploader withdrew it (their delete while it was held, B01-5e); `null` otherwise. */
@@ -1338,6 +1346,24 @@ export const item = query({
       decided: await decidedOf(r, found),
     } as InboxItemView;
     return { item: view, pending };
+  },
+});
+
+/**
+ * **The full photo, on *Show the photo*** (board 2.7, B01-5e) — a staff-only read keyed by the photo
+ * (`inbox.read` and `content.read`), so the full image's address is in the page's data only once a
+ * moderator asks for it; the item read serves the thumbnail alone. `null` for a photo that is gone or
+ * purged (a tombstone serves no address).
+ */
+export const photoReveal = query({
+  args: { photoId: v.id('photos') },
+  handler: async (ctx, { photoId }): Promise<{ url: string | null }> => {
+    await requireCapability(ctx, 'inbox.read');
+    await requireCapability(ctx, 'content.read');
+    const budget = budgetOf(ctx);
+    const photo = await budget.one('photo', () => ctx.db.get(photoId));
+    if (!photo || photo.purgedAt !== undefined) return { url: null };
+    return { url: await ctx.storage.getUrl(photo.storageId) };
   },
 });
 

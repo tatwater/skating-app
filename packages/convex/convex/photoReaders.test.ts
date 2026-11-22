@@ -292,10 +292,9 @@ describe('the privacy table: reader × viewer × status', () => {
         return itemView(r, item);
       });
       const photo = (
-        view?.view as {
+        view?.view as unknown as {
           target: {
             photo: {
-              url: string | null;
               thumbUrl: string | null;
               canReveal: boolean;
               caption: string | null;
@@ -305,7 +304,7 @@ describe('the privacy table: reader × viewer × status', () => {
         }
       ).target.photo;
       expect(photo.canReveal).toBe(canReadContent);
-      expect(photo.url === null).toBe(!canReadContent);
+      expect('url' in photo).toBe(false);
       expect(photo.thumbUrl === null).toBe(!canReadContent);
       expect(photo.caption).toBe(canReadContent ? 'hidden' : null);
       expect(photo.siblings).toHaveLength(STATUS_KEYS.length - 1);
@@ -387,5 +386,44 @@ describe('recommended counts visible photos only', () => {
       return { cards: await selectOnVisiblePhotos(ctx, candidates, byId, T0), shown };
     });
     expect(picked.cards.flatMap((c) => c.reportIds)).toEqual([picked.shown]);
+  });
+});
+
+describe('the access-photo cap counts only photos still shown', () => {
+  test('a hidden photo holds no slot; three shown ones fill the cap', async () => {
+    const w = (await world()) as W;
+    const putInId = await w.t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: w.waterBodyId,
+        coord: { lat: 0.3, lng: 0.3 },
+        source: 'derived' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      }),
+    );
+    const uploader = w.t.withIdentity({ subject: 'uploader' });
+    const fresh = (over: Partial<Doc<'photos'>> = {}) =>
+      w.t.run(async (ctx) => {
+        const u = ((await ctx.db.get(w.byStatus.visible)) as Doc<'photos'>).uploaderId;
+        return ctx.db.insert('photos', {
+          storageId: await ctx.storage.store(new Blob(['f'])),
+          thumbStorageId: await ctx.storage.store(new Blob(['t'])),
+          uploaderId: u,
+          placeOnMap: false,
+          createdAt: T0,
+          ...over,
+        });
+      });
+    const attach = (photoId: Id<'photos'>) =>
+      uploader.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    await attach(await fresh());
+    await attach(await fresh());
+    const later = await fresh();
+    await attach(later);
+    await expect(attach(await fresh())).rejects.toThrow('at most');
+    await w.t.run((ctx) => ctx.db.patch(later, { moderationStatus: 'hidden' }));
+    await attach(await fresh());
+    const shown = await w.t.query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId });
+    expect(shown).toHaveLength(3);
   });
 });

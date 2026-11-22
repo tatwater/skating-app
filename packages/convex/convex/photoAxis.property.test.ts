@@ -9,7 +9,7 @@
  * 4. once its uploader withdrew it, it is never visible again;
  * 5. no deleter takes it while it is held (`deletePhotoAndBlobs` answers `held`).
  *
- * The seed varies per run (fast-check's default), and the failing seed is printed on a failure.
+ * The seed varies per run (system randomness), and the failing seed is printed on a failure.
  */
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
@@ -201,17 +201,14 @@ async function run(ops: Op[]) {
   }
 }
 
-const SEED =
-  process.env.PHOTO_AXIS_SEED !== undefined
-    ? Number(process.env.PHOTO_AXIS_SEED)
-    : (crypto.getRandomValues(new Int32Array(1))[0] as number);
+/** A fresh seed every run, from the system's randomness (the test fakes `Date`, which a clock-derived
+ * seed would freeze). fast-check prints it with a failure; set it here to replay one. */
+const SEED: number = crypto.getRandomValues(new Int32Array(1))[0] as number;
 
 describe('the photo axis under any sequence of writes', () => {
   test('every invariant after every step', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(opArb, { minLength: 1, maxLength: 10 }), (ops) => run(ops)),
-      // A fresh seed every run, from the system's randomness (the test fakes `Date`, which a
-      // clock-derived seed would freeze); `PHOTO_AXIS_SEED` replays one.
       { numRuns: 25, seed: SEED },
     );
   }, 60_000);

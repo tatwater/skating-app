@@ -380,6 +380,26 @@ describe('the record sheet sees a photo', () => {
     expect(pane?.purgeAt).toEqual(expect.any(Number));
   });
 
+  test('a photo item carries a staff-only thumbnail (content.thumbUrl), none once purged; its kind counts', async () => {
+    const { t, uploader, mod, photoId } = await world();
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'photo',
+      targetId: photoId,
+      status: 'removed',
+      reason: 'x',
+    });
+    const pane = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
+    expect((pane?.content as { thumbUrl?: string | null }).thumbUrl).toEqual(expect.any(String));
+    const counts = await t.run(async (ctx) => {
+      const { readVerdictCounts } = await import('./lib/contentVerdicts');
+      return readVerdictCounts(ctx, uploader.id);
+    });
+    expect(counts.byKind.photo).toBe(1);
+    await t.run((ctx) => ctx.db.patch(photoId, { purgedAt: T0, caption: undefined }));
+    const tomb = await mod.as.query(api.contentRecord.item, { targetType: 'photo', targetId: photoId });
+    expect((tomb?.content as { thumbUrl?: string | null }).thumbUrl).toBeNull();
+  });
+
   test('a list row that didn’t read the withdrawal points Restore at the item', async () => {
     const { recordFactsOf, recordLevers } = await import('./lib/recordRules');
     const viewer = {
@@ -479,11 +499,27 @@ describe('the Inbox photo item', () => {
       indexOnReport: 1,
       photoCount: 3,
       moderationStatus: 'visible',
+      moderatedAt: null,
       canReveal: true,
-      siblingsCapped: false,
+      siblingsCut: false,
     });
-    expect(tgt.photo.url).toEqual(expect.any(String));
+    // The thumbnail only: the full image comes from the reveal read, keyed by the photo.
+    expect(tgt.photo.thumbUrl).toEqual(expect.any(String));
+    expect('url' in tgt.photo).toBe(false);
+    const revealed = await mod.as.query(api.inbox.photoReveal, { photoId: target });
+    expect(revealed.url).toEqual(expect.any(String));
+    await expect(skater.as.query(api.inbox.photoReveal, { photoId: target })).rejects.toThrow();
+    // The others only, never the flagged photo itself; each with its own open flag, if any.
     expect(tgt.photo.siblings.map((s) => s.photoId)).toEqual([ids[0], ids[2]]);
+    expect(tgt.photo.siblings.map((s) => s.openFlagId)).toEqual([null, null]);
+    const sibFlag = await skater.as.mutation(api.contentFlags.flag, {
+      targetType: 'photo',
+      targetId: ids[2] as Id<'photos'>,
+      reason: 'spam',
+    });
+    const again = (await mod.as.query(api.inbox.item, { ref: itemId })).item as typeof view;
+    const again2 = again.target as typeof tgt;
+    expect(again2.photo.siblings.map((s) => s.openFlagId)).toEqual([null, sibFlag]);
     expect(view.author?.person.userId).toBe(uploader.id);
     expect(view.flags).toHaveLength(1);
     expect(view.can.hide).toBeNull();
