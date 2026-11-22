@@ -44,6 +44,7 @@ import schema from './schema';
 import { scheduleRestamp, syncCellsForParent } from './subAreas';
 import {
   type LeftKind,
+  PAGE_TIME,
   PHASES,
   UNMERGE_ABANDON_REASON,
   UNMERGE_ABANDONED,
@@ -1573,7 +1574,15 @@ suite('a heavy unmerge pages', () => {
         ).length,
     );
     expect(parts).toBeGreaterThan(1);
-    await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    // The boundary this test reads is the metrics' alone: the page's time cap off (a contended runner
+    // could otherwise end a page sooner).
+    const wasTime = PAGE_TIME.ms;
+    PAGE_TIME.ms = Number.POSITIVE_INFINITY;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    } finally {
+      PAGE_TIME.ms = wasTime;
+    }
     const onLoser = async () =>
       (
         await w.t.run((ctx) =>
@@ -1690,6 +1699,29 @@ suite('a heavy unmerge pages', () => {
     expect(preview).toMatchObject({ ok: true, tooBig: false });
     await w.actor.as.mutation(api.waterBodies.merge, { survivorId: w.survivor, loserId: w.loser });
     expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.mergedIntoId).toBe(w.survivor);
+  });
+
+  test('a page stops on its time, as on its metrics: with no time each page takes one row, and the state comes back', async () => {
+    const w = await world(['content', 'favorites', 'asks']);
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w);
+    const was = PAGE_TIME.ms;
+    PAGE_TIME.ms = 0;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      // The first page took its one row (a page always advances) and scheduled the rest.
+      const lead = (await unmergeRowOf(w.t, w.loser))?.metadata as {
+        cursor?: unknown;
+        done?: boolean;
+      };
+      expect(lead.done).toBe(false);
+      expect(lead.cursor).toEqual({ phase: 'moved', from: 1 });
+      await settle(w.t);
+    } finally {
+      PAGE_TIME.ms = was;
+    }
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
+    expect(await census(w.t)).toEqual(before);
   });
 
   test('an undone unmerge’s later pages do nothing', async () => {

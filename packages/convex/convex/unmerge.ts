@@ -343,6 +343,14 @@ export const PHASES = [
 ] as const;
 export type Phase = (typeof PHASES)[number];
 
+/**
+ * The most time a page spends taking rows before it stops and schedules the next (B01-5d, R11):
+ * Convex fails a function past 1 s, and no transaction metric counts time — the real-backend proof
+ * measured an unmerge page of 867 reports in two bays at 772 ms. Half the limit, leaving the first
+ * page's own work before its rows, and a row's worst step, room under it. A test seam (`ms`).
+ */
+export const PAGE_TIME = { ms: 500 };
+
 /** Where a run stands: the phase, and the offset into its list. */
 export interface UnmergeCursor {
   phase: Phase;
@@ -625,9 +633,17 @@ async function runPage(ctx: MutationCtx, state: PageState): Promise<void> {
   const loserId = cs.loserId;
   const mergedAt = mergeRow.createdAt;
   let done = 0;
-  /** Whether one more item of `cost` fits this page: always the first. */
+  const started = performance.now();
+  /**
+   * Whether one more item of `cost` fits this page: always the first; after it, while the page is
+   * under its time (`PAGE_TIME`, which no transaction metric counts) and the transaction's live
+   * metrics hold the item at its worst (`batchHasRoom`).
+   */
   const room = async (cost: TxCost) =>
-    done === 0 || (!pageIsFull(done) && (await batchHasRoom(ctx, cost)));
+    done === 0 ||
+    (!pageIsFull(done) &&
+      performance.now() - started < PAGE_TIME.ms &&
+      (await batchHasRoom(ctx, cost)));
   let cursor: UnmergeCursor | null = state.cursor;
 
   await inboxBatch(ctx, async () => {
