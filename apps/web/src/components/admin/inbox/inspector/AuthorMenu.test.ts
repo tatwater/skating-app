@@ -37,20 +37,20 @@ describe('the author menu’s levers are People’s', () => {
 });
 
 describe('registration', () => {
-  test('every flag subject but a photo, and nothing else', () => {
+  test('every flag subject, a photo included (2.7), and nothing else', () => {
     const keys = registrations.flatMap((r) => r.keys);
     expect([...keys].sort()).toEqual(
       [
         'flag:accessAlert',
         'flag:comment',
         'flag:hazard',
+        'flag:photo',
         'flag:post',
         'flag:report',
         'flag:user',
         'flag:waterbody',
       ].sort(),
     );
-    expect(keys).not.toContain('flag:photo');
     expect(() => buildRegistry({ 'handlers/Flag/register.tsx': { registrations } })).not.toThrow();
   });
 });

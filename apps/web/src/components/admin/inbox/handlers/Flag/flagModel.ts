@@ -30,6 +30,9 @@ import type {
   ReportSubjectData,
 } from './flagTypes';
 import { REASON_HEAD, TARGET_WORDS, FLAG_WORDS as W } from './flagWords';
+import { PHOTO_WORDS } from './photoWords';
+
+const PHOTO_SUBJECT = PHOTO_WORDS.subject;
 
 /**
  * **The flag handler, as data** — pure: the pane head, the claims as the report states them, the
@@ -80,8 +83,10 @@ export function verbGroups(item: Pick<FlagItem, 'can' | 'target'>): VerbGroup[] 
       };
     }
   }
-  const alertFirst = target.exists && target.targetType === 'accessAlert';
-  const groups = alertFirst ? [content, flag] : [flag, content];
+  // 2.6 and 2.7 lead with the content's own levers (*Alert*, *Photo*); 2.1 with the flag.
+  const contentFirst =
+    target.exists && (target.targetType === 'accessAlert' || target.targetType === 'photo');
+  const groups = contentFirst ? [content, flag] : [flag, content];
   return groups.filter((g): g is VerbGroup => g !== null && g.verbs.length > 0);
 }
 
@@ -436,11 +441,16 @@ export function targetNoun(target: LiveTarget | FlagTarget): string {
   return noun === 'Post' ? noun : noun.toLowerCase();
 }
 
-/** What a receipt names: the body, or the person. */
+/**
+ * What a receipt names: the body, or the person. A photo names its body, else "A photo" — never its
+ * uploader (a photo's toast is about the photo, and a name is not needed to find it).
+ */
 export function subjectOf(item: Pick<FlagItem, 'target' | 'author'>): string {
   const t = item.target;
   if (t.exists) {
     switch (t.targetType) {
+      case 'photo':
+        return t.photo.body?.name ?? PHOTO_SUBJECT;
       case 'report':
         return t.report.body.name;
       case 'post':
@@ -457,6 +467,7 @@ export function subjectOf(item: Pick<FlagItem, 'target' | 'author'>): string {
         break;
     }
   }
+  if (t.targetType === 'photo') return PHOTO_SUBJECT;
   return item.author?.person.displayName ?? '';
 }
 

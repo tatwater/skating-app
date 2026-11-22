@@ -16,6 +16,7 @@ import { flagSlots } from './FlagView';
 import { BOARD_NOW, BOARD_ZONE } from './flagFixtures';
 import type { FlagItem } from './flagTypes';
 import type { WeatherState } from './parts';
+import type { RemovalWording } from './photoWords';
 import type { FlagWrite } from './useFlagWrites';
 
 /**
@@ -47,6 +48,8 @@ export type FlagFixtureReads = {
   onWrite: (write: FlagWrite) => Promise<boolean>;
   /** *Try again* on a failed context read. */
   onRetry?: () => void;
+  /** A photo's takedown words (both are drawn in the stories). */
+  wording?: RemovalWording;
 };
 
 const HAS_PLACE = new Set(['report', 'hazard', 'accessAlert', 'waterbody']);
@@ -63,6 +66,7 @@ export function StoryFlagInspector({
   levers,
   onWrite,
   onRetry,
+  wording,
 }: FlagFixtureReads & { item: FlagItem; now: number }) {
   const { pane } = useInspectorContext();
   const [open, setOpen] = useState(false);
@@ -82,6 +86,7 @@ export function StoryFlagInspector({
       HAS_PLACE.has(item.target.targetType) && { map: mapSlot ?? <MapStandIn /> }),
     onWrite,
     pane,
+    ...(wording !== undefined && { wording }),
     bodyLink: (id) => storyLink(`/admin/body/${id}`),
     ...(author !== null &&
       !author.person.deleted && {
@@ -156,6 +161,7 @@ export function storyFlagRegistry(reads: FlagFixtureReads): ReadonlyMap<HandlerK
     'flag:post',
     'flag:comment',
     'flag:hazard',
+    'flag:photo',
     'flag:accessAlert',
     'flag:waterbody',
     'flag:user',
