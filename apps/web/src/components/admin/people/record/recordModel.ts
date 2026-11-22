@@ -14,6 +14,7 @@ import { floorText, settledEmpty } from '../answers';
 import { dateWords, firstName, momentWords, personName } from '../person/personModel';
 import { WORDS as PERSON_WORDS } from '../person/personWords';
 import {
+  type ItemKind,
   KIND_ORDER,
   KIND_WORDS,
   kindCount,
@@ -596,7 +597,12 @@ export type Plate =
       display: string | null;
       text: Title | null;
     }
-  | { kind: 'erased'; heading: string; title: string; sub: string };
+  | { kind: 'erased'; heading: string; title: string; sub: string }
+  /**
+   * A photo: its thumbnail, pixelated until asked (as the Inbox's stage), or none when the server
+   * served no address (its file deleted, or a viewer it serves no photos).
+   */
+  | { kind: 'photo'; heading: string; kicker: string; thumbUrl: string | null };
 
 export type LifeStationView = {
   when: string;
@@ -781,8 +787,19 @@ export function itemView(
   const where = whereParts(kind, item);
   const place = placeName(kind, item);
   const up = isUp(item.published);
-  const plate: Plate =
-    content === null
+  // A photo verdict (B01-5e): the item's kind as the server will send it; its thumbnail is the
+  // content's staff-only `thumbUrl`, which the read owes.
+  const photo = (kind as ItemKind) === 'photo';
+  const plate: Plate = photo
+    ? {
+        kind: 'photo',
+        heading: W.asPublished,
+        kicker: [...where, ...(content === null ? [] : [momentWords(content.at, now, tz)])].join(
+          ' · ',
+        ),
+        thumbUrl: (content as { thumbUrl?: string | null } | null)?.thumbUrl ?? null,
+      }
+    : content === null
       ? {
           kind: 'erased',
           heading: kind === 'comment' ? W.asWritten : W.asPublished,

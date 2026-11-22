@@ -18,15 +18,22 @@ import { floorText, NOT_RECORDED, STILL_PREPARING } from '../answers';
 /** The five kinds a decision lands on, as the server names them. */
 export type RecordKind = 'report' | 'post' | 'comment' | 'hazard' | 'accessAlert';
 
+/**
+ * A kind the item pane can draw: the listed kinds, and a photo — a photo verdict is on the record
+ * once the server's photo axis lands (B01-5e). It joins `RecordKind` (the lists, the counts, the
+ * filter) when the server's counts and lists carry it.
+ */
+export type ItemKind = RecordKind | 'photo';
+
 /** Each kind's word, its plural, and its capitalized form (a pane's kicker). */
-export const KIND_WORDS: Readonly<Record<RecordKind, { one: string; many: string; head: string }>> =
-  {
-    report: { one: 'report', many: 'reports', head: 'Report' },
-    post: { one: 'post', many: 'posts', head: 'Post' },
-    comment: { one: 'comment', many: 'comments', head: 'Comment' },
-    hazard: { one: 'hazard', many: 'hazards', head: 'Hazard' },
-    accessAlert: { one: 'access alert', many: 'access alerts', head: 'Access alert' },
-  };
+export const KIND_WORDS: Readonly<Record<ItemKind, { one: string; many: string; head: string }>> = {
+  report: { one: 'report', many: 'reports', head: 'Report' },
+  post: { one: 'post', many: 'posts', head: 'Post' },
+  comment: { one: 'comment', many: 'comments', head: 'Comment' },
+  hazard: { one: 'hazard', many: 'hazards', head: 'Hazard' },
+  accessAlert: { one: 'access alert', many: 'access alerts', head: 'Access alert' },
+  photo: { one: 'photo', many: 'photos', head: 'Photo' },
+};
 
 /** The kinds in the order every list of them is written. */
 export const KIND_ORDER: readonly RecordKind[] = [
@@ -152,6 +159,13 @@ export const RECORD_WORDS = {
   onAgain: (place: string) => `On ${place} again`,
   erasedPlate: (moment: string) => `The words were erased ${moment}`,
   erasedPlateNoDate: 'The words were erased',
+  /** A photo's plate: pixelated as the Inbox's stage is, until asked. */
+  photoPixelated: 'The photo, pixelated',
+  photoShow: 'Show',
+  photoPixelate: 'Pixelate again',
+  photoAlt: 'The photo the decision is on',
+  /** No address served: its file was deleted, or this viewer isn't served photos. */
+  photoNone: 'No photo to show',
   erasedAfter: (days: number, first: string) =>
     `${days} ${days === 1 ? 'day' : 'days'} after ${first} deleted it. Who decided what, and why, stays here.`,
   erasedStays: 'Who decided what, and why, stays here.',

@@ -553,3 +553,30 @@ export const CHOICES: ChoicesRead = {
     },
   ],
 } as ChoicesRead;
+
+/**
+ * A photo verdict (B01-5e): a photo removed from a report. The read doesn't serve the kind yet (the
+ * server's photo axis lands with its own builder), so it is carried past the type; its content's
+ * `thumbUrl` is the staff-only thumbnail the item read owes.
+ */
+export const ITEM_PHOTO = {
+  ...item({
+    targetType: 'report',
+    targetId: 'ph_3',
+    decisions: [decision({ kind: 'removed', reason: 'Children’s faces, close up' })],
+    can: { restore: yes() },
+  }),
+  targetType: 'photo',
+  content: {
+    at: at(10, 11, 14, 22),
+    text: null,
+    thumbUrl:
+      'data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22400%22%20height%3D%22250%22%3E%3Crect%20width%3D%22400%22%20height%3D%22250%22%20fill%3D%22%23585c60%22%2F%3E%3C%2Fsvg%3E',
+  },
+} as unknown as ItemRead;
+
+/** The same verdict, its file deleted (or a viewer served no photos): no address. */
+export const ITEM_PHOTO_NONE = {
+  ...ITEM_PHOTO,
+  content: { at: at(10, 11, 14, 22), text: null, thumbUrl: null },
+} as unknown as ItemRead;
