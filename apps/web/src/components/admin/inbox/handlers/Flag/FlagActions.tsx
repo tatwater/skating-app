@@ -3,8 +3,6 @@ import { type ReactNode, type RefObject, useState } from 'react';
 
 import { ActionBar, type ActionBarGroup, type ActionBarItem } from '@/components/kit/action-bar';
 
-import { Button } from '@/components/kit/button';
-
 import { AskDialog } from '../../../people/person/AskDialog';
 import { allows, type FlagVerb, targetNoun, verbGroups } from './flagModel';
 import type { FlagItem } from './flagTypes';
@@ -86,18 +84,15 @@ export function FlagActions({
     }
   };
 
-  const ask = (verb: Asking) => {
-    setAsking(verb);
-    setSerial((s) => s + 1);
-    setOpen(true);
-  };
   const press = (verb: FlagVerb) => {
     if (busy !== null) return;
     if (verb === 'restore') {
       void run(verb, { kind: 'restore' });
       return;
     }
-    ask(verb);
+    setAsking(verb);
+    setSerial((s) => s + 1);
+    setOpen(true);
   };
   const photo = item.target.exists && item.target.targetType === 'photo';
   const what = (verb: FlagVerb): string =>
@@ -146,7 +141,8 @@ export function FlagActions({
             item.flags.filter((f) => f.status === 'open').length,
             withdrawn,
           );
-  // A hide whose bytes stay on their address offers Remove for an urgent case, when Remove is drawn.
+  // A hide whose bytes stay on their address points to Remove for an urgent case, when Remove is
+  // drawn. Words, not a button: a button above the reason would take the dialog's opening focus.
   const urgent =
     photo && asking === 'hide' && allows(item.can, 'remove')
       ? REMOVAL_WORDINGS[wording].urgent
@@ -175,12 +171,9 @@ export function FlagActions({
           destructive={asking === 'remove' || asking === 'retract'}
           {...(urgent !== null && {
             children: (
-              <div data-slot="photo-urgent" className="flex flex-col items-start gap-(--space-2)">
-                <span className="text-assist leading-list text-fg2">{urgent}</span>
-                <Button size="xs" variant="danger" onClick={() => ask('remove')}>
-                  {P.removeInstead}
-                </Button>
-              </div>
+              <p data-slot="photo-urgent" className="m-0 text-assist leading-list text-fg2">
+                {urgent}
+              </p>
             ),
           })}
           onConfirm={async (reason) => {

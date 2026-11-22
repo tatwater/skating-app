@@ -30,6 +30,12 @@ import { cn } from '@/lib/utils';
  * - **On reveal,** the full image mounts as an ordinary `<img>` with its alternative text.
  */
 
+/**
+ * Words set over the photo: a backing in the page's own ground, so they read in either mode over
+ * whatever the photo is (in dark mode it all but vanishes, as the board draws them bare).
+ */
+const ON_PHOTO = 'bg-bg/75 px-(--space-1_5) py-(--space-1)';
+
 /** Cells across the stage's mosaic, and a thumbnail's (the board's 36 px and 11 px blocks). */
 export const STAGE_CELLS = 24;
 export const THUMB_CELLS = 12;
@@ -197,7 +203,7 @@ export function PhotoStage({
       data-slot="photo-stage"
       data-shown={shown ? '' : undefined}
       className={cn(
-        'relative m-0 h-[22.5rem] min-w-0 overflow-hidden border-0 border-b border-solid border-line bg-raise',
+        'relative m-0 h-60 min-w-0 @[45rem]:h-[22.5rem] overflow-hidden border-0 border-b border-solid border-line bg-raise',
         className,
       )}
     >
@@ -236,9 +242,9 @@ export function PhotoStage({
       ) : (
         <div
           data-slot="photo-veil"
-          className="absolute start-1/2 top-1/2 z-1 flex -translate-1/2 flex-col items-center gap-(--space-2_5) border border-solid border-line2 bg-scrim-deep px-(--space-5) py-(--space-4)"
+          className="absolute start-1/2 top-1/2 z-1 flex max-w-[calc(100%-2*var(--space-3))] -translate-1/2 flex-col items-center gap-(--space-2_5) border border-solid border-line2 bg-bg/80 px-(--space-5) py-(--space-4) text-center"
         >
-          <span className="text-row leading-snug whitespace-nowrap text-fg1">{veil}</span>
+          <span className="text-row leading-snug text-fg1">{veil}</span>
           <Button
             ref={showRef}
             size="sm"
@@ -255,21 +261,21 @@ export function PhotoStage({
           </Button>
         </div>
       )}
-      {caption != null && (
-        <span
-          data-slot="photo-caption"
-          className="absolute start-(--space-3) bottom-(--space-2_5) z-1 font-(family-name:--family-mono) text-kick leading-none tracking-micro text-fg2 uppercase"
-        >
-          {caption}
-        </span>
-      )}
-      {place != null && (
-        <span
-          data-slot="photo-place"
-          className="absolute end-(--space-3) bottom-(--space-2_5) z-1 font-(family-name:--family-mono) text-kick leading-none tracking-micro text-fg2 uppercase"
-        >
-          {place}
-        </span>
+      {(caption != null || place != null) && (
+        // One line at the foot: when and where on the left, the place on the report on the right;
+        // the caption gives way (truncates) before the two can meet on a narrow pane.
+        <div className="pointer-events-none absolute inset-x-(--space-2) bottom-(--space-1_5) z-1 flex items-baseline justify-between gap-(--space-3) font-(family-name:--family-mono) text-kick leading-none tracking-micro text-fg2 uppercase">
+          {caption != null && (
+            <span data-slot="photo-caption" className={cn('min-w-0 truncate', ON_PHOTO)}>
+              {caption}
+            </span>
+          )}
+          {place != null && (
+            <span data-slot="photo-place" className={cn('ms-auto shrink-0', ON_PHOTO)}>
+              {place}
+            </span>
+          )}
+        </div>
       )}
     </figure>
   );

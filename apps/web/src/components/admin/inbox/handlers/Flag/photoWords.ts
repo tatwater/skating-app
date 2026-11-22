@@ -65,7 +65,6 @@ export const PHOTO_WORDS = {
   removeTitle: 'Remove this photo?',
   /** What every takedown does to the flags, after the wording's body. */
   closesFlags: 'Closes every open flag on it, in every lane, and tells each flagger.',
-  removeInstead: 'Remove instead',
 
   // ── Receipts ────────────────────────────────────────────────────────────────────────────────
   /** What a receipt names when the photo has no body to name: the uploader's name is never used. */
@@ -97,7 +96,7 @@ export const REMOVAL_WORDINGS = {
       'Skaters stop seeing it wherever it is attached. Anyone who already has its link can still open it. Undo brings it back and reopens the flags.',
     removeBody: `Skaters stop seeing it. Anyone who already has its link can still open it until it is deleted, in ${PHOTO_PURGE_DAYS} days unless it is restored.`,
     hideWhat: 'Hides it everywhere it is attached; a link someone already has still opens it',
-    urgent: `Urgent? Remove it instead: its file is deleted in ${PHOTO_PURGE_DAYS} days unless restored.`,
+    urgent: `Urgent? Cancel and choose Remove instead: its file is deleted in ${PHOTO_PURGE_DAYS} days unless restored.`,
   },
 } as const;
 

@@ -200,9 +200,9 @@ describe('a photo flag, through the route and the view', () => {
     fireEvent.click(within(inspector()).getByRole('button', { name: /^Hide/ }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('Hide this photo?');
-    // The conservative wording: the link still opens; Remove offered for an urgent case.
+    // The conservative wording: the link still opens; Remove pointed to for an urgent case.
     expect(dialog).toHaveTextContent('Anyone who already has its link can still open it.');
-    expect(within(dialog).getByRole('button', { name: 'Remove instead' })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Urgent? Cancel and choose Remove instead');
     fireEvent.change(within(dialog).getByRole('textbox'), {
       target: { value: 'Children’s faces' },
     });
@@ -221,16 +221,13 @@ describe('a photo flag, through the route and the view', () => {
     expect(undo.looked).not.toContainEqual({ targetType: 'photo', targetId: FIRST.photoId });
   });
 
-  it('Remove says the 30 days and calls takeDown removed; Remove instead switches from Hide', async () => {
+  it('Remove says the 30 days and calls takeDown removed', async () => {
     open(PHOTO_THIRD);
     mount();
-    fireEvent.click(within(inspector()).getByRole('button', { name: /^Hide/ }));
-    const hide = await screen.findByRole('alertdialog');
-    fireEvent.click(within(hide).getByRole('button', { name: 'Remove instead' }));
-    await waitFor(() =>
-      expect(screen.getByRole('alertdialog')).toHaveTextContent('Remove this photo?'),
-    );
-    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(inspector()).getByRole('button', { name: /^Remove/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Remove this photo?');
+    expect(dialog).not.toHaveTextContent('Urgent?');
     expect(dialog).toHaveTextContent(
       'Anyone who already has its link can still open it until it is deleted, in 30 days unless it is restored.',
     );

@@ -30,14 +30,14 @@ const id = <T extends TableNames>(s: string) => s as Id<T>;
 export function scene(seed: number, size: 'full' | 'thumb'): string {
   const w = size === 'full' ? 1600 : 400;
   const h = size === 'full' ? 1000 : 250;
-  const shift = (seed * 37) % 60;
+  const shift = (seed * 37) % 24;
   const warm = [0.36, 0.5, 0.62]
     .map(
       (x, i) =>
-        `<ellipse cx="${(x + ((seed + i) % 3) * 0.03) * w}" cy="${(0.44 + i * 0.03) * h}" rx="${0.05 * w}" ry="${0.11 * h}" fill="rgb(${190 + i * 10},${150 + shift / 2},${120 + i * 6})"/>`,
+        `<ellipse cx="${(x + ((seed + i) % 3) * 0.03) * w}" cy="${(0.44 + i * 0.03) * h}" rx="${0.05 * w}" ry="${0.11 * h}" fill="rgb(${150 + i * 8},${112 + shift / 2},${88 + i * 5})"/>`,
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><!--${size}-${seed}--><rect width="${w}" height="${h * 0.32}" fill="rgb(${140 + shift},${150 + shift},${158 + shift})"/><rect y="${h * 0.32}" width="${w}" height="${h * 0.2}" fill="rgb(96,104,110)"/><rect y="${h * 0.52}" width="${w}" height="${h * 0.48}" fill="rgb(${70 + shift / 3},${74 + shift / 3},${78 + shift / 3})"/>${warm}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><!--${size}-${seed}--><rect width="${w}" height="${h * 0.32}" fill="rgb(${84 + shift},${88 + shift},${92 + shift})"/><rect y="${h * 0.32}" width="${w}" height="${h * 0.2}" fill="rgb(62,66,70)"/><rect y="${h * 0.52}" width="${w}" height="${h * 0.48}" fill="rgb(${42 + shift / 3},${46 + shift / 3},${48 + shift / 3})"/>${warm}</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
