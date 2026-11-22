@@ -360,7 +360,8 @@ describe('an ask’s decision tells its asker (D285)', () => {
     const delivered = await flushAllDue(w.t);
     expect(delivered).toHaveLength(n);
     expect(new Set(delivered.map((r) => r.userId))).toEqual(new Set(askers));
-  }, 120_000);
+    // 5x headroom over its time when every package's suite runs at once (CI's `pnpm test`: 13–35 s).
+  }, 180_000);
 
   test('an ask a script filed tells no one — its requester is staff, and nobody asked (D289)', async () => {
     const w = await world();
