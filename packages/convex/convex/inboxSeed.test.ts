@@ -5,15 +5,15 @@
  * `inbox.lanes`, a second run filing nothing, and the clear leaving every table as it found it.
  */
 
-import { NOTIFICATION_PREF_KEYS } from '@skating/core';
+import { NOTIFICATION_PREF_KEYS, representativePoint } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Id, TableNames } from './_generated/dataModel';
+import type { Doc, Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
-import { INBOX_LEAVE_COST, PREFS_OFF, prefsDrifted } from './inboxSeed';
+import { INBOX_LEAVE_COST, loopPath, offset, PREFS_OFF, prefsDrifted } from './inboxSeed';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
 
@@ -1194,6 +1194,132 @@ describe('the clear finds everything the seed made, whatever was merged since (B
     // A whole seed applied, merged, unmerged and cleared: 5x headroom over its time when every
     // package's suite runs at once (CI's `pnpm test`, 6.9 s; under 1 s alone).
   }, 60_000);
+});
+
+describe('the merge-proof pair never reaches a real body (R10-E)', () => {
+  test('a real body first among the drawing’s matches: the survivor side is unavailable, never filed', async () => {
+    const t = harness();
+    await devWorld(t);
+    // An official lake around where the pair is drawn — official bodies rank first among matches.
+    const center = await t.run(async (ctx) => {
+      const caspian = (await ctx.db.query('waterBodies').collect()).find(
+        (b) => b.name === 'Caspian Lake',
+      ) as Doc<'waterBodies'>;
+      const p =
+        caspian.representativePoint ?? representativePoint(caspian.polygon as unknown as Polygon);
+      return offset(p, 6_000, 6_000);
+    });
+    // The drawing's own water, as an official catalog lake: a near-certain match, and official.
+    const ring = loopPath(center, 240).coordinates as [number, number][];
+    const lats = ring.map((c) => c[1]);
+    const lngs = ring.map((c) => c[0]);
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm',
+          states: ['VT'],
+          externalId: 'way/RealPond',
+          osmId: 'way/RealPond',
+          name: 'Real Pond',
+          type: 'lakePond',
+          polygon: { type: 'Polygon', coordinates: [ring] },
+          bbox: {
+            minLat: Math.min(...lats),
+            maxLat: Math.max(...lats),
+            minLng: Math.min(...lngs),
+            maxLng: Math.max(...lngs),
+          },
+          centroid: center,
+          surfaceAreaSqM: 180_000,
+        },
+      ],
+    });
+    const real = (await t.run((ctx) => ctx.db.query('waterBodies').collect())).find(
+      (b) => b.name === 'Real Pond',
+    )?._id as Id<'waterBodies'>;
+    await crons(t);
+    expect((await runSeed(t)).failed).toEqual([]);
+    // Ranked first among the drawing's matches (as an official lake over the same water can be): the
+    // plan must not take it for the seed's own survivor.
+    await t.run(async (ctx) => {
+      const cove = (await ctx.db.query('waterBodies').collect()).find(
+        (b) => b.name === 'Merge Proof Cove',
+      ) as Doc<'waterBodies'>;
+      await ctx.db.patch(cove._id, {
+        duplicateCandidateIds: [real, ...(cove.duplicateCandidateIds ?? [])],
+      });
+    });
+    const run = await runSeed(t);
+    expect(run.failed).toEqual([]);
+    expect(run.filed).toEqual([]);
+    const blocked = run.last.unavailable.filter((u) => u.key.startsWith('mp-'));
+    expect(blocked.length).toBeGreaterThan(0);
+    // Each blocked for the reason, or for a step that is.
+    expect(blocked.some((u) => /a real body ranks first there/.test(u.missing))).toBe(true);
+    for (const u of blocked) {
+      expect(u.missing).toMatch(
+        /a real body ranks first there|^mp-[a-z-]+, which can’?'?t be filed here$/,
+      );
+    }
+    // Nothing of the seed's on the real body.
+    const onReal = await t.run(async (ctx) => {
+      const r = (await ctx.db.get(real)) as Doc<'waterBodies'>;
+      return {
+        bays: (await ctx.db.query('waterBodySubAreas').collect()).filter(
+          (b) => b.waterBodyId === real,
+        ).length,
+        landmarks: (await ctx.db.query('bodyLandmarks').collect()).filter(
+          (l) => l.waterBodyId === real,
+        ).length,
+        lists: [r.moderatorAliases ?? [], r.moderatorTownKeys ?? [], r.referenceLinks ?? []],
+        favorites: (await ctx.db.query('waterBodyFavorites').collect()).filter(
+          (f) => f.waterBodyId === real,
+        ).length,
+      };
+    });
+    expect(onReal).toEqual({ bays: 0, landmarks: 0, lists: [[], [], []], favorites: 0 });
+  });
+
+  test('a seed drawing merged into a real body: the clear stops before anything, and says which to unmerge', async () => {
+    const t = harness();
+    await devWorld(t);
+    await crons(t);
+    const run = await runSeed(t);
+    expect(run.failed).toEqual([]);
+    // The founder merges Morey East Bay into Lake Morey from the Inbox.
+    const { itemId, lake } = await t.run(async (ctx) => {
+      const bodies = await ctx.db.query('waterBodies').collect();
+      const drawing = bodies.find((b) => b.name === 'Morey East Bay') as Doc<'waterBodies'>;
+      const member = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) =>
+          q.eq('sourceTable', 'waterBodies').eq('sourceId', drawing._id),
+        )
+        .first();
+      return {
+        itemId: member?.itemId as Id<'inboxItems'>,
+        lake: bodies.find((b) => b.name === 'Lake Morey')?._id as Id<'waterBodies'>,
+      };
+    });
+    const { actionId } = await t
+      .withIdentity({ subject: OPERATOR })
+      .mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId: lake });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const before = await counts(t);
+    await expect(t.mutation(internal.inboxSeed.clear, {})).rejects.toThrow(
+      /Unmerge Morey East Bay from Lake Morey first/,
+    );
+    expect(await counts(t)).toEqual(before);
+    expect(await t.query(internal.inboxSeed.clearPlan, {})).toHaveProperty([
+      'blocked: unmerge Morey East Bay from Lake Morey first',
+    ]);
+    // Unmerged, the clear runs to the end.
+    await t
+      .withIdentity({ subject: OPERATOR })
+      .mutation(api.undo.run, { actionId, reason: 'Clearing the seed' });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await runClear(t)).removed.profiles).toBe(8);
+  });
 });
 
 describe('the seed refuses any deployment that is not dev', () => {

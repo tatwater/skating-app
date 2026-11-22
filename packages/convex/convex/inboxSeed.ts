@@ -1589,7 +1589,22 @@ function mergeProofSteps(): StepDef[] {
   });
   type Side = 'cove' | 'survivor';
   const on = async (r: Refs, side: Side): Promise<Id<'waterBodies'>> =>
-    side === 'cove' ? (r.out('mp-cove') as Id<'waterBodies'>) : r.survivor('mp-cove');
+    side === 'cove' ? (r.out('mp-cove') as Id<'waterBodies'>) : ownSurvivor(r);
+  /**
+   * The drawing's live survivor — **verified to be one of the seed's own two lakes** (R10-E1). A real
+   * body ranked first (an official one sitting inside the loop) would have the proof merge seed rows
+   * into it, so the survivor side's steps are unavailable then, with the reason — never filed.
+   */
+  const ownSurvivor = async (r: Refs): Promise<Id<'waterBodies'>> => {
+    const survivor = await r.survivor('mp-cove');
+    if (survivor !== r.out('mp-pond') && survivor !== r.out('mp-west')) {
+      throw new Missing(
+        'the merge-proof drawing’s overlap to be a lake the seed drew — a real body ranks first there',
+        false,
+      );
+    }
+    return survivor;
+  };
   /**
    * Where a side's row is found: the cove's own rows on the cove, or — once the cove is merged — on
    * the body it went into, so a seed applied again after a merge finds them all (B01-5d).
@@ -2927,6 +2942,15 @@ export const clear = internalMutation({
     assertSeedDeployment();
     const s = new Sweep(ctx, new ReadBudget(budgetBytes ?? TX_BUDGET));
     const people = Object.values(await seedProfiles(ctx)).filter((p): p is Doc<'profiles'> => !!p);
+    // A seed drawing merged into a body the seed didn't draw left seed rows on that real body (its
+    // bays, labels, list entries), which nothing here can tell from the body's own: the clear stops
+    // before it removes anything, and says which to unmerge first (R10-E2) — never half-clears.
+    const stuck = await mergedIntoReal(ctx, people);
+    if (stuck !== null) {
+      throw new ConvexError(
+        `Unmerge ${stuck.drawing} from ${stuck.into} first: it was merged into a body the seed didn't draw, and the clear can't tell the seed's rows there from the body's own.`,
+      );
+    }
     try {
       await sweepPeople(s, people);
       for (const p of people) {
@@ -2942,6 +2966,29 @@ export const clear = internalMutation({
   },
 });
 
+/**
+ * A seed drawing merged into a body no fake person drew, or `null` (R10-E2): each person's drawings
+ * through the Inbox members they filed (a handful each), and the body a merged one went into — plain
+ * reads of a few small rows, before the clear's budget starts.
+ */
+async function mergedIntoReal(
+  ctx: QueryCtx,
+  people: Doc<'profiles'>[],
+): Promise<{ drawing: string; into: string } | null> {
+  const fake = new Set<string>(people.map((p) => p._id));
+  for (const p of people) {
+    for (const m of await drawingMembers(ctx, p._id)) {
+      const drawing = await ctx.db.get(m.sourceId as Id<'waterBodies'>);
+      if (!drawing?.mergedIntoId || drawing.createdByUserId !== p._id) continue;
+      const into = await ctx.db.get(drawing.mergedIntoId);
+      if (into && !(into.createdByUserId !== undefined && fake.has(into.createdByUserId))) {
+        return { drawing: drawing.name, into: into.name };
+      }
+    }
+  }
+  return null;
+}
+
 /** What `clear` would remove, by fake person, counted from bounded reads — the dry run. */
 export const clearPlan = internalQuery({
   args: {},
@@ -2951,6 +2998,9 @@ export const clearPlan = internalQuery({
     const cap = 500;
     const db = ctx.db;
     const out: Record<string, number> = { profiles: people.length };
+    // The clear would stop first (R10-E2): say so in the dry run too.
+    const stuck = await mergedIntoReal(ctx, people);
+    if (stuck !== null) out[`blocked: unmerge ${stuck.drawing} from ${stuck.into} first`] = 1;
     const add = (table: string, n: number) => {
       out[table] = (out[table] ?? 0) + n;
     };
