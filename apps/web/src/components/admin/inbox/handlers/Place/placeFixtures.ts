@@ -43,6 +43,9 @@ const LUC_ASK = {
     where: 'through the Narrows, open water north of it',
   },
   activityId: null,
+  skate: null,
+  // His landmark asks so far, from his own filings: three asked, two added.
+  landmarkAsks: { asked: 3, added: 2, capped: false },
 };
 
 const OSM_NARROWS = {
@@ -65,6 +68,8 @@ export const NARROWS = {
   memberCount: 1,
   body: { ...NEWFOUND, areaSqM: 4_100 * 4046.8564224 },
   asks: [LUC_ASK],
+  asksCut: false,
+  primaryRequestId: LUC_ASK.requestId,
   drawnSubAreaId: null,
   answeringLandmarkId: null,
   lookalikes: [OSM_NARROWS],
@@ -109,6 +114,7 @@ const BAY_ASKS = [
     note: 'The cove by the Shaker village, everyone calls it that.',
     coord: { lat: 43.64, lng: -72.17 },
     fromReport: null,
+    landmarkAsks: null,
   },
   {
     ...LUC_ASK,
@@ -119,6 +125,7 @@ const BAY_ASKS = [
     note: null,
     coord: { lat: 43.641, lng: -72.171 },
     fromReport: null,
+    landmarkAsks: null,
   },
   {
     ...LUC_ASK,
@@ -129,6 +136,7 @@ const BAY_ASKS = [
     note: null,
     coord: { lat: 43.642, lng: -72.17 },
     fromReport: null,
+    landmarkAsks: null,
   },
 ];
 
@@ -142,6 +150,9 @@ export const BAY_UNDRAWN = {
   memberCount: 3,
   body: MASCOMA,
   asks: BAY_ASKS,
+  asksCut: false,
+  // Served newest first: the newest open ask is the one a decision is sent for.
+  primaryRequestId: id('rqbay1'),
   drawnSubAreaId: null,
   answeringLandmarkId: null,
   lookalikes: [],

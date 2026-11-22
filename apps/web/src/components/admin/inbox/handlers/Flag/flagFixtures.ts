@@ -157,6 +157,8 @@ const base = {
   facet: 'reports',
   memberCount: 1,
   memberCountIsFloor: false,
+  // The read cut no flag short of the count (`flagsCut`).
+  flagsCut: false,
   decided: null,
 };
 
@@ -786,11 +788,14 @@ export const UNREADABLE_ITEM: FlagItem = {
 /** A takedown that closed this item's flag and two in another lane. */
 export const LANDED_ACROSS_LANES: InboxWriteResultData = { ...LANDED, flagsClosed: 3 };
 
-/** Three members, one closed by an earlier decision: two flags are this item's question. */
+/**
+ * Three members, one closed by an earlier decision: two flags are this item's question. The item's
+ * count is the server's (`deriveItem`): its open members while any is open — two.
+ */
 export const SAFETY_WITH_CLOSED: FlagItem = {
   ...SAFETY_MANY,
   itemId: id<'inboxItems'>('i_closed_member'),
-  memberCount: 3,
+  memberCount: 2,
   memberCountIsFloor: false,
   flags: [
     ...SAFETY_MANY.flags,

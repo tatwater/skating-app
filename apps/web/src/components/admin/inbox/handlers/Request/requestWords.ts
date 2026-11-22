@@ -125,9 +125,6 @@ export const REQUEST_HANDLER_WORDS = {
   /** A body with no name the catalog knows, as a receipt names it. */
   unnamedWater: 'Unnamed water',
 
-  /** Why the levers aren't drawn: restore and takedown are an admin's (D48). */
-  adminDecides: 'An admin decides this',
-
   /** The dialogs. */
   declineTitle: (subject: string) => `Decline · ${subject}`,
   declineBody:

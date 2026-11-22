@@ -4,7 +4,7 @@ import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
 import type { UndoTarget } from '../../../shell/undo';
-import { type Landed, useDecisionRunner } from '../../actions/useDecisionRunner';
+import { type Landed, useDecisionRunner, type WriteAnswer } from '../../actions/useDecisionRunner';
 import { type LandmarkLookalike, type PlaceItem, primaryAsk } from './placeModel';
 import { PLACE_WORDS as W } from './placeWords';
 
@@ -31,11 +31,11 @@ export type PlaceServer = {
   approve: (args: {
     requestId: Id<'waterBodyRequests'>;
     sameAs?: SameAs;
-  }) => Promise<{ requestId: Id<'waterBodyRequests'> }>;
+  }) => Promise<{ requestId: Id<'waterBodyRequests'> } & WriteAnswer>;
   decline: (args: {
     requestId: Id<'waterBodyRequests'>;
     note: string;
-  }) => Promise<Id<'waterBodyRequests'>>;
+  }) => Promise<{ requestId: Id<'waterBodyRequests'> } & WriteAnswer>;
 };
 
 /** The mutations the handler decides through (a test holds the handler to them). */
@@ -48,13 +48,17 @@ export function usePlaceServer(): PlaceServer {
   return useMemo(() => ({ approve, decline }), [approve, decline]);
 }
 
-/** A decision's Undo target: the ask the write answered with. */
-const askTarget = (id: string): Landed => ({
-  target: { targetType: 'waterBodyRequest', targetId: id } satisfies UndoTarget,
+/** What landed: the ask the write answered with, and its own answer (the row and its undo offer). */
+const landed = (answer: { requestId: string } & WriteAnswer): Landed => ({
+  target: { targetType: 'waterBodyRequest', targetId: answer.requestId } satisfies UndoTarget,
+  answer,
 });
 
 export function usePlaceWrites(
-  item: Pick<PlaceItem, 'itemId' | 'asks' | 'memberCount' | 'memberCountIsFloor' | 'body'>,
+  item: Pick<
+    PlaceItem,
+    'itemId' | 'asks' | 'primaryRequestId' | 'memberCount' | 'memberCountIsFloor' | 'body'
+  >,
   server: PlaceServer,
 ): {
   samePlace: (l: LandmarkLookalike) => Promise<boolean>;
@@ -68,7 +72,8 @@ export function usePlaceWrites(
     itemId: item.itemId,
     subject: name !== '' ? `“${name}” · ${item.body.name}` : item.body.name,
   });
-  const requestId = ask?.requestId;
+  // The ask the server names for the decision (`primaryRequestId`), from the item, never inferred.
+  const requestId = ask === null ? undefined : item.primaryRequestId;
   const closes = W.closesAsks(item.memberCount, item.memberCountIsFloor);
   const samePlace = useCallback(
     async (l: LandmarkLookalike) => {
@@ -77,13 +82,11 @@ export function usePlaceWrites(
         act: 'samePlace',
         what: W.theDecision,
         write: async () =>
-          askTarget(
-            (
-              await server.approve({
-                requestId,
-                sameAs: { landmarkId: l.landmarkId, name: l.name, point: l.point },
-              })
-            ).requestId,
+          landed(
+            await server.approve({
+              requestId,
+              sameAs: { landmarkId: l.landmarkId, name: l.name, point: l.point },
+            }),
           ),
         receipt: { title: W.receiptSamePlace, description: closes },
       });
@@ -95,7 +98,7 @@ export function usePlaceWrites(
     return run({
       act: 'approve',
       what: W.theDecision,
-      write: async () => askTarget((await server.approve({ requestId })).requestId),
+      write: async () => landed(await server.approve({ requestId })),
       receipt: { title: W.receiptApproved, description: closes },
     });
   }, [run, server, requestId, closes]);
@@ -105,7 +108,7 @@ export function usePlaceWrites(
       return run({
         act: 'decline',
         what: W.theDecision,
-        write: async () => askTarget(await server.decline({ requestId, note: note.trim() })),
+        write: async () => landed(await server.decline({ requestId, note: note.trim() })),
         receipt: { title: W.receiptDeclined, description: closes },
       });
     },

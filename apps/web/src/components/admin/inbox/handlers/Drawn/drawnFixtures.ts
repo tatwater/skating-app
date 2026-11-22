@@ -32,7 +32,17 @@ export const OVER_CASPIAN = {
     skateEndTime: zonedInstant(2026, 10, 11, 11 * 60, 'America/New_York'),
     author: KATE,
     observedFrom: null,
+    excerpt: 'Skated the east arm all morning with the club.',
   },
+  // The skate the drawing was made from: 11 Oct, two hours out, with a track for the map.
+  skate: {
+    activityId: 'ackate11oct'.padEnd(32, '0'),
+    startTime: zonedInstant(2026, 10, 11, 9 * 60, 'America/New_York'),
+    endTime: zonedInstant(2026, 10, 11, 11 * 60, 'America/New_York'),
+    elapsedSeconds: 96 * 60,
+    hasTrack: true,
+  },
+  drawerReports: 14,
 } as unknown as DrawnItem;
 
 /** A drawing over no known body: nothing to merge into, so no gauge and no merge. */
@@ -41,6 +51,7 @@ export const NEW_WATER = {
   can: { approveDrawn: null, rejectDrawn: null },
   overlap: null,
   fromReport: null,
+  skate: null,
 } as unknown as DrawnItem;
 
 /** Under the threshold: the gauge says so, its label quiet; a merge is still drawn (Coming soon). */

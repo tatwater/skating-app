@@ -6,7 +6,6 @@ import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { acres } from '../../list/inboxModel';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { askedBy } from '../../words/inboxWords';
-import { decidedAsk } from '../asks/decidedAsk';
 import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
 
 /**
@@ -18,8 +17,8 @@ import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
  * - **Every lever comes from the item's `can`** (D217): a verb the item answers `null` is drawn; a
  *   sentence is the server's refusal, said in the item and never drawn as a button; a verb it doesn't
  *   answer is not drawn at all. No rule here re-decides what the server decided.
- * - **Restore and takedown are an admin's** (D48, `body.remove`): when the item refuses their
- *   approval, the item says an admin decides it, and draws no bar at all (the design's table).
+ * - **Restore and takedown are an admin's both ways** (D48, `body.remove`; §7 ruling 16): the
+ *   server refuses both levers to anyone else, so `can` alone draws no bar and says why.
  * - Nothing here says anything about the ice (D3).
  */
 
@@ -37,12 +36,11 @@ export type RequestWrite =
   | { kind: 'decline'; note: string }
   | { kind: 'lookUpAgain' };
 
-/** Restore and takedown need `body.remove` (an admin's) to approve. S3-REMOVE with its two callers. */
-export const adminOnly = (kind: RequestKind): boolean => kind === 'restore' || kind === 'takedown';
-
-/** The ask a decision is sent for (`decidedAsk`: the oldest open one, else the first). */
-export function primaryAsk(item: Pick<RequestItem, 'asks'>): RequestItem['asks'][number] | null {
-  return decidedAsk(item.asks);
+/** The ask a decision is sent for: the one the server names (`primaryRequestId`), if it is served. */
+export function primaryAsk(
+  item: Pick<RequestItem, 'asks' | 'primaryRequestId'>,
+): RequestItem['asks'][number] | null {
+  return item.asks.find((a) => a.requestId === item.primaryRequestId) ?? null;
 }
 
 /** What a receipt and a dialog call the item: its body, its catalog feature, or unnamed water. */
@@ -212,14 +210,10 @@ const allows = (item: Pick<RequestItem, 'can'>, verb: RequestVerb): boolean =>
 
 /**
  * The bar's buttons, from the item's `can` alone: the kind's approval, *Admit* and the rest (or *Look up again* for an
- * admit the catalog hasn't matched, which the item answers in *Admit*'s place) then *Decline*. A
- * restore or takedown whose approval the item refuses draws no bar at all — an admin decides it.
+ * admit the catalog hasn't matched, which the item answers in *Admit*'s place) then *Decline*.
  */
 export function requestBar(item: Pick<RequestItem, 'can' | 'requestKind'>): RequestBarItem[] {
   const kind = item.requestKind;
-  // S3-REMOVE (§7 ruling 16): once `can.decline` refuses a viewer without `body.remove` (S3's ask
-  // 11), `can` alone empties this bar; delete this kind check at S3's integration.
-  if (adminOnly(kind) && !allows(item, 'approve')) return [];
   const out: RequestBarItem[] = [];
   if (allows(item, 'approve')) {
     out.push({
@@ -256,12 +250,10 @@ export function requestBar(item: Pick<RequestItem, 'can' | 'requestKind'>): Requ
 
 /**
  * What the item says in place of the levers it refuses: each distinct sentence the server answered
- * (its own words, D268), led by *An admin decides this* for a restore or takedown whose approval it
- * refuses. `null` when nothing is refused — or when the item is decided, which the lock says.
+ * (its own words, D268). `null` when nothing is refused — or when the item is decided, which the lock
+ * says.
  */
-export function refusalNote(
-  item: Pick<RequestItem, 'can' | 'requestKind' | 'decided'>,
-): { lead: string | null; lines: string[] } | null {
+export function refusalNote(item: Pick<RequestItem, 'can' | 'decided'>): string[] | null {
   if (item.decided !== null) return null;
   const lines = [
     ...new Set(
@@ -270,27 +262,22 @@ export function refusalNote(
         .filter((s): s is string => typeof s === 'string' && s.trim() !== ''),
     ),
   ];
-  // S3-REMOVE (§7 ruling 16): the lead read from the kind goes once the server's own refusal of
-  // both levers says an admin decides it; delete at S3's integration.
-  const admin = adminOnly(item.requestKind) && !allows(item, 'approve');
-  if (lines.length === 0 && !admin) return null;
-  return { lead: admin ? W.adminDecides : null, lines };
+  return lines.length === 0 ? null : lines;
 }
 
 // ── The receipt ──────────────────────────────────────────────────────────────────────────────
 
-/** A landed write's receipt: its title and what it closes (present tense), and whether it undoes. */
+/**
+ * A landed write's receipt: its title and what it closes (present tense). Whether it offers Undo is
+ * the write's own answer's (a lookup answers none), never decided here.
+ */
 export function receiptOf(
   item: Pick<RequestItem, 'requestKind' | 'memberCount' | 'memberCountIsFloor'>,
   write: RequestWrite,
-): { title: string; description: string; undoable: boolean } {
-  if (write.kind === 'lookUpAgain') {
-    // Nothing was decided, so there is nothing to undo.
-    return { title: W.lookingUp, description: W.lookingUpDetail, undoable: false };
-  }
+): { title: string; description: string } {
+  if (write.kind === 'lookUpAgain') return { title: W.lookingUp, description: W.lookingUpDetail };
   return {
     title: write.kind === 'decline' ? W.declined : W.receipt[item.requestKind],
     description: W.closesReceipt(item.memberCount, item.memberCountIsFloor),
-    undoable: true,
   };
 }

@@ -11,8 +11,8 @@ import { type Receipt, type UndoTarget, useUndo } from '../../shell/undo';
  * - **Through `said` (D268)**: a refusal — the server's, a throw, a failed send — is one toast,
  *   "Not saved · ‹subject›" with the server's own sentence, never printed in place.
  * - **A landed decision raises the shell's receipt**, in the present tense (what the decision
- *   does: "Closes 3 asks"), with Undo from the write's own answer when it gives one
- *   ({@link WriteAnswer}: its audit row and whether it can be undone).
+ *   does: "Closes 3 asks"), with Undo from the write's own answer ({@link WriteAnswer}: its audit
+ *   row and whether this viewer can undo it now) — never a lookup of the latest action.
  * - **A receipt never shows over another item**: the item drawn is asked again once the server has
  *   answered, and the receipt shows only if it is still the one drawn.
  * - **Nothing optimistic, one write at a time**: the press shows pending until the server answers,
@@ -23,16 +23,21 @@ import { type Receipt, type UndoTarget, useUndo } from '../../shell/undo';
  */
 
 /**
- * What a decision's write answers with, once the server says it (Access's `ruleAccess` already
- * does): the decision's own audit row and whether it can be undone now.
+ * What a decision's write answers (the server's `InboxDecisionResult`, as Access's `ruleAccess`
+ * answers too): the decision's own audit row, and whether this viewer can undo it now — read by the
+ * undo engine's own rule, so the toast never looks up "the latest action" on the target.
  */
-export type WriteAnswer = { actionId: string; undoable: boolean; undoNeedsReason: boolean };
+export type WriteAnswer = { actionId: string } & (
+  | { undoable: true; undoNeedsReason: boolean }
+  | { undoable: false }
+);
 
 /**
  * What landed: the receipt's target (built from the item's ids or the write's answer, never from
- * what the page assumed), and the write's own answer when it gives one.
+ * what the page assumed), and the write's own answer — `null` for a write that decided nothing (a
+ * lookup), which offers no Undo.
  */
-export type Landed = { target: UndoTarget; answer?: WriteAnswer };
+export type Landed = { target: UndoTarget; answer: WriteAnswer | null };
 
 export type Decision<A extends string> = {
   /** Which lever this is, for the pending state. */
@@ -40,21 +45,14 @@ export type Decision<A extends string> = {
   write: () => Promise<Landed>;
   /** What a refusal's toast says was not saved ("The decision"). */
   what: string;
-  /** The receipt, once it landed; `undoable: false` when it decided nothing (a lookup). */
-  receipt: { title: string; description?: string; undoable?: false };
+  /** The receipt, once it landed. */
+  receipt: { title: string; description?: string };
 };
 
-/** The receipt's Undo: from the write's answer, else the shell's lookup on the target. */
-export function undoOf(
-  landed: Landed,
-  undoable: false | undefined,
-): Pick<Receipt, 'actionId' | 'undoNeedsReason' | 'undoable'> {
-  if (undoable === false) return { undoable: false };
+/** The receipt's Undo, from the write's own answer alone: no answer, no Undo, nothing looked up. */
+export function undoOf(landed: Landed): Pick<Receipt, 'actionId' | 'undoNeedsReason' | 'undoable'> {
   const answer = landed.answer;
-  // FALLBACK (until the request, place and drawn writes answer with `WriteAnswer`): no answer, so
-  // the shell looks up the caller's newest row on the target (`undo.latestOwn`) — the decision
-  // just written. Delete this branch, and make `answer` required, once they do.
-  if (answer === undefined) return {};
+  if (answer === null) return { undoable: false };
   return answer.undoable
     ? { actionId: answer.actionId, undoNeedsReason: answer.undoNeedsReason }
     : { actionId: answer.actionId, undoable: false };
@@ -97,7 +95,7 @@ export function useDecisionRunner<A extends string>({
             : {}),
           target: sent.value.target,
           subject,
-          ...undoOf(sent.value, decision.receipt.undoable),
+          ...undoOf(sent.value),
         };
         void announce(receipt, () => shown.current === mine).catch(() => {});
         return true;

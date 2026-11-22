@@ -17,6 +17,7 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
+import { listTotalOf } from '../../blocks/listCut';
 import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import {
   InspectorHeadAge,
@@ -218,11 +219,7 @@ export function PlaceBody({
             count={{ count: item.memberCount, capped: item.memberCountIsFloor }}
             data-slot="place-asks"
           >
-            <AskList
-              asks={item.asks}
-              now={now}
-              total={{ count: item.memberCount, floor: item.memberCountIsFloor }}
-            />
+            <AskList asks={item.asks} now={now} total={listTotalOf(item, item.asksCut)} />
           </Section>
         </Part>
       )}

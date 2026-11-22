@@ -220,13 +220,15 @@ describe('the writes', () => {
       </>
     );
   }
+  // The decision's own row and its undo offer, as the server answers them (`InboxDecisionResult`).
+  const answer = { actionId: 'ma_place', undoable: true as const, undoNeedsReason: false };
   const okServer = (): PlaceServer => ({
-    approve: vi.fn(async ({ requestId }) => ({ requestId })),
-    decline: vi.fn(async ({ requestId }) => requestId),
+    approve: vi.fn(async ({ requestId }) => ({ requestId, ...answer })),
+    decline: vi.fn(async ({ requestId }) => ({ requestId, ...answer })),
   });
-  const ask = (item: PlaceItem) => (item.asks[0] as PlaceItem['asks'][number]).requestId;
+  const ask = (item: PlaceItem) => item.primaryRequestId;
 
-  it('Same place sends sameAs, and announces with Undo on the ask the write answered', async () => {
+  it('Same place sends sameAs, and announces with Undo from the write’s own answer', async () => {
     const user = userEvent.setup();
     const u = undoServer();
     const server = okServer();
@@ -244,15 +246,12 @@ describe('the writes', () => {
     );
     expect(await screen.findByText(/Same place/)).toBeInTheDocument();
     expect(screen.getByText('Closes 1 ask')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(u.latestOwn).toHaveBeenCalledWith({
-        targetType: 'waterBodyRequest',
-        targetId: ask(NARROWS),
-      }),
-    );
+    // Undo is the answer's row: nothing is looked up.
+    expect((await screen.findAllByRole('button', { name: /Undo/ })).length).toBeGreaterThan(0);
+    expect(u.latestOwn).not.toHaveBeenCalled();
   });
 
-  it('Approve sends the first ask alone; Decline its note trimmed', async () => {
+  it('Approve sends the ask the server names alone; Decline its note trimmed', async () => {
     const user = userEvent.setup();
     const server = okServer();
     inShell(<Harness item={BAY_DRAWN} server={server} />);
@@ -285,7 +284,7 @@ describe('the writes', () => {
 
   it('runs one write at a time', async () => {
     const user = userEvent.setup();
-    let release: (v: { requestId: never }) => void = () => {};
+    let release: (v: { requestId: never } & typeof answer) => void = () => {};
     const server: PlaceServer = {
       approve: vi.fn(
         () =>
@@ -293,14 +292,14 @@ describe('the writes', () => {
             release = r as typeof release;
           }),
       ) as PlaceServer['approve'],
-      decline: vi.fn(async ({ requestId }) => requestId),
+      decline: vi.fn(async ({ requestId }) => ({ requestId, ...answer })),
     };
     inShell(<Harness item={NARROWS} server={server} />);
     await user.click(screen.getByRole('button', { name: 'go-same' }));
     expect(screen.getByTestId('pending')).toHaveTextContent('samePlace');
     await user.click(screen.getByRole('button', { name: 'go-decline' }));
     expect(server.decline).not.toHaveBeenCalled();
-    await act(async () => release({ requestId: ask(NARROWS) as never }));
+    await act(async () => release({ requestId: ask(NARROWS) as never, ...answer }));
     await waitFor(() => expect(screen.getByTestId('pending')).toHaveTextContent('none'));
   });
 });

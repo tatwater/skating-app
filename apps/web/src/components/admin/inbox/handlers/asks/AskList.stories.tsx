@@ -15,9 +15,17 @@ function Lists() {
       value={{ pane: { current: null }, decidedOnOpen: false, now: ASKS_NOW, timeZone: ASKS_TZ }}
     >
       <div className="grid w-[46rem] max-w-full grid-cols-2 gap-x-(--space-7) gap-y-(--space-6)">
-        <AskList asks={BOARD_ASKS} now={ASKS_NOW} total={{ count: 2, floor: false }} />
-        <AskList asks={[REPORT_ASK, GONE_ASK]} now={ASKS_NOW} />
-        <AskList asks={MANY_ASKS.slice(0, 3)} now={ASKS_NOW} total={{ count: 500, floor: true }} />
+        <AskList asks={BOARD_ASKS} now={ASKS_NOW} total={{ count: 2, floor: false, cut: false }} />
+        <AskList
+          asks={[REPORT_ASK, GONE_ASK]}
+          now={ASKS_NOW}
+          total={{ count: 2, floor: false, cut: false }}
+        />
+        <AskList
+          asks={MANY_ASKS.slice(0, 3)}
+          now={ASKS_NOW}
+          total={{ count: 500, floor: true, cut: false }}
+        />
       </div>
     </InspectorProvider>
   );

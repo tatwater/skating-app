@@ -4,7 +4,12 @@ import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
 import type { UndoTarget } from '../../../shell/undo';
-import { type Decision, type Landed, useDecisionRunner } from '../../actions/useDecisionRunner';
+import {
+  type Decision,
+  type Landed,
+  useDecisionRunner,
+  type WriteAnswer,
+} from '../../actions/useDecisionRunner';
 import type { DrawnItem } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
 
@@ -21,8 +26,13 @@ export type DrawnAct = 'approve' | 'reject';
 
 /** The two writes, as the handler calls them (a story or a test fakes them). */
 export type DrawnServer = {
-  approve: (args: { waterBodyId: Id<'waterBodies'> }) => Promise<Id<'waterBodies'>>;
-  reject: (args: { waterBodyId: Id<'waterBodies'>; reason?: string }) => Promise<Id<'waterBodies'>>;
+  approve: (args: {
+    waterBodyId: Id<'waterBodies'>;
+  }) => Promise<{ waterBodyId: Id<'waterBodies'> } & WriteAnswer>;
+  reject: (args: {
+    waterBodyId: Id<'waterBodies'>;
+    reason?: string;
+  }) => Promise<{ waterBodyId: Id<'waterBodies'> } & WriteAnswer>;
 };
 
 /** The mutations the handler decides through (a test holds the handler to them). */
@@ -35,9 +45,10 @@ export function useDrawnServer(): DrawnServer {
   return useMemo(() => ({ approve, reject }), [approve, reject]);
 }
 
-/** A decision's Undo target: the drawn body the write answered with. */
-const bodyTarget = (id: string): Landed => ({
-  target: { targetType: 'waterbody', targetId: id } satisfies UndoTarget,
+/** What landed: the drawn body the write answered with, and its own answer (the row, its offer). */
+const landed = (answer: { waterBodyId: string } & WriteAnswer): Landed => ({
+  target: { targetType: 'waterbody', targetId: answer.waterBodyId } satisfies UndoTarget,
+  answer,
 });
 
 export function useDrawnWrites(
@@ -58,7 +69,7 @@ export function useDrawnWrites(
       run({
         act: 'approve',
         what: W.theDecision,
-        write: async () => bodyTarget(await server.approve({ waterBodyId })),
+        write: async () => landed(await server.approve({ waterBodyId })),
         receipt: { title: W.approved, description: W.approvedDetail },
       } satisfies Decision<DrawnAct>),
     [run, server, waterBodyId],
@@ -68,7 +79,7 @@ export function useDrawnWrites(
       run({
         act: 'reject',
         what: W.theDecision,
-        write: async () => bodyTarget(await server.reject({ waterBodyId, reason: reason.trim() })),
+        write: async () => landed(await server.reject({ waterBodyId, reason: reason.trim() })),
         receipt: { title: W.rejected, description: W.rejectedDetail },
       }),
     [run, server, waterBodyId],

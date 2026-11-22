@@ -35,6 +35,14 @@ const writes = {
   'corpusRequests:decline': vi.fn(async (_args: unknown): Promise<unknown> => ({})),
   'corpusRequests:reresolve': vi.fn(async (_args: unknown): Promise<unknown> => ({})),
 };
+/** A decision's answer, as the server writes it: its own row and this viewer's undo offer. */
+const answered = (args: unknown) => ({
+  ...(args as { requestId: string }),
+  itemId: null,
+  actionId: 'ma_request',
+  undoable: true as const,
+  undoNeedsReason: false,
+});
 let narrowPage = false;
 
 vi.doMock('convex/react', async (orig) => {
@@ -98,7 +106,7 @@ beforeEach(() => {
   server = undo();
   for (const w of Object.values(writes)) {
     w.mockReset();
-    w.mockImplementation(async () => ({}));
+    w.mockImplementation(async (args) => answered(args));
   }
   h.lanes = LANES;
 });
@@ -152,24 +160,20 @@ describe('a request opens its handler, not the placeholder', () => {
 });
 
 describe('each lever calls its write with the item’s ids', () => {
-  it('Admit approves the oldest open ask', async () => {
+  it('Admit approves the ask the server names', async () => {
     const user = userEvent.setup();
     const item = admit();
     open(item);
     await user.click(button('Admit'));
     await waitFor(() =>
       expect(writes['corpusRequests:approve']).toHaveBeenCalledWith({
-        requestId: item.asks[0]?.requestId,
+        requestId: item.primaryRequestId,
       }),
     );
-    // The receipt, with Undo found on the ask's own row.
+    // The receipt, with Undo from the write's own answer: nothing is looked up.
     expect((await screen.findAllByText(/Admitted/)).length).toBeGreaterThan(0);
-    await waitFor(() =>
-      expect(server.latestOwn).toHaveBeenCalledWith({
-        targetType: 'waterBodyRequest',
-        targetId: item.asks[0]?.requestId,
-      }),
-    );
+    expect((await screen.findAllByRole('button', { name: /Undo/ })).length).toBeGreaterThan(0);
+    expect(server.latestOwn).not.toHaveBeenCalled();
   });
 
   it('Decline asks the note the asker reads, then declines with it', async () => {
@@ -183,7 +187,7 @@ describe('each lever calls its write with the item’s ids', () => {
     await user.click(within(dialog).getByRole('button', { name: /^Decline/ }));
     await waitFor(() =>
       expect(writes['corpusRequests:decline']).toHaveBeenCalledWith({
-        requestId: item.asks[0]?.requestId,
+        requestId: item.primaryRequestId,
         note: 'That one is a beaver flowage.',
       }),
     );
@@ -197,7 +201,7 @@ describe('each lever calls its write with the item’s ids', () => {
     await user.click(button('Look up again'));
     await waitFor(() =>
       expect(writes['corpusRequests:reresolve']).toHaveBeenCalledWith({
-        requestId: item.asks[0]?.requestId,
+        requestId: item.primaryRequestId,
       }),
     );
   });
@@ -215,7 +219,7 @@ describe('each lever calls its write with the item’s ids', () => {
     await user.click(confirm());
     await waitFor(() =>
       expect(writes['corpusRequests:approve']).toHaveBeenCalledWith({
-        requestId: item.asks[0]?.requestId,
+        requestId: item.primaryRequestId,
         note: 'The owner wrote in.',
       }),
     );
@@ -256,10 +260,10 @@ describe('the bar follows the item', () => {
     expect(inspector().querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
   });
 
-  it('draws no bar on a restore a moderator can’t approve, and says an admin decides it', () => {
+  it('draws no bar on a restore a moderator can’t decide either way, in the server’s sentence', () => {
     open(restore('moderator'));
     expect(bar()).toBeNull();
-    expect(within(inspector()).getByText('An admin decides this')).toBeInTheDocument();
+    expect(within(inspector()).getByText('Requires admin role')).toBeInTheDocument();
   });
 });
 

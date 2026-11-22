@@ -163,13 +163,13 @@ export const Restore: Story = {
   },
 };
 
-/** A restore, as a moderator: an admin decides it — no bar. */
+/** A restore, as a moderator: the server refuses both levers to them — no bar, and its sentence. */
 export const RestoreForModerator: Story = {
   render: () => one(restore('moderator')),
   play: async ({ canvasElement }) => {
     await expectBar(canvasElement, []);
     for (const q of quads(canvasElement)) {
-      await expect(within(q).getByText('An admin decides this')).toBeVisible();
+      await expect(within(q).getByText('Requires admin role')).toBeVisible();
     }
   },
 };
@@ -220,13 +220,13 @@ export const TakedownAsksItsReason: Story = {
   },
 };
 
-/** A takedown, as a moderator: an admin decides it — no bar. */
+/** A takedown, as a moderator: the server refuses both levers to them — no bar, and its sentence. */
 export const TakedownForModerator: Story = {
   render: () => one(takedown('moderator')),
   play: async ({ canvasElement }) => {
     await expectBar(canvasElement, []);
     for (const q of quads(canvasElement)) {
-      await expect(within(q).getByText('An admin decides this')).toBeVisible();
+      await expect(within(q).getByText('Requires admin role')).toBeVisible();
     }
   },
 };

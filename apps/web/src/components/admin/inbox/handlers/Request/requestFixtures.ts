@@ -75,8 +75,8 @@ export const VIEWERS = ['admin', 'moderator', 'filer', 'noRole', 'decided'] as c
 export type Viewer = (typeof VIEWERS)[number];
 
 /**
- * The item's `can` for a viewer, as `inboxCan` answers it: the capability first (approving a restore
- * or takedown is `body.remove`, an admin's; everything else `inbox.request`, a moderator's), then a
+ * The item's `can` for a viewer, as `inboxCan` answers it: the capability first (approving or declining
+ * a restore or takedown is `body.remove`, an admin's; everything else `inbox.request`, a moderator's), then a
  * decided item, then the viewer's own filing, then the verb's precondition (`pre`).
  */
 function canFor(
@@ -87,7 +87,8 @@ function canFor(
 ): RequestItem['can'] {
   const can: RequestItem['can'] = {};
   for (const verb of verbs) {
-    const needsAdmin = verb === 'approve' && (kind === 'restore' || kind === 'takedown');
+    // A restore or takedown is an admin's both ways: approving and declining are `body.remove`.
+    const needsAdmin = verb !== 'lookUpAgain' && (kind === 'restore' || kind === 'takedown');
     can[verb] =
       viewer === 'noRole'
         ? needsAdmin
@@ -115,34 +116,79 @@ const decidedState = (viewer: Viewer): RequestItem['decided'] =>
       }
     : null;
 
+/** What the read adds to every request item: the ask it names for the decision, and the cut. */
+type Served = 'primaryRequestId' | 'asksCut' | 'ruling' | 'dormancy';
+
+/**
+ * A request item as served: `primaryRequestId` is the newest open ask (the first open one in `asks`,
+ * served newest first), else the newest; nothing cut; no ruling or dormancy unless the kind has one.
+ */
+function served(
+  item: Omit<RequestItem, Served> & Partial<Pick<RequestItem, 'ruling' | 'dormancy' | 'asksCut'>>,
+): RequestItem {
+  const named = item.asks.find((a) => a.status === 'open') ?? item.asks[0];
+  return {
+    ruling: null,
+    dormancy: null,
+    asksCut: false,
+    ...item,
+    primaryRequestId: (named?.requestId ?? id('rqnone')) as RequestItem['primaryRequestId'],
+  };
+}
+
+/** Spectacle Pond's standing ruling, which its contest asks against: no public access. */
+export const SPECTACLE_RULING: NonNullable<RequestItem['ruling']> = {
+  verdict: 'none',
+  ruledAt: REQUEST_NOW - 40 * D,
+  by: {
+    userId: id('prsarah') as never,
+    displayName: 'Sarah Berman',
+    username: 'sberman',
+    deleted: false,
+    isStaff: true,
+  },
+  note: 'Posted private by the landowner.',
+  reason: 'The landowner wrote in; the only access is across their field.',
+};
+
+/** Lake Tarleton's dormancy, as the body stores it: nobody there for seasons. */
+export const TARLETON_DORMANCY: NonNullable<RequestItem['dormancy']> = {
+  reason: 'inactive',
+  since: REQUEST_NOW - 300 * D,
+  note: null,
+  by: null,
+};
+
 // ── Each kind, for a viewer ──────────────────────────────────────────────────────────────────
 
 /** 2.3: an admit the catalog matched, asked by two. */
-export const admit = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('admit', 'admit', 3 * D),
-  memberCount: 2,
-  kind: 'request',
-  requestKind: 'admit',
-  body: null,
-  asks: BOARD_ASKS,
-  candidate: UNNAMED_POND,
-  resolveError: null,
-  can: canFor(viewer, 'admit', ['approve', 'decline']),
-  decided: decidedState(viewer),
-});
+export const admit = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('admit', 'admit', 3 * D),
+    memberCount: 2,
+    kind: 'request',
+    requestKind: 'admit',
+    body: null,
+    asks: BOARD_ASKS,
+    candidate: UNNAMED_POND,
+    resolveError: null,
+    can: canFor(viewer, 'admit', ['approve', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** An admit the catalog didn't match: *Look up again* in *Admit*'s place, and why. */
-export const admitNoMatch = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('nomatch', 'admit', 2 * D),
-  kind: 'request',
-  requestKind: 'admit',
-  body: null,
-  asks: [{ ...LUC_ASK, note: null }],
-  candidate: null,
-  resolveError: 'No 3DHP feature within 150 m',
-  can: canFor(viewer, 'admit', ['lookUpAgain', 'decline']),
-  decided: decidedState(viewer),
-});
+export const admitNoMatch = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('nomatch', 'admit', 2 * D),
+    kind: 'request',
+    requestKind: 'admit',
+    body: null,
+    asks: [{ ...LUC_ASK, note: null }],
+    candidate: null,
+    resolveError: 'No 3DHP feature within 150 m',
+    can: canFor(viewer, 'admit', ['lookUpAgain', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** An admit whose lookup hasn't answered yet. */
 export const admitPending = (viewer: Viewer = 'admin'): RequestItem => ({
@@ -152,79 +198,87 @@ export const admitPending = (viewer: Viewer = 'admin'): RequestItem => ({
 });
 
 /** An admit the catalog matched to flowing water: *Admit* is refused, said in the item. */
-export const admitFlowing = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...admit(viewer),
-  itemId: id('itrqflowing') as RequestItem['itemId'],
-  memberCount: 1,
-  asks: [KATE_ASK],
-  candidate: { ...UNNAMED_POND, cls: null },
-  can: canFor(viewer, 'admit', ['approve', 'decline'], { approve: FLOWING }),
-});
+export const admitFlowing = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...admit(viewer),
+    itemId: id('itrqflowing') as RequestItem['itemId'],
+    memberCount: 1,
+    asks: [KATE_ASK],
+    candidate: { ...UNNAMED_POND, cls: null },
+    can: canFor(viewer, 'admit', ['approve', 'decline'], { approve: FLOWING }),
+  });
 
 /** An activate: a dormant body asked back onto the active map. */
-export const activate = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('activate', 'activate', 7 * H),
-  memberCount: 2,
-  kind: 'request',
-  requestKind: 'activate',
-  body: TARLETON,
-  asks: [
-    { ...KATE_ASK, note: 'The club skated it every weekend last winter.', activityId: null },
-    { ...LUC_ASK, note: null },
-  ],
-  candidate: null,
-  resolveError: null,
-  can: canFor(viewer, 'activate', ['approve', 'decline']),
-  decided: decidedState(viewer),
-});
+export const activate = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('activate', 'activate', 7 * H),
+    memberCount: 2,
+    kind: 'request',
+    requestKind: 'activate',
+    body: TARLETON,
+    asks: [
+      { ...KATE_ASK, note: 'The club skated it every weekend last winter.', activityId: null },
+      { ...LUC_ASK, note: null },
+    ],
+    candidate: null,
+    resolveError: null,
+    dormancy: TARLETON_DORMANCY,
+    can: canFor(viewer, 'activate', ['approve', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** A restore: a removed body asked back (an admin's to approve). */
-export const restore = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('restore', 'restore', 6 * D),
-  kind: 'request',
-  requestKind: 'restore',
-  body: KOLELEMOOK,
-  asks: [{ ...LUC_ASK, note: 'Removed in July, but the town opened the beach lot.' }],
-  candidate: null,
-  resolveError: null,
-  can: canFor(viewer, 'restore', ['approve', 'decline']),
-  decided: decidedState(viewer),
-});
+export const restore = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('restore', 'restore', 6 * D),
+    kind: 'request',
+    requestKind: 'restore',
+    body: KOLELEMOOK,
+    asks: [{ ...LUC_ASK, note: 'Removed in July, but the town opened the beach lot.' }],
+    candidate: null,
+    resolveError: null,
+    can: canFor(viewer, 'restore', ['approve', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** A contest of a no-public-access ruling. */
-export const contest = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('contest', 'contest_access', 4 * D),
-  kind: 'request',
-  requestKind: 'contest_access',
-  body: SPECTACLE,
-  asks: [{ ...KATE_ASK, note: 'The town plows the beach lot now.', activityId: null }],
-  candidate: null,
-  resolveError: null,
-  can: canFor(viewer, 'contest_access', ['approve', 'decline']),
-  decided: decidedState(viewer),
-});
+export const contest = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('contest', 'contest_access', 4 * D),
+    kind: 'request',
+    requestKind: 'contest_access',
+    body: SPECTACLE,
+    asks: [{ ...KATE_ASK, note: 'The town plows the beach lot now.', activityId: null }],
+    candidate: null,
+    resolveError: null,
+    ruling: SPECTACLE_RULING,
+    can: canFor(viewer, 'contest_access', ['approve', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** A takedown: a landowner asks a body off the map (an admin's to approve). */
-export const takedown = (viewer: Viewer = 'admin'): RequestItem => ({
-  ...base('takedown', 'takedown', 1 * D),
-  kind: 'request',
-  requestKind: 'takedown',
-  body: POST_POND,
-  asks: [{ ...LUC_ASK, note: 'I own the only shore. Please take it off the map.' }],
-  candidate: null,
-  resolveError: null,
-  can: canFor(viewer, 'takedown', ['approve', 'decline']),
-  decided: decidedState(viewer),
-});
+export const takedown = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...base('takedown', 'takedown', 1 * D),
+    kind: 'request',
+    requestKind: 'takedown',
+    body: POST_POND,
+    asks: [{ ...LUC_ASK, note: 'I own the only shore. Please take it off the map.' }],
+    candidate: null,
+    resolveError: null,
+    can: canFor(viewer, 'takedown', ['approve', 'decline']),
+    decided: decidedState(viewer),
+  });
 
 /** An activate asked by more people than the read holds: a page of fifty, counted to a floor. */
-export const activateMany = (): RequestItem => ({
-  ...activate('admin'),
-  itemId: id('itrqmany') as RequestItem['itemId'],
-  memberCount: 500,
-  memberCountIsFloor: true,
-  asks: MANY_ASKS,
-});
+export const activateMany = (): RequestItem =>
+  served({
+    ...activate('admin'),
+    itemId: id('itrqmany') as RequestItem['itemId'],
+    memberCount: 500,
+    memberCountIsFloor: true,
+    asks: MANY_ASKS,
+  });
 
 /** Every kind, by name — the table test's rows and the stories' list. */
 export const KINDS = {

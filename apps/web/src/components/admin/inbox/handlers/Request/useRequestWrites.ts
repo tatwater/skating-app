@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
-import { useDecisionRunner } from '../../actions/useDecisionRunner';
+import { type Landed, useDecisionRunner, type WriteAnswer } from '../../actions/useDecisionRunner';
 import {
   primaryAsk,
   type RequestItem,
@@ -23,16 +23,25 @@ import { REQUEST_HANDLER_WORDS as W } from './requestWords';
  *
  * Through the Inbox's one decision runner (`actions/useDecisionRunner`, D268): a refusal is one toast
  * naming the item, in the server's words, never printed in place; the lever learns only that it
- * didn't land. A landed decision raises the shell's receipt with Undo — on the ask's own audit row,
- * which the toast finds by the ask (the runner's marked fallback, until these writes answer with
- * their row). A lookup decides nothing, so its receipt offers no Undo. **Nothing optimistic**: the
+ * didn't land. A landed decision raises the shell's receipt with Undo from the write's own answer —
+ * the ask's audit row and this viewer's undo offer, never looked up. A lookup decides nothing, so
+ * its receipt offers no Undo. **Nothing optimistic**: the
  * item's read draws what changed.
  */
 
-/** The three writes, as this path calls them (a story or a test fakes them). */
+/**
+ * The three writes, as this path calls them (a story or a test fakes them): a decision answers its
+ * own row and undo offer (`InboxDecisionResult`); a lookup decides nothing and answers none.
+ */
 export type RequestServer = {
-  approve: (args: { requestId: Id<'waterBodyRequests'>; note?: string }) => Promise<unknown>;
-  decline: (args: { requestId: Id<'waterBodyRequests'>; note: string }) => Promise<unknown>;
+  approve: (args: {
+    requestId: Id<'waterBodyRequests'>;
+    note?: string;
+  }) => Promise<{ requestId: Id<'waterBodyRequests'> } & WriteAnswer>;
+  decline: (args: {
+    requestId: Id<'waterBodyRequests'>;
+    note: string;
+  }) => Promise<{ requestId: Id<'waterBodyRequests'> } & WriteAnswer>;
   reresolve: (args: { requestId: Id<'waterBodyRequests'> }) => Promise<unknown>;
 };
 
@@ -81,31 +90,28 @@ export function useRequestWrites({
       const ask = primaryAsk(item);
       // An item with no ask can't be decided from here; its read is mid-change.
       if (ask === null) return false;
-      const call = callOf(ask.requestId, write);
+      // The ask the server names for the decision (`primaryRequestId`), from the item.
+      const requestId = item.primaryRequestId;
+      const call = callOf(requestId, write);
       const receipt = receiptOf(item, write);
       return run({
         act: write.kind,
         what: write.kind === 'lookUpAgain' ? W.theLookup : W.theDecision,
-        write: async () => {
+        write: async (): Promise<Landed> => {
+          // The decision's row is the ask's own (`approve_request` / `decline_request`).
+          const target = { targetType: 'waterBodyRequest', targetId: requestId } as const;
           switch (call.kind) {
             case 'approve':
-              await server.approve(call.args);
-              break;
+              return { target, answer: await server.approve(call.args) };
             case 'decline':
-              await server.decline(call.args);
-              break;
+              return { target, answer: await server.decline(call.args) };
             case 'reresolve':
+              // A lookup decides nothing: no row to undo.
               await server.reresolve(call.args);
-              break;
+              return { target, answer: null };
           }
-          // The decision's row is the ask's own (`approve_request` / `decline_request`).
-          return { target: { targetType: 'waterBodyRequest', targetId: ask.requestId } };
         },
-        receipt: {
-          title: receipt.title,
-          description: receipt.description,
-          ...(receipt.undoable ? {} : { undoable: false as const }),
-        },
+        receipt: { title: receipt.title, description: receipt.description },
       });
     },
     [item, server, run],

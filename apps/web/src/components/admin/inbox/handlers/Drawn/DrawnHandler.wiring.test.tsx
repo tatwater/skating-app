@@ -42,7 +42,10 @@ vi.doMock('convex/react', async (orig) => ({
     return async (args: Record<string, unknown>) => {
       writes.calls.push({ name, args });
       const answer = writes.answer[name];
-      return answer ? answer(args) : (args.waterBodyId ?? args.requestId);
+      // As the server answers a decision: the row it decided by, its own audit row and the offer.
+      return answer
+        ? answer(args)
+        : { ...args, itemId: null, actionId: 'ma_wired', undoable: true, undoNeedsReason: false };
     };
   },
 }));

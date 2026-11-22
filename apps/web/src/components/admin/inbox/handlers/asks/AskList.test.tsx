@@ -3,17 +3,8 @@ import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { InspectorProvider } from '../../inspector/inspectorContext';
-import { AskList, askWhen, newestFirst, shownLine } from './AskList';
-import {
-  ASKS_NOW,
-  ASKS_TZ,
-  BOARD_ASKS,
-  GONE_ASK,
-  KATE_ASK,
-  LUC_ASK,
-  MANY_ASKS,
-  REPORT_ASK,
-} from './askFixtures';
+import { AskList, askWhen } from './AskList';
+import { ASKS_NOW, ASKS_TZ, BOARD_ASKS, GONE_ASK, MANY_ASKS, REPORT_ASK } from './askFixtures';
 
 /** Inside the inspector's context, in the board's zone. */
 const inPane = (ui: ReactElement) =>
@@ -28,8 +19,10 @@ const inPane = (ui: ReactElement) =>
 const asks = () => screen.getAllByRole('listitem');
 
 describe('the ask list', () => {
-  it('lists the askers newest first, each with their byline, time and note (2.3)', () => {
-    inPane(<AskList asks={BOARD_ASKS} now={ASKS_NOW} />);
+  it('lists the askers in the server’s order (newest first), each with their byline, time and note (2.3)', () => {
+    inPane(
+      <AskList asks={BOARD_ASKS} now={ASKS_NOW} total={{ count: 2, floor: false, cut: false }} />,
+    );
     const [first, second] = asks();
     expect(within(first as HTMLElement).getByText('Luc Pelletier')).toBeInTheDocument();
     expect(within(first as HTMLElement).getByText('12 Oct · 2 d ago')).toBeInTheDocument();
@@ -45,50 +38,36 @@ describe('the ask list', () => {
   });
 
   it('names nobody for a gone asker, and draws no empty quote', () => {
-    inPane(<AskList asks={[GONE_ASK]} now={ASKS_NOW} />);
+    inPane(
+      <AskList asks={[GONE_ASK]} now={ASKS_NOW} total={{ count: 1, floor: false, cut: false }} />,
+    );
     expect(screen.getByText('A former skater')).toBeInTheDocument();
     expect(screen.queryByText('Deleted user')).toBeNull();
     expect(document.querySelector('[data-slot="ask-note"]')).toBeNull();
   });
 
   it('says an ask filed from a report, and the day of that skate', () => {
-    inPane(<AskList asks={[REPORT_ASK]} now={ASKS_NOW} />);
+    inPane(
+      <AskList asks={[REPORT_ASK]} now={ASKS_NOW} total={{ count: 1, floor: false, cut: false }} />,
+    );
     expect(screen.getByText('From their report · 14 Oct')).toBeInTheDocument();
   });
 
   it('says how many of how many when the server cut the list short — a floor past its count', () => {
     const { rerender } = inPane(
-      <AskList asks={MANY_ASKS} now={ASKS_NOW} total={{ count: 500, floor: true }} />,
+      <AskList asks={MANY_ASKS} now={ASKS_NOW} total={{ count: 500, floor: true, cut: false }} />,
     );
     expect(screen.getByText('Showing 50 of 500+ asks')).toBeInTheDocument();
-    rerender(<AskList asks={MANY_ASKS} now={ASKS_NOW} total={{ count: 50, floor: false }} />);
+    rerender(
+      <AskList asks={MANY_ASKS} now={ASKS_NOW} total={{ count: 50, floor: false, cut: false }} />,
+    );
     expect(screen.queryByText(/Showing/)).toBeNull();
   });
 });
 
 describe('its rules', () => {
-  it('sorts newest first, keeping the served order on a tie', () => {
-    expect(newestFirst(BOARD_ASKS).map((a) => a.requestId)).toEqual([
-      LUC_ASK.requestId,
-      KATE_ASK.requestId,
-    ]);
-    const tie = { ...LUC_ASK, requestId: 'tie' as typeof LUC_ASK.requestId };
-    expect(newestFirst([LUC_ASK, tie]).map((a) => a.requestId)).toEqual([LUC_ASK.requestId, 'tie']);
-    // A copy: the served list is never reordered in place.
-    const served = [...BOARD_ASKS];
-    newestFirst(served);
-    expect(served).toEqual(BOARD_ASKS);
-  });
-
   it('says how long ago from the clock it is given, never negative', () => {
     expect(askWhen(ASKS_NOW - 5 * 3_600_000, ASKS_NOW, ASKS_TZ)).toBe('14 Oct · 5 h ago');
     expect(askWhen(ASKS_NOW + 60_000, ASKS_NOW, ASKS_TZ)).toBe('14 Oct · 0 min ago');
-  });
-
-  it('draws the count line only past what is shown', () => {
-    expect(shownLine(2, undefined)).toBeNull();
-    expect(shownLine(2, { count: 2, floor: false })).toBeNull();
-    expect(shownLine(50, { count: 51, floor: false })).toBe('Showing 50 of 51 asks');
-    expect(shownLine(50, { count: 50, floor: true })).toBe('Showing 50 of 50+ asks');
   });
 });

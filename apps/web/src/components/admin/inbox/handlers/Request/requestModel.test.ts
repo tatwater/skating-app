@@ -104,39 +104,25 @@ const BARS: Record<Kind, Record<Viewer, string[]>> = {
 
 /** What each viewer's item says in place of the levers it refuses. */
 const NOTES: Record<Kind, Record<Viewer, ReturnType<typeof refusalNote>>> = (() => {
-  const plain = (lines: string[]) => ({ lead: null, lines });
-  const admin = (lines: string[]) => ({ lead: 'An admin decides this', lines });
-  const common = {
-    filer: plain([OWN_FILING]),
-    noRole: plain([MODERATOR_ROLE]),
+  const common = { filer: [OWN_FILING], noRole: [MODERATOR_ROLE], decided: null };
+  const open = { admin: null, moderator: null, ...common };
+  // A restore or takedown is an admin's both ways: the server's one sentence for both levers.
+  const adminOnly = {
+    admin: null,
+    moderator: [ADMIN_ROLE],
+    filer: [OWN_FILING],
+    noRole: [ADMIN_ROLE],
     decided: null,
   };
-  const open = { admin: null, moderator: null, ...common };
   return {
     admit: open,
     admitNoMatch: open,
     admitPending: open,
-    admitFlowing: {
-      admin: plain([FLOWING]),
-      moderator: plain([FLOWING]),
-      ...common,
-    },
+    admitFlowing: { admin: [FLOWING], moderator: [FLOWING], ...common },
     activate: open,
     contest: open,
-    restore: {
-      admin: null,
-      moderator: admin([ADMIN_ROLE]),
-      filer: admin([OWN_FILING]),
-      noRole: admin([ADMIN_ROLE, MODERATOR_ROLE]),
-      decided: null,
-    },
-    takedown: {
-      admin: null,
-      moderator: admin([ADMIN_ROLE]),
-      filer: admin([OWN_FILING]),
-      noRole: admin([ADMIN_ROLE, MODERATOR_ROLE]),
-      decided: null,
-    },
+    restore: adminOnly,
+    takedown: adminOnly,
   };
 })();
 
@@ -196,17 +182,13 @@ describe('the head', () => {
     expect(subjectOf(admit())).toBe('Unnamed water');
   });
 
-  it('sends a decision for the oldest open ask, as served', () => {
+  it('sends a decision for the ask the server names, never one it infers', () => {
     const item = admit();
-    expect(primaryAsk(item)?.requestId).toBe(item.asks[0]?.requestId);
-    const closedFirst = {
-      asks: [
-        { ...(item.asks[0] as (typeof item.asks)[number]), status: 'closed' as const },
-        ...item.asks.slice(1),
-      ],
-    };
-    expect(primaryAsk(closedFirst)?.requestId).toBe(item.asks[1]?.requestId);
-    expect(primaryAsk({ asks: [] })).toBeNull();
+    expect(primaryAsk(item)?.requestId).toBe(item.primaryRequestId);
+    const second = item.asks[1] as (typeof item.asks)[number];
+    expect(primaryAsk({ ...item, primaryRequestId: second.requestId })).toBe(second);
+    // Named but not served (the list was cut before it): nothing to send from here.
+    expect(primaryAsk({ asks: [], primaryRequestId: item.primaryRequestId })).toBeNull();
   });
 });
 
@@ -290,29 +272,30 @@ describe('the blocks', () => {
 });
 
 describe('the receipt', () => {
-  it('says what landed and what it closes, in the present tense, with Undo', () => {
+  it('says what landed and what it closes, in the present tense', () => {
     expect(receiptOf(admit(), { kind: 'approve' })).toEqual({
       title: 'Admitted',
       description: 'Closes 2 asks · each asker told',
-      undoable: true,
     });
     expect(receiptOf(takedown(), { kind: 'approve', note: 'Owner' }).title).toBe('Taken down');
     expect(receiptOf(activateMany(), { kind: 'decline', note: 'No' })).toEqual({
       title: 'Declined',
       description: 'Closes 500+ asks · each asker told',
-      undoable: true,
     });
   });
 
-  it('offers no Undo for a lookup: nothing was decided', () => {
-    expect(receiptOf(admitNoMatch(), { kind: 'lookUpAgain' }).undoable).toBe(false);
+  it('says a lookup is under way', () => {
+    expect(receiptOf(admitNoMatch(), { kind: 'lookUpAgain' })).toEqual({
+      title: 'Looking it up again',
+      description: 'The catalog answers in a moment',
+    });
   });
 });
 
 describe('the flowing-water admit', () => {
   it('says the server’s sentence and draws only Decline', () => {
     const item = admitFlowing();
-    expect(refusalNote(item)?.lines).toEqual([FLOWING]);
+    expect(refusalNote(item)).toEqual([FLOWING]);
     expect(requestBar(item).map((b) => b.verb)).toEqual(['decline']);
   });
 });

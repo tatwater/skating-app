@@ -42,7 +42,14 @@ vi.doMock('convex/react', async (orig) => ({
       writes.calls.push({ name, args });
       const answer = writes.answer[name];
       if (answer) return answer(args);
-      return name === 'corpusRequests:approve' ? { requestId: args.requestId } : args.requestId;
+      // As the server answers a decision: the ask, its own audit row and this viewer's offer.
+      return {
+        requestId: args.requestId,
+        itemId: null,
+        actionId: 'ma_wired',
+        undoable: true,
+        undoNeedsReason: false,
+      };
     };
   },
 }));

@@ -2,7 +2,6 @@ import { LANDMARK_KIND_LABELS, type LandmarkKind, landmarkNameKey } from '@skati
 import type { CompareRow } from '@/components/kit/compare-table';
 import { ageInWords } from '@/lib/ages';
 import type { InboxItemView } from '../../list/inboxTypes';
-import { decidedAsk } from '../asks/decidedAsk';
 import { milesWords } from '../Flag/flagFormat';
 import { PLACE_WORDS as W } from './placeWords';
 
@@ -32,9 +31,9 @@ export type ProposalLookalike = Extract<Lookalike, { kind: 'proposal' }>;
 const allowed = (item: Pick<PlaceItem, 'can'>, v: 'approve' | 'decline' | 'sameAs'): boolean =>
   v in item.can && item.can[v] === null;
 
-/** The ask a decision is written on (`decidedAsk`: the oldest open one, else the first). */
-export function primaryAsk(item: Pick<PlaceItem, 'asks'>): PlaceAsk | null {
-  return decidedAsk(item.asks);
+/** The ask a decision is written on: the one the server names (`primaryRequestId`), if served. */
+export function primaryAsk(item: Pick<PlaceItem, 'asks' | 'primaryRequestId'>): PlaceAsk | null {
+  return item.asks.find((a) => a.requestId === item.primaryRequestId) ?? null;
 }
 
 /** The landmark the item's lookalikes hold, if any (the one *Same place* answers with). */
@@ -59,7 +58,13 @@ export type PlaceBar = {
 export function placeBar(
   item: Pick<
     PlaceItem,
-    'can' | 'placeKind' | 'lookalikes' | 'drawnSubAreaId' | 'answeringLandmarkId' | 'asks'
+    | 'can'
+    | 'placeKind'
+    | 'lookalikes'
+    | 'drawnSubAreaId'
+    | 'answeringLandmarkId'
+    | 'asks'
+    | 'primaryRequestId'
   >,
 ): PlaceBar {
   const lookalike = item.placeKind === 'name_landmark' ? landmarkLookalike(item) : null;
@@ -100,11 +105,12 @@ export const headAge = (item: Pick<PlaceItem, 'filedAt'>, now: number): string =
   ageInWords(item.filedAt, now);
 
 /** The ask came from a report's *where*: the head links Reports (Coming soon), else the body. */
-export const fromReport = (item: Pick<PlaceItem, 'asks'>): boolean =>
+export const fromReport = (item: Pick<PlaceItem, 'asks' | 'primaryRequestId'>): boolean =>
   primaryAsk(item)?.fromReport != null;
 
 /** The name asked for, as the display word quotes it. */
-export const askedName = (item: Pick<PlaceItem, 'asks'>): string => primaryAsk(item)?.name ?? '';
+export const askedName = (item: Pick<PlaceItem, 'asks' | 'primaryRequestId'>): string =>
+  primaryAsk(item)?.name ?? '';
 
 /** The body's line over the name: "Newfound Lake · Bristol, NH". */
 export function bodyLine(body: PlaceItem['body']): string {

@@ -42,6 +42,9 @@ beforeAll(() => {
   stubJsdomAnimations();
 });
 
+/** A decision's answer, as the server writes it: its own row and this viewer's undo offer. */
+const ANSWER = { actionId: 'ma_drawn', undoable: true as const, undoNeedsReason: false };
+
 const undoServer = (): UndoServer & { latestOwn: ReturnType<typeof vi.fn> } => ({
   latestOwn: vi.fn(async () => null),
   run: vi.fn(async () => {}),
@@ -227,12 +230,12 @@ describe('the writes', () => {
     );
   }
 
-  it('approves with the item’s body, and announces with Undo on the body the write answered', async () => {
+  it('approves with the item’s body, and announces with Undo from the write’s own answer', async () => {
     const user = userEvent.setup();
     const u = undoServer();
     const server: DrawnServer = {
-      approve: vi.fn(async ({ waterBodyId }) => waterBodyId),
-      reject: vi.fn(async ({ waterBodyId }) => waterBodyId),
+      approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
+      reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
     inShell(<Harness item={OVER_CASPIAN} server={server} />, u);
     await user.click(screen.getByRole('button', { name: 'go-approve' }));
@@ -241,19 +244,16 @@ describe('the writes', () => {
     );
     expect(await screen.findByText(/Approved as new/)).toBeInTheDocument();
     expect(screen.getByText('Lists it on the map · tells the drawer')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(u.latestOwn).toHaveBeenCalledWith({
-        targetType: 'waterbody',
-        targetId: OVER_CASPIAN.body.waterBodyId,
-      }),
-    );
+    // Undo is the answer's row: nothing is looked up.
+    expect((await screen.findAllByRole('button', { name: /Undo/ })).length).toBeGreaterThan(0);
+    expect(u.latestOwn).not.toHaveBeenCalled();
   });
 
   it('rejects with the reason trimmed', async () => {
     const user = userEvent.setup();
     const server: DrawnServer = {
-      approve: vi.fn(async ({ waterBodyId }) => waterBodyId),
-      reject: vi.fn(async ({ waterBodyId }) => waterBodyId),
+      approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
+      reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
     inShell(<Harness item={OVER_CASPIAN} server={server} />);
     await user.click(screen.getByRole('button', { name: 'go-reject' }));
@@ -296,7 +296,7 @@ describe('the writes', () => {
             release = r as (v: string) => void;
           }),
       ) as DrawnServer['approve'],
-      reject: vi.fn(async ({ waterBodyId }) => waterBodyId),
+      reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
     inShell(<Harness item={OVER_CASPIAN} server={server} />);
     await user.click(screen.getByRole('button', { name: 'go-approve' }));

@@ -18,6 +18,7 @@ import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 
 import { AskDialog } from '../../../people/person/AskDialog';
+import { listTotalOf } from '../../blocks/listCut';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
@@ -149,13 +150,12 @@ function Part({ children, ...props }: ComponentProps<'div'>) {
 
 /** What the item says in place of the levers it refuses (the server's sentences). */
 function Refusals({ item }: { item: RequestItem }) {
-  const said = refusalNote(item);
-  if (said === null) return null;
+  const lines = refusalNote(item);
+  if (lines === null) return null;
   return (
     <div className="px-(--space-5) pt-(--space-5)">
       <Note data-slot="request-refusals" tone="warn">
-        {said.lead !== null && <strong className="block">{said.lead}</strong>}
-        {said.lines.map((line) => (
+        {lines.map((line) => (
           <span key={line} className="block">
             {line}
           </span>
@@ -199,11 +199,7 @@ export function RequestBody({ item, now, map }: Pick<RequestViewProps, 'item' | 
           data-slot="request-asks"
           end={<span className={MICRO}>{W.people(item.memberCount, item.memberCountIsFloor)}</span>}
         >
-          <AskList
-            asks={item.asks}
-            now={now}
-            total={{ count: item.memberCount, floor: item.memberCountIsFloor }}
-          />
+          <AskList asks={item.asks} now={now} total={listTotalOf(item, item.asksCut)} />
         </Section>
         {item.requestKind === 'admit' ? (
           <Section title={W.theCatalog} data-slot="request-catalog">

@@ -1,5 +1,3 @@
-import { countOf } from '../../words/inboxWords';
-
 /**
  * **The ask list's words** — shared by the request handler (2.3) and the place handler (2.4), so an
  * ask reads the same in both. From the board (2.3's *The ask*): the byline's "12 Oct · 2 d ago" and
@@ -17,9 +15,6 @@ export const ASK_LIST_WORDS = {
   goneAsker: 'A former skater',
   /** An ask filed from a report's where (a landmark ask, D202). */
   fromReport: (day: string) => `From their report · ${day}`,
-  /** Under a list the server cut short: how many of how many are shown ("500+" past its count). */
-  shownOf: (shown: number, total: number, floor: boolean) =>
-    `Showing ${countOf(shown)} of ${countOf(total, floor)} asks`,
   /** The list's accessible name. */
   list: 'The asks',
 } as const;
