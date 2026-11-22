@@ -309,22 +309,14 @@ export const KIND_HEAD: Readonly<Record<string, string>> = {
  * (coined). The link words wear the link chip's arrow.
  */
 export const ELSEWHERE_PHOTO = 'A flag on a photo is decided on the Flags page for now.';
-export const ELSEWHERE_REQUEST = 'Requests are decided on the Requests page for now.';
-export const ELSEWHERE_PLACE =
-  'Place asks are decided on the Requests page for now, or answered by drawing in the body’s editor.';
-export const ELSEWHERE_DRAWN = 'Drawn bodies are decided in the Water bodies list for now.';
 export const ELSEWHERE_TICKET = 'Support tickets are answered on the Support page for now.';
 export const ELSEWHERE_FLAGS = 'Flags';
-export const ELSEWHERE_REQUESTS = 'Requests';
-export const ELSEWHERE_BODY_EDITOR = 'Body editor';
-export const ELSEWHERE_WATER = 'Water bodies';
 export const ELSEWHERE_SUPPORT = 'Support';
 export const FACT_LANE = 'Lane';
 export const FACT_FILED = 'Filed';
 export const FACT_MEMBERS = 'Filed by';
 export const FACT_BODY = 'Body';
 export const FACT_SUBJECT = 'About';
-export const FACT_DECIDED = 'Decided';
 export const FACT_REASONS = 'Reasons';
 export const FACT_NOTE = 'Note';
 export const people = (n: number, floor = false) =>
@@ -347,7 +339,6 @@ export const OPEN_START_UNKNOWN =
 export const LEGEND_OPEN = 'Open';
 export const LEGEND_FILED = 'Filed';
 export const LEGEND_DECIDED = 'Decided';
-export const DECIDED_SO_FAR = 'Decided so far';
 export const DECIDED_BY_LANE = 'Decided today, by lane';
 export const NOT_IN_INBOX = 'Not in the inbox';
 /** The zero page's short lane names (the board's). */
@@ -379,11 +370,6 @@ export function medianWords(ms: number): string {
   if (hours >= 1) return plural(Math.floor(hours), 'hour', 'hours');
   return plural(Math.max(0, Math.floor(ms / 60_000)), 'minute', 'minutes');
 }
-
-// ── Keys ─────────────────────────────────────────────────────────────────────────────────────
-
-export const KEY_OPEN = 'open';
-export const KEY_BACK = 'back to the list';
 
 /** The flag reasons in words, re-exported for the frame's readers. */
 export { FLAG_WORDS };
