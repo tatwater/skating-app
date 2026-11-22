@@ -9698,7 +9698,10 @@ the receipt and in History (fork 1).
    - *Recorded:* `subAreasBefore` (whole), `subAreasDelisted`.
    - *Unmerge:* each bay whose `updatedAt` is no later than the merge's is put back to its
      before-image, then cells re-synced and the name lists rebuilt. Each side row is marked undone.
-   - *Left:* a bay edited since (its edit stands, on the survivor).
+     *As built (R10):* the change set records the fields the merge wrote (`rowsAfter`), and only
+     those are put back, each while it still holds the merge's value. `updatedAt` decides nothing.
+   - *Left:* a bay edited since (its edit stands, on the survivor). *As built:* a bay one of whose
+     merge-written fields changed since; an edit to any other field survives.
 9. **The survivor's bays.**
    - *Merge:* the re-clip may change one.
    - *Recorded:* nothing today; **add** before-images of the changed ones.
@@ -9708,8 +9711,9 @@ the receipt and in History (fork 1).
     - *Merge:* moved, folded into twins, retired over the cap or as a bay (side rows).
     - *Recorded:* `landmarksBefore` (whole), `landmarksAfter` (id, body, removed, fold target).
     - *Unmerge:* each changed landmark whose `updatedAt` is no later than the merge's is put back
-      to its before-image, the name lists rebuilt, and each side row marked undone.
-    - *Left:* a landmark edited since.
+      to its before-image, the name lists rebuilt, and each side row marked undone. *As built
+      (R10):* field by field, by value, as row 8.
+    - *Left:* a landmark edited since. *As built:* one of whose merge-written fields changed since.
 11. **The drawn item.**
     - *Merge:* decided `merged`, with no action id today.
     - *Recorded:* **add** whether one was decided.
@@ -9718,8 +9722,10 @@ the receipt and in History (fork 1).
 12. **The notification.**
     - *Merge:* `moderator_decision` `merged` to the drawer (new in this PR).
     - *Recorded:* by its queue row.
-    - *Unmerge:* the drawer's message, as `return_to_review` sends one; inside the window the
-      re-check drops both.
+    - *Unmerge:* ~~the drawer's message, as `return_to_review` sends one~~ *Corrected (R10):*
+      neither the unmerge nor `return_to_review` sends the drawer a message. An unmerge inside the
+      window drops the queued `merged` message at its re-check; after it, the drawer has been told
+      once and is told nothing more.
 13. **Derived facts.**
     - *Merge:* cells, summaries, library rows, geometry staleness, recurrence, restamp.
     - *Recorded:* nothing; they are recomputed.
@@ -10195,8 +10201,8 @@ It **leaves** a row where it is, counted on its own audit row by kind with the f
 | Requests, place names, body flags | The row was decided since (it stands, on the survivor). |
 | Partners' dedup flags | The flag no longer equals its after-image. |
 | Re-created favorites | The kept row is gone. |
-| The loser's bays and the survivor's re-clipped bays | The bay was edited since. |
-| Landmarks | The landmark was edited since. |
+| The loser's bays and the survivor's re-clipped bays | A field the merge wrote no longer holds the merge's value. Judged by value, never by `updatedAt`: a later rename of a bay the merge didn't rename survives, and only that untouched field is kept as edited. |
+| Landmarks | A field the merge wrote no longer holds the merge's value (by value, as above). |
 | Founding skates | The skate's body is no longer what the merge made it. |
 | Side rows | Their target was left (edited since). |
 
@@ -10370,6 +10376,79 @@ S4a's commits past `06e53d868` were cherry-picked with no conflicts, through `9c
     renders with no delay.
   - *Merge | Preview:* its clock waits on the dialog's fade are now waits on the fade's frames and
     the transition's `finished`; the 5 s guess is gone.
+
+#### B01-5d: the real-backend proof, first run (2026-11-22)
+
+S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
+
+| Shape | Estimate | Real merge |
+|---|---|---|
+| 8,000 put-ins | ok | **fails**: 4,096 index-range cap; 3,900 used 4,043, so the real cap is about 3,950 |
+| 3,296 favorites | ok | **fails** (index ranges); 1,800 used 3,743, so the real cap is about 1,950 |
+| 299 flags | ok | **fails**: too many documents read (one shared Inbox item makes it grow with the square of the count) |
+| 2 bays of 900 KB; 1 MiB survivor outline with 2 bays | ok | **fails**: 1 s execution limit |
+| 1 MiB outline on each side | ok | ok, but read 15.6 MB against 8 MiB budgeted |
+| 366 requests | ok | ok (3,075 ranges); refused at 367, real cap about 500 (1.36× conservative) |
+| 4 reports of 1 MB | ok | ok at 16.02 MB read (95% of limit); 5 refused, real ok |
+| 2 landmarks of 1 MB | ok | ok; 3 refused, real ok (≥1.5× conservative) |
+| mix of kinds, lists at caps | ok | ok |
+
+**Why the estimate failed:**
+- The real backend counts every `patch` as an index range. The estimate charged nothing for moved
+  rows, and the test harness didn't count them either.
+- The estimate didn't model execution time.
+- Flags were re-keyed into one Inbox item, so their document reads grew with the square of the
+  count.
+
+**What passed on the real backend:**
+- **The census:** every merge the estimate accepted unmerged with the census equal, in 2 to 17
+  pages. The heaviest (mix-lite) took 17 pages and about 60 s, with both markers cleared.
+- **Drift:** it left exactly three rows: the moved report, the moved bay and the decided ask.
+- **Split change sets:** sets of 2, 3 and 11 parts unmerged cleanly.
+- **The seed shape:** built by hand, since the seed refuses non-dev hosts. It was merged through
+  `mergeDrawn` and undone through `undo.run`, and `mergeProofCensus` matched.
+- **A real stall:** S4b canceled the scheduled next page. The unmerge read `stalled`, kept both
+  markers, and resumed to done with the census equal; a second resume was refused.
+
+**Before the PR opens:**
+- S4a is rebuilding the estimate (`lib/mergeLoad.ts`) to bound index ranges, bytes, documents and
+  execution time from the code's per-row work, and moving flags linearly.
+- S4b is making the test harness count index ranges and scanned documents as the real backend
+  does.
+- The proof re-runs green on a real backend.
+
+#### B01-5d: S4b's review fixes, and a stalled unmerge on the web (2026-11-22)
+
+S4b's three R10 commits were cherry-picked through `7574ad59b`. Its schema commit duplicating S4a's
+`unmergeActionId` seam was dropped. `waterBodies.ts`, where S4b's recording edit met S4a's other
+edits, merged without a textual conflict.
+
+- **Fields, never rows.**
+  - The change set records `rowsAfter: { table, id, set, absent }[]` for every bay and landmark the
+    merge changed.
+  - The unmerge puts back only those fields, each while it still holds the merge's value
+    (D291, amended).
+  - Counters (`reportCount`, `confirmCount`) and mouth notes now survive an unmerge.
+  - One timestamp check stays on purpose: an ask decided since is left by `decidedAt`.
+- **Stalled and resumable.**
+  - `unmerge.receipt` answers `{ unmergeActionId, done, stalled: { reason } | null, left }`, judged
+    from the scheduler's record of the next page.
+  - `unmerge.resume({ mergeActionId })` is refused while a page runs and once done.
+  - The unmerge sets the marker on both bodies in its first transaction and clears it on its last.
+  - S4a's stand-in that set the marker is gone. Its merge-during-unmerge test passes on the real
+    unmerge.
+- **`activityBack`** judges a moved skate by value; an absent list stays absent.
+- **`unmerge.runningOn({ waterBodyIds })`** (the integration's): a merge refused with `unmerging`
+  finds its unmerge by the pair's bodies.
+- **The web.**
+  - Wherever the unmerge's state shows, a stalled unmerge says "The unmerge stopped before it
+    finished": the Undone toast, the Body console's History row, and the Drawn lever's and the
+    Shape flow's refusal.
+  - The server's reason is a quieter line under it. *Resume* appears for a viewer with
+    `corpus.duplicates`, and a refusal is a toast ("Not resumed").
+  - History keeps this as its only action. The cross-console History with Undo is still unmounted
+    (register Sh10).
+- **Still open for the founder:** the stall reason says "failed" even for a canceled page.
 
 ### What B01 still owes (the register, 2026-11-17)
 
