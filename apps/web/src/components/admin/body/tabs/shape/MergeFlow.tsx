@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMagnifyingGlass } from '@fortawesome/sharp-regular-svg-icons';
 import { AUDIT_REASON_MAX } from '@skating/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
@@ -12,6 +12,8 @@ import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
 import { Skeleton } from '@/components/kit/skeleton';
 import { Table, TableBody, TableCell, TableRow } from '@/components/kit/table';
+import { sayRefusal } from '../../../said';
+import { notSavedTitle, notSavedWhat } from '../../consoleWords';
 import { ReasonAsk } from '../access/ReasonAsk';
 import {
   consequenceRows,
@@ -163,6 +165,19 @@ function MergePreviewBlock({
   const verdict = mergeVerdict(ready);
   const ok = ready?.ok ? ready : null;
   const moves = ok === null ? [] : moveRows(ok.moves);
+  // **A refusal arriving while the reason dialog is open closes it for good**: a toast says why, in
+  // the server's words, and the moderator opens it again themselves — it never reopens on its own
+  // when the preview turns back.
+  useEffect(() => {
+    if (!asking || verdict.confirm) return;
+    setAsking(false);
+    if (verdict.said !== null) {
+      sayRefusal({
+        title: notSavedTitle(bodyName),
+        description: notSavedWhat(W.what, verdict.said),
+      });
+    }
+  }, [asking, verdict.confirm, verdict.said, bodyName]);
   return (
     <section
       data-slot="merge-preview"

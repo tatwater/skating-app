@@ -12,6 +12,12 @@ import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL } from './mergeFixtures';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_COMPUTED_YET, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
 
+const toasts = vi.hoisted(() => [] as unknown[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: unknown) => toasts.push(t),
+}));
+
 beforeAll(stubJsdomAnimations);
 
 const OUTLINE = {
@@ -383,6 +389,36 @@ describe('the merge itself', () => {
     await user.click(send);
     await waitFor(() => expect(onMerge).toHaveBeenCalledWith('Drawn twice'));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('a refusal arriving mid-dialog closes it for good, says why in a toast, and never reopens it', async () => {
+    const user = userEvent.setup();
+    toasts.length = 0;
+    const at = (preview: MergeFlowProps['preview']) =>
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({ survivor: { id: 'k1', name: 'Crystal Lake' }, preview }),
+      });
+    const { rerender } = render(at(MERGE_TO_CRYSTAL));
+    await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
+    await screen.findByRole('alertdialog');
+    // The preview turns to a refusal while the reason is being typed.
+    rerender(at(MERGE_REFUSED));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(toasts).toEqual([
+      expect.objectContaining({
+        title: 'Not saved · Mascoma Lake',
+        description: `The merge: ${MERGE_REFUSED.refusal}`,
+        tone: 'bad',
+      }),
+    ]);
+    // It turns back: the dialog stays shut until the moderator opens it again.
+    rerender(at(MERGE_TO_CRYSTAL));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(toasts).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
   });
 
   it('unpicks from the preview', async () => {
