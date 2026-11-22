@@ -414,7 +414,7 @@ export type ActorPayload =
  * | activity | the activity exists and is still un-linked and un-dismissed |
  * | request_decided (an ask) | the ask is still closed by that decision: its status is the outcome, decided at the decision row's instant |
  * | request_decided (a drawing) | its review is still the outcome, unmerged, and the decision row has not been undone |
- * | request_decided (a drawing merged) | it is still merged by that merge (`reviewStatus: 'merged'`), and the merge's row has not been undone |
+ * | request_decided (a drawing merged) | it is still merged away, and the merge's row has not been undone |
  * | alert_retracted | the alert is still retracted by that row: by its actor, at its instant |
  *
  * `blocked` is the recipient's block set (either direction), loaded once per recipient per tick by
@@ -645,8 +645,8 @@ async function settleDrawnDecision(
 }
 
 /**
- * A drawing's merge into a known body (B01-5d), if it still stands: the drawing is still merged by
- * this merge — `dedupStatus: 'merged'` with the review status the merge wrote — and the merge's row has
+ * A drawing's merge into a known body (B01-5d), if it still stands: the drawing is still merged away
+ * (`dedupStatus: 'merged'`, whatever its review — in review or approved before, R10-B) and the merge's row has
  * not been undone (the unmerge's `unmerge_waterbody` names it). An unmerge inside the window drops the
  * message; a merge made again is another row, with its own. The message names the body it was merged
  * into, so the tap lands on the lake the drawing's reports moved to.
@@ -657,8 +657,9 @@ async function settleDrawnMerge(
   actionId: Id<'moderationActions'>,
 ): Promise<ActorPayload | null> {
   const body = await ctx.db.get(waterBodyId);
-  if (body?.dedupStatus !== 'merged' || body.reviewStatus !== 'merged') return null;
-  if (body.mergedIntoId === undefined) return null;
+  // Still merged away (its review status is the merge's `merged` for a drawing in review, or still
+  // `approved` for one approved before, R10-B); the merge's own row decides the rest.
+  if (body?.dedupStatus !== 'merged' || body.mergedIntoId === undefined) return null;
   const undone = await ctx.db
     .query('moderationActions')
     .withIndex('by_undoes', (q) => q.eq('undoesActionId', actionId))

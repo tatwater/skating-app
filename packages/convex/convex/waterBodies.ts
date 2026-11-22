@@ -4284,8 +4284,14 @@ export async function mergeBodyInto(
     });
     const decidedItem = decided === 'closed' || decided === 'filed';
     // The person who drew it hears it (D285), held at the flush to this row: an unmerge inside the
-    // window drops it. A person's merge only — the ETL's merges decide no drawing a person is owed word of.
-    if (decidesDrawing && actorId !== undefined && loser.createdByUserId !== undefined) {
+    // window drops it. Whatever its review — in review, or approved already (R10-B, ruled): an
+    // approval's own message is dropped at its flush once the body is merged away, so the merge's is
+    // the one that tells them. A person's merge only — the ETL's merges are no one's decision — and
+    // never the decider themself (`enqueueModeratorDecision`).
+    const toldOfMerge =
+      loser.source === 'user' &&
+      (loser.reviewStatus === 'pending' || loser.reviewStatus === 'approved');
+    if (toldOfMerge && actorId !== undefined && loser.createdByUserId !== undefined) {
       await enqueueModeratorDecision(ctx, {
         recipientId: loser.createdByUserId,
         deciderId: actorId,

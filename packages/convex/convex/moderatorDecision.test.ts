@@ -535,7 +535,9 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
     expect(await flushAllDue(w.t)).toHaveLength(1);
   });
 
-  test('an approved drawing merged into another body inside the window: no message about a body merged away', async () => {
+  // R10-B, ruled: the drawer is told of a merge whatever the drawing's review — the approval's own
+  // message is dropped once the body is merged away, so the merge's is the one that tells them.
+  test('an approved drawing merged inside the approval’s window: exactly one message, the merge’s', async () => {
     const w = await world();
     const body = await drawn(w);
     await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
@@ -546,7 +548,41 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
       reason: 'The same pond',
     });
     expect((await w.t.run((ctx) => ctx.db.get(body)))?.dedupStatus).toBe('merged');
-    expect(await flushAllDue(w.t)).toEqual([]);
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    const told = await inboxOf(w.asker.as, KNOWS);
+    expect(told).toHaveLength(1);
+    expect(told[0]).toMatchObject({ about: 'drawn', outcome: 'merged', body: { id: w.active } });
+  });
+
+  test('a drawing approved long ago, then merged: one message more, the merge’s', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    await w.admin.as.mutation(api.waterBodies.merge, { survivorId: w.active, loserId: body });
+    expect(await flushAllDue(w.t)).toHaveLength(2);
+    expect(
+      (await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { outcome: string }).outcome).sort(),
+    ).toEqual(['approved', 'merged']);
+  });
+
+  test('an approved drawing’s merge undone inside its window tells no one of it', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    await flushAllDue(w.t);
+    const { actionId } = await w.admin.as.mutation(api.waterBodies.merge, {
+      survivorId: w.active,
+      loserId: body,
+    });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    await undo(w, actionId, w.mod.as);
+    await w.t.finishAllScheduledFunctions(() => {});
+    expect((await w.t.run((ctx) => ctx.db.get(body)))?.dedupStatus).not.toBe('merged');
+    await flushAllDue(w.t);
+    expect(
+      (await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { outcome: string }).outcome),
+    ).toEqual(['approved']);
   });
 
   test('a review undone and made again inside the window is one message, about the last review', async () => {
@@ -623,16 +659,17 @@ describe('a drawing merged into a known body tells the person who drew it (B01-5
     expect(await flushAllDue(w.t)).toEqual([]);
   });
 
-  test('a drawing no longer merged by it — unmerged, or merged without the review status — tells no one', async () => {
-    for (const patch of [
-      { dedupStatus: 'clean' as const, mergedIntoId: undefined, reviewStatus: 'pending' as const },
-      { reviewStatus: 'approved' as const },
-    ]) {
-      const w = await world();
-      const { drawing } = await mergedDrawing(w);
-      await w.t.run((ctx) => ctx.db.patch(drawing, patch));
-      expect(await flushAllDue(w.t), JSON.stringify(patch)).toEqual([]);
-    }
+  test('a drawing no longer merged away tells no one', async () => {
+    const w = await world();
+    const { drawing } = await mergedDrawing(w);
+    await w.t.run((ctx) =>
+      ctx.db.patch(drawing, {
+        dedupStatus: 'clean',
+        mergedIntoId: undefined,
+        reviewStatus: 'pending',
+      }),
+    );
+    expect(await flushAllDue(w.t)).toEqual([]);
   });
 
   test('an ask is never merged: a merged outcome on an ask is dropped at the flush', async () => {
