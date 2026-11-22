@@ -20,7 +20,7 @@ import {
   MERGE_TO_CRYSTAL,
   MERGE_UNMERGING,
 } from '../tabs/shape/mergeFixtures';
-import { BodyBoard } from './bodyBoard';
+import { BodyBoard, BodyGoneBoard } from './bodyBoard';
 import { CAPPED_HISTORY, MASCOMA_BOUNDS, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
 
@@ -424,6 +424,61 @@ export const MergeRefused: Story = {
     await expect(
       within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
     ).toBeDisabled();
+  },
+};
+
+/**
+ * The merge lands: the record is the survivor's, and the frame draws the merged page in the console's
+ * place — as the route does. The dialog and the confirm that held focus go with the console, so the
+ * merged page takes focus (the console's rule on arriving at a body with nothing focused).
+ */
+function MergeLands() {
+  const [merged, setMerged] = useState(false);
+  if (merged)
+    return (
+      <BodyGoneBoard
+        survivor={CRYSTAL_PICK}
+        removal={{ verb: 'Merged', when: '9 Oct 2026', who: 'Matt', reason: null }}
+        removalShown
+        towns={null}
+        reports={null}
+        record={null}
+        // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
+        survivorLink={(id) => <a href={`#body-${id}`} />}
+        history={CAPPED_HISTORY}
+      />
+    );
+  const args = mergeArgs(
+    {
+      survivor: CRYSTAL_PICK,
+      preview: MERGE_TO_CRYSTAL,
+      onMerge: async () => {
+        setMerged(true);
+        return true;
+      },
+    },
+    `neighbor:${NEIGHBOR_ID}`,
+  );
+  return <BodyBoard {...args} />;
+}
+
+export const MergeLandsFocus: Story = {
+  name: 'Merge | Lands · focus',
+  render: () => <MergeLands />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await page.findByRole('button', { name: 'Merge into Crystal Lake' }));
+    const dialog = await page.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Drawn twice');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
+    // Read and asserted in one retry: the merged page holds focus once the swap has settled.
+    await waitFor(() => {
+      expect(page.getByText(/This body was merged into/)).toBeVisible();
+      expect(canvasElement.ownerDocument.activeElement).toHaveAttribute(
+        'data-slot',
+        'body-console-gone',
+      );
+    });
   },
 };
 
