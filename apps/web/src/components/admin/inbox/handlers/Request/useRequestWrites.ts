@@ -3,10 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
-import type { ToastManager } from '@/components/kit/toast';
-
-import { said } from '../../../said';
-import type { Receipt } from '../../../shell/undo';
+import { useDecisionRunner } from '../../actions/useDecisionRunner';
 import {
   primaryAsk,
   type RequestItem,
@@ -24,11 +21,11 @@ import { REQUEST_HANDLER_WORDS as W } from './requestWords';
  * again*). Each asks the Inbox's own rule on the item before it writes (`assertMayDecide`), so a lever
  * the item drew is never one its write refuses, and one that is refused anyway says why.
  *
- * Through `said`, as the flag handler's writes (D268): a refusal is one toast naming the item, in the
- * server's words, never printed in place; the lever learns only that it didn't land. A landed
- * decision raises the shell's receipt with Undo — on the ask's own audit row, which the toast finds
- * by the ask (`undo.latestOwn` on `waterBodyRequest:<id>`), since these writes don't answer with
- * their row. A lookup decides nothing, so its receipt offers no Undo. **Nothing optimistic**: the
+ * Through the Inbox's one decision runner (`actions/useDecisionRunner`, D268): a refusal is one toast
+ * naming the item, in the server's words, never printed in place; the lever learns only that it
+ * didn't land. A landed decision raises the shell's receipt with Undo — on the ask's own audit row,
+ * which the toast finds by the ask (the runner's marked fallback, until these writes answer with
+ * their row). A lookup decides nothing, so its receipt offers no Undo. **Nothing optimistic**: the
  * item's read draws what changed.
  */
 
@@ -71,53 +68,46 @@ export function callOf(requestId: Id<'waterBodyRequests'>, write: RequestWrite) 
 export function useRequestWrites({
   item,
   server,
-  announce,
-  here,
-  manager,
 }: {
   item: RequestItem;
   server: RequestServer;
-  announce: (receipt: Receipt, here?: () => boolean) => Promise<void>;
-  /** The caller's binding (this item still open): a receipt never shows over another item. */
-  here?: () => boolean;
-  manager?: ToastManager;
 }): (write: RequestWrite) => Promise<boolean> {
+  const { run } = useDecisionRunner<RequestWrite['kind']>({
+    itemId: item.itemId,
+    subject: subjectOf(item),
+  });
   return useCallback(
     async (write: RequestWrite): Promise<boolean> => {
-      const subject = subjectOf(item);
       const ask = primaryAsk(item);
       // An item with no ask can't be decided from here; its read is mid-change.
       if (ask === null) return false;
       const call = callOf(ask.requestId, write);
-      const sent = await said(
-        (): Promise<unknown> => {
+      const receipt = receiptOf(item, write);
+      return run({
+        act: write.kind,
+        what: write.kind === 'lookUpAgain' ? W.theLookup : W.theDecision,
+        write: async () => {
           switch (call.kind) {
             case 'approve':
-              return server.approve(call.args);
+              await server.approve(call.args);
+              break;
             case 'decline':
-              return server.decline(call.args);
+              await server.decline(call.args);
+              break;
             case 'reresolve':
-              return server.reresolve(call.args);
+              await server.reresolve(call.args);
+              break;
           }
+          // The decision's row is the ask's own (`approve_request` / `decline_request`).
+          return { target: { targetType: 'waterBodyRequest', targetId: ask.requestId } };
         },
-        (why) => ({ title: W.notChanged(subject), description: why }),
-        { ...(manager !== undefined && { manager }) },
-      );
-      if (!sent.landed) return false;
-      const receipt = receiptOf(item, write);
-      void announce(
-        {
+        receipt: {
           title: receipt.title,
           description: receipt.description,
-          subject,
-          // The decision's row is the ask's own (`approve_request` / `decline_request`).
-          target: { targetType: 'waterBodyRequest', targetId: ask.requestId },
           ...(receipt.undoable ? {} : { undoable: false as const }),
         },
-        here,
-      ).catch(() => {});
-      return true;
+      });
     },
-    [item, server, announce, here, manager],
+    [item, server, run],
   );
 }

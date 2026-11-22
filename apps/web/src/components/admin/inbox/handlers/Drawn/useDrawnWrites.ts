@@ -3,12 +3,10 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
-import type { ToastManager } from '@/components/kit/toast';
-
 import type { UndoTarget } from '../../../shell/undo';
+import { type Decision, type Landed, useDecisionRunner } from '../../actions/useDecisionRunner';
 import type { DrawnItem } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
-import { type Decision, useDecisionRunner } from './useDecisionRunner';
 
 /**
  * **The drawn handler's writes** (board 2.5): *Approve as new* is `waterBodies.approve`, *Reject*
@@ -38,12 +36,13 @@ export function useDrawnServer(): DrawnServer {
 }
 
 /** A decision's Undo target: the drawn body the write answered with. */
-const bodyTarget = (id: string): UndoTarget => ({ targetType: 'waterbody', targetId: id });
+const bodyTarget = (id: string): Landed => ({
+  target: { targetType: 'waterbody', targetId: id } satisfies UndoTarget,
+});
 
 export function useDrawnWrites(
   item: Pick<DrawnItem, 'itemId' | 'body'>,
   server: DrawnServer,
-  manager?: ToastManager,
 ): {
   approve: () => Promise<boolean>;
   reject: (reason: string) => Promise<boolean>;
@@ -52,7 +51,6 @@ export function useDrawnWrites(
   const { run, pending } = useDecisionRunner<DrawnAct>({
     itemId: item.itemId,
     subject: item.body.name,
-    ...(manager !== undefined ? { manager } : {}),
   });
   const waterBodyId = item.body.waterBodyId;
   const approve = useCallback(

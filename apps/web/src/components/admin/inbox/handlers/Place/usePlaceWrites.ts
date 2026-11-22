@@ -3,10 +3,8 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 
-import type { ToastManager } from '@/components/kit/toast';
-
 import type { UndoTarget } from '../../../shell/undo';
-import { useDecisionRunner } from '../Drawn/useDecisionRunner';
+import { type Landed, useDecisionRunner } from '../../actions/useDecisionRunner';
 import { type LandmarkLookalike, type PlaceItem, primaryAsk } from './placeModel';
 import { PLACE_WORDS as W } from './placeWords';
 
@@ -51,12 +49,13 @@ export function usePlaceServer(): PlaceServer {
 }
 
 /** A decision's Undo target: the ask the write answered with. */
-const askTarget = (id: string): UndoTarget => ({ targetType: 'waterBodyRequest', targetId: id });
+const askTarget = (id: string): Landed => ({
+  target: { targetType: 'waterBodyRequest', targetId: id } satisfies UndoTarget,
+});
 
 export function usePlaceWrites(
   item: Pick<PlaceItem, 'itemId' | 'asks' | 'memberCount' | 'memberCountIsFloor' | 'body'>,
   server: PlaceServer,
-  manager?: ToastManager,
 ): {
   samePlace: (l: LandmarkLookalike) => Promise<boolean>;
   approve: () => Promise<boolean>;
@@ -68,7 +67,6 @@ export function usePlaceWrites(
   const { run, pending } = useDecisionRunner<PlaceAct>({
     itemId: item.itemId,
     subject: name !== '' ? `“${name}” · ${item.body.name}` : item.body.name,
-    ...(manager !== undefined ? { manager } : {}),
   });
   const requestId = ask?.requestId;
   const closes = W.closesAsks(item.memberCount, item.memberCountIsFloor);

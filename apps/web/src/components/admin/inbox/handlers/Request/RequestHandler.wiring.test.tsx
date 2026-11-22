@@ -241,11 +241,11 @@ describe('a refusal reaches a toast', () => {
     });
     open(admit());
     await user.click(button('Admit'));
-    const said = await screen.findAllByText('This has already been decided.');
+    const said = await screen.findAllByText('The decision: This has already been decided.');
     expect(said.length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Not changed · Unnamed water').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Not saved · Unnamed water').length).toBeGreaterThan(0);
     // Not printed in the inspector.
-    expect(within(inspector()).queryByText('This has already been decided.')).toBeNull();
+    expect(within(inspector()).queryByText(/already been decided/)).toBeNull();
   });
 });
 

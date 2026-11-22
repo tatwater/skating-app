@@ -1,11 +1,9 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 
-import { useUndo } from '../../../shell/undo';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { InspectorFrame } from '../../inspector/InspectorFrame';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import { ItemMap } from '../../map/ItemMap';
-import { useStillHere } from '../Flag/useStillHere';
 import { requestSlots } from './RequestView';
 import type { RequestItem } from './requestModel';
 import { useRequestServer, useRequestWrites } from './useRequestWrites';
@@ -31,10 +29,8 @@ function RequestInspector({
   const { pane } = useInspectorContext();
   // Where the console is, for the Body console's way back (`from`), as every handler builds it.
   const here = useRouterState({ select: (s) => s.location.href });
-  const { announce } = useUndo();
   const server = useRequestServer();
-  const stillHere = useStillHere(item.itemId);
-  const onWrite = useRequestWrites({ item, server, announce, here: stillHere });
+  const onWrite = useRequestWrites({ item, server });
   const body = item.body;
   const {
     head,

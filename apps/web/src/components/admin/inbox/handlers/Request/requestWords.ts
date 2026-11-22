@@ -153,8 +153,9 @@ export const REQUEST_HANDLER_WORDS = {
   lookingUpDetail: 'The catalog answers in a moment',
   closesReceipt: (n: number, floor: boolean) =>
     `Closes ${floor ? `${n.toLocaleString('en-US')}+ asks` : n === 1 ? '1 ask' : `${n.toLocaleString('en-US')} asks`} · each asker told`,
-  /** A refusal's toast title: nothing changed, and on what. */
-  notChanged: (subject: string) => `Not changed · ${subject}`,
+  /** What a refusal's toast says was not saved ("Not saved · ‹item›" — "The decision: …"). */
+  theDecision: 'The decision',
+  theLookup: 'The lookup',
 
   openInBody: 'Open in Body',
 } as const;
