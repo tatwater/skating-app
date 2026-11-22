@@ -27,7 +27,12 @@ import type { Doc, Id } from './_generated/dataModel';
 import { BACKFILL_PHASES, reviewAuditOf } from './inboxItems';
 import { readSnapshot } from './lib/audit';
 import { bodySource, fileMember } from './lib/inboxItems';
-import { DRAWN_SURVIVOR_READ, drawnSurvivorOf, SURVIVOR_CHANGED_REFUSAL } from './lib/inboxRules';
+import {
+  DRAWN_SURVIVOR_READ,
+  drawnSurvivorOf,
+  OWN_DRAWING,
+  SURVIVOR_CHANGED_REFUSAL,
+} from './lib/inboxRules';
 import { MERGE_ROWS_PER_KIND, MERGE_TOO_BIG, RETARGET_CAP } from './lib/mergeLoad';
 import schema from './schema';
 import type { MergeChangeSet } from './waterBodies';
@@ -400,19 +405,43 @@ describe('the merge’s refusals (fork 3)', () => {
     expect(MERGE_ROWS_PER_KIND).toBeLessThan(8_192);
   });
 
-  test('the drawer never merges their own drawing (D289); the preview says so first', async () => {
+  test('the drawer never merges their own drawing (D289): one sentence and code on both entry points', async () => {
     const w = await pair();
-    await w.t.run((ctx) => ctx.db.patch(w.loser, { createdByUserId: w.mod.id }));
+    // Drawn by the moderator, so the Inbox's member names them as its filer.
+    const own = await body(w.t, 'Mine', 0.005, {
+      source: 'user',
+      reviewStatus: 'pending',
+      createdByUserId: w.mod.id,
+      dedupStatus: 'suspected_duplicate',
+      duplicateCandidateIds: [w.survivor],
+    });
+    const said = { refusal: OWN_DRAWING.refusal, code: OWN_DRAWING.code };
+    // The Shape tab's read, from the drawer's seat.
     const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
-      loserId: w.loser,
+      loserId: own,
       survivorId: w.survivor,
     });
-    expect(preview).toEqual({
-      ok: false,
-      refusal: 'You filed this, so another staff member decides it.',
-      code: 'ownDrawing',
-    });
-    await expect(w.merge()).rejects.toThrow(/another staff member decides it/);
+    expect(preview).toEqual({ ok: false, ...said });
+    // The Inbox's read, from the same seat: the lever's refusal and its code.
+    const { item } = await w.mod.as.query(api.inbox.item, { ref: `body:${own}` });
+    if (item?.kind !== 'drawn') throw new Error('no drawn item');
+    expect({ refusal: item.can.mergeDrawn, code: item.canCode.mergeDrawn }).toEqual(said);
+    // Both writes refuse it in the same words.
+    await expect(
+      w.mod.as.mutation(api.waterBodies.merge, { survivorId: w.survivor, loserId: own }),
+    ).rejects.toThrow(said.refusal);
+    await expect(
+      w.mod.as.mutation(api.inboxWrites.mergeDrawn, {
+        itemId: item.itemId,
+        survivorId: w.survivor,
+      }),
+    ).rejects.toThrow(said.refusal);
+    // Another moderator's seat: offered, with no code.
+    const other = await person(w.t, 'other', 'moderator');
+    const theirs = await other.as.query(api.inbox.item, { ref: `body:${own}` });
+    if (theirs.item?.kind !== 'drawn') throw new Error('no drawn item');
+    expect(theirs.item.can.mergeDrawn).toBeNull();
+    expect(theirs.item.canCode).toEqual({});
   });
 
   test('every refusal the write gives, the preview gives in its words', async () => {

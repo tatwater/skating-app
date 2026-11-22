@@ -83,6 +83,25 @@ export type DrawnSurvivor = {
   suggested: boolean;
 };
 
+/**
+ * **D289 on a drawing's merge — one sentence and one code** (B01-5d): the staffer who drew a drawing
+ * in review doesn't merge it. The Inbox's `can.mergeDrawn` (and its `canCode`) and the Shape tab's
+ * preview and `waterBodies.merge` (`mergePairRefusal`) all answer with this.
+ */
+export const OWN_DRAWING = { refusal: OWN_FILING_REFUSAL, code: 'ownDrawing' } as const;
+
+/** {@link OWN_DRAWING} when `viewerId` drew this drawing still in review, else `null`. */
+export function ownDrawingRefusal(
+  drawing: Pick<Doc<'waterBodies'>, 'source' | 'reviewStatus' | 'createdByUserId'>,
+  viewerId: Id<'profiles'>,
+): typeof OWN_DRAWING | null {
+  return drawing.source === 'user' &&
+    drawing.reviewStatus === 'pending' &&
+    drawing.createdByUserId === viewerId
+    ? OWN_DRAWING
+    : null;
+}
+
 /** What a drawing that overlaps no live body is told — the rule's sentence for `mergeDrawn`. */
 export const NO_OVERLAP_REFUSAL = 'This drawing overlaps no known body.';
 /** A `mergeDrawn` whose survivor the bar showed is no longer the drawing's live survivor. */
@@ -563,7 +582,13 @@ export async function inboxCanWithCodes(
       whoRefusal(viewer, item, verb, theirs, facts) ?? uncheckedRefusal(verb, facts ?? {});
     const precondition = earlier === null && facts ? preconditionRefusal(verb, facts) : null;
     can[verb] = earlier ?? precondition;
-    const code = precondition !== null && facts ? preconditionCode(verb, facts) : undefined;
+    const code =
+      precondition !== null && facts
+        ? preconditionCode(verb, facts)
+        : // A drawing's own drawer refused its merge: the code the merge's preview gives (D289).
+          item.kind === 'drawn' && verb === 'mergeDrawn' && earlier === OWN_DRAWING.refusal
+          ? OWN_DRAWING.code
+          : undefined;
     if (code !== undefined) canCode[verb] = code;
   }
   return { can, canCode };

@@ -116,9 +116,11 @@ export type InboxCan = Partial<Record<InboxVerb, string | null>>;
 /**
  * Why a verb is refused, where a client must tell one refusal from another without reading its
  * words (B01-5d): `awaitsDrawing` — a place ask's *Approve* waits on a bay or landmark not drawn
- * yet, so the handler offers *Draw in Body →*. Only refusals a client acts on have a code.
+ * yet, so the handler offers *Draw in Body →*; `ownDrawing` — a drawing's merge refused to the
+ * staffer who drew it (D289), the code the Shape tab's preview gives too. Only refusals a client acts
+ * on have a code.
  */
-export type InboxRefusalCode = 'awaitsDrawing';
+export type InboxRefusalCode = 'awaitsDrawing' | 'ownDrawing';
 
 /** Each refused verb's code, where it has one (absent for a verb allowed or a refusal with none). */
 export type InboxCanCode = Partial<Record<InboxVerb, InboxRefusalCode>>;

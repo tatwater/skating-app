@@ -142,7 +142,12 @@ import {
   reopenItem,
   requestSource,
 } from './lib/inboxItems';
-import { assertInboxVerb, DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './lib/inboxRules';
+import {
+  assertInboxVerb,
+  DECIDED_REFUSAL,
+  OWN_FILING_REFUSAL,
+  ownDrawingRefusal,
+} from './lib/inboxRules';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
@@ -3695,13 +3700,8 @@ export function mergePairRefusal(
   if (loser.dedupStatus === 'merged' || loser.mergedIntoId !== undefined) {
     return { refusal: 'Water body is already merged', code: 'loserMerged' };
   }
-  if (
-    loser.source === 'user' &&
-    loser.reviewStatus === 'pending' &&
-    loser.createdByUserId === viewerId
-  ) {
-    return { refusal: OWN_FILING_REFUSAL, code: 'ownDrawing' };
-  }
+  const own = ownDrawingRefusal(loser, viewerId);
+  if (own !== null) return { ...own };
   const lists = mergedModeratorLists(survivor, [loser]).refusal;
   return lists === null ? null : { refusal: lists, code: 'listsOverCap' };
 }
