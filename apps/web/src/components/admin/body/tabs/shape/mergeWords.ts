@@ -116,6 +116,28 @@ export const MERGE_WORDS = {
     recordUnreadable: 'The merge’s record couldn’t be read.',
     mergedAgain: 'The body was merged again while it ran.',
   } satisfies Record<UnmergeStallCode, string>,
+  /** Ended by a moderator before it finished: terminal, beside done. */
+  unmergeAbandoned: 'Abandoned before it finished',
+  /** Ends a stalled unmerge where it stands (destructive, behind a reason). */
+  abandon: 'Abandon',
+  abandonTitle: 'Abandon this unmerge?',
+  /**
+   * What abandoning does, from `unmerge.abandon`: both bodies unlocked and their derived facts
+   * recomputed; the rows already put back stay put back; the rest stays where the merge put them;
+   * the History keeps a row of it — and nothing here takes it back.
+   */
+  abandonWhat: (leftCount: number) =>
+    `Both bodies are unlocked and can be merged again. Rows already moved back stay on this body; rows the unmerge hadn't reached yet stay where the merge put them${leftCount > 0 ? `, and the ${leftCount.toLocaleString('en-US')} that had changed since stay where they are` : ''}. History records what was and wasn't moved back. This can't be undone here.`,
+  abandonReasonLabel: 'Reason · kept in the audit log',
+  /** An abandon the server refused: the toast's title, the server's words after it. */
+  notAbandoned: 'Not abandoned',
+  /** The abandon's own History row: what it never reached, still where the merge put them. */
+  notReached: (count: number) =>
+    count === 1
+      ? '1 row wasn’t moved back and stays where the merge put it'
+      : `${count.toLocaleString('en-US')} rows weren’t moved back and stay where the merge put them`,
+  everythingReached: 'Every row had been reached',
+  notReachedUnread: 'What it didn’t reach couldn’t be read',
   /** Carries a stalled unmerge on from where it stopped. */
   resume: 'Resume',
   /** A resume the server refused: the toast's title, the server's words after it. */

@@ -12,7 +12,7 @@ import {
 } from '@skating/core';
 
 import { type AuditAction, type AuditTarget, actionLabel } from '../../shell/actionLabels';
-import { mergeUndoWhy, unmergeFactsOf, unmergeLine } from '../../shell/unmergeLine';
+import { abandonLineOf, mergeUndoWhy, unmergeFactsOf, unmergeLine } from '../../shell/unmergeLine';
 import type { BodyTabKey } from './bodySearch';
 
 /**
@@ -478,6 +478,9 @@ export function bodyHistory(rows: readonly HistoryAction[]): HistoryEntry[] {
 /** A row's second line ({@link HistoryEntry.line}), from the row alone; `null` for none. */
 function historyLineOf(r: HistoryAction): string | null {
   if (r.action === 'unmerge_waterbody') {
+    // The row an abandon wrote says what it did and didn't move back.
+    const abandoned = abandonLineOf(r.metadata);
+    if (abandoned !== null) return abandoned;
     const facts = unmergeFactsOf(r.metadata);
     return facts === null ? null : unmergeLine(facts);
   }

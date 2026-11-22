@@ -10,12 +10,16 @@ export function unmergeLine({
   done,
   leftCount,
   stalled = false,
+  abandoned = false,
 }: {
   done: boolean;
   leftCount: number;
   /** Not done, and nothing is carrying it on (a page failed): it stopped before it finished. */
   stalled?: boolean;
+  /** Ended by a moderator before it finished (`unmerge.abandon`): terminal, beside done. */
+  abandoned?: boolean;
 }): string {
+  if (!done && abandoned) return MW.unmergeAbandoned;
   if (!done && stalled) return MW.unmergeStalled;
   if (!done) return leftCount > 0 ? `${MW.unmerging} · ${MW.leftSince(leftCount)}` : MW.unmerging;
   return leftCount > 0 ? MW.leftSince(leftCount) : MW.unmergedAll;
@@ -28,15 +32,45 @@ export function unmergeLine({
  */
 export function unmergeFactsOf(
   metadata: unknown,
-): { done: boolean; leftCount: number; stalled: boolean } | null {
+): { done: boolean; leftCount: number; stalled: boolean; abandoned: boolean } | null {
   if (typeof metadata !== 'object' || metadata === null) return null;
-  const { done, left, stalled } = metadata as {
+  const { done, left, stalled, abandoned } = metadata as {
     done?: unknown;
     left?: { count?: unknown };
     stalled?: unknown;
+    abandoned?: unknown;
   };
   if (typeof done !== 'boolean' || typeof left?.count !== 'number') return null;
-  return { done, leftCount: left.count, stalled: !done && stalled != null };
+  return {
+    done,
+    leftCount: left.count,
+    stalled: !done && stalled != null,
+    abandoned: !done && abandoned != null,
+  };
+}
+
+/**
+ * The line of the row an abandon wrote (`unmerge_waterbody` with `metadata.abandons`): that it was
+ * abandoned, what it had left where it was, and what it never reached (`notReached`, each phase's rows
+ * from where it stopped, still where the merge put them) — or that this couldn't be read. `null` for
+ * any other row.
+ */
+export function abandonLineOf(metadata: unknown): string | null {
+  if (typeof metadata !== 'object' || metadata === null) return null;
+  const { abandons, left, notReached } = metadata as {
+    abandons?: unknown;
+    left?: { count?: unknown };
+    notReached?: { remaining?: Record<string, number> } | null;
+  };
+  if (abandons === undefined) return null;
+  const parts: string[] = [MW.unmergeAbandoned];
+  if (typeof left?.count === 'number' && left.count > 0) parts.push(MW.leftSince(left.count));
+  if (notReached === null || notReached === undefined) parts.push(MW.notReachedUnread);
+  else {
+    const n = Object.values(notReached.remaining ?? {}).reduce((sum, k) => sum + k, 0);
+    parts.push(n > 0 ? MW.notReached(n) : MW.everythingReached);
+  }
+  return parts.join(' · ');
 }
 
 /**

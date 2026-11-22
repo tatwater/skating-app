@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { AUDIT_REASON_MAX } from '@skating/core';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   reads: {} as Record<string, unknown>,
   args: {} as Record<string, unknown>,
   resume: vi.fn(async (_args: unknown): Promise<unknown> => ({ unmergeActionId: 'u1' })),
+  abandon: vi.fn(async (_args: unknown): Promise<unknown> => ({ actionId: 'ab1' })),
   can: true,
   toasts: [] as unknown[],
 }));
@@ -30,7 +32,13 @@ vi.mock('../reads/consoleReads', async (original) => ({
     return { reads, retry: () => {}, live: true, failed: false, pending: false };
   },
 }));
-vi.mock('convex/react', () => ({ useMutation: () => mocks.resume }));
+vi.mock('convex/react', async () => {
+  const { getFunctionName } = await import('convex/server');
+  return {
+    useMutation: (ref: Parameters<typeof getFunctionName>[0]) =>
+      getFunctionName(ref).endsWith(':abandon') ? mocks.abandon : mocks.resume,
+  };
+});
 vi.mock('@/lib/useRole', () => ({
   useRole: () => ({ can: (c: string) => mocks.can && c === 'corpus.duplicates' }),
 }));
@@ -46,7 +54,9 @@ const { UnmergeLeft, UnmergeLeftView, UnmergingNote, stallWhy, unmergeLeftLine }
 const answer = (done: boolean, count: number, stalled: string | null = null) => ({
   unmergeActionId: 'u1' as never,
   done,
-  stalled: stalled === null ? null : { code: 'pageFailed' as const, error: stalled },
+  stalled:
+    stalled === null ? null : { code: 'pageFailed' as const, error: stalled, resumable: true },
+  abandoned: null as { at: number; actionId: never } | null,
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
 /** A failed page's error text, as the scheduler records it on a deployment. */
@@ -56,6 +66,8 @@ beforeEach(() => {
   mocks.reads = {};
   mocks.args = {};
   mocks.resume.mockReset();
+  mocks.abandon.mockReset();
+  mocks.abandon.mockImplementation(async () => ({ actionId: 'ab1' }));
   mocks.resume.mockImplementation(async () => ({ unmergeActionId: 'u1' }));
   mocks.can = true;
   mocks.toasts.length = 0;
@@ -103,7 +115,10 @@ describe('UnmergeLeftView', () => {
     expect(screen.getByText(`${MW.stallWhy.pageFailed} ${FAILED}`)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: MW.resume })).toBeNull();
     rerender(
-      <UnmergeLeftView receipt={answer(false, 0, FAILED)} resume={{ onResume, pending: true }} />,
+      <UnmergeLeftView
+        receipt={answer(false, 0, FAILED)}
+        levers={{ resume: { onResume, pending: true }, abandon: null }}
+      />,
     );
     expect(screen.getByRole('button', { name: MW.resume })).toBeDisabled();
   });
@@ -111,24 +126,57 @@ describe('UnmergeLeftView', () => {
 
 describe('stallWhy', () => {
   it('says each stall code in plain words, and a failed page’s error after it', () => {
-    expect(stallWhy({ code: 'pageCanceled' })).toBe(MW.stallWhy.pageCanceled);
-    expect(stallWhy({ code: 'mergedAgain' })).toBe('The body was merged again while it ran.');
-    expect(stallWhy({ code: 'pageFailed', error: 'boom' })).toBe(`${MW.stallWhy.pageFailed} boom`);
-    expect(stallWhy({ code: 'pageFailed', error: '' })).toBe(MW.stallWhy.pageFailed);
+    expect(stallWhy({ code: 'pageCanceled', resumable: true })).toBe(MW.stallWhy.pageCanceled);
+    expect(stallWhy({ code: 'mergedAgain', resumable: false })).toBe(
+      'The body was merged again while it ran.',
+    );
+    expect(stallWhy({ code: 'pageFailed', error: 'boom', resumable: true })).toBe(
+      `${MW.stallWhy.pageFailed} boom`,
+    );
+    expect(stallWhy({ code: 'pageFailed', error: '', resumable: true })).toBe(
+      MW.stallWhy.pageFailed,
+    );
   });
 
-  it('offers Resume for a stall of any code — the server names none a resume can’t help', () => {
-    const onResume = vi.fn();
-    for (const code of ['undone', 'recordGone', 'mergedAgain', 'pageMissing'] as const) {
+  it('offers Resume only where the server marks the stall resumable; Abandon on any stall', () => {
+    const levers = {
+      resume: { onResume: vi.fn(), pending: false },
+      abandon: { onAbandon: vi.fn(async () => true) },
+    };
+    for (const [code, resumable] of [
+      ['pageMissing', true],
+      ['undone', false],
+      ['recordGone', false],
+      ['mergedAgain', false],
+    ] as const) {
       const { unmount } = render(
         <UnmergeLeftView
-          receipt={{ ...answer(false, 0), stalled: { code } }}
-          resume={{ onResume, pending: false }}
+          receipt={{ ...answer(false, 0), stalled: { code, resumable } }}
+          levers={levers}
         />,
       );
-      expect(screen.getByRole('button', { name: MW.resume })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: MW.resume }) !== null).toBe(resumable);
+      expect(screen.getByRole('button', { name: MW.abandon })).toBeInTheDocument();
       unmount();
     }
+  });
+
+  it('draws an abandoned unmerge as terminal: its line, no reason, no actions', () => {
+    render(
+      <UnmergeLeftView
+        receipt={{
+          ...answer(false, 2, FAILED),
+          abandoned: { at: 1, actionId: 'ab1' as never },
+        }}
+        levers={{
+          resume: { onResume: vi.fn(), pending: false },
+          abandon: { onAbandon: vi.fn(async () => true) },
+        }}
+      />,
+    );
+    expect(screen.getByText(MW.unmergeAbandoned)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByText(MW.unmergeStalled)).toBeNull();
   });
 });
 
@@ -194,6 +242,75 @@ describe('UnmergeLeft, live', () => {
     mocks.reads.receipt = (await import('../reads/consoleReads')).retryAll([]);
     render(<UnmergeLeft mergeActionId="ma1" fallback="usual" />);
     expect(screen.getByText('usual')).toBeInTheDocument();
+  });
+});
+
+describe('Abandon, live', () => {
+  const NOT_RESUMABLE = { code: 'undone' as const, resumable: false };
+
+  it('stalled, not resumable → no Resume; Abandon asks a reason, sends it, and the row reads abandoned', async () => {
+    const user = userEvent.setup();
+    mocks.reads.receipt = { ...answer(false, 1), stalled: NOT_RESUMABLE };
+    const view = render(<UnmergeLeft mergeActionId="ma1" />);
+    expect(screen.queryByRole('button', { name: MW.resume })).toBeNull();
+    await user.click(screen.getByRole('button', { name: MW.abandon }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(MW.abandonTitle);
+    expect(dialog).toHaveTextContent(MW.abandonWhat(1));
+    expect(within(dialog).getByRole('textbox')).toHaveAttribute(
+      'maxlength',
+      String(AUDIT_REASON_MAX),
+    );
+    await user.type(within(dialog).getByRole('textbox'), 'A dead page');
+    // Destructive: armed by the first press, sent by the second.
+    const confirm = within(dialog).getByRole('button', { name: MW.abandon });
+    await user.click(confirm);
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(mocks.abandon).toHaveBeenCalledWith({ mergeActionId: 'ma1', reason: 'A dead page' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    mocks.reads.receipt = {
+      ...answer(false, 1),
+      stalled: NOT_RESUMABLE,
+      abandoned: { at: 1, actionId: 'ab1' as never },
+    };
+    view.rerender(<UnmergeLeft mergeActionId="ma1" />);
+    expect(screen.getByText(MW.unmergeAbandoned)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('an abandon refused is a toast in the server’s words; the dialog keeps the reason', async () => {
+    const user = userEvent.setup();
+    mocks.abandon.mockImplementationOnce(async () => {
+      throw new ConvexError('This unmerge is still running.');
+    });
+    mocks.reads.receipt = { ...answer(false, 0), stalled: NOT_RESUMABLE };
+    render(<UnmergeLeft mergeActionId="ma1" />);
+    await user.click(screen.getByRole('button', { name: MW.abandon }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Stuck');
+    const confirm = within(dialog).getByRole('button', { name: MW.abandon });
+    await user.click(confirm);
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(mocks.toasts).toEqual([
+        expect.objectContaining({
+          title: 'Not abandoned',
+          description: 'This unmerge is still running.',
+        }),
+      ]),
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(within(screen.getByRole('alertdialog')).getByRole('textbox')).toHaveValue('Stuck');
+  });
+
+  it('a viewer without the capability sees the state and no actions', () => {
+    mocks.can = false;
+    mocks.reads.receipt = answer(false, 0, FAILED);
+    render(<UnmergeLeft mergeActionId="ma1" />);
+    expect(screen.getByText(MW.unmergeStalled)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 

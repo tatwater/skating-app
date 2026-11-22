@@ -32,9 +32,17 @@ const FAILED = 'Uncaught Error: Too many reads in a single function execution';
 const at = (done: boolean, count: number, stalled: string | null = null): UnmergeReceipt => ({
   unmergeActionId: 'u1' as never,
   done,
-  stalled: stalled === null ? null : { code: 'pageFailed' as const, error: stalled },
+  stalled:
+    stalled === null ? null : { code: 'pageFailed' as const, error: stalled, resumable: true },
+  abandoned: null,
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
+const noop = () => {};
+/** The levers a viewer with the capability holds, faked. */
+const levers = (
+  onResume: () => void = noop,
+  onAbandon: (reason: string) => Promise<boolean> = async () => true,
+) => ({ resume: { pending: false, onResume }, abandon: { onAbandon } });
 
 /** Its pages landing, then the last: "Moving rows back…", then what stayed. */
 function RunningToDone() {
@@ -63,13 +71,10 @@ function StalledToResumed() {
   return (
     <UnmergeLeftView
       receipt={receipt}
-      resume={{
-        pending: false,
-        onResume: () => {
-          setReceipt(at(false, 1));
-          setTimeout(() => setReceipt(at(true, 1)), 300);
-        },
-      }}
+      levers={levers(() => {
+        setReceipt(at(false, 1));
+        setTimeout(() => setReceipt(at(true, 1)), 300);
+      })}
     />
   );
 }
@@ -96,9 +101,8 @@ function Refused() {
     <div className="flex flex-col gap-(--space-3)">
       <UnmergeLeftView
         receipt={at(false, 0, FAILED)}
-        resume={{
-          pending: false,
-          onResume: () =>
+        levers={levers(
+          () =>
             void said(
               async () => {
                 throw new ConvexError('This unmerge is still running.');
@@ -106,7 +110,7 @@ function Refused() {
               (why) => ({ title: MW.notResumed, description: why }),
               { manager },
             ),
-        }}
+        )}
       />
       <div ref={setBox} className="relative h-[9rem] w-full max-w-(--size-sheet-sm)">
         {box !== null && <Toaster manager={manager} contained container={box} />}
@@ -142,7 +146,7 @@ export const RefusedWhileStalled: Story = {
       <UnmergingNoteView
         sentence="This body is still being unmerged. Merge it once that finishes."
         running={RUNNING}
-        resume={{ pending: false, onResume: () => {} }}
+        levers={levers()}
       />
     </div>
   ),
@@ -156,6 +160,14 @@ export const RefusedWhileStalled: Story = {
   },
 };
 
+/** The codes the server marks resumable (`unmerge.ts`); the rest are dead ends: Abandon only. */
+const RESUMABLE: ReadonlySet<string> = new Set([
+  'pageFailed',
+  'pageCanceled',
+  'pageMissing',
+  'pageStopped',
+]);
+
 /** Each way an unmerge can stop, by the server's code: the headline, then the code in plain words. */
 export const StallCodes: Story = {
   name: 'Stall codes',
@@ -164,8 +176,11 @@ export const StallCodes: Story = {
       {(Object.keys(MW.stallWhy) as (keyof typeof MW.stallWhy)[]).map((code) => (
         <UnmergeLeftView
           key={code}
-          receipt={{ ...(at(false, 0) as NonNullable<UnmergeReceipt>), stalled: { code } }}
-          resume={{ pending: false, onResume: () => {} }}
+          receipt={{
+            ...(at(false, 0) as NonNullable<UnmergeReceipt>),
+            stalled: { code, resumable: RESUMABLE.has(code) },
+          }}
+          levers={levers()}
         />
       ))}
     </div>
@@ -178,5 +193,107 @@ export const StallCodes: Story = {
     await expect(page.getAllByText(MW.unmergeStalled)).toHaveLength(
       Object.keys(MW.stallWhy).length,
     );
+  },
+};
+
+/** A dead end (undone while it ran): no Resume; Abandon asks why, then the row reads abandoned. */
+function DeadEndAbandoned() {
+  const [receipt, setReceipt] = useState<UnmergeReceipt>({
+    ...(at(false, 2) as NonNullable<UnmergeReceipt>),
+    stalled: { code: 'undone', resumable: false },
+  });
+  return (
+    <div className="w-(--size-inspector)">
+      <UnmergeLeftView
+        receipt={receipt}
+        levers={levers(noop, async () => {
+          setReceipt({
+            ...(receipt as NonNullable<UnmergeReceipt>),
+            abandoned: { at: 1, actionId: 'ab1' as never },
+          });
+          return true;
+        })}
+      />
+    </div>
+  );
+}
+
+export const StalledThenAbandoned: Story = {
+  name: 'Stalled, not resumable → abandoned',
+  render: () => <DeadEndAbandoned />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(page.queryByRole('button', { name: MW.resume })).toBeNull();
+    await userEvent.click(page.getByRole('button', { name: MW.abandon }));
+    const dialog = await body.findByRole('alertdialog');
+    await expect(dialog).toHaveTextContent(MW.abandonWhat(2));
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Undone while it ran');
+    const confirm = within(dialog).getByRole('button', { name: MW.abandon });
+    // Destructive: armed by the first press, sent by the second.
+    await userEvent.click(confirm);
+    await userEvent.click(confirm);
+    await expect(await page.findByText(MW.unmergeAbandoned)).toBeVisible();
+    await waitFor(() => expect(page.queryByRole('button')).toBeNull());
+  },
+};
+
+/** *Abandon* refused (a page started meanwhile): a toast in the server's words, the dialog kept. */
+function AbandonRefusedBoard() {
+  const [manager] = useState(createToastManager);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  return (
+    <div className="flex w-(--size-inspector) flex-col gap-(--space-3)">
+      <UnmergeLeftView
+        receipt={at(false, 0, FAILED)}
+        levers={levers(noop, async (reason) => {
+          const sent = await said(
+            async () => {
+              throw new ConvexError('This unmerge is still running.');
+            },
+            (why) => ({ title: MW.notAbandoned, description: why }),
+            { manager },
+          );
+          return sent.landed && reason !== '';
+        })}
+      />
+      <div ref={setBox} className="relative h-[9rem] w-full max-w-(--size-sheet-sm)">
+        {box !== null && <Toaster manager={manager} contained container={box} />}
+      </div>
+    </div>
+  );
+}
+
+export const AbandonRefused: Story = {
+  name: 'Abandon refused',
+  render: () => <AbandonRefusedBoard />,
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(within(canvasElement).getByRole('button', { name: MW.abandon }));
+    const dialog = await body.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Stuck');
+    const confirm = within(dialog).getByRole('button', { name: MW.abandon });
+    await userEvent.click(confirm);
+    await userEvent.click(confirm);
+    const toast = await waitFor(() =>
+      must(canvasElement.querySelector<HTMLElement>('[data-slot="toast"]')),
+    );
+    await expect(toast).toHaveTextContent('Not abandoned');
+    await expect(body.getByRole('alertdialog')).toBeInTheDocument();
+  },
+};
+
+/** A viewer without `corpus.duplicates`: the state, and no actions. */
+export const NoCapability: Story = {
+  name: 'Stalled · a viewer who can’t act',
+  render: () => (
+    <div className="w-(--size-inspector)">
+      <UnmergeLeftView receipt={at(false, 0, FAILED)} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(page.getByText(MW.unmergeStalled)).toBeVisible();
+    await expect(page.queryByRole('button')).toBeNull();
   },
 };

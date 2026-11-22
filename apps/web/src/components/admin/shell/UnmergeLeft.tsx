@@ -1,12 +1,13 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { useMutation } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { createContext, type ReactNode, useCallback, useRef, useState } from 'react';
-
 import { Button } from '@/components/kit/button';
 import { Note } from '@/components/kit/note';
 import { useRole } from '@/lib/useRole';
+import { ReasonAsk } from '../body/tabs/access/ReasonAsk';
 import { MERGE_WORDS as MW } from '../body/tabs/shape/mergeWords';
 import { isFailed, read, useConsoleReadSet } from '../reads/consoleReads';
 import { said } from '../said';
@@ -22,8 +23,10 @@ import { unmergeLine } from './unmergeLine';
  *
  * **A stalled unmerge** (not done, and nothing carrying it on — the server judges it from the
  * scheduler's record of its next page) says it stopped before it finished, its reason as a quieter
- * line under that, and — for a viewer the server lets resume (`corpus.duplicates`, `unmerge.resume`'s
- * gate) — *Resume*, through the console's write path: a refusal is a toast ("Not resumed").
+ * line under that, and — for a viewer with `corpus.duplicates` (the gate `unmerge.resume` and
+ * `unmerge.abandon` share) — *Resume* where the server marks the stall `resumable`, and *Abandon*,
+ * destructive, behind a reason, on any stall. Both go through the console's write path: a refusal is
+ * a toast. An abandoned unmerge is a terminal state beside done, with no actions.
  *
  * The line is a toast's or a row's second line, so a read that fails draws the fallback: the unmerge
  * still landed, and its History row asks again when it is next drawn.
@@ -38,11 +41,19 @@ export function unmergeLeftLine(receipt: UnmergeReceipt | undefined): string | n
     done: receipt.done,
     leftCount: receipt.left.count,
     stalled: receipt.stalled !== null,
+    abandoned: receipt.abandoned !== null,
   });
 }
 
 /** *Resume*, as a viewer the server lets resume holds it: `null` for anyone else. */
 export type ResumeLever = { onResume: () => void; pending: boolean };
+
+/** *Abandon*, as a viewer the server lets abandon holds it: resolves whether it landed. */
+export type AbandonLever = { onAbandon: (reason: string) => Promise<boolean> };
+
+/** A stalled unmerge's two ways on, as the viewer holds them. */
+export type StallLevers = { resume: ResumeLever | null; abandon: AbandonLever | null };
+const NO_LEVERS: StallLevers = { resume: null, abandon: null };
 
 /** What stopped an unmerge, as the server says it (`stalled`): a code, and a failed page's error. */
 type Stall = NonNullable<UnmergeReceipt>['stalled'] & {};
@@ -54,29 +65,60 @@ export function stallWhy(stall: Stall): string {
 }
 
 /**
- * The stalled unmerge's reason and its *Resume*, under the line that says it stopped. *Resume* is
- * offered for every stall `unmerge.resume` accepts — today, every one: the server names no stall a
- * resume can't help, so the web draws none apart.
+ * The stalled unmerge's reason and its ways on, under the line that says it stopped: *Resume* only
+ * where the server marks the stall `resumable` (a dead end — undone, its record gone, the body merged
+ * again — isn't), and *Abandon* on any stall, destructive, behind its reason dialog.
  */
-function Stalled({ stall, resume }: { stall: Stall; resume: ResumeLever | null }) {
-  const reason = stallWhy(stall);
+function Stalled({
+  stall,
+  leftCount,
+  levers,
+}: {
+  stall: Stall;
+  leftCount: number;
+  levers: StallLevers;
+}) {
+  const [asking, setAsking] = useState(false);
+  const { resume, abandon } = levers;
   return (
     <>
       <span data-slot="unmerge-stalled-why" className="block text-assist text-fg3">
-        {reason}
+        {stallWhy(stall)}
       </span>
-      {resume !== null && (
-        <Button
-          size="xs"
-          variant="outline"
-          data-slot="unmerge-resume"
-          className="mt-(--space-1)"
-          disabled={resume.pending}
-          onClick={resume.onResume}
-        >
-          {MW.resume}
-        </Button>
-      )}
+      {(stall.resumable && resume !== null) || abandon !== null ? (
+        <span className="mt-(--space-1) inline-flex gap-(--space-2)">
+          {stall.resumable && resume !== null && (
+            <Button
+              size="xs"
+              variant="outline"
+              data-slot="unmerge-resume"
+              disabled={resume.pending}
+              onClick={resume.onResume}
+            >
+              {MW.resume}
+            </Button>
+          )}
+          {abandon !== null && (
+            <ReasonAsk
+              open={asking}
+              onOpenChange={setAsking}
+              trigger={
+                <Button size="xs" variant="danger" data-slot="unmerge-abandon">
+                  {MW.abandon}
+                </Button>
+              }
+              title={MW.abandonTitle}
+              description={MW.abandonWhat(leftCount)}
+              confirm={MW.abandon}
+              label={MW.abandonReasonLabel}
+              // An abandon's reason is its audit row's (the audit log's cap, from core).
+              maxLength={AUDIT_REASON_MAX}
+              destructive
+              onConfirm={abandon.onAbandon}
+            />
+          )}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -85,20 +127,22 @@ function Stalled({ stall, resume }: { stall: Stall; resume: ResumeLever | null }
 export function UnmergeLeftView({
   receipt,
   fallback = null,
-  resume = null,
+  levers = NO_LEVERS,
 }: {
   receipt: UnmergeReceipt | undefined;
   /** What to say while there is nothing to say (the toast's usual line). */
   fallback?: ReactNode;
-  resume?: ResumeLever | null;
+  levers?: StallLevers;
 }): ReactNode {
   const line = unmergeLeftLine(receipt);
-  if (line === null) return fallback;
-  const stalled = receipt?.done === false ? receipt.stalled : null;
+  if (line === null || receipt == null) return fallback;
+  const stalled = !receipt.done && receipt.abandoned === null ? receipt.stalled : null;
   return (
     <span data-slot="unmerge-left" className="inline-flex flex-col items-start">
       <span>{line}</span>
-      {stalled !== null && <Stalled stall={stalled} resume={resume} />}
+      {stalled !== null && (
+        <Stalled stall={stalled} leftCount={receipt.left.count} levers={levers} />
+      )}
     </span>
   );
 }
@@ -128,6 +172,34 @@ export function useUnmergeResume(mergeActionId: string | null): ResumeLever | nu
   return { onResume, pending };
 }
 
+/**
+ * *Abandon* for one merge's stalled unmerge: `null` when there is none to name or the viewer can't
+ * abandon (`corpus.duplicates`, `unmerge.abandon`'s gate). A refusal is said in a toast in the server's
+ * words, and the dialog stays open over the reason.
+ */
+export function useUnmergeAbandon(mergeActionId: string | null): AbandonLever | null {
+  const { can } = useRole();
+  const abandon = useMutation(api.unmerge.abandon);
+  const onAbandon = useCallback(
+    async (reason: string) => {
+      if (mergeActionId === null) return false;
+      const sent = await said(
+        () => abandon({ mergeActionId: mergeActionId as Id<'moderationActions'>, reason }),
+        (why) => ({ title: MW.notAbandoned, description: why }),
+      );
+      return sent.landed;
+    },
+    [mergeActionId, abandon],
+  );
+  if (mergeActionId === null || !can('corpus.duplicates')) return null;
+  return { onAbandon };
+}
+
+/** Both ways on for one merge's unmerge, as the viewer holds them. */
+export function useStallLevers(mergeActionId: string | null): StallLevers {
+  return { resume: useUnmergeResume(mergeActionId), abandon: useUnmergeAbandon(mergeActionId) };
+}
+
 /** The line for one merge's unmerge, read live from the server, with *Resume* while it is stalled. */
 export function UnmergeLeft({
   mergeActionId,
@@ -141,13 +213,13 @@ export function UnmergeLeft({
       mergeActionId: mergeActionId as Id<'moderationActions'>,
     }),
   });
-  const resume = useUnmergeResume(mergeActionId);
+  const levers = useStallLevers(mergeActionId);
   const receipt = reads.receipt;
   return (
     <UnmergeLeftView
       receipt={isFailed(receipt) ? undefined : receipt}
       fallback={fallback}
-      resume={resume}
+      levers={levers}
     />
   );
 }
@@ -163,22 +235,23 @@ export type RunningUnmerge = FunctionReturnType<typeof api.unmerge.runningOn>;
 export function UnmergingNoteView({
   sentence,
   running,
-  resume = null,
+  levers = NO_LEVERS,
   ...props
 }: {
   /** The refusal's own words (the server's). */
   sentence: string;
   running: RunningUnmerge | undefined;
-  resume?: ResumeLever | null;
+  levers?: StallLevers;
 } & Omit<React.ComponentProps<typeof Note>, 'children'>): ReactNode {
-  const stalled = running != null && !running.done ? running.stalled : null;
+  const stalled =
+    running != null && !running.done && running.abandoned === null ? running.stalled : null;
   return (
     <Note data-slot="unmerging-note" {...props}>
       <span className="block">{sentence}</span>
-      {stalled !== null && (
+      {stalled !== null && running != null && (
         <>
           <span className="block">{MW.unmergeStalled}</span>
-          <Stalled stall={stalled} resume={resume} />
+          <Stalled stall={stalled} leftCount={running.left.count} levers={levers} />
         </>
       )}
     </Note>
@@ -200,8 +273,8 @@ export function UnmergingNote({
     }),
   });
   const running = isFailed(reads.running) ? undefined : reads.running;
-  const resume = useUnmergeResume(running?.mergeActionId ?? null);
-  return <UnmergingNoteView sentence={sentence} running={running} resume={resume} {...props} />;
+  const levers = useStallLevers(running?.mergeActionId ?? null);
+  return <UnmergingNoteView sentence={sentence} running={running} levers={levers} {...props} />;
 }
 
 /**

@@ -303,6 +303,26 @@ describe('a history row’s second line', () => {
       'The unmerge stopped before it finished',
     );
     expect(bodyHistory([row({ undoesActionId: 'ma1' })])[0]?.unmergeOf).toBe('ma1');
+    // Abandoned (`metadata.abandoned` on the unmerge's own row): terminal, beside done.
+    expect(line({ done: false, left: { count: 0 }, abandoned: { at: 1 } })).toBe(
+      'Abandoned before it finished',
+    );
+    // The row an abandon wrote: what was left, and what it never reached.
+    expect(
+      line({
+        abandons: 'u1',
+        left: { count: 2 },
+        notReached: { remaining: { moved: 3, bays: 1 } },
+      }),
+    ).toBe(
+      'Abandoned before it finished · 2 rows had changed since the merge and stay where they are · 4 rows weren’t moved back and stay where the merge put them',
+    );
+    expect(line({ abandons: 'u1', left: { count: 0 }, notReached: { remaining: {} } })).toBe(
+      'Abandoned before it finished · Every row had been reached',
+    );
+    expect(line({ abandons: 'u1', left: { count: 0 }, notReached: null })).toBe(
+      'Abandoned before it finished · What it didn’t reach couldn’t be read',
+    );
     // A row that doesn't carry the facts says nothing more.
     expect(line(undefined)).toBeUndefined();
     expect(line({ done: 'yes' })).toBeUndefined();

@@ -57,7 +57,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/shell/ConsoleLayout.tsx':
     'the presence heartbeat: no one asked, nothing to say',
   'components/admin/shell/undo.tsx': 'said: "Not undone"',
-  'components/admin/shell/UnmergeLeft.tsx': 'said: "Not resumed" (a stalled unmerge’s Resume)',
+  'components/admin/shell/UnmergeLeft.tsx':
+    'said: "Not resumed" / "Not abandoned" (a stalled unmerge’s Resume and Abandon)',
   'components/skater/profile/ModeratorTools.tsx':
     'said, naming the person; a write that changed nothing, the person page’s receipt',
 };
