@@ -92,7 +92,7 @@ export const THEME_INIT_SCRIPT = `(function () {
     var under = function (tree) { return path === tree || path.indexOf(tree + '/') === 0; };
     var oldTrees = ['/admin/dashboard', '/admin/flags', '/admin/water',
       '/admin/features', '/admin/recurrence', '/admin/ice-calibration', '/admin/seasons',
-      '/admin/support', '/admin/tuning', '/admin/imports'];
+      '/admin/tuning', '/admin/imports'];
     var old = false;
     for (var i = 0; i < oldTrees.length; i++) if (under(oldTrees[i])) old = true;
     if (!under('/admin')) root.setAttribute('data-surface', 'skater');
