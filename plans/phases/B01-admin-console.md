@@ -8457,6 +8457,15 @@ one-shot read of the strip's across form now waits for it (the record sheet's, t
 stories, four of the strip's own). `LifeList`, `RecordRow` and `ItemTimeline` aren't measured, so
 their reads can't land early. The changed stories passed ten times each, half of them starved.
 
+#### #171 merged (2026-11-22)
+
+B01-5b squash-merged to main as `dc27ff6e0`, its tree equal to the PR's last head (`a8addd1e6`), at
+Greptile 5/5 on `aceb5e261` and CI green on `a8addd1e6`, with the founder's authority to merge. The last
+head's change was the life-strip CI fix (`CI on the second head`, above): stories and the phase doc
+only, no source, so it merged without a further Greptile review — the governor's call, told to the
+founder. The phase branch was then rebased onto main at `dc27ff6e0` (§12.2: only the B01-5c brief and
+its three T0 commits replayed), and the local PR branch `phase-b01-inbox-2` retired.
+
 #### How the forks were ruled (2026-11-20)
 
 The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
