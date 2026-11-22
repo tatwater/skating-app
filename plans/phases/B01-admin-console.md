@@ -960,6 +960,30 @@ Not overturned, so recorded as standing:
   filed, with no own-filing check**; and **a ruling's undo skips the undoer's own report, leaving it
   dismissed.**
 
+### A governor's ruling the founder is told of (2026-11-22): abandoning a dead unmerge
+
+The founder may overturn it.
+
+- **The ruling:** a stalled unmerge can be **abandoned** — an audited way out, so a dead unmerge
+  can't lock two bodies for good. It is allowed on any stall, a resumable one included: a page that
+  fails the same way every time would otherwise hold both markers forever.
+- **The write:** `unmerge.abandon({ mergeActionId, reason })`, gated on `corpus.duplicates`. It is
+  refused while a page runs, once the unmerge is done or abandoned, and without a reason. In one
+  transaction it:
+  - clears both bodies' markers;
+  - recomputes their derived facts through their paths;
+  - writes an `unmerge_waterbody` row on the loser.
+- **The audit shape:** no new verb in `MODERATION_ACTIONS`. The row is an `unmerge_waterbody` with
+  `metadata.abandons` (the unmerge's row) and `metadata.mergeActionId`. Its metadata also records
+  the stall (`code`, `error`), what was put back (`left`, and the phases before the cursor), and what
+  wasn't: `notReached`, each phase's rows from the cursor on, or `null` when the merge's record
+  can't be read. The unmerge's own row gains `metadata.abandoned` (`at`, `byUserId`, `actionId`),
+  and `unmerge.receipt` answers it as `abandoned`. `unmerge_waterbody` itself is undone by nothing,
+  as before: "merge it again" is a fresh merge.
+- **The web:** *Abandon* is red, armed for a second press, and asks a reason held to the audit cap.
+  Its dialog says in plain words what abandoning does. Afterwards the row reads "Abandoned before
+  it finished", with what was and wasn't moved back.
+
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
 Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
@@ -10419,6 +10443,55 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
   does.
 - The proof re-runs green on a real backend.
 
+#### B01-5d: the real-backend proof, second run (2026-11-22)
+
+S4b's re-proof on the integrated head, on a throwaway local backend. Its table, verbatim (ranges =
+index ranges, out of 4,096):
+
+| Shape | Estimate edge | Real peak, merge time | Real ceiling |
+|---|---|---|---|
+| put-ins | 2,652 | ranges 69%, 507 ms | ×1.49 |
+| favorites | 1,326 | ranges 69%, 457 ms | ×1.48 |
+| asks | 265 | ranges 56%, 521 ms | ×1.86 |
+| landmark asks | 102 | ranges 23%, 725 ms | ×5.4 |
+| flags | 241 | ranges 35%, 660 ms | ×3.2 |
+| loser bays | 106 | ranges 13% | ×11.8 |
+| survivor bays | 126 | ranges 14% | ×11.4 |
+| labels | 204 | ranges 10% | ×19 |
+| reports in two bays | 867 | ranges 56%, **598–905 ms** | ×1.85 |
+| 900 KB reports | 3 | bytes read 64% | ×1.33 |
+| 150 KB skates | 23 | bytes read 66% | ×1.48 |
+| two outlines, 28k points each | accepted | bytes read 44%, 523 ms | refused near 30k each; ×~1.9 before the 1 MiB document cap |
+| bays × 9k-point survivor | 2 (points) | 512 ms | — |
+| `mergeDrawn`, 15,000 + 14,990 points | ok; +210 points refused | merged | — |
+
+In every row the preview said ok at the edge and refused at one more.
+
+- **The unmerges:** all done, with nothing stalled or left, the census equal, in one or two pages.
+  - The heaviest page used 2,794 ranges (68%) and 772 ms.
+  - A page now also stops after 500 ms of work. Re-run, the heaviest page took 570 ms.
+- **The ETL path:**
+  - One too-heavy pair among ordinary ones: 2 retired, and the heavy pair named as a skip.
+  - Three pairs that need deferring: 3 calls, all retired, and the loop ends.
+- **A merge during an unmerge** was refused for the loser and the survivor.
+- **A real stall** (a canceled scheduled page) read `pageCanceled`, resumable, and resume finished
+  it. Abandon cleared both markers, and the pair could merge again.
+- **The one finding: execution time for row-heavy merges.** The estimate has no time axis except
+  the outline-points proxy.
+  - The smallest shape over 90%: 867 reports, each in two overlapping bays, at the edge, took 905 ms
+    of the 1 s limit on one run (598 ms on another).
+  - Landmark asks (725 ms) and flags (660 ms) come next.
+  - S4a is adding a time axis. The PR opens after that and a re-measure.
+
+**The stall codes now say whether a resume can help.** `stalled` is
+`{ code, error?, resumable }`:
+- resumable: `pageFailed`, `pageCanceled`, `pageMissing`, `pageStopped` (the run's state is intact);
+- not resumable: `undone`, `recordGone`, `recordUnreadable`, `mergedAgain`. A resumed page would stop
+  the same way, and `resume` refuses those with a sentence from the same function.
+
+The web draws *Resume* only where `resumable`, and *Abandon* on any stall (§7's ruling of
+2026-11-22).
+
 #### B01-5d: the corrected merge estimate — to be re-proven on a real backend (2026-11-22)
 
 S4a's `6e810d7e5`, integrated with no conflicts. `lib/mergeLoad.ts` refuses at 75% of each Convex
@@ -10678,6 +10751,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh9 | The life strip re-lays out when web fonts arrive late: drawn stacked with a fallback face, then across once the faces land | `kit/life-strip.tsx` | open (accepted for now: the governor's ruling 14, 2026-11-21) | polish | S | A preload of the faces, or a font-ready gate before the first measure — the same family as the Saira preload already owed |
 | Sh10 | A cross-console History with Undo: built in B01-2 (#109), mounted nowhere. The History the console shows is the Body console's read-only `BodyHistorySection` (B01-5d's R11 puts the unmerge's outcome there) | `shell/HistoryPanel.tsx` | open: no slice owes it | missing planned | M | A home in the console, and its Undo wired through `useUndo` (B01-5d added `action` and the unmerge's `lineOf`) |
 | Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
+| Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
 
 #### The boards to make in Paper (founder call 1)
 
