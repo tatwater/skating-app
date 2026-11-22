@@ -118,16 +118,15 @@ describe('2.3 — a catalog candidate', () => {
     expectAllLayersOn(v);
   });
 
-  it('runs the rule shore to shore, and its measure says that distance', () => {
+  it('runs the rule shore to shore, and its measure says the distance the server served', () => {
     const gap = byId(v, 'gap:nearest:ricker') as MapLine;
     const [from, to] = gap.path as [LngLat, LngLat];
     expect(outlineCoords(UNNAMED_POND.outline)).toContainEqual(from);
     expect(outlineCoords(RICKER_POND.outline)).toContainEqual(to);
     const label = byId(v, 'gap:nearest:ricker:length') as MapLabel;
-    expect(label).toMatchObject({
-      style: 'measure',
-      text: formatDistance(metersBetween(from, to)),
-    });
+    // The row beside the map says the served distance; the rule says the same, never its own.
+    expect(label).toMatchObject({ style: 'measure', text: formatDistance(1_300) });
+    expect(formatDistance(metersBetween(from, to))).not.toBe(label.text);
   });
 
   it('frames the candidate, the skate and the rule — not the whole of ours', () => {

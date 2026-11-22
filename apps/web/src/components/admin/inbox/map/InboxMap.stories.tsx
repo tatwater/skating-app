@@ -112,7 +112,8 @@ export const Admit: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       await expect(q.querySelectorAll('[data-slot="map-legend-item"]')).toHaveLength(3);
-      await expect(must(q.querySelector('[data-style="measure"]')).textContent).toMatch(/mi$/);
+      // The served distance to Ricker Pond, as the *Nearest* row says it.
+      await expect(must(q.querySelector('[data-style="measure"]')).textContent).toBe('0.8 mi');
       // The distance rule is ticked at both ends, solid, over a dashed run.
       const rule = must(q.querySelector('[data-slot="body-map-dimension"][data-style="gap"]'));
       await expect(

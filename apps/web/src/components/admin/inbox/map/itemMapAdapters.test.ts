@@ -82,6 +82,44 @@ describe('each kind’s scene', () => {
     expect(v?.caption).toBe('Unnamed · 41 ac');
   });
 
+  it('an admit’s rule runs to the body the item names, measured as served — none named, none drawn', () => {
+    const rule = (v: InboxMapView | null) =>
+      v?.scene.items.find((i) => i.id === 'gap:nearest:ricker:length');
+    // The served 1,300 m, in the console's one distance format: the *Nearest* row's own words.
+    expect(rule(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ))).toMatchObject({
+      text: '0.8 mi',
+    });
+    const withNearest = (nearestKnown: unknown) =>
+      ({
+        ...ADMIT_MATCH,
+        candidate: {
+          ...(ADMIT_MATCH as Extract<typeof ADMIT_MATCH, { kind: 'request' }>).candidate,
+          nearestKnown,
+        },
+      }) as never;
+    // None named: no outline of ours, no rule, no legend row — whatever the answer's outlines.
+    const none = itemMapScene(withNearest(null), ADMIT_MAP_NO_TRACK, TZ);
+    expect(ids(none)).toEqual(['candidate:yq4k2']);
+    expect(none?.legend.map((r) => r.label)).toEqual(['Catalog outline · not ours yet']);
+    // Another body named than the answer's outline: nothing drawn rather than the wrong one.
+    const other = itemMapScene(
+      withNearest({ waterBodyId: 'postpond', name: 'Post Pond', meters: 900 }),
+      ADMIT_MAP_NO_TRACK,
+      TZ,
+    );
+    expect(ids(other)).toEqual(['candidate:yq4k2']);
+    // The served distance, not the drawn rule's own: another figure, another label.
+    expect(
+      rule(
+        itemMapScene(
+          withNearest({ waterBodyId: 'ricker', name: 'Ricker Pond', meters: 4_000 }),
+          ADMIT_MAP_NO_TRACK,
+          TZ,
+        ),
+      ),
+    ).toMatchObject({ text: '2.5 mi' });
+  });
+
   it('an admit with an ask’s skate: its track, named for its asker as the board does', () => {
     const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP, TZ);
     expect(lines(v)).toContain('track:kd');

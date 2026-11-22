@@ -56,7 +56,8 @@ export const UNNAMED_POND: NonNullable<RequestItem['candidate']> = {
   >['polygon'],
   matchedAt: REQUEST_NOW - 3 * D,
   metersFromAsk: 38,
-  nearestKnown: null,
+  // The board's *Nearest*: Ricker Pond, 1.3 km off (the map's fixture outline is `ricker`).
+  nearestKnown: { waterBodyId: 'ricker' as never, name: 'Ricker Pond', meters: 1_300 },
 };
 
 const base = (key: string, facet: string, filedAgo: number) => ({
@@ -216,14 +217,18 @@ export const admitPending = (viewer: Viewer = 'admin'): RequestItem => ({
   resolveError: null,
 });
 
-/** An admit the catalog matched to flowing water: *Admit* is refused, said in the item. */
+/**
+ * An admit the catalog matched to flowing water, with no body of ours near it: *Admit* is refused,
+ * said in the item; no *Nearest*.
+ */
 export const admitFlowing = (viewer: Viewer = 'admin'): RequestItem =>
   served({
     ...admit(viewer),
     itemId: id('itrqflowing') as RequestItem['itemId'],
     memberCount: 1,
     asks: [KATE_ASK],
-    candidate: { ...UNNAMED_POND, cls: null },
+    // And no nearest body found: no *Nearest* row, no rule on the map.
+    candidate: { ...UNNAMED_POND, cls: null, nearestKnown: null },
     can: canFor(viewer, 'admit', ['approve', 'decline'], { approve: FLOWING }),
   });
 

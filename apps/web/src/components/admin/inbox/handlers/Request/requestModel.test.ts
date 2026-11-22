@@ -199,25 +199,30 @@ describe('the head', () => {
 });
 
 describe('the blocks', () => {
-  it('draws 2.3’s catalog: source, class, area, no name, the match and its distance', () => {
+  it('draws 2.3’s catalog: source, class, area, no name, the match, the nearest body', () => {
     expect(catalogRows(UNNAMED_POND, REQUEST_NOW)).toEqual([
       { label: 'Source', value: '3DHP · YQ4K2', mono: true },
       { label: 'Class', value: 'Lake or pond' },
       { label: 'Area', value: '41 ac' },
       { label: 'Name', value: 'None in any catalog' },
       { label: 'Matched', value: '3 d ago · 125 ft from the ask' },
+      // The console's one distance format, from the served meters.
+      { label: 'Nearest', value: 'Ricker Pond · 0.8 mi' },
     ]);
   });
 
-  it('names the nearest body only when the read found one', () => {
-    const rows = catalogRows(
+  it('names the nearest body only when the read found one: none served, no row', () => {
+    const rows = catalogRows({ ...UNNAMED_POND, nearestKnown: null }, REQUEST_NOW);
+    expect(rows.map((r) => r.label)).not.toContain('Nearest');
+    // A name and a distance from the server, each as served.
+    const near = catalogRows(
       {
         ...UNNAMED_POND,
-        nearestKnown: { waterBodyId: 'x' as never, name: 'Ricker Pond', meters: 1300 },
+        nearestKnown: { waterBodyId: 'x' as never, name: 'Post Pond', meters: 40 },
       },
       REQUEST_NOW,
     );
-    expect(rows.at(-1)).toEqual({ label: 'Nearest', value: 'Ricker Pond · 0.8 mi' });
+    expect(near.at(-1)).toEqual({ label: 'Nearest', value: 'Post Pond · 131 ft' });
   });
 
   it('says why an admit has no match, or that the lookup hasn’t answered', () => {

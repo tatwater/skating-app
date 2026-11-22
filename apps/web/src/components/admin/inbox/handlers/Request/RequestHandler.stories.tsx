@@ -78,6 +78,11 @@ export const Admit: Story = {
       await expect(s.getByRole('region', { name: 'The catalog' })).toHaveTextContent(
         '3DHP · YQ4K2',
       );
+      // *Nearest* and the map's rule say one distance: the served one, in the console's format.
+      await expect(s.getByRole('region', { name: 'The catalog' })).toHaveTextContent(
+        'Ricker Pond · 0.8 mi',
+      );
+      await expect(must(q.querySelector('[data-style="measure"]'))).toHaveTextContent('0.8 mi');
       await expect(s.getByRole('region', { name: 'Admitting it' })).toHaveTextContent(
         '2 asks · both told',
       );
@@ -120,7 +125,7 @@ export const AdmitPending: Story = {
   },
 };
 
-/** A match the catalog calls flowing water: *Admit* is refused, the server's sentence said. */
+/** A match the catalog calls flowing water, no body of ours near: *Admit* refused, no *Nearest*. */
 export const AdmitFlowing: Story = {
   render: () => one(admitFlowing()),
   play: async ({ canvasElement }) => {
@@ -130,6 +135,11 @@ export const AdmitFlowing: Story = {
         /flowing water or a canal/,
       );
       await expect(within(q).queryByRole('button', { name: /^Admit/ })).toBeNull();
+      // No nearest body served: no row, and no rule on the map though the answer holds an outline.
+      await expect(within(q).getByRole('region', { name: 'The catalog' })).not.toHaveTextContent(
+        'Nearest',
+      );
+      await expect(q.querySelector('[data-style="measure"]')).toBeNull();
     }
   },
 };

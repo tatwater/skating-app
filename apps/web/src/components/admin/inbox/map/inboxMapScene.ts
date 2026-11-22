@@ -152,8 +152,11 @@ const askedItem = (a: EmbedPoint): MapItem => ({
   ...(a.name === undefined ? {} : { name: a.name }),
 });
 
-/** A distance rule between two points, and its length set into it. */
-function gapItems(id: string, from: LngLat, to: LngLat): MapItem[] {
+/**
+ * A distance rule between two points, and its length set into it: the length the server measured
+ * when one is given (so the rule and the block beside the map say one distance), else the rule's own.
+ */
+function gapItems(id: string, from: LngLat, to: LngLat, meters?: number): MapItem[] {
   return [
     { kind: 'line', id: `gap:${id}`, layer: 'marks', path: [from, to], style: 'gap' },
     {
@@ -161,7 +164,7 @@ function gapItems(id: string, from: LngLat, to: LngLat): MapItem[] {
       id: `gap:${id}:length`,
       layer: 'marks',
       at: midpoint(from, to),
-      text: formatDistance(metersBetween(from, to)),
+      text: formatDistance(meters ?? metersBetween(from, to)),
       style: 'measure',
     },
   ];
@@ -282,8 +285,11 @@ export interface AdmitInput extends Captioned {
   asks: readonly EmbedPoint[];
   /** The skates the asks came with. */
   tracks?: readonly EmbedPath[];
-  /** The nearest body of ours, if the catalog block names one: drawn, with the distance to it. */
-  nearest?: EmbedBody | null;
+  /**
+   * The nearest body of ours, if the catalog block names one (`candidate.nearestKnown`): drawn, with
+   * a rule to it measured as the server measured it — the distance the *Nearest* row says.
+   */
+  nearest?: (EmbedBody & { meters: number }) | null;
   /** The legend's words for what is drawn; a row shows only for a label given. */
   legend?: { candidate?: string; track?: string; nearest?: string };
   /**
@@ -333,7 +339,7 @@ export function admitScene({
       : { type: 'Polygon', coordinates: [asks.map((a) => [...a.at])] };
     const pair = nearestVertices(from, nearest.outline);
     if (pair) {
-      items.push(...gapItems(`nearest:${nearest.id}`, pair[0], pair[1]));
+      items.push(...gapItems(`nearest:${nearest.id}`, pair[0], pair[1], nearest.meters));
       framed.push(pair[0], pair[1]);
     }
   }
