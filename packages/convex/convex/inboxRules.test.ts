@@ -154,7 +154,8 @@ describe('the verbs a handler draws, and their preconditions (rule 5)', () => {
   });
 
   test('each precondition refuses in its own words, and allows what it should', () => {
-    expect(preconditionRefusal('hide', { targetType: 'photo' })).toMatch(/photo/);
+    // A photo has its axis (B01-5e): without record facts it defers to the write, as content does.
+    expect(preconditionRefusal('hide', { targetType: 'photo' })).toBeNull();
     // Without the record facts (a write that didn't read them) the content verbs defer to
     // `setContentStatus`, which refuses by the same function the read answers from.
     expect(preconditionRefusal('hide', { targetStatus: 'visible' })).toBeNull();

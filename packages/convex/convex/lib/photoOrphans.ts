@@ -28,6 +28,7 @@
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { photoHeld } from './photoAccess';
 import { deleteStoredBlob } from './storageBlobs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -153,43 +154,60 @@ export async function durablePhotoIds(
   return referenced;
 }
 
+/** What {@link deletePhotoAndBlobs} did: the row is gone, a blob outlived it (row kept), or held. */
+export type PhotoDeleteResult = 'deleted' | 'retained' | 'held';
+
 /**
- * Delete a photo row and both of its stored blobs. Returns whether the **row is gone** — `false` means
- * a blob outlived the attempt and the row was deliberately kept.
+ * Delete a photo row and both of its stored blobs — **unless the photo is held** (B01-5e; D248: an
+ * author can't drop evidence). Every deleter of a photo calls this, and this asks `photoHeld` itself
+ * (moderated, under an open flag, or under a standing verdict), so a new caller can't forget the check;
+ * `packages/guards`' `photoDeleters.test.ts` holds that no other code deletes a photo row or blob. A
+ * held photo is left exactly as it is (`held`): a removal's bytes go by the purge alone
+ * (`photoPurge`, through {@link purgePhotoBlobs}), and a hide or an open flag keeps them.
+ *
+ * Returns `retained` when a blob outlived the attempt and the row was deliberately kept.
  *
  * This used to swallow both blob errors and delete the row regardless, reasoning that a throw would
  * strand the row *and* leave the blobs, "strictly worse than the blob leak the next sweep can't even
  * see." The premise is right and the conclusion doesn't follow, because those aren't the only two
  * options (PR #29 review). **The row is the only pointer to those two blobs** — `sweepOrphanPhotos`
- * finds its work by reading `photos` — so the parenthetical was the whole problem, not an aside: a
- * leak no sweep can see is a leak nobody will ever clean up, holding someone's private image bytes,
- * possibly with a GPS coordinate, indefinitely.
+ * finds its work by reading `photos` — so a leak no sweep can see is a leak nobody will ever clean up,
+ * holding someone's private image bytes, possibly with a GPS coordinate, indefinitely.
  *
  * So the third option: don't throw *and* don't drop the pointer. A photo whose blob is provably gone
- * loses its row; one whose blob is still there keeps it, and the daily sweep tries again — which costs
- * a row nobody can see and buys a retry that can actually happen. `lib/storageBlobs` is what makes
- * "provably gone" a real check rather than a swallowed error.
- *
- * **No operator alert at a threshold**, unlike the export bundles that share this shape. That's a
- * proportionality call, not an oversight: a stuck export is a complete copy of one account and worth
- * paging someone over, while a stuck photo is one image whose retry is free and whose count shows up
- * in the sweep's `retained` every day.
+ * loses its row; one whose blob is still there keeps it, and the daily sweep tries again. **No operator
+ * alert at a threshold**: a stuck photo is one image whose retry is free and whose count shows up in
+ * the sweep's `retained` every day.
  */
 export async function deletePhotoAndBlobs(
   ctx: MutationCtx,
   photo: Doc<'photos'>,
-): Promise<boolean> {
-  const failures = [
-    await deleteStoredBlob(ctx, photo.storageId as Id<'_storage'>),
-    await deleteStoredBlob(ctx, photo.thumbStorageId as Id<'_storage'>),
-  ].filter((f): f is string => f !== null);
-
+): Promise<PhotoDeleteResult> {
+  if (await photoHeld(ctx, photo)) return 'held';
+  const failures = await deleteBlobsOf(ctx, photo);
   if (failures.length > 0) {
     console.warn(
       `photos: keeping row ${photo._id} — ${failures.length} of its blobs could not be deleted (${failures.join('; ')}). It is the only pointer to them; the orphan sweep retries daily.`,
     );
-    return false;
+    return 'retained';
   }
   await ctx.db.delete(photo._id);
-  return true;
+  return 'deleted';
+}
+
+/**
+ * **The blob half** (B01-5e, D222): a removed photo's purge deletes its two blobs and keeps its row as
+ * the tombstone the verdict and History name. Only the purge calls it (`photoPurge`), on a photo whose
+ * clock is due. Returns the failures — empty when both blobs are provably gone.
+ */
+export async function purgePhotoBlobs(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
+  return deleteBlobsOf(ctx, photo);
+}
+
+/** Both blobs of a photo, each deleted honestly (`lib/storageBlobs`): the failures, if any. */
+async function deleteBlobsOf(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
+  return [
+    await deleteStoredBlob(ctx, photo.storageId as Id<'_storage'>),
+    await deleteStoredBlob(ctx, photo.thumbStorageId as Id<'_storage'>),
+  ].filter((f): f is string => f !== null);
 }

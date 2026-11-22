@@ -226,7 +226,12 @@ export type ReportSubjectView = {
   observedFrom: ObservedFrom | null;
   notes: string | null;
   claims: ReportClaimsView;
+  /**
+   * Its photos: every one for a viewer with `content.read`; for anyone else only the visible ones
+   * (B01-5e), counted among the first twelve — `photoCountIsFloor` says there may be more.
+   */
   photoCount: number;
+  photoCountIsFloor: boolean;
   moderationStatus: ModerationStatus;
   /** *Also on this report*: thumbs up and down; null when not read. */
   ratings: { up: number; down: number } | null;
@@ -274,20 +279,46 @@ export type AlertSubjectView = {
   }[];
 };
 
-/** A photo as 2.7's stage draws it: staff URLs, pixelated until *Show the photo*. */
+/**
+ * A photo as 2.7's stage draws it: staff URLs, pixelated until *Show the photo* (B01-5e, D222).
+ * **The URLs, the reveal and a down photo's caption go only to a viewer with `content.read`** —
+ * decided on the server, so a viewer with `inbox.read` alone gets `null`s and `canReveal: false`.
+ */
 export type PhotoSubjectView = {
   photoId: Id<'photos'>;
+  /** `null` for a hidden or removed photo to a viewer without `content.read`, or none written. */
   caption: string | null;
   takenAt: number | null;
   createdAt: number;
-  /** Staff-only URLs (`content.read`); null when the blob is gone. */
+  /** Staff-only URLs (`content.read`); `null` without it, and when the blob is gone (purged). */
   url: string | null;
   thumbUrl: string | null;
   reportId: Id<'reports'> | null;
   body: BodyRefView | null;
-  /** *On the same report*: the report's other photos, in order (1 of 4). */
-  siblings: { photoId: Id<'photos'>; thumbUrl: string | null }[];
+  /**
+   * *On the same report*: the report's other photos, in its order, at most twelve
+   * (`siblingsCapped` past them). A thumbnail only with `content.read`; each with its status, so a
+   * down one can be drawn as down.
+   */
+  siblings: {
+    photoId: Id<'photos'>;
+    thumbUrl: string | null;
+    moderationStatus: ModerationStatus;
+  }[];
+  siblingsCapped: boolean;
+  /** Its place on the report (0-based; "1 of 4" is `indexOnReport + 1` of `photoCount`). */
   indexOnReport: number | null;
+  photoCount: number | null;
+  /** The photo's moderation axis; absent on the row reads as `visible`. */
+  moderationStatus: ModerationStatus;
+  /** The viewer may see the bytes (`content.read`): the reveal is drawn only then. */
+  canReveal: boolean;
+  /** When its uploader withdrew it (their delete while it was held, B01-5e); `null` otherwise. */
+  withdrawnAt: number | null;
+  /** A removal's purge: when its bytes go (`null` unless removed and not yet purged)… */
+  purgeAt: number | null;
+  /** …and when they went: the row is a tombstone from then, its URLs `null`. */
+  purgedAt: number | null;
 };
 
 /** A hazard as a plain content flag's subject draws it: its kind, words, footprint and votes. */

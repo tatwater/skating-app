@@ -608,8 +608,11 @@ export async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: Photo
 export const MAX_SETTLE_ATTEMPTS = MAX_ATTEMPTS;
 /** Clearing one debt: its row read and deleted. */
 const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
-/** Settling one photo: the row, its access-photo check, and the delete or strip. */
-const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
+/**
+ * Settling one photo: the row, its access-photo check, its hold (`photoHeld`: a standing verdict and
+ * an open flag per open status, B01-5e), and the delete or strip.
+ */
+const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small + ROW_MAX.verdict + 2 * ROW_MAX.contentFlag;
 /** A step's own bookkeeping: its place in the queue, read and written back. */
 const STEP_PLACE = 2 * ROW_MAX.settleQueue;
 /** The least a step is given: its place, and a page row with a photo's settlement beside it. */
@@ -903,7 +906,11 @@ export const settleStep = internalMutation({
           );
           if (onAccess) return;
           reads.touch('photo');
-          if (await deletePhotoAndBlobs(ctx, photo)) return;
+          const result = await deletePhotoAndBlobs(ctx, photo);
+          // Gone; or held (B01-5e, D248: moderated, flagged or under a decision) — its row stays, still
+          // its uploader's, its bytes on the purge clock if removed; the orphan walk owes it again
+          // once nothing holds it.
+          if (result !== 'retained') return;
           // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
           // and no longer anything of its uploader's.
           await ctx.db.patch(photoId, {

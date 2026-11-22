@@ -889,10 +889,15 @@ async function erasePhotos(
   let deleted = 0;
   for (const photo of page.page) {
     if (referenced.has(photo._id)) continue;
-    if (await deletePhotoAndBlobs(ctx, photo)) {
+    const result = await deletePhotoAndBlobs(ctx, photo);
+    if (result === 'deleted') {
       deleted++;
       continue;
     }
+    // Held (B01-5e; D248): moderated, flagged or under a decision — evidence outlives the account.
+    // The row stays as it is; a removal's bytes follow its purge clock, and once nothing holds it the
+    // orphan walk finds it like any other.
+    if (result === 'held') continue;
     // The blob outlived the attempt, so the row stays as the only pointer to it (`lib/photoOrphans`)
     // and the orphan cron retries daily. What it does *not* get to do is stay a record of a person:
     // the caption, the timestamp and — the one that matters — the GPS coordinate come off now, leaving

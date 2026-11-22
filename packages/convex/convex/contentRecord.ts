@@ -74,7 +74,7 @@ import {
   recordFactsOf,
   recordLevers,
 } from './lib/recordRules';
-import { photoWithdrawnAt } from './lib/photoAccess';
+import { photoWithdrawalRow } from './lib/photoAccess';
 import { type UndoState, undoStates } from './lib/undo';
 import { literals } from './lib/validators';
 import {
@@ -921,8 +921,8 @@ async function photoFactsOf(
   reads: ReadBudget,
   photo: Doc<'photos'>,
 ): Promise<{ photoWithdrawn?: boolean }> {
-  const at = await reads.measured('moderationAction', () => photoWithdrawnAt(ctx, photo._id));
-  return at === undefined ? {} : { photoWithdrawn: at !== null };
+  const row = await reads.measured('moderationAction', () => photoWithdrawalRow(ctx, photo._id));
+  return row === undefined ? {} : { photoWithdrawn: row !== null };
 }
 
 /**

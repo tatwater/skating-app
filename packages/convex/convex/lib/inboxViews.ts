@@ -65,6 +65,7 @@ import type {
 import { planPostRestore } from '../moderation';
 import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
+import { photoVisible, photoWithdrawalRow } from './photoAccess';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
 import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
 import {
@@ -140,6 +141,16 @@ export class InboxReader {
       this.memo.set(key, read);
     }
     return read;
+  }
+
+  /** Any read the item makes once, memoized by `key` (the read charges the budget itself). */
+  once<T>(key: string, read: () => Promise<T>): Promise<T> {
+    let hit = this.memo.get(key) as Promise<T> | undefined;
+    if (hit === undefined) {
+      hit = read();
+      this.memo.set(key, hit);
+    }
+    return hit;
   }
 
   /**
@@ -355,6 +366,30 @@ export function placeOf(report: Pick<Doc<'reports'>, 'place'>): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
+/** A report's photos a viewer without `content.read` has counted, at most (each row read). */
+export const REPORT_PHOTO_COUNT_READ = 12;
+
+/**
+ * A report's photo count as this viewer may know it (B01-5e): every photo for `content.read`; for
+ * anyone else the visible ones (`photoVisible`), among the first {@link REPORT_PHOTO_COUNT_READ} —
+ * there is no cap on a report's photos, so past that it is a floor, said so.
+ */
+async function reportPhotoCount(
+  r: InboxReader,
+  report: Doc<'reports'>,
+): Promise<{ photoCount: number; photoCountIsFloor: boolean }> {
+  if (r.canReadContent) return { photoCount: report.photoIds.length, photoCountIsFloor: false };
+  let visible = 0;
+  let read = 0;
+  for (const id of report.photoIds.slice(0, REPORT_PHOTO_COUNT_READ)) {
+    if (!r.budget.affordsRead('photo')) break;
+    const photo = await r.get<'photos'>('photo', id);
+    read++;
+    if (photo && photoVisible(photo)) visible++;
+  }
+  return { photoCount: visible, photoCountIsFloor: read < report.photoIds.length };
+}
+
 async function reportSubject(
   r: InboxReader,
   report: Doc<'reports'>,
@@ -371,7 +406,7 @@ async function reportSubject(
     observedFrom: report.observedFrom ?? null,
     notes: r.text(report, report.notes),
     claims: claimsOf(report),
-    photoCount: report.photoIds.length,
+    ...(await reportPhotoCount(r, report)),
     moderationStatus: report.moderationStatus,
     ratings: null,
     corroborations: await corroborationsOf(r, report._id),
@@ -473,9 +508,66 @@ export async function targetLabel(
 }
 
 /** The flagged content whose takedown and restore go through `setContentStatus`. */
-const RECORD_TARGETS = { report: true, post: true, comment: true, hazard: true } as const;
+const RECORD_TARGETS = {
+  report: true,
+  post: true,
+  comment: true,
+  hazard: true,
+  photo: true,
+} as const;
 type RecordTarget = keyof typeof RECORD_TARGETS;
-type RecordDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
+type RecordDoc = Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'> | Doc<'photos'>;
+
+/**
+ * When a photo's uploader withdrew it (`lib/photoAccess.photoWithdrawnAt`), read through the item's
+ * budget once (memoized) — the photo subject and the record's facts ask the same row.
+ */
+function photoWithdrawnOf(r: InboxReader, photoId: Id<'photos'>): Promise<number | null> {
+  return r.once(`withdrawn:${photoId}`, async () => {
+    if (!r.budget.affordsRead('moderationAction')) {
+      throw new OverBudget('inbox item: a photo withdrawal row past the item budget');
+    }
+    const row = await r.budget.measured('moderationAction', () =>
+      photoWithdrawalRow(r.ctx, photoId),
+    );
+    return row?.createdAt ?? null;
+  });
+}
+
+/** *On the same report*, at most this many of the report's other photos (board 2.7's strip). */
+export const PHOTO_SIBLINGS_READ = 12;
+
+/**
+ * **Board 2.7's *On the same report*** — the report's other photos, in its order, at most
+ * {@link PHOTO_SIBLINGS_READ} (`siblingsCapped` past it): there is no cap on a report's photos but
+ * Convex's array limit, so the strip is bounded on its own. Each photo row is read through the item's
+ * budget; a thumbnail URL only to a viewer with `content.read`, as the stage's. Filled after the
+ * item's required rows (the target, its author), so it can't crowd them out.
+ */
+export async function photoSiblings(
+  r: InboxReader,
+  photo: PhotoSubjectView,
+): Promise<Pick<PhotoSubjectView, 'siblings' | 'siblingsCapped'>> {
+  if (photo.reportId === null) return { siblings: [], siblingsCapped: false };
+  const report = await r.get<'reports'>('report', photo.reportId);
+  if (!report) return { siblings: [], siblingsCapped: false };
+  const others = report.photoIds.filter((id) => id !== photo.photoId);
+  const siblings: PhotoSubjectView['siblings'] = [];
+  for (const id of others.slice(0, PHOTO_SIBLINGS_READ)) {
+    if (!r.budget.affordsRead('photo')) break;
+    const sib = await r.get<'photos'>('photo', id);
+    if (!sib) continue;
+    siblings.push({
+      photoId: sib._id,
+      thumbUrl: r.canReadContent ? await r.ctx.storage.getUrl(sib.thumbStorageId) : null,
+      moderationStatus: sib.moderationStatus ?? 'visible',
+    });
+  }
+  return {
+    siblings,
+    siblingsCapped: others.length > siblings.length,
+  };
+}
 
 /**
  * A content row's record facts, read exactly as `setContentStatus` reads them before a takedown or a
@@ -489,6 +581,11 @@ async function recordOf(
 ): Promise<RecordFacts> {
   r.budget.reserve('verdict', 1);
   const held = await heldKindOn(r.ctx, targetType, doc._id);
+  if (targetType === 'photo') {
+    // A photo's uploader withdrawal is on its audit rows, read as `setContentStatus` reads it.
+    const withdrawnAt = await photoWithdrawnOf(r, doc._id as Id<'photos'>);
+    return recordFactsOf('photo', doc, held, { photoWithdrawn: withdrawnAt !== null });
+  }
   if (targetType !== 'post') return recordFactsOf(targetType, doc, held);
   const post = doc as Doc<'posts'>;
   // Its restore plan reads each member Report and its newest row, and the count below each Report
@@ -626,22 +723,49 @@ async function flagTargetView(
       return { view: { ...base, targetType, hazard }, facts };
     }
     case 'photo': {
+      // Board 2.7's stage (B01-5e). The report it documents and that report's body are rows the
+      // stage rests on — read first, required (`must`); *On the same report* is a list, filled after
+      // the item's author (`photoSiblings`, from `itemView`). The bytes' URLs go only to a viewer
+      // with `content.read`, on the server — the photo subject's rule and `photos.getUrls`' are one.
       const p = doc as Doc<'photos'>;
-      const report = p.reportId ? await r.get<'reports'>('report', p.reportId) : null;
-      const siblings = report ? report.photoIds : [];
+      const report = p.reportId ? await r.must<'reports'>('report', p.reportId) : null;
+      const body = report
+        ? bodyRef(await r.must<'waterBodies'>('waterBody', report.waterBodyId))
+        : null;
+      const withdrawnAt = await photoWithdrawnOf(r, p._id);
+      const staff = r.canReadContent;
+      const status = p.moderationStatus ?? 'visible';
       const photo: PhotoSubjectView = {
         photoId: p._id,
-        caption: p.caption ?? null,
+        caption: staff || status === 'visible' ? (p.caption ?? null) : null,
         takenAt: p.takenAt ?? null,
         createdAt: p.createdAt,
-        url: await r.ctx.storage.getUrl(p.storageId),
-        thumbUrl: await r.ctx.storage.getUrl(p.thumbStorageId),
+        url: staff ? await r.ctx.storage.getUrl(p.storageId) : null,
+        thumbUrl: staff ? await r.ctx.storage.getUrl(p.thumbStorageId) : null,
         reportId: p.reportId ?? null,
-        body: report ? bodyRef(await r.get<'waterBodies'>('waterBody', report.waterBodyId)) : null,
+        body,
         siblings: [],
-        indexOnReport: report ? siblings.indexOf(p._id) : null,
+        siblingsCapped: false,
+        indexOnReport: report ? report.photoIds.indexOf(p._id) : null,
+        photoCount: report ? report.photoIds.length : null,
+        moderationStatus: status,
+        canReveal: staff,
+        withdrawnAt,
+        purgeAt: p.purgeAt ?? null,
+        purgedAt: p.purgedAt ?? null,
       };
-      return { view: { ...base, targetType, photo }, facts: { ...facts, targetStatus: null } };
+      return {
+        view: {
+          ...base,
+          // An uploader's withdrawal of a held photo, or its purge: no longer up (the stored row says
+          // which, as a deleted or erased comment's does).
+          withdrawnAt: p.purgedAt ?? withdrawnAt ?? base.withdrawnAt,
+          withdrawal: p.purgedAt !== undefined ? 'erased' : withdrawnAt !== null ? 'deleted' : null,
+          targetType,
+          photo,
+        },
+        facts: { ...facts, targetStatus: status },
+      };
     }
     case 'accessAlert': {
       const a = doc as Doc<'accessAlerts'>;
@@ -1206,9 +1330,14 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         ? await r.must<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
         : null;
       if (!firstFlag) return null;
-      const { view: target, facts } = await flagTargetView(r, firstFlag);
+      const { view: targetRead, facts } = await flagTargetView(r, firstFlag);
       const author =
         firstFlag.targetType === 'user' ? null : await authorBlock(r, item.subjectUserId);
+      // A photo's *On the same report* is a list: filled once the required rows are read.
+      const target =
+        targetRead.exists && targetRead.targetType === 'photo'
+          ? { ...targetRead, photo: { ...targetRead.photo, ...(await photoSiblings(r, targetRead.photo)) } }
+          : targetRead;
       const { rows: flags, cut: flagsCut } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
         flagMember(r, m),
       );

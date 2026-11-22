@@ -267,7 +267,10 @@ const step = (t: T, uploaderId: Id<'profiles'>, pageSize?: number, bytes = TX_BU
  * photos at the caption cap, so a test of where a pass stops seeds more than that.
  */
 const LEAST_STEP =
-  ROW_MAX.hazard + 2 * ROW_MAX.settleQueue + 2 * (2 * ROW_MAX.photo + ROW_MAX.small);
+  ROW_MAX.hazard +
+  2 * ROW_MAX.settleQueue +
+  // A photo's settlement: its row, its access check, its hold (a verdict, a flag per open status).
+  2 * (2 * ROW_MAX.photo + ROW_MAX.small + ROW_MAX.verdict + 2 * ROW_MAX.contentFlag);
 /** More photos than one {@link LEAST_STEP} pass settles. */
 const PAST_ONE_PASS = 60;
 /** Everything owed settled: the walk, run to its end. */

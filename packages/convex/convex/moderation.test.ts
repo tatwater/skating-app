@@ -196,7 +196,7 @@ describe('moderation.listFlags target context', () => {
       post: { ...attributed, summary: 'Trip title', moderationStatus: 'visible' },
       comment: { ...attributed, summary: 'Reply text', moderationStatus: 'removed' },
       hazard: { ...attributed, summary: 'Hazard: open_water', moderationStatus: 'hidden' },
-      photo: { ...attributed, summary: 'Photo' },
+      photo: { ...attributed, summary: 'Photo', moderationStatus: 'visible' },
       accessAlert: { ...attributed, summary: 'Access alert: not_plowed' },
       waterbody: { exists: true, author: null, summary: 'Lake: Lake Morey' },
       user: { ...attributed, summary: 'User: @author' },

@@ -315,6 +315,9 @@ export const collect = internalQuery({
         scopes: c.scopes,
         connectedAt: c.connectedAt,
       })),
+      // Their own photos whatever a moderator decided (B01-5e): a hidden or removed photo is still
+      // theirs, so it ships with its bytes and its status; a purged one (its bytes deleted on the
+      // removal's clock) ships as a line without bytes — no storage id to fetch.
       photos: photos.map((p) => ({
         photoId: p._id,
         caption: p.caption,
@@ -322,7 +325,9 @@ export const collect = internalQuery({
         coord: p.coord,
         placeOnMap: p.placeOnMap,
         createdAt: p.createdAt,
-        storageId: p.storageId,
+        moderationStatus: p.moderationStatus ?? 'visible',
+        purgedAt: p.purgedAt,
+        storageId: p.purgedAt === undefined ? p.storageId : undefined,
       })),
     };
   },
@@ -459,6 +464,8 @@ export const buildExport = internalAction({
       let omitted = 0;
       const files: { photoId: string; contentType: string | null; base64: string }[] = [];
       for (const photo of data.photos) {
+        // A purged photo is a line without bytes (B01-5e): its file went on the removal's clock.
+        if (photo.storageId === undefined) continue;
         const blob = await ctx.storage.get(photo.storageId as Id<'_storage'>);
         if (blob === null) continue; // already swept — its metadata still ships below
         const buffer = await blob.arrayBuffer();
