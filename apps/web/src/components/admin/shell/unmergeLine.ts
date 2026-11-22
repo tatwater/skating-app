@@ -86,3 +86,25 @@ export function mergeUndoWhy(
     ? undo.why
     : null;
 }
+
+/** A stalled unmerge's `notReached`, as the server answers it (each kind's count from the cursor on). */
+export type NotReached = {
+  remaining: Partial<Record<keyof typeof MW.unmoved.kinds, number>>;
+} | null;
+
+/**
+ * What it hasn't moved back yet, in plain words: "Still not moved back: 3 rows, 2 bays", nothing
+ * waiting, or that it can't be told (`null`: the merge's record can't be read).
+ */
+export function unmovedLine(notReached: NotReached): string {
+  if (notReached === null) return MW.unmoved.unknown;
+  const parts = (Object.keys(MW.unmoved.kinds) as (keyof typeof MW.unmoved.kinds)[])
+    .map((kind) => {
+      const n = notReached.remaining[kind] ?? 0;
+      if (n <= 0) return null;
+      const [one, many] = MW.unmoved.kinds[kind];
+      return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+    })
+    .filter((x): x is string => x !== null);
+  return parts.length === 0 ? MW.unmoved.none : `${MW.unmoved.lead}: ${parts.join(', ')}`;
+}

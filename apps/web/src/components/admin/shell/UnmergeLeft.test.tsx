@@ -47,15 +47,20 @@ vi.mock('@/components/kit/toast', async (original) => ({
   toast: (t: unknown) => mocks.toasts.push(t),
 }));
 
+const { unmovedLine } = await import('./unmergeLine');
 const { UnmergeLeft, UnmergeLeftView, UnmergingNote, stallWhy, unmergeLeftLine } = await import(
   './UnmergeLeft'
 );
 
+/** What a stalled unmerge hasn't moved back yet, as the receipt says it. */
+const UNMOVED = { phase: 'moved' as const, from: 2, remaining: { moved: 3, bays: 1 } };
 const answer = (done: boolean, count: number, stalled: string | null = null) => ({
   unmergeActionId: 'u1' as never,
   done,
   stalled:
-    stalled === null ? null : { code: 'pageFailed' as const, error: stalled, resumable: true },
+    stalled === null
+      ? null
+      : { code: 'pageFailed' as const, error: stalled, resumable: true, notReached: UNMOVED },
   abandoned: null as { at: number; actionId: never } | null,
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
@@ -124,18 +129,32 @@ describe('UnmergeLeftView', () => {
   });
 });
 
+describe('unmovedLine', () => {
+  it('says what is still to move back, per kind in the unmerge’s order, or that it can’t be told', () => {
+    expect(unmovedLine(UNMOVED)).toBe('Still not moved back: 3 rows, 1 bay');
+    expect(
+      unmovedLine({
+        phase: 'activities',
+        from: 0,
+        remaining: { sides: 2, activities: 1, landmarks: 4, favorites: 1 },
+      } as never),
+    ).toBe('Still not moved back: 1 skate, 1 favorite, 4 landmarks, 2 side changes');
+    expect(unmovedLine({ remaining: {} })).toBe(MW.unmoved.none);
+    expect(unmovedLine(null)).toBe(MW.unmoved.unknown);
+  });
+
+  it('draws it under a stalled unmerge’s reason', () => {
+    render(<UnmergeLeftView receipt={answer(false, 0, FAILED)} />);
+    expect(screen.getByText('Still not moved back: 3 rows, 1 bay')).toBeInTheDocument();
+  });
+});
+
 describe('stallWhy', () => {
   it('says each stall code in plain words, and a failed page’s error after it', () => {
-    expect(stallWhy({ code: 'pageCanceled', resumable: true })).toBe(MW.stallWhy.pageCanceled);
-    expect(stallWhy({ code: 'mergedAgain', resumable: false })).toBe(
-      'The body was merged again while it ran.',
-    );
-    expect(stallWhy({ code: 'pageFailed', error: 'boom', resumable: true })).toBe(
-      `${MW.stallWhy.pageFailed} boom`,
-    );
-    expect(stallWhy({ code: 'pageFailed', error: '', resumable: true })).toBe(
-      MW.stallWhy.pageFailed,
-    );
+    expect(stallWhy({ code: 'pageCanceled' })).toBe(MW.stallWhy.pageCanceled);
+    expect(stallWhy({ code: 'mergedAgain' })).toBe('The body was merged again while it ran.');
+    expect(stallWhy({ code: 'pageFailed', error: 'boom' })).toBe(`${MW.stallWhy.pageFailed} boom`);
+    expect(stallWhy({ code: 'pageFailed', error: '' })).toBe(MW.stallWhy.pageFailed);
   });
 
   it('offers Resume only where the server marks the stall resumable; Abandon on any stall', () => {
@@ -151,7 +170,7 @@ describe('stallWhy', () => {
     ] as const) {
       const { unmount } = render(
         <UnmergeLeftView
-          receipt={{ ...answer(false, 0), stalled: { code, resumable } }}
+          receipt={{ ...answer(false, 0), stalled: { code, resumable, notReached: null } }}
           levers={levers}
         />,
       );
@@ -246,7 +265,11 @@ describe('UnmergeLeft, live', () => {
 });
 
 describe('Abandon, live', () => {
-  const NOT_RESUMABLE = { code: 'undone' as const, resumable: false };
+  const NOT_RESUMABLE = {
+    code: 'undone' as const,
+    resumable: false,
+    notReached: { phase: 'moved' as const, from: 4, remaining: { moved: 6, favorites: 2 } },
+  };
 
   it('stalled, not resumable → no Resume; Abandon asks a reason, sends it, and the row reads abandoned', async () => {
     const user = userEvent.setup();
@@ -256,7 +279,9 @@ describe('Abandon, live', () => {
     await user.click(screen.getByRole('button', { name: MW.abandon }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent(MW.abandonTitle);
-    expect(dialog).toHaveTextContent(MW.abandonWhat(1));
+    // The dialog's figure is the receipt's: what `stalled.notReached` says is still to move.
+    expect(dialog).toHaveTextContent(MW.abandonWhat(1, unmovedLine(NOT_RESUMABLE.notReached)));
+    expect(dialog).toHaveTextContent('Still not moved back: 6 rows, 2 favorites');
     expect(within(dialog).getByRole('textbox')).toHaveAttribute(
       'maxlength',
       String(AUDIT_REASON_MAX),

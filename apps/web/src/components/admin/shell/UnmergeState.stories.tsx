@@ -33,7 +33,14 @@ const at = (done: boolean, count: number, stalled: string | null = null): Unmerg
   unmergeActionId: 'u1' as never,
   done,
   stalled:
-    stalled === null ? null : { code: 'pageFailed' as const, error: stalled, resumable: true },
+    stalled === null
+      ? null
+      : {
+          code: 'pageFailed' as const,
+          error: stalled,
+          resumable: true,
+          notReached: { phase: 'moved' as const, from: 2, remaining: { moved: 3, bays: 1 } },
+        },
   abandoned: null,
   left: { count, byKind: count > 0 ? { reports: count } : {}, rows: [] },
 });
@@ -178,7 +185,7 @@ export const StallCodes: Story = {
           key={code}
           receipt={{
             ...(at(false, 0) as NonNullable<UnmergeReceipt>),
-            stalled: { code, resumable: RESUMABLE.has(code) },
+            stalled: { code, resumable: RESUMABLE.has(code), notReached: null },
           }}
           levers={levers()}
         />
@@ -200,7 +207,11 @@ export const StallCodes: Story = {
 function DeadEndAbandoned() {
   const [receipt, setReceipt] = useState<UnmergeReceipt>({
     ...(at(false, 2) as NonNullable<UnmergeReceipt>),
-    stalled: { code: 'undone', resumable: false },
+    stalled: {
+      code: 'undone',
+      resumable: false,
+      notReached: { phase: 'favorites', from: 0, remaining: { favorites: 2, sides: 1 } },
+    },
   });
   return (
     <div className="w-(--size-inspector)">
@@ -227,7 +238,7 @@ export const StalledThenAbandoned: Story = {
     await expect(page.queryByRole('button', { name: MW.resume })).toBeNull();
     await userEvent.click(page.getByRole('button', { name: MW.abandon }));
     const dialog = await body.findByRole('alertdialog');
-    await expect(dialog).toHaveTextContent(MW.abandonWhat(2));
+    await expect(dialog).toHaveTextContent('Still not moved back: 2 favorites, 1 side change');
     await userEvent.type(within(dialog).getByRole('textbox'), 'Undone while it ran');
     const confirm = within(dialog).getByRole('button', { name: MW.abandon });
     // Destructive: armed by the first press, sent by the second.

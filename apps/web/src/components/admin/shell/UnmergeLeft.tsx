@@ -11,7 +11,7 @@ import { ReasonAsk } from '../body/tabs/access/ReasonAsk';
 import { MERGE_WORDS as MW } from '../body/tabs/shape/mergeWords';
 import { isFailed, read, useConsoleReadSet } from '../reads/consoleReads';
 import { said } from '../said';
-import { unmergeLine } from './unmergeLine';
+import { unmergeLine, unmovedLine } from './unmergeLine';
 
 /**
  * **What an unmerge left where it was, and whether it is still going** — said where the unmerge is:
@@ -59,7 +59,7 @@ const NO_LEVERS: StallLevers = { resume: null, abandon: null };
 type Stall = NonNullable<UnmergeReceipt>['stalled'] & {};
 
 /** The quieter line: the code in plain words, then the server's own error verbatim when it has one. */
-export function stallWhy(stall: Stall): string {
+export function stallWhy(stall: Pick<Stall, 'code' | 'error'>): string {
   const why = MW.stallWhy[stall.code];
   return stall.error !== undefined && stall.error !== '' ? `${why} ${stall.error}` : why;
 }
@@ -85,6 +85,9 @@ function Stalled({
       <span data-slot="unmerge-stalled-why" className="block text-assist text-fg3">
         {stallWhy(stall)}
       </span>
+      <span data-slot="unmerge-unmoved" className="block text-assist text-fg3">
+        {unmovedLine(stall.notReached)}
+      </span>
       {(stall.resumable && resume !== null) || abandon !== null ? (
         <span className="mt-(--space-1) inline-flex gap-(--space-2)">
           {stall.resumable && resume !== null && (
@@ -108,7 +111,7 @@ function Stalled({
                 </Button>
               }
               title={MW.abandonTitle}
-              description={MW.abandonWhat(leftCount)}
+              description={MW.abandonWhat(leftCount, unmovedLine(stall.notReached))}
               confirm={MW.abandon}
               label={MW.abandonReasonLabel}
               // An abandon's reason is its audit row's (the audit log's cap, from core).

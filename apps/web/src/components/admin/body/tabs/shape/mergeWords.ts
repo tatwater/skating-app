@@ -126,8 +126,25 @@ export const MERGE_WORDS = {
    * recomputed; the rows already put back stay put back; the rest stays where the merge put them;
    * the History keeps a row of it — and nothing here takes it back.
    */
-  abandonWhat: (leftCount: number) =>
-    `Both bodies are unlocked and can be merged again. Rows already moved back stay on this body; rows the unmerge hadn't reached yet stay where the merge put them${leftCount > 0 ? `, and the ${leftCount.toLocaleString('en-US')} that had changed since stay where they are` : ''}. History records what was and wasn't moved back. This can't be undone here.`,
+  abandonWhat: (leftCount: number, unmoved: string) =>
+    `Both bodies are unlocked and can be merged again. Rows already moved back stay on this body; rows the unmerge hadn't reached yet stay where the merge put them${leftCount > 0 ? `, and the ${leftCount.toLocaleString('en-US')} that had changed since stay where they are` : ''}. ${unmoved}. History records what was and wasn't moved back. This can't be undone here.`,
+  /**
+   * What a stalled unmerge hasn't moved back yet, from `stalled.notReached` — each kind in plain
+   * words, in the unmerge's own order — or that it can't be told (the merge's record unreadable).
+   */
+  unmoved: {
+    lead: 'Still not moved back',
+    kinds: {
+      moved: ['row', 'rows'],
+      activities: ['skate', 'skates'],
+      favorites: ['favorite', 'favorites'],
+      bays: ['bay', 'bays'],
+      landmarks: ['landmark', 'landmarks'],
+      sides: ['side change', 'side changes'],
+    },
+    none: 'Nothing is still waiting to move back',
+    unknown: 'How much is still not moved back can’t be told',
+  },
   abandonReasonLabel: 'Reason · kept in the audit log',
   /** An abandon the server refused: the toast's title, the server's words after it. */
   notAbandoned: 'Not abandoned',
