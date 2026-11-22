@@ -72,8 +72,20 @@ describe('the bar, from the item’s can alone', () => {
     ).toBeNull();
   });
 
-  it('draws no bay Approve without a bay drawn, even were the verb allowed', () => {
-    expect(placeBar({ ...BAY_UNDRAWN, can: { approve: null, decline: null } }).approve).toBe(false);
+  it('draws Approve wherever can allows it: the server, not the page, decides the bay is there', () => {
+    const allowed = placeBar({ ...BAY_UNDRAWN, can: { approve: null, decline: null } });
+    expect(allowed.approve).toBe(true);
+    // And no Draw in Body beside an Approve the server allows.
+    expect(allowed.draw).toBe(false);
+  });
+
+  it('draws Draw in Body only where Approve is refused and nothing drawn answers the ask', () => {
+    expect(placeBar(BAY_UNDRAWN).draw).toBe(true);
+    // Refused for another reason with the bay drawn: no Draw in Body.
+    expect(
+      placeBar({ ...BAY_DRAWN, can: { approve: 'This has already been decided.', decline: null } })
+        .draw,
+    ).toBe(false);
   });
 
   it('draws nothing for a verb absent from can', () => {
