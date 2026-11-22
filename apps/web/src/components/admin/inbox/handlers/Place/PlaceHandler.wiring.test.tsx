@@ -211,6 +211,26 @@ describe('a place item, through the route and the view', () => {
     opened.mockRestore();
   });
 
+  it('Draw in Body follows the server’s code through the route, never the drawing facts', () => {
+    // The facts say no bay is drawn, but the refusal carries no code: no Draw in Body.
+    open({
+      ...BAY_UNDRAWN,
+      can: { approve: 'Approving needs body.names.', decline: null },
+      canCode: {},
+    } as InboxItemView);
+    const first = mount();
+    expect(within(inspector()).queryByRole('button', { name: /Draw in Body/ })).toBeNull();
+    first.unmount();
+    // The facts say a bay is drawn, but the server's code says Approve waits on a drawing.
+    open({
+      ...BAY_DRAWN,
+      can: { approve: 'No sub-area called that yet.', decline: null },
+      canCode: { approve: 'awaitsDrawing' },
+    } as InboxItemView);
+    mount();
+    expect(within(inspector()).getByRole('button', { name: /Draw in Body/ })).toBeInTheDocument();
+  });
+
   it('a refusal reaches a toast, in the server’s words', async () => {
     open(NARROWS);
     writes.answer['corpusRequests:approve'] = () => {

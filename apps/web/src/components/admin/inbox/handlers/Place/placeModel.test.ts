@@ -73,23 +73,57 @@ describe('the bar, from the item’s can alone', () => {
   });
 
   it('draws Approve wherever can allows it: the server, not the page, decides the bay is there', () => {
-    const allowed = placeBar({ ...BAY_UNDRAWN, can: { approve: null, decline: null } });
+    const allowed = placeBar({
+      ...BAY_UNDRAWN,
+      can: { approve: null, decline: null },
+      canCode: {},
+    });
     expect(allowed.approve).toBe(true);
     // And no Draw in Body beside an Approve the server allows.
     expect(allowed.draw).toBe(false);
   });
 
-  it('draws Draw in Body only where Approve is refused and nothing drawn answers the ask', () => {
+  it('draws Draw in Body exactly where the server’s code says Approve waits on a drawing', () => {
     expect(placeBar(BAY_UNDRAWN).draw).toBe(true);
-    // Refused for another reason with the bay drawn: no Draw in Body.
+    expect(placeBar(NARROWS).draw).toBe(true);
+    // Refused for another reason: no code, no Draw in Body.
     expect(
-      placeBar({ ...BAY_DRAWN, can: { approve: 'This has already been decided.', decline: null } })
-        .draw,
+      placeBar({
+        ...BAY_DRAWN,
+        can: { approve: 'This has already been decided.', decline: null },
+        canCode: {},
+      }).draw,
     ).toBe(false);
+    // A code not yet served (the field optional until the server serves it): nothing drawn.
+    const { canCode: _, ...unserved } = BAY_UNDRAWN;
+    expect(placeBar(unserved).draw).toBe(false);
+  });
+
+  it('follows the code, never the drawing facts the item also serves', () => {
+    // Nothing drawn answers the ask by the facts, but the server's refusal carries no code (a
+    // refusal of another kind): no Draw in Body.
+    expect(
+      placeBar({
+        ...BAY_UNDRAWN,
+        can: { approve: 'Approving needs body.names.', decline: null },
+        canCode: {},
+      }).draw,
+    ).toBe(false);
+    // The facts say a bay is drawn, yet the server says Approve waits on a drawing (the bay it
+    // found isn't the one asked for): the code wins.
+    expect(
+      placeBar({
+        ...BAY_DRAWN,
+        can: { approve: 'No sub-area called that yet.', decline: null },
+        canCode: { approve: 'awaitsDrawing' },
+      }).draw,
+    ).toBe(true);
+    // And on a viewer's own landmark ask with the facts undrawn: no code, no Draw.
+    expect(placeBar(PLACE_BY_VIEWER).draw).toBe(false);
   });
 
   it('draws nothing for a verb absent from can', () => {
-    expect(hasBar(placeBar({ ...NARROWS, can: {} }))).toBe(false);
+    expect(hasBar(placeBar({ ...NARROWS, can: {}, canCode: {} }))).toBe(false);
   });
 
   it('draws no Same place on a bay ask', () => {
@@ -103,7 +137,7 @@ describe('the bar, from the item’s can alone', () => {
     );
     expect(refusalSaid(NARROWS)).toBeNull();
     expect(refusalSaid(PLACE_DECIDED)).toBeNull();
-    expect(refusalSaid({ ...NARROWS, can: {} })).toBeNull();
+    expect(refusalSaid({ ...NARROWS, can: {}, canCode: {} })).toBeNull();
   });
 });
 
