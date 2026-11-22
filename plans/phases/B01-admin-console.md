@@ -10443,6 +10443,38 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
   does.
 - The proof re-runs green on a real backend.
 
+#### B01-5d: the real-backend proof, third run — time (2026-11-22)
+
+S4b measured S4a's time axis on a throwaway local backend: the server clock inside the transaction,
+five runs each. Its table, verbatim:
+
+| Kind | Count | Predicted | Min / median / max | Ratio (median, max) |
+|---|---|---|---|---|
+| Launches | 979 | 400 | 164 / 166 / 178 | 0.41, 0.45 |
+| Favorites | 511 | 400 | 129 / 134 / 139 | 0.34, 0.35 |
+| Asks | 104 | 398 | 189 / 190 / 215 | 0.48, 0.54 |
+| Landmark asks | 35 | 396 | 96 / 98 / 100 | 0.25, 0.25 |
+| Flags | 95 | 399 | 105 / 111 / 114 | 0.28, 0.29 |
+| Reports in two bays | 447 | 399 | 191 / 206 / 219 | 0.52, 0.55 |
+| Two outlines, 16k points each | – | 380 | 174 / 180 / 184 | 0.47, 0.48 |
+| `mergeDrawn`, 6k + 6k points | – | 322 | 261 / 346 / 360 | 1.07, 1.12 |
+| Bays × 9k-point survivor | 1 | 300 | 205 / 277 / 295 | 0.92, 0.98 |
+| Mix at the edge | – | 400 | 186 / 199 / 343 | 0.50, 0.86 |
+
+- **Nothing under-predicted by more than 25%:** `mergeDrawn` is the worst, 12% under. The worst
+  accepted merge ran 360 ms, `mergeDrawn` with two 6k-point outlines.
+- **The row costs over-predict 2–4×:** real is about 0.14 ms a call against the model's 0.27.
+  That stays as it is for now (register Sh13).
+- **The unmerge** finished every merge in one transaction. The heaviest page, reports in two bays,
+  took 316–370 ms, and one run took 581 ms: the 500 ms stop bounds the rows, and the recompute runs
+  after them.
+- **S4a's pinned ceilings** match S4b's computed edges except reports in two bays (447 against
+  311), where the two fixtures' join counts differ.
+
+**The stalled row and the Abandon dialog now say how much is still not moved back,** from
+`receipt.stalled.notReached` (S4b's `71a5d1a5e`, the shape the abandon's row records). Each kind is in
+plain words, and "can't be told" when the merge's record can't be read.
+
 #### B01-5d: the merge estimate's time axis — the final table (2026-11-22)
 
 S4a's `45becf3dd`, integrated. Its one conflict was a test file, where I had raised two ceiling
@@ -10800,6 +10832,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh10 | A cross-console History with Undo: built in B01-2 (#109), mounted nowhere. The History the console shows is the Body console's read-only `BodyHistorySection` (B01-5d's R11 puts the unmerge's outcome there) | `shell/HistoryPanel.tsx` | open: no slice owes it | missing planned | M | A home in the console, and its Undo wired through `useUndo` (B01-5d added `action` and the unmerge's `lineOf`) |
 | Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
 | Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
+| Sh13 | The merge estimate's per-call time cost (0.27 ms modeled, about 0.14 ms measured locally) over-refuses: row-heavy merges it refuses run in 100–220 ms | `lib/mergeLoad.ts` (`MS_PER_CALL`) | open: tunable | performance | S | A measure on the deployment, then loosen it toward the measured cost |
 
 #### The boards to make in Paper (founder call 1)
 
