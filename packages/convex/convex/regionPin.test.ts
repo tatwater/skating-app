@@ -176,9 +176,14 @@ async function retireInBatches(
     aliases: string[];
     links: { label: string; url: string }[];
   }[] = [];
-  for (let i = 0; i < pairs.length; i += batch) {
+  // As the retire script sends them (`scripts/etl`'s `retireBatches`): pairs a call hands back as
+  // `deferred` (its transaction had no room left for them) go first in the next call, so every pair
+  // is decided once — the apply defers, the dry run never needs to.
+  let queue = [...pairs];
+  while (queue.length > 0) {
+    const sent = queue.slice(0, batch);
     const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
-      pairs: pairs.slice(i, i + batch),
+      pairs: sent,
       ...(apply ? { apply: true } : {}),
       ...(retired.length > 0 ? { alreadyRetired: retired } : {}),
       ...(taken.length > 0 ? { taken } : {}),
@@ -186,6 +191,9 @@ async function retireInBatches(
     retired.push(...res.retiredKeys);
     taken = res.taken;
     for (const sk of res.skippedSamples) if (/pass a cap/.test(sk.why)) refused.push(sk.pair);
+    // Every call decides at least its first pair, so the queue always shortens.
+    expect(res.deferred.length).toBeLessThan(sent.length);
+    queue = [...res.deferred, ...queue.slice(sent.length)];
   }
   return { retired, refused };
 }
@@ -1019,7 +1027,14 @@ describe('the pin against the other writers', () => {
         expect(dry.refused.sort()).toEqual(applied.refused.sort());
       },
     );
+    // 2027 and 11 from the build; -2017459737 from a hot run — four pairs into one survivor, batch 4,
+    // where the apply's one call deferred its last pair (the time axis) and the helper never re-sent it.
     for (const seed of [11, 2027]) await fc.assert(prop, { seed, numRuns: 6 });
+    await fc.assert(prop, {
+      seed: -2017459737,
+      path: '3:0:0:0:0:0:0:0:0:0:0:0:0:0:2:5:9:12:7:9:0:5',
+      endOnFailure: true,
+    });
     await fc.assert(prop, { numRuns: 6 });
   });
 
