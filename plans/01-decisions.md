@@ -5212,7 +5212,12 @@ insulation, wind, depth, current and springs — the same variables that make th
 necessary. Learning *how* poorly, with numbers, is worth a season; learning it privately is what makes
 it safe to learn at all.
 
-**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), D56, D150, D151, [`phase-A05c`](./phases/A05c-hazard-memory.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
+**Amended 2026-11-20 (D288).** One staff screen may now show the estimate: beside a flagged claim in
+the console's Inbox, labeled as the Stefan thickness estimate, for a moderator's context. It still
+never reaches a skater, never feeds anything automatically, and is never worded as a verdict; D288
+says exactly what it permits.
+
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), D56, D150, D151, D288, [`phase-A05c`](./phases/A05c-hazard-memory.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
 
 ## D161 — The season checker stays the trigger; the cell scanner is what it starts (A06h)
 
@@ -8262,7 +8267,9 @@ and their alerts would wait for a second staff member.
 **Why:** a decision on one's own content is no decision — the record it writes is evidence only when
 someone else made it.
 
-**Related:** D37, D217, D226, D248, D267, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.
+**Extended 2026-11-20 (D289):** no staffer decides an ask or a flag they filed themselves either.
+
+**Related:** D37, D217, D226, D248, D267, D289, [`phase-B01`](./phases/B01-admin-console.md) *B01-4f*.
 
 ## D270 — A write that changes nothing writes nothing; a refused write leaves nothing (B01)
 
@@ -8466,6 +8473,192 @@ cover any realistic person.
 **Related:** D226, D248, D267, D202, [B01 phase doc](./phases/B01-admin-console.md) *The two stored
 facts built (B01-4m, B01-3u)*.
 
+## D283 — The Inbox's colleague lock is decided-only; the flag status `reviewing` is retired (B01)
+
+**2026-11-20, the founder's call** (asked at the Inbox's design, B01-5). An Inbox item a colleague
+has **decided** locks for everyone else who has it open — "Sarah decided this" with when, what, and
+the way back to the queue — and nothing else locks. There is **no claim**: no "Sarah is looking at
+this", no presence-based lock that lapses after two minutes, no *Take over*. Two people may read the
+same item; the first decision wins, and the second sees what it was. The lock generalizes what
+`corpusRequests.reviewState` and `useReviewWatch` already do for the old landmark tool (a decided
+request, named by who decided it) to every kind the Inbox lists, read off the item's own stored
+decision.
+
+**`reviewing` is retired.** Nothing has ever written it (B01 §2's diagnosis, item 9), and nothing
+will: no claim exists to record. Its readers keep reading it — `lib/openFlags`, `lib/autoFlag`,
+`lib/eraseClock`, core's `flagRetraction`, `moderation.listFlags` until the old flags page goes — so
+D251's rule ("a flag under review is still open") stays true trivially and no count can disagree. The
+enum member is **narrowed out at B01's close**, once a dev read confirms no row carries it (prod has
+never been initialized); until then the schema keeps it, so the narrowing is one step with no
+backfill.
+
+**Why:** a claim lock is presence, and presence is wrong exactly when it matters — a moderator who
+opened an item and walked away holds it until a timer runs out, and *Take over* turns a decision into
+a negotiation. Moderation here is a handful of staff working the same small queue; a decision is the
+only fact worth broadcasting, and the server already enforces it (a decided item's writes are
+refused). A status no code writes is a trap for the next reader of the enum.
+
+**Related:** D202, D216, D251, D269, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-20),
+*The Inbox (B01-5, the design)*.
+
+## D284 — Support has no assignee and no "in progress"; staff notes and outbound replies are audited (B01)
+
+**2026-11-20, the founder's call** (B01-5; the assignee half first said 2026-10-19). The console's
+support lane builds **no assignee and no `in_progress`**: anyone pitches in, and a ticket is open
+until someone resolves it. What a ticket gains is a trail: a **staff note** (seen only by staff with
+support's read, D37's PII line) and a **reply by email** to the person who filed it, each an audited
+action with its own undo — a note's undo removes it; a reply's undo cancels it while it is still
+settling, and once sent it can't be unsent (History says so). Resolving and reopening are audited too,
+so support joins the undo registry (§11's "outside the audit table today" row closes).
+
+- **Replies go out from an address at `skating.teaganatwater.com`**, the sending domain Resend already
+  verifies, until a real domain is bought; the address is its own environment variable beside the
+  existing sender's, registered in `05-accounts-and-credentials.md`.
+- **Replies are outbound only.** A person's emailed answer is not threaded back into the ticket; the
+  domain has no inbound mail on purpose. **Every reply's footer** says replies to the email aren't
+  read and to write back from the app's Help (the founder's answer, 2026-11-20).
+- **Existing rows keep reading.** `assignedToUserId` and the `in_progress` status stay in the schema
+  for rows already written and are drawn as open; nothing new writes either. The old page's *Assign to
+  me* goes with the old page.
+
+**Why:** with two or three admins, an assignee is a claim (D283's reasoning) and `in_progress` is a
+second "open" that every count has to remember. What was missing was not ownership but a record:
+today a ticket is assigned and resolved with no audit row, no note and no way to answer the person.
+
+**Related:** D35, D37, D38, D226, D283, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-20).
+
+## D285 — A skater who asked hears the answer, and an alert's author hears a retraction: one notification type, through the settle queue (B01)
+
+**2026-11-20, the founder's call**, closing §11's call 3 (2026-10-14) and reversing D179's deferral
+("not a notification type … deferred"). A person who filed **any of the seven request kinds**
+(`activate`, `admit`, `restore`, `contest_access`, `takedown`, `name_bay`, `name_landmark`) or **drew
+a body** hears the decision — approved, declined with the moderator's note, a drawn body approved,
+rejected or merged into a known body — in the in-app notifications page, by push, and by email, under
+the person's own toggles. Every asker a decision closes hears it (siblings included, D179's "one
+decision answers all four"). **Access reporters already hear** through the flag verdict
+(`content_flag_resolved`), and nothing about that changes.
+
+**Amended the same day (the founder's answer to the design's fork 9):** **an access alert's author is
+told when a moderator retracts their alert**, as the Inbox's board 2.6 draws — a second kind under the
+same type, through the same settle queue, so an undo inside the window cancels it. Never for a verdict
+recorded on an alert its author had already retracted (they withdrew it themselves), and the message
+names the alert, not the moderator's reason. The type is named for both: `moderator_decision`, its
+toggle "A moderator decides something I asked for or posted" (wording for the copy pass), with two
+queue kinds, `request_decided` and `alert_retracted`.
+
+- **One new type** on the A08 pipeline, with its own preference toggle (D16's one-to-one mirror) and
+  email-eligible (a decision is worth an email, as a flag verdict is).
+- **Through the settle queue** (D169, `SETTLE_MS`), re-read at flush: the decision must still stand
+  as it was made. An undo inside the window cancels the message; after it has gone out, an undo
+  changes the state and sends nothing on its own (§11).
+- **What it says is the decision, never a verdict on the ice** (D3): "approved", "added to the map",
+  "declined — ‹note›", "taken down", never "skateable" or "safe".
+
+**Why:** a request is a question a person asked a moderator; silence after a decision reads as being
+ignored, and the drawer's read-back (D179) only reaches someone who goes looking.
+
+**Related:** D16, D167, D169, D179, D202, D226, [`phase-B01`](./phases/B01-admin-console.md) §7
+(2026-11-20).
+
+## D286 — A link to a console mode that isn't built is drawn, and says "Coming soon" (B01)
+
+**2026-11-20, the governor's pick between two the founder offered.** Where a board draws a link into
+a mode the console doesn't have yet — *Open in Reports →*, a *History →* that names Reports, Inbox
+zero's *Corpus →* and *Machinery →*, the Stefan estimate's *How it is calculated →* to Tuning (D288)
+— the link is drawn exactly as the board draws it and is
+**unavailable**: it stays focusable, says **"Coming soon"** on hover and focus (a tooltip) and on
+press (a toast), and does nothing else. It reuses the console's existing pattern for unbuilt tools
+(the kit's `UnavailableButton`, whose words for a tool are "Not available yet"); a mode that isn't
+built yet is the one place the words differ. When the mode lands, the link goes live and the words go.
+
+**Why:** a link left out makes the board and the page disagree, and the page reads as finished when it
+isn't; a link to a 404 is a dead end. One honest, consistent sentence keeps the layout the founder
+reviewed and tells the operator the truth.
+
+**Related:** D216, D223, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-13, ruling 6;
+2026-11-20).
+
+## D287 — The dev inbox seed files through the real mutations as fake people named "Test-…", who are never mailed, pushed or synced to Clerk (B01)
+
+**2026-11-20, the founder's call**, lifting the hold of 2026-11-17. The dev seed (B01 §8 §2) may
+create **fake users**, and **every fake user's last name starts with "Test-"** ("Ada Test-Lindqvist"),
+so no screen, export or count can mistake one for a person. They have profiles and no Clerk account:
+the seed files their flags, asks, alerts, drawn bodies and tickets through the same public mutations a
+skater's app calls, signed as them, so the Inbox is designed against exactly what the real paths
+write.
+
+- **Never contacted.** A fake person's notification toggles and channels are off, and every sender
+  that reaches outside Convex — Clerk's ban lock and its daily reconcile (D277), account deletion's
+  Clerk delete, the email fallback lookup — skips a fake profile by one predicate, so seeding a
+  suspension or a ban never calls Clerk and never pages the operator.
+- **Dev only, idempotent, and clearable.** A second run files nothing new; a clear removes every row
+  the fake people wrote and every row written about them, then the people.
+
+**Why:** every person-filed queue is empty on dev (B01 §2, item 10), and the Inbox, the People record
+sheet and the status-terms backfill (Pe26) can't be checked against nothing. Real mutations keep the
+seed honest; a surname no real person carries keeps it from ever reading as one.
+
+**Related:** D33, D62, D256, D277, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-20).
+
+## D288 — A moderator sees the Stefan thickness estimate beside a flagged ice claim, labeled as a model's figure (B01, amends D160)
+
+**2026-11-20, the founder's answer** to the Inbox design's fork 4: *"Let's still show it, but make it
+clear that estimate is the Stefan thickness (with an eventual link to the Tuning page with that
+function explained)"*. D160 shipped the estimate as a dark calibration instrument that "never feeds
+anything". This amends it in one place and no other.
+
+- **What it now permits:** on the console's Inbox, in the handler of a flag on a report (board 2.1,
+  *That night, at the body*), the Stefan thickness estimate for that report's body and skate day,
+  computed exactly as the Ice calibration instrument computes its *predicted* figure (the same 60-day
+  window, coefficient and thaw and minimum-cold refusals, one rule in `lib/stefanWindow.ts`), labeled
+  **Stefan thickness estimate** with a sub-line that it is a model's figure from air temperatures
+  only, context and not a verdict, and a link to the page that explains the function (Tuning, not
+  built yet, so *Coming soon*, D286). The read is staff-only (`content.read`); a refused estimate says
+  why ("Too much thaw in the last 60 days for the estimate").
+- **What it still forbids:** any skater-facing payload or surface; any automatic use — no score,
+  ranking, lane, auto-flag, decay, trust or decision reads it, and nothing stores it; any wording that
+  makes it a verdict ("thick enough", "safe", "solid", "the report is wrong") or puts it in a sentence
+  with the claim as a comparison. A moderator weighs it with the reports around it and the weather;
+  the figure itself decides nothing.
+- **Graduating it anywhere else** still needs its own decision (D160's third guardrail stands).
+
+**Why:** the moderator ruling on "black ice, 3½ inches, held fine" in early October is better served
+knowing what the cold could have grown than guessing, and D160's own reason for keeping it dark — that
+a reader takes inches as a safety verdict — applies to skaters, not to staff who see it labeled for
+what it is beside the community's own measurements.
+
+**Related:** D3, D150, D160, D226, D286, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-20),
+*The Inbox (B01-5, the design)*.
+
+## D289 — Staff change the corpus directly; the Inbox is for what skaters file, and no staffer decides what they filed (B01, extends D269)
+
+**2026-11-20, the founder's answer** to the Inbox design's fork 12: *"If we want to make a change
+without going through the request flow with the other's approval, we can just make the change
+manually in the admin dashboard, which is how we'd probably do it anyway. Admin dashboard
+modifications should not go through the Inbox"*.
+
+- **No staffer decides an ask or a flag they filed themselves.** Every Inbox verb on an item one of
+  whose members the viewer filed is refused, by the same rule the lever asks (`lib/inboxRules`) and
+  the write enforces, with a plain sentence; another staffer decides it. It extends D269 (no decision
+  on your own content, or on a flag about you) to what you asked for; admins are bound too.
+- **The principle:** staff change the corpus directly in the console — the Body console's tabs, a
+  merge, a ruling, People's levers. The Inbox is the queue for what skaters file; a staffer who wants
+  a change makes it, and doesn't file an ask for a colleague to approve.
+- **Asks a script filed are not Inbox items** (the governor's ruling, 2026-11-20, from D216 and this
+  decision). `corpusRequests.seedBayRequests` files the corpus's destination bays as asks under a
+  staff requester. `waterBodyRequests` gains an optional `origin` (`app` | `seed`; absent reads as
+  `app`), written `seed` by that function and backfilled on the rows it already wrote. A seed-origin
+  ask files no Inbox item and counts in no lane and not on the Overview's Inbox card; it stays
+  decidable where it is today (the old editor's bay queue, the Bodies preview's asks) until Corpus
+  (§4) takes it; and the own-filing refusal above doesn't apply to it — no person asked, so any staffer
+  holding the capability decides it.
+
+**Why:** a decision on your own ask is no decision — the same reason as D269 — and a second path for
+staff changes (file, then approve) would split the audit trail of one act across two rows and two
+people.
+
+**Related:** D37, D216, D217, D269, [`phase-B01`](./phases/B01-admin-console.md) §7 (2026-11-20).
+
 ## D290 — Winter region-wide sets in on 10 of the last 14 nights, and can end (A06i)
 
 **Decided (2026-11-20, founder).** A **winter night** is still one on which at least half the
@@ -8487,3 +8680,4 @@ and 9 December and ends it mid-April to early May, restarting once (a real cold 
 seasons, including a December thaw that ended 2023-24's winter for five days.
 
 **Related:** D3, D149, D212, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
+

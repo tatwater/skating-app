@@ -246,17 +246,26 @@ export async function launchRefusal(
   if (!row) return 'That put-in no longer exists';
   return launchRefusalOf(
     row,
-    await hiddenLaunches(ctx, row.waterBodyId).take(SUPPRESSION_ROWS_READ),
+    await hiddenLaunches(ctx, row.waterBodyId).take(SUPPRESSION_ROWS_READ + 1),
   );
 }
 
-/** {@link launchRefusal} on the hidden launches its caller read — one rule, however they're read. */
+/** What a body with more hidden launches than the check reads is told: refused, not guessed. */
+export const SUPPRESSION_UNCHECKED =
+  'This body has more hidden put-ins than one check can read, so this can’t be done here.';
+
+/**
+ * {@link launchRefusal} on the hidden launches its caller read — one rule, however they're read. The
+ * caller reads {@link SUPPRESSION_ROWS_READ} and one more: past the bound the spot can't be checked
+ * against every hidden launch, so it is refused rather than decided on a window of them (PR #170).
+ */
 export function launchRefusalOf(
   row: Doc<'putIns'>,
   hidden: readonly { coord: { lat: number; lng: number } }[],
 ): string | null {
   if (row.status !== 'visible')
     return 'That put-in is hidden — a moderator said it is not a way in';
+  if (hidden.length > SUPPRESSION_ROWS_READ) return SUPPRESSION_UNCHECKED;
   if (isSuppressed(row.coord, hidden)) {
     return 'A moderator hid a put-in at this spot — it is not a way in';
   }

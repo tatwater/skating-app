@@ -433,7 +433,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
     await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId });
     // Second approve on the now-approved body must be rejected.
     await expect(asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId })).rejects.toThrow(
-      /not pending/i,
+      'This has already been decided.',
     );
 
     const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());

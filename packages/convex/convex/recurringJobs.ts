@@ -24,6 +24,7 @@
  * | find bodies missing geometry | a library row | `jobFailures` | never parked: the weekly walk is the retry |
  * | reset lapsed suspensions | a person | on the profile, mirrored | out of the due range; retried daily (`peopleJobs.retryLapsedDaily`) |
  * | reconcile clerk ban locks | a lock it repaired, or the run | `jobFailures` | never parked: a repair is counted for a week; an unfinished run until one finishes |
+ * | the Inbox's backfill (by hand) | a source row | `jobFailures` | the drift repair retries it while failing; once parked, retried daily — the Inbox says `pending` until none is owed |
  */
 
 import { v } from 'convex/values';
@@ -132,7 +133,7 @@ const RETRY_ITEM: ItemBudget = {
 };
 
 /** The jobs the daily retry walks, in order. */
-const DAILY_JOBS = ['prompt', 'card', 'standing'] as const;
+const DAILY_JOBS = ['prompt', 'card', 'standing', 'inbox'] as const;
 
 /**
  * **Parking heals itself** (D258): once a day, a few parked pieces of each job — a skater's prompt, a
@@ -243,6 +244,28 @@ async function retryOne(
     );
     if (one.ok) return 'freed';
     await recordCardFailure(ctx, row, one.errorClass, now, { byDailyRetry: true });
+    return 'failed';
+  }
+  if (job === 'inbox') {
+    // A source the Inbox's backfill parked (PR #170): the drift repair retries only what is still
+    // failing, so a parked one would stay a missing question, and the Inbox `pending`, for good.
+    const row = await ctx.db
+      .query('jobFailures')
+      .withIndex('by_job_parked', (q) =>
+        q.eq('job', 'inboxBackfill').gt('parkedAt', 0).lt('parkedAt', cutoff),
+      )
+      .first();
+    if (!row) return 'none';
+    const one = await runIsolated<unknown>(
+      ctx,
+      internal.inboxItems.retryBackfillSource,
+      { key: row.key },
+      RETRY_ITEM.limits,
+    );
+    if (one.ok) return 'freed';
+    await recordFailure(ctx, 'inboxBackfill', row.key, one.errorClass, now, {
+      byDailyRetry: true,
+    });
     return 'failed';
   }
   // The rollover's bodies: any failing one, least recently failed first (parked ones by when they
@@ -408,4 +431,7 @@ const CRON_OF: Record<FailingJob, string> = {
   geoMissing: 'find bodies missing geometry',
   lapses: 'reset lapsed suspensions',
   clerkMirror: 'reconcile clerk ban locks',
+  // The backfill is run by hand; its failures are retried by the repair's cron, parked ones daily.
+  inboxBackfill: 'repair inbox items drift',
+  inboxRepair: 'repair inbox items drift',
 };

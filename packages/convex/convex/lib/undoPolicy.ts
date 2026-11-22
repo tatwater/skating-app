@@ -192,13 +192,14 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'corpus.duplicates',
   },
+  // Both reviews go back to pending (B01-5): the policy's pure inverse, not the opposite review (D247).
   approve_waterbody: {
-    undo: later('§2 Inbox', 'Back to pending review.'),
+    undo: inverse('return_to_review'),
     takesAway: never,
     capability: 'inbox.drawnBody',
   },
   reject_waterbody: {
-    undo: later('§2 Inbox', 'Back to pending review (the RestoreGate dead end, fixed).'),
+    undo: inverse('return_to_review'),
     takesAway: always,
     capability: 'inbox.drawnBody',
   },
@@ -251,31 +252,58 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   },
 
   // ── Requests and flags ──────────────────────────────────────────────────────────────────────────
+  // Reopened with every sibling the decision closed (B01-5); an approval's body-side row is undone
+  // first, through its own handler and capability.
   approve_request: {
-    undo: later('§2 Inbox', 'Reopen the request; the body-side row undoes on its own.'),
+    undo: inverse('reopen_request'),
     takesAway: never,
     capability: 'inbox.request',
   },
+
   decline_request: {
-    undo: later('§2 Inbox', 'Reopen the request.'),
+    undo: inverse('reopen_request'),
     takesAway: always,
     capability: 'inbox.request',
   },
+
+  // Reopened with every flag the decision closed (B01-5); a verdict message still settling is dropped.
   resolve_flag: {
-    undo: later(
-      '§2 Inbox',
-      'Reopen the flag; the verdict message is canceled inside the settle window.',
-    ),
+    undo: inverse('reopen_flag'),
     takesAway: always,
     capability: 'inbox.flag',
   },
+
   dismiss_flag: {
-    undo: later(
-      '§2 Inbox',
-      'Reopen the flag; the verdict message is canceled inside the settle window.',
-    ),
+    undo: inverse('reopen_flag'),
     takesAway: never,
     capability: 'inbox.flag',
+  },
+
+  // The Inbox's own inverses (B01-5), each undone by deciding again as before: a reopened flag
+  // closes with its prior resolution; a reopened decline declines the same asks again. A reopened
+  // approval is approved again from the Inbox (its handler says so): undo never re-runs a body act.
+  reopen_flag: {
+    undo: inverse('priorStatus'),
+    takesAway: (resolution) => resolution === 'actioned',
+    capability: 'inbox.flag',
+  },
+  reopen_request: {
+    undo: inverse('decline_request'),
+    takesAway: never,
+    capability: 'inbox.request',
+  },
+  // Its undo reviews the drawing again as the row it took back had it; a rejection takes it off the
+  // map, so putting one back asks why. The value is the review status put in place.
+  return_to_review: {
+    undo: inverse('priorStatus'),
+    takesAway: (reviewStatus) => reviewStatus === 'rejected',
+    capability: 'inbox.drawnBody',
+  },
+  // Its undo retracts the alert again, through the same retraction (which records `prev` anew).
+  unretract_access_alert: {
+    undo: inverse('retract_access_alert'),
+    takesAway: never,
+    capability: 'access.alert',
   },
 
   // ── Hazards, features, recurrence ───────────────────────────────────────────────────────────────
@@ -353,11 +381,10 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'access.alert',
   },
+  // A moderator's retraction of someone else's alert puts it back to the `prev` it recorded (B01-5);
+  // one recorded on an alert its author had already retracted is a verdict, reversed by an overturn.
   retract_access_alert: {
-    undo: later(
-      '§2 Inbox',
-      'Return the alert to the status it had before retraction. A retraction recorded on an alert its author had already retracted is a verdict, reversed by an overturn instead.',
-    ),
+    undo: inverse('unretract_access_alert'),
     takesAway: always,
     capability: 'access.alert',
   },

@@ -168,6 +168,23 @@ export const PageTabs: Story = {
   },
 };
 
+/** The Inbox card while the items' backfill runs: one dim row to the Inbox, never a number. */
+export const InboxCardPending: Story = {
+  render: () => (
+    <div className="w-[15rem]">
+      <InboxCard data={{ ...must(HOME.inbox), pending: true }} now={NOW} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const rows = slots(canvasElement, 'count-row');
+    await expect(rows).toHaveLength(1);
+    await expect(must(rows[0])).toHaveTextContent('Still being prepared');
+    await expect(slot(must(rows[0]), 'count-link')).toHaveAttribute('href', '/admin/inbox');
+    await expect(canvasElement.querySelector('[data-slot="section-note"]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-slot="count-foot"]')).toBeNull();
+  },
+};
+
 /**
  * A count card: the slug 12 px over its rows, rows the board's 22 px, rules unbroken, the value's
  * ink its meaning, and a row that goes somewhere is a link.

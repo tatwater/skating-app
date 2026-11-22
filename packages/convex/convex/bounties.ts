@@ -58,6 +58,7 @@ import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped, takeCappedResult } from './lib/scan';
+import { seedSideOf } from './lib/seedPeople';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
 
@@ -772,6 +773,8 @@ export async function attachReportToOpenBounties(
   ctx: MutationCtx,
   report: Doc<'reports'>,
 ): Promise<void> {
+  // A fake person's report from the dev seed answers no one's bounty (D287).
+  if (await seedSideOf(ctx).isSeed(report.authorId)) return;
   const open = await ctx.db
     .query('bounties')
     .withIndex('by_water_body_status', (q) =>

@@ -97,6 +97,7 @@ import {
 } from './_generated/server';
 import { failedAttempt } from './lib/attempts';
 import {
+  type AuditEntry,
   type AuditReasonOrText,
   checkedReason,
   composed,
@@ -119,6 +120,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
+import { isProdDeployment } from './lib/deployment';
 import {
   CANONICAL_SOURCES,
   GEOMETRY_SOURCES,
@@ -126,7 +128,20 @@ import {
   REMOVAL_REASONS,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { closeFlag } from './lib/flagResolution';
+import { closeFlagsUnder } from './lib/inboxFlags';
+import {
+  bodySource,
+  decideItem,
+  fileMember,
+  flagSource,
+  inboxBatch,
+  itemToDecide,
+  refreshItemTab,
+  rekey,
+  reopenItem,
+  requestSource,
+} from './lib/inboxItems';
+import { assertInboxVerb, DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './lib/inboxRules';
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
@@ -413,14 +428,19 @@ async function flagAsDuplicates(
   ctx: { db: MutationCtx['db'] },
   keys: readonly Id<'waterBodies'>[],
 ): Promise<void> {
-  for (const key of keys) {
-    const row = await ctx.db.get(key);
-    // `merged` is terminal — a tombstone must not be dragged back into the queue.
-    if (!row || row.dedupStatus === 'merged') continue;
-    const others = keys.filter((k) => k !== key);
-    const partners = [...new Set([...(row.duplicateCandidateIds ?? []), ...others])];
-    await ctx.db.patch(key, { dedupStatus: 'near_certain', duplicateCandidateIds: partners });
-  }
+  // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+  await inboxBatch(ctx as MutationCtx, async () => {
+    for (const key of keys) {
+      const row = await ctx.db.get(key);
+      // `merged` is terminal — a tombstone must not be dragged back into the queue.
+      if (!row || row.dedupStatus === 'merged') continue;
+      const others = keys.filter((k) => k !== key);
+      const partners = [...new Set([...(row.duplicateCandidateIds ?? []), ...others])];
+      await ctx.db.patch(key, { dedupStatus: 'near_certain', duplicateCandidateIds: partners });
+      // A drawing's tab follows its overlap (B01-5): *Overlap* once it names a known body.
+      await rekey(ctx as MutationCtx, bodySource(key));
+    }
+  });
 }
 
 /**
@@ -1252,29 +1272,33 @@ export const importReconciliation = internalMutation({
 
     let flagged = 0;
     let flagSkipped = 0;
-    for (const group of duplicateGroups ?? []) {
-      const present = (await Promise.all(group.map((id) => ctx.db.get(id)))).filter(
-        (b): b is NonNullable<typeof b> => b !== null,
-      );
-      if (present.length < 2) {
-        flagSkipped++;
-        continue;
-      }
-      for (const body of present) {
-        if (body.dedupStatus === 'merged') {
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (const group of duplicateGroups ?? []) {
+        const present = (await Promise.all(group.map((id) => ctx.db.get(id)))).filter(
+          (b): b is NonNullable<typeof b> => b !== null,
+        );
+        if (present.length < 2) {
           flagSkipped++;
           continue;
         }
-        const others = present.filter((o) => o._id !== body._id).map((o) => o._id);
-        await ctx.db.patch(body._id, {
-          dedupStatus: 'near_certain',
-          // Union rather than replace: a body may already have candidates from the D36 create-time
-          // check, and dropping those would lose a signal a moderator has not acted on yet.
-          duplicateCandidateIds: [...new Set([...(body.duplicateCandidateIds ?? []), ...others])],
-        });
-        flagged++;
+        for (const body of present) {
+          if (body.dedupStatus === 'merged') {
+            flagSkipped++;
+            continue;
+          }
+          const others = present.filter((o) => o._id !== body._id).map((o) => o._id);
+          await ctx.db.patch(body._id, {
+            dedupStatus: 'near_certain',
+            // Union rather than replace: a body may already have candidates from the D36 create-time
+            // check, and dropping those would lose a signal a moderator has not acted on yet.
+            duplicateCandidateIds: [...new Set([...(body.duplicateCandidateIds ?? []), ...others])],
+          });
+          await rekey(ctx, bodySource(body._id));
+          flagged++;
+        }
       }
-    }
+    });
 
     return { idWritten, idAlreadySet, missing, flagged, flagSkipped };
   },
@@ -2850,6 +2874,8 @@ export const create = mutation({
       minVisibleZoom: scores.minVisibleZoom,
       listed: isListed({ reviewStatus: 'pending', dedupStatus: status }),
     });
+    // A skater's drawing waits on a moderator: its Inbox item (B01-5).
+    await fileMember(ctx, bodySource(id), { now });
     // Bind the skate to the water it discovered, so the report flow can carry straight on.
     await ctx.db.patch(args.activityId, { waterBodyId: id });
     await queueLibraryRefresh(ctx, [id]);
@@ -2938,42 +2964,201 @@ export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    const body = await ctx.db.get(args.waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    // Only user-created bodies enter the review queue; approving canonical (OSM/NHD)
-    // bodies is meaningless and would stamp a `reviewStatus` they shouldn't have.
-    if (body.source !== 'user') {
-      throw new ConvexError('Only user-created water bodies can be reviewed');
-    }
-    // Idempotency + audit integrity: only a pending body can be approved, so we never
-    // reverse a rejection or write duplicate audit rows on a re-approve.
-    if (body.reviewStatus !== 'pending') {
-      throw new ConvexError('Water body is not pending review');
-    }
-
-    await ctx.db.patch(args.waterBodyId, { reviewStatus: 'approved' });
-    // Keep the cell index in sync with the new listing (still listed, D48).
-    await syncWaterBodyCells(ctx, args.waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: zoomSortKey(body),
-      listed: isListed({ ...body, reviewStatus: 'approved' }),
-    });
-    // Sub-areas inherit the parent's listing (Decision 11), so every mutation that moves it has to
-    // move theirs — a bay is only reachable while the lake it names is.
-    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'approved' });
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'approve_waterbody',
-      targetType: 'waterbody',
-      targetId: args.waterBodyId,
-      reason: 'Approved user-created water body',
-      // When it was drawn, for a staffer's time to decide (People).
-      metadata: { filedAt: body.createdAt },
-      createdAt: Date.now(),
-    });
+    await reviewDrawnBodyImpl(ctx, actor, { waterBodyId: args.waterBodyId, verdict: 'approved' });
     return args.waterBodyId;
   },
 });
+
+/** A drawn body's review, as `approve`, `reject` and their undo (`return_to_review`) move it. */
+export type DrawnReviewStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * A drawn body's review status moved, its listing with it: the status patched, the cell index
+ * re-synced to the new listing (approved and pending are listed, rejected is not, D48), and its bays'
+ * cells with it — a bay is only reachable while the lake it names is (Decision 11). Then the audit row,
+ * and the Inbox (B01-5): a review decides the drawing's item, stamped with that row; a return to
+ * review reopens the item the undone review (`reopens`) decided.
+ */
+async function moveDrawnReview(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  body: Doc<'waterBodies'>,
+  reviewStatus: DrawnReviewStatus,
+  audit: Omit<AuditEntry, 'actorId' | 'targetType' | 'targetId'>,
+  reopens?: Id<'moderationActions'>,
+): Promise<Id<'moderationActions'>> {
+  await ctx.db.patch(body._id, { reviewStatus });
+  await syncWaterBodyCells(ctx, body._id, {
+    bbox: body.bbox,
+    minVisibleZoom: zoomSortKey(body),
+    listed: isListed({ ...body, reviewStatus }),
+  });
+  await syncCellsForParent(ctx, body._id, { ...body, reviewStatus });
+  const actionId = await writeAudit(ctx, {
+    ...audit,
+    actorId: actor._id,
+    targetType: 'waterbody',
+    targetId: body._id,
+  });
+  if (reviewStatus === 'pending') {
+    if (reopens !== undefined) await reopenItem(ctx, reopens);
+    // A review from before the items were stamped: the drawing's member reopens all the same.
+    await fileMember(ctx, bodySource(body._id));
+  } else {
+    await decideItem(ctx, bodySource(body._id), {
+      actorId: actor._id,
+      actionId,
+      decision: reviewStatus,
+    });
+  }
+  return actionId;
+}
+
+/**
+ * D289 on a drawing: the staffer who drew it doesn't review it — the Inbox's own rule on its item, in
+ * the rule's words. A drawing the backfill hasn't reached is filed first, so it gets the same answer.
+ */
+async function assertMayReview(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  body: Doc<'waterBodies'>,
+  verdict: 'approved' | 'rejected',
+): Promise<void> {
+  const item = await itemToDecide(ctx, bodySource(body._id));
+  if (item) {
+    await assertInboxVerb(
+      ctx,
+      actor,
+      item,
+      verdict === 'approved' ? 'approveDrawn' : 'rejectDrawn',
+    );
+  }
+}
+
+/** A user-drawn body, or the refusal: only those enter review (D37). */
+async function drawnBodyOf(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'waterBodies'>> {
+  const body = await ctx.db.get(waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  // Only user-created bodies enter the review queue; approving canonical (OSM/NHD) bodies is
+  // meaningless and would stamp a `reviewStatus` they shouldn't have.
+  if (body.source !== 'user') {
+    throw new ConvexError('Only user-created water bodies can be reviewed');
+  }
+  return body;
+}
+
+/** A drawing reviewed or merged already: no further review. */
+function reviewedAlready(body: Doc<'waterBodies'>): boolean {
+  return (
+    body.reviewStatus !== 'pending' ||
+    body.dedupStatus === 'merged' ||
+    body.mergedIntoId !== undefined
+  );
+}
+
+/**
+ * Why reviewing a drawing again (the undo of a return to review) is refused to `viewerId`, or `null` —
+ * the review's own rule, as `reviewDrawnBodyImpl` and `assertMayReview` ask it: reviewed or merged
+ * already, or the viewer drew it (D289). For the undo's offer, so History offers what the write accepts.
+ */
+export function reviewAgainRefusal(
+  body: Doc<'waterBodies'> | null,
+  viewerId: Id<'profiles'>,
+): string | null {
+  if (!body) return 'The water body no longer exists.';
+  if (reviewedAlready(body)) return DECIDED_REFUSAL;
+  return body.createdByUserId === viewerId ? OWN_FILING_REFUSAL : null;
+}
+
+/**
+ * **A drawn body's review** — `approve`'s and `reject`'s body, shared with the undo of a return to
+ * review (which approves or rejects again, as the reviewed row had it). Only a pending body is
+ * reviewed, so a rejection is never reversed by an approval and a re-approve writes no second row.
+ * Returns the audit row.
+ */
+export async function reviewDrawnBodyImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { waterBodyId: Id<'waterBodies'>; verdict: 'approved' | 'rejected'; reason?: string },
+): Promise<Id<'moderationActions'>> {
+  const body = await drawnBodyOf(ctx, args.waterBodyId);
+  // Idempotency + audit integrity: only a pending body can be reviewed, so we never reverse a
+  // rejection or write duplicate audit rows on a re-approve. Reviewed (or merged) already: in the
+  // Inbox rule's words, so the item and this write agree.
+  if (reviewedAlready(body)) throw new ConvexError(DECIDED_REFUSAL);
+  await assertMayReview(ctx, actor, body, args.verdict);
+  const approved = args.verdict === 'approved';
+  return moveDrawnReview(ctx, actor, body, args.verdict, {
+    action: approved ? 'approve_waterbody' : 'reject_waterbody',
+    reason:
+      args.reason?.trim() ||
+      (approved ? 'Approved user-created water body' : 'Rejected user-created water body'),
+    // When it was drawn, for a staffer's time to decide (People).
+    metadata: { filedAt: body.createdAt },
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Why a drawn body's review can't go back to pending now, or `null` — the one rule the undo's offer
+ * and its write both ask. The review must still be the one the row made (a later review writes its
+ * own row, which overtakes this one; this catches a change no row records), and the body must still
+ * stand on its own: a merged drawing is unmerged first.
+ */
+export function returnToReviewRefusal(
+  body: Doc<'waterBodies'> | null,
+  from: 'approved' | 'rejected',
+  /** Who would take it back: the person who drew it never decides it, an undo included (D289). */
+  viewerId?: Id<'profiles'>,
+): string | null {
+  if (!body) return 'The water body no longer exists.';
+  if (viewerId !== undefined && body.createdByUserId === viewerId) return OWN_FILING_REFUSAL;
+  if (body.dedupStatus === 'merged') {
+    return 'It has been merged into another body since, so it can’t go back to review.';
+  }
+  if (body.reviewStatus !== from) {
+    return 'It has been reviewed again since, so this review can’t be taken back.';
+  }
+  return null;
+}
+
+/**
+ * **A drawn body back to pending review** (`return_to_review`, B01-5): the undo of an approval or a
+ * rejection — the old `RestoreGate` dead end fixed. Back in the queue, listed again as a pending body
+ * is (its cells and its bays' re-synced). The row records the review it took back, so its own undo
+ * approves or rejects again. Returns the audit row.
+ */
+export async function returnToReviewImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    from: 'approved' | 'rejected';
+    reason: string;
+    /** The review row being undone: the Inbox item it decided reopens. */
+    undoes: Id<'moderationActions'>;
+  },
+): Promise<Id<'moderationActions'>> {
+  const body = await drawnBodyOf(ctx, args.waterBodyId);
+  const why = returnToReviewRefusal(body, args.from, actor._id);
+  if (why !== null) throw new ConvexError(why);
+  return moveDrawnReview(
+    ctx,
+    actor,
+    body,
+    'pending',
+    {
+      action: 'return_to_review',
+      reason: args.reason,
+      metadata: { filedAt: body.createdAt, prev: { reviewStatus: args.from } },
+      createdAt: Date.now(),
+    },
+    args.undoes,
+  );
+}
 
 /**
  * Admin: soft-delist a body — curation or a landowner takedown (D48). Reversible (never a hard
@@ -3137,11 +3322,19 @@ export const setPublicAccess = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'access.rule');
-    return setPublicAccessImpl(ctx, actor, args);
+    await setPublicAccessImpl(ctx, actor, args);
+    return args.waterBodyId;
   },
 });
 
-/** `setPublicAccess`'s body, shared with its undo (D226), which rules `prev` again. */
+/** A clear of a ruling that isn't there: nothing would change (D270) — the Inbox rule's words too. */
+export const NO_RULING_TO_CLEAR = 'There is no ruling to clear.';
+
+/**
+ * `setPublicAccess`'s body, shared with its undo (D226), which rules `prev` again, and with the Inbox's
+ * ruling (`inboxWrites.ruleAccess`). Returns the ruling's audit row: written before the reports close,
+ * so each report's Inbox member is stamped with it and the ruling's undo reopens them (B01-5).
+ */
 export async function setPublicAccessImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
@@ -3156,10 +3349,14 @@ export async function setPublicAccessImpl(
     note?: string;
     reason?: string;
   },
-): Promise<Id<'waterBodies'>> {
+): Promise<Id<'moderationActions'>> {
   {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
+    // Clearing a ruling that isn't there would change nothing (D270): refused, nothing written.
+    if (verdict === null && body.publicAccess === undefined) {
+      throw new ConvexError(NO_RULING_TO_CLEAR);
+    }
 
     const trimmedNote = note?.trim();
     if (trimmedNote && trimmedNote.length > MAX_PUBLIC_ACCESS_NOTE_LENGTH) {
@@ -3218,30 +3415,28 @@ export async function setPublicAccessImpl(
     // the Phase 07-2 disposition chart like any other resolution. Both were missed when this path
     // patched the rows itself, because both were built after it.
     const resolution = verdict === 'none' ? 'actioned' : verdict === 'open' ? 'dismissed' : null;
-    let resolved = 0;
-    if (resolution) {
-      const open = await ctx.db
-        .query('contentFlags')
-        .withIndex('by_target_status_reason', (q) =>
-          q
-            .eq('targetType', 'waterbody')
-            .eq('targetId', waterBodyId as string)
-            .eq('status', 'open')
-            .eq('reason', 'no_public_access'),
-        )
-        .collect();
-      for (const row of open) {
-        await closeFlag(ctx, row, resolution, actor._id, now);
-        resolved++;
-      }
-    }
+    const open = resolution
+      ? await ctx.db
+          .query('contentFlags')
+          .withIndex('by_target_status_reason', (q) =>
+            q
+              .eq('targetType', 'waterbody')
+              .eq('targetId', waterBodyId as string)
+              .eq('status', 'open')
+              .eq('reason', 'no_public_access'),
+          )
+          // Bounded: past this many open reports the rest stay open in the item for the next ruling.
+          .take(RULING_REPORTS_READ)
+      : [];
 
-    await writeAudit(ctx, {
+    // The ruling's row first, so each report it closes is stamped with it (its Inbox member, and
+    // through it the item's decision) — the ruling's undo reopens exactly those.
+    const actionId = await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_public_access',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: reason?.trim() || describePublicAccessChange(verdict, trimmedNote, resolved),
+      reason: reason?.trim() || describePublicAccessChange(verdict, trimmedNote, open.length),
       metadata: {
         publicAccess: next ?? null,
         prev: {
@@ -3251,9 +3446,28 @@ export async function setPublicAccessImpl(
       },
       createdAt: now,
     });
-    return waterBodyId;
+    if (resolution) {
+      // Paged, one Inbox batch a page (`closeFlagsUnder`): the body's Access item recounted once a
+      // page, each report's hold and the counters moved once; no row per report — the ruling's names
+      // them.
+      await closeFlagsUnder(ctx, actor, open, {
+        resolution,
+        decision: resolution === 'actioned' ? 'ruled_closed' : 'ruled_accessible',
+        reason: '',
+        defaulted: false,
+        now,
+        lead: actionId,
+        perFlagRows: false,
+      });
+    }
+    // Reports the ruling left open (a clear) now read against the new ruling: *New* or *Disputes*.
+    await refreshItemTab(ctx, `access:${waterBodyId}`, { now });
+    return actionId;
   }
 }
+
+/** The most open access reports one ruling reads and closes. */
+export const RULING_REPORTS_READ = 1_000;
 
 /** A citation, not a paragraph — it renders inline on the lake. Matches the depth-note ceiling. */
 const MAX_PUBLIC_ACCESS_NOTE_LENGTH = 160;
@@ -3317,31 +3531,10 @@ export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'inbox.drawnBody');
-    const body = await ctx.db.get(args.waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    if (body.source !== 'user') {
-      throw new ConvexError('Only user-created water bodies can be reviewed');
-    }
-    if (body.reviewStatus !== 'pending') {
-      throw new ConvexError('Water body is not pending review');
-    }
-
-    await ctx.db.patch(args.waterBodyId, { reviewStatus: 'rejected' });
-    await syncWaterBodyCells(ctx, args.waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: zoomSortKey(body),
-      listed: isListed({ ...body, reviewStatus: 'rejected' }),
-    });
-    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'rejected' });
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'reject_waterbody',
-      targetType: 'waterbody',
-      targetId: args.waterBodyId,
-      reason: args.reason?.trim() || 'Rejected user-created water body',
-      // When it was drawn, for a staffer's time to decide (People).
-      metadata: { filedAt: body.createdAt },
-      createdAt: Date.now(),
+    await reviewDrawnBodyImpl(ctx, actor, {
+      waterBodyId: args.waterBodyId,
+      verdict: 'rejected',
+      ...(args.reason !== undefined ? { reason: args.reason } : {}),
     });
     return args.waterBodyId;
   },
@@ -3480,6 +3673,20 @@ export async function retargetAsks(
   flags: Id<'contentFlags'>[];
   flagsLeft: number;
 }> {
+  // One batch: each item the moved asks and reports leave or join is recounted once.
+  return inboxBatch(ctx, () => retargetEach(ctx, loserId, survivorId));
+}
+
+async function retargetEach(
+  ctx: MutationCtx,
+  loserId: Id<'waterBodies'>,
+  survivorId: Id<'waterBodies'>,
+): Promise<{
+  requests: Id<'waterBodyRequests'>[];
+  placeNames: Id<'corpusPlaceNames'>[];
+  flags: Id<'contentFlags'>[];
+  flagsLeft: number;
+}> {
   const requests: Id<'waterBodyRequests'>[] = [];
   for (const kind of REQUEST_KINDS) {
     for (const status of REQUEST_STATUSES) {
@@ -3491,6 +3698,8 @@ export async function retargetAsks(
         .take(RETARGET_CAP);
       for (const r of rows) {
         await ctx.db.patch(r._id, { waterBodyId: survivorId });
+        // An open ask's question is now the survivor's: it joins that item (B01-5).
+        await rekey(ctx, requestSource(r._id));
         requests.push(r._id);
       }
     }
@@ -3530,6 +3739,8 @@ export async function retargetAsks(
         continue;
       }
       await ctx.db.patch(f._id, { targetId: survivorId });
+      // An access report on the survivor now: it joins that body's item (B01-5).
+      await rekey(ctx, flagSource(f._id));
       flags.push(f._id);
     }
   }
@@ -3785,6 +3996,12 @@ export async function mergeBodyInto(
             searchText: bodySearchTextFor({ ...loser, moderatorAliases: undefined }),
           }
         : {}),
+    });
+    // A skater's drawing merged into a known body is decided `merged` in the Inbox (B01-5); any other
+    // loser was never an Inbox item, and the reconcile files nothing for it.
+    await decideItem(ctx, bodySource(loserId), {
+      decision: 'merged',
+      ...(actorId ? { actorId } : {}),
     });
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
@@ -7444,6 +7661,8 @@ async function clearDuplicateFlag(
       ? { dedupStatus: 'clean' as const }
       : {}),
   });
+  // A drawing whose last candidate went moves back to *New water* (B01-5).
+  await rekey(ctx, bodySource(body._id));
 }
 
 /**
@@ -7536,153 +7755,157 @@ export const resolveIncomingMergeDuplicates = internalMutation({
     const skipped: { externalId: string; reason: string; detail?: string }[] = [];
     let alreadyResolved = 0;
 
-    for (const record of records) {
-      const rows = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-      for (const [index, id] of [record.osmId, record.nhdId, record.threeDhpId].entries()) {
-        if (id === undefined) continue;
-        const indexName = (['by_osm_id', 'by_nhd_id', 'by_three_dhp_id'] as const)[index];
-        const field = (['osmId', 'nhdId', 'threeDhpId'] as const)[index];
-        if (indexName === undefined || field === undefined) continue;
-        const hits = await ctx.db
-          .query('waterBodies')
-          // biome-ignore lint/suspicious/noExplicitAny: three index names, one loop, same shape.
-          .withIndex(indexName, (q: any) => q.eq(field, id))
-          .take(4);
-        for (const hit of hits) rows.set(hit._id, hit);
-      }
-      if (rows.size <= 1) {
-        // The load has since written it, or a previous run of this pass already resolved it.
-        alreadyResolved++;
-        continue;
-      }
+    // One Inbox batch (PR #170): each item the loop's sources touch is recounted once.
+    await inboxBatch(ctx as MutationCtx, async () => {
+      for (const record of records) {
+        const rows = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
+        for (const [index, id] of [record.osmId, record.nhdId, record.threeDhpId].entries()) {
+          if (id === undefined) continue;
+          const indexName = (['by_osm_id', 'by_nhd_id', 'by_three_dhp_id'] as const)[index];
+          const field = (['osmId', 'nhdId', 'threeDhpId'] as const)[index];
+          if (indexName === undefined || field === undefined) continue;
+          const hits = await ctx.db
+            .query('waterBodies')
+            // biome-ignore lint/suspicious/noExplicitAny: three index names, one loop, same shape.
+            .withIndex(indexName, (q: any) => q.eq(field, id))
+            .take(4);
+          for (const hit of hits) rows.set(hit._id, hit);
+        }
+        if (rows.size <= 1) {
+          // The load has since written it, or a previous run of this pass already resolved it.
+          alreadyResolved++;
+          continue;
+        }
 
-      const all = [...rows.values()];
-      const survivor = all.find((r) => r.externalId === record.externalId);
-      if (survivor === undefined) {
-        skipped.push({
-          externalId: record.externalId,
-          reason: 'no-row-carries-the-arrival-key',
-          detail: all.map((r) => r.externalId ?? '(none)').join(' / '),
-        });
-        continue;
-      }
-
-      for (const loser of all) {
-        if (loser._id === survivor._id) continue;
-        const attachment = await bodyAttachmentKind(ctx, loser._id);
-        if (attachment !== null) {
+        const all = [...rows.values()];
+        const survivor = all.find((r) => r.externalId === record.externalId);
+        if (survivor === undefined) {
           skipped.push({
             externalId: record.externalId,
-            reason: 'loser-is-attached',
-            detail: `${loser.name || '(unnamed)'}: ${attachment}`,
+            reason: 'no-row-carries-the-arrival-key',
+            detail: all.map((r) => r.externalId ?? '(none)').join(' / '),
           });
           continue;
         }
-        const coverage = await ctx.db
-          .query('bathymetryCoverage')
-          .withIndex('by_external_id', (q) =>
-            q
-              .eq('source', loser.source === 'nhd' ? 'nhd' : 'osm')
-              .eq('externalId', loser.externalId ?? ''),
-          )
-          .take(1);
-        if (coverage.length > 0 && includeCoverageReferenced !== true) {
-          skipped.push({
-            externalId: record.externalId,
-            reason: 'loser-has-contour-coverage',
-            detail: loser.externalId,
-          });
-          continue;
-        }
-        // **Carry the enrichment the survivor lacks, before deleting the row that holds it.**
-        //
-        // Measured on run 7's 109 losers: 9 carry a depth and 5 an elevation. None is
-        // operator-set — they are all `lagos_us`, `globathy` and `hydrolakes_modeled` — so the
-        // depth pass would re-stamp them. But "a later pass will recompute it" is an assumption,
-        // and this one is doing real work: the join matches a source lake to a body by containment
-        // and area ratio, and the survivor's outline is not the loser's. A pair of rows that a
-        // moderator merged by hand would carry the values across, so this does too.
-        //
-        // Only where the survivor has nothing — a value it already holds was chosen by its own
-        // rung of the D68 ladder and outranks anything inherited from a row we are deleting.
-        const inherit: Record<string, unknown> = {};
-        /**
-         * Copy `field` when the survivor has none — and **omit an undefined companion rather than
-         * writing one**, because in Convex an explicit `undefined` is a *clear*, not a no-op. A
-         * value gets its provenance or it gets nothing; it never gets the other row's silence.
-         */
-        const take = (field: keyof Doc<'waterBodies'>) => {
-          if (survivor[field] === undefined && loser[field] !== undefined) {
-            inherit[field] = loser[field];
+
+        for (const loser of all) {
+          if (loser._id === survivor._id) continue;
+          const attachment = await bodyAttachmentKind(ctx, loser._id);
+          if (attachment !== null) {
+            skipped.push({
+              externalId: record.externalId,
+              reason: 'loser-is-attached',
+              detail: `${loser.name || '(unnamed)'}: ${attachment}`,
+            });
+            continue;
           }
-        };
-        // A value the survivor already holds was chosen by its own rung of the D68 ladder and
-        // outranks anything inherited from a row we are deleting — so each of these is gated on the
-        // survivor having nothing, and a source rides along only with the measurement it describes.
-        if (survivor.maxDepthM === undefined) {
-          take('maxDepthM');
-          if (inherit.maxDepthM !== undefined) take('maxDepthSource');
-        }
-        if (survivor.meanDepthM === undefined) {
-          take('meanDepthM');
-          if (inherit.meanDepthM !== undefined) take('meanDepthSource');
-        }
-        take('depthSourceNote');
-        if (survivor.elevationM === undefined) {
-          take('elevationM');
-          if (inherit.elevationM !== undefined) take('elevationSource');
-        }
-        if (survivor.windRose === undefined) {
-          take('windRose');
-          if (inherit.windRose !== undefined) take('windRoseSource');
-        }
-        // **Decisions, not measurements — and the reason they are here is that losing one is worse
-        // than losing a modeled depth.** A curated boost is an operator saying this lake matters;
-        // `includedByRequest` is A07b's override saying it exists *despite* a corpus rule. Both
-        // survive every prune by design, and deleting the row that carries one would revoke a human
-        // judgment with no trace. Neither is present on run 7's losers — which is exactly why it
-        // is cheap to be right about now rather than after the first one appears.
-        if ((survivor.curatedBoost ?? 0) === 0 && (loser.curatedBoost ?? 0) !== 0) {
-          inherit.curatedBoost = loser.curatedBoost;
-        }
-        if (survivor.includedByRequest !== true && loser.includedByRequest === true) {
-          inherit.includedByRequest = true;
-        }
-        const inherited = Object.keys(inherit);
-        if (inherited.length > 0 && apply === true) {
-          await ctx.db.patch(survivor._id, inherit as Partial<Doc<'waterBodies'>>);
-        }
+          const coverage = await ctx.db
+            .query('bathymetryCoverage')
+            .withIndex('by_external_id', (q) =>
+              q
+                .eq('source', loser.source === 'nhd' ? 'nhd' : 'osm')
+                .eq('externalId', loser.externalId ?? ''),
+            )
+            .take(1);
+          if (coverage.length > 0 && includeCoverageReferenced !== true) {
+            skipped.push({
+              externalId: record.externalId,
+              reason: 'loser-has-contour-coverage',
+              detail: loser.externalId,
+            });
+            continue;
+          }
+          // **Carry the enrichment the survivor lacks, before deleting the row that holds it.**
+          //
+          // Measured on run 7's 109 losers: 9 carry a depth and 5 an elevation. None is
+          // operator-set — they are all `lagos_us`, `globathy` and `hydrolakes_modeled` — so the
+          // depth pass would re-stamp them. But "a later pass will recompute it" is an assumption,
+          // and this one is doing real work: the join matches a source lake to a body by containment
+          // and area ratio, and the survivor's outline is not the loser's. A pair of rows that a
+          // moderator merged by hand would carry the values across, so this does too.
+          //
+          // Only where the survivor has nothing — a value it already holds was chosen by its own
+          // rung of the D68 ladder and outranks anything inherited from a row we are deleting.
+          const inherit: Record<string, unknown> = {};
+          /**
+           * Copy `field` when the survivor has none — and **omit an undefined companion rather than
+           * writing one**, because in Convex an explicit `undefined` is a *clear*, not a no-op. A
+           * value gets its provenance or it gets nothing; it never gets the other row's silence.
+           */
+          const take = (field: keyof Doc<'waterBodies'>) => {
+            if (survivor[field] === undefined && loser[field] !== undefined) {
+              inherit[field] = loser[field];
+            }
+          };
+          // A value the survivor already holds was chosen by its own rung of the D68 ladder and
+          // outranks anything inherited from a row we are deleting — so each of these is gated on the
+          // survivor having nothing, and a source rides along only with the measurement it describes.
+          if (survivor.maxDepthM === undefined) {
+            take('maxDepthM');
+            if (inherit.maxDepthM !== undefined) take('maxDepthSource');
+          }
+          if (survivor.meanDepthM === undefined) {
+            take('meanDepthM');
+            if (inherit.meanDepthM !== undefined) take('meanDepthSource');
+          }
+          take('depthSourceNote');
+          if (survivor.elevationM === undefined) {
+            take('elevationM');
+            if (inherit.elevationM !== undefined) take('elevationSource');
+          }
+          if (survivor.windRose === undefined) {
+            take('windRose');
+            if (inherit.windRose !== undefined) take('windRoseSource');
+          }
+          // **Decisions, not measurements — and the reason they are here is that losing one is worse
+          // than losing a modeled depth.** A curated boost is an operator saying this lake matters;
+          // `includedByRequest` is A07b's override saying it exists *despite* a corpus rule. Both
+          // survive every prune by design, and deleting the row that carries one would revoke a human
+          // judgment with no trace. Neither is present on run 7's losers — which is exactly why it
+          // is cheap to be right about now rather than after the first one appears.
+          if ((survivor.curatedBoost ?? 0) === 0 && (loser.curatedBoost ?? 0) !== 0) {
+            inherit.curatedBoost = loser.curatedBoost;
+          }
+          if (survivor.includedByRequest !== true && loser.includedByRequest === true) {
+            inherit.includedByRequest = true;
+          }
+          const inherited = Object.keys(inherit);
+          if (inherited.length > 0 && apply === true) {
+            await ctx.db.patch(survivor._id, inherit as Partial<Doc<'waterBodies'>>);
+          }
 
-        deleted.push({
-          ...(inherited.length > 0 ? { inherited } : {}),
-          name: loser.name || '(unnamed)',
-          externalId: loser.externalId,
-          acres: Math.round((loser.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
-          survivor: survivor.externalId ?? String(survivor._id),
-        });
-        if (apply === true) {
-          // Unlist before deleting, exactly as both prunes do: the cell rows are a separate table
-          // and a deleted body whose cells survive is a viewport hit that resolves to nothing.
-          await syncWaterBodyCells(ctx, loser._id, {
-            bbox: loser.bbox,
-            minVisibleZoom: loser.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
-            listed: false,
+          deleted.push({
+            ...(inherited.length > 0 ? { inherited } : {}),
+            name: loser.name || '(unnamed)',
+            externalId: loser.externalId,
+            acres: Math.round((loser.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
+            survivor: survivor.externalId ?? String(survivor._id),
           });
-          await ctx.db.delete(loser._id);
-          await queueLibraryRefresh(ctx, [loser._id]);
-          await markGeoStale(ctx, [loser._id]);
+          if (apply === true) {
+            // Unlist before deleting, exactly as both prunes do: the cell rows are a separate table
+            // and a deleted body whose cells survive is a viewport hit that resolves to nothing.
+            await syncWaterBodyCells(ctx, loser._id, {
+              bbox: loser.bbox,
+              minVisibleZoom: loser.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+              listed: false,
+            });
+            await ctx.db.delete(loser._id);
+            await queueLibraryRefresh(ctx, [loser._id]);
+            await markGeoStale(ctx, [loser._id]);
+          }
+        }
+
+        // The survivor keeps no pointer at a row that no longer exists.
+        if (apply === true) {
+          await ctx.db.patch(survivor._id, {
+            dedupStatus: 'clean',
+            duplicateCandidateIds: undefined,
+          });
+          await rekey(ctx, bodySource(survivor._id));
+          await queueLibraryRefresh(ctx, [survivor._id]);
         }
       }
-
-      // The survivor keeps no pointer at a row that no longer exists.
-      if (apply === true) {
-        await ctx.db.patch(survivor._id, {
-          dedupStatus: 'clean',
-          duplicateCandidateIds: undefined,
-        });
-        await queueLibraryRefresh(ctx, [survivor._id]);
-      }
-    }
+    });
 
     return {
       applied: apply === true,
@@ -8098,7 +8321,7 @@ async function walkAllBodySummaries(ctx: ActionCtx): Promise<{ swept: number; pa
     label: 'map summary cards: full walk (fills the refresh table)',
     campaignId: SUMMARY_BACKFILL_CAMPAIGN,
     deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
-    isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+    isProd: isProdDeployment(),
     stages: [
       {
         name: 'walk',

@@ -21,6 +21,7 @@ import {
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import { isProdDeployment } from './lib/deployment';
 import { isListed } from './lib/listing';
 
 /** The metrics a caption can compare against. Keep in step with the `regionStats.metrics` object. */
@@ -105,7 +106,7 @@ export const recompute = internalAction({
       deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
       // An action has no view of which deployment it is: it *is* the deployment. A prod row is
       // therefore identified by its own URL rather than by a `--prod` flag nobody passed.
-      isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+      isProd: isProdDeployment(),
       stages: [
         {
           name: 'scan',

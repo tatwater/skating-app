@@ -1,10 +1,42 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { holdMoved } from './eraseClock';
+import { type DecideOpts, decideItem, flagSource } from './inboxItems';
 import { bumpMetricMetaCounter } from './metrics';
 import { enqueueActorNotification } from './notificationQueue';
 
 export type FlagResolution = 'actioned' | 'dismissed';
+
+/**
+ * The per-target effects of closing many flags, gathered and run **once** (PR #170): every flag a
+ * decision closes is on the same target, and each close moved the target's erasure hold (a scan of its
+ * flags) and bumped one metric counter — per flag, a 500-flag takedown re-scanned the target 500 times.
+ * A closer that closes several hands one of these to {@link closeFlag} and calls `settle` after.
+ */
+export class FlagCloseEffects {
+  private readonly targets = new Map<string, { type: string; id: string }>();
+  private readonly metrics = new Map<string, { count: number; at: number }>();
+
+  /** One flag's hold move and metric, owed. */
+  owe(flag: Doc<'contentFlags'>, resolution: FlagResolution, at: number): void {
+    this.targets.set(`${flag.targetType}:${flag.targetId}`, {
+      type: flag.targetType,
+      id: flag.targetId,
+    });
+    const key = `${flag.reason}:${resolution}`;
+    this.metrics.set(key, { count: (this.metrics.get(key)?.count ?? 0) + 1, at });
+  }
+
+  /** Each target's hold moved once, each counter bumped once by what it owes. */
+  async settle(ctx: MutationCtx, now: number): Promise<void> {
+    for (const { type, id } of this.targets.values()) await holdMoved(ctx, type, id, now);
+    for (const [key, { count, at }] of this.metrics) {
+      await bumpMetricMetaCounter(ctx, 'flag_dispositions', key, count, at);
+    }
+    this.targets.clear();
+    this.metrics.clear();
+  }
+}
 
 /**
  * Close one open content flag — the status patch, the tuning metric, and the word to whoever filed
@@ -34,14 +66,25 @@ export async function closeFlag(
   resolution: FlagResolution,
   actorId: Id<'profiles'>,
   now: number,
+  /**
+   * The decision's audit row and the Inbox decision it makes (B01-5): stamped on the flag's Inbox
+   * member, so an undo finds every flag a decision closed. A caller that writes its audit row first
+   * passes it; one that doesn't leaves the member unstamped (its undo can't reopen the item).
+   */
+  inbox: Pick<DecideOpts, 'actionId' | 'decision'> = {},
+  /** A closer of several: the hold move and the metric owed here and run once (`settle`). */
+  effects?: FlagCloseEffects,
 ): Promise<void> {
   await ctx.db.patch(flag._id, {
     status: resolution,
     resolvedByUserId: actorId,
     resolvedAt: now,
   });
+  // Its Inbox member closes; the item is decided when this was its last open flag.
+  await decideItem(ctx, flagSource(flag._id), { now, actorId, ...inbox });
+  if (effects) effects.owe(flag, resolution, now);
   // A decided complaint no longer holds withdrawn content back from erasure (D248).
-  await holdMoved(ctx, flag.targetType, flag.targetId, now);
+  else await holdMoved(ctx, flag.targetType, flag.targetId, now);
 
   // The enforcement funnel's last stage (Phase 07-2): upheld vs dismissed, **keyed by flag reason**.
   // The reason is what makes it a tuning signal rather than a workload stat — mostly-dismissed
@@ -49,7 +92,9 @@ export async function closeFlag(
   // `unsafe_false_report` says CONTRADICTION_FLAG_THRESHOLD is. Counted on write because the
   // dispositions of *today's* resolutions can't be reconstructed from a queue that only holds
   // what's still open.
-  await bumpMetricMetaCounter(ctx, 'flag_dispositions', `${flag.reason}:${resolution}`, 1, now);
+  if (!effects) {
+    await bumpMetricMetaCounter(ctx, 'flag_dispositions', `${flag.reason}:${resolution}`, 1, now);
+  }
 
   // `content_flag_resolved` (A08 §2.3): tell the person who filed it that a moderator ruled. Verdict
   // only — not what was done, not to whom, not by which moderator. **`origin === 'user'` only**:

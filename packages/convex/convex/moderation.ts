@@ -50,6 +50,8 @@ import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from
 import { ERASABLE, refreshEraseClock } from './lib/eraseClock';
 import { closeFlag } from './lib/flagResolution';
 import { flagSubject, flagSubjectOf } from './lib/flagSubject';
+import { flagSource, itemToDecide } from './lib/inboxItems';
+import { assertInboxVerb } from './lib/inboxRules';
 import { withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { ownContentRefusal } from './lib/ownContent';
 import {
@@ -78,6 +80,7 @@ import {
 } from './lib/recordRules';
 import { clearFailure } from './lib/recurringWork';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
+import { isSeedProfile } from './lib/seedPeople';
 import { type UndoState, undoState, undoStates } from './lib/undo';
 import { literals } from './lib/validators';
 import { syncWithdrawal } from './lib/withdrawals';
@@ -1337,12 +1340,15 @@ export const resolveFlag = mutation({
       );
     }
 
-    const now = Date.now();
-    // The status, the Phase 07-2 disposition metric, and the A08 verdict notification — shared with
-    // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
-    await closeFlag(ctx, flag, args.resolution, actor._id, now);
+    // The Inbox's one rule on the item that holds it (B01-5): above all, no staffer decides a flag
+    // they filed (D289). A flag the backfill hasn't reached is filed first, so it gets that answer too.
+    const item = await itemToDecide(ctx, flagSource(flag._id));
+    if (item) await assertInboxVerb(ctx, actor, item, 'dismiss');
 
-    await writeAudit(ctx, {
+    const now = Date.now();
+    // The audit row first, so the flag's Inbox member is stamped with it and the decision's undo
+    // (`reopen_flag`) finds the flag by it.
+    const actionId = await writeAudit(ctx, {
       actorId: actor._id,
       action: args.resolution === 'actioned' ? 'resolve_flag' : 'dismiss_flag',
       targetType: 'contentFlag',
@@ -1351,6 +1357,12 @@ export const resolveFlag = mutation({
       // When it was filed, for a staffer's time to decide (People).
       metadata: { filedAt: flag.createdAt },
       createdAt: now,
+    });
+    // The status, the Phase 07-2 disposition metric, and the A08 verdict notification — shared with
+    // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
+    await closeFlag(ctx, flag, args.resolution, actor._id, now, {
+      actionId,
+      decision: args.resolution,
     });
     return args.flagId;
   },
@@ -1874,6 +1886,8 @@ async function syncClerkBan(
   target: Doc<'profiles'>,
   banned: boolean,
 ): Promise<void> {
+  // A fake person from the dev seed has no Clerk account: nothing to mirror (D287).
+  if (isSeedProfile(target)) return;
   await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
     clerkUserId: target.clerkUserId,
     banned,

@@ -108,6 +108,9 @@ export const ROW_MAX = {
   // A withdrawal row (B01-4m): two ids, a literal, four numbers and a boolean — about 250 bytes.
   withdrawal: 1024,
   small: SLACK,
+  // An Inbox member: its one writer (`lib/inboxItems`) stores three ids, a source id it copies from a
+  // row's `_id`, two literals and a number — about 250 bytes, so 1 KiB.
+  inboxMember: 1024,
   // A bounty-create attempt: ids, a decision, a few numbers and a trust class — no free text.
   gateEvent: 2 * 1024,
   // A console presence row: a staffer's id and an instant.

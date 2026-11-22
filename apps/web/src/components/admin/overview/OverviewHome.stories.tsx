@@ -116,6 +116,17 @@ export const Moderator: Story = {
   },
 };
 
+/** The Inbox's backfill still running: the heading and the card say so, never a short count. */
+export const InboxPreparing: Story = {
+  args: { data: { ...HOME, inbox: { ...must(HOME.inbox), pending: true } } },
+  play: async ({ canvasElement }) => {
+    const badges = slots(canvasElement, 'badge').map((b) => b.textContent);
+    await expect(badges).toContain('Inbox still being prepared');
+    await expect(badges.some((b) => b?.endsWith('in the inbox'))).toBe(false);
+    await expect(within(canvasElement).getByText('Still being prepared')).toBeInTheDocument();
+  },
+};
+
 /** Everything on its way: each block holds its place, so nothing moves when the numbers land. */
 export const Loading: Story = {
   args: { data: {}, live: 'checking', lastCheckedAt: null },

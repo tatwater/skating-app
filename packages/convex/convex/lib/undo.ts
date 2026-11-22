@@ -27,7 +27,7 @@ import { ownContentRefusal } from './ownContent';
 import { type PersonWrite, refusalFor, writeRefusal } from './peopleCan';
 import { factsOfRow, personRowOf, rowlessProfile } from './peopleRows';
 import { ROW_MAX, requestBudget, type WaveCost } from './readBudget';
-import { UNDO_HANDLERS } from './undoHandlers';
+import { undoHandlers } from './undoHandlers';
 import { UNDO_POLICY, type UndoRule, undoCapability, WORKSTREAM_MODE } from './undoPolicy';
 import { UNDO_CHECKED_ELSEWHERE, undoReader } from './undoReads';
 import {
@@ -49,13 +49,15 @@ export type UndoState =
 
 /** The handler for a row, if its verb is undoable in this build. */
 function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
-  return UNDO_HANDLERS[row.action] ?? null;
+  return undoHandlers()[row.action] ?? null;
 }
 
 /**
  * How many rows tagged with one undo are read to find that undo's own row. An undo tags every row it
- * writes (`asUndoOf`): a Post's undo writes a row per member it moves (at most ten), then the Post's
- * own, so this covers the largest undo with room to spare.
+ * writes (`asUndoOf`, and its continuations): a Post's undo a row per member it moves (at most ten),
+ * then the Post's own; a flag decision's undo a `reopen_flag` row a flag, hundreds. Whether the row
+ * was undone is decided by any one of them (PR #170: the cap can't change that answer); which row the
+ * state names is cosmetic — every tagged row is the one undo's, by the one actor.
  */
 const UNDO_TAG_READ = 16;
 
@@ -197,7 +199,8 @@ export async function undoStates(
     pending,
     ({ cost }) => cost,
     async ({ row, handler }, share): Promise<UndoState> => {
-      const why = (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope))) ?? null;
+      const why =
+        (await handler.refusal?.(ctx, row, undoReader(ctx, share, scope), viewer)) ?? null;
       return why
         ? { state: 'unavailable', why }
         : { state: 'available', needsReason: undoNeedsReason(row) };

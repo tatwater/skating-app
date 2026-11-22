@@ -104,6 +104,7 @@ beforeEach(() => {
       support: count(1),
       oldestOpenAt: null,
       medianOpenedAt: null,
+      pending: false,
     },
     people: {
       moderators: count(2),

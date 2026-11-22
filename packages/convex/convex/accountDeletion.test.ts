@@ -15,6 +15,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { fileMember, ticketSource } from './lib/inboxItems';
 import schema from './schema';
 
 /**
@@ -1127,7 +1128,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       });
       await ctx.db.insert('blocks', { blockerId: user.id, blockedId: other.id, createdAt: T0 });
       await ctx.db.insert('blocks', { blockerId: other.id, blockedId: user.id, createdAt: T0 });
-      await ctx.db.insert('supportTickets', {
+      const ticketId = await ctx.db.insert('supportTickets', {
         userId: user.id,
         clerkUserId: 'leaver',
         category: 'account' as const,
@@ -1135,6 +1136,8 @@ describe('bucket 1 — erase (private artifacts)', () => {
         status: 'open' as const,
         createdAt: T0,
       });
+      // Its Inbox item (B01-5), which must go with it.
+      await fileMember(ctx, ticketSource(ticketId));
       // The days they opened the app (B01), and someone else's, which must survive.
       await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-14', firstAt: T0 });
       await ctx.db.insert('signInDays', { userId: user.id, day: '2026-01-15', firstAt: T0 });
@@ -1155,6 +1158,11 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: (await ctx.db.query('pushTokens').collect()).length,
       blocks: (await ctx.db.query('blocks').collect()).length,
       tickets: (await ctx.db.query('supportTickets').collect()).length,
+      inbox: [
+        (await ctx.db.query('inboxItems').collect()).length,
+        (await ctx.db.query('inboxItemMembers').collect()).length,
+        (await ctx.db.query('inboxCounts').collect()).filter((c) => c.count !== 0).length,
+      ],
       signInDays: (await ctx.db.query('signInDays').collect()).map((r) => r.userId),
       presence: (await ctx.db.query('consolePresence').collect()).map((r) => r.userId),
     }));
@@ -1167,6 +1175,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       pushTokens: 0, // a capability to ring the phone, and a tombstone must not keep one
       blocks: 0, // both directions — a block against a tombstone would filter forever
       tickets: 0,
+      inbox: [0, 0, 0], // the ticket's Inbox item, member and count went with it
       signInDays: [other.id], // a behavioral record of one person; the other person's stays
       presence: [other.id],
     });

@@ -27,7 +27,7 @@ import type { GoLetter } from '@/lib/keys';
 import { LiveMark } from './LiveMark';
 import { OverviewHome, type OverviewHomeData } from './OverviewHome';
 import { OverviewPage } from './OverviewPage';
-import { inboxTotal, machineryTrouble } from './overviewData';
+import { inboxHeadCount, machineryTrouble } from './overviewData';
 import { NOW } from './overviewFixtures';
 import { type LiveState, overviewHeads } from './overviewModel';
 import { OverviewLamp, overviewStatus } from './overviewStatus';
@@ -70,7 +70,7 @@ export function OverviewBoard({
 }: BoardProps) {
   const [tab, setTab] = useState<'home' | 'metrics'>('home');
   const heads = overviewHeads({
-    inbox: data.inbox ? inboxTotal(data.inbox) : { count: 0, capped: false },
+    inbox: inboxHeadCount(data.inbox),
     refits: data.corpus?.chordRefits ?? { count: 0, capped: false },
     ...machineryTrouble(data.machinery),
   });

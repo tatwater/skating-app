@@ -1,11 +1,28 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { markReady, refreshPersonRow } from './lib/peopleRows';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
+
+/**
+ * The Inbox's stored items for rows seeded raw (B01-5): the Overview's Inbox card reads the items'
+ * counts, so a test that seeds source rows directly files them the way the backfill does.
+ */
+async function fileStored(t: {
+  mutation: (
+    fn: typeof internal.inboxItems.backfill,
+    args: { restart?: boolean },
+  ) => Promise<{ done: boolean }>;
+}) {
+  for (let i = 0; i < 100; i++) {
+    const pass = await t.mutation(internal.inboxItems.backfill, i === 0 ? { restart: true } : {});
+    if (pass.done) return;
+  }
+  throw new Error('the Inbox backfill did not finish');
+}
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -108,6 +125,7 @@ describe('console.overview (B01 §5.1)', () => {
     await seedRequest(t, skater.id, 'name_landmark');
     await syncPeople(t);
 
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.safety).toEqual({ count: 1, capped: false });
     expect(o.inbox.accessReports).toEqual({ count: 2, capped: false });
@@ -130,6 +148,7 @@ describe('console.overview (B01 §5.1)', () => {
     await seedFlag(t, filer.id, 'unsafe_false_report', 'report', 'r2', author.id);
     await syncPeople(t);
     await t.run((ctx) => markReady(ctx, 'flagSubjects'));
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
     expect(o.people.pending).toEqual([]);
@@ -146,6 +165,7 @@ describe('console.overview (B01 §5.1)', () => {
         createdAt: Date.now(),
       }),
     );
+    await fileStored(t);
     const later = (await mod.as.query(api.console.overview, {})).people;
     expect(later.flaggedPeople).toEqual({ count: 2, capped: false });
     expect(later.pending).toEqual(['flagSubjects']);
@@ -166,8 +186,11 @@ describe('console.overview (B01 §5.1)', () => {
       }),
     );
     await syncPeople(t);
+    await fileStored(t);
     expect((await mod.as.query(api.console.overview, {})).inbox.support).toBeNull();
+    await fileStored(t);
     expect((await mod.as.query(api.console.overview, {})).people.appealsOpen).toBeNull();
+    await fileStored(t);
     const a = await admin.as.query(api.console.overview, {});
     expect(a.inbox.support).toEqual({ count: 1, capped: false });
     expect(a.people.appealsOpen).toEqual({ count: 1, capped: false });
@@ -191,6 +214,7 @@ describe('console.overview (B01 §5.1)', () => {
     });
     await syncPeople(t);
 
+    await fileStored(t);
     const p = (await mod.as.query(api.console.overview, {})).people;
     expect(p.moderators.count).toBe(1);
     expect(p.admins.count).toBe(1);
@@ -207,6 +231,7 @@ describe('console.overview (B01 §5.1)', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     const skater = await seedUser(t, 's');
     await seedFlag(t, skater.id, 'no_public_access', 'report', 'r1');
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.inbox.accessReports).toEqual({ count: 0, capped: false });
     expect(o.inbox.contentFlags).toEqual({ count: 1, capped: false });
@@ -239,6 +264,7 @@ describe('console.overview (B01 §5.1)', () => {
       });
     });
     await syncPeople(t);
+    await fileStored(t);
     const o = await admin.as.query(api.console.overview, {});
     expect(o.inbox.support).toEqual({ count: 3, capped: false });
     expect(o.people.appealsOpen).toEqual({ count: 2, capped: false });
@@ -268,17 +294,19 @@ describe('console.overview (B01 §5.1)', () => {
       }
     });
     await syncPeople(t);
+    await fileStored(t);
     const p = (await mod.as.query(api.console.overview, {})).people;
     expect(p.suspended).toEqual({ count: 200, capped: true });
   });
 
-  test('a lane past the cap reads as capped rather than being scanned', async () => {
+  test('a lane past the old read cap is counted whole: the card reads the stored counts (B01-5)', async () => {
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');
     const skater = await seedUser(t, 's');
     for (let i = 0; i < 201; i++) await seedFlag(t, skater.id, 'spam', 'report', `r${i}`);
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
-    expect(o.inbox.contentFlags).toEqual({ count: 200, capped: true });
+    expect(o.inbox.contentFlags).toEqual({ count: 201, capped: false });
   });
 
   test('flagged people are people: several flags on one account count it once', async () => {
@@ -292,6 +320,7 @@ describe('console.overview (B01 §5.1)', () => {
     }
     await seedFlag(t, mod.id, 'spam', 'user', other.id);
     await syncPeople(t);
+    await fileStored(t);
     const o = await mod.as.query(api.console.overview, {});
     expect(o.people.flaggedPeople).toEqual({ count: 2, capped: false });
   });
@@ -317,8 +346,9 @@ describe('console.overview (B01 §5.1)', () => {
       });
     });
     await syncPeople(t);
+    await fileStored(t);
     const o = await admin.as.query(api.console.overview, {});
-    expect(o.inbox.support).toEqual({ count: 200, capped: true });
+    expect(o.inbox.support).toEqual({ count: 202, capped: false });
     // Appeals read their own index range (account tickets), so a full page of bugs can't hide one.
     expect(o.people.appealsOpen).toEqual({ count: 1, capped: false });
   });
@@ -326,6 +356,7 @@ describe('console.overview (B01 §5.1)', () => {
   test('a member is refused', async () => {
     const t = convexTest(schema, modules);
     const member = await seedUser(t, 'm');
+    await fileStored(t);
     await expect(member.as.query(api.console.overview, {})).rejects.toThrow(/requires moderator/i);
   });
 });

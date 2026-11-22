@@ -1,6 +1,65 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
+
+/**
+ * **The harness enforces the real backend's limits** (PR #170). Two rewrites of the inlined
+ * `convex-test` bundle, test-only:
+ *
+ * - every `convexTest(...)` runs under Convex's default per-transaction limits (`transactionLimits:
+ *   true` — documents and bytes read and written, index ranges, functions scheduled and their
+ *   argument bytes, files), which `convex-test` leaves off unless a test asks; a function or fixture
+ *   past one throws as the backend would;
+ * - Convex's one-paginated-query rule, for mutations too. The real
+ * backend refuses a second `.paginate()` in one function execution, queries and mutations alike —
+ * `crates/isolate/src/environment/udf/async_syscall.rs`, the `queryPage` syscall:
+ * `MultiplePaginatedDatabaseQueries`, "This query or mutation function ran multiple paginated
+ * queries. Convex only supports a single paginated query in each function." `convex-test` (0.0.72)
+ * counts it for queries only (its mutation context carries no counter), so a mutation paginating
+ * twice passed here and would throw on deploy. This gives every mutation execution a counter of its
+ * own — nested ones too: the backend builds each execution its own `DatabaseUdfEnvironment` with a
+ * fresh `next_journal` (`environment/udf/mod.rs`; a nested call runs at `reactor_depth > 0`) — and
+ * names the function in the error. Test-only: it rewrites the inlined `convex-test` bundle, never
+ * production code. Its own test: `harnessLimits.test.ts`.
+ */
+function singlePaginatePerMutation(): Plugin {
+  const MUTATION_CTX = `udfType: "mutation",
+            depth: (parentCtx?.depth ?? 0) + 1,
+        };`;
+  const THROW = `throw new Error("Only a single paginated query (\`.paginate()\`) is allowed per " +`;
+  const LIMITS_OFF = `export function convexTest(schemaOrOptions, modules) {
+    let schema = undefined;
+    let limitsConfig = false;`;
+  const LIMITS_ON = `export function convexTest(schemaOrOptions, modules) {
+    let schema = undefined;
+    let limitsConfig = true;`;
+  return {
+    name: 'convex-single-paginate-per-mutation',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/convex-test[\\/]dist[\\/]index\.js$/.test(id)) return null;
+      if (!code.includes(MUTATION_CTX) || !code.includes(THROW) || !code.includes(LIMITS_OFF)) {
+        throw new Error(
+          'convex-test changed: the one-paginated-query harness rule no longer applies; update it',
+        );
+      }
+      return code
+        .replace(LIMITS_OFF, LIMITS_ON)
+        .replace(
+          MUTATION_CTX,
+          `udfType: "mutation",
+            depth: (parentCtx?.depth ?? 0) + 1,
+            pagination: { calls: 0 },
+        };`,
+        )
+        .replace(
+          THROW,
+          `throw new Error("[" + (executionContextStorage.getStore()?.udfPath ?? "?") + "] " + "Only a single paginated query (\`.paginate()\`) is allowed per " +`,
+        );
+    },
+  };
+}
 
 export default defineConfig({
+  plugins: [singlePaginatePerMutation()],
   test: {
     /**
      * 20s, not vitest's 5s default.

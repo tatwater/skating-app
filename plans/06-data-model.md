@@ -56,7 +56,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `corpusPlaceNames` | a place the community's emails name that no landmark took, with its mention count and the lake it is on when known — a moderator's queue (`/admin/water/place-names`): placed on the map, filed as a landmark's spelling, or dismissed with a reason — D202 |
 | `bodyNameLists` | one row per body: each live landmark's id, kind, point and names, and each live bay's names — the short list a page of History checks the landmark undo's whole rule from; rebuilt whole by its one writer (`lib/bodyNames`) beside every landmark or bay write, bounded at 256 KiB at the write (past it `capped` and empty) — D282 |
 | `landmarkSourceBaselines` | what each catalog source (`vt.osm`, `ny.gnis`) read on the complete landmark loads this deployment accepted — the bar a later load must clear before it retires a catalog row; one row per accepted load, the newest is the bar — D202 |
-| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write — D179, D201, D202 |
+| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write; `origin` tells a script's ask (the corpus's seeded bays), which is never an Inbox item — D179, D201, D202, D289 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
 | `bodyLibraryRows` | the Bodies library's row: what the console's list shows, sorts by and filters on, one per body per scope (`*` and each state it touches), written only by `lib/bodyLibrary.ts` at the writes that change its facts — B01 §12.8 |
 | `bodyLibraryCounts` | the library's counts — each lane's total, the state tabs, every facet option, per lane and scope — moved by the row writer by the difference of each change, so a count is the tally of the rows — B01 §12.8 |
@@ -168,6 +168,10 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `auditSnapshots` | what an audited action replaced when it is too big for its row (a polygon, a weather grid, a merge's moved rows), read only by its undo — D226 |
 | `contentRevisions` | what a Post or Report said before each author edit, for a moderator's comparison; the card shows only *Edited*; cleared with the words by the departed-user sweep — A10-3 |
 | `supportTickets` | the in-app support inbox, emailed to the operator — D37 |
+| `inboxItems` | the Inbox's row: one per question a person filed — a flag target in a lane, a body's access reports, an ask and its siblings, a drawn body, a ticket — with its lane, tab, rank, the oldest member's filing time and, once decided, who decided what (the colleague lock, D283); written only by `lib/inboxItems.ts` at the writes that file, withdraw or decide a member, with a drift repair — B01 §12.8 (B01-5) |
+| `inboxItemMembers` | the source rows an Inbox item holds (a flag, a request, a drawn body, a ticket), who filed each (D289) and which decision closed it, so an undo reopens exactly what one decision closed — B01-5 |
+| `inboxCounts` | the Inbox's stored counts — each lane's and tab's open items and the decided total — moved by the item writer with each row, so a count is the tally of the rows; the Overview's Inbox card reads them — B01-5 |
+| `inboxJobRuns` | where the Inbox's chained jobs stand — the items backfill, the drift repair, the dev seed's clear: the phase, the cursor, whether it is done — B01-5 |
 | `metricSnapshots` | pre-aggregated numbers every `/admin` chart reads, one row per (metric, day) — charts never scan the corpus — 07-2 |
 
 ---

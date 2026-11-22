@@ -24,6 +24,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { type ActionCtx, internalAction, internalQuery } from './_generated/server';
+import { isSeedProfile } from './lib/seedPeople';
 
 const CLERK_API_BASE = 'https://api.clerk.com/v1';
 
@@ -161,6 +162,8 @@ export const setBanned = internalAction({
     repair: v.optional(v.boolean()),
   },
   handler: async (ctx, { clerkUserId, banned: scheduled, attempt = 0, repair }) => {
+    // A fake person from the dev seed has no Clerk account (D287): nothing to lock, nothing to page.
+    if (isSeedProfile(clerkUserId)) return;
     const key = process.env.CLERK_SECRET_KEY;
     if (!key) {
       console.warn(
@@ -294,6 +297,8 @@ export const deleteUser = internalAction({
     attempt: v.optional(v.number()),
   },
   handler: async (ctx, { clerkUserId, attempt = 0 }) => {
+    // A fake person from the dev seed has no Clerk account to delete (D287).
+    if (isSeedProfile(clerkUserId)) return;
     const key = process.env.CLERK_SECRET_KEY;
     if (!key) {
       console.warn(

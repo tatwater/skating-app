@@ -86,6 +86,11 @@ const VERB: Record<AuditAction, string> = {
   pin_access_alert: 'Pinned an access alert',
   unpin_access_alert: 'Unpinned an access alert',
   retract_access_alert: 'Retracted an access alert',
+  // The Inbox's inverses (B01-5); wording for the copy pass.
+  reopen_flag: 'Reopened a flag',
+  reopen_request: 'Reopened a request',
+  return_to_review: 'Put a drawn body back in review',
+  unretract_access_alert: 'Put back an access alert',
   // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
   // closed it and released the pin.
   author_resolve_access_alert: 'The reporter said “It’s open” on a pinned access alert',
