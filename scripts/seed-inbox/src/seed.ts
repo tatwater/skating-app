@@ -135,23 +135,6 @@ export function serverSentence(stderr: string): string {
   return useful.at(-1) ?? 'convex run failed with no message';
 }
 
-/**
- * What `convex run` printed on stdout, parsed: the function's JSON return value, or `undefined` for
- * none. A run whose stdout carries something before the value is read from its last JSON block.
- */
-export function parseRunOutput<T>(stdout: string): T {
-  const text = stdout.trim();
-  if (text === '') return undefined as T;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    const block = text.match(/(\[[\s\S]*\]|\{[\s\S]*\}|"[^"]*")\s*$/)?.[1];
-    if (block === undefined)
-      throw new Error(`convex run returned unparseable output: ${text.slice(0, 200)}`);
-    return JSON.parse(block) as T;
-  }
-}
-
 /** The first line of an error, which the CLI's runner makes the server's own sentence. */
 export function errorLine(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);

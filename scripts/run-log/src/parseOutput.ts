@@ -5,31 +5,56 @@
  * while this — the part that actually had a bug — is tested.
  */
 
+/** Terminal color and cursor codes, which pnpm and the Convex CLI add when they think stdout is a TTY. */
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, 'g');
+
+/** A line a top-level JSON value can begin on: unindented, opening a value. */
+const VALUE_START = /^[[{"\-0-9tfn]/;
+
 /**
  * Parse what `convex run` printed.
  *
- * Split out from the subprocess call because it is the part with a bug in it, and it had one: the
- * original only recognized `{…}` and `"…"`, so an **array** return (any list query) fell through to
- * a regex that matched the first `{…}` *inside* the array and parsed one element as the whole
- * result. Here that threw; the version of this mistake that silently succeeds is much worse.
+ * **The rule: the function's result is the longest run of whole, unindented-edged lines that parses
+ * as one JSON value.** `convex run` prints the return value alone, pretty-printed, as whole lines: a
+ * top-level object or array opens and closes at column 0 with everything inside indented, and a
+ * string, number or boolean is one line. Anything else on stdout is a whole line of its own — pnpm's
+ * `[WARN] Unsupported engine … wanted: {"node":"26.x"} (current: …)`, which the seed's first dev run
+ * met, carries JSON *inside* a line and so never parses as a block. A parser that takes the first
+ * brace it sees picks that warning up; this one can't, wherever the warning sits — before the result,
+ * after it, or both — and ANSI codes are stripped first. Among candidate blocks the longest wins, so a
+ * one-line element inside a multi-line array never stands in for the array.
+ *
+ * Split out from the subprocess call because it is the part with bugs in it: the original only
+ * recognized `{…}` and `"…"`, so an array return fell through to a regex that matched one element.
  */
 export function parseConvexOutput<T>(stdout: string): T {
-  const trimmed = stdout.trim();
+  const text = stdout.replace(ANSI, '').replace(/\r\n?/g, '\n');
+  const trimmed = text.trim();
   if (trimmed.length === 0) return undefined as T;
-  // A function can return an object, an array, a bare string (an inserted id), a number or a bool.
-  if (/^[[{"]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(true|false|null)$/.test(trimmed)) {
+  try {
     return JSON.parse(trimmed) as T;
+  } catch {
+    // Not the value alone: find it among the lines.
   }
-  // Something else reached stdout ahead of the value — take the last JSON-looking block. Arrays are
-  // tried first: an array of objects also matches the object pattern, and matching that would hand
-  // back one element dressed as the whole answer.
-  const candidate =
-    trimmed.match(/\[[\s\S]*\]/)?.[0] ??
-    trimmed.match(/\{[\s\S]*\}/)?.[0] ??
-    trimmed.match(/"[^"]*"/)?.[0];
-  if (candidate === undefined)
-    throw new Error(`convex run returned unparseable output: ${trimmed}`);
-  return JSON.parse(candidate) as T;
+  const lines = text.split('\n');
+  const edge = (line: string) => line.length > 0 && line === line.trimStart();
+  let best: { from: number; to: number; value: unknown } | undefined;
+  for (let from = 0; from < lines.length; from++) {
+    const first = lines[from] ?? '';
+    if (!edge(first) || !VALUE_START.test(first)) continue;
+    for (let to = from; to < lines.length; to++) {
+      if (!edge(lines[to] ?? '')) continue;
+      let value: unknown;
+      try {
+        value = JSON.parse(lines.slice(from, to + 1).join('\n'));
+      } catch {
+        continue;
+      }
+      if (!best || to - from >= best.to - best.from) best = { from, to, value };
+    }
+  }
+  if (best === undefined) throw new Error(`convex run returned unparseable output: ${trimmed}`);
+  return best.value as T;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -48,3 +48,15 @@ export function parseArgs(
   const mode: Mode = clear ? (apply ? 'clear' : 'clear-dry') : apply ? 'apply' : 'dry';
   return { ok: true, mode, operator };
 }
+
+/**
+ * Why this Node can't run the seed, or `null` when it can: the repo pins a version (`.node-version`)
+ * and pnpm refuses or warns on a different major — the seed's first dev run died on that warning.
+ * Compared by major version, as the workspace's `engines` (`26.x`) does.
+ */
+export function nodeVersionRefusal(wanted: string, running: string): string | null {
+  const major = (v: string) => v.trim().replace(/^v/, '').split('.')[0] ?? '';
+  const want = major(wanted);
+  if (want === '' || major(running) === want) return null;
+  return `seed-inbox needs Node ${want} (the repo's .node-version, ${wanted.trim()}); this shell runs ${running}. Switch Node (e.g. \`fnm use\` or \`nvm use\`) and run it again.`;
+}
