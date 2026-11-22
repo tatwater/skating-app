@@ -1122,7 +1122,7 @@ B01-3, and what the Overview adopted:
 
 **Kit extensions (B01-5, 2026-11-20)** — what the Inbox's boards needed, and People's candidates
 promoted, built on `b01-inbox-w4-kit` and integrated on `phase-b01-inbox` (ten new pieces join the
-count above):
+count above; B01-5c's `OverlapGauge` and `CompareTable` make twelve):
 
 | Piece | Status | What it is | Adopted by |
 |---|---|---|---|
@@ -1153,6 +1153,8 @@ count above):
 | Keys — a held key swallows its own repeats (`lib/keys`) | ✅ | A bound key that acted swallows its own repeat keydowns, and the text they would type, until it is released, wherever focus has gone. So holding an action letter no longer types into the reason dialog it opens. A fresh press, any other key, a held ⇧ or ⌘, and IME composition pass through; it lets go on keyup, window blur or a hidden page | Every pane, the shell |
 | LockBanner — its live region is its words only (`note`) | ✅ | The reader-only status region holds the banner's line alone, never its buttons | `DecidedLock` |
 | StepRugChart — the caller's ticks (`step-rug-chart`) | ✅ | Takes its tick instants from the caller (`ticks`), and `hourTicks(from, to, floor)` makes whole hours by the caller's own floor, so a chart's ticks fall on the reader's clock in any zone | Inbox zero |
+| OverlapGauge (`overlap-gauge`) | ✅ | Promoted from the Drawn handler: a share of a drawing as a bar, with its threshold's tick and label, the label bright at or past it (2.5) | The Drawn handler |
+| CompareTable (`compare-table`) | ✅ | Promoted from the Place handler: two things side by side, row by row, the second's head in the warn ink (2.4's *Same place?*) | The Place handler, `placeModel` |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -8974,6 +8976,96 @@ the PR body says so.
 W5 is the slice's weight and should be two builders, disjoint by directory: **W5a** (`Request/`,
 the six request kinds and the admit with no match) and **W5b** (`Place/` with `CompareTable`,
 `Drawn/` with `OverlapGauge`, the redirect, the links, the bell, the *author told* line).
+
+#### B01-5c: the web builders integrated (2026-11-22)
+
+On `phase-b01-inbox`, unpushed, after `#171 merged`. W5a and W5b were cherry-picked; W5b's copy
+of the shared seam commit was dropped as a duplicate. One conflict: `inspector/elsewhere.ts`, where
+each builder removed only their own kinds' rows. All three rows go, along with their imports.
+
+**What each built.**
+
+- **W5a** built `handlers/Request/`: one handler for the `request` key covering 2.3's admit
+  (and the admit the catalog found no match for, with *Look up again* in *Admit*'s place) plus
+  activate, restore, contest access and takedown, derived from it. It also built
+  `handlers/asks/AskList`, the shared ask list (newest first, each byline with its time and note,
+  and *Showing n of m asks* past a page).
+- **W5b** built:
+  - `handlers/Place/`: 2.4's landmark ask, with *Same place?* in `CompareTable`, and the bay ask;
+  - `handlers/Drawn/`: 2.5, with `OverlapGauge`;
+  - the bell's `moderator_decision` (its `knows`, its mark, core's sentence);
+  - the links from the Overview, the audit feed and the Bodies preview into the Inbox;
+  - the water list without its pending-review card;
+  - the pin on 2.6's *author told*.
+
+**Integration seams.**
+
+1. The route harness stands in `useRouterState`, and its `Link` renders the real `href`. Every
+   handler builds its console link the router's way (`useHereHref` is gone).
+2. `OverlapGauge` and `CompareTable` were promoted to the kit (their rows are under *Kit
+   extensions (B01-5)*).
+3. **One decision runner**, `inbox/actions/useDecisionRunner`, used by every request, place and
+   drawn write. A refusal reads the same on all three: "Not saved · ‹item›" over "The decision:
+   ‹the server's words›". A write lands as `{ target, answer? }`. When S3's writes answer with their
+   `actionId` and undo offer, the receipt takes Undo from them, and the marked `latestOwn` fallback
+   in `undoOf` is deleted in one place.
+4. The Drawn bar's *Merge* takes no key. It is still drawn as *Coming soon*.
+5. The Inbox words no caller read are deleted.
+6. The legacy dashboard's pending-review link opens the Inbox's drawn lane. A separate link to the
+   water list keeps the duplicates.
+7. `AskList`'s newest-first re-sort is marked temporary.
+8. The `/admin/water/requests` redirect is held as the slice's last commit.
+
+The integration review fixed four things:
+
+- The place handler wrote on the item's first ask even when it was closed; it now asks
+  `decidedAsk`, as the request handler does.
+- The new stories' layout reads now wait for the layout to settle.
+- A place ask's counts are written by `countOf`.
+- The writers' guard now inventories the three write hooks.
+
+**Board against build.**
+
+- **2.3:**
+  - distances are in feet and miles;
+  - the class reads *Lake or pond*;
+  - the handle is on bylines;
+  - the catalog outline is white;
+  - there is no skate track (the read serves none).
+- **2.4 and 2.5:** what the item read doesn't serve yet (below) is left out rather than invented,
+  not drawn as empty.
+
+**Choices invented for the founder's look:**
+
+- the four request kinds' heads;
+- the keys R, C, T and L;
+- the amber refusal note;
+- the approve and decline rows;
+- one-press approve, and a takedown that asks its reason;
+- *Draw in Body →* only when *Approve* is refused while it waits on a drawing;
+- the bell's marks;
+- the Overview's three lanes now opening the Inbox.
+
+**Open: the server asks the builders filed (S3), ten of them:**
+
+- the request, place and drawn writes answering with their `actionId` and undo offer;
+- on the request item: its ruling, the dormancy reason, `nearestKnown` and the skate stats;
+- the asks' one order, decided on the server;
+- on the drawn item: `fromReport` and its counts.
+
+**Found integrating, listed rather than fixed (not this slice's to change):**
+
+- **Restore and takedown.** The plan's 2.3 row (*Requests: activate, restore, contest access, takedown*) has a viewer without `body.remove` see *An admin
+  decides this* with no bar. The server's `can` still allows that viewer *Decline*, so the bar
+  hides a lever the item allows. The fix is on the server: `can.decline` refuses for that viewer,
+  and the bar draws from `can` alone.
+- **Refusal titles.** The flag handler's refusals say "Not changed · ‹subject›"; Access and the
+  runner say "Not saved". One title wants choosing.
+- **The place bar's *Approve*.** It also checks that a bay or landmark is drawn, beside
+  `can.approve`. The server's `can` already says so, so the extra check is redundant, and harmless
+  while the two agree.
+- **#171's stories.** Several Flag and Access layout reads are still one-shot, the shape the life
+  strip's failure had.
 
 ### What B01 still owes (the register, 2026-11-17)
 
