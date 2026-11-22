@@ -313,6 +313,8 @@ interface UnmergeMeta {
   nextPageId?: Id<'_scheduled_functions'>;
   /** A page found a state it couldn't carry on from, and said why. */
   stalled?: { code: UnmergeStallCode; at: number };
+  /** Ended by a moderator (`unmerge.abandon`): its markers cleared, its row (the abandoning one). */
+  abandoned?: { at: number; byUserId: Id<'profiles'>; actionId: Id<'moderationActions'> };
 }
 
 /**
@@ -1083,8 +1085,24 @@ export interface UnmergeReceipt {
    * cause), with the scheduler's own error text when a page failed. `unmerge.resume` carries it on.
    */
   stalled: UnmergeStall | null;
+  /** Ended by a moderator before it finished (`unmerge.abandon`): when, and the abandoning row. */
+  abandoned: { at: number; actionId: Id<'moderationActions'> } | null;
   /** What it left where it was, counted (by kind) and the first rows named — final once `done`. */
   left: UnmergeLeft;
+}
+
+/** The receipt's fields from an unmerge's row. */
+async function receiptOf(ctx: QueryCtx, row: Doc<'moderationActions'>): Promise<UnmergeReceipt> {
+  const metadata = (row.metadata ?? {}) as UnmergeMeta;
+  return {
+    unmergeActionId: row._id,
+    done: metadata.done === true,
+    stalled: await stalledOf(ctx, metadata),
+    abandoned: metadata.abandoned
+      ? { at: metadata.abandoned.at, actionId: metadata.abandoned.actionId }
+      : null,
+    left: metadata.left ?? noneLeft(),
+  };
 }
 
 /**
@@ -1102,7 +1120,57 @@ export type UnmergeStallCode =
   | 'recordGone'
   | 'recordUnreadable'
   | 'mergedAgain';
-export type UnmergeStall = { code: UnmergeStallCode; error?: string };
+/**
+ * A stall as the receipt says it: what happened, the scheduler's error text when a page failed, and
+ * whether a resume can finish the work (`resumable`, from {@link resumabilityOf}).
+ */
+export type UnmergeStall = { code: UnmergeStallCode; error?: string; resumable: boolean };
+
+/**
+ * **Whether resuming can finish an unmerge stalled this way** — the one answer `receipt` serves and
+ * `resume` refuses by. A page that failed, was canceled, is missing or stopped short left the run's
+ * state intact: re-scheduling from its cursor carries it on. A page that stopped itself did so on a
+ * state no later page can carry on from — the unmerge undone, the merge's record gone or unreadable,
+ * the body merged again (its rows are that merge's now) — and a resumed page would stop the same way.
+ */
+export function resumabilityOf(
+  code: UnmergeStallCode,
+): { resumable: true } | { resumable: false; why: string } {
+  switch (code) {
+    case 'pageFailed':
+    case 'pageCanceled':
+    case 'pageMissing':
+    case 'pageStopped':
+      return { resumable: true };
+    case 'undone':
+      return { resumable: false, why: UNMERGE_CANT_RESUME.undone };
+    case 'recordGone':
+      return { resumable: false, why: UNMERGE_CANT_RESUME.recordGone };
+    case 'recordUnreadable':
+      return { resumable: false, why: UNMERGE_CANT_RESUME.recordUnreadable };
+    case 'mergedAgain':
+      return { resumable: false, why: UNMERGE_CANT_RESUME.mergedAgain };
+  }
+}
+
+/** Why a stall can't be resumed, in the sentence `resume` refuses with. */
+export const UNMERGE_CANT_RESUME = {
+  undone:
+    'This unmerge was undone partway, so it can’t be carried on. Abandon it to release both bodies.',
+  recordGone:
+    'The merge’s record is gone, so this unmerge can’t be carried on. Abandon it to release both bodies.',
+  recordUnreadable:
+    'The merge’s record can’t be read whole, so this unmerge can’t be carried on. Abandon it to release both bodies.',
+  mergedAgain:
+    'The body was merged again partway, so this unmerge can’t be carried on. Abandon it to release both bodies.',
+} as const;
+
+/** A stall with its resumability. */
+const stallOf = (code: UnmergeStallCode, error?: string): UnmergeStall => ({
+  code,
+  ...(error ? { error } : {}),
+  resumable: resumabilityOf(code).resumable,
+});
 
 /** The unmerge row of a merge, if one exists. */
 async function unmergeRowOfMerge(
@@ -1122,21 +1190,21 @@ async function unmergeRowOfMerge(
  * canceled, or finished without moving the cursor on (it stalled itself, saying why) doesn't.
  */
 async function stalledOf(ctx: QueryCtx, metadata: UnmergeMeta): Promise<UnmergeStall | null> {
-  if (metadata.done === true) return null;
-  if (metadata.stalled) return { code: metadata.stalled.code };
+  if (metadata.done === true || metadata.abandoned) return null;
+  if (metadata.stalled) return stallOf(metadata.stalled.code);
   const page = metadata.nextPageId ? await ctx.db.system.get(metadata.nextPageId) : null;
   const state = page?.state;
-  if (!state) return { code: 'pageMissing' };
+  if (!state) return stallOf('pageMissing');
   switch (state.kind) {
     case 'pending':
     case 'inProgress':
       return null;
     case 'failed':
-      return { code: 'pageFailed', ...(state.error ? { error: state.error } : {}) };
+      return stallOf('pageFailed', state.error);
     case 'canceled':
-      return { code: 'pageCanceled' };
+      return stallOf('pageCanceled');
     default:
-      return { code: 'pageStopped' };
+      return stallOf('pageStopped');
   }
 }
 
@@ -1152,14 +1220,7 @@ export const receipt = query({
   handler: async (ctx, { mergeActionId }): Promise<UnmergeReceipt | null> => {
     await requireCapability(ctx, 'audit.read');
     const row = await unmergeRowOfMerge(ctx, mergeActionId);
-    if (!row) return null;
-    const metadata = (row.metadata ?? {}) as UnmergeMeta;
-    return {
-      unmergeActionId: row._id,
-      done: metadata.done === true,
-      stalled: await stalledOf(ctx, metadata),
-      left: metadata.left ?? noneLeft(),
-    };
+    return row ? receiptOf(ctx, row) : null;
   },
 });
 
@@ -1186,14 +1247,7 @@ export const runningOn = query({
       const running = body ? unmergeRunningOn(body) : null;
       const row = running ? await ctx.db.get(running) : null;
       if (!row || row.undoesActionId === undefined) continue;
-      const metadata = (row.metadata ?? {}) as UnmergeMeta;
-      return {
-        mergeActionId: row.undoesActionId,
-        unmergeActionId: row._id,
-        done: metadata.done === true,
-        stalled: await stalledOf(ctx, metadata),
-        left: metadata.left ?? noneLeft(),
-      };
+      return { mergeActionId: row.undoesActionId, ...(await receiptOf(ctx, row)) };
     }
     return null;
   },
@@ -1203,6 +1257,7 @@ export const runningOn = query({
 export const UNMERGE_RESUME_DONE = 'This unmerge has finished.';
 export const UNMERGE_RESUME_RUNNING = 'This unmerge is still running.';
 export const UNMERGE_RESUME_NONE = 'This merge has not been unmerged.';
+export const UNMERGE_ABANDONED = 'This unmerge was abandoned.';
 
 /**
  * **Carry a stalled unmerge on** (R10): re-schedules its next page from the cursor its row recorded,
@@ -1220,7 +1275,11 @@ export const resume = mutation({
     if (!row) throw new ConvexError(UNMERGE_RESUME_NONE);
     const metadata = (row.metadata ?? {}) as UnmergeMeta;
     if (metadata.done === true) throw new ConvexError(UNMERGE_RESUME_DONE);
-    if ((await stalledOf(ctx, metadata)) === null) throw new ConvexError(UNMERGE_RESUME_RUNNING);
+    if (metadata.abandoned) throw new ConvexError(UNMERGE_ABANDONED);
+    const stall = await stalledOf(ctx, metadata);
+    if (stall === null) throw new ConvexError(UNMERGE_RESUME_RUNNING);
+    const can = resumabilityOf(stall.code);
+    if (!can.resumable) throw new ConvexError(can.why);
     const cursor = metadata.cursor ?? { phase: 'moved', from: 0 };
     const pageId = await schedulePage(ctx, {
       unmergeId: row._id,
@@ -1232,6 +1291,103 @@ export const resume = mutation({
     const { stalled: _cleared, ...rest } = metadata;
     await ctx.db.patch(row._id, { metadata: { ...rest, nextPageId: pageId } });
     return { unmergeActionId: row._id };
+  },
+});
+
+/** Why an abandon is refused. */
+export const UNMERGE_ABANDON_REASON = 'Say why this unmerge is abandoned.';
+
+/**
+ * What an abandoned unmerge never reached: the phase and offset it stopped at, and how many rows of
+ * each phase from there on stay as the merge left them — `null` when the merge's record can't be read.
+ */
+function notReachedOf(cs: MergeChangeSet | null | 'missing', cursor: UnmergeCursor | undefined) {
+  if (cs === null || cs === 'missing') return null;
+  const at = cursor ?? { phase: 'moved' as const, from: 0 };
+  const lists: Record<Exclude<Phase, 'derived'>, number> = {
+    moved: cs.moved.length,
+    activities: (cs.movedActivities ?? []).length,
+    favorites: cs.deletedFavorites.length,
+    bays: (cs.rowsAfter ?? []).filter((r) => r.table === 'waterBodySubAreas').length,
+    landmarks: (cs.rowsAfter ?? []).filter((r) => r.table === 'bodyLandmarks').length,
+    sides: (cs.sideActions ?? []).length,
+  };
+  const reached = PHASES.indexOf(at.phase);
+  const remaining: Partial<Record<Exclude<Phase, 'derived'>, number>> = {};
+  for (const phase of Object.keys(lists) as Exclude<Phase, 'derived'>[]) {
+    const i = PHASES.indexOf(phase);
+    const n = i < reached ? 0 : i === reached ? Math.max(0, lists[phase] - at.from) : lists[phase];
+    if (n > 0) remaining[phase] = n;
+  }
+  return { phase: at.phase, from: at.from, remaining };
+}
+
+/**
+ * **End a stalled unmerge** (B01-5d, R11): the exit for an unmerge that can't — or won't — be carried
+ * on, so no body stays locked by a dead one. Refused while a page runs, once it's done, or once
+ * abandoned; asks a reason. In one transaction: both bodies' marker cleared (each only if it is this
+ * unmerge's), both bodies' derived facts recomputed through their paths (cells, names, the map card,
+ * the library, the geometry, the stamps) since the last page never ran, and an `unmerge_waterbody` row
+ * on the loser that records it (`metadata.abandons`): the stall, what was put back (`left` and the
+ * phases before the cursor) and what wasn't (`notReached`: each phase's rows from the cursor on, still
+ * as the merge left them). Allowed for every stall, a resumable one included — a page that fails the
+ * same way each time would otherwise lock both bodies for good. Returns the abandoning row.
+ */
+export const abandon = mutation({
+  args: { mergeActionId: v.id('moderationActions'), reason: v.string() },
+  handler: async (
+    ctx,
+    { mergeActionId, reason },
+  ): Promise<{ actionId: Id<'moderationActions'> }> => {
+    const actor = await requireCapability(ctx, 'corpus.duplicates');
+    const why = reason.trim();
+    if (why.length === 0) throw new ConvexError(UNMERGE_ABANDON_REASON);
+    const row = await unmergeRowOfMerge(ctx, mergeActionId);
+    if (!row) throw new ConvexError(UNMERGE_RESUME_NONE);
+    const metadata = (row.metadata ?? {}) as UnmergeMeta;
+    if (metadata.done === true) throw new ConvexError(UNMERGE_RESUME_DONE);
+    if (metadata.abandoned) throw new ConvexError(UNMERGE_ABANDONED);
+    const stall = await stalledOf(ctx, metadata);
+    if (stall === null) throw new ConvexError(UNMERGE_RESUME_RUNNING);
+    const loserId = ctx.db.normalizeId('waterBodies', row.targetId);
+    const bodies = [loserId, metadata.survivorId].filter(
+      (id): id is Id<'waterBodies'> => id !== null && id !== undefined,
+    );
+    for (const id of bodies) {
+      const body = await ctx.db.get(id);
+      if (!body) continue;
+      if (body.unmergeActionId === row._id) await ctx.db.patch(id, { unmergeActionId: undefined });
+      await syncCellsForParent(ctx, id, body);
+    }
+    setNamesAllowance(ctx, 0);
+    for (const id of bodies) {
+      if (!(await ctx.db.get(id))) continue;
+      await refreshBodyNames(ctx, id);
+      await recomputeBodySummary(ctx, id);
+      await scheduleRestamp(ctx, id);
+    }
+    await markGeoStale(ctx, bodies);
+    await queueLibraryRefresh(ctx, bodies);
+    const notReached = notReachedOf(await readChangeSet(ctx, mergeActionId), metadata.cursor);
+    const actionId = await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'unmerge_waterbody',
+      targetType: 'waterbody',
+      targetId: row.targetId,
+      reason: why,
+      metadata: {
+        abandons: row._id,
+        mergeActionId,
+        stalled: { code: stall.code, ...(stall.error ? { error: stall.error } : {}) },
+        left: metadata.left ?? noneLeft(),
+        notReached,
+      },
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(row._id, {
+      metadata: { ...metadata, abandoned: { at: Date.now(), byUserId: actor._id, actionId } },
+    });
+    return { actionId };
   },
 });
 

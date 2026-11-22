@@ -45,6 +45,9 @@ import { scheduleRestamp, syncCellsForParent } from './subAreas';
 import {
   type LeftKind,
   PHASES,
+  UNMERGE_ABANDON_REASON,
+  UNMERGE_ABANDONED,
+  UNMERGE_CANT_RESUME,
   UNMERGE_FAULT,
   UNMERGE_LOSER_MOVED,
   UNMERGE_PARTS_MISSING,
@@ -54,6 +57,7 @@ import {
   UNMERGE_ROW_STEPS,
   UNMERGE_SURVIVOR_GONE,
   type UnmergeLeft,
+  type UnmergeStallCode,
   unmergeSurvivorMerged,
 } from './unmerge';
 import { type MergeChangeSet, mergeBodyInto } from './waterBodies';
@@ -1731,7 +1735,7 @@ suite('a heavy unmerge pages', () => {
     // Stopped, and said: never a silent return (R10).
     expect(
       (await w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId }))?.stalled,
-    ).toEqual({ code: 'undone' });
+    ).toEqual({ code: 'undone', resumable: false });
   });
 });
 
@@ -1881,6 +1885,210 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
     await expect(
       w.skater.as.query(api.unmerge.runningOn, { waterBodyIds: [w.loser] }),
     ).rejects.toThrow();
+  });
+
+  // ── R11: which stalls a resume can finish, and the exit for the rest ──
+
+  /** The unmerge's row and its next page, mid-run (one row a page). */
+  const midRun = async (w: World, mergeId: Id<'moderationActions'>) => {
+    await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+    return {
+      lead,
+      next: (lead.metadata as { nextPageId: Id<'_scheduled_functions'> }).nextPageId,
+    };
+  };
+  const patchMeta = (
+    w: World,
+    id: Id<'moderationActions'>,
+    fn: (m: Record<string, unknown>) => Record<string, unknown>,
+  ) =>
+    w.t.run(async (ctx) => {
+      const row = (await ctx.db.get(id)) as Doc<'moderationActions'>;
+      await ctx.db.patch(id, { metadata: fn((row.metadata ?? {}) as Record<string, unknown>) });
+    });
+
+  test.each([
+    [
+      'pageCanceled',
+      async (w: World, next: Id<'_scheduled_functions'>) => {
+        await w.t.run((ctx) => ctx.scheduler.cancel(next));
+      },
+    ],
+    [
+      'pageMissing',
+      async (w: World, next: Id<'_scheduled_functions'>, lead: Doc<'moderationActions'>) => {
+        await w.t.run((ctx) => ctx.scheduler.cancel(next));
+        await patchMeta(w, lead._id, ({ nextPageId: _n, ...m }) => m);
+      },
+    ],
+    [
+      'pageStopped',
+      async (w: World, next: Id<'_scheduled_functions'>, lead: Doc<'moderationActions'>) => {
+        await w.t.run((ctx) => ctx.scheduler.cancel(next));
+        // A page the scheduler finished that carried nothing on (a job that ran and returned).
+        const done = await w.t.run(
+          async (ctx) =>
+            (await ctx.db.system.query('_scheduled_functions').collect()).find(
+              (j) => j.state.kind === 'success',
+            )?._id,
+        );
+        await patchMeta(w, lead._id, (m) => ({ ...m, nextPageId: done }));
+      },
+    ],
+  ] as const)('%s: resumable, and a resume finishes it as before', async (code, stop) => {
+    const w = await world(['content']);
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w);
+    await paged(async () => {
+      const { lead, next } = await midRun(w, mergeId);
+      await stop(w, next, lead);
+      expect((await receiptOf(w, mergeId))?.stalled).toEqual({ code, resumable: true });
+      await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
+      await settle(w.t);
+    });
+    expect((await receiptOf(w, mergeId))?.done).toBe(true);
+    expect(await census(w.t)).toEqual(before);
+  });
+
+  test('pageFailed is resumable', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    await paged(async () => {
+      UNMERGE_FAULT.phase = 'moved';
+      try {
+        await midRun(w, mergeId);
+        await settle(w.t);
+      } finally {
+        UNMERGE_FAULT.phase = null;
+      }
+    });
+    expect((await receiptOf(w, mergeId))?.stalled).toMatchObject({
+      code: 'pageFailed',
+      resumable: true,
+    });
+  });
+
+  /** A stall no resume can carry on from, each made as it happens. */
+  const deadEnds: [
+    UnmergeStallCode,
+    (w: World, mergeId: Id<'moderationActions'>, lead: Doc<'moderationActions'>) => Promise<void>,
+  ][] = [
+    [
+      'undone',
+      (w, _m, lead) =>
+        w.t.run(async (ctx) => {
+          await writeAudit(ctx, {
+            actorId: w.actor.id,
+            action: 'merge_waterbody',
+            targetType: 'waterbody',
+            targetId: w.loser,
+            reason: 'Undone',
+            undoesActionId: lead._id,
+            createdAt: Date.now(),
+          });
+        }),
+    ],
+    ['recordGone', (w, mergeId) => w.t.run((ctx) => ctx.db.delete(mergeId))],
+    [
+      'recordUnreadable',
+      (w, mergeId) =>
+        w.t.run(async (ctx) => {
+          const part = await ctx.db
+            .query('auditSnapshots')
+            .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+            .first();
+          if (part) await ctx.db.patch(part._id, { payload: { chunk: '{', of: 2 } });
+        }),
+    ],
+    [
+      'mergedAgain',
+      (w) =>
+        w.t.run(async (ctx) => {
+          const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
+          const loser = (await ctx.db.get(w.loser)) as Doc<'waterBodies'>;
+          await mergeBodyInto(ctx, { survivor, loser, actorId: w.actor.id, reason: 'Again' });
+        }),
+    ],
+  ];
+
+  test.each(deadEnds)(
+    '%s: not resumable — resume refuses in words; abandon releases both bodies and records what was and wasn’t put back',
+    async (code, stop) => {
+      const w = await world(['content']);
+      const mergeId = await mergeV2(w);
+      const lead = await paged(async () => {
+        const { lead } = await midRun(w, mergeId);
+        await stop(w, mergeId, lead);
+        await settle(w.t);
+        return lead;
+      });
+      expect((await receiptOf(w, mergeId))?.stalled).toEqual({ code, resumable: false });
+      await expect(
+        w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+      ).rejects.toThrow(UNMERGE_CANT_RESUME[code as keyof typeof UNMERGE_CANT_RESUME]);
+      // Both bodies still locked by the dead unmerge, until it is abandoned.
+      expect(await markers(w)).toEqual([lead._id, lead._id]);
+      await expect(
+        w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: '  ' }),
+      ).rejects.toThrow(UNMERGE_ABANDON_REASON);
+      const { actionId } = await w.actor.as.mutation(api.unmerge.abandon, {
+        mergeActionId: mergeId,
+        reason: 'It can’t finish',
+      });
+      expect(await markers(w)).toEqual([null, null]);
+      const after = await receiptOf(w, mergeId);
+      expect(after).toMatchObject({ done: false, stalled: null, abandoned: { actionId } });
+      const row = await w.t.run((ctx) => ctx.db.get(actionId));
+      expect(row).toMatchObject({
+        action: 'unmerge_waterbody',
+        actorId: w.actor.id,
+        targetId: w.loser,
+        reason: 'It can’t finish',
+        metadata: { abandons: lead._id, mergeActionId: mergeId, stalled: { code } },
+      });
+      // What wasn't put back, from the cursor on — unless the merge's record can't be read.
+      const notReached = (row?.metadata as { notReached?: unknown } | undefined)?.notReached;
+      if (code === 'recordUnreadable') expect(notReached).toBeNull();
+      else expect(notReached).toMatchObject({ phase: 'moved', from: 1 });
+      // Ended: neither resumed nor abandoned again.
+      await expect(
+        w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+      ).rejects.toThrow(UNMERGE_ABANDONED);
+      await expect(
+        w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: 'Again' }),
+      ).rejects.toThrow(UNMERGE_ABANDONED);
+    },
+  );
+
+  test('abandon: refused while a page runs, once done, and to a skater; allowed on a resumable stall', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    await paged(async () => {
+      await midRun(w, mergeId);
+      await expect(
+        w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: 'Stop' }),
+      ).rejects.toThrow(UNMERGE_RESUME_RUNNING);
+      UNMERGE_FAULT.phase = 'moved';
+      try {
+        await settle(w.t);
+      } finally {
+        UNMERGE_FAULT.phase = null;
+      }
+    });
+    await expect(
+      w.skater.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: 'Stop' }),
+    ).rejects.toThrow();
+    // A page that fails the same way each time would lock both bodies for good: a resumable stall can
+    // be abandoned too.
+    await w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: mergeId, reason: 'Stuck' });
+    expect(await markers(w)).toEqual([null, null]);
+    const w2 = await world(['content']);
+    const merge2 = await mergeV2(w2);
+    await unmerge(w2, merge2);
+    await expect(
+      w2.actor.as.mutation(api.unmerge.abandon, { mergeActionId: merge2, reason: 'Late' }),
+    ).rejects.toThrow(UNMERGE_RESUME_DONE);
   });
 });
 
