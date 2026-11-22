@@ -16,12 +16,21 @@
  * `insert` and `delete` (the R11 proof: 3,900 launches used 4,043 ranges — one a row, 143 fixed). A
  * merge is refused once its projected spend passes {@link SAFETY} (75 %) of any limit.
  *
- * **Execution time** (1 s, the limit no metric reports) is bounded by a proxy: the outline points the
- * merge's geometry passes through ({@link MERGE_GEOMETRY_POINTS}). Every bay is re-clipped against
- * the survivor's outline (its points and the survivor's), and the Inbox's merge first measures the
- * drawing's share of its survivor (both outlines). Measured locally, a clip costs ≈ 9 µs a point
- * (17,000 + 200 points: 162 ms; 58,000 + 50,000: 880 ms), so 30,000 points is ≈ 300 ms — under a third
- * of the limit, leaving room for an isolate up to 1.5× slower and the merge's other work.
+ * **Execution time** (1 s, the limit no metric reports) is a projection too ({@link MergeCost}'s
+ * `timeMs`), summed from three costs **measured on a local backend, not on the deployment**:
+ *
+ * - every database call, {@link MS_PER_CALL} (0.27 ms) — S4b's R12 runs: 2,652 launches (one call
+ *   each) in 507 ms, 1,326 favorites (two) in 457 ms, 265 asks (ten) in 521 ms, 241 flags (eleven) in
+ *   660 ms: 0.17–0.25 ms a call, so 0.27 holds each from above;
+ * - every outline point the merge's geometry passes through, {@link MS_PER_POINT} (9 µs) — each bay
+ *   re-clipped against the survivor's outline, and the Inbox's merge measuring the drawing's share of
+ *   its survivor (a clip: 17,000 + 200 points in 162 ms, 58,000 + 50,000 in 880 ms);
+ * - every MiB read or written, {@link MS_PER_MIB} (30 ms) — two 28,000-point outlines took 523 ms,
+ *   ≈ 410 ms of it the bodies' 14.5 MiB moved;
+ *
+ * plus a landmark ask's same-place rule ({@link PER_ROW}'s `extraMs`). A merge is refused past
+ * {@link TIME_SAFETY} (40 %) of the limit — 400 ms — a wider margin than the database limits' 75 %,
+ * because time is the one dimension measured only off the target, and it varied 50 % run to run.
  *
  * **How it reads.** Each kind is streamed from its index, one document at a time, charged as it comes;
  * the moment the projection passes a threshold the read stops (`capped`), so the check itself reads a
@@ -69,15 +78,24 @@ export type MergeCost = {
   documentsWritten: number;
   /** Database calls: ranges, reads by id, patches, replaces, inserts, deletes. */
   databaseQueries: number;
-  /** Outline points the merge's geometry passes through — execution time's proxy. */
+  /** Outline points the merge's geometry passes through (counted into `timeMs`). */
   geometryPoints: number;
+  /** Projected execution time, in milliseconds (see the module doc). */
+  timeMs: number;
 };
 
 const MiB = 1 << 20;
 
 /**
  * **Convex's documented per-transaction limits** (`docs.convex.dev/production/state/limits`), in one
- * place — execution time (1 s) as its point proxy ({@link MERGE_GEOMETRY_POINTS}).
+ * place — execution time as `timeMs`, a projection ({@link MS_PER_CALL} and its kin).
+ *
+ * | dimension | limit | refused past | why that factor |
+ * |---|---|---|---|
+ * | bytes read / written | 16 MiB each | 12 MiB (75 %) | counted from the code; the fixed part varies |
+ * | documents read / written | 32,000 / 16,000 | 24,000 / 12,000 (75 %) | the same |
+ * | database calls (index ranges) | 4,096 | 3,072 (75 %) | the same |
+ * | execution time | 1,000 ms | 400 ms (40 %) | measured off the target, varying 50 % a run |
  */
 export const TX_LIMITS: Omit<MergeCost, 'geometryPoints'> = {
   bytesRead: 16 * MiB,
@@ -85,7 +103,17 @@ export const TX_LIMITS: Omit<MergeCost, 'geometryPoints'> = {
   documentsRead: 32_000,
   documentsWritten: 16_000,
   databaseQueries: 4_096,
+  timeMs: 1_000,
 };
+
+/** One database call's time (measured locally; see the module doc). */
+export const MS_PER_CALL = 0.27;
+/** One outline point's time through a clip (measured locally). */
+export const MS_PER_POINT = 0.009;
+/** One MiB read or written (measured locally). */
+export const MS_PER_MIB = 30;
+/** The share of the execution-time limit a merge may project (see the module doc for why 40 %). */
+export const TIME_SAFETY = 0.4;
 
 /**
  * A merge is refused past this share of any limit: the per-row arithmetic is counted from the code,
@@ -95,9 +123,6 @@ export const TX_LIMITS: Omit<MergeCost, 'geometryPoints'> = {
  */
 export const SAFETY = 0.75;
 
-/** The outline points one merge's geometry may pass through (see the module doc for the measure). */
-export const MERGE_GEOMETRY_POINTS = 30_000;
-
 /** The thresholds a merge's projection is held under. */
 export const THRESHOLDS: MergeCost = {
   bytesRead: SAFETY * TX_LIMITS.bytesRead,
@@ -105,8 +130,19 @@ export const THRESHOLDS: MergeCost = {
   documentsRead: SAFETY * TX_LIMITS.documentsRead,
   documentsWritten: SAFETY * TX_LIMITS.documentsWritten,
   databaseQueries: SAFETY * TX_LIMITS.databaseQueries,
-  geometryPoints: MERGE_GEOMETRY_POINTS,
+  // Counted into `timeMs`, which is held under its own margin.
+  geometryPoints: Number.POSITIVE_INFINITY,
+  timeMs: TIME_SAFETY * TX_LIMITS.timeMs,
 };
+
+/** The time a spend projects: its calls, its geometry, its bytes (see the module doc). */
+function timeOf(c: Omit<MergeCost, 'timeMs'>): number {
+  return (
+    c.databaseQueries * MS_PER_CALL +
+    c.geometryPoints * MS_PER_POINT +
+    ((c.bytesRead + c.bytesWritten) / MiB) * MS_PER_MIB
+  );
+}
 
 /**
  * What a merge spends whatever it moves, beyond the two bodies' own weight ({@link bodiesCost}): the
@@ -122,6 +158,8 @@ export const MERGE_FIXED: MergeCost = {
   documentsWritten: 600,
   databaseQueries: 400,
   geometryPoints: 0,
+  // Its calls' time (the byte allowance above is headroom, not work done).
+  timeMs: 400 * MS_PER_CALL,
 };
 
 /**
@@ -134,7 +172,7 @@ export const MERGE_FIXED: MergeCost = {
 function bodiesCost(survivor: Doc<'waterBodies'>, loser: Doc<'waterBodies'>): MergeCost {
   const s = getDocumentSize(survivor as never);
   const l = getDocumentSize(loser as never);
-  return {
+  const spend = {
     bytesRead: 10 * (s + l),
     bytesWritten: 6 * s + 3 * l,
     documentsRead: 20,
@@ -142,6 +180,7 @@ function bodiesCost(survivor: Doc<'waterBodies'>, loser: Doc<'waterBodies'>): Me
     databaseQueries: 20,
     geometryPoints: 0,
   };
+  return { ...spend, timeMs: timeOf(spend) };
 }
 
 /** The points of an outline (every ring, every part). */
@@ -165,6 +204,8 @@ type PerRow = (row: Record<string, unknown>) => {
   documentsRead: number;
   documentsWritten: number;
   databaseQueries: number;
+  /** Time beyond its calls and bytes (a landmark ask's same-place rule). */
+  extraMs?: number;
 };
 
 /** The two Inbox calls a ruled access flag or an ask re-keys through, as `RECONCILE_COST` measures. */
@@ -176,16 +217,17 @@ const REKEY = { documentsRead: 8, databaseQueries: 8, documentsWritten: 4 };
  * read); "calls" are the index-range cap's.
  */
 export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandmarks', PerRow> = {
-  // read by the check and the merge's range, patched (read + write): 3 reads, 1 write; calls: the
-  // patch 1, the bay join's range 1, a patch per join row (`mirrorReportSubAreas`) — J = its bays.
+  // read by the check and the merge's range, patched (read + write): 3 reads (4 kept), 1 write; calls:
+  // the patch 1, and a patch per bay join row (J = its bays) — the joins are read once a bay (R12),
+  // charged to the bay. Time: (1 + J) × 0.27 ms + its bytes ≈ 1.05 ms in two bays (R12: 0.7–1.0).
   reports: (r) => {
     const joins = (r.subAreaIds as unknown[] | undefined)?.length ?? 1;
     return {
       reads: 4,
       writes: 1,
-      documentsRead: 2 + joins,
+      documentsRead: joins,
       documentsWritten: 1 + joins,
-      databaseQueries: 2 + joins,
+      databaseQueries: 1 + joins,
     };
   },
   // check + range + patch: 3 reads, 1 write; calls: the patch 1 (R11: 3,900 launches, 3,900 + 143).
@@ -241,6 +283,8 @@ export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandm
   }),
   // the patch 1 + its re-key (the reconcile's 8 calls, `RECONCILE_COST`) + the patch of its member 1:
   // 10; a landmark ask also reads its body's open asks for the same-place rule (LANDMARK_SCAN 8, twice).
+  // Time: 10 × 0.27 = 2.7 ms (R12: 2 ms); a landmark ask 26 calls and its place comparisons, 1 ms
+  // more: 8 ms (R12: ≈ 7).
   requests: (r) => {
     const place = r.kind === 'name_landmark' ? 16 : 0;
     return {
@@ -249,10 +293,12 @@ export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandm
       documentsRead: 2 + REKEY.documentsRead + place,
       documentsWritten: 1 + REKEY.documentsWritten,
       databaseQueries: 2 + REKEY.databaseQueries + place,
+      ...(place > 0 ? { extraMs: 1 } : {}),
     };
   },
   // its flagger's flag on the survivor, a point read per open status (2), the patch 1, the re-key 8:
-  // 11 — linear, each a point read (the R11 fix: never a scan of the survivor's flags).
+  // 11 — linear, each a point read (the R11 fix: never a scan of the survivor's flags). Time: 2.97 ms
+  // (R12: 2.7).
   flags: () => ({
     reads: 4,
     writes: 1,
@@ -263,13 +309,14 @@ export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandm
   // read by the check, `subAreasBefore`, the repoint's and the re-clip's reads and the change set's
   // look (5) and patched up to three times (re-point, re-derive, delist): 8 reads, 4 writes with its
   // snapshot; calls: 3 patches, its cells' range and up to 8 cell inserts/deletes, a delist's audit row
-  // (insert, its target, its link's range and insert, an inline library refresh ≈ 10): 25.
+  // (insert, its target, its link's range and insert, an inline library refresh ≈ 10), and the range
+  // its reports' joins are read by (R12): 26.
   subAreas: () => ({
     reads: 8,
     writes: 4,
     documentsRead: 30,
     documentsWritten: 22,
-    databaseQueries: 25,
+    databaseQueries: 26,
   }),
   // the survivor's own bays: re-clipped (a re-derive and a note: 2 patches), cells (1 + 8), a
   // retirement's audit row ≈ 10: 21 calls; read by the check, the before-image read, the re-clip and
@@ -291,16 +338,50 @@ export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandm
     documentsWritten: 6,
     databaseQueries: 13,
   }),
-  // the survivor's labels: read by the check and in ranges by the move (no call each), snapshotted, a
-  // get by the change set's look 1 — a retirement as a bay is the rare one, charged in the fixed part.
+  // the survivor's labels: read by the check and in ranges by the move (no call each) and
+  // snapshotted; re-read only when the merge changed one (a twin it folded into, one it retired — R12:
+  // never a read by id of every label), charged in the fixed part.
   survivorLandmarks: () => ({
     reads: 4,
     writes: 1,
     documentsRead: 0,
     documentsWritten: 0,
-    databaseQueries: 1,
+    databaseQueries: 0,
   }),
 };
+
+/**
+ * One row's projected spend, every axis and its time — what {@link mergeLoadOf} charges a row of
+ * `kind`, given the survivor's outline points (a bay is re-clipped against them).
+ */
+export function rowCost(
+  kind: MergeMoveKind | 'survivorSubAreas' | 'survivorLandmarks',
+  row: Record<string, unknown>,
+  survivorPoints: number,
+): MergeCost {
+  const size = getDocumentSize(row as never);
+  const per = PER_ROW[kind](row);
+  const spend = {
+    bytesRead: per.reads * size,
+    bytesWritten: per.writes * size,
+    documentsRead: per.reads + per.documentsRead,
+    documentsWritten: per.documentsWritten,
+    databaseQueries: per.databaseQueries,
+    // A bay — the loser's or the survivor's own — is re-clipped against the survivor's outline.
+    geometryPoints:
+      kind === 'subAreas' || kind === 'survivorSubAreas'
+        ? outlinePoints(row.polygon) + survivorPoints
+        : 0,
+  };
+  return { ...spend, timeMs: timeOf(spend) + (per.extraMs ?? 0) };
+}
+
+/** What a merge of these two bodies spends before any row: its fixed part and the bodies' weight. */
+export function baseCost(survivor: Doc<'waterBodies'>, loser: Doc<'waterBodies'>): MergeCost {
+  const cost: MergeCost = { ...MERGE_FIXED };
+  add(cost, bodiesCost(survivor, loser));
+  return cost;
+}
 
 /** What {@link mergeLoadOf} found: each kind's count, the projection, and whether it fits. */
 export type MergeLoad = {
@@ -311,7 +392,7 @@ export type MergeLoad = {
   tooBig: boolean;
 };
 
-/** Whether `cost` stays under every threshold (`SAFETY` of each limit, and the geometry's points). */
+/** Whether `cost` stays under every threshold (`SAFETY` of each database limit, `TIME_SAFETY` of time). */
 export function fitsOneTransaction(cost: MergeCost): boolean {
   return (Object.keys(THRESHOLDS) as (keyof MergeCost)[]).every((k) => cost[k] <= THRESHOLDS[k]);
 }
@@ -334,10 +415,13 @@ export async function mergeLoadOf(
 ): Promise<MergeLoad> {
   const loserId = loser._id;
   const survivorId = survivor._id;
-  const cost: MergeCost = { ...MERGE_FIXED };
-  add(cost, bodiesCost(survivor, loser));
+  const cost = baseCost(survivor, loser);
   const survivorPoints = outlinePoints(survivor.polygon);
-  if (opts.overlap) cost.geometryPoints += survivorPoints + outlinePoints(loser.polygon);
+  if (opts.overlap) {
+    const points = survivorPoints + outlinePoints(loser.polygon);
+    cost.geometryPoints += points;
+    cost.timeMs += points * MS_PER_POINT;
+  }
   const moves = Object.fromEntries(
     MERGE_MOVE_KINDS.map((k) => [k, { count: 0, capped: false }]),
   ) as Record<MergeMoveKind, MergeCount>;
@@ -359,20 +443,7 @@ export async function mergeLoadOf(
       // Past the merge's own read of this range: rows it never touches.
       if (seen >= limit) break;
       seen++;
-      const size = getDocumentSize(row as never);
-      const per = PER_ROW[kind](row);
-      add(cost, {
-        bytesRead: per.reads * size,
-        bytesWritten: per.writes * size,
-        documentsRead: per.reads + per.documentsRead,
-        documentsWritten: per.documentsWritten,
-        databaseQueries: per.databaseQueries,
-        // A bay — the loser's or the survivor's own — is re-clipped against the survivor's outline.
-        geometryPoints:
-          kind === 'subAreas' || kind === 'survivorSubAreas'
-            ? outlinePoints(row.polygon) + survivorPoints
-            : 0,
-      });
+      add(cost, rowCost(kind, row, survivorPoints));
       if (into) into.count++;
       if (!fitsOneTransaction(cost)) {
         stopped = true;

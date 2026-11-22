@@ -35,10 +35,13 @@ import {
   SURVIVOR_CHANGED_REFUSAL,
 } from './lib/inboxRules';
 import {
+  baseCost,
+  fitsOneTransaction,
   MERGE_FIXED,
-  MERGE_GEOMETRY_POINTS,
   MERGE_TOO_BIG,
+  type MergeCost,
   RETARGET_CAP,
+  rowCost,
   THRESHOLDS,
 } from './lib/mergeLoad';
 import { UNMERGING_REFUSAL } from './lib/unmergeState';
@@ -50,13 +53,29 @@ const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 const NOW = Date.now();
 
-/**
- * The launches one merge moves at most: each is one database call (its patch), so the index-range
- * threshold less the merge's fixed calls and the two bodies' (20) — R11's arithmetic, from the module.
- */
-const LAUNCH_CEILING = Math.floor(THRESHOLDS.databaseQueries - MERGE_FIXED.databaseQueries - 20);
-/** The favorites: two calls each (the twin lookup, the patch or the delete). */
-const FAVORITE_CEILING = Math.floor(LAUNCH_CEILING / 2);
+/** More launches than any merge moves — past every ceiling (time's ≈ 1,000, index ranges' ≈ 2,650). */
+const TOO_MANY_LAUNCHES = 3_000;
+
+/** `c` scaled by `n` on every axis. */
+const scaled = (c: MergeCost, n: number): MergeCost =>
+  Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v * n])) as MergeCost;
+/** `a` and `b` summed on every axis. */
+const plus = (a: MergeCost, b: MergeCost): MergeCost =>
+  Object.fromEntries(
+    Object.entries(a).map(([k, v]) => [k, v + b[k as keyof MergeCost]]),
+  ) as MergeCost;
+/** The largest `n` for which `base + f(n)` fits every threshold — `f` grows with `n` (a search). */
+function largestFitting(base: MergeCost, f: (n: number) => MergeCost): number {
+  let hi = 1;
+  while (fitsOneTransaction(plus(base, f(hi)))) hi *= 2;
+  let lo = 0;
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fitsOneTransaction(plus(base, f(mid)))) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
 
 /** A square of half-width `r` degrees around (lng, lat). */
 const square = (lng: number, lat: number, r: number): Polygon => ({
@@ -234,6 +253,59 @@ describe('change set version 2 (B01-5d)', () => {
     expect(cs.landmarksAfter.find((a) => a.id === moved)?.removed).toBe(true);
   });
 
+  test('a survivor label a moved bay now names is retired, and recorded as changed (R12)', async () => {
+    const w = await pair();
+    // The survivor's label "Heron Bay" sits in the water a moved bay of that name now holds.
+    const label = await landmark(w.t, w.survivor, 'Heron Bay');
+    await bay(w.t, w.loser, 'Heron Bay', 0.002, w.mod.id);
+    const { actionId } = await w.merge();
+    const cs = await changeSetOf(w.t, actionId);
+    expect(cs.landmarksAfter.find((a) => a.id === label)).toMatchObject({ removed: true });
+    const rows = await w.t.run(async (ctx) =>
+      Promise.all((cs.sideActions ?? []).map((id) => ctx.db.get(id))),
+    );
+    expect(rows.map((r) => [r?.action, r?.targetId])).toContainEqual(['promote_landmark', label]);
+  });
+
+  test('a moved report’s bay joins follow it to the survivor, read once a bay (R12)', async () => {
+    const w = await pair();
+    const west = await bay(w.t, w.loser, 'West Bay', 0.002, w.mod.id, LNG - 0.004);
+    const east = await bay(w.t, w.loser, 'East Bay', 0.002, w.mod.id, LNG + 0.004);
+    await w.t.run(async (ctx) => {
+      for (let i = 0; i < 3; i++) {
+        const reportId = await ctx.db.insert('reports', {
+          authorId: w.skater.id,
+          waterBodyId: w.loser,
+          subAreaIds: [west, east],
+          point: { lat: LAT, lng: LNG },
+          skateEndTime: NOW - i,
+          reportTime: NOW,
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          createdAt: NOW,
+          updatedAt: NOW,
+        } as never);
+        for (const subAreaId of [west, east]) {
+          await ctx.db.insert('reportSubAreas', {
+            reportId,
+            subAreaId,
+            waterBodyId: w.loser,
+            moderationStatus: 'visible',
+            skateEndTime: NOW - i,
+          });
+        }
+      }
+    });
+    await w.merge();
+    const joins = await w.t.run((ctx) => ctx.db.query('reportSubAreas').collect());
+    expect(joins).toHaveLength(6);
+    expect(joins.every((j) => j.waterBodyId === w.survivor)).toBe(true);
+  });
+
   test('a survivor bay the re-clip changed is kept as it stood; an untouched one is not', async () => {
     const w = await pair();
     // Half outside the survivor's water: the re-clip cuts it to the shore.
@@ -401,10 +473,10 @@ describe('the merge’s refusals (fork 3)', () => {
     expect((etl as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
   });
 
-  test('one row past the index-range ceiling: refused, preview and write alike', async () => {
+  test('more launches than a merge moves: refused, preview and write alike', async () => {
     const w = await pair();
     await w.t.run(async (ctx) => {
-      for (let i = 0; i <= LAUNCH_CEILING; i++) {
+      for (let i = 0; i < TOO_MANY_LAUNCHES; i++) {
         await ctx.db.insert('putIns', {
           waterBodyId: w.loser,
           coord: { lat: LAT, lng: LNG },
@@ -419,7 +491,8 @@ describe('the merge’s refusals (fork 3)', () => {
       survivorId: w.survivor,
     });
     if (!preview.ok) throw new Error(preview.refusal);
-    expect(preview.moves.putIns).toEqual({ count: LAUNCH_CEILING + 1, capped: true });
+    expect(preview.moves.putIns.capped).toBe(true);
+    expect(preview.moves.putIns.count).toBeLessThan(TOO_MANY_LAUNCHES);
     expect(preview).toMatchObject({ tooBig: true, code: 'tooBig' });
     // The kinds after the one that stopped the count were never read: said to be cut, not zeroed —
     // and the ones before it, read whole, still split exactly.
@@ -1087,7 +1160,7 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     for (const key of ['s1', 'a1', 's2', 'h2', 's3', 'a3']) ids[key] = await catalog(t, key);
     // Past the rows of one kind a merge moves: too heavy, whatever the transaction has left.
     await t.run(async (ctx) => {
-      for (let i = 0; i <= LAUNCH_CEILING; i++) {
+      for (let i = 0; i < TOO_MANY_LAUNCHES; i++) {
         await ctx.db.insert('putIns', {
           waterBodyId: ids.h2 as Id<'waterBodies'>,
           coord: { lat: LAT, lng: LNG },
@@ -1144,15 +1217,40 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     expect(await mergedAway(t, 'u-a')).toBe(false);
   });
 
-  test('execution time across a batch: two pairs each in the points budget, never both in one call', async () => {
+  /** Points a ring of a 4-ring survivor bay may carry for its merge to project `share` of the time. */
+  const ringPointsForShare = (share: number): number => {
+    const ring = (n: number) => ({
+      polygon: {
+        type: 'MultiPolygon',
+        coordinates: Array.from({ length: 4 }, () => [
+          Array.from({ length: n }, (_, i) => [LNG + i * 1e-7, LAT + i * 1e-7]),
+        ]),
+      },
+      name: 'Points Bay',
+      bbox: boxOf(LNG, LAT, 0.008),
+    });
+    // The pair's own base is a few small catalog rows: the fixed part's time stands in for it.
+    const time = (n: number) => MERGE_FIXED.timeMs + rowCost('survivorSubAreas', ring(n), 5).timeMs;
+    let lo = 3;
+    let hi = 8_000;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (time(mid) <= share * THRESHOLDS.timeMs) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
+
+  test('execution time across a batch: two pairs each in the time budget, never both in one call', async () => {
     const t = harness();
     const mod = await person(t, 'mod', 'moderator');
     const keys = [1, 2].map((i) => ({ s: `geo-s${i}`, a: `geo-a${i}` }));
     for (const k of keys) {
       const survivor = await catalog(t, k.s);
       await catalog(t, k.a);
-      // A survivor bay of 4 rings, together ~60 % of the points budget: re-clipped by its merge.
-      const n = Math.floor((0.6 * MERGE_GEOMETRY_POINTS) / 4);
+      // A survivor bay of 4 rings, each ring's points the most for which this one merge projects
+      // within 60 % of the time budget — so one fits a call, two never do.
+      const n = ringPointsForShare(0.6);
       await t.run((ctx) =>
         ctx.db.insert('waterBodySubAreas', {
           waterBodyId: survivor,
@@ -1189,7 +1287,7 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     expect(first.deferred).toEqual([pairOf(keys[1]?.s as string, keys[1]?.a as string)]);
     const second = await retire(t, first.deferred);
     expect(second).toMatchObject({ retired: 1, deferred: [] });
-  }, 300_000);
+  }, 60_000);
 
   test('bodies that together pass one transaction: the rest come back, and the next calls take them', async () => {
     const t = harness();
@@ -1197,8 +1295,8 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     for (const k of keys) {
       await catalog(t, k.s);
       const absorbed = await catalog(t, k.a);
-      // Four launches whose names no writer caps, each near the document limit: ~3.6 MiB a merge
-      // moves — one fits a transaction, two never do.
+      // Four launches whose names no writer caps, ~500 KiB each: ~2 MiB a merge moves — one fits a
+      // transaction's time and bytes, two never do.
       for (let start = 0; start < 4; start += 2) {
         await t.run(async (ctx) => {
           for (let i = start; i < start + 2; i++) {
@@ -1207,7 +1305,7 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
               coord: { lat: LAT, lng: LNG },
               source: 'osm',
               status: 'visible',
-              name: `${i}${'P'.repeat(900 * 1024)}`,
+              name: `${i}${'P'.repeat(500 * 1024)}`,
               createdAt: NOW,
             });
           }
@@ -1262,23 +1360,67 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
       }
     });
 
-  test('index ranges: launches just under the ceiling merge; one over is refused before writing', async () => {
+  type W = Awaited<ReturnType<typeof pair>>;
+  const TABLE = {
+    putIns: 'putIns',
+    favorites: 'waterBodyFavorites',
+    requests: 'waterBodyRequests',
+    flags: 'contentFlags',
+    reports: 'reports',
+  } as const;
+  /** A loser row of `kind`, as stored — the sample the arithmetic weighs. */
+  const sampleOf = (w: W, kind: keyof typeof TABLE) =>
+    w.t.run(async (ctx) => {
+      const rows = await ctx.db.query(TABLE[kind]).collect();
+      const row = rows.find((r) =>
+        kind === 'flags'
+          ? (r as Doc<'contentFlags'>).targetId === w.loser
+          : (r as { waterBodyId?: string }).waterBodyId === w.loser,
+      );
+      return row as unknown as Record<string, unknown>;
+    });
+  /** The pair's own spend before any row: the fixed part and its two bodies, as the check charges. */
+  const baseOf = (w: W) =>
+    w.t.run(async (ctx) =>
+      baseCost(
+        (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>,
+        (await ctx.db.get(w.loser)) as Doc<'waterBodies'>,
+      ),
+    );
+  /**
+   * **One kind at its edge, from the module's own arithmetic** (the harness can't enforce time, so
+   * this tests the arithmetic and the refusal, not the clock): the most rows the projection admits,
+   * found by search over `rowCost`; one fewer merges, one more is refused by the preview and the
+   * write alike. `extra` charges rows the shape needs besides (the bays reports join).
+   */
+  const atTheEdge = async (
+    kind: keyof typeof TABLE,
+    insert: (w: W, from: number, n: number) => Promise<void>,
+    extra: (w: W) => Promise<MergeCost | null> = async () => null,
+  ): Promise<number> => {
+    const probe = await pair();
+    await insert(probe, 0, 1);
+    const sample = await sampleOf(probe, kind);
+    const more = await extra(probe);
+    const base = more ? plus(await baseOf(probe), more) : await baseOf(probe);
+    const edge = largestFitting(base, (n) => scaled(rowCost(kind, sample, 5), n));
     const under = await pair();
-    await launches(under, LAUNCH_CEILING - 25);
+    await insert(under, 0, edge - 1);
     expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
     const over = await pair();
-    await launches(over, LAUNCH_CEILING + 1);
+    await insert(over, 0, edge + 1);
     expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
-  }, 300_000);
-
-  test('index ranges: favorites at two calls each — under merges, over refused', async () => {
-    const fans = async (w: Awaited<ReturnType<typeof pair>>, n: number) =>
-      w.t.run(async (ctx) => {
-        for (let i = 0; i < n; i++) {
-          const userId = await ctx.db.insert('profiles', {
-            clerkUserId: `fan${i}`,
-            displayName: `fan${i} Test-Person`,
-            username: `fan${i}`,
+    return edge;
+  };
+  const people = (w: W, from: number, n: number, tag: string) =>
+    w.t.run(async (ctx) => {
+      const ids: Id<'profiles'>[] = [];
+      for (let i = from; i < from + n; i++) {
+        ids.push(
+          await ctx.db.insert('profiles', {
+            clerkUserId: `${tag}${i}`,
+            displayName: `${tag}${i} Test-Person`,
+            username: `${tag}${i}`,
             driveTimePrefMinutes: 60,
             profileVisibility: 'public',
             notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
@@ -1287,7 +1429,22 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
             role: 'member',
             status: 'active',
             createdAt: NOW,
-          });
+          }),
+        );
+      }
+      return ids;
+    });
+
+  test('launches at their edge (time binds before index ranges)', async () => {
+    const edge = await atTheEdge('putIns', (w, _from, n) => launches(w, n));
+    expect(edge).toBeLessThan(Math.floor(THRESHOLDS.databaseQueries));
+  }, 120_000);
+
+  test('favorites at their edge', async () => {
+    await atTheEdge('favorites', async (w, from, n) => {
+      const fans = await people(w, from, n, 'fan');
+      await w.t.run(async (ctx) => {
+        for (const userId of fans) {
           await ctx.db.insert('waterBodyFavorites', {
             userId,
             waterBodyId: w.loser,
@@ -1295,62 +1452,160 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
           });
         }
       });
-    const under = await pair();
-    await fans(under, FAVORITE_CEILING - 15);
-    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
-    const over = await pair();
-    await fans(over, FAVORITE_CEILING + 1);
-    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
-  }, 60_000);
+    });
+  }, 120_000);
 
-  test('bytes: launches near the document limit — four fit, five are refused', async () => {
-    const heavy = (i: number) => `${i}${'P'.repeat(900 * 1024)}`;
-    const under = await pair();
-    for (let i = 0; i < 4; i += 2) await launches(under, 2, (k) => heavy(i + k));
-    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
-    const over = await pair();
-    for (let i = 0; i < 5; i += 2) await launches(over, Math.min(2, 5 - i), (k) => heavy(i + k));
-    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
-  }, 60_000);
-
-  test('execution time: a bay re-clipped past the points budget is refused; one under merges', async () => {
-    /** A bay of `parts` small rings around the middle, each `n` points (a ring stays under 8,192). */
-    const bayOf = (w: Awaited<ReturnType<typeof pair>>, parts: number, n: number) =>
-      w.t.run((ctx) =>
-        ctx.db.insert('waterBodySubAreas', {
-          waterBodyId: w.survivor,
-          name: 'Many Points Bay',
-          searchText: 'Many Points Bay',
-          polygon: {
-            type: 'MultiPolygon',
-            coordinates: Array.from({ length: parts }, (_, p) => [
-              [
-                ...Array.from({ length: n - 1 }, (_, i) => {
-                  const a = (2 * Math.PI * i) / (n - 1);
-                  return [LNG - 0.006 + p * 0.003 + 0.001 * Math.cos(a), LAT + 0.001 * Math.sin(a)];
-                }),
-                [LNG - 0.006 + p * 0.003 + 0.001, LAT],
-              ],
-            ]),
-          } as never,
-          bbox: boxOf(LNG, LAT, 0.008),
-          centroid: { lat: LAT, lng: LNG },
-          surfaceAreaSqM: 10_000,
-          displayScore: 0,
-          minVisibleZoom: 10,
-          createdByUserId: w.mod.id,
+  const asks = (kind: 'activate' | 'name_landmark') => (w: W, from: number, n: number) =>
+    w.t.run(async (ctx) => {
+      for (let i = from; i < from + n; i++) {
+        await ctx.db.insert('waterBodyRequests', {
+          kind,
+          status: 'open',
+          requesterId: w.skater.id,
+          coord: { lat: LAT + i * 1e-5, lng: LNG },
+          waterBodyId: w.loser,
+          ...(kind === 'name_landmark' ? { name: `Rock ${i}` } : {}),
           createdAt: NOW,
-          updatedAt: NOW,
-        } as never),
-      );
-    // The survivor's square is 5 points; each part a ring of n.
+        });
+      }
+    });
+
+  test('asks at their edge', async () => {
+    await atTheEdge('requests', asks('activate'));
+  }, 120_000);
+
+  test('landmark asks at their edge (the same-place rule)', async () => {
+    await atTheEdge('requests', asks('name_landmark'));
+  }, 120_000);
+
+  test('flags at their edge', async () => {
+    await atTheEdge('flags', async (w, from, n) => {
+      const flaggers = await people(w, from, n, 'flagger');
+      await w.t.run(async (ctx) => {
+        for (const flaggerId of flaggers) {
+          await ctx.db.insert('contentFlags', {
+            flaggerId,
+            targetType: 'waterbody',
+            targetId: w.loser,
+            reason: 'no_public_access',
+            status: 'open',
+            createdAt: NOW,
+          });
+        }
+      });
+    });
+  }, 120_000);
+
+  test('reports each in two bays at their edge', async () => {
+    // By the world itself: separate harnesses hand out the same ids.
+    const bays = new Map<W, Id<'waterBodySubAreas'>[]>();
+    const baysOf = async (w: W) => {
+      const known = bays.get(w);
+      if (known) return known;
+      const ids = [
+        await bay(w.t, w.loser, 'West Bay', 0.002, w.mod.id, LNG - 0.004),
+        await bay(w.t, w.loser, 'East Bay', 0.002, w.mod.id, LNG + 0.004),
+      ];
+      bays.set(w, ids);
+      return ids;
+    };
+    await atTheEdge(
+      'reports',
+      async (w, from, n) => {
+        const two = await baysOf(w);
+        await w.t.run(async (ctx) => {
+          for (let i = from; i < from + n; i++) {
+            const reportId = await ctx.db.insert('reports', {
+              authorId: w.skater.id,
+              waterBodyId: w.loser,
+              subAreaIds: two,
+              point: { lat: LAT, lng: LNG },
+              skateEndTime: NOW - i,
+              reportTime: NOW,
+              source: 'native',
+              iceTypes: [],
+              surfaceTags: [],
+              photoIds: [],
+              moderationStatus: 'visible',
+              hazardIdsCreated: [],
+              createdAt: NOW,
+              updatedAt: NOW,
+            } as never);
+            for (const subAreaId of two) {
+              await ctx.db.insert('reportSubAreas', {
+                reportId,
+                subAreaId,
+                waterBodyId: w.loser,
+                moderationStatus: 'visible',
+                skateEndTime: NOW - i,
+              });
+            }
+          }
+        });
+      },
+      async (w) => {
+        const two = await baysOf(w);
+        const docs = await w.t.run(async (ctx) => Promise.all(two.map((id) => ctx.db.get(id))));
+        return docs
+          .map((d) => rowCost('subAreas', d as unknown as Record<string, unknown>, 5))
+          .reduce(plus);
+      },
+    );
+  }, 120_000);
+
+  test('heavy rows: launches near the document limit at their edge (their bytes cost time)', async () => {
+    const edge = await atTheEdge('putIns', async (w, from, n) => {
+      // Two a transaction: each ~900 KiB, and a transaction writes at most 16 MiB.
+      for (let i = from; i < from + n; i += 2) {
+        await launches(w, Math.min(2, from + n - i), (k) => `${i + k}${'P'.repeat(900 * 1024)}`);
+      }
+    });
+    expect(edge).toBeGreaterThan(0);
+  }, 120_000);
+
+  test('execution time: a bay re-clipped at the edge of the time budget merges; past it, refused', async () => {
+    /** A bay of four small rings around the middle, each `n` points (a ring stays under 8,192). */
+    const bayDoc = (w: W, n: number) => ({
+      waterBodyId: w.survivor,
+      name: 'Many Points Bay',
+      searchText: 'Many Points Bay',
+      polygon: {
+        type: 'MultiPolygon',
+        coordinates: Array.from({ length: 4 }, (_, p) => [
+          [
+            ...Array.from({ length: n - 1 }, (_, i) => {
+              const a = (2 * Math.PI * i) / (n - 1);
+              return [LNG - 0.006 + p * 0.003 + 0.001 * Math.cos(a), LAT + 0.001 * Math.sin(a)];
+            }),
+            [LNG - 0.006 + p * 0.003 + 0.001, LAT],
+          ],
+        ]),
+      },
+      bbox: boxOf(LNG, LAT, 0.008),
+      centroid: { lat: LAT, lng: LNG },
+      surfaceAreaSqM: 10_000,
+      displayScore: 0,
+      minVisibleZoom: 10,
+      createdByUserId: w.mod.id,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const probe = await pair();
+    const base = await baseOf(probe);
+    // The most points a ring may carry, by the module's arithmetic (its geometry and its bytes).
+    const edge = largestFitting(base, (n) =>
+      n < 3 ? scaled(base, 0) : rowCost('survivorSubAreas', bayDoc(probe, n), 5),
+    );
+    expect(edge).toBeLessThan(8_192);
     const under = await pair();
-    await bayOf(under, 4, Math.floor((MERGE_GEOMETRY_POINTS - 1_000) / 4));
+    await under.t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', bayDoc(under, edge - 10) as never),
+    );
     expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
     const over = await pair();
-    await bayOf(over, 4, Math.ceil(MERGE_GEOMETRY_POINTS / 4));
+    await over.t.run((ctx) => ctx.db.insert('waterBodySubAreas', bayDoc(over, edge + 10) as never));
     expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
-  }, 60_000);
+  }, 120_000);
 
   test('flags re-key into one item in linear reads, never quadratic', async () => {
     const readsFor = async (n: number) => {
@@ -1391,4 +1646,86 @@ describe('the merge estimate is a bound in every dimension (R11)', () => {
     // Twice the flags, about twice the extra reads — a square would be four times.
     expect((more - none) / (some - none)).toBeLessThan(2.5);
   }, 60_000);
+});
+
+describe('the time ceilings, pinned (R12)', () => {
+  /**
+   * The rows of each kind one merge of two small bodies admits, from the arithmetic alone — pinned, so
+   * a change to a time constant or a kind's calls shows here, and S4b's real-backend table can be
+   * re-run against exactly these. Time binds every kind (the index-range ceilings are higher).
+   */
+  test('each kind’s ceiling, from the module’s own arithmetic', () => {
+    const square = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [0, 1],
+          [1, 1],
+          [1, 0],
+          [0, 0],
+        ],
+      ],
+    };
+    const body = {
+      _id: 'x'.repeat(32),
+      _creationTime: 1,
+      name: 'Lake Morey',
+      searchText: 'Lake Morey',
+      type: 'lakePond',
+      source: 'osm',
+      dedupStatus: 'clean',
+      polygon: square,
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      centroid: { lat: 0.5, lng: 0.5 },
+      surfaceAreaSqM: 1e6,
+      createdAt: 1,
+    } as unknown as Doc<'waterBodies'>;
+    const base = baseCost(body, body);
+    const id = 'y'.repeat(32);
+    const row = { _id: id, _creationTime: 1, waterBodyId: id, createdAt: 1 };
+    const ask = { ...row, status: 'open', requesterId: id, coord: { lat: 0, lng: 0 } };
+    const edge = (more: MergeCost, one: MergeCost) => largestFitting(more, (n) => scaled(one, n));
+    const report = {
+      ...row,
+      authorId: id,
+      subAreaIds: [id, id],
+      point: { lat: 0, lng: 0 },
+      skateEndTime: 1,
+      reportTime: 1,
+      source: 'native',
+      iceTypes: [],
+      surfaceTags: [],
+      photoIds: [],
+      moderationStatus: 'visible',
+      hazardIdsCreated: [],
+      updatedAt: 1,
+    };
+    const twoBays = plus(
+      base,
+      scaled(rowCost('subAreas', { ...row, name: 'Bay', polygon: square }, 5), 2),
+    );
+    expect(Math.round(base.timeMs)).toBe(114);
+    expect({
+      launches: edge(base, rowCost('putIns', { ...row, source: 'osm', status: 'visible' }, 5)),
+      favorites: edge(base, rowCost('favorites', { ...row, userId: id }, 5)),
+      asks: edge(base, rowCost('requests', { ...ask, kind: 'activate' }, 5)),
+      landmarkAsks: edge(
+        base,
+        rowCost('requests', { ...ask, kind: 'name_landmark', name: 'Rock 1' }, 5),
+      ),
+      flags: edge(
+        base,
+        rowCost('flags', { ...row, flaggerId: id, reason: 'no_public_access', status: 'open' }, 5),
+      ),
+      reportsInTwoBays: edge(twoBays, rowCost('reports', report, 5)),
+    }).toEqual({
+      launches: 994,
+      favorites: 511,
+      asks: 104,
+      landmarkAsks: 35,
+      flags: 95,
+      reportsInTwoBays: 311,
+    });
+  });
 });

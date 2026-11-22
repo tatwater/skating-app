@@ -718,8 +718,10 @@ describe('heavy rows: drawn bodies with outlines near the document limit', () =>
 });
 
 /**
- * An outline near the document limit (~860 KiB) a deployment can store, with water to merge over: a
- * shore of 8,000 points around (0.5, 0.5) and five islands of 8,000 points each, clear of the middle.
+ * A heavy outline (~430 KiB, 24,000 points) a deployment can store, with water to merge over: a shore
+ * of 8,000 points around (0.5, 0.5) and two islands of 8,000 each, clear of the middle — as heavy as a
+ * merge's time budget lets a survivor be (R12: an outline near the document limit, read and written
+ * whole a dozen times, passes 400 ms on its bytes alone).
  */
 function heavyShore() {
   const island = (cx: number, cy: number) => {
@@ -733,14 +735,7 @@ function heavyShore() {
   };
   return {
     type: 'Polygon' as const,
-    coordinates: [
-      ring(8_000),
-      island(0.3, 0.5),
-      island(0.7, 0.5),
-      island(0.5, 0.3),
-      island(0.5, 0.75),
-      island(0.3, 0.3),
-    ],
+    coordinates: [ring(8_000), island(0.3, 0.5), island(0.7, 0.5)],
   };
 }
 
@@ -828,9 +823,9 @@ describe('heavy rows: a merge (B01-5d)', () => {
         mergeDrawn: () =>
           w.mod.as.mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId: w.lake }),
       });
-      // The Inbox's merge measures the drawing's share of its survivor in its own transaction: ~48,000
-      // outline points past the geometry's budget (R11, `lib/mergeLoad`) — refused with the sentence,
-      // never a merge that runs out of time.
+      // The Inbox's merge measures the drawing's share of its survivor in its own transaction too:
+      // ~24,000 more points of geometry, past the time budget (R12, `lib/mergeLoad`) — refused with
+      // the sentence, never a merge that runs out of time.
       expect(steps).toEqual({ item: 'completed', merge: 'completed', mergeDrawn: 'refused' });
       expect((await w.t.run((ctx) => ctx.db.get(viaInbox)))?.reviewStatus).toBe('pending');
     },

@@ -152,12 +152,12 @@ import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
 import {
-  MERGE_GEOMETRY_POINTS,
   MERGE_TOO_BIG,
   type MergeCost,
   mergeLoadOf,
   RETARGET_CAP,
   SAFETY,
+  THRESHOLDS,
   TX_LIMITS,
 } from './lib/mergeLoad';
 import { enqueueModeratorDecision } from './lib/notificationQueue';
@@ -172,7 +172,6 @@ import {
   mirrorFailure,
   runIsolated,
 } from './lib/recurringWork';
-import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
@@ -4093,9 +4092,19 @@ export async function mergeBodyInto(
     // History shows them. Recorded in the change set, for the unmerge.
     const asks = await retargetAsks(ctx, loserId, survivorId, 'refuse');
     // The bay join mirrors the report's body (A09); the bays themselves move to the survivor below,
-    // so the `subAreaId` on each row stays valid and only the body needs following.
-    for (const report of reports) {
-      await mirrorReportSubAreas(ctx, { ...report, waterBodyId: survivorId });
+    // so the `subAreaId` on each row stays valid and only the body needs following. A loser's reports
+    // join only the loser's own bays, so the joins are read **once a bay** — a range each — and each
+    // patched to the survivor (R12: a range a report, as `mirrorReportSubAreas` reads them, made the
+    // reports the merge's slowest rows). The patch leaves the index's key as it was.
+    for (const bay of await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', loserId))
+      .collect()) {
+      for await (const join of ctx.db
+        .query('reportSubAreas')
+        .withIndex('by_sub_area_moderation_skate_end', (q) => q.eq('subAreaId', bay._id))) {
+        if (join.waterBodyId === loserId) await ctx.db.patch(join._id, { waterBodyId: survivorId });
+      }
     }
 
     // Favorites are one row per user × body × bay (`by_user_water_body_sub_area` is the uniqueness
@@ -4406,8 +4415,35 @@ export async function mergeBodyInto(
       }
       noteAfter(rowAfterOf('waterBodySubAreas', before, after));
     }
+    // Which labels the moves changed, re-read only where a change can be (R12): every one of the
+    // loser's, and of the survivor's only the twins they folded into and those retired by this merge
+    // (removed from its start, by a range with that lower bound) — not a read by id of every label
+    // of both lakes, which on a lake at the cap was 1,500 calls. The same entries, in the same order.
+    const afterOf = new Map<string, Doc<'bodyLandmarks'>>();
+    const twins = new Set<string>();
     for (const before of landmarksBefore) {
+      if (before.waterBodyId !== loserId) continue;
       const after = await ctx.db.get(before._id);
+      if (!after) continue;
+      afterOf.set(after._id, after);
+      if (after.mergedIntoId !== undefined) twins.add(after.mergedIntoId);
+    }
+    for (const retired of await ctx.db
+      .query('bodyLandmarks')
+      .withIndex('by_water_body_removed', (q) =>
+        q.eq('waterBodyId', survivorId).gte('removedAt', startedAt),
+      )
+      .collect()) {
+      afterOf.set(retired._id, retired);
+    }
+    for (const before of landmarksBefore) {
+      if (before.waterBodyId !== loserId && !afterOf.has(before._id) && twins.has(before._id)) {
+        const twin = await ctx.db.get(before._id);
+        if (twin) afterOf.set(twin._id, twin);
+      }
+    }
+    for (const before of landmarksBefore) {
+      const after = afterOf.get(before._id);
       if (after && JSON.stringify(after) !== JSON.stringify(before)) {
         noteAfter(rowAfterOf('bodyLandmarks', before, after));
         changeSet.landmarksAfter.push({
@@ -4663,7 +4699,7 @@ export const retireAbsorbedBodies = internalMutation({
     /** Pairs this call had no room left for (R10-C): sent back, as given, for the next call. */
     const deferred: typeof pairs = [];
     let mergedHere = 0;
-    let geometryHere = 0;
+    let timeHere = 0;
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
       const absorbed = await byKey(pair.absorbed);
@@ -4740,8 +4776,7 @@ export const retireAbsorbedBodies = internalMutation({
       if (
         apply === true &&
         mergedHere > 0 &&
-        (!(await roomFor(ctx, load.cost)) ||
-          geometryHere + load.cost.geometryPoints > MERGE_GEOMETRY_POINTS)
+        (!(await roomFor(ctx, load.cost)) || timeHere + load.cost.timeMs > THRESHOLDS.timeMs)
       ) {
         deferred.push(...pairs.slice(pairs.indexOf(pair)));
         break;
@@ -4766,8 +4801,8 @@ export const retireAbsorbedBodies = internalMutation({
       if (apply === true) {
         const campaign = campaignId ? ` (${campaignId})` : '';
         mergedHere++;
-        // Execution time has no live metric: the call's geometry is summed against the one budget.
-        geometryHere += load.cost.geometryPoints;
+        // Execution time has no live metric: the call's merges are summed against the one budget.
+        timeHere += load.cost.timeMs;
         await mergeBodyInto(ctx, {
           survivor,
           loser: absorbed,
