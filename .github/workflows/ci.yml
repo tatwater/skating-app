@@ -147,7 +147,7 @@ jobs:
       # shifts no dates at all, and that is exactly how `accessModel.test.ts` passed its own PR and
       # then turned main red at `f5d070a0` nine hours later, when the computed zone was UTC+11.
       #
-      # The unit project only: it is the fixture-heavy half and costs under a minute, where the
+      # The unit projects only (`unit*`: jsdom's and Node's): the fixture-heavy half, where the
       # story project needs another Chromium pass. Invoked through vitest rather than `pnpm test`
       # so turbo replays nothing.
       - name: Test the web suite again at 1 AM local, and at both ends of the date line
@@ -155,7 +155,7 @@ jobs:
           ONE_AM=$(node -e 'let o=((1-new Date().getUTCHours())%24+24)%24; if (o>12) o-=24; console.log(o>=0?`Etc/GMT-${o}`:`Etc/GMT+${-o}`)')
           for ZONE in "$ONE_AM" Etc/GMT-14 Etc/GMT+11; do
             echo "Re-running the web unit project in $ZONE — local time $(TZ="$ZONE" date +%H:%M)"
-            TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project unit
+            TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project 'unit*'
           done
 
       - name: Upload coverage
