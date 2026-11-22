@@ -75,3 +75,12 @@ describe('whether it may be confirmed', () => {
     expect(mergeVerdict(null)).toEqual({ confirm: false, said: null });
   });
 });
+
+describe('an unmerge’s rows left where they were', () => {
+  it('says how many, plainly, singular and plural', () => {
+    expect(W.leftSince(1)).toBe('1 row had changed since the merge and stays where it is');
+    expect(W.leftSince(1_204)).toBe(
+      '1,204 rows had changed since the merge and stay where they are',
+    );
+  });
+});
