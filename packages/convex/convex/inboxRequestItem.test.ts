@@ -1337,7 +1337,7 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
     expect(map?.tracks.length).toBeLessThan(5);
     expect(map?.tracks.every((t) => !t.simplified)).toBe(true);
     expect(map?.capped).toBe(true);
-  });
+  }, 60_000); // 7.7 s under the contended run: 5x headroom with CI's slower runners.
 
   test('the drawer and any skater are refused the map, track and all', async () => {
     const w = await world();
