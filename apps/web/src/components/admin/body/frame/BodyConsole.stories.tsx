@@ -362,14 +362,18 @@ export const MergePreview: Story = {
     const confirm = within(preview).getByRole('button', { name: 'Merge into Crystal Lake' });
     await expect(confirm).toBeEnabled();
     await userEvent.click(confirm);
-    const dialog = await page.findByRole('alertdialog');
+    // The dialog's fades take longer on a starved runner (the convex suite beside it): its waits
+    // ride that out rather than read mid-fade.
+    const steady = { timeout: 5_000 };
+    const dialog = await page.findByRole('alertdialog', {}, steady);
     await expect(dialog).toHaveTextContent('Merge Mascoma Lake into Crystal Lake');
     // The dialog fades in: read its words once they are seen, not mid-fade.
-    await waitFor(() =>
-      expect(within(dialog).getByText('Reason · kept in the audit log')).toBeVisible(),
+    await waitFor(
+      () => expect(within(dialog).getByText('Reason · kept in the audit log')).toBeVisible(),
+      steady,
     );
     await userEvent.keyboard('{Escape}');
-    await waitFor(() => expect(page.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(page.queryByRole('alertdialog')).toBeNull(), steady);
   },
 };
 
