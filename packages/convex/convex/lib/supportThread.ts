@@ -162,48 +162,10 @@ export function supportUndoRefusal(
   return messageStateRefusal(verb, facts.message, facts.now);
 }
 
-// ── The audit row that wrote a message ─────────────────────────────────────────────────────────
-
-/** Rows read after a message's creation to find the audit row its write made right after it. */
-export const MESSAGE_ROW_READ = 4;
-
-/**
- * The audit row the write of `message` made — a `support_note` or `support_reply` row on its ticket
- * naming it (`metadata.messageId`). The write inserts the message and then its row in one transaction,
- * so the row is among the ticket's first rows created from the message on: a bounded read of
- * {@link MESSAGE_ROW_READ}, checked by the id it names, never a scan of the ticket's history. `null`
- * when it isn't among them (a write in another transaction can't land between the two inserts, so
- * that means the row is gone).
- */
-export async function messageActionOf(
-  ctx: QueryCtx,
-  message: Doc<'supportMessages'>,
-): Promise<Doc<'moderationActions'> | null> {
-  const rows = await ctx.db
-    .query('moderationActions')
-    .withIndex('by_target', (q) =>
-      q
-        .eq('targetType', 'supportTicket')
-        .eq('targetId', message.ticketId)
-        .gte('_creationTime', message._creationTime),
-    )
-    .take(MESSAGE_ROW_READ);
-  return (
-    rows.find(
-      (r) =>
-        (r.action === 'support_note' || r.action === 'support_reply') &&
-        r.undoesActionId === undefined &&
-        (r.metadata as { messageId?: string } | undefined)?.messageId === message._id,
-    ) ?? null
-  );
-}
-
 // ── The thread, as the Inbox item reads it ─────────────────────────────────────────────────────
 
 /** The newest messages a thread serves; older ones are cut, and the cut is said (`capped`). */
 export const THREAD_MESSAGES = 100;
-/** The settling replies whose audit row a thread looks up for their cancel (each lives a minute). */
-export const THREAD_CANCELS = 5;
 
 // ── Erasure ────────────────────────────────────────────────────────────────────────────────────
 

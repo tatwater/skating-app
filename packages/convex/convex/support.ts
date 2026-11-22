@@ -38,7 +38,6 @@ import { isSeedProfile } from './lib/seedPeople';
 import {
   bodyRefusal,
   MESSAGE_GONE_REFUSAL,
-  messageActionOf,
   NOT_A_NOTE_REFUSAL,
   SUPPORT_REASONS,
   seedTicket,
@@ -334,6 +333,7 @@ export const addNote = mutation({
       metadata: { messageId, kind: 'note', reasonDefaulted: true },
       createdAt: now,
     });
+    await ctx.db.patch(messageId, { actionId });
     return answer(ctx, actor, { itemId: item._id, ticketId, actionId }, { messageId });
   },
 });
@@ -377,6 +377,7 @@ export const reply = mutation({
       metadata: { messageId, kind: 'reply', reasonDefaulted: true },
       createdAt: now,
     });
+    await ctx.db.patch(messageId, { actionId });
     if (!seed) await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
     return answer(
       ctx,
@@ -430,7 +431,7 @@ export const cancelReply = mutation({
     const actor = await requireCapability(ctx, 'inbox.support');
     const message = await ctx.db.get(messageId);
     if (message?.kind !== 'reply') throw new ConvexError(MESSAGE_GONE_REFUSAL);
-    const row = await messageActionOf(ctx, message);
+    const row = message.actionId ? await ctx.db.get(message.actionId) : null;
     if (!row) throw new ConvexError('This reply’s record is missing, so it can’t be canceled.');
     await runUndo(ctx, actor, row._id, undefined, undoWriters);
     const cancel = await undoRowOf(ctx, row);

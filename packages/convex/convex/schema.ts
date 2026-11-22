@@ -4241,6 +4241,12 @@ export default defineSchema({
      * `noAddress` (no profile email and no Clerk address), `sendFailed` (the provider refused).
      */
     failedWhy: v.optional(literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const)),
+    /**
+     * The audit row its write made (`support_note` / `support_reply`), stamped by that write in the
+     * same transaction, right after the row: a reply's cancel undoes it by id. Optional only because
+     * the row names the message, so the message is inserted first.
+     */
+    actionId: v.optional(v.id('moderationActions')),
   }).index('by_ticket_created', ['ticketId', 'createdAt']),
 
   bounties: defineTable({

@@ -181,6 +181,8 @@ describe('support.addNote', () => {
       kind: 'note',
       body: 'Reproduced on a Pixel.',
       authorId: w.admin.id,
+      // The write stamps its own audit row on the message (the cancel and History read it by id).
+      actionId: out.actionId,
     });
     expect(note?.status).toBeUndefined();
     const row = (await w.rowsOn(ticketId)).find((r) => r._id === out.actionId);
@@ -372,6 +374,7 @@ describe('support.reply and its send', () => {
     const out = await w.admin.as.mutation(api.support.reply, { ticketId, body: 'Wrong ticket' });
     vi.advanceTimersByTime(SETTLE_MS / 2);
     const cancel = await w.admin.as.mutation(api.support.cancelReply, { messageId: out.messageId });
+    expect((await w.message(out.messageId))?.actionId).toBe(out.actionId);
     expect(cancel).toMatchObject({ ticketId, messageId: out.messageId, undoable: false });
     const row = (await w.rowsOn(ticketId)).find((r) => r._id === cancel.actionId);
     expect(row).toMatchObject({ action: 'cancel_support_reply', undoesActionId: out.actionId });
@@ -386,6 +389,26 @@ describe('support.reply and its send', () => {
     await expect(
       w.admin.as.mutation(api.support.cancelReply, { messageId: out.messageId }),
     ).rejects.toThrow('That action has already been undone');
+  });
+
+  test('a reply with no audit row of its own is refused in words, never canceled blind', async () => {
+    const w = await world();
+    const ticketId = await w.ticket();
+    const messageId = await w.t.run((ctx) =>
+      ctx.db.insert('supportMessages', {
+        ticketId,
+        kind: 'reply',
+        authorId: w.admin.id,
+        body: 'No row',
+        createdAt: Date.now(),
+        status: 'settling',
+        sendAfter: Date.now() + SETTLE_MS,
+      }),
+    );
+    await expect(w.admin.as.mutation(api.support.cancelReply, { messageId })).rejects.toThrow(
+      'This reply’s record is missing, so it can’t be canceled.',
+    );
+    expect((await w.message(messageId))?.status).toBe('settling');
   });
 
   test('the row is re-read at send: one canceled under the scheduler (by any path) sends nothing', async () => {
