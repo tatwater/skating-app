@@ -413,7 +413,8 @@ export const Restoring: Story = {
     await userEvent.click(lever);
     await waitFor(() => expect(lever).toHaveAttribute('aria-busy', 'true'));
     await expect(lever).toHaveAccessibleName(/Restoring/);
-    await expect(document.activeElement).toBe(lever);
+    // Focus stays on the lever through its pending state (read in a retry: a press is asynchronous).
+    await waitFor(() => expect(document.activeElement).toBe(lever));
     // The server's own words come back in the toast, naming the person; the sheet prints none.
     await waitFor(() =>
       expect(slot(canvasElement, 'toast')).toHaveTextContent(
