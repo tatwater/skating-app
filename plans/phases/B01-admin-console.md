@@ -10410,6 +10410,8 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
 - **A real stall:** S4b canceled the scheduled next page. The unmerge read `stalled`, kept both
   markers, and resumed to done with the census equal; a second resume was refused.
 
+**Status: awaiting the re-run** (see *the harness counts what the backend counts*, below).
+
 **Before the PR opens:**
 - S4a is rebuilding the estimate (`lib/mergeLoad.ts`) to bound index ranges, bytes, documents and
   execution time from the code's per-row work, and moving flags linearly.
@@ -10460,6 +10462,72 @@ at 9.3% or less. A seed test holds it under half.
 
 **The web:** nothing assumed the old cap. No "8,000" appears in the console's words, fixtures or
 stories; the preview's counts and floors come from the server.
+
+#### B01-5d: the harness counts what the backend counts (2026-11-22)
+
+S4b's `099d0a97b` and `9d928bdf7`, integrated with no conflicts. **The proof's status: awaiting the
+re-run** on this head (S4b's), after which the PR opens.
+
+**The model** (`packages/convex/vitest.config.ts`'s transform). Per-operation costs were measured on
+a throwaway local backend, then checked against six real merges.
+- **Reads:** a read is charged one index range only where it reaches outside what the transaction,
+  nested calls included, has already read on that index. A repeat, a narrower read inside a wider
+  one, or a second touch of a row is free.
+- **Writes:** `patch`, `replace` and `delete` each take their row's range (convex-test charged none).
+  A patch that changes nothing writes nothing.
+- **Scans:** every row a `.filter` scans counts as read, kept or not. `.collect()`, `.take(n)`,
+  `.first()`, `.unique()` and a page count every row they scan.
+- **A fixed start cost:** each registered function is charged 96 ranges before its handler runs.
+  The real backend reads its module's code first, measured at 8 to 95 ranges.
+- **Not modeled:** the 1 s execution limit. The merge bounds that by outline points (30,000).
+
+**The calibration** (index ranges):
+
+| Merge shape | Real backend | Harness |
+|---|---|---|
+| 3,900 put-ins | 4,044 | 4,077 |
+| 1,800 favorites | 3,745 | 3,777 |
+| 1,200 favorites (both bodies) | 2,544 | 2,576 |
+| 120 flags + 2,000 hazards | 2,515 | 2,548 |
+| 366 requests | 3,076 | 3,474 |
+| mix of kinds | 2,964 | 3,033 |
+
+The harness never undercounts. Its margin is about 32 ranges from the start bound, plus about one
+per request (conservative).
+
+**Against S4a's per-row costs** (S4b's measurements): each one measured is at or above the real
+cost: put-ins 1, favorites 2, asks 10 (real about 8), flags 11 (real about 2.75), fixed 420 (real
+about 185–214). Bays, survivor bays, labels and landmark asks weren't measured. Restoring S4a's
+quadratic flag scan now fails S4a's linear-flags test.
+
+**What the suite newly failed.**
+- **On S4b's branch:** only S4b's own 2,000-favorite fixture, which can't merge on a real backend
+  either. It was resized to 1,800.
+- **In the workspace run, nothing over a limit; but the bookkeeping slows every convex test under
+  contention.** The suite went from 131 s to 192–221 s.
+  - Three tests timed out on their old budgets, though each runs green alone. The suite's
+    `testTimeout` went from 20 s to 60 s, and the heavy tests got 5x their contended time.
+  - One of the integration's own tests, the merge-during-unmerge test, raced convex-test's
+    real-clock scheduler. It now holds the clock.
+
+**The unmerge's page reservations.** Three undercounts are fixed:
+- a bay or label read twice (its `get`, then its patch);
+- a side row's audit write refreshing the body's library;
+- each of a report's bay-join rows costing a range.
+
+A per-kind test measures every restored row against its page's reservation. On the real backend,
+1,800 favorites and mix-lite both unmerged to done, with nothing stalled or left.
+
+**The stall codes.** `stalled` is `{ code, error? }`:
+- from the scheduler's record of the next page: `pageFailed` (with the scheduler's error text on a
+  deployment), `pageCanceled`, `pageMissing`, `pageStopped`;
+- recorded by a page that stopped itself: `undone`, `recordGone`, `recordUnreadable`, `mergedAgain`.
+
+The web's headline stays "The unmerge stopped before it finished". The quieter line is
+`MERGE_WORDS.stallWhy`'s plain words for the code (invented, for the copy pass), then the error
+verbatim. *Resume* is offered for every code, because `unmerge.resume` accepts every stall. Which
+codes a resume can't help (`undone`, `recordGone`, `mergedAgain`) is a server ask for S4b, not a web
+decision.
 
 #### B01-5d: S4b's review fixes, and a stalled unmerge on the web (2026-11-22)
 
