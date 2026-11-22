@@ -1,30 +1,26 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
-import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
-import { useSaidMutation } from '../components/admin/said';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Card, CardContent } from '../ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { AdminEmpty, AdminPageHeader } from './adminUi';
+import { useSaidMutation } from './said';
 
 /**
  * Support inbox (D35/D37) — **admin-only** (PII). Tickets, bug reports, and account appeals
  * (`category: account`), filterable by status, with assign/resolve. Server-gated to admins.
+ *
+ * **Retired (B01-5f):** tickets are answered in the Inbox's Support lane now, and
+ * `/admin/support` redirects there. Kept on disk, unrouted, until B01's close deletes the old
+ * pages (its *Assign to me* goes with it, D284).
  */
-export const Route = createFileRoute('/admin/support')({ component: AdminSupport });
 
 const STATUSES = ['open', 'in_progress', 'resolved'] as const;
 
-function AdminSupport() {
+export function SupportQueue() {
   const [status, setStatus] = useState<'all' | (typeof STATUSES)[number]>('open');
   const tickets = useQuery(api.support.list, status === 'all' ? {} : { status });
   const assign = useSaidMutation(api.support.assign);

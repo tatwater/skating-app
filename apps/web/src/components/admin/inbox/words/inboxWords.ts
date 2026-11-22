@@ -309,9 +309,7 @@ export const KIND_HEAD: Readonly<Record<string, string>> = {
  * (coined). The link words wear the link chip's arrow.
  */
 export const ELSEWHERE_PHOTO = 'A flag on a photo is decided on the Flags page for now.';
-export const ELSEWHERE_TICKET = 'Support tickets are answered on the Support page for now.';
 export const ELSEWHERE_FLAGS = 'Flags';
-export const ELSEWHERE_SUPPORT = 'Support';
 export const FACT_LANE = 'Lane';
 export const FACT_FILED = 'Filed';
 export const FACT_MEMBERS = 'Filed by';

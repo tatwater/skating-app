@@ -23,8 +23,9 @@ describe('where an item without its handler is decided', () => {
     expect(elsewhereFor('request', ADMIT_ITEM, true)).toBeNull();
   });
 
-  it('points a ticket at the old Support page — only for a viewer who reads Support', () => {
-    expect(targets(elsewhereFor('ticket', TICKET_ITEM, true))).toEqual(['/admin/support']);
+  it('says nothing for a ticket: its handler has landed, and the old Support page redirects', () => {
+    expect(HANDLERS.has('ticket')).toBe(true);
+    expect(elsewhereFor('ticket', TICKET_ITEM, true)).toBeNull();
     expect(elsewhereFor('ticket', TICKET_ITEM, false)).toBeNull();
   });
 

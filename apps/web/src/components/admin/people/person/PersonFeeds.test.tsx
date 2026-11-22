@@ -148,13 +148,13 @@ describe('an appeal', () => {
 });
 
 describe('where its links go', () => {
-  it('sends a flag to its item in the Inbox, and an appeal to support until its handler lands', () => {
+  it('sends a flag and an appeal each to its own item in the Inbox', () => {
     const block = draw({ flags: [flag({ targetLabel: 'Mascoma Lake' })], appeals: [appeal()] });
     expect(
       within(block)
         .getAllByRole('link', { name: /Handle/ })
         .map((a) => a.getAttribute('href')),
-    ).toEqual(['/admin/inbox?item=flag%3Af1', '/admin/support']);
+    ).toEqual(['/admin/inbox?item=flag%3Af1', `/admin/inbox?item=ticket%3A${appeal().ticketId}`]);
     expect(screen.getAllByRole('link')).toHaveLength(2);
   });
 });

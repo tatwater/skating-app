@@ -6,7 +6,7 @@ import { Splash } from '../Splash';
 /**
  * The operator surface's shell (D37) — a role-gated `/admin` tree inside the web app (not a second
  * app). It gates the whole tree at **moderator**, redirects a moderator off the **admin-only**
- * children (`/admin/support`, `/admin/tuning` — PII + constants), renders the sidebar (hiding links
+ * children (`/admin/tuning`, `/admin/imports`, `/admin/seasons` — constants and machinery), renders the sidebar (hiding links
  * the caller can't use), and hosts the child pages via `<Outlet/>`.
  *
  * The client gate is a **UX** boundary, not a security one: every underlying Convex function
@@ -60,7 +60,7 @@ export function AdminLayout() {
 }
 
 /** Paths only an admin may reach — a moderator is bounced back to the dashboard. */
-const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning', '/admin/imports', '/admin/seasons'];
+const ADMIN_ONLY_PREFIXES = ['/admin/tuning', '/admin/imports', '/admin/seasons'];
 
 interface NavItem {
   to: string;
@@ -94,7 +94,7 @@ const NAV: NavItem[] = [
   // navigate to is a page nobody judges the model from, which is the whole reason it was built.
   { to: '/admin/ice-calibration', label: 'Ice calibration' },
   { to: '/admin/seasons', label: 'Seasons', adminOnly: true },
-  { to: '/admin/support', label: 'Support', adminOnly: true },
+  // Support tickets are answered in the Inbox now (B01-5f); the old page redirects there.
   { to: '/admin/tuning', label: 'Tuning', adminOnly: true },
   { to: '/admin/imports', label: 'Imports', adminOnly: true },
 ];

@@ -32,8 +32,9 @@ export function consolePathFor(to: OverviewTarget): string | null {
         case 'placesAsked':
         case 'drawnBodies':
           return inboxPath({ lane: to.lane });
+        // Support tickets are answered in the Inbox (B01-5f): the old page redirects there.
         case 'support':
-          return '/admin/support';
+          return inboxPath({ lane: 'support' });
         default:
           // Safety, access reports and content flags are all flags.
           return '/admin/flags';

@@ -147,7 +147,7 @@ describe('board 8.1 — a suspended skater', () => {
       within(open)
         .getAllByRole('link', { name: /Handle/ })
         .map((a) => a.getAttribute('href')),
-    ).toEqual(['/admin/inbox?item=flag%3Aflag1', '/admin/support']);
+    ).toEqual(['/admin/inbox?item=flag%3Aflag1', '/admin/inbox?item=ticket%3Aticket1']);
     const history = slot('person-history');
     expect(history).toHaveTextContent('Suspended Rob Tremblay until 15 Oct');
     expect(history).toHaveTextContent('Reason: “Second unsafe report in a week; cooling off”');
