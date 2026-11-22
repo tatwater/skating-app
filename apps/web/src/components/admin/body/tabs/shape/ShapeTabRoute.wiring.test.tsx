@@ -318,11 +318,13 @@ describe('the Shape tab’s merge, through the route', () => {
     await act(async () => {
       vi.advanceTimersByTime(200);
     });
+    // One more than it lists, so it can say when more matched.
     expect(askedFor(api.waterBodies.searchByName).at(-1)).toEqual({
       query: 'po',
-      limit: 6,
+      limit: 7,
       bodiesOnly: true,
     });
+    expect(screen.queryByText(MERGE_WORDS.searchMore)).toBeNull();
     const hits = within(region()).getByRole('table', { name: MERGE_WORDS.searchLabel });
     // This body is never offered as its own survivor.
     expect(within(hits).queryByText('Mascoma Lake')).toBeNull();
@@ -341,6 +343,30 @@ describe('the Shape tab’s merge, through the route', () => {
       loserId: MASCOMA_ID,
       reason: 'Same pond',
     });
+  });
+
+  it('lists the search’s first six, and says when more matched than it shows', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    // Seven back for a limit of seven: more exist than the six listed.
+    set(
+      api.waterBodies.searchByName,
+      Array.from({ length: 7 }, (_, i) => ({
+        waterBodyId: `k57pond${i}`.padEnd(32, '0'),
+        name: `Pond ${i + 1}`,
+        type: 'pond',
+        states: ['NH'],
+      })),
+    );
+    render(<Mounted />);
+    await user.type(within(region()).getByRole('searchbox'), 'pond');
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    const hits = within(region()).getByRole('table', { name: MERGE_WORDS.searchLabel });
+    expect(within(hits).getAllByRole('row')).toHaveLength(6);
+    expect(within(hits).queryByText('Pond 7')).toBeNull();
+    expect(within(region()).getByText(MERGE_WORDS.searchMore)).toBeInTheDocument();
   });
 
   it('the map lights the survivor picked, however it was picked — never the one before', async () => {

@@ -55,7 +55,8 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
   const canMerge = canRead && can('corpus.duplicates');
   const [survivor, setSurvivor] = useState<Survivor | null>(null);
   const [query, setQuery] = useState('');
-  const asked = searchQueryArg(useResting(query, SEARCH_REST_MS), SEARCH_HITS);
+  // One more than it lists, so the search can say when more matched than it shows.
+  const asked = searchQueryArg(useResting(query, SEARCH_REST_MS), SEARCH_HITS + 1);
   const r = useConsoleReads({
     body: read(api.waterBodies.get, { waterBodyId }),
     subAreas: read(api.subAreas.listForBody, { waterBodyId }),
@@ -127,7 +128,10 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
               hits:
                 asked === 'skip'
                   ? null
-                  : mapLoadable(r.hits, (found) => survivorHits(found, bodyId)),
+                  : mapLoadable(r.hits, (found) =>
+                      survivorHits(found, bodyId).slice(0, SEARCH_HITS),
+                    ),
+              hitsMore: (loaded(r.hits)?.length ?? 0) > SEARCH_HITS,
               preview: r.preview,
               bodyName,
               onMerge: async (reason: string) => {

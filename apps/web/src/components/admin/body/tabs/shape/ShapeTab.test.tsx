@@ -378,6 +378,10 @@ describe('the merge itself', () => {
     await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('Merge Mascoma Lake into Crystal Lake');
+    // What Undo does, truly: rows that change in the meantime stay where they are.
+    expect(dialog).toHaveTextContent(
+      'Undo moves it back, except rows that change in the meantime: those stay where they are.',
+    );
     expect(within(dialog).getByText('Reason · kept in the audit log')).toBeInTheDocument();
     const box = within(dialog).getByRole('textbox');
     expect(box).toHaveAttribute('maxlength', String(AUDIT_REASON_MAX));

@@ -25,8 +25,9 @@ export const MERGE_WORDS = {
   open: 'Open →',
   /** The search for a survivor beyond the touching bodies. */
   searchLabel: 'Or find the body that survives',
-  searchPlaceholder: 'A body’s name',
   searchNone: 'No body by that name',
+  /** The search lists its first few: more matched than it shows. */
+  searchMore: 'More bodies match · type more of the name',
   searchFailed: 'The search couldn’t be read',
   /** The preview's subhead: the survivor picked. */
   into: (name: string) => `Into ${name}`,
@@ -72,7 +73,7 @@ export const MERGE_WORDS = {
   confirm: 'Merge',
   dialogTitle: (loser: string, survivor: string) => `Merge ${loser} into ${survivor}`,
   dialogDescription: (survivor: string) =>
-    `Everything on it moves to ${survivor}, and this body stays behind as a pointer to it. Undo puts it back.`,
+    `Everything on it moves to ${survivor}, and this body stays behind as a pointer to it. Undo moves it back, except rows that change in the meantime: those stay where they are.`,
   reasonLabel: 'Reason · kept in the audit log',
   /** The receipt names both bodies: the survivor here, this body as its subject. */
   merged: (survivor: string) => `Merged into ${survivor}`,

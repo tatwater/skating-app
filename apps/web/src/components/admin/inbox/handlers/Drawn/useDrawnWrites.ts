@@ -26,8 +26,10 @@ import { DRAWN_WORDS as W } from './drawnWords';
 
 export type DrawnAct = 'merge' | 'approve' | 'reject';
 
-/** What `mergeDrawn` answers: the Inbox writes' shape (`InboxWriteResult`): the merge's own row. */
-/** What `inboxWrites.mergeDrawn` answers, as the server types it. */
+/**
+ * What `inboxWrites.mergeDrawn` answers, as the server types it: the decision's own row (the merge's),
+ * whether this viewer can undo it now, and the survivor it merged into.
+ */
 export type MergeDrawnAnswer = FunctionReturnType<typeof api.inboxWrites.mergeDrawn>;
 
 /** The three writes, as the handler calls them (a story or a test fakes them). */

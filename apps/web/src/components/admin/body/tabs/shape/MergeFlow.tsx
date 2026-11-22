@@ -47,6 +47,8 @@ export interface MergeFlowProps {
   onQueryChange: (query: string) => void;
   /** The search's hits; `null` while too little is typed to ask. */
   hits: Loadable<readonly SurvivorHit[]> | null;
+  /** More bodies matched than the hits show (the search lists its first few). */
+  hitsMore?: boolean;
   /** The server's preview of merging this body into the survivor; ignored with none picked. */
   preview: Loadable<MergePreview>;
   /** This body's name, for the dialog's title (the console's own record). */
@@ -63,6 +65,7 @@ export function MergeFlow({
   query,
   onQueryChange,
   hits,
+  hitsMore,
   preview,
   bodyName,
   onMerge,
@@ -75,6 +78,7 @@ export function MergeFlow({
         query={query}
         onQueryChange={onQueryChange}
         hits={hits}
+        hitsMore={hitsMore}
       />
       {survivor !== null && (
         <MergePreviewBlock
@@ -95,7 +99,8 @@ function MergeSearch({
   query,
   onQueryChange,
   hits,
-}: Pick<MergeFlowProps, 'survivor' | 'onPick' | 'query' | 'onQueryChange' | 'hits'>) {
+  hitsMore = false,
+}: Pick<MergeFlowProps, 'survivor' | 'onPick' | 'query' | 'onQueryChange' | 'hits' | 'hitsMore'>) {
   return (
     <div data-slot="merge-search" className="flex flex-col gap-(--space-2)">
       <InputGroup>
@@ -142,6 +147,9 @@ function MergeSearch({
             })}
           </TableBody>
         </Table>
+      )}
+      {hitsMore && hits !== null && !isFailed(hits) && hits !== undefined && hits.length > 0 && (
+        <Note data-slot="merge-search-more">{W.searchMore}</Note>
       )}
     </div>
   );
