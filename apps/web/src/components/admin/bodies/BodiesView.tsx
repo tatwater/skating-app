@@ -81,6 +81,8 @@ export type BodiesViewProps = {
   openLabel?: string;
   /** The router's link to a body's console; the preview's open action renders as it. */
   bodyLink?: (id: string) => ReactElement;
+  /** The router's link to an ask's Inbox item; the preview's asks render as it. */
+  askLink?: (item: string) => ReactElement;
   /** Opens a body's console (⏎ in the preview). */
   onOpenBody: (id: string) => void;
   /** The page's status-bar groups ("Last campaign 12 Oct"). */
@@ -113,6 +115,7 @@ export function BodiesView({
   previewRemoved,
   now,
   bodyLink,
+  askLink,
   openLabel = OPEN_LABEL,
   onOpenBody,
   status = [],
@@ -370,6 +373,7 @@ export function BodiesView({
           data={previewData}
           now={now}
           {...(bodyLink !== undefined && { bodyLink })}
+          {...(askLink !== undefined && { askLink })}
           onOpen={onOpenBody}
           openLabel={openLabel}
           // The note holds (Trying again…) and keeps focus while the reads run again.

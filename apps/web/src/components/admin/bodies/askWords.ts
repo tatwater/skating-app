@@ -55,6 +55,7 @@ export function askFrom(ask: PreviewFacts['asks'][number]): PreviewAsk {
     case 'request':
       return {
         id: ask.id,
+        item: `request:${ask.id}`,
         kicker: `${REQUEST_WORDS[ask.requestKind]}${askersWords(ask.askers)} · Inbox`,
         title: ask.name !== null ? `“${ask.name}”` : REQUEST_ASKS[ask.requestKind],
         sub: ask.note,

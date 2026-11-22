@@ -16,6 +16,7 @@ describe('an ask', () => {
       }),
     ).toEqual({
       id: 'r1',
+      item: 'request:r1',
       kicker: 'Bay name · Inbox',
       title: '“Shaker cove”',
       sub: 'Near the Shaker Bridge launch',
@@ -29,7 +30,13 @@ describe('an ask', () => {
         note: null,
         createdAt: 1,
       }),
-    ).toEqual({ id: 'r2', kicker: 'Activation · Inbox', title: 'Make it active', sub: null });
+    ).toEqual({
+      id: 'r2',
+      item: 'request:r2',
+      kicker: 'Activation · Inbox',
+      title: 'Make it active',
+      sub: null,
+    });
   });
 
   it('words a place name by its emails, and a flag by its reason', () => {

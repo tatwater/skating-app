@@ -1,5 +1,11 @@
+import { type InboxQuery, inboxHref } from '../inbox/inboxSearch';
 import type { FeedTarget } from './overviewData';
 import { type OverviewTarget, PEOPLE_LANE_OF } from './overviewLinks';
+
+/** The Inbox at a place: a lane, or one item by its source ref (`request:<id>`). */
+function inboxPath(place: Partial<Pick<InboxQuery, 'lane' | 'item'>>): string {
+  return inboxHref({ lane: 'all', facet: 'all', filter: null, item: null, from: null, ...place });
+}
 
 /** A body's console: the Bodies mode's page for one body. */
 function bodyConsolePath(id: string): string {
@@ -20,11 +26,12 @@ export function consolePathFor(to: OverviewTarget): string | null {
   switch (to.kind) {
     case 'inbox':
       switch (to.lane) {
+        // Requests, places asked and drawn bodies are decided in the Inbox (B01-5c): their old pages
+        // retire with it (the requests page redirects, the water list loses its pending card).
         case 'requests':
         case 'placesAsked':
-          return '/admin/water/requests';
         case 'drawnBodies':
-          return '/admin/water';
+          return inboxPath({ lane: to.lane });
         case 'support':
           return '/admin/support';
         default:
@@ -82,7 +89,8 @@ function auditPath(type: string, id: string): string | null {
     case 'hazardRecurrence':
       return '/admin/recurrence';
     case 'waterBodyRequest':
-      return '/admin/water/requests';
+      // The ask's own item in the Inbox (`inbox.item` resolves a `request:` ref).
+      return inboxPath({ item: `request:${id}` });
     case 'corpusPlaceName':
       return '/admin/water/place-names';
     case 'waterBodySubArea':

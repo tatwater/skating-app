@@ -226,6 +226,7 @@ export const PREVIEW_MASCOMA: BodyPreviewData = {
   asks: [
     {
       id: 'a1',
+      item: 'request:a1',
       kicker: 'Bay name · asked by 3 · Inbox',
       title: '“Shaker cove”',
       sub: 'Near the Shaker Bridge launch',
