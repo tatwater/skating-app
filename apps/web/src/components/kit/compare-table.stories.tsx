@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect } from 'storybook/test';
+import { expect, waitFor } from 'storybook/test';
 import { ThemePair } from '../../../.storybook/theme';
 import { CompareTable } from './compare-table';
 import { computedColor, sameColor } from './measure';
@@ -81,14 +81,17 @@ export const FourUp: Story = {
         const cells = [...box.querySelectorAll<HTMLElement>('[data-slot="compare-cell"]')];
         await expect(getComputedStyle(must(cells[0])).color).toEqual(sameColor(fg));
         await expect(getComputedStyle(must(cells[2])).color).toEqual(sameColor(fg2));
-        // The two value columns share the room equally, and nothing runs out of the box.
-        const a = must(cells[2]).getBoundingClientRect().width;
-        const b = must(cells[3]).getBoundingClientRect().width;
-        await expect(Math.abs(a - b)).toBeLessThanOrEqual(1);
-        await expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
-        // The board's 30 px rows (a cell that wraps may grow past them, never short of them).
-        for (const row of box.querySelectorAll<HTMLElement>('[data-slot="compare-row"]'))
-          await expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(29.5);
+        // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+        await waitFor(() => {
+          // The two value columns share the room equally, and nothing runs out of the box.
+          const a = must(cells[2]).getBoundingClientRect().width;
+          const b = must(cells[3]).getBoundingClientRect().width;
+          expect(Math.abs(a - b)).toBeLessThanOrEqual(1);
+          expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth);
+          // The board's 30 px rows (a cell that wraps may grow past them, never short of them).
+          for (const row of box.querySelectorAll<HTMLElement>('[data-slot="compare-row"]'))
+            expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(29.5);
+        });
       }
     }
   },

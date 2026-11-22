@@ -117,11 +117,14 @@ export const Lookalike: Story = {
       // The map sits beside the where at the board's width.
       const map = must(q.querySelector<HTMLElement>('[data-slot="place-map"]'));
       const line = must(q.querySelector<HTMLElement>('[data-slot="place-body-line"]'));
-      await expect(map.getBoundingClientRect().left).toBeGreaterThan(
-        line.getBoundingClientRect().right,
-      );
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
-      await expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
+      // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+      await waitFor(() => {
+        expect(map.getBoundingClientRect().left).toBeGreaterThan(
+          line.getBoundingClientRect().right,
+        );
+        expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
+      });
     }
   },
 };

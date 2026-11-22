@@ -1,3 +1,5 @@
+import { countOf } from '../../words/inboxWords';
+
 /**
  * Board 2.4's words, and every word the board did not supply (marked *invented* for the copy pass):
  * a landmark ask with a lookalike is the board's; a bay ask, an ask with no lookalike and the
@@ -74,7 +76,7 @@ export const PLACE_WORDS = {
   ifDeclined: 'If declined',
   closes: 'Closes',
   asksClosed: (n: number, floor: boolean) =>
-    floor ? `${n}+ asks` : n === 1 ? 'The ask' : `All ${n} asks`,
+    floor ? `${countOf(n, true)} asks` : n === 1 ? 'The ask' : `All ${countOf(n)} asks`,
   toldWithNote: 'Told, with your note',
   approve: 'Approve',
   /** Each button's tooltip (the bar has no explaining line). */
@@ -92,6 +94,10 @@ export const PLACE_WORDS = {
   receiptApproved: 'Approved',
   receiptDeclined: 'Declined',
   closesAsks: (n: number, floor: boolean) =>
-    floor ? `Closes ${n}+ asks` : n === 1 ? 'Closes 1 ask' : `Closes ${n} asks`,
+    floor
+      ? `Closes ${countOf(n, true)} asks`
+      : n === 1
+        ? 'Closes 1 ask'
+        : `Closes ${countOf(n)} asks`,
   theDecision: 'The decision',
 } as const;

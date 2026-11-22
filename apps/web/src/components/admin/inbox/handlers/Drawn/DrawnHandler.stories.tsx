@@ -117,7 +117,8 @@ export const OverCaspian: Story = {
       await expect(s.getByRole('button', { name: 'Reject' })).toBeVisible();
       await expect(q.querySelector('[data-slot="body-map"]')).not.toBeNull();
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
-      await expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
+      // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+      await waitFor(() => expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth));
     }
   },
 };
