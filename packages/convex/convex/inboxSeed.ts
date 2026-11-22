@@ -1773,10 +1773,12 @@ function mergeProofSteps(): StepDef[] {
       label: 'a report on the merge-proof drawing',
       as: 'ada',
       fn: 'reports:create',
-      after: ['mp-bounty'],
+      // In the cove's own bay, so the proof carries a bay join for the merge to move and put back.
+      after: ['mp-bounty', 'mp-bay-cove'],
       args: (r) => ({
         waterBodyId: cove(r),
         idempotencyKey: seedKey('mp-report'),
+        point: offset(proofCenter(r), 0, -150),
         skateEndTime: r.now - 6 * HOUR,
         conditions: { airTempC: -9, windSpeedKph: 5 },
         surfaceTags: ['smooth'],

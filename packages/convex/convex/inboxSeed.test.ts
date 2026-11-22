@@ -749,6 +749,29 @@ describe('the seed, end to end', () => {
       };
     });
     expect(pair.cove?.reviewStatus).toBe('pending');
+    // Both the bounty and the report it waits on are filed (dev's first run carried neither), and
+    // the report sits in the cove's bay, joined to it.
+    expect(run.calls.map((c) => c.key)).toEqual(expect.arrayContaining(['mp-bounty', 'mp-report']));
+    const proofRows = await t.run(async (ctx) => {
+      const cove = pair.cove?._id as Id<'waterBodies'>;
+      const report = await ctx.db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', cove))
+        .unique();
+      const bounty = await ctx.db
+        .query('bounties')
+        .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove))
+        .unique();
+      const joins = report
+        ? await ctx.db
+            .query('reportSubAreas')
+            .withIndex('by_report', (q) => q.eq('reportId', report._id))
+            .collect()
+        : [];
+      const bays = await Promise.all(joins.map((j) => ctx.db.get(j.subAreaId)));
+      return { report: report !== null, bounty: bounty !== null, bays: bays.map((b) => b?.name) };
+    });
+    expect(proofRows).toEqual({ report: true, bounty: true, bays: ['Proof Inlet'] });
     expect([...(pair.cove?.duplicateCandidateIds ?? [])].sort()).toEqual(
       [pair.pond, pair.west].sort(),
     );
