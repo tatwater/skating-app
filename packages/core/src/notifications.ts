@@ -294,6 +294,12 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       outcome: 'approved' | 'declined' | 'merged' | 'rejected' | 'retracted';
       body: NotificationBodyRef | null;
       note?: string;
+      /**
+       * A retracted access alert's spot — the put-in's or the lot's own name, where it has one — so
+       * the sentence says which alert ("at the Route 5 lot, Lake Morey"). Absent for every other
+       * decision, and for a spot with no name of its own.
+       */
+      place?: string;
     }
   | {
       /**
@@ -522,14 +528,116 @@ export function describeNotification(
         target: { kind: 'unreported_skates' },
       };
     case 'moderator_decision':
-      // PLACEHOLDER (B01-5c T0): S3 replaces this with the design's sentences, one per outcome
-      // (D285; invented, for the copy pass). Never a word about the ice (D3).
-      return {
-        title: 'A moderator made a decision on something you sent',
-        target: view.body ? { kind: 'water', id: view.body.id } : null,
-      };
+      return describeModeratorDecision(view);
     case 'unknown':
       return { title: 'An older notification that can no longer be shown', target: null };
+  }
+}
+
+type ModeratorDecisionView = Extract<NotificationView, { type: 'moderator_decision' }>;
+
+/**
+ * What a decided ask says it was about, with its lake or the words that stand in for one — "to name a
+ * bay on Lake Morey", "to add a lake". The decline sentence's middle (D285).
+ */
+const ASKED_TO: Record<RequestKind, (lake: string | null) => string> = {
+  admit: (lake) => `to add ${lake ?? 'a lake'}`,
+  activate: (lake) => `to add ${lake ?? 'a lake'} to the map`,
+  restore: (lake) => `to restore ${lake ?? 'a lake'}`,
+  contest_access: (lake) => `about public access to ${lake ?? 'a lake'}`,
+  takedown: (lake) => `to take ${lake ?? 'a lake'} off the map`,
+  name_bay: (lake) => (lake ? `to name a bay on ${lake}` : 'to name a bay'),
+  name_landmark: (lake) => (lake ? `to name a place on ${lake}` : 'to name a place'),
+};
+
+/** What an approved ask did, as the asker hears it. */
+const APPROVED: Record<RequestKind, (lake: string | null) => string> = {
+  admit: (lake) => `Gli added ${lake ?? 'the lake you asked for'} to the map`,
+  activate: (lake) => `Gli added ${lake ?? 'the lake you asked for'} to the map`,
+  restore: (lake) => `Gli put ${lake ?? 'the lake you asked about'} back on the map`,
+  contest_access: (lake) =>
+    `Gli marked ${lake ?? 'the lake you asked about'} as having public access`,
+  takedown: (lake) => `Gli took ${lake ?? 'the lake you asked about'} off the map, as you asked`,
+  name_bay: (lake) =>
+    lake ? `Gli added the bay you named on ${lake}` : 'Gli added the bay you named',
+  name_landmark: (lake) =>
+    lake ? `Gli added the place you named on ${lake}` : 'Gli added the place you named',
+};
+
+/** Said when a view pairs an `about` with an outcome no writer gives it — a sentence, never a throw. */
+const SOME_DECISION = 'A moderator made a decision on something you sent';
+
+/**
+ * The words for a moderator's decision (D285; invented, for the copy pass). Each says what was
+ * decided — added, declined, taken down — and never a word about the ice (D3). A request's note is
+ * the moderator's words to the asker (D179), carried as the quieter line; a retraction carries no
+ * reason (the governor's ruling, 2026-11-21) and a drawing's rejection none either — both reasons are
+ * audit-facing. The tap goes to the lake, unless the decision took it off the map.
+ */
+function describeModeratorDecision(view: ModeratorDecisionView): NotificationDescription {
+  const lake = view.body?.name ?? null;
+  const water: NotificationTarget | null = view.body ? { kind: 'water', id: view.body.id } : null;
+  const note = view.note?.trim();
+  const withNote = note ? { detail: note } : {};
+  const fallback: NotificationDescription = { title: SOME_DECISION, target: water };
+  switch (view.about) {
+    case 'accessAlert': {
+      if (view.outcome !== 'retracted') return fallback;
+      const where =
+        view.place && lake
+          ? ` at ${view.place}, ${lake}`
+          : view.place
+            ? ` at ${view.place}`
+            : lake
+              ? ` on ${lake}`
+              : '';
+      return { title: `A moderator took down your access alert${where}`, target: water };
+    }
+    case 'drawn':
+      switch (view.outcome) {
+        case 'approved':
+          return {
+            title: lake
+              ? `Gli added ${lake}, the lake you drew, to the map`
+              : 'Gli added the lake you drew to the map',
+            target: water,
+          };
+        case 'rejected':
+          // Off the map: nowhere to send the tap.
+          return {
+            title: lake
+              ? `Gli didn’t add ${lake}, the lake you drew, to the map`
+              : 'Gli didn’t add the lake you drew to the map',
+            target: null,
+          };
+        case 'merged':
+          return {
+            title: lake
+              ? `Your drawing was merged into ${lake} — anything you reported there moved with it`
+              : 'Your drawing was merged into a lake already on the map',
+            target: water,
+          };
+        default:
+          return fallback;
+      }
+    default: {
+      // Looked up, not trusted: a kind this build has no words for (one a later server sends, or a
+      // row cached by a later build) reads as the plain sentence rather than throwing in the list.
+      const approved = Object.hasOwn(APPROVED, view.about) ? APPROVED[view.about] : undefined;
+      const asked = Object.hasOwn(ASKED_TO, view.about) ? ASKED_TO[view.about] : undefined;
+      if (view.outcome === 'approved' && approved) {
+        return {
+          title: approved(lake),
+          ...withNote,
+          // A takedown took the lake off the map: nowhere to send the tap.
+          target: view.about === 'takedown' ? null : water,
+        };
+      }
+      if (view.outcome === 'declined' && asked) {
+        return { title: `Your request ${asked(lake)} was declined`, ...withNote, target: water };
+      }
+      return fallback;
+    }
   }
 }
 
