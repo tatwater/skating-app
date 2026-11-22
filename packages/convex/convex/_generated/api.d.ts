@@ -104,6 +104,7 @@ import type * as lib_hazardValidators from "../lib/hazardValidators.js";
 import type * as lib_imageryPump from "../lib/imageryPump.js";
 import type * as lib_inboxFlags from "../lib/inboxFlags.js";
 import type * as lib_inboxItems from "../lib/inboxItems.js";
+import type * as lib_inboxMapBounds from "../lib/inboxMapBounds.js";
 import type * as lib_inboxRepair from "../lib/inboxRepair.js";
 import type * as lib_inboxRules from "../lib/inboxRules.js";
 import type * as lib_inboxViews from "../lib/inboxViews.js";
@@ -309,6 +310,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imageryPump": typeof lib_imageryPump;
   "lib/inboxFlags": typeof lib_inboxFlags;
   "lib/inboxItems": typeof lib_inboxItems;
+  "lib/inboxMapBounds": typeof lib_inboxMapBounds;
   "lib/inboxRepair": typeof lib_inboxRepair;
   "lib/inboxRules": typeof lib_inboxRules;
   "lib/inboxViews": typeof lib_inboxViews;
