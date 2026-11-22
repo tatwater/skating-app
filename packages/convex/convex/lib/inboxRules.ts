@@ -590,6 +590,28 @@ export async function inboxVerbRefusal(
   );
 }
 
+/**
+ * Rules 1–4 and the reach check alone (no precondition): who may decide this item by `verb` — for a
+ * write that must ask them **before** its own preconditions, as the rule orders them (a decision's
+ * first check, `lib/requestDecisions.assertMayDecide`'s `stage: 'who'`), so a staffer who filed the
+ * ask hears so, never an ask's state they couldn't act on anyway.
+ */
+export async function inboxWhoRefusal(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  item: RuleItem,
+  verb: InboxVerb,
+  facts: InboxRuleFacts = {},
+): Promise<string | null> {
+  const choice = choiceRefusal(item, verb, facts);
+  if (choice !== null) return choice;
+  const filed =
+    (await filedByViewer(ctx, item._id, viewer._id)) ||
+    (CLOSES_EVERY_LANE.has(verb) && (await filedOnTarget(ctx, item, viewer._id))) ||
+    askedAlongsideFor(verb, facts);
+  return whoRefusal(viewer, item, verb, filed, facts) ?? uncheckedRefusal(verb, facts);
+}
+
 /** The write's side: refuse `verb` on `item` in the rule's words (a `ConvexError`, for a toast). */
 export async function assertInboxVerb(
   ctx: QueryCtx,

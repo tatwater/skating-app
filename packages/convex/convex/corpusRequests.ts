@@ -78,14 +78,23 @@ import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { inboxDecisionResult } from './lib/decisionResult';
 import { refreshEraseClock } from './lib/eraseClock';
-import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
-import { capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
+import {
+  fileMember,
+  inboxBatch,
+  itemToDecide,
+  leaveMember,
+  rekey,
+  requestSource,
+} from './lib/inboxItems';
+import { assertInboxVerb, capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
 import {
+  assertMayDecide,
   bodyActionSince,
   closeSiblingPage,
+  type DecisionAnswer,
   decide,
   decisionArgs,
   drawnBay,
@@ -474,9 +483,14 @@ export const recordResolution = internalMutation({
 export const reresolve = mutation({
   args: { requestId: v.id('waterBodyRequests') },
   handler: async (ctx, { requestId }) => {
-    await requireCapability(ctx, 'inbox.request');
+    const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
-    if (request?.kind !== 'admit') throw new ConvexError('Not an admit request');
+    if (!request) throw new ConvexError('Request not found');
+    // The Inbox's rule on its item, in its order and words (B01-5d): decided, then the viewer's own
+    // ask (D289), then an admit's only. A script's ask is no item: its own checks below.
+    const item = await itemToDecide(ctx, requestSource(request._id));
+    if (item) await assertInboxVerb(ctx, actor, item, 'lookUpAgain', { requestKind: request.kind });
+    if (request.kind !== 'admit') throw new ConvexError('Not an admit request');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     await ctx.scheduler.runAfter(0, internal.corpusRequests.resolveAdmit, { requestId });
     return requestId;
@@ -779,13 +793,21 @@ export const approve = mutation({
     );
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    const now = Date.now();
+    // Who may decide it (D289: an ask of their own, here or among those the answer closes) — before
+    // the ask's own preconditions and the act, in the Inbox rule's order (B01-5d): a staffer who
+    // filed a bay ask hears that, not that the bay isn't drawn. The answer is the one the item reads.
+    await assertMayDecide(ctx, request, actor._id, 'approved', {
+      ...(await standingAnswer(ctx, request)),
+      asOf: now,
+      stage: 'who',
+    });
     // *Same place* only where something looks like it — the rule's precondition, in its words and
     // its order (after the lever and the decided check), so the lever and this write agree (B01-5c).
     if (sameAs !== undefined) {
       const why = await sameAsRefusal(ctx, request);
       if (why !== null) throw new ConvexError(why);
     }
-    const now = Date.now();
     const trimmedNote = note?.trim();
 
     let admittedWaterBodyId: Id<'waterBodies'> | undefined;
@@ -911,6 +933,25 @@ export const approve = mutation({
   },
 });
 
+/**
+ * The answer an ask's approval reaches others' asks through, as it stands now — the bay drawn by the
+ * asked name, or the landmark at the asked spot — the same one the Inbox item reads for its reach
+ * (`lib/inboxViews`), for the decision's first check.
+ */
+async function standingAnswer(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<DecisionAnswer> {
+  if (request.waterBodyId === undefined) return {};
+  if (request.kind === 'name_bay') {
+    return { subArea: await drawnBay(ctx, request.waterBodyId, requestNames(request)) };
+  }
+  if (request.kind === 'name_landmark') {
+    return { landmark: await namedLandmark(ctx, request.waterBodyId, landmarkAskOf(request)) };
+  }
+  return {};
+}
+
 /** Moderator: decline — with a note the requester reads. Declining is not deleting (D107). */
 export const decline = mutation({
   args: { requestId: v.id('waterBodyRequests'), note: v.string() },
@@ -928,6 +969,8 @@ export const decline = mutation({
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     // In the Inbox rule's words, so the item's levers and this write say one thing (D268).
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    // Who may decide it, before the note is weighed — the rule's order (B01-5d).
+    await assertMayDecide(ctx, request, actor._id, 'declined', { asOf: Date.now(), stage: 'who' });
     // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
     // that A07b exists to end. Enforced here, not only in the dialog.
     const trimmed = note.trim();

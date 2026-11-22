@@ -632,6 +632,26 @@ const requestCells: Cell[] = [
     verbs: ['approve', 'lookUpAgain', 'decline'],
     setup: (w) => ask(w, w.author.as, 'admit'),
   },
+  // *Look up again* asks the rule too (B01-5d): the viewer's own admit, and one decided.
+  {
+    kind: 'request (admit, unmatched)',
+    state: 'the viewer’s own filing',
+    verbs: ['approve', 'lookUpAgain', 'decline'],
+    setup: (w) => ask(w, w.viewer.as, 'admit'),
+  },
+  {
+    kind: 'request (admit, unmatched)',
+    state: 'already decided',
+    verbs: ['lookUpAgain'],
+    setup: async (w) => {
+      const s = await ask(w, w.author.as, 'admit');
+      await w.other.as.mutation(api.corpusRequests.decline, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      return s;
+    },
+  },
   {
     kind: 'place (bay, not drawn)',
     state: 'open',
@@ -795,7 +815,7 @@ const sameAsCells: Cell[] = [
   {
     kind: 'place (landmark, a lookalike)',
     state: 'the viewer’s own filing',
-    verbs: ['sameAs'],
+    verbs: ['approve', 'sameAs', 'decline'],
     setup: (w) => landmarkAsk(w, w.viewer.id, 'lookalike'),
   },
   {
@@ -1165,13 +1185,7 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
  * report, with its file and line. Listed so the table passes until each lands, and failing once one
  * agrees and is still here, so the list only shrinks.
  */
-const AWAITING_THE_WRITE: Record<string, string> = {
-  // Found by B01-5d's canCode cells: `corpusRequests.approve` refuses a bay not drawn yet
-  // (`corpusRequests.ts:842`) before it asks the Inbox's rule (`assertMayDecide`, reached through
-  // `closeRequest`), so the viewer's own ask is told to draw the bay — the rule says another staffer
-  // decides it. The fix: ask `assertMayDecide` before the kind's own preconditions. A seam request.
-  'place (bay, not drawn) · the viewer’s own filing · approve': 'corpusRequests.ts:842',
-};
+const AWAITING_THE_WRITE: Record<string, string> = {};
 
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {
@@ -1179,7 +1193,9 @@ describe('the rule and the write', () => {
     // B01-5d added *Merge into*'s nine — the overlap, the drawer, decided, a first candidate merged
     // away, a candidate gone, the lists' cap, the drawing over new water — and a bay ask awaiting
     // its drawing that is decided, or the viewer's own (its code must not ride an earlier refusal).
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(174);
+    // The order pass added *Look up again*'s own and decided cells, the viewer's own admit's approve
+    // and decline, and the viewer's own landmark ask's approve and decline.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(180);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {
@@ -1193,6 +1209,19 @@ describe('the rule and the write', () => {
       cells.some((cell) => c.startsWith(`${cell.kind} · ${cell.state}`)),
     );
     expect(mine.filter((c) => !disagreements.some((d) => cellOf(d) === c))).toEqual([]);
+  });
+});
+
+describe('a decision asks who decides before it weighs its inputs (B01-5d)', () => {
+  test('the viewer’s own ask declined with no note hears that it is theirs, not to say why', async () => {
+    const w = await world();
+    const s = await ask(w, w.viewer.as, 'activate');
+    await expect(
+      w.viewer.as.mutation(api.corpusRequests.decline, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        note: '  ',
+      }),
+    ).rejects.toThrow('You filed this, so another staff member decides it.');
   });
 });
 

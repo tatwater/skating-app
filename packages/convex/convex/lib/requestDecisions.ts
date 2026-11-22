@@ -48,6 +48,7 @@ import {
   ALONGSIDE_UNCHECKED,
   type AlongsideAnswer,
   assertInboxVerb,
+  inboxWhoRefusal,
   OWN_FILING_REFUSAL,
   SAME_AS_REFUSAL,
 } from './inboxRules';
@@ -603,7 +604,14 @@ export async function assertMayDecide(
   request: Doc<'waterBodyRequests'>,
   actorId: Id<'profiles'>,
   status: 'approved' | 'declined',
-  answer: DecisionAnswer & { asOf?: number } = {},
+  answer: DecisionAnswer & {
+    asOf?: number;
+    /**
+     * `who`: rules 1–4 and the reach alone — the decision's first check, before the ask's own
+     * preconditions and its act, as the Inbox rule orders them (B01-5d). Absent: the whole rule.
+     */
+    stage?: 'who';
+  } = {},
 ): Promise<void> {
   const viewer = await ctx.db.get(actorId);
   if (!viewer) throw new ConvexError('Your profile was not found');
@@ -624,7 +632,13 @@ export async function assertMayDecide(
   }
   const item = await itemToDecide(ctx, requestSource(request._id));
   const verb = status === 'approved' ? 'approve' : 'decline';
-  if (item) {
+  if (item && answer.stage === 'who') {
+    const refused = await inboxWhoRefusal(ctx, viewer, item, verb, {
+      requestKind: request.kind,
+      askedAlongside: { [verb]: alongside },
+    });
+    if (refused !== null) throw new ConvexError(refused);
+  } else if (item) {
     await assertInboxVerb(ctx, viewer, item, verb, {
       requestKind: request.kind,
       hasCandidate: request.candidate !== undefined,
