@@ -77,8 +77,8 @@ The clear leaves three anonymous counters as they are (`textLengthEvents`, `exte
 
 ## What it costs in metered calls
 
-- **A full apply:** 3 calls to USGS 3DHP (`hydro.nationalmap.gov`, the catalog lookup each of the three
-  `admit` asks schedules) — no quota of ours, a public service. **No Open-Meteo call:** every seeded
+- **A full apply:** USGS 3DHP calls unmeasured (`hydro.nationalmap.gov`: each of the three `admit` asks
+  schedules a catalog lookup) — no quota of ours, a public service. **No Open-Meteo call:** every seeded
   report carries the skater's own conditions, so none schedules the weather auto-fill, and the
   contradiction settle reads stored weather only. While the seed is loaded, its one approved body that
   stays (*Town Beach Pond*) is an active body, so dev's weather crons may fetch its cell like any

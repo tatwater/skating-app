@@ -7019,7 +7019,9 @@ internal read (`inboxSeed.state`: what each fake person already authored), and s
 tickets, messages, reports, Posts, comments, hazards, alerts, photos and their blobs, drawn bodies and
 their activities, inbox items and members, verdicts, the audit rows targeting any of them, notification
 rows — then the profiles and their People rows; the counts move with the rows through their writers.
-After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspended and banned rows.
+After the seed, on dev: `peopleJobs:preparation '{}'` reading `ready: true` is the check (corrected after
+the first dev run, 2026-11-21). The People procedure re-runs `peopleJobs:backfillRows` only in the
+situation its step 6 names — steps 2–5 having run before B01-4b or B01-4f deployed — not after every seed.
 
 #### The build plan
 
@@ -7114,8 +7116,9 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 1. `convex dev --once` from main by the named executor (codegen committed first).
 2. PR 1: `corpusRequests:backfillOrigin` dry, paged (repeat with `{"cursor": <continueCursor>}` until
    `isDone`), its candidates confirmed, then applied the same way (before the
-   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then `seed-inbox --apply` with `CONVEX_RUN_AS`; then
-   `peopleJobs:backfillRows` (Pe26); confirm the Overview's Inbox card equals the lanes.
+   items backfill, so seeded asks never file items); `inboxItems:backfill` to done (told by its `inboxJobRuns` row, not the logs: "PR 1's after-merge steps on dev" below); then, on Node 26, `seed-inbox --apply` with `CONVEX_RUN_AS`; then
+   `peopleJobs:preparation '{}'` reading `ready: true`; confirm the Overview's Inbox card equals the
+   lanes (`inbox:lanes` from the CLI takes the console's local midnight: `convex run inbox:lanes '{"now":<ms>,"dayStart":<ms>}' --identity '{"subject":"<your Clerk user id>"}'`, with `dayStart` within the 36 hours before `now`).
 3. PR 3: the `notificationPrefs` canonicalize backfill, then the narrowing commit's deploy; an EAS
    `preview` build installed on the Pixel.
 4. PR 4: a merge and its unmerge on two seeded bodies, compared row by row.
@@ -7240,7 +7243,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   to `inboxItemMembers.by_item_filer`, which the deploy rebuilds); `corpusRequests:backfillOrigin
   '{}'`, paged by its `continueCursor` until `isDone` (bounded on bytes, walking by creation time), its
   candidates read (a call that stopped at its bound leaves finding the end to the next, so the last
-  call may read nothing and only say `isDone`), then `'{"apply":true}'` the same way;
+  call may read nothing and only say `isDone`; on an empty `waterBodyRequests` the first call answers
+  done), then `'{"apply":true}'` the same way;
   `inboxItems:backfill '{}'`, which chains
   itself (its later passes' answers never reach the logs): its scan's end is told by its
   `inboxJobRuns` row (`job: "backfill"`) reading `done: true` — from then a direct run answers
@@ -7249,7 +7253,7 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   Overview's Inbox card says "Still being prepared". A failing source is retried by the drift repair, a
   parked one by the daily retry; Machinery's "repair inbox items drift" shows both counts. One that
   should never be filed: `recurringJobs:forgetBefore '{"job":"inboxBackfill","before":<ms>}'`. Then
-  the card checked equal to `inbox.lanes`.
+  the card checked equal to `inbox.lanes` (`inbox:lanes` from the CLI takes the console's local midnight: `convex run inbox:lanes '{"now":<ms>,"dayStart":<ms>}' --identity '{"subject":"<your Clerk user id>"}'`, with `dayStart` within the 36 hours before `now`).
 - ~~**Owed before PR 1 opens:** `lib/inboxViews.ts` at about 59% line coverage~~ — closed: on the
   PR 1 branch it is at 98.9% of lines (95.6% of statements).
 - **Where the server met the web** (the integration, 2026-11-21): the frame's words map labels the five
@@ -7453,14 +7457,16 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     Inbox's own writes.
   - **Where the design was wrong:** the hazard "never existed" auto flag never counts repeats (it has no
     occurrences to seed); a `name_landmark` ask can't be filed through `corpusRequests.create` (only a
-    report's `where` files one); a `contest_access` ask needs a body ruled closed and an `activate` ask a
-    dormant body — each picked from dev by index, and shown as unavailable in the plan if dev lacks one.
-  - **On dev, in order** (`CONVEX_RUN_AS` must be an **admin**: the takedown approval needs
-    `body.remove`; the package README says so): `pnpm --filter @skating/seed-inbox seed` (the plan,
-    dry); `CONVEX_RUN_AS=<your Clerk id> pnpm --filter @skating/seed-inbox seed --apply`, ending
-    `filed 82 · failed 0 · still ready 0` (after the seed's third review; 23 open and 10 decided); a
-    second `--apply` filing 0; `peopleJobs:backfillRows` (Pe26); and, to undo it all, `seed
-    --clear` then `seed --clear --apply`.
+    report's `where` files one). ~~A `contest_access` ask needs a body ruled closed and an `activate` ask a
+    dormant body, each picked from dev~~ — since the follow-up of 2026-11-21 the contest, activate and
+    restore asks land on bodies the seed itself draws, approves and then closes, shelves or removes.
+  - **On dev, in order, on Node 26** (the repo's `.node-version`; the seed and its dry run stop on
+    another major), with `CONVEX_RUN_AS` an **admin** (the takedown approval needs `body.remove`; the
+    package README says so): `pnpm --filter @skating/seed-inbox seed` (the plan, dry);
+    `CONVEX_RUN_AS=<your Clerk id> pnpm --filter @skating/seed-inbox seed --apply`, ending
+    `filed 90 · failed 0 · still ready 0` (since the follow-up of 2026-11-21: 23 open and 12 decided,
+    none unavailable on any dev); a second `--apply` filing 0; `peopleJobs:preparation '{}'` reading
+    `ready: true`; and, to undo it all, `seed --clear` then `seed --clear --apply`.
   - **Owed:** an `importRuns` kind `seed_inbox`; until then each writing run's log is a JSON file under
     `scripts/seed-inbox/runs/` (gitignored). **Not verified, for the first dev run:** `--identity` with
     a seed subject, whether dev's bodies match the plan, and the admit resolver's network call.
@@ -7632,7 +7638,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   | Imagery plans, season rollups | a run while the seed is loaded counts its active body or its reports | **not verified** |
   | Badges | a badge a real person earns from a vote on seeded content isn't taken back | known leftover |
 
-  **External calls:** a full apply makes 3 USGS 3DHP calls (the admit resolver) and no Open-Meteo call;
+  **External calls:** a full apply's USGS 3DHP calls (the admit resolver) are unmeasured — three
+  `admit` asks each schedule a catalog lookup — and it makes no Open-Meteo call (0 on dev, 2026-11-21);
   a second apply, a dry run and the clear make none. The run log stores the server's own sentence for a
   failed step, and the counts add the steps still ready.
 - **`ItemMap({ item })`, the one map every handler drops into its slot** (W3, third piece;
@@ -8308,8 +8315,10 @@ function writes no audit row and no marker, so the rows it wrote are told apart 
 — a `name_bay` ask carrying `aliases` (`corpusRequests.create` never writes them) — or a `name_bay`
 ask whose requester is staff and whose `coord` is a real place rather than the lake's own point
 (`isLakePoint` false: a skater's drawer ask carries the lake's point). The dry run lists every
-candidate with its requester and date for the operator to confirm before `apply`; D201 says sixteen
-were filed, and whether dev holds them, and whether any skater's ask could match the second test, is
+candidate with its requester and date for the operator to confirm before `apply`; D201's text says the
+corpus's sixteen destination bays were filed this way (`plans/01-decisions.md`, D201: "The corpus's
+sixteen destination bays were filed the same way"). On dev (2026-11-21) `waterBodyRequests` was
+empty, so none were found there; whether another deployment holds them, and whether any skater's ask could match the second test, is
 **not verified** without a dev read. No other path
 routes a staff change through an item: the approvals perform the act a skater asked for, and every
 direct lever (the Body console's tabs, merge from the Shape tab, the ruling, People's levers) writes
