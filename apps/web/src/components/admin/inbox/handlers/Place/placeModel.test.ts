@@ -3,16 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   BAY_DRAWN,
   BAY_UNDRAWN,
+  FIRST_LANDMARK_ASK,
   LANDMARK_ALONE,
   LANDMARK_ANSWERED,
   LANDMARK_PROPOSAL,
+  MANY_LANDMARK_ASKS,
   NARROWS,
   PLACE_BY_VIEWER,
   PLACE_DECIDED,
   PLACE_FIXTURES,
   PLACE_NOW,
+  UNCOUNTED_ASKER,
 } from './placeFixtures';
 import {
+  askerStanding,
   bodyLine,
   compareRows,
   fromReport,
@@ -22,6 +26,7 @@ import {
   ifApproved,
   ifDeclined,
   ifSamePlace,
+  landmarkHistory,
   landmarkLookalike,
   lookalikeHead,
   matchChips,
@@ -165,5 +170,36 @@ describe('the futures', () => {
     expect(ifDeclined(BAY_UNDRAWN)[0]?.value).toBe('All 3 asks');
     expect(ifDeclined(LANDMARK_ALONE)[0]?.value).toBe('The ask');
     expect(ifDeclined({ memberCount: 500, memberCountIsFloor: true })[0]?.value).toBe('500+ asks');
+  });
+});
+
+describe('the asker’s landmark history', () => {
+  const ask = (item: PlaceItem) => item.asks[0] as PlaceItem['asks'][number];
+
+  it('counts asks added of asks made, beside the standing', () => {
+    expect(landmarkHistory(ask(NARROWS).landmarkAsks)).toBe('2 of 3 landmark asks added');
+    expect(askerStanding(ask(NARROWS), 'Trusted · 63 pts')).toBe(
+      'Trusted · 63 pts · 2 of 3 landmark asks added',
+    );
+  });
+
+  it('says a first ask as such, and a cut count as floors', () => {
+    expect(landmarkHistory(ask(FIRST_LANDMARK_ASK).landmarkAsks)).toBe('first landmark ask');
+    expect(landmarkHistory(ask(MANY_LANDMARK_ASKS).landmarkAsks)).toBe(
+      '31+ of 50+ landmark asks added',
+    );
+    // A capped count is never a first ask, however small.
+    expect(landmarkHistory({ asked: 1, added: 0, capped: true })).toBe(
+      '0+ of 1+ landmark asks added',
+    );
+  });
+
+  it('adds nothing when the history isn’t served, or the asker is gone', () => {
+    expect(landmarkHistory(null)).toBeNull();
+    expect(askerStanding(ask(UNCOUNTED_ASKER), 'Trusted · 63 pts')).toBe('Trusted · 63 pts');
+    const gone = { ...ask(NARROWS), asker: null };
+    expect(askerStanding(gone, 'Not shown for a former skater')).toBe(
+      'Not shown for a former skater',
+    );
   });
 });

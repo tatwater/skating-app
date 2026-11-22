@@ -61,6 +61,12 @@ export const PLACE_WORDS = {
   /** The person gone. */
   formerSkater: 'A former skater',
   noTrust: 'Not shown for a former skater',
+  /**
+   * The asker's landmark asks, by the byline (the board's "3 landmarks named"): how many of their
+   * asks a landmark answered, of how many they made — floors ("50+") where the count stopped.
+   */
+  landmarksAdded: (added: string, asked: string) => `${added} of ${asked} landmark asks added`,
+  firstLandmarkAsk: 'first landmark ask',
   pts: 'pts',
   /** *If drawn*: the old editor, while the console's map tools are not built. */
   opens: 'Opens',

@@ -13,9 +13,11 @@ import {
   BAY_UNDRAWN,
   LANDMARK_ALONE,
   LANDMARK_PROPOSAL,
+  MANY_LANDMARK_ASKS,
   NARROWS,
   PLACE_BY_VIEWER,
   PLACE_NOW,
+  UNCOUNTED_ASKER,
 } from './placeFixtures';
 import { landmarkLookalike, type PlaceItem } from './placeModel';
 import { type PlaceServer, usePlaceWrites } from './usePlaceWrites';
@@ -98,7 +100,7 @@ describe('the slots', () => {
       'From the where of Luc Pelletier’s report, 14 Oct 09:40: “through the Narrows, open water north of it”',
     );
     expect(screen.getByText('43.6702 −71.7588', { selector: 'span' })).toBeInTheDocument();
-    expect(screen.getByText('Trusted · 63 pts')).toBeInTheDocument();
+    expect(screen.getByText('Trusted · 63 pts · 2 of 3 landmark asks added')).toBeInTheDocument();
     const table = screen.getByRole('table', { name: 'Same place?' });
     expect(
       within(table).getByRole('columnheader', { name: 'The Narrows · OpenStreetMap' }),
@@ -112,6 +114,17 @@ describe('the slots', () => {
     expect(screen.getByRole('region', { name: 'If drawn' })).toHaveTextContent(
       'The old editor · in a new tab',
     );
+  });
+
+  it('draws the asker’s landmark history only where it is served', () => {
+    const { unmount } = inShell(<Pane item={MANY_LANDMARK_ASKS} />);
+    expect(
+      screen.getByText('Trusted · 63 pts · 31+ of 50+ landmark asks added'),
+    ).toBeInTheDocument();
+    unmount();
+    inShell(<Pane item={UNCOUNTED_ASKER} />);
+    expect(screen.getByText('Trusted · 63 pts')).toBeInTheDocument();
+    expect(screen.queryByText(/landmark asks? /)).toBeNull();
   });
 
   it('says a landmark ask with nothing like it, and another ask nearby', () => {

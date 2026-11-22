@@ -30,6 +30,7 @@ import { trustLine } from '../Drawn/drawnModel';
 import { dayTime, milesWords } from '../Flag/flagFormat';
 import {
   askedName,
+  askerStanding,
   bodyLine,
   compareRows,
   fromReport,
@@ -193,7 +194,7 @@ export function PlaceBody({
                   ? []
                   : [
                       { label: W.user, value: <Asker ask={ask} /> },
-                      { label: W.trust, value: trustLine(ask.asker) },
+                      { label: W.trust, value: askerStanding(ask, trustLine(ask.asker)) },
                     ]),
               ]}
             />

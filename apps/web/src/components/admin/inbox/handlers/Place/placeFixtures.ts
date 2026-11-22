@@ -189,6 +189,24 @@ export const PLACE_DECIDED = {
   },
 } as unknown as PlaceItem;
 
+/** The board's ask from an asker on their first landmark ask. */
+export const FIRST_LANDMARK_ASK = {
+  ...NARROWS,
+  asks: [{ ...LUC_ASK, landmarkAsks: { asked: 1, added: 0, capped: false } }],
+} as unknown as PlaceItem;
+
+/** An asker whose filings the server stopped counting: both counts are floors. */
+export const MANY_LANDMARK_ASKS = {
+  ...NARROWS,
+  asks: [{ ...LUC_ASK, landmarkAsks: { asked: 50, added: 31, capped: true } }],
+} as unknown as PlaceItem;
+
+/** The asker's history not served (past the item's cap, or the Inbox backfill pending). */
+export const UNCOUNTED_ASKER = {
+  ...NARROWS,
+  asks: [{ ...LUC_ASK, landmarkAsks: null }],
+} as unknown as PlaceItem;
+
 /** Every place fixture, by name — the table test walks them all. */
 export const PLACE_FIXTURES = {
   NARROWS,

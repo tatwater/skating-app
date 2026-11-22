@@ -227,3 +227,22 @@ export function ifDeclined(item: Pick<PlaceItem, 'memberCount' | 'memberCountIsF
     { label: W.asker, value: W.toldWithNote },
   ];
 }
+
+/**
+ * An asker's landmark history, for the *Trust* row: "2 of 3 landmark asks added", "first landmark
+ * ask" when this is their only one, both counts floors ("2+ of 50+") when the server stopped
+ * counting. `null` (not served, or not a landmark ask) adds nothing.
+ */
+export function landmarkHistory(l: PlaceAsk['landmarkAsks']): string | null {
+  if (l === null) return null;
+  if (!l.capped && l.asked <= 1) return W.firstLandmarkAsk;
+  const n = (v: number) => `${v.toLocaleString('en-US')}${l.capped ? '+' : ''}`;
+  return W.landmarksAdded(n(l.added), n(l.asked));
+}
+
+/** The asker's *Trust* row: their standing, then their landmark history where it is served. */
+export function askerStanding(ask: PlaceAsk, trust: string): string {
+  const p = ask.asker;
+  const history = p === null || p.deleted ? null : landmarkHistory(ask.landmarkAsks);
+  return history === null ? trust : `${trust} · ${history}`;
+}

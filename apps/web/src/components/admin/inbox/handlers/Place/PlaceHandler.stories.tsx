@@ -13,11 +13,14 @@ import { placeSlots } from './PlaceHandlerView';
 import {
   BAY_DRAWN,
   BAY_UNDRAWN,
+  FIRST_LANDMARK_ASK,
   LANDMARK_ALONE,
+  MANY_LANDMARK_ASKS,
   NARROWS,
   PLACE_BY_VIEWER,
   PLACE_DECIDED,
   PLACE_NOW,
+  UNCOUNTED_ASKER,
 } from './placeFixtures';
 import type { PlaceItem } from './placeModel';
 
@@ -111,6 +114,7 @@ export const Lookalike: Story = {
       const s = within(q);
       await expect(s.getByRole('table', { name: 'Same place?' })).toBeVisible();
       await expect(s.getByRole('button', { name: 'Same place' })).toBeVisible();
+      await expect(s.getByText('Trusted · 63 pts · 2 of 3 landmark asks added')).toBeVisible();
       await expect(s.getByRole('button', { name: 'Draw in Body →' })).toBeVisible();
       await expect(s.getByRole('button', { name: 'Decline' })).toBeVisible();
       await expect(q.querySelector('[data-slot="body-map"]')).not.toBeNull();
@@ -125,6 +129,27 @@ export const Lookalike: Story = {
         );
         expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
       });
+    }
+  },
+};
+
+/** The asker's landmark history in its three other shapes: a first ask, floors, and not served. */
+export const AskerHistory: Story = {
+  render: () =>
+    pair(() => (
+      <div className="flex flex-col gap-(--space-6)">
+        {[FIRST_LANDMARK_ASK, MANY_LANDMARK_ASKS, UNCOUNTED_ASKER].map((item, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: three fixed fixtures
+          <Inspector key={i} item={item} height={420} />
+        ))}
+      </div>
+    )),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const s = within(q);
+      await expect(s.getByText('Trusted · 63 pts · first landmark ask')).toBeVisible();
+      await expect(s.getByText('Trusted · 63 pts · 31+ of 50+ landmark asks added')).toBeVisible();
+      await expect(s.getByText('Trusted · 63 pts')).toBeVisible();
     }
   },
 };
