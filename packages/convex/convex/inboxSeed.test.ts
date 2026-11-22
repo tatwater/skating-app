@@ -5,6 +5,7 @@
  * `inbox.lanes`, a second run filing nothing, and the clear leaving every table as it found it.
  */
 
+import { NOTIFICATION_PREF_KEYS } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
@@ -12,8 +13,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
-import { INBOX_LEAVE_COST } from './inboxSeed';
-import { DEV_DEPLOYMENT, SEED_DEV_ONLY } from './lib/seedPeople';
+import { INBOX_LEAVE_COST, PREFS_OFF, prefsDrifted } from './inboxSeed';
+import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1228,6 +1229,9 @@ describe('the seed refuses any deployment that is not dev', () => {
   });
 });
 
+/** A fake person's place in the cast, by display name — the order `ensurePeople` walks them in. */
+const SEED_ORDER = (name: string) => SEED_CAST.findIndex((p) => p.displayName === name);
+
 describe('ensurePeople', () => {
   test('a dry run says who it would create and writes nothing; applied twice, the second creates no one', async () => {
     const t = harness();
@@ -1249,6 +1253,54 @@ describe('ensurePeople', () => {
     }
     expect(await t.run((ctx) => ctx.db.query('peopleRows').collect())).toHaveLength(8);
     expect(await t.run((ctx) => ctx.db.query('pushTokens').collect())).toEqual([]);
+  });
+
+  test('every toggle core knows is off for a fake person — a key core adds is off by construction', async () => {
+    const t = harness();
+    await t.mutation(internal.inboxSeed.ensurePeople, { apply: true });
+    const people = await t.run((ctx) => ctx.db.query('profiles').collect());
+    expect(people).toHaveLength(8);
+    for (const p of people) {
+      // Exactly core's keys, each off: a key core lists that the seed doesn't write fails here.
+      expect(p.notificationPrefs).toEqual(
+        Object.fromEntries(NOTIFICATION_PREF_KEYS.map((k) => [k, false])),
+      );
+    }
+  });
+
+  test('a re-apply puts a drifted fake person back to all off; dry, it says so and writes nothing', async () => {
+    const t = harness();
+    await t.mutation(internal.inboxSeed.ensurePeople, { apply: true });
+    const [first, second, third] = await t.run((ctx) => ctx.db.query('profiles').collect());
+    if (!first || !second || !third) throw new Error('no fake people');
+    await t.run(async (ctx) => {
+      // A backfill's default (dev's eight, after #172), a channel switched on, a key never written.
+      await ctx.db.patch(first._id, {
+        notificationPrefs: { ...first.notificationPrefs, moderatorDecision: true },
+      });
+      await ctx.db.patch(second._id, { channelPrefs: { push: true, email: false } });
+      const { moderatorDecision: _gone, ...older } = third.notificationPrefs;
+      await ctx.db.patch(third._id, { notificationPrefs: older as never });
+    });
+    const dry = await t.mutation(internal.inboxSeed.ensurePeople, {});
+    expect(dry.corrected).toEqual(
+      [first.displayName, second.displayName, third.displayName].sort(
+        (a, b) => SEED_ORDER(a) - SEED_ORDER(b),
+      ),
+    );
+    expect((await t.run((ctx) => ctx.db.get(first._id)))?.notificationPrefs.moderatorDecision).toBe(
+      true,
+    );
+    const applied = await t.mutation(internal.inboxSeed.ensurePeople, { apply: true });
+    expect(applied.corrected).toEqual(dry.corrected);
+    for (const p of await t.run((ctx) => ctx.db.query('profiles').collect())) {
+      expect(prefsDrifted(p)).toBe(false);
+      expect(p.notificationPrefs).toEqual(PREFS_OFF);
+      expect(p.channelPrefs).toEqual({ push: false, email: false });
+    }
+    expect((await t.mutation(internal.inboxSeed.ensurePeople, { apply: true })).corrected).toEqual(
+      [],
+    );
   });
 
   test('asked about the operator, it answers their role and status — or null — and writes nothing', async () => {

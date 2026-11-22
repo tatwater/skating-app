@@ -1973,10 +1973,33 @@ async function seedBodies(
 
 // ── The people ───────────────────────────────────────────────────────────────────────────────────
 
-const PREFS_OFF = Object.fromEntries(NOTIFICATION_PREF_KEYS.map((k) => [k, false])) as Record<
-  (typeof NOTIFICATION_PREF_KEYS)[number],
-  boolean
->;
+/**
+ * Every notification toggle off (D287), built from core's list of keys — so a key core adds is off for
+ * the fake people without anyone remembering it here.
+ */
+export const PREFS_OFF = Object.fromEntries(
+  NOTIFICATION_PREF_KEYS.map((k) => [k, false]),
+) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>;
+
+/** Both channels off (D287): never pushed, never mailed. */
+const CHANNELS_OFF = { push: false, email: false };
+
+/**
+ * Whether a fake person's toggles and channels are anything but all off — a profile written before a
+ * key existed, or one a backfill filled with the key's default (dev's eight got `moderatorDecision:
+ * true` from #172's): a re-apply puts it back to all off.
+ */
+export function prefsDrifted(
+  p: Pick<Doc<'profiles'>, 'notificationPrefs' | 'channelPrefs'>,
+): boolean {
+  const prefs = p.notificationPrefs as Record<string, boolean | undefined>;
+  const keys = new Set([...Object.keys(prefs), ...NOTIFICATION_PREF_KEYS]);
+  return (
+    [...keys].some((k) => prefs[k] !== false) ||
+    p.channelPrefs?.push !== false ||
+    p.channelPrefs?.email !== false
+  );
+}
 
 async function seedProfiles(ctx: QueryCtx) {
   const out: Partial<Record<SeedPersonKey, Doc<'profiles'>>> = {};
@@ -2015,6 +2038,7 @@ export const ensurePeople = internalMutation({
             .first();
     const existing = await seedProfiles(ctx);
     const created: string[] = [];
+    const corrected: string[] = [];
     const now = Date.now();
     for (const [i, p] of SEED_CAST.entries()) {
       if (!hasTestSurname(p.displayName)) {
@@ -2022,7 +2046,20 @@ export const ensurePeople = internalMutation({
           `${p.displayName}: every fake person's last name starts with "Test-"`,
         );
       }
-      if (existing[p.key]) continue;
+      const found = existing[p.key];
+      if (found) {
+        // Already here: its toggles held to all off, a key added since included (D287).
+        if (prefsDrifted(found)) {
+          corrected.push(p.displayName);
+          if (apply === true) {
+            await ctx.db.patch(found._id, {
+              notificationPrefs: PREFS_OFF,
+              channelPrefs: CHANNELS_OFF,
+            });
+          }
+        }
+        continue;
+      }
       created.push(p.displayName);
       if (apply !== true) continue;
       const id = await ctx.db.insert('profiles', {
@@ -2033,7 +2070,7 @@ export const ensurePeople = internalMutation({
         profileVisibility: 'public',
         // Never contacted (D287): every toggle and both channels off, no email, no push token.
         notificationPrefs: PREFS_OFF,
-        channelPrefs: { push: false, email: false },
+        channelPrefs: CHANNELS_OFF,
         dateOfBirth: Date.UTC(1980 + i, i % 12, 1 + i),
         riskAckVersion: RISK_ACK_VERSION,
         riskAckAt: now,
@@ -2048,6 +2085,8 @@ export const ensurePeople = internalMutation({
     }
     return {
       created,
+      /** Existing fake people whose toggles weren't all off: set so (or, dry, would be). */
+      corrected,
       existing: SEED_CAST.filter((p) => existing[p.key]).map((p) => p.displayName),
       applied: apply === true,
       ...(operator === undefined
