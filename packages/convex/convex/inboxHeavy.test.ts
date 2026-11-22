@@ -192,9 +192,9 @@ async function heavyWorld() {
 /**
  * The heavy approval tests' timeout: their point is the real size, so they keep it, with 5x headroom
  * over their time when every package's suite runs at once (CI's `pnpm test`, measured ~6x their time
- * alone): about 8 s alone, 48 s contended.
+ * alone): about 8 s alone, 48 s contended — 53 s under the range-counting harness.
  */
-const HEAVY_TIMEOUT = 240_000;
+const HEAVY_TIMEOUT = 300_000;
 
 /** Every continuation a decision or undo scheduled, run to its end — each its own execution. */
 async function drainAll(t: T) {
