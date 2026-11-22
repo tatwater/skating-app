@@ -10839,6 +10839,45 @@ timed out in 10000ms". CI's runner took 952 s for the convex suite, where this m
   (`--concurrency=2`, vitest `--maxWorkers=2`). 18/18 tasks and 17,846 tests passed. The convex
   suite took 203 s, and its slowest test 9 s (the heavy undo; limit 300 s).
 
+#### #173 merged (2026-11-22)
+
+- **The merge.** #173 is squash-merged to main as `56a93ecd`. Its tree equals the PR's last head,
+  `71343e97f`, and the local `phase-b01-inbox-4` is deleted.
+- **The dev rollout and the dev proof are running** (the deploy executor). The steps are the
+  roadmap's B01-5d line, in order:
+  1. `convex dev --once`;
+  2. the drift repair;
+  3. the seed cleared and re-applied;
+  4. the merge, census, unmerge, census proof.
+
+  The numbers follow when it reports.
+- **The phase branch moved onto main.** It carried #173's round-one fixes as commits of its own, up
+  to `71343e97f`, so the three commits after it were rebased from there onto `origin/main`:
+  - the two brief packs;
+  - the rulings;
+  - T0.
+
+  `git diff origin/main phase-b01-inbox` shows only those files. Round one's markers are on main:
+  - the overlapping-unmerge refusal in `unmergeRefusalOf`;
+  - `flaggedOnSurvivor` in the merge preview;
+  - `test.setup.ts`'s `afterEach` drain racing the test's own timeout.
+
+  The four builders' branches stay cut from the old T0 (`df3732958`) and are carried over by content
+  at integration.
+- **CI's time.** #173's last run took 25.8 min; #172's took 38.4 and #171's 27.2. Install, codegen,
+  lint and type-check together are about 1.5 min. The rest:
+
+  | Run | `pnpm test` (turbo) | of it: web (unit + stories) | convex | core | Web unit re-run ×3 (time zones) |
+  | --- | --- | --- | --- | --- | --- |
+  | #173 last (`45075028025`) | 11.2 min | 639 s | 531 s | 71 s | 13.0 min (3 × 255 s) |
+  | #172 last (`45010753400`) | 16.3 min | 936 s | 715 s | 106 s | 20.1 min (3 × 398 s) |
+  | #171 last (`44988590052`) | 11.4 min | 645 s | 466 s | 72 s | 14.0 min (3 × 277 s) |
+
+  The time-zone step's comment says it "costs under a minute". It now costs more than the whole
+  test step: it runs all 444 unit files three times, and jsdom's environment setup is 27% of each
+  run. Every push to main pays the full run again on a tree its PR already tested (25–32 min each).
+  The ways to bring it down go to the founder.
+
 #### Briefs (B01-5e) — photos (2026-11-22)
 
 The design's PR 5 (*Photos: the moderation axis*, D222), read against the code on `phase-b01-inbox`
