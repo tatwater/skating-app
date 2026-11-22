@@ -7812,12 +7812,23 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   before. A member count the server capped draws as "500+". People's *Handle* on a flag opens its
   Inbox item (Pe6, closed for flags; an appeal keeps the Support page).
 
-  **What a part-finished decision looks like.** While a large decision's later pages run, the item
-  stays open with a falling count until its last member closes. The lock stays live with no banner,
-  and Inbox zero waits for the last item.
+  **What a part-finished decision looks like** (read in `refreshItem` and the lock's model). The server
+  decides an item only once no member of it is open: while a large decision's later pages run, the
+  item stays `open`, and its `memberCount` (open members only) falls page by page. Its read carries
+  `decided: null` meanwhile, so the lock stays `live` for everyone watching it — no banner, and the
+  verbs stand on what is still open — and becomes `locked` (or `quiet` for the person who decided)
+  only when the last page closes the last member. The item counts in its lane until then, so Inbox
+  zero waits for it too.
 
   **For the copy pass,** the new words: the five lines above, and the link labels "Body editor" and
   "Water bodies".
+- **The re-check of the web fix rounds** (2026-11-21): 19 of the 22 claimed fixes closed, two only
+  in part, and one — the wording — not; no code defect blocking. Its first fixes (W1, fifth pass):
+  - **Inbox zero's chart starts on a whole hour of the reader's clock.** It had floored to a UTC hour,
+    so in a half-hour zone it started at :30 and a test failed under `TZ=America/St_Johns`. A property
+    over eight zones across DST changes now holds it.
+  - **The two filter-search stories wait for the popover's own animation and for focus** before
+    typing; one had failed 2 of 40 repeats under load, and fails 0 of 160 now.
 - **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
   handler draws no map. **Owed to the kit:** an `ActionBar` narrow layout (three buttons run to
   471 px at 360), a controlled `open` on `ReasonAsk`, and the promotion of `ReticleMark`,
