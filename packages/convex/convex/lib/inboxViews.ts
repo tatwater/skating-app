@@ -686,6 +686,40 @@ async function flagTargetView(
   }
 }
 
+/**
+ * **Members read one at a time, each whole or not at all** (B01-5c). A member's reads go through the
+ * reader's budget, which starts a read only while that row's worst case fits and otherwise reads
+ * nothing (`ReadBudget.measured` — `null`, as for a row that's gone). Started together, each read
+ * reserves its worst case at once, so past about a budget's worth of documents the rest read nothing
+ * and their members vanished without a word; and a member whose row fit but whose person didn't came
+ * back half-read. So each member is started only while its whole worst case (`worst`: every row it
+ * reads, at its bound) fits, one after another; when the next doesn't, the list ends there and says
+ * `cut`. A member whose row is really gone is still left out, as before.
+ */
+async function readEach<T>(
+  r: InboxReader,
+  members: readonly Doc<'inboxItemMembers'>[],
+  worst: number,
+  member: (m: Doc<'inboxItemMembers'>) => Promise<T | null>,
+): Promise<{ rows: T[]; cut: boolean }> {
+  const rows: T[] = [];
+  for (const m of members) {
+    if (!r.budget.affords(worst) || !r.budget.affordsCalls(MEMBER_READS, MEMBER_READS)) {
+      return { rows, cut: true };
+    }
+    const row = await member(m);
+    if (row !== null) rows.push(row);
+  }
+  return { rows, cut: false };
+}
+
+/** The most rows one member reads: its source, a related row (a report, a prior flag), a person. */
+const MEMBER_READS = 3;
+/** A flag member at its worst: the flag and the one it supersedes (capped notes), and its filer. */
+const FLAG_MEMBER_WORST = 2 * ROW_MAX.contentFlag + ROW_MAX.profile;
+/** An ask member at its worst: the ask (an admit's catalog polygon), its report, and its asker. */
+const ASK_MEMBER_WORST = ROW_MAX.waterBodyRequest + ROW_MAX.report + ROW_MAX.profile;
+
 async function flagMember(
   r: InboxReader,
   m: Doc<'inboxItemMembers'>,
@@ -973,13 +1007,10 @@ export async function rowLabel(
   };
   switch (item.kind) {
     case 'flag': {
-      const flags = (
-        await Promise.all(
-          members.map((m) =>
-            r.get<'contentFlags'>('contentFlag', m.sourceId as Id<'contentFlags'>),
-          ),
-        )
-      ).filter((f): f is Doc<'contentFlags'> => f !== null);
+      // One at a time, each whole (`readEach`): a row's first flag is never one a budget skipped.
+      const { rows: flags } = await readEach(r, members, ROW_MAX.contentFlag, (m) =>
+        r.get<'contentFlags'>('contentFlag', m.sourceId as Id<'contentFlags'>),
+      );
       const oldest = flags[0];
       const label = oldest ? await targetLabel(r, oldest.targetType, oldest.targetId) : null;
       const target = {
@@ -1030,13 +1061,9 @@ export async function rowLabel(
     }
     case 'request':
     case 'place': {
-      const asks = (
-        await Promise.all(
-          members.map((m) =>
-            r.get<'waterBodyRequests'>('waterBodyRequest', m.sourceId as Id<'waterBodyRequests'>),
-          ),
-        )
-      ).filter((a): a is Doc<'waterBodyRequests'> => a !== null);
+      const { rows: asks } = await readEach(r, members, ROW_MAX.waterBodyRequest, (m) =>
+        r.get<'waterBodyRequests'>('waterBodyRequest', m.sourceId as Id<'waterBodyRequests'>),
+      );
       const a = asks[0];
       const firstAsker = personRef(await r.get<'profiles'>('profile', a?.requesterId));
       if (item.kind === 'request') {
@@ -1123,8 +1150,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
   switch (item.kind) {
     case 'flag': {
       const members = await oldestMembers();
-      const flags = (await Promise.all(members.map((m) => flagMember(r, m)))).filter(
-        (f): f is FlagMemberView => f !== null,
+      const { rows: flags } = await readEach(r, members, FLAG_MEMBER_WORST, (m) =>
+        flagMember(r, m),
       );
       const firstFlag = members[0]
         ? await r.get<'contentFlags'>('contentFlag', members[0].sourceId as Id<'contentFlags'>)
@@ -1145,9 +1172,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         ...(await r.members(item._id, 'open', VIEW_MEMBERS, 'newest')),
         ...(await r.members(item._id, 'closed', VIEW_MEMBERS, 'newest')),
       ];
-      const reports = (await Promise.all(recent.map((m) => flagMember(r, m))))
-        .filter((f): f is FlagMemberView => f !== null)
-        .sort((a, b) => b.filedAt - a.filedAt);
+      const read = await readEach(r, recent, FLAG_MEMBER_WORST, (m) => flagMember(r, m));
+      const reports = read.rows.sort((a, b) => b.filedAt - a.filedAt);
       const p = water.publicAccess;
       const ruling = await rulingOf(r, water);
       const contest = await r.take('waterBodyRequest', COUNT_CAP + 1, (k) =>
@@ -1192,7 +1218,15 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         }
       }
       return {
-        view: { ...base, kind: 'access', body, reports, ruling, dismissedByRuling, contestAsks },
+        view: {
+          ...base,
+          kind: 'access',
+          body,
+          reports,
+          ruling,
+          dismissedByRuling,
+          contestAsks,
+        },
         facts: { hasRuling: p !== undefined },
       };
     }
@@ -1204,13 +1238,10 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         ...(await r.members(item._id, 'open', VIEW_MEMBERS, 'newest')),
         ...(await r.members(item._id, 'closed', VIEW_MEMBERS, 'newest')),
       ];
-      // One at a time, each charged as it really weighs: read together, each would reserve a whole
-      // document first and all but the first few would read nothing, dropped without a word.
-      const read: { view: AskMemberView; doc: Doc<'waterBodyRequests'> }[] = [];
-      for (const m of recent) {
-        const a = await askMember(r, m);
-        if (a) read.push(a);
-      }
+      // One at a time, each whole (`readEach`): past what the budget holds the list ends, and says so.
+      const { rows: read, cut: asksCut } = await readEach(r, recent, ASK_MEMBER_WORST, (m) =>
+        askMember(r, m),
+      );
       const asks = read.sort(
         (a, b) => b.doc.createdAt - a.doc.createdAt || b.doc._creationTime - a.doc._creationTime,
       );
@@ -1257,6 +1288,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
               asks.map((a) => a.view),
             ),
             primaryRequestId: first._id,
+            asksCut,
             candidate,
             resolveError: first.resolveError ?? null,
             ruling: first.kind === 'contest_access' && water ? await rulingOf(r, water) : null,
@@ -1323,6 +1355,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
               : asks.map((a) => a.view),
           ),
           primaryRequestId: first._id,
+          asksCut,
           drawnSubAreaId,
           answeringLandmarkId,
           lookalikes,

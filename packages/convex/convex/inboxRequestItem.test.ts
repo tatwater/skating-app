@@ -800,3 +800,134 @@ describe('a restore or takedown ask is an admin’s to decide, both ways (B01-5c
     await w.mod.as.mutation(api.undo.run, { actionId: out.actionId, reason: 'Checked' });
   });
 });
+
+describe('an item’s lists are read whole, member by member: never a silent drop', () => {
+  test.each([1, VIEW_MEMBERS, VIEW_MEMBERS + 10])(
+    'an item of %i asks: served to the cap by count, the true total beside it',
+    async (n) => {
+      const w = await world();
+      const ids = await w.t.run(async (ctx) => {
+        const out: Id<'waterBodyRequests'>[] = [];
+        for (let i = 0; i < n; i++) {
+          const who = await ctx.db.insert('profiles', {
+            clerkUserId: `n${i}`,
+            displayName: `n${i} Test-Person`,
+            username: `n${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public',
+            notificationPrefs: PREFS,
+            dateOfBirth: Date.UTC(1990, 0, 1),
+            reputationPoints: 0,
+            role: 'member',
+            status: 'active',
+            createdAt: NOW,
+          });
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_bay',
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0.2, lng: 0.2 },
+            waterBodyId: w.lake,
+            name: 'North Bay',
+            nameKey: requestNameKeyFor('name_bay', 'North Bay'),
+            createdAt: NOW - 100_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          out.push(id);
+        }
+        return out;
+      });
+      const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as PlaceView;
+      expect(item.asks).toHaveLength(Math.min(n, VIEW_MEMBERS));
+      expect(item.asks.every((a) => a.asker !== null)).toBe(true);
+      expect(item.memberCount).toBe(n);
+      expect(item.asksCut).toBe(false);
+    },
+  );
+
+  test('heavy asks: the list ends where the budget does, says so, and no ask is half-read', async () => {
+    const w = await world();
+    const outline = {
+      type: 'Polygon' as const,
+      coordinates: [
+        Array.from({ length: 48_001 }, (_, i) => {
+          const a = (2 * Math.PI * (i % 48_000)) / 48_000;
+          return [30.5 + 0.4 * Math.cos(a), 0.4 * Math.sin(a)];
+        }),
+      ],
+    };
+    const n = 16;
+    const ids: Id<'waterBodyRequests'>[] = [];
+    for (let i = 0; i < n; i++) {
+      const who = (await person(w.t, `heavy${i}`)).id;
+      ids.push(
+        await w.t.run(async (ctx) => {
+          const id = await ctx.db.insert('waterBodyRequests', {
+            kind: 'admit',
+            status: 'open',
+            requesterId: who,
+            coord: { lat: 0, lng: 30.5 },
+            candidate: {
+              source: '3dhp',
+              externalId: 'catalog/heavy',
+              name: 'Big Pond',
+              featureType: 390,
+              cls: 'lakePond',
+              polygon: outline as never,
+              bbox: { minLat: -0.5, minLng: 30, maxLat: 0.5, maxLng: 31 },
+              centroid: { lat: 0, lng: 30.5 },
+              surfaceAreaSqM: 5_000_000,
+              serviceUrl: 'https://example.invalid/3dhp',
+              fetchedAt: NOW,
+            },
+            candidateExternalId: 'catalog/heavy',
+            resolvedAt: NOW,
+            createdAt: NOW - 100_000 + i,
+          });
+          await fileMember(ctx, requestSource(id));
+          return id;
+        }),
+      );
+    }
+    const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as RequestView;
+    expect(item.asksCut).toBe(true);
+    expect(item.memberCount).toBe(n);
+    expect(item.asks.length).toBeGreaterThan(0);
+    expect(item.asks.length).toBeLessThan(n);
+    // A prefix by recency, each whole: its asker read with it.
+    expect(item.asks.map((a) => a.requestId)).toEqual(
+      [...ids].reverse().slice(0, item.asks.length),
+    );
+    expect(item.asks.every((a) => a.asker !== null)).toBe(true);
+  }, 120_000);
+
+  test('a flag item and an Access item past a dozen: every flag and report keeps its filer', async () => {
+    const w = await world();
+    const target = await person(w.t, 'flagged');
+    const filers: As[] = [];
+    for (let i = 0; i < 30; i++) filers.push((await person(w.t, `f${i}`)).as);
+    for (const f of filers) {
+      await f.mutation(api.contentFlags.flag, {
+        targetType: 'user',
+        targetId: target.id,
+        reason: 'harassment',
+      });
+      await f.mutation(api.contentFlags.flag, {
+        targetType: 'waterbody',
+        targetId: w.lake,
+        reason: 'no_public_access',
+      });
+    }
+    const items = await w.t.run((ctx) => ctx.db.query('inboxItems').collect());
+    const flagItem = items.find((i) => i.kind === 'flag');
+    const accessItem = items.find((i) => i.kind === 'access');
+    const flags = (await w.mod.as.query(api.inbox.item, { ref: flagItem?._id as string }))
+      .item as Extract<InboxItemView, { kind: 'flag' }>;
+    const access = (await w.mod.as.query(api.inbox.item, { ref: accessItem?._id as string }))
+      .item as Extract<InboxItemView, { kind: 'access' }>;
+    expect(flags.flags).toHaveLength(30);
+    expect(flags.flags.every((f) => f.filer !== null)).toBe(true);
+    expect(access.reports).toHaveLength(30);
+    expect(access.reports.every((f) => f.filer !== null)).toBe(true);
+  }, 120_000);
+});

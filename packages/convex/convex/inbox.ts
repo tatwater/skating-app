@@ -556,13 +556,20 @@ export type InboxItemView = ItemBase &
     | {
         kind: 'flag';
         target: FlagTargetView;
+        /**
+         * Oldest first: the oldest `VIEW_MEMBERS` of each status, each read whole (B01-5c) — fewer
+         * when the item's budget can't hold the next flag and its filer; `memberCount` is the total.
+         */
         flags: FlagMemberView[];
         author: AuthorBlockView | null;
       }
     | {
         kind: 'access';
         body: BodyRefView;
-        /** Newest first. */
+        /**
+         * Newest first: the newest `VIEW_MEMBERS` of each status, each read whole (B01-5c) — fewer
+         * when the item's budget can't hold the next report and its filer; `memberCount` is the total.
+         */
         reports: FlagMemberView[];
         ruling: RulingView | null;
         /** The reports the standing ruling dismissed (2.2's timeline). */
@@ -579,11 +586,15 @@ export type InboxItemView = ItemBase &
         body: BodyRefView | null;
         /**
          * Newest first by when each was asked, open and closed together, as the Access item's
-         * reports: read from the newest `VIEW_MEMBERS` of each status, so past the cap the reader sees
-         * the latest asks (B01-5c). An ask the item's budget can't read (an admit near the document
-         * limit) ends the list there; `memberCount` still counts every ask.
+         * reports: the newest `VIEW_MEMBERS` (50) of each status, by count, each read whole (B01-5c).
+         * Fewer when the item's budget can't hold the next ask at its worst (an admit carrying a
+         * catalog polygon near the document limit): the list ends there and `asksCut` says so. The
+         * true total is `memberCount` (`memberCountIsFloor` past 500): the web draws "Showing
+         * `asks.length` of `memberCount`".
          */
         asks: AskMemberView[];
+        /** The list ended because the item's budget couldn't hold the next ask whole. */
+        asksCut: boolean;
         /**
          * The ask a decision is sent for — the newest open one served (the first ask in `asks` that is
          * open), whose reach the item's `can` was checked for. Any ask of the item closes the same group.
@@ -606,6 +617,8 @@ export type InboxItemView = ItemBase &
         body: BodyRefView;
         /** Newest first, capped as a request's are (B01-5c). */
         asks: AskMemberView[];
+        /** As a request's. */
+        asksCut: boolean;
         /** The ask a decision is sent for, as a request's (B01-5c). */
         primaryRequestId: Id<'waterBodyRequests'>;
         /** A bay by the asked name now drawn on the body — *Approve* is drawn only then. */
