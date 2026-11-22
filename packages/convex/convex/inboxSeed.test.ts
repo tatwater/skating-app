@@ -1603,7 +1603,11 @@ describe('ensurePeople', () => {
     const t = harness();
     await t.mutation(internal.inboxSeed.ensurePeople, { apply: true });
     const s = (await t.query(internal.inboxSeed.state, {})) as SeedState;
-    expect(s.waiting).toEqual([]);
+    // Only what waits on a step that is ready here: the bug ticket's note and reply (B01-5f).
+    expect(s.waiting.map((w) => [w.key, w.on])).toEqual([
+      ['t-bug-note', 't-bug'],
+      ['t-bug-reply', 't-bug'],
+    ]);
     expect(s.ready.map((c) => c.key)).toEqual(['f-person', 't-bug', 't-safety', 't-other']);
     expect(s.unavailable.length).toBeGreaterThan(40);
     expect(s.bodies.every((b) => b.name === null)).toBe(true);

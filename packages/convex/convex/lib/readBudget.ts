@@ -20,6 +20,8 @@ import {
   COMMENT_BODY_MAX_LENGTH,
   FLAG_NOTE_MAX_CHARS,
   IDEMPOTENCY_KEY_MAX_CHARS,
+  MAX_SUPPORT_NOTE_LENGTH,
+  MAX_SUPPORT_REPLY_LENGTH,
   PHOTO_CAPTION_MAX_CHARS,
   POST_BODY_MAX_CHARS,
   POST_TITLE_MAX_CHARS,
@@ -81,6 +83,8 @@ export const ROW_MAX = {
   settleQueue: 64 * 1024,
   // A support ticket: its body is capped at 5,000 characters (`support.create`); the rest is short.
   supportTicket: 5_000 * 4 + SLACK,
+  // A staffer's note or reply on a ticket (B01-5f): its body capped at core's longer support cap.
+  supportMessage: Math.max(MAX_SUPPORT_NOTE_LENGTH, MAX_SUPPORT_REPLY_LENGTH) * 4 + SLACK,
   // A People row: names, a handle, an avatar URL, a reason line cut to 280 characters.
   personRow: 4 * 1024,
   // A body's previous weather grid as its snapshot stores it: at most `MAX_SUGGESTED_SAMPLE_POINTS`

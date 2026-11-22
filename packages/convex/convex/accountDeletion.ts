@@ -78,7 +78,6 @@ import { internalMutation, type MutationCtx, mutation } from './_generated/serve
 import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
-import { inboxBatch, leaveMember, ticketSource } from './lib/inboxItems';
 import { refreshPersonRow } from './lib/peopleRows';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
 import {
@@ -91,6 +90,7 @@ import {
   saveLap,
 } from './lib/recurringWork';
 import { isSeedProfile } from './lib/seedPeople';
+import { eraseTicketsOf } from './lib/supportThread';
 
 /**
  * What deleting a fake person from the dev seed is told (D287). Deletion rewrites the Clerk subject
@@ -783,15 +783,11 @@ async function erasePrivate(
   // Support tickets have no by-user index — they're looked up by status and by Clerk subject — so they
   // come off the Clerk-subject index. That's the identifier the tombstone is about to scrub, which is
   // one concrete reason the stage order isn't arbitrary: `erase` runs first, while it still resolves.
-  const tickets = await ctx.db
-    .query('supportTickets')
-    .withIndex('by_clerk_user_created', (q) => q.eq('clerkUserId', profile.clerkUserId))
-    .take(size);
-  await drain(tickets);
-  // A deleted ticket is no question: each leaves its Inbox item (B01-5), which goes with it.
-  await inboxBatch(ctx, async () => {
-    for (const ticket of tickets) await leaveMember(ctx, ticketSource(ticket._id));
-  });
+  // Each ticket goes with every staff note and reply on it (B01-5f), messages first, `size` rows a pass,
+  // and leaves its Inbox item.
+  const tickets = await eraseTicketsOf(ctx, profile.clerkUserId, size);
+  deleted += tickets.deleted;
+  if (tickets.more) full = true;
 
   return { more: full, deleted };
 }

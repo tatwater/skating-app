@@ -427,38 +427,40 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     capability: 'body.places',
   },
 
-  // ── Support (B01-5f) ───────────────────────────────────────────────────────────────────────────
-  // T0 PLACEHOLDERS (B01-5f): `later` rows that keep the map compiling until S6 writes each verb's
-  // real rule (the design's undo table: note → `remove_support_note`; reply → `cancel_support_reply`
-  // only while it settles, then none, "Sent replies can't be unsent"; resolve → `reopen_ticket`).
-  // `T0_INBOX_PLACEHOLDERS` in the test lists them; S6 empties its part of that list.
+  // ── Support (B01-5f, D284) ─────────────────────────────────────────────────────────────────────
+  // Notes and replies are staff's words to staff or to the person who filed; none takes anything away
+  // from skaters, so no undo asks a reason. A note's removal and its return undo each other; a reply
+  // cancels only while it settles (its handler refuses after: "Sent replies can't be unsent"); a
+  // resolve and a reopen undo each other.
   support_note: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): remove the note (remove_support_note).'),
+    undo: inverse('remove_support_note'),
     takesAway: never,
     capability: 'inbox.support',
   },
+  // Its undo puts the note back, writing `support_note` again for the same note.
   remove_support_note: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): the note back, as its row had it.'),
+    undo: inverse('support_note'),
     takesAway: never,
     capability: 'inbox.support',
   },
   support_reply: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): cancel the reply while it settles.'),
+    undo: inverse('cancel_support_reply'),
     takesAway: never,
     capability: 'inbox.support',
   },
+  // A canceled reply was never sent; sending it now would be a new reply, written as one.
   cancel_support_reply: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): a canceled reply is written anew, not undone.'),
+    undo: { kind: 'none', why: 'A canceled reply isn’t sent again; write a new one.' },
     takesAway: never,
     capability: 'inbox.support',
   },
   resolve_ticket: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): reopen the ticket (reopen_ticket).'),
+    undo: inverse('reopen_ticket'),
     takesAway: never,
     capability: 'inbox.support',
   },
   reopen_ticket: {
-    undo: later('§2 Inbox', 'PLACEHOLDER (B01-5f): resolve the ticket again.'),
+    undo: inverse('resolve_ticket'),
     takesAway: never,
     capability: 'inbox.support',
   },

@@ -56,12 +56,19 @@ export async function sendEmail(opts: {
    * client can offer its own one-click unsubscribe — the same link the footer carries (A08 PR 3).
    */
   headers?: Record<string, string>;
+  /**
+   * The sender, when it isn't the general one (`RESEND_FROM_EMAIL`): a support reply goes out from
+   * `SUPPORT_FROM_EMAIL` (B01-5f, D284). A caller that passes it has already refused to send without
+   * it, so an empty value here is skipped like a missing key — never quietly sent from the general
+   * address.
+   */
+  from?: string;
 }): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
+  const from = opts.from !== undefined ? opts.from : process.env.RESEND_FROM_EMAIL;
   if (!key || !from || !opts.to) {
     console.warn(
-      `${opts.context} email skipped (Resend env not configured): ${opts.subject} — set RESEND_API_KEY / RESEND_FROM_EMAIL to enable.`,
+      `${opts.context} email skipped (Resend env not configured): ${opts.subject} — set RESEND_API_KEY / ${opts.from !== undefined ? 'the sender' : 'RESEND_FROM_EMAIL'} to enable.`,
     );
     return false;
   }

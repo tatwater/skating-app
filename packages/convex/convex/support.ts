@@ -5,20 +5,50 @@
  * the operator surface); appeals/reinstatement reuse this table via `category: 'account'` rather than a
  * new table. Reading/triaging the inbox is **admin-only** (PII — D37's admin line).
  *
- * `assign`/`resolve` land in a later Phase-07 commit alongside `create`; this file starts with the
- * admin-only `list` query the inbox reads.
+ * **Answering one** (B01-5f, D284): a staffer adds a staff-only note, replies by email, resolves or
+ * reopens — four writes behind `inbox.support`, each through the Inbox's one rule (`lib/inboxRules`:
+ * what the item's `can` offers is what the write enforces, in its order: the capability, a decided
+ * ticket, the staffer's own filing), each audited with the verb's default reason (never the text) and
+ * answering as every Inbox decision does: its item, its audit row and the undo it offers. A reply is
+ * stored `settling` and sent by `sendReply` once its window (`SETTLE_MS`) has run, re-reading the row;
+ * `cancelReply` is its undo inside the window, through the undo engine. There is no assignee and no
+ * "in progress" (D284): `assign` stays only for the old page until it goes.
  */
 
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalAction,
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability } from './lib/auth';
+import { clerkEmailForSubject } from './lib/clerkEmail';
 import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
 import { decideItem, fileMember, itemToDecide, ticketSource } from './lib/inboxItems';
 import { assertInboxVerb } from './lib/inboxRules';
+import { SETTLE_MS } from './lib/notificationQueue';
+import { sendEmail } from './lib/resend';
 import { isSeedProfile } from './lib/seedPeople';
+import {
+  bodyRefusal,
+  MESSAGE_GONE_REFUSAL,
+  messageActionOf,
+  SUPPORT_REASONS,
+  type SupportUndoVerb,
+  supportReplyEmail,
+  supportUndoRefusal,
+  TICKET_GONE_REFUSAL,
+} from './lib/supportThread';
+import { runUndo, undoRowOf } from './lib/undo';
 import { literals } from './lib/validators';
+import { undoOfferAfterWrite } from './moderation';
+import { undoWriters } from './undo';
 
 /** Support-ticket body bounds — enough for a real report, capped so it stays an inbox row not an essay. */
 const MAX_BODY_LENGTH = 5000;
@@ -206,26 +236,468 @@ export const assign = mutation({
   },
 });
 
-/** Resolve a ticket (D37 — **admin-only**). Stamps `resolvedBy`/`resolvedAt` and closes it. */
+// ── Answering a ticket (B01-5f, D284) ────────────────────────────────────────────────────────────
+
+/**
+ * What every support write answers, as every Inbox decision does (`inboxWrites.InboxWriteResult`): the
+ * ticket's item, the audit row the toast's Undo undoes, and — only when this viewer can undo that row
+ * right now — whether the undo asks a reason (none of these does). **A published contract** for the
+ * web's Ticket handler.
+ */
+export type SupportWriteResult = {
+  itemId: Id<'inboxItems'>;
+  ticketId: Id<'supportTickets'>;
+  actionId: Id<'moderationActions'>;
+} & ({ undoable: true; undoNeedsReason: boolean } | { undoable: false });
+
+/** `addNote`'s answer: the note's row besides. */
+export type SupportNoteResult = SupportWriteResult & { messageId: Id<'supportMessages'> };
+
+/**
+ * `reply`'s answer: the reply's row, and how it stands — `settling` until `sendAfter` (the toast's
+ * *Sending in 60 s · Undo*), or `failed` at once for a seeded ticket (`failedWhy: 'seed'`: the seed is
+ * never mailed).
+ */
+export type SupportReplyResult = SupportWriteResult & {
+  messageId: Id<'supportMessages'>;
+  status: 'settling' | 'failed';
+  sendAfter: number;
+  failedWhy: 'seed' | null;
+};
+
+/** `cancelReply`'s answer: the cancel's own row (which has no undo: a canceled reply is written anew). */
+export type SupportCancelResult = {
+  itemId: Id<'inboxItems'>;
+  ticketId: Id<'supportTickets'>;
+  messageId: Id<'supportMessages'>;
+  actionId: Id<'moderationActions'>;
+  undoable: false;
+};
+
+type Actor = Doc<'profiles'>;
+
+/** The ticket and its Inbox item, the item filed first if the backfill hasn't reached it. */
+async function ticketAndItem(
+  ctx: MutationCtx,
+  ticketId: Id<'supportTickets'>,
+  now: number,
+): Promise<{ ticket: Doc<'supportTickets'>; item: Doc<'inboxItems'> }> {
+  const ticket = await ctx.db.get(ticketId);
+  if (!ticket) throw new ConvexError(TICKET_GONE_REFUSAL);
+  const item = await itemToDecide(ctx, ticketSource(ticketId), { now });
+  // A ticket is always an Inbox item (`lib/inboxItems.ticketFacts`); none means it is going.
+  if (!item) throw new ConvexError(TICKET_GONE_REFUSAL);
+  return { ticket, item };
+}
+
+async function answer<T extends object>(
+  ctx: MutationCtx,
+  actor: Actor,
+  base: {
+    itemId: Id<'inboxItems'>;
+    ticketId: Id<'supportTickets'>;
+    actionId: Id<'moderationActions'>;
+  },
+  extra: T,
+): Promise<SupportWriteResult & T> {
+  return { ...base, ...extra, ...(await undoOfferAfterWrite(ctx, actor._id, base.actionId)) };
+}
+
+/** Whether the person a ticket is from is one of the dev seed's fake people (D287): never mailed. */
+function seedTicket(ticket: Doc<'supportTickets'>, profile: Doc<'profiles'> | null): boolean {
+  return isSeedProfile(ticket.clerkUserId) || isSeedProfile(profile);
+}
+
+/**
+ * Add a staff-only note to a ticket (D284). Asks the Inbox's rule (`note`), then the note's own words
+ * (empty, past `MAX_SUPPORT_NOTE_LENGTH`). Its undo removes it.
+ */
+export const addNote = mutation({
+  args: { ticketId: v.id('supportTickets'), body: v.string() },
+  handler: async (ctx, { ticketId, body }): Promise<SupportNoteResult> => {
+    const actor = await requireCapability(ctx, 'inbox.support');
+    const now = Date.now();
+    const { item } = await ticketAndItem(ctx, ticketId, now);
+    await assertInboxVerb(ctx, actor, item, 'note');
+    const refused = bodyRefusal('note', body);
+    if (refused !== null) throw new ConvexError(refused);
+    const messageId = await ctx.db.insert('supportMessages', {
+      ticketId,
+      kind: 'note',
+      authorId: actor._id,
+      body: body.trim(),
+      createdAt: now,
+    });
+    const actionId = await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'support_note',
+      targetType: 'supportTicket',
+      targetId: ticketId,
+      reason: SUPPORT_REASONS.support_note,
+      metadata: { messageId, kind: 'note', reasonDefaulted: true },
+      createdAt: now,
+    });
+    return answer(ctx, actor, { itemId: item._id, ticketId, actionId }, { messageId });
+  },
+});
+
+/**
+ * Reply to the person who filed a ticket, by email (D284). Asks the Inbox's rule (`reply`), then the
+ * reply's words. Stored `settling`, sent by {@link sendReply} at `sendAfter` (one settle window on),
+ * which re-reads the row and sends only a reply still settling — so {@link cancelReply} inside the
+ * window means nothing is sent. **A seeded ticket is never mailed** (D287): its reply is stored
+ * `failed` (`seed`) here and nothing is scheduled; the send refuses it again besides.
+ */
+export const reply = mutation({
+  args: { ticketId: v.id('supportTickets'), body: v.string() },
+  handler: async (ctx, { ticketId, body }): Promise<SupportReplyResult> => {
+    const actor = await requireCapability(ctx, 'inbox.support');
+    const now = Date.now();
+    const { ticket, item } = await ticketAndItem(ctx, ticketId, now);
+    await assertInboxVerb(ctx, actor, item, 'reply');
+    const refused = bodyRefusal('reply', body);
+    if (refused !== null) throw new ConvexError(refused);
+    const profile = ticket.userId ? await ctx.db.get(ticket.userId) : null;
+    const seed = seedTicket(ticket, profile);
+    const sendAfter = now + SETTLE_MS;
+    const messageId = await ctx.db.insert('supportMessages', {
+      ticketId,
+      kind: 'reply',
+      authorId: actor._id,
+      body: body.trim(),
+      createdAt: now,
+      sendAfter,
+      ...(seed
+        ? { status: 'failed' as const, failedWhy: 'seed' as const }
+        : { status: 'settling' as const }),
+    });
+    const actionId = await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'support_reply',
+      targetType: 'supportTicket',
+      targetId: ticketId,
+      reason: SUPPORT_REASONS.support_reply,
+      metadata: { messageId, kind: 'reply', reasonDefaulted: true },
+      createdAt: now,
+    });
+    if (!seed) await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
+    return answer(
+      ctx,
+      actor,
+      { itemId: item._id, ticketId, actionId },
+      {
+        messageId,
+        status: seed ? ('failed' as const) : ('settling' as const),
+        sendAfter,
+        failedWhy: seed ? ('seed' as const) : null,
+      },
+    );
+  },
+});
+
+/**
+ * Cancel a reply still settling — its undo, through the undo engine (`undo.run` on the reply's row
+ * answers the same): refused once it was sent ("Sent replies can't be unsent"), or is on its way.
+ */
+export const cancelReply = mutation({
+  args: { messageId: v.id('supportMessages') },
+  handler: async (ctx, { messageId }): Promise<SupportCancelResult> => {
+    const actor = await requireCapability(ctx, 'inbox.support');
+    const message = await ctx.db.get(messageId);
+    if (message?.kind !== 'reply') throw new ConvexError(MESSAGE_GONE_REFUSAL);
+    const row = await messageActionOf(ctx, message);
+    if (!row) throw new ConvexError('This reply’s record is missing, so it can’t be canceled.');
+    await runUndo(ctx, actor, row._id, undefined, undoWriters);
+    const cancel = await undoRowOf(ctx, row);
+    const item = await itemToDecide(ctx, ticketSource(message.ticketId));
+    if (!cancel || !item) throw new Error('cancelReply: the cancel wrote no row');
+    return {
+      itemId: item._id,
+      ticketId: message.ticketId,
+      messageId,
+      actionId: cancel._id,
+      undoable: false,
+    };
+  },
+});
+
+/** Resolve a ticket (D37 — **admin-only**). Stamps `resolvedBy`/`resolvedAt` and closes it; audited. */
 export const resolve = mutation({
   args: { ticketId: v.id('supportTickets') },
-  handler: async (ctx, { ticketId }) => {
+  handler: async (ctx, { ticketId }): Promise<SupportWriteResult> => {
     const actor = await requireCapability(ctx, 'inbox.support');
-    const ticket = await ctx.db.get(ticketId);
-    if (!ticket) throw new ConvexError('Ticket not found');
+    const now = Date.now();
     // The Inbox's one rule (B01-5): a decided ticket takes no second resolve (D283), and no staffer
     // resolves a ticket they filed themselves (D289) — the same answer the item's `can` gives. A ticket
     // the backfill hasn't reached is filed first, so it gets that answer too.
+    const { item } = await ticketAndItem(ctx, ticketId, now);
+    await assertInboxVerb(ctx, actor, item, 'resolve');
+    const actionId = await resolveTicketImpl(ctx, actor, { ticketId, now });
+    return answer(ctx, actor, { itemId: item._id, ticketId, actionId }, {});
+  },
+});
+
+/** Reopen a resolved ticket (B01-5f): open again, its item reopened; audited. Its undo resolves it. */
+export const reopen = mutation({
+  args: { ticketId: v.id('supportTickets') },
+  handler: async (ctx, { ticketId }): Promise<SupportWriteResult> => {
+    const actor = await requireCapability(ctx, 'inbox.support');
     const now = Date.now();
-    const item = await itemToDecide(ctx, ticketSource(ticketId), { now });
-    if (item) await assertInboxVerb(ctx, actor, item, 'resolve');
-    await ctx.db.patch(ticketId, {
-      status: 'resolved',
-      resolvedByUserId: actor._id,
-      resolvedAt: now,
+    const { item } = await ticketAndItem(ctx, ticketId, now);
+    await assertInboxVerb(ctx, actor, item, 'reopen');
+    const actionId = await reopenTicketImpl(ctx, actor, { ticketId, now });
+    return answer(ctx, actor, { itemId: item._id, ticketId, actionId }, {});
+  },
+});
+
+// ── The impls, shared by the writes and the undo handlers ────────────────────────────────────────
+
+/**
+ * Asks the support undo's one rule (`lib/supportThread.supportUndoRefusal`) inside the write itself, so
+ * an undo whose offer was right when drawn still refuses in the same words if the row moved since.
+ */
+async function assertSupportUndo(
+  ctx: MutationCtx,
+  actor: Actor,
+  verb: SupportUndoVerb,
+  ticketId: Id<'supportTickets'>,
+  messageId: Id<'supportMessages'> | undefined,
+  now: number,
+): Promise<{ ticket: Doc<'supportTickets'>; message: Doc<'supportMessages'> | null }> {
+  const ticket = await ctx.db.get(ticketId);
+  const message = messageId ? await ctx.db.get(messageId) : null;
+  const refused = supportUndoRefusal(actor, verb, {
+    ticket,
+    ...(messageId ? { message } : {}),
+    now,
+  });
+  if (refused !== null || !ticket) throw new ConvexError(refused ?? TICKET_GONE_REFUSAL);
+  return { ticket, message };
+}
+
+/** The ticket resolved, its item decided by the row; returns the `resolve_ticket` row. */
+export async function resolveTicketImpl(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: { ticketId: Id<'supportTickets'>; now: number; asUndo?: boolean },
+): Promise<Id<'moderationActions'>> {
+  const { ticket } = args.asUndo
+    ? await assertSupportUndo(ctx, actor, 'resolve', args.ticketId, undefined, args.now)
+    : { ticket: (await ctx.db.get(args.ticketId)) as Doc<'supportTickets'> };
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'resolve_ticket',
+    targetType: 'supportTicket',
+    targetId: args.ticketId,
+    reason: SUPPORT_REASONS.resolve_ticket,
+    metadata: { prev: { status: ticket.status }, reasonDefaulted: true },
+    createdAt: args.now,
+  });
+  await ctx.db.patch(args.ticketId, {
+    status: 'resolved',
+    resolvedByUserId: actor._id,
+    resolvedAt: args.now,
+  });
+  await decideItem(ctx, ticketSource(args.ticketId), {
+    now: args.now,
+    actorId: actor._id,
+    actionId,
+  });
+  return actionId;
+}
+
+/** The ticket open again, its item reopened in place; returns the `reopen_ticket` row. */
+export async function reopenTicketImpl(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: { ticketId: Id<'supportTickets'>; now: number; asUndo?: boolean },
+): Promise<Id<'moderationActions'>> {
+  const { ticket } = args.asUndo
+    ? await assertSupportUndo(ctx, actor, 'reopen', args.ticketId, undefined, args.now)
+    : { ticket: (await ctx.db.get(args.ticketId)) as Doc<'supportTickets'> };
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'reopen_ticket',
+    targetType: 'supportTicket',
+    targetId: args.ticketId,
+    reason: SUPPORT_REASONS.reopen_ticket,
+    metadata: {
+      prev: {
+        status: ticket.status,
+        ...(ticket.resolvedAt !== undefined ? { resolvedAt: ticket.resolvedAt } : {}),
+        ...(ticket.resolvedByUserId !== undefined
+          ? { resolvedByUserId: ticket.resolvedByUserId }
+          : {}),
+      },
+      reasonDefaulted: true,
+    },
+    createdAt: args.now,
+  });
+  // `open`, never `in_progress`; nothing writes an assignee (D284).
+  await ctx.db.patch(args.ticketId, {
+    status: 'open',
+    resolvedByUserId: undefined,
+    resolvedAt: undefined,
+  });
+  // Open again: its member reopens into its decided item, in place (or the newer open one).
+  await fileMember(ctx, ticketSource(args.ticketId), { now: args.now });
+  return actionId;
+}
+
+/** A note soft-removed (a note's undo); writes `remove_support_note`. */
+export async function removeNoteImpl(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: { ticketId: Id<'supportTickets'>; messageId: Id<'supportMessages'>; now: number },
+): Promise<Id<'moderationActions'>> {
+  await assertSupportUndo(ctx, actor, 'removeNote', args.ticketId, args.messageId, args.now);
+  await ctx.db.patch(args.messageId, { removedAt: args.now });
+  return writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'remove_support_note',
+    targetType: 'supportTicket',
+    targetId: args.ticketId,
+    reason: SUPPORT_REASONS.remove_support_note,
+    metadata: { messageId: args.messageId, kind: 'note', reasonDefaulted: true },
+    createdAt: args.now,
+  });
+}
+
+/** A removed note put back (a removal's undo); writes `support_note` again, naming the same note. */
+export async function restoreNoteImpl(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: { ticketId: Id<'supportTickets'>; messageId: Id<'supportMessages'>; now: number },
+): Promise<Id<'moderationActions'>> {
+  await assertSupportUndo(ctx, actor, 'restoreNote', args.ticketId, args.messageId, args.now);
+  await ctx.db.patch(args.messageId, { removedAt: undefined });
+  return writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'support_note',
+    targetType: 'supportTicket',
+    targetId: args.ticketId,
+    reason: SUPPORT_REASONS.support_note,
+    metadata: { messageId: args.messageId, kind: 'note', restored: true, reasonDefaulted: true },
+    createdAt: args.now,
+  });
+}
+
+/** A settling reply canceled (a reply's undo); writes `cancel_support_reply`. Nothing is sent. */
+export async function cancelReplyImpl(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: { ticketId: Id<'supportTickets'>; messageId: Id<'supportMessages'>; now: number },
+): Promise<Id<'moderationActions'>> {
+  await assertSupportUndo(ctx, actor, 'cancelReply', args.ticketId, args.messageId, args.now);
+  await ctx.db.patch(args.messageId, { status: 'canceled' });
+  return writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'cancel_support_reply',
+    targetType: 'supportTicket',
+    targetId: args.ticketId,
+    reason: SUPPORT_REASONS.cancel_support_reply,
+    metadata: { messageId: args.messageId, kind: 'reply', reasonDefaulted: true },
+    createdAt: args.now,
+  });
+}
+
+// ── The send ─────────────────────────────────────────────────────────────────────────────────────
+
+/** What the send needs, once it has claimed the reply: never the address, which it resolves itself. */
+type ReplyClaim = {
+  body: string;
+  email: string | null;
+  clerkUserId: string | null;
+  seed: boolean;
+};
+
+/**
+ * **The send's claim** — the re-read the snippet's `replyToSend` is, as a mutation: a reply still
+ * settling (not canceled, not claimed before) is stamped `sentAt` while it still reads `settling`, and
+ * from then on its cancel is refused — so a cancel and a send can't both land (they write the same row,
+ * and one of them retries and sees the other). `null`: canceled, gone, already sent or claimed.
+ */
+export const claimReply = internalMutation({
+  args: { messageId: v.id('supportMessages') },
+  handler: async (ctx, { messageId }): Promise<ReplyClaim | null> => {
+    const message = await ctx.db.get(messageId);
+    if (message?.kind !== 'reply') return null;
+    if (message.status !== 'settling' || message.sentAt !== undefined) return null;
+    const ticket = await ctx.db.get(message.ticketId);
+    if (!ticket) {
+      await ctx.db.patch(messageId, { status: 'failed', failedWhy: 'noAddress' });
+      return null;
+    }
+    const profile = ticket.userId ? await ctx.db.get(ticket.userId) : null;
+    await ctx.db.patch(messageId, { sentAt: Date.now() });
+    return {
+      body: message.body,
+      email: profile?.email ?? null,
+      clerkUserId: ticket.clerkUserId ?? profile?.clerkUserId ?? null,
+      seed: seedTicket(ticket, profile),
+    };
+  },
+});
+
+/** The claimed reply went: `sent`, stamped when the provider took it. */
+export const replySent = internalMutation({
+  args: { messageId: v.id('supportMessages') },
+  handler: async (ctx, { messageId }) => {
+    const message = await ctx.db.get(messageId);
+    if (message?.status !== 'settling') return;
+    await ctx.db.patch(messageId, { status: 'sent', sentAt: Date.now() });
+  },
+});
+
+/** The claimed reply didn't go: `failed`, with its class (never the provider's words or an address). */
+export const replyFailed = internalMutation({
+  args: {
+    messageId: v.id('supportMessages'),
+    why: literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const),
+  },
+  handler: async (ctx, { messageId, why }) => {
+    const message = await ctx.db.get(messageId);
+    if (message?.status !== 'settling') return;
+    await ctx.db.patch(messageId, { status: 'failed', failedWhy: why, sentAt: undefined });
+  },
+});
+
+/**
+ * **The reply's send** (B01-5f), scheduled at `sendAfter`: claim the row (still settling, or nothing
+ * is sent); with no `SUPPORT_FROM_EMAIL`, `failed` (`unconfigured`) with the skip logged — never sent
+ * from the general address (ruled); a seeded ticket `failed` (`seed`) **before any address is
+ * resolved**; then the address — the profile's, else the ticket's Clerk subject's, so a ticket filed
+ * before provisioning is answered — or `failed` (`noAddress`); then the email, with its footer, from
+ * the support sender, recorded `sent` or `failed` (`sendFailed`).
+ */
+export const sendReply = internalAction({
+  args: { messageId: v.id('supportMessages') },
+  handler: async (ctx, { messageId }) => {
+    const claim = await ctx.runMutation(internal.support.claimReply, { messageId });
+    if (claim === null) return; // canceled, gone, or already sent
+    const from = process.env.SUPPORT_FROM_EMAIL;
+    if (!from) {
+      console.warn('support reply skipped (SUPPORT_FROM_EMAIL not configured)');
+      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'unconfigured' });
+      return;
+    }
+    if (claim.seed) {
+      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'seed' });
+      return;
+    }
+    const to =
+      claim.email ?? (claim.clerkUserId ? await clerkEmailForSubject(claim.clerkUserId) : null);
+    if (!to) {
+      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'noAddress' });
+      return;
+    }
+    const ok = await sendEmail({
+      to,
+      from,
+      ...supportReplyEmail(claim.body),
+      context: 'support reply',
     });
-    // Its Inbox item is decided `resolved` (no audit row yet: PR 6 audits the resolve).
-    await decideItem(ctx, ticketSource(ticketId), { now, actorId: actor._id });
-    return ticketId;
+    if (ok) await ctx.runMutation(internal.support.replySent, { messageId });
+    else await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'sendFailed' });
   },
 });

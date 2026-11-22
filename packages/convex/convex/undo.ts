@@ -27,7 +27,7 @@ import {
 
 // Admin and moderation read undo eligibility. Bind their inverse writes at the mutation
 // boundary so the engine doesn't import either module at runtime.
-const undoWriters: UndoWriters = {
+export const undoWriters: UndoWriters = {
   banImpl,
   grantRoleImpl,
   revertPostVerdict,

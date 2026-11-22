@@ -9,14 +9,7 @@ import { UNDO_POLICY, undoCapability, undoOwed, WORKSTREAM_MODE } from './undoPo
  * slice's server builder writes each real rule and removes it here; the list is empty before the
  * slice's PR opens.
  */
-const T0_INBOX_PLACEHOLDERS: readonly ModerationAction[] = [
-  'support_note',
-  'remove_support_note',
-  'support_reply',
-  'cancel_support_reply',
-  'resolve_ticket',
-  'reopen_ticket',
-];
+const T0_INBOX_PLACEHOLDERS: readonly ModerationAction[] = [];
 
 describe('the undo registry (D226)', () => {
   test('covers every audited verb, and nothing else', () => {

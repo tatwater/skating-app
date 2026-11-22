@@ -531,18 +531,49 @@ export type TicketView = {
   resolvedBy: PersonRefView | null;
 };
 
-/** A note or reply on a ticket (PR 6's `supportMessages`; empty until then). */
+/**
+ * A staffer's note or email reply on a ticket (B01-5f, `supportMessages`) — staff-only and PII, served
+ * only behind `inbox.support.read`. Never the address a reply went to.
+ */
 export type SupportMessageView = {
-  messageId: string;
+  messageId: Id<'supportMessages'>;
+  /** A `note` is staff-only (the dashed box); a `reply` went, or is going, to the person by email. */
   kind: 'note' | 'reply';
   author: PersonRefView | null;
-  body: string;
+  /** `null` once a note is removed (its undo puts it back). */
+  body: string | null;
   createdAt: number;
+  removedAt: number | null;
   reply: {
+    /**
+     * `settling` while its window runs (*Sending in 60 s · Undo*) and while its send is under way;
+     * `sent`; `canceled` (undone inside the window); `failed` (*Not sent*, with `failedWhy`).
+     */
     status: 'settling' | 'sent' | 'canceled' | 'failed';
     sendAfter: number;
     sentAt: number | null;
+    /**
+     * Why it wasn't sent, as a class, never the provider's message or an address: no support sender
+     * configured, a seeded ticket (never mailed), no address on file, or the provider refused.
+     */
+    failedWhy: 'unconfigured' | 'seed' | 'noAddress' | 'sendFailed' | null;
+    /**
+     * Whether this viewer may cancel it now (`support.cancelReply`): `null`, or the sentence that
+     * write refuses with — the undo's own rule, so *Undo* is drawn only where it lands (D217). Asked
+     * at read time; a client hides *Undo* once `sendAfter` passes, when the write refuses it.
+     */
+    cancel: string | null;
   } | null;
+};
+
+/** A flag about the ticket's person, on 2.8's *Related* (each opens its Inbox item, `flag:<id>`). */
+export type TicketRelatedFlagView = {
+  flagId: Id<'contentFlags'>;
+  reason: Doc<'contentFlags'>['reason'];
+  targetType: Doc<'contentFlags'>['targetType'];
+  status: 'open' | 'actioned';
+  createdAt: number;
+  resolvedAt: number | null;
 };
 
 // ── An item (`inbox.item`) ─────────────────────────────────────────────────────────────────────
@@ -687,8 +718,17 @@ export type InboxItemView = ItemBase &
     | {
         kind: 'ticket';
         ticket: TicketView;
+        /**
+         * The thread after the ticket's own body: the newest messages (at most `THREAD_MESSAGES`,
+         * `lib/supportThread`), oldest first, newest last.
+         */
         messages: SupportMessageView[];
+        /** Older messages were cut: the thread starts part-way (a cut line above the first). */
+        messagesCapped: boolean;
+        /** The person who filed it; `null` for a ticket filed before they had a profile. */
         person: AuthorBlockView | null;
+        /** Flags about that person, newest first: the open ones, then those actioned. */
+        related: { flags: TicketRelatedFlagView[]; capped: boolean };
       }
   );
 

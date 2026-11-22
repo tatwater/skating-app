@@ -58,6 +58,8 @@ import type {
   ReportRefView,
   ReportSubjectView,
   RulingView,
+  SupportMessageView,
+  TicketRelatedFlagView,
   TicketView,
 } from '../inbox';
 import { planPostRestore } from '../moderation';
@@ -94,6 +96,7 @@ import {
   ownAsks,
   requestNames,
 } from './requestDecisions';
+import { supportUndoRefusal, THREAD_MESSAGES } from './supportThread';
 
 /** `Omit` over each member of a union, so a variant keeps its own fields. */
 export type DistOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -1469,10 +1472,14 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
     }
     case 'ticket': {
       const m = (await oldestMembers())[0];
+      // Required rows first (B01-5c), before any list fills the budget: the ticket, who resolved it,
+      // and the person who filed it — none of them may read as "no one" for want of room.
       const t = m
-        ? await r.get<'supportTickets'>('supportTicket', m.sourceId as Id<'supportTickets'>)
+        ? await r.must<'supportTickets'>('supportTicket', m.sourceId as Id<'supportTickets'>)
         : null;
       if (!t) return null;
+      const resolver = await r.must<'profiles'>('profile', t.resolvedByUserId);
+      await r.must<'profiles'>('profile', t.userId);
       const ticket: TicketView = {
         ticketId: t._id,
         category: t.category,
@@ -1481,20 +1488,115 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         status: t.status === 'resolved' ? 'resolved' : 'open',
         context: t.context ?? null,
         resolvedAt: t.resolvedAt ?? null,
-        resolvedBy: personRef(await r.get<'profiles'>('profile', t.resolvedByUserId)),
+        resolvedBy: personRef(resolver),
       };
+      const thread = await ticketThread(r, t);
+      const related = await ticketRelated(r, t.userId);
       return {
         view: {
           ...base,
           kind: 'ticket',
           ticket,
-          messages: [],
+          messages: thread.messages,
+          messagesCapped: thread.capped,
+          // Last: its reports fill what the budget has left, and say so when they stop short.
           person: await authorBlock(r, t.userId),
+          related,
         },
         facts: {},
       };
     }
   }
+}
+
+/**
+ * **A ticket's thread** (B01-5f): its newest {@link THREAD_MESSAGES} messages, oldest first — read
+ * from the newest end, so a busy ticket shows its latest words and says the older ones were cut —
+ * each charged at its worst, then each author, required (attribution never reads as "no one"). A
+ * reply's `cancel` is the undo's own rule (`supportUndoRefusal`) for this viewer, over the rows read
+ * here.
+ */
+async function ticketThread(
+  r: InboxReader,
+  t: Doc<'supportTickets'>,
+): Promise<{ messages: SupportMessageView[]; capped: boolean }> {
+  const asked = r.budget.rows('supportMessage', THREAD_MESSAGES + 1);
+  const newest = await r.take('supportMessage', THREAD_MESSAGES + 1, (k) =>
+    r.ctx.db
+      .query('supportMessages')
+      .withIndex('by_ticket_created', (q) => q.eq('ticketId', t._id))
+      .order('desc')
+      .take(k),
+  );
+  // Past the bound — or a budget that couldn't ask for one past it and came back full.
+  const capped =
+    newest.length > THREAD_MESSAGES || (asked <= THREAD_MESSAGES && newest.length === asked);
+  const rows = newest.slice(0, THREAD_MESSAGES).reverse();
+  const viewer = rows.some((m) => m.kind === 'reply')
+    ? await r.must<'profiles'>('profile', r.viewerId)
+    : null;
+  const messages: SupportMessageView[] = [];
+  for (const m of rows) {
+    const author = personRef(await r.must<'profiles'>('profile', m.authorId));
+    messages.push({
+      messageId: m._id,
+      kind: m.kind,
+      author,
+      body: m.removedAt !== undefined ? null : m.body,
+      createdAt: m.createdAt,
+      removedAt: m.removedAt ?? null,
+      reply:
+        m.kind === 'reply'
+          ? {
+              status: m.status ?? 'failed',
+              sendAfter: m.sendAfter ?? m.createdAt,
+              sentAt: m.status === 'sent' ? (m.sentAt ?? null) : null,
+              failedWhy: m.failedWhy ?? null,
+              cancel: viewer
+                ? supportUndoRefusal(viewer, 'cancelReply', { ticket: t, message: m, now: r.now })
+                : 'Undoing this takes a role you do not hold.',
+            }
+          : null,
+    });
+  }
+  return { messages, capped };
+}
+
+/** Flags about a ticket's person *Related* lists, of each status (open, then actioned). */
+export const TICKET_RELATED_FLAGS = 5;
+
+/** 2.8's *Related*: the person's open flags, then the newest actioned ones, each bounded. */
+async function ticketRelated(
+  r: InboxReader,
+  userId: Id<'profiles'> | undefined,
+): Promise<{ flags: TicketRelatedFlagView[]; capped: boolean }> {
+  if (!userId) return { flags: [], capped: false };
+  const flags: TicketRelatedFlagView[] = [];
+  let capped = false;
+  for (const status of ['open', 'actioned'] as const) {
+    const asked = r.budget.rows('contentFlag', TICKET_RELATED_FLAGS + 1);
+    const rows = await r.take('contentFlag', TICKET_RELATED_FLAGS + 1, (k) =>
+      r.ctx.db
+        .query('contentFlags')
+        .withIndex('by_subject_status', (q) => q.eq('subjectUserId', userId).eq('status', status))
+        .order('desc')
+        .take(k),
+    );
+    capped ||=
+      rows.length > TICKET_RELATED_FLAGS ||
+      (asked <= TICKET_RELATED_FLAGS && rows.length === asked);
+    for (const f of rows.slice(0, TICKET_RELATED_FLAGS)) {
+      flags.push({
+        flagId: f._id,
+        reason: f.reason,
+        targetType: f.targetType,
+        status,
+        createdAt: f.createdAt,
+        resolvedAt: f.resolvedAt ?? null,
+      });
+    }
+  }
+  return { flags, capped };
 }
 
 /**

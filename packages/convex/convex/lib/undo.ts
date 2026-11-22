@@ -263,7 +263,14 @@ async function stateBeforeRefusal(
     newestOnTarget(ctx, row.targetType, row.targetId),
   ]);
   if (undoneBy) return { state: 'undone', byActionId: undoneBy._id };
-  if (newest && newest._id !== row._id && newest._creationTime > row._creationTime) {
+  // A row about one part of a shared target (a ticket's note or reply) is held current by its own
+  // refusal, which reads that part (`UndoHandler.overtakenByTarget`).
+  if (
+    handler.overtakenByTarget !== false &&
+    newest &&
+    newest._id !== row._id &&
+    newest._creationTime > row._creationTime
+  ) {
     return { state: 'overtaken', byActionId: newest._id };
   }
 
