@@ -249,6 +249,7 @@ export function AuthorMenu({
           until={shown.until}
           replacesBan={shown.replacesBan}
           now={now}
+          maxLength={AUDIT_REASON_MAX}
           onConfirm={({ until, reason, shape }) =>
             run(
               shown.id,
