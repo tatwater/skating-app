@@ -9388,6 +9388,74 @@ fix. S3 fixed them on `b01-5c-s3-3` (`60b3b58e7`), cherry-picked with no conflic
 2. **Scheduled heavy drain pages waited 13–270 s** on the local backend, where a direct run took
    about 9 s. To watch on dev after the merge.
 
+#### B01-5c: the web review (R9) and its fixes (2026-11-22)
+
+An independent review of the web half at `04e5cf9fa` found nothing blocking. Each fix below landed
+with a test that fails without it.
+
+**Clean, per the reviewer:**
+- No write is sent with another item's ids.
+- No lever is drawn against `item.can`.
+- No copy says or implies anything about the ice (D3).
+
+**The findings and their fixes:**
+
+1. **The Reject dialog told the moderator the drawer reads their reason.** The server keeps a
+   rejection's reason audit-only: the resolver drops a drawing's note, and core's sentence has no
+   line for it.
+   - The dialog now says *Reason · kept in the audit log* (People's words) and takes the audit
+     log's cap.
+   - A test pins every reason dialog's words against what the server sends. A request's decline,
+     a takedown and a place decline reach the asker; a drawing's rejection never reaches the drawer.
+2. **The drawn map's legend named a drawer whose account is being deleted**, while the inspector
+   said "A former skater". `blocks/shownName` is now the one rule for every name the Inbox draws.
+   - **The sweep fixed:**
+     - the drawn legend;
+     - the timeline's ruler and filers, in a contest's standing ruling and in Access ("A former
+       moderator", "A former skater");
+     - an activate's dormancy *Set by*.
+   - **Already right, now through the helper:**
+     - the skate legend's asker;
+     - the ask list's bylines;
+     - the place asker and its *Trust* row's history (`rowMeta`);
+     - the drawn *User* row.
+   - **Nothing to name:** receipts and toasts name a body or an ask, never a person.
+3. **A skate that crossed midnight was labeled with its end day only.** One rule now
+   (`skateWhen`):
+   - within a day, the start's day and its two times;
+   - across a day, both days ("10 Oct 23:00 – 11 Oct 01:00");
+   - with no end, the start.
+
+   The map's legend names the start's day, so the two agree. Tests run in New York, Kathmandu and
+   Lord Howe (same day, across midnight, across a clock change), with a property that the label's
+   days are the start's and the end's local days.
+4. **Two lines that pick what gets written were held by no test.**
+   - **(a) Sending `primaryRequestId`.** New fixtures serve a newer, closed ask first, and the
+     request and place wiring tests assert the id sent. With `asks[0]` swapped in, both fail.
+   - **(b) The runner's "receipt only while its item is open" check.** The runner's own tests now
+     hold the console's rule:
+     - a write that lands after the moderator opened another item draws no receipt there; it
+       landed, and its row's Undo is in History, with no window (the toast's ten seconds are the
+       only window);
+     - one that lands with its item still open draws the receipt and its Undo;
+     - a late refusal still reaches a toast.
+
+     With the check removed, the first test fails.
+5. **Comments:** the request and place writes now say they send the newest open ask, as the server
+   names it.
+6. **The Drawn and Place `Narrow` stories** read layout inside one retry, as Access's does.
+
+**Slow tests, under the governor's rule** (a test's contended time is at most a fifth of its limit;
+CI's runners are about 1.5× slower than this machine). From the workspace run:
+
+| Test | Contended time | Limit was | Limit now |
+|---|---|---|---|
+| `moderatorDecision` *heavy re-checks* | 24.7 s | 60 s | 240 s |
+| `moderatorDecision` *flags due before them* | 22.4 s | 60 s | 240 s |
+| `inboxRequestItem` *tracks share the answer's bound* | 7.7 s | 20 s | 60 s |
+
+The flush byte guard's mutation was re-run: with the guard removed, *heavy re-checks* still fails.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
