@@ -1606,24 +1606,16 @@ suite('a heavy unmerge pages', () => {
     const mergeId = await mergeV2(w);
     const was = PAGE_SEAM.sources;
     PAGE_SEAM.sources = 1;
-    let stoodIn = false;
     try {
       await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
-      // The unmerge's first transaction marks both bodies (`unmergeActionId`, S4b's `unmerge.ts`);
-      // until that lands, the marker is set here as it would be — and cleared below as its last page
-      // would. Once it lands this stand-in never runs, and the marker is the unmerge's own.
+      // The real unmerge's first transaction marks both bodies (`unmergeActionId`), nothing here.
       const unmergeId = (await unmergeRowOf(w.t, w.loser))?._id as Id<'moderationActions'>;
       expect(unmergeId).toBeDefined();
-      const marked = await w.t.run(
-        async (ctx) => (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
-      );
-      if (marked === null) {
-        stoodIn = true;
-        await w.t.run(async (ctx) => {
-          await ctx.db.patch(w.loser, { unmergeActionId: unmergeId });
-          await ctx.db.patch(w.survivor, { unmergeActionId: unmergeId });
-        });
-      }
+      const marked = await w.t.run(async (ctx) => [
+        (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
+        (await ctx.db.get(w.survivor))?.unmergeActionId ?? null,
+      ]);
+      expect(marked).toEqual([unmergeId, unmergeId]);
       const said = { refusal: UNMERGING_REFUSAL, code: 'unmerging' };
       // As loser: merged into its survivor again, refused — the preview first, then the write.
       expect(
@@ -1655,12 +1647,6 @@ suite('a heavy unmerge pages', () => {
     // The later pages ran to the end: every row back, nothing left.
     expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
     expect((await leftOf(w.t, w.loser)).count).toBe(0);
-    if (stoodIn) {
-      await w.t.run(async (ctx) => {
-        await ctx.db.patch(w.loser, { unmergeActionId: undefined });
-        await ctx.db.patch(w.survivor, { unmergeActionId: undefined });
-      });
-    }
     // Done: both bodies free again (the unmerge clears its own marker), and the round trip holds.
     const markers = await w.t.run(async (ctx) => [
       (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
