@@ -5632,5 +5632,12 @@ export default defineSchema({
     done: v.boolean(),
     startedAt: v.number(),
     updatedAt: v.number(),
+    // The drift repair's full sweep (`inboxItems:repairAll`) totals what it did so far:
+    // items examined, things fixed, drift found by kind, items whose repair failed (Machinery has
+    // each failure in `jobFailures`). Absent on the backfill's and the clear's rows.
+    examined: v.optional(v.number()),
+    fixed: v.optional(v.number()),
+    changed: v.optional(v.record(v.string(), v.number())),
+    failures: v.optional(v.number()),
   }).index('by_job', ['job']),
 });

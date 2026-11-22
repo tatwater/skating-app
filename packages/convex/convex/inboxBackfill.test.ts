@@ -17,7 +17,10 @@ const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 const PREFS = {
   activityDetected: true,
@@ -217,6 +220,124 @@ describe('inboxItems:backfill', () => {
       (i) => i.startsWith('flag:') && i.includes('|open|'),
     );
     expect(flagItem).toMatch(/\|open\|2\|/);
+  });
+});
+
+describe('inboxItems:repairAll (the full sweep)', () => {
+  /** The sweep's run row. */
+  const sweepRow = (t: T) =>
+    t.run((ctx) =>
+      ctx.db
+        .query('inboxJobRuns')
+        .withIndex('by_job', (q) => q.eq('job', 'repair'))
+        .first(),
+    );
+  /** Every item's id, and each one drifted (a wrong count) so its repair fixes one thing. */
+  const driftAll = (t: T) =>
+    t.run(async (ctx) => {
+      const items = await ctx.db.query('inboxItems').collect();
+      for (const i of items) await ctx.db.patch(i._id, { memberCount: 99 });
+      return items.map((i) => i._id as string);
+    });
+  /** How many times each item was repaired: the sweep runs each through `asItem`, keyed by its id. */
+  const countVisits = () => {
+    const visits = new Map<string, number>();
+    const real = recurringWork.asItem;
+    vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      visits.set(key, (visits.get(key) ?? 0) + 1);
+      return real(key, work);
+    });
+    return visits;
+  };
+
+  test('pages itself to the end over more items than a pass holds: each item once, the totals recorded', async () => {
+    vi.useFakeTimers();
+    const t = harness();
+    await seedRaw(t);
+    await runToDone(t);
+    const good = await snapshot(t);
+    const ids = await driftAll(t);
+    expect(ids.length).toBeGreaterThan(4);
+    const visits = countVisits();
+    const first = await t.mutation(internal.inboxItems.repairAll, { pageCap: 2 });
+    expect(first).toMatchObject({ visited: 2, examined: 2, done: false });
+    // Called again while it runs: reported, not advanced, and no second chain.
+    expect(await t.mutation(internal.inboxItems.repairAll, { pageCap: 2 })).toMatchObject({
+      running: true,
+      visited: 0,
+      examined: 2,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect([...visits.entries()].filter(([k]) => ids.includes(k)).sort()).toEqual(
+      ids.map((id) => [id, 1]).sort(),
+    );
+    expect(await sweepRow(t)).toMatchObject({
+      phase: 'sweep 1',
+      done: true,
+      examined: ids.length,
+      fixed: ids.length,
+      changed: { fields: ids.length },
+      failures: 0,
+    });
+    expect(await snapshot(t)).toEqual(good);
+    // A sweep that's done: the next call starts a new one, from the first item.
+    expect((await t.mutation(internal.inboxItems.repairAll, {})).visited).toBeGreaterThan(0);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await sweepRow(t)).toMatchObject({
+      phase: 'sweep 2',
+      done: true,
+      examined: ids.length,
+      fixed: 0,
+      changed: {},
+    });
+  });
+
+  test('an item whose repair throws is recorded and passed; a restart leaves the old chain to stop', async () => {
+    vi.useFakeTimers();
+    const t = harness();
+    await seedRaw(t);
+    await runToDone(t);
+    const ids = await driftAll(t);
+    const heavy = ids[1] as string;
+    const real = recurringWork.asItem;
+    const visits = new Map<string, number>();
+    vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      visits.set(key, (visits.get(key) ?? 0) + 1);
+      if (key === heavy) throw new Error('too heavy');
+      return real(key, work);
+    });
+    await t.mutation(internal.inboxItems.repairAll, { pageCap: 2 });
+    // Restarted before its chain ran: the old chain's pass stops, the new sweep covers every item.
+    await t.mutation(internal.inboxItems.repairAll, { pageCap: 2, restart: true });
+    // The old chain's pass, run now, does nothing: only the standing sweep's chain advances it, so
+    // two chains never run side by side (each would double the passes, and race on the row).
+    expect(
+      await t.mutation(internal.inboxItems.repairAll, { pageCap: 2, sweep: 'sweep 1' }),
+    ).toMatchObject({ visited: 0, examined: 2, done: false });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const row = await sweepRow(t);
+    expect(row).toMatchObject({ phase: 'sweep 2', done: true, examined: ids.length, failures: 1 });
+    // The first item was fixed by the first sweep before the restart; the second one failed.
+    expect(row?.fixed).toBe(ids.length - 2);
+    // Twice each for the first page (both sweeps), once each after it: no chain ran twice.
+    for (const [i, id] of ids.entries()) expect([id, visits.get(id)]).toEqual([id, i < 2 ? 2 : 1]);
+    expect(
+      (await t.run((ctx) => ctx.db.query('jobFailures').collect())).map((f) => [f.job, f.key]),
+    ).toEqual([['inboxRepair', heavy]]);
+  });
+
+  test('an empty Inbox: one pass, done, nothing examined', async () => {
+    const t = harness();
+    expect(await t.mutation(internal.inboxItems.repairAll, {})).toMatchObject({
+      examined: 0,
+      done: true,
+      visited: 0,
+    });
+    // A chained pass for a sweep that isn't the one standing does nothing.
+    expect(await t.mutation(internal.inboxItems.repairAll, { sweep: 'sweep 9' })).toMatchObject({
+      visited: 0,
+      done: true,
+    });
   });
 });
 
