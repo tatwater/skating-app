@@ -4,6 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { must } from '@/components/kit/storyKit';
 
 import { EntryTile } from './entry-tile';
+import { TooltipProvider } from './tooltip';
 
 /** The way-in tile — a gesture drawn on a button, its name, its key. */
 const meta = {
@@ -29,17 +30,22 @@ type Story = StoryObj<typeof meta>;
 
 export const Tiles: Story = {
   parameters: { fourUp: true },
+  // No hover delay here: the play reads that the tile says *Not available yet*, not the tooltip's
+  // 600 ms wait — which, on a runner busy with the whole suite, outlasted the read's one-second
+  // retry (the delay itself is the tooltip's own story's).
   render: (args) => (
-    <div className="flex w-(--size-inspector) flex-col gap-(--space-2)">
-      <EntryTile {...args} />
-      <EntryTile
-        {...args}
-        title="Add what a sign says"
-        description="For the ice only, a put-in or lot gets its own"
-        kbd="R"
-        what="Writing what a sign says comes with the posted-rules editor."
-      />
-    </div>
+    <TooltipProvider delay={0}>
+      <div className="flex w-(--size-inspector) flex-col gap-(--space-2)">
+        <EntryTile {...args} />
+        <EntryTile
+          {...args}
+          title="Add what a sign says"
+          description="For the ice only, a put-in or lot gets its own"
+          kbd="R"
+          what="Writing what a sign says comes with the posted-rules editor."
+        />
+      </div>
+    </TooltipProvider>
   ),
   play: async ({ canvasElement, args }) => {
     const quad = must(canvasElement.querySelector<HTMLElement>('[data-theme-scope]'));
