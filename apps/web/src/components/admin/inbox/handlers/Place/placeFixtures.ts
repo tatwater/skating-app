@@ -247,3 +247,17 @@ export const LANDMARK_SEVERAL = {
     },
   ],
 } as unknown as PlaceItem;
+
+/**
+ * The drawn bay with a newer ask already closed (its asker withdrew it), served first: the ask a
+ * decision is sent for (`primaryRequestId`, the newest open one) is not `asks[0]`.
+ */
+export const BAY_DRAWN_CLOSED_FIRST = {
+  ...BAY_DRAWN,
+  itemId: id('itbayclosedfirst'),
+  asks: [
+    { ...BAY_ASKS[0], requestId: id('rqbaywithdrawn'), askedAt: NOW - 1 * H, status: 'closed' },
+    ...BAY_ASKS,
+  ],
+  primaryRequestId: id('rqbay1'),
+} as unknown as PlaceItem;

@@ -25,6 +25,7 @@ import {
   activateNoDormancy,
   activateShelved,
   admit,
+  admitClosedFirst,
   admitNoMatch,
   contest,
   contestNoRuling,
@@ -262,6 +263,23 @@ describe('each lever calls its write with the item’s ids', () => {
     expect((await screen.findAllByText(/Admitted/)).length).toBeGreaterThan(0);
     expect((await screen.findAllByRole('button', { name: /Undo/ })).length).toBeGreaterThan(0);
     expect(server.latestOwn).not.toHaveBeenCalled();
+  });
+
+  it('sends the ask the server names even when a newer closed ask is served first', async () => {
+    const user = userEvent.setup();
+    const item = admitClosedFirst();
+    expect(item.asks[0]?.status).toBe('closed');
+    expect(item.primaryRequestId).not.toBe(item.asks[0]?.requestId);
+    open(item);
+    await user.click(button('Admit'));
+    await waitFor(() =>
+      expect(writes['corpusRequests:approve']).toHaveBeenCalledWith({
+        requestId: item.primaryRequestId,
+      }),
+    );
+    expect(writes['corpusRequests:approve']).not.toHaveBeenCalledWith({
+      requestId: item.asks[0]?.requestId,
+    });
   });
 
   it('Decline asks the note the asker reads, then declines with it', async () => {

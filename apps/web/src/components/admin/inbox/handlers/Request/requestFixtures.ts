@@ -176,6 +176,25 @@ export const admit = (viewer: Viewer = 'admin'): RequestItem =>
     decided: decidedState(viewer),
   });
 
+/**
+ * 2.3's admit with a newer ask already closed (its asker withdrew it) — served first, newest first —
+ * so the ask a decision is sent for (`primaryRequestId`, the newest open one) is not `asks[0]`.
+ */
+export const admitClosedFirst = (viewer: Viewer = 'admin'): RequestItem =>
+  served({
+    ...admit(viewer),
+    itemId: id('itrqclosedfirst') as RequestItem['itemId'],
+    asks: [
+      {
+        ...LUC_ASK,
+        requestId: id('rqwithdrawn') as never,
+        askedAt: REQUEST_NOW - 1 * H,
+        status: 'closed',
+      },
+      ...BOARD_ASKS,
+    ],
+  });
+
 /** An admit the catalog didn't match: *Look up again* in *Admit*'s place, and why. */
 export const admitNoMatch = (viewer: Viewer = 'admin'): RequestItem =>
   served({

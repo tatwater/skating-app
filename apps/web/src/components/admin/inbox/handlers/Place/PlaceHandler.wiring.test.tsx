@@ -16,7 +16,14 @@ import {
   must,
   resetHarness,
 } from '../../testing/routeHarness';
-import { BAY_DRAWN, BAY_UNDRAWN, NARROWS, PLACE_BY_VIEWER, PLACE_DECIDED } from './placeFixtures';
+import {
+  BAY_DRAWN,
+  BAY_DRAWN_CLOSED_FIRST,
+  BAY_UNDRAWN,
+  NARROWS,
+  PLACE_BY_VIEWER,
+  PLACE_DECIDED,
+} from './placeFixtures';
 
 /**
  * **The place handler through the real route and view** (the shared harness: only the router, the
@@ -113,8 +120,8 @@ beforeEach(() => {
 const inspector = () =>
   must(document.querySelector<HTMLElement>('[data-pane="detail"]'), 'the inspector');
 const called = (name: string) => writes.calls.filter((c) => c.name === name);
-const firstAsk = (item: InboxItemView) =>
-  must((item as typeof NARROWS).asks[0], 'an ask').requestId;
+/** The ask the server names for a decision — never inferred from the list's order. */
+const firstAsk = (item: InboxItemView) => (item as typeof NARROWS).primaryRequestId;
 
 describe('a place item, through the route and the view', () => {
   it('opens the place handler, not the placeholder', () => {
@@ -124,7 +131,7 @@ describe('a place item, through the route and the view', () => {
     expect(inspector().querySelector('[data-slot="inbox-placeholder-facts"]')).toBeNull();
   });
 
-  it('Same place approves the first ask with the lookalike as sameAs', async () => {
+  it('Same place approves the ask the server names, with the lookalike as sameAs', async () => {
     open(NARROWS);
     mount();
     fireEvent.click(within(inspector()).getByRole('button', { name: 'Same place' }));
@@ -145,7 +152,7 @@ describe('a place item, through the route and the view', () => {
     );
   });
 
-  it('Approve answers a drawn bay with the first ask', async () => {
+  it('Approve answers a drawn bay with the ask the server names', async () => {
     open(BAY_DRAWN);
     mount();
     fireEvent.click(within(inspector()).getByRole('button', { name: 'Approve' }));
@@ -154,6 +161,20 @@ describe('a place item, through the route and the view', () => {
         { name: 'corpusRequests:approve', args: { requestId: firstAsk(BAY_DRAWN) } },
       ]),
     );
+  });
+
+  it('sends the ask the server names even when a newer closed ask is served first', async () => {
+    const item = BAY_DRAWN_CLOSED_FIRST;
+    expect(item.asks[0]?.status).toBe('closed');
+    open(item);
+    mount();
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Approve' }));
+    await waitFor(() =>
+      expect(called('corpusRequests:approve')).toEqual([
+        { name: 'corpusRequests:approve', args: { requestId: item.primaryRequestId } },
+      ]),
+    );
+    expect(item.primaryRequestId).not.toBe(item.asks[0]?.requestId);
   });
 
   it('Decline asks the note and calls corpusRequests.decline with it', async () => {
