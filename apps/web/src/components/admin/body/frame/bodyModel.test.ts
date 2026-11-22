@@ -277,6 +277,45 @@ describe('asks and history', () => {
   });
 });
 
+describe('a history row’s second line', () => {
+  const row = (over: Partial<HistoryAction>): HistoryAction => ({
+    id: 'u1',
+    action: 'unmerge_waterbody',
+    targetType: 'waterbody',
+    targetId: 'b',
+    createdAt: 0,
+    actor: null,
+    ...over,
+  });
+
+  it('says an unmerge’s outcome from its own row, in the toast’s one wording', () => {
+    const line = (metadata: unknown) => bodyHistory([row({ metadata })])[0]?.line;
+    expect(line({ done: false, left: { count: 0 } })).toBe('Moving rows back…');
+    expect(line({ done: false, left: { count: 2 } })).toBe(
+      'Moving rows back… · 2 rows had changed since the merge and stay where they are',
+    );
+    expect(line({ done: true, left: { count: 0 } })).toBe('Every row went back');
+    expect(line({ done: true, left: { count: 1 } })).toBe(
+      '1 row had changed since the merge and stays where it is',
+    );
+    // A row that doesn't carry the facts says nothing more.
+    expect(line(undefined)).toBeUndefined();
+    expect(line({ done: 'yes' })).toBeUndefined();
+  });
+
+  it('says why a merge can’t be undone, and never a verb’s own reason', () => {
+    const why = 'This merge was recorded before merges kept everything an unmerge needs.';
+    const unavailable = { state: 'unavailable', why };
+    expect(bodyHistory([row({ action: 'merge_waterbody', undo: unavailable })])[0]?.line).toBe(why);
+    expect(
+      bodyHistory([row({ action: 'merge_waterbody', undo: { state: 'available' } })])[0]?.line,
+    ).toBeUndefined();
+    expect(
+      bodyHistory([row({ action: 'set_standing', undo: unavailable })])[0]?.line,
+    ).toBeUndefined();
+  });
+});
+
 describe('clock words', () => {
   it('writes September as Sep, never Sept', () => {
     const sep = new Date(2026, 8, 17, 12).getTime();

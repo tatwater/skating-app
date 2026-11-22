@@ -50,7 +50,7 @@ import {
 } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { refreshPinnedFacts } from './lib/bodyGeo';
-import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
+import { linkAuditRow, queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { refreshBodyNames, setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells } from './lib/cellIndex';
@@ -331,6 +331,18 @@ export async function unmergeBodyImpl(
     },
     createdAt: now,
   });
+  // The row is on the loser; linked to the survivor too, so both bodies' History say how it went.
+  await linkAuditRow(
+    ctx,
+    {
+      actionId: unmergeId,
+      action: 'unmerge_waterbody',
+      targetType: 'waterbody',
+      targetId: loser._id,
+      createdAt: now,
+    },
+    [survivor._id],
+  );
   const left = noneLeft();
   await restoreBodies(ctx, cs, loser, survivor);
   await restorePartners(ctx, cs, left);

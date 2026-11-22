@@ -3,15 +3,16 @@ import type { Id } from '@skating/convex/dataModel';
 import type { FunctionReturnType } from 'convex/server';
 import type { ReactNode } from 'react';
 
-import { MERGE_WORDS as MW } from '../body/tabs/shape/mergeWords';
 import { isFailed, read, useConsoleReadSet } from '../reads/consoleReads';
+import { unmergeLine } from './unmergeLine';
 
 /**
  * **What an unmerge left where it was**, said where the unmerge is: the Undone toast after a merge's
  * Undo, and the unmerge's History row. The server counts it on the unmerge's own audit row as its
  * pages land (`unmerge.receipt`), so the line moves while the unmerge runs: "Moving rows back…",
- * then — once the last page lands — how many rows had changed since the merge and stayed, or
- * nothing at all when every row went back (the toast then says what any undo says).
+ * then — once the last page lands — how many rows had changed since the merge and stayed, or that
+ * every row went back ({@link unmergeLine}, the one wording). Until the row is read, the caller's
+ * fallback (the toast's usual line).
  *
  * The line is a toast's or a row's second line, so a read that fails draws nothing: the unmerge
  * still landed, and its History row asks again when it is next drawn.
@@ -19,12 +20,10 @@ import { isFailed, read, useConsoleReadSet } from '../reads/consoleReads';
 
 export type UnmergeReceipt = FunctionReturnType<typeof api.unmerge.receipt>;
 
-/** The line for one answer: `null` while there is nothing to say. */
+/** The line for one answer: `null` until the unmerge's row is there. */
 export function unmergeLeftLine(receipt: UnmergeReceipt | undefined): string | null {
   if (receipt === undefined || receipt === null) return null;
-  const { done, left } = receipt;
-  if (!done) return left.count > 0 ? `${MW.unmerging} · ${MW.leftSince(left.count)}` : MW.unmerging;
-  return left.count > 0 ? MW.leftSince(left.count) : null;
+  return unmergeLine({ done: receipt.done, leftCount: receipt.left.count });
 }
 
 /** The line for an answer the page already holds (a story, a test). */

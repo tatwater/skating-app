@@ -226,6 +226,11 @@ export function BodyHistorySection({
                   {...(h.who !== null ? { who: h.who } : {})}
                 >
                   {h.what}
+                  {h.line !== undefined && (
+                    <span data-slot="body-history-line" className="block text-assist text-fg3">
+                      {h.line}
+                    </span>
+                  )}
                 </HistoryRow>
               ))}
             </HistoryList>

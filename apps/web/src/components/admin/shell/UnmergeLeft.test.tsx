@@ -46,22 +46,22 @@ describe('unmergeLeftLine', () => {
     expect(unmergeLeftLine(answer(false, 2))).toBe(`${MW.unmerging} · ${MW.leftSince(2)}`);
   });
 
-  it('says what stayed once it is done, and nothing when every row went back', () => {
+  it('says what stayed once it is done, or that every row went back', () => {
     expect(unmergeLeftLine(answer(true, 1))).toBe(
       '1 row had changed since the merge and stays where it is',
     );
     expect(unmergeLeftLine(answer(true, 1200))).toBe(
       '1,200 rows had changed since the merge and stay where they are',
     );
-    expect(unmergeLeftLine(answer(true, 0))).toBeNull();
+    expect(unmergeLeftLine(answer(true, 0))).toBe('Every row went back');
   });
 });
 
 describe('UnmergeLeftView', () => {
-  it('draws the line, or the fallback while there is nothing to say', () => {
+  it('draws the line, or the fallback until the unmerge’s row is read', () => {
     const { rerender } = render(<UnmergeLeftView receipt={answer(true, 3)} fallback="usual" />);
     expect(screen.getByText(MW.leftSince(3))).toBeInTheDocument();
-    rerender(<UnmergeLeftView receipt={answer(true, 0)} fallback="usual" />);
+    rerender(<UnmergeLeftView receipt={null} fallback="usual" />);
     expect(screen.getByText('usual')).toBeInTheDocument();
   });
 });

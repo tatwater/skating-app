@@ -1514,6 +1514,22 @@ suite('a heavy unmerge pages', () => {
   });
 });
 
+// ── Where the unmerge is said ──────────────────────────────────────────────────────────────────────
+
+suite('the unmerge in both bodies’ History', () => {
+  test('its row, with its outcome, is in the loser’s History and the survivor’s', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    await unmerge(w, mergeId);
+    for (const waterBodyId of [w.loser, w.survivor]) {
+      const { entries } = await w.colleague.as.query(api.bodyConsole.history, { waterBodyId });
+      const row = entries.find((e) => e.action === 'unmerge_waterbody');
+      expect(row?.undoesActionId).toBe(mergeId);
+      expect(row?.metadata).toMatchObject({ done: true, left: { count: 0 } });
+    }
+  });
+});
+
 // ── The drawer's message ───────────────────────────────────────────────────────────────────────────
 
 suite('the drawer is told of the merge once, or not at all', () => {

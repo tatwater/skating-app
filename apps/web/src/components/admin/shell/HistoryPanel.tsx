@@ -10,6 +10,7 @@ import { actionLabel } from './actionLabels';
 import { historyWhen } from './consoleTime';
 import { UnmergeLeft } from './UnmergeLeft';
 import { type UndoTarget, useUndo } from './undo';
+import { mergeUndoWhy } from './unmergeLine';
 
 /**
  * History (D226): the audit trail of one thing — a report, a body, a person — or of everything,
@@ -46,13 +47,6 @@ export type HistoryPanelViewProps = {
    */
   lineOf?: (row: HistoryEntry) => ReactNode;
 };
-
-/**
- * Why a row can't be undone, said on the row before anything runs — only where the reason is the
- * row's own rather than the verb's (a merge recorded before its change set kept everything an
- * unmerge needs); a verb that never undoes says nothing, as before.
- */
-const SAYS_WHY: ReadonlySet<string> = new Set(['merge_waterbody']);
 
 /** The id a row is reachable by, so "changed since" can take the reader to the row that did. */
 const rowId = (id: string) => `history-${id}`;
@@ -157,8 +151,7 @@ export function HistoryPanelView({
         <HistoryList>
           {rows.map((row) => {
             const reason = row.reason.trim();
-            const why =
-              row.undo.state === 'unavailable' && SAYS_WHY.has(row.action) ? row.undo.why : null;
+            const why = mergeUndoWhy(row.action, row.undo);
             const line = lineOf?.(row) ?? null;
             return (
               <HistoryRow
