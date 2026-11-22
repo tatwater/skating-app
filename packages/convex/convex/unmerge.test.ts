@@ -1824,6 +1824,37 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
       w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
     ).rejects.toThrow(UNMERGE_RESUME_DONE);
   });
+  test('runningOn finds a pair’s unmerge by either body — its merge, stalled or not — and none once done', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    const on = (ids: Id<'waterBodies'>[]) =>
+      w.colleague.as.query(api.unmerge.runningOn, { waterBodyIds: ids });
+    expect(await on([w.loser, w.survivor])).toBeNull();
+    await paged(async () => {
+      UNMERGE_FAULT.phase = 'moved';
+      try {
+        await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+        await settle(w.t);
+      } finally {
+        UNMERGE_FAULT.phase = null;
+      }
+      // By the survivor alone, or the loser: the merge resume and receipt are keyed by.
+      for (const ids of [[w.survivor], [w.loser], [w.elsewhere, w.loser]]) {
+        expect(await on(ids)).toMatchObject({
+          mergeActionId: mergeId,
+          done: false,
+          stalled: { reason: UNMERGE_PAGE_FAILED },
+        });
+      }
+      await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
+      await settle(w.t);
+    });
+    expect(await on([w.loser, w.survivor])).toBeNull();
+    // Held to the audit reader: a skater is refused.
+    await expect(
+      w.skater.as.query(api.unmerge.runningOn, { waterBodyIds: [w.loser] }),
+    ).rejects.toThrow();
+  });
 });
 
 // ── Where the unmerge is said ──────────────────────────────────────────────────────────────────────

@@ -80,6 +80,7 @@ import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { DOC_MAX, ROW_MAX } from './lib/readBudget';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { zoomSortKey } from './lib/scoring';
+import { unmergeRunningOn } from './lib/unmergeState';
 import { scheduleRestamp, syncCellsForParent } from './subAreas';
 import {
   type MergeChangeSet,
@@ -1130,6 +1131,38 @@ export const receipt = query({
       stalled: await stalledOf(ctx, metadata),
       left: metadata.left ?? noneLeft(),
     };
+  },
+});
+
+/**
+ * **The unmerge still running on either of a pair of bodies**, by the bodies alone — for a merge
+ * refused with `unmerging` (the Drawn lever, the Shape tab's preview), whose place says the body is
+ * still being unmerged and, when that unmerge is stalled, offers its Resume. The bodies' marker
+ * (`unmergeActionId`) names the unmerge's row; its `undoes:` is the merge `receipt` and `resume` are
+ * keyed by. `null` when neither body is marked. At most two bodies, each one read.
+ */
+export const runningOn = query({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (
+    ctx,
+    { waterBodyIds },
+  ): Promise<(UnmergeReceipt & { mergeActionId: Id<'moderationActions'> }) | null> => {
+    await requireCapability(ctx, 'audit.read');
+    for (const id of waterBodyIds.slice(0, 2)) {
+      const body = await ctx.db.get(id);
+      const running = body ? unmergeRunningOn(body) : null;
+      const row = running ? await ctx.db.get(running) : null;
+      if (!row || row.undoesActionId === undefined) continue;
+      const metadata = (row.metadata ?? {}) as UnmergeMeta;
+      return {
+        mergeActionId: row.undoesActionId,
+        unmergeActionId: row._id,
+        done: metadata.done === true,
+        stalled: await stalledOf(ctx, metadata),
+        left: metadata.left ?? noneLeft(),
+      };
+    }
+    return null;
   },
 });
 
