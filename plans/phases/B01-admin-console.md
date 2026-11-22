@@ -1139,6 +1139,8 @@ count above):
 | Pane and global keys — once per press (`lib/keys`) | ✅ | `usePaneKeys` and the two global keys (⌘K, ?) register with `requireReset`, as go mode's G already did: a held key acts once and again only after its release; a busy bar button's key is held inert. A list's ↑↓ is its own handling and still repeats | Every pane, the shell |
 | LockBanner — announced (`note`) | ✅ | Its polite live region is in the page before its words, which go into a reader-only slot a frame after mount (`RetryNote`'s rule), so a screen reader announces the lock | `DecidedLock` |
 | LifeStrip — re-measured after every commit (`life-strip`) | ✅ | Re-decides its narrow layout when its words change, not only its count or box: its unseen copy is measured after every commit, and its observer set up once; the strip seen is never remounted | The flag and Access handlers |
+| Keys — a held key swallows its own repeats (`lib/keys`) | ✅ | A bound key that acted swallows its own repeat keydowns, and the text they would type, until it is released, wherever focus has gone. So holding an action letter no longer types into the reason dialog it opens. A fresh press, any other key, a held ⇧ or ⌘, and IME composition pass through; it lets go on keyup, window blur or a hidden page | Every pane, the shell |
+| LockBanner — its live region is its words only (`note`) | ✅ | The reader-only status region holds the banner's line alone, never its buttons | `DecidedLock` |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -7822,8 +7824,43 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
 
   **For the copy pass,** the new words: the five lines above, and the link labels "Body editor" and
   "Water bodies".
+- **For the founder's copy pass, from the re-check's fixes:**
+  - the four Safety heads above;
+  - the contradiction sentence, and "N counted by the contradiction check";
+  - "Of the reports read; more lie past the window’s cut";
+  - the scale bar and the distance rule read "1.0 MI" for whole miles, because the console's
+    `formatDistance` returns one decimal (`miles.toFixed(1)` from 0.095 mi up, rounded feet below) and
+    the scale bar sets it in caps. The same formatter writes Places' "Possibly X, 0.4 mi away". The
+    boards draw metric scale bars and "0.4 mi apart".
 - **The re-check of the web fix rounds** (2026-11-21): 19 of the 22 claimed fixes closed, two only
-  in part, and one — the wording — not; no code defect blocking. Its first fixes (W1, fifth pass):
+  in part, and one — the wording — not; no code defect blocking. **The blocker it named was the
+  wording:** the contradiction check's sentence named the wrong comparison, with the server's own note
+  drawn under it. **What the check counts,** as W2 read it in `contradictions.ts`: the author's running
+  tally of reports with no corroboration of their own that disagreed with a more-corroborated report
+  at the same body by more than the weather since explains (not "recent" reports). **The fixes:**
+  - **The contradiction sentence** now says exactly that, attributed to the check: "N of their
+    reports, with no corroboration of their own, disagreed with a more-corroborated report at the same
+    body by more than the weather since explains". The author's row reads "N counted by the
+    contradiction check".
+  - **An app flag's note is drawn only where it is the rule's own count** (the hazard vote's); the
+    contradiction check's fixed server prose is not.
+  - **The Safety heads say whose claim it is, per subject,** in a colon form: "Flagged: false safety
+    report" (a report or Post), "Flagged: never there" (a hazard the app flagged by vote), "Flagged:
+    false hazard" (a hazard a person flagged), "Flagged: false safety claim" (anything else). The
+    longer phrasing overflowed the head at 360 px.
+  - **A held key no longer types into the dialog it opens** (the kit's fifth pass): held past the
+    repeat delay, an action letter opened its reason dialog once and its repeats then typed into the
+    field, so for *Dismiss* (whose reason is optional) ⌘⏎ could send "dddd" to the audit log and the
+    flagger. A key that acted now swallows its own repeats until released.
+  - **Smaller fixes:**
+    - capped *Around it* tiles and phrases are floors ("2+");
+    - the author menu's reason dialog and the suspend dialog it opens are capped at the server's
+      `AUDIT_REASON_MAX`;
+    - `useStillHere` sets its item in setup, so StrictMode never reads a mounted handler as gone;
+    - the day walk's DST case is pinned, and the flag fixtures are absolute instants;
+    - `LockBanner`'s live region holds its words only.
+
+  Two more of its fixes (W1, fifth pass):
   - **Inbox zero's chart starts on a whole hour of the reader's clock.** It had floored to a UTC hour,
     so in a half-hour zone it started at :30 and a test failed under `TZ=America/St_Johns`. A property
     over eight zones across DST changes now holds it.
