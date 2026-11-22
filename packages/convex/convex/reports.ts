@@ -566,7 +566,7 @@ const RECOMMENDED_PHOTO_ROUNDS = 4;
  * {@link RECOMMENDED_PHOTO_ROUNDS} rounds drops its uncounted reports. Reads at most rounds × cards ×
  * bundle × the read cap photo rows — the cards, never the 500 candidates.
  */
-async function selectOnVisiblePhotos(
+export async function selectOnVisiblePhotos(
   ctx: QueryCtx,
   candidates: RecommendableReport[],
   byId: ReadonlyMap<string, Doc<'reports'>>,

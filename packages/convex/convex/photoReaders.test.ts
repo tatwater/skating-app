@@ -331,3 +331,41 @@ describe('listPhotos joins by id, never by position', () => {
     }
   });
 });
+
+describe('recommended counts visible photos only', () => {
+  test('a report that clears the bar on its listed photos but not its visible ones loses its card; the next wins', async () => {
+    const { selectOnVisiblePhotos } = await import('./reports');
+    const w = (await world()) as W;
+    const make = (reportId: string, photoCount: number) => ({
+      reportId,
+      waterBodyId: w.waterBodyId as string,
+      skateEndTime: T0 - 60_000,
+      skateQuality: 'great' as const,
+      iceTypes: [{ type: 'black_ice' as const }],
+      photoCount,
+      corroborationCount: 9,
+      authorTrust: 'expert' as const,
+    });
+    const picked = await w.t.run(async (ctx) => {
+      // Two photos listed, one hidden: below the bar of two once counted.
+      const mostlyDown = (await ctx.db.get(w.reportId)) as Doc<'reports'>;
+      await ctx.db.patch(w.reportId, {
+        photoIds: [w.byStatus.visible, w.byStatus.hidden],
+      });
+      const shown = await ctx.db.insert('reports', {
+        ...(({ _id, _creationTime, ...rest }) => rest)(mostlyDown),
+        photoIds: [w.byStatus.visible, w.byStatus.absent],
+        skateEndTime: T0 - 120_000,
+      });
+      const byId = new Map<string, Doc<'reports'>>([
+        [w.reportId, (await ctx.db.get(w.reportId)) as Doc<'reports'>],
+        [shown, (await ctx.db.get(shown)) as Doc<'reports'>],
+      ]);
+      // The first ranks first on its listed count (more corroboration ties broken by photos).
+      const candidates = [make(w.reportId, 2), make(shown, 2)];
+      candidates[0] = { ...candidates[0], corroborationCount: 10 } as (typeof candidates)[0];
+      return { cards: await selectOnVisiblePhotos(ctx, candidates, byId, T0), shown };
+    });
+    expect(picked.cards.flatMap((c) => c.reportIds)).toEqual([picked.shown]);
+  });
+});
