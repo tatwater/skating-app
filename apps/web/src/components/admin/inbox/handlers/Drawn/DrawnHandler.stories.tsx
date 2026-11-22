@@ -11,13 +11,16 @@ import { ItemMapView } from '../../map/ItemMap';
 import { DRAWN_MAP } from '../../map/itemMapFixtures';
 import { drawnSlots } from './DrawnHandlerView';
 import {
+  BARE_SKATE,
   BELOW_THRESHOLD,
   DRAWN_BY_VIEWER,
   DRAWN_DECIDED,
   DRAWN_NOW,
+  LONG_REPORT,
   MODERATOR_VIEW,
   NEW_WATER,
   OVER_CASPIAN,
+  REPORT_WITHHELD,
 } from './drawnFixtures';
 import type { DrawnItem } from './drawnModel';
 
@@ -110,6 +113,9 @@ export const OverCaspian: Story = {
       const s = within(q);
       await expect(s.getByRole('meter', { name: 'Of the drawing is Caspian Lake' })).toBeVisible();
       await expect(s.getByRole('region', { name: 'If merged into Caspian Lake' })).toBeVisible();
+      await expect(s.getByRole('blockquote')).toHaveTextContent('Skated the east arm');
+      await expect(s.getByText('Trusted · 41 pts · 14 reports')).toBeVisible();
+      await expect(s.getByText('1h 36m · 11 Oct 09:00–11:00')).toBeVisible();
       const merge = s.getByRole('button', { name: /Merge into Caspian Lake/ });
       await expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
       await expect(s.getByRole('button', { name: 'Approve as new' })).toBeVisible();
@@ -118,6 +124,45 @@ export const OverCaspian: Story = {
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
       // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
       await waitFor(() => expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth));
+    }
+  },
+};
+
+/** The report the drawing came from, hidden or withdrawn to this viewer: its words withheld. */
+export const ReportWithheld: Story = {
+  render: () => pair(() => <Inspector item={REPORT_WITHHELD} />),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const report = within(q).getByRole('region', { name: 'The report it came from' });
+      await expect(within(report).queryByRole('blockquote')).toBeNull();
+      await expect(within(report).getByText(/Its words aren’t shown/)).toBeVisible();
+      await expect(within(report).getByRole('button', { name: /Open in Reports/ })).toBeVisible();
+    }
+  },
+};
+
+/** A long report: the server's cut at 100 characters, drawn whole as the excerpt it is. */
+export const LongReport: Story = {
+  render: () => pair(() => <Inspector item={LONG_REPORT} />),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const quote = within(q).getByRole('blockquote');
+      await expect(quote.textContent?.endsWith('…”')).toBe(true);
+      // Never clipped sideways: it wraps inside its column.
+      await expect(quote.scrollWidth).toBeLessThanOrEqual(quote.clientWidth + 1);
+    }
+  },
+};
+
+/** No report, a skate with no end or moving time, a drawer with no count served. */
+export const BareSkate: Story = {
+  render: () => pair(() => <Inspector item={BARE_SKATE} />),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const report = within(q).getByRole('region', { name: 'The report it came from' });
+      await expect(within(report).getByText('No report is linked to this drawing')).toBeVisible();
+      await expect(within(report).getByText('11 Oct 09:00')).toBeVisible();
+      await expect(within(report).getByText('Trusted · 41 pts')).toBeVisible();
     }
   },
 };

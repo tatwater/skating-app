@@ -9,13 +9,16 @@ import { stubJsdomAnimations } from '../../../body/tabs/jsdomStubs';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
 import { DrawnActions, DrawnBody, type DrawnHandlerProps, DrawnHead } from './DrawnHandlerView';
 import {
+  BARE_SKATE,
   BELOW_THRESHOLD,
   DRAWER_GONE,
   DRAWN_BY_VIEWER,
   DRAWN_NOW,
+  LONG_REPORT,
   MODERATOR_VIEW,
   NEW_WATER,
   OVER_CASPIAN,
+  REPORT_WITHHELD,
 } from './drawnFixtures';
 import type { DrawnItem } from './drawnModel';
 import { type DrawnServer, useDrawnWrites } from './useDrawnWrites';
@@ -100,8 +103,16 @@ describe('the slots', () => {
     expect(screen.getByText('Merge suggested from 80 %')).toHaveAttribute('data-reached');
     const report = screen.getByRole('region', { name: 'The report it came from' });
     expect(within(report).getByText('Kate Donovan')).toBeInTheDocument();
-    expect(within(report).getByText('Trusted · 41 pts')).toBeInTheDocument();
-    expect(within(report).getByText('11 Oct')).toBeInTheDocument();
+    expect(within(report).getByText('Trusted · 41 pts · 14 reports')).toBeInTheDocument();
+    expect(within(report).getByText('1h 36m · 11 Oct 09:00–11:00')).toBeInTheDocument();
+    expect(
+      within(report).getByText('“Skated the east arm all morning with the club.”'),
+    ).toBeInTheDocument();
+    // The report lives in Reports, which isn't built.
+    expect(within(report).getByRole('button', { name: /Open in Reports/ })).toHaveAttribute(
+      'data-unavailable-title',
+      'Coming soon',
+    );
     const merged = screen.getByRole('region', { name: 'If merged into Caspian Lake' });
     expect(merged).toHaveTextContent('Re-homed · stays visible');
     // A merge isn't built anywhere yet: the block says so, links nowhere, and names no page that
@@ -109,6 +120,30 @@ describe('the slots', () => {
     expect(within(merged).getByText('Coming soon')).toBeInTheDocument();
     expect(within(merged).queryByRole('link')).toBeNull();
     expect(merged.textContent).not.toMatch(/editor|elsewhere|merge it/i);
+  });
+
+  it('withholds a hidden report’s words, saying so; draws a long one as the server cut it', () => {
+    const { unmount } = inShell(<Pane item={REPORT_WITHHELD} />);
+    const report = () => screen.getByRole('region', { name: 'The report it came from' });
+    expect(within(report()).queryByRole('blockquote')).toBeNull();
+    expect(
+      within(report()).getByText('Its words aren’t shown: the report is hidden or withdrawn'),
+    ).toBeInTheDocument();
+    unmount();
+    inShell(<Pane item={LONG_REPORT} />);
+    const quote = within(report()).getByRole('blockquote');
+    // As served: the server's cut and its ellipsis, nothing added, nothing whole.
+    expect(quote.textContent).toBe(`“${LONG_REPORT.fromReport?.excerpt}”`);
+    expect(quote.textContent?.endsWith('…”')).toBe(true);
+  });
+
+  it('draws a bare skate from its start, no report and no count it wasn’t given', () => {
+    inShell(<Pane item={BARE_SKATE} />);
+    const report = screen.getByRole('region', { name: 'The report it came from' });
+    expect(within(report).getByText('No report is linked to this drawing')).toBeInTheDocument();
+    expect(within(report).queryByRole('button', { name: /Open in Reports/ })).toBeNull();
+    expect(within(report).getByText('Trusted · 41 pts')).toBeInTheDocument();
+    expect(within(report).getByText('11 Oct 09:00')).toBeInTheDocument();
   });
 
   it('says a drawing over no body plainly, with no gauge and no merge block', () => {

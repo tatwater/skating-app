@@ -25,8 +25,16 @@ export const DRAWN_WORDS = {
   // ── Invented ────────────────────────────────────────────────────────────────────────────────
   /** The head's micro line when no report is linked. */
   drawnByASkater: 'Drawn by a skater',
-  /** The report block's rows (the read carries no report's words or track yet). */
+  /** The report block's rows. */
   skated: 'Skated',
+  /** The skate the drawing came from: its row (the board's *Track*; no distance is served). */
+  skate: 'Skate',
+  /** The report's words withheld from this viewer (hidden, removed, or withdrawn by its author). */
+  excerptWithheld: 'Its words aren’t shown: the report is hidden or withdrawn',
+  /** The report itself lives in Reports, which isn't built. */
+  openInReports: 'Open in Reports',
+  /** The drawer's visible reports, after their standing. */
+  reports: (n: number) => (n === 1 ? '1 report' : `${n.toLocaleString('en-US')} reports`),
   noReportLinked: 'No report is linked to this drawing',
   /** The drawer gone (a finished deletion). */
   drawerGone: 'A former skater',

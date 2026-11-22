@@ -11,12 +11,16 @@ import {
 import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
 import { buttonVariants } from '@/components/kit/button';
 import { LabelRows } from '@/components/kit/label-rows';
-import { Note } from '@/components/kit/note';
+import { Note, Quote } from '@/components/kit/note';
 import { OverlapGauge } from '@/components/kit/overlap-gauge';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { ToolbarItem } from '@/components/kit/toolbar';
-import { COMING_SOON, UnavailableButton } from '@/components/kit/unavailable-button';
+import {
+  COMING_SOON,
+  ComingSoonLink,
+  UnavailableButton,
+} from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
@@ -33,7 +37,8 @@ import {
   MERGE_PERCENT,
   mergeRows,
   refusalSaid,
-  trustLine,
+  skateLine,
+  standingLine,
 } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
 import type { DrawnAct } from './useDrawnWrites';
@@ -166,10 +171,28 @@ export function DrawnBody({
         </Section>
       </Part>
       <Part className="grid grid-cols-1 gap-x-(--space-7) gap-y-(--space-5_5) px-(--space-5) pt-(--space-5_5) @[40rem]:grid-cols-2">
-        <Section title={W.theReport} data-slot="drawn-report">
+        <Section
+          title={W.theReport}
+          data-slot="drawn-report"
+          {...(report !== null
+            ? {
+                // The report lives in Reports, which isn't built (D286).
+                end: (
+                  <ComingSoonLink data-slot="drawn-open-report">{W.openInReports}</ComingSoonLink>
+                ),
+              }
+            : {})}
+        >
           <div className="flex min-w-0 flex-col gap-(--space-2)">
-            {report === null && (
+            {report === null ? (
               <p className="m-0 text-row leading-body text-fg3">{W.noReportLinked}</p>
+            ) : report.excerpt !== null ? (
+              // An excerpt as the server cut it (its own ellipsis), never the whole report.
+              <Quote data-slot="drawn-report-excerpt">“{report.excerpt}”</Quote>
+            ) : (
+              <p data-slot="drawn-report-withheld" className="m-0 text-row leading-body text-fg3">
+                {W.excerptWithheld}
+              </p>
             )}
             <LabelRows
               rows={[
@@ -186,10 +209,12 @@ export function DrawnBody({
                       />
                     ),
                 },
-                { label: W.trust, value: trustLine(drawer) },
-                ...(report !== null
-                  ? [{ label: W.skated, value: dayMonth(report.skateEndTime, timeZone) }]
-                  : []),
+                { label: W.trust, value: standingLine(drawer, item.drawerReports) },
+                ...(item.skate !== null
+                  ? [{ label: W.skate, value: skateLine(item.skate, timeZone) }]
+                  : report !== null
+                    ? [{ label: W.skated, value: dayMonth(report.skateEndTime, timeZone) }]
+                    : []),
               ]}
             />
           </div>

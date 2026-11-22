@@ -2,6 +2,7 @@ import { MERGE_SUGGEST_SHARE } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 
 import {
+  BARE_SKATE,
   BELOW_THRESHOLD,
   DRAWER_GONE,
   DRAWN_BY_VIEWER,
@@ -20,6 +21,8 @@ import {
   MERGE_PERCENT,
   mergeRows,
   refusalSaid,
+  skateLine,
+  standingLine,
   trustLine,
 } from './drawnModel';
 
@@ -107,5 +110,28 @@ describe('the merge block', () => {
   it('keeps the below-threshold item’s share as the server sent it', () => {
     expect((BELOW_THRESHOLD as DrawnItem).overlap?.share).toBe(0.41);
     expect((BELOW_THRESHOLD as DrawnItem).overlap?.suggested).toBe(false);
+  });
+});
+
+describe('the drawer’s standing and the skate', () => {
+  it('adds the drawer’s reports to their standing; a count not given adds nothing', () => {
+    expect(standingLine(OVER_CASPIAN.drawer, 14)).toBe('Trusted · 41 pts · 14 reports');
+    expect(standingLine(OVER_CASPIAN.drawer, 1)).toBe('Trusted · 41 pts · 1 report');
+    expect(standingLine(OVER_CASPIAN.drawer, 0)).toBe('Trusted · 41 pts · 0 reports');
+    expect(standingLine(OVER_CASPIAN.drawer, null)).toBe('Trusted · 41 pts');
+    // A departed drawer: no standing, and no count either.
+    expect(standingLine(DRAWER_GONE.drawer, 14)).toBe('Not shown for a former skater');
+  });
+
+  it('says the moving time, then when — never the span’s length as the time', () => {
+    const skate = OVER_CASPIAN.skate as NonNullable<DrawnItem['skate']>;
+    // 96 minutes moving inside a two-hour span.
+    expect(skateLine(skate, 'America/New_York')).toBe('1h 36m · 11 Oct 09:00–11:00');
+  });
+
+  it('reads a skate with no end from its start, and no moving time as nothing', () => {
+    const bare = BARE_SKATE.skate as NonNullable<DrawnItem['skate']>;
+    expect(skateLine(bare, 'America/New_York')).toBe('11 Oct 09:00');
+    expect(skateLine({ ...bare, elapsedSeconds: 0 }, 'America/New_York')).toBe('11 Oct 09:00');
   });
 });

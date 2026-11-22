@@ -105,6 +105,41 @@ export const DRAWN_DECIDED = {
   },
 } as unknown as DrawnItem;
 
+/** The report is hidden or withdrawn, to this viewer: its words withheld, the rest as served. */
+export const REPORT_WITHHELD = {
+  ...OVER_CASPIAN,
+  fromReport: {
+    ...(OVER_CASPIAN.fromReport as NonNullable<DrawnItem['fromReport']>),
+    excerpt: null,
+  },
+} as unknown as DrawnItem;
+
+/** A long report, cut by the server at 100 characters with its own ellipsis. */
+export const LONG_REPORT = {
+  ...OVER_CASPIAN,
+  fromReport: {
+    ...(OVER_CASPIAN.fromReport as NonNullable<DrawnItem['fromReport']>),
+    excerpt:
+      'Skated the whole east shore, tested in four places. The map had no lake here so I drew one a…',
+  },
+} as unknown as DrawnItem;
+
+/**
+ * A skate with no report, whose provider sent no end and no moving time; a drawer whose report
+ * count the server couldn't give.
+ */
+export const BARE_SKATE = {
+  ...OVER_CASPIAN,
+  fromReport: null,
+  skate: {
+    ...(OVER_CASPIAN.skate as NonNullable<DrawnItem['skate']>),
+    endTime: null,
+    elapsedSeconds: null,
+    hasTrack: false,
+  },
+  drawerReports: null,
+} as unknown as DrawnItem;
+
 /** Every drawn fixture, by name — the table test walks them all. */
 export const DRAWN_FIXTURES = {
   OVER_CASPIAN,
@@ -114,4 +149,7 @@ export const DRAWN_FIXTURES = {
   DRAWN_BY_VIEWER,
   DRAWER_GONE,
   DRAWN_DECIDED,
+  REPORT_WITHHELD,
+  LONG_REPORT,
+  BARE_SKATE,
 } as const;

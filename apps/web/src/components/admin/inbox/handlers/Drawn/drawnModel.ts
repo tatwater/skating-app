@@ -1,8 +1,9 @@
-import { MERGE_SUGGEST_SHARE, TRUST_CLASS_LABELS } from '@skating/core';
+import { formatDurationLabel, MERGE_SUGGEST_SHARE, TRUST_CLASS_LABELS } from '@skating/core';
 
 import { ageInWords } from '@/lib/ages';
 
 import type { InboxItemView } from '../../list/inboxTypes';
+import { dayTime, skateSpan } from '../Flag/flagFormat';
 import { DRAWN_WORDS as W } from './drawnWords';
 
 /**
@@ -69,6 +70,31 @@ export const MERGE_PERCENT = Math.round(MERGE_SUGGEST_SHARE * 100);
 export function trustLine(p: Lockup | null): string {
   if (p === null || p.deleted || p.trustClass === null) return W.noTrust;
   return `${TRUST_CLASS_LABELS[p.trustClass]} · ${p.points.toLocaleString('en-US')} ${W.pts}`;
+}
+
+/**
+ * The drawer's standing and their visible reports, as the board's *Trust* row: "Trusted · 41 pts ·
+ * 14 reports". A count the server couldn't give (`null`) adds nothing; a departed drawer has none.
+ */
+export function standingLine(p: Lockup | null, reports: number | null): string {
+  const trust = trustLine(p);
+  if (p === null || p.deleted || p.trustClass === null || reports === null) return trust;
+  return `${trust} · ${W.reports(reports)}`;
+}
+
+/**
+ * The skate the drawing came from: its moving time, then when — "1h 36m · 11 Oct 09:00–11:00".
+ * The provider's moving time leaves out stops, so it is never the span's length; with none sent,
+ * only when. A skate with no end reads from its start.
+ */
+export function skateLine(skate: NonNullable<DrawnItem['skate']>, timeZone?: string): string {
+  const when =
+    skate.endTime !== null
+      ? skateSpan(skate.startTime, skate.endTime, timeZone)
+      : dayTime(skate.startTime, timeZone);
+  return skate.elapsedSeconds !== null && skate.elapsedSeconds > 0
+    ? `${formatDurationLabel(skate.elapsedSeconds / 60)} · ${when}`
+    : when;
 }
 
 /** What a merge would do, said as the merge — the block never offers to do it here. */
