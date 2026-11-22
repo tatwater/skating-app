@@ -239,7 +239,7 @@ describe('the dock', () => {
   it('says where a reply goes from and that their answer isn’t read; a note says who reads it', () => {
     const reply = draw({ item: ROB_APPEAL });
     expect(slots(reply.container, 'reply-dock-foot')[0]).toHaveTextContent(
-      `Sent from ${SUPPORT_FROM}. Their answer by email isn’t read: they write back from the app’s Help.`,
+      `Sent from ${SUPPORT_FROM}. Their answer by email isn’t read.`,
     );
     expect(slots(reply.container, 'reply-dock-to')[0]).toHaveTextContent('To Rob Tremblay');
     reply.unmount();

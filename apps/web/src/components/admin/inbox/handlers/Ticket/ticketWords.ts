@@ -77,7 +77,7 @@ export const TICKET_WORDS = {
   sentFromSupport: 'Sent from the support address.',
   /** Coined: the variable is unset, so a reply would read Not sent — said before it is written. */
   noSender: 'No sending address is set up, so a reply won’t be sent: it will read Not sent.',
-  answersNotRead: 'Their answer by email isn’t read: they write back from the app’s Help.',
+  answersNotRead: 'Their answer by email isn’t read.',
   noteFoot: 'Seen only by staff who answer support.',
   /** A form's own check (D268: in place, never a toast). */
   tooLong: (max: number, length: number, what: string) =>
