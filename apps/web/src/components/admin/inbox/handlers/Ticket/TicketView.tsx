@@ -18,7 +18,9 @@ import { Button } from '@/components/kit/button';
 import { FactList } from '@/components/kit/fact-list';
 import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
+import { ReplyDock, type ReplyDockMode } from '@/components/kit/reply-dock';
 import { Section } from '@/components/kit/section-slug';
+import { ThreadEvent, ThreadMessage } from '@/components/kit/thread-message';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
 import { reportsWords } from '../../blocks/AuthorBlock';
@@ -34,8 +36,6 @@ import {
 import { TARGET_CHIP } from '../../words/inboxWords';
 import { dayMonth, dayTime } from '../Flag/flagFormat';
 import { FLAG_WORDS, REASON_HEAD } from '../Flag/flagWords';
-import { ReplyDock, type ReplyDockMode } from './ReplyDock';
-import { ThreadEvent, ThreadMessage } from './ThreadMessage';
 import type { TicketDraft } from './ticketDrafts';
 import {
   askerName,
@@ -148,6 +148,8 @@ export function TicketView(props: TicketViewProps) {
     <InspectorFrame
       head={<TicketHead {...props} />}
       locked={locked}
+      // Two columns fill the scroll to its foot: the thread scrolls itself, the side carries the bar.
+      fill={wide}
       // One column: the frame floats the bar at the pane's foot. Two: it is the side's own.
       {...(!wide && resolveBar !== null && { actions: resolveBar })}
     >
@@ -157,10 +159,7 @@ export function TicketView(props: TicketViewProps) {
         data-layout={wide ? 'columns' : 'stack'}
         className={cn(
           'min-w-0',
-          // Two columns fill the scroll to its foot: the frame leaves its end room (56 px) under its
-          // scroll, which the thread's own scroll and the side's bar replace here.
-          wide &&
-            'grid h-[calc(100%+var(--space-14))] -mb-(--space-14) grid-cols-[minmax(0,1fr)_17.5rem] grid-rows-[minmax(0,1fr)]',
+          wide && 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_17.5rem] grid-rows-[minmax(0,1fr)]',
         )}
       >
         <div data-slot="ticket-main" className={cn('flex min-w-0 flex-col', wide && 'min-h-0')}>

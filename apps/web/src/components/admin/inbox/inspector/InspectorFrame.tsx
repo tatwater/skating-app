@@ -19,6 +19,9 @@ import { useInspectorContext } from './inspectorContext';
  *   (tight to its buttons, 8 px clear of the status bar and both sides; the frame is its positioned
  *   pane). The scroll then keeps 80 px of room at its end so the last line clears it (the Inbox
  *   pass); with no actions it ends in the console's ~56 px.
+ * - **`fill`** — the body fills the scroll to its foot and scrolls itself (board 2.8's two columns,
+ *   whose thread scrolls above its dock and whose side carries its own bar): the frame leaves no end
+ *   room under it.
  * - **`locked`** — the item's decision, when it has one. The action bar goes (a decided item takes
  *   no verb), and a banner says who decided it, when and what, with *History →* and *Back to the
  *   queue* (⏎) — unless the viewer decided it themselves while it was open here, which clears
@@ -44,11 +47,13 @@ export function InspectorFrame({
   head,
   actions,
   locked,
+  fill = false,
   children,
 }: {
   head: ReactNode;
   actions?: ReactNode;
   locked?: DecidedState | null;
+  fill?: boolean;
   children: ReactNode;
 }) {
   const { pane, onBack, history, decidedOnOpen, now, timeZone } = useInspectorContext();
@@ -115,8 +120,9 @@ export function InspectorFrame({
         data-slot="inbox-inspector-scroll"
         className={cn(
           'min-h-0 flex-1 overflow-y-auto overscroll-contain',
-          bar ? 'pb-(--space-20)' : 'pb-(--space-14)',
+          fill ? 'flex flex-col' : bar ? 'pb-(--space-20)' : 'pb-(--space-14)',
         )}
+        data-fill={fill ? '' : undefined}
       >
         {children}
       </div>

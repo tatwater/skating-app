@@ -9,8 +9,8 @@ import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
 /**
- * **A reply docked under a thread, like a mail client's** (board 2.8's `.compose`) — a kit
- * candidate, built beside the ticket handler: the mode picker (*Reply by email* / *Note*) with who it
+ * **A reply docked under a thread, like a mail client's** (board 2.8's `.compose`; first used by
+ * the Inbox's ticket handler): the mode picker (*Reply by email* / *Note*) with who it
  * reaches at the row's end, the boxed field, and a foot with what the mode does and its send button.
  *
  * - **⌘⏎ sends** (Ctrl ⏎ off a Mac), bound to the dock itself (`lib/keys`' `usePaneKeys` on this

@@ -4,9 +4,9 @@ import { Avatar } from '@/components/kit/avatar';
 import { cn } from '@/lib/utils';
 
 /**
- * **One message in a thread** (board 2.8's `.msg`) — a kit candidate, built beside the ticket
- * handler (promoted at integration, if the kit's writer takes it): a person's circle, their name, a
- * kicker after it, the time at the row's end, and what they wrote under it.
+ * **One message in a thread** (board 2.8's `.msg`; first used by the Inbox's ticket handler): a
+ * person's circle, their name, a kicker after it, the time at the row's end, and what they wrote
+ * under it.
  *
  * - **A circle for a person** (`Avatar`, initials hidden from a reader: the name beside it is said
  *   once). Someone gone has no initials to show: `face={null}` draws the bare circle.

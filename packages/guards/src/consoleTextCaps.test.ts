@@ -32,7 +32,7 @@ const FIELDS = ['Input', 'ChipInput', 'AlertDialogReason', 'Textarea', 'textarea
 const PASS_THROUGH: Record<string, string> = {
   ReasonAsk: 'components/admin/body/tabs/access/ReasonAsk.tsx',
   // The ticket's reply and note field (B01-5f): each mode hands it its cap (`max`).
-  ReplyDock: 'components/admin/inbox/handlers/Ticket/ReplyDock.tsx',
+  ReplyDock: 'components/kit/reply-dock.tsx',
 };
 
 /**

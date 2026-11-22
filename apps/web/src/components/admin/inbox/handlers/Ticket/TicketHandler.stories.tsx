@@ -204,6 +204,11 @@ export const LongThread: Story = {
         const pane = must(q.querySelector('[data-pane="inspector"]')).getBoundingClientRect();
         expect(dock.bottom).toBeLessThanOrEqual(pane.bottom + 1);
         expect(dock.top).toBeGreaterThan(pane.top);
+        // The frame is filled (`fill`): no end room under it, and it never scrolls itself.
+        const frame = must(q.querySelector<HTMLElement>('[data-slot="inbox-inspector-scroll"]'));
+        expect(frame).toHaveAttribute('data-fill');
+        expect(Number.parseFloat(getComputedStyle(frame).paddingBottom)).toBe(0);
+        expect(frame.scrollHeight).toBeLessThanOrEqual(frame.clientHeight + 1);
       });
     }
   },
