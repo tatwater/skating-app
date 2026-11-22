@@ -808,8 +808,9 @@ async function moveBack(
 }
 
 /**
- * A founding skate back (fork 2): when its body is still what the merge made it — the loser's place
- * taken by the survivor — both of its body fields go back as recorded.
+ * A founding skate back (fork 2), **by value** (R10): both of its body fields go back as recorded —
+ * an absent list stays absent — only while both still hold what the merge wrote (the loser's place
+ * taken by the survivor, once). A skate re-resolved since keeps what it was given; it's counted.
  */
 async function activityBack(
   ctx: MutationCtx,
@@ -819,11 +820,16 @@ async function activityBack(
 ): Promise<boolean> {
   const row = await ctx.db.get(a.id);
   if (!row) return false;
-  const expected = a.waterBodyId === loserId ? survivorId : a.waterBodyId;
-  if ((row.waterBodyId ?? null) !== expected) return false;
+  // What the merge wrote: the survivor as the body; the list with the loser swapped for it, once.
+  const idAfter = survivorId;
+  const idsAfter =
+    a.waterBodyIds === null || a.waterBodyIds === undefined
+      ? undefined
+      : [...new Set(a.waterBodyIds.map((id) => (id === loserId ? survivorId : id)))];
+  if (row.waterBodyId !== idAfter || !sameJson(row.waterBodyIds, idsAfter)) return false;
   await ctx.db.patch(row._id, {
     waterBodyId: a.waterBodyId ?? undefined,
-    waterBodyIds: a.waterBodyIds.length > 0 ? a.waterBodyIds : undefined,
+    waterBodyIds: a.waterBodyIds ?? undefined,
   });
   return true;
 }

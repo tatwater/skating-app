@@ -3797,12 +3797,13 @@ export interface MergeChangeSet {
     decidedItem: boolean;
   };
   /**
-   * The founding skates the merge moved (ruled in, B01-5d fork 2), with both of their body fields.
+   * The founding skates the merge moved (ruled in, B01-5d fork 2), with both of their body fields;
+   * `null` is a field the skate didn't have (S4b, R10: an absent list comes back absent).
    */
   movedActivities?: {
     id: Id<'gpsActivities'>;
     waterBodyId: Id<'waterBodies'> | null;
-    waterBodyIds: Id<'waterBodies'>[];
+    waterBodyIds: Id<'waterBodies'>[] | null;
   }[];
   /**
    * Each bay and landmark the merge changed, field by field (S4b, R10): the fields it wrote, with the
@@ -4131,7 +4132,7 @@ export async function mergeBodyInto(
       movedActivities.push({
         id: a._id,
         waterBodyId: a.waterBodyId ?? null,
-        waterBodyIds: a.waterBodyIds ?? [],
+        waterBodyIds: a.waterBodyIds ?? null,
       });
       await ctx.db.patch(a._id, {
         waterBodyId: survivorId,

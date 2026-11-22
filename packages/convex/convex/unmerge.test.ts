@@ -1438,6 +1438,45 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
     expect((r as Doc<'reports'>).notes).toBe('Seen again');
   });
 
+  test('a skate whose list was re-resolved since: left, counted (both fields judged by value)', async () => {
+    const w = await world(['skates']);
+    const mergeId = await mergeV2(w);
+    const id = w.rows.gpsActivities?.[0] as Id<'gpsActivities'>;
+    // Its body still the survivor, its list changed since: the old check passed it and wrote the list back.
+    await w.t.run((ctx) => ctx.db.patch(id, { waterBodyIds: [w.survivor, w.elsewhere] }));
+    await unmerge(w, mergeId);
+    expect((await leftOf(w.t, w.loser)).rows).toEqual([{ kind: 'gpsActivities', id }]);
+    expect((await w.t.run((ctx) => ctx.db.get(id)))?.waterBodyIds).toEqual([
+      w.survivor,
+      w.elsewhere,
+    ]);
+  });
+
+  test('a skate’s list comes back as it was — empty as empty, absent as absent — and its prompt kept', async () => {
+    const w = await world(['skates']);
+    const id = w.rows.gpsActivities?.[0] as Id<'gpsActivities'>;
+    const other = await w.t.run(async (ctx) => {
+      const row = (await ctx.db.get(id)) as Doc<'gpsActivities'>;
+      const { _id, _creationTime, ...rest } = row;
+      await ctx.db.patch(id, { waterBodyIds: [] });
+      return ctx.db.insert('gpsActivities', {
+        ...rest,
+        providerActivityId: 'second',
+        waterBodyIds: undefined,
+      });
+    });
+    const mergeId = await mergeV2(w);
+    await w.t.run((ctx) => ctx.db.patch(id, { promptState: 'dismissed' }));
+    await unmerge(w, mergeId);
+    const [a, b] = await w.t.run(async (ctx) => [await ctx.db.get(id), await ctx.db.get(other)]);
+    expect(a?.waterBodyId).toBe(w.loser);
+    expect(a?.waterBodyIds).toEqual([]);
+    expect(a?.promptState).toBe('dismissed');
+    expect(b?.waterBodyId).toBe(w.loser);
+    expect(b && 'waterBodyIds' in b).toBe(false);
+    expect((await leftOf(w.t, w.loser)).count).toBe(0);
+  });
+
   test('a partner renamed since: its flags back, its name kept', async () => {
     const w = await world(['partners']);
     const mergeId = await mergeV2(w);
