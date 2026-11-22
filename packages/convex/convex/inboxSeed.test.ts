@@ -14,6 +14,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
 import { INBOX_LEAVE_COST, loopPath, offset, PREFS_OFF, prefsDrifted } from './inboxSeed';
+import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
 
@@ -1173,6 +1174,33 @@ describe('the clear finds everything the seed made, whatever was merged since (B
     expect(again.last.waiting).toEqual([]);
     expect(again.last.unavailable).toEqual([]);
     await clearsEverything(w);
+  });
+
+  test('the proof pair fits the merge estimate with room: under half of every threshold', async () => {
+    const t = harness();
+    await devWorld(t);
+    await realAround(t);
+    await crons(t);
+    expect((await runSeed(t)).failed).toEqual([]);
+    const shares = await t.run(async (ctx) => {
+      const cove = (await ctx.db.query('waterBodies').collect()).find(
+        (b) => b.name === 'Merge Proof Cove',
+      ) as Doc<'waterBodies'>;
+      const survivor = (await ctx.db.get(
+        cove.duplicateCandidateIds?.[0] as Id<'waterBodies'>,
+      )) as Doc<'waterBodies'>;
+      // As `mergeDrawn` asks it: both outlines count toward the geometry.
+      const load = await mergeLoadOf(ctx, cove, survivor, { overlap: true });
+      expect(load.tooBig).toBe(false);
+      return Object.fromEntries(
+        (Object.keys(THRESHOLDS) as (keyof typeof THRESHOLDS)[]).map((k) => [
+          k,
+          load.cost[k] / THRESHOLDS[k],
+        ]),
+      );
+    });
+    // The largest share of any threshold the pair uses — its margin is the rest.
+    expect(Math.max(...Object.values(shares))).toBeLessThan(0.5);
   });
 
   // The unmerge is the undo of the merge's row (B01-5d's S4b inverse).

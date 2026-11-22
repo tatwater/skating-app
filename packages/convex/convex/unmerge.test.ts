@@ -1846,11 +1846,13 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
           stalled: { reason: UNMERGE_PAGE_FAILED },
         });
       }
+      // Bounded to the first two ids passed: a marked body third in the list is never read.
+      expect(await on([w.elsewhere, w.partner, w.loser])).toBeNull();
       await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
       await settle(w.t);
     });
     expect(await on([w.loser, w.survivor])).toBeNull();
-    // Held to the audit reader: a skater is refused.
+    // Held to `resume`'s capability (`corpus.duplicates`): a skater is refused.
     await expect(
       w.skater.as.query(api.unmerge.runningOn, { waterBodyIds: [w.loser] }),
     ).rejects.toThrow();

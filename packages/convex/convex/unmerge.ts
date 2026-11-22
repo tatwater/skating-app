@@ -1139,7 +1139,8 @@ export const receipt = query({
  * refused with `unmerging` (the Drawn lever, the Shape tab's preview), whose place says the body is
  * still being unmerged and, when that unmerge is stalled, offers its Resume. The bodies' marker
  * (`unmergeActionId`) names the unmerge's row; its `undoes:` is the merge `receipt` and `resume` are
- * keyed by. `null` when neither body is marked. At most two bodies, each one read.
+ * keyed by. `null` when neither body is marked. Only the first two ids passed are read, one read each;
+ * held to `corpus.duplicates`, the capability `resume` checks.
  */
 export const runningOn = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
@@ -1147,7 +1148,8 @@ export const runningOn = query({
     ctx,
     { waterBodyIds },
   ): Promise<(UnmergeReceipt & { mergeActionId: Id<'moderationActions'> }) | null> => {
-    await requireCapability(ctx, 'audit.read');
+    // Behind `resume`'s own gate: it is read only to offer that Resume.
+    await requireCapability(ctx, 'corpus.duplicates');
     for (const id of waterBodyIds.slice(0, 2)) {
       const body = await ctx.db.get(id);
       const running = body ? unmergeRunningOn(body) : null;
