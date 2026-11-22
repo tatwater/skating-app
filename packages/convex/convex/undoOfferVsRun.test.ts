@@ -570,6 +570,31 @@ const CASES: Case[] = [
     },
   },
   {
+    // Recorded before change sets kept everything (`version: 2`): refused for everyone, offer and run,
+    // in the dialog's sentence.
+    name: 'merge_waterbody (recorded before version 2) → refused',
+    viewers: ALL,
+    setup: async (w) => {
+      const mergeId = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      await w.t.run(async (ctx) => {
+        const rows = await ctx.db
+          .query('auditSnapshots')
+          .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+          .collect();
+        for (const row of rows) {
+          const { version: _v, ...v1 } = row.payload as { version?: number };
+          await ctx.db.patch(row._id, { payload: v1 });
+        }
+      });
+      return mergeId;
+    },
+  },
+  {
     name: 'grant_role → revoked (the subject is the person promoted)',
     viewers: ALL,
     setup: async (w) => {

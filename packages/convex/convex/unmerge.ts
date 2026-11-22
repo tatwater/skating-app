@@ -39,7 +39,7 @@ import { bodyLabel, bodySearchTextFor } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, type QueryCtx } from './_generated/server';
+import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
 import {
   type AuditContext,
   asContinuationOf,
@@ -48,6 +48,7 @@ import {
   composed,
   writeAudit,
 } from './lib/audit';
+import { requireCapability } from './lib/auth';
 import { refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
 import { refreshBodyNames, setNamesAllowance } from './lib/bodyNames';
@@ -967,5 +968,44 @@ export const unmergeRest = internalMutation({
         left: noneLeft(),
       }),
     );
+  },
+});
+
+// ── The receipt ────────────────────────────────────────────────────────────────────────────────────
+
+/** What an unmerge has done so far, as the receipt and History read it. */
+export interface UnmergeReceipt {
+  /** The unmerge's own row (`unmerge_waterbody` on the loser). */
+  unmergeActionId: Id<'moderationActions'>;
+  /** Every page has landed (the last recomputed the derived facts). */
+  done: boolean;
+  /** What it left where it was, counted (by kind) and the first rows named — final once `done`. */
+  left: UnmergeLeft;
+}
+
+/**
+ * **The unmerge of a merge, as it stands** — the receipt's answer to "what did that undo leave?"
+ * (`undo.run` answers nothing of its own). Keyed by the merge's row, which the receipt already holds;
+ * `null` until an unmerge of it exists. Live: a paged unmerge's count grows as its pages land and
+ * `done` turns true with the last, so the receipt can draw the first page's answer at once and the
+ * final count when it arrives. History reads the same fields off the unmerge's row
+ * (`metadata.left`, `metadata.done`).
+ */
+export const receipt = query({
+  args: { mergeActionId: v.id('moderationActions') },
+  handler: async (ctx, { mergeActionId }): Promise<UnmergeReceipt | null> => {
+    await requireCapability(ctx, 'audit.read');
+    const rows = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_undoes', (q) => q.eq('undoesActionId', mergeActionId))
+      .take(16);
+    const row = rows.find((r) => r.action === 'unmerge_waterbody' && r.targetType === 'waterbody');
+    if (!row) return null;
+    const metadata = (row.metadata ?? {}) as { left?: UnmergeLeft; done?: boolean };
+    return {
+      unmergeActionId: row._id,
+      done: metadata.done === true,
+      left: metadata.left ?? noneLeft(),
+    };
   },
 });

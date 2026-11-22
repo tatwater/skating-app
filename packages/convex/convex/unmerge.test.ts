@@ -193,7 +193,11 @@ function landmark(
  * with the rows of each kind asked for on them. Every scheduled job is run to its end, so the world
  * stands as a deployment would hold it.
  */
-async function world(kinds: readonly Kind[] = KINDS): Promise<World> {
+async function world(
+  kinds: readonly Kind[] = KINDS,
+  /** The survivor a skater's approved drawing (the seed's second pair), not a catalog body. */
+  opts: { survivorDrawn?: boolean } = {},
+): Promise<World> {
   const t = harness();
   const has = (k: Kind) => kinds.includes(k);
   const actor = await person(t, 'actor', 'moderator');
@@ -216,7 +220,13 @@ async function world(kinds: readonly Kind[] = KINDS): Promise<World> {
       searchText: has('lists')
         ? bodySearchTextFor({ name: 'Lake Morey', moderatorAliases: ['Morey', 'Fairlee Lake'] })
         : 'Lake Morey',
-      source: 'osm' as const,
+      ...(opts.survivorDrawn
+        ? {
+            source: 'user' as const,
+            reviewStatus: 'approved' as const,
+            createdByUserId: skater.id,
+          }
+        : { source: 'osm' as const }),
       ...rect(0, 0, 1, 1),
       dedupStatus: 'clean' as const,
       ...(has('lists')
@@ -835,6 +845,16 @@ suite('a merge and its unmerge: the state equals the state before', () => {
     },
   );
 
+  test('into a skater’s approved drawing (the seed’s second pair), every kind at once', async () => {
+    const w = await world(KINDS, { survivorDrawn: true });
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w);
+    await unmerge(w, mergeId);
+    expect(await leftOf(w.t, w.loser)).toEqual({ count: 0, byKind: {}, rows: [] });
+    expect(await census(w.t)).toEqual(before);
+    await assertAudit(w, mergeId);
+  });
+
   test('the change set split in parts unmerges the same', async () => {
     const w = await world();
     const before = await census(w.t);
@@ -1275,6 +1295,44 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
     // The body itself came back.
     expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.dedupStatus).not.toBe('merged');
     await c.stays(w, id);
+  });
+
+  test('the receipt reads what was left, live: the first page’s count at once, the total once done', async () => {
+    const w = await world(['content', 'partners']);
+    const mergeId = await mergeV2(w);
+    const read = () => w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId });
+    expect(await read()).toBeNull();
+    // Two rows drift: the partner (put back in the first transaction) and the putIn (a later page).
+    await w.t.run(async (ctx) => {
+      await ctx.db.patch(w.partner, { duplicateCandidateIds: [w.elsewhere, w.survivor] });
+      await ctx.db.patch(w.rows.putIns?.[0] as Id<'putIns'>, { waterBodyId: w.elsewhere });
+    });
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      const first = await read();
+      expect(first?.done).toBe(false);
+      expect(first?.left.byKind).toEqual({ partners: 1 });
+      await settle(w.t);
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+    const last = await read();
+    expect(last?.done).toBe(true);
+    expect(last?.left).toEqual({
+      count: 2,
+      byKind: { partners: 1, putIns: 1 },
+      rows: [
+        { kind: 'partners', id: w.partner },
+        { kind: 'putIns', id: w.rows.putIns?.[0] },
+      ],
+    });
+    expect(last?.unmergeActionId).toBe((await unmergeRowOf(w.t, w.loser))?._id);
+    // The receipt is staff's to read.
+    await expect(
+      w.skater.as.query(api.unmerge.receipt, { mergeActionId: mergeId }),
+    ).rejects.toThrow();
   });
 
   test('a delisted bay edited since stays delisted, and its side row is left live', async () => {
