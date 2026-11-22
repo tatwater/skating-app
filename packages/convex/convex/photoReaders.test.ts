@@ -320,14 +320,34 @@ describe('the privacy table: reader × viewer × status', () => {
 describe('listPhotos joins by id, never by position', () => {
   test('a hidden photo between two visible ones: each result names its own attachment', async () => {
     const w = (await world()) as W;
-    const got = await w.t.query(api.accessPoints.listPhotos, {
-      targetType: 'put_in',
-      putInId: w.putInId,
+    // Its own put-in, attached in the order visible, hidden, visible: a positional join would hand
+    // the second visible photo the hidden one's attachment.
+    const { putInId, rows } = await w.t.run(async (ctx) => {
+      const putInId = await ctx.db.insert('putIns', {
+        waterBodyId: w.waterBodyId,
+        coord: { lat: 0.4, lng: 0.4 },
+        source: 'derived' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      });
+      const uploaderId = ((await ctx.db.get(w.byStatus.visible)) as Doc<'photos'>).uploaderId;
+      const rows: Record<string, Id<'accessPhotos'>> = {};
+      for (const status of ['visible', 'hidden', 'absent'] as const) {
+        rows[status] = await ctx.db.insert('accessPhotos', {
+          targetType: 'put_in' as const,
+          putInId,
+          photoId: w.byStatus[status],
+          uploaderId,
+          createdAt: T0,
+        });
+      }
+      return { putInId, rows };
     });
+    const got = await w.t.query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId });
+    expect(got.map((p) => p.caption)).toEqual(['visible', 'absent']);
     for (const p of got) {
-      const status = p.caption as Status;
-      expect(p.accessPhotoId).toBe(w.attachments[status]);
-      expect(p.photoId).toBe(w.byStatus[status]);
+      expect(p.accessPhotoId).toBe(rows[p.caption as string]);
+      expect(p.photoId).toBe(w.byStatus[p.caption as Status]);
     }
   });
 });

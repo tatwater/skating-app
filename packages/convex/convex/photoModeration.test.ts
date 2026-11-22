@@ -7,7 +7,7 @@
  */
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { AUTHOR_DELETED_RESTORE } from './lib/authorDeletion';
 import { OWN_CONTENT_REFUSAL } from './lib/ownContent';
@@ -568,5 +568,45 @@ describe('the Inbox photo item', () => {
     await expect(mod.as.mutation(api.inboxWrites.restoreAndDismiss, { itemId })).rejects.toThrow(
       AUTHOR_DELETED_RESTORE,
     );
+  });
+});
+
+describe('a photo takedown tells its flagger once', () => {
+  /** Make every queued notification due and flush it — the settle window, fast-forwarded. */
+  async function flushAllDue(t: T) {
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('notificationQueue').collect()) {
+        await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+      }
+    });
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    return t.run((ctx) => ctx.db.query('notifications').collect());
+  }
+
+  test('told once; an undo inside the settle window tells no one', async () => {
+    const { t, skater, mod, mod2, uploader } = await world();
+    const told = async (undo: boolean) => {
+      const p = await photo(t, uploader.id);
+      const flagId = await skater.as.mutation(api.contentFlags.flag, {
+        targetType: 'photo',
+        targetId: p,
+        reason: 'inappropriate',
+      });
+      const out = await mod.as.mutation(api.inboxWrites.takeDown, {
+        itemId: await photoItem(t, flagId),
+        status: 'hidden',
+        reason: 'x',
+      });
+      if (undo) await mod2.as.mutation(api.undo.run, { actionId: out.actionId });
+      return flagId;
+    };
+    const undone = await told(true);
+    const kept = await told(false);
+    const sent = await flushAllDue(t);
+    const about = (flagId: string) =>
+      sent.filter((n) => n.userId === skater.id && JSON.stringify(n).includes(flagId));
+    expect(about(kept)).toHaveLength(1);
+    expect(about(undone)).toHaveLength(0);
   });
 });
