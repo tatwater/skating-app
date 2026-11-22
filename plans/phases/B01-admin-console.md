@@ -8754,6 +8754,196 @@ The `…View` helpers are S1's to define beside it, from the reads they come fro
 - [ ] Every fake person's surname starts with "Test-" (a test over the seed's cast).
 - [ ] Run against a local `convex-test` world end to end: the lanes' counts match the seed's plan.
 
+#### Briefs (B01-5c)
+
+The design's PR 3: *Requests, places, drawn bodies, and telling askers*. Written 2026-11-21 against
+the code as merged: #170's server (`97ce98dc`) and #171's web (`aceb5e261`, at Greptile 5/5). Paste a
+brief whole; every brief also carries §12.4's invariants verbatim.
+
+##### What the design says, and what the code now has
+
+#170 built far more of this slice's server than the design assumed. Every read, rule and write the
+three handlers need already exists and is tested; what is missing is the notification and the web.
+
+| Design says | Code has | The brief says |
+|---|---|---|
+| S3 builds the request, place and drawn reads | `inbox.item` already returns all three kinds: `request` (`requestKind`, `body`, `asks: AskMemberView[]`, `candidate: CandidateView \| null`, `resolveError`), `place` (`placeKind`, `body`, `asks`, `drawnSubAreaId`, `answeringLandmarkId`, `lookalikes: LookalikeView[]`) and `drawn` (`body`, `drawer`, `overlap: OverlapView \| null`, `fromReport`) | W5 draws from these as they are; a field W5 finds missing is a server ask to S3, never a web-side derivation |
+| The rule for these verbs, to be written | `InboxVerb` already has `approve`, `decline`, `sameAs`, `lookUpAgain`, `approveDrawn`, `rejectDrawn`, `mergeDrawn`; `capabilitiesFor` and `inboxVerbRefusal` answer each (restore and takedown asks need `body.remove`; a bay's *Approve* waits on `bayMissing`; a landmark's on `landmarkMissing`) | W5 draws each lever only from `item.can`; no web rule |
+| Writes: `corpusRequests.approve` / `decline`, `waterBodies.approve` / `reject` | All exist and ask the Inbox's rule (`approve` takes `sameAs` for a landmark lookalike); `corpusRequests.reresolve` is *Look up again*. Drains page through `closeSiblingPage` and `lib/requestDecisions.closeRow`, inside `inboxBatch` | No new write in this PR; `mergeDrawn` stays for PR 4 and its bar slot is *Coming soon* |
+| The undo verbs `reopen_request`, `return_to_review` are new | Both exist with their offer-versus-run cases; the request undo pages through `reopenRequestsRest` | Nothing to add; W5's toasts use the writes' existing undo |
+| The rule-versus-write table | 141 cells; `approve`, `decline`, `lookUpAgain`, `approveDrawn`, `rejectDrawn` covered; **`sameAs` is not** | S3 adds the `sameAs` cells |
+| The heavy-rows matrix | Covers decline with its drain, a landmark decline, drawn approve and reject; **approving a heavy admit is owed** | S3 adds the heavy admit's approval |
+| `notifications.list` gains `knows` (PR 3) | **Built in #170**: `knows?: string[]`, absent → `NOTIFICATION_TYPES_EVERY_BUILD_KNOWS` (frozen, `packages/core/src/inbox.ts`) | **Neither client passes it yet.** The web bell (`components/skater/NotificationsMenu.tsx`) runs current core, so without `knows` it would read `moderator_decision` as `unknown`: W5 passes `knows: NOTIFICATION_TYPES`; the phone passes it from its own core |
+| A new pref key rolls out widen → deploy → backfill → narrow | `notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS)` in `schema.ts`, so adding the key to core makes it **required at once**; `profiles.backfillNotificationPrefs` exists and fills missing keys from `NOTIFICATION_PREF_DEFAULTS`; **`recipientWants` reads `=== true`, so an absent key reads as off** | The widening seam below keeps the key optional in the schema; until the backfill runs, nobody is told, which on dev means running the backfill in the same after-merge step as the deploy |
+| Handlers register in the registry | `handlers/<Kind>/register.tsx` exporting `registration` (or `registrations`), `{ keys: HandlerKey[], Handler }`; `HandlerKey` is `` `flag:${FlagSubject}` `` or the kind (`'request' \| 'place' \| 'drawn'`); `inspector/elsewhere.test.ts` holds every key to a handler or a placeholder destination | W5 registers `request`, `place`, `drawn` and removes their rows from `inspector/elsewhere.ts` (photo and ticket stay) |
+| The map for 2.3–2.5 is W5's | `inbox/map/itemMapAdapters.ts` already turns `admit`, `activate`, `place` and `drawn` answers into scenes (fixtures `ADMIT_MAP`, `PLACE_MAP`, `DRAWN_MAP`, `ACTIVATE_MAP`), and `ItemMap` draws any kind with a map | W5 drops `<ItemMap item={item} />` into each handler's map slot; no map work |
+| `CompareTable`, `OverlapGauge` | Do not exist | W5 builds them as kit candidates beside the handlers; the executor promotes them at integration |
+| Pe25: the record sheet's flag links, "a server ask: `contentRecord.item` returns them" | `contentRecord.item` returns no flag ids; Pe25's register row is still "blocked on a board", and that board's four questions are open | A fork (below) |
+| Retire `/admin/water/requests`; `admin.water.index.tsx` loses its pending card | Both pages stand; the pending card offers approve and reject only (merge lives in the old body editor, which stays) | Retiring both loses nothing once 2.3–2.5 land; `OLD_SHELL_TREES` is unchanged (the `/admin/water` tree stays for the editor) |
+| 2.6's *What each does* gains "· author told" | The alert handler's words are W2's (`handlers/Flag/flagWords.ts`) | W5 makes the one-line change, granted |
+
+##### Territories (disjoint)
+
+| Builder | Owns | Must not touch |
+|---|---|---|
+| **S3 — the notification** | `packages/core/src/notifications.ts` (the type, the pref key, its label, order and default, the view variant, `describeNotification`'s cases); `packages/convex`: `lib/validators.ts` (`notificationTrigger`'s two kinds), `lib/notificationQueue.ts` (`TYPE_FOR_KIND`, `settleReadCost`, `settleTrigger`'s two cases, the enqueue helper), `lib/notificationResolve.ts` (the view), `notificationDelivery.ts` if it needs the case, the enqueue calls in `lib/requestDecisions.ts` (`closeRow`), `waterBodies.ts` (`approve`, `reject`) and `accessAlerts.ts` (the moderator's retraction); `contentRecord.ts` (`item`'s open flag ids, only if the Pe25 fork is ruled in); the `sameAs` cells and the heavy admit's approval in the existing tables; `apps/mobile/app/notifications.tsx`'s `knows` and its offline cache's test (folded in from M, below) | `schema.ts` (the seam); the web; the Inbox's reads, rules and writes beyond the enqueue calls |
+| **W5 — the handlers** | `apps/web/src/components/admin/inbox/handlers/Request/`, `Place/`, `Drawn/` (new, each with `register.tsx`); the kit candidates `CompareTable` and `OverlapGauge` beside them; `inspector/elsewhere.ts` (the three rows out); `handlers/Flag/flagWords.ts` (the one *author told* line); `components/skater/NotificationsMenu.tsx` (`knows`); the links the retirement table names (`overview/overviewRoutes.ts` audit `waterBodyRequest`, the Bodies preview's ask links); `routes/admin.water.index.tsx` (the pending card out); Pe25's web half if ruled in | `packages/*`; the route tree and `consoleNav.ts` (the seam); `components/kit/` (candidates live beside the handlers until promoted); every other handler |
+
+**M is folded into S3.** The phone's toggle and its words come from core (`NOTIFICATION_PREF_ORDER`,
+`NOTIFICATION_PREF_LABELS`, `describeNotification`), so a build carrying S3's core shows them with no
+mobile code; what is left is one argument (`knows`) and its test. The EAS `preview` build and its
+device pass are the executor's after-merge step.
+
+##### The seams (an executor commit at T0)
+
+1. **`schema.ts`**: the pref key optional while it rolls out —
+   ```ts
+   const notificationPrefs = v.object({
+     ...boolFlags(NOTIFICATION_PREF_KEYS.filter((k) => k !== 'moderatorDecision')).fields,
+     // Widened for the rollout (B01-5c): narrowed back to required in its own later commit, after
+     // `profiles.backfillNotificationPrefs` has written it on every row.
+     moderatorDecision: v.optional(v.boolean()),
+   });
+   ```
+   (`boolFlags` returns a `v.object`, whose `.fields` this spreads); `notifications.type` takes `NOTIFICATION_TYPES` from
+   core, so the new type needs no schema line; `notificationQueue.trigger` is `notificationTrigger`
+   (S3's, in `lib/validators.ts`).
+2. **Core, at T0, so S3 and W5 build against the same names**: `'moderator_decision'` in
+   `NOTIFICATION_TYPES` (never in `NOTIFICATION_TYPES_EVERY_BUILD_KNOWS`), `'moderatorDecision'` in
+   `NOTIFICATION_PREF_KEYS`, `NOTIFICATION_PREF_KEY_FOR`, `NOTIFICATION_PREF_DEFAULTS` (`true`),
+   `NOTIFICATION_PREF_ORDER` and `NOTIFICATION_PREF_LABELS` (the design's invented label, for the
+   copy pass); the `NotificationView` variant below. `describeNotification`'s case is S3's.
+3. **The route**: `routes/admin.water.requests.tsx` becomes a redirect to `/admin/inbox?lane=requests`
+   (the old component stays on disk until B01's close, §12.7); its test follows.
+4. **`consoleNav.ts`, `OLD_SHELL_TREES`, `lib/theme.ts`**: no change.
+5. **Kit**: none at T0; `CompareTable` and `OverlapGauge` are promoted at integration.
+
+##### Canonical snippets
+
+**The view** (S3 lands it in core; the web bell, the phone page, push and email all read it):
+
+```ts
+| {
+    type: 'moderator_decision';
+    /** What was decided: an ask (its kind), a drawing, or an access alert. */
+    about: RequestKind | 'drawn' | 'accessAlert';
+    outcome: 'approved' | 'declined' | 'merged' | 'rejected' | 'retracted';
+    body: NotificationBodyRef | null;
+    /** A decline's note, which the asker reads (D179). A retraction carries no reason. */
+    note?: string;
+  }
+```
+
+`describeNotification`'s cases (invented, for the copy pass; never a word about the ice, D3): "Gli
+added ‹body› to the map", "Your request for ‹body› was declined — ‹note›", "Your drawing was merged
+into ‹body› — your report moved with it" (the variant exists now; PR 4 enqueues it), "A moderator
+took down your access alert at ‹place›, ‹body›"; the target is the body (`{ kind: 'water', id }`),
+or none when the body is gone.
+
+**The queue kinds** (`notificationTrigger`): `{ kind: 'request_decided'; requestId?:
+Id<'waterBodyRequests'>; waterBodyId?: Id<'waterBodies'>; outcome; actionId:
+Id<'moderationActions'> }` and `{ kind: 'alert_retracted'; accessAlertId: Id<'accessAlerts'>;
+actionId: Id<'moderationActions'> }`; both map to `moderator_decision` in `TYPE_FOR_KIND`. No
+`actorId`.
+
+**A handler** (W5): `export const registration: InboxHandlerRegistration = { keys: ['request'],
+Handler: RequestHandler }`, where `Handler` takes `{ item, locked, now }` (`InboxHandlerProps`) and
+returns `<InspectorFrame head actions locked>{body}</InspectorFrame>` — `actions` drawn from
+`item.can` (a verb absent is not drawn; a sentence is a refusal, never drawn as a button), `locked`
+passed through, the map slot `<ItemMap item={item} />`, every refusal a toast (D268), the receipt in
+the present tense ("Closes 3 asks"), its Undo the write's own row. The kinds a handler draws:
+`request` — admit (with a catalog match; without one, *Look up again* in *Admit*'s place and
+`resolveError` said), activate, restore, contest access, takedown; `place` — a landmark ask (with
+lookalikes in `CompareTable`: *Same place* is `approve` with `sameAs`) and a bay ask (*Approve* only
+with `drawnSubAreaId`, else *Draw in Body →* to `/admin/water/$id`); `drawn` — approve and reject,
+`OverlapGauge` from `overlap`, *Merge* drawn as *Coming soon* (D286).
+
+##### Definitions of done
+
+**S3 — the notification:**
+- [ ] The type end to end: core's case and words (`describeNotification` exhaustive, its test); the
+  view in `notificationResolve`; push and email composed from it (`notificationDelivery`'s test).
+- [ ] Enqueued exactly where D285 says: `closeRow` for each closed ask's requester (every page of a
+  drain, so a 499-sibling decline tells all of them, once each); `waterBodies.approve` / `reject` for
+  the drawer; a moderator's retraction of someone else's live alert. **Not** for an ask a script
+  filed (`origin: 'seed'`: the requester is staff, and nobody asked) nor a retraction recorded on an
+  alert its author already withdrew.
+- [ ] The settle re-check: the decision is still that `actionId` (the ask still closed by it; the
+  alert still retracted by it). **An undo inside the window drops it** — a `convex-test` that decides,
+  undoes before the flush and flushes (no notification), and one that undoes after (the notification
+  stands, as for flags).
+- [ ] `knows`: an absent `knows` serves `moderator_decision` as `unknown`; a phone passing its core's
+  types gets the view; the phone page's offline cache stores and reads it.
+- [ ] The pref: on by default for a new profile (`upsertFromClerk`); off once toggled off; absent
+  (before the backfill) reads as off and the rollout below closes that window.
+- [ ] The `sameAs` cells in the rule-versus-write table; the heavy admit's approval in the heavy-rows
+  matrix; both tables' sizes said in the report.
+- [ ] Any `fast-check` property added or changed run at 20× its runs before report, and under
+  `TZ=Australia/Lord_Howe`, `TZ=Asia/Kathmandu` and `TZ=UTC` where a clock is involved; its
+  counterexamples pinned.
+
+**W5 — the handlers:**
+- [ ] Each kind's handler draws from `item` and `item.can` alone; each board (2.3, 2.4, 2.5) and each
+  undrawn kind (activate, restore, contest, takedown, the admit with no match, the bay ask) beside its
+  mock at 1440 × 900 and 360 px, both modes (§12.5).
+- [ ] **A route-and-view wiring test per handler** — the real `InboxRoute` around the real `InboxView`
+  with only the router, role and read layer stood in (`InboxRoute.wiring.test.tsx`'s harness): the
+  item opens its handler (not the placeholder), its levers call the write with the item's ids, a
+  refusal reaches a toast, and a decided item drops the bar.
+- [ ] `inspector/elsewhere.test.ts` still holds every `HandlerKey` to a handler or a destination,
+  with the three rows gone; a story per new kind; the narrow layout's map view-only through the inspector's
+  `narrow`.
+- [ ] The web bell passes `knows: NOTIFICATION_TYPES` and words the new type (its test).
+- [ ] The redirect and the retired pending card; the links the retirement table names, each to the
+  Inbox item.
+- [ ] Every optional prop W5 adds has a live caller, or a one-line note saying which later slice it
+  waits for (the class #171's first review found).
+
+##### The pref rollout, on dev
+
+1. **This PR**: the widening seam (`moderatorDecision` optional) and core's key.
+2. **After merge**: `convex dev --once` (the deploy).
+3. **Then at once**: `convex run profiles:backfillNotificationPrefs '{}'`, repeated with
+   `'{"cursor":"<cursor>"}'` until it answers `isDone: true` (a direct call's answer, which
+   `convex run` prints), so no profile reads the new toggle as off for long.
+4. **A later commit, its own PR or the next slice's**: narrow `moderatorDecision` back to required
+   (`boolFlags(NOTIFICATION_PREF_KEYS)` whole) and deploy; `convex dev --once` fails loudly if any
+   row still lacks it.
+5. **The phone**: an EAS `preview` build carrying the new core, installed on the Pixel; the in-app
+   page and the toggle checked (the executor; the founder's device pass).
+
+##### Forks for the founder
+
+1. **Pe25 (the record sheet's cross-links) has no board.** Its register row reads "blocked on a
+   board", and four questions are open (does a link close the sheet; one Inbox link per flag or per
+   item; does erased content link anywhere; does a Post link to its first Report). *Options:* (a) take
+   it out of B01-5c and draw the board first; (b) build a minimal version now from the console's link
+   rule — the body and the skater page per item, one *Open in Inbox →* per item with open flags (the
+   server's open flag ids), the sheet left open on desktop, nothing for erased content but its body,
+   no Post link. *Recommendation:* (a). *If he says nothing:* (a), and Pe25 stays on the register.
+2. **A retraction's message carries no reason.** The design marked it invented: the moderator's
+   reason is audit-facing. It decides the payload, not just the words. *Options:* no reason (as
+   designed); or the reason, as a decline's note is shown. *Recommendation:* no reason. *If he says
+   nothing:* no reason.
+
+Found and ruled in the brief, not forks: the web bell must pass `knows` or it reads the new type as
+`unknown`; a script's seeded asks tell no one; `recipientWants` reads an absent key as off, so the
+backfill runs right after the deploy.
+
+##### Size, honestly
+
+The design estimated PR 3 at ~4,200 lines and ~70 files. #170 and #171 each ran about five times
+their estimates, but this slice's server is mostly built: S3 is the notification (about 1,500 lines
+with its tests, plus the two table additions). W5 is three handlers covering nine kinds, two kit
+candidates, wiring tests and stories, the size of #171's two handlers: about 9,000–12,000 lines.
+**About 11,000–14,000 lines and 90–120 files** — over the guideline for the reasons #171 was, and
+the PR body says so.
+
+**The split, revised:** M folds into S3 (one argument and its test; the build is the executor's).
+W5 is the slice's weight and should be two builders, disjoint by directory: **W5a** (`Request/`,
+the six request kinds and the admit with no match) and **W5b** (`Place/` with `CompareTable`,
+`Drawn/` with `OverlapGauge`, the redirect, the links, the bell, the *author told* line).
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
