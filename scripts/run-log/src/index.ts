@@ -27,3 +27,4 @@ export {
 } from './provenance';
 export { identityArgs, type RunAs } from './runAs';
 export { DRY_RUN_NOTE, RunLogger } from './runLogger';
+export { logSafe, MAX_ERROR_LENGTH, serverSentence } from './serverSentence';

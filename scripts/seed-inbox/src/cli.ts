@@ -13,11 +13,10 @@
  * arguments in `args.ts`, excluded from coverage like every other script's CLI.
  */
 
-import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { identityArgs, parseConvexOutput, type RunAs, resolveDeployment } from '@skating/run-log';
+import { convexRun, type RunAs, resolveDeployment } from '@skating/run-log';
 import { nodeVersionRefusal, parseArgs } from './args';
 import {
   applyClear,
@@ -27,38 +26,14 @@ import {
   errorLine,
   planSeed,
   runLogName,
-  serverSentence,
   tally,
 } from './seed';
 
 const say = (line: string) => process.stderr.write(`[seed-inbox] ${line}\n`);
 
-/**
- * `convex run`, as `@skating/run-log`'s `convexRun` makes it, but with stderr captured as well as
- * shown: a refused step's run-log row then carries the server's own sentence (`serverSentence`), not
- * the `Command failed: pnpm …` line the child process error would give.
- */
-const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T => {
-  const res = spawnSync(
-    'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      fn,
-      JSON.stringify(args),
-      ...identityArgs(runAs),
-    ],
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-  );
-  if (res.stderr) process.stderr.write(res.stderr);
-  if (res.error) throw res.error;
-  if (res.status !== 0) throw new Error(serverSentence(res.stderr ?? ''));
-  // `@skating/run-log`'s parser: the result is the one whole JSON block, never JSON inside a warning.
-  return parseConvexOutput<T>(res.stdout ?? '');
-};
+/** `convex run` through `@skating/run-log`: a failed call throws the server's own sentence. */
+const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T =>
+  convexRun<T>(fn, args, runAs !== undefined ? { runAs } : {});
 
 function writeLog(mode: string, record: unknown): string {
   const dir = new URL('../runs/', import.meta.url);
