@@ -1,10 +1,9 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useRouterState } from '@tanstack/react-router';
 
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { InspectorFrame } from '../../inspector/InspectorFrame';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import { ItemMap } from '../../map/ItemMap';
-import { useHereHref } from '../Drawn/useHereHref';
 import { placeSlots } from './PlaceHandlerView';
 import type { PlaceItem } from './placeModel';
 import { usePlaceServer, usePlaceWrites } from './usePlaceWrites';
@@ -20,7 +19,7 @@ export function PlaceHandler({ item, locked, now }: InboxHandlerProps) {
   // The registry hands this handler only `place` items (its one key).
   const place = item as PlaceItem;
   const { pane, timeZone } = useInspectorContext();
-  const here = useHereHref();
+  const here = useRouterState({ select: (s) => s.location.href });
   const server = usePlaceServer();
   const { samePlace, approve, decline, pending } = usePlaceWrites(place, server);
   const { head, actions, body } = placeSlots({

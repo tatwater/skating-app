@@ -1,4 +1,5 @@
-import { bodyConsoleHref } from '../../../body/frame/bodySearch';
+import { Link, useRouterState } from '@tanstack/react-router';
+
 import { useUndo } from '../../../shell/undo';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { InspectorFrame } from '../../inspector/InspectorFrame';
@@ -22,21 +23,14 @@ export function RequestHandler({ item, locked, now }: InboxHandlerProps) {
   return <RequestInspector item={item} locked={locked} now={now} />;
 }
 
-/** The body's page, with the way back to this Inbox place (the Body console's own `from`). */
-export function bodyPath(waterBodyId: string): string {
-  const from =
-    typeof window === 'undefined'
-      ? undefined
-      : `${window.location.pathname}${window.location.search}`;
-  return bodyConsoleHref(waterBodyId, from);
-}
-
 function RequestInspector({
   item,
   locked,
   now,
 }: Omit<InboxHandlerProps, 'item'> & { item: RequestItem }) {
-  const { pane, linkFor } = useInspectorContext();
+  const { pane } = useInspectorContext();
+  // Where the console is, for the Body console's way back (`from`), as every handler builds it.
+  const here = useRouterState({ select: (s) => s.location.href });
   const { announce } = useUndo();
   const server = useRequestServer();
   const stillHere = useStillHere(item.itemId);
@@ -50,8 +44,10 @@ function RequestInspector({
     item,
     now,
     map: <ItemMap item={item} />,
-    // The inspector's own link for a console path (the route's router link), with the way back.
-    bodyLink: body === null || linkFor === undefined ? null : linkFor(bodyPath(body.waterBodyId)),
+    bodyLink:
+      body === null ? null : (
+        <Link to="/admin/body/$id" params={{ id: body.waterBodyId }} search={{ from: here }} />
+      ),
     onWrite,
     pane,
   });

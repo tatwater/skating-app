@@ -31,6 +31,8 @@ export const harness = {
   search: {} as Record<string, unknown>,
   /** Heard on every navigation; a test that follows the place sets `search` from it and rerenders. */
   navigate: (() => {}) as (opts: { search: Record<string, unknown> }) => void,
+  /** Where the console is (`useRouterState`'s `location.href`): a link's way back reads it. */
+  here: '/admin/inbox' as string,
   /** The viewer's capabilities (`useRole().can`); every one by default. */
   can: (() => true) as (capability: string) => boolean,
   /** Every read asked, in order, by its function's name (`inbox:lanes`, `inbox:item`, …). */
@@ -54,6 +56,7 @@ const DEFAULTS: Record<string, () => unknown> = {
 export function resetHarness(): void {
   harness.search = {};
   harness.navigate = () => {};
+  harness.here = '/admin/inbox';
   harness.can = () => true;
   harness.asked = [];
   harness.answers = {};
@@ -71,7 +74,28 @@ export async function installInboxRouteMocks(): Promise<{
   vi.doMock('@tanstack/react-router', () => ({
     useSearch: () => harness.search,
     useNavigate: () => harness.navigate,
-    Link: ({ children, ...p }: { children?: ReactNode }) => <a {...p}>{children}</a>,
+    useRouterState: (opts?: { select?: (state: unknown) => unknown }) => {
+      const state = { location: { href: harness.here } };
+      return opts?.select ? opts.select(state) : state;
+    },
+    // The router's link as an anchor whose `href` is the place it goes: `to` with its `params`
+    // filled, and its `search`, so a test reads where a link leads and the way back it carries.
+    Link: ({
+      children,
+      to,
+      params,
+      search,
+      ...p
+    }: {
+      children?: ReactNode;
+      to?: string;
+      params?: Record<string, string>;
+      search?: Record<string, unknown>;
+    }) => (
+      <a {...p} data-to={to} href={hrefOf(to, params, search)}>
+        {children}
+      </a>
+    ),
   }));
   vi.doMock('@/lib/useRole', () => ({ useRole: () => ({ can: (c: string) => harness.can(c) }) }));
   vi.doMock('@/components/admin/reads/consoleReads', async (orig) => {
@@ -93,6 +117,27 @@ export async function installInboxRouteMocks(): Promise<{
   });
   const { InboxRoute } = await import('../InboxRoute');
   return { Route: InboxRoute, mount: () => render(<InboxRoute />, { wrapper: KeysProvider }) };
+}
+
+/** A router link's place as a path: `to` with each `$param` filled, then its search. */
+export function hrefOf(
+  to: string | undefined,
+  params: Record<string, string> | undefined,
+  search: Record<string, unknown> | undefined,
+): string | undefined {
+  if (to === undefined) return undefined;
+  const path = to
+    .split('/')
+    .map((part) =>
+      part.startsWith('$') ? encodeURIComponent(params?.[part.slice(1)] ?? part) : part,
+    )
+    .join('/');
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(search ?? {})) {
+    if (v !== undefined && v !== null) q.set(k, String(v));
+  }
+  const qs = q.toString();
+  return qs === '' ? path : `${path}?${qs}`;
 }
 
 /** The arguments the newest read of `name` was asked with. */

@@ -61,7 +61,6 @@ vi.doMock('../../../shell/columnsFit', async (orig) => ({
   ...(await orig<typeof import('../../../shell/columnsFit')>()),
   useColumnsFit: () => page.fits,
 }));
-vi.doMock('./useHereHref', () => ({ useHereHref: () => '/admin/inbox?item=here' }));
 
 const { Route } = await installInboxRouteMocks();
 

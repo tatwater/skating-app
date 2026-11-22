@@ -133,29 +133,21 @@ describe('a request opens its handler, not the placeholder', () => {
     expect(within(inspector()).getByText('Asked by 2 · 3 days ago')).toBeInTheDocument();
   });
 
-  it('links a request on a body we hold into the body’s page, with the way back', () => {
+  it('links a request on a body we hold into the body’s page, with the way back here', () => {
+    // Where the console is, as the router says (every handler's link reads it the same way).
+    h.here = `/admin/inbox?lane=requests&item=${activate().itemId}`;
     open(activate());
-    // The router's link (the harness's anchor, which takes no href): the body's console.
     const link = must(
-      inspector().querySelector<HTMLElement>('[data-slot="open-in-body"]'),
+      inspector().querySelector<HTMLElement>(
+        '[data-slot="open-in-body"] a, a[data-slot="open-in-body"]',
+      ),
       'Open in Body',
     );
-    expect(link).toHaveTextContent('Open in Body');
-    expect(link.getAttribute('to')).toBe(`/admin/body/${activate().body?.waterBodyId}`);
-  });
-});
-
-describe('the body link carries the way back', () => {
-  it('returns to this Inbox place, its lane and item in its search', async () => {
-    const { bodyPath } = await import('./RequestHandler');
+    expect(link.closest('[data-slot="open-in-body"]')).toHaveTextContent('Open in Body');
     const id = activate().body?.waterBodyId as string;
-    window.history.pushState({}, '', `/admin/inbox?lane=requests&item=${activate().itemId}`);
-    const back = new URL(bodyPath(id), 'https://gli.test');
-    expect(back.pathname).toBe(`/admin/body/${id}`);
-    expect(back.searchParams.get('from')).toBe(
-      `/admin/inbox?lane=requests&item=${activate().itemId}`,
-    );
-    window.history.pushState({}, '', '/');
+    const to = new URL(must(link.getAttribute('href'), 'href'), 'https://gli.test');
+    expect(to.pathname).toBe(`/admin/body/${id}`);
+    expect(to.searchParams.get('from')).toBe(h.here);
   });
 });
 
