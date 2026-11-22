@@ -28,7 +28,7 @@ export const TICKET_WORDS = {
   reply: 'Reply by email',
   /** Coined: a note its writer took back (its Undo); its words are not kept on screen. */
   noteRemoved: 'A note was removed',
-  /** Coined: the thread holds more than the read served — "Showing the newest 50 of 300+ messages". */
+  /** Coined: the thread holds more than the read served — "Showing the newest 100 of 100+ messages". */
   shownOf: (shown: number, total: number, floor: boolean) =>
     `Showing the newest ${countOf(shown)} of ${countOf(total, floor)} ${
       total === 1 && !floor ? 'message' : 'messages'
@@ -89,7 +89,6 @@ export const TICKET_WORDS = {
   /** "15 Oct · set by Matt" (the board's words). */
   until: (day: string, by: string) => `${day} · set by ${by}`,
   related: 'Related',
-  /** Coined: Related's rows, from the person's own standing (the read serves no list of them yet). */
   /** Coined: a flag on Related, by its reason ("Unsafe false report flag"). */
   flagTitle: (reason: string) => `${reason} flag`,
   /** Coined: an open flag's line ("report · 4 days ago"). */
