@@ -446,6 +446,25 @@ async function world(
     }
     if (has('loserBays')) {
       add('loserBays', await bay(ctx, loser, 'East Cove', rect(0.8, 0.1, 0.95, 0.3), actor.id));
+      // A report inside it: its bay join (`reportSubAreas`) follows the report's body both ways.
+      add(
+        'reports',
+        await ctx.db.insert('reports', {
+          authorId: skater.id,
+          waterBodyId: loser,
+          point: { lat: 0.2, lng: 0.85 },
+          skateEndTime: now() - 60_000,
+          reportTime: now(),
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible',
+          hazardIdsCreated: [],
+          createdAt: now(),
+          updatedAt: now(),
+        }),
+      );
     }
     if (has('clashingBay')) {
       add(
@@ -853,6 +872,16 @@ suite('a merge and its unmerge: the state equals the state before', () => {
     expect(await leftOf(w.t, w.loser)).toEqual({ count: 0, byKind: {}, rows: [] });
     expect(await census(w.t)).toEqual(before);
     await assertAudit(w, mergeId);
+  });
+
+  test('a moved report’s bay join follows it in the page that moves it, before any restamp runs', async () => {
+    const w = await world(['loserBays']);
+    const mergeId = await mergeV2(w);
+    await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    // Nothing scheduled has run yet: the join was re-mirrored by the unmerge's own page.
+    const joins = await w.t.run((ctx) => ctx.db.query('reportSubAreas').collect());
+    expect(joins.length).toBeGreaterThan(0);
+    expect(joins.every((j) => j.waterBodyId === w.loser)).toBe(true);
   });
 
   test('the change set split in parts unmerges the same', async () => {
@@ -1297,6 +1326,38 @@ suite('a row that has drifted since the merge is left where it is, and said', ()
     await c.stays(w, id);
   });
 
+  test('the survivor’s lists come apart by difference: what it gained since stays, the loser’s go back', async () => {
+    const w = await world(['lists']);
+    const mergeId = await mergeV2(w);
+    // Since the merge, a moderator gave the survivor an alias of its own and a link of its own.
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.survivor, {
+        moderatorAliases: ['Morey', 'Fairlee Lake', 'East Morey', 'Lake Fairlee'],
+        referenceLinks: [
+          { label: 'Town', url: 'https://example.invalid/town' },
+          { label: 'Club', url: 'https://example.invalid/club' },
+          { label: 'Map', url: 'https://example.invalid/map' },
+        ],
+      }),
+    );
+    await unmerge(w, mergeId);
+    const [survivor, loser] = await w.t.run(async (ctx) => [
+      await ctx.db.get(w.survivor),
+      await ctx.db.get(w.loser),
+    ]);
+    // Only the loser's own ("East Morey"; "fairlee lake" was the survivor's already, case aside) and
+    // its club link left the survivor; what the survivor gained since stayed.
+    expect(survivor?.moderatorAliases).toEqual(['Morey', 'Fairlee Lake', 'Lake Fairlee']);
+    expect(survivor?.referenceLinks?.map((l) => l.url)).toEqual([
+      'https://example.invalid/town',
+      'https://example.invalid/map',
+    ]);
+    expect(survivor?.searchText).toBe(
+      bodySearchTextFor({ name: 'Lake Morey', moderatorAliases: survivor?.moderatorAliases }),
+    );
+    expect(loser?.moderatorAliases).toEqual(['East Morey', 'fairlee lake']);
+  });
+
   test('the receipt reads what was left, live: the first page’s count at once, the total once done', async () => {
     const w = await world(['content', 'partners']);
     const mergeId = await mergeV2(w);
@@ -1460,6 +1521,42 @@ suite('a heavy unmerge pages', () => {
       Array.from({ length: N }, (_, i) => i),
     );
   }, 120_000);
+
+  test('a loser merged again between pages: the later pages stop, its rows are that merge’s', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      // Between pages, someone merges the drawing again.
+      await w.t.run(async (ctx) => {
+        const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
+        const loser = (await ctx.db.get(w.loser)) as Doc<'waterBodies'>;
+        await mergeBodyInto(ctx, {
+          survivor,
+          loser,
+          actorId: w.actor.id,
+          reason: 'Same after all',
+        });
+      });
+      await settle(w.t);
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+    const onLoser = await w.t.run(async (ctx) => [
+      ...(await ctx.db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', w.loser))
+        .collect()),
+      ...(await ctx.db
+        .query('hazards')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
+        .collect()),
+    ]);
+    expect(onLoser).toEqual([]);
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+  });
 
   test('an undone unmerge’s later pages do nothing', async () => {
     const w = await world(['content']);

@@ -1059,7 +1059,16 @@ describe('the pin against the other writers', () => {
             .replace(new RegExp(`metadata: \\{ ${field}[^\\n]*`, 'g'), ''),
         ),
       );
-    expect(writersOf('moderatorTownKeys').sort()).toEqual(['waterBodies.ts']);
+    // The unmerge (B01-5d) puts both bodies' pins back through the same builder.
+    expect(writersOf('moderatorTownKeys').sort()).toEqual(['unmerge.ts', 'waterBodies.ts']);
+    const unmerge = readFileSync(join(dir, 'unmerge.ts'), 'utf8').split('\n');
+    const unmergeWrites = unmerge
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => /moderatorTownKeys\s*:/.test(l));
+    expect(unmergeWrites).toHaveLength(2);
+    for (const { i } of unmergeWrites) {
+      expect(unmerge.slice(i - 2, i + 3).join('\n')).toMatch(/regionStatesFields\(/);
+    }
     // The rule's states are written by the one builder alone.
     expect(writersOf('regionStates').sort()).toEqual(['waterBodies.ts']);
     const source = readFileSync(join(dir, 'waterBodies.ts'), 'utf8').split('\n');

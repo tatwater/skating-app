@@ -1006,10 +1006,7 @@ describe('a body merge records its change set (D226)', () => {
       mergedIntoId: null,
     });
 
-    // The unmerge is §4's; until then History says so rather than offering an undo.
-    await expect(mod.as.mutation(api.undo.run, { actionId: merge._id })).rejects.toThrow(
-      /^Undo for this arrives with Corpus\.$/,
-    );
+    // Its undo is the unmerge (B01-5d), held row by row in `unmerge.test.ts`.
   });
 
   test('a payload too big for one row splits into parts and reads back whole', async () => {

@@ -110,21 +110,23 @@ export interface UnmergeFacts {
   survivorInto: Doc<'waterBodies'> | null;
 }
 
-/** Whether a change set carries every field the unmerge reads (`version: 2` and the rest). */
+/**
+ * Whether a version-2 change set carries what the unmerge can't do without: the moved rows, the
+ * before-images, the lists, the loser's review, and the partners' after-images whenever it has
+ * partners. A list of side rows, re-clipped survivor bays or moved skates may be absent when empty.
+ */
 function isWhole(cs: MergeChangeSet): boolean {
   return (
     Array.isArray(cs.moved) &&
     Array.isArray(cs.dedupBefore) &&
+    cs.dedupBefore.length > 0 &&
     Array.isArray(cs.deletedFavorites) &&
     Array.isArray(cs.subAreasBefore) &&
     Array.isArray(cs.landmarksBefore) &&
     Array.isArray(cs.landmarksAfter) &&
     cs.listsBefore !== undefined &&
-    Array.isArray(cs.sideActions) &&
-    Array.isArray(cs.dedupAfter) &&
-    Array.isArray(cs.survivorSubAreasBefore) &&
     cs.loserReview !== undefined &&
-    Array.isArray(cs.movedActivities)
+    (cs.dedupBefore.length === 1 || Array.isArray(cs.dedupAfter))
   );
 }
 
