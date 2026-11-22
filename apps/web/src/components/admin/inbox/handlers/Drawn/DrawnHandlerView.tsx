@@ -10,15 +10,13 @@ import {
 
 import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
 import { buttonVariants } from '@/components/kit/button';
-import { Kbd } from '@/components/kit/kbd';
 import { LabelRows } from '@/components/kit/label-rows';
 import { Note } from '@/components/kit/note';
 import { OverlapGauge } from '@/components/kit/overlap-gauge';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { ToolbarItem } from '@/components/kit/toolbar';
-import { COMING_SOON, sayComingSoon, UnavailableButton } from '@/components/kit/unavailable-button';
-import { usePaneKeys } from '@/lib/keys';
+import { COMING_SOON, UnavailableButton } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
@@ -48,7 +46,7 @@ import type { DrawnAct } from './useDrawnWrites';
  * - **Body** — the map (the drawing dashed over the body it overlaps); the overlap gauge, from the
  *   server's share; the report it came from and who drew it; *If merged into ‹body›*, which says
  *   what a merge does and that it is not here yet — never an offer to do it.
- * - **Bar** — *Merge into ‹body›* (M) drawn as *Coming soon* (D286), *Approve as new* (A),
+ * - **Bar** — *Merge into ‹body›* drawn as *Coming soon* (D286), with no key until it does something, *Approve as new* (A),
  *   *Reject* (R, its reason asked: the drawer reads it). Each only where `can` allows its verb.
  *
  * No reads, no writes: the container binds them. A refusal is the shell's toast (D268).
@@ -234,7 +232,6 @@ function MergeComingSoon({ name }: { name: string }) {
   return (
     <ToolbarItem
       data-slot="drawn-merge"
-      aria-keyshortcuts="M"
       render={({ children, ...props }) => (
         <UnavailableButton {...props} variant="outline" title={COMING_SOON} what={W.whatMerge}>
           {children}
@@ -242,9 +239,6 @@ function MergeComingSoon({ name }: { name: string }) {
       )}
     >
       {W.mergeInto(name)}
-      <Kbd variant="dim" aria-hidden="true">
-        M
-      </Kbd>
     </ToolbarItem>
   );
 }
@@ -259,15 +253,6 @@ export function DrawnActions({
   const bar = drawnBar(item);
   const [asking, setAsking] = useState(false);
   const busy = pending !== null;
-  // M says *Coming soon* as the button's press does (the kit's unavailable rule: its key too).
-  usePaneKeys(pane ?? { current: null }, [
-    {
-      key: 'M',
-      run: () => sayComingSoon(),
-      enabled: pane !== undefined && bar.merge !== null,
-      label: bar.merge !== null ? W.mergeInto(bar.merge) : '',
-    },
-  ]);
   if (!hasBar(bar)) return null;
   const items: ActionBarItem[] = [
     ...(bar.merge !== null

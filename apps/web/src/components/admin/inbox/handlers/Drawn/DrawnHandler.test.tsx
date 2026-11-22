@@ -145,12 +145,12 @@ describe('the slots', () => {
 });
 
 describe('the bar', () => {
-  it('draws Merge (Coming soon, M), Approve as new (A), Reject (R)', () => {
+  it('draws Merge (Coming soon, no key), Approve as new (A), Reject (R)', () => {
     inShell(<Pane item={OVER_CASPIAN} />);
     const merge = screen.getByRole('button', { name: /Merge into Caspian Lake/ });
     expect(merge).toHaveAttribute('aria-disabled', 'true');
     expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
-    expect(merge).toHaveAttribute('aria-keyshortcuts', 'M');
+    expect(merge).not.toHaveAttribute('aria-keyshortcuts');
     expect(screen.getByRole('button', { name: 'Approve as new' })).toHaveAttribute(
       'aria-keyshortcuts',
       'A',
@@ -167,15 +167,16 @@ describe('the bar', () => {
     expect(screen.getByRole('button', { name: 'Approve as new' })).toBeInTheDocument();
   });
 
-  it('Merge says Coming soon on a press and on M, and writes nothing', async () => {
+  it('Merge says Coming soon on a press and writes nothing; M is no key of it', async () => {
     const user = userEvent.setup();
     const onApprove = vi.fn(async () => true);
     const onReject = vi.fn(async () => true);
     inShell(<Pane item={OVER_CASPIAN} onApprove={onApprove} onReject={onReject} />);
-    await user.click(screen.getByRole('button', { name: /Merge into Caspian Lake/ }));
-    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0));
     screen.getByTestId('pane').focus();
     await user.keyboard('m');
+    expect(screen.queryByText('Coming soon')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Merge into Caspian Lake/ }));
+    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0));
     expect(onApprove).not.toHaveBeenCalled();
     expect(onReject).not.toHaveBeenCalled();
   });
