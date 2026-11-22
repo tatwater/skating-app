@@ -9,6 +9,7 @@ import {
 
 import { ActionBar, type ActionBarItem } from '@/components/kit/action-bar';
 import { Badge } from '@/components/kit/badge';
+import { CompareTable } from '@/components/kit/compare-table';
 import { DisplayWord } from '@/components/kit/display-word';
 import { LabelRows } from '@/components/kit/label-rows';
 import { Note } from '@/components/kit/note';
@@ -26,7 +27,6 @@ import { AskList } from '../asks/AskList';
 import { LinkChip } from '../Drawn/DrawnHandlerView';
 import { trustLine } from '../Drawn/drawnModel';
 import { dayTime, milesWords } from '../Flag/flagFormat';
-import { CompareTable } from './kit-candidates/compare-table';
 import {
   askedName,
   bodyLine,

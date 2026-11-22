@@ -13,6 +13,7 @@ import { buttonVariants } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
 import { LabelRows } from '@/components/kit/label-rows';
 import { Note } from '@/components/kit/note';
+import { OverlapGauge } from '@/components/kit/overlap-gauge';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { ToolbarItem } from '@/components/kit/toolbar';
@@ -37,7 +38,6 @@ import {
   trustLine,
 } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
-import { OverlapGauge } from './kit-candidates/overlap-gauge';
 import type { DrawnAct } from './useDrawnWrites';
 
 /**

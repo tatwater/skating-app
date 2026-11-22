@@ -1,18 +1,17 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
-
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { must } from '@/components/kit/storyKit';
-import { ThemePair } from '../../../../../../../.storybook/theme';
+import { ThemePair } from '../../../.storybook/theme';
 import { CompareTable } from './compare-table';
+import { computedColor, sameColor } from './measure';
+import { must } from './storyKit';
 
 /**
- * Kit candidate: the compare table (the Inbox's 2.4) — four-up: dark and light, at the board's part
+ * The compare table (the Inbox's 2.4) — four-up: dark and light, at the board's part
  * width and at a phone's, where the label column narrows and a long cell wraps rather than clip.
  */
 
 const meta = {
-  title: 'Admin/Inbox/Kit candidates/Compare table',
+  title: 'Kit/CompareTable',
   component: CompareTable,
   parameters: { layout: 'fullscreen' },
   globals: { surface: 'admin' },

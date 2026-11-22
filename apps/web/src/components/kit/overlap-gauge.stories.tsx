@@ -1,19 +1,18 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor } from 'storybook/test';
-
-import { computedColor, sameColor } from '@/components/kit/measure';
-import { must } from '@/components/kit/storyKit';
-import { ThemePair } from '../../../../../../../.storybook/theme';
+import { ThemePair } from '../../../.storybook/theme';
+import { computedColor, sameColor } from './measure';
 import { OverlapGauge } from './overlap-gauge';
+import { must } from './storyKit';
 
 /**
- * Kit candidate: the overlap gauge (the Inbox's 2.5) — four-up: dark and light, at the board's
+ * The overlap gauge (the Inbox's 2.5) — four-up: dark and light, at the board's
  * inspector width and at a phone's (where the figure stacks over the scale). The board's figure,
  * 92 % of a drawing inside Caspian Lake against the 80 % merge threshold, then one short of it.
  */
 
 const meta = {
-  title: 'Admin/Inbox/Kit candidates/Overlap gauge',
+  title: 'Kit/OverlapGauge',
   component: OverlapGauge,
   parameters: { layout: 'fullscreen' },
   globals: { surface: 'admin' },

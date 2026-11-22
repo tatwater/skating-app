@@ -1,10 +1,8 @@
 import { LANDMARK_KIND_LABELS, type LandmarkKind, landmarkNameKey } from '@skating/core';
-
+import type { CompareRow } from '@/components/kit/compare-table';
 import { ageInWords } from '@/lib/ages';
-
 import type { InboxItemView } from '../../list/inboxTypes';
 import { milesWords } from '../Flag/flagFormat';
-import type { CompareRow } from './kit-candidates/compare-table';
 import { PLACE_WORDS as W } from './placeWords';
 
 /**
