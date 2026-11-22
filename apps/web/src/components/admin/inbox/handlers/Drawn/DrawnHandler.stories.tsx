@@ -17,6 +17,7 @@ import {
   DRAWN_DECIDED,
   DRAWN_MERGED,
   DRAWN_NOW,
+  DRAWN_UNMERGING,
   LONG_REPORT,
   MODERATOR_VIEW,
   NEW_WATER,
@@ -233,6 +234,20 @@ export const DrawnByViewer: Story = {
     for (const q of quads(canvasElement)) {
       await expect(within(q).queryByRole('toolbar')).toBeNull();
       await expect(within(q).getByRole('note')).toHaveTextContent('You filed this');
+    }
+  },
+};
+
+/** An unmerge still runs on it: Merge held back in the server's sentence; approve and reject stay. */
+export const Unmerging: Story = {
+  render: () => pair(() => <Inspector item={DRAWN_UNMERGING} />),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(within(q).queryByRole('button', { name: /Merge/ })).toBeNull();
+      await expect(within(q).getByRole('button', { name: 'Approve as new' })).toBeVisible();
+      await expect(within(q).getByRole('note')).toHaveTextContent(
+        'This body is still being unmerged. Merge it once that finishes.',
+      );
     }
   },
 };

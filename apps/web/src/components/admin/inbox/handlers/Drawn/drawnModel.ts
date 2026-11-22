@@ -51,11 +51,19 @@ export function drawnBar(item: Pick<DrawnItem, 'can' | 'overlap'>): DrawnBar {
 export const hasBar = (bar: DrawnBar): boolean => bar.merge !== null || bar.approve || bar.reject;
 
 /**
- * The first refusal among the verbs the item draws, when it draws no lever at all — said once in the
- * body, so an empty bar is never a mystery. `null` when any lever is drawn or none is refused.
+ * The refusal said once in the body, in the server's words: the first refusal among the verbs the
+ * item draws when it draws no lever at all, so an empty bar is never a mystery — or, whatever else
+ * the bar holds, a merge held back while an unmerge still runs on either body (`canCode.mergeDrawn
+ * === 'unmerging'`: the server's code, never a check here), so the missing Merge says why. `null`
+ * otherwise.
  */
-export function refusalSaid(item: Pick<DrawnItem, 'can' | 'overlap' | 'decided'>): string | null {
-  if (item.decided !== null || hasBar(drawnBar(item))) return null;
+export function refusalSaid(
+  item: Pick<DrawnItem, 'can' | 'canCode' | 'overlap' | 'decided'>,
+): string | null {
+  if (item.decided !== null) return null;
+  const merge = item.can.mergeDrawn;
+  if (item.canCode?.mergeDrawn === 'unmerging' && typeof merge === 'string') return merge;
+  if (hasBar(drawnBar(item))) return null;
   for (const v of ['approveDrawn', 'rejectDrawn', 'mergeDrawn'] as const) {
     const answer = item.can[v];
     if (typeof answer === 'string') return answer;

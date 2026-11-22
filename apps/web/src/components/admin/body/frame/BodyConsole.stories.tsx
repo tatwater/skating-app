@@ -14,7 +14,12 @@ import { fitCamera } from '@/lib/mapSurface';
 import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
 import { FIT_PADDING } from '../map/useBodyMapCanvas';
 import type { MergeFlowProps } from '../tabs/shape/MergeFlow';
-import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL } from '../tabs/shape/mergeFixtures';
+import {
+  MERGE_HEAVY,
+  MERGE_REFUSED,
+  MERGE_TO_CRYSTAL,
+  MERGE_UNMERGING,
+} from '../tabs/shape/mergeFixtures';
 import { BodyBoard } from './bodyBoard';
 import { CAPPED_HISTORY, MASCOMA_BOUNDS, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
@@ -415,6 +420,21 @@ export const MergeRefused: Story = {
     const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
     await expect(within(preview).getByRole('note')).toHaveTextContent(
       'Survivor is itself merged — pick the canonical body',
+    );
+    await expect(
+      within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
+    ).toBeDisabled();
+  },
+};
+
+/** An unmerge still runs on one of the pair: the server's sentence, and no confirm. */
+export const MergeUnmerging: Story = {
+  name: 'Merge | Unmerging',
+  args: mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_UNMERGING }, `neighbor:${NEIGHBOR_ID}`),
+  play: async ({ canvasElement }) => {
+    const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
+    await expect(within(preview).getByRole('note')).toHaveTextContent(
+      'This body is still being unmerged. Merge it once that finishes.',
     );
     await expect(
       within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),

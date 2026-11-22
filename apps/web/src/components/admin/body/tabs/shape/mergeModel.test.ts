@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { MERGE_HEAVY, MERGE_NOTHING_MOVES, MERGE_REFUSED, MERGE_TO_CRYSTAL } from './mergeFixtures';
+import {
+  MERGE_HEAVY,
+  MERGE_NOTHING_MOVES,
+  MERGE_REFUSED,
+  MERGE_TO_CRYSTAL,
+  MERGE_UNMERGING,
+} from './mergeFixtures';
 import { consequenceRows, countText, mergeVerdict, moveRows } from './mergeModel';
 import { MERGE_WORDS as W } from './mergeWords';
 
@@ -94,6 +100,13 @@ describe('whether it may be confirmed', () => {
     expect(mergeVerdict(MERGE_REFUSED)).toEqual({
       confirm: false,
       said: 'Survivor is itself merged — pick the canonical body',
+    });
+  });
+
+  it('says a merge held back mid-unmerge in the server’s sentence, and offers no confirm', () => {
+    expect(mergeVerdict(MERGE_UNMERGING)).toEqual({
+      confirm: false,
+      said: 'This body is still being unmerged. Merge it once that finishes.',
     });
   });
 

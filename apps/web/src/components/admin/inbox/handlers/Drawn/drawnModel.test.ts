@@ -11,6 +11,7 @@ import {
   DRAWN_FIXTURES,
   DRAWN_MERGED,
   DRAWN_NOW,
+  DRAWN_UNMERGING,
   MODERATOR_VIEW,
   NEW_WATER,
   OVER_CASPIAN,
@@ -87,6 +88,16 @@ describe('the bar, from the item’s can alone', () => {
     expect(refusalSaid(DRAWN_BY_VIEWER)).toBe(
       'You filed this, so another staff member decides it.',
     );
+  });
+
+  it('says a merge held back mid-unmerge from its code, whatever else the bar holds', () => {
+    const bar = drawnBar(DRAWN_UNMERGING);
+    expect(bar).toMatchObject({ merge: null, approve: true, reject: true });
+    expect(refusalSaid(DRAWN_UNMERGING)).toBe(
+      'This body is still being unmerged. Merge it once that finishes.',
+    );
+    // The code, never the words: the same sentence uncoded says nothing while levers are drawn.
+    expect(refusalSaid({ ...DRAWN_UNMERGING, canCode: {} })).toBeNull();
   });
 
   it('says no refusal while any lever is drawn, for a decided item, or with nothing refused', () => {

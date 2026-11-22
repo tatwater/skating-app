@@ -93,6 +93,13 @@ export const MERGE_REFUSED: MergePreview = {
   code: 'survivorMerged',
 };
 
+/** An unmerge still runs on this body or the survivor (R10-A): refused in its sentence and code. */
+export const MERGE_UNMERGING: MergePreview = {
+  ok: false,
+  refusal: 'This body is still being unmerged. Merge it once that finishes.',
+  code: 'unmerging',
+};
+
 /** The merge's answer: its own audit row, and the unmerge offered with a reason asked. */
 export const MERGE_ANSWER: MergeAnswer = {
   survivorId: NEIGHBOR_ID as MergeAnswer['survivorId'],

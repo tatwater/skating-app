@@ -81,6 +81,19 @@ export const DRAWN_BY_VIEWER = {
   canCode: { mergeDrawn: 'ownDrawing' },
 } as unknown as DrawnItem;
 
+/**
+ * An unmerge still runs on the drawing or its survivor (R10-A): Merge held back in the server's own
+ * sentence and code; approve and reject stay.
+ */
+export const DRAWN_UNMERGING = {
+  ...OVER_CASPIAN,
+  can: {
+    ...OPEN,
+    mergeDrawn: 'This body is still being unmerged. Merge it once that finishes.',
+  },
+  canCode: { mergeDrawn: 'unmerging' },
+} as unknown as DrawnItem;
+
 /** The drawer's account is gone. */
 export const DRAWER_GONE = {
   ...OVER_CASPIAN,
@@ -169,6 +182,7 @@ export const DRAWN_FIXTURES = {
   BELOW_THRESHOLD,
   MODERATOR_VIEW,
   DRAWN_BY_VIEWER,
+  DRAWN_UNMERGING,
   DRAWER_GONE,
   DRAWN_DECIDED,
   DRAWN_MERGED,

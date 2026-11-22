@@ -17,6 +17,7 @@ import {
   DRAWN_BY_VIEWER,
   DRAWN_MERGED,
   DRAWN_NOW,
+  DRAWN_UNMERGING,
   LONG_REPORT,
   MODERATOR_VIEW,
   NEW_WATER,
@@ -189,6 +190,16 @@ describe('the slots', () => {
 });
 
 describe('the bar', () => {
+  it('holds Merge back while an unmerge still runs, says why in the server’s words, and keeps the rest', () => {
+    inShell(<Pane item={DRAWN_UNMERGING} />);
+    expect(screen.queryByRole('button', { name: /Merge/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve as new' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'This body is still being unmerged. Merge it once that finishes.',
+    );
+  });
+
   it('draws Merge into ‹the survivor› (M), Approve as new (A), Reject (R)', () => {
     inShell(<Pane item={OVER_CASPIAN} />);
     const merge = screen.getByRole('button', { name: 'Merge into Caspian Lake' });
@@ -366,6 +377,24 @@ describe('the writes', () => {
         )
       ).length,
     ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Merged into/)).toBeNull();
+  });
+
+  it('says a merge too heavy for one transaction in a toast, the server’s sentence from its coded refusal', async () => {
+    const user = userEvent.setup();
+    const tooBig =
+      'Too much moves for one merge here. Merge it from the duplicates queue in parts, or ask an admin.';
+    const server: DrawnServer = {
+      // The write's refusal carries its code beside the sentence (`{ message, code: 'tooBig' }`).
+      mergeDrawn: vi.fn(async () => {
+        throw new ConvexError({ message: tooBig, code: 'tooBig' });
+      }),
+      approve: vi.fn(),
+      reject: vi.fn(),
+    };
+    inShell(<Harness item={OVER_CASPIAN} server={server} />);
+    await user.click(screen.getByRole('button', { name: 'go-merge' }));
+    expect((await screen.findAllByText(`The decision: ${tooBig}`)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Merged into/)).toBeNull();
   });
 

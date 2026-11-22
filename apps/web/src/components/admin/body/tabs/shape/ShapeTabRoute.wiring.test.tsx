@@ -260,8 +260,9 @@ describe('the Shape tab’s merge, through the route', () => {
   it('a refusal reaches a toast in the server’s words, naming this body; the dialog stays', async () => {
     const user = userEvent.setup();
     const { ConvexError } = await import('convex/values');
+    // The write's coded refusal (`{ message, code: 'tooBig' }`): its sentence reaches the toast.
     mocks.answer[MERGE] = () => {
-      throw new ConvexError('Too much moves for one merge here.');
+      throw new ConvexError({ message: 'Too much moves for one merge here.', code: 'tooBig' });
     };
     render(<Mounted />);
     await mergeIntoCrystal(user);
