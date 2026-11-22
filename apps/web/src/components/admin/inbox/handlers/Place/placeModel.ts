@@ -2,6 +2,7 @@ import { LANDMARK_KIND_LABELS, type LandmarkKind, landmarkNameKey } from '@skati
 import type { CompareRow } from '@/components/kit/compare-table';
 import { ageInWords } from '@/lib/ages';
 import type { InboxItemView } from '../../list/inboxTypes';
+import { decidedAsk } from '../asks/decidedAsk';
 import { milesWords } from '../Flag/flagFormat';
 import { PLACE_WORDS as W } from './placeWords';
 
@@ -31,9 +32,9 @@ export type ProposalLookalike = Extract<Lookalike, { kind: 'proposal' }>;
 const allowed = (item: Pick<PlaceItem, 'can'>, v: 'approve' | 'decline' | 'sameAs'): boolean =>
   v in item.can && item.can[v] === null;
 
-/** The ask a decision is written on: the item's first, the one its rule's facts were read from. */
+/** The ask a decision is written on (`decidedAsk`: the oldest open one, else the first). */
 export function primaryAsk(item: Pick<PlaceItem, 'asks'>): PlaceAsk | null {
-  return item.asks[0] ?? null;
+  return decidedAsk(item.asks);
 }
 
 /** The landmark the item's lookalikes hold, if any (the one *Same place* answers with). */

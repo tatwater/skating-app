@@ -6,6 +6,7 @@ import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { acres } from '../../list/inboxModel';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { askedBy } from '../../words/inboxWords';
+import { decidedAsk } from '../asks/decidedAsk';
 import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
 
 /**
@@ -39,9 +40,9 @@ export type RequestWrite =
 /** Restore and takedown need `body.remove` (an admin's) to approve. */
 export const adminOnly = (kind: RequestKind): boolean => kind === 'restore' || kind === 'takedown';
 
-/** The ask a decision is sent for: the oldest open one, as served (the read lists oldest first). */
+/** The ask a decision is sent for (`decidedAsk`: the oldest open one, else the first). */
 export function primaryAsk(item: Pick<RequestItem, 'asks'>): RequestItem['asks'][number] | null {
-  return item.asks.find((a) => a.status === 'open') ?? item.asks[0] ?? null;
+  return decidedAsk(item.asks);
 }
 
 /** What a receipt and a dialog call the item: its body, its catalog feature, or unnamed water. */

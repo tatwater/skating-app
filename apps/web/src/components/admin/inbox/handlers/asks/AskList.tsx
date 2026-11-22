@@ -27,7 +27,10 @@ export type AskMemberView = Extract<InboxItemView, { kind: 'request' }>['asks'][
 /** An item's count of its asks, and whether the server stopped counting (a floor). */
 export type AskTotal = { count: number; floor: boolean };
 
-/** The asks newest first; ties keep the order they were served in. */
+/**
+ * The asks newest first; ties keep the order they were served in. TEMPORARY: the server serves them
+ * oldest first today; S3 decides the one order on the server, and this re-sort goes with it.
+ */
 export function newestFirst(asks: readonly AskMemberView[]): AskMemberView[] {
   return asks
     .map((a, i) => ({ a, i }))
