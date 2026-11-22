@@ -41,6 +41,7 @@ import {
   ifDeclined,
   ifDrawn,
   ifSamePlace,
+  landmarkHistory,
   landmarkLookalike,
   lookalikeHead,
   matchChips,
@@ -220,7 +221,15 @@ export function PlaceBody({
             count={{ count: item.memberCount, capped: item.memberCountIsFloor }}
             data-slot="place-asks"
           >
-            <AskList asks={item.asks} now={now} total={listTotalOf(item, item.asksCut)} />
+            <AskList
+              asks={item.asks}
+              now={now}
+              total={listTotalOf(item, item.asksCut)}
+              // Each asker's landmark history where it is served (the read serves the first few).
+              rowMeta={(a) =>
+                a.asker === null || a.asker.deleted ? null : landmarkHistory(a.landmarkAsks)
+              }
+            />
           </Section>
         </Part>
       )}

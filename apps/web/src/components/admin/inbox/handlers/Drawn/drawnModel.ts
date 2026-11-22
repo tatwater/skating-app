@@ -1,9 +1,8 @@
-import { formatDurationLabel, MERGE_SUGGEST_SHARE, TRUST_CLASS_LABELS } from '@skating/core';
+import { MERGE_SUGGEST_SHARE, TRUST_CLASS_LABELS } from '@skating/core';
 
 import { ageInWords } from '@/lib/ages';
 
 import type { InboxItemView } from '../../list/inboxTypes';
-import { dayTime, skateSpan } from '../Flag/flagFormat';
 import { DRAWN_WORDS as W } from './drawnWords';
 
 /**
@@ -80,21 +79,6 @@ export function standingLine(p: Lockup | null, reports: number | null): string {
   const trust = trustLine(p);
   if (p === null || p.deleted || p.trustClass === null || reports === null) return trust;
   return `${trust} · ${W.reports(reports)}`;
-}
-
-/**
- * The skate the drawing came from: its moving time, then when — "1h 36m · 11 Oct 09:00–11:00".
- * The provider's moving time leaves out stops, so it is never the span's length; with none sent,
- * only when. A skate with no end reads from its start.
- */
-export function skateLine(skate: NonNullable<DrawnItem['skate']>, timeZone?: string): string {
-  const when =
-    skate.endTime !== null
-      ? skateSpan(skate.startTime, skate.endTime, timeZone)
-      : dayTime(skate.startTime, timeZone);
-  return skate.elapsedSeconds !== null && skate.elapsedSeconds > 0
-    ? `${formatDurationLabel(skate.elapsedSeconds / 60)} · ${when}`
-    : when;
 }
 
 /** What a merge would do, said as the merge — the block never offers to do it here. */

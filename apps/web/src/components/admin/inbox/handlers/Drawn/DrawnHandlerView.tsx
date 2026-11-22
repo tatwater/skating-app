@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { skateWords } from '../../blocks/skateWords';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
@@ -37,7 +38,6 @@ import {
   MERGE_PERCENT,
   mergeRows,
   refusalSaid,
-  skateLine,
   standingLine,
 } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
@@ -211,7 +211,7 @@ export function DrawnBody({
                 },
                 { label: W.trust, value: standingLine(drawer, item.drawerReports) },
                 ...(item.skate !== null
-                  ? [{ label: W.skate, value: skateLine(item.skate, timeZone) }]
+                  ? [{ label: W.skate, value: skateWords(item.skate, timeZone) }]
                   : report !== null
                     ? [{ label: W.skated, value: dayMonth(report.skateEndTime, timeZone) }]
                     : []),

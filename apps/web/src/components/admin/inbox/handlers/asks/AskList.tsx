@@ -1,4 +1,5 @@
-import { formatDurationLabel, formatSkateWindow } from '@skating/core';
+import type { ReactNode } from 'react';
+
 import { Quote } from '@/components/kit/note';
 import { PersonByline } from '@/components/kit/person-lockup';
 
@@ -6,6 +7,7 @@ import { shortAge } from '@/lib/ages';
 
 import { dayMonth } from '../../../shell/consoleTime';
 import { ListCutLine, type ListTotal } from '../../blocks/listCut';
+import { skateWords } from '../../blocks/skateWords';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { ASK_LIST_WORDS as W } from './askListWords';
@@ -27,23 +29,16 @@ import { ASK_LIST_WORDS as W } from './askListWords';
 export type AskMemberView = Extract<InboxItemView, { kind: 'request' }>['asks'][number];
 
 /**
- * An ask's recorded skate as its line says it: the day it was skated and how long — the provider's
- * moving time when it sent one (stops left out), else the window from start to end, else nothing.
- * An ask tied to a skate the read couldn't describe still says it came with one.
+ * An ask's recorded skate as its line says it: "With a recorded skate · 1h 36m · 11 Oct 09:00–11:00"
+ * — the one skate format (`blocks/skateWords`). An ask tied to a skate the read couldn't describe
+ * still says it came with one.
  */
 export function skateLine(
   a: Pick<AskMemberView, 'activityId' | 'skate'>,
   timeZone?: string,
 ): string | null {
   if (a.skate === null) return a.activityId !== null ? W.withSkate : null;
-  const { startTime, endTime, elapsedSeconds } = a.skate;
-  const length =
-    elapsedSeconds !== null && elapsedSeconds > 0
-      ? formatDurationLabel(elapsedSeconds / 60)
-      : endTime !== null
-        ? formatSkateWindow(endTime, startTime)
-        : null;
-  return W.skateWhen(dayMonth(startTime, timeZone), length);
+  return W.skateWhen(skateWords(a.skate, timeZone));
 }
 
 /** "12 Oct · 2 d ago": the day it was asked and how long ago. */
@@ -55,10 +50,16 @@ export function AskList({
   asks,
   now,
   total,
+  rowMeta,
 }: {
   asks: AskMemberView[];
   now: number;
   total: ListTotal;
+  /**
+   * What a kind adds under an asker's row (the place handler's landmark history); `null` adds
+   * nothing for that ask.
+   */
+  rowMeta?: (ask: AskMemberView) => ReactNode;
 }) {
   const { timeZone } = useInspectorContext();
   return (
@@ -90,6 +91,7 @@ export function AskList({
                 {skateLine(a, timeZone)}
               </span>
             )}
+            {rowMeta !== undefined && <AskRowMeta>{rowMeta(a)}</AskRowMeta>}
             {a.fromReport !== null && (
               <span data-slot="ask-report" className="text-assist leading-body text-fg3">
                 {W.fromReport(dayMonth(a.fromReport.skateEndTime, timeZone))}
@@ -100,6 +102,16 @@ export function AskList({
       </ul>
       <ListCutLine members={asks} total={total} noun="asks" />
     </div>
+  );
+}
+
+/** A kind's own line under an asker's row, in the list's assist face; nothing for `null`. */
+function AskRowMeta({ children }: { children: ReactNode }) {
+  if (children === null || children === undefined || children === false) return null;
+  return (
+    <span data-slot="ask-meta" className="text-assist leading-body text-fg3">
+      {children}
+    </span>
   );
 }
 

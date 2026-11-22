@@ -218,3 +218,32 @@ export const PLACE_FIXTURES = {
   PLACE_BY_VIEWER,
   PLACE_DECIDED,
 } as const;
+
+/**
+ * A landmark several people asked for: three askers, two with a landmark history the read serves
+ * (the first few askers' counts) and one whose profile is gone — the list says each history, under
+ * its own asker, and nothing for the departed one.
+ */
+export const LANDMARK_SEVERAL = {
+  ...NARROWS,
+  memberCount: 3,
+  asks: [
+    LUC_ASK,
+    {
+      ...LUC_ASK,
+      requestId: id('rqnarrows-kate'),
+      asker: lockup(KATE),
+      askedAt: NOW - 1 * D,
+      fromReport: null,
+      landmarkAsks: { asked: 1, added: 0, capped: false },
+    },
+    {
+      ...LUC_ASK,
+      requestId: id('rqnarrows-gone'),
+      asker: null,
+      askedAt: NOW - 2 * D,
+      fromReport: null,
+      landmarkAsks: null,
+    },
+  ],
+} as unknown as PlaceItem;

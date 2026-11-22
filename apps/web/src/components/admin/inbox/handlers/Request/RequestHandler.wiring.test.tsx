@@ -202,7 +202,7 @@ describe('what the read serves reaches the page', () => {
   it('says when an ask’s recorded skate was, and how long', () => {
     open(admit());
     expect(
-      within(inspector()).getByText('With a recorded skate · 10 Oct · 48m'),
+      within(inspector()).getByText('With a recorded skate · 48m · 10 Oct 12:00–13:15'),
     ).toBeInTheDocument();
   });
 });

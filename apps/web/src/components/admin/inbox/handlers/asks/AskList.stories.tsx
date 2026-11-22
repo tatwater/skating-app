@@ -73,7 +73,9 @@ export const FourUp: Story = {
         (n) => n.textContent,
       );
       await expect(names).toEqual(['Luc Pelletier', 'Kate Donovan']);
-      await expect(within(board).getByText('With a recorded skate · 10 Oct · 48m')).toBeVisible();
+      await expect(
+        within(board).getByText('With a recorded skate · 48m · 10 Oct 12:00–13:15'),
+      ).toBeVisible();
       await expect(within(skates).getByText('With a recorded skate · 8 Oct')).toBeVisible();
       await expect(within(skates).getByText('With a recorded skate')).toBeVisible();
       await expect(within(odd).getByText('A former skater')).toBeVisible();

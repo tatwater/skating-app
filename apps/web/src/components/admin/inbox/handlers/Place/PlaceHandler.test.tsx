@@ -13,6 +13,7 @@ import {
   BAY_UNDRAWN,
   LANDMARK_ALONE,
   LANDMARK_PROPOSAL,
+  LANDMARK_SEVERAL,
   MANY_LANDMARK_ASKS,
   NARROWS,
   PLACE_BY_VIEWER,
@@ -84,6 +85,19 @@ const inShell = (ui: ReactElement, s: UndoServer = undoServer()) =>
       <UndoProvider server={s}>{ui}</UndoProvider>
     </Toaster>,
   );
+
+describe('several askers', () => {
+  it('says each asker’s landmark history under their own row, and nothing for one gone', () => {
+    inShell(<Pane item={LANDMARK_SEVERAL} />);
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-slot="ask"]')];
+    expect(rows).toHaveLength(3);
+    expect(
+      within(rows[0] as HTMLElement).getByText('2 of 3 landmark asks added'),
+    ).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText('first landmark ask')).toBeInTheDocument();
+    expect((rows[2] as HTMLElement).querySelector('[data-slot="ask-meta"]')).toBeNull();
+  });
+});
 
 describe('the slots', () => {
   it('draws the board: the where, the asker, the compare table, the two futures', () => {
