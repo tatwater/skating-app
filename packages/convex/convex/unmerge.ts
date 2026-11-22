@@ -40,7 +40,13 @@ import { bodyLabel, bodySearchTextFor } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import {
   type AuditContext,
   asContinuationOf,
@@ -267,27 +273,57 @@ async function recordLeft(
   ctx: MutationCtx,
   unmergeId: Id<'moderationActions'>,
   page: UnmergeLeft,
-  done: boolean,
+  next: { cursor: UnmergeCursor | null; pageId?: Id<'_scheduled_functions'> },
 ): Promise<void> {
   const row = await ctx.db.get(unmergeId);
   if (!row) return;
-  const metadata = (row.metadata ?? {}) as { left?: UnmergeLeft; done?: boolean };
+  const metadata = (row.metadata ?? {}) as UnmergeMeta;
   const left = metadata.left ?? noneLeft();
   const byKind = { ...left.byKind };
   for (const [kind, n] of Object.entries(page.byKind) as [LeftKind, number][]) {
     byKind[kind] = (byKind[kind] ?? 0) + n;
   }
+  const { stalled: _cleared, nextPageId: _was, ...rest } = metadata;
   await ctx.db.patch(unmergeId, {
     metadata: {
-      ...metadata,
+      ...rest,
       left: {
         count: left.count + page.count,
         byKind,
         rows: [...left.rows, ...page.rows].slice(0, LEFT_NAMED),
       },
-      done: done || metadata.done === true,
+      done: next.cursor === null || metadata.done === true,
+      // Where the run stands, and the page that carries it on: what `receipt` and `resume` read.
+      ...(next.cursor !== null ? { cursor: next.cursor } : {}),
+      ...(next.pageId !== undefined ? { nextPageId: next.pageId } : {}),
     },
   });
+}
+
+/** What an unmerge's own row holds as it runs (`metadata`). */
+interface UnmergeMeta {
+  survivorId?: Id<'waterBodies'>;
+  mergeActionId?: Id<'moderationActions'>;
+  left?: UnmergeLeft;
+  done?: boolean;
+  /** The phase and offset the next page starts from. */
+  cursor?: UnmergeCursor;
+  /** The scheduled page carrying the run on — its state says whether the run is still moving. */
+  nextPageId?: Id<'_scheduled_functions'>;
+  /** A page found a state it couldn't carry on from, and said why. */
+  stalled?: { reason: string; at: number };
+}
+
+/**
+ * A page that can't carry its unmerge on says so on the unmerge's row — never just returns: the run
+ * is owed, both bodies stay marked (so neither can be merged meanwhile), and `receipt` reads it stalled
+ * until a moderator resumes it.
+ */
+async function stall(ctx: MutationCtx, unmergeId: Id<'moderationActions'>, reason: string) {
+  const row = await ctx.db.get(unmergeId);
+  if (!row) return;
+  const metadata = (row.metadata ?? {}) as UnmergeMeta;
+  await ctx.db.patch(unmergeId, { metadata: { ...metadata, stalled: { reason, at: Date.now() } } });
 }
 
 // ── The run ────────────────────────────────────────────────────────────────────────────────────────
@@ -356,7 +392,7 @@ export async function unmergeBodyImpl(
     [survivor._id],
   );
   const left = noneLeft();
-  await restoreBodies(ctx, cs, loser, survivor);
+  await restoreBodies(ctx, cs, loser, survivor, unmergeId);
   await restorePartners(ctx, cs, left);
   // The drawing's Inbox item reopens (B01-5d): the member its merge closed, then the drawing re-filed,
   // as a return to review does (`moveDrawnReview`), so `inboxCounts` move back with it.
@@ -386,6 +422,8 @@ async function restoreBodies(
   cs: MergeChangeSet,
   loser: Doc<'waterBodies'>,
   survivor: Doc<'waterBodies'>,
+  /** The unmerge's row, marked on both bodies until its last page (R10): neither merges meanwhile. */
+  unmergeId: Id<'moderationActions'>,
 ): Promise<void> {
   const lists = cs.listsBefore as NonNullable<MergeChangeSet['listsBefore']>;
   // The survivor: what came only from the loser and is still there goes back; what it had before, or
@@ -407,7 +445,8 @@ async function restoreBodies(
   const pins = pinsNow.filter((p) => !pinsGone.has(p));
   const aliases = aliasesNow.filter((a) => !aliasesGone.has(aliasKey(a)));
   const links = linksNow.filter((l) => !urlsGone.has(l.url));
-  const survivorPatch: Partial<Doc<'waterBodies'>> = {};
+  // The marker rides in this transaction's one write of each body (an outline can weigh near 1 MiB).
+  const survivorPatch: Partial<Doc<'waterBodies'>> = { unmergeActionId: unmergeId };
   if (pins.length !== pinsNow.length) {
     Object.assign(survivorPatch, {
       moderatorTownKeys: pins.length > 0 ? pins : undefined,
@@ -424,7 +463,7 @@ async function restoreBodies(
   if (links.length !== linksNow.length) {
     Object.assign(survivorPatch, { referenceLinks: links.length > 0 ? links : undefined });
   }
-  if (Object.keys(survivorPatch).length > 0) await ctx.db.patch(survivor._id, survivorPatch);
+  await ctx.db.patch(survivor._id, survivorPatch);
   if (pins.length !== pinsNow.length) await refreshPinnedFacts(ctx, survivor._id, pins);
 
   // The loser: as it stood, with its own lists, its review status and its duplicate flags.
@@ -437,6 +476,7 @@ async function restoreBodies(
     duplicateCandidateIds: dedup.duplicateCandidateIds ?? undefined,
     mergedIntoId: dedup.mergedIntoId ?? undefined,
     reviewStatus: review.reviewStatus ?? undefined,
+    unmergeActionId: unmergeId,
     ...(fromLoser.pins.length > 0
       ? {
           moderatorTownKeys: fromLoser.pins,
@@ -566,8 +606,9 @@ export const DERIVED_COST: TxCost = {
   bytesRead: 8 * DOC_MAX,
   documentsRead: 8_000,
   databaseQueries: 400,
-  documentsWritten: 2_000,
-  bytesWritten: 4 * DOC_MAX,
+  documentsWritten: 2_002,
+  // The recompute's writes, and the marker cleared from both bodies (two documents of up to 1 MiB).
+  bytesWritten: 6 * DOC_MAX,
 };
 
 /** The page's work: each phase's rows from the cursor while the room holds, then the next page. */
@@ -651,7 +692,7 @@ async function runPage(ctx: MutationCtx, state: PageState): Promise<void> {
           stopped = true;
         } else {
           done++;
-          await recomputeDerived(ctx, cs, state.actorId);
+          await recomputeDerived(ctx, cs, state.actorId, state.unmergeId);
           from = 1;
         }
       }
@@ -664,18 +705,39 @@ async function runPage(ctx: MutationCtx, state: PageState): Promise<void> {
     }
   });
 
-  await recordLeft(ctx, state.unmergeId, state.left, cursor === null);
+  let pageId: Id<'_scheduled_functions'> | undefined;
   if (cursor !== null) {
     const carried: AuditContext = await auditContextOf(ctx);
-    await ctx.scheduler.runAfter(0, internal.unmerge.unmergeRest, {
+    pageId = await schedulePage(ctx, {
       unmergeId: state.unmergeId,
       mergeActionId: mergeRow._id,
-      phase: cursor.phase,
-      from: cursor.from,
-      ...(state.actorId !== undefined ? { actorId: state.actorId } : {}),
-      ...carried,
+      cursor,
+      actorId: state.actorId,
+      carried,
     });
   }
+  await recordLeft(ctx, state.unmergeId, state.left, { cursor, ...(pageId ? { pageId } : {}) });
+}
+
+/** The next page of an unmerge, scheduled now, carrying its audit context. */
+function schedulePage(
+  ctx: MutationCtx,
+  p: {
+    unmergeId: Id<'moderationActions'>;
+    mergeActionId: Id<'moderationActions'>;
+    cursor: UnmergeCursor;
+    actorId: Id<'profiles'> | undefined;
+    carried: AuditContext;
+  },
+): Promise<Id<'_scheduled_functions'>> {
+  return ctx.scheduler.runAfter(0, internal.unmerge.unmergeRest, {
+    unmergeId: p.unmergeId,
+    mergeActionId: p.mergeActionId,
+    phase: p.cursor.phase,
+    from: p.cursor.from,
+    ...(p.actorId !== undefined ? { actorId: p.actorId } : {}),
+    ...p.carried,
+  });
 }
 
 /**
@@ -907,11 +969,16 @@ async function recomputeDerived(
   ctx: MutationCtx,
   cs: MergeChangeSet,
   actorId: Id<'profiles'> | undefined,
+  unmergeId: Id<'moderationActions'>,
 ): Promise<void> {
   const bodies = [cs.loserId, cs.survivorId];
   for (const id of bodies) {
     const body = await ctx.db.get(id);
-    if (body) await syncCellsForParent(ctx, id, body);
+    if (!body) continue;
+    // The unmerge is done: both bodies may be merged again (their two heavy writes are in
+    // `DERIVED_COST`).
+    if (body.unmergeActionId === unmergeId) await ctx.db.patch(id, { unmergeActionId: undefined });
+    await syncCellsForParent(ctx, id, body);
   }
   // Both rows rebuilt in transactions of their own, as the merge leaves them (`lib/bodyNames`).
   setNamesAllowance(ctx, 0);
@@ -960,17 +1027,22 @@ export const unmergeRest = internalMutation({
     ...auditContextArgs,
   },
   handler: async (ctx, args) => {
+    if (UNMERGE_FAULT.phase === args.phase) throw new Error('unmerge: an injected page failure');
     const undone = await ctx.db
       .query('moderationActions')
       .withIndex('by_undoes', (q) => q.eq('undoesActionId', args.unmergeId))
       .first();
-    if (undone !== null) return;
+    if (undone !== null) return stall(ctx, args.unmergeId, 'The unmerge was undone partway.');
     const mergeRow = await ctx.db.get(args.mergeActionId);
-    if (!mergeRow) return;
+    if (!mergeRow) return stall(ctx, args.unmergeId, 'The merge’s record is gone.');
     const cs = await readChangeSet(ctx, mergeRow._id);
-    if (cs === null || cs === 'missing') return;
+    if (cs === null || cs === 'missing') {
+      return stall(ctx, args.unmergeId, 'The merge’s record can’t be read whole.');
+    }
     const loser = await ctx.db.get(cs.loserId);
-    if (!loser || loser.dedupStatus === 'merged') return;
+    if (!loser || loser.dedupStatus === 'merged') {
+      return stall(ctx, args.unmergeId, 'The body was merged again partway.');
+    }
     await asContinuationOf(ctx, { undoOf: args.undoOf, via: args.via }, () =>
       runPage(ctx, {
         cs,
@@ -984,41 +1056,109 @@ export const unmergeRest = internalMutation({
   },
 });
 
+/** A test seam: a page of this phase throws, as a failed scheduled page does (never set outside tests). */
+export const UNMERGE_FAULT: { phase: Phase | null } = { phase: null };
+
 // ── The receipt ────────────────────────────────────────────────────────────────────────────────────
 
 /** What an unmerge has done so far, as the receipt and History read it. */
 export interface UnmergeReceipt {
   /** The unmerge's own row (`unmerge_waterbody` on the loser). */
   unmergeActionId: Id<'moderationActions'>;
-  /** Every page has landed (the last recomputed the derived facts). */
+  /** Every page has landed (the last recomputed the derived facts and cleared both bodies' marker). */
   done: boolean;
+  /**
+   * Not done, and nothing is carrying it on: a page failed (scheduled pages aren't retried), or one
+   * found a state it couldn't carry on from — with why. `unmerge.resume` carries it on.
+   */
+  stalled: { reason: string } | null;
   /** What it left where it was, counted (by kind) and the first rows named — final once `done`. */
   left: UnmergeLeft;
+}
+
+/** Why a page that failed reads stalled. */
+export const UNMERGE_PAGE_FAILED = 'A page of the unmerge failed partway; resume it to finish.';
+
+/** The unmerge row of a merge, if one exists. */
+async function unmergeRowOfMerge(
+  ctx: QueryCtx,
+  mergeActionId: Id<'moderationActions'>,
+): Promise<Doc<'moderationActions'> | null> {
+  const rows = await ctx.db
+    .query('moderationActions')
+    .withIndex('by_undoes', (q) => q.eq('undoesActionId', mergeActionId))
+    .take(16);
+  return rows.find((r) => r.action === 'unmerge_waterbody' && r.targetType === 'waterbody') ?? null;
+}
+
+/**
+ * Whether a not-done unmerge is stalled, and why — read from the scheduler's own record of its next
+ * page, which is authoritative: a page pending or running carries it on; one that failed, was
+ * canceled, or finished without moving the cursor on (it stalled itself, saying why) doesn't.
+ */
+async function stalledOf(ctx: QueryCtx, metadata: UnmergeMeta): Promise<{ reason: string } | null> {
+  if (metadata.done === true) return null;
+  if (metadata.stalled) return { reason: metadata.stalled.reason };
+  const page = metadata.nextPageId ? await ctx.db.system.get(metadata.nextPageId) : null;
+  const state = page?.state.kind;
+  return state === 'pending' || state === 'inProgress' ? null : { reason: UNMERGE_PAGE_FAILED };
 }
 
 /**
  * **The unmerge of a merge, as it stands** — the receipt's answer to "what did that undo leave?"
  * (`undo.run` answers nothing of its own). Keyed by the merge's row, which the receipt already holds;
- * `null` until an unmerge of it exists. Live: a paged unmerge's count grows as its pages land and
- * `done` turns true with the last, so the receipt can draw the first page's answer at once and the
- * final count when it arrives. History reads the same fields off the unmerge's row
- * (`metadata.left`, `metadata.done`).
+ * `null` until an unmerge of it exists. Live: a paged unmerge's count grows as its pages land, `done`
+ * turns true with the last, and `stalled` says when nothing is carrying it on. History reads the same
+ * fields off the unmerge's row (`metadata.left`, `metadata.done`, `metadata.stalled`).
  */
 export const receipt = query({
   args: { mergeActionId: v.id('moderationActions') },
   handler: async (ctx, { mergeActionId }): Promise<UnmergeReceipt | null> => {
     await requireCapability(ctx, 'audit.read');
-    const rows = await ctx.db
-      .query('moderationActions')
-      .withIndex('by_undoes', (q) => q.eq('undoesActionId', mergeActionId))
-      .take(16);
-    const row = rows.find((r) => r.action === 'unmerge_waterbody' && r.targetType === 'waterbody');
+    const row = await unmergeRowOfMerge(ctx, mergeActionId);
     if (!row) return null;
-    const metadata = (row.metadata ?? {}) as { left?: UnmergeLeft; done?: boolean };
+    const metadata = (row.metadata ?? {}) as UnmergeMeta;
     return {
       unmergeActionId: row._id,
       done: metadata.done === true,
+      stalled: await stalledOf(ctx, metadata),
       left: metadata.left ?? noneLeft(),
     };
+  },
+});
+
+/** Why a resume is refused. */
+export const UNMERGE_RESUME_DONE = 'This unmerge has finished.';
+export const UNMERGE_RESUME_RUNNING = 'This unmerge is still running.';
+export const UNMERGE_RESUME_NONE = 'This merge has not been unmerged.';
+
+/**
+ * **Carry a stalled unmerge on** (R10): re-schedules its next page from the cursor its row recorded,
+ * as the act it continues (its first page's actor and its `undoes:` link). Idempotent: refused while a
+ * page is pending or running — so two resumes make one continuation — and once the unmerge is done.
+ */
+export const resume = mutation({
+  args: { mergeActionId: v.id('moderationActions') },
+  handler: async (
+    ctx,
+    { mergeActionId },
+  ): Promise<{ unmergeActionId: Id<'moderationActions'> }> => {
+    await requireCapability(ctx, 'corpus.duplicates');
+    const row = await unmergeRowOfMerge(ctx, mergeActionId);
+    if (!row) throw new ConvexError(UNMERGE_RESUME_NONE);
+    const metadata = (row.metadata ?? {}) as UnmergeMeta;
+    if (metadata.done === true) throw new ConvexError(UNMERGE_RESUME_DONE);
+    if ((await stalledOf(ctx, metadata)) === null) throw new ConvexError(UNMERGE_RESUME_RUNNING);
+    const cursor = metadata.cursor ?? { phase: 'moved', from: 0 };
+    const pageId = await schedulePage(ctx, {
+      unmergeId: row._id,
+      mergeActionId,
+      cursor,
+      actorId: row.actorId,
+      carried: { undoOf: mergeActionId },
+    });
+    const { stalled: _cleared, ...rest } = metadata;
+    await ctx.db.patch(row._id, { metadata: { ...rest, nextPageId: pageId } });
+    return { unmergeActionId: row._id };
   },
 });

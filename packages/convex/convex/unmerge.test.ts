@@ -35,9 +35,14 @@ import schema from './schema';
 import { scheduleRestamp, syncCellsForParent } from './subAreas';
 import {
   type LeftKind,
+  PHASES,
+  UNMERGE_FAULT,
   UNMERGE_LOSER_MOVED,
+  UNMERGE_PAGE_FAILED,
   UNMERGE_PARTS_MISSING,
   UNMERGE_PREDATES,
+  UNMERGE_RESUME_DONE,
+  UNMERGE_RESUME_RUNNING,
   UNMERGE_SURVIVOR_GONE,
   type UnmergeLeft,
   unmergeSurvivorMerged,
@@ -1674,6 +1679,125 @@ suite('a heavy unmerge pages', () => {
     );
     expect(hazards).toHaveLength(1);
     expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+    // Stopped, and said: never a silent return (R10).
+    expect(
+      (await w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId }))?.stalled,
+    ).toEqual({ reason: 'The unmerge was undone partway.' });
+  });
+});
+
+// ── R10: the marker, and a stalled unmerge resumed ─────────────────────────────────────────────────
+
+suite('an unmerge marks both bodies while it runs, and a stalled one is seen and resumed', () => {
+  const markers = (w: World) =>
+    w.t.run(async (ctx) => [
+      (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
+      (await ctx.db.get(w.survivor))?.unmergeActionId ?? null,
+    ]);
+  const receiptOf = (w: World, mergeId: Id<'moderationActions'>) =>
+    w.colleague.as.query(api.unmerge.receipt, { mergeActionId: mergeId });
+  const pendingPages = (w: World) =>
+    w.t.run(
+      async (ctx) =>
+        (
+          await ctx.db.system
+            .query('_scheduled_functions')
+            .filter((q) =>
+              q.and(
+                q.eq(q.field('name'), 'unmerge:unmergeRest'),
+                q.eq(q.field('state.kind'), 'pending'),
+              ),
+            )
+            .collect()
+        ).length,
+    );
+  /** Run with one row a page, so every phase starts in a page of its own. */
+  const paged = async <R>(fn: () => Promise<R>): Promise<R> => {
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    try {
+      return await fn();
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+  };
+
+  test('the marker is on both bodies after the first page, and on neither once done', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    expect(await markers(w)).toEqual([null, null]);
+    await paged(async () => {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+      expect(await markers(w)).toEqual([lead._id, lead._id]);
+      await settle(w.t);
+    });
+    expect(await markers(w)).toEqual([null, null]);
+  });
+
+  test.each([...PHASES])(
+    'a page of %s that fails: stalled, both bodies still marked; resumed, it completes as before',
+    async (phase) => {
+      const w = await world();
+      const before = await census(w.t);
+      const mergeId = await mergeV2(w);
+      await paged(async () => {
+        UNMERGE_FAULT.phase = phase;
+        try {
+          await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+          await settle(w.t);
+        } finally {
+          UNMERGE_FAULT.phase = null;
+        }
+        const stuck = await receiptOf(w, mergeId);
+        expect(stuck?.done).toBe(false);
+        expect(stuck?.stalled).toEqual({ reason: UNMERGE_PAGE_FAILED });
+        const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+        expect(await markers(w)).toEqual([lead._id, lead._id]);
+        expect(await pendingPages(w)).toBe(0);
+        await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
+        await settle(w.t);
+      });
+      const done = await receiptOf(w, mergeId);
+      expect(done?.done).toBe(true);
+      expect(done?.stalled).toBeNull();
+      expect(await markers(w)).toEqual([null, null]);
+      expect(await census(w.t)).toEqual(before);
+    },
+  );
+
+  test('resume is refused while a page runs, twice makes one continuation, and refused once done', async () => {
+    const w = await world(['content']);
+    const mergeId = await mergeV2(w);
+    await paged(async () => {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+      // A page is pending: nothing to resume.
+      await expect(
+        w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+      ).rejects.toThrow(UNMERGE_RESUME_RUNNING);
+      // Stall it: the pending page fails.
+      UNMERGE_FAULT.phase = 'moved';
+      try {
+        await settle(w.t);
+      } finally {
+        UNMERGE_FAULT.phase = null;
+      }
+      expect((await receiptOf(w, mergeId))?.stalled).not.toBeNull();
+      await w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId });
+      await expect(
+        w.colleague.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+      ).rejects.toThrow(UNMERGE_RESUME_RUNNING);
+      expect(await pendingPages(w)).toBe(1);
+      // A skater holds no merge lever.
+      await expect(
+        w.skater.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+      ).rejects.toThrow();
+      await settle(w.t);
+    });
+    expect((await receiptOf(w, mergeId))?.done).toBe(true);
+    await expect(
+      w.actor.as.mutation(api.unmerge.resume, { mergeActionId: mergeId }),
+    ).rejects.toThrow(UNMERGE_RESUME_DONE);
   });
 });
 
