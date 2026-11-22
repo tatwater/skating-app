@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMagnifyingGlass } from '@fortawesome/sharp-regular-svg-icons';
 import { AUDIT_REASON_MAX } from '@skating/core';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
@@ -13,6 +13,7 @@ import { Note } from '@/components/kit/note';
 import { Skeleton } from '@/components/kit/skeleton';
 import { Table, TableBody, TableCell, TableRow } from '@/components/kit/table';
 import { sayRefusal } from '../../../said';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { notSavedTitle, notSavedWhat } from '../../consoleWords';
 import { ReasonAsk } from '../access/ReasonAsk';
 import {
@@ -53,6 +54,8 @@ export interface MergeFlowProps {
   preview: Loadable<MergePreview>;
   /** This body's name, for the dialog's title (the console's own record). */
   bodyName: string;
+  /** This body's id: with the survivor's, where a merge refused mid-unmerge finds that unmerge. */
+  bodyId?: string;
   /** Sends the merge with its reason; resolves whether it landed (the dialog closes on `true`). */
   onMerge: (reason: string) => Promise<boolean>;
 }
@@ -68,6 +71,7 @@ export function MergeFlow({
   hitsMore,
   preview,
   bodyName,
+  bodyId,
   onMerge,
 }: MergeFlowProps) {
   return (
@@ -85,6 +89,7 @@ export function MergeFlow({
           survivor={survivor}
           preview={preview}
           bodyName={bodyName}
+          {...(bodyId !== undefined ? { bodyId } : {})}
           onClear={() => onPick(null)}
           onMerge={onMerge}
         />
@@ -159,16 +164,19 @@ function MergePreviewBlock({
   survivor,
   preview,
   bodyName,
+  bodyId,
   onClear,
   onMerge,
 }: {
   survivor: Survivor;
+  bodyId?: string;
   preview: Loadable<MergePreview>;
   bodyName: string;
   onClear: () => void;
   onMerge: (reason: string) => Promise<boolean>;
 }) {
   const [asking, setAsking] = useState(false);
+  const live = useContext(UnmergeLive);
   const ready = isFailed(preview) ? undefined : preview;
   const verdict = mergeVerdict(ready);
   const ok = ready?.ok ? ready : null;
@@ -224,7 +232,13 @@ function MergePreviewBlock({
           ))}
         </KeyValueList>
       )}
-      {verdict.said !== null && <Note data-slot="merge-refusal">{verdict.said}</Note>}
+      {verdict.said !== null &&
+        // Refused mid-unmerge: where the route reads it live, a stalled unmerge offers Resume.
+        (ready?.code === 'unmerging' && live !== null ? (
+          live.note(verdict.said, [...(bodyId !== undefined ? [bodyId] : []), survivor.id])
+        ) : (
+          <Note data-slot="merge-refusal">{verdict.said}</Note>
+        ))}
       <div>
         <Button
           size="sm"

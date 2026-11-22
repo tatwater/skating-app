@@ -93,4 +93,10 @@ export const MERGE_WORDS = {
   unmerging: 'Moving rows back…',
   /** The unmerge finished with nothing left where the merge put it. */
   unmergedAll: 'Every row went back',
+  /** Not done, and nothing carrying it on: a page failed or stopped. Its reason is the detail. */
+  unmergeStalled: 'The unmerge stopped before it finished',
+  /** Carries a stalled unmerge on from where it stopped. */
+  resume: 'Resume',
+  /** A resume the server refused: the toast's title, the server's words after it. */
+  notResumed: 'Not resumed',
 } as const;

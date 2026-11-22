@@ -1,4 +1,4 @@
-import { type ReactNode, type Ref, useId, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useContext, useId, useRef, useState } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
@@ -13,6 +13,7 @@ import { Skeleton, SkeletonText } from '@/components/kit/skeleton';
 import { Slider } from '@/components/kit/slider';
 import { LedStrip } from '@/components/kit/trace-chart';
 import { cn } from '@/lib/utils';
+import { UnmergeLive } from '../../shell/UnmergeLeft';
 import { type Completeness, completenessSegments, missingSentence } from '../completeness';
 import { PICK_WHAT } from '../consoleWords';
 import { outcomeOf, useLatestPick } from '../tabs/latestPick';
@@ -193,6 +194,10 @@ export function BodyHistorySection({
 }) {
   const ready = history === undefined || isFailed(history) ? undefined : history;
   const head = ready === undefined ? null : historyHead(ready);
+  // An unmerge row's live line — History's one action (*Resume*, while stalled) — where the route
+  // provides it (`UnmergeLive`); the cross-console History with Undo (`shell/HistoryPanel`) is still
+  // unmounted.
+  const live = useContext(UnmergeLive)?.line ?? null;
   return (
     <Section
       className={className}
@@ -226,9 +231,11 @@ export function BodyHistorySection({
                   {...(h.who !== null ? { who: h.who } : {})}
                 >
                   {h.what}
-                  {h.line !== undefined && (
+                  {(h.line !== undefined || h.unmergeOf !== undefined) && (
                     <span data-slot="body-history-line" className="block text-assist text-fg3">
-                      {h.line}
+                      {h.unmergeOf !== undefined && live !== null
+                        ? live(h.unmergeOf, h.line ?? null)
+                        : h.line}
                     </span>
                   )}
                 </HistoryRow>

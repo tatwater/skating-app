@@ -76,6 +76,8 @@ export interface HistoryAction {
   metadata?: unknown;
   /** What the viewer can do about the row, as the undo engine says (a pre-v2 merge's `why`). */
   undo?: { state: string; why?: string };
+  /** The row this one undid (an unmerge's merge). */
+  undoesActionId?: string;
 }
 
 /** The geometry facts (towns, touching bodies) aren't computed for the body yet. */
@@ -450,6 +452,11 @@ export interface HistoryEntry {
    * moving rows back, every row back, or how many stayed), or why a merge can't be undone.
    */
   line?: string;
+  /**
+   * An unmerge row's merge — what its live state (`unmerge.receipt`: stalled, and *Resume*) is read
+   * by where the section is wired.
+   */
+  unmergeOf?: string;
 }
 
 export function bodyHistory(rows: readonly HistoryAction[]): HistoryEntry[] {
@@ -461,6 +468,9 @@ export function bodyHistory(rows: readonly HistoryAction[]): HistoryEntry[] {
       who: r.actor ? firstName(r.actor.displayName) : null,
       what: actionLabel(r.action, r.targetType),
       ...(line !== null ? { line } : {}),
+      ...(r.action === 'unmerge_waterbody' && r.undoesActionId !== undefined
+        ? { unmergeOf: r.undoesActionId }
+        : {}),
     };
   });
 }

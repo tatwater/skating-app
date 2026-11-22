@@ -6,9 +6,10 @@ import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import type { MergeFlowProps } from './MergeFlow';
-import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL } from './mergeFixtures';
+import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL, MERGE_UNMERGING } from './mergeFixtures';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_COMPUTED_YET, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
 
@@ -423,6 +424,28 @@ describe('the merge itself', () => {
     expect(toasts).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('a merge refused mid-unmerge: its place is the live note where the route provides it, by the pair', () => {
+    const note = vi.fn((sentence: string, ids: readonly string[]) => (
+      <p>
+        live {sentence} · {ids.join(',')}
+      </p>
+    ));
+    render(
+      <UnmergeLive.Provider value={{ line: () => null, note }}>
+        {view({
+          merge: { touching: neighbors, note: null },
+          mergeFlow: flow({
+            survivor: { id: 'k1', name: 'Crystal Lake' },
+            preview: MERGE_UNMERGING,
+            bodyId: 'mascoma',
+          }),
+        })}
+      </UnmergeLive.Provider>,
+    );
+    expect(note).toHaveBeenCalledWith(MERGE_UNMERGING.refusal, ['mascoma', 'k1']);
+    expect(screen.getByRole('button', { name: 'Merge into Crystal Lake' })).toBeDisabled();
   });
 
   it('unpicks from the preview', async () => {

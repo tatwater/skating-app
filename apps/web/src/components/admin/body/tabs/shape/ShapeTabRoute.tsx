@@ -134,6 +134,7 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
               hitsMore: (loaded(r.hits)?.length ?? 0) > SEARCH_HITS,
               preview: r.preview,
               bodyName,
+              bodyId,
               onMerge: async (reason: string) => {
                 if (survivor === null) return false;
                 const into = survivor;

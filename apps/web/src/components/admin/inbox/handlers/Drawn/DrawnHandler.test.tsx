@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { Toaster } from '@/components/kit/toast';
 import { stubJsdomAnimations } from '../../../body/tabs/jsdomStubs';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
 import { must } from '../../testing/routeHarness';
 import { DrawnActions, DrawnBody, type DrawnHandlerProps, DrawnHead } from './DrawnHandlerView';
@@ -198,6 +199,24 @@ describe('the bar', () => {
     expect(screen.getByRole('note')).toHaveTextContent(
       'This body is still being unmerged. Merge it once that finishes.',
     );
+  });
+
+  it('where the route reads the unmerge live, the held-back Merge’s place is its note, by the pair’s bodies', () => {
+    const note = vi.fn((sentence: string, ids: readonly string[]) => (
+      <p>
+        live {sentence} · {ids.join(',')}
+      </p>
+    ));
+    inShell(
+      <UnmergeLive.Provider value={{ line: () => null, note }}>
+        <Pane item={DRAWN_UNMERGING} />
+      </UnmergeLive.Provider>,
+    );
+    expect(note).toHaveBeenCalledWith(
+      'This body is still being unmerged. Merge it once that finishes.',
+      [DRAWN_UNMERGING.body.waterBodyId, DRAWN_UNMERGING.overlap?.body.waterBodyId],
+    );
+    expect(screen.getByText(/^live This body is still being unmerged/)).toBeInTheDocument();
   });
 
   it('draws Merge into ‹the survivor› (M), Approve as new (A), Reject (R)', () => {

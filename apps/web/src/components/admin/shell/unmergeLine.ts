@@ -6,17 +6,37 @@ import { MERGE_WORDS as MW } from '../body/tabs/shape/mergeWords';
  * unmerge's own audit row carries (`metadata.done`, `metadata.left.count`): still moving rows back,
  * finished with every row back, or how many rows had changed since the merge and stayed.
  */
-export function unmergeLine({ done, leftCount }: { done: boolean; leftCount: number }): string {
+export function unmergeLine({
+  done,
+  leftCount,
+  stalled = false,
+}: {
+  done: boolean;
+  leftCount: number;
+  /** Not done, and nothing is carrying it on (a page failed): it stopped before it finished. */
+  stalled?: boolean;
+}): string {
+  if (!done && stalled) return MW.unmergeStalled;
   if (!done) return leftCount > 0 ? `${MW.unmerging} · ${MW.leftSince(leftCount)}` : MW.unmerging;
   return leftCount > 0 ? MW.leftSince(leftCount) : MW.unmergedAll;
 }
 
-/** The two facts from an unmerge row's stored `metadata`; `null` when it doesn't carry them. */
-export function unmergeFactsOf(metadata: unknown): { done: boolean; leftCount: number } | null {
+/**
+ * The facts from an unmerge row's stored `metadata`; `null` when it doesn't carry them. A stall its
+ * row records (a page that found a state it couldn't carry on from) reads here; one the scheduler
+ * alone knows (a page that failed) only from the live read (`unmerge.receipt`).
+ */
+export function unmergeFactsOf(
+  metadata: unknown,
+): { done: boolean; leftCount: number; stalled: boolean } | null {
   if (typeof metadata !== 'object' || metadata === null) return null;
-  const { done, left } = metadata as { done?: unknown; left?: { count?: unknown } };
+  const { done, left, stalled } = metadata as {
+    done?: unknown;
+    left?: { count?: unknown };
+    stalled?: unknown;
+  };
   if (typeof done !== 'boolean' || typeof left?.count !== 'number') return null;
-  return { done, leftCount: left.count };
+  return { done, leftCount: left.count, stalled: !done && stalled != null };
 }
 
 /**

@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import type { ReactNode } from 'react';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { UnmergeLive } from '../../shell/UnmergeLeft';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyHistorySection } from './BodyLeftColumn';
 import { BODY_NOW } from './bodyFixtures';
@@ -58,5 +60,32 @@ describe('BodyHistorySection', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Recorded before merges kept everything.')).toBeInTheDocument();
     expect(container.querySelectorAll('[data-slot="body-history-line"]')).toHaveLength(2);
+  });
+
+  it('draws an unmerge row live where the route provides it — History’s one action — and the stored line otherwise', () => {
+    const entries = bodyHistory([
+      {
+        id: 'u1',
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: 'b',
+        createdAt: at,
+        actor: null,
+        undoesActionId: 'ma1',
+        metadata: { done: false, left: { count: 0 } },
+      },
+    ]);
+    const line = vi.fn((mergeActionId: string, stored: ReactNode) => (
+      <span>
+        live {mergeActionId} over {stored}
+      </span>
+    ));
+    render(
+      <UnmergeLive.Provider value={{ line, note: () => null }}>
+        <BodyHistorySection history={{ entries, capped: false }} now={BODY_NOW} />
+      </UnmergeLive.Provider>,
+    );
+    expect(line).toHaveBeenCalledWith('ma1', 'Moving rows back…');
+    expect(screen.getByText(/live ma1 over Moving rows back…/)).toBeInTheDocument();
   });
 });

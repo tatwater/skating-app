@@ -4,6 +4,7 @@ import {
   type ReactElement,
   type ReactNode,
   type RefObject,
+  useContext,
   useState,
 } from 'react';
 
@@ -16,6 +17,7 @@ import { Section } from '@/components/kit/section-slug';
 import { ComingSoonLink } from '@/components/kit/unavailable-button';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { LinkChip } from '../../blocks/LinkChip';
 import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
@@ -104,6 +106,7 @@ export function DrawnBody({
   timeZone,
 }: Pick<DrawnHandlerProps, 'item' | 'map' | 'timeZone'>) {
   const said = refusalSaid(item);
+  const live = useContext(UnmergeLive);
   const drawer = item.drawer;
   const report = item.fromReport;
   return (
@@ -117,7 +120,15 @@ export function DrawnBody({
       </div>
       {said !== null && (
         <Part data-slot="drawn-refusal">
-          <Note>{said}</Note>
+          {/* Held back mid-unmerge: where the route reads it live, a stalled unmerge offers Resume. */}
+          {item.canCode?.mergeDrawn === 'unmerging' && live !== null ? (
+            live.note(said, [
+              item.body.waterBodyId,
+              ...(item.overlap !== null ? [item.overlap.body.waterBodyId] : []),
+            ])
+          ) : (
+            <Note>{said}</Note>
+          )}
         </Part>
       )}
       <Part>

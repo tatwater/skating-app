@@ -298,6 +298,11 @@ describe('a history row’s second line', () => {
     expect(line({ done: true, left: { count: 1 } })).toBe(
       '1 row had changed since the merge and stays where it is',
     );
+    // A stall its row records (a page that stopped itself, saying why) reads from the row alone.
+    expect(line({ done: false, left: { count: 1 }, stalled: { reason: 'r', at: 1 } })).toBe(
+      'The unmerge stopped before it finished',
+    );
+    expect(bodyHistory([row({ undoesActionId: 'ma1' })])[0]?.unmergeOf).toBe('ma1');
     // A row that doesn't carry the facts says nothing more.
     expect(line(undefined)).toBeUndefined();
     expect(line({ done: 'yes' })).toBeUndefined();
