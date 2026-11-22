@@ -537,7 +537,11 @@ export const FilterSearchStops: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole('button', { name: /^Filter/ }));
     const menu = await within(document.body).findByRole('dialog', { name: 'Filter' });
-    await userEvent.type(within(menu).getByRole('searchbox', { name: 'Find a body' }), 'mas');
+    await Promise.all(menu.getAnimations({ subtree: true }).map((a) => a.finished));
+    const field = within(menu).getByRole('searchbox', { name: 'Find a body' });
+    await userEvent.click(field);
+    await waitFor(() => expect(field).toHaveFocus());
+    await userEvent.keyboard('mas');
     await waitFor(() => expect(bodyQuery).toHaveBeenLastCalledWith('mas'));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
@@ -550,15 +554,26 @@ export const FilterSearchFailed: Story = {
   args: {
     bodySearch: { onQuery: fn(), results: [], failure: { retry: retrySearch, pending: false } },
   },
+  beforeEach: () => {
+    retrySearch.mockClear();
+  },
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole('button', { name: /^Filter/ }));
     const menu = await within(document.body).findByRole('dialog', { name: 'Filter' });
-    await userEvent.type(within(menu).getByRole('searchbox', { name: 'Find a body' }), 'mas');
-    const note = await within(menu).findByText('The search didn’t load.');
-    await expect(note).toBeVisible();
+    // The popover fades in: a read during its opening reads it as invisible. Wait for its own
+    // animations to end, never for elapsed time.
+    await Promise.all(menu.getAnimations({ subtree: true }).map((a) => a.finished));
+    // Type only once focus is in the search box itself.
+    const field = within(menu).getByRole('searchbox', { name: 'Find a body' });
+    await userEvent.click(field);
+    await waitFor(() => expect(field).toHaveFocus());
+    await userEvent.keyboard('mas');
+    // The read and its assertion in one retry: a fresh query each time, the note's own state.
+    await waitFor(() => expect(within(menu).getByText('The search didn’t load.')).toBeVisible());
     await userEvent.click(within(menu).getByRole('button', { name: /Try again/ }));
-    await expect(retrySearch).toHaveBeenCalled();
+    await expect(retrySearch).toHaveBeenCalledTimes(1);
     await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   },
 };
 
