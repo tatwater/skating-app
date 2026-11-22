@@ -59,6 +59,7 @@ import {
   UNMERGE_SURVIVOR_GONE,
   type UnmergeLeft,
   type UnmergeStallCode,
+  unmergeBodyBusy,
   unmergeSurvivorMerged,
 } from './unmerge';
 import { type MergeChangeSet, mergeBodyInto } from './waterBodies';
@@ -2131,6 +2132,144 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
     await expect(
       w2.actor.as.mutation(api.unmerge.abandon, { mergeActionId: merge2, reason: 'Late' }),
     ).rejects.toThrow(UNMERGE_RESUME_DONE);
+  });
+});
+
+// ── One unmerge a body at a time (Greptile on #173) ───────────────────────────────────────────────
+
+suite('one unmerge a body at a time: a second is refused while either body is still being unmerged', () => {
+  const marks = (w: World, ids: Id<'waterBodies'>[]) =>
+    w.t.run(async (ctx) =>
+      Promise.all(ids.map(async (id) => (await ctx.db.get(id))?.unmergeActionId ?? null)),
+    );
+  const offerFor = (w: World, actionId: Id<'moderationActions'>) =>
+    w.t.run(async (ctx) =>
+      undoState(
+        ctx,
+        (await ctx.db.get(w.colleague.id)) as Doc<'profiles'>,
+        (await ctx.db.get(actionId)) as Doc<'moderationActions'>,
+        'one',
+      ),
+    );
+  /** The unmerge of `mergeId` started and left mid-run (one row a page; its later pages pending). */
+  const startPaged = async (w: World, mergeId: Id<'moderationActions'>) => {
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
+    } finally {
+      PAGE_SEAM.sources = was;
+    }
+  };
+  const name = (w: World, id: Id<'waterBodies'>) =>
+    w.t.run(async (ctx) => (await ctx.db.get(id))?.name as string);
+  /** Both refuse the second unmerge, offer and run, in the same sentence. */
+  const refused = async (w: World, mergeId: Id<'moderationActions'>, busy: Id<'waterBodies'>) => {
+    const why = unmergeBodyBusy(await name(w, busy));
+    expect(await offerFor(w, mergeId)).toEqual({ state: 'unavailable', why });
+    await expect(
+      w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Too' }),
+    ).rejects.toThrow(why);
+  };
+
+  test('two merges into one survivor: the second’s unmerge waits for the first; both then come back as before', async () => {
+    const w = await world(['content']);
+    const before = await census(w.t);
+    const first = await mergeV2(w);
+    // A second body, unrelated to the first's partners, merged into the same survivor.
+    const second = await mergeV2({ ...w, loser: w.elsewhere });
+    await startPaged(w, first);
+    const lead = (await unmergeRowOf(w.t, w.loser)) as Doc<'moderationActions'>;
+    await refused(w, second, w.survivor);
+    // Nothing was overwritten: the survivor is still the first unmerge's.
+    expect(await marks(w, [w.loser, w.survivor, w.elsewhere])).toEqual([lead._id, lead._id, null]);
+    await settle(w.t);
+    expect(await marks(w, [w.loser, w.survivor])).toEqual([null, null]);
+    await unmerge(w, second);
+    expect(await census(w.t)).toEqual(before);
+  });
+
+  test('a survivor that is the loser of a running unmerge (the chain A→B, then B→C, undone last first)', async () => {
+    const w = await world(['content']);
+    const before = await census(w.t);
+    // A (the drawing) into B (the survivor), then B into C (elsewhere).
+    const aIntoB = await mergeV2(w);
+    const bIntoC = await mergeV2({ ...w, survivor: w.elsewhere, loser: w.survivor });
+    // Undoing A→B first is refused: B is merged into C.
+    expect((await offerFor(w, aIntoB)).state).toBe('unavailable');
+    await startPaged(w, bIntoC);
+    // B is back on its own, but still being unmerged: A→B waits.
+    await refused(w, aIntoB, w.survivor);
+    await settle(w.t);
+    await unmerge(w, aIntoB);
+    expect(await census(w.t)).toEqual(before);
+  });
+
+  test('a stalled first unmerge holds the second until it is resumed or abandoned; abandon clears only its own', async () => {
+    const w = await world(['content']);
+    const first = await mergeV2(w);
+    const second = await mergeV2({ ...w, loser: w.elsewhere });
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    UNMERGE_FAULT.phase = 'moved';
+    try {
+      await w.colleague.as.mutation(api.undo.run, { actionId: first, reason: 'Two lakes' });
+      await settle(w.t);
+    } finally {
+      UNMERGE_FAULT.phase = null;
+      PAGE_SEAM.sources = was;
+    }
+    await refused(w, second, w.survivor);
+    await w.actor.as.mutation(api.unmerge.abandon, { mergeActionId: first, reason: 'Stuck' });
+    expect(await marks(w, [w.loser, w.survivor])).toEqual([null, null]);
+    await unmerge(w, second);
+    expect((await w.colleague.as.query(api.unmerge.receipt, { mergeActionId: second }))?.done).toBe(
+      true,
+    );
+  });
+
+  test('a marker that isn’t its own is never cleared — by the last page or by abandon', async () => {
+    const w = await world(['content']);
+    const first = await mergeV2(w);
+    await startPaged(w, first);
+    // Another row's marker on the survivor (as a second unmerge would have set it before the refusal).
+    const other = await w.t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: w.survivor,
+        reason: 'Another',
+        createdAt: Date.now(),
+      }),
+    );
+    await w.t.run((ctx) => ctx.db.patch(w.survivor, { unmergeActionId: other }));
+    await settle(w.t);
+    expect(await marks(w, [w.loser, w.survivor])).toEqual([null, other]);
+    // And abandon, on a stalled one.
+    const w2 = await world(['content']);
+    const m2 = await mergeV2(w2);
+    const was = PAGE_SEAM.sources;
+    PAGE_SEAM.sources = 1;
+    UNMERGE_FAULT.phase = 'moved';
+    try {
+      await w2.colleague.as.mutation(api.undo.run, { actionId: m2, reason: 'Two lakes' });
+      await settle(w2.t);
+    } finally {
+      UNMERGE_FAULT.phase = null;
+      PAGE_SEAM.sources = was;
+    }
+    const other2 = await w2.t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: w2.survivor,
+        reason: 'Another',
+        createdAt: Date.now(),
+      }),
+    );
+    await w2.t.run((ctx) => ctx.db.patch(w2.survivor, { unmergeActionId: other2 }));
+    await w2.actor.as.mutation(api.unmerge.abandon, { mergeActionId: m2, reason: 'Stuck' });
+    expect(await marks(w2, [w2.loser, w2.survivor])).toEqual([null, other2]);
   });
 });
 

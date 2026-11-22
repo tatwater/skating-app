@@ -104,6 +104,11 @@ export const UNMERGE_LOSER_MOVED =
 export const UNMERGE_SURVIVOR_GONE =
   'The body this was merged into no longer exists, so it can’t be unmerged.';
 
+/** A body of the pair is still being unmerged from another merge: that one ends first. */
+export function unmergeBodyBusy(name: string): string {
+  return `“${bodyLabel({ name })}” is still being unmerged from another merge. Let that finish — or resume or abandon it — first.`;
+}
+
 /** The survivor has since been merged into another body: that merge is undone first. */
 export function unmergeSurvivorMerged(survivorName: string, intoName: string | null): string {
   const into = intoName === null ? 'another body' : `“${bodyLabel({ name: intoName })}”`;
@@ -172,6 +177,12 @@ export function unmergeRefusalOf(
   if (!survivor) return UNMERGE_SURVIVOR_GONE;
   if (survivor.dedupStatus === 'merged' || survivor.mergedIntoId !== undefined) {
     return unmergeSurvivorMerged(survivor.name, facts.survivorInto?.name ?? null);
+  }
+  // One unmerge a body at a time (Greptile on #173): each marks both its bodies, and a second would
+  // overwrite the first's marker on the body they share — the first's later pages then run unlocked,
+  // and a merge in between strands its rows. The other finishes, is resumed or is abandoned first.
+  for (const body of [loser, survivor]) {
+    if (unmergeRunningOn(body) !== null) return unmergeBodyBusy(body.name);
   }
   if (viewerId !== undefined && cs.loserReview?.decidedItem && loser.createdByUserId === viewerId) {
     return OWN_FILING_REFUSAL;

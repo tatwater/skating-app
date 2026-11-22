@@ -23,6 +23,7 @@ import {
   flagSource,
   MAX_MEMBERS,
   MEMBER_BOUND,
+  PAGE_SEAM,
   refreshCost,
   requestSource,
 } from './lib/inboxItems';
@@ -568,6 +569,34 @@ const CASES: Case[] = [
         }),
       );
       return mergeV2({ t: w.t, survivor: w.lake, loser: dup, actor: { id: w.p.actor.id } });
+    },
+  },
+  {
+    // Greptile on #173: one unmerge a body at a time — the survivor still being unmerged from another
+    // merge refuses this one, offer and run alike, for everyone.
+    name: 'merge_waterbody (its survivor still being unmerged from another merge) → refused',
+    viewers: ALL,
+    setup: async (w) => {
+      const first = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      const second = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      const was = PAGE_SEAM.sources;
+      PAGE_SEAM.sources = 1;
+      try {
+        await w.p.admin.as.mutation(api.undo.run, { actionId: first, reason: 'Two lakes' });
+      } finally {
+        PAGE_SEAM.sources = was;
+      }
+      return second;
     },
   },
   {
