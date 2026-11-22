@@ -1,16 +1,20 @@
 import { MERGE_SUGGEST_SHARE } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 
+import { CASPIAN } from '../../list/inboxFixtures';
 import {
+  BARE_SKATE,
   BELOW_THRESHOLD,
   DRAWER_GONE,
   DRAWN_BY_VIEWER,
   DRAWN_DECIDED,
   DRAWN_FIXTURES,
+  DRAWN_MERGED,
   DRAWN_NOW,
   MODERATOR_VIEW,
   NEW_WATER,
   OVER_CASPIAN,
+  OVER_MOREY,
 } from './drawnFixtures';
 import {
   type DrawnItem,
@@ -44,7 +48,24 @@ describe('the bar, from the item’s can alone', () => {
   }
 
   it('draws the board’s three: Merge into Caspian Lake, Approve, Reject', () => {
-    expect(drawnBar(OVER_CASPIAN)).toEqual({ merge: 'Caspian Lake', approve: true, reject: true });
+    expect(drawnBar(OVER_CASPIAN)).toEqual({
+      merge: { waterBodyId: CASPIAN.waterBodyId, name: 'Caspian Lake' },
+      approve: true,
+      reject: true,
+    });
+  });
+
+  it('names the server’s survivor — the item’s overlap — never the drawing itself', () => {
+    expect(drawnBar(OVER_MOREY).merge).toEqual({
+      waterBodyId: OVER_MOREY.overlap?.body.waterBodyId,
+      name: 'Lake Morey',
+    });
+    expect(drawnBar(OVER_MOREY).merge?.waterBodyId).not.toBe(OVER_MOREY.body.waterBodyId);
+  });
+
+  it('draws no lever once merged (or otherwise decided)', () => {
+    expect(hasBar(drawnBar(DRAWN_MERGED))).toBe(false);
+    expect(refusalSaid(DRAWN_MERGED)).toBeNull();
   });
 
   it('draws no merge for a moderator the server refuses it', () => {
@@ -96,13 +117,33 @@ describe('the gauge’s threshold and the drawer', () => {
 });
 
 describe('the merge block', () => {
-  it('says what a merge does — never that it can be done here', () => {
-    const rows = mergeRows('Caspian Lake');
-    expect(rows).toEqual([
+  it('says what moves, as the board does: the report, the skate, the drawer told, the drawing', () => {
+    expect(mergeRows(OVER_CASPIAN, 'Caspian Lake')).toEqual([
       { label: 'Report', value: 'Re-homed · stays visible' },
+      { label: 'Skate', value: 'Kept · moves with it' },
+      { label: 'Skater', value: 'Told it was merged' },
       { label: 'Drawing', value: 'Points at Caspian Lake' },
     ]);
-    for (const r of rows) expect(r.value).not.toMatch(/press|click|merge it|here/i);
+  });
+
+  it('names only what the item serves: no report, no skate, no one gone to tell', () => {
+    expect(mergeRows(BARE_SKATE, 'Caspian Lake').map((r) => r.label)).toEqual([
+      'Skate',
+      'Skater',
+      'Drawing',
+    ]);
+    expect(mergeRows({ ...OVER_CASPIAN, skate: null }, 'Caspian Lake').map((r) => r.label)).toEqual(
+      ['Report', 'Skater', 'Drawing'],
+    );
+    // A drawer gone or being deleted: no one to tell, and never named.
+    expect(mergeRows(DRAWER_GONE, 'Caspian Lake').map((r) => r.label)).toEqual([
+      'Report',
+      'Skate',
+      'Drawing',
+    ]);
+    expect(mergeRows({ ...OVER_CASPIAN, drawer: null }, 'X').map((r) => r.label)).not.toContain(
+      'Skater',
+    );
   });
 
   it('keeps the below-threshold item’s share as the server sent it', () => {

@@ -1,6 +1,6 @@
 import { zonedInstant } from '@skating/core';
 
-import { CASPIAN, DRAWN_ITEM, KATE, NOW } from '../../list/inboxFixtures';
+import { CASPIAN, DRAWN_ITEM, KATE, MOREY, NOW } from '../../list/inboxFixtures';
 import type { DrawnItem } from './drawnModel';
 
 /**
@@ -105,6 +105,23 @@ export const DRAWN_DECIDED = {
   },
 } as unknown as DrawnItem;
 
+/** Merged by a colleague into Caspian Lake: decided, every verb refused, so no bar. */
+export const DRAWN_MERGED = {
+  ...DRAWN_DECIDED,
+  decided: { ...DRAWN_DECIDED.decided, decision: 'merged' },
+} as unknown as DrawnItem;
+
+/**
+ * Another drawing, over Lake Morey — its own item, its own drawing, another survivor — so a write
+ * that sent the first item's ids, or the first survivor, is caught.
+ */
+export const OVER_MOREY = {
+  ...OVER_CASPIAN,
+  itemId: 'itdrawnmorey'.padEnd(32, '0'),
+  body: { ...OVER_CASPIAN.body, waterBodyId: 'drawnmorey'.padEnd(32, '0'), name: 'Morey east arm' },
+  overlap: { share: 0.87, suggested: true, body: MOREY },
+} as unknown as DrawnItem;
+
 /** The report is hidden or withdrawn, to this viewer: its words withheld, the rest as served. */
 export const REPORT_WITHHELD = {
   ...OVER_CASPIAN,
@@ -149,6 +166,8 @@ export const DRAWN_FIXTURES = {
   DRAWN_BY_VIEWER,
   DRAWER_GONE,
   DRAWN_DECIDED,
+  DRAWN_MERGED,
+  OVER_MOREY,
   REPORT_WITHHELD,
   LONG_REPORT,
   BARE_SKATE,

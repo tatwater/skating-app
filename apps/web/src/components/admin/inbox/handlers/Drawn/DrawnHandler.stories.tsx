@@ -15,6 +15,7 @@ import {
   BELOW_THRESHOLD,
   DRAWN_BY_VIEWER,
   DRAWN_DECIDED,
+  DRAWN_MERGED,
   DRAWN_NOW,
   LONG_REPORT,
   MODERATOR_VIEW,
@@ -73,6 +74,7 @@ function Inspector({
       />
     ),
     bodyLink: <a href="/admin/body/wb_drawn">Open in Body</a>,
+    onMerge: async () => true,
     onApprove: async () => true,
     onReject: async () => true,
     pending: null,
@@ -130,8 +132,13 @@ export const OverCaspian: Story = {
       );
       // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
       await waitFor(() => expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1));
-      const merge = s.getByRole('button', { name: /Merge into Caspian Lake/ });
-      await expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
+      // The live lever: the server's survivor, its key M, and the block saying what moves.
+      const merge = s.getByRole('button', { name: 'Merge into Caspian Lake' });
+      await expect(merge).toHaveAttribute('aria-keyshortcuts', 'M');
+      await expect(merge).not.toHaveAttribute('data-unavailable-title');
+      await expect(
+        s.getByRole('region', { name: 'If merged into Caspian Lake' }),
+      ).toHaveTextContent('Told it was merged');
       await expect(s.getByRole('button', { name: 'Approve as new' })).toBeVisible();
       await expect(s.getByRole('button', { name: 'Reject' })).toBeVisible();
       await expect(q.querySelector('[data-slot="body-map"]')).not.toBeNull();
@@ -181,7 +188,7 @@ export const BareSkate: Story = {
   },
 };
 
-/** Short of the threshold: the label quiet; a merge still drawn (Coming soon). */
+/** Short of the threshold: the label quiet; a merge still drawn, the server allowing it. */
 export const BelowThreshold: Story = {
   render: () => pair(() => <Inspector item={BELOW_THRESHOLD} />),
   play: async ({ canvasElement }) => {
@@ -190,6 +197,9 @@ export const BelowThreshold: Story = {
       await expect(
         must(q.querySelector('[data-slot="overlap-gauge-threshold"]')).hasAttribute('data-reached'),
       ).toBe(false);
+      await expect(
+        within(q).getByRole('button', { name: 'Merge into Caspian Lake' }),
+      ).toBeVisible();
     }
   },
 };
@@ -246,6 +256,30 @@ export const DecidedByColleague: Story = {
     for (const q of quads(canvasElement)) {
       await expect(q.querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
       await expect(within(q).queryByRole('toolbar')).toBeNull();
+    }
+  },
+};
+
+/** Merged by a colleague: the lock, no bar, no lever. */
+export const MergedByColleague: Story = {
+  render: () =>
+    pair(() => (
+      <Inspector
+        item={DRAWN_MERGED}
+        locked={{
+          by: 'Sarah Berman',
+          at: DRAWN_NOW - 600_000,
+          decision: 'merged',
+          byMe: false,
+          actionId: 'a2',
+        }}
+      />
+    )),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      await expect(q.querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
+      await expect(within(q).queryByRole('toolbar')).toBeNull();
+      await expect(within(q).queryByRole('button', { name: /Merge/ })).toBeNull();
     }
   },
 };

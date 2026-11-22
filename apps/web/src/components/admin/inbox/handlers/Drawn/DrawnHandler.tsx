@@ -10,7 +10,8 @@ import { useDrawnServer, useDrawnWrites } from './useDrawnWrites';
 
 /**
  * **The drawn handler** (board 2.5), registered for the `drawn` key (`register.tsx`): the item drawn
- * inside `InspectorFrame`, its writes bound (`useDrawnWrites` → `waterBodies.approve` / `reject`),
+ * inside `InspectorFrame`, its writes bound (`useDrawnWrites` → `inboxWrites.mergeDrawn`,
+ * `waterBodies.approve` / `reject`),
  * *Open in Body →* to the drawing's own console, the bar's keys on the inspector pane, and the
  * item's map (`ItemMap`).
  */
@@ -20,7 +21,7 @@ export function DrawnHandler({ item, locked, now }: InboxHandlerProps) {
   const { pane, timeZone } = useInspectorContext();
   const here = useRouterState({ select: (s) => s.location.href });
   const server = useDrawnServer();
-  const { approve, reject, pending } = useDrawnWrites(drawn, server);
+  const { merge, approve, reject, pending } = useDrawnWrites(drawn, server);
   const { head, actions, body } = drawnSlots({
     item: drawn,
     now,
@@ -28,6 +29,7 @@ export function DrawnHandler({ item, locked, now }: InboxHandlerProps) {
     bodyLink: (
       <Link to="/admin/body/$id" params={{ id: drawn.body.waterBodyId }} search={{ from: here }} />
     ),
+    onMerge: merge,
     onApprove: approve,
     onReject: reject,
     pending,
