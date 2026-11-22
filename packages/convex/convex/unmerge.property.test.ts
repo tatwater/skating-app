@@ -9,8 +9,8 @@
  * - with an edit to a row the merge recorded, that row is left as the edit left it, and the unmerge
  *   says so — exactly that row, counted and named — while every other row is back as before.
  *
- * The merge is `unmerge.test.ts`' fixture writer until S4a's `version: 2` merge lands (it then steps
- * aside). Runs: `UNMERGE_PROPERTY_RUNS` a seed (default 4), over `UNMERGE_PROPERTY_SEEDS` seeds
+ * The merge is the real one (`unmerge.test.ts`' `mergeV2`: S4a's merge, which writes the `version: 2`
+ * change set itself). Runs: `UNMERGE_PROPERTY_RUNS` a seed (default 4), over `UNMERGE_PROPERTY_SEEDS` seeds
  * (default 1) — the build ran it at 20 seeds of 100.
  */
 

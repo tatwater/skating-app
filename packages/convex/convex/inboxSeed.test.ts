@@ -14,7 +14,6 @@ import type { Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
 import { INBOX_LEAVE_COST } from './inboxSeed';
 import { DEV_DEPLOYMENT, SEED_DEV_ONLY } from './lib/seedPeople';
-import { UNDO_POLICY } from './lib/undoPolicy';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1174,26 +1173,23 @@ describe('the clear finds everything the seed made, whatever was merged since (B
     await clearsEverything(w);
   });
 
-  // The unmerge is the undo of the merge's row once its inverse is registered (B01-5d's S4b).
-  test.skipIf(UNDO_POLICY.merge_waterbody.undo.kind !== 'inverse')(
-    'apply, merge, unmerge, clear: nothing of the seed remains',
-    async () => {
-      const w = await mergedWorld();
-      await w.t
-        .withIdentity({ subject: OPERATOR })
-        .mutation(api.undo.run, { actionId: w.merged.actionId, reason: 'Not the same water' });
+  // The unmerge is the undo of the merge's row (B01-5d's S4b inverse).
+  test('apply, merge, unmerge, clear: nothing of the seed remains', async () => {
+    const w = await mergedWorld();
+    await w.t
+      .withIdentity({ subject: OPERATOR })
+      .mutation(api.undo.run, { actionId: w.merged.actionId, reason: 'Not the same water' });
+    await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (let pages = 0; pages < 50; pages++) {
+      const next = (
+        await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+      ).find((j) => j.state.kind === 'pending');
+      if (!next) break;
       await w.t.finishAllScheduledFunctions(vi.runAllTimers);
-      for (let pages = 0; pages < 50; pages++) {
-        const next = (
-          await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-        ).find((j) => j.state.kind === 'pending');
-        if (!next) break;
-        await w.t.finishAllScheduledFunctions(vi.runAllTimers);
-      }
-      expect((await w.t.run((ctx) => ctx.db.get(w.merged.cove)))?.reviewStatus).toBe('pending');
-      await clearsEverything(w);
-    },
-  );
+    }
+    expect((await w.t.run((ctx) => ctx.db.get(w.merged.cove)))?.reviewStatus).toBe('pending');
+    await clearsEverything(w);
+  });
 });
 
 describe('the seed refuses any deployment that is not dev', () => {

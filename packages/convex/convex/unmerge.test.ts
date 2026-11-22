@@ -11,12 +11,9 @@
  * (forward only: the unmerge stamps it again) — plus the timestamps a recompute writes as it runs
  * ({@link VOLATILE}), each named with why.
  *
- * **The merge here is the fixture writer** ({@link mergeV2}) until S4a's `version: 2` merge lands: it
- * runs the real `mergeBodyInto`, and — only where the change set it wrote lacks `version: 2` — does
- * what the brief says the merge will (fork 2's skates moved, the drawing's review `merged`, its item
- * decided under the merge's row, the side rows, the partners' after-images and the survivor's
- * re-clipped bays recorded). Once the real merge writes `version: 2`, the writer adds nothing and these
- * tests run on it unchanged.
+ * **The merge here is the real one** ({@link mergeV2}): S4a's `mergeBodyInto` writes the `version: 2`
+ * change set itself. The fixture writer that stood in for it until then is gone, and a merge that
+ * writes anything else fails every test here.
  */
 
 import { bodySearchTextFor } from '@skating/core';
@@ -543,18 +540,13 @@ async function settle(t: T): Promise<void> {
   throw new Error('the library queue never drained');
 }
 
-// ── The merge (the fixture writer until S4a's merge writes version 2) ─────────────────────────────
-
-/** Whether the real merge wrote `version: 2` itself (S4a landed) — set by the first {@link mergeV2}. */
-const realMerge = { v2: false };
+// ── The merge (the real one: S4a's merge writes version 2) ─────────────────────────────────────
 
 /**
- * **Merge `loser` into `survivor` as the B01-5d merge does**, returning the merge's row. The real
- * `mergeBodyInto` runs; where the change set it wrote lacks `version: 2`, this writes what the brief
- * says the merge will, in the same transaction: fork 2's founding skates moved (recorded), a pending
- * drawing's review `merged`, its Inbox member and item stamped with the merge's row, and the change
- * set's version-2 fields (`sideActions`, `dedupAfter`,
- * `survivorSubAreasBefore`, `loserReview`, `movedActivities`).
+ * **Merge `loser` into `survivor` through the real `mergeBodyInto`**, returning the merge's row. The
+ * fixture writer that stood in for S4a's merge is gone: a merge that writes anything but a `version:
+ * 2` change set fails here, so nothing below can pass on a change set the real merge didn't write.
+ * `chunked` re-stores the merge's own change set in three parts, as a busy body's merge stores it.
  */
 async function mergeV2(
   w: Pick<World, 't' | 'survivor' | 'loser'> & { actor: { id: Id<'profiles'> } },
@@ -563,114 +555,33 @@ async function mergeV2(
   const id = await w.t.run(async (ctx) => {
     const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
     const loser = (await ctx.db.get(w.loser)) as Doc<'waterBodies'>;
-    const survivorBays = await ctx.db
-      .query('waterBodySubAreas')
-      .withIndex('by_parent', (q) => q.eq('waterBodyId', w.survivor))
-      .collect();
-    const skates = await ctx.db
-      .query('gpsActivities')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
-      .collect();
-    const marker = Date.now();
-    await mergeBodyInto(ctx, {
+    const { actionId } = await mergeBodyInto(ctx, {
       survivor,
       loser,
       actorId: w.actor.id,
       reason: `Merged into ${survivor.name}`,
     });
-    const mergeRow = (await ctx.db
-      .query('moderationActions')
-      .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', w.loser))
-      .order('desc')
-      .first()) as Doc<'moderationActions'>;
-    const cs = (await readSnapshot<MergeChangeSet>(ctx, mergeRow._id)) as MergeChangeSet;
-    if (cs.version === 2) {
-      realMerge.v2 = true;
-      return mergeRow._id;
-    }
-    // ── What the B01-5d merge adds (S4a's), written here until it lands ──
-    const movedActivities: NonNullable<MergeChangeSet['movedActivities']> = [];
-    for (const s of skates) {
-      movedActivities.push({
-        id: s._id,
-        waterBodyId: s.waterBodyId ?? null,
-        waterBodyIds: s.waterBodyIds ?? [],
-      });
-      const ids = [...new Set((s.waterBodyIds ?? []).map((b) => (b === w.loser ? w.survivor : b)))];
-      await ctx.db.patch(s._id, { waterBodyId: w.survivor, waterBodyIds: ids });
-    }
-    const drawing = loser.source === 'user' && loser.reviewStatus === 'pending';
-    if (drawing) {
-      await ctx.db.patch(w.loser, { reviewStatus: 'merged' });
-      const member = await ctx.db
-        .query('inboxItemMembers')
-        .withIndex('by_source', (q) => q.eq('sourceTable', 'waterBodies').eq('sourceId', w.loser))
-        .first();
-      if (member) {
-        await ctx.db.patch(member._id, { closedByActionId: mergeRow._id });
-        await ctx.db.patch(member.itemId, { decisionActionId: mergeRow._id });
-      }
-      // The `merged` message to the drawer is S4a's (the queue's schema takes the outcome with it).
-    }
-    const written = await ctx.db.query('moderationActions').order('desc').take(200);
-    const sideActions = written
-      .filter(
-        (r) =>
-          r._id !== mergeRow._id &&
-          r._creationTime >= marker &&
-          r._creationTime <= mergeRow._creationTime,
-      )
-      .map((r) => r._id)
-      .reverse();
-    const dedupAfter: MergeChangeSet['dedupBefore'] = [];
-    for (const before of cs.dedupBefore.slice(1)) {
-      const p = (await ctx.db.get(before.id)) as Doc<'waterBodies'>;
-      dedupAfter.push({
-        id: p._id,
-        dedupStatus: p.dedupStatus,
-        duplicateCandidateIds: p.duplicateCandidateIds ?? null,
-        mergedIntoId: p.mergedIntoId ?? null,
-      });
-    }
-    const survivorSubAreasBefore: NonNullable<MergeChangeSet['survivorSubAreasBefore']> = [];
-    for (const b of survivorBays) {
-      const after = await ctx.db.get(b._id);
-      if (JSON.stringify(after) !== JSON.stringify(b)) {
-        const { _id, _creationTime, ...rest } = b;
-        survivorSubAreasBefore.push({ ...rest, id: _id, creationTime: _creationTime });
-      }
-    }
-    const v2: MergeChangeSet = {
-      ...cs,
-      version: 2,
-      sideActions,
-      dedupAfter,
-      survivorSubAreasBefore,
-      loserReview: { reviewStatus: loser.reviewStatus ?? null, decidedItem: drawing },
-      movedActivities,
-    };
-    for (const row of await ctx.db
-      .query('auditSnapshots')
-      .withIndex('by_action', (q) => q.eq('actionId', mergeRow._id))
-      .collect()) {
-      await ctx.db.delete(row._id);
-    }
+    const cs = (await readSnapshot<MergeChangeSet>(ctx, actionId)) as MergeChangeSet;
+    if (cs.version !== 2) throw new Error('The real merge wrote no version-2 change set');
     if (opts.chunked) {
-      // As a busy body's merge stores it: split in parts.
-      const json = JSON.stringify(v2);
+      for (const row of await ctx.db
+        .query('auditSnapshots')
+        .withIndex('by_action', (q) => q.eq('actionId', actionId))
+        .collect()) {
+        await ctx.db.delete(row._id);
+      }
+      const json = JSON.stringify(cs);
       const size = Math.ceil(json.length / 3);
       for (let part = 0; part < 3; part++) {
         await ctx.db.insert('auditSnapshots', {
-          actionId: mergeRow._id,
+          actionId,
           part,
           payload: { chunk: json.slice(part * size, (part + 1) * size), of: 3 },
           createdAt: Date.now(),
         });
       }
-    } else {
-      await writeSnapshot(ctx, mergeRow._id, v2);
     }
-    return mergeRow._id;
+    return actionId;
   });
   await settle(w.t);
   return id;
@@ -1633,21 +1544,21 @@ suite('the drawer is told of the merge once, or not at all', () => {
       }
     });
 
-  test('an unmerge inside the window drops the merged message', async (ctx) => {
+  test('an unmerge inside the window drops the merged message', async () => {
     const w = await world(['content']);
     const mergeId = await mergeV2(w);
-    // The `merged` message is S4a's enqueue: until the merge queues one there is nothing to drop.
-    if ((await queued(w)).length === 0) ctx.skip();
+    // The merge queued its `merged` message (S4a's enqueue): the unmerge drops it.
+    expect(await queued(w)).toHaveLength(1);
     await unmerge(w, mergeId);
     await dueNow(w);
     await flushAll(w.t);
     expect(await toldDrawer(w)).toBe(0);
   });
 
-  test('a merge that stands is told once, and an unmerge after it tells nothing more', async (ctx) => {
+  test('a merge that stands is told once, and an unmerge after it tells nothing more', async () => {
     const w = await world(['content']);
     const mergeId = await mergeV2(w);
-    if ((await queued(w)).length === 0) ctx.skip();
+    expect(await queued(w)).toHaveLength(1);
     await dueNow(w);
     await flushAll(w.t);
     expect(await toldDrawer(w)).toBe(1);
@@ -1666,7 +1577,6 @@ export {
   type Kind,
   leftOf,
   mergeV2,
-  realMerge,
   rect,
   settle,
   type T,
