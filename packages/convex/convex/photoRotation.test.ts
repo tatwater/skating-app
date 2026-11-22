@@ -98,12 +98,14 @@ const bytesOf = (t: T, id: string) =>
   t.run(async (ctx) => (await ctx.storage.get(id as Id<'_storage'>))?.text() ?? null);
 const storedCount = (t: T) =>
   t.run(async (ctx) => (await ctx.db.system.query('_storage').collect()).length);
-const rotationsScheduled = (t: T) =>
+const pending = (t: T, fn: string) =>
   t.run(async (ctx) =>
     (await ctx.db.system.query('_scheduled_functions').collect()).filter(
-      (f) => f.name.includes('rotateBlobs') && f.state.kind === 'pending',
+      (f) => f.name.includes(fn) && f.state.kind === 'pending',
     ),
   );
+const rotationsScheduled = (t: T) => pending(t, 'rotateBlobs');
+const watches = (t: T) => pending(t, 'rotationWatch');
 /** Run what is due now (each zero-delay step), never the far retries. */
 async function runDue(t: T) {
   await vi.advanceTimersByTimeAsync(1);
@@ -229,7 +231,7 @@ describe('the rotation through the public writes', () => {
     void set;
   });
 
-  test('a swap whose old blob won’t delete rolls back, drops its copies, and retries by the attempts rule', async () => {
+  test('a swap whose old blob won’t delete rolls back and drops its copies; its watch runs it again', async () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     failing.ids.add(before.storageId);
@@ -238,32 +240,48 @@ describe('the rotation through the public writes', () => {
     // Rolled back: the row still points at what still answers; the copies are gone.
     expect((await row(t, photoId)).storageId).toBe(before.storageId);
     expect(await storedCount(t)).toBe(2);
-    const retry = await rotationsScheduled(t);
-    expect(retry).toHaveLength(1);
-    expect(retry[0]?.args[0]).toMatchObject({ photoId, attempts: 1, errorClass: 'OldBlobKept' });
-    expect(retry[0]?.scheduledTime).toBe(Date.now() + (ROTATION_RETRY_MS[0] as number));
-    // Storage lets go: the retry rotates.
+    expect(await rotationsScheduled(t)).toHaveLength(0);
+    const [watch] = await watches(t);
+    expect(watch?.args[0]).toMatchObject({ photoId, oldStorageId: before.storageId });
+    expect(Math.abs((watch?.scheduledTime ?? 0) - (T0 + (ROTATION_RETRY_MS[0] as number)))).toBeLessThan(10);
+    // Storage lets go: the watch finds it unrotated and runs it again, which lands.
     failing.ids.clear();
-    await vi.advanceTimersByTimeAsync(ROTATION_RETRY_MS[0] as number);
-    await t.finishInProgressScheduledFunctions();
+    // Run everything to its end: the watch runs it again, it lands, the next watch ends the chain.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
     expect(await urlOf(t, before.storageId)).toBeNull();
+    expect(await watches(t)).toHaveLength(0);
   });
 
-  test('three failures park it; a parked rotation is retried daily, never dropped', async () => {
+  test('a rotation the runtime kills is never dropped: the watch, a mutation, runs it again', async () => {
+    const { t, photoId, set } = await world();
+    const before = await row(t, photoId);
+    await set('hidden');
+    // The action never ran (a transient runtime failure is outside its own catch): cancel it.
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
+      }
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
+    expect(await watches(t)).toHaveLength(0);
+  });
+
+  test('three misses park it; a parked rotation is retried daily, never dropped', async () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     failing.ids.add(before.storageId);
     await set('hidden');
     await runDue(t);
-    for (const wait of ROTATION_RETRY_MS.slice(0, 2)) {
+    for (const wait of ROTATION_RETRY_MS) {
       await vi.advanceTimersByTimeAsync(wait);
       await t.finishInProgressScheduledFunctions();
+      await runDue(t);
     }
-    // The third failure (the 10-minute retry's) parks it.
-    const parked = await rotationsScheduled(t);
-    expect(parked[0]?.args[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
-    expect(parked[0]?.scheduledTime).toBe(Date.now() + 24 * 60 * 60 * 1000);
+    const [parked] = await watches(t);
+    expect(parked?.args[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
+    expect(Math.abs((parked?.scheduledTime ?? 0) - (Date.now() + 24 * 60 * 60 * 1000))).toBeLessThan(10);
     expect(await storedCount(t)).toBe(2);
   });
 
@@ -275,7 +293,7 @@ describe('the rotation through the public writes', () => {
     await runDue(t);
     expect((await row(t, photoId)).storageId).toBe(before.storageId);
     expect(await storedCount(t)).toBe(2);
-    expect((await rotationsScheduled(t))[0]?.args[0]).toMatchObject({ errorClass: 'TooLarge' });
+    expect(await watches(t)).toHaveLength(1);
   }, 30_000);
 
   test('a photo whose thumbnail is gone carries its full image; the thumbnail id stays', async () => {
