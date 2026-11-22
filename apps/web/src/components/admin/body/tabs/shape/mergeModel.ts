@@ -76,9 +76,13 @@ export function consequenceRows(p: Extract<MergePreview, { ok: true }>): Row[] {
     ...(some(p.favoritesDeduped)
       ? [{ label: W.keptOnce, value: W.favoritesDeduped(p.favoritesDeduped, p.survivor.name) }]
       : []),
+    // A capped list (the preview didn't read the survivor's bays) says so from the flag — with no
+    // names, that they weren't checked; never read as "none clash".
     ...(p.baysClashing.names.length > 0
       ? [{ label: W.delisted, value: W.baysClash(p.baysClashing, p.survivor.name) }]
-      : []),
+      : p.baysClashing.capped
+        ? [{ label: W.delisted, value: W.baysClashUnchecked(p.survivor.name) }]
+        : []),
     { label: W.lists, value: W.listsAgainstCaps(p.lists) },
     ...(behind.length > 0 ? [{ label: W.staysHere, value: behind.join(' · ') }] : []),
   ];

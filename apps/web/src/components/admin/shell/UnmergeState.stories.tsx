@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { must } from '@/components/kit/storyKit';
 import { createToastManager, Toaster } from '@/components/kit/toast';
+import { BodyHistorySection } from '../body/frame/BodyLeftColumn';
+import { BODY_NOW, TWO_MERGES } from '../body/frame/bodyFixtures';
+import { bodyHistory } from '../body/frame/bodyModel';
 import { MERGE_WORDS as MW } from '../body/tabs/shape/mergeWords';
 import { said } from '../said';
 import {
@@ -306,5 +309,30 @@ export const NoCapability: Story = {
     const page = within(canvasElement);
     await expect(page.getByText(MW.unmergeStalled)).toBeVisible();
     await expect(page.queryByRole('button')).toBeNull();
+  },
+};
+
+const WAIT =
+  '“Lake Morey” is still being unmerged from another merge. Let that finish — or resume or abandon it — first.';
+
+/**
+ * Two bodies merged into one survivor; one undone, its unmerge still running. The other merge's row
+ * says why its undo must wait, in the server's sentence, before anything runs (one unmerge a body at a
+ * time).
+ */
+export const OneUnmergeAtATime: Story = {
+  name: 'History · one unmerge a body at a time',
+  render: () => (
+    <div className="w-(--size-inspector)">
+      <BodyHistorySection
+        history={{ entries: bodyHistory(TWO_MERGES(WAIT)), capped: false }}
+        now={BODY_NOW}
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(page.getByText(WAIT)).toBeVisible();
+    await expect(page.getByText('Moving rows back…')).toBeVisible();
   },
 };

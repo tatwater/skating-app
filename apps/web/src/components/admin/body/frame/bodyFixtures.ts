@@ -271,3 +271,39 @@ export const NEIGHBOR_POLYGON: GeoJSON.Polygon = {
     ],
   ],
 };
+
+/**
+ * Two bodies merged into one survivor, and one of them undone while its unmerge still runs: the other
+ * merge's undo is refused before anything runs, in the server's sentence (`why`) — one unmerge a body
+ * at a time. Newest first, as History reads it.
+ */
+export const TWO_MERGES = (why: string): HistoryAction[] => [
+  {
+    id: 'unmergeB',
+    action: 'unmerge_waterbody',
+    targetType: 'waterbody',
+    targetId: 'bodyB',
+    createdAt: BODY_NOW - 60_000,
+    actor: { displayName: 'Sarah Berman', username: 'sarah' },
+    undoesActionId: 'mergeB',
+    metadata: { done: false, left: { count: 0 } },
+  },
+  {
+    id: 'mergeB',
+    action: 'merge_waterbody',
+    targetType: 'waterbody',
+    targetId: 'bodyB',
+    createdAt: BODY_NOW - 120_000,
+    actor: { displayName: 'Matt Steinberg', username: 'matt' },
+    undo: { state: 'undone' },
+  },
+  {
+    id: 'mergeA',
+    action: 'merge_waterbody',
+    targetType: 'waterbody',
+    targetId: 'bodyA',
+    createdAt: BODY_NOW - 180_000,
+    actor: { displayName: 'Matt Steinberg', username: 'matt' },
+    undo: { state: 'unavailable', why },
+  },
+];

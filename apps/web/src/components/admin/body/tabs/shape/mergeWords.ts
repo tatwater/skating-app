@@ -64,6 +64,9 @@ export const MERGE_WORDS = {
   /** A capped list of names ends "…and more": the server stopped reading, never a whole list. */
   baysClash: ({ names, capped }: { names: readonly string[]; capped: boolean }, survivor: string) =>
     `${names.join(', ')}${capped ? ' …and more' : ''} · ${survivor} has a bay by ${names.length === 1 && !capped ? 'that name' : 'each name'}`,
+  /** The preview didn't read the survivor's bays (the load stopped first): not checked, not none. */
+  baysClashUnchecked: (survivor: string) =>
+    `Not checked here · a bay may be delisted if ${survivor} has one by its name`,
   lists: 'Lists',
   listsAgainstCaps: (l: {
     pins: number;

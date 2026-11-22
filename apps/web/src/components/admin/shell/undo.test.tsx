@@ -288,6 +288,29 @@ describe('a receipt that names its own row', () => {
   });
 });
 
+describe('a merge’s Undo while another unmerge runs on its survivor', () => {
+  it('is refused before anything runs, in a toast in the server’s sentence', async () => {
+    const WAIT =
+      '“Lake Morey” is still being unmerged from another merge. Let that finish — or resume or abandon it — first.';
+    server.run.mockRejectedValue(new ConvexError(WAIT));
+    const merged: Receipt = {
+      title: 'Merged into Lake Morey',
+      target: { targetType: 'waterbody', targetId: 'bodyA' },
+      actionId: 'mergeA',
+      undoNeedsReason: false,
+      action: 'merge_waterbody',
+    };
+    render(<Harness server={server} receipt={merged} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide it' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Undo/ }));
+    expect(server.run).toHaveBeenCalledWith({ actionId: 'mergeA' });
+    // A failure is announced at once (Base UI repeats a high-priority toast for the reader).
+    expect((await screen.findAllByText('Not undone')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(WAIT).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Undone')).toBeNull();
+  });
+});
+
 describe('the reason dialog', () => {
   it('waits for a reason, then undoes with it', async () => {
     render(<Harness server={server} receipt={receipt} />);

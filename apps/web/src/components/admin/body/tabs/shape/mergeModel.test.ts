@@ -76,6 +76,18 @@ describe('what the merge runs into', () => {
       { label: 'Lists', value: 'Pins 3 of 10 · Aliases 4 of 20 · Links 2 of 10' },
       { label: 'Stays here', value: '200+ access alerts · 200+ linked lots' },
     ]);
+    // The survivor's bays unread (the clash list capped, no names): said from the flag, not a length.
+    expect(
+      consequenceRows({ ...MERGE_TO_CRYSTAL, baysClashing: { names: [], capped: true } })[1],
+    ).toEqual({
+      label: 'Delisted',
+      value: 'Not checked here · a bay may be delisted if Crystal Lake has one by its name',
+    });
+    expect(
+      consequenceRows({ ...MERGE_TO_CRYSTAL, baysClashing: { names: [], capped: false } }).map(
+        (r) => r.label,
+      ),
+    ).not.toContain('Delisted');
     // A capped zero is a floor the read stopped at: drawn, never dropped; uncapped, exact.
     const zero = { count: 0, capped: true };
     const zeros = {

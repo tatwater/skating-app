@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { UnmergeLive } from '../../shell/UnmergeLeft';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyHistorySection } from './BodyLeftColumn';
-import { BODY_NOW } from './bodyFixtures';
+import { BODY_NOW, TWO_MERGES } from './bodyFixtures';
 import { bodyHistory } from './bodyModel';
 
 /**
@@ -87,5 +87,16 @@ describe('BodyHistorySection', () => {
     );
     expect(line).toHaveBeenCalledWith('ma1', 'Moving rows back…');
     expect(screen.getByText(/live ma1 over Moving rows back…/)).toBeInTheDocument();
+  });
+
+  it('two merges into one survivor, one undone: the other merge’s row says why its undo must wait', () => {
+    const WAIT =
+      '“Lake Morey” is still being unmerged from another merge. Let that finish — or resume or abandon it — first.';
+    const entries = bodyHistory(TWO_MERGES(WAIT));
+    render(<BodyHistorySection history={{ entries, capped: false }} now={BODY_NOW} />);
+    // The waiting merge says why before anything runs, in the server's sentence.
+    expect(screen.getByText(WAIT)).toBeInTheDocument();
+    // The running unmerge says it is moving rows back.
+    expect(screen.getByText('Moving rows back…')).toBeInTheDocument();
   });
 });
