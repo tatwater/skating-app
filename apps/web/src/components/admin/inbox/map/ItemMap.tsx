@@ -36,7 +36,9 @@ export function ItemMap({ item }: { item: InboxItemView }): ReactNode {
   const { resolvedTheme } = useTheme();
   // The inspector's zone (the console's: the reader's own unless the page pins one), so a date on
   // the map reads on the same day as every date beside it.
-  const { timeZone } = useInspectorContext();
+  // On a narrow page (one pane at a time, the view's rule) the map is view-only: no zoom pair, and it
+  // takes no pointer, so a swipe scrolls the inspector rather than the map.
+  const { timeZone, narrow = false } = useInspectorContext();
   const mode = resolvedTheme === 'light' ? 'light' : 'dark';
   if (!hasMap) return null;
   return (
@@ -45,7 +47,9 @@ export function ItemMap({ item }: { item: InboxItemView }): ReactNode {
       state={reads.map as Loadable<ItemMapRead>}
       onRetry={retry}
       retrying={pending}
-      renderMap={(view) => <InboxMap view={view} mode={mode} height={EMBED_HEIGHT} />}
+      renderMap={(view) => (
+        <InboxMap view={view} mode={mode} height={EMBED_HEIGHT} viewOnly={narrow} />
+      )}
       {...(timeZone !== undefined ? { timeZone } : {})}
     />
   );

@@ -36,6 +36,11 @@ export type InspectorContextValue = {
   linkFor?: ((path: string) => ReactElement) | undefined;
   /** The viewer may read Support (D37): what the inspector draws about tickets follows it. */
   canReadSupport?: boolean | undefined;
+  /**
+   * The page shows one pane at a time (the view's own `useColumnsFit`, the one narrow signal): a
+   * phone's page, where an item's map is view-only so a swipe scrolls the inspector.
+   */
+  narrow?: boolean | undefined;
 };
 
 const NO_PANE: RefObject<HTMLElement | null> = { current: null };

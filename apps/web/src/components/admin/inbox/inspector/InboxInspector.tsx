@@ -61,6 +61,8 @@ export type InboxInspectorProps = {
   registry?: ReadonlyMap<HandlerKey, InboxHandler>;
   /** The viewer may read Support: the placeholder points at the Support page only then. */
   canReadSupport?: boolean;
+  /** One pane at a time (the view's narrow rule): an item's map is view-only. */
+  narrow?: boolean;
 };
 
 export function InboxInspector({
@@ -73,6 +75,7 @@ export function InboxInspector({
   zero,
   registry = HANDLERS,
   canReadSupport = false,
+  narrow = false,
 }: InboxInspectorProps) {
   const item = state.kind === 'item' ? state.item : null;
   const decidedOnOpen = state.kind === 'item' && state.phase === 'onOpen';
@@ -87,6 +90,7 @@ export function InboxInspector({
         timeZone,
         linkFor,
         canReadSupport,
+        narrow,
       }}
     >
       <Contents state={state} now={now} zero={zero} registry={registry} />

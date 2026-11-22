@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { LANES, MODERATOR_LANES, NOW, PENDING_LANES, ZERO_LANES } from '../list/inboxFixtures';
@@ -110,6 +111,45 @@ describe('local midnight', () => {
     expect(new Date(m).getHours()).toBe(0);
     expect(new Date(m).getDate()).toBe(new Date(NOW).getDate());
     expect(NOW - m).toBe(12 * 3_600_000);
+  });
+
+  // The day's first instant, in whatever zone the process runs in (the gate runs seven), across
+  // every kind of day: a change forward (23 h), back (25 h), and Lord Howe's half-hour ones.
+  const isDayStart = (at: number) => {
+    const m = localMidnight(at);
+    const day = new Date(at);
+    const start = new Date(m);
+    expect(m).toBeLessThanOrEqual(at);
+    expect(at - m).toBeLessThan(25 * 3_600_000);
+    // The same calendar day, and its first instant: the minute before is the day before.
+    expect([start.getFullYear(), start.getMonth(), start.getDate()]).toEqual([
+      day.getFullYear(),
+      day.getMonth(),
+      day.getDate(),
+    ]);
+    expect(new Date(m - 60_000).getDate()).not.toBe(start.getDate());
+    expect(localMidnight(m)).toBe(m);
+  };
+
+  it('is the first instant of the day, whatever kind of day it is (fast-check)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2026, 0, 2), max: Date.UTC(2026, 11, 30) }),
+        isDayStart,
+      ),
+      { numRuns: 400 },
+    );
+  });
+
+  it('holds on the change days: New York’s two, and Lord Howe’s half-hour forward change', () => {
+    for (const at of [
+      Date.UTC(2026, 2, 8, 17), // New York springs forward that morning
+      Date.UTC(2026, 10, 1, 17), // and falls back
+      Date.UTC(2026, 9, 3, 16), // 03:00 LHDT on 4 Oct, half an hour after Lord Howe's jump
+      Date.UTC(2026, 3, 4, 15, 30), // 02:00 LHDT on 5 Apr, as Lord Howe falls back
+    ]) {
+      isDayStart(at);
+    }
   });
 });
 

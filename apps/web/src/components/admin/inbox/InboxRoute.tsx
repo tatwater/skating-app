@@ -46,7 +46,8 @@ import { COUNTS_FAILED, SUPPORT_REFUSED } from './words/inboxWords';
  * - **The lanes a viewer has** are the server's rule, asked of the role before the counts land, so
  *   a moderator's link to Support is All open, never an error.
  * - **The list is read against the list's clock**: the minute it was opened, held while it stays
- *   open, so a new minute never restarts the paging.
+ *   open, so a new minute never restarts the paging. **The day is the reader's live one**: today's
+ *   counts roll over at local midnight with the list still open, and change only when the day does.
  * - **Every change of place is a navigation**, so the back button, a reload and a shared link put
  *   the page back as it was. Another lane, tab or filter closes an item opened from the list, and
  *   keeps one that came by a direct link (`placeAfter`); opening an item beside one already open
@@ -62,12 +63,20 @@ export function InboxRoute() {
   const query = queryOf(search, canSupport);
   const key = listKey(query);
   const listNow = useClockFor(key);
-  const dayStart = localMidnight(listNow);
+  // **The day is the reader's, on the live clock**: today's counts (the lanes' *Decided today*, Inbox
+  // zero's day) count from the latest local midnight, so a list left open past midnight rolls over
+  // with it. It changes only when the day does, so no day read re-subscribes on a minute tick.
+  const dayStart = localMidnight(now);
+  // A day read's clock: the list's, or the day's start once that passes it. The server holds a
+  // `dayStart` within `[now − 1.5 days, now]` (`heldDayStart`), so the new day's midnight beside
+  // yesterday's list clock would be pulled back to that clock; this pair satisfies it, and changes
+  // only with the list or the day. The pages keep the list's clock, so the paging never restarts.
+  const dayNow = Math.max(listNow, dayStart);
   const inspectorRef = useRef<HTMLElement | null>(null);
   // The item last opened from the list (a row's press or keys); any other open item came by a link.
   const openedFromList = useRef<string | null>(null);
 
-  const lanesRead = useInboxLanes(listNow, dayStart, canRead);
+  const lanesRead = useInboxLanes(dayNow, dayStart, canRead);
   const lanes = lanesRead.shown;
   const pages = useInboxPages(
     canRead
@@ -89,7 +98,7 @@ export function InboxRoute() {
     lanes !== undefined &&
     !lanes.pending &&
     lanes.allOpen === 0;
-  const todayRead = useInboxToday(listNow, dayStart, canRead && atZero);
+  const todayRead = useInboxToday(dayNow, dayStart, canRead && atZero);
   const decidedRead = useDecidedFirstPage(listNow, canRead && atZero);
 
   // ── The open item and its lock ──────────────────────────────────────────────────────────────

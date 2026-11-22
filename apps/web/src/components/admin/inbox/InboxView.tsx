@@ -273,7 +273,9 @@ export function InboxView({
           selected={lane}
           onSelect={(next) => {
             if (next === lane) return;
-            onQueryChange({ ...query, lane: next, facet: 'all', item: null });
+            // The item is the route's to keep or close (`placeAfter`: a linked item stays, one opened from
+            // the list closes), so a lane's change never forces it.
+            onQueryChange({ ...query, lane: next, facet: 'all' });
           }}
           countsNote={countsNote}
         />
@@ -409,6 +411,7 @@ export function InboxView({
           onBack={backToList}
           linkFor={linkFor}
           canReadSupport={canReadSupport}
+          narrow={narrow}
           {...(registry !== undefined && { registry })}
           {...(atZero &&
             zero !== null && {

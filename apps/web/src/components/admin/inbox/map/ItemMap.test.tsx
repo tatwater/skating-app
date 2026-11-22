@@ -183,3 +183,56 @@ describe('ItemMap’s dates', () => {
     vi.doUnmock('./InboxMap');
   });
 });
+
+describe('ItemMap on a narrow page', () => {
+  it('is view-only there — no zoom pair, the map takes no pointer — and not on a wide page', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/useRole', () => ({ useRole: () => ({ can: () => true }) }));
+    vi.doMock('@/components/theme-provider', () => ({
+      useTheme: () => ({ resolvedTheme: 'dark' }),
+    }));
+    vi.doMock('../../reads/consoleReads', async (orig) => ({
+      ...(await orig<typeof import('../../reads/consoleReads')>()),
+      useConsoleReadSet: () => ({
+        reads: { map: { map: ACCESS_MAP, pending: false } },
+        retry: () => {},
+        pending: false,
+      }),
+    }));
+    // The live map draws through MapLibre; the still takes the same props, `viewOnly` among them.
+    vi.doMock('./InboxMap', async (orig) => {
+      const actual = await orig<typeof import('./InboxMap')>();
+      return {
+        ...actual,
+        InboxMap: (p: Parameters<typeof actual.InboxMap>[0]) => (
+          <actual.InboxMapStill view={p.view} viewOnly={p.viewOnly ?? false} width={336} />
+        ),
+      };
+    });
+    const { ItemMap } = await import('./ItemMap');
+    const { InspectorProvider } = await import('../inspector/inspectorContext');
+    const at = (narrow: boolean) =>
+      render(
+        <InspectorProvider
+          value={{ pane: { current: null }, decidedOnOpen: false, now: 0, narrow }}
+        >
+          <ItemMap item={ACCESS_REPORTS} />
+        </InspectorProvider>,
+      );
+    // The zoom pair is hidden by the pane's class (the map's own test holds what it draws).
+    const zoomHidden = (c: HTMLElement) =>
+      c.querySelector('[data-slot="body-map"]')?.className.includes('[&_[data-map-zoom]]:hidden');
+    const narrow = at(true);
+    expect(narrow.container.querySelector('[data-view-only]')).not.toBeNull();
+    expect(zoomHidden(narrow.container)).toBe(true);
+    narrow.unmount();
+    const wide = at(false);
+    expect(wide.container.querySelector('[data-view-only]')).toBeNull();
+    expect(zoomHidden(wide.container)).toBe(false);
+    wide.unmount();
+    vi.doUnmock('@/lib/useRole');
+    vi.doUnmock('@/components/theme-provider');
+    vi.doUnmock('../../reads/consoleReads');
+    vi.doUnmock('./InboxMap');
+  });
+});
