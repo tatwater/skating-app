@@ -9456,6 +9456,49 @@ CI's runners are about 1.5× slower than this machine). From the workspace run:
 
 The flush byte guard's mutation was re-run: with the guard removed, *heavy re-checks* still fails.
 
+#### Greptile on #172, round 1 (2026-11-22)
+
+Greptile reviewed #172 at `2b50fb82f` and scored it 4/5, with two non-blocking findings. Both are
+fixed on `phase-b01-inbox-3` and carried onto `phase-b01-inbox`.
+
+1. **"Single asks hide useful context"**, of the class *a compact or single-member layout drops what
+   the list layout shows*.
+   - **The miss:** the place handler's compact layout (one ask served) drew the asker's note and
+     recorded skate only through `AskList`, behind `several`. So one ask showed neither, and the
+     "Showing 1 of N" line was hidden when that row came from a larger group.
+   - **The fix:** `AskWords` is now the one way an ask's note and skate are drawn. `AskList`'s rows
+     and the compact layout both use it, with the shared cut line under it. Tests and a story cover
+     one ask with a note and a skate, one ask served of four, and one with neither.
+   - **The sweep:**
+     - the request handler always draws `AskList`;
+     - the flag block's single flag keeps its quote and byline (its time moves to the rule's end)
+       and draws the cut line in both forms;
+     - the Access timeline draws every report and the cut line;
+     - one place asker's landmark history is on the *Trust* row.
+
+     Only the place compact layout dropped anything.
+2. **"Expired alerts still send notices"** (S3's fix, `6d1d2a5e1`), of the class *a stored status
+   used where the reads use a time-based liveness predicate*.
+   - **The fix:** `retractAlertImpl` now tells the author only if `accessAlertIsLive`, the predicate
+     every read uses, said the alert was live at the retraction's instant. Tests through
+     `accessAlerts.retract`:
+     - a term already over, or ending at that exact instant: not told;
+     - a running term: told;
+     - live when retracted but expired before the flush: told once.
+   - Nothing changes in what `can` answers, so no web fixture moves.
+   - **S3's sweep:**
+
+     | Place | Result |
+     |---|---|
+     | The retraction notice | fixed (above) |
+     | The settle re-check, the retraction's undo, the flush window | already agree with the reads |
+     | *Pin as official* on a lapsed alert | **kept on purpose** (below) |
+     | A lapsed suspension blocks notifications until the flip runs (`canReceiveNotifications`, older code) | to the register |
+
+   - **The governor's ruling (2026-11-22):** pinning a lapsed alert as official stays. It is a
+     deliberate feature that D226's undo tests pin, so S3's sibling branch `b01-5c-s3-5-pin` is not
+     taken.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
