@@ -10443,6 +10443,54 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
   does.
 - The proof re-runs green on a real backend.
 
+#### B01-5d: the merge estimate's time axis — the final table (2026-11-22)
+
+S4a's `45becf3dd`, integrated. Its one conflict was a test file, where I had raised two ceiling
+tests' timeouts and S4a had rewritten them; S4a's version was taken. The estimate refuses a merge
+once its projected spend passes any threshold below. **The time costs are measured on a local
+backend, not on the deployment** (register Sh12).
+
+| Dimension | Convex's limit | Threshold | Factor | Why |
+| --- | --- | --- | --- | --- |
+| Index ranges | 4,096 | 3,072 | 75% | Counted per row from the code; the harness counts them as the real backend does |
+| Bytes read | 16 MiB | 12 MiB | 75% | Both bodies read and written whole, plus each row's size |
+| Bytes written | 16 MiB | 12 MiB | 75% | As above |
+| Documents read | 32,000 | 24,000 | 75% | Counted per row; a `.filter`'s scanned rows count |
+| Documents written | 16,000 | 12,000 | 75% | Counted per row |
+| Execution time | 1 s | 400 ms | 40% | A projection, not a measure: a wider margin than the database limits, since the deployment's time isn't measured |
+
+**The time projection's costs** (measured on a local backend):
+- 0.27 ms per database call;
+- 9 µs per outline point through a clip;
+- 30 ms per MiB read or written;
+- +1 ms per landmark ask, for its same-place rule.
+
+**Two real slownesses are gone:**
+- a report's bay joins are read once per bay, not once per report;
+- the change set re-reads only the loser's labels, their twins, and labels this merge retired.
+
+**Per-kind ceilings for two small bodies** (pinned in `mergeV2.test.ts`):
+
+| Kind | Rows in one merge |
+| --- | --- |
+| Put-ins (launches) | 994 |
+| Favorites | 511 |
+| Asks | 104 |
+| Landmark asks | 35 |
+| Flags | 95 |
+| Reports in two bays | 311 |
+
+**What this changed elsewhere:**
+- **The seed's proof pair** now uses at most 38.4% of a threshold, execution time being the
+  tightest. It was 17.9% of index ranges before the time axis. The seed test holds it under half.
+- **The unmerge's real-limits test** merged 1,800 favorites through `mergeBodyInto` directly, past
+  the estimate, and a real merge refuses that now. It merges 500, the preview first accepting them,
+  and asserts the unmerge completes with every row back.
+- **The web's `tooBig` fixtures and stories** needed no change: the refusal is still the server's
+  sentence with `code: 'tooBig'`.
+
+S4b's re-measure of the time rows comes next.
+
 #### B01-5d: the real-backend proof, second run (2026-11-22)
 
 S4b's re-proof on the integrated head, on a throwaway local backend. Its table, verbatim (ranges =
