@@ -62,7 +62,7 @@ import {
   unmergeBodyBusy,
   unmergeSurvivorMerged,
 } from './unmerge';
-import { type MergeChangeSet, mergeBodyInto } from './waterBodies';
+import { byMeaning, type MergeChangeSet, mergeBodyInto } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -698,7 +698,12 @@ async function census(t: T): Promise<Record<string, unknown[]>> {
     );
     for (const table of Object.keys(schema.tables) as TableNames[]) {
       if (SKIPPED[table]) continue;
-      const rows = (await ctx.db.query(table).collect()).map((row) => {
+      // A derived fact read by meaning: never computed and computed over nothing are alike
+      // (`byMeaning` — the dev proof's ruling), so a row that means "absent" is left out.
+      const meant = (await ctx.db.query(table).collect())
+        .map((row) => byMeaning(table, row as unknown as Record<string, unknown>))
+        .filter((row): row is Record<string, unknown> => row !== null);
+      const rows = meant.map((row) => {
         const s = strip(row) as Record<string, unknown>;
         if (REMADE[table]) delete s._id;
         if (table === 'inboxItemMembers') s.itemId = keyOf.get(s.itemId as string) ?? s.itemId;
@@ -805,6 +810,79 @@ suite('a merge and its unmerge: the state equals the state before', () => {
     expect(await leftOf(w.t, w.loser)).toEqual({ count: 0, byKind: {}, rows: [] });
     expect(await census(w.t)).toEqual(before);
     await assertAudit(w, mergeId);
+  });
+
+  test('a survivor whose derived facts were never computed: absent before, computed over nothing after — alike', async () => {
+    // The dev proof's case: the survivor's summary was null before the merge (never computed) and
+    // the card over nothing after the unmerge (recomputed) — ruled the same. Its name list and its
+    // geometry facts too: none before; an empty list and a stale mark after.
+    const w = await world(['favorites']);
+    await w.t.run(async (ctx) => {
+      await ctx.db.patch(w.survivor, { summary: undefined });
+      for (const table of ['bodyNameLists', 'bodyGeoFacts'] as const) {
+        for (const row of await ctx.db.query(table).collect()) {
+          if (row.waterBodyId === w.survivor) await ctx.db.delete(row._id);
+        }
+      }
+    });
+    const before = await census(w.t);
+    const mergeId = await mergeV2(w);
+    await unmerge(w, mergeId);
+    // The case is real: each fact is present now where none stood.
+    const now = await w.t.run(async (ctx) => ({
+      summary: (await ctx.db.get(w.survivor))?.summary,
+      names: (await ctx.db.query('bodyNameLists').collect()).filter(
+        (r) => r.waterBodyId === w.survivor,
+      ),
+      geo: (await ctx.db.query('bodyGeoFacts').collect()).filter(
+        (r) => r.waterBodyId === w.survivor,
+      ),
+    }));
+    expect(now.summary).toMatchObject({ recentReportCount: 0, topHazardTypes: [] });
+    expect(now.names).toHaveLength(1);
+    expect(now.geo).toHaveLength(1);
+    expect(await census(w.t)).toEqual(before);
+  });
+
+  test('the dev proof’s census reads those facts by meaning too', async () => {
+    const w = await world(['favorites']);
+    await w.t.run(async (ctx) => {
+      await ctx.db.patch(w.survivor, { summary: undefined });
+      for (const table of ['bodyNameLists', 'bodyGeoFacts'] as const) {
+        for (const row of await ctx.db.query(table).collect()) {
+          if (row.waterBodyId === w.survivor) await ctx.db.delete(row._id);
+        }
+      }
+      // What a recompute over nothing leaves: an empty name list, a facts row with only its mark.
+      await ctx.db.insert('bodyNameLists', {
+        waterBodyId: w.survivor,
+        capped: false,
+        landmarks: [],
+        bays: [],
+        updatedAt: 1,
+      });
+      await ctx.db.insert('bodyGeoFacts', { waterBodyId: w.survivor, staleAt: 1 });
+    });
+    const out = JSON.parse(
+      await w.t.query(internal.waterBodies.mergeProofCensus, { ids: [w.survivor] }),
+    ) as Record<
+      string,
+      {
+        body: { summary: unknown };
+        bodyNames: { rows: unknown[] };
+        bodyGeoFacts: { rows: unknown[] };
+      }
+    >;
+    const survivor = out[w.survivor];
+    expect(survivor?.body.summary).toEqual({ recentReportCount: 0, topHazardTypes: [] });
+    expect(survivor?.bodyNames.rows).toEqual([]);
+    expect(survivor?.bodyGeoFacts.rows).toEqual([]);
+    // A fact that is there is read as it is.
+    expect(byMeaning('bodyGeoFacts', { waterBodyId: 'b', staleAt: 1, towns: [] })).not.toBeNull();
+    expect(byMeaning('names', { capped: true, landmarks: [], bays: [] })).not.toBeNull();
+    const card = { recentReportCount: 2, topHazardTypes: [] };
+    expect(byMeaning('waterBodies', { summary: card })).toEqual({ summary: card });
+    expect(byMeaning('reports', { a: 1 })).toEqual({ a: 1 });
   });
 
   test('a moved report’s bay join follows it in the page that moves it, before any restamp runs', async () => {

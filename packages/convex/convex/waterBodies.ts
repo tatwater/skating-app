@@ -8956,6 +8956,58 @@ export const listNamedForSeeding = internalQuery({
 /** Rows of one kind the census reads for one body, at most — past it, the kind says so. */
 const CENSUS_CAP = 500;
 
+/**
+ * A geometry-facts row's own bookkeeping — its stale mark and its retry state — as against a fact it
+ * holds (`computedAt` and everything computed).
+ */
+const GEO_MARKS = new Set([
+  '_id',
+  '_creationTime',
+  'waterBodyId',
+  'staleAt',
+  'attempts',
+  'errorClass',
+  'parkedAt',
+  'retriedAt',
+  'checkedAt',
+]);
+
+/**
+ * **A derived fact by meaning** (the dev proof's ruling, B01-5d): a fact never computed and one
+ * computed over nothing say the same, so the census reads them alike — and a merge's round trip,
+ * which recomputes what it touches, never differs from the state before on that alone. Three such
+ * facts, each written where none stood by a recompute over nothing:
+ *
+ * - a body's `summary` (`recomputeBodySummary`): absent reads as the card over no reports and no
+ *   hazards, `{ recentReportCount: 0, topHazardTypes: [] }` (its `updatedAt` a time, not a fact);
+ * - a short name list with no names and not capped (`refreshBodyNames` inserts one): read as absent;
+ * - a geometry-facts row holding only its marks (`markGeoStale` inserts one, owed its first
+ *   computation either way): read as absent.
+ *
+ * Every other derived row starts absent only while it is unbuilt (a library row) or follows a rule
+ * that gives the same answer both times (cells follow listing; a counter at zero reads as absent):
+ * those stay compared strictly. `table` names the row's table; `null` means "read as absent".
+ */
+export function byMeaning(
+  table: string,
+  row: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (table === 'waterBodies') {
+    const summary = row.summary as { recentReportCount?: number } | null | undefined;
+    if (summary !== undefined && summary !== null) return row;
+    return { ...row, summary: { recentReportCount: 0, topHazardTypes: [] } };
+  }
+  // A short name list, known by its shape (its table is named by its own module alone).
+  if (Array.isArray(row.landmarks) && Array.isArray(row.bays) && typeof row.capped === 'boolean') {
+    const empty = row.capped !== true && row.landmarks.length === 0 && row.bays.length === 0;
+    return empty ? null : row;
+  }
+  if (table === 'bodyGeoFacts') {
+    return Object.keys(row).every((k) => GEO_MARKS.has(k)) ? null : row;
+  }
+  return row;
+}
+
 /** `value` with every object's keys sorted, so two reads of the same state serialize identically. */
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -9100,9 +9152,11 @@ export const mergeProofCensus = internalQuery({
           .withIndex('by_body', (q) => q.eq('waterBodyId', id))
           .take(n),
       );
-      // The short list of names, read through its own module (the one that may name its table).
+      // The short list of names, read through its own module (the one that may name its table) —
+      // one with no names reads as none (`byMeaning`).
       const names = await bodyNamesRow(ctx, id);
-      put('bodyNames', names ? [names] : []);
+      const meant = names ? byMeaning('names', names as never) : null;
+      put('bodyNames', meant ? [meant as { _id: string }] : []);
       put(
         'bodyLibraryRows',
         await db
@@ -9112,10 +9166,12 @@ export const mergeProofCensus = internalQuery({
       );
       put(
         'bodyGeoFacts',
-        await db
-          .query('bodyGeoFacts')
-          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
-          .take(n),
+        (
+          await db
+            .query('bodyGeoFacts')
+            .withIndex('by_body', (q) => q.eq('waterBodyId', id))
+            .take(n)
+        ).filter((row) => byMeaning('bodyGeoFacts', row as never) !== null),
       );
       const items: { _id: string }[] = [];
       for (const key of [`drawn:${id}`, `access:${id}`]) {
@@ -9127,7 +9183,8 @@ export const mergeProofCensus = internalQuery({
         );
       }
       put('inboxItems', items);
-      out[id] = { body: await db.get(id), ...kinds };
+      const body = await db.get(id);
+      out[id] = { body: body ? byMeaning('waterBodies', body as never) : null, ...kinds };
     }
     return JSON.stringify(canonical(out));
   },
