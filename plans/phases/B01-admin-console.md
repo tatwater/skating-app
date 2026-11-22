@@ -1141,6 +1141,7 @@ count above):
 | LifeStrip — re-measured after every commit (`life-strip`) | ✅ | Re-decides its narrow layout when its words change, not only its count or box: its unseen copy is measured after every commit, and its observer set up once; the strip seen is never remounted | The flag and Access handlers |
 | Keys — a held key swallows its own repeats (`lib/keys`) | ✅ | A bound key that acted swallows its own repeat keydowns, and the text they would type, until it is released, wherever focus has gone. So holding an action letter no longer types into the reason dialog it opens. A fresh press, any other key, a held ⇧ or ⌘, and IME composition pass through; it lets go on keyup, window blur or a hidden page | Every pane, the shell |
 | LockBanner — its live region is its words only (`note`) | ✅ | The reader-only status region holds the banner's line alone, never its buttons | `DecidedLock` |
+| StepRugChart — the caller's ticks (`step-rug-chart`) | ✅ | Takes its tick instants from the caller (`ticks`), and `hourTicks(from, to, floor)` makes whole hours by the caller's own floor, so a chart's ticks fall on the reader's clock in any zone | Inbox zero |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -7863,7 +7864,11 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   Two more of its fixes (W1, fifth pass):
   - **Inbox zero's chart starts on a whole hour of the reader's clock.** It had floored to a UTC hour,
     so in a half-hour zone it started at :30 and a test failed under `TZ=America/St_Johns`. A property
-    over eight zones across DST changes now holds it.
+    over eight zones across DST changes now holds it. Its ticks fall on the reader's whole hours too
+    (passed to `StepRugChart` through `hourTicks`). W1's sixth pass made the floor exact:
+    `floorLocalHour` finds the latest whole local hour by the zone's own offsets, where subtracting
+    minutes landed on :30 just after Lord Howe Island's half-hour clock change. The web unit project
+    now passes under `TZ=Australia/Lord_Howe` too.
   - **The two filter-search stories wait for the popover's own animation and for focus** before
     typing; one had failed 2 of 40 repeats under load, and fails 0 of 160 now.
 - **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
