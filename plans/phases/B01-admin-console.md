@@ -901,6 +901,9 @@ Made on the design's engineering forks; the founder may overturn any of them.
     accepted for now and owed on the register (Sh9).
 15. **`moderatorDecision` is narrowed back to required with B01-5d** (2026-11-21), after its dev
     backfill.
+16. **An admin decides a restore or a takedown, both ways** (2026-11-22): a viewer without
+    `body.remove` can neither approve nor decline one. The server says so (S3, ask 11: `can.decline`
+    refuses that viewer, as `can.approve` already does), and the request bar draws from `can` alone.
 
 ### The founder's calls of 2026-11-21
 
@@ -8939,7 +8942,7 @@ with `drawnSubAreaId`, else *Draw in Body →* to `/admin/water/$id`); `drawn` �
 
 ##### How the forks were ruled (2026-11-21)
 
-The governor's rulings; the founder has been told of them and may overturn any (§7, rulings 11–15).
+The governor's rulings; the founder has been told of them and may overturn any (§7, rulings 11–16).
 
 1. **Pe25 is out of B01-5c.** It stays on the register, blocked on its board. S3 does not touch
    `contentRecord.item`; W5 builds no record-sheet links.
@@ -8950,6 +8953,11 @@ The governor's rulings; the founder has been told of them and may overturn any (
 4. **The life strip showing stacked, then running across once late fonts land, is accepted for now**
    and owed on the register's shared rows (Sh9), in the family of the Saira preload already owed.
 5. **The narrowing of `moderatorDecision` back to required ships with B01-5d**, not its own PR.
+6. **Restore and takedown are an admin's both ways** (2026-11-22, §7 ruling 16), found integrating
+   W5a: the board drew no bar for a viewer without `body.remove`, but the server's `can` still
+   allowed that viewer *Decline*. S3 makes `can.decline` a refusal for that viewer (ask 11). The web
+   stays as built; its kind check (`requestBar`'s early return, `refusalNote`'s lead) is marked
+   `S3-REMOVE` and goes at S3's integration, once `can` alone empties the bar.
 
 **What landed at T0** (on `phase-b01-inbox`): the type, the pref key and the view in core; the
 schema's widening; and placeholders that S3 and W5b replace — core's `describeNotification` case
@@ -9046,7 +9054,7 @@ The integration review fixed four things:
 - the bell's marks;
 - the Overview's three lanes now opening the Inbox.
 
-**Open: the server asks the builders filed (S3), ten of them:**
+**Open: the server asks the builders filed (S3), ten of them, and an eleventh from integration (`can.decline` on a restore or takedown, below):**
 
 - the request, place and drawn writes answering with their `actionId` and undo offer;
 - on the request item: its ruling, the dormancy reason, `nearestKnown` and the skate stats;
@@ -9055,7 +9063,7 @@ The integration review fixed four things:
 
 **Found integrating, listed rather than fixed (not this slice's to change):**
 
-- **Restore and takedown.** The plan's 2.3 row (*Requests: activate, restore, contest access, takedown*) has a viewer without `body.remove` see *An admin
+- **Restore and takedown — ruled (§7 ruling 16; S3's ask 11).** The plan's 2.3 row (*Requests: activate, restore, contest access, takedown*) has a viewer without `body.remove` see *An admin
   decides this* with no bar. The server's `can` still allows that viewer *Decline*, so the bar
   hides a lever the item allows. The fix is on the server: `can.decline` refuses for that viewer,
   and the bar draws from `can` alone.

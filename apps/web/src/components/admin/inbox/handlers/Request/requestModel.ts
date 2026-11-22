@@ -37,7 +37,7 @@ export type RequestWrite =
   | { kind: 'decline'; note: string }
   | { kind: 'lookUpAgain' };
 
-/** Restore and takedown need `body.remove` (an admin's) to approve. */
+/** Restore and takedown need `body.remove` (an admin's) to approve. S3-REMOVE with its two callers. */
 export const adminOnly = (kind: RequestKind): boolean => kind === 'restore' || kind === 'takedown';
 
 /** The ask a decision is sent for (`decidedAsk`: the oldest open one, else the first). */
@@ -217,6 +217,8 @@ const allows = (item: Pick<RequestItem, 'can'>, verb: RequestVerb): boolean =>
  */
 export function requestBar(item: Pick<RequestItem, 'can' | 'requestKind'>): RequestBarItem[] {
   const kind = item.requestKind;
+  // S3-REMOVE (§7 ruling 16): once `can.decline` refuses a viewer without `body.remove` (S3's ask
+  // 11), `can` alone empties this bar; delete this kind check at S3's integration.
   if (adminOnly(kind) && !allows(item, 'approve')) return [];
   const out: RequestBarItem[] = [];
   if (allows(item, 'approve')) {
@@ -268,6 +270,8 @@ export function refusalNote(
         .filter((s): s is string => typeof s === 'string' && s.trim() !== ''),
     ),
   ];
+  // S3-REMOVE (§7 ruling 16): the lead read from the kind goes once the server's own refusal of
+  // both levers says an admin decides it; delete at S3's integration.
   const admin = adminOnly(item.requestKind) && !allows(item, 'approve');
   if (lines.length === 0 && !admin) return null;
   return { lead: admin ? W.adminDecides : null, lines };
