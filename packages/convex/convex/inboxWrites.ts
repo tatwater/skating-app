@@ -433,7 +433,8 @@ export const mergeDrawn = mutation({
       throw new ConvexError(DECIDED_REFUSAL);
     }
     const typed = given?.trim() ? checkedReason(given) : undefined;
-    await assertMergeFits(ctx, drawn, live.survivor);
+    // The overlap was measured above, in this transaction: both outlines are the geometry's too.
+    await assertMergeFits(ctx, drawn, live.survivor, { overlap: true });
     const { actionId } = await mergeBodyInto(ctx, {
       survivor: live.survivor,
       loser: drawn,

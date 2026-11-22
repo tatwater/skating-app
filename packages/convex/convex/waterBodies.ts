@@ -151,7 +151,15 @@ import {
 import { landmarksForBody, repointLandmarksOnMerge } from './lib/landmarkRows';
 import { assertListUnchanged } from './lib/listCas';
 import { isListed } from './lib/listing';
-import { MERGE_TOO_BIG, type MergeCost, mergeLoadOf, RETARGET_CAP } from './lib/mergeLoad';
+import {
+  MERGE_GEOMETRY_POINTS,
+  MERGE_TOO_BIG,
+  type MergeCost,
+  mergeLoadOf,
+  RETARGET_CAP,
+  SAFETY,
+  TX_LIMITS,
+} from './lib/mergeLoad';
 import { enqueueModeratorDecision } from './lib/notificationQueue';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { reasonFor } from './lib/peopleCan';
@@ -3645,10 +3653,12 @@ export async function assertMergeFits(
   ctx: MutationCtx,
   loser: Doc<'waterBodies'>,
   survivor: Doc<'waterBodies'>,
+  /** The caller measured the drawing's share of its survivor in this transaction (the Inbox's merge). */
+  opts: { overlap?: boolean } = {},
 ): Promise<void> {
   // With its code beside the sentence (R10-D): a Drawn lever never asks the weight (its `can` stays
   // cheap), so this refusal is the one place the web learns the merge is too heavy.
-  if ((await mergeLoadOf(ctx, loser, survivor)).tooBig) {
+  if ((await mergeLoadOf(ctx, loser, survivor, opts)).tooBig) {
     throw new ConvexError({ message: MERGE_TOO_BIG, code: 'tooBig' as MergeRefusalCode });
   }
 }
@@ -3925,15 +3935,20 @@ async function retargetEach(
   const flags: Id<'contentFlags'>[] = [];
   let flagsLeft = 0;
   // Whether this flagger already has an open flag on the survivor — of any reason, open or in review:
-  // the table's rule is one open flag per (flagger, target), whatever it says.
+  // the table's rule is one open flag per (flagger, target), whatever it says. A point read per open
+  // status (`by_target_flagger_status_origin`'s four-field prefix), never a scan of the survivor's
+  // flags — which grew with every flag moved onto it, so N flags read N² rows (R11).
   const flaggedSurvivor = async (flaggerId: Id<'profiles'>) => {
     for (const status of OPEN_FLAG_STATUSES) {
       const hit = await ctx.db
         .query('contentFlags')
-        .withIndex('by_target_status_reason', (q) =>
-          q.eq('targetType', 'waterbody').eq('targetId', survivorId).eq('status', status),
+        .withIndex('by_target_flagger_status_origin', (q) =>
+          q
+            .eq('targetType', 'waterbody')
+            .eq('targetId', survivorId)
+            .eq('flaggerId', flaggerId)
+            .eq('status', status),
         )
-        .filter((q) => q.eq(q.field('flaggerId'), flaggerId))
         .first();
       if (hit !== null) return true;
     }
@@ -4648,6 +4663,7 @@ export const retireAbsorbedBodies = internalMutation({
     /** Pairs this call had no room left for (R10-C): sent back, as given, for the next call. */
     const deferred: typeof pairs = [];
     let mergedHere = 0;
+    let geometryHere = 0;
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
       const absorbed = await byKey(pair.absorbed);
@@ -4721,7 +4737,12 @@ export const retireAbsorbedBodies = internalMutation({
       // closers ask). Past that, this pair and the rest go back to the caller, untouched, to send
       // again — never retired here, never counted as skipped. The call's first merge always runs: the
       // weight check above already holds it to a whole transaction, so every call advances.
-      if (apply === true && mergedHere > 0 && !(await roomFor(ctx, load.cost))) {
+      if (
+        apply === true &&
+        mergedHere > 0 &&
+        (!(await roomFor(ctx, load.cost)) ||
+          geometryHere + load.cost.geometryPoints > MERGE_GEOMETRY_POINTS)
+      ) {
         deferred.push(...pairs.slice(pairs.indexOf(pair)));
         break;
       }
@@ -4745,6 +4766,8 @@ export const retireAbsorbedBodies = internalMutation({
       if (apply === true) {
         const campaign = campaignId ? ` (${campaignId})` : '';
         mergedHere++;
+        // Execution time has no live metric: the call's geometry is summed against the one budget.
+        geometryHere += load.cost.geometryPoints;
         await mergeBodyInto(ctx, {
           survivor,
           loser: absorbed,
@@ -4778,15 +4801,20 @@ export const retireAbsorbedBodies = internalMutation({
   },
 });
 
-/** Whether the transaction still has room for a cost on every axis Convex limits (live metrics). */
+/**
+ * Whether the transaction still has room for a merge's projected spend on every axis Convex limits
+ * (live metrics), keeping the same quarter of each limit back the estimate keeps (`lib/mergeLoad`).
+ */
 async function roomFor(ctx: MutationCtx, cost: MergeCost): Promise<boolean> {
   const m = await ctx.meta.getTransactionMetrics();
+  const fits = (left: number, k: keyof typeof TX_LIMITS) =>
+    left >= cost[k] + (1 - SAFETY) * TX_LIMITS[k];
   return (
-    m.bytesRead.remaining >= cost.bytesRead &&
-    m.bytesWritten.remaining >= cost.bytesWritten &&
-    m.documentsRead.remaining >= cost.documentsRead &&
-    m.documentsWritten.remaining >= cost.documentsWritten &&
-    m.databaseQueries.remaining >= cost.databaseQueries
+    fits(m.bytesRead.remaining, 'bytesRead') &&
+    fits(m.bytesWritten.remaining, 'bytesWritten') &&
+    fits(m.documentsRead.remaining, 'documentsRead') &&
+    fits(m.documentsWritten.remaining, 'documentsWritten') &&
+    fits(m.databaseQueries.remaining, 'databaseQueries')
   );
 }
 

@@ -802,7 +802,7 @@ describe('heavy rows: a merge (B01-5d)', () => {
   }
 
   test(
-    'a heavy survivor: the preview fits, and the merge and mergeDrawn complete',
+    'a heavy survivor: the merge fits and completes; mergeDrawn, measuring its overlap too, is refused',
     async () => {
       const w = await heavyLake();
       const viaMerge = await drawnIn(w.t, w.skater.id, w.lake);
@@ -828,8 +828,11 @@ describe('heavy rows: a merge (B01-5d)', () => {
         mergeDrawn: () =>
           w.mod.as.mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId: w.lake }),
       });
-      expect(steps).toEqual({ item: 'completed', merge: 'completed', mergeDrawn: 'completed' });
-      expect((await w.t.run((ctx) => ctx.db.get(viaInbox)))?.reviewStatus).toBe('merged');
+      // The Inbox's merge measures the drawing's share of its survivor in its own transaction: ~48,000
+      // outline points past the geometry's budget (R11, `lib/mergeLoad`) — refused with the sentence,
+      // never a merge that runs out of time.
+      expect(steps).toEqual({ item: 'completed', merge: 'completed', mergeDrawn: 'refused' });
+      expect((await w.t.run((ctx) => ctx.db.get(viaInbox)))?.reviewStatus).toBe('pending');
     },
     HEAVY_TIMEOUT,
   );

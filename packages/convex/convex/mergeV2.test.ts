@@ -34,7 +34,13 @@ import {
   OWN_DRAWING,
   SURVIVOR_CHANGED_REFUSAL,
 } from './lib/inboxRules';
-import { MERGE_ROWS_PER_KIND, MERGE_TOO_BIG, RETARGET_CAP } from './lib/mergeLoad';
+import {
+  MERGE_FIXED,
+  MERGE_GEOMETRY_POINTS,
+  MERGE_TOO_BIG,
+  RETARGET_CAP,
+  THRESHOLDS,
+} from './lib/mergeLoad';
 import { UNMERGING_REFUSAL } from './lib/unmergeState';
 import schema from './schema';
 import type { MergeChangeSet } from './waterBodies';
@@ -43,6 +49,14 @@ const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 const NOW = Date.now();
+
+/**
+ * The launches one merge moves at most: each is one database call (its patch), so the index-range
+ * threshold less the merge's fixed calls and the two bodies' (20) — R11's arithmetic, from the module.
+ */
+const LAUNCH_CEILING = Math.floor(THRESHOLDS.databaseQueries - MERGE_FIXED.databaseQueries - 20);
+/** The favorites: two calls each (the twin lookup, the patch or the delete). */
+const FAVORITE_CEILING = Math.floor(LAUNCH_CEILING / 2);
 
 /** A square of half-width `r` degrees around (lng, lat). */
 const square = (lng: number, lat: number, r: number): Polygon => ({
@@ -387,10 +401,10 @@ describe('the merge’s refusals (fork 3)', () => {
     expect((etl as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
   });
 
-  test('more rows of one kind than the cap: refused, preview and write alike, under the array limit', async () => {
+  test('one row past the index-range ceiling: refused, preview and write alike', async () => {
     const w = await pair();
     await w.t.run(async (ctx) => {
-      for (let i = 0; i <= MERGE_ROWS_PER_KIND; i++) {
+      for (let i = 0; i <= LAUNCH_CEILING; i++) {
         await ctx.db.insert('putIns', {
           waterBodyId: w.loser,
           coord: { lat: LAT, lng: LNG },
@@ -405,7 +419,7 @@ describe('the merge’s refusals (fork 3)', () => {
       survivorId: w.survivor,
     });
     if (!preview.ok) throw new Error(preview.refusal);
-    expect(preview.moves.putIns).toEqual({ count: MERGE_ROWS_PER_KIND + 1, capped: true });
+    expect(preview.moves.putIns).toEqual({ count: LAUNCH_CEILING + 1, capped: true });
     expect(preview).toMatchObject({ tooBig: true, code: 'tooBig' });
     // The kinds after the one that stopped the count were never read: said to be cut, not zeroed —
     // and the ones before it, read whole, still split exactly.
@@ -425,7 +439,6 @@ describe('the merge’s refusals (fork 3)', () => {
       message: MERGE_TOO_BIG,
       code: 'tooBig',
     });
-    expect(MERGE_ROWS_PER_KIND).toBeLessThan(8_192);
   });
 
   test('what stays behind is counted to its cap, and one row past it says the count is a floor', async () => {
@@ -1074,7 +1087,7 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     for (const key of ['s1', 'a1', 's2', 'h2', 's3', 'a3']) ids[key] = await catalog(t, key);
     // Past the rows of one kind a merge moves: too heavy, whatever the transaction has left.
     await t.run(async (ctx) => {
-      for (let i = 0; i <= MERGE_ROWS_PER_KIND; i++) {
+      for (let i = 0; i <= LAUNCH_CEILING; i++) {
         await ctx.db.insert('putIns', {
           waterBodyId: ids.h2 as Id<'waterBodies'>,
           coord: { lat: LAT, lng: LNG },
@@ -1131,6 +1144,53 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     expect(await mergedAway(t, 'u-a')).toBe(false);
   });
 
+  test('execution time across a batch: two pairs each in the points budget, never both in one call', async () => {
+    const t = harness();
+    const mod = await person(t, 'mod', 'moderator');
+    const keys = [1, 2].map((i) => ({ s: `geo-s${i}`, a: `geo-a${i}` }));
+    for (const k of keys) {
+      const survivor = await catalog(t, k.s);
+      await catalog(t, k.a);
+      // A survivor bay of 4 rings, together ~60 % of the points budget: re-clipped by its merge.
+      const n = Math.floor((0.6 * MERGE_GEOMETRY_POINTS) / 4);
+      await t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: survivor,
+          name: 'Points Bay',
+          searchText: 'Points Bay',
+          polygon: {
+            type: 'MultiPolygon',
+            coordinates: Array.from({ length: 4 }, (_, p) => [
+              [
+                ...Array.from({ length: n - 1 }, (_, i) => {
+                  const a = (2 * Math.PI * i) / (n - 1);
+                  return [LNG - 0.006 + p * 0.003 + 0.001 * Math.cos(a), LAT + 0.001 * Math.sin(a)];
+                }),
+                [LNG - 0.006 + p * 0.003 + 0.001, LAT],
+              ],
+            ]),
+          } as never,
+          bbox: boxOf(LNG, LAT, 0.008),
+          centroid: { lat: LAT, lng: LNG },
+          surfaceAreaSqM: 10_000,
+          displayScore: 0,
+          minVisibleZoom: 10,
+          createdByUserId: mod.id,
+          createdAt: NOW,
+          updatedAt: NOW,
+        } as never),
+      );
+    }
+    const first = await retire(
+      t,
+      keys.map((k) => pairOf(k.s, k.a)),
+    );
+    expect(first.retired).toBe(1);
+    expect(first.deferred).toEqual([pairOf(keys[1]?.s as string, keys[1]?.a as string)]);
+    const second = await retire(t, first.deferred);
+    expect(second).toMatchObject({ retired: 1, deferred: [] });
+  }, 60_000);
+
   test('bodies that together pass one transaction: the rest come back, and the next calls take them', async () => {
     const t = harness();
     const keys = [1, 2, 3].map((i) => ({ s: `big-s${i}`, a: `big-a${i}` }));
@@ -1170,4 +1230,165 @@ describe('the ETL’s absorb: a batch never dies on one heavy body (R10-C)', () 
     expect(calls).toBeGreaterThan(1);
     for (const k of keys) expect(await mergedAway(t, k.a)).toBe(true);
   }, 120_000);
+});
+
+describe('the merge estimate is a bound in every dimension (R11)', () => {
+  /** A merge from the Shape tab's seat: the preview's answer, then the write's. */
+  const tryMerge = async (w: Awaited<ReturnType<typeof pair>>) => {
+    const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    if (!preview.ok) throw new Error(preview.refusal);
+    const wrote = await w
+      .merge()
+      .then(() => 'merged')
+      .catch((e: ConvexError<{ message?: string } | string>) =>
+        typeof e.data === 'string' ? e.data : (e.data?.message ?? String(e)),
+      );
+    return { tooBig: preview.tooBig, wrote };
+  };
+  const launches = (w: Awaited<ReturnType<typeof pair>>, n: number, name?: (i: number) => string) =>
+    w.t.run(async (ctx) => {
+      for (let i = 0; i < n; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: w.loser,
+          coord: { lat: LAT, lng: LNG },
+          source: 'osm',
+          status: 'visible',
+          ...(name ? { name: name(i) } : {}),
+          createdAt: NOW,
+        });
+      }
+    });
+
+  test('index ranges: launches just under the ceiling merge; one over is refused before writing', async () => {
+    const under = await pair();
+    await launches(under, LAUNCH_CEILING - 25);
+    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
+    const over = await pair();
+    await launches(over, LAUNCH_CEILING + 1);
+    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
+  }, 60_000);
+
+  test('index ranges: favorites at two calls each — under merges, over refused', async () => {
+    const fans = async (w: Awaited<ReturnType<typeof pair>>, n: number) =>
+      w.t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          const userId = await ctx.db.insert('profiles', {
+            clerkUserId: `fan${i}`,
+            displayName: `fan${i} Test-Person`,
+            username: `fan${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public',
+            notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
+            dateOfBirth: Date.UTC(1990, 0, 1),
+            reputationPoints: 0,
+            role: 'member',
+            status: 'active',
+            createdAt: NOW,
+          });
+          await ctx.db.insert('waterBodyFavorites', {
+            userId,
+            waterBodyId: w.loser,
+            createdAt: NOW,
+          });
+        }
+      });
+    const under = await pair();
+    await fans(under, FAVORITE_CEILING - 15);
+    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
+    const over = await pair();
+    await fans(over, FAVORITE_CEILING + 1);
+    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
+  }, 60_000);
+
+  test('bytes: launches near the document limit — four fit, five are refused', async () => {
+    const heavy = (i: number) => `${i}${'P'.repeat(900 * 1024)}`;
+    const under = await pair();
+    for (let i = 0; i < 4; i += 2) await launches(under, 2, (k) => heavy(i + k));
+    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
+    const over = await pair();
+    for (let i = 0; i < 5; i += 2) await launches(over, Math.min(2, 5 - i), (k) => heavy(i + k));
+    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
+  }, 60_000);
+
+  test('execution time: a bay re-clipped past the points budget is refused; one under merges', async () => {
+    /** A bay of `parts` small rings around the middle, each `n` points (a ring stays under 8,192). */
+    const bayOf = (w: Awaited<ReturnType<typeof pair>>, parts: number, n: number) =>
+      w.t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: w.survivor,
+          name: 'Many Points Bay',
+          searchText: 'Many Points Bay',
+          polygon: {
+            type: 'MultiPolygon',
+            coordinates: Array.from({ length: parts }, (_, p) => [
+              [
+                ...Array.from({ length: n - 1 }, (_, i) => {
+                  const a = (2 * Math.PI * i) / (n - 1);
+                  return [LNG - 0.006 + p * 0.003 + 0.001 * Math.cos(a), LAT + 0.001 * Math.sin(a)];
+                }),
+                [LNG - 0.006 + p * 0.003 + 0.001, LAT],
+              ],
+            ]),
+          } as never,
+          bbox: boxOf(LNG, LAT, 0.008),
+          centroid: { lat: LAT, lng: LNG },
+          surfaceAreaSqM: 10_000,
+          displayScore: 0,
+          minVisibleZoom: 10,
+          createdByUserId: w.mod.id,
+          createdAt: NOW,
+          updatedAt: NOW,
+        } as never),
+      );
+    // The survivor's square is 5 points; each part a ring of n.
+    const under = await pair();
+    await bayOf(under, 4, Math.floor((MERGE_GEOMETRY_POINTS - 1_000) / 4));
+    expect(await tryMerge(under)).toEqual({ tooBig: false, wrote: 'merged' });
+    const over = await pair();
+    await bayOf(over, 4, Math.ceil(MERGE_GEOMETRY_POINTS / 4));
+    expect(await tryMerge(over)).toEqual({ tooBig: true, wrote: MERGE_TOO_BIG });
+  }, 60_000);
+
+  test('flags re-key into one item in linear reads, never quadratic', async () => {
+    const readsFor = async (n: number) => {
+      const w = await pair();
+      await w.t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          const flaggerId = await ctx.db.insert('profiles', {
+            clerkUserId: `f${i}`,
+            displayName: `f${i} Test-Person`,
+            username: `f${i}`,
+            driveTimePrefMinutes: 60,
+            profileVisibility: 'public',
+            notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
+            dateOfBirth: Date.UTC(1990, 0, 1),
+            reputationPoints: 0,
+            role: 'member',
+            status: 'active',
+            createdAt: NOW,
+          });
+          await ctx.db.insert('contentFlags', {
+            flaggerId,
+            targetType: 'waterbody',
+            targetId: w.loser,
+            reason: 'no_public_access',
+            status: 'open',
+            createdAt: NOW,
+          });
+        }
+      });
+      return w.t.run(async (ctx) => {
+        const { mergeBodyInto } = await import('./waterBodies');
+        const [s, l] = [await ctx.db.get(w.survivor), await ctx.db.get(w.loser)];
+        await mergeBodyInto(ctx, { survivor: s as never, loser: l as never, reason: 'x' });
+        return (await ctx.meta.getTransactionMetrics()).documentsRead.used;
+      });
+    };
+    const [none, some, more] = [await readsFor(0), await readsFor(40), await readsFor(80)];
+    // Twice the flags, about twice the extra reads — a square would be four times.
+    expect((more - none) / (some - none)).toBeLessThan(2.5);
+  }, 60_000);
 });
