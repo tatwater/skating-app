@@ -1408,7 +1408,9 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
       dryRun: false,
     });
     expect(counts).toMatchObject({ returned: 1, dropped: MAX_LANDMARKS_PER_BODY });
-  });
+    // 5x its time when every package's suite runs at once (41.6 s there under the range-counting
+    // harness; 1.9 s alone).
+  }, 240_000);
 });
 
 describe('a complete load retires only what its sources vouch for (Greptile, third round)', () => {
