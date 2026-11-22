@@ -733,7 +733,7 @@ describe('heavy rows: flags with their longest notes, tickets with their longest
     });
     const after = await w.admin.as.query(api.inbox.item, { ref: `ticket:${ticketId}` });
     if (after.item?.kind !== 'ticket') throw new Error('not a ticket');
-    expect(after.item.messagesCapped).toBe(true);
+    expect(after.item.messagesCut).toBe(true);
     expect(after.item.messages.at(-1)?.reply?.status).toBe('canceled');
   });
 });

@@ -39,11 +39,13 @@ import {
   bodyRefusal,
   MESSAGE_GONE_REFUSAL,
   messageActionOf,
+  NOT_A_NOTE_REFUSAL,
   SUPPORT_REASONS,
+  seedTicket,
   supportReplyEmail,
   TICKET_GONE_REFUSAL,
 } from './lib/supportThread';
-import { reopenTicketImpl, resolveTicketImpl } from './lib/supportWrites';
+import { removeNoteImpl, reopenTicketImpl, resolveTicketImpl } from './lib/supportWrites';
 import { runUndo, undoRowOf } from './lib/undo';
 import { literals } from './lib/validators';
 import { undoOfferAfterWrite } from './moderation';
@@ -211,7 +213,8 @@ export const create = mutation({
         profile ? `From @${profile.username}` : 'From a signed-in user with no profile row yet',
         trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
       ],
-      deepLinkPath: '/admin/support',
+      // The ticket's own Inbox item (B01-5f: the old Support page is retired).
+      deepLinkPath: `/admin/inbox?item=ticket:${ticketId}`,
     });
     return ticketId;
   },
@@ -302,11 +305,6 @@ async function answer<T extends object>(
   return { ...base, ...extra, ...(await undoOfferAfterWrite(ctx, actor._id, base.actionId)) };
 }
 
-/** Whether the person a ticket is from is one of the dev seed's fake people (D287): never mailed. */
-function seedTicket(ticket: Doc<'supportTickets'>, profile: Doc<'profiles'> | null): boolean {
-  return isSeedProfile(ticket.clerkUserId) || isSeedProfile(profile);
-}
-
 /**
  * Add a staff-only note to a ticket (D284). Asks the Inbox's rule (`note`), then the note's own words
  * (empty, past `MAX_SUPPORT_NOTE_LENGTH`). Its undo removes it.
@@ -390,6 +388,34 @@ export const reply = mutation({
         sendAfter,
         failedWhy: seed ? ('seed' as const) : null,
       },
+    );
+  },
+});
+
+/**
+ * Remove a staff note (B01-5f): soft-removed, its words kept for its undo, which puts it back. The
+ * support undo's one rule decides it (`lib/supportThread.supportUndoRefusal`: the capability, the
+ * staffer's own ticket, a note already removed) — the same answer the thread's `remove` gives.
+ */
+export const removeNote = mutation({
+  args: { messageId: v.id('supportMessages') },
+  handler: async (ctx, { messageId }): Promise<SupportNoteResult> => {
+    const actor = await requireCapability(ctx, 'inbox.support');
+    const message = await ctx.db.get(messageId);
+    if (!message) throw new ConvexError(MESSAGE_GONE_REFUSAL);
+    if (message.kind !== 'note') throw new ConvexError(NOT_A_NOTE_REFUSAL);
+    const now = Date.now();
+    const { item } = await ticketAndItem(ctx, message.ticketId, now);
+    const actionId = await removeNoteImpl(ctx, actor, {
+      ticketId: message.ticketId,
+      messageId,
+      now,
+    });
+    return answer(
+      ctx,
+      actor,
+      { itemId: item._id, ticketId: message.ticketId, actionId },
+      { messageId },
     );
   },
 });

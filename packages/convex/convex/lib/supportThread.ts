@@ -22,6 +22,7 @@ import { inboxBatch, leaveMember, ticketSource } from './inboxItems';
 import { capabilityRefusal, DECIDED_REFUSAL, OWN_FILING_REFUSAL } from './inboxRules';
 import { ReadBudget, ROW_MAX } from './readBudget';
 import { escapeHtml } from './resend';
+import { isSeedProfile } from './seedPeople';
 
 // ── The words ──────────────────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ export const CANCELED_REPLY_REFUSAL = 'This reply was already canceled.';
 export const NOTE_REMOVED_REFUSAL = 'This note was already removed.';
 export const NOTE_NOT_REMOVED_REFUSAL = 'This note isn’t removed.';
 export const MESSAGE_GONE_REFUSAL = 'This message no longer exists.';
+/** A reply is canceled while it settles, never removed. */
+export const NOT_A_NOTE_REFUSAL = 'Only a note is removed; a reply is canceled while it settles.';
 export const TICKET_GONE_REFUSAL = 'Ticket not found';
 /** `whoRefusal`'s words for a ticket's Reopen while it is open (`lib/inboxRules`). */
 export const TICKET_OPEN_REFUSAL = 'This ticket is still open.';
@@ -77,6 +80,14 @@ export function supportReplyEmail(body: string): { subject: string; html: string
     html: `${paragraphs}<hr><p style="color:#666;font-size:13px">${escapeHtml(SUPPORT_REPLY_FOOTER)}</p>`,
     text: `${body.trim()}\n\n—\n${SUPPORT_REPLY_FOOTER}`,
   };
+}
+
+/** Whether the person a ticket is from is one of the dev seed's fake people (D287): never mailed. */
+export function seedTicket(
+  ticket: Pick<Doc<'supportTickets'>, 'clerkUserId'>,
+  profile: Pick<Doc<'profiles'>, 'clerkUserId'> | null,
+): boolean {
+  return isSeedProfile(ticket.clerkUserId) || isSeedProfile(profile);
 }
 
 // ── The one rule for changing a message, and a ticket's state, from an undo ─────────────────────

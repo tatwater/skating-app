@@ -96,7 +96,12 @@ import {
   ownAsks,
   requestNames,
 } from './requestDecisions';
-import { supportUndoRefusal, THREAD_MESSAGES } from './supportThread';
+import {
+  NOT_A_NOTE_REFUSAL,
+  seedTicket,
+  supportUndoRefusal,
+  THREAD_MESSAGES,
+} from './supportThread';
 
 /** `Omit` over each member of a union, so a variant keeps its own fields. */
 export type DistOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -1479,7 +1484,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
         : null;
       if (!t) return null;
       const resolver = await r.must<'profiles'>('profile', t.resolvedByUserId);
-      await r.must<'profiles'>('profile', t.userId);
+      const filer = await r.must<'profiles'>('profile', t.userId);
       const ticket: TicketView = {
         ticketId: t._id,
         category: t.category,
@@ -1492,13 +1497,19 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       };
       const thread = await ticketThread(r, t);
       const related = await ticketRelated(r, t.userId);
+      const personTickets = await ticketCountsOf(r, t.userId);
+      const replyFrom = process.env.SUPPORT_FROM_EMAIL || null;
       return {
         view: {
           ...base,
           kind: 'ticket',
           ticket,
           messages: thread.messages,
-          messagesCapped: thread.capped,
+          messageCount: thread.messages.length,
+          messagesCut: thread.capped,
+          replyFrom,
+          replyBlocked: seedTicket(t, filer) ? 'seed' : replyFrom === null ? 'unconfigured' : null,
+          personTickets,
           // Last: its reports fill what the budget has left, and say so when they stop short.
           person: await authorBlock(r, t.userId),
           related,
@@ -1532,9 +1543,7 @@ async function ticketThread(
   const capped =
     newest.length > THREAD_MESSAGES || (asked <= THREAD_MESSAGES && newest.length === asked);
   const rows = newest.slice(0, THREAD_MESSAGES).reverse();
-  const viewer = rows.some((m) => m.kind === 'reply')
-    ? await r.must<'profiles'>('profile', r.viewerId)
-    : null;
+  const viewer = rows.length > 0 ? await r.must<'profiles'>('profile', r.viewerId) : null;
   const messages: SupportMessageView[] = [];
   for (const m of rows) {
     const author = personRef(await r.must<'profiles'>('profile', m.authorId));
@@ -1545,6 +1554,12 @@ async function ticketThread(
       body: m.removedAt !== undefined ? null : m.body,
       createdAt: m.createdAt,
       removedAt: m.removedAt ?? null,
+      remove:
+        m.kind === 'note'
+          ? viewer
+            ? supportUndoRefusal(viewer, 'removeNote', { ticket: t, message: m, now: r.now })
+            : 'Undoing this takes a role you do not hold.'
+          : NOT_A_NOTE_REFUSAL,
       reply:
         m.kind === 'reply'
           ? {
@@ -1560,6 +1575,38 @@ async function ticketThread(
     });
   }
   return { messages, capped };
+}
+
+/** A person's tickets the head counts, of each status, before it says "50+". */
+export const PERSON_TICKETS_COUNTED = 50;
+
+/**
+ * The person's tickets for the head (*Tickets 2 · 1 resolved*): their ticket members, open and
+ * closed, through the filer's index — 1 KiB rows, never the tickets' bodies — each status to a bound.
+ */
+async function ticketCountsOf(
+  r: InboxReader,
+  userId: Id<'profiles'> | undefined,
+): Promise<{ total: number; resolved: number; capped: boolean } | null> {
+  if (!userId) return null;
+  const counts = { open: 0, closed: 0 };
+  let capped = false;
+  for (const status of ['open', 'closed'] as const) {
+    const asked = r.budget.rows('inboxMember', PERSON_TICKETS_COUNTED + 1);
+    const rows = await r.take('inboxMember', PERSON_TICKETS_COUNTED + 1, (k) =>
+      r.ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_filer_source_status', (q) =>
+          q.eq('filedByUserId', userId).eq('sourceTable', 'supportTickets').eq('status', status),
+        )
+        .take(k),
+    );
+    counts[status] = Math.min(rows.length, PERSON_TICKETS_COUNTED);
+    capped ||=
+      rows.length > PERSON_TICKETS_COUNTED ||
+      (asked <= PERSON_TICKETS_COUNTED && rows.length === asked);
+  }
+  return { total: counts.open + counts.closed, resolved: counts.closed, capped };
 }
 
 /** Flags about a ticket's person *Related* lists, of each status (open, then actioned). */

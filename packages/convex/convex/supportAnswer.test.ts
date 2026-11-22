@@ -16,6 +16,7 @@ import { SETTLE_MS } from './lib/notificationQueue';
 import {
   CANCELED_REPLY_REFUSAL,
   eraseTicketsOf,
+  NOT_A_NOTE_REFUSAL,
   NOTE_NOT_REMOVED_REFUSAL,
   NOTE_REMOVED_REFUSAL,
   SENT_REPLY_REFUSAL,
@@ -261,6 +262,35 @@ describe('support.addNote', () => {
     // And removed again by that row's undo.
     await w.admin.as.mutation(api.undo.run, { actionId: back?._id as Id<'moderationActions'> });
     expect((await w.message(out.messageId))?.removedAt).toBeTypeOf('number');
+  });
+
+  test('support.removeNote: a forward removal, its undo puts the note back; a reply and the filer are refused', async () => {
+    const w = await world();
+    const ticketId = await w.ticket();
+    const note = await w.admin.as.mutation(api.support.addNote, { ticketId, body: 'Checked' });
+    const out = await w.colleague.as.mutation(api.support.removeNote, {
+      messageId: note.messageId,
+    });
+    expect(out).toMatchObject({ ticketId, messageId: note.messageId, undoable: true });
+    expect((await w.message(note.messageId))?.removedAt).toBeTypeOf('number');
+    await expect(
+      w.admin.as.mutation(api.support.removeNote, { messageId: note.messageId }),
+    ).rejects.toThrow(NOTE_REMOVED_REFUSAL);
+    await w.colleague.as.mutation(api.undo.run, { actionId: out.actionId });
+    expect((await w.message(note.messageId))?.removedAt).toBeUndefined();
+    stubMail();
+    const reply = await w.admin.as.mutation(api.support.reply, { ticketId, body: 'Hi' });
+    await expect(
+      w.admin.as.mutation(api.support.removeNote, { messageId: reply.messageId }),
+    ).rejects.toThrow(NOT_A_NOTE_REFUSAL);
+    await expect(
+      w.mod.as.mutation(api.support.removeNote, { messageId: note.messageId }),
+    ).rejects.toThrow('Requires admin role');
+    const own = await w.ticket(w.admin);
+    const onOwn = await w.colleague.as.mutation(api.support.addNote, { ticketId: own, body: 'n' });
+    await expect(
+      w.admin.as.mutation(api.support.removeNote, { messageId: onOwn.messageId }),
+    ).rejects.toThrow('You filed this, so another staff member decides it.');
   });
 
   test('a removed note’s own undo is refused in words, offer and run alike', async () => {
@@ -516,6 +546,46 @@ describe('support.reply and its send', () => {
 
 // ── The seed never mails ────────────────────────────────────────────────────────────────────────
 
+describe('what the dock and the head are told', () => {
+  test('replyFrom is the support sender or null; replyBlocked says a reply won’t go; the person’s tickets are counted', async () => {
+    const w = await world();
+    const ticketId = await w.ticket();
+    const second = await w.ticket(w.skater, 'Another');
+    await w.admin.as.mutation(api.support.resolve, { ticketId: second });
+    const read = async (ref: string) => {
+      const out = await w.admin.as.query(api.inbox.item, { ref });
+      if (out.item?.kind !== 'ticket') throw new Error('not a ticket');
+      return out.item;
+    };
+    expect(await read(`ticket:${ticketId}`)).toMatchObject({
+      replyFrom: FROM,
+      replyBlocked: null,
+      personTickets: { total: 2, resolved: 1, capped: false },
+    });
+    vi.stubEnv('SUPPORT_FROM_EMAIL', '');
+    expect(await read(`ticket:${ticketId}`)).toMatchObject({
+      replyFrom: null,
+      replyBlocked: 'unconfigured',
+    });
+    const fake = await w.person('seed_inbox_ben', 'member');
+    const seeded = await w.ticket(fake);
+    expect((await read(`ticket:${seeded}`)).replyBlocked).toBe('seed');
+    const early = w.t.withIdentity({ subject: 'user_early' });
+    const unprovisioned = await early.mutation(api.support.create, { category: 'bug', body: 'x' });
+    expect((await read(`ticket:${unprovisioned}`)).personTickets).toBeNull();
+  });
+
+  test('the operator mail links the ticket’s Inbox item, not the retired page', async () => {
+    const w = await world();
+    const ticketId = await w.ticket();
+    const jobs = await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const alert = jobs.find((j) => /operatorAlerts(\.js)?:send$/.test(j.name));
+    expect((alert?.args[0] as { deepLinkPath?: string } | undefined)?.deepLinkPath).toBe(
+      `/admin/inbox?item=ticket:${ticketId}`,
+    );
+  });
+});
+
 describe('a seeded ticket is never mailed (D287)', () => {
   test('the reply is stored failed (seed) and nothing is scheduled; the send refuses it before any address', async () => {
     const w = await world();
@@ -657,8 +727,17 @@ describe('inbox.item’s ticket: the thread, the person, related flags — staff
       cancel: null,
       failedWhy: null,
     });
+    expect(item.messages.map((m) => m.remove)).toEqual([
+      null,
+      NOT_A_NOTE_REFUSAL,
+      NOTE_REMOVED_REFUSAL,
+    ]);
+    expect(item.messageCount).toBe(3);
+    expect(item.replyFrom).toBe(FROM);
+    expect(item.replyBlocked).toBeNull();
+    expect(item.personTickets).toEqual({ total: 1, resolved: 0, capped: false });
     expect(item.messages[0]?.author?.userId).toBe(w.admin.id);
-    expect(item.messagesCapped).toBe(false);
+    expect(item.messagesCut).toBe(false);
     expect(item.person?.person.userId).toBe(w.skater.id);
     expect(item.related.flags.map((f) => [f.reason, f.status])).toEqual([['spam', 'open']]);
     expect(item.can).toEqual({ reply: null, note: null, resolve: null });
@@ -694,7 +773,7 @@ describe('inbox.item’s ticket: the thread, the person, related flags — staff
     });
     const read = await w.admin.as.query(api.inbox.item, { ref: `ticket:${ticketId}` });
     if (read.item?.kind !== 'ticket') throw new Error('not a ticket');
-    expect(read.item.messagesCapped).toBe(true);
+    expect(read.item.messagesCut).toBe(true);
     expect(read.item.messages).toHaveLength(THREAD_MESSAGES);
     const firstOf = (m: { body: string | null }) => Number(m.body?.slice(0, 4));
     expect(read.item.messages.map(firstOf)).toEqual(

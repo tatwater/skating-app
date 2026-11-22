@@ -544,6 +544,11 @@ export type SupportMessageView = {
   body: string | null;
   createdAt: number;
   removedAt: number | null;
+  /**
+   * A note: `null` when this viewer may remove it now (`support.removeNote`), else that write's
+   * sentence. A reply: always a sentence (a reply is canceled, never removed).
+   */
+  remove: string | null;
   reply: {
     /**
      * `settling` while its window runs (*Sending in 60 s · Undo*) and while its send is under way;
@@ -723,8 +728,23 @@ export type InboxItemView = ItemBase &
          * `lib/supportThread`), oldest first, newest last.
          */
         messages: SupportMessageView[];
+        /** How many messages are served; with `messagesCut`, a floor ("100+"). */
+        messageCount: number;
         /** Older messages were cut: the thread starts part-way (a cut line above the first). */
-        messagesCapped: boolean;
+        messagesCut: boolean;
+        /**
+         * The address a reply goes out from (`SUPPORT_FROM_EMAIL`, the configured sender — nothing
+         * else from the environment), or `null` when it is unset and no reply will be sent.
+         */
+        replyFrom: string | null;
+        /** Why a reply written now would not be sent, before it is written; `null` when it would. */
+        replyBlocked: 'unconfigured' | 'seed' | null;
+        /**
+         * The person's tickets, as the Inbox files them (their ticket members, open and resolved),
+         * each status counted to a bound (`capped`: the figures are floors); `null` for a ticket filed
+         * before they had a profile.
+         */
+        personTickets: { total: number; resolved: number; capped: boolean } | null;
         /** The person who filed it; `null` for a ticket filed before they had a profile. */
         person: AuthorBlockView | null;
         /** Flags about that person, newest first: the open ones, then those actioned. */
