@@ -115,7 +115,7 @@ import {
 import { resolveSurvivor } from './lib/bodies';
 import { markGeoStale, outlineStamp, refreshPinnedFacts } from './lib/bodyGeo';
 import { queueLibraryRefresh, stampChanged } from './lib/bodyLibrary';
-import { setNamesAllowance } from './lib/bodyNames';
+import { bodyNamesRow, setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
@@ -8774,8 +8774,8 @@ function canonical(value: unknown): unknown {
  * **The dev proof's census** (B01-5d, *The dev proof*): each body's own row and every row that hangs
  * off it — the children a merge moves (reports, hazards, bounties, known features, launches,
  * favorites, asks, place names, flags, bays, landmarks, skates) and the stored facts it recomputes
- * (cells, the bays' cells, the name list, the library rows, the geometry facts, the report–bay join,
- * its Inbox items) — as one canonical JSON string: rows sorted by id, keys sorted. Run before a merge
+ * (cells, the bays' cells, the short name list, the library rows, the geometry facts, the report–bay
+ * join, its Inbox items) — as one canonical JSON string: rows sorted by id, keys sorted. Run before a merge
  * and after its unmerge, the two are `diff`ed with the round-trip test's exclusions (`updatedAt`,
  * `changedAt`, re-created favorites' ids). Read-only and bounded: each kind to `CENSUS_CAP` rows a
  * body, a kind past it marked `capped` — a census of a body that big proves nothing, and says so.
@@ -8901,13 +8901,9 @@ export const mergeProofCensus = internalQuery({
           .withIndex('by_body', (q) => q.eq('waterBodyId', id))
           .take(n),
       );
-      put(
-        'bodyNameLists',
-        await db
-          .query('bodyNameLists')
-          .withIndex('by_body', (q) => q.eq('waterBodyId', id))
-          .take(n),
-      );
+      // The short list of names, read through its own module (the one that may name its table).
+      const names = await bodyNamesRow(ctx, id);
+      put('bodyNames', names ? [names] : []);
       put(
         'bodyLibraryRows',
         await db

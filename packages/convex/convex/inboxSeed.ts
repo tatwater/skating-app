@@ -50,6 +50,7 @@ import {
   type QueryCtx,
 } from './_generated/server';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
+import { dropBodyNames } from './lib/bodyNames';
 import { queueSummaryRefresh } from './lib/bodySummary';
 import { ADMIN_AREA_LADDER } from './lib/cellIndex';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
@@ -2476,12 +2477,11 @@ async function dropBodyChildren(s: Sweep, body: Doc<'waterBodies'>): Promise<voi
         .first(),
     (row) => dropAuditsOf(s, 'corpusPlaceName', row._id),
   );
-  await s.drain('bodyNameLists', 'bodyNames', () =>
-    db
-      .query('bodyNameLists')
-      .withIndex('by_body', (q) => q.eq('waterBodyId', body._id))
-      .first(),
-  );
+  // Its short list of names, through the list's own module (the one that may write it).
+  s.need(ROW_MAX.bodyNames);
+  if (await dropBodyNames(s.ctx, body._id)) {
+    s.removed.bodyNames = (s.removed.bodyNames ?? 0) + 1;
+  }
 }
 
 /** A body a fake person drew, and everything its write made: cells, facts, library rows, item. */
