@@ -124,3 +124,17 @@ describe('the lock’s readings', () => {
     ).toMatchObject({ by: 'a former staff member', actionId: '' });
   });
 });
+
+describe('a decision or an undo that finishes over several server steps', () => {
+  it('stays live while the item is part-closed (still open), then clears quietly for the viewer’s own', () => {
+    // The server keeps the item open, its count shrinking, until its last member closes: the lock
+    // reads only the item's decision, so a half-finished act never shows a banner or flickers.
+    const s = run('a', open, open, open, byMe);
+    expect(s.phase).toBe('quiet');
+    expect(run('a', open, open, open).phase).toBe('live');
+  });
+
+  it('a paged undo reopens the item at its first step and stays live while the rest reopen', () => {
+    expect(run('a', open, byMe, open, open, open).phase).toBe('live');
+  });
+});

@@ -140,7 +140,9 @@ function openFacts(
         ? join(FILED_BY_APP, row.occurrences > 1 && occurrence(row.occurrences))
         : row.firstFiler === null
           ? null
-          : flaggedBy(andMore(row.firstFiler.displayName, row.memberCount - 1));
+          : flaggedBy(
+              andMore(row.firstFiler.displayName, row.memberCount - 1, row.memberCountIsFloor),
+            );
       return {
         chips,
         title,
@@ -159,7 +161,7 @@ function openFacts(
           ...(row.disputes === null
             ? []
             : [{ label: disputesChip(dayMonth(row.disputes.ruledAt)), tone: 'bad' as const }]),
-          { label: reportsChip(row.reporters), tone: 'default' },
+          { label: reportsChip(row.reporters, row.memberCountIsFloor), tone: 'default' },
         ],
         title: row.body?.name ?? UNTITLED,
         sub: join(row.body?.place, quoted(row.latestNote)),
@@ -179,7 +181,9 @@ function openFacts(
         title: row.body?.name ?? row.candidate?.name ?? UNTITLED,
         sub: join(
           row.body?.place,
-          row.resolveError === null ? askedBy(row.askers) : row.resolveError,
+          row.resolveError === null
+            ? askedBy(row.askers, row.memberCountIsFloor)
+            : row.resolveError,
           row.resolveError === null && quoted(row.note),
         ),
       };
@@ -194,8 +198,9 @@ function openFacts(
         ],
         title: join(quoted(row.name), where) ?? UNTITLED,
         sub: join(
-          row.fromReport ? FROM_REPORT : askedBy(row.askers),
-          row.firstAsker !== null && andMore(row.firstAsker.displayName, row.askers - 1),
+          row.fromReport ? FROM_REPORT : askedBy(row.askers, row.memberCountIsFloor),
+          row.firstAsker !== null &&
+            andMore(row.firstAsker.displayName, row.askers - 1, row.memberCountIsFloor),
         ),
       };
     case 'drawn':

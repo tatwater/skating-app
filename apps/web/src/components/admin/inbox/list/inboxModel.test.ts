@@ -118,6 +118,34 @@ describe('a row, as the boards draw it', () => {
     expect(rowView(decidedRow(WITHDRAWN_ROW, MATT, D, 'dismissed'), NOW).withdrawn).toBe(true);
   });
 
+  it('draws a member count the server stopped at its bound as a floor, never a total', () => {
+    const access = {
+      ...ACCESS_ROW,
+      reporters: 500,
+      memberCount: 500,
+      memberCountIsFloor: true,
+    } as InboxRowView;
+    expect(rowView(access, NOW).chips.map((c) => c.label)).toContain('500+ reports');
+    const ask = {
+      ...ADMIT_ROW,
+      askers: 500,
+      memberCount: 500,
+      memberCountIsFloor: true,
+    } as InboxRowView;
+    expect(rowView(ask, NOW).sub).toContain('Asked by 500+');
+    const flag = { ...SAFETY_ROW, memberCount: 500, memberCountIsFloor: true } as InboxRowView;
+    expect(rowView(flag, NOW).sub).toContain('flagged by Sarah Berman and 499+ more');
+    const bay = {
+      ...BAY_ROW,
+      askers: 500,
+      memberCount: 500,
+      memberCountIsFloor: true,
+    } as InboxRowView;
+    expect(rowView(bay, NOW).sub).toBe('Asked by 500+ · Luc Pelletier and 499+ more');
+    // Below the bound, exact as ever.
+    expect(rowView(ACCESS_ROW, NOW).chips.map((c) => c.label)).toContain('2 reports');
+  });
+
   it('2.8: a ticket', () => {
     const v = rowView(TICKET_ROW, NOW);
     expect(v.chips).toEqual([{ label: 'account', tone: 'default' }]);
