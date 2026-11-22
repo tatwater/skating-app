@@ -386,13 +386,14 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   reopen_request: 'Reopened request',
   return_to_review: 'Returned drawn body to review',
   unretract_access_alert: 'Restored access alert',
-  // T0 PLACEHOLDERS (B01-5e/5f): words for the copy pass; each slice's web builder settles its own.
-  support_note: 'Noted on ticket',
-  remove_support_note: 'Removed ticket note',
-  support_reply: 'Replied to ticket',
-  cancel_support_reply: 'Canceled ticket reply',
+  // Support (B01-5f, D284): a reply's row says it was written, never that it reached anyone.
+  support_note: 'Added staff note',
+  remove_support_note: 'Removed staff note',
+  support_reply: 'Wrote email reply',
+  cancel_support_reply: 'Canceled email reply before it was sent',
   resolve_ticket: 'Resolved ticket',
   reopen_ticket: 'Reopened ticket',
+  // T0 PLACEHOLDER (B01-5e): words for the copy pass; the photos slice's web builder settles it.
   purge_photo: 'Deleted photo file',
   author_resolve_access_alert: 'Said “It’s open” on their pinned alert',
   set_posted_access: 'Set posted rules',

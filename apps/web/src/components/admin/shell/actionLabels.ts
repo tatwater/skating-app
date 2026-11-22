@@ -93,13 +93,15 @@ const VERB: Record<AuditAction, string> = {
   reopen_request: 'Reopened a request',
   return_to_review: 'Put a drawn body back in review',
   unretract_access_alert: 'Put back an access alert',
-  // T0 PLACEHOLDERS (B01-5e/5f): words for the copy pass; each slice's web builder settles its own.
-  support_note: 'Added a note to {t}',
-  remove_support_note: 'Removed a note from {t}',
-  support_reply: 'Replied to {t}',
-  cancel_support_reply: 'Canceled a reply to {t}',
+  // Support (B01-5f, D284). A reply's row is written when it is sent off to settle, so it says it
+  // was written, never that it reached anyone: it may yet be canceled or fail to send.
+  support_note: 'Added a staff note to {t}',
+  remove_support_note: 'Removed a staff note from {t}',
+  support_reply: 'Wrote an email reply on {t}',
+  cancel_support_reply: 'Canceled an email reply on {t} before it was sent',
   resolve_ticket: 'Resolved {t}',
   reopen_ticket: 'Reopened {t}',
+  // T0 PLACEHOLDER (B01-5e): words for the copy pass; the photos slice's web builder settles it.
   purge_photo: 'Deleted the file of {t}',
   // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
   // closed it and released the pin.

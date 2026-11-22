@@ -22,6 +22,26 @@ describe('actionLabel', () => {
     );
   });
 
+  it('says a support reply was written, never that it reached anyone (it may not send)', () => {
+    expect(actionLabel('support_reply', 'supportTicket')).toBe(
+      'Wrote an email reply on a support ticket',
+    );
+    expect(actionLabel('cancel_support_reply', 'supportTicket')).toBe(
+      'Canceled an email reply on a support ticket before it was sent',
+    );
+    expect(actionLabel('support_note', 'supportTicket')).toBe(
+      'Added a staff note to a support ticket',
+    );
+    expect(actionLabel('remove_support_note', 'supportTicket')).toBe(
+      'Removed a staff note from a support ticket',
+    );
+    expect(actionLabel('resolve_ticket', 'supportTicket')).toBe('Resolved a support ticket');
+    expect(actionLabel('reopen_ticket', 'supportTicket')).toBe('Reopened a support ticket');
+    for (const a of ['support_reply', 'cancel_support_reply'] as const) {
+      expect(actionLabel(a, 'supportTicket')).not.toMatch(/\b(sent to|emailed|replied)\b/i);
+    }
+  });
+
   it('never shows a code name or a placeholder', () => {
     for (const [a, t] of [
       ['ban', 'user'],
