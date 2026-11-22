@@ -138,6 +138,10 @@ export function parsePayload(
         totalCount: isNumber(p.totalCount) ? p.totalCount : bodies.reduce((n, b) => n + b.count, 0),
       };
     }
+    case 'moderator_decision':
+      // PLACEHOLDER (B01-5c T0): S3 parses the payload its queue kinds write. Until then nothing
+      // writes the type, and a row of it would read as the `unknown` notification every build words.
+      return null;
     case 'activity_detected':
       if (!isString(p.activityId) || !isNumber(p.startTime)) return null;
       return {

@@ -50,6 +50,10 @@ export function notificationMark(view: NotificationView): NotificationMark {
       return { kind: 'icon', icon: 'bounty' };
     case 'content_flag_resolved':
       return { kind: 'icon', icon: 'flag' };
+    case 'moderator_decision':
+      // PLACEHOLDER (B01-5c T0): the bell's mark for a moderator's decision is W5b's to choose;
+      // a moderator's ruling on a flag wears this one.
+      return { kind: 'icon', icon: 'flag' };
     case 'favorite_report':
     case 'great_report_nearby':
     case 'nearby_report_digest':

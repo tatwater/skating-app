@@ -25,7 +25,12 @@ export const NOTIFICATION_GROUPS: { title: string; end?: string; keys: Notificat
     keys: ['favoriteReport', 'reportCommented', 'reportRated', 'hazardConfirmation'],
   },
   { title: 'Bounties', keys: ['bountyRequest', 'bountyAnswered'] },
-  { title: 'Moderation and recording', keys: ['contentFlagResolved', 'activityDetected'] },
+  {
+    title: 'Moderation and recording',
+    // `moderatorDecision` (B01-5c) beside the flag ruling: the boards predate it, so its place is
+    // the build's, for the founder's look.
+    keys: ['contentFlagResolved', 'moderatorDecision', 'activityDetected'],
+  },
   { title: 'Nearby', end: 'From your home', keys: ['nearbyReportDigest', 'greatReportNearby'] },
 ];
 

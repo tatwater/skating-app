@@ -490,7 +490,9 @@ function NotificationSettings() {
     <ToggleRow
       key={key}
       label={NOTIFICATION_PREF_LABELS[key]}
-      value={prefs[key]}
+      // A key a profile doesn't hold yet (`moderatorDecision`, until its backfill, B01-5c) reads as
+      // off, exactly as the server's gate does.
+      value={prefs[key] === true}
       onToggle={(v) => void setPrefs({ prefs: { [key]: v } })}
     />
   );
