@@ -10138,8 +10138,8 @@ merge and the backfill.
 
 - **S4a, the merge:**
   - The merge records its change set at `version: 2` (fields below).
-  - It refuses a merge too heavy for one transaction (`MERGE_TOO_BIG`), and moves at most 8,000
-    rows of one kind.
+  - It refuses a merge too heavy for one transaction (`MERGE_TOO_BIG`). It first capped each
+    kind at 8,000 rows; the corrected estimate below replaced that cap.
   - `bodyConsole.mergePreview` serves the write's own refusal and its code.
   - `inboxWrites.mergeDrawn` merges a drawing from the Inbox into its one live survivor.
   - `canCode` is required on every Inbox item. Two codes are served:
@@ -10416,6 +10416,50 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
 - S4b is making the test harness count index ranges and scanned documents as the real backend
   does.
 - The proof re-runs green on a real backend.
+
+#### B01-5d: the corrected merge estimate — to be re-proven on a real backend (2026-11-22)
+
+S4a's `6e810d7e5`, integrated with no conflicts. `lib/mergeLoad.ts` refuses at 75% of each Convex
+limit (`SAFETY`), with each kind's per-row cost counted from the code (`PER_ROW`). The flat
+8,000-rows-per-kind cap is gone. **None of these numbers is proven yet: they are re-proven on a
+real backend once S4b's harness rule lands.**
+
+| Dimension | Convex's limit | Refused past |
+| --- | --- | --- |
+| Index ranges (database calls) | 4,096 | 3,072 |
+| Bytes read | 16 MiB | 12 MiB |
+| Bytes written | 16 MiB | 12 MiB |
+| Documents read | 32,000 | 24,000 |
+| Documents written | 16,000 | 12,000 |
+| Execution time (1 s) | — | 30,000 outline points, its proxy (about 300 ms measured locally) |
+
+**Per-kind ceilings, as S4a counts them for one merge with nothing else on it:**
+
+| Kind | Index ranges a row | About this many in one merge |
+| --- | --- | --- |
+| Put-ins, hazards, bounties, features, skates | 1 | 2,650 |
+| Favorites | 2 | 1,325 |
+| Requests and asks | 10 | 265 |
+| Flags | 11 | 240 |
+| Landmark asks | 26 | — |
+| Bays (moved / the survivor's re-clipped) | 25 / 21 | — |
+| Labels | 13 | — |
+
+- **The fixed cost** is about 420 index ranges.
+- **Outlines:** two 1 MiB outlines are now refused on bytes alone, where the first run passed that
+  case at 15.6 of 16 MiB.
+- **`mergeDrawn` counts both outlines.** A survivor of about 48,000 points refuses `mergeDrawn`
+  where the plain merge fits.
+- **Flags** are re-keyed linearly now.
+- **The ETL path** holds each pair and each call to the same estimate.
+- **Every refusal** is the one sentence, with `code: 'tooBig'`.
+
+**The seed's proof pair fits with room.** *Merge Proof Cove* into its survivor, asked as
+`mergeDrawn` asks it, uses at most 17.9% of any threshold (index ranges); every other dimension is
+at 9.3% or less. A seed test holds it under half.
+
+**The web:** nothing assumed the old cap. No "8,000" appears in the console's words, fixtures or
+stories; the preview's counts and floors come from the server.
 
 #### B01-5d: S4b's review fixes, and a stalled unmerge on the web (2026-11-22)
 
