@@ -1,4 +1,4 @@
-import { INBOX_LANES, type InboxLane } from '@skating/core';
+import { INBOX_LANES, type InboxLane, zonedParts } from '@skating/core';
 import type { ReactNode } from 'react';
 
 import { DisplayWord } from '@/components/kit/display-word';
@@ -97,7 +97,7 @@ export function InboxZero({
                 label={OPEN_TODAY}
                 start={day.today.openAtStart}
                 events={eventsOf(day.today)}
-                {...span(day.today, now)}
+                {...span(day.today, now, timeZone ?? ownZone())}
                 formatTime={time}
                 zeroLabel={(at) => zeroAt(time(at))}
               />
@@ -148,11 +148,32 @@ export function eventsOf(today: InboxTodayView): StepEvent[] {
   ];
 }
 
-/** The chart's span: from the hour of the day's first event (or eight hours back) to the next hour. */
-export function span(today: InboxTodayView, now: number): { from: number; to: number } {
+/** The viewer's own zone, when the page names none. */
+const ownZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/**
+ * The whole local hour at or before `at`, in `timeZone`: the local minutes and seconds taken off.
+ * Floored on the reader's clock, never UTC's — in a half-hour or 45-minute zone (St John's, India,
+ * Kathmandu) a UTC hour is a local :30 or :15. Within one local hour the offset holds, so what is
+ * left reads :00 locally on either side of a DST change.
+ */
+export function floorLocalHour(at: number, timeZone: string): number {
+  const p = zonedParts(at, timeZone);
+  return at - (p.minute * 60 + p.second) * 1000 - (((at % 1000) + 1000) % 1000);
+}
+
+/**
+ * The chart's span: from the local hour of the day's first event (or eight hours back), never before
+ * the day began, to the next local hour.
+ */
+export function span(
+  today: InboxTodayView,
+  now: number,
+  timeZone: string = ownZone(),
+): { from: number; to: number } {
   const first = Math.min(now - 8 * HOUR, ...eventsOf(today).map((e) => e.at));
-  const from = Math.max(today.since, Math.floor(first / HOUR) * HOUR);
-  const to = Math.max(from + HOUR, Math.ceil(now / HOUR) * HOUR);
+  const from = Math.max(today.since, floorLocalHour(first, timeZone));
+  const to = Math.max(from + HOUR, floorLocalHour(now + HOUR - 1, timeZone));
   return { from, to };
 }
 
