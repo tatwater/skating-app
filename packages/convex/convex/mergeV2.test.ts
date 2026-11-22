@@ -177,6 +177,17 @@ describe('change set version 2 (B01-5d)', () => {
     const w = await pair();
     await bay(w.t, w.survivor, 'North Bay', 0.002, w.mod.id);
     const clash = await bay(w.t, w.loser, 'North Bay', 0.002, w.mod.id);
+    // An older row on the same bay, by the same moderator: never mistaken for the merge's.
+    await w.t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: w.mod.id,
+        action: 'remove',
+        targetType: 'waterBodySubArea',
+        targetId: clash,
+        reason: 'An earlier delist',
+        createdAt: NOW - 60_000,
+      }),
+    );
     const { actionId } = await w.merge();
     const cs = await changeSetOf(w.t, actionId);
     expect(cs.version).toBe(2);
@@ -344,11 +355,25 @@ describe('the merge’s refusals (fork 3)', () => {
       loserId: w.loser,
       survivorId: w.survivor,
     });
-    expect(preview).toMatchObject({ ok: true, tooBig: true });
+    expect(preview).toMatchObject({
+      ok: true,
+      tooBig: true,
+      refusal: MERGE_TOO_BIG,
+      code: 'tooBig',
+    });
     const err = await w.merge().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ConvexError);
     expect((err as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
     expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.dedupStatus).toBe('suspected_duplicate');
+    // The ETL's path asks no preview: the merge itself refuses the group past the cap.
+    const etl = await w.t
+      .run(async (ctx) => {
+        const { mergeBodyInto } = await import('./waterBodies');
+        const [s, l] = [await ctx.db.get(w.survivor), await ctx.db.get(w.loser)];
+        await mergeBodyInto(ctx, { survivor: s as never, loser: l as never, reason: 'ETL' });
+      })
+      .catch((e: unknown) => e);
+    expect((etl as ConvexError<string>).data).toBe(MERGE_TOO_BIG);
   });
 
   test('the drawer never merges their own drawing (D289); the preview says so first', async () => {
@@ -361,6 +386,7 @@ describe('the merge’s refusals (fork 3)', () => {
     expect(preview).toEqual({
       ok: false,
       refusal: 'You filed this, so another staff member decides it.',
+      code: 'ownDrawing',
     });
     await expect(w.merge()).rejects.toThrow(/another staff member decides it/);
   });
@@ -378,14 +404,28 @@ describe('the merge’s refusals (fork 3)', () => {
     expect(await read(w.loser, w.loser)).toEqual({
       ok: false,
       refusal: await write(w.loser, w.loser),
+      code: 'sameBody',
     });
     // A survivor merged away, and a loser merged already.
     const gone = await body(w.t, 'Gone', 0.01);
     await w.mod.as.mutation(api.waterBodies.merge, { survivorId: w.survivor, loserId: gone });
-    expect(await read(w.loser, gone)).toEqual({ ok: false, refusal: await write(w.loser, gone) });
+    expect(await read(w.loser, gone)).toEqual({
+      ok: false,
+      refusal: await write(w.loser, gone),
+      code: 'survivorMerged',
+    });
     expect(await read(gone, w.survivor)).toEqual({
       ok: false,
       refusal: await write(gone, w.survivor),
+      code: 'loserMerged',
+    });
+    // A body gone altogether.
+    const deleted = await body(w.t, 'Deleted', 0.01);
+    await w.t.run((ctx) => ctx.db.delete(deleted));
+    expect(await read(w.loser, deleted)).toEqual({
+      ok: false,
+      refusal: await write(w.loser, deleted),
+      code: 'gone',
     });
     // The lists together over a cap.
     const links = (n: number, tag: string) =>
@@ -399,7 +439,11 @@ describe('the merge’s refusals (fork 3)', () => {
     });
     const lists = await write(w.loser, w.survivor);
     expect(lists).toMatch(/links/);
-    expect(await read(w.loser, w.survivor)).toEqual({ ok: false, refusal: lists });
+    expect(await read(w.loser, w.survivor)).toEqual({
+      ok: false,
+      refusal: lists,
+      code: 'listsOverCap',
+    });
     // A viewer without the merge's capability: refused in `requireCapability`'s words.
     await expect(read(w.loser, w.survivor, member.as)).rejects.toThrow(/Requires/);
   });
@@ -595,7 +639,7 @@ describe('the preview says what the merge moves', () => {
     expect(preview.baysClashing).toEqual(['North Bay']);
     expect(cs.subAreasDelisted).toHaveLength(1);
     expect(preview.staysBehind).toEqual({ accessAlerts: 1, parkingLots: 0 });
-    expect(preview.tooBig).toBe(false);
+    expect(preview).toMatchObject({ tooBig: false, refusal: null, code: null });
     expect(preview.lists.caps).toEqual({ pins: 8, aliases: 20, links: 8 });
   });
 });

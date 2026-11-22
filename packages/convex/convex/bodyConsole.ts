@@ -52,6 +52,7 @@ import { bodyRef } from './lib/inboxViews';
 import { landmarksForBody } from './lib/landmarkRows';
 import {
   MERGE_MOVE_KINDS,
+  MERGE_TOO_BIG,
   type MergeCount,
   type MergeMoveKind,
   mergeLoadOf,
@@ -62,7 +63,13 @@ import { type UndoState, undoStates } from './lib/undo';
 import type { UndoViewer } from './lib/undoTypes';
 import { literals } from './lib/validators';
 import { subAreasForBody } from './subAreas';
-import { depthChoicesOf, MERGE_SELF_REFUSAL, mergePairRefusal } from './waterBodies';
+import {
+  depthChoicesOf,
+  MERGE_GONE_REFUSAL,
+  MERGE_SELF_REFUSAL,
+  type MergeRefusalCode,
+  mergePairRefusal,
+} from './waterBodies';
 
 /** A person as the console names them; `null` for the machine or an erased account. */
 type PersonView = { userId: Id<'profiles'>; username: string; displayName: string } | null;
@@ -924,7 +931,8 @@ export const STAYS_BEHIND_CAP = 200;
  * would give, or what would move.
  */
 export type MergePreview =
-  | { ok: false; refusal: string }
+  /** Refused before anything is counted: the write's sentence, word for word, and its code. */
+  | { ok: false; refusal: string; code: MergeRefusalCode }
   | {
       ok: true;
       survivor: BodyRefView;
@@ -944,8 +952,14 @@ export type MergePreview =
       };
       /** What stays on the loser (B01-5d fork 2's remainder), each counted to `STAYS_BEHIND_CAP`. */
       staysBehind: { accessAlerts: number; parkingLots: number };
-      /** Past one transaction's budget: the merge would be refused, in the write's words. */
+      /** Past one transaction's budget (or an ask group past its cap): the merge would be refused. */
       tooBig: boolean;
+      /**
+       * `null` when the merge would run; else the write's own sentence (`MERGE_TOO_BIG`) and code
+       * (`tooBig`) — the only refusal that comes with counts, since it is the counts that refuse.
+       */
+      refusal: string | null;
+      code: 'tooBig' | null;
     };
 
 /**
@@ -964,16 +978,17 @@ export const mergePreview = query({
     // its words, so the preview never offers a merge its write refuses (D217).
     const viewer = await requireCapability(ctx, 'body.read');
     const noRight = capabilityRefusal(viewer, 'corpus.duplicates');
-    if (noRight !== null) return { ok: false, refusal: noRight };
-    if (loserId === survivorId) return { ok: false, refusal: MERGE_SELF_REFUSAL };
+    if (noRight !== null) return { ok: false, refusal: noRight, code: 'capability' };
+    if (loserId === survivorId) return { ok: false, refusal: MERGE_SELF_REFUSAL, code: 'sameBody' };
     const loser = await ctx.db.get(loserId);
     const survivor = await ctx.db.get(survivorId);
-    if (!loser || !survivor) return { ok: false, refusal: 'Water body not found' };
-    const refusal = mergePairRefusal(survivor, loser, viewer._id);
-    if (refusal !== null) return { ok: false, refusal };
     const survivorRef = bodyRef(survivor);
     const loserRef = bodyRef(loser);
-    if (!survivorRef || !loserRef) return { ok: false, refusal: 'Water body not found' };
+    if (!loser || !survivor || !survivorRef || !loserRef) {
+      return { ok: false, refusal: MERGE_GONE_REFUSAL, code: 'gone' };
+    }
+    const refused = mergePairRefusal(survivor, loser, viewer._id);
+    if (refused !== null) return { ok: false, ...refused };
 
     const load = await mergeLoadOf(ctx, loser, survivor);
     const moves = Object.fromEntries(
@@ -1046,6 +1061,8 @@ export const mergePreview = query({
       },
       staysBehind: { accessAlerts: alerts.length, parkingLots: lots.length },
       tooBig: load.tooBig,
+      refusal: load.tooBig ? MERGE_TOO_BIG : null,
+      code: load.tooBig ? 'tooBig' : null,
     };
   },
 });

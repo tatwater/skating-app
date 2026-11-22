@@ -3597,9 +3597,9 @@ export const merge = mutation({
     if (survivorId === loserId) throw new ConvexError(MERGE_SELF_REFUSAL);
     const survivor = await ctx.db.get(survivorId);
     const loser = await ctx.db.get(loserId);
-    if (!survivor || !loser) throw new ConvexError('Water body not found');
+    if (!survivor || !loser) throw new ConvexError(MERGE_GONE_REFUSAL);
     const refused = mergePairRefusal(survivor, loser, actor._id);
-    if (refused !== null) throw new ConvexError(refused);
+    if (refused !== null) throw new ConvexError(refused.refusal);
     // Past one transaction it is refused here, before any write, by the preview's own answer (fork 3).
     await assertMergeFits(ctx, loser, survivor);
     const { actionId } = await mergeBodyInto(ctx, {
@@ -3645,6 +3645,26 @@ export async function assertMergeFits(
 
 /** A merge of a body into itself. */
 export const MERGE_SELF_REFUSAL = 'Cannot merge a water body into itself';
+/** A merge whose survivor or loser no longer exists. */
+export const MERGE_GONE_REFUSAL = 'Water body not found';
+
+/**
+ * Why a merge is refused, where a client must tell one refusal from another without reading its
+ * words (B01-5d, as the Inbox's `canCode`): the Shape tab disables *Merge* on any, and draws the
+ * sentence beside it.
+ */
+export type MergeRefusalCode =
+  | 'capability'
+  | 'sameBody'
+  | 'gone'
+  | 'survivorMerged'
+  | 'loserMerged'
+  | 'ownDrawing'
+  | 'listsOverCap'
+  | 'tooBig';
+
+/** A merge refused: the write's sentence, word for word, and its code. */
+export type MergeRefusal = { refusal: string; code: MergeRefusalCode };
 
 /**
  * **Why this pair can't be merged by this viewer, or `null`** — the one rule `merge` refuses by and
@@ -3664,22 +3684,26 @@ export function mergePairRefusal(
   survivor: Doc<'waterBodies'>,
   loser: Doc<'waterBodies'>,
   viewerId: Id<'profiles'>,
-): string | null {
-  if (survivor._id === loser._id) return MERGE_SELF_REFUSAL;
+): MergeRefusal | null {
+  if (survivor._id === loser._id) return { refusal: MERGE_SELF_REFUSAL, code: 'sameBody' };
   if (survivor.mergedIntoId !== undefined || survivor.dedupStatus === 'merged') {
-    return 'Survivor is itself merged — pick the canonical body';
+    return {
+      refusal: 'Survivor is itself merged — pick the canonical body',
+      code: 'survivorMerged',
+    };
   }
   if (loser.dedupStatus === 'merged' || loser.mergedIntoId !== undefined) {
-    return 'Water body is already merged';
+    return { refusal: 'Water body is already merged', code: 'loserMerged' };
   }
   if (
     loser.source === 'user' &&
     loser.reviewStatus === 'pending' &&
     loser.createdByUserId === viewerId
   ) {
-    return OWN_FILING_REFUSAL;
+    return { refusal: OWN_FILING_REFUSAL, code: 'ownDrawing' };
   }
-  return mergedModeratorLists(survivor, [loser]).refusal;
+  const lists = mergedModeratorLists(survivor, [loser]).refusal;
+  return lists === null ? null : { refusal: lists, code: 'listsOverCap' };
 }
 
 /**
