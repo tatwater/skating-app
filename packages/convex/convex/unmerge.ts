@@ -1140,7 +1140,7 @@ export const receipt = query({
  * still being unmerged and, when that unmerge is stalled, offers its Resume. The bodies' marker
  * (`unmergeActionId`) names the unmerge's row; its `undoes:` is the merge `receipt` and `resume` are
  * keyed by. `null` when neither body is marked. Only the first two ids passed are read, one read each;
- * held to `corpus.duplicates`, the capability `resume` checks.
+ * held to `audit.read`, as `receipt` is (a query takes a read capability; `resume` checks its own).
  */
 export const runningOn = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
@@ -1148,8 +1148,10 @@ export const runningOn = query({
     ctx,
     { waterBodyIds },
   ): Promise<(UnmergeReceipt & { mergeActionId: Id<'moderationActions'> }) | null> => {
-    // Behind `resume`'s own gate: it is read only to offer that Resume.
-    await requireCapability(ctx, 'corpus.duplicates');
+    // A query takes a read capability only (`requireCapability`'s query overload): `receipt`'s
+    // `audit.read`, the same role as `resume`'s `corpus.duplicates`. The Resume it offers is drawn for
+    // `corpus.duplicates` alone, and `resume` refuses anyone else.
+    await requireCapability(ctx, 'audit.read');
     for (const id of waterBodyIds.slice(0, 2)) {
       const body = await ctx.db.get(id);
       const running = body ? unmergeRunningOn(body) : null;

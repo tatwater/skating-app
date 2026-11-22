@@ -1852,7 +1852,7 @@ suite('an unmerge marks both bodies while it runs, and a stalled one is seen and
       await settle(w.t);
     });
     expect(await on([w.loser, w.survivor])).toBeNull();
-    // Held to `resume`'s capability (`corpus.duplicates`): a skater is refused.
+    // Held to `audit.read`, as `receipt` is (a query takes a read capability): a skater is refused.
     await expect(
       w.skater.as.query(api.unmerge.runningOn, { waterBodyIds: [w.loser] }),
     ).rejects.toThrow();
