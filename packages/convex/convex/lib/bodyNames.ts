@@ -297,6 +297,35 @@ export async function refreshBodyNames(
   return { wrote: true, read, deferred };
 }
 
+/**
+ * A body's stored row as it stands, or `null` — for a reader that compares stored facts (the merge's
+ * dev proof census, B01-5d); the writer and History's undo check read it through their own paths.
+ */
+export function bodyNamesRow(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<BodyNames | null> {
+  return ctx.db
+    .query('bodyNameLists')
+    .withIndex('by_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+}
+
+/**
+ * **A gone body's row removed** (B01-5d): for a writer that deletes the body itself — the dev seed's
+ * clear, taking a body the seed drew with everything on it. Never for a live body, whose row
+ * `refreshBodyNames` keeps. Returns whether there was a row.
+ */
+export async function dropBodyNames(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<boolean> {
+  const row = await bodyNamesRow(ctx, waterBodyId);
+  if (row === null) return false;
+  await ctx.db.delete(row._id);
+  return true;
+}
+
 /** Whether a stored row already holds these lists (a stored object's keys come back in their own order). */
 function sameLists(a: Pick<BodyNames, 'capped' | 'landmarks' | 'bays'>, b: typeof a): boolean {
   const names = (x: readonly string[], y: readonly string[]) =>
