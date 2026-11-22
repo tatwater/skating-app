@@ -253,6 +253,62 @@ const ANYWHERE_PRINTABLE = {
   ignoreDefaultPrevented: true,
 } as const;
 
+// ── A held key, after it acted ───────────────────────────────────────────────────────────────
+
+/** The keys that have acted and are still held, by `code`: each one's release. */
+const held = new Map<string, () => void>();
+
+/**
+ * **A bound key that acted owns its own repeats until it is let go.** Held past the key-repeat
+ * delay, a letter's repeats would land wherever its action put focus — the reason field of the
+ * dialog it opened — as text ("dddd", sent as the reason). So once a bound key fires, every repeat
+ * `keydown` of that same physical key (`code`) is stopped and its default (the text) prevented,
+ * wherever focus has gone, until the key is released.
+ *
+ * What it lets through: a fresh press of the same key (not a repeat — and it ends the hold, should
+ * the release have been missed); any other key, a held ⇧ or ⌘ included (only the action key's own
+ * repeats are swallowed); and an IME composition. It lets go on the key's `keyup`, when the window
+ * loses focus, or when the page is hidden, so nothing outlives the hold.
+ */
+export function swallowRepeats(event: KeyboardEvent): void {
+  const code = event.code || event.key;
+  if (typeof window === 'undefined' || held.has(code)) return;
+  const onDown = (e: KeyboardEvent) => {
+    if ((e.code || e.key) !== code) return;
+    // A fresh press: the hold is over (its release was missed). Let it act as itself.
+    if (!e.repeat) {
+      release();
+      return;
+    }
+    if (e.isComposing || e.key === 'Process') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  const onUp = (e: KeyboardEvent) => {
+    if ((e.code || e.key) === code) release();
+  };
+  const onHidden = () => {
+    if (document.visibilityState === 'hidden') release();
+  };
+  const release = () => {
+    window.removeEventListener('keydown', onDown, true);
+    window.removeEventListener('keyup', onUp, true);
+    window.removeEventListener('blur', release);
+    document.removeEventListener('visibilitychange', onHidden);
+    held.delete(code);
+  };
+  window.addEventListener('keydown', onDown, true);
+  window.addEventListener('keyup', onUp, true);
+  window.addEventListener('blur', release);
+  document.addEventListener('visibilitychange', onHidden);
+  held.set(code, release);
+}
+
+/** Test support: let go of every hold (a test that ends mid-hold leaves none behind). */
+export function releaseHeldKeys(): void {
+  for (const release of [...held.values()]) release();
+}
+
 // ── Panes ────────────────────────────────────────────────────────────────────────────────────
 
 export type PaneBinding = {
@@ -281,7 +337,10 @@ export function usePaneKeys(
   for (const b of bindings) assertBindable(b.key, 'pane');
   const definitions: UseHotkeyDefinition[] = bindings.map((b) => ({
     hotkey: b.key,
-    callback: () => b.run(),
+    callback: (event: KeyboardEvent) => {
+      swallowRepeats(event);
+      b.run();
+    },
     options: {
       target: pane,
       enabled: b.enabled ?? true,
@@ -310,6 +369,7 @@ export function useGlobalKey(
         if (focusOwnsPrintableKeys()) return;
         event.preventDefault();
       }
+      swallowRepeats(event);
       run();
     },
     // Once per press, as every bound key: a held ⌘K or ? must not toggle what it opens.
