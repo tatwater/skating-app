@@ -3,6 +3,7 @@ import { TRUST_CLASS_LABELS, waterBodyClassLabel } from '@skating/core';
 import { acresText } from '../../../bodies/bodiesModel';
 import { dayMonth } from '../../../shell/consoleTime';
 import { countedLike, isWhole, listTotalOf } from '../../blocks/listCut';
+import { rulingEvent } from '../../blocks/rulingEvent';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { countOf } from '../../words/inboxWords';
 import { ACCESS_WORDS as W } from './accessWords';
@@ -176,17 +177,7 @@ export function accessTimeline(item: AccessItem): TimelineEvent[] {
     autoFiled: r.autoFiled,
     note: r.note,
   }));
-  if (item.ruling !== null) {
-    events.push({
-      kind: 'ruling',
-      key: 'ruling',
-      at: item.ruling.ruledAt,
-      verdict: item.ruling.verdict,
-      by: item.ruling.by,
-      note: item.ruling.note,
-      reason: item.ruling.reason?.trim() || null,
-    });
-  }
+  if (item.ruling !== null) events.push(rulingEvent(item.ruling));
   const dismissed = item.dismissedByRuling;
   if (dismissed.length > 0) {
     events.push({

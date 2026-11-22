@@ -17,7 +17,6 @@ import {
   REQUEST_NOW,
   REQUEST_TZ,
   restore,
-  SPECTACLE_RULING,
   TARLETON_DORMANCY,
   takedown,
   UNNAMED_POND,
@@ -37,7 +36,6 @@ import {
   receiptOf,
   refusalNote,
   requestBar,
-  rulingEvent,
   subjectOf,
 } from './requestModel';
 
@@ -338,21 +336,5 @@ describe('an activate’s dormancy (in Activating it)', () => {
     for (const k of [admit, restore, takedown, contest]) {
       expect(ifBlocks(k(), REQUEST_TZ).first.rows.map((r) => r.label)).not.toContain('Dormant');
     }
-  });
-});
-
-describe('contest access’s standing ruling', () => {
-  it('is the Access handler’s ruling event, its source trimmed (blank reads as none)', () => {
-    expect(rulingEvent(SPECTACLE_RULING)).toEqual({
-      kind: 'ruling',
-      key: 'ruling',
-      at: SPECTACLE_RULING.ruledAt,
-      verdict: 'none',
-      by: SPECTACLE_RULING.by,
-      note: 'Posted private by the landowner.',
-      reason: 'The landowner wrote in; the only access is across their field.',
-    });
-    expect(rulingEvent({ ...SPECTACLE_RULING, reason: '   ' }).reason).toBeNull();
-    expect(rulingEvent({ ...SPECTACLE_RULING, reason: null }).reason).toBeNull();
   });
 });

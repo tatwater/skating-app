@@ -12,7 +12,6 @@ import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { acres } from '../../list/inboxModel';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { askedBy } from '../../words/inboxWords';
-import type { TimelineEvent } from '../Access/accessModel';
 import { kindName, REQUEST_HANDLER_WORDS as W } from './requestWords';
 
 /**
@@ -34,7 +33,6 @@ export type RequestItem = Extract<InboxItemView, { kind: 'request' }>;
 export type RequestCandidate = NonNullable<RequestItem['candidate']>;
 export type RequestBody = NonNullable<RequestItem['body']>;
 export type RequestDormancy = NonNullable<RequestItem['dormancy']>;
-export type RequestRuling = NonNullable<RequestItem['ruling']>;
 
 /** The verbs a request item's bar can send. */
 export type RequestVerb = 'approve' | 'decline' | 'lookUpAgain';
@@ -141,22 +139,6 @@ export function dormancyRows(d: RequestDormancy, timeZone?: string): Row[] {
     // Staff are named by first name on the console.
     ...(d.by !== null ? [{ label: W.setBy, value: firstName(d.by.displayName) }] : []),
   ];
-}
-
-/**
- * Contest access's standing ruling as the Access handler's timeline draws its ruling event (its own
- * `eventBody` renders it): the verdict, who ruled, the public note and the cited source.
- */
-export function rulingEvent(r: RequestRuling): Extract<TimelineEvent, { kind: 'ruling' }> {
-  return {
-    kind: 'ruling',
-    key: 'ruling',
-    at: r.ruledAt,
-    verdict: r.verdict,
-    by: r.by,
-    note: r.note,
-    reason: r.reason?.trim() || null,
-  };
 }
 
 /** The two futures: what approving (or looking up again) does, and what declining does. */

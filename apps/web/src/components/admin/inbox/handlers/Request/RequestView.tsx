@@ -21,13 +21,14 @@ import { cn } from '@/lib/utils';
 import { AskDialog } from '../../../people/person/AskDialog';
 import { dayMonth } from '../../../shell/consoleTime';
 import { listTotalOf } from '../../blocks/listCut';
+import { rulingEvent } from '../../blocks/rulingEvent';
+import { TimelineEventBody } from '../../blocks/TimelineEventBody';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
   InspectorHeadTitle,
 } from '../../inspector/InspectorFrame';
 import { useInspectorContext } from '../../inspector/inspectorContext';
-import { eventBody } from '../Access/AccessHandlerView';
 import { AskList } from '../asks/AskList';
 import {
   bodyKicker,
@@ -44,7 +45,6 @@ import {
   type Row,
   refusalNote,
   requestBar,
-  rulingEvent,
   subjectOf,
 } from './requestModel';
 import { REQUEST_HANDLER_WORDS as W } from './requestWords';
@@ -177,7 +177,12 @@ function StandingRuling({ ruling }: { ruling: NonNullable<RequestItem['ruling']>
   return (
     <ItemTimeline
       events={[
-        { key: e.key, date: dayMonth(e.at, timeZone), mark: 'bright', children: eventBody(e) },
+        {
+          key: e.key,
+          date: dayMonth(e.at, timeZone),
+          mark: 'bright',
+          children: <TimelineEventBody event={e} />,
+        },
       ]}
     />
   );
