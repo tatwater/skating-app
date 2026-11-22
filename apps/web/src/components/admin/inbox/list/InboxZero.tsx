@@ -6,7 +6,7 @@ import { Note } from '@/components/kit/note';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonText } from '@/components/kit/skeleton';
-import { type StepEvent, StepRugChart } from '@/components/kit/step-rug-chart';
+import { hourTicks, type StepEvent, StepRugChart } from '@/components/kit/step-rug-chart';
 import { cn } from '@/lib/utils';
 import { ComingSoonLink } from '../inspector/ComingSoonLink';
 import {
@@ -97,7 +97,13 @@ export function InboxZero({
                 label={OPEN_TODAY}
                 start={day.today.openAtStart}
                 events={eventsOf(day.today)}
-                {...span(day.today, now, timeZone ?? ownZone())}
+                {...(() => {
+                  // The ticks on the reader's whole hours, as the span is (a half-hour zone's
+                  // UTC hours would read :30): floored by this page's own clock.
+                  const zone = timeZone ?? ownZone();
+                  const { from, to } = span(day.today, now, zone);
+                  return { from, to, ticks: hourTicks(from, to, (t) => floorLocalHour(t, zone)) };
+                })()}
                 formatTime={time}
                 zeroLabel={(at) => zeroAt(time(at))}
               />
