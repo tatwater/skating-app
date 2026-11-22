@@ -603,7 +603,8 @@ describe('every step of the plan, as the script makes it', () => {
     // Statically, over the whole plan — not only the steps a run here reaches: the script makes a
     // person's step through `convex run --identity`, which finds public functions only.
     const steps = seedSteps();
-    expect(steps).toHaveLength(121);
+    // 121 at B01-5d, and B01-5f's note and reply on t-bug (`support:addNote`, `support:reply`).
+    expect(steps).toHaveLength(123);
     const refused: string[] = [];
     for (const step of steps) {
       const why = unreachable(step.as, step.fn, await registered(step.fn));
