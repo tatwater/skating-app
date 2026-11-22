@@ -37,6 +37,8 @@ const NO_CAPPED_WRITE: Record<string, string> = {
     'no write yet: what a filing records is the founder’s call, and the field is drawn disabled',
   'components/admin/body/tabs/imagery/ImageryTabView.tsx :: #1':
     'no write yet: the pass override is drawn Not available yet until the apps honor it',
+  'components/admin/body/tabs/shape/MergeFlow.tsx :: #1':
+    'a search for the body to merge into: a read, and the server never refuses its length',
   'components/admin/bodies/ListTools.tsx :: Find a body':
     'a search: the server cuts a long one to its length, never refuses it',
 };

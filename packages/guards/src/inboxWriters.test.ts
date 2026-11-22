@@ -61,6 +61,10 @@ const SOURCE_WRITERS: Record<string, string> = {
   'waterBodies.ts#moveDrawnReview': 'a drawing approved, rejected, or returned to review',
   'waterBodies.ts#retargetEach': 'a merge moves access reports (and, by body id, asks), one batch',
   'waterBodies.ts#mergeBodyInto': 'a drawing merged into a known body',
+  // The unmerge (B01-5d, D291): each moved row back on the loser, each partner's flag back.
+  'unmerge.ts#moveBack':
+    'an unmerge moves a flag or an ask back to the loser, and re-keys its item',
+  'unmerge.ts#restorePartners': 'an unmerge puts a duplicate partner’s flag back, and re-keys it',
   'support.ts#create': 'a ticket filed',
   'support.ts#resolve': 'a ticket resolved',
 };
