@@ -723,3 +723,52 @@ describe('Same place answers its own row and undo offer', () => {
     expect((await w.t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
   });
 });
+
+describe('a restore or takedown ask is an admin’s to decide, both ways (B01-5c, ruled)', () => {
+  test.each(['takedown', 'restore'] as const)(
+    'a %s ask: a moderator is refused decline, in the item and the write, in one sentence; an admin declines',
+    async (kind) => {
+      const w = await world();
+      if (kind === 'restore') {
+        await w.t.run((ctx) =>
+          ctx.db.patch(w.lake, { removedAt: NOW, removalReason: 'landowner_request' }),
+        );
+        await w.t.mutation(internal.waterBodies.backfillCells, {});
+      }
+      const requestId = await w.asker.as.mutation(api.corpusRequests.create, {
+        kind,
+        coord: { lat: 0.1, lng: 0.1 },
+        waterBodyId: w.lake,
+      });
+      const item = (await itemOf(w, requestId)) as RequestView & {
+        can: Record<string, string | null>;
+      };
+      expect(item.can).toEqual({ approve: 'Requires admin role', decline: 'Requires admin role' });
+      await expect(
+        w.mod.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' }),
+      ).rejects.toThrow('Requires admin role');
+      const asAdmin = (await w.admin.as.query(api.inbox.item, { ref: `request:${requestId}` }))
+        .item as RequestView & { can: Record<string, string | null> };
+      expect(asAdmin.can.decline).toBeNull();
+      await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
+      expect((await w.t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('declined');
+    },
+  );
+
+  test('every other kind stays a moderator’s to decline', async () => {
+    const w = await world();
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.lake, { dormant: { since: NOW, reason: 'inactive' as const } }),
+    );
+    const requestId = await w.asker.as.mutation(api.corpusRequests.create, {
+      kind: 'activate',
+      coord: { lat: 0.1, lng: 0.1 },
+      waterBodyId: w.lake,
+    });
+    const item = (await itemOf(w, requestId)) as RequestView & {
+      can: Record<string, string | null>;
+    };
+    expect(item.can.decline).toBeNull();
+    await w.mod.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
+  });
+});

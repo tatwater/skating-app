@@ -82,11 +82,12 @@ export function capabilitiesFor(
     case 'clearRuling':
       return ['access.rule'];
     case 'approve':
-      // Restoring or taking down a body is the body.remove lever itself (D48).
+    case 'decline':
+      // Restoring or taking down a body is the body.remove lever itself (D48) — and an admin decides
+      // these both ways: declining one is as much the decision as approving it (B01-5c, ruled).
       return facts.requestKind === 'restore' || facts.requestKind === 'takedown'
         ? ['body.remove']
         : ['inbox.request'];
-    case 'decline':
     case 'sameAs':
     case 'lookUpAgain':
       return ['inbox.request'];
@@ -104,7 +105,10 @@ export function capabilitiesFor(
 }
 
 /** What a viewer without `capability` is told — `requireCapability`'s own words. */
-function capabilityRefusal(viewer: Doc<'profiles'>, capability: Capability): string | null {
+export function capabilityRefusal(
+  viewer: Pick<Doc<'profiles'>, 'role' | 'canEditLedger' | 'deletionRequestedAt'>,
+  capability: Capability,
+): string | null {
   if (!hasCapability(viewer, capability)) return `Requires ${CAPABILITIES[capability].role} role`;
   if (CAPABILITIES[capability].write && viewer.deletionRequestedAt !== undefined) {
     return DELETION_PENDING_MESSAGE;

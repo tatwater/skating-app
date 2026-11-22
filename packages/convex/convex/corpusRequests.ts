@@ -78,7 +78,7 @@ import { syncWaterBodyCells } from './lib/cellIndex';
 import { inboxDecisionResult } from './lib/decisionResult';
 import { refreshEraseClock } from './lib/eraseClock';
 import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
-import { DECIDED_REFUSAL } from './lib/inboxRules';
+import { capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
@@ -850,9 +850,16 @@ export const approve = mutation({
 export const decline = mutation({
   args: { requestId: v.id('waterBodyRequests'), note: v.string() },
   handler: async (ctx, { requestId, note }) => {
-    const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
+    // The decision's lever, in the Inbox rule's order and words (`capabilitiesFor`): a restore or a
+    // takedown is an admin's both ways (`body.remove`), the rest `inbox.request` — asked before the
+    // ask's state, as `approve` asks it, so the item's levers and this write say one thing (D268).
+    let actor: Doc<'profiles'> | undefined;
+    for (const cap of capabilitiesFor('decline', { requestKind: request.kind })) {
+      actor = await requireCapability(ctx, cap);
+    }
+    if (!actor) throw new ConvexError('Not signed in');
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     // In the Inbox rule's words, so the item's levers and this write say one thing (D268).
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);

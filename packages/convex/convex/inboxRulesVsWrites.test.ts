@@ -673,6 +673,53 @@ async function landmarkAsk(
   return { ref: `request:${requestId}`, requestId, landmarkId };
 }
 
+/**
+ * A restore or takedown ask: an admin decides it both ways (`body.remove`, B01-5c ruled). As an admin
+ * here; the moderator pass runs the same cells from a moderator's chair, where both verbs refuse.
+ */
+const adminAsk = async (w: W, by: As, kind: 'takedown' | 'restore'): Promise<Setup> => {
+  if (kind === 'restore') {
+    await w.t.run((ctx) =>
+      ctx.db.patch(w.active, { removedAt: Date.now(), removalReason: 'landowner_request' }),
+    );
+    await w.t.mutation(internal.waterBodies.backfillCells, {});
+  }
+  const requestId = await by.mutation(api.corpusRequests.create, {
+    kind,
+    coord: { lat: 0.2, lng: 0.2 },
+    waterBodyId: w.active,
+  });
+  return { ref: `request:${requestId}`, requestId };
+};
+const adminAskCells: Cell[] = (['takedown', 'restore'] as const).flatMap((kind) => [
+  {
+    kind: `request (${kind})`,
+    state: 'open, decided by an admin',
+    verbs: ['approve', 'decline'] as InboxVerb[],
+    setup: (w: W) => adminAsk(w, w.author.as, kind),
+  },
+  {
+    kind: `request (${kind})`,
+    state: 'already decided',
+    verbs: ['approve', 'decline'] as InboxVerb[],
+    setup: async (w: W) => {
+      const s = await adminAsk(w, w.author.as, kind);
+      await w.t.run((ctx) => ctx.db.patch(w.other.id, { role: 'admin' }));
+      await w.other.as.mutation(api.corpusRequests.decline, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      return s;
+    },
+  },
+  {
+    kind: `request (${kind})`,
+    state: 'the viewer’s own filing',
+    verbs: ['approve', 'decline'] as InboxVerb[],
+    setup: (w: W) => adminAsk(w, w.viewer.as, kind),
+  },
+]);
+
 /** *Same place* on asks that aren't a landmark's lookalike: the rule says so, and so must the write. */
 const sameAsCells: Cell[] = [
   {
@@ -888,6 +935,7 @@ const GROUPS: Record<string, Cell[]> = {
   alert: alertCells,
   access: accessCells,
   request: requestCells,
+  'admin’s asks': adminAskCells,
   sameAs: sameAsCells,
   drawn: drawnCells,
   ticket: ticketCells,
@@ -941,8 +989,8 @@ const AWAITING_THE_WRITE: Record<string, string> = {
 
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {
-    // 141 through B01-5b; B01-5c added *Same place*'s ten.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(151);
+    // 141 through B01-5b; B01-5c added *Same place*'s ten and a restore's and a takedown's twelve.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(163);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {

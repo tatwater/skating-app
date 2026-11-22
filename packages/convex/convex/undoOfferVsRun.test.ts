@@ -385,6 +385,27 @@ const CASES: Case[] = [
       return w.newest('approve_waterbody');
     },
   },
+  {
+    // B01-5c: an admin decides a takedown both ways, so declining it again is an admin's too.
+    name: 'reopen_request → declined again (a takedown, which only body.remove declines)',
+    viewers: ALL,
+    setup: async (w) => {
+      const ask = {
+        kind: 'takedown' as const,
+        coord: { lat: 0.5, lng: 0.5 },
+        waterBodyId: w.lake,
+        note: 'Mine',
+      };
+      const first = await w.p.skater.as.mutation(api.corpusRequests.create, ask);
+      await w.tick();
+      const out = await w.p.admin.as.mutation(api.corpusRequests.decline, {
+        requestId: first,
+        note: 'Not yours',
+      });
+      await w.p.admin.as.mutation(api.undo.run, { actionId: out.actionId });
+      return w.newest('reopen_request');
+    },
+  },
   // B01-5c: each decision write answers its own row; the table holds that row's offer to its run.
   {
     name: 'approve_request (the row its answer names) → reopen_request',

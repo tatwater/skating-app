@@ -61,7 +61,7 @@ import {
   requestSource,
   syncInboxSource,
 } from './inboxItems';
-import { OWN_FILING_REFUSAL } from './inboxRules';
+import { capabilitiesFor, capabilityRefusal, OWN_FILING_REFUSAL } from './inboxRules';
 import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { ownContentRefusal } from './ownContent';
 import { ROW_MAX, type RowKind } from './readBudget';
@@ -1101,6 +1101,12 @@ const undoRequestReopen: UndoHandler = {
     const id = row.targetId as Id<'waterBodyRequests'>;
     const primary = await read.row('waterBodyRequest', id);
     if (primary?.status !== 'open') return REQUEST_DECIDED_SINCE;
+    // Declining again is the decision's lever, by the Inbox's rule (`capabilitiesFor`): a restore or a
+    // takedown is an admin's (`body.remove`), as its run's `assertMayDecide` asks (B01-5c).
+    for (const cap of capabilitiesFor('decline', { requestKind: primary.kind })) {
+      const refused = capabilityRefusal(viewer, cap);
+      if (refused !== null) return refused;
+    }
     const own = await decisionActorRefusal(
       ctx,
       viewer,
