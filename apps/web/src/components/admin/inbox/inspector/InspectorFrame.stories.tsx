@@ -154,7 +154,13 @@ export const Locked: Story = {
     await expect(within(canvasElement).queryByRole('toolbar')).toBeNull();
     const lock = must(canvasElement.querySelector<HTMLElement>('[data-slot="inbox-decided-lock"]'));
     await expect(lock).toHaveTextContent('Decided by Sarah Berman · 11:42 · approved');
-    await expect(lock).toHaveAttribute('role', 'status');
+    // The lock announces through the kit's live region inside it, which holds the banner's line
+    // alone (its words land a frame after mount) — never the buttons.
+    const said = within(lock).getByRole('status');
+    await waitFor(() =>
+      expect(said).toHaveTextContent('Decided by Sarah Berman · 11:42 · approved'),
+    );
+    await expect(within(said).queryByRole('button')).toBeNull();
     const back = within(lock).getByRole('button', { name: /Back to the queue/ });
     await expect(back).toHaveTextContent('⏎');
     // ⏎ in the pane goes back; a letter does nothing now the item is decided.
