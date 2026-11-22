@@ -2,22 +2,27 @@
  * **What a request or drawing decision answers** (B01-5c): the Inbox writes' shape (`InboxWriteResult`
  * in `inboxWrites.ts`) — the item the decision decided, the decision's own audit row (the one the
  * toast's Undo undoes), and whether this viewer can undo that row now, read by the undo engine's own
- * rule (`undoOfferAfterWrite`, the reading `undo.run` makes). So the toast never looks up "the latest
+ * rule (`undoOfferAfterWrite`, the reading `undo.run` makes) — asked through `ctx.runQuery`
+ * (`moderation.undoOfferForRow`), never imported: the engine's handlers import `waterBodies.ts`, one
+ * of this module's callers, so a static import here would close a cycle. So the toast never looks up "the latest
  * action on the ask", a second rule that another staffer's later action or a paged drain can make
  * disagree with the write.
  */
 
+import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
-import { undoOfferAfterWrite } from '../moderation';
 import type { InboxSource } from './inboxItems';
+
+/** What the undo engine offers this viewer for a row, now. */
+type UndoOffer = { undoable: true; undoNeedsReason: boolean } | { undoable: false };
 
 export type InboxDecisionResult = {
   /** The Inbox item the decision decided; `null` for a source that is no item (a script's ask, D289). */
   itemId: Id<'inboxItems'> | null;
   /** The decision's own audit row: the primary ask's `approve_request` / `decline_request`, or the drawing's review. */
   actionId: Id<'moderationActions'>;
-} & ({ undoable: true; undoNeedsReason: boolean } | { undoable: false });
+} & UndoOffer;
 
 /** The answer for `source`'s decision, written as `actionId` by `actorId`. */
 export async function inboxDecisionResult(
@@ -31,9 +36,10 @@ export async function inboxDecisionResult(
     .query('inboxItemMembers')
     .withIndex('by_source', (q) => q.eq('sourceTable', source.table).eq('sourceId', source.id))
     .first();
-  return {
-    itemId: member?.itemId ?? null,
+  // A nested query in this transaction: it reads the decision just written.
+  const offer: UndoOffer = await ctx.runQuery(internal.moderation.undoOfferForRow, {
+    actorId,
     actionId,
-    ...(await undoOfferAfterWrite(ctx, actorId, actionId)),
-  };
+  });
+  return { itemId: member?.itemId ?? null, actionId, ...offer };
 }

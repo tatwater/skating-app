@@ -84,6 +84,7 @@ import type * as lib_contentVerdicts from "../lib/contentVerdicts.js";
 import type * as lib_contributionCounts from "../lib/contributionCounts.js";
 import type * as lib_contributions from "../lib/contributions.js";
 import type * as lib_dailyThrottle from "../lib/dailyThrottle.js";
+import type * as lib_decisionResult from "../lib/decisionResult.js";
 import type * as lib_dedupQueue from "../lib/dedupQueue.js";
 import type * as lib_deployment from "../lib/deployment.js";
 import type * as lib_depth from "../lib/depth.js";
@@ -288,6 +289,7 @@ declare const fullApi: ApiFromModules<{
   "lib/contributionCounts": typeof lib_contributionCounts;
   "lib/contributions": typeof lib_contributions;
   "lib/dailyThrottle": typeof lib_dailyThrottle;
+  "lib/decisionResult": typeof lib_decisionResult;
   "lib/dedupQueue": typeof lib_dedupQueue;
   "lib/deployment": typeof lib_deployment;
   "lib/depth": typeof lib_depth;
