@@ -902,8 +902,13 @@ Made on the design's engineering forks; the founder may overturn any of them.
 15. **`moderatorDecision` is narrowed back to required with B01-5d** (2026-11-21), after its dev
     backfill.
 16. **An admin decides a restore or a takedown, both ways** (2026-11-22): a viewer without
-    `body.remove` can neither approve nor decline one. The server says so (S3, ask 11: `can.decline`
-    refuses that viewer, as `can.approve` already does), and the request bar draws from `can` alone.
+    `body.remove` can neither approve nor decline one, **nor undo a decline of one** (un-deciding is
+    deciding). The server says so (S3, ask 11: `can.decline` refuses that viewer, as `can.approve`
+    already does, and the reopen's offer and run ask the same lever), and the request bar draws from
+    `can` alone.
+17. **A request's nearest known body moves to B01-5d** (2026-11-22): `candidate.nearestKnown` stays
+    `null`. A bounded geographic read doesn't fit the item's budget; the merge PR's preview read is
+    where a body's neighbors are read.
 
 ### The founder's calls of 2026-11-21
 
@@ -8957,7 +8962,10 @@ The governor's rulings; the founder has been told of them and may overturn any (
    W5a: the board drew no bar for a viewer without `body.remove`, but the server's `can` still
    allowed that viewer *Decline*. S3 makes `can.decline` a refusal for that viewer (ask 11). The web
    stays as built; its kind check (`requestBar`'s early return, `refusalNote`'s lead) is marked
-   `S3-REMOVE` and goes at S3's integration, once `can` alone empties the bar.
+   `S3-REMOVE` and goes at S3's integration, once `can` alone empties the bar. **Done at S3's
+   integration (2026-11-22):** both checks are gone, and the reopen of such a decline is an admin's
+   too.
+7. **`nearestKnown` moves to B01-5d** (2026-11-22, §7 ruling 17).
 
 **What landed at T0** (on `phase-b01-inbox`): the type, the pref key and the view in core; the
 schema's widening; and placeholders that S3 and W5b replace — core's `describeNotification` case
@@ -9077,6 +9085,117 @@ The integration review fixed four things:
   while the two agree.
 - **#171's stories.** Several Flag and Access layout reads are still one-shot, the shape the life
   strip's failure had.
+
+#### B01-5c: the server integrated (2026-11-22)
+
+S3 (`b01-5c-s3` at `44240f07f`, 17 commits) was cherry-picked onto `phase-b01-inbox` with no
+conflicts, its seam request (`lib/enums.ts`, the queue's two kinds) included. A fresh anonymous push
+left `convex/_generated` unchanged: S3 had committed the missing `lib/decisionResult` entry.
+
+**Who is told, and where each message is queued.**
+
+- **Where each is queued** (two trigger kinds, `request_decided` and `alert_retracted`, both
+  flushing to `moderator_decision`):
+  - every ask a decision closes, on every page of a drain, once each (`closeRow`);
+  - a drawing's approval, its rejection, and an undo's re-review (`reviewDrawnBodyImpl`);
+  - a live alert's retraction (`retractAlertImpl`).
+
+  Each is keyed on the decided row, with the self gate held.
+- **The settle re-check** holds each message to its decision row. When the queue drains:
+  - an ask must still be closed at that row's instant;
+  - a drawing must still be reviewed that way, with its row not undone;
+  - an alert must still be retracted by that row.
+
+  So an undo inside the window drops the message, an undo after it leaves the message, and a
+  decision made again inside the window is one message.
+- **Never told:**
+  - an ask a script filed, or a seed ask;
+  - fake people, checked both at enqueue and at the flush;
+  - anyone with the toggle off, or absent before the backfill;
+  - the decider;
+  - the author of an expired or resolved alert, or one who had already withdrawn it.
+- **The words** are core's `describeNotification`: per kind and outcome, a decline's note as its
+  second line, and a retraction naming the alert's spot (`place`) and lake but never the reason.
+  Nothing in them says anything about the ice (D3).
+- **The flush**:
+  - costs each re-check in bytes before it starts it;
+  - drains 40 heavy messages (an admit's ask near the document limit) in at most 7 executions
+    (measured 6), none rolled back;
+  - drains 499 in about 72 continuations, each scheduled immediately: about 30–70 seconds of wall
+    clock.
+
+**The member lists.**
+
+- An item's asks, flags and access reports are read **member by member**, each whole.
+- At most 50 of each status are served (`VIEW_MEMBERS`), fewer when heavy.
+- The order is newest first, except a flag item's, which is oldest first.
+- The cut flag sits beside `memberCount`: `asksCut`, `flagsCut`, `reportsCut`, and
+  `dismissedByRulingCut` for the 20 dismissed reports read.
+- **What this fixed:** read together, each member had reserved a whole document, so past about
+  eleven the rest silently read nothing.
+- **The web:** one shared line, *Showing N of M+* (`blocks/listCut`), under the ask, flag and
+  access lists. FlagBlock's count, the access reporter count, its dismissals and its two futures now
+  read the item's count, or a floor, never a page's length.
+
+**The asks, and how each ended:**
+
+1. **A decision's own row and undo offer: done.**
+   - `corpusRequests.approve` and `decline`, and `waterBodies.approve` and `reject`, answer
+     `InboxDecisionResult` (`{ itemId, actionId } & (undoable…)`), read by the undo engine's own
+     rule through a function reference (no import cycle). A new uncached guard,
+     `packages/guards` `importCycles`, holds the graph.
+   - The web's decision runner takes Undo from that answer. The marked "latest action" fallback is
+     deleted.
+2. **A contest's standing ruling (`request.ruling`): done.**
+3. **An activate's dormancy (`request.dormancy`: reason, since, note, by): done.**
+4. **Each ask's skate (`AskMemberView.skate`): done.** It carries the start and end times and the
+   moving time. There is no distance: no row stores one.
+5. **The ask order: done.**
+   - Asks are newest first, open and closed together.
+   - `primaryRequestId` names the ask a decision is sent for.
+   - The web's re-sort and its own ask inference are deleted.
+6. **The nearest known body (`candidate.nearestKnown`): moved to B01-5d** (§7 ruling 17).
+7. **A drawing's skate (`drawn.skate`, with `hasTrack`): done.**
+8. **The report a drawing became, with an excerpt (`drawn.fromReport`): done.** The excerpt is
+   `null` for content hidden, removed or withdrawn, to a viewer without `content.read`.
+9. **The drawer's count (`drawn.drawerReports`) and a landmark asker's asks
+   (`AskMemberView.landmarkAsks`): done.**
+10. **Nearby drawings, and a drawing's distance: not served.** The only spatial read loads whole
+    body documents, which the item's budget can't hold.
+11. **Restore and takedown, an admin's both ways, and their reopen: done** (§7 ruling 16).
+    - The web's `S3-REMOVE` kind checks are gone. The bar draws from `can` alone and says the
+      server's sentence.
+    - The fixtures were brought to what the server answers.
+- *Same place* is refused in the rule's words where nothing looks like it.
+
+**The tables:**
+
+| Table | Before | After |
+|---|---|---|
+| Rule-versus-write | 141 cells | 163, none awaiting |
+| Offer-versus-run | 16 cases × 8 viewers | 22 cases × 8 viewers |
+| Heavy-rows matrix | 5 rows | 7 (the heavy admit's approval, its messages delivered) |
+
+**Not served, owed:**
+- the nearest known body (B01-5d);
+- nearby drawings;
+- a drawing's distance;
+- a skate's distance (no row stores one).
+
+**The web doesn't draw yet** (the web follow-up's brief):
+
+- **Request:**
+  - a contest's `ruling` (as 2.2's ruling event);
+  - an activate's `dormancy`;
+  - each ask's `skate` times and moving time, beside *With a recorded skate*.
+- **Place:** the byline's `landmarkAsks` (2.4's counts).
+- **Drawn:**
+  - `fromReport.excerpt`;
+  - the `skate`'s times;
+  - its track on the map (`itemMapAdapters` draws no skate);
+  - `drawerReports`.
+- **The bell:** nothing. A retraction's `place` is already worded by core's `describeNotification`,
+  which the bell calls.
 
 #### Briefs (B01-5d)
 
