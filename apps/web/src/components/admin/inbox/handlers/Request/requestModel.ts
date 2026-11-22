@@ -9,6 +9,7 @@ import { shortAge } from '@/lib/ages';
 
 import { firstName, statusDate } from '../../../body/frame/bodyModel';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
+import { shownName } from '../../blocks/shownName';
 import { acres } from '../../list/inboxModel';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { askedBy } from '../../words/inboxWords';
@@ -136,8 +137,10 @@ export function dormancyRows(d: RequestDormancy, timeZone?: string): Row[] {
     ...(d.note !== null && d.note.trim() !== ''
       ? [{ label: W.note, value: `“${d.note.trim()}”` }]
       : []),
-    // Staff are named by first name on the console.
-    ...(d.by !== null ? [{ label: W.setBy, value: firstName(d.by.displayName) }] : []),
+    // Staff are named by first name on the console; one who is gone or leaving isn't named.
+    ...(shownName(d.by) !== null
+      ? [{ label: W.setBy, value: firstName(shownName(d.by) as string) }]
+      : []),
   ];
 }
 

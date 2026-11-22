@@ -55,6 +55,8 @@ export const ACCESS_WORDS = {
   by: 'By',
   /** The ruling event when the person who ruled is gone. */
   someoneGone: 'A former moderator',
+  /** A reporter who is gone or leaving: never named. */
+  formerSkater: 'A former skater',
   /** The two *If* blocks with no standing ruling, or after a no-access one. */
   newRuling: 'The first on this body',
   replaces: (date: string) => `Replaces ${date}’s`,

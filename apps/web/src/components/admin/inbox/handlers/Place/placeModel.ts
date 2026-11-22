@@ -2,6 +2,7 @@ import { LANDMARK_KIND_LABELS, type LandmarkKind, landmarkNameKey } from '@skati
 import type { CompareRow } from '@/components/kit/compare-table';
 import { ageInWords } from '@/lib/ages';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
+import { shownName } from '../../blocks/shownName';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { PLACE_WORDS as W } from './placeWords';
 
@@ -244,7 +245,6 @@ export function landmarkHistory(l: PlaceAsk['landmarkAsks']): string | null {
 
 /** The asker's *Trust* row: their standing, then their landmark history where it is served. */
 export function askerStanding(ask: PlaceAsk, trust: string): string {
-  const p = ask.asker;
-  const history = p === null || p.deleted ? null : landmarkHistory(ask.landmarkAsks);
+  const history = shownName(ask.asker) === null ? null : landmarkHistory(ask.landmarkAsks);
   return history === null ? trust : `${trust} · ${history}`;
 }

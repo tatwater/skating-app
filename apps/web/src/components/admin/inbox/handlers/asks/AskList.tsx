@@ -7,6 +7,7 @@ import { shortAge } from '@/lib/ages';
 
 import { dayMonth } from '../../../shell/consoleTime';
 import { ListCutLine, type ListTotal } from '../../blocks/listCut';
+import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import type { InboxItemView } from '../../list/inboxTypes';
@@ -67,7 +68,7 @@ export function AskList({
       <ul aria-label={W.list} className="m-0 flex list-none flex-col gap-(--space-3_5) p-0">
         {asks.map((a) => (
           <li key={a.requestId} data-slot="ask" className="flex min-w-0 flex-col gap-(--space-1_5)">
-            {a.asker === null || a.asker.deleted ? (
+            {shownName(a.asker) === null || a.asker === null ? (
               <div className="flex min-w-0 items-baseline justify-between gap-(--space-3)">
                 <span data-slot="ask-gone" className="text-row leading-list text-fg3">
                   {W.goneAsker}

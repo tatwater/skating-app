@@ -20,6 +20,7 @@ import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { LinkChip } from '../../blocks/LinkChip';
 import { listTotalOf } from '../../blocks/listCut';
+import { shownName } from '../../blocks/shownName';
 import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import {
   InspectorHeadAge,
@@ -121,14 +122,11 @@ function Part({ className, ...props }: ComponentProps<'div'>) {
 
 function Asker({ ask }: { ask: NonNullable<ReturnType<typeof primaryAsk>> }) {
   const p = ask.asker;
-  return p === null || p.deleted ? (
+  const name = shownName(p);
+  return p === null || name === null ? (
     <span className="text-fg3">{W.formerSkater}</span>
   ) : (
-    <PersonLockup
-      size="md"
-      name={p.displayName}
-      {...(p.username !== '' ? { handle: p.username } : {})}
-    />
+    <PersonLockup size="md" name={name} {...(p.username !== '' ? { handle: p.username } : {})} />
   );
 }
 
@@ -175,7 +173,7 @@ export function PlaceBody({
           {ask !== null && where !== null && (
             <Note data-slot="place-from-where">
               {W.fromWhere(
-                ask.asker === null || ask.asker.deleted ? W.formerSkater : ask.asker.displayName,
+                shownName(ask.asker) ?? W.formerSkater,
                 dayTime(where.skateEndTime, timeZone),
               )}{' '}
               {where.where !== null && <strong>“{where.where}”</strong>}
@@ -228,7 +226,7 @@ export function PlaceBody({
               total={listTotalOf(item, item.asksCut)}
               // Each asker's landmark history where it is served (the read serves the first few).
               rowMeta={(a) =>
-                a.asker === null || a.asker.deleted ? null : landmarkHistory(a.landmarkAsks)
+                shownName(a.asker) === null ? null : landmarkHistory(a.landmarkAsks)
               }
             />
           </Section>

@@ -22,6 +22,7 @@ import {
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
 import { LinkChip } from '../../blocks/LinkChip';
+import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
 import {
   InspectorHeadAge,
@@ -167,7 +168,7 @@ export function DrawnBody({
                 {
                   label: W.user,
                   value:
-                    drawer === null || drawer.deleted ? (
+                    drawer === null || shownName(drawer) === null ? (
                       <span className="text-fg3">{W.drawerGone}</span>
                     ) : (
                       <PersonLockup

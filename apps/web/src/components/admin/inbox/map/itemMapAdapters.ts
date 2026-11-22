@@ -3,6 +3,7 @@ import type { FunctionReturnType } from 'convex/server';
 
 import { acresText } from '../../bodies/bodiesModel';
 import { dayMonth } from '../../shell/consoleTime';
+import { shownName } from '../blocks/shownName';
 import type { InboxItemView } from '../list/inboxTypes';
 import {
   accessScene,
@@ -87,8 +88,8 @@ function skatesLegend(
 ): string | undefined {
   if (tracks.length === 0) return undefined;
   if (tracks.length > 1) return W.skates;
-  const asker = item.asks.find((a) => a.activityId === tracks[0]?.id)?.asker;
-  return asker && !asker.deleted ? W.skateOf(asker.displayName) : W.aSkate;
+  const asker = shownName(item.asks.find((a) => a.activityId === tracks[0]?.id)?.asker);
+  return asker !== null ? W.skateOf(asker) : W.aSkate;
 }
 
 /** A caption from its parts, or none. */
@@ -195,7 +196,8 @@ function drawnMap(
   if (map.body === null) return null;
   const known = map.others[0] ?? null;
   const ours = item.overlap?.body;
-  const drawer = item.drawer?.displayName;
+  // Never a name for a drawer who is gone or leaving (the inspector says "A former skater").
+  const drawer = shownName(item.drawer);
   const fact = shoreFact(map.overlapShare);
   // The skate the drawing was made from: one track at most (the server sends it only with a track).
   const track = map.tracks[0] ?? null;
