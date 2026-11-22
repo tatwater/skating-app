@@ -8363,6 +8363,74 @@ scope.
 **Also changed:** the reopen's per-flag cost (`FLAG_REOPEN_COST`) now counts the rule's reads. A flag
 decision's own undo now refuses whole only on its lead flag (see the undo policy above).
 
+#### Greptile on #171, round 1 (2026-11-21)
+
+**The score:** 4/5 on `9efea7c27`, with three P2s. All three are real and share one class: a behavior
+that exists and is tested at its own level, with the live wiring not reaching it.
+
+- **Today included yesterday.** `InboxRoute` took the day from the list's frozen clock, so a list
+  left open past midnight kept counting "decided today" and Inbox zero's day from yesterday.
+  **Fix:** the day is `localMidnight` of the live minute clock. That changes only when the day does,
+  so no read re-subscribes on a minute tick. The server holds a `dayStart` within
+  `[now − 1.5 days, now]` (`heldDayStart`, in `inbox.lanes` and `inbox.today`), so the day reads are
+  asked with `{ now: max(listClock, dayStart), dayStart }`: today's pair until midnight passes the
+  list's clock, then moving once. The pages keep the list's clock, so the paging never restarts.
+- **Changing lanes closed a linked item.** `InboxView` forced `item: null` on a lane select,
+  defeating the route's `placeAfter`. **Fix:** removed. The tabs, the filters and clearing a filter
+  already left the item to the route.
+- **Phone maps caught scrolling gestures.** `ItemMap` never passed `viewOnly`. **Fix:** the view's
+  one narrow signal (`useColumnsFit`) reaches the inspector's context as `narrow`, and `ItemMap`
+  draws the map view-only there.
+
+**The tests that now hold each, at the level where it broke** (each fails with its bug put back):
+- `InboxRoute.wiring.test.tsx` renders the real route around the real view, with only the router,
+  the role and the read layer stood in, and records every read's arguments. In it, the day crosses
+  midnight with the list open: the day reads move to the new midnight, the pages' clock and chain
+  don't, and an ordinary minute re-asks nothing. And a linked item is kept, and a list-opened one
+  closed, through a lane, a tab and a filter.
+- `ItemMap` on a narrow page draws the view-only map, and on a wide page doesn't.
+- A `localMidnight` property, with New York's two change days and Lord Howe's half-hour ones pinned,
+  runs in all seven zones.
+
+**What the sweep found:**
+- **A capability with no live caller:** `FlagView`'s optional `peopleHref` and `bodyHref`, which no
+  caller, story or test overrode, are deleted. `InboxView`'s `timeZone` and `registry` are deliberate
+  seams (a pinned zone, a story's handlers), and their docs now say the live page passes neither.
+  Ten optional kit props have no live caller (`LifeStrip`'s and `LifeList`'s `showKey`,
+  `MapLayerRack.collapsed`, `MapScaleBar.maxWidth`, `SizedMark.big`, four of `SearchLane`'s, and
+  `ToolbarOverflow.moreLabel`). All predate this PR, on main's kit or carried in with People's
+  candidates, and stay as library options.
+- **Clocks:** each reads the one it needs. The pages, a lane's tail and the zero page's decided list
+  read the list's clock. Ages, "ago" words, the lock's time, the chart's span and the day read the
+  live minute. The author menu reads People on the minute the person opened, and the item's map on
+  the minute the item opened. *Around it* and *That night* take no clock (their window is relative
+  to the report). The context's `Date.now()` is only the default outside a provider (a handler's own
+  story).
+- **A child deciding the route's place:** the lane select was the only one.
+- **Phones:** besides the map, everything narrow is self-measuring (`ActionBar`'s and `LifeStrip`'s
+  narrow forms) or switched by the view's own rule (the hidden panes). No other prop waits on a narrow
+  caller.
+
+**CI on the first head.** `9efea7c27` went red on one test: Inbox zero's span property, on seed
+396754415, with the counterexample `["Australia/Lord_Howe", 1791070200000, []]`. Nine local runs had
+passed because the property draws a fresh seed each run and none drew that input. **The bound was
+wrong, not the code.** With nothing decided, the chart reaches back to 02:30 LHDT on 4 Oct 2026, the
+first instant after Lord Howe's clocks jumped from 02:00 to 02:30. Local 02:00 never happened, so the
+latest whole local hour is 01:00 LHST, a full real hour before; the property wanted "less than an
+hour". Across a half-hour change forward, two consecutive whole local hours are 90 real minutes
+apart. The span and floor properties now say the start is the latest whole local hour and under 90
+minutes before; the counterexample is pinned.
+
+**The higher-run pass.** Every `fast-check` property this PR adds or changes under `apps/web` (19
+test files) ran at 20× its configured runs, or 5,000 where none was set, under `TZ=Australia/Lord_Howe`,
+`TZ=Asia/Kathmandu` and `TZ=UTC`. It found one more, and **this time the code was wrong**: at
+01:00:00.001 LHST that morning, the chart's end, "an hour on, floored", fell back to 01:00, before
+now, because the next whole hour is 03:00 LHDT, 90 minutes on. `ceilLocalHour` (the floor's mirror)
+now gives the end, the same as before wherever clocks move by whole hours; the counterexample is
+pinned and a property holds the ceiling. After the fix, the hot pass ran clean in all three zones,
+and twice more in Lord Howe. Only `InboxZero`'s and `StepRugChart`'s properties take zones from a
+list; the rest read the process's zone.
+
 #### How the forks were ruled (2026-11-20)
 
 The design's twelve forks, answered the same day (§7, the founder's second block and the governor's
