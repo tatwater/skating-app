@@ -34,6 +34,7 @@ import {
   type TxCost,
 } from './lib/inboxItems';
 import { enqueueModeratorDecision, settleReadCost } from './lib/notificationQueue';
+import { parsePayload } from './lib/notificationResolve';
 import { REQUEST_SIBLINGS_MAX, siblingCost } from './lib/requestDecisions';
 import { SEED_CLERK_PREFIX } from './lib/seedPeople';
 import schema from './schema';
@@ -154,6 +155,14 @@ const CONTINUATIONS = new Set([
 const queueRows = (t: T) => t.run((ctx) => ctx.db.query('notificationQueue').collect());
 const inboxRows = (t: T) => t.run((ctx) => ctx.db.query('notifications').collect());
 
+/** Every queued row due now, unflushed. */
+const makeDue = (t: T) =>
+  t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+
 /**
  * Make every queued row due and flush until the queue is empty — the cron's work, done now. Each
  * flush is a transaction of its own (the harness holds each to Convex's limits); a large queue takes
@@ -242,6 +251,46 @@ describe('an ask’s decision tells its asker (D285)', () => {
     expect(describeNotification(view as NotificationView).title).toBe(
       'Gli added Pond B to the map',
     );
+  });
+
+  test('an approved admit names the lake it admitted', async () => {
+    const w = await world();
+    const requestId = await w.t.run(async (ctx) => {
+      const id = await ctx.db.insert('waterBodyRequests', {
+        kind: 'admit',
+        status: 'open',
+        requesterId: w.asker.id,
+        coord: { lat: 30.5, lng: 30.5 },
+        candidate: {
+          source: '3dhp',
+          externalId: 'catalog/new',
+          name: 'Found Pond',
+          featureType: 390,
+          cls: 'lakePond',
+          polygon: SQUARE(30.5) as never,
+          bbox: { minLat: -0.5, minLng: 30, maxLat: 0.5, maxLng: 31 },
+          centroid: { lat: 0, lng: 30.5 },
+          surfaceAreaSqM: 1_000_000,
+          serviceUrl: 'https://example.invalid/3dhp',
+          fetchedAt: NOW - 1000,
+        },
+        candidateExternalId: 'catalog/new',
+        resolvedAt: NOW - 1000,
+        createdAt: NOW - 10_000,
+      });
+      await fileMember(ctx, requestSource(id));
+      return id;
+    });
+    await w.admin.as.mutation(api.corpusRequests.approve, { requestId });
+    const admitted = (await w.t.run((ctx) => ctx.db.get(requestId)))?.admittedWaterBodyId;
+    expect(admitted).toBeDefined();
+    await flushAllDue(w.t);
+    const [view] = await inboxOf(w.asker.as, KNOWS);
+    expect(view).toMatchObject({
+      about: 'admit',
+      outcome: 'approved',
+      body: { id: admitted, name: 'Found Pond' },
+    });
   });
 
   test('a declined admit has no lake yet, and still reads as a sentence', async () => {
@@ -359,6 +408,22 @@ describe('an ask’s decision tells its asker (D285)', () => {
     ]);
   });
 
+  test('a row already due when its decision is undone and made again: only the new decision is told', async () => {
+    const w = await world();
+    const requestId = await activate(w);
+    await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'First' });
+    // Due but not yet flushed: a later event can't join it, so the next decision gets a row of its own.
+    await makeDue(w.t);
+    await undo(w, (await decisionOf(w.t, 'decline_request', requestId))?._id);
+    await w.mod.as.mutation(api.corpusRequests.decline, { requestId, note: 'Second' });
+    expect(await queueRows(w.t)).toHaveLength(2);
+    // The first row's decision was undone: the ask is closed again, but by another row.
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    expect((await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { note?: string }).note)).toEqual([
+      'Second',
+    ]);
+  });
+
   test('the undo of a reopen declines again inside the window — the message stands, once', async () => {
     const w = await world();
     const requestId = await activate(w);
@@ -448,6 +513,18 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
     await w.admin.as.mutation(api.waterBodies.reject, { waterBodyId: body });
     expect(await flushAllDue(w.t)).toHaveLength(1);
     await undo(w, (await decisionOf(w.t, 'reject_waterbody', body))?._id);
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+  });
+
+  test('a review’s row already due when it is undone and made again: only the new review is told', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    await makeDue(w.t);
+    await undo(w, (await decisionOf(w.t, 'approve_waterbody', body))?._id);
+    await w.mod.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    expect(await queueRows(w.t)).toHaveLength(2);
+    // Approved again, but the first row's approval was undone: one message.
     expect(await flushAllDue(w.t)).toHaveLength(1);
   });
 
@@ -666,6 +743,38 @@ describe('who is never told', () => {
     );
     await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
     expect(await flushAllDue(w.t)).toHaveLength(1);
+  });
+});
+
+describe('the stored payload, read back', () => {
+  test('only the pairs a writer gives are read; a drawing’s reason never reaches its drawer', () => {
+    const read = (p: Record<string, unknown>) => parsePayload('moderator_decision', p);
+    expect(
+      read({ kind: 'request_decided', about: 'drawn', outcome: 'rejected', note: 'Duplicate' }),
+    ).toEqual({ kind: 'request_decided', about: 'drawn', outcome: 'rejected' });
+    expect(
+      read({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' }),
+    ).toEqual({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' });
+    // An empty note is no note.
+    expect(
+      read({ kind: 'request_decided', about: 'admit', outcome: 'declined', note: '' }),
+    ).toEqual({ kind: 'request_decided', about: 'admit', outcome: 'declined' });
+    for (const bad of [
+      { kind: 'request_decided', about: 'drawn', outcome: 'declined' },
+      { kind: 'request_decided', about: 'admit', outcome: 'rejected' },
+      { kind: 'request_decided', about: 'admit', outcome: 'retracted' },
+      { kind: 'request_decided', about: 'photo', outcome: 'approved' },
+      { kind: 'request_decided', outcome: 'approved' },
+      { kind: 'alert_retracted', accessAlertId: 'a' },
+      { kind: 'something_else' },
+    ]) {
+      expect(read(bad), JSON.stringify(bad)).toBeNull();
+    }
+    expect(read({ kind: 'alert_retracted', accessAlertId: 'a', waterBodyId: 'b' })).toEqual({
+      kind: 'alert_retracted',
+      accessAlertId: 'a',
+      waterBodyId: 'b',
+    });
   });
 });
 
