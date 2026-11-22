@@ -12,10 +12,10 @@ import { PLACE_WORDS as W } from './placeWords';
  * **The place handler's writes** (board 2.4): *Same place* and *Approve* are
  * `corpusRequests.approve` — *Same place* carrying `sameAs` (the lookalike's id, the name and the
  * point the moderator saw it by) — and *Decline* is `corpusRequests.decline` with the note the
- * asker reads. Each is written on the item's first ask, the one its rule was read from; the server
- * closes its siblings with it. Each asks the Inbox's rule first, so the lever and the write say one
+ * asker reads. Each is written on the ask the server names (`primaryRequestId`: the newest open one
+ * served, whose reach the item's `can` was checked for); the server closes its siblings with it. Each asks the Inbox's rule first, so the lever and the write say one
  * thing; each runs through `useDecisionRunner` (refusals to a toast, the receipt with Undo on the
- * decision's row, `reopen_request`).
+ * decision's own row, from the write's answer).
  */
 
 export type PlaceAct = 'samePlace' | 'approve' | 'decline';

@@ -14,8 +14,9 @@ import {
 import { REQUEST_HANDLER_WORDS as W } from './requestWords';
 
 /**
- * **The request handler's one write path** — the corpus request writes, sent for the item's oldest
- * open ask (the decision closes every ask of its question, its siblings paged by the server):
+ * **The request handler's one write path** — the corpus request writes, sent for the ask the server
+ * names (`primaryRequestId`: the newest open one served; the decision closes every ask of its
+ * question, its siblings paged by the server):
  * `corpusRequests.approve` (a takedown's with its reason, as the note the asker reads),
  * `corpusRequests.decline` (with the note the asker reads), and `corpusRequests.reresolve` (*Look up
  * again*). Each asks the Inbox's own rule on the item before it writes (`assertMayDecide`), so a lever
