@@ -7795,6 +7795,29 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   and Enter went to the trigger and shut the menu. The test now waits for focus inside the menu, then
   for Sign out to light, then for the call. It failed 3 of 80 runs before and 0 of 85 after; the time
   zone was a coincidence. The test is on main's code, so the fix also rides on PR 1's branch.
+- **The placeholder points at the page that still decides it** (W1, fourth pass, 2026-11-21). Each
+  kind with no handler yet says so in one line and links there, same tab:
+
+  | Kind | The line | Links |
+  |---|---|---|
+  | A photo flag | "A flag on a photo is decided on the Flags page for now." | *Flags* (`/admin/flags`) |
+  | A request | "Requests are decided on the Requests page for now." | *Requests* (`/admin/water/requests`) |
+  | A place ask | "Place asks are decided on the Requests page for now, or answered by drawing in the body’s editor." | *Requests*, and *Body editor* (`/admin/water/<body>`) |
+  | A drawn body | "Drawn bodies are decided in the Water bodies list for now." | *Water bodies* (`/admin/water`) |
+  | A ticket | "Support tickets are answered on the Support page for now." | *Support* (`/admin/support`), for a viewer who reads support |
+
+  A test holds every handler key to a registered handler or one of these destinations. **None of the
+  old pages reads a search param,** so no link opens the item there or carries a way back; the
+  browser's Back returns to the Inbox. Deep links are owed with each old page's retirement, not
+  before. A member count the server capped draws as "500+". People's *Handle* on a flag opens its
+  Inbox item (Pe6, closed for flags; an appeal keeps the Support page).
+
+  **What a part-finished decision looks like.** While a large decision's later pages run, the item
+  stays open with a falling count until its last member closes. The lock stays live with no banner,
+  and Inbox zero waits for the last item.
+
+  **For the copy pass,** the new words: the five lines above, and the link labels "Body editor" and
+  "Water bodies".
 - **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
   handler draws no map. **Owed to the kit:** an `ActionBar` narrow layout (three buttons run to
   471 px at 360), a controlled `open` on `ReasonAsk`, and the promotion of `ReticleMark`,
@@ -8672,7 +8695,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe3 | A person write that answers `{undoable: false}` still did the undo lookup | `person/usePersonWrites.ts` | done in #145 | performance/polish | S | — |
 | Pe4 | The People list didn't pass `endCursor`, so a change in an earlier page dropped the deeper pages | `list/peopleReads.ts` | done in #142 (B01-4i) | correctness | S–M | — |
 | Pe5 | The record sheet's three lists take no `endCursor` | `contentRecord.ts` `personVerdicts`, `personReversed`, `personDeleted` | done in #145 | correctness | M | — |
-| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. Its *Handle* links still go to the old flags and support lists: blocked on the Inbox | missing | S | — |
+| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. **Closed for flags in B01-5b** (2026-11-21): a flag's *Handle* opens its Inbox item; an appeal's still goes to the Support page until the ticket handler lands | done for flags; appeals wait | S | — |
 | Pe7 | The lever facts the server sends: since when a right is off, ledger "since", the bounty season line, each lever's own `can`, the profile-opens link | `person/LeverBlock.tsx`, `PersonView.tsx` | done in #145 | missing | M | — |
 | Pe8 | The staff strip didn't name who undid a staffer's decisions | `person/personModel.ts` | done in #142 | missing | S | — |
 | Pe9 | A Post restored with chosen Reports: those Reports left Standing with no row for the sitting | `record/RecordSheet.tsx` | done in #145 | polish | S | — |
