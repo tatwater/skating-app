@@ -881,6 +881,15 @@ Made on the design's engineering forks; the founder may overturn any of them.
 9. **A request decision's drain closes at most 499 siblings** (`REQUEST_SIBLINGS_MAX`; 2026-11-21,
    round five). Any past that stay open in their item for another decision, as a ruling already leaves
    reports past its cap.
+10. **B01-5b doesn't retire `/admin/flags`** (2026-11-21, after #170 merged). A flag on a photo has no
+    handler until the photos PR, and the frame draws it read-only, so retiring the old page now would
+    leave photo flags undecidable. The old flags, requests and support pages all stay in the Legacy
+    group, untouched, with `OLD_SHELL_TREES` unchanged; the Inbox is added beside them. **Each old page
+    retires with the PR that lands the last handler it still serves:** flags with photos, requests with
+    the request handlers, support with support (*Legacy retirement*, in the design). **Owed before
+    B01-5b opens:** the read-only placeholder (a photo flag, a request, a place ask, a drawn body, a
+    ticket) draws only the item's facts. Neither its row nor its pane says the item is decided on the
+    old page, and neither links there.
 
 ### The founder's calls of 2026-11-21
 
@@ -891,7 +900,8 @@ Asked by the governor as the Inbox's first PR was cut. **The calls:**
    enough) that we get 5/5 first time on all seven, vs going round and round with the two PRs. I'll
    leave it to you." The governor's slicing: **B01-5a**, the Inbox's server and its seed; **B01-5b**,
    the Inbox's web so far — the kit additions, the frame, the embedded map, the Access and flag
-   handlers, and `/admin/flags` retired; then the remaining slices as designed (requests, places,
+   handlers (and `/admin/flags` retired — overturned by the governor's ruling 10: the old page stays
+   until the photos PR); then the remaining slices as designed (requests, places,
    drawn bodies and telling askers; merge and unmerge; photos; support), bundled where they review as
    one unit. The design's *The slices* and *The phase branch for this wave* say how each is cut.
 2. **Pin as official is offered on the Inbox's alert item** (board 2.6), so retiring the old flags
@@ -6948,9 +6958,13 @@ console's territory), specified by the canonical snippet below.
 
 ##### Legacy retirement
 
+Each old page retires with the PR that lands the **last** handler it still serves (§7, the governor's
+ruling 10, 2026-11-21): B01-5b (the list and the flag handlers but a photo's) retires nothing, and the
+flags row below moves to the photos PR.
+
 | PR | Redirects | `OLD_SHELL_TREES` loses | Links fixed |
 |---|---|---|---|
-| 2 (the list and flags) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
+| 5 (photos; was 2 — the photo flag is the old flags page's last kind without a handler) | `/admin/flags` → `/admin/inbox?lane=safety` | `/admin/flags` (and the init script's copy in `lib/theme.ts`) | `overviewRoutes.consolePathFor` inbox lanes and audit `contentFlag`/`report`/… → the Inbox; People's `PersonFeeds` flag *Handle* → `?item=flag:<id>` (Pe6); the Bodies preview's flag asks; `contentFlags.flag`'s and the auto-flag's operator mail deep links |
 | 3 (requests, places, drawn) | `/admin/water/requests` → `?lane=requests` | — (`/admin/water` stays for the editor, Bo23) | request and drawn asks; audit `waterBodyRequest`; the record sheet's flag links (Pe25, by the item's open flag ids — a server ask: `contentRecord.item` returns them) |
 | 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
 | 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
@@ -7014,8 +7028,9 @@ After the seed, on dev: `peopleJobs:backfillRows` (Pe26) runs against real suspe
 **As shipped** (§7, *The founder's calls of 2026-11-21*: fewer PRs, Greptile being metered per
 request): **B01-5a** is PR 1 below with the seed — the Inbox's server, its seed, and the least of the
 web the server forces (the audit-verb words, the Overview's Inbox card and heading); **B01-5b** is the
-Inbox's web so far — PR 2's kit additions, frame, embedded map, the Access and flag handlers, and
-`/admin/flags` retired; PRs 3–6 follow as designed, bundled where two review as one unit. The table
+Inbox's web so far — PR 2's kit additions, frame, embedded map, and the Access and flag handlers with
+*Pin*; **it does not retire `/admin/flags`** (§7, the governor's ruling 10; *Legacy retirement*
+below); PRs 3–6 follow as designed, bundled where two review as one unit. The table
 is the design's six, kept for what each holds.
 
 
