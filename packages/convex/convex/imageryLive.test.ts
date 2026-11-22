@@ -373,6 +373,7 @@ async function seedAdmin(t: T) {
         favoriteReport: true,
         nearbyReportDigest: true,
         greatReportNearby: true,
+        moderatorDecision: false,
       },
       dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,

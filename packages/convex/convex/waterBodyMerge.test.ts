@@ -49,6 +49,7 @@ async function seedMod(t: ReturnType<typeof convexTest>, subject = 'mod') {
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,
@@ -156,7 +157,12 @@ describe('waterBodies.merge (D36)', () => {
       loserId: loser,
       reason: 'same pond',
     });
-    expect(returned).toBe(survivor);
+    // The survivor and the merge's own row, with the undo on offer (B01-5d) — whatever the registry
+    // says of it today.
+    expect(returned.survivorId).toBe(survivor);
+    const row = await t.run((ctx) => ctx.db.get(returned.actionId));
+    expect(row).toMatchObject({ action: 'merge_waterbody', targetId: loser });
+    expect(typeof returned.undoable).toBe('boolean');
 
     // Children now point at the survivor.
     const after = await t.run(async (ctx) => ({
@@ -236,6 +242,7 @@ describe('waterBodies.merge (D36)', () => {
           favoriteReport: true,
           nearbyReportDigest: false,
           greatReportNearby: false,
+          moderatorDecision: false,
         },
         dateOfBirth: Date.UTC(1990, 0, 1),
         reputationPoints: 0,

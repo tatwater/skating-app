@@ -51,7 +51,7 @@ import type { DataModel, Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { inboxPending } from './inboxItems';
 import { hasCapability, requireCapability } from './lib/auth';
-import { type InboxRuleFacts, inboxCan } from './lib/inboxRules';
+import { type InboxRuleFacts, inboxCan, inboxCanWithCodes } from './lib/inboxRules';
 import {
   claimsOf,
   decidedOf,
@@ -112,6 +112,19 @@ export type InboxVerb =
  * refusal, word for word (D268), and the button is not drawn (D217).
  */
 export type InboxCan = Partial<Record<InboxVerb, string | null>>;
+
+/**
+ * Why a verb is refused, where a client must tell one refusal from another without reading its
+ * words (B01-5d): `awaitsDrawing` — a place ask's *Approve* waits on a bay or landmark not drawn
+ * yet, so the handler offers *Draw in Body →*; `ownDrawing` — a drawing's merge refused to the
+ * staffer who drew it (D289), the code the Shape tab's preview gives too; `unmerging` — a merge refused
+ * while an unmerge is still running on either body (R10-A). Only refusals a client acts
+ * on have a code.
+ */
+export type InboxRefusalCode = 'awaitsDrawing' | 'ownDrawing' | 'unmerging';
+
+/** Each refused verb's code, where it has one (absent for a verb allowed or a refusal with none). */
+export type InboxCanCode = Partial<Record<InboxVerb, InboxRefusalCode>>;
 
 /** Who decided an item, when and what (the Decided rows and the colleague lock, D283). */
 export type InboxDecidedState = {
@@ -456,9 +469,10 @@ export type CandidateView = {
   /** How far the feature is from the first ask's point. */
   metersFromAsk: number | null;
   /**
-   * The nearest body already on the map ("Ricker Pond · 1.3 km west"). **Not served yet: always
-   * `null`** (B01-5c) — a bounded geo read doesn't fit this item's budget; it is to be stamped when the
-   * catalog answers, which needs a schema field (a seam request).
+   * The nearest body already on the map ("Ricker Pond · 1.3 km west"), as the catalog lookup stamped
+   * it on the ask (`waterBodyRequests.nearestKnown`, B01-5d: a bounded geo read at the lookup's write,
+   * never at this read). `null` for an ask looked up before it was stamped — until *Look up again* —
+   * and when no listed body lies within the lookup's margin.
    */
   nearestKnown: { waterBodyId: Id<'waterBodies'>; name: string; meters: number } | null;
 };
@@ -547,6 +561,12 @@ type ItemBase = {
    */
   memberCountIsFloor: boolean;
   can: InboxCan;
+  /**
+   * The refusal codes beside `can` (B01-5d): a refused verb's code where a client acts on which
+   * refusal it is — `approve: 'awaitsDrawing'` exactly where a place ask's *Approve* waits on a bay or
+   * landmark not drawn yet (the handler's *Draw in Body →*). Empty when no refusal has a code.
+   */
+  canCode: InboxCanCode;
   decided: InboxDecidedState | null;
 };
 
@@ -1217,9 +1237,11 @@ export const item = query({
     );
     const built = await itemView(r, found);
     if (!built) return { item: null, pending };
+    const { can, canCode } = await inboxCanWithCodes(ctx, viewer, found, built.facts);
     const view = {
       ...built.view,
-      can: await inboxCan(ctx, viewer, found, built.facts),
+      can,
+      canCode,
       decided: await decidedOf(r, found),
     } as InboxItemView;
     return { item: view, pending };

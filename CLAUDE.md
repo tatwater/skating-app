@@ -44,9 +44,14 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
   `lte()` range matches every row lacking the field. Schema changes go widen → deploy → backfill →
   narrow; field names must be ASCII.
 - **`convex-test` doesn't enforce every backend rule** — a mutation that paginates twice passes
-  there and throws on a deployment. The convex suite's harness now enforces one `.paginate()` per
-  execution and Convex's default transaction limits, through a transform in
-  `packages/convex/vitest.config.ts`; a new suite or config must keep it.
+  there and throws on a deployment. The convex suite's harness (a transform in
+  `packages/convex/vitest.config.ts`; a new suite or config must keep it) enforces one `.paginate()`
+  per execution, Convex's transaction limits — index ranges and documents read counted as the real
+  backend counts them, with a fixed start cost — and the 8,192-item array cap. It can't enforce the
+  1 s execution limit (the merge bounds that by outline points). A write whose size scales with user
+  data is proven on a throwaway local backend at the edge of its own refusal before its PR opens.
+- **Convex refuses any array over 8,192 items** (a document, scheduled args, a function's args or
+  result); the harness enforces it — split rings, cap tracks at `MAX_TRACK_POINTS`.
 - **Bound every corpus-wide read** — pass `marginMeters` to `listedBodiesNearCoord`; without it one
   ETL load read 105 GB and disabled the deployment.
 - **A test that reads the repo belongs in `packages/guards`** — Turbo hashes a package's own files

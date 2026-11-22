@@ -41,6 +41,7 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor',
   'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue; sendFor',
   'components/admin/body/tabs/places/PlacesTab.tsx': 'act (sendFor)',
+  'components/admin/body/tabs/shape/ShapeTabRoute.tsx': 'the merge: attempt (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
   'components/admin/inbox/handlers/Access/useAccessWrites.ts': 'said, naming the body',
@@ -56,6 +57,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/shell/ConsoleLayout.tsx':
     'the presence heartbeat: no one asked, nothing to say',
   'components/admin/shell/undo.tsx': 'said: "Not undone"',
+  'components/admin/shell/UnmergeLeft.tsx':
+    'said: "Not resumed" / "Not abandoned" (a stalled unmerge’s Resume and Abandon)',
   'components/skater/profile/ModeratorTools.tsx':
     'said, naming the person; a write that changed nothing, the person page’s receipt',
 };

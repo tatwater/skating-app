@@ -51,6 +51,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 function me(over: Record<string, unknown> = {}) {

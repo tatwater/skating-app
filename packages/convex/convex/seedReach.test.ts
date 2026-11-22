@@ -27,6 +27,7 @@ const PREFS_ON = {
   favoriteReport: true,
   nearbyReportDigest: true,
   greatReportNearby: true,
+  moderatorDecision: false,
 };
 
 async function person(t: T, clerkUserId: string, role: 'member' | 'admin' = 'member') {

@@ -4,6 +4,7 @@ import {
   type ReactElement,
   type ReactNode,
   type RefObject,
+  useContext,
   useState,
 } from 'react';
 
@@ -13,14 +14,10 @@ import { Note, Quote } from '@/components/kit/note';
 import { OverlapGauge } from '@/components/kit/overlap-gauge';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
-import { ToolbarItem } from '@/components/kit/toolbar';
-import {
-  COMING_SOON,
-  ComingSoonLink,
-  UnavailableButton,
-} from '@/components/kit/unavailable-button';
+import { ComingSoonLink } from '@/components/kit/unavailable-button';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { dayMonth } from '../../../shell/consoleTime';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { LinkChip } from '../../blocks/LinkChip';
 import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
@@ -31,6 +28,7 @@ import {
 } from '../../inspector/InspectorFrame';
 import {
   type DrawnItem,
+  type DrawnSurvivor,
   drawnBar,
   hasBar,
   headLine,
@@ -48,10 +46,10 @@ import type { DrawnAct } from './useDrawnWrites';
  * - **Head** — *Drawn body*, where it came from and its age, *Open in Body →* (live: the drawing's
  *   own Body console).
  * - **Body** — the map (the drawing dashed over the body it overlaps); the overlap gauge, from the
- *   server's share; the report it came from and who drew it; *If merged into ‹body›*, which says
- *   what a merge does and that it is not here yet — never an offer to do it.
- * - **Bar** — *Merge into ‹body›* drawn as *Coming soon* (D286), with no key until it does something, *Approve as new* (A),
- *   *Reject* (R, its reason asked: kept in the audit log, never sent to the drawer). Each only where `can` allows its verb.
+ *   server's share; the report it came from and who drew it; *If merged into ‹body›*: what moves.
+ * - **Bar** — *Merge into ‹body›* (M, the server's survivor, one press), *Approve as new* (A),
+ *   *Reject* (R, its reason asked: kept in the audit log, never sent to the drawer). Each only where
+ *   `can` allows its verb.
  *
  * No reads, no writes: the container binds them. A refusal is the shell's toast (D268).
  */
@@ -63,6 +61,8 @@ export type DrawnHandlerProps = {
   map: ReactNode;
   /** The link into the drawing's Body console: an anchor element (the router's `Link`), unstyled. */
   bodyLink: ReactElement;
+  /** Folds the drawing into the survivor the bar shows; resolves whether it landed. */
+  onMerge: (survivor: DrawnSurvivor) => Promise<boolean>;
   onApprove: () => Promise<boolean>;
   /** Sends the rejection with its reason; resolves whether it landed (the dialog closes on `true`). */
   onReject: (reason: string) => Promise<boolean>;
@@ -106,6 +106,7 @@ export function DrawnBody({
   timeZone,
 }: Pick<DrawnHandlerProps, 'item' | 'map' | 'timeZone'>) {
   const said = refusalSaid(item);
+  const live = useContext(UnmergeLive);
   const drawer = item.drawer;
   const report = item.fromReport;
   return (
@@ -119,7 +120,15 @@ export function DrawnBody({
       </div>
       {said !== null && (
         <Part data-slot="drawn-refusal">
-          <Note>{said}</Note>
+          {/* Held back mid-unmerge: where the route reads it live, a stalled unmerge offers Resume. */}
+          {item.canCode?.mergeDrawn === 'unmerging' && live !== null ? (
+            live.note(said, [
+              item.body.waterBodyId,
+              ...(item.overlap !== null ? [item.overlap.body.waterBodyId] : []),
+            ])
+          ) : (
+            <Note>{said}</Note>
+          )}
         </Part>
       )}
       <Part>
@@ -190,15 +199,7 @@ export function DrawnBody({
         </Section>
         {item.overlap !== null && (
           <Section title={W.ifMergedInto(item.overlap.body.name)} data-slot="drawn-if-merged">
-            <LabelRows
-              rows={[
-                ...mergeRows(item.overlap.body.name),
-                {
-                  label: W.rowHere,
-                  value: <span data-slot="drawn-merge-not-here">{W.mergeNotHere}</span>,
-                },
-              ]}
-            />
+            <LabelRows rows={mergeRows(item, item.overlap.body.name)} />
           </Section>
         )}
       </Part>
@@ -208,36 +209,32 @@ export function DrawnBody({
 
 // ── The bar ──────────────────────────────────────────────────────────────────────────────────
 
-/** *Merge into ‹body›*: the bar's button, in the kit's unavailable face — it says *Coming soon*. */
-function MergeComingSoon({ name }: { name: string }) {
-  return (
-    <ToolbarItem
-      data-slot="drawn-merge"
-      render={({ children, ...props }) => (
-        <UnavailableButton {...props} variant="outline" title={COMING_SOON} what={W.whatMerge}>
-          {children}
-        </UnavailableButton>
-      )}
-    >
-      {W.mergeInto(name)}
-    </ToolbarItem>
-  );
-}
-
 export function DrawnActions({
   item,
+  onMerge,
   onApprove,
   onReject,
   pending,
   pane,
-}: Pick<DrawnHandlerProps, 'item' | 'onApprove' | 'onReject' | 'pending' | 'pane'>) {
+}: Pick<DrawnHandlerProps, 'item' | 'onMerge' | 'onApprove' | 'onReject' | 'pending' | 'pane'>) {
   const bar = drawnBar(item);
   const [asking, setAsking] = useState(false);
   const busy = pending !== null;
   if (!hasBar(bar)) return null;
+  const survivor = bar.merge;
   const items: ActionBarItem[] = [
-    ...(bar.merge !== null
-      ? [{ kind: 'control' as const, id: 'merge', control: <MergeComingSoon name={bar.merge} /> }]
+    ...(survivor !== null
+      ? [
+          {
+            id: 'merge',
+            label: W.mergeInto(survivor.name),
+            what: W.whatMerge(survivor.name),
+            // One press: the survivor the bar shows, as the server named it.
+            onPress: () => void onMerge(survivor),
+            loading: pending === 'merge',
+            disabled: busy,
+          },
+        ]
       : []),
     ...(bar.approve
       ? [
@@ -301,6 +298,7 @@ export function drawnSlots(props: DrawnHandlerProps): {
     actions: (
       <DrawnActions
         item={props.item}
+        onMerge={props.onMerge}
         onApprove={props.onApprove}
         onReject={props.onReject}
         pending={props.pending}

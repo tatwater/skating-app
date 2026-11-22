@@ -13,7 +13,6 @@
 import {
   COUNT_CAP,
   type Count,
-  coveredFraction,
   HAZARD_VERDICTS,
   type HazardVerdict,
   haversineMeters,
@@ -22,7 +21,6 @@ import {
   INBOX_LANE_ORDER,
   INBOX_LANES,
   type LatLng,
-  MERGE_SUGGEST_SHARE,
   medianOpenedAt,
   type RequestKind,
   restrictionsOf,
@@ -67,7 +65,14 @@ import { NEIGHBOR_RING_POINTS, simplifiedRing } from './bodyGeo';
 import { heldKindOn, type VerdictTargetType } from './contentVerdicts';
 import { inboxPending, MAX_MEMBERS, readCount } from './inboxItems';
 import { MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inboxMapBounds';
-import type { AlongsideAnswer, InboxRuleFacts } from './inboxRules';
+import {
+  type AlongsideAnswer,
+  type DrawnSurvivor,
+  drawnMergeFacts,
+  drawnSurvivorOf,
+  type InboxRuleFacts,
+  liveSurvivorOf,
+} from './inboxRules';
 import { liveLandmarksForBody } from './landmarkRows';
 import {
   CHARGED_QUERY_BUDGET,
@@ -1131,8 +1136,10 @@ export async function rowLabel(
     }
     case 'drawn': {
       const water = await r.get<'waterBodies'>('waterBody', item.waterBodyId);
-      const over = water?.duplicateCandidateIds?.[0];
-      const overBody = over ? await r.get<'waterBodies'>('waterBody', over) : null;
+      // The live survivor, as the item names it — never a first candidate merged away since.
+      const overBody = water
+        ? await liveSurvivorOf(water, (id) => r.get<'waterBodies'>('waterBody', id))
+        : null;
       return {
         ...base,
         kind: 'drawn',
@@ -1159,7 +1166,10 @@ export async function rowLabel(
 
 // ── Items ──────────────────────────────────────────────────────────────────────────────────────
 
-type ItemFacts = { view: DistOmit<InboxItemView, 'can' | 'decided'>; facts: InboxRuleFacts };
+type ItemFacts = {
+  view: DistOmit<InboxItemView, 'can' | 'canCode' | 'decided'>;
+  facts: InboxRuleFacts;
+};
 
 /** An item as its handler draws it, and the facts its verbs' preconditions read. */
 export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise<ItemFacts | null> {
@@ -1334,7 +1344,8 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
               polygon: c.polygon,
               matchedAt: withCandidate?.resolvedAt ?? c.fetchedAt,
               metersFromAsk: Math.round(haversineMeters(c.centroid, first.coord)),
-              nearestKnown: null,
+              // Stamped by the lookup that found the candidate (B01-5d); an older ask's reads null.
+              nearestKnown: withCandidate?.nearestKnown ?? null,
             }
           : null;
         const facts: InboxRuleFacts = {
@@ -1438,7 +1449,9 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
       if (!body || !water) return null;
       const drawerProfile = await r.must<'profiles'>('profile', water.createdByUserId);
       const drawer = personLockup(drawerProfile, r.now);
-      const overlap = await overlapOf(r, water);
+      // The rule's facts are the gauge's own survivor: no overlap drawn, no merge offered (B01-5d).
+      const live = await drawnSurvivorOf(water, (id) => r.get<'waterBodies'>('waterBody', id));
+      const overlap = overlapView(live);
       const made = await drawnSkateOf(r, water);
       return {
         view: {
@@ -1451,7 +1464,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           fromReport: made.fromReport,
           skate: made.skate,
         },
-        facts: { hasOverlap: (water.duplicateCandidateIds?.length ?? 0) > 0 },
+        facts: drawnMergeFacts(water, live),
       };
     }
     case 'ticket': {
@@ -1698,27 +1711,21 @@ export const MAP_BOUNDS = {
 const toLngLat = (p: LatLng): InboxMapLngLat => [p.lng, p.lat];
 
 /**
- * A drawing's share inside the known body it overlaps (the first of its dedup candidates), from core's
- * `coveredFraction`; `null` when it overlaps none, the body is gone, or the clipper can't say.
+ * A drawing's overlap as 2.5's gauge draws it: its live survivor and the share of the drawing inside
+ * it — `drawnSurvivorOf`, the one function the item's `can` and `mergeDrawn` read too (B01-5d), so the
+ * bar and its lever never disagree. `null` when it overlaps no live body, or the clipper can't say.
  */
 export async function overlapOf(
   r: InboxReader,
   drawn: Doc<'waterBodies'>,
 ): Promise<OverlapView | null> {
-  const id = drawn.duplicateCandidateIds?.[0];
-  const known = id ? await r.get<'waterBodies'>('waterBody', id) : null;
-  const body = bodyRef(known);
-  if (!known || !body || !drawn.polygon || !known.polygon) return null;
-  let share: number;
-  try {
-    share = coveredFraction(
-      drawn.polygon as Polygon | MultiPolygon,
-      known.polygon as Polygon | MultiPolygon,
-    );
-  } catch {
-    return null;
-  }
-  return { share, body, suggested: share >= MERGE_SUGGEST_SHARE };
+  return overlapView(await drawnSurvivorOf(drawn, (id) => r.get<'waterBodies'>('waterBody', id)));
+}
+
+/** A live survivor as 2.5's gauge draws it. */
+function overlapView(live: DrawnSurvivor | null): OverlapView | null {
+  const body = live ? bodyRef(live.survivor) : null;
+  return live && body ? { share: live.share, body, suggested: live.suggested } : null;
 }
 
 /** An outline for the embed: whole within its bound, else its largest ring kept to `points`. */

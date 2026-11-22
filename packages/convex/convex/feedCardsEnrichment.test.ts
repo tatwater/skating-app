@@ -36,6 +36,7 @@ async function seedUser(t: T, subject: string, extra: Partial<Doc<'profiles'>> =
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,

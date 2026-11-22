@@ -1,7 +1,7 @@
 /**
  * Board 2.5's words, and every word the board did not supply (marked *invented* for the copy pass).
  * Nothing here says anything about the ice (D3): a drawing is about where the water is, never what
- * it is like. *Merge* is drawn and says *Coming soon* (D286); nothing here offers to merge.
+ * it is like.
  */
 export const DRAWN_WORDS = {
   // ── From the board ──────────────────────────────────────────────────────────────────────────
@@ -17,6 +17,7 @@ export const DRAWN_WORDS = {
   trust: 'Trust',
   ifMergedInto: (name: string) => `If merged into ${name}`,
   rowReport: 'Report',
+  rowSkater: 'Skater',
   rowDrawing: 'Drawing',
   mergeInto: (name: string) => `Merge into ${name}`,
   approveAsNew: 'Approve as new',
@@ -43,14 +44,16 @@ export const DRAWN_WORDS = {
   pts: 'pts',
   /** With no overlap: the gauge's place. */
   noOverlap: 'It overlaps no body on the map',
-  /** *If merged into*: what a merge does, never an offer to do it here. */
+  /** *If merged into*: what moves, each row only where the item serves what it names. */
   mergeReport: 'Re-homed · stays visible',
+  /** The skate the drawing came from moves with it (a merge re-points the founding skate). */
+  mergeSkate: 'Kept · moves with it',
+  /** The drawer is told of the merge (never with a reason). */
+  mergeTold: 'Told it was merged',
   mergePoints: (name: string) => `Points at ${name}`,
-  /** The merge block's last row: a merge isn't built yet — and no page claims to do it. */
-  rowHere: 'Here',
-  mergeNotHere: 'Coming soon',
   /** Each button's tooltip (the bar has no explaining line). */
-  whatMerge: 'Folds the drawing into the body it overlaps.',
+  whatMerge: (name: string) =>
+    `Folds the drawing into ${name}: what it holds moves there, and the drawer is told.`,
   whatApprove: 'Lists the drawing as a new body; the drawer is told.',
   whatReject: 'Takes the drawing off the map; the drawer is told. Asks a reason, kept for staff.',
   bar: 'Drawn body',
@@ -68,5 +71,8 @@ export const DRAWN_WORDS = {
   approvedDetail: 'Lists it on the map · tells the drawer',
   rejected: 'Rejected',
   rejectedDetail: 'Takes it off the map · tells the drawer',
+  /** The merge's receipt names both bodies: the survivor here, the drawing as its subject. */
+  mergedInto: (name: string) => `Merged into ${name}`,
+  mergedDetail: 'Moves what the drawing holds · tells the drawer',
   theDecision: 'The decision',
 } as const;

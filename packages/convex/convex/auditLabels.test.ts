@@ -25,6 +25,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** A ctx whose database calls are counted. */

@@ -49,6 +49,8 @@ export type ReasonAskProps = {
   maxLength: number;
   /** Sends it. Resolves whether it landed: the dialog closes, or stays open over the reason. */
   onConfirm: (reason: string) => Promise<boolean>;
+  /** The action can't be taken back here: drawn red, and armed for a second press (the kit's rule). */
+  destructive?: boolean;
 };
 
 export function ReasonAsk({
@@ -64,6 +66,7 @@ export function ReasonAsk({
   extra,
   maxLength,
   onConfirm,
+  destructive = false,
 }: ReasonAskProps) {
   const [openInner, setOpenInner] = useState(false);
   const controlled = openProp !== undefined;
@@ -129,6 +132,7 @@ export function ReasonAsk({
         <AlertDialogFooter>
           <AlertDialogCancel />
           <AlertDialogAction
+            destructive={destructive}
             waiting={(!optional && trimmed.length === 0) || busy}
             onClick={() => {
               setBusy(true);

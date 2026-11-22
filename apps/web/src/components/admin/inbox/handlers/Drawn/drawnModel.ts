@@ -2,6 +2,7 @@ import { MERGE_SUGGEST_SHARE, TRUST_CLASS_LABELS } from '@skating/core';
 
 import { ageInWords } from '@/lib/ages';
 
+import { shownName } from '../../blocks/shownName';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { DRAWN_WORDS as W } from './drawnWords';
 
@@ -13,8 +14,8 @@ import { DRAWN_WORDS as W } from './drawnWords';
  *
  * - **A lever is drawn only where the item's `can` holds its verb**: `null` draws it; a sentence is
  *   the server's refusal and draws nothing (D217); a verb absent draws nothing.
- * - **Merge is drawn as *Coming soon*** where `can.mergeDrawn` allows it (D286): the next slice
- *   builds the write, so the lever is the kit's unavailable face, never a working button.
+ * - **Merge names the server's survivor**: the body the item's `overlap` names (the drawing's live
+ *   survivor, the one the write checks), never a body picked here. No overlap, no merge.
  * - **The gauge's figure and whether it suggests a merge are the server's** (`overlap.share`,
  *   `overlap.suggested`); nothing here re-decides either.
  */
@@ -22,10 +23,13 @@ import { DRAWN_WORDS as W } from './drawnWords';
 export type DrawnItem = Extract<InboxItemView, { kind: 'drawn' }>;
 type Lockup = NonNullable<DrawnItem['drawer']>;
 
+/** The body a merge folds the drawing into: the item's `overlap.body`, as served. */
+export type DrawnSurvivor = Pick<NonNullable<DrawnItem['overlap']>['body'], 'waterBodyId' | 'name'>;
+
 /** The verbs a drawn item's bar draws, as the item's `can` allows them. */
 export type DrawnBar = {
-  /** *Merge into ‹body›*: drawn, saying *Coming soon* — `null` when not drawn. */
-  merge: string | null;
+  /** *Merge into ‹body›*: the survivor it names and sends — `null` when not drawn. */
+  merge: DrawnSurvivor | null;
   approve: boolean;
   reject: boolean;
 };
@@ -35,7 +39,10 @@ export function drawnBar(item: Pick<DrawnItem, 'can' | 'overlap'>): DrawnBar {
   const allowed = (v: 'approveDrawn' | 'rejectDrawn' | 'mergeDrawn') =>
     v in item.can && item.can[v] === null;
   return {
-    merge: allowed('mergeDrawn') && item.overlap !== null ? item.overlap.body.name : null,
+    merge:
+      allowed('mergeDrawn') && item.overlap !== null
+        ? { waterBodyId: item.overlap.body.waterBodyId, name: item.overlap.body.name }
+        : null,
     approve: allowed('approveDrawn'),
     reject: allowed('rejectDrawn'),
   };
@@ -44,11 +51,19 @@ export function drawnBar(item: Pick<DrawnItem, 'can' | 'overlap'>): DrawnBar {
 export const hasBar = (bar: DrawnBar): boolean => bar.merge !== null || bar.approve || bar.reject;
 
 /**
- * The first refusal among the verbs the item draws, when it draws no lever at all — said once in the
- * body, so an empty bar is never a mystery. `null` when any lever is drawn or none is refused.
+ * The refusal said once in the body, in the server's words: the first refusal among the verbs the
+ * item draws when it draws no lever at all, so an empty bar is never a mystery — or, whatever else
+ * the bar holds, a merge held back while an unmerge still runs on either body (`canCode.mergeDrawn
+ * === 'unmerging'`: the server's code, never a check here), so the missing Merge says why. `null`
+ * otherwise.
  */
-export function refusalSaid(item: Pick<DrawnItem, 'can' | 'overlap' | 'decided'>): string | null {
-  if (item.decided !== null || hasBar(drawnBar(item))) return null;
+export function refusalSaid(
+  item: Pick<DrawnItem, 'can' | 'canCode' | 'overlap' | 'decided'>,
+): string | null {
+  if (item.decided !== null) return null;
+  const merge = item.can.mergeDrawn;
+  if (item.canCode?.mergeDrawn === 'unmerging' && typeof merge === 'string') return merge;
+  if (hasBar(drawnBar(item))) return null;
   for (const v of ['approveDrawn', 'rejectDrawn', 'mergeDrawn'] as const) {
     const answer = item.can[v];
     if (typeof answer === 'string') return answer;
@@ -81,10 +96,20 @@ export function standingLine(p: Lockup | null, reports: number | null): string {
   return `${trust} · ${W.reports(reports)}`;
 }
 
-/** What a merge would do, said as the merge — the block never offers to do it here. */
-export function mergeRows(survivor: string): { label: string; value: string }[] {
+/**
+ * *If merged into ‹body›*: what moves, from what the item serves — the report row only where a
+ * report is linked, the skate's only where a skate is, the drawer told only where there is a drawer
+ * to tell (none gone or being deleted) — then where the drawing points.
+ */
+export function mergeRows(
+  item: Pick<DrawnItem, 'fromReport' | 'skate' | 'drawer'>,
+  survivor: string,
+): { label: string; value: string }[] {
   return [
-    { label: W.rowReport, value: W.mergeReport },
+    ...(item.fromReport !== null ? [{ label: W.rowReport, value: W.mergeReport }] : []),
+    ...(item.skate !== null ? [{ label: W.skate, value: W.mergeSkate }] : []),
+    // The Inbox's one rule for a person who is gone or being deleted: no one there to tell.
+    ...(shownName(item.drawer) !== null ? [{ label: W.rowSkater, value: W.mergeTold }] : []),
     { label: W.rowDrawing, value: W.mergePoints(survivor) },
   ];
 }

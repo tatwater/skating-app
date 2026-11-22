@@ -194,7 +194,11 @@ export function consoleHrefFor(bodyId: string, canReadBody: boolean): string | n
 export function ModeratorTools({
   body,
 }: {
-  body: { _id: string; source: string; reviewStatus?: 'pending' | 'approved' | 'rejected' };
+  body: {
+    _id: string;
+    source: string;
+    reviewStatus?: 'pending' | 'approved' | 'rejected' | 'merged';
+  };
 }) {
   const { canModerate, can } = useRole();
   const approve = useMutation(api.waterBodies.approve);

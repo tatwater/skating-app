@@ -42,6 +42,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 type T = ReturnType<typeof convexTest>;

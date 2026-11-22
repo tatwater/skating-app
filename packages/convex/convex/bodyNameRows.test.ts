@@ -43,6 +43,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 function ring(minLng: number, minLat: number, maxLng: number, maxLat: number) {
@@ -817,5 +818,45 @@ describe('a merge adds no names reads to its own transaction (B01-3u)', () => {
     await rowsHold(w);
     const after = await w.t.run((ctx) => ctx.db.query('bodyNameLists').collect());
     expect(after.every((r) => !r.capped)).toBe(true);
+  });
+});
+
+describe('a gone body’s row (B01-5d)', () => {
+  test('bodyNamesRow reads it; dropBodyNames removes it once, and says whether it found one', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Gone Pond',
+        searchText: 'Gone Pond',
+        type: 'lakePond',
+        source: 'osm',
+        dedupStatus: 'clean',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        createdAt: 0,
+      } as never),
+    );
+    await t.run((ctx) => refreshBodyNames(ctx, waterBodyId as Id<'waterBodies'>));
+    const id = waterBodyId as Id<'waterBodies'>;
+    expect(await t.run((ctx) => bodyNamesLib.bodyNamesRow(ctx, id))).toMatchObject({
+      waterBodyId: id,
+      landmarks: [],
+      bays: [],
+    });
+    expect(await t.run((ctx) => bodyNamesLib.dropBodyNames(ctx, id))).toBe(true);
+    expect(await t.run((ctx) => bodyNamesLib.bodyNamesRow(ctx, id))).toBeNull();
+    expect(await t.run((ctx) => bodyNamesLib.dropBodyNames(ctx, id))).toBe(false);
   });
 });

@@ -17,6 +17,7 @@ import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import { listWords } from '@/lib/words';
 import { rememberOpened } from '../../bodies/openedRecently';
+import { UnmergeLiveProvider } from '../../shell/UnmergeLeft';
 import { useUndo } from '../../shell/undo';
 import { PICK_WHAT } from '../consoleWords';
 import { BodyMap } from '../map/BodyMap';
@@ -124,18 +125,20 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
   if (data.state === 'failed') return <BodyConsoleMissing state="failed" onRetry={data.retry} />;
   if (data.state === 'gone') {
     return (
-      <BodyConsoleGone
-        {...data.gone}
-        now={Date.now()}
-        onReturn={onReturn}
-        survivorLink={(id) => (
-          <Link
-            to="/admin/body/$id"
-            params={{ id }}
-            search={search.from !== undefined ? { from: search.from } : {}}
-          />
-        )}
-      />
+      <UnmergeLiveProvider>
+        <BodyConsoleGone
+          {...data.gone}
+          now={Date.now()}
+          onReturn={onReturn}
+          survivorLink={(id) => (
+            <Link
+              to="/admin/body/$id"
+              params={{ id }}
+              search={search.from !== undefined ? { from: search.from } : {}}
+            />
+          )}
+        />
+      </UnmergeLiveProvider>
     );
   }
 
@@ -167,84 +170,86 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
     // The console's binding (`currentBody`), above its loading and tab branches: the left column's
     // writes hold it; a tab holds its own host's, which dies no later.
     <BodyBindingProvider bodyId={bodyId} name={bodyName}>
-      <BodyConsoleView
-        bodyKey={bodyId}
-        {...(data.state === 'ready'
-          ? {
-              identity: data.identity,
-              completeness: data.completeness,
-              towns: data.towns,
-              trust: data.trust,
-              asks: data.asks,
-              asksMore: data.asksMore,
-              history: data.history,
-              attention: data.attention,
-            }
-          : {
-              identity: undefined,
-              completeness: undefined,
-              towns: undefined,
-              trust: undefined,
-              asks: undefined,
-              history: undefined,
-              attention: NO_ATTENTION,
-            })}
-        lit={lit}
-        now={Date.now()}
-        tab={tab}
-        onTabChange={(next) => go(searchFor(search, { tab: next }))}
-        onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
-        {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
-        onReturn={onReturn}
-        status={status}
-        map={
-          data.state === 'ready' && scene !== null ? (
-            <ReadBoundary
-              // The open tab's drawing is read inside it: another tab is another try.
-              resetKey={`${bodyId}:${slot.key}`}
-              fallback={(retry) => (
-                <div className="p-gutter">
-                  <RetryNote data-for="body-map" onRetry={retry}>
-                    The map couldn’t be drawn
-                  </RetryNote>
-                </div>
-              )}
-            >
-              {slot.map !== undefined && (
-                <TabSceneProbe
-                  key={`${bodyId}:${slot.key}`}
-                  map={slot.map}
-                  bodyId={bodyId}
-                  lit={lit}
-                  onScene={setTabScene}
-                />
-              )}
-              <BodyMap
-                bbox={data.bbox}
-                scene={scene}
-                // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
-                // name opens at once, with no loading in between to remount the map.
-                resetKey={`${bodyId}:${tab}`}
-                mode={mode}
-                foot={mapFoot(
-                  data.mapFailures,
-                  slot.Dock === undefined ? null : (
-                    <BodyTabHost
-                      key={slot.key}
-                      name={bodyName}
-                      Wiring={slot.Dock}
-                      bodyId={bodyId}
-                      lit={lit}
-                      onLitChange={onLitChange}
-                    />
-                  ),
+      <UnmergeLiveProvider>
+        <BodyConsoleView
+          bodyKey={bodyId}
+          {...(data.state === 'ready'
+            ? {
+                identity: data.identity,
+                completeness: data.completeness,
+                towns: data.towns,
+                trust: data.trust,
+                asks: data.asks,
+                asksMore: data.asksMore,
+                history: data.history,
+                attention: data.attention,
+              }
+            : {
+                identity: undefined,
+                completeness: undefined,
+                towns: undefined,
+                trust: undefined,
+                asks: undefined,
+                history: undefined,
+                attention: NO_ATTENTION,
+              })}
+          lit={lit}
+          now={Date.now()}
+          tab={tab}
+          onTabChange={(next) => go(searchFor(search, { tab: next }))}
+          onOpenAsk={(ask) => go(searchFor(search, { tab: ask.tab, lit: ask.id }))}
+          {...(data.state === 'ready' && data.canSetBoost ? { onBoostCommit: boost } : {})}
+          onReturn={onReturn}
+          status={status}
+          map={
+            data.state === 'ready' && scene !== null ? (
+              <ReadBoundary
+                // The open tab's drawing is read inside it: another tab is another try.
+                resetKey={`${bodyId}:${slot.key}`}
+                fallback={(retry) => (
+                  <div className="p-gutter">
+                    <RetryNote data-for="body-map" onRetry={retry}>
+                      The map couldn’t be drawn
+                    </RetryNote>
+                  </div>
                 )}
-              />
-            </ReadBoundary>
-          ) : null
-        }
-        tabPanel={tabPanel}
-      />
+              >
+                {slot.map !== undefined && (
+                  <TabSceneProbe
+                    key={`${bodyId}:${slot.key}`}
+                    map={slot.map}
+                    bodyId={bodyId}
+                    lit={lit}
+                    onScene={setTabScene}
+                  />
+                )}
+                <BodyMap
+                  bbox={data.bbox}
+                  scene={scene}
+                  // A new body is a fresh rack as much as a new tab is: a neighbor already read for its
+                  // name opens at once, with no loading in between to remount the map.
+                  resetKey={`${bodyId}:${tab}`}
+                  mode={mode}
+                  foot={mapFoot(
+                    data.mapFailures,
+                    slot.Dock === undefined ? null : (
+                      <BodyTabHost
+                        key={slot.key}
+                        name={bodyName}
+                        Wiring={slot.Dock}
+                        bodyId={bodyId}
+                        lit={lit}
+                        onLitChange={onLitChange}
+                      />
+                    ),
+                  )}
+                />
+              </ReadBoundary>
+            ) : null
+          }
+          tabPanel={tabPanel}
+        />
+      </UnmergeLiveProvider>
     </BodyBindingProvider>
   );
 }

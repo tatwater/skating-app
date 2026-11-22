@@ -83,6 +83,7 @@ async function seedUser(
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       dateOfBirth,
       reputationPoints: 0,

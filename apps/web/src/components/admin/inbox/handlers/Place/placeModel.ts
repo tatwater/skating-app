@@ -17,11 +17,11 @@ import { PLACE_WORDS as W } from './placeWords';
  *   `can.sameAs` allows it and the item holds a landmark lookalike.
  * - **Approve** is drawn where `can.approve` allows it, and nowhere else: the server's rule already
  *   refuses it until a bay by that name is drawn or a landmark answers the ask.
- * - **Draw in Body →** stands in for *Approve* while the server refuses it because the place isn't
- *   drawn yet — told by the item's own facts (`drawnSubAreaId`, `answeringLandmarkId`: no bay or
- *   landmark answers it), never by the refusal's words — on an item the viewer may otherwise decide
- *   (another verb allowed). `can` says only the sentence; a refusal code would let it read `can`
- *   alone. It is a link, not a write: the old editor in a new tab.
+ * - **Draw in Body →** stands in for *Approve* exactly where the server's refusal code says *Approve*
+ *   waits on a drawing (`canCode.approve === 'awaitsDrawing'`) — never told by the refusal's words,
+ *   nor re-derived from the drawing facts the item also serves (`drawnSubAreaId`,
+ *   `answeringLandmarkId`, which the *If approved* block reads). It is a link, not a write: the old
+ *   editor in a new tab.
  */
 
 export type PlaceItem = Extract<InboxItemView, { kind: 'place' }>;
@@ -60,26 +60,15 @@ export type PlaceBar = {
 export function placeBar(
   item: Pick<
     PlaceItem,
-    | 'can'
-    | 'placeKind'
-    | 'lookalikes'
-    | 'drawnSubAreaId'
-    | 'answeringLandmarkId'
-    | 'asks'
-    | 'primaryRequestId'
+    'can' | 'canCode' | 'placeKind' | 'lookalikes' | 'asks' | 'primaryRequestId'
   >,
 ): PlaceBar {
   const lookalike = item.placeKind === 'name_landmark' ? landmarkLookalike(item) : null;
   const samePlace = allowed(item, 'sameAs') && lookalike !== null ? lookalike : null;
   const approve = allowed(item, 'approve') && primaryAsk(item) !== null;
   const decline = allowed(item, 'decline') && primaryAsk(item) !== null;
-  // The server's facts on the item, not a second rule: nothing drawn answers the ask yet.
-  const undrawn =
-    item.placeKind === 'name_bay'
-      ? item.drawnSubAreaId === null
-      : item.answeringLandmarkId === null;
-  const waitsOnDrawing = typeof item.can.approve === 'string' && undrawn;
-  const draw = !approve && waitsOnDrawing && (decline || samePlace !== null);
+  // The server's code for why Approve is refused, and nothing else: no second rule over its facts.
+  const draw = item.canCode?.approve === 'awaitsDrawing';
   return { samePlace, approve, draw, decline };
 }
 

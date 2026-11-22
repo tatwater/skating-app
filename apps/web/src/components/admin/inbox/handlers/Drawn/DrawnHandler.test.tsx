@@ -7,18 +7,23 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { Toaster } from '@/components/kit/toast';
 import { stubJsdomAnimations } from '../../../body/tabs/jsdomStubs';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
+import { must } from '../../testing/routeHarness';
 import { DrawnActions, DrawnBody, type DrawnHandlerProps, DrawnHead } from './DrawnHandlerView';
 import {
   BARE_SKATE,
   BELOW_THRESHOLD,
   DRAWER_GONE,
   DRAWN_BY_VIEWER,
+  DRAWN_MERGED,
   DRAWN_NOW,
+  DRAWN_UNMERGING,
   LONG_REPORT,
   MODERATOR_VIEW,
   NEW_WATER,
   OVER_CASPIAN,
+  OVER_MOREY,
   REPORT_WITHHELD,
 } from './drawnFixtures';
 import type { DrawnItem } from './drawnModel';
@@ -26,9 +31,9 @@ import { type DrawnServer, useDrawnWrites } from './useDrawnWrites';
 
 /**
  * The drawn handler's slots and its writes: the board's blocks, the bar drawn only where `can`
- * allows, Merge saying *Coming soon* and never writing, A acting only while the pane has focus,
- * Reject asking the drawer's reason, a refusal said in a toast and never in place, a landed decision
- * announced with Undo on the body the write answered with, one write at a time.
+ * allows, Merge sending the item and the survivor it shows, M and A acting only while the pane has
+ * focus, Reject asking the drawer's reason, a refusal said in a toast and never in place, a landed
+ * decision announced with Undo from the write's own answer, one write at a time.
  */
 
 beforeAll(() => {
@@ -47,7 +52,9 @@ beforeAll(() => {
 });
 
 /** A decision's answer, as the server writes it: its own row and this viewer's undo offer. */
-const ANSWER = { actionId: 'ma_drawn', undoable: true as const, undoNeedsReason: false };
+const ANSWER = { actionId: 'ma_drawn' as never, undoable: true as const, undoNeedsReason: false };
+/** `mergeDrawn`'s answer beyond the offer: the item, nothing in other lanes, and the survivor. */
+const MERGED = { flagsClosed: 0, survivorId: 'wbcaspian' as never };
 
 const undoServer = (): UndoServer & { latestOwn: ReturnType<typeof vi.fn> } => ({
   latestOwn: vi.fn(async () => null),
@@ -56,11 +63,13 @@ const undoServer = (): UndoServer & { latestOwn: ReturnType<typeof vi.fn> } => (
 
 function Pane({
   item,
+  onMerge = vi.fn(async () => true),
   onApprove = vi.fn(async () => true),
   onReject = vi.fn(async () => true),
   pending = null,
 }: {
   item: DrawnItem;
+  onMerge?: DrawnHandlerProps['onMerge'];
   onApprove?: DrawnHandlerProps['onApprove'];
   onReject?: DrawnHandlerProps['onReject'];
   pending?: DrawnHandlerProps['pending'];
@@ -72,6 +81,7 @@ function Pane({
       <DrawnBody item={item} map={null} timeZone="America/New_York" />
       <DrawnActions
         item={item}
+        onMerge={onMerge}
         onApprove={onApprove}
         onReject={onReject}
         pending={pending}
@@ -116,11 +126,11 @@ describe('the slots', () => {
     );
     const merged = screen.getByRole('region', { name: 'If merged into Caspian Lake' });
     expect(merged).toHaveTextContent('Re-homed · stays visible');
-    // A merge isn't built anywhere yet: the block says so, links nowhere, and names no page that
-    // would do it (the old editor has no merge).
-    expect(within(merged).getByText('Coming soon')).toBeInTheDocument();
-    expect(within(merged).queryByRole('link')).toBeNull();
-    expect(merged.textContent).not.toMatch(/editor|elsewhere|merge it/i);
+    expect(merged).toHaveTextContent('Kept · moves with it');
+    expect(merged).toHaveTextContent('Told it was merged');
+    expect(merged).toHaveTextContent('Points at Caspian Lake');
+    // The lever is live now: no stub, no page elsewhere named for it.
+    expect(merged.textContent).not.toMatch(/Coming soon|editor|elsewhere/i);
   });
 
   it('withholds a hidden report’s words, saying so; draws a long one as the server cut it', () => {
@@ -169,8 +179,11 @@ describe('the slots', () => {
   });
 
   it('says the refusal once when nothing can be drawn, never as a button', () => {
+    // The drawer's own seat: Merge refused with its code beside the server's sentence.
+    expect(DRAWN_BY_VIEWER.canCode).toEqual({ mergeDrawn: 'ownDrawing' });
     inShell(<Pane item={DRAWN_BY_VIEWER} />);
     expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Merge/ })).toBeNull();
     expect(screen.getByRole('note')).toHaveTextContent(
       'You filed this, so another staff member decides it.',
     );
@@ -178,12 +191,40 @@ describe('the slots', () => {
 });
 
 describe('the bar', () => {
-  it('draws Merge (Coming soon, no key), Approve as new (A), Reject (R)', () => {
+  it('holds Merge back while an unmerge still runs, says why in the server’s words, and keeps the rest', () => {
+    inShell(<Pane item={DRAWN_UNMERGING} />);
+    expect(screen.queryByRole('button', { name: /Merge/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve as new' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'This body is still being unmerged. Merge it once that finishes.',
+    );
+  });
+
+  it('where the route reads the unmerge live, the held-back Merge’s place is its note, by the pair’s bodies', () => {
+    const note = vi.fn((sentence: string, ids: readonly string[]) => (
+      <p>
+        live {sentence} · {ids.join(',')}
+      </p>
+    ));
+    inShell(
+      <UnmergeLive.Provider value={{ line: () => null, note }}>
+        <Pane item={DRAWN_UNMERGING} />
+      </UnmergeLive.Provider>,
+    );
+    expect(note).toHaveBeenCalledWith(
+      'This body is still being unmerged. Merge it once that finishes.',
+      [DRAWN_UNMERGING.body.waterBodyId, DRAWN_UNMERGING.overlap?.body.waterBodyId],
+    );
+    expect(screen.getByText(/^live This body is still being unmerged/)).toBeInTheDocument();
+  });
+
+  it('draws Merge into ‹the survivor› (M), Approve as new (A), Reject (R)', () => {
     inShell(<Pane item={OVER_CASPIAN} />);
-    const merge = screen.getByRole('button', { name: /Merge into Caspian Lake/ });
-    expect(merge).toHaveAttribute('aria-disabled', 'true');
-    expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
-    expect(merge).not.toHaveAttribute('aria-keyshortcuts');
+    const merge = screen.getByRole('button', { name: 'Merge into Caspian Lake' });
+    expect(merge).not.toHaveAttribute('aria-disabled', 'true');
+    expect(merge).not.toHaveAttribute('data-unavailable-title');
+    expect(merge).toHaveAttribute('aria-keyshortcuts', 'M');
     expect(screen.getByRole('button', { name: 'Approve as new' })).toHaveAttribute(
       'aria-keyshortcuts',
       'A',
@@ -200,21 +241,30 @@ describe('the bar', () => {
     expect(screen.getByRole('button', { name: 'Approve as new' })).toBeInTheDocument();
   });
 
-  it('Merge says Coming soon on a press and writes nothing; M is no key of it', async () => {
+  it('M merges into the survivor the bar shows, only while the pane has focus; one press', async () => {
     const user = userEvent.setup();
+    const onMerge = vi.fn(async () => true);
     const onApprove = vi.fn(async () => true);
-    const onReject = vi.fn(async () => true);
-    inShell(<Pane item={OVER_CASPIAN} onApprove={onApprove} onReject={onReject} />);
-    // The merge block already says *Coming soon*; a toast would say it again.
-    const said = () => screen.getAllByText('Coming soon').length;
-    const before = said();
+    inShell(<Pane item={OVER_MOREY} onMerge={onMerge} onApprove={onApprove} />);
+    await user.keyboard('m');
+    expect(onMerge).not.toHaveBeenCalled();
     screen.getByTestId('pane').focus();
     await user.keyboard('m');
-    expect(said()).toBe(before);
-    await user.click(screen.getByRole('button', { name: /Merge into Caspian Lake/ }));
-    await waitFor(() => expect(said()).toBeGreaterThan(before));
+    await waitFor(() => expect(onMerge).toHaveBeenCalledTimes(1));
+    // The server's survivor for this item (its overlap), never the drawing nor another item's.
+    expect(onMerge).toHaveBeenCalledWith({
+      waterBodyId: OVER_MOREY.overlap?.body.waterBodyId,
+      name: 'Lake Morey',
+    });
+    await user.click(screen.getByRole('button', { name: 'Merge into Lake Morey' }));
+    expect(onMerge).toHaveBeenCalledTimes(2);
     expect(onApprove).not.toHaveBeenCalled();
-    expect(onReject).not.toHaveBeenCalled();
+  });
+
+  it('draws no merge, and no bar, once merged by a colleague', () => {
+    inShell(<Pane item={DRAWN_MERGED} />);
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Merge/ })).toBeNull();
   });
 
   it('A acts only while the pane has focus', async () => {
@@ -250,9 +300,18 @@ describe('the bar', () => {
 
 describe('the writes', () => {
   function Harness({ item, server }: { item: DrawnItem; server: DrawnServer }) {
-    const { approve, reject, pending } = useDrawnWrites(item, server);
+    const { merge, approve, reject, pending } = useDrawnWrites(item, server);
     return (
       <>
+        <button
+          type="button"
+          onClick={() =>
+            item.overlap !== null &&
+            void merge({ waterBodyId: item.overlap.body.waterBodyId, name: item.overlap.body.name })
+          }
+        >
+          go-merge
+        </button>
         <button type="button" onClick={() => void approve()}>
           go-approve
         </button>
@@ -268,6 +327,7 @@ describe('the writes', () => {
     const user = userEvent.setup();
     const u = undoServer();
     const server: DrawnServer = {
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
       reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
@@ -283,9 +343,84 @@ describe('the writes', () => {
     expect(u.latestOwn).not.toHaveBeenCalled();
   });
 
+  it('merges with the item’s id and the survivor shown; the receipt names both, Undo from the answer', async () => {
+    const user = userEvent.setup();
+    const u = undoServer();
+    const server: DrawnServer = {
+      mergeDrawn: vi.fn(async ({ itemId }) => ({
+        itemId,
+        ...MERGED,
+        actionId: 'ma_merge' as never,
+        undoable: true as const,
+        undoNeedsReason: true,
+      })),
+      approve: vi.fn(),
+      reject: vi.fn(),
+    };
+    inShell(<Harness item={OVER_MOREY} server={server} />, u);
+    await user.click(screen.getByRole('button', { name: 'go-merge' }));
+    await waitFor(() =>
+      expect(server.mergeDrawn).toHaveBeenCalledWith({
+        itemId: OVER_MOREY.itemId,
+        survivorId: OVER_MOREY.overlap?.body.waterBodyId,
+      }),
+    );
+    // Both bodies named: the survivor in the title, the drawing as its subject.
+    expect(
+      (await screen.findAllByText('Merged into Lake Morey · Morey east arm')).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('Moves what the drawing holds · tells the drawer')).toBeInTheDocument();
+    // Undo is the answer's row, and it asks a reason as the answer said: nothing looked up.
+    const undo = (await screen.findAllByRole('button', { name: /Undo/ }))[0];
+    expect(u.latestOwn).not.toHaveBeenCalled();
+    await user.click(must(undo, 'the receipt’s Undo'));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(/needs a reason/);
+    expect(u.run).not.toHaveBeenCalled();
+  });
+
+  it('says a refused merge in a toast with the server’s words', async () => {
+    const user = userEvent.setup();
+    const server: DrawnServer = {
+      mergeDrawn: vi.fn(async () => {
+        throw new ConvexError('The drawing now overlaps another body: open it again.');
+      }),
+      approve: vi.fn(),
+      reject: vi.fn(),
+    };
+    inShell(<Harness item={OVER_CASPIAN} server={server} />);
+    await user.click(screen.getByRole('button', { name: 'go-merge' }));
+    expect(
+      (
+        await screen.findAllByText(
+          'The decision: The drawing now overlaps another body: open it again.',
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Merged into/)).toBeNull();
+  });
+
+  it('says a merge too heavy for one transaction in a toast, the server’s sentence from its coded refusal', async () => {
+    const user = userEvent.setup();
+    const tooBig =
+      'Too much moves for one merge here. Merge it from the duplicates queue in parts, or ask an admin.';
+    const server: DrawnServer = {
+      // The write's refusal carries its code beside the sentence (`{ message, code: 'tooBig' }`).
+      mergeDrawn: vi.fn(async () => {
+        throw new ConvexError({ message: tooBig, code: 'tooBig' });
+      }),
+      approve: vi.fn(),
+      reject: vi.fn(),
+    };
+    inShell(<Harness item={OVER_CASPIAN} server={server} />);
+    await user.click(screen.getByRole('button', { name: 'go-merge' }));
+    expect((await screen.findAllByText(`The decision: ${tooBig}`)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Merged into/)).toBeNull();
+  });
+
   it('rejects with the reason trimmed', async () => {
     const user = userEvent.setup();
     const server: DrawnServer = {
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
       reject: vi.fn(async ({ waterBodyId }) => ({ waterBodyId, ...ANSWER })),
     };
@@ -303,6 +438,7 @@ describe('the writes', () => {
     const user = userEvent.setup();
     const u = undoServer();
     const server: DrawnServer = {
+      mergeDrawn: vi.fn(),
       approve: vi.fn(async () => {
         throw new ConvexError('This has already been decided.');
       }),
@@ -324,6 +460,7 @@ describe('the writes', () => {
     const user = userEvent.setup();
     let release: (v: string) => void = () => {};
     const server: DrawnServer = {
+      mergeDrawn: vi.fn(async ({ itemId }) => ({ itemId, ...MERGED, ...ANSWER })),
       approve: vi.fn(
         () =>
           new Promise((r) => {

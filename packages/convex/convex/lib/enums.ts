@@ -90,8 +90,11 @@ export const CANONICAL_SOURCES = ['osm', 'nhd', '3dhp'] as const;
  */
 export const GEOMETRY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 
-/** Moderation review lifecycle for user-created water bodies (D37). */
-export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;
+/**
+ * Moderation review lifecycle for user-created water bodies (D37). `merged` (B01-5d): a skater's
+ * drawing merged into a known body — no longer pending, so nothing counts it as waiting for review.
+ */
+export const REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const;
 
 /** Administrative-boundary granularity for point→place labels (Phase 05). */
 export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
@@ -294,6 +297,8 @@ export const MODERATION_ACTIONS = [
   'suspend',
   'unban',
   'merge_waterbody',
+  // The merge's inverse (B01-5d, D291): put back from the change set the merge recorded.
+  'unmerge_waterbody',
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 02a)

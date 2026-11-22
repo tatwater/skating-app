@@ -27,6 +27,7 @@ import {
 import { type ToastManager, toast, toastManager } from '@/components/kit/toast';
 import { said, sayRefusal } from '../said';
 import type { AuditTarget } from './actionLabels';
+import { UnmergeLeft } from './UnmergeLeft';
 
 /**
  * Undo in the console (D226): every operator action undoes from its toast for ten seconds, and from
@@ -82,6 +83,11 @@ export type Receipt = {
    * as the People receipts name their person.
    */
   subject?: string;
+  /**
+   * The audit verb the write recorded (`merge_waterbody`), when the Undone toast has more to say
+   * about undoing it — a merge's unmerge says what it left where it was.
+   */
+  action?: string;
 };
 
 type UndoRequest = {
@@ -90,6 +96,8 @@ type UndoRequest = {
   needsReason: boolean;
   /** What is being undone, for the dialog's question. */
   what?: ReactNode;
+  /** The row's audit verb, for the Undone toast's line ({@link UndoServer.undoneLine}). */
+  action?: string;
 };
 
 type UndoApi = {
@@ -117,7 +125,22 @@ export type UndoServer = {
     target: UndoTarget,
   ) => Promise<{ actionId: string; undo: { state: string; needsReason?: boolean } } | null>;
   run: (args: { actionId: string; reason?: string }) => Promise<void>;
+  /**
+   * The Undone toast's line for an undo with more to say than the usual one — a merge's unmerge
+   * reads what it left where it was, live, as its pages land. `null` for the usual line.
+   */
+  undoneLine?: (undone: { actionId: string; action: string }) => ReactNode;
 };
+
+/** The usual Undone line. */
+const UNDONE_LINE = 'Both rows stay in the audit log';
+
+/** A merge's Undo is the unmerge: its toast says what stayed where it was, as the server counts it. */
+function undoneLineFor({ actionId, action }: { actionId: string; action: string }): ReactNode {
+  return action === 'merge_waterbody' ? (
+    <UnmergeLeft mergeActionId={actionId} fallback={UNDONE_LINE} />
+  ) : null;
+}
 
 /** The real server: Convex's `undo.latestOwn` and `undo.run`. */
 export function useUndoServer(): UndoServer {
@@ -131,6 +154,7 @@ export function useUndoServer(): UndoServer {
           ...(reason !== undefined ? { reason } : {}),
         });
       },
+      undoneLine: undoneLineFor,
     }),
     [convex],
   );
@@ -160,17 +184,16 @@ export function UndoProvider({
   }, []);
 
   const run = useCallback(
-    async (actionId: string, why?: string): Promise<boolean> => {
+    async ({ actionId, action }: UndoRequest, why?: string): Promise<boolean> => {
       const sent = await said(
         () => server.run({ actionId, ...(why !== undefined ? { reason: why } : {}) }),
         (words) => ({ title: NOT_UNDONE, description: words }),
         { manager },
       );
       if (sent.landed) {
-        toast(
-          { title: 'Undone', description: 'Both rows stay in the audit log', tone: 'lit' },
-          manager,
-        );
+        const line =
+          action !== undefined ? (server.undoneLine?.({ actionId, action }) ?? null) : null;
+        toast({ title: 'Undone', description: line ?? UNDONE_LINE, tone: 'lit' }, manager);
       }
       return sent.landed;
     },
@@ -196,14 +219,23 @@ export function UndoProvider({
         setAsking(request);
         return;
       }
-      void run(request.actionId);
+      void run(request);
     },
     [run, manager],
   );
 
   const announce = useCallback(
     async (
-      { title: done, description, target, actionId, undoNeedsReason, undoable, subject }: Receipt,
+      {
+        title: done,
+        description,
+        target,
+        actionId,
+        undoNeedsReason,
+        undoable,
+        subject,
+        action,
+      }: Receipt,
       here?: () => boolean,
     ) => {
       // A receipt that may show over another page names its subject ("Links saved · Mascoma Lake").
@@ -251,6 +283,7 @@ export function UndoProvider({
                       actionId: offered.actionId,
                       needsReason: offered.undo.needsReason === true,
                       what: title,
+                      ...(action !== undefined ? { action } : {}),
                     }),
                 },
               }
@@ -307,7 +340,7 @@ export function UndoProvider({
                 if (request === null) return;
                 setBusy(true);
                 // Refused: said in its toast; the dialog stays open over the kept reason.
-                void run(request.actionId, trimmed).then((landed) => {
+                void run(request, trimmed).then((landed) => {
                   setBusy(false);
                   if (landed) setAsking(null);
                 });

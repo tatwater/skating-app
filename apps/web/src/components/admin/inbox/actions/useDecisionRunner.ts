@@ -45,8 +45,11 @@ export type Decision<A extends string> = {
   write: () => Promise<Landed>;
   /** What a refusal's toast says was not saved ("The decision"). */
   what: string;
-  /** The receipt, once it landed. */
-  receipt: { title: string; description?: string };
+  /**
+   * The receipt, once it landed; `action` is the audit verb the write recorded when its Undo has
+   * more to say (a merge's unmerge — see the shell's `Receipt.action`).
+   */
+  receipt: { title: string; description?: string; action?: string };
 };
 
 /** The receipt's Undo, from the write's own answer alone: no answer, no Undo, nothing looked up. */
@@ -95,6 +98,7 @@ export function useDecisionRunner<A extends string>({
             : {}),
           target: sent.value.target,
           subject,
+          ...(decision.receipt.action !== undefined ? { action: decision.receipt.action } : {}),
           ...undoOf(sent.value),
         };
         void announce(receipt, () => shown.current === mine).catch(() => {});

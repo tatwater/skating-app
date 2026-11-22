@@ -277,6 +277,70 @@ describe('asks and history', () => {
   });
 });
 
+describe('a history row’s second line', () => {
+  const row = (over: Partial<HistoryAction>): HistoryAction => ({
+    id: 'u1',
+    action: 'unmerge_waterbody',
+    targetType: 'waterbody',
+    targetId: 'b',
+    createdAt: 0,
+    actor: null,
+    ...over,
+  });
+
+  it('says an unmerge’s outcome from its own row, in the toast’s one wording', () => {
+    const line = (metadata: unknown) => bodyHistory([row({ metadata })])[0]?.line;
+    expect(line({ done: false, left: { count: 0 } })).toBe('Moving rows back…');
+    expect(line({ done: false, left: { count: 2 } })).toBe(
+      'Moving rows back… · 2 rows had changed since the merge and stay where they are',
+    );
+    expect(line({ done: true, left: { count: 0 } })).toBe('Every row went back');
+    expect(line({ done: true, left: { count: 1 } })).toBe(
+      '1 row had changed since the merge and stays where it is',
+    );
+    // A stall its row records (a page that stopped itself, saying why) reads from the row alone.
+    expect(line({ done: false, left: { count: 1 }, stalled: { reason: 'r', at: 1 } })).toBe(
+      'The unmerge stopped before it finished',
+    );
+    expect(bodyHistory([row({ undoesActionId: 'ma1' })])[0]?.unmergeOf).toBe('ma1');
+    // Abandoned (`metadata.abandoned` on the unmerge's own row): terminal, beside done.
+    expect(line({ done: false, left: { count: 0 }, abandoned: { at: 1 } })).toBe(
+      'Abandoned before it finished',
+    );
+    // The row an abandon wrote: what was left, and what it never reached.
+    expect(
+      line({
+        abandons: 'u1',
+        left: { count: 2 },
+        notReached: { remaining: { moved: 3, bays: 1 } },
+      }),
+    ).toBe(
+      'Abandoned before it finished · 2 rows had changed since the merge and stay where they are · 4 rows weren’t moved back and stay where the merge put them',
+    );
+    expect(line({ abandons: 'u1', left: { count: 0 }, notReached: { remaining: {} } })).toBe(
+      'Abandoned before it finished · Every row had been reached',
+    );
+    expect(line({ abandons: 'u1', left: { count: 0 }, notReached: null })).toBe(
+      'Abandoned before it finished · What it didn’t reach couldn’t be read',
+    );
+    // A row that doesn't carry the facts says nothing more.
+    expect(line(undefined)).toBeUndefined();
+    expect(line({ done: 'yes' })).toBeUndefined();
+  });
+
+  it('says why a merge can’t be undone, and never a verb’s own reason', () => {
+    const why = 'This merge was recorded before merges kept everything an unmerge needs.';
+    const unavailable = { state: 'unavailable', why };
+    expect(bodyHistory([row({ action: 'merge_waterbody', undo: unavailable })])[0]?.line).toBe(why);
+    expect(
+      bodyHistory([row({ action: 'merge_waterbody', undo: { state: 'available' } })])[0]?.line,
+    ).toBeUndefined();
+    expect(
+      bodyHistory([row({ action: 'set_standing', undo: unavailable })])[0]?.line,
+    ).toBeUndefined();
+  });
+});
+
 describe('clock words', () => {
   it('writes September as Sep, never Sept', () => {
     const sep = new Date(2026, 8, 17, 12).getTime();

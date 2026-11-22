@@ -159,6 +159,8 @@ const base = {
   memberCountIsFloor: false,
   // The read cut no flag short of the count (`flagsCut`).
   flagsCut: false,
+  // No flag verb's refusal has a code (the server codes only a place ask's waiting Approve).
+  canCode: {},
   decided: null,
 };
 

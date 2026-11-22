@@ -12,6 +12,7 @@ import {
 } from '@skating/core';
 
 import { type AuditAction, type AuditTarget, actionLabel } from '../../shell/actionLabels';
+import { abandonLineOf, mergeUndoWhy, unmergeFactsOf, unmergeLine } from '../../shell/unmergeLine';
 import type { BodyTabKey } from './bodySearch';
 
 /**
@@ -71,6 +72,12 @@ export interface HistoryAction {
   actor: { displayName: string; username: string } | null;
   /** The reason the actor gave, or the machine's own words. */
   reason?: string;
+  /** The row's stored facts (an unmerge's `done` and `left`), as the read serves them. */
+  metadata?: unknown;
+  /** What the viewer can do about the row, as the undo engine says (a pre-v2 merge's `why`). */
+  undo?: { state: string; why?: string };
+  /** The row this one undid (an unmerge's merge). */
+  undoesActionId?: string;
 }
 
 /** The geometry facts (towns, touching bodies) aren't computed for the body yet. */
@@ -440,15 +447,44 @@ export interface HistoryEntry {
   who: string | null;
   /** What, from the operator's side ("Set the curated boost"). */
   what: string;
+  /**
+   * The row's second line, when it has more to say: an unmerge's outcome from its own row (still
+   * moving rows back, every row back, or how many stayed), or why a merge can't be undone.
+   */
+  line?: string;
+  /**
+   * An unmerge row's merge — what its live state (`unmerge.receipt`: stalled, and *Resume*) is read
+   * by where the section is wired.
+   */
+  unmergeOf?: string;
 }
 
 export function bodyHistory(rows: readonly HistoryAction[]): HistoryEntry[] {
-  return rows.map((r) => ({
-    id: r.id,
-    at: r.createdAt,
-    who: r.actor ? firstName(r.actor.displayName) : null,
-    what: actionLabel(r.action, r.targetType),
-  }));
+  return rows.map((r) => {
+    const line = historyLineOf(r);
+    return {
+      id: r.id,
+      at: r.createdAt,
+      who: r.actor ? firstName(r.actor.displayName) : null,
+      what: actionLabel(r.action, r.targetType),
+      ...(line !== null ? { line } : {}),
+      ...(r.action === 'unmerge_waterbody' && r.undoesActionId !== undefined
+        ? { unmergeOf: r.undoesActionId }
+        : {}),
+    };
+  });
+}
+
+/** A row's second line ({@link HistoryEntry.line}), from the row alone; `null` for none. */
+function historyLineOf(r: HistoryAction): string | null {
+  if (r.action === 'unmerge_waterbody') {
+    // The row an abandon wrote says what it did and didn't move back.
+    const abandoned = abandonLineOf(r.metadata);
+    if (abandoned !== null) return abandoned;
+    const facts = unmergeFactsOf(r.metadata);
+    return facts === null ? null : unmergeLine(facts);
+  }
+  return mergeUndoWhy(r.action, r.undo);
 }
 
 /**

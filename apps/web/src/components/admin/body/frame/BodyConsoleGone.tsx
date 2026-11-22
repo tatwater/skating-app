@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useRef } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
 import { isFailed, type Loadable } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Avatar } from '@/components/kit/avatar';
@@ -7,6 +7,7 @@ import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
 import { Note } from '@/components/kit/note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { usePaneKeys } from '@/lib/keys';
+import { cn } from '@/lib/utils';
 import { ConsoleTopStart } from '../../shell/ConsoleShell';
 import { LEFT_NOT_SAID } from '../consoleWords';
 import { NOT_RECORDED } from '../tabs/tabStates';
@@ -51,7 +52,7 @@ export function BodyConsoleGone({
   now,
   timeZone,
 }: BodyConsoleGoneProps) {
-  const root = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLElement | null>(null);
   usePaneKeys(root, [
     {
       key: 'Shift+Enter',
@@ -60,11 +61,35 @@ export function BodyConsoleGone({
       run: () => onReturn?.(),
     },
   ]);
+  // **Arriving with nothing focused, focus goes to the page** — the console's rule for a body's page
+  // (`BodyConsoleView`: the panel takes it on a new body). Here it matters most when the record
+  // turns into this page under the moderator: a merge just landed, and the dialog and the confirm
+  // that held focus are gone with the console. Checked again on the next frame, after a closing
+  // dialog has handed focus back to a control that no longer exists. Focus somewhere that stays is
+  // left where it is.
+  useEffect(() => {
+    const lost = () => {
+      const active = document.activeElement;
+      return active === null || active === document.body || !active.isConnected;
+    };
+    const take = () => {
+      if (lost()) root.current?.focus({ preventScroll: true });
+    };
+    take();
+    const frame = requestAnimationFrame(take);
+    return () => cancelAnimationFrame(frame);
+  }, []);
   return (
-    <div
+    <section
       ref={root}
       data-slot="body-console-gone"
-      className="flex h-full min-h-0 flex-col overflow-y-auto p-gutter"
+      tabIndex={-1}
+      aria-label="The body"
+      className={cn(
+        'flex h-full min-h-0 flex-col overflow-y-auto p-gutter outline-none',
+        // Focus moved here from the keys is seen, as the console's other panes show it.
+        'focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
+      )}
     >
       <div className="flex w-full max-w-(--size-inspector) flex-col items-start gap-(--space-3_5)">
         <Note data-slot="body-gone-note">
@@ -111,7 +136,7 @@ export function BodyConsoleGone({
           </Button>
         </ConsoleTopStart>
       )}
-    </div>
+    </section>
   );
 }
 

@@ -9,11 +9,19 @@ import {
   expectNoSidewaysScroll,
   faceLoaded,
   must,
+  settled,
 } from '@/components/kit/storyKit';
 import { fitCamera } from '@/lib/mapSurface';
 import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
 import { FIT_PADDING } from '../map/useBodyMapCanvas';
-import { BodyBoard } from './bodyBoard';
+import type { MergeFlowProps } from '../tabs/shape/MergeFlow';
+import {
+  MERGE_HEAVY,
+  MERGE_REFUSED,
+  MERGE_TO_CRYSTAL,
+  MERGE_UNMERGING,
+} from '../tabs/shape/mergeFixtures';
+import { BodyBoard, BodyGoneBoard } from './bodyBoard';
 import { CAPPED_HISTORY, MASCOMA_BOUNDS, NEIGHBOR_ID, NEIGHBOR_POLYGON } from './bodyFixtures';
 import { NOT_COMPUTED } from './bodyModel';
 
@@ -33,6 +41,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** One animation frame: what Base UI's popups wait on between their styles. */
+const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
 const slot = (root: ParentNode, name: string) =>
   must(root.querySelector<HTMLElement>(`[data-slot="${name}"]`));
 const slots = (root: ParentNode, name: string) => [
@@ -240,45 +250,255 @@ export const CappedHistory: Story = {
   },
 };
 
+const touchingScene = {
+  items: [
+    {
+      kind: 'outline' as const,
+      id: `neighbor:${NEIGHBOR_ID}`,
+      layer: 'outline' as const,
+      geometry: NEIGHBOR_POLYGON,
+      style: 'neighbor' as const,
+    },
+  ],
+  lit: `neighbor:${NEIGHBOR_ID}`,
+};
+const touchingMerge = {
+  touching: [{ lit: `neighbor:${NEIGHBOR_ID}`, id: NEIGHBOR_ID, name: 'Crystal Lake' }],
+  note: null,
+};
+const CRYSTAL_PICK = { id: NEIGHBOR_ID, name: 'Crystal Lake' };
+/** The merge flow as a viewer with the duplicates capability has it; each story sets its state. */
+const mergeFlow = (over: Partial<MergeFlowProps> = {}): MergeFlowProps => ({
+  survivor: null,
+  onPick: fn(),
+  query: '',
+  onQueryChange: fn(),
+  hits: null,
+  preview: undefined,
+  bodyName: 'Mascoma Lake',
+  onMerge: fn(async () => true),
+  ...over,
+});
+/** The Shape tab's Merge block, with a merge flow in the given state. */
+const mergeArgs = (over: Partial<MergeFlowProps> = {}, lit: string | null = null) => ({
+  lit,
+  tabScene: { ...touchingScene, lit },
+  shape: {
+    merge: touchingMerge,
+    // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
+    bodyLink: (id: string) => <a href={`#body-${id}`} />,
+    mergeFlow: mergeFlow(over),
+  },
+});
+const mergeBlock = (root: HTMLElement) =>
+  within(root).getByRole('region', { name: 'Merge into another body' });
+
 /**
  * Another body touches this one: the map draws it quiet and dashed beside the shore, and Shape
- * offers the merge (not built here yet), the touching body lit from its row.
+ * lists it, lit from its row — for a viewer who can't merge, nothing more.
  */
 export const Touching: Story = {
   args: {
     lit: `neighbor:${NEIGHBOR_ID}`,
-    tabScene: {
-      items: [
-        {
-          kind: 'outline',
-          id: `neighbor:${NEIGHBOR_ID}`,
-          layer: 'outline',
-          geometry: NEIGHBOR_POLYGON,
-          style: 'neighbor',
-        },
-      ],
-      lit: `neighbor:${NEIGHBOR_ID}`,
-    },
+    tabScene: touchingScene,
     shape: {
-      merge: {
-        touching: [{ lit: `neighbor:${NEIGHBOR_ID}`, id: NEIGHBOR_ID, name: 'Crystal Lake' }],
-        note: null,
-      },
+      merge: touchingMerge,
       // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
       bodyLink: (id) => <a href={`#body-${id}`} />,
     },
   },
   play: async ({ canvasElement }) => {
-    const page = within(canvasElement);
-    const merge = page.getByRole('region', { name: 'Merge into another body' });
+    const merge = mergeBlock(canvasElement);
     await expect(within(merge).getByText('Crystal Lake')).toBeVisible();
     await expect(
       must(merge.querySelector(`tr[data-id="neighbor:${NEIGHBOR_ID}"]`)),
     ).toHaveAttribute('data-selected');
-    await expect(within(merge).getByRole('button', { name: 'Choose a body' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    await expect(within(merge).queryByRole('searchbox')).toBeNull();
+    await expect(within(merge).queryByRole('button', { name: /Merge into/ })).toBeNull();
+  },
+};
+
+/** The merge, before a survivor is picked: the touching body to press, or one found by name. */
+export const MergeStart: Story = {
+  name: 'Merge | Start',
+  args: mergeArgs(),
+  play: async ({ canvasElement }) => {
+    const merge = mergeBlock(canvasElement);
+    await expect(within(merge).getByRole('searchbox')).toBeVisible();
+    await expect(
+      must(merge.querySelector(`tr[data-id="neighbor:${NEIGHBOR_ID}"]`)),
+    ).not.toHaveAttribute('data-selected');
+    await expect(within(merge).queryByRole('button', { name: /Merge into/ })).toBeNull();
+  },
+};
+
+/** A survivor found by name: two of one name told apart by their kind and states. */
+export const MergeSearch: Story = {
+  name: 'Merge | Search',
+  args: mergeArgs({
+    query: 'post',
+    hits: [
+      { id: 'kpostnh', name: 'Post Pond', sub: 'Pond · NH' },
+      { id: 'kpostvt', name: 'Post Pond', sub: 'Pond · VT' },
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const merge = mergeBlock(canvasElement);
+    await expect(within(merge).getByText('Pond · VT')).toBeVisible();
+    await expect(within(merge).getAllByText('Post Pond')).toHaveLength(2);
+  },
+};
+
+/**
+ * Crystal Lake picked, and the server's preview: what moves, what it runs into, what stays here,
+ * and the confirm — which asks the reason before anything is sent.
+ */
+export const MergePreview: Story = {
+  name: 'Merge | Preview',
+  args: mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_TO_CRYSTAL }, `neighbor:${NEIGHBOR_ID}`),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
+    await expect(preview).toHaveTextContent('Reports 3');
+    await expect(preview).toHaveTextContent('West cove · Crystal Lake has a bay by that name');
+    await expect(preview).toHaveTextContent('1 access alert · 2 linked lots');
+    // Nothing in the block runs off its column sideways, read once the faces have settled.
+    await waitFor(() => {
+      const block = slot(canvasElement, 'merge-preview');
+      expect(block.scrollWidth).toBeLessThanOrEqual(block.clientWidth + 1);
+    });
+    const confirm = within(preview).getByRole('button', { name: 'Merge into Crystal Lake' });
+    await expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+    // The dialog's fade is waited on as events, never the clock: Base UI drops its starting style
+    // on a later frame, the opacity transition then runs to its end, and on Escape the ending style
+    // goes on and the popup unmounts once that transition finishes. Each arrives — nothing here waits
+    // on a read — but a starved runner can make any of them later than a fixed timeout.
+    const dialog = await page.findByRole('alertdialog');
+    await expect(dialog).toHaveTextContent('Merge Mascoma Lake into Crystal Lake');
+    while (dialog.hasAttribute('data-starting-style')) await nextFrame();
+    await settled(dialog);
+    await expect(within(dialog).getByText('Reason · kept in the audit log')).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    while (dialog.isConnected && !dialog.hasAttribute('data-ending-style')) await nextFrame();
+    await settled(dialog);
+    // Only the unmount's commit is left once the fade has finished.
+    await waitFor(() => expect(page.queryByRole('alertdialog')).toBeNull());
+  },
+};
+
+/** The preview in the console's light map. */
+export const MergePreviewLight: Story = {
+  ...MergePreview,
+  name: 'Merge | Preview · Light',
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/** Too much to move in one go: the counts as floors, the sentence, and no confirm to press. */
+export const MergeTooHeavy: Story = {
+  name: 'Merge | Too heavy',
+  args: mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_HEAVY }, `neighbor:${NEIGHBOR_ID}`),
+  play: async ({ canvasElement }) => {
+    const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
+    await expect(preview).toHaveTextContent('Reports 1,000+');
+    await expect(within(preview).getByRole('note')).toHaveTextContent(
+      MERGE_HEAVY.refusal as string,
     );
+    await expect(
+      within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
+    ).toBeDisabled();
+  },
+};
+
+/** Too heavy, in the light map. */
+export const MergeTooHeavyLight: Story = {
+  ...MergeTooHeavy,
+  name: 'Merge | Too heavy · Light',
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/** The server refuses the merge outright: its sentence, and no confirm. */
+export const MergeRefused: Story = {
+  name: 'Merge | Refused',
+  args: mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_REFUSED }, `neighbor:${NEIGHBOR_ID}`),
+  play: async ({ canvasElement }) => {
+    const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
+    await expect(within(preview).getByRole('note')).toHaveTextContent(
+      'Survivor is itself merged — pick the canonical body',
+    );
+    await expect(
+      within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
+    ).toBeDisabled();
+  },
+};
+
+/**
+ * The merge lands: the record is the survivor's, and the frame draws the merged page in the console's
+ * place — as the route does. The dialog and the confirm that held focus go with the console, so the
+ * merged page takes focus (the console's rule on arriving at a body with nothing focused).
+ */
+function MergeLands() {
+  const [merged, setMerged] = useState(false);
+  if (merged)
+    return (
+      <BodyGoneBoard
+        survivor={CRYSTAL_PICK}
+        removal={{ verb: 'Merged', when: '9 Oct 2026', who: 'Matt', reason: null }}
+        removalShown
+        towns={null}
+        reports={null}
+        record={null}
+        // biome-ignore lint/a11y/useAnchorContent: the link takes its words from what renders it.
+        survivorLink={(id) => <a href={`#body-${id}`} />}
+        history={CAPPED_HISTORY}
+      />
+    );
+  const args = mergeArgs(
+    {
+      survivor: CRYSTAL_PICK,
+      preview: MERGE_TO_CRYSTAL,
+      onMerge: async () => {
+        setMerged(true);
+        return true;
+      },
+    },
+    `neighbor:${NEIGHBOR_ID}`,
+  );
+  return <BodyBoard {...args} />;
+}
+
+export const MergeLandsFocus: Story = {
+  name: 'Merge | Lands · focus',
+  render: () => <MergeLands />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await page.findByRole('button', { name: 'Merge into Crystal Lake' }));
+    const dialog = await page.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Drawn twice');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
+    // Read and asserted in one retry: the merged page holds focus once the swap has settled.
+    await waitFor(() => {
+      expect(page.getByText(/This body was merged into/)).toBeVisible();
+      expect(canvasElement.ownerDocument.activeElement).toHaveAttribute(
+        'data-slot',
+        'body-console-gone',
+      );
+    });
+  },
+};
+
+/** An unmerge still runs on one of the pair: the server's sentence, and no confirm. */
+export const MergeUnmerging: Story = {
+  name: 'Merge | Unmerging',
+  args: mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_UNMERGING }, `neighbor:${NEIGHBOR_ID}`),
+  play: async ({ canvasElement }) => {
+    const preview = within(canvasElement).getByRole('region', { name: 'Into Crystal Lake' });
+    await expect(within(preview).getByRole('note')).toHaveTextContent(
+      'This body is still being unmerged. Merge it once that finishes.',
+    );
+    await expect(
+      within(preview).getByRole('button', { name: 'Merge into Crystal Lake' }),
+    ).toBeDisabled();
   },
 };
 
@@ -359,6 +579,46 @@ export const Phone: Story = {
 export const PhoneLight: Story = {
   ...Phone,
   name: 'Phone · Light',
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/**
+ * The merge's preview on a phone (360 px): the tabs' pane takes the page, and the Merge block — its
+ * search, the preview's rows and the confirm — keeps inside it, nothing scrolling sideways.
+ */
+export const PhoneMerge: Story = {
+  name: 'Phone | Merge',
+  args: {
+    bare: true,
+    className: 'h-[52.75rem] w-[22.5rem]',
+    ...mergeArgs({ survivor: CRYSTAL_PICK, preview: MERGE_TO_CRYSTAL }, `neighbor:${NEIGHBOR_ID}`),
+  },
+  play: async ({ canvasElement }) => {
+    const page = () => slot(canvasElement, 'body-console');
+    const pane = (name: string) =>
+      must(page().querySelector<HTMLElement>(`:scope > [data-pane="${name}"]`));
+    await waitFor(() => expect(page()).toHaveAttribute('data-narrow'));
+    await faceLoaded(slot(canvasElement, 'record-lockup-name'));
+    // Arriving with the survivor lit, the page opens on the tab's pane (the console's narrow rule).
+    await waitFor(() => expect(page()).toHaveAttribute('data-pane-shown', 'tab'));
+    slot(canvasElement, 'merge-preview').scrollIntoView({ block: 'center' });
+    // Layout, read and asserted in one retry once it has settled.
+    await waitFor(() => {
+      const right = page().getBoundingClientRect().right + 0.5;
+      for (const name of ['shape-merge', 'merge-search', 'merge-preview', 'merge-confirm'])
+        expect(slot(canvasElement, name).getBoundingClientRect().right).toBeLessThanOrEqual(right);
+      const block = slot(canvasElement, 'merge-preview');
+      expect(block.scrollWidth).toBeLessThanOrEqual(block.clientWidth + 1);
+    });
+    await expectNoSidewaysScroll(page(), { except: ['map-key'] });
+    await expectControlsInside(page(), pane('inspector'));
+  },
+};
+
+/** The merge on a phone, in the light map. */
+export const PhoneMergeLight: Story = {
+  ...PhoneMerge,
+  name: 'Phone | Merge · Light',
   globals: { surface: 'admin', mode: 'light' },
 };
 

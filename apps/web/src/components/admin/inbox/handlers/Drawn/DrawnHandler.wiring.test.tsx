@@ -16,14 +16,22 @@ import {
   must,
   resetHarness,
 } from '../../testing/routeHarness';
-import { DRAWN_DECIDED, MODERATOR_VIEW, OVER_CASPIAN } from './drawnFixtures';
+import {
+  DRAWN_DECIDED,
+  DRAWN_MERGED,
+  MODERATOR_VIEW,
+  NEW_WATER,
+  OVER_CASPIAN,
+  OVER_MOREY,
+} from './drawnFixtures';
 
 /**
  * **The drawn handler through the real route and view** (the shared harness: only the router, the
  * role and the read layer stood in, plus the mutations, the theme and the live map's canvas): a
- * `drawn` item opens this handler, not the placeholder; *Approve as new* and *Reject* call their
- * writes with the item's body; *Merge* writes nothing; a refusal reaches a toast; a decided item
- * drops the bar; and on a narrow page the map is view-only.
+ * `drawn` item opens this handler, not the placeholder; *Merge into ‹body›* calls `mergeDrawn` with
+ * the open item's id and the survivor it shows; *Approve as new* and *Reject* call their writes with
+ * the item's body; a refusal reaches a toast; a decided or merged item drops the bar; and on a
+ * narrow page the map is view-only.
  */
 
 // ── What the harness doesn't stand in ────────────────────────────────────────────────────────
@@ -152,14 +160,84 @@ describe('a drawn item, through the route and the view', () => {
     );
   });
 
-  it('Merge writes nothing: it says Coming soon', async () => {
+  it('Merge into ‹body› calls inboxWrites.mergeDrawn with the item and the survivor it shows', async () => {
     open(OVER_CASPIAN);
     mount();
-    // The merge block says it already; the press says it again, in a toast.
-    const before = screen.getAllByText('Coming soon').length;
-    fireEvent.click(within(inspector()).getByRole('button', { name: /Merge into Caspian Lake/ }));
-    await waitFor(() => expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(before));
-    expect(writes.calls).toEqual([]);
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Merge into Caspian Lake' }));
+    await waitFor(() =>
+      expect(called('inboxWrites:mergeDrawn')).toEqual([
+        {
+          name: 'inboxWrites:mergeDrawn',
+          args: {
+            itemId: OVER_CASPIAN.itemId,
+            survivorId: OVER_CASPIAN.overlap?.body.waterBodyId,
+          },
+        },
+      ]),
+    );
+    // One press, one write: nothing else is sent.
+    expect(writes.calls.map((c) => c.name)).toEqual(['inboxWrites:mergeDrawn']);
+  });
+
+  it('sends the open item’s ids, never the item opened before it', async () => {
+    const byRef: Record<string, InboxItemView> = {
+      [OVER_CASPIAN.itemId]: OVER_CASPIAN,
+      [OVER_MOREY.itemId]: OVER_MOREY,
+    };
+    h.lanes = LANES;
+    h.search = { lane: 'drawnBodies', item: OVER_CASPIAN.itemId };
+    h.answers['inbox:item'] = (args) => ({
+      item: byRef[args.ref as string] ?? null,
+      pending: false,
+    });
+    h.answers['inbox:itemMap'] = () => ({ map: DRAWN_MAP, pending: false });
+    const page = mount();
+    expect(
+      within(inspector()).getByRole('button', { name: 'Merge into Caspian Lake' }),
+    ).toBeVisible();
+    h.search = { lane: 'drawnBodies', item: OVER_MOREY.itemId };
+    page.rerender(
+      <Toaster>
+        <UndoProvider server={{ latestOwn: async () => null, run: async () => {} }}>
+          <Route />
+        </UndoProvider>
+      </Toaster>,
+    );
+    fireEvent.click(
+      await within(inspector()).findByRole('button', { name: 'Merge into Lake Morey' }),
+    );
+    await waitFor(() => expect(called('inboxWrites:mergeDrawn')).toHaveLength(1));
+    expect(called('inboxWrites:mergeDrawn')[0]?.args).toEqual({
+      itemId: OVER_MOREY.itemId,
+      survivorId: OVER_MOREY.overlap?.body.waterBodyId,
+    });
+  });
+
+  it('a refused merge reaches a toast in the server’s words, and never the pane', async () => {
+    open(OVER_CASPIAN);
+    writes.answer['inboxWrites:mergeDrawn'] = () => {
+      throw new ConvexError('The drawing now overlaps another body: open it again.');
+    };
+    mount();
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Merge into Caspian Lake' }));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('The decision: The drawing now overlaps another body: open it again.')
+          .length,
+      ).toBeGreaterThan(0),
+    );
+    expect(within(inspector()).queryByText(/overlaps another body/)).toBeNull();
+  });
+
+  it('a merged item drops the bar, and over no body no merge is drawn', () => {
+    open(DRAWN_MERGED);
+    const merged = mount();
+    expect(within(inspector()).queryByRole('toolbar')).toBeNull();
+    merged.unmount();
+    open(NEW_WATER);
+    mount();
+    expect(within(inspector()).queryByRole('button', { name: /Merge/ })).toBeNull();
+    expect(within(inspector()).getByRole('button', { name: 'Approve as new' })).toBeVisible();
   });
 
   it('a refusal reaches a toast, in the server’s words', async () => {

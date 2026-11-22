@@ -28,6 +28,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 async function heavy(t: T, subject: string, over: Partial<Doc<'profiles'>> = {}) {

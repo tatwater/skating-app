@@ -29,7 +29,8 @@ import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
 import { setStandingImpl } from '../standing';
-import { setIncludedByRequestImpl } from '../waterBodies';
+import { readChangeSet, unmergeBodyImpl, unmergeRefusalOf } from '../unmerge';
+import { type MergeChangeSet, setIncludedByRequestImpl } from '../waterBodies';
 import {
   type AuditContext,
   asContinuationOf,
@@ -1063,6 +1064,47 @@ const undoMerge: UndoHandler = {
   },
 };
 
+// ── Body merges (B01-5d, D291) ────────────────────────────────────────────────────────────────────
+
+/**
+ * merge_waterbody → unmerged (`unmerge.ts`), from the change set the merge recorded. The offer and the
+ * run ask one refusal (`unmergeRefusalOf`) in one order, on the same facts: the change set, the loser,
+ * the survivor and the body it was merged into since. The bodies are read first, through the page's
+ * charged reader. The change set is read whole where one row is in view (`one`: the toast, the run) —
+ * a snapshot read, which the reader leaves uncharged (`lib/undoReads`), bounded by
+ * `CHANGE_SET_PARTS_MAX` parts; on a page (`list`) only a record stored as one row is read, charged,
+ * and one split in parts says "check elsewhere", as a feature's split shape does.
+ */
+const undoBodyMerge: UndoHandler = {
+  undoTakesAway: () => UNDO_POLICY.unmerge_waterbody.takesAway(),
+  refusalCost: (scope) => ({
+    bytes: 3 * ROW_MAX.waterBody + (scope === 'list' ? ROW_MAX.moderationAction : 0),
+    reads: scope === 'list' ? 4 : 3,
+  }),
+  refusal: async (ctx, row, read, viewer) => {
+    const loserId = ctx.db.normalizeId('waterBodies', row.targetId);
+    const loser = loserId ? await read.row('waterBody', loserId) : null;
+    let changeSet: MergeChangeSet | null | 'missing';
+    if (read.scope === 'one') {
+      changeSet = await readChangeSet(ctx, row._id);
+    } else {
+      const first = await read.snapshot<MergeChangeSet>('moderationAction', row._id);
+      if (first === 'parts') return UNDO_CHECKED_ELSEWHERE;
+      changeSet = first;
+    }
+    const survivorId =
+      changeSet !== null && changeSet !== 'missing' ? changeSet.survivorId : undefined;
+    const survivor = survivorId ? await read.row('waterBody', survivorId) : null;
+    const survivorInto = survivor?.mergedIntoId
+      ? await read.row('waterBody', survivor.mergedIntoId)
+      : null;
+    return unmergeRefusalOf({ changeSet, loser, survivor, survivorInto }, viewer._id);
+  },
+  run: async ({ ctx, actor, row, reason }) => {
+    await unmergeBodyImpl(ctx, actor, { mergeRow: row, reason });
+  },
+};
+
 /**
  * reopen_request → declined again, exactly the asks it reopened, with the note the asker read. An
  * approval reopened isn't re-run by an undo — it acts on the body, through the approval's own checks
@@ -1196,6 +1238,7 @@ export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>
   suppress_recurrence: undoSuppress,
   unsuppress_recurrence: undoUnsuppress,
   merge_hazards: undoMerge,
+  merge_waterbody: undoBodyMerge,
 };
 
 /** `hide` / `remove` / `restore` for the target kinds this area owns. */

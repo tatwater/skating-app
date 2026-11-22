@@ -29,6 +29,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 async function person(t: T, subject: string, role: 'member' | 'moderator' | 'admin' = 'member') {
@@ -57,6 +58,19 @@ function ring(x: number, n: number, r = 0.5): Polygon {
     return [x + r * Math.cos(a), r * Math.sin(a)];
   });
   return { type: 'Polygon', coordinates: [[...pts, pts[0] as number[]]] };
+}
+
+/**
+ * An outline of about `n` points that a deployment can store: the shore a ring of up to 8,000 (an
+ * array caps at 8,192 items), the rest small islands near the middle, each a ring under the cap.
+ */
+function heavyOutline(x: number, n: number): Polygon {
+  const rings = ring(x, Math.min(n, 8_000)).coordinates;
+  for (let left = n - 8_000, k = 0; left > 0; left -= 8_000, k++) {
+    const hole = ring(x + 0.1 * (k - 1), Math.min(left, 8_000), 0.02).coordinates[0] as number[][];
+    rings.push(hole);
+  }
+  return { type: 'Polygon', coordinates: rings };
 }
 
 async function lake(t: T, externalId: string, x: number, points = 8) {
@@ -148,9 +162,10 @@ describe('inbox.itemMap', () => {
     const t = harness();
     const mod = await person(t, 'mod', 'moderator');
     const s = await person(t, 's');
-    // 30,000 points stored as-is (past the import's own simplification): over the embed's bound.
+    // 30,000 points stored as-is (past the import's own simplification), in rings a deployment can
+    // hold: over the embed's bound.
     const a = await lake(t, 'osm/Big', 0);
-    await t.run((ctx) => ctx.db.patch(a, { polygon: ring(0, 30_000) }));
+    await t.run((ctx) => ctx.db.patch(a, { polygon: heavyOutline(0, 30_000) }));
     await t.run((ctx) =>
       ctx.db.insert('putIns', {
         waterBodyId: a,

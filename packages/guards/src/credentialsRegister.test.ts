@@ -79,7 +79,14 @@ const NOT_CONFIG = new Set(['NODE_ENV', 'MODE', 'DEV', 'PROD', 'SSR', 'BASE_URL'
 function walk(dir: string): string[] {
   if (!statSync(dir, { throwIfNoEntry: false })) return [];
   return readdirSync(dir).flatMap((name) => {
-    if (name === 'node_modules' || name === '_generated' || name.startsWith('.')) return [];
+    // Coverage output is no source, and another package's test task may be writing it mid-walk.
+    if (
+      name === 'node_modules' ||
+      name === '_generated' ||
+      name === 'coverage' ||
+      name.startsWith('.')
+    )
+      return [];
     const path = join(dir, name);
     if (statSync(path).isDirectory()) return walk(path);
     return [path];

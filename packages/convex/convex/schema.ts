@@ -143,21 +143,7 @@ import {
 } from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
-const notificationPrefs = v.object({
-  ...boolFlags(
-    NOTIFICATION_PREF_KEYS.filter(
-      (k): k is Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'> =>
-        k !== 'moderatorDecision',
-    ) as unknown as readonly [
-      Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'>,
-      ...Exclude<(typeof NOTIFICATION_PREF_KEYS)[number], 'moderatorDecision'>[],
-    ],
-  ).fields,
-  // Widened for the rollout (B01-5c, D285): optional until `profiles.backfillNotificationPrefs` has
-  // written it on every row, then narrowed back to required with B01-5d (the governor's ruling).
-  // Until then an absent key reads as off (`recipientWants` reads `=== true`).
-  moderatorDecision: v.optional(v.boolean()),
-});
+const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
 
 /** A People chained job (`lib/peopleRuns.PEOPLE_JOBS`): its run row and its progress row alike. */
 const peopleJob = v.union(
@@ -1471,6 +1457,13 @@ export default defineSchema({
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
     mergedIntoId: v.optional(v.id('waterBodies')), // reads follow the survivor (D36)
+    /**
+     * An unmerge still running on this body, as loser or survivor (B01-5d, R10-A): its
+     * `unmerge_waterbody` row, set on both bodies by the unmerge's first transaction and cleared on
+     * both when it is done. While set, neither body takes a merge (`lib/unmergeState`). Optional, no
+     * backfill: absent reads as no unmerge running.
+     */
+    unmergeActionId: v.optional(v.id('moderationActions')),
     duplicateCandidateIds: v.optional(v.array(v.id('waterBodies'))),
     /**
      * Soft-delist (D48); reversible, cleared on restore.
@@ -3734,6 +3727,15 @@ export default defineSchema({
     ),
     resolvedAt: v.optional(v.number()),
     resolveError: v.optional(v.string()),
+    /**
+     * The nearest listed body to the ask, as the catalog resolve found it (B01-5d): stamped by the
+     * resolve's write through `listedBodiesNearCoord` with a bounded `marginMeters` (never a corpus
+     * read), served as `candidate.nearestKnown` (board 2.3's *Nearest*). Optional, no backfill: a row
+     * resolved before it reads `null` until *Look up again*.
+     */
+    nearestKnown: v.optional(
+      v.object({ waterBodyId: v.id('waterBodies'), name: v.string(), meters: v.number() }),
+    ),
     /**
      * `candidate.externalId`, lifted to the row so it can be indexed: two people tapping the same
      * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalog id is the

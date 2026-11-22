@@ -48,6 +48,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** An ellipse of `n` vertices centred at (cx, cy). */
@@ -60,6 +61,23 @@ function ellipse(cx: number, cy: number, rx: number, ry: number, n: number): Pol
   ring.push(ring[0] as number[]);
   return { type: 'Polygon', coordinates: [ring] };
 }
+/**
+ * The largest outline on dev as Convex can hold it: 14,151 vertices, but no ring over the 8,192-item
+ * array cap (the ETL coarsens any ring past it) — an 8,151-vertex shore and six 1,000-vertex islands
+ * near its middle, as Lake Champlain's islands carry the rest of its vertices.
+ */
+function largestLake(cx: number, cy: number, rx: number, ry: number): Polygon {
+  const shore = ellipse(cx, cy, rx, ry, 8_151).coordinates[0] as number[][];
+  const islands = Array.from(
+    { length: 6 },
+    (_, k) =>
+      ellipse(cx + (k - 2.5) * rx * 0.1, cy, rx * 0.01, ry * 0.01, 1_000)
+        .coordinates[0] as number[][],
+  );
+  return { type: 'Polygon', coordinates: [shore, ...islands] };
+}
+const LARGEST_VERTICES = 14_151;
+
 /** An axis-aligned rectangle from its corners. */
 function rectangle(x0: number, y0: number, x1: number, y1: number): Polygon {
   return {
@@ -589,11 +607,20 @@ describe('computed at the write, read without geometry', () => {
     expect(extras).toMatchObject({ towns: null, townsWithState: null, touchingBodyIds: [near] });
   });
 
+  test('the largest dev lake’s fixture: its vertex count, and no ring past the array cap', () => {
+    const rings = largestLake(-73.3, 44.5, 0.3, 0.2).coordinates;
+    // Each ring closes on its first vertex.
+    expect(rings.reduce((sum, r) => sum + r.length - 1, 0)).toBe(LARGEST_VERTICES);
+    expect(Math.max(...rings.map((r) => r.length))).toBeLessThanOrEqual(8_192);
+  });
+
   test('the largest dev lake against the most candidates: towns paged, every one tested, within the action’s limits', async () => {
     const t = harness();
     // 14,151 vertices — the largest outline on dev — over a 9 × 9 grid of towns, as Lake Champlain
     // meets 75 candidate towns on dev. The lake (rx 0.3°, ry 0.2°) reaches into the inner towns only.
-    const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.3, 0.2], { n: 14_151 });
+    const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.3, 0.2], {
+      over: { polygon: largestLake(-73.3, 44.5, 0.3, 0.2) },
+    });
     const step = 0.1;
     for (let i = 0; i < 9; i++) {
       for (let j = 0; j < 9; j++) {
@@ -678,7 +705,9 @@ describe('no read does geometry that grows with an outline', () => {
     // 14,151 vertices — the largest outline on dev — with a dozen neighbors around it. Their facts
     // are stored directly as the computation would leave them: this test is about the reads, and the
     // computation's own cost (an action, seconds here) is not what it bounds.
-    const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.6, 0.4], { n: 14_151 });
+    const giant = await seedBody(t, 'Largest', [-73.3, 44.5], [0.6, 0.4], {
+      over: { polygon: largestLake(-73.3, 44.5, 0.6, 0.4) },
+    });
     const neighbors: {
       waterBodyId: Id<'waterBodies'>;
       name: string;

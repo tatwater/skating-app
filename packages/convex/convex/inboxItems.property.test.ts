@@ -29,7 +29,7 @@ import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import type { Polygon } from 'geojson';
-import { describe, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
@@ -40,10 +40,12 @@ import {
   bodySource,
   countKeysOf,
   decideItem,
+  decisionHeld,
   deriveItem,
   factsOf,
   flagSource,
   type InboxSource,
+  liveReads,
   requestSource,
   ticketSource,
 } from './lib/inboxItems';
@@ -72,6 +74,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 const square = (x: number, y: number): Polygon => ({
@@ -902,4 +905,92 @@ describe('the one writer, under random histories', () => {
     'after every step, the stored items are what the source rows say (%s draw)',
     () => histories(11),
   );
+});
+
+/**
+ * Pinned from the property (seed −272421, shrunk): a decided item whose deciding member an undo moves
+ * to a newer open item on the key. A raw Cove ask (no member yet) and a filed Cove ask share item I1;
+ * the raw one is declined alone (A0: filed into I1, closed — I1 stays open), then the filed one (A1:
+ * I1 decided by A1); a new Cove ask opens I2; the undo of A1 reopens its member into I2. I1 is left
+ * decided by its one remaining member — so its decision is A0, never A1, a row none of its members
+ * records any more.
+ */
+const DECIDER_LEFT: Ev[] = [
+  { k: 'rawAsk', who: 0, name: 0 },
+  { k: 'ask', who: 1, kind: 0 },
+  { k: 'primaryOnly', i: 0 },
+  { k: 'primaryOnly', i: 0 },
+  { k: 'ask', who: 0, kind: 0 },
+  { k: 'undo', i: 0 },
+];
+
+describe('the one writer, pinned histories', () => {
+  test("an undo moves a decided item's deciding member away: the item takes its other member's decision", async () => {
+    const w = await world();
+    for (const [n, e] of DECIDER_LEFT.entries()) {
+      await apply(w, e);
+      expect(await invariants(w.t, w.unfiled), `after step ${n}`).toEqual([]);
+    }
+    const decided = await w.t.run(async (ctx) => {
+      const items = await ctx.db.query('inboxItems').collect();
+      const item = items.find((i) => i.status === 'decided') as Doc<'inboxItems'>;
+      const members = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_item_status', (q) => q.eq('itemId', item._id))
+        .collect();
+      return {
+        item,
+        members,
+        open: items.filter((i) => i.status === 'open' && i.key === item.key),
+      };
+    });
+    // On the Cove key: one decided item (I1) with the raw ask's closed member, one open (I2) holding both
+    // open asks.
+    expect(decided.open).toHaveLength(1);
+    expect(decided.open[0]?.memberCount).toBe(2);
+    expect(decided.members).toHaveLength(1);
+    expect(decided.item.decisionActionId).toBe(decided.members[0]?.closedByActionId);
+    expect(decided.item.decision).toBe('declined');
+    // Held only by a member of this item: the same row asked of the open item on the key is not.
+    const held = await w.t.run(async (ctx) => {
+      const reads = liveReads(ctx);
+      const other = decided.open[0] as Doc<'inboxItems'>;
+      const actionId = decided.item.decisionActionId;
+      return [
+        await decisionHeld(ctx, reads, decided.item),
+        await decisionHeld(ctx, reads, { _id: other._id, decisionActionId: actionId }),
+        await decisionHeld(ctx, reads, { _id: other._id, decisionActionId: undefined }),
+      ];
+    });
+    expect(held).toEqual([true, false, true]);
+  });
+
+  test('an item already left that way on a deployment: the drift check finds it, the repair re-derives it', async () => {
+    const w = await world();
+    for (const e of DECIDER_LEFT) await apply(w, e);
+    // As the writer left it before the fix: still stamped with the reopened member's decision.
+    const { itemId, gone } = await w.t.run(async (ctx) => {
+      const item = (await ctx.db.query('inboxItems').collect()).find(
+        (i) => i.status === 'decided',
+      ) as Doc<'inboxItems'>;
+      // A1, the later decline (A0 is the raw ask's, which the item keeps).
+      const undone = await ctx.db
+        .query('moderationActions')
+        .order('desc')
+        .filter((q) => q.eq(q.field('action'), 'decline_request'))
+        .first();
+      expect(undone?._id).not.toBe(item.decisionActionId);
+      await ctx.db.patch(item._id, { decisionActionId: undone?._id });
+      return { itemId: item._id, gone: undone?._id };
+    });
+    expect(gone).toBeDefined();
+    const before = await w.t.run(async (ctx) =>
+      inboxDrift(ctx, (await ctx.db.get(itemId)) as Doc<'inboxItems'>),
+    );
+    expect(before).toEqual(['fields']);
+    expect(await w.t.mutation(internal.inboxItems.repairOne, { itemId })).toBeGreaterThan(0);
+    expect(await invariants(w.t, w.unfiled)).toEqual([]);
+    const after = await w.t.run(async (ctx) => ctx.db.get(itemId));
+    expect(after?.decisionActionId).not.toBe(gone);
+  });
 });

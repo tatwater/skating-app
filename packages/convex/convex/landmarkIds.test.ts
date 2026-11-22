@@ -175,6 +175,7 @@ describe('a merge folding one waterway into its twin', () => {
           favoriteReport: true,
           nearbyReportDigest: false,
           greatReportNearby: false,
+          moderatorDecision: false,
         },
         reputationPoints: 0,
         role: 'admin',

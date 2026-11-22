@@ -30,6 +30,7 @@ import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   bodySearchTextFor,
   catalogQueryUrl,
+  distanceToPolygonMeters,
   externalIdFits,
   groupLandmarkAsks,
   isActive,
@@ -77,14 +78,23 @@ import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { inboxDecisionResult } from './lib/decisionResult';
 import { refreshEraseClock } from './lib/eraseClock';
-import { fileMember, inboxBatch, leaveMember, rekey, requestSource } from './lib/inboxItems';
-import { capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
+import {
+  fileMember,
+  inboxBatch,
+  itemToDecide,
+  leaveMember,
+  rekey,
+  requestSource,
+} from './lib/inboxItems';
+import { assertInboxVerb, capabilitiesFor, DECIDED_REFUSAL } from './lib/inboxRules';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { ReadBudget, ROW_MAX, TX_BUDGET } from './lib/readBudget';
 import {
+  assertMayDecide,
   bodyActionSince,
   closeSiblingPage,
+  type DecisionAnswer,
   decide,
   decisionArgs,
   drawnBay,
@@ -334,11 +344,25 @@ export const resolveAdmit = internalAction({
       return { resolved: 'error' };
     }
     const resolution = parseCatalogResponse(json, request.coord, now);
+    // The nearest body already on the map (board 2.3's *Nearest*, B01-5d), for a lookup that found
+    // water: a bounded geo read in a transaction of its own, so a dense shore can never cost the
+    // answer itself. A read that fails stamps nothing — the row reads `null`, as an old one does.
+    let nearestKnown: NearestKnown | null = null;
+    if (resolution.kind === 'found') {
+      try {
+        nearestKnown = await ctx.runQuery(internal.corpusRequests.nearestKnownForResolve, {
+          coord: request.coord,
+        });
+      } catch (err) {
+        console.warn(`resolveAdmit: nearest known body not read for ${requestId}: ${String(err)}`);
+      }
+    }
     try {
       await ctx.runMutation(internal.corpusRequests.recordResolution, {
         requestId,
         resolvedAt: now,
         ...(resolution.kind === 'found' ? { candidate: resolution.candidate } : {}),
+        ...(nearestKnown !== null ? { nearestKnown } : {}),
         ...(resolution.kind === 'error' ? { resolveError: resolution.message } : {}),
         ...(resolution.kind === 'none' ? { resolveError: 'No catalog water at this point' } : {}),
       });
@@ -354,6 +378,47 @@ export const resolveAdmit = internalAction({
     }
     return { resolved: resolution.kind };
   },
+});
+
+/** How far from an ask the lookup names the nearest body already on the map (B01-5d). */
+export const NEAREST_KNOWN_MARGIN_M = 2_000;
+
+/** The nearest listed body to an ask, as the ask stores it (`waterBodyRequests.nearestKnown`). */
+export type NearestKnown = { waterBodyId: Id<'waterBodies'>; name: string; meters: number };
+
+const nearestKnownValidator = v.object({
+  waterBodyId: v.id('waterBodies'),
+  name: v.string(),
+  meters: v.number(),
+});
+
+/**
+ * **The nearest body already on the map to `coord`** — within {@link NEAREST_KNOWN_MARGIN_M}, by the
+ * distance to its outline (0 inside it), `null` when none. Bounded: one `listedBodiesNearCoord` read
+ * with that margin (never the resolution-grade default, never a corpus scan — one unbounded read of
+ * this kind once spent 105 GB), and a body whose box falls inside the margin but whose water doesn't
+ * is passed over, so "within 2 km" means its water.
+ */
+export async function nearestKnownOf(
+  ctx: QueryCtx,
+  coord: { lat: number; lng: number },
+): Promise<NearestKnown | null> {
+  const nearby = await listedBodiesNearCoord(ctx, coord, NEAREST_KNOWN_MARGIN_M);
+  let best: NearestKnown | null = null;
+  for (const b of nearby.values()) {
+    if (!b.polygon) continue;
+    const meters = distanceToPolygonMeters(coord, b.polygon as unknown as Polygon | MultiPolygon);
+    if (meters > NEAREST_KNOWN_MARGIN_M) continue;
+    if (best === null || meters < best.meters) {
+      best = { waterBodyId: b._id, name: b.name, meters };
+    }
+  }
+  return best && { ...best, meters: Math.round(best.meters) };
+}
+
+export const nearestKnownForResolve = internalQuery({
+  args: { coord: latLng },
+  handler: (ctx, { coord }) => nearestKnownOf(ctx, coord),
 });
 
 export const getForResolve = internalQuery({
@@ -391,8 +456,10 @@ export const recordResolution = internalMutation({
     resolvedAt: v.number(),
     candidate: v.optional(candidateValidator),
     resolveError: v.optional(v.string()),
+    /** The nearest listed body to the ask (B01-5d), read beside a found candidate. */
+    nearestKnown: v.optional(nearestKnownValidator),
   },
-  handler: async (ctx, { requestId, resolvedAt, candidate, resolveError }) => {
+  handler: async (ctx, { requestId, resolvedAt, candidate, resolveError, nearestKnown }) => {
     const request = await ctx.db.get(requestId);
     if (!request) return;
     await ctx.db.patch(requestId, {
@@ -402,6 +469,9 @@ export const recordResolution = internalMutation({
         : undefined,
       candidateExternalId: candidate?.externalId,
       resolveError,
+      // Each lookup writes its own answer: a lookup that found no water, or no body near it, clears
+      // the last one's — never a stale neighbor beside a fresh candidate.
+      nearestKnown: candidate ? nearestKnown : undefined,
     });
     // Resolved to a catalog feature, the admit's question is that feature: its Inbox member moves to
     // the item every ask for the same water shares (B01-5).
@@ -413,9 +483,14 @@ export const recordResolution = internalMutation({
 export const reresolve = mutation({
   args: { requestId: v.id('waterBodyRequests') },
   handler: async (ctx, { requestId }) => {
-    await requireCapability(ctx, 'inbox.request');
+    const actor = await requireCapability(ctx, 'inbox.request');
     const request = await ctx.db.get(requestId);
-    if (request?.kind !== 'admit') throw new ConvexError('Not an admit request');
+    if (!request) throw new ConvexError('Request not found');
+    // The Inbox's rule on its item, in its order and words (B01-5d): decided, then the viewer's own
+    // ask (D289), then an admit's only. A script's ask is no item: its own checks below.
+    const item = await itemToDecide(ctx, requestSource(request._id));
+    if (item) await assertInboxVerb(ctx, actor, item, 'lookUpAgain', { requestKind: request.kind });
+    if (request.kind !== 'admit') throw new ConvexError('Not an admit request');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     await ctx.scheduler.runAfter(0, internal.corpusRequests.resolveAdmit, { requestId });
     return requestId;
@@ -718,13 +793,21 @@ export const approve = mutation({
     );
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    const now = Date.now();
+    // Who may decide it (D289: an ask of their own, here or among those the answer closes) — before
+    // the ask's own preconditions and the act, in the Inbox rule's order (B01-5d): a staffer who
+    // filed a bay ask hears that, not that the bay isn't drawn. The answer is the one the item reads.
+    await assertMayDecide(ctx, request, actor._id, 'approved', {
+      ...(await standingAnswer(ctx, request)),
+      asOf: now,
+      stage: 'who',
+    });
     // *Same place* only where something looks like it — the rule's precondition, in its words and
     // its order (after the lever and the decided check), so the lever and this write agree (B01-5c).
     if (sameAs !== undefined) {
       const why = await sameAsRefusal(ctx, request);
       if (why !== null) throw new ConvexError(why);
     }
-    const now = Date.now();
     const trimmedNote = note?.trim();
 
     let admittedWaterBodyId: Id<'waterBodies'> | undefined;
@@ -850,6 +933,25 @@ export const approve = mutation({
   },
 });
 
+/**
+ * The answer an ask's approval reaches others' asks through, as it stands now — the bay drawn by the
+ * asked name, or the landmark at the asked spot — the same one the Inbox item reads for its reach
+ * (`lib/inboxViews`), for the decision's first check.
+ */
+async function standingAnswer(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<DecisionAnswer> {
+  if (request.waterBodyId === undefined) return {};
+  if (request.kind === 'name_bay') {
+    return { subArea: await drawnBay(ctx, request.waterBodyId, requestNames(request)) };
+  }
+  if (request.kind === 'name_landmark') {
+    return { landmark: await namedLandmark(ctx, request.waterBodyId, landmarkAskOf(request)) };
+  }
+  return {};
+}
+
 /** Moderator: decline — with a note the requester reads. Declining is not deleting (D107). */
 export const decline = mutation({
   args: { requestId: v.id('waterBodyRequests'), note: v.string() },
@@ -867,6 +969,8 @@ export const decline = mutation({
     if (request.status === 'retracted') throw new ConvexError(WITHDRAWN_BY_ASKER);
     // In the Inbox rule's words, so the item's levers and this write say one thing (D268).
     if (request.status !== 'open') throw new ConvexError(DECIDED_REFUSAL);
+    // Who may decide it, before the note is weighed — the rule's order (B01-5d).
+    await assertMayDecide(ctx, request, actor._id, 'declined', { asOf: Date.now(), stage: 'who' });
     // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
     // that A07b exists to end. Enforced here, not only in the dialog.
     const trimmed = note.trim();

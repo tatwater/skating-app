@@ -36,6 +36,7 @@ import {
 import {
   enqueueActorNotification,
   enqueueModeratorDecision,
+  recipientWants,
   settleReadCost,
 } from './lib/notificationQueue';
 import { parsePayload } from './lib/notificationResolve';
@@ -347,19 +348,31 @@ describe('an ask’s decision tells its asker (D285)', () => {
     }
     const asks = await bayAsks(w.t, w.active, askers);
     await settle();
-    await w.admin.as.mutation(api.corpusRequests.decline, {
-      requestId: asks[0] as Id<'waterBodyRequests'>,
-      note: 'Not its own place',
-    });
+    // The scheduler held: its pages run only as the drain runs them, so the drain counts every one.
+    // On real timers a zero-delay page fires by itself between the drain's reads, and the count
+    // depends on how loaded the machine is (alone, the whole chain ran before the drain looked: 0).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let pages: number;
+    try {
+      await w.admin.as.mutation(api.corpusRequests.decline, {
+        requestId: asks[0] as Id<'waterBodyRequests'>,
+        note: 'Not its own place',
+      });
+      pages = await drainAll(w.t);
+    } finally {
+      vi.useRealTimers();
+    }
     // More than one page: the drain's continuations, each its own transaction.
-    expect(await drainAll(w.t)).toBeGreaterThanOrEqual(2);
+    expect(pages).toBeGreaterThanOrEqual(2);
     const queued = await queueRows(w.t);
     expect(queued).toHaveLength(n);
     expect(new Set(queued.map((r) => r.userId))).toEqual(new Set(askers));
     const delivered = await flushAllDue(w.t);
     expect(delivered).toHaveLength(n);
     expect(new Set(delivered.map((r) => r.userId))).toEqual(new Set(askers));
-  }, 120_000);
+    // 5x headroom over its time when every package's suite runs at once (CI's `pnpm test`: 13–85 s,
+    // the most under the range-counting harness).
+  }, 450_000);
 
   test('an ask a script filed tells no one — its requester is staff, and nobody asked (D289)', async () => {
     const w = await world();
@@ -533,7 +546,9 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
     expect(await flushAllDue(w.t)).toHaveLength(1);
   });
 
-  test('an approved drawing merged into another body inside the window: no message about a body merged away', async () => {
+  // R10-B, ruled: the drawer is told of a merge whatever the drawing's review — the approval's own
+  // message is dropped once the body is merged away, so the merge's is the one that tells them.
+  test('an approved drawing merged inside the approval’s window: exactly one message, the merge’s', async () => {
     const w = await world();
     const body = await drawn(w);
     await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
@@ -544,7 +559,41 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
       reason: 'The same pond',
     });
     expect((await w.t.run((ctx) => ctx.db.get(body)))?.dedupStatus).toBe('merged');
-    expect(await flushAllDue(w.t)).toEqual([]);
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    const told = await inboxOf(w.asker.as, KNOWS);
+    expect(told).toHaveLength(1);
+    expect(told[0]).toMatchObject({ about: 'drawn', outcome: 'merged', body: { id: w.active } });
+  });
+
+  test('a drawing approved long ago, then merged: one message more, the merge’s', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    await w.admin.as.mutation(api.waterBodies.merge, { survivorId: w.active, loserId: body });
+    expect(await flushAllDue(w.t)).toHaveLength(2);
+    expect(
+      (await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { outcome: string }).outcome).sort(),
+    ).toEqual(['approved', 'merged']);
+  });
+
+  test('an approved drawing’s merge undone inside its window tells no one of it', async () => {
+    const w = await world();
+    const body = await drawn(w);
+    await w.admin.as.mutation(api.waterBodies.approve, { waterBodyId: body });
+    await flushAllDue(w.t);
+    const { actionId } = await w.admin.as.mutation(api.waterBodies.merge, {
+      survivorId: w.active,
+      loserId: body,
+    });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    await undo(w, actionId, w.mod.as);
+    await w.t.finishAllScheduledFunctions(() => {});
+    expect((await w.t.run((ctx) => ctx.db.get(body)))?.dedupStatus).not.toBe('merged');
+    await flushAllDue(w.t);
+    expect(
+      (await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { outcome: string }).outcome),
+    ).toEqual(['approved']);
   });
 
   test('a review undone and made again inside the window is one message, about the last review', async () => {
@@ -558,6 +607,102 @@ describe('a drawing’s review tells the person who drew it (D285)', () => {
     expect(
       (await inboxOf(w.asker.as, KNOWS)).map((v) => (v as { outcome: string }).outcome),
     ).toEqual(['rejected']);
+  });
+});
+
+describe('a drawing merged into a known body tells the person who drew it (B01-5d)', () => {
+  /**
+   * A pending drawing marked merged as `mergeBodyInto` leaves it, its merge row, and the merge's
+   * message queued — the queue's own contract, apart from the merge that writes it.
+   */
+  const mergedDrawing = async (w: W) => {
+    const drawing = await lake(w.t, 'osm/D', 6);
+    return w.t.run(async (ctx) => {
+      await ctx.db.patch(drawing, {
+        source: 'user',
+        createdByUserId: w.asker.id,
+        reviewStatus: 'merged',
+        dedupStatus: 'merged',
+        mergedIntoId: w.active,
+      });
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        targetId: drawing,
+        reason: 'The same pond',
+        createdAt: Date.now(),
+      });
+      await enqueueModeratorDecision(ctx, {
+        recipientId: w.asker.id,
+        deciderId: w.admin.id,
+        trigger: { kind: 'request_decided', waterBodyId: drawing, outcome: 'merged', actionId },
+      });
+      return { drawing, actionId };
+    });
+  };
+
+  test('the merge reaches the drawer once, naming the body it was merged into', async () => {
+    const w = await world();
+    await mergedDrawing(w);
+    expect(await flushAllDue(w.t)).toHaveLength(1);
+    const [merged] = await inboxOf(w.asker.as, KNOWS);
+    expect(merged).toMatchObject({ about: 'drawn', outcome: 'merged', body: { id: w.active } });
+    expect(describeNotification(merged as NotificationView).title).toBe(
+      'Your drawing was merged into Pond A — anything you reported there moved with it',
+    );
+  });
+
+  test('the merge undone inside the window drops it: a row undoing the merge row', async () => {
+    const w = await world();
+    const { actionId, drawing } = await mergedDrawing(w);
+    await w.t.run(async (ctx) => {
+      await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: drawing,
+        reason: 'Not the same pond',
+        undoesActionId: actionId,
+        createdAt: Date.now(),
+      });
+    });
+    expect(await flushAllDue(w.t)).toEqual([]);
+  });
+
+  test('a drawing no longer merged away tells no one', async () => {
+    const w = await world();
+    const { drawing } = await mergedDrawing(w);
+    await w.t.run((ctx) =>
+      ctx.db.patch(drawing, {
+        dedupStatus: 'clean',
+        mergedIntoId: undefined,
+        reviewStatus: 'pending',
+      }),
+    );
+    expect(await flushAllDue(w.t)).toEqual([]);
+  });
+
+  test('an ask is never merged: a merged outcome on an ask is dropped at the flush', async () => {
+    const w = await world();
+    const requestId = await activate(w);
+    await w.t.run(async (ctx) => {
+      const actionId = await ctx.db.insert('moderationActions', {
+        actorId: w.admin.id,
+        action: 'merge_waterbody',
+        targetType: 'waterbody',
+        targetId: w.dormant,
+        reason: 'x',
+        createdAt: Date.now(),
+      });
+      await enqueueModeratorDecision(ctx, {
+        recipientId: w.asker.id,
+        deciderId: w.admin.id,
+        trigger: { kind: 'request_decided', requestId, outcome: 'merged', actionId },
+      });
+    });
+    expect(await queueRows(w.t)).toHaveLength(1);
+    expect(await flushAllDue(w.t)).toEqual([]);
   });
 });
 
@@ -790,13 +935,25 @@ describe('who is never told', () => {
   test('the toggle off, or absent before the backfill, tells no one; on by default for a new profile', async () => {
     const w = await world();
     const off = await person(w.t, 'off', 'member', { ...PREFS, moderatorDecision: false });
-    const { moderatorDecision: _absent, ...beforeBackfill } = PREFS;
-    const absent = await person(w.t, 'absent', 'member', beforeBackfill);
-    for (const who of [off, absent]) {
-      const requestId = await activate(w, who.as);
-      await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
-    }
+    const requestId = await activate(w, off.as);
+    await w.admin.as.mutation(api.corpusRequests.decline, { requestId, note: 'No' });
     expect(await queueRows(w.t)).toEqual([]);
+    // A row from before the backfill can no longer be stored (the key is required since B01-5d's
+    // narrowing), but the gate stays tolerant: an absent key reads as off.
+    const { moderatorDecision: _absent, ...beforeBackfill } = PREFS;
+    const stored = (await w.t.run((ctx) => ctx.db.get(off.id))) as Doc<'profiles'>;
+    expect(
+      recipientWants(
+        { ...stored, notificationPrefs: beforeBackfill as Doc<'profiles'>['notificationPrefs'] },
+        'moderator_decision',
+      ),
+    ).toBe(false);
+    expect(
+      recipientWants(
+        { ...stored, notificationPrefs: { ...stored.notificationPrefs, moderatorDecision: true } },
+        'moderator_decision',
+      ),
+    ).toBe(true);
 
     // Onboarding writes every key from core's defaults (`upsertFromClerk`): this one on.
     const fresh = w.t.withIdentity({ subject: 'clerk_fresh' });
@@ -863,6 +1020,10 @@ describe('the stored payload, read back', () => {
     expect(
       read({ kind: 'request_decided', about: 'drawn', outcome: 'rejected', note: 'Duplicate' }),
     ).toEqual({ kind: 'request_decided', about: 'drawn', outcome: 'rejected' });
+    // A drawing merged into a known body (B01-5d), naming that body.
+    expect(
+      read({ kind: 'request_decided', about: 'drawn', outcome: 'merged', waterBodyId: 'w' }),
+    ).toEqual({ kind: 'request_decided', about: 'drawn', outcome: 'merged', waterBodyId: 'w' });
     expect(
       read({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' }),
     ).toEqual({ kind: 'request_decided', about: 'restore', outcome: 'declined', note: 'No' });
@@ -874,6 +1035,7 @@ describe('the stored payload, read back', () => {
       { kind: 'request_decided', about: 'drawn', outcome: 'declined' },
       { kind: 'request_decided', about: 'admit', outcome: 'rejected' },
       { kind: 'request_decided', about: 'admit', outcome: 'retracted' },
+      { kind: 'request_decided', about: 'admit', outcome: 'merged' },
       { kind: 'request_decided', about: 'photo', outcome: 'approved' },
       { kind: 'request_decided', outcome: 'approved' },
       { kind: 'alert_retracted', accessAlertId: 'a' },

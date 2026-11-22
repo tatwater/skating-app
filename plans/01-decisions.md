@@ -8681,3 +8681,31 @@ seasons, including a December thaw that ended 2023-24's winter for five days.
 
 **Related:** D3, D149, D212, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
 
+## D291 — An inverse may restore the fields the forward write changed, from before-values it recorded, through the forward paths' side effects (B01)
+
+**Decided (2026-11-22, governor; the founder is told and may overturn).** An undo still runs its
+verb's inverse through the same internal paths the forward action uses, so every side effect runs
+again. What changes: an inverse **may restore the fields the forward write changed, from
+before-values it recorded** (`auditSnapshots`), through the forward paths' side effects, and never
+by patching a row back to its snapshot bare. The unmerge (`unmerge_waterbody`, B01-5d) restores
+from the change set the merge recorded. It re-points each moved row through the same re-pointing,
+re-keys the Inbox, re-syncs cells, rebuilds the name lists and the library, and restamps.
+- **Fields, not rows.** For a bay or landmark, it puts back only the fields the merge wrote
+  (`rowsAfter`), and only while each still holds the merge's value.
+- **Judged by value.** A later edit of a field the merge didn't write (a rename, a counter) survives
+  the unmerge, and `updatedAt` decides nothing. *Amended 2026-11-22 (R10): the decision first read
+  "may restore from a before-image", which allowed whole-row restores.*
+
+It takes the survivor's unioned lists apart by difference: it removes what came only from the loser and is still there, and keeps what
+the survivor gained since. A merge recorded before its change set was complete (`version: 2`) has
+nothing to restore from and is refused, saying so before it runs.
+
+**Why:** the founder ruled that the unmerge is built in this wave (B01 §7, *the founder's answers
+to the Inbox design's forks*, 2026-11-20, answer 5). A merge's inverse has no forward verb to call:
+the rows it moved, the bays it re-clipped and the flags it cleared can only come back from what the
+merge recorded. The registry's old line ("nothing here patches a row back from a snapshot") ruled
+that out as written. A sub-area redraw already restored its outline from a snapshot through the
+setter (`redraw_sub_area`). This decision names that shape and its limit, so a restore never skips
+the side effects a forward write would run.
+
+**Related:** D15, D33, D226, D36, [`phase-B01`](./phases/B01-admin-console.md) *Briefs (B01-5d)*.

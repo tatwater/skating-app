@@ -47,6 +47,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 const SQUARE: Polygon = {
   type: 'Polygon',

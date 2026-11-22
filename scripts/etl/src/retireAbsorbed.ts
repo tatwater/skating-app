@@ -34,6 +34,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { type RetireResult, retireInBatches } from './retireBatches';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch', 'merge');
@@ -104,60 +105,18 @@ function main(): void {
   });
   logger.start();
 
-  const totals = { scanned: 0, retired: 0 };
-  const skipped: Record<string, number> = {};
-  const samples: { absorbed: string; into: string; name: string }[] = [];
-  // A skip means a duplicate row STAYS. That is at least as worth naming as a retirement.
-  const skippedSamples: { pair: string; why: string }[] = [];
-
-  // **Carried across batches, because one row can arrive under two keys.** The mutation's own
-  // one-row-once guard is per-call, and two merge-group keys resolving to the same document —
-  // `Divol Pond` as both an OSM key and an NHD one — land in different batches whenever the boundary
-  // falls between them. Without this the dry run counted such a row twice while `--apply` counted it
-  // once, so the dry run stopped predicting the apply at exactly the sizes nobody tests at.
-  //
-  // These are the RESOLVED row keys the mutation returns, not the input refs, which is what lets two
-  // differing keys collapse to one string.
-  const retiredKeys: string[] = [];
-  // **And the moderator-held lists each survivor holds by now** (B01-3g): the cap check reads them,
-  // so the dry run predicts the apply across any batch boundary.
-  let taken: {
-    key: string;
-    pins: string[];
-    aliases: string[];
-    links: { label: string; url: string }[];
-  }[] = [];
-
-  for (let i = 0; i < pairs.length; i += batch) {
-    const slice = pairs
-      .slice(i, i + batch)
-      .map((p) => ({ survivor: p.survivor, absorbed: p.absorbed }));
-    const result = convexRun<{
-      applied: boolean;
-      scanned: number;
-      retired: number;
-      samples: { absorbed: string; into: string; name: string }[];
-      retiredKeys: string[];
-      taken: typeof taken;
-      skipped: Record<string, number>;
-      skippedSamples: { pair: string; why: string }[];
-    }>('waterBodies:retireAbsorbedBodies', {
-      pairs: slice,
-      ...(campaignId ? { campaignId } : {}),
-      ...(apply ? { apply: true } : {}),
-      ...(retiredKeys.length > 0 ? { alreadyRetired: retiredKeys } : {}),
-      ...(taken.length > 0 ? { taken } : {}),
-    });
-    retiredKeys.push(...result.retiredKeys);
-    taken = result.taken ?? [];
-    totals.scanned += result.scanned;
-    totals.retired += result.retired;
-    for (const [why, n] of Object.entries(result.skipped)) skipped[why] = (skipped[why] ?? 0) + n;
-    for (const s of result.samples) if (samples.length < 25) samples.push(s);
-    for (const s of result.skippedSamples) if (skippedSamples.length < 25) skippedSamples.push(s);
-    logger.count('retired', totals.retired);
-    logger.flush();
-  }
+  // The batching, the keys and lists carried across calls, and the deferred pairs sent again — a
+  // bounded loop (`retireBatches.ts`, tested): a pair that never fits is skipped by name, not retried.
+  const { scanned, retired, skipped, samples, skippedSamples } = retireInBatches(
+    pairs.map((p) => ({ survivor: p.survivor, absorbed: p.absorbed })),
+    { batch, apply, ...(campaignId ? { campaignId } : {}) },
+    (args) => convexRun<RetireResult>('waterBodies:retireAbsorbedBodies', { ...args }),
+    (running) => {
+      logger.count('retired', running.retired);
+      logger.flush();
+    },
+  );
+  const totals = { scanned, retired };
 
   process.stderr.write(
     `\n[retire] ${apply ? 'retired' : 'WOULD retire'} ${totals.retired} of ${totals.scanned} pair(s)\n`,
@@ -191,6 +150,11 @@ function main(): void {
     apply
       ? `${totals.retired} duplicate row(s) folded into their survivors; nothing deleted`
       : `dry run — ${totals.retired} would be retired. Re-run with --apply.`,
+    // Every skip by reason, and the pairs that stay duplicates named (the expected missing rows aside).
+    ...Object.entries(skipped).map(([why, n]) => `${n} skipped — ${why}`),
+    ...skippedSamples
+      .filter((x) => x.why !== 'absorbed row does not exist')
+      .map((x) => `skipped: ${x.pair} (${x.why})`),
   ]);
 }
 

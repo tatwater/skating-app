@@ -909,6 +909,19 @@ Made on the design's engineering forks; the founder may overturn any of them.
 17. **A request's nearest known body moves to B01-5d** (2026-11-22): `candidate.nearestKnown` stays
     `null`. A bounded geographic read doesn't fit the item's budget; the merge PR's preview read is
     where a body's neighbors are read.
+18. **B01-5d: a drifted row is left and counted** (2026-11-22, fork 1 (B)). The unmerge's body-level
+    refusals run first; a row that has moved again since the merge stays where it is, counted on the
+    receipt and named in History, as ruling 8 does for a flag's undo.
+19. **B01-5d moves the drawing's skates** (2026-11-22, fork 2 (B)). `gpsActivities` move with a merge,
+    recorded and read back by the unmerge. Access alerts and linked lots go to the register, each
+    with its reader census.
+20. **B01-5d's merge stays atomic** (2026-11-22, fork 3 (A)). The preview and the write refuse past
+    one transaction's budget with one sentence, and so does a question past 1,000 asks.
+21. **The pref narrowing is B01-5d's last commit** (2026-11-22, fork 4 (A)), after #172 has merged,
+    dev is deployed, and the backfill has left zero rows lacking the key. This sharpens ruling 15.
+22. **D291: an inverse may restore from a recorded before-image** (2026-11-22, fork 5 (A)), through
+    the forward paths' side effects. The unmerge takes the survivor's merged lists apart by
+    difference.
 
 ### The founder's calls of 2026-11-21
 
@@ -946,6 +959,30 @@ Not overturned, so recorded as standing:
 - **The Body console's ruling lever closes a body's access reports, including any the ruling staffer
   filed, with no own-filing check**; and **a ruling's undo skips the undoer's own report, leaving it
   dismissed.**
+
+### A governor's ruling the founder is told of (2026-11-22): abandoning a dead unmerge
+
+The founder may overturn it.
+
+- **The ruling:** a stalled unmerge can be **abandoned** — an audited way out, so a dead unmerge
+  can't lock two bodies for good. It is allowed on any stall, a resumable one included: a page that
+  fails the same way every time would otherwise hold both markers forever.
+- **The write:** `unmerge.abandon({ mergeActionId, reason })`, gated on `corpus.duplicates`. It is
+  refused while a page runs, once the unmerge is done or abandoned, and without a reason. In one
+  transaction it:
+  - clears both bodies' markers;
+  - recomputes their derived facts through their paths;
+  - writes an `unmerge_waterbody` row on the loser.
+- **The audit shape:** no new verb in `MODERATION_ACTIONS`. The row is an `unmerge_waterbody` with
+  `metadata.abandons` (the unmerge's row) and `metadata.mergeActionId`. Its metadata also records
+  the stall (`code`, `error`), what was put back (`left`, and the phases before the cursor), and what
+  wasn't: `notReached`, each phase's rows from the cursor on, or `null` when the merge's record
+  can't be read. The unmerge's own row gains `metadata.abandoned` (`at`, `byUserId`, `actionId`),
+  and `unmerge.receipt` answers it as `abandoned`. `unmerge_waterbody` itself is undone by nothing,
+  as before: "merge it again" is a fresh merge.
+- **The web:** *Abandon* is red, armed for a second press, and asks a reason held to the audit cap.
+  Its dialog says in plain words what abandoning does. Afterwards the row reads "Abandoned before
+  it finished", with what was and wasn't moved back.
 
 ## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
 
@@ -9525,6 +9562,34 @@ files):
   suite and the web unit project ran beside the storybook project, instead of only `yes` loops.
   This is the condition the earlier "starved" runs missed three times. All 10 runs passed.
 
+#### #172 merged (2026-11-22)
+
+- **The merge.** #172 is squash-merged to main as `6b39b107`. Its tree equals the PR's last head,
+  `f348fd83f`.
+- **The dev rollout.** Dev is deployed from `6b39b107`. Then `profiles:backfillNotificationPrefs`
+  ran to done:
+  - 15 of 15 profiles patched;
+  - 0 profiles now lack `notificationPrefs.moderatorDecision`;
+  - a re-run patched none.
+- **The notification's dev check.** The operator declined a seeded ask, and nothing was queued for
+  the fake asker: the enqueue-time gate (`recipientWants`, D287) held. Its undo restored the ask.
+- **The narrowing, and its precondition.** The rollout had widened `notificationPrefs.moderatorDecision` to optional
+  until every profile carried it. The backfill's 0 is that precondition.
+  - B01-5d narrows the field back: `notificationPrefs` is `boolFlags(NOTIFICATION_PREF_KEYS)`
+    whole.
+  - Before it, a mechanical commit gives every prefs literal in tests and fixtures
+    `moderatorDecision: false` (163 lines in 156 files), so each commit compiles.
+  - The runtime stays tolerant: `recipientWants` still reads `=== true`, so an absent key reads as
+    off.
+- **The seed's prefs.** S4a's last commit makes a seed re-apply reset any seed profile's prefs and
+  channels to all off. Dev's eight seed profiles got `moderatorDecision: true` from the backfill.
+  The fake-person gate held, and nothing leaked.
+- **The phase branch moved onto main.** It carried #172's round-one commits as its own
+  cherry-picks, with B01-5d's T0 commits between them, which #172 never had.
+  - T0 (`b50c3769a`, `acd803dce`) was cherry-picked onto `origin/main` first. That tree equals
+    `fd4844df0`'s.
+  - B01-5d was rebased from `fd4844df0` onto it, and its tree came out unchanged.
+
 #### Briefs (B01-5d)
 
 This is the design's PR 4, *Merge into, and the unmerge*. It was written on 2026-11-22 against
@@ -9657,7 +9722,10 @@ the receipt and in History (fork 1).
    - *Recorded:* `subAreasBefore` (whole), `subAreasDelisted`.
    - *Unmerge:* each bay whose `updatedAt` is no later than the merge's is put back to its
      before-image, then cells re-synced and the name lists rebuilt. Each side row is marked undone.
-   - *Left:* a bay edited since (its edit stands, on the survivor).
+     *As built (R10):* the change set records the fields the merge wrote (`rowsAfter`), and only
+     those are put back, each while it still holds the merge's value. `updatedAt` decides nothing.
+   - *Left:* a bay edited since (its edit stands, on the survivor). *As built:* a bay one of whose
+     merge-written fields changed since; an edit to any other field survives.
 9. **The survivor's bays.**
    - *Merge:* the re-clip may change one.
    - *Recorded:* nothing today; **add** before-images of the changed ones.
@@ -9667,8 +9735,9 @@ the receipt and in History (fork 1).
     - *Merge:* moved, folded into twins, retired over the cap or as a bay (side rows).
     - *Recorded:* `landmarksBefore` (whole), `landmarksAfter` (id, body, removed, fold target).
     - *Unmerge:* each changed landmark whose `updatedAt` is no later than the merge's is put back
-      to its before-image, the name lists rebuilt, and each side row marked undone.
-    - *Left:* a landmark edited since.
+      to its before-image, the name lists rebuilt, and each side row marked undone. *As built
+      (R10):* field by field, by value, as row 8.
+    - *Left:* a landmark edited since. *As built:* one of whose merge-written fields changed since.
 11. **The drawn item.**
     - *Merge:* decided `merged`, with no action id today.
     - *Recorded:* **add** whether one was decided.
@@ -9677,8 +9746,10 @@ the receipt and in History (fork 1).
 12. **The notification.**
     - *Merge:* `moderator_decision` `merged` to the drawer (new in this PR).
     - *Recorded:* by its queue row.
-    - *Unmerge:* the drawer's message, as `return_to_review` sends one; inside the window the
-      re-check drops both.
+    - *Unmerge:* ~~the drawer's message, as `return_to_review` sends one~~ *Corrected (R10):*
+      neither the unmerge nor `return_to_review` sends the drawer a message. An unmerge inside the
+      window drops the queued `merged` message at its re-check; after it, the drawer has been told
+      once and is told nothing more.
 13. **Derived facts.**
     - *Merge:* cells, summaries, library rows, geometry staleness, recurrence, restamp.
     - *Recorded:* nothing; they are recomputed.
@@ -9711,9 +9782,9 @@ the receipt and in History (fork 1).
 
 | Builder | Owns | Must not touch |
 |---|---|---|
-| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
-| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts` | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
-| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
+| **S4a — the merge, the read, the seed** | `packages/convex/convex/inboxWrites.ts` (`mergeDrawn`); `lib/inboxRules.ts` and `lib/inboxViews.ts` (the drawing's live survivor: one function for the fact, `overlapOf` and `bodyRef`); `waterBodies.ts` (`mergeBodyInto`: change set `version: 2`, `reviewStatus: 'merged'`, `decideItem` after the audit row with its `actionId`, the `merged` enqueue, fork 2's and fork 3's changes; `merge` answering its undo offer; `listPendingReview` unchanged); `lib/inboxItems.ts` (the `drawn:merged` backfill phase); `bodyConsole.ts` (`mergePreview`); `inboxSeed.ts` (the merge pair); the rule-versus-write cells and the heavy-rows rows for `mergeDrawn` and the merge; **added by the rulings:** `inboxItems.ts` (`reviewAuditOf` and the `drawn:merged` backfill phase); the gpsActivities move in `mergeBodyInto` (fork 2); the over-budget refusal and the 1,000-ask cap as that refusal (fork 3); **`waterBodyRequests.nearestKnown`** stamped by the catalog resolve's write (`corpusRequests.ts`' resolve) through `listedBodiesNearCoord` with a bounded `marginMeters` (~2 km), served as `candidate.nearestKnown`; **`canCode`** served on every item (`lib/inboxRules.ts`, `lib/inboxViews.ts`: `awaitsDrawing` on a place ask's *Approve*), then made required | `lib/undo*.ts`; `convex/unmerge.ts`; `apps/*` |
+| **S4b — the unmerge** | `packages/convex/convex/unmerge.ts` (new: the impl, `unmergeRest`), `lib/undoPolicy.ts` (`merge_waterbody` → `inverse: unmerge_waterbody`; `unmerge_waterbody` → `none`; the header reworded), `lib/undoHandlersCorpus.ts` (its handler), `undoPolicy.test.ts`, the unmerge's case in `undoOfferVsRun.test.ts`, `unmerge.test.ts` (the round trips), `unmerge.property.test.ts`; **added by the rulings:** `packages/convex/vitest.config.ts`'s transform enforces Convex's **8,192-item array cap** (beside the paginate and transaction-limit rules), the heavy-skate track fixtures (25,000–50,000 points) rebuilt legally, and a `CLAUDE.md` line under *Things that bite*; D291's header already landed at T0 | `waterBodies.ts` (it reads the change set's type from the seam); `apps/*` |
+| **W6 — both entry points** | `apps/web/src/components/admin/inbox/handlers/Drawn/` (the live Merge lever: `useDrawnWrites` gains `merge`, `drawnModel`'s bar, its words; `mergeNotHere` and `editorLink` out); `apps/web/src/components/admin/body/tabs/shape/` (`ShapeTab.tsx`'s `MergeSection` → the flow, `ShapeTabRoute.tsx`'s reads and write, `shapeModel.ts`, their tests); `body/frame/BodyConsole.stories.tsx`'s Shape stories; the merged page's link back, if it needs one; **added by the rulings:** `handlers/Request/` (board 2.3's *Nearest* row from `candidate.nearestKnown`, and nothing else there) and `inbox/map/` (the map's distance rule to the nearest known body, and nothing else there); Place's *Draw in Body →* read from `canCode.approve === 'awaitsDrawing'` instead of the served drawing facts | `packages/*`; `inbox/actions/` (it uses the runner, unchanged); other Body tabs |
 
 **The Shape tab is the Body console's, with its own conventions, not the Inbox's.**
 
@@ -9728,35 +9799,48 @@ W6 starts at T0 against the snippets' types with fixtures, and wires to S4a's re
 
 ##### The seams (an executor commit at T0)
 
-1. **`lib/enums.ts`**: the review status widened, no backfill —
-   ```ts
-   export const REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const;
-   ```
-   The hand-typed copies follow in the same commit: `waterBodies.ts:2973` (`DrawnReviewStatus`),
-   `packages/core/src/standing.ts:97`, `lib/listing.ts:27`, `apps/web/…/ModeratorCard.tsx:197`, and
-   the web and mobile `waterMap.ts` (`:289`, `:301`). Each reads `merged` as a merged body already
-   does: `standingOf` and `isListed` rank `dedupStatus: 'merged'` first.
-2. **`lib/enums.ts`**: `MODERATION_ACTIONS` gains `'unmerge_waterbody'`. In the same commit:
-   - `UNDO_POLICY` gains `unmerge_waterbody: { undo: { kind: 'none', why: 'To put them back together,
-     merge them again.' }, takesAway: never, capability: 'corpus.duplicates' }`;
-   - the web's `VERB` gains `unmerge_waterbody: 'Unmerged'`;
-   - `ACTION_WORDS` gains `unmerge_waterbody: 'unmerged a body'`;
-   - `inboxItems.ts:201` lists it among a drawn body's review rows.
-3. **`waterBodies.ts`**: the change set's additions (the snippet below), as types only. S4a fills
-   them; S4b reads them.
-4. **`schema.ts`**: `moderatorDecision` required —
-   ```ts
-   const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
-   ```
-   - The 160 fixture files gain `moderatorDecision: <same as greatReportNearby>`: one mechanical
-     commit, no other change in it.
-   - `SettingsPage.tsx:290`'s cast and the stale backfill comment at `apps/mobile/app/(tabs)/you.tsx:493` go.
-   - **Its dev precondition**, before the deploy that carries it:
-     - `profiles:backfillNotificationPrefs` run to `isDone`;
-     - then the new internal query `profiles:prefsMissingKey`, paged with one `.paginate()` per
-       call and looped by the caller, reading **0** rows lacking the key.
-   - A deploy against a non-zero count fails schema validation, so the order is the executor's
-     after-merge step 1.
+**What landed at T0** (on `phase-b01-inbox`), each placeholder marked `PLACEHOLDER`:
+
+1. **The review status widened** (`lib/enums.ts`), with no backfill: `REVIEW_STATUSES` gains
+   `merged`.
+   - The hand-typed copies that exist follow: core's `standing.ts` (whose `standingOf` reads a
+     merged review status as unlisted, as it reads `dedupStatus: 'merged'`) and the web's
+     `ModeratorCard.tsx`.
+   - `lib/listing.ts` derives its type from the array.
+   - `DrawnReviewStatus` stays the three statuses a review moves between.
+   - There is no web or mobile `waterMap.ts` copy, despite what the pack first said.
+2. **`unmerge_waterbody`** joins `MODERATION_ACTIONS`, with:
+   - the web's two label maps (`VERB` "Unmerged a body", `ACTION_WORDS` "Unmerged body");
+   - a **placeholder** `UNDO_POLICY` rule (`none`, "To put them back together, merge them
+     again."), which S4b replaces, with `merge_waterbody` becoming
+     `inverse('unmerge_waterbody')`;
+   - `undoPolicy.ts`'s header reworded for D291.
+
+   Listing the unmerge among a drawn body's review rows (`inboxItems.ts`' `reviewAuditOf`) changes
+   what the backfill decides, so it is **S4a's**, with the `drawn:merged` phase, not a T0 seam.
+3. **The change set's `version: 2` fields** (`waterBodies.ts`' `MergeChangeSet`), as types only:
+   `version`, `sideActions`, `dedupAfter`, `survivorSubAreasBefore`, `loserReview`, and
+   `movedActivities` (fork 2's skates). S4a fills them; S4b reads them.
+4. **`waterBodyRequests.nearestKnown`** (`schema.ts`), optional: `{ waterBodyId, name, meters }`.
+5. **The refusal code's types** (`inbox.ts`):
+   - `InboxRefusalCode` (`'awaitsDrawing'`);
+   - `InboxCanCode`;
+   - a **placeholder** optional `canCode` on every item, which S4a serves and then makes required.
+
+**Not at T0, and the slice's last commit:** the `moderatorDecision` pref narrowed to required
+(fork 4). It lands only after:
+- #172 has merged;
+- dev is deployed;
+- `profiles:backfillNotificationPrefs` has run to done;
+- the new `profiles:prefsMissingKey`, paged with one `.paginate()` per call and looped by the
+  caller, reads **0** rows lacking the key.
+
+The commit itself:
+- `notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS)`;
+- the 160 fixture files gain `moderatorDecision`, in one mechanical commit;
+- `SettingsPage.tsx:290`'s cast and `apps/mobile/app/(tabs)/you.tsx:493`'s stale comment go.
+
+A deploy against a non-zero count fails schema validation.
 
 ##### Canonical snippets
 
@@ -9823,6 +9907,23 @@ export interface MergeChangeSet {
 }
 ```
 
+**Added by the rulings** (types at T0 where marked):
+
+```ts
+// schema.ts — T0: the resolve's nearest listed body (S4a stamps it; served as candidate.nearestKnown)
+nearestKnown: v.optional(
+  v.object({ waterBodyId: v.id('waterBodies'), name: v.string(), meters: v.number() }),
+),
+
+// inbox.ts — T0: refusal codes beside `can` (S4a serves them, then makes `canCode` required)
+export type InboxRefusalCode = 'awaitsDrawing';
+export type InboxCanCode = Partial<Record<InboxVerb, InboxRefusalCode>>;
+// ItemBase: canCode?: InboxCanCode;   // W6: Draw in Body → ⇔ canCode.approve === 'awaitsDrawing'
+
+// waterBodies.ts — T0: MergeChangeSet's movedActivities (fork 2: the founding skates move)
+movedActivities?: { id: Id<'gpsActivities'>; waterBodyId: Id<'waterBodies'> | null; waterBodyIds: Id<'waterBodies'>[] }[];
+```
+
 ##### Definitions of done
 
 **S4a**
@@ -9844,6 +9945,15 @@ export interface MergeChangeSet {
   - `mergeDrawn` on a heavy survivor.
 - [ ] The `drawn:merged` backfill phase and its drift repair.
 - [ ] The seed's merge pair (below); a second `--apply` files nothing new.
+
+- [ ] **Ruled in:** the gpsActivities move recorded and its round trip; the over-budget refusal
+  (one sentence, preview and write alike) and a question past 1,000 asks refused instead of left
+  behind; `reviewAuditOf` reading the unmerge with the `drawn:merged` phase.
+- [ ] `nearestKnown` stamped by the resolve (a bounded `listedBodiesNearCoord` read, tested at the
+  bound: a body just past the margin isn't named), served as `candidate.nearestKnown`; an old row
+  reads `null` until *Look up again*.
+- [ ] `canCode.approve === 'awaitsDrawing'` exactly where a place ask's *Approve* waits on a drawing,
+  and nowhere else (rule-versus-write cells); `canCode` required once served.
 
 **S4b**
 
@@ -9872,6 +9982,10 @@ export interface MergeChangeSet {
   - **the property:** the state equals the state before, modulo the same exclusions, or the edit's
     row is reported *left*.
 
+- [ ] **Ruled in:** the harness enforces the 8,192-item array cap (a test that a 8,193-item array
+  is refused, beside `harnessLimits.test.ts`'s), the heavy-skate track fixtures rebuilt within it,
+  and the `CLAUDE.md` line.
+
 **W6**
 
 - [ ] The Drawn bar's *Merge into ‹body›*:
@@ -9891,6 +10005,10 @@ export interface MergeChangeSet {
 - [ ] Stories in both modes at 788 and 360. Layout reads wait for the layout to settle, run 5×
   with half the runs starved.
 - [ ] No D#, § or phase token on screen, and nothing readable as a claim about the ice (D3).
+
+- [ ] **Ruled in:** 2.3's *Nearest* row and the map's distance rule from `candidate.nearestKnown`
+  (none drawn for `null`); Place's *Draw in Body →* from `canCode` alone, with a test that it
+  follows the code and not the served drawing facts.
 
 ##### The dev proof
 
@@ -9969,6 +10087,43 @@ one proved, and gives the drawing and Lake Morey:
    **Recommend (A).** It never refuses for an unrelated edit. An alias added later that matches a
    loser alias goes back to the loser, which is the right home for it.
 
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings. The founder is told of them and may overturn any (§7, rulings 18–22).
+
+1. **A drifted row: (B).**
+   - The body-level refusals run in the first transaction.
+   - After that, each row that has moved again since the merge is left where it is: counted on the
+     receipt and named in History, as ruling 8 does for a flag's undo.
+2. **What the merge doesn't move: (B).**
+   - The `gpsActivities` move in this PR, recorded in the change set (`movedActivities`) and read
+     back by the unmerge.
+   - Access alerts and linked lots go to the register as a row of their own, with the reader census
+     each needs.
+3. **A merge too heavy for one transaction: (A).**
+   - The merge stays atomic.
+   - The preview and the write refuse past the budget with one sentence.
+   - The 1,000-ask cap's overflow becomes that refusal, instead of asks left behind silently.
+4. **The pref narrowing: (A), in this PR, as its own mechanical commit and the slice's last.** It is
+   made only after:
+   - #172 has merged;
+   - dev is deployed;
+   - `profiles:backfillNotificationPrefs` has run to done, with a zero count of rows lacking the
+     key.
+
+   Not at T0.
+5. **The survivor's lists, and the registry's rule: (A), and D291 is minted.** An inverse may
+   restore from a before-image the forward write recorded, through the forward paths' side effects.
+   `undoPolicy.ts`'s header says so as of T0.
+
+**Added to this pack from what #172 left owed:**
+- `waterBodyRequests.nearestKnown`:
+  - S4a stamps it, bounded by `marginMeters`;
+  - W6 draws it as 2.3's *Nearest* row and the map's distance rule.
+- The harness enforces Convex's 8,192-item array cap, and the heavy-skate track fixtures are rebuilt
+  within it (S4b).
+- A refusal code on `can` (`canCode`): S4a serves it, and W6's *Draw in Body →* reads it.
+
 ##### Size, honestly
 
 | Part | Estimate |
@@ -9992,6 +10147,674 @@ body says both.
   S4a's reads when they land.
 - S4b's round trips need S4a's `version: 2` writes. S4b builds against the seam with a fixture
   writer, and the executor runs its suite against S4a's merge at integration.
+
+#### B01-5d: the builders integrated (2026-11-22)
+
+The three builders were cherry-picked onto `phase-b01-inbox` from `fd4844df0` with no conflicts:
+- **S4a** (`b01-5d-s4a`, through `92e6ff77a`, three follow-ups included);
+- **S4b** (`b01-5d-s4b`, `c01dd24d6`);
+- **W6** (`b01-5d-w6`, `3ccd89896`).
+
+Nothing is pushed or deployed. The pref narrowing is not in this integration: it waits for #172's
+merge and the backfill.
+
+**What each built:**
+
+- **S4a, the merge:**
+  - The merge records its change set at `version: 2` (fields below).
+  - It refuses a merge too heavy for one transaction (`MERGE_TOO_BIG`). It first capped each
+    kind at 8,000 rows; the corrected estimate below replaced that cap.
+  - `bodyConsole.mergePreview` serves the write's own refusal and its code.
+  - `inboxWrites.mergeDrawn` merges a drawing from the Inbox into its one live survivor.
+  - `canCode` is required on every Inbox item. Two codes are served:
+    - `approve: 'awaitsDrawing'`, a place ask waiting on a bay or landmark;
+    - `mergeDrawn: 'ownDrawing'`, a drawer's own drawing. One `ownDrawingRefusal` feeds the
+      preview, the merge and the code.
+  - `candidate.nearestKnown` names the nearest body of ours.
+  - The drawer is told `moderator_decision` `merged`.
+  - The seed has a merge-proof pair and `waterBodies:mergeProofCensus`.
+  - The harness enforces Convex's 8,192-item array cap (heavy fixtures were rebuilt within it).
+  - The follow-ups:
+    - `approve` and `decline` ask who decides before their own preconditions;
+    - `reresolve` asks the rule (it had not refused a staffer's own admit);
+    - the seed's clear finds what it made, whatever was merged since.
+- **S4b, the unmerge:**
+  - `unmerge_waterbody`, the merge's inverse (D291), runs from the version-2 change set, through
+    the forward paths, in pages.
+  - Its receipt is `unmerge.receipt`.
+  - Tests: its property test, its mutation-held cases, and a pre-version-2 merge in the
+    offer-versus-run table.
+- **W6, the web:**
+  - Place's *Draw in Body →* reads `canCode`.
+  - Board 2.3's *Nearest* row and the map's rule come from `nearestKnown`.
+  - The Drawn handler's live *Merge into ‹body›* lever (2.5).
+  - The Shape tab's *Merge into another body*: search or press a touching body, the server's
+    preview, a reason, the write.
+  - Stories at the board's size and a phone's.
+  - The unmerge's left-rows sentence.
+
+**The change set's version-2 fields** (`MergeChangeSet`, beside the version-1 record):
+
+| Field | What it holds |
+| --- | --- |
+| `version` | `2`. Absent means a merge recorded before B01-5d, which the unmerge refuses. |
+| `sideActions` | The rows the merge wrote beside its own (bay delists, landmarks retired as bays, folds, over-cap retirements). The unmerge marks each one undone. |
+| `dedupAfter` | Each partner's dedup fields as the merge left them, so a flag changed since can be told apart. |
+| `survivorSubAreasBefore` | The survivor's own bays that the re-clip changed, as they stood before. |
+| `loserReview` | The loser's review status before the merge (a drawing's `pending`), and whether its Inbox item was decided. The brief called this `reviewStatusBefore`. |
+| `movedActivities` | The founding skates the merge moved (fork 2), with both of their body fields. |
+
+**The unmerge's row table, as built.**
+
+The unmerge **refuses**, before any write, in one order shared by the offer and the run:
+1. no change set, or one before `version: 2` (the pre-v2 sentence);
+2. a part of the record is missing;
+3. the loser is no longer merged into the recorded survivor;
+4. the survivor is gone;
+5. the survivor has since been merged into another body ("Unmerge it from ‹X› first");
+6. the viewer drew the merged drawing (D289).
+
+The engine refuses the rest: already undone, overtaken by a later row on the loser, or the
+capability (`corpus.duplicates`).
+
+It **leaves** a row where it is, counted on its own audit row by kind with the first 20 named:
+
+| Kind | Left when |
+| --- | --- |
+| Reports, hazards, bounties, features, put-ins, re-pointed favorites | The row is on another body now, or gone. |
+| Requests, place names, body flags | The row was decided since (it stands, on the survivor). |
+| Partners' dedup flags | The flag no longer equals its after-image. |
+| Re-created favorites | The kept row is gone. |
+| The loser's bays and the survivor's re-clipped bays | A field the merge wrote no longer holds the merge's value. Judged by value, never by `updatedAt`: a later rename of a bay the merge didn't rename survives, and only that untouched field is kept as edited. |
+| Landmarks | A field the merge wrote no longer holds the merge's value (by value, as above). |
+| Founding skates | The skate's body is no longer what the merge made it. |
+| Side rows | Their target was left (edited since). |
+
+**The receipt**, wired in this integration:
+- **The Undone toast** after a merge's Undo, and **the unmerge's History row**, read
+  `unmerge.receipt` live. They say "Moving rows back…" while the pages land. Then they say
+  "N rows had changed since the merge and stay where they are", or nothing more when every row
+  went back.
+- **A pre-v2 merge's History row** says its sentence before anything runs.
+
+**The seed's new numbers:**
+- 121 steps;
+- 27 open, 14 decided;
+- by lane: access 4, places 4, drawn 2.
+
+**Boards, and the words the founder hasn't seen** (W6's, unless marked):
+- **The Shape tab's merge flow has no board.** It is built in the Body console's conventions.
+- **2.5:** "Told it was merged" (*If merged into*'s drawer row) and "Kept · moves with it".
+- **2.3:** "0.8 mi" is said without a direction.
+- **The receipt's** "Moving rows back…" is this integration's own.
+
+**Owed:**
+- Access alerts and linked lots don't move with a merge.
+- Old merged drawings keep `pending`: there is no backfill.
+- A skate that names the loser only in its list (`waterBodyIds`) stays where it is.
+- The ETL path skips the weight check.
+
+**What the integration found:**
+- **The fixture writer would have hidden the real merge.**
+  - Once S4a's merge wrote `version: 2`, `unmerge.test.ts`' writer returned early. Its `chunked`
+    option was skipped silently, so "the change set split in parts" and "a part of the change
+    set missing" ran on a single-part snapshot.
+  - The writer is now deleted. `mergeV2` is the real merge and throws on anything but
+    version 2, and `chunked` re-stores the real change set in three parts.
+- **The real merge and the unmerge agree.** On the real merge, these all pass:
+  - all of `unmerge.test.ts` and `unmerge.property.test.ts`;
+  - the `merge_waterbody` offer-versus-run cases;
+  - the three tests un-skipped here: S4b's two drawer-message tests, and S4a's seed
+    apply → merge → unmerge → clear.
+- **The break is caught.** With the real merge's `loserReview` recorded as `reviewStatus: null`,
+  18 tests fail.
+- **`canCode` fixtures.**
+  - 13 fixture lines took `canCode: {}`, and every item fixture now serves the field.
+  - The drawer's own seat on the Drawn handler carries `mergeDrawn: 'ownDrawing'`, with no lever
+    and the server's sentence.
+- **W6's placeholders** became the real `api.*`. Its fixtures now match the server's answers
+  (`lakePond`, `refusal`/`code` on every preview, `flagsClosed` and `survivorId`). *Too big* is
+  the server's sentence; the tab words no refusal itself.
+- **`useTabAction`** takes a receipt built from the write's answer (W6's request), so the Shape
+  tab's merge no longer mutates its receipt.
+- **Four guards** flagged the builders' code, and each was checked and listed:
+  - the unmerge's two Inbox writers (both call `rekey`);
+  - the Shape tab's direct mutation;
+  - the survivor search's uncapped field (a read);
+  - the property test's two environment knobs.
+- **`MergeSearch` stays in `MergeFlow`.** It is a search box and a pick-one table, built from kit
+  parts and bound to the console's read layer (`Loadable`, `ReadNote`). It has one use, so there is
+  nothing new for the kit.
+- **The array cap caught one more fixture**, in the workspace run: `bodyGeo.test.ts`' two
+  largest-lake tests (B01-3g) stored a single 14,152-point ring, which Convex would refuse too.
+  - The fixture now keeps the 14,151 vertices with no ring past the cap: an 8,151-vertex shore and
+    six islands.
+  - The convex suite's failure had also stopped turbo's web task partway.
+- **Two slow B01-5d tests** got the R9 rule's 5x headroom over their time in CI's `pnpm test`:
+  - the unmerge's real-limits paging test: 60 s there (3.6 s alone), now 300 s;
+  - the seed's unmerge → clear: 6.9 s there, now 60 s.
+- **The codegen check** on a throwaway anonymous backend matched the committed `_generated`.
+
+#### B01-5d: the web review (R11) and its fixes (2026-11-22)
+
+An independent web review of `257dd098f`. Each fix is its own commit with a test that fails
+without it.
+
+**The reviewer's clean areas:**
+- no write sends a wrong id;
+- no privacy gap;
+- no crash.
+
+**The findings and their fixes:**
+
+1. **The History half of the unmerge couldn't be reached.**
+   - *The finding:* `shell/HistoryPanel` has been mounted nowhere since B01-2 built it (#109). The
+     History the console shows is the Body console's `BodyHistorySection`, read-only.
+   - *The fix:*
+     - `bodyHistory` now gives each row a second line from the row itself, a read that already
+       served `metadata` and the undo state the web dropped. An unmerge says "Moving rows back…",
+       "Every row went back", or "N rows had changed since the merge and stay where they are". A
+       pre-version-2 merge says why it can't be undone.
+     - `shell/unmergeLine` is the one wording, shared with the Undone toast.
+     - The unmerge's row is now also linked to the survivor, so both bodies' History show it.
+   - *Not done unasked:* mounting `HistoryPanel`.
+2. **The lit body stopped matching the picked survivor.** The route's one `pick` now lights the map
+   from the survivor (`litForSurvivor`):
+   - a touching body lights its outline;
+   - a body found by name that the map doesn't draw lights nothing, as does *Pick another* —
+     never the body picked before.
+3. **The *Nearest* rule's label wasn't its line's length.** The server measures from the ask's
+   point to the outline, which the map read doesn't serve. The nearest body now gets a plain
+   `leader`, with no figure; the distance is the *Nearest* row's alone.
+4. **The reason dialog reopened by itself.** A refusal arriving mid-dialog now closes it for good,
+   with a toast in the server's words. The moderator opens it again.
+5. **"Stays behind" counts were drawn as exact.** S4a's `06e53d868` flags each preview bound
+   `{ count, capped }`. Capped counts read "N+", including "0+", and a capped bay-name list ends
+   "…and more".
+6. **Copy and leftovers:**
+   - the dialog says what Undo does, including that rows changed in the meantime stay where they
+     are;
+   - the unused `searchPlaceholder` is gone;
+   - the survivor search asks for seven, lists six, and says "More bodies match · type more of the
+     name";
+   - `useDrawnWrites`' stale doc comment is gone.
+
+**The gate's story runs:** *Merge | Preview* failed once in ten starved runs and didn't reproduce in
+eight more. Its dialog waits now get 5 s (`a29d303fb`), and ten runs, half starved, then passed.
+
+**What the reviewer couldn't review, checked in a real-browser story** (a temporary probe, deleted):
+- **Focus after the frame swaps to the merged page:** it falls to `<body>`. Nothing on the merged
+  page takes it. Not fixed here: it waits for a ruling on where focus should land.
+- **The Undone toast as its line changes:**
+  - The line updates in place, as the same node, inside Base UI's toast viewport: a
+    `role="region"` with `aria-live="polite"`, `aria-atomic="false"` and
+    `aria-relevant="additions text"`.
+  - The toast itself is `role="dialog"`, described by its description.
+  - So the change from "Moving rows back…" to the count is a text change inside a polite live
+    region. Whether a screen reader speaks it depends on its support for `text` changes; no screen
+    reader was run.
+
+#### B01-5d: the server review (R10) — S4a's fixes (2026-11-22)
+
+S4a's commits past `06e53d868` were cherry-picked with no conflicts, through `9c6024a91`.
+
+- **The blocker: merging during an unmerge (R10-A).**
+  - *The gap:* an unmerge's first page makes the loser live and reopens its Inbox item, so Merge
+    was offered again. A merge between the unmerge's pages stranded on the survivor every row the
+    later pages still had to move, and the unmerge read `done: false` for good.
+  - *The marker:* the bodies now carry `waterBodies.unmergeActionId` (optional, the seam). An
+    unmerge's first transaction sets it on both bodies and its last clears it; S4b's commit does
+    the setting.
+  - *The reader:* `lib/unmergeState` is the one reader, and every merge path asks it of both bodies:
+    `merge`, `inboxWrites.mergeDrawn`, the preview and `can.mergeDrawn`. They refuse with "This body
+    is still being unmerged. Merge it once that finishes." (code `unmerging`). A stand-in sets the
+    marker in tests until S4b's commit lands.
+  - *The web side:* the Drawn handler holds Merge back by `can`, and says the sentence from
+    `canCode.mergeDrawn` even beside Approve and Reject. The Shape flow draws the preview's refusal
+    with no confirm. Fixtures and a story for each.
+- **The drawer is told whatever the review status (R10-B).** A drawing merged away tells its drawer
+  whether it was pending or approved. This is the governor's ruling, which the founder may
+  overturn.
+- **A merge too heavy for one transaction (R10-D)** is refused with
+  `{ message, code: 'tooBig' }`. The web's `said` reads the message, so the toast says the server's
+  sentence, from both merge writes (tested).
+- **The ETL path (R10-C).**
+  - The absorb skips and names a pair too heavy to merge, or one mid-unmerge, and never dies
+    mid-batch.
+  - It returns pairs a transaction can't hold as `deferred`.
+  - `scripts/etl`'s retire pass re-sends deferred pairs, bounded, and names its skips.
+- **The seed's two guards (R10-E):**
+  - the proof drawing's survivor must be the seed's own lake, never a real body;
+  - the clear stops with "Unmerge X from Y first" before removing anything, never half-clearing.
+
+**Also in this round:**
+- **Focus after a merge swaps in the merged page.**
+  - *The bug:* focus fell to `<body>`.
+  - *The convention:* the console's rule (`BodyConsoleView`) is that arriving at a body with nothing
+    focused, its pane takes focus.
+  - *The fix:* the merged page is now a focusable pane, "The body". It takes focus when focus is
+    lost, checking again on the next frame after the dialog closes. A real-focus story,
+    *Merge | Lands · focus*, holds it.
+- **Two flaky story reads, each late, never "never":**
+  - *Kit EntryTile, Tiles:* the tooltip's 600 ms `OPEN_DELAY` raced a 1 s retry. The story now
+    renders with no delay.
+  - *Merge | Preview:* its clock waits on the dialog's fade are now waits on the fade's frames and
+    the transition's `finished`; the 5 s guess is gone.
+
+#### B01-5d: the real-backend proof, first run (2026-11-22)
+
+S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
+
+| Shape | Estimate | Real merge |
+|---|---|---|
+| 8,000 put-ins | ok | **fails**: 4,096 index-range cap; 3,900 used 4,043, so the real cap is about 3,950 |
+| 3,296 favorites | ok | **fails** (index ranges); 1,800 used 3,743, so the real cap is about 1,950 |
+| 299 flags | ok | **fails**: too many documents read (one shared Inbox item makes it grow with the square of the count) |
+| 2 bays of 900 KB; 1 MiB survivor outline with 2 bays | ok | **fails**: 1 s execution limit |
+| 1 MiB outline on each side | ok | ok, but read 15.6 MB against 8 MiB budgeted |
+| 366 requests | ok | ok (3,075 ranges); refused at 367, real cap about 500 (1.36× conservative) |
+| 4 reports of 1 MB | ok | ok at 16.02 MB read (95% of limit); 5 refused, real ok |
+| 2 landmarks of 1 MB | ok | ok; 3 refused, real ok (≥1.5× conservative) |
+| mix of kinds, lists at caps | ok | ok |
+
+**Why the estimate failed:**
+- The real backend counts every `patch` as an index range. The estimate charged nothing for moved
+  rows, and the test harness didn't count them either.
+- The estimate didn't model execution time.
+- Flags were re-keyed into one Inbox item, so their document reads grew with the square of the
+  count.
+
+**What passed on the real backend:**
+- **The census:** every merge the estimate accepted unmerged with the census equal, in 2 to 17
+  pages. The heaviest (mix-lite) took 17 pages and about 60 s, with both markers cleared.
+- **Drift:** it left exactly three rows: the moved report, the moved bay and the decided ask.
+- **Split change sets:** sets of 2, 3 and 11 parts unmerged cleanly.
+- **The seed shape:** built by hand, since the seed refuses non-dev hosts. It was merged through
+  `mergeDrawn` and undone through `undo.run`, and `mergeProofCensus` matched.
+- **A real stall:** S4b canceled the scheduled next page. The unmerge read `stalled`, kept both
+  markers, and resumed to done with the census equal; a second resume was refused.
+
+**Status: awaiting the re-run** (see *the harness counts what the backend counts*, below).
+
+**Before the PR opens:**
+- S4a is rebuilding the estimate (`lib/mergeLoad.ts`) to bound index ranges, bytes, documents and
+  execution time from the code's per-row work, and moving flags linearly.
+- S4b is making the test harness count index ranges and scanned documents as the real backend
+  does.
+- The proof re-runs green on a real backend.
+
+#### B01-5d: the stored-items property's counterexample (2026-11-22)
+
+**A real bug in the Inbox's one writer, on main since #170**, found by the stored-items property on
+a random seed (−272421) in this PR's cold workspace run.
+
+**The history:**
+1. A "Cove" bay ask is filed raw, before the backfill had filed it.
+2. A second Cove ask is filed into an open item.
+3. A moderator declines the raw ask alone. It is filed into that item and closed, and the item
+   stays open.
+4. The moderator then declines the filed ask alone, and the item is decided by that action.
+5. A new Cove ask opens a second item on the same key.
+6. Undoing the second decline reopens its member into the newer, open item.
+
+`refreshItemNow` kept the first item's stored decision whatever happened to its members, so it was
+left decided by an action none of its members records.
+
+**The fix** (`lib/inboxItems`): a decided item's decision stands only while one of its members still
+records it (`decisionHeld`, one bounded point range on `by_closed_by`). Otherwise it is re-derived
+from the first closed member. The drift check flags an item already left that way, and the drift
+repair re-derives it. The history, the predicate's scoping and the repair case are pinned.
+
+**Reachable on dev, rarely**, through this sequence:
+1. a decision on an unfiled source, or before a sibling drain ran;
+2. a later decision on the same key;
+3. a newer ask;
+4. an undo.
+
+The drift repair now finds what that left. It runs once after merge.
+
+**Two stale properties found in the same round:**
+- **`unmerge.property`** has been stale since the field-wise unmerge: it failed on every seed at 50x
+  on a bay rename. It is restated: the bay is back as before except for exactly the fields the edit
+  wrote, and every stamped row names its bays as they now stand. It is pinned.
+  - *Why the earlier 20x runs passed:* the property pins its seeds (`0x5eed + n`, 4 runs, 1 seed), so
+    running the file 20 times replayed the same 4 cases. The final gate ran it over 50 distinct seeds
+    in each zone.
+- **`regionPin`'s retire property** ("the dry run's merged and refused sets equal the apply's") found a
+  counterexample at 50x (seed −2017459737): four pairs into one survivor, batch 4. Under the time
+  axis, the apply's one call deferred its last pair, and the test's helper never re-sent it. The
+  merge code is right (`scripts/etl`'s `retireBatches` re-sends deferred pairs). The helper now does
+  the same, and the case is pinned.
+
+#### B01-5d: the real-backend proof, third run — time (2026-11-22)
+
+S4b measured S4a's time axis on a throwaway local backend: the server clock inside the transaction,
+five runs each. Its table, verbatim:
+
+| Kind | Count | Predicted | Min / median / max | Ratio (median, max) |
+|---|---|---|---|---|
+| Launches | 979 | 400 | 164 / 166 / 178 | 0.41, 0.45 |
+| Favorites | 511 | 400 | 129 / 134 / 139 | 0.34, 0.35 |
+| Asks | 104 | 398 | 189 / 190 / 215 | 0.48, 0.54 |
+| Landmark asks | 35 | 396 | 96 / 98 / 100 | 0.25, 0.25 |
+| Flags | 95 | 399 | 105 / 111 / 114 | 0.28, 0.29 |
+| Reports in two bays | 447 | 399 | 191 / 206 / 219 | 0.52, 0.55 |
+| Two outlines, 16k points each | – | 380 | 174 / 180 / 184 | 0.47, 0.48 |
+| `mergeDrawn`, 6k + 6k points | – | 322 | 261 / 346 / 360 | 1.07, 1.12 |
+| Bays × 9k-point survivor | 1 | 300 | 205 / 277 / 295 | 0.92, 0.98 |
+| Mix at the edge | – | 400 | 186 / 199 / 343 | 0.50, 0.86 |
+
+- **Nothing under-predicted by more than 25%:** `mergeDrawn` is the worst, 12% under. The worst
+  accepted merge ran 360 ms, `mergeDrawn` with two 6k-point outlines.
+- **The row costs over-predict 2–4×:** real is about 0.14 ms a call against the model's 0.27.
+  That stays as it is for now (register Sh13).
+- **The unmerge** finished every merge in one transaction. The heaviest page, reports in two bays,
+  took 316–370 ms, and one run took 581 ms: the 500 ms stop bounds the rows, and the recompute runs
+  after them.
+- **S4a's pinned ceilings** match S4b's computed edges except reports in two bays (447 against
+  311), where the two fixtures' join counts differ.
+
+**The stalled row and the Abandon dialog now say how much is still not moved back,** from
+`receipt.stalled.notReached` (S4b's `71a5d1a5e`, the shape the abandon's row records). Each kind is in
+plain words, and "can't be told" when the merge's record can't be read.
+
+#### B01-5d: the merge estimate's time axis — the final table (2026-11-22)
+
+S4a's `45becf3dd`, integrated. Its one conflict was a test file, where I had raised two ceiling
+tests' timeouts and S4a had rewritten them; S4a's version was taken. The estimate refuses a merge
+once its projected spend passes any threshold below. **The time costs are measured on a local
+backend, not on the deployment** (register Sh12).
+
+| Dimension | Convex's limit | Threshold | Factor | Why |
+| --- | --- | --- | --- | --- |
+| Index ranges | 4,096 | 3,072 | 75% | Counted per row from the code; the harness counts them as the real backend does |
+| Bytes read | 16 MiB | 12 MiB | 75% | Both bodies read and written whole, plus each row's size |
+| Bytes written | 16 MiB | 12 MiB | 75% | As above |
+| Documents read | 32,000 | 24,000 | 75% | Counted per row; a `.filter`'s scanned rows count |
+| Documents written | 16,000 | 12,000 | 75% | Counted per row |
+| Execution time | 1 s | 400 ms | 40% | A projection, not a measure: a wider margin than the database limits, since the deployment's time isn't measured |
+
+**The time projection's costs** (measured on a local backend):
+- 0.27 ms per database call;
+- 9 µs per outline point through a clip;
+- 30 ms per MiB read or written;
+- +1 ms per landmark ask, for its same-place rule.
+
+**Two real slownesses are gone:**
+- a report's bay joins are read once per bay, not once per report;
+- the change set re-reads only the loser's labels, their twins, and labels this merge retired.
+
+**Per-kind ceilings for two small bodies** (pinned in `mergeV2.test.ts`):
+
+| Kind | Rows in one merge |
+| --- | --- |
+| Put-ins (launches) | 994 |
+| Favorites | 511 |
+| Asks | 104 |
+| Landmark asks | 35 |
+| Flags | 95 |
+| Reports in two bays | 311 |
+
+**What this changed elsewhere:**
+- **The seed's proof pair** now uses at most 38.4% of a threshold, execution time being the
+  tightest. It was 17.9% of index ranges before the time axis. The seed test holds it under half.
+- **The unmerge's real-limits test** merged 1,800 favorites through `mergeBodyInto` directly, past
+  the estimate, and a real merge refuses that now. It merges 500, the preview first accepting them,
+  and asserts the unmerge completes with every row back.
+- **The web's `tooBig` fixtures and stories** needed no change: the refusal is still the server's
+  sentence with `code: 'tooBig'`.
+
+S4b's re-measure of the time rows comes next.
+
+#### B01-5d: the real-backend proof, second run (2026-11-22)
+
+S4b's re-proof on the integrated head, on a throwaway local backend. Its table, verbatim (ranges =
+index ranges, out of 4,096):
+
+| Shape | Estimate edge | Real peak, merge time | Real ceiling |
+|---|---|---|---|
+| put-ins | 2,652 | ranges 69%, 507 ms | ×1.49 |
+| favorites | 1,326 | ranges 69%, 457 ms | ×1.48 |
+| asks | 265 | ranges 56%, 521 ms | ×1.86 |
+| landmark asks | 102 | ranges 23%, 725 ms | ×5.4 |
+| flags | 241 | ranges 35%, 660 ms | ×3.2 |
+| loser bays | 106 | ranges 13% | ×11.8 |
+| survivor bays | 126 | ranges 14% | ×11.4 |
+| labels | 204 | ranges 10% | ×19 |
+| reports in two bays | 867 | ranges 56%, **598–905 ms** | ×1.85 |
+| 900 KB reports | 3 | bytes read 64% | ×1.33 |
+| 150 KB skates | 23 | bytes read 66% | ×1.48 |
+| two outlines, 28k points each | accepted | bytes read 44%, 523 ms | refused near 30k each; ×~1.9 before the 1 MiB document cap |
+| bays × 9k-point survivor | 2 (points) | 512 ms | — |
+| `mergeDrawn`, 15,000 + 14,990 points | ok; +210 points refused | merged | — |
+
+In every row the preview said ok at the edge and refused at one more.
+
+- **The unmerges:** all done, with nothing stalled or left, the census equal, in one or two pages.
+  - The heaviest page used 2,794 ranges (68%) and 772 ms.
+  - A page now also stops after 500 ms of work. Re-run, the heaviest page took 570 ms.
+- **The ETL path:**
+  - One too-heavy pair among ordinary ones: 2 retired, and the heavy pair named as a skip.
+  - Three pairs that need deferring: 3 calls, all retired, and the loop ends.
+- **A merge during an unmerge** was refused for the loser and the survivor.
+- **A real stall** (a canceled scheduled page) read `pageCanceled`, resumable, and resume finished
+  it. Abandon cleared both markers, and the pair could merge again.
+- **The one finding: execution time for row-heavy merges.** The estimate has no time axis except
+  the outline-points proxy.
+  - The smallest shape over 90%: 867 reports, each in two overlapping bays, at the edge, took 905 ms
+    of the 1 s limit on one run (598 ms on another).
+  - Landmark asks (725 ms) and flags (660 ms) come next.
+  - S4a is adding a time axis. The PR opens after that and a re-measure.
+
+**The stall codes now say whether a resume can help.** `stalled` is
+`{ code, error?, resumable }`:
+- resumable: `pageFailed`, `pageCanceled`, `pageMissing`, `pageStopped` (the run's state is intact);
+- not resumable: `undone`, `recordGone`, `recordUnreadable`, `mergedAgain`. A resumed page would stop
+  the same way, and `resume` refuses those with a sentence from the same function.
+
+The web draws *Resume* only where `resumable`, and *Abandon* on any stall (§7's ruling of
+2026-11-22).
+
+#### B01-5d: the corrected merge estimate — to be re-proven on a real backend (2026-11-22)
+
+S4a's `6e810d7e5`, integrated with no conflicts. `lib/mergeLoad.ts` refuses at 75% of each Convex
+limit (`SAFETY`), with each kind's per-row cost counted from the code (`PER_ROW`). The flat
+8,000-rows-per-kind cap is gone. **None of these numbers is proven yet: they are re-proven on a
+real backend once S4b's harness rule lands.**
+
+| Dimension | Convex's limit | Refused past |
+| --- | --- | --- |
+| Index ranges (database calls) | 4,096 | 3,072 |
+| Bytes read | 16 MiB | 12 MiB |
+| Bytes written | 16 MiB | 12 MiB |
+| Documents read | 32,000 | 24,000 |
+| Documents written | 16,000 | 12,000 |
+| Execution time (1 s) | — | 30,000 outline points, its proxy (about 300 ms measured locally) |
+
+**Per-kind ceilings, as S4a counts them for one merge with nothing else on it:**
+
+| Kind | Index ranges a row | About this many in one merge |
+| --- | --- | --- |
+| Put-ins, hazards, bounties, features, skates | 1 | 2,650 |
+| Favorites | 2 | 1,325 |
+| Requests and asks | 10 | 265 |
+| Flags | 11 | 240 |
+| Landmark asks | 26 | — |
+| Bays (moved / the survivor's re-clipped) | 25 / 21 | — |
+| Labels | 13 | — |
+
+- **The fixed cost** is about 420 index ranges.
+- **Outlines:** two 1 MiB outlines are now refused on bytes alone, where the first run passed that
+  case at 15.6 of 16 MiB.
+- **`mergeDrawn` counts both outlines.** A survivor of about 48,000 points refuses `mergeDrawn`
+  where the plain merge fits.
+- **Flags** are re-keyed linearly now.
+- **The ETL path** holds each pair and each call to the same estimate.
+- **Every refusal** is the one sentence, with `code: 'tooBig'`.
+
+**The seed's proof pair fits with room.** *Merge Proof Cove* into its survivor, asked as
+`mergeDrawn` asks it, uses at most 17.9% of any threshold (index ranges); every other dimension is
+at 9.3% or less. A seed test holds it under half.
+
+**The web:** nothing assumed the old cap. No "8,000" appears in the console's words, fixtures or
+stories; the preview's counts and floors come from the server.
+
+#### B01-5d: the harness counts what the backend counts (2026-11-22)
+
+S4b's `099d0a97b` and `9d928bdf7`, integrated with no conflicts. **The proof's status: awaiting the
+re-run** on this head (S4b's), after which the PR opens.
+
+**The model** (`packages/convex/vitest.config.ts`'s transform). Per-operation costs were measured on
+a throwaway local backend, then checked against six real merges.
+- **Reads:** a read is charged one index range only where it reaches outside what the transaction,
+  nested calls included, has already read on that index. A repeat, a narrower read inside a wider
+  one, or a second touch of a row is free.
+- **Writes:** `patch`, `replace` and `delete` each take their row's range (convex-test charged none).
+  A patch that changes nothing writes nothing.
+- **Scans:** every row a `.filter` scans counts as read, kept or not. `.collect()`, `.take(n)`,
+  `.first()`, `.unique()` and a page count every row they scan.
+- **A fixed start cost:** each registered function is charged 96 ranges before its handler runs.
+  The real backend reads its module's code first, measured at 8 to 95 ranges.
+- **Not modeled:** the 1 s execution limit. The merge bounds that by outline points (30,000).
+
+**The calibration** (index ranges):
+
+| Merge shape | Real backend | Harness |
+|---|---|---|
+| 3,900 put-ins | 4,044 | 4,077 |
+| 1,800 favorites | 3,745 | 3,777 |
+| 1,200 favorites (both bodies) | 2,544 | 2,576 |
+| 120 flags + 2,000 hazards | 2,515 | 2,548 |
+| 366 requests | 3,076 | 3,474 |
+| mix of kinds | 2,964 | 3,033 |
+
+The harness never undercounts. Its margin is about 32 ranges from the start bound, plus about one
+per request (conservative).
+
+**Against S4a's per-row costs** (S4b's measurements): each one measured is at or above the real
+cost: put-ins 1, favorites 2, asks 10 (real about 8), flags 11 (real about 2.75), fixed 420 (real
+about 185–214). Bays, survivor bays, labels and landmark asks weren't measured. Restoring S4a's
+quadratic flag scan now fails S4a's linear-flags test.
+
+**What the suite newly failed.**
+- **On S4b's branch:** only S4b's own 2,000-favorite fixture, which can't merge on a real backend
+  either. It was resized to 1,800.
+- **In the workspace run, nothing over a limit; but the bookkeeping slows every convex test under
+  contention.** The suite went from 131 s to 192–221 s.
+  - Three tests timed out on their old budgets, though each runs green alone. The suite's
+    `testTimeout` went from 20 s to 60 s, and the heavy tests got 5x their contended time.
+  - One of the integration's own tests, the merge-during-unmerge test, raced convex-test's
+    real-clock scheduler. It now holds the clock.
+
+**The unmerge's page reservations.** Three undercounts are fixed:
+- a bay or label read twice (its `get`, then its patch);
+- a side row's audit write refreshing the body's library;
+- each of a report's bay-join rows costing a range.
+
+A per-kind test measures every restored row against its page's reservation. On the real backend,
+1,800 favorites and mix-lite both unmerged to done, with nothing stalled or left.
+
+**The stall codes.** `stalled` is `{ code, error? }`:
+- from the scheduler's record of the next page: `pageFailed` (with the scheduler's error text on a
+  deployment), `pageCanceled`, `pageMissing`, `pageStopped`;
+- recorded by a page that stopped itself: `undone`, `recordGone`, `recordUnreadable`, `mergedAgain`.
+
+The web's headline stays "The unmerge stopped before it finished". The quieter line is
+`MERGE_WORDS.stallWhy`'s plain words for the code (invented, for the copy pass), then the error
+verbatim. *Resume* is offered for every code, because `unmerge.resume` accepts every stall. Which
+codes a resume can't help (`undone`, `recordGone`, `mergedAgain`) is a server ask for S4b, not a web
+decision.
+
+#### B01-5d: S4b's review fixes, and a stalled unmerge on the web (2026-11-22)
+
+S4b's three R10 commits were cherry-picked through `7574ad59b`. Its schema commit duplicating S4a's
+`unmergeActionId` seam was dropped. `waterBodies.ts`, where S4b's recording edit met S4a's other
+edits, merged without a textual conflict.
+
+- **Fields, never rows.**
+  - The change set records `rowsAfter: { table, id, set, absent }[]` for every bay and landmark the
+    merge changed.
+  - The unmerge puts back only those fields, each while it still holds the merge's value
+    (D291, amended).
+  - Counters (`reportCount`, `confirmCount`) and mouth notes now survive an unmerge.
+  - One timestamp check stays on purpose: an ask decided since is left by `decidedAt`.
+- **Stalled and resumable.**
+  - `unmerge.receipt` answers `{ unmergeActionId, done, stalled: { reason } | null, left }`, judged
+    from the scheduler's record of the next page.
+  - `unmerge.resume({ mergeActionId })` is refused while a page runs and once done.
+  - The unmerge sets the marker on both bodies in its first transaction and clears it on its last.
+  - S4a's stand-in that set the marker is gone. Its merge-during-unmerge test passes on the real
+    unmerge.
+- **`activityBack`** judges a moved skate by value; an absent list stays absent.
+- **`unmerge.runningOn({ waterBodyIds })`** (the integration's): a merge refused with `unmerging`
+  finds its unmerge by the pair's bodies.
+- **The web.**
+  - Wherever the unmerge's state shows, a stalled unmerge says "The unmerge stopped before it
+    finished": the Undone toast, the Body console's History row, and the Drawn lever's and the
+    Shape flow's refusal.
+  - The server's reason is a quieter line under it. *Resume* appears for a viewer with
+    `corpus.duplicates`, and a refusal is a toast ("Not resumed").
+  - History keeps this as its only action. The cross-console History with Undo is still unmounted
+    (register Sh10).
+- **Still open for the founder:** the stall reason says "failed" even for a canceled page.
+
+#### Greptile on #173, round 1 (2026-11-22)
+
+The first review, on `e0b3454a7`, scored 3/5 with two findings. Both are fixed, with a test that
+fails without each fix.
+
+1. **"Flag scans break merge previews"** (`bodyConsole.ts`).
+   - *The bug:* the preview scanned the survivor's flags once per loser flag. 90 loser flags over
+     400 unrelated survivor flags read past 32,000 documents, so the Shape tab couldn't preview a
+     merge the write would accept.
+   - *The class:* a preview costing more than the write it previews. No fixture had a busy survivor.
+   - *The fix:* the preview splits each kind with the write's own functions, over the write's own
+     reads:
+     - `flaggedOnSurvivor`, a point read per open status;
+     - `favoriteTwinOn`;
+     - `bayClashes`, which reads the survivor's bays only once the load has counted them, else the
+       clash list is `capped`.
+
+     The web says a capped list with no names as "Not checked here", from the flag.
+   - *The sweep:* the seed's `flagBy` read a target's flags by `.filter`, and now bounds by the same
+     index. Busy-survivor tests now cover every kind the merge reads but doesn't move: 400
+     unrelated rows on the survivor, the preview against the write, the estimate's edge, the
+     Greptile case, `mergeDrawn` and the ETL path. Each fails on its mutant.
+2. **"Overlapping unmerges unlock bodies early"** (`unmerge.ts`).
+   - *The bug:* with A and B both merged into S, undoing B while A's unmerge ran overwrote S's
+     marker. B's last page then cleared it, with A's pages still owed.
+   - *The class:* a body's marker assumed one unmerge at a time.
+   - *The fix:* the refusal the undo's offer and run share now refuses a new unmerge while either
+     body carries another unmerge's marker: "let that finish — or resume or abandon it — first".
+     The last page and abandon each clear only their own marker.
+   - *The sweep:*
+     - a merge chain is refused in both orders (a survivor that is the loser of a running unmerge;
+       the reverse was already refused, as the survivor is merged);
+     - a stalled first unmerge holds the second until it is resumed or abandoned.
+   - *The web* says the refusal before anything runs:
+     - History's merge row shows the offer's `why`;
+     - a toast Undo is refused in "Not undone", in the server's sentence.
+
+#### CI on the first head (2026-11-22)
+
+CI was red on one test: the multi-page sibling decline (`moderatorDecision.test.ts`), with "Hook
+timed out in 10000ms". CI's runner took 952 s for the convex suite, where this machine takes about
+200 s.
+- **The hook's bound:** the setup's `afterEach` drains the test's scheduled work, and it ran under
+  vitest's 10 s hook default while the test itself is allowed 450 s. The drain now runs against the
+  test's own timeout, so a runaway still fails at that bound.
+- **The scheduler race:** zero-delay pages fired on real timers between the drain's reads. The
+  scheduler is now held on fake timers while the drain runs every page.
+- **The harness's cost:**
+  - *Before:* interval bookkeeping scanned every interval and sorted per read, and every patched
+    document was serialized twice for the no-op check.
+  - *Now:* sorted disjoint intervals, binary-searched; a set of rows read by id; the no-op check
+    compares only the fields set.
+  - *The effect:* on two workers, 112 s without counting, 136 s with the first cut, and 122 s now.
+    The 4,097-range test went from 7.4 s to under 1.7 s.
+- **The constrained run** on the second head: the workspace `pnpm test`, cold, at two workers
+  (`--concurrency=2`, vitest `--maxWorkers=2`). 18/18 tasks and 17,846 tests passed. The convex
+  suite took 203 s, and its slowest test 9 s (the heavy undo; limit 300 s).
 
 ### What B01 still owes (the register, 2026-11-17)
 
@@ -10107,6 +10930,10 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh7 | The kit `AppShell`'s own stacking doesn't use the console's narrow rule | `kit/app-shell` | open | polish (kit) | S–M | — |
 | Sh8 | The verdicts backfill (`peopleJobs:backfillVerdicts`, walking `contentRecord.backfillVerdicts`) walks the whole moderation audit table 4 rows a pass (each row's worst case is sized at 1 MiB), so its length follows the audit log's size: 7,951 passes (about 5.5 minutes) on dev, which holds no moderated content | `contentRecord.ts` `backfillVerdicts`, its page table under §12.8 | open: look at the page sizing before it runs on a large log | performance (engine) | S–M | A page sized by the rows' real weight, or a narrower walk; not designed |
 | Sh9 | The life strip re-lays out when web fonts arrive late: drawn stacked with a fallback face, then across once the faces land | `kit/life-strip.tsx` | open (accepted for now: the governor's ruling 14, 2026-11-21) | polish | S | A preload of the faces, or a font-ready gate before the first measure — the same family as the Saira preload already owed |
+| Sh10 | A cross-console History with Undo: built in B01-2 (#109), mounted nowhere. The History the console shows is the Body console's read-only `BodyHistorySection` (B01-5d's R11 puts the unmerge's outcome there) | `shell/HistoryPanel.tsx` | open: no slice owes it | missing planned | M | A home in the console, and its Undo wired through `useUndo` (B01-5d added `action` and the unmerge's `lineOf`) |
+| Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
+| Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
+| Sh13 | The merge estimate's per-call time cost (0.27 ms modeled, about 0.14 ms measured locally) over-refuses: row-heavy merges it refuses run in 100–220 ms | `lib/mergeLoad.ts` (`MS_PER_CALL`) | open: tunable | performance | S | A measure on the deployment, then loosen it toward the measured cost |
 
 #### The boards to make in Paper (founder call 1)
 

@@ -85,6 +85,9 @@ async function outcomeOf(op: () => Promise<unknown>): Promise<Outcome> {
   } catch (err) {
     const data = (err as { data?: unknown }).data;
     if (typeof data === 'string' && data.length > 0) return { kind: 'refused', why: data };
+    // A refusal that carries a code beside its sentence (the merge's `tooBig`, B01-5d R10-D).
+    const message = (data as { message?: unknown } | null)?.message;
+    if (typeof message === 'string' && message.length > 0) return { kind: 'refused', why: message };
     throw err;
   }
 }
@@ -189,9 +192,9 @@ async function heavyWorld() {
 /**
  * The heavy approval tests' timeout: their point is the real size, so they keep it, with 5x headroom
  * over their time when every package's suite runs at once (CI's `pnpm test`, measured ~6x their time
- * alone): about 8 s alone, 48 s contended.
+ * alone): about 8 s alone, 48 s contended — 53 s under the range-counting harness.
  */
-const HEAVY_TIMEOUT = 240_000;
+const HEAVY_TIMEOUT = 300_000;
 
 /** Every continuation a decision or undo scheduled, run to its end — each its own execution. */
 async function drainAll(t: T) {
@@ -712,4 +715,166 @@ describe('heavy rows: drawn bodies with outlines near the document limit', () =>
     });
     expect(steps).toEqual({ approve: 'completed', undoApproval: 'completed', reject: 'completed' });
   });
+});
+
+/**
+ * A heavy outline (~430 KiB, 24,000 points) a deployment can store, with water to merge over: a shore
+ * of 8,000 points around (0.5, 0.5) and two islands of 8,000 each, clear of the middle — as heavy as a
+ * merge's time budget lets a survivor be (R12: an outline near the document limit, read and written
+ * whole a dozen times, passes 400 ms on its bytes alone).
+ */
+function heavyShore() {
+  const island = (cx: number, cy: number) => {
+    const pts: number[][] = [];
+    for (let i = 0; i < 8_000; i++) {
+      const a = (2 * Math.PI * i) / 8_000;
+      pts.push([cx + 0.02 * Math.cos(a), cy + 0.02 * Math.sin(a)]);
+    }
+    pts.push(pts[0] as number[]);
+    return pts;
+  };
+  return {
+    type: 'Polygon' as const,
+    coordinates: [ring(8_000), island(0.3, 0.5), island(0.7, 0.5)],
+  };
+}
+
+/** A small drawing in the middle of the shore, pending and filed, its candidate the lake. */
+async function drawnIn(t: T, by: Id<'profiles'>, lake: Id<'waterBodies'>) {
+  return t.run(async (ctx) => {
+    const id = (await ctx.db.insert('waterBodies', {
+      name: 'Drawn',
+      searchText: 'Drawn',
+      type: 'lakePond',
+      source: 'user',
+      dedupStatus: 'suspected_duplicate',
+      duplicateCandidateIds: [lake],
+      reviewStatus: 'pending',
+      createdByUserId: by,
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0.45, 0.45],
+            [0.45, 0.55],
+            [0.55, 0.55],
+            [0.55, 0.45],
+            [0.45, 0.45],
+          ],
+        ],
+      },
+      centroid: { lat: 0.5, lng: 0.5 },
+      bbox: { minLat: 0.45, minLng: 0.45, maxLat: 0.55, maxLng: 0.55 },
+      createdAt: NOW - 1000,
+    } as never)) as Id<'waterBodies'>;
+    const { bodySource } = await import('./lib/inboxItems');
+    await fileMember(ctx, bodySource(id));
+    return id;
+  });
+}
+
+describe('heavy rows: a merge (B01-5d)', () => {
+  /** Staff, a skater, and a lake whose outline is near the document limit. */
+  async function heavyLake() {
+    const t = harness();
+    const mod = await person(t, 'mod', 'moderator');
+    const skater = await person(t, 'skater');
+    const lake = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Heavy Lake',
+        searchText: 'Heavy Lake',
+        type: 'lakePond',
+        source: 'osm',
+        dedupStatus: 'clean',
+        polygon: heavyShore(),
+        centroid: { lat: 0.5, lng: 0.5 },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        createdAt: NOW,
+      } as never),
+    )) as Id<'waterBodies'>;
+    await markReady(t);
+    return { t, mod, skater, lake };
+  }
+
+  test(
+    'a heavy survivor: the merge fits and completes; mergeDrawn, measuring its overlap too, is refused',
+    async () => {
+      const w = await heavyLake();
+      const viaMerge = await drawnIn(w.t, w.skater.id, w.lake);
+      const viaInbox = await drawnIn(w.t, w.skater.id, w.lake);
+      const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+        loserId: viaMerge,
+        survivorId: w.lake,
+      });
+      expect(preview).toMatchObject({ ok: true, tooBig: false });
+      const itemId = await w.t.run(async (ctx) => {
+        const m = await ctx.db
+          .query('inboxItemMembers')
+          .withIndex('by_source', (q) =>
+            q.eq('sourceTable', 'waterBodies').eq('sourceId', viaInbox),
+          )
+          .first();
+        return m?.itemId as Id<'inboxItems'>;
+      });
+      const steps = await matrix({
+        item: () => w.mod.as.query(api.inbox.item, { ref: `body:${viaInbox}` }),
+        merge: () =>
+          w.mod.as.mutation(api.waterBodies.merge, { survivorId: w.lake, loserId: viaMerge }),
+        mergeDrawn: () =>
+          w.mod.as.mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId: w.lake }),
+      });
+      // The Inbox's merge measures the drawing's share of its survivor in its own transaction too:
+      // ~24,000 more points of geometry, past the time budget (R12, `lib/mergeLoad`) — refused with
+      // the sentence, never a merge that runs out of time.
+      expect(steps).toEqual({ item: 'completed', merge: 'completed', mergeDrawn: 'refused' });
+      expect((await w.t.run((ctx) => ctx.db.get(viaInbox)))?.reviewStatus).toBe('pending');
+    },
+    HEAVY_TIMEOUT,
+  );
+
+  test(
+    'a heavy loser past one transaction: refused by the preview and the write, before any write',
+    async () => {
+      const w = await heavyLake();
+      const loser = await drawnIn(w.t, w.skater.id, w.lake);
+      // Put-ins whose names no writer caps, each near the document limit — 7 MiB that would move.
+      for (let start = 0; start < 8; start += 4) {
+        await w.t.run(async (ctx) => {
+          for (let i = start; i < start + 4; i++) {
+            await ctx.db.insert('putIns', {
+              waterBodyId: loser,
+              coord: { lat: 0.5, lng: 0.5 },
+              source: 'osm',
+              status: 'visible',
+              name: `${i}${'P'.repeat(900 * 1024)}`,
+              createdAt: NOW,
+            });
+          }
+        });
+      }
+      const preview = await w.mod.as.query(api.bodyConsole.mergePreview, {
+        loserId: loser,
+        survivorId: w.lake,
+      });
+      expect(preview).toMatchObject({ ok: true, tooBig: true });
+      if (preview.ok) expect(preview.moves.putIns.capped).toBe(true);
+      const steps = await matrix({
+        merge: () =>
+          w.mod.as.mutation(api.waterBodies.merge, { survivorId: w.lake, loserId: loser }),
+      });
+      expect(steps).toEqual({ merge: 'refused' });
+      const after = await w.t.run(async (ctx) => ({
+        loser: await ctx.db.get(loser),
+        moved: (
+          await ctx.db
+            .query('putIns')
+            .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.lake))
+            .take(1)
+        ).length,
+      }));
+      expect(after.loser?.dedupStatus).toBe('suspected_duplicate');
+      expect(after.moved).toBe(0);
+    },
+    HEAVY_TIMEOUT,
+  );
 });

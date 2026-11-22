@@ -853,6 +853,29 @@ async function systemDelist(
 }
 
 /**
+ * **Which of a loser's bays a merge delists for a name clash** — each listed loser bay whose names meet
+ * a listed survivor bay's, or an earlier moved bay's that cleared (`namesMeet`, the same-bay rule
+ * `assertNameFree` uses, so a merge and a create cannot disagree about whether "Mallett's Bay" and
+ * "Malletts Bay" are one bay). Keyed by the loser bay's id, to the name it clashes with. Pure: the
+ * merge (`repointSubAreasOnMerge`) and the Shape tab's preview ask it of the same two reads.
+ */
+export function bayClashes(
+  survivorBays: readonly Doc<'waterBodySubAreas'>[],
+  loserBays: readonly Doc<'waterBodySubAreas'>[],
+): Map<Id<'waterBodySubAreas'>, string> {
+  const taken = survivorBays.filter((b) => b.removedAt === undefined).map(bayNames);
+  const clashes = new Map<Id<'waterBodySubAreas'>, string>();
+  for (const bay of loserBays) {
+    if (bay.removedAt !== undefined) continue;
+    const names = bayNames(bay);
+    const clash = taken.find((other) => namesMeet(names, other));
+    if (clash) clashes.set(bay._id, clash[0] as string);
+    else taken.push(names);
+  }
+  return clashes;
+}
+
+/**
  * Move a merge loser's sub-areas onto the survivor (Decision 11).
  *
  * A dedup loser is by definition the *same water* as the survivor, and `merge` already repoints every
@@ -876,28 +899,21 @@ export async function repointSubAreasOnMerge(
   /** The moderator who ran the merge — a merge is somebody's click, so the audit row names them. */
   actorId?: Id<'profiles'>,
 ): Promise<{ repointed: number; delisted: number }> {
-  // The same-bay rule `assertNameFree` uses (`namesMeet`), so a merge and a create cannot disagree
-  // about whether "Mallett's Bay" and "Malletts Bay" are one bay.
-  const existing: string[][] = (await subAreasForBody(ctx, survivor._id))
-    .filter((row) => row.removedAt === undefined)
-    .map(bayNames);
+  const loserBays = await subAreasForBody(ctx, loserId);
+  const clashes = bayClashes(await subAreasForBody(ctx, survivor._id), loserBays);
   let repointed = 0;
   let delisted = 0;
 
-  for (const subArea of await subAreasForBody(ctx, loserId)) {
+  for (const subArea of loserBays) {
     await ctx.db.patch(subArea._id, { waterBodyId: survivor._id, updatedAt: Date.now() });
     repointed++;
-    if (subArea.removedAt !== undefined) continue;
-    const names = bayNames(subArea);
-    const clash = existing.find((other) => namesMeet(names, other));
-    if (clash) {
-      const why = `${survivor.name} already has a bay called "${clash[0]}". The merged copy was delisted rather than left to compete for the stamp.`;
+    const clash = clashes.get(subArea._id);
+    if (clash !== undefined) {
+      const why = `${survivor.name} already has a bay called "${clash}". The merged copy was delisted rather than left to compete for the stamp.`;
       console.warn(`subAreas: ${why} (A02/D60)`);
       await systemDelist(ctx, subArea, why, actorId);
       delisted++;
-      continue;
     }
-    existing.push(names);
   }
   // Now that they belong to the survivor, hold them to the survivor's outline and listing.
   const { delisted: reclipDelisted } = await reclipSubAreasToParent(

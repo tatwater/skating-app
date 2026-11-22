@@ -100,6 +100,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** Seed a provisioned profile; `minor` true = an under-18 account (read-only — can't post, D41). */

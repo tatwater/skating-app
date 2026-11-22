@@ -17,9 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/kit/table';
-import { UnavailableButton } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
+import { MergeFlow, type MergeFlowProps } from './MergeFlow';
+import { MERGE_WORDS as MW } from './mergeWords';
 import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
 
 /**
@@ -33,8 +34,10 @@ import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
  * (`useTabKeys`); outside the console, while this pane has focus.
  *
  * **Merge into another body** shows only when another body touches this one (Review 13 #8), or when
- * the touching test couldn't say: each touching body is listed (a press lights it on the map), and
- * the merge itself is *Not available yet* until the console's merge tool exists.
+ * the touching test couldn't say: each touching body is listed (a press lights it on the map). For a
+ * viewer who may merge, `mergeFlow` adds the merge itself: a touching body pressed is the survivor
+ * picked (and lit), or one is found by name; the server's preview says what moves; the confirm asks
+ * the reason (`MergeFlow`).
  *
  * Each block draws its own read: a skeleton while it loads, a note with *Try again* if it failed.
  */
@@ -53,6 +56,11 @@ export interface ShapeTabViewProps {
   merge?: Loadable<ShapeMerge | null>;
   /** A touching body's console, as a router link (`<Link to="/admin/body/$id" … />`). */
   bodyLink?: (id: string) => ReactElement;
+  /**
+   * The merge itself, for a viewer who may merge (`corpus.duplicates`): the pick, the search, the
+   * preview and the write. Left out, the block lists the touching bodies and offers nothing more.
+   */
+  mergeFlow?: MergeFlowProps;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
   onAddBay?: (way: BayWay) => void;
@@ -71,6 +79,7 @@ export function ShapeTabView({
   baysMadeFailed = null,
   merge,
   bodyLink,
+  mergeFlow,
   lit,
   onLitChange,
   onAddBay,
@@ -203,7 +212,13 @@ export function ShapeTabView({
       </Section>
 
       {merge !== undefined && merge !== null && (
-        <MergeSection merge={merge} lit={lit} onLitChange={onLitChange} bodyLink={bodyLink} />
+        <MergeSection
+          merge={merge}
+          lit={lit}
+          onLitChange={onLitChange}
+          bodyLink={bodyLink}
+          flow={mergeFlow}
+        />
       )}
     </div>
   );
@@ -211,22 +226,25 @@ export function ShapeTabView({
 
 /**
  * The rare merge, with the shape (it changes what the body is): the bodies that touch this one,
- * each lighting its outline on the map, and the merge itself, not built here yet.
+ * each lighting its outline on the map, and — for a viewer who may merge — the merge itself: a
+ * touching body pressed is picked as the survivor and lit; pressed again, neither.
  */
 function MergeSection({
   merge,
   lit,
   onLitChange,
   bodyLink,
+  flow,
 }: {
   merge: Loadable<ShapeMerge>;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
   bodyLink: ((id: string) => ReactElement) | undefined;
+  flow: MergeFlowProps | undefined;
 }) {
   if (isFailed(merge)) {
     return (
-      <Section title="Merge into another body">
+      <Section title={MW.title}>
         <ReadNote data-for="shape-merge" reads={[merge]}>
           Whether another body touches this one couldn’t be read
         </ReadNote>
@@ -235,12 +253,21 @@ function MergeSection({
   }
   if (merge === undefined) return null;
   const touching = merge.touching;
+  // With the flow, a row is the survivor picked (and lit); without it, a row only lights.
+  const selected = (n: { id: string; lit: string }) =>
+    flow !== undefined ? flow.survivor?.id === n.id : n.lit === lit;
+  const press = (n: { id: string; lit: string; name: string }) => {
+    if (flow === undefined) {
+      onLitChange(n.lit === lit ? null : n.lit);
+      return;
+    }
+    // The flow's pick lights the map (the route's one survivor state), never a second write here.
+    flow.onPick(flow.survivor?.id === n.id ? null : { id: n.id, name: n.name });
+  };
   return (
-    <Section title="Merge into another body" data-slot="shape-merge">
+    <Section title={MW.title} data-slot="shape-merge">
       <div className="flex flex-col items-start gap-(--space-3)">
-        <p className="m-0 text-assist leading-list text-fg3">
-          For a lake drawn twice: everything on it moves to the body you pick.
-        </p>
+        <p className="m-0 text-assist leading-list text-fg3">{MW.lead}</p>
         <ReadNote data-for="shape-touching" reads={[touching]}>
           The bodies that touch this one couldn’t be read
         </ReadNote>
@@ -251,7 +278,7 @@ function MergeSection({
             <Table inset className="w-full">
               <TableHeader>
                 <tr>
-                  <TableHead sticky={false}>Touches</TableHead>
+                  <TableHead sticky={false}>{MW.touches}</TableHead>
                   <TableHead sticky={false} align="end">
                     <span className="sr-only">Open</span>
                   </TableHead>
@@ -262,9 +289,9 @@ function MergeSection({
                   <TableRow
                     key={n.id}
                     clickable
-                    selected={n.lit === lit}
+                    selected={selected(n)}
                     data-id={n.lit}
-                    onClick={() => onLitChange(n.lit === lit ? null : n.lit)}
+                    onClick={() => press(n)}
                   >
                     <TableCell lead>{n.name}</TableCell>
                     <TableCell align="end">
@@ -277,7 +304,7 @@ function MergeSection({
                           }>,
                           {
                             className: buttonVariants({ variant: 'link', size: 'row' }),
-                            children: 'Open →',
+                            children: MW.open,
                             // Opening it isn't lighting it.
                             onClick: (e) => e.stopPropagation(),
                           },
@@ -290,13 +317,7 @@ function MergeSection({
           )
         )}
         {merge.note !== null && <Note data-slot="shape-merge-note">{merge.note}</Note>}
-        <UnavailableButton
-          variant="outline"
-          size="sm"
-          what="Merging from the console comes with its merge tool. The duplicates queue merges bodies today."
-        >
-          Choose a body
-        </UnavailableButton>
+        {flow !== undefined && <MergeFlow {...flow} />}
       </div>
     </Section>
   );

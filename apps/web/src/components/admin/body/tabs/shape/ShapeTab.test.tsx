@@ -1,3 +1,4 @@
+import { AUDIT_REASON_MAX } from '@skating/core';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -5,9 +6,18 @@ import type { ReadFailure } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { expectNoBlanks } from '@/test/blanksAudit';
 import { expectKeyboardOperable } from '@/test/keyboardAudit';
+import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { stubJsdomAnimations } from '../jsdomStubs';
+import type { MergeFlowProps } from './MergeFlow';
+import { MERGE_HEAVY, MERGE_REFUSED, MERGE_TO_CRYSTAL, MERGE_UNMERGING } from './mergeFixtures';
 import { ShapeTabView, type ShapeTabViewProps } from './ShapeTab';
 import { CAPPED_SOME, NOT_COMPUTED_YET, BAY_NOT_RECORDED as NOT_RECORDED } from './shapeModel';
+
+const toasts = vi.hoisted(() => [] as unknown[]);
+vi.mock('@/components/kit/toast', async (original) => ({
+  ...(await original<typeof import('@/components/kit/toast')>()),
+  toast: (t: unknown) => toasts.push(t),
+}));
 
 beforeAll(stubJsdomAnimations);
 
@@ -170,7 +180,7 @@ describe('Merge into another body', () => {
     expect(screen.queryByRole('heading', { name: 'Merge into another body' })).toBeNull();
   });
 
-  it('lists each body that touches it — a press lights it, a link opens it — and the merge isn’t built', async () => {
+  it('lists each body that touches it — a press lights it, a link opens it — and offers no merge to a viewer who can’t', async () => {
     const user = userEvent.setup();
     const onLitChange = vi.fn();
     render(
@@ -189,10 +199,9 @@ describe('Merge into another body', () => {
     onLitChange.mockClear();
     await user.click(open);
     expect(onLitChange).not.toHaveBeenCalled();
-    const choose = within(merge).getByRole('button', { name: 'Choose a body' });
-    expect(choose).toHaveAttribute('aria-disabled', 'true');
-    await user.hover(choose);
-    await waitFor(() => expect(screen.getAllByText('Not available yet').length).toBeGreaterThan(0));
+    // No flow passed (no `corpus.duplicates`): no search, no confirm, no stub.
+    expect(within(merge).queryByRole('searchbox')).toBeNull();
+    expect(within(merge).queryByRole('button', { name: /Merge into|Choose a body/ })).toBeNull();
   });
 
   it('says what the touching test couldn’t check, never that nothing touches', () => {
@@ -216,5 +225,239 @@ describe('Merge into another body', () => {
     expect(screen.getByText('The bodies that touch this one couldn’t be read')).toBeInTheDocument();
     rerender(view({ merge: { touching: undefined, note: null } }));
     expect(screen.getByRole('heading', { name: 'Merge into another body' })).toBeInTheDocument();
+  });
+});
+
+describe('the merge itself', () => {
+  const neighbors = [{ lit: 'neighbor:k1', id: 'k1', name: 'Crystal Lake' }];
+  const flow = (over: Partial<MergeFlowProps> = {}): MergeFlowProps => ({
+    survivor: null,
+    onPick: vi.fn(),
+    query: '',
+    onQueryChange: vi.fn(),
+    hits: null,
+    preview: undefined,
+    bodyName: 'Mascoma Lake',
+    onMerge: vi.fn(async () => true),
+    ...over,
+  });
+  const region = () => screen.getByRole('region', { name: 'Merge into another body' });
+
+  it('picks a touching body as the survivor; pressed again, none — the route lights the map from the pick', async () => {
+    const user = userEvent.setup();
+    const onLitChange = vi.fn();
+    const onPick = vi.fn();
+    const { rerender } = render(
+      view({
+        merge: { touching: neighbors, note: null },
+        onLitChange,
+        mergeFlow: flow({ onPick }),
+      }),
+    );
+    await user.click(within(region()).getByText('Crystal Lake'));
+    expect(onPick).toHaveBeenCalledWith({ id: 'k1', name: 'Crystal Lake' });
+    // One piece of state: the pick. The view never lights a survivor itself.
+    expect(onLitChange).not.toHaveBeenCalled();
+    rerender(
+      view({
+        merge: { touching: neighbors, note: null },
+        onLitChange,
+        mergeFlow: flow({ onPick, survivor: { id: 'k1', name: 'Crystal Lake' } }),
+      }),
+    );
+    // The picked row is the selected one, whatever is lit.
+    expect(region().querySelector('tr[data-id="neighbor:k1"]')).toHaveAttribute('data-selected');
+    await user.click(within(region()).getAllByText('Crystal Lake')[0] as HTMLElement);
+    expect(onPick).toHaveBeenLastCalledWith(null);
+    expect(onLitChange).not.toHaveBeenCalled();
+  });
+
+  it('finds a survivor by name: the hits, none, the search failed; a hit pressed is picked', async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    const onQueryChange = vi.fn();
+    const merge = { touching: neighbors, note: null };
+    const { rerender } = render(view({ merge, mergeFlow: flow({ onQueryChange }) }));
+    await user.type(within(region()).getByRole('searchbox'), 'p');
+    expect(onQueryChange).toHaveBeenCalledWith('p');
+    const hits = [
+      { id: 'kpost', name: 'Post Pond', sub: 'Pond · NH' },
+      { id: 'kpost2', name: 'Post Pond', sub: 'Pond · VT' },
+    ];
+    rerender(view({ merge, mergeFlow: flow({ onPick, query: 'post', hits }) }));
+    // Two of one name told apart by their kind and states; the second pressed is the one picked.
+    expect(within(region()).getByText('Pond · VT')).toBeInTheDocument();
+    await user.click(within(region()).getByText('Pond · VT'));
+    expect(onPick).toHaveBeenCalledWith({ id: 'kpost2', name: 'Post Pond' });
+    rerender(view({ merge, mergeFlow: flow({ query: 'zzz', hits: [] }) }));
+    expect(within(region()).getByText('No body by that name')).toBeInTheDocument();
+    const failed = failure();
+    rerender(view({ merge, mergeFlow: flow({ query: 'post', hits: failed }) }));
+    expect(within(region()).getByText('The search couldn’t be read')).toBeInTheDocument();
+    await user.click(within(region()).getByRole('button', { name: 'Try again' }));
+    expect(failed.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('previews what moves, what it runs into and what stays, from the server’s answer', () => {
+    render(
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({
+          survivor: { id: 'k1', name: 'Crystal Lake' },
+          preview: MERGE_TO_CRYSTAL,
+        }),
+      }),
+    );
+    const preview = screen.getByRole('region', { name: 'Into Crystal Lake' });
+    expect(preview).toHaveTextContent('Reports 3');
+    expect(preview).toHaveTextContent('Skates 1');
+    expect(preview).toHaveTextContent('1 favorite already on Crystal Lake');
+    expect(preview).toHaveTextContent('West cove · Crystal Lake has a bay by that name');
+    expect(preview).toHaveTextContent('Pins 3 of 10 · Aliases 4 of 20 · Links 2 of 10');
+    expect(preview).toHaveTextContent('1 access alert · 2 linked lots');
+    expect(within(preview).getByRole('button', { name: 'Merge into Crystal Lake' })).toBeEnabled();
+    expect(within(preview).queryByRole('note')).toBeNull();
+  });
+
+  it('a merge too heavy for one go says so, and the confirm can’t be pressed', () => {
+    const onMerge = vi.fn(async () => true);
+    render(
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({
+          survivor: { id: 'k1', name: 'Crystal Lake' },
+          preview: MERGE_HEAVY,
+          onMerge,
+        }),
+      }),
+    );
+    const preview = screen.getByRole('region', { name: 'Into Crystal Lake' });
+    expect(within(preview).getByRole('note')).toHaveTextContent(MERGE_HEAVY.refusal as string);
+    expect(preview).toHaveTextContent('Reports 1,000+');
+    const confirm = within(preview).getByRole('button', { name: 'Merge into Crystal Lake' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onMerge).not.toHaveBeenCalled();
+  });
+
+  it('a refused preview is the server’s sentence, and no confirm; loading and failed, none either', async () => {
+    const user = userEvent.setup();
+    const survivor = { id: 'k1', name: 'Crystal Lake' };
+    const merge = { touching: neighbors, note: null };
+    const { rerender } = render(
+      view({ merge, mergeFlow: flow({ survivor, preview: MERGE_REFUSED }) }),
+    );
+    const confirm = () => screen.getByRole('button', { name: 'Merge into Crystal Lake' });
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Survivor is itself merged — pick the canonical body',
+    );
+    expect(confirm()).toBeDisabled();
+    rerender(view({ merge, mergeFlow: flow({ survivor, preview: undefined }) }));
+    expect(confirm()).toBeDisabled();
+    const failed = failure();
+    rerender(view({ merge, mergeFlow: flow({ survivor, preview: failed }) }));
+    expect(screen.getByText('What the merge would move couldn’t be read')).toBeInTheDocument();
+    expect(confirm()).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(failed.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks a reason before it merges — required, the audit log’s cap — and sends it', async () => {
+    const user = userEvent.setup();
+    const onMerge = vi.fn(async () => true);
+    render(
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({
+          survivor: { id: 'k1', name: 'Crystal Lake' },
+          preview: MERGE_TO_CRYSTAL,
+          onMerge,
+        }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Merge Mascoma Lake into Crystal Lake');
+    // What Undo does, truly: rows that change in the meantime stay where they are.
+    expect(dialog).toHaveTextContent(
+      'Undo moves it back, except rows that change in the meantime: those stay where they are.',
+    );
+    expect(within(dialog).getByText('Reason · kept in the audit log')).toBeInTheDocument();
+    const box = within(dialog).getByRole('textbox');
+    expect(box).toHaveAttribute('maxlength', String(AUDIT_REASON_MAX));
+    // Required: nothing is sent without one.
+    const send = within(dialog).getByRole('button', { name: 'Merge' });
+    await user.click(send);
+    expect(onMerge).not.toHaveBeenCalled();
+    await user.type(box, '  Drawn twice  ');
+    await user.click(send);
+    await waitFor(() => expect(onMerge).toHaveBeenCalledWith('Drawn twice'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('a refusal arriving mid-dialog closes it for good, says why in a toast, and never reopens it', async () => {
+    const user = userEvent.setup();
+    toasts.length = 0;
+    const at = (preview: MergeFlowProps['preview']) =>
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({ survivor: { id: 'k1', name: 'Crystal Lake' }, preview }),
+      });
+    const { rerender } = render(at(MERGE_TO_CRYSTAL));
+    await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
+    await screen.findByRole('alertdialog');
+    // The preview turns to a refusal while the reason is being typed.
+    rerender(at(MERGE_REFUSED));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(toasts).toEqual([
+      expect.objectContaining({
+        title: 'Not saved · Mascoma Lake',
+        description: `The merge: ${MERGE_REFUSED.refusal}`,
+        tone: 'bad',
+      }),
+    ]);
+    // It turns back: the dialog stays shut until the moderator opens it again.
+    rerender(at(MERGE_TO_CRYSTAL));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(toasts).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Merge into Crystal Lake' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('a merge refused mid-unmerge: its place is the live note where the route provides it, by the pair', () => {
+    const note = vi.fn((sentence: string, ids: readonly string[]) => (
+      <p>
+        live {sentence} · {ids.join(',')}
+      </p>
+    ));
+    render(
+      <UnmergeLive.Provider value={{ line: () => null, note }}>
+        {view({
+          merge: { touching: neighbors, note: null },
+          mergeFlow: flow({
+            survivor: { id: 'k1', name: 'Crystal Lake' },
+            preview: MERGE_UNMERGING,
+            bodyId: 'mascoma',
+          }),
+        })}
+      </UnmergeLive.Provider>,
+    );
+    expect(note).toHaveBeenCalledWith(MERGE_UNMERGING.refusal, ['mascoma', 'k1']);
+    expect(screen.getByRole('button', { name: 'Merge into Crystal Lake' })).toBeDisabled();
+  });
+
+  it('unpicks from the preview', async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    render(
+      view({
+        merge: { touching: neighbors, note: null },
+        mergeFlow: flow({ survivor: { id: 'k1', name: 'Crystal Lake' }, onPick }),
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Pick another' }));
+    expect(onPick).toHaveBeenCalledWith(null);
   });
 });

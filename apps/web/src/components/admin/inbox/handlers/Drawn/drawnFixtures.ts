@@ -1,6 +1,6 @@
 import { zonedInstant } from '@skating/core';
 
-import { CASPIAN, DRAWN_ITEM, KATE, NOW } from '../../list/inboxFixtures';
+import { CASPIAN, DRAWN_ITEM, KATE, MOREY, NOW } from '../../list/inboxFixtures';
 import type { DrawnItem } from './drawnModel';
 
 /**
@@ -66,7 +66,11 @@ export const MODERATOR_VIEW = {
   can: { ...OPEN, mergeDrawn: 'Requires admin role' },
 } as unknown as DrawnItem;
 
-/** The viewer drew it (D289): every verb refused, so no bar — and the refusal said once. */
+/**
+ * The drawer's own seat (D289): every verb refused in the server's one sentence, so no bar — and
+ * the refusal said once. Its merge carries the code the server serves beside it (`ownDrawing`, the
+ * same rule `mergePreview` and `merge` refuse by).
+ */
 export const DRAWN_BY_VIEWER = {
   ...OVER_CASPIAN,
   can: {
@@ -74,6 +78,20 @@ export const DRAWN_BY_VIEWER = {
     mergeDrawn: 'You filed this, so another staff member decides it.',
     rejectDrawn: 'You filed this, so another staff member decides it.',
   },
+  canCode: { mergeDrawn: 'ownDrawing' },
+} as unknown as DrawnItem;
+
+/**
+ * An unmerge still runs on the drawing or its survivor (R10-A): Merge held back in the server's own
+ * sentence and code; approve and reject stay.
+ */
+export const DRAWN_UNMERGING = {
+  ...OVER_CASPIAN,
+  can: {
+    ...OPEN,
+    mergeDrawn: 'This body is still being unmerged. Merge it once that finishes.',
+  },
+  canCode: { mergeDrawn: 'unmerging' },
 } as unknown as DrawnItem;
 
 /** The drawer's account is gone. */
@@ -103,6 +121,23 @@ export const DRAWN_DECIDED = {
     actionId: 'ma9'.padEnd(32, '0'),
     byMe: false,
   },
+} as unknown as DrawnItem;
+
+/** Merged by a colleague into Caspian Lake: decided, every verb refused, so no bar. */
+export const DRAWN_MERGED = {
+  ...DRAWN_DECIDED,
+  decided: { ...DRAWN_DECIDED.decided, decision: 'merged' },
+} as unknown as DrawnItem;
+
+/**
+ * Another drawing, over Lake Morey — its own item, its own drawing, another survivor — so a write
+ * that sent the first item's ids, or the first survivor, is caught.
+ */
+export const OVER_MOREY = {
+  ...OVER_CASPIAN,
+  itemId: 'itdrawnmorey'.padEnd(32, '0'),
+  body: { ...OVER_CASPIAN.body, waterBodyId: 'drawnmorey'.padEnd(32, '0'), name: 'Morey east arm' },
+  overlap: { share: 0.87, suggested: true, body: MOREY },
 } as unknown as DrawnItem;
 
 /** The report is hidden or withdrawn, to this viewer: its words withheld, the rest as served. */
@@ -147,8 +182,11 @@ export const DRAWN_FIXTURES = {
   BELOW_THRESHOLD,
   MODERATOR_VIEW,
   DRAWN_BY_VIEWER,
+  DRAWN_UNMERGING,
   DRAWER_GONE,
   DRAWN_DECIDED,
+  DRAWN_MERGED,
+  OVER_MOREY,
   REPORT_WITHHELD,
   LONG_REPORT,
   BARE_SKATE,

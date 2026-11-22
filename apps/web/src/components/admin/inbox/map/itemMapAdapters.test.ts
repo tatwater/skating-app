@@ -72,14 +72,54 @@ describe('each kind’s scene', () => {
 
   it('an admit: the candidate dashed, ours, the rule, the legend and the catalog’s fact', () => {
     const v = itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ);
-    expect(ids(v)).toEqual([
-      'body:ricker',
-      'candidate:yq4k2',
-      'gap:nearest:ricker',
-      'gap:nearest:ricker:length',
-    ]);
+    expect(ids(v)).toEqual(['body:ricker', 'candidate:yq4k2', 'leader:nearest:ricker']);
     expect(v?.legend.map((r) => r.label)).toEqual(['Catalog outline · not ours yet', 'Ours']);
     expect(v?.caption).toBe('Unnamed · 41 ac');
+  });
+
+  it('an admit’s leader runs to the body the item names, with no figure on it — none named, none drawn', () => {
+    const leader = (v: InboxMapView | null) =>
+      v?.scene.items.find((i) => i.id === 'leader:nearest:ricker');
+    // The distance is the *Nearest* row's alone (the server measured from a point the map doesn't
+    // draw): the leader carries no figure, and no label sits on it.
+    expect(leader(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ))).toMatchObject({
+      kind: 'line',
+      style: 'leader',
+    });
+    expect(
+      itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ)?.scene.items.some(
+        (i) => i.kind === 'label',
+      ),
+    ).toBe(false);
+    const withNearest = (nearestKnown: unknown) =>
+      ({
+        ...ADMIT_MATCH,
+        candidate: {
+          ...(ADMIT_MATCH as Extract<typeof ADMIT_MATCH, { kind: 'request' }>).candidate,
+          nearestKnown,
+        },
+      }) as never;
+    // None named: no outline of ours, no rule, no legend row — whatever the answer's outlines.
+    const none = itemMapScene(withNearest(null), ADMIT_MAP_NO_TRACK, TZ);
+    expect(ids(none)).toEqual(['candidate:yq4k2']);
+    expect(none?.legend.map((r) => r.label)).toEqual(['Catalog outline · not ours yet']);
+    // Another body named than the answer's outline: nothing drawn rather than the wrong one.
+    const other = itemMapScene(
+      withNearest({ waterBodyId: 'postpond', name: 'Post Pond', meters: 900 }),
+      ADMIT_MAP_NO_TRACK,
+      TZ,
+    );
+    expect(ids(other)).toEqual(['candidate:yq4k2']);
+    // Whatever distance is served, the leader is the same line, figure-free.
+    expect(
+      leader(
+        itemMapScene(
+          withNearest({ waterBodyId: 'ricker', name: 'Ricker Pond', meters: 4_000 }),
+          ADMIT_MAP_NO_TRACK,
+          TZ,
+        ),
+      ),
+    ).toEqual(leader(itemMapScene(ADMIT_MATCH, ADMIT_MAP_NO_TRACK, TZ)));
   });
 
   it('an admit with an ask’s skate: its track, named for its asker as the board does', () => {

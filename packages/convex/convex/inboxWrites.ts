@@ -12,7 +12,9 @@
  * - `restoreAndDismiss` is for an item whose content is already down (a flag filed before the
  *   takedown): the content restored, the item's flags dismissed;
  * - `ruleAccess` rules on an Access item's body (2.2): no public access, accessible, or the ruling
- *   cleared — through the body's own ruling (`setPublicAccessImpl`), after the Inbox's rule.
+ *   cleared — through the body's own ruling (`setPublicAccessImpl`), after the Inbox's rule;
+ * - `mergeDrawn` merges a skater's drawing into the known body it overlaps (2.5, B01-5d) — through
+ *   the body merge (`mergeBodyInto`), after the Inbox's rule.
  *
  * Every write asks the Inbox's one rule per verb (`lib/inboxRules.ts`) before it writes, so a lever
  * the read offered is the write the server accepts; a refusal is the server's sentence, thrown as a
@@ -31,7 +33,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation } from './_generated/server';
 import { retractAlertImpl, setOfficialImpl } from './accessAlerts';
-import { auditContextArgs, checkedReason } from './lib/audit';
+import { auditContextArgs, checkedReason, composed } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { PUBLIC_ACCESS_VERDICTS } from './lib/enums';
 import {
@@ -42,7 +44,14 @@ import {
   reopenFlagsRestPage,
 } from './lib/inboxFlags';
 import { MAX_MEMBERS } from './lib/inboxItems';
-import { assertInboxVerb, type InboxRuleFacts } from './lib/inboxRules';
+import {
+  assertInboxVerb,
+  DECIDED_REFUSAL,
+  drawnMergeFacts,
+  drawnSurvivorOf,
+  type InboxRuleFacts,
+  SURVIVOR_CHANGED_REFUSAL,
+} from './lib/inboxRules';
 import { reasonFor } from './lib/peopleCan';
 import { closeRequestsRestPage, decisionArgs } from './lib/requestDecisions';
 import { reopenRequestsRestPage } from './lib/undoHandlersCorpus';
@@ -53,7 +62,7 @@ import {
   setContentStatus,
   undoOfferAfterWrite,
 } from './moderation';
-import { setPublicAccessImpl } from './waterBodies';
+import { assertMergeFits, mergeBodyInto, setPublicAccessImpl } from './waterBodies';
 
 // ── Results ────────────────────────────────────────────────────────────────────────────────────
 
@@ -87,6 +96,12 @@ export type RestoreAndDismissResult = InboxWriteResult;
  * the item stays open).
  */
 export type RuleAccessResult = InboxWriteResult & { verdict: 'none' | 'open' | null };
+
+/**
+ * `mergeDrawn`'s answer: the merge's `merge_waterbody` row the toast's (its undo is the unmerge), no
+ * flags closed — and which body the drawing went into, for the receipt.
+ */
+export type MergeDrawnResult = InboxWriteResult & { survivorId: Id<'waterBodies'> };
 
 /** What a dismissal's row says when the moderator gave no reason (a dismissal takes nothing away). */
 export const DISMISS_DEFAULT_REASON = 'Dismissed';
@@ -375,6 +390,58 @@ export const ruleAccess = mutation({
       ...(typed !== undefined ? { reason: typed } : {}),
     });
     return { ...(await resultOf(ctx, actor, itemId, actionId, open)), verdict };
+  },
+});
+
+/**
+ * *Merge into ‹body›* on a Drawn item (2.5, B01-5d): the skater's drawing merged into the known body
+ * it overlaps. In order:
+ *
+ * 1. **The Inbox's rule** (`lib/inboxRules`), as every write here asks it: both capabilities
+ *    (`inbox.drawnBody`, `corpus.duplicates`), a decided item (D283), the viewer's own drawing (D289),
+ *    and an overlap — the drawing's live survivor (`drawnSurvivorOf`), the one function the item's
+ *    `can` and its bar read too.
+ * 2. **The survivor the bar showed is still that survivor**: the page may be minutes old, and a merge
+ *    into a body the moderator didn't see is refused, never redirected.
+ * 3. **The merge fits one transaction** (`lib/mergeLoad`, the preview's own answer).
+ *
+ * Then `mergeBodyInto`: every child re-pointed, `reviewStatus: 'merged'`, the item decided with the
+ * merge's row, the drawer told through the settle queue (D285). A reason is optional — the merge's row
+ * says what it did — and the merge's row is the toast's.
+ */
+export const mergeDrawn = mutation({
+  args: {
+    itemId: v.id('inboxItems'),
+    /** The survivor the bar showed; refused if the drawing's live survivor is now another body. */
+    survivorId: v.id('waterBodies'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { itemId, survivorId, reason: given }): Promise<MergeDrawnResult> => {
+    const actor = await requireCapability(ctx, 'inbox.drawnBody');
+    const item = await ctx.db.get(itemId);
+    if (!item) throw new ConvexError('No such item.');
+    if (item.kind !== 'drawn' || item.waterBodyId === undefined) {
+      throw new ConvexError('This item is not a drawn body.');
+    }
+    const drawn = await ctx.db.get(item.waterBodyId);
+    if (!drawn) throw new ConvexError('Water body not found');
+    const live = await drawnSurvivorOf(drawn, (id) => ctx.db.get(id));
+    await assertInboxVerb(ctx, actor, item, 'mergeDrawn', drawnMergeFacts(drawn, live));
+    if (!live || live.survivor._id !== survivorId) throw new ConvexError(SURVIVOR_CHANGED_REFUSAL);
+    // Reviewed or merged since the item was decided by the reconcile's last look: the rule's word.
+    if (drawn.reviewStatus !== 'pending' || drawn.dedupStatus === 'merged') {
+      throw new ConvexError(DECIDED_REFUSAL);
+    }
+    const typed = given?.trim() ? checkedReason(given) : undefined;
+    // The overlap was measured above, in this transaction: both outlines are the geometry's too.
+    await assertMergeFits(ctx, drawn, live.survivor, { overlap: true });
+    const { actionId } = await mergeBodyInto(ctx, {
+      survivor: live.survivor,
+      loser: drawn,
+      actorId: actor._id,
+      reason: typed ?? composed`Merged into ${live.survivor.name}`,
+    });
+    return { ...(await resultOf(ctx, actor, itemId, actionId, 0)), survivorId };
   },
 });
 

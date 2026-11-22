@@ -107,8 +107,7 @@ describe('2.3 — a catalog candidate', () => {
       'body:ricker',
       'candidate:yq4k2',
       'track:kd',
-      'gap:nearest:ricker',
-      'gap:nearest:ricker:length',
+      'leader:nearest:ricker',
     ]);
     expect(byId(v, 'body:ricker')).toMatchObject({ style: 'neighbor' });
     expect(byId(v, 'candidate:yq4k2')).toMatchObject({ style: 'candidate' });
@@ -118,16 +117,14 @@ describe('2.3 — a catalog candidate', () => {
     expectAllLayersOn(v);
   });
 
-  it('runs the rule shore to shore, and its measure says that distance', () => {
-    const gap = byId(v, 'gap:nearest:ricker') as MapLine;
+  it('runs a plain leader shore to shore, with no figure on it: the distance is the row’s alone', () => {
+    const gap = byId(v, 'leader:nearest:ricker') as MapLine;
     const [from, to] = gap.path as [LngLat, LngLat];
     expect(outlineCoords(UNNAMED_POND.outline)).toContainEqual(from);
     expect(outlineCoords(RICKER_POND.outline)).toContainEqual(to);
-    const label = byId(v, 'gap:nearest:ricker:length') as MapLabel;
-    expect(label).toMatchObject({
-      style: 'measure',
-      text: formatDistance(metersBetween(from, to)),
-    });
+    // No label anywhere on the scene: a figure on the line would have to be the line's own length,
+    // and the server's measure (ask's point to outline) is not this line.
+    expect(v.scene.items.filter((i) => i.kind === 'label')).toEqual([]);
   });
 
   it('frames the candidate, the skate and the rule — not the whole of ours', () => {
@@ -185,7 +182,7 @@ describe('2.3 — a catalog candidate', () => {
 
   it('with no match but a nearest body, runs the rule from the asked point', () => {
     const v2 = admitScene({ ...ADMIT, candidate: null });
-    const gap = byId(v2, 'gap:nearest:ricker') as MapLine;
+    const gap = byId(v2, 'leader:nearest:ricker') as MapLine;
     expect(ADMIT.asks.map((a) => a.at)).toContainEqual(gap.path[0]);
   });
 });

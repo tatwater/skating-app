@@ -481,6 +481,8 @@ const itemBase = (row: InboxRowView) => ({
   memberCount: row.memberCount,
   memberCountIsFloor: row.memberCountIsFloor,
   can: row.can,
+  // Every item is served its refusal codes: none here (a fixture that refuses with one sets it).
+  canCode: {},
   decided: row.decided,
 });
 

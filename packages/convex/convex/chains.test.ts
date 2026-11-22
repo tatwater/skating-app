@@ -35,6 +35,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 async function seedUser(t: T, subject: string, role: 'member' | 'moderator' = 'member') {

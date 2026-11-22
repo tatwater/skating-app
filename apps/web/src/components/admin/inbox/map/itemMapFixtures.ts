@@ -70,7 +70,11 @@ export const ACCESS_MAP: ServerItemMap = {
 const ADMIT_ASK = (ADMIT_ITEM as Extract<InboxItemView, { kind: 'request' }>).asks[0];
 export const ADMIT_MATCH = {
   ...ADMIT_ITEM,
-  candidate: { name: null, areaSqM: 41 * 4046.8564224 },
+  candidate: {
+    name: null,
+    areaSqM: 41 * 4046.8564224,
+    nearestKnown: { waterBodyId: 'ricker', name: 'Ricker Pond', meters: 1_300 },
+  },
   // Kate Donovan's ask came with her recorded skate: the track the map draws is hers.
   asks: ADMIT_ASK ? [{ ...ADMIT_ASK, activityId: ADMIT.tracks?.[0]?.id ?? null }] : [],
 } as unknown as InboxItemView;

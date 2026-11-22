@@ -152,7 +152,11 @@ const askedItem = (a: EmbedPoint): MapItem => ({
   ...(a.name === undefined ? {} : { name: a.name }),
 });
 
-/** A distance rule between two points, and its length set into it. */
+/**
+ * A distance rule between two points, and its length set into it: the length the server measured
+ * when one is given (so the rule and the block beside the map say one distance), else the rule's own.
+ */
+/** A rule between two points, its label its own drawn length — a dimension line says what it is. */
 function gapItems(id: string, from: LngLat, to: LngLat): MapItem[] {
   return [
     { kind: 'line', id: `gap:${id}`, layer: 'marks', path: [from, to], style: 'gap' },
@@ -165,6 +169,11 @@ function gapItems(id: string, from: LngLat, to: LngLat): MapItem[] {
       style: 'measure',
     },
   ];
+}
+
+/** A plain leader between two points: a thin rule, no ticks and no figure — it points, never measures. */
+function leaderItem(id: string, from: LngLat, to: LngLat): MapItem {
+  return { kind: 'line', id: `leader:${id}`, layer: 'marks', path: [from, to], style: 'leader' };
 }
 
 /** The scene, with every layer an item belongs to switched on — an embed has no rack to do it. */
@@ -282,7 +291,11 @@ export interface AdmitInput extends Captioned {
   asks: readonly EmbedPoint[];
   /** The skates the asks came with. */
   tracks?: readonly EmbedPath[];
-  /** The nearest body of ours, if the catalog block names one: drawn, with the distance to it. */
+  /**
+   * The nearest body of ours, if the catalog block names one (`candidate.nearestKnown`): drawn, with
+   * a plain leader to it. The distance is the *Nearest* row's alone: the server measured from the
+   * ask's point to the body's outline, which the map doesn't draw, so no figure sits on the leader.
+   */
   nearest?: EmbedBody | null;
   /** The legend's words for what is drawn; a row shows only for a label given. */
   legend?: { candidate?: string; track?: string; nearest?: string };
@@ -333,7 +346,7 @@ export function admitScene({
       : { type: 'Polygon', coordinates: [asks.map((a) => [...a.at])] };
     const pair = nearestVertices(from, nearest.outline);
     if (pair) {
-      items.push(...gapItems(`nearest:${nearest.id}`, pair[0], pair[1]));
+      items.push(leaderItem(`nearest:${nearest.id}`, pair[0], pair[1]));
       framed.push(pair[0], pair[1]);
     }
   }

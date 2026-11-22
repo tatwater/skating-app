@@ -10,6 +10,7 @@ import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads
 import { ReadNote } from '../reads/ReadNote';
 import { useClockFor } from '../reads/readArgs';
 import { useMinuteNow } from '../shell/presence';
+import { UnmergeLiveProvider } from '../shell/UnmergeLeft';
 import { InboxView } from './InboxView';
 import {
   type InboxQuery,
@@ -193,63 +194,66 @@ export function InboxRoute() {
   const linkFor = useMemo(() => (path: string) => <Link {...routerTarget(path)} />, []);
 
   return (
-    <InboxView
-      lanes={lanes}
-      canReadSupport={canSupport}
-      query={query}
-      onQueryChange={(next) =>
-        go(placeAfter(query, next, query.item !== null && openedFromList.current === query.item))
-      }
-      list={{
-        status: pages.status,
-        rows: pages.rows,
-        pending: pages.pending,
-        retryPending: pages.failure?.pending === true,
-      }}
-      onLoadMore={pages.loadMore}
-      {...(pages.failure !== null && { onRetryList: pages.failure.retry })}
-      tail={tail}
-      zero={atZero ? { day: zeroDay } : null}
-      inspector={inspector}
-      onOpenItem={(itemId, from) => {
-        openedFromList.current = itemId;
-        go({ ...query, item: itemId }, query.item !== null);
-        // From the keys, focus follows into the item; a press leaves it where the pointer is.
-        if (from === 'keys') inspectorRef.current?.focus();
-      }}
-      onCloseItem={() => go({ ...query, item: null }, true)}
-      {...(query.from !== null && {
-        onReturn: () => void navigate({ ...routerTarget(query.from as string) } as never),
-      })}
-      now={now}
-      linkFor={linkFor}
-      filterName={filterName}
-      {...(can('body.read') && {
-        bodySearch: {
-          onQuery: setBodyQ,
-          results: bodyResults,
-          failure: searchFailure(found.bodies),
-        },
-      })}
-      {...(can('people.read') && {
-        personSearch: {
-          onQuery: setPersonQ,
-          results: personResults,
-          failure: searchFailure(found.people),
-        },
-      })}
-      onNamed={(id, name) => setNamed({ id, name })}
-      inspectorRef={inspectorRef}
-      countsNote={
-        <ReadNote
-          data-slot="counts-error"
-          className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
-          reads={[lanesRead.state]}
-        >
-          {COUNTS_FAILED}
-        </ReadNote>
-      }
-    />
+    // The unmerge's live state where a merge is refused with `unmerging` (the Drawn lever).
+    <UnmergeLiveProvider>
+      <InboxView
+        lanes={lanes}
+        canReadSupport={canSupport}
+        query={query}
+        onQueryChange={(next) =>
+          go(placeAfter(query, next, query.item !== null && openedFromList.current === query.item))
+        }
+        list={{
+          status: pages.status,
+          rows: pages.rows,
+          pending: pages.pending,
+          retryPending: pages.failure?.pending === true,
+        }}
+        onLoadMore={pages.loadMore}
+        {...(pages.failure !== null && { onRetryList: pages.failure.retry })}
+        tail={tail}
+        zero={atZero ? { day: zeroDay } : null}
+        inspector={inspector}
+        onOpenItem={(itemId, from) => {
+          openedFromList.current = itemId;
+          go({ ...query, item: itemId }, query.item !== null);
+          // From the keys, focus follows into the item; a press leaves it where the pointer is.
+          if (from === 'keys') inspectorRef.current?.focus();
+        }}
+        onCloseItem={() => go({ ...query, item: null }, true)}
+        {...(query.from !== null && {
+          onReturn: () => void navigate({ ...routerTarget(query.from as string) } as never),
+        })}
+        now={now}
+        linkFor={linkFor}
+        filterName={filterName}
+        {...(can('body.read') && {
+          bodySearch: {
+            onQuery: setBodyQ,
+            results: bodyResults,
+            failure: searchFailure(found.bodies),
+          },
+        })}
+        {...(can('people.read') && {
+          personSearch: {
+            onQuery: setPersonQ,
+            results: personResults,
+            failure: searchFailure(found.people),
+          },
+        })}
+        onNamed={(id, name) => setNamed({ id, name })}
+        inspectorRef={inspectorRef}
+        countsNote={
+          <ReadNote
+            data-slot="counts-error"
+            className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
+            reads={[lanesRead.state]}
+          >
+            {COUNTS_FAILED}
+          </ReadNote>
+        }
+      />
+    </UnmergeLiveProvider>
   );
 }
 

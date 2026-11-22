@@ -29,7 +29,10 @@ const PHASES = join(REPO, 'plans/phases');
 function files(dir: string, ext: string[]): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (name === 'node_modules' || name.startsWith('.')) return [];
+    // Build and coverage output is no source — and another package's test task may be writing it
+    // while this walk runs (`pnpm test` runs every package at once): a file read in the listing can
+    // be gone by its `stat`.
+    if (name === 'node_modules' || name === 'coverage' || name.startsWith('.')) return [];
     if (statSync(path).isDirectory()) return files(path, ext);
     return ext.some((e) => name.endsWith(e)) ? [path] : [];
   });

@@ -20,14 +20,24 @@
  * nothing here applies to it (D289, amended: any staffer holding the capability decides it).
  */
 
-import { CAPABILITIES, type Capability, type InboxItemKind, type RequestKind } from '@skating/core';
+import {
+  CAPABILITIES,
+  type Capability,
+  coveredFraction,
+  type InboxItemKind,
+  MERGE_SUGGEST_SHARE,
+  mergedModeratorLists,
+  type RequestKind,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
-import type { InboxCan, InboxVerb } from '../inbox';
+import type { InboxCan, InboxCanCode, InboxVerb } from '../inbox';
 import { DELETION_PENDING_MESSAGE, hasCapability } from './auth';
 import { ownContentRefusal } from './ownContent';
 import { ERASED_ALREADY, type RecordFacts, recordRefusal, takedownRefusal } from './recordRules';
+import { UNMERGING_REFUSAL, unmergeRunningOn } from './unmergeState';
 
 /** What `setContentStatus` says of content whose row is gone (before it reads the record). */
 export const CONTENT_GONE = 'Target not found';
@@ -60,6 +70,102 @@ export const ALONGSIDE_UNCHECKED =
 
 /** Whether a decision would close one of the viewer's own asks: yes, no, or it couldn't be checked. */
 export type AlongsideAnswer = 'own' | 'clear' | 'unchecked';
+
+// ── A drawing's live survivor (B01-5d) ────────────────────────────────────────────────────────
+
+/** The most of a drawing's dedup candidates the survivor search reads — create stores a handful. */
+export const DRAWN_SURVIVOR_READ = 8;
+
+/** What a drawing merges into: its live survivor, and the share of the drawing inside it (0–1). */
+export type DrawnSurvivor = {
+  survivor: Doc<'waterBodies'>;
+  share: number;
+  /** The share is at or past the merge threshold (*Merge suggested from 80 %*). */
+  suggested: boolean;
+};
+
+/**
+ * **D289 on a drawing's merge — one sentence and one code** (B01-5d): the staffer who drew a drawing
+ * in review doesn't merge it. The Inbox's `can.mergeDrawn` (and its `canCode`) and the Shape tab's
+ * preview and `waterBodies.merge` (`mergePairRefusal`) all answer with this.
+ */
+export const OWN_DRAWING = { refusal: OWN_FILING_REFUSAL, code: 'ownDrawing' } as const;
+
+/** {@link OWN_DRAWING} when `viewerId` drew this drawing still in review, else `null`. */
+export function ownDrawingRefusal(
+  drawing: Pick<Doc<'waterBodies'>, 'source' | 'reviewStatus' | 'createdByUserId'>,
+  viewerId: Id<'profiles'>,
+): typeof OWN_DRAWING | null {
+  return drawing.source === 'user' &&
+    drawing.reviewStatus === 'pending' &&
+    drawing.createdByUserId === viewerId
+    ? OWN_DRAWING
+    : null;
+}
+
+/** What a drawing that overlaps no live body is told — the rule's sentence for `mergeDrawn`. */
+export const NO_OVERLAP_REFUSAL = 'This drawing overlaps no known body.';
+/** A `mergeDrawn` whose survivor the bar showed is no longer the drawing's live survivor. */
+export const SURVIVOR_CHANGED_REFUSAL =
+  'The body this drawing overlaps has changed since this page loaded. Look again before merging.';
+
+/**
+ * **The drawing's live survivor — the one function** (B01-5d) the Inbox rule's `hasOverlap`, the
+ * Drawn item's `overlap` and `body` and `mergeDrawn`'s currency check all read, so `can` and the bar
+ * never disagree: the first of the drawing's dedup candidates (in create's ranking, the best match
+ * first) that is **neither merged nor gone** — a tombstoned first candidate is passed over for the
+ * next, never offered and then refused — with the share of the drawing inside it, from core's
+ * `coveredFraction`. `null` when no candidate among the first {@link DRAWN_SURVIVOR_READ} is live, or
+ * the outlines can't be measured (missing, or the clipper fails): then there is no merge to offer.
+ * `get` is how the caller reads a body — charged to an item's budget in a view, plain in a write.
+ */
+export async function drawnSurvivorOf(
+  drawn: Pick<Doc<'waterBodies'>, '_id' | 'polygon' | 'duplicateCandidateIds'>,
+  get: (id: Id<'waterBodies'>) => Promise<Doc<'waterBodies'> | null>,
+): Promise<DrawnSurvivor | null> {
+  const body = await liveSurvivorOf(drawn, get);
+  if (!body || !drawn.polygon || !body.polygon) return null;
+  try {
+    const share = coveredFraction(
+      drawn.polygon as unknown as Polygon | MultiPolygon,
+      body.polygon as unknown as Polygon | MultiPolygon,
+    );
+    return { survivor: body, share, suggested: share >= MERGE_SUGGEST_SHARE };
+  } catch {
+    return null;
+  }
+}
+
+/** The facts `mergeDrawn`'s rule reads, from the drawing's live survivor — the view's and the write's. */
+export function drawnMergeFacts(
+  drawn: Doc<'waterBodies'>,
+  live: DrawnSurvivor | null,
+): Pick<InboxRuleFacts, 'hasOverlap' | 'mergeListsRefusal' | 'mergeUnmerging'> {
+  return {
+    hasOverlap: live !== null,
+    mergeUnmerging:
+      unmergeRunningOn(drawn) !== null ||
+      (live !== null && unmergeRunningOn(live.survivor) !== null),
+    mergeListsRefusal: live ? mergedModeratorLists(live.survivor, [drawn]).refusal : null,
+  };
+}
+
+/**
+ * The survivor half of {@link drawnSurvivorOf}, without the share — what a list row names (*over
+ * ‹body›*), with no outline arithmetic per row. The first candidate neither merged nor gone.
+ */
+export async function liveSurvivorOf(
+  drawn: Pick<Doc<'waterBodies'>, '_id' | 'duplicateCandidateIds'>,
+  get: (id: Id<'waterBodies'>) => Promise<Doc<'waterBodies'> | null>,
+): Promise<Doc<'waterBodies'> | null> {
+  for (const id of (drawn.duplicateCandidateIds ?? []).slice(0, DRAWN_SURVIVOR_READ)) {
+    if (id === drawn._id) continue;
+    const body = await get(id);
+    if (!body || body.dedupStatus === 'merged' || body.mergedIntoId !== undefined) continue;
+    return body;
+  }
+  return null;
+}
 
 /** The capabilities each verb needs (all of them). */
 export function capabilitiesFor(
@@ -141,6 +247,13 @@ export type InboxRuleFacts = {
   landmarkMissing?: string | null;
   hasLookalike?: boolean;
   hasOverlap?: boolean;
+  /**
+   * A drawing's merge into its live survivor refused by the lists' union (B01-3g's
+   * `mergedModeratorLists`, the merge's own check), else `null` (B01-5d).
+   */
+  mergeListsRefusal?: string | null;
+  /** An unmerge still running on the drawing or its live survivor (R10-A, `lib/unmergeState`). */
+  mergeUnmerging?: boolean;
   /**
    * An ask's decision, per verb: the viewer has an open ask of their own among those it would close in
    * another item — a sibling its drain reaches through an answer's names or a landmark's place
@@ -411,10 +524,31 @@ export function preconditionRefusal(verb: InboxVerb, facts: InboxRuleFacts): str
     case 'lookUpAgain':
       return facts.requestKind === 'admit' ? null : 'Only an admit is looked up in the catalog.';
     case 'mergeDrawn':
-      return facts.hasOverlap ? null : 'This drawing overlaps no known body.';
+      if (!facts.hasOverlap) return NO_OVERLAP_REFUSAL;
+      if (facts.mergeUnmerging) return UNMERGING_REFUSAL;
+      return facts.mergeListsRefusal ?? null;
     default:
       return null;
   }
+}
+
+/**
+ * The refusal code of a precondition (B01-5d), where a client must act on which refusal it is: a
+ * place ask's *Approve* waiting on a bay or a landmark not drawn yet — `awaitsDrawing`, where the
+ * handler offers *Draw in Body →*. Asked only of the refusal that answered (rule 5's), so a viewer
+ * refused by an earlier rule never gets the code.
+ */
+export function preconditionCode(
+  verb: InboxVerb,
+  facts: InboxRuleFacts,
+): InboxCanCode[InboxVerb] | undefined {
+  if (verb === 'mergeDrawn') {
+    return facts.hasOverlap && facts.mergeUnmerging ? 'unmerging' : undefined;
+  }
+  if (verb !== 'approve') return undefined;
+  if (facts.requestKind === 'name_bay' && facts.bayMissing) return 'awaitsDrawing';
+  if (facts.requestKind === 'name_landmark' && facts.landmarkMissing) return 'awaitsDrawing';
+  return undefined;
 }
 
 /**
@@ -429,6 +563,20 @@ export async function inboxCan(
   /** How a list row reads (charged to its page's budget); an item's read reads plainly. */
   take: RuleTake = plainTake,
 ): Promise<InboxCan> {
+  return (await inboxCanWithCodes(ctx, viewer, item, facts, take)).can;
+}
+
+/**
+ * {@link inboxCan} with each refused verb's code beside it (`canCode`, B01-5d) — the code of the rule
+ * that answered, and only where a code exists — so a client tells refusals apart without their words.
+ */
+export async function inboxCanWithCodes(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  item: RuleItem,
+  facts?: InboxRuleFacts,
+  take: RuleTake = plainTake,
+): Promise<{ can: InboxCan; canCode: InboxCanCode }> {
   const filed = await filedByViewer(ctx, item._id, viewer._id);
   const verbs = verbsOf(item, facts ?? {});
   const onTarget =
@@ -436,15 +584,24 @@ export async function inboxCan(
       ? await filedOnTarget(ctx, item, viewer._id, take)
       : false;
   const can: InboxCan = {};
+  const canCode: InboxCanCode = {};
   for (const verb of verbs) {
     const theirs =
       filed || (onTarget && CLOSES_EVERY_LANE.has(verb)) || askedAlongsideFor(verb, facts ?? {});
-    can[verb] =
-      whoRefusal(viewer, item, verb, theirs, facts) ??
-      uncheckedRefusal(verb, facts ?? {}) ??
-      (facts ? preconditionRefusal(verb, facts) : null);
+    const earlier =
+      whoRefusal(viewer, item, verb, theirs, facts) ?? uncheckedRefusal(verb, facts ?? {});
+    const precondition = earlier === null && facts ? preconditionRefusal(verb, facts) : null;
+    can[verb] = earlier ?? precondition;
+    const code =
+      precondition !== null && facts
+        ? preconditionCode(verb, facts)
+        : // A drawing's own drawer refused its merge: the code the merge's preview gives (D289).
+          item.kind === 'drawn' && verb === 'mergeDrawn' && earlier === OWN_DRAWING.refusal
+          ? OWN_DRAWING.code
+          : undefined;
+    if (code !== undefined) canCode[verb] = code;
   }
-  return can;
+  return { can, canCode };
 }
 
 /** The rule's answer for one verb, drawn or not: `null` (allowed) or the write's sentence. */
@@ -466,6 +623,28 @@ export async function inboxVerbRefusal(
     uncheckedRefusal(verb, facts) ??
     preconditionRefusal(verb, facts)
   );
+}
+
+/**
+ * Rules 1–4 and the reach check alone (no precondition): who may decide this item by `verb` — for a
+ * write that must ask them **before** its own preconditions, as the rule orders them (a decision's
+ * first check, `lib/requestDecisions.assertMayDecide`'s `stage: 'who'`), so a staffer who filed the
+ * ask hears so, never an ask's state they couldn't act on anyway.
+ */
+export async function inboxWhoRefusal(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  item: RuleItem,
+  verb: InboxVerb,
+  facts: InboxRuleFacts = {},
+): Promise<string | null> {
+  const choice = choiceRefusal(item, verb, facts);
+  if (choice !== null) return choice;
+  const filed =
+    (await filedByViewer(ctx, item._id, viewer._id)) ||
+    (CLOSES_EVERY_LANE.has(verb) && (await filedOnTarget(ctx, item, viewer._id))) ||
+    askedAlongsideFor(verb, facts);
+  return whoRefusal(viewer, item, verb, filed, facts) ?? uncheckedRefusal(verb, facts);
 }
 
 /** The write's side: refuse `verb` on `item` in the rule's words (a `ConvexError`, for a toast). */

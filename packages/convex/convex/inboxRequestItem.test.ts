@@ -16,11 +16,13 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { MAX_TRACK_POINTS } from './gpsActivities';
 import { type InboxItemView, MAP_OUTLINE_BYTES, MAP_RING_POINTS } from './inbox';
 import { fileMember, flagSource, requestSource } from './lib/inboxItems';
 import {
   DISMISSED_BY_RULING_READ,
   DRAWN_SKATE_PAGE,
+  embedTrack,
   InboxReader,
   VIEW_ASKER_COUNTS,
   VIEW_MEMBERS,
@@ -122,7 +124,22 @@ type RequestView = Extract<InboxItemView, { kind: 'request' }>;
 type PlaceView = Extract<InboxItemView, { kind: 'place' }>;
 
 /** A recorded skate of `who`'s, its track `points` long (a track is what an activity row weighs). */
+/** About what one track point weighs as Convex measures it. */
+const POINT_BYTES = 18;
+
+/**
+ * A recorded skate weighing about `points` track points. A deployment caps an array at 8,192 items
+ * (and `gpsActivities.record` a track at `MAX_TRACK_POINTS`), so past that the track stops at the cap
+ * and the rest of the weight rides in its photo links — a row as heavy as the test wants, that a
+ * deployment can hold.
+ */
 async function skate(w: W, who: Id<'profiles'>, i: number, points = 20) {
+  const track = Math.min(points, MAX_TRACK_POINTS);
+  const extra = (points - track) * POINT_BYTES;
+  const photoUrls = Array.from(
+    { length: Math.ceil(extra / 1_000) },
+    (_, k) => `https://example.invalid/${i}/${k}/${'p'.repeat(960)}`,
+  );
   return w.t.run((ctx) =>
     ctx.db.insert('gpsActivities', {
       userId: who,
@@ -132,9 +149,10 @@ async function skate(w: W, who: Id<'profiles'>, i: number, points = 20) {
       startTime: NOW - 7_200_000 - i,
       endTime: NOW - 3_600_000 - i,
       elapsedSeconds: 3_000,
+      ...(photoUrls.length > 0 ? { photoUrls } : {}),
       path: {
         type: 'LineString',
-        coordinates: Array.from({ length: points }, (_, k) => [30 + k * 1e-5, 30 + i * 1e-3]),
+        coordinates: Array.from({ length: track }, (_, k) => [30 + k * 1e-5, 30 + i * 1e-3]),
       },
       promptState: 'pending',
       detectedAt: NOW,
@@ -1238,16 +1256,29 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
     ]);
   });
 
-  test('an oversized track: thinned to the embed’s points, first and last kept, said', async () => {
+  test('the longest track a deployment stores is drawn whole; past the embed’s bytes one is thinned, ends kept, said', async () => {
     const w = await world();
     const { activityId, waterBodyId } = await drawFrom(w, w.asker);
-    const coordinates = Array.from({ length: 30_000 }, (_, k) => [50 + k * 1e-6, 40 + k * 1e-6]);
-    await w.t.run((ctx) => ctx.db.patch(activityId, { path: { type: 'LineString', coordinates } }));
-    const track = (await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks[0];
+    // A deployment caps an array at 8,192 items, so no stored track outweighs the embed's bytes: the
+    // longest one (~147 KiB) is sent whole through the real map.
+    const longest = Array.from({ length: MAX_TRACK_POINTS }, (_, k) => [
+      50 + k * 1e-6,
+      40 + k * 1e-6,
+    ]);
+    await w.t.run((ctx) =>
+      ctx.db.patch(activityId, { path: { type: 'LineString', coordinates: longest } }),
+    );
+    const whole = (await mapOf(w.mod.as, `body:${waterBodyId}`))?.tracks[0];
+    expect(whole?.simplified).toBe(false);
+    expect(whole?.path).toHaveLength(MAX_TRACK_POINTS);
+    // The thinning stands for a heavier path (three coordinates a point, past the embed's bytes),
+    // built in memory since no table can hold it.
+    const heavy = Array.from({ length: 30_000 }, (_, k) => [50 + k * 1e-6, 40 + k * 1e-6, k]);
+    const track = embedTrack('t', { type: 'LineString', coordinates: heavy });
     expect(track?.simplified).toBe(true);
     expect(track?.path).toHaveLength(MAP_RING_POINTS);
-    expect(track?.path[0]).toEqual(coordinates[0]);
-    expect(track?.path.at(-1)).toEqual(coordinates.at(-1));
+    expect(track?.path[0]).toEqual(heavy[0]?.slice(0, 2));
+    expect(track?.path.at(-1)).toEqual(heavy.at(-1)?.slice(0, 2));
   });
 
   test('an admit ask from a recorded skate: its track beside the asked point', async () => {
@@ -1272,13 +1303,14 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
   });
 
   test('tracks share the answer’s bound with the outlines: past it, one is left out and the map says capped', async () => {
+    const TRACKS = 8;
     const w = await world();
     const ids: Id<'waterBodyRequests'>[] = [];
-    // Five askers, each from a skate whose track is just under what an embed sends whole (~230 KiB):
-    // more than the answer's 1 MiB together.
-    for (let i = 0; i < 5; i++) {
+    // Eight askers, each from a skate whose track is the longest a deployment holds (8,192 points,
+    // ~147 KiB, under what an embed sends whole): more than the answer's 1 MiB together.
+    for (let i = 0; i < TRACKS; i++) {
       const who = (await person(w.t, `trk${i}`)).id;
-      const activityId = await skate(w, who, 100 + i, 12_000);
+      const activityId = await skate(w, who, 100 + i, MAX_TRACK_POINTS);
       ids.push(
         await w.t.run(async (ctx) => {
           const id = await ctx.db.insert('waterBodyRequests', {
@@ -1298,7 +1330,7 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
       );
     }
     const item = (await itemOf(w, ids[0] as Id<'waterBodyRequests'>)) as PlaceView;
-    expect(item.asks.filter((a) => a.skate !== null)).toHaveLength(5);
+    expect(item.asks.filter((a) => a.skate !== null)).toHaveLength(Math.min(TRACKS, VIEW_SKATES));
     // A place's map draws its asks' points, not their skates: the bound is held on a request's.
     const request = await w.t.run(async (ctx) => {
       const admits: Id<'waterBodyRequests'>[] = [];
@@ -1334,7 +1366,7 @@ describe('the item’s map draws the skate behind it (boards 2.3, 2.5)', () => {
     });
     const map = await mapOf(w.mod.as, `request:${request[0]}`);
     expect(map?.tracks.length).toBeGreaterThan(0);
-    expect(map?.tracks.length).toBeLessThan(5);
+    expect(map?.tracks.length).toBeLessThan(TRACKS);
     expect(map?.tracks.every((t) => !t.simplified)).toBe(true);
     expect(map?.capped).toBe(true);
   }, 60_000); // 7.7 s under the contended run: 5x headroom with CI's slower runners.

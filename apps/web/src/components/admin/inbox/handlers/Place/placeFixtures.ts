@@ -74,6 +74,8 @@ export const NARROWS = {
   answeringLandmarkId: null,
   lookalikes: [OSM_NARROWS],
   can: { approve: NO_LANDMARK, sameAs: null, decline: null },
+  // Approve waits on a landmark not drawn yet: the server's code says so (Draw in Body →).
+  canCode: { approve: 'awaitsDrawing' },
 } as unknown as PlaceItem;
 
 /** A landmark ask with nothing like it on the body: draw it, or decline. */
@@ -103,6 +105,7 @@ export const LANDMARK_ANSWERED = {
   answeringLandmarkId: id('lmnarrows'),
   lookalikes: [],
   can: { approve: null, decline: null },
+  canCode: {},
 } as unknown as PlaceItem;
 
 const BAY_ASKS = [
@@ -157,6 +160,7 @@ export const BAY_UNDRAWN = {
   answeringLandmarkId: null,
   lookalikes: [],
   can: { approve: NO_BAY, decline: null },
+  canCode: { approve: 'awaitsDrawing' },
 } as unknown as PlaceItem;
 
 /** The bay is drawn now: Approve answers every ask. */
@@ -164,12 +168,15 @@ export const BAY_DRAWN = {
   ...BAY_UNDRAWN,
   drawnSubAreaId: id('sashaker'),
   can: { approve: null, decline: null },
+  canCode: {},
 } as unknown as PlaceItem;
 
 /** The viewer asked it (D289): every verb refused, so no bar — and the refusal said once. */
 export const PLACE_BY_VIEWER = {
   ...NARROWS,
   can: { approve: OWN, sameAs: OWN, decline: OWN },
+  // Refused as the viewer's own: a refusal with no code.
+  canCode: {},
 } as unknown as PlaceItem;
 
 /** Decided by a colleague: the lock. */
@@ -180,6 +187,7 @@ export const PLACE_DECIDED = {
     sameAs: 'This has already been decided.',
     decline: 'This has already been decided.',
   },
+  canCode: {},
   decided: {
     at: NOW - 10 * 60_000,
     by: { userId: id('prsarah'), displayName: 'Sarah Berman' },

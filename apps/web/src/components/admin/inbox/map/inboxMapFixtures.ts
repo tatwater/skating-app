@@ -158,6 +158,7 @@ export const ADMIT: AdmitInput = {
     { id: 'lp', at: groton([0.6, 0.62]), name: 'Luc Pelletier' },
   ],
   tracks: [{ id: 'kd', path: KATE_SKATE.map(groton) }],
+  // Ricker Pond, as `candidate.nearestKnown` names it: drawn with a leader; its distance is the row's.
   nearest: RICKER_POND,
   legend: {
     candidate: 'Catalog outline · not ours yet',

@@ -23,6 +23,7 @@ import {
   flagSource,
   MAX_MEMBERS,
   MEMBER_BOUND,
+  PAGE_SEAM,
   refreshCost,
   requestSource,
 } from './lib/inboxItems';
@@ -32,6 +33,7 @@ import { undoState } from './lib/undo';
 import { undoHandlers } from './lib/undoHandlers';
 import { REOPEN_ASK_COST, REOPEN_RESERVE } from './lib/undoHandlersCorpus';
 import schema from './schema';
+import { mergeV2 } from './unmerge.test';
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -49,6 +51,7 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 const POLYGON = {
@@ -532,6 +535,93 @@ const CASES: Case[] = [
         );
       void out;
       return w.newest('set_public_access');
+    },
+  },
+  // B01-5d: a body merge → unmerged, from its change set. The drawer of a merged drawing is refused
+  // (D289), offer and run alike; everyone on staff holds the merge's lever.
+  {
+    name: 'merge_waterbody (a skater’s drawing into a known body) → unmerge_waterbody',
+    viewers: ALL,
+    setup: async (w) =>
+      mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      }),
+  },
+  {
+    name: 'merge_waterbody (a catalog duplicate) → unmerge_waterbody',
+    viewers: ALL,
+    setup: async (w) => {
+      const dup = await w.t.run((ctx) =>
+        ctx.db.insert('waterBodies', {
+          name: 'Lake Morey (duplicate)',
+          searchText: 'Lake Morey (duplicate)',
+          type: 'lakePond' as const,
+          source: 'osm' as const,
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          dedupStatus: 'suspected_duplicate' as const,
+          duplicateCandidateIds: [w.lake],
+          createdAt: Date.now(),
+        }),
+      );
+      return mergeV2({ t: w.t, survivor: w.lake, loser: dup, actor: { id: w.p.actor.id } });
+    },
+  },
+  {
+    // Greptile on #173: one unmerge a body at a time — the survivor still being unmerged from another
+    // merge refuses this one, offer and run alike, for everyone.
+    name: 'merge_waterbody (its survivor still being unmerged from another merge) → refused',
+    viewers: ALL,
+    setup: async (w) => {
+      const first = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      const second = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      const was = PAGE_SEAM.sources;
+      PAGE_SEAM.sources = 1;
+      try {
+        await w.p.admin.as.mutation(api.undo.run, { actionId: first, reason: 'Two lakes' });
+      } finally {
+        PAGE_SEAM.sources = was;
+      }
+      return second;
+    },
+  },
+  {
+    // Recorded before change sets kept everything (`version: 2`): refused for everyone, offer and run,
+    // in the dialog's sentence.
+    name: 'merge_waterbody (recorded before version 2) → refused',
+    viewers: ALL,
+    setup: async (w) => {
+      const mergeId = await mergeV2({
+        t: w.t,
+        survivor: w.lake,
+        loser: await drawnBy(w, w.p.drawer.id),
+        actor: { id: w.p.actor.id },
+      });
+      await w.t.run(async (ctx) => {
+        const rows = await ctx.db
+          .query('auditSnapshots')
+          .withIndex('by_action', (q) => q.eq('actionId', mergeId))
+          .collect();
+        for (const row of rows) {
+          const { version: _v, ...v1 } = row.payload as { version?: number };
+          await ctx.db.patch(row._id, { payload: v1 });
+        }
+      });
+      return mergeId;
     },
   },
   {

@@ -73,6 +73,7 @@ async function seed(
         favoriteReport: true,
         nearbyReportDigest: false,
         greatReportNearby: false,
+        moderatorDecision: false,
       },
       reputationPoints: 0,
       role: 'moderator',

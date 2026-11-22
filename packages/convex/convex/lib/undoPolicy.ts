@@ -3,7 +3,14 @@
  *
  * An undo runs the verb's **inverse through the same internal path the forward action uses**, so the
  * side effects run again too (a post's restore brings back the reports it hid; a sub-area redraw
- * re-stamps; a lifted ban unlocks Clerk). Nothing here patches a row back from a snapshot.
+ * re-stamps; a lifted ban unlocks Clerk). An inverse may restore the fields the forward write
+ * changed, from before-values it recorded (`auditSnapshots`), through the forward paths' side
+ * effects — never a bare patch of a row back to its snapshot that skips them (D291). A redraw's undo
+ * puts its outline back through the setter; the unmerge (`unmerge.ts`) re-points each moved row as
+ * the merge did (a report's bay join re-mirrored, an ask or a flag re-keyed into its Inbox item),
+ * puts back on each bay and landmark only the fields the merge wrote — and only while each still
+ * holds the merge's value — then re-cells, re-names and re-stamps both bodies, and recomputes every
+ * derived fact through the path that keeps it.
  *
  * Each rule says:
  * - `undo`: how the action is undone —
@@ -182,9 +189,19 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   },
 
   // ── Bodies ──────────────────────────────────────────────────────────────────────────────────────
+  // The unmerge (B01-5d, D291): from the change set the merge recorded, through the forward paths.
   merge_waterbody: {
-    undo: later('§4 Corpus', 'Unmerge from the moved-row change set recorded in auditSnapshots.'),
+    undo: inverse('unmerge_waterbody'),
     takesAway: always,
+    capability: 'corpus.duplicates',
+  },
+  // "Merge it again" is a fresh merge, with its own change set — never an undo of the unmerge.
+  unmerge_waterbody: {
+    undo: {
+      kind: 'none',
+      why: 'To put them back together, merge them again.',
+    },
+    takesAway: never,
     capability: 'corpus.duplicates',
   },
   dismiss_duplicate: {

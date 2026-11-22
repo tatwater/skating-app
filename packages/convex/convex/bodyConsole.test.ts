@@ -44,6 +44,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  moderatorDecision: false,
 };
 
 /** A square centered at (lng, lat) with half-width `h` degrees. */
