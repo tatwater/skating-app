@@ -39,6 +39,8 @@ const PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
+  // On, so every decision here also queues its askers' messages (D285): the heavy paths carry them.
+  moderatorDecision: true,
 };
 
 /** A ring of `n` points around (0.5, 0.5) — about 18 bytes a point as Convex weighs it. */
@@ -98,8 +100,16 @@ async function person(t: T, subject: string, role: 'member' | 'moderator' | 'adm
   return { id, as: t.withIdentity({ subject }) };
 }
 
-/** `n` admit asks for one catalog feature, each carrying the heavy polygon, each filed. */
-async function heavyAdmits(t: T, askers: Id<'profiles'>[], externalId: string) {
+/**
+ * `n` admit asks for one catalog feature, each carrying the heavy name (or, given `polygon`, a heavy
+ * outline under an ordinary name — the weight an approval can admit), each filed.
+ */
+async function heavyAdmits(
+  t: T,
+  askers: Id<'profiles'>[],
+  externalId: string,
+  heavy: { polygon?: { type: 'Polygon'; coordinates: number[][][] } } = {},
+) {
   const ids: Id<'waterBodyRequests'>[] = [];
   // A few a transaction: each is ~900 KiB, and a transaction writes at most 16 MiB.
   for (let start = 0; start < askers.length; start += 4) {
@@ -116,10 +126,10 @@ async function heavyAdmits(t: T, askers: Id<'profiles'>[], externalId: string) {
             candidate: {
               source: '3dhp',
               externalId,
-              name: HEAVY_NAME,
+              name: heavy.polygon ? 'Big Pond' : HEAVY_NAME,
               featureType: 390,
               cls: 'lakePond',
-              polygon: SQUARE as never,
+              polygon: (heavy.polygon ?? SQUARE) as never,
               bbox: { minLat: 0.1, minLng: 0.1, maxLat: 0.9, maxLng: 0.9 },
               centroid: { lat: 0.5, lng: 0.5 },
               surfaceAreaSqM: 5_000_000,
@@ -334,6 +344,77 @@ describe.each(['pending', 'ready'] as const)(
       await drainAll(w.t);
       expect(new Set(await statusesOf(w.t, w.asks))).toEqual(new Set(['declined']));
     });
+  },
+);
+
+describe.each(['pending', 'ready'] as const)(
+  'heavy rows: approving a heavy admit question — the Inbox %s',
+  (mode) => {
+    test('a heavy name refuses with its sentence; a heavy outline’s approval completes, every asker told once', async () => {
+      // The question ten asks deep for the outline: the twenty-deep one carries the heavy name.
+      const w = await heavyWorld();
+      if (mode === 'ready') await markReady(w.t);
+      // The name near the document limit is past the corpus's name cap: an honest refusal, nothing
+      // written, every ask still open.
+      expect(
+        await outcomeOf(() =>
+          w.admin.as.mutation(api.corpusRequests.approve, {
+            requestId: w.asks[0] as Id<'waterBodyRequests'>,
+          }),
+        ),
+      ).toEqual({
+        kind: 'refused',
+        why: 'The catalog’s name for this water is 921600 characters; keep it to 200. Decline this, or name it from the lake editor.',
+      });
+      expect(new Set(await statusesOf(w.t, w.asks))).toEqual(new Set(['open']));
+      // The outline near the limit is admitted: ten asks of it, each ~860 KiB, for other water — more
+      // than a page holds (a page reads into a quarter of what the transaction has left).
+      const outline = { type: 'Polygon' as const, coordinates: [ring(48_000)] };
+      const askers = w.people.slice(0, 10);
+      const asks = await heavyAdmits(w.t, askers, 'catalog/outline', { polygon: outline });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const first = asks[0] as Id<'waterBodyRequests'>;
+      const approve = await matrix({
+        approve: () => w.admin.as.mutation(api.corpusRequests.approve, { requestId: first }),
+      });
+      expect(approve).toEqual({ approve: 'completed' });
+      expect(await drainAll(w.t)).toBeGreaterThan(0);
+      expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['approved']));
+      // One body for the twenty, named on every ask the approval closed.
+      const admitted = new Set<string>();
+      for (const id of asks) {
+        const ask = await w.t.run((ctx) => ctx.db.get(id));
+        admitted.add(String(ask?.admittedWaterBodyId));
+      }
+      expect(admitted.size).toBe(1);
+      // Every asker's message queued once, by the drain's every page.
+      const queued = await w.t.run((ctx) => ctx.db.query('notificationQueue').collect());
+      expect(
+        queued
+          .filter((r) => r.kind === 'request_decided')
+          .map((r) => r.userId)
+          .sort(),
+      ).toEqual([...askers].sort());
+      // Its undo completes, page by page: every ask open again.
+      const decision = await w.t.run(async (ctx) =>
+        (await ctx.db.query('moderationActions').collect()).find(
+          (r) => r.action === 'approve_request' && r.targetId === first,
+        ),
+      );
+      expect(
+        (
+          await outcomeOf(() =>
+            w.admin.as.mutation(api.undo.run, {
+              actionId: decision?._id as Id<'moderationActions'>,
+              reason: 'Undone',
+            }),
+          )
+        ).kind,
+      ).toBe('completed');
+      await drainAll(w.t);
+      expect(new Set(await statusesOf(w.t, asks))).toEqual(new Set(['open']));
+      // Ten outlines near the limit, written, approved, drained and reopened: ~10 s on a laptop.
+    }, 90_000);
   },
 );
 

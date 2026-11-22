@@ -10,6 +10,7 @@
  * `inboxOrigin.test.ts`'s.)
  */
 
+import { requestNameKeyFor } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
@@ -17,6 +18,7 @@ import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { InboxVerb } from './inbox';
+import { fileMember, requestSource } from './lib/inboxItems';
 import { inboxVerbRefusal } from './lib/inboxRules';
 import { InboxReader, itemOfRef, itemView } from './lib/inboxViews';
 import { ReadBudget } from './lib/readBudget';
@@ -138,6 +140,8 @@ type Setup = {
   waterBodyId?: Id<'waterBodies'>;
   requestId?: Id<'waterBodyRequests'>;
   ticketId?: Id<'supportTickets'>;
+  /** For `sameAs`: the landmark the moderator names — the item's lookalike, where it has one. */
+  landmarkId?: Id<'bodyLandmarks'>;
 };
 
 async function itemIdOf(w: W, ref: string): Promise<Id<'inboxItems'>> {
@@ -194,6 +198,16 @@ async function write(w: W, verb: InboxVerb, s: Setup): Promise<void> {
         note: 'No',
       });
       return;
+    case 'sameAs': {
+      // *Same place*: `approve` with the landmark the dialog showed, as it showed it.
+      const landmark = await w.t.run((ctx) => ctx.db.get(s.landmarkId as Id<'bodyLandmarks'>));
+      if (!landmark) throw new Error('a sameAs cell names a landmark');
+      await as.mutation(api.corpusRequests.approve, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        sameAs: { landmarkId: landmark._id, name: landmark.name, point: landmark.point },
+      });
+      return;
+    }
     case 'lookUpAgain':
       await as.mutation(api.corpusRequests.reresolve, {
         requestId: s.requestId as Id<'waterBodyRequests'>,
@@ -610,6 +624,115 @@ const requestCells: Cell[] = [
 ];
 
 /**
+ * A landmark on `waterBodyId` named "Long Point": at the ask's own spot (it answers the ask), or far
+ * across the lake (a lookalike — the same name at another place, which *Same place* answers).
+ */
+const longPoint = (w: W, waterBodyId: Id<'waterBodies'>, at: 'spot' | 'far') =>
+  w.t.run((ctx) =>
+    ctx.db.insert('bodyLandmarks', {
+      waterBodyId,
+      name: 'Long Point',
+      kind: 'point',
+      point:
+        at === 'spot'
+          ? { lat: 0.2, lng: waterBodyId === w.active ? 0.2 : 3.2 }
+          : { lat: -0.3, lng: -0.3 },
+      source: 'moderator',
+      externalIds: [],
+      aliases: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+    }),
+  );
+
+/**
+ * A "Long Point" landmark ask on the active lake, filed into the Inbox (a report files these, D202),
+ * and the landmark `sameAs` names: a lookalike across the lake, or one standing at the ask's spot.
+ */
+async function landmarkAsk(
+  w: W,
+  by: Id<'profiles'>,
+  landmark: 'lookalike' | 'answering',
+): Promise<Setup> {
+  const landmarkId = await longPoint(w, w.active, landmark === 'lookalike' ? 'far' : 'spot');
+  const requestId = await w.t.run(async (ctx) => {
+    const id = await ctx.db.insert('waterBodyRequests', {
+      kind: 'name_landmark',
+      status: 'open',
+      requesterId: by,
+      coord: { lat: 0.2, lng: 0.2 },
+      waterBodyId: w.active,
+      name: 'Long Point',
+      nameKey: requestNameKeyFor('name_landmark', 'Long Point'),
+      createdAt: NOW - 1000,
+    });
+    await fileMember(ctx, requestSource(id));
+    return id;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  return { ref: `request:${requestId}`, requestId, landmarkId };
+}
+
+/** *Same place* on asks that aren't a landmark's lookalike: the rule says so, and so must the write. */
+const sameAsCells: Cell[] = [
+  {
+    kind: 'place (landmark, a lookalike)',
+    state: 'open',
+    verbs: ['approve', 'sameAs', 'decline'],
+    setup: (w) => landmarkAsk(w, w.author.id, 'lookalike'),
+  },
+  {
+    kind: 'place (landmark, a lookalike)',
+    state: 'already decided',
+    verbs: ['sameAs'],
+    setup: async (w) => {
+      const s = await landmarkAsk(w, w.author.id, 'lookalike');
+      await w.other.as.mutation(api.corpusRequests.decline, {
+        requestId: s.requestId as Id<'waterBodyRequests'>,
+        note: 'No',
+      });
+      return s;
+    },
+  },
+  {
+    kind: 'place (landmark, a lookalike)',
+    state: 'the viewer’s own filing',
+    verbs: ['sameAs'],
+    setup: (w) => landmarkAsk(w, w.viewer.id, 'lookalike'),
+  },
+  {
+    kind: 'place (landmark, answered at its spot)',
+    state: 'open',
+    verbs: ['approve', 'decline'],
+    setup: (w) => landmarkAsk(w, w.author.id, 'answering'),
+  },
+  {
+    kind: 'place (landmark, answered at its spot)',
+    state: 'asked by Same place',
+    verbs: ['sameAs'],
+    setup: (w) => landmarkAsk(w, w.author.id, 'answering'),
+  },
+  {
+    kind: 'place (bay, not drawn)',
+    state: 'a landmark of its name on the lake',
+    verbs: ['sameAs'],
+    setup: async (w) => ({
+      ...(await ask(w, w.author.as, 'name_bay')),
+      landmarkId: await longPoint(w, w.active, 'far'),
+    }),
+  },
+  {
+    kind: 'request (activate)',
+    state: 'a landmark on the lake',
+    verbs: ['sameAs'],
+    setup: async (w) => ({
+      ...(await ask(w, w.author.as, 'activate')),
+      landmarkId: await longPoint(w, w.dormant, 'spot'),
+    }),
+  },
+];
+
+/**
  * "Northwest Bay" drawn with the alias "NW Bay"; the author asks by its name and `sibling` by its
  * alias — another key, so another item, which the approval's drain closes too.
  */
@@ -765,10 +888,11 @@ const GROUPS: Record<string, Cell[]> = {
   alert: alertCells,
   access: accessCells,
   request: requestCells,
+  sameAs: sameAsCells,
   drawn: drawnCells,
   ticket: ticketCells,
 };
-const CELLS: Cell[] = Object.values(GROUPS).flat();
+const ALL_CELLS: Cell[] = Object.values(GROUPS).flat();
 
 /** A group's cells: the rule's answer and the write's outcome. */
 async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: string[] }> {
@@ -801,11 +925,24 @@ async function runCells(cells: Cell[]): Promise<{ size: number; disagreements: s
  * report, with its file and line. Listed so the table passes until each lands, and failing once one
  * agrees and is still here, so the list only shrinks.
  */
-const AWAITING_THE_WRITE: Record<string, string> = {};
+const AWAITING_THE_WRITE: Record<string, string> = {
+  // B01-5c (S3's seam request): `corpusRequests.approve` takes `sameAs` past the rule. It approves on
+  // the landmark already answering at the ask's spot (the rule: nothing looks like it, so no *Same
+  // place*), and it refuses a bay or activate ask's `sameAs` in its own words, before its capability
+  // check. The fix: answer `sameAs` with the rule's sentence after the capability and decided checks
+  // whenever the item has no landmark lookalike (`preconditionRefusal`'s `sameAs`), in the rule's order.
+  'place (landmark, answered at its spot) · asked by Same place · sameAs':
+    'corpusRequests.ts approve: sameAs on an ask a landmark answers at its spot',
+  'place (bay, not drawn) · a landmark of its name on the lake · sameAs':
+    'corpusRequests.ts approve: sameAs on a bay ask',
+  'request (activate) · a landmark on the lake · sameAs':
+    'corpusRequests.ts approve: sameAs on a request ask',
+};
 
 describe('the rule and the write', () => {
   test('the table holds every cell', () => {
-    expect(CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(141);
+    // 141 through B01-5b; B01-5c added *Same place*'s ten.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(151);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {
@@ -821,6 +958,14 @@ describe('the rule and the write', () => {
     expect(mine.filter((c) => !disagreements.some((d) => cellOf(d) === c))).toEqual([]);
   });
 });
+
+/**
+ * The cells the moderator pass runs: every cell but one awaiting its write — that pass has no list of
+ * its own, so a cell joins it once its write agrees and its entry above comes off.
+ */
+const CELLS: Cell[] = ALL_CELLS.filter(
+  (c) => !c.verbs.some((verb) => `${c.kind} · ${c.state} · ${verb}` in AWAITING_THE_WRITE),
+);
 
 // Shared with the moderator pass (`inboxRulesVsWritesModerator.test.ts`).
 // biome-ignore lint/suspicious/noExportsInTest: the moderator pass runs these same cells, kept apart from builder S2's cells here.
