@@ -230,19 +230,22 @@ export const Narrow: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
-      const right = pane.getBoundingClientRect().right + 0.5;
-      for (const slot of ['inbox-inspector-head', 'place-handler', 'compare-table'])
-        await expect(
-          must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
-            .right,
-        ).toBeLessThanOrEqual(right);
       await expect(within(pane).queryByRole('button', { name: 'Zoom out' })).toBeNull();
-      const map = must(pane.querySelector<HTMLElement>('[data-slot="place-map"]'));
-      const line = must(pane.querySelector<HTMLElement>('[data-slot="place-body-line"]'));
-      await expect(map.getBoundingClientRect().top).toBeGreaterThan(
-        line.getBoundingClientRect().bottom,
-      );
+      // Layout throughout, read and asserted in one retry once it has settled (a measure taken
+      // before the fonts land is a fallback's): every block keeps to the page, the map stacks
+      // under the where, and the bar keeps to the page in its narrow form.
       await waitFor(() => {
+        const right = pane.getBoundingClientRect().right + 0.5;
+        for (const slot of ['inbox-inspector-head', 'place-handler', 'compare-table'])
+          expect(
+            must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
+              .right,
+          ).toBeLessThanOrEqual(right);
+        const map = must(pane.querySelector<HTMLElement>('[data-slot="place-map"]'));
+        const line = must(pane.querySelector<HTMLElement>('[data-slot="place-body-line"]'));
+        expect(map.getBoundingClientRect().top).toBeGreaterThan(
+          line.getBoundingClientRect().bottom,
+        );
         const bar = must(seenBar(pane));
         expect(bar.getBoundingClientRect().right).toBeLessThanOrEqual(right);
         expect(bar.getBoundingClientRect().left).toBeGreaterThanOrEqual(

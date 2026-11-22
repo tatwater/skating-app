@@ -256,22 +256,23 @@ export const Narrow: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
-      const right = pane.getBoundingClientRect().right + 0.5;
-      for (const slot of ['inbox-inspector-head', 'drawn-handler', 'overlap-gauge'])
-        await expect(
-          must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
-            .right,
-        ).toBeLessThanOrEqual(right);
       // The view-only map draws no zoom pair.
       await expect(within(pane).queryByRole('button', { name: 'Zoom out' })).toBeNull();
-      // The report and the merge block stack.
-      const report = must(pane.querySelector<HTMLElement>('[data-slot="drawn-report"]'));
-      const merged = must(pane.querySelector<HTMLElement>('[data-slot="drawn-if-merged"]'));
-      await expect(merged.getBoundingClientRect().top).toBeGreaterThan(
-        report.getBoundingClientRect().bottom - 1,
-      );
-      // The bar keeps to the page, read in one retry once it has settled its narrow form.
+      // Layout throughout, read and asserted in one retry once it has settled (a measure taken
+      // before the fonts land is a fallback's): every block keeps to the page, the report and the
+      // merge block stack, and the bar keeps to the page in its narrow form.
       await waitFor(() => {
+        const right = pane.getBoundingClientRect().right + 0.5;
+        for (const slot of ['inbox-inspector-head', 'drawn-handler', 'overlap-gauge'])
+          expect(
+            must(pane.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect()
+              .right,
+          ).toBeLessThanOrEqual(right);
+        const report = must(pane.querySelector<HTMLElement>('[data-slot="drawn-report"]'));
+        const merged = must(pane.querySelector<HTMLElement>('[data-slot="drawn-if-merged"]'));
+        expect(merged.getBoundingClientRect().top).toBeGreaterThan(
+          report.getBoundingClientRect().bottom - 1,
+        );
         const bar = must(seenBar(pane));
         expect(bar.getBoundingClientRect().right).toBeLessThanOrEqual(right);
         expect(bar.getBoundingClientRect().left).toBeGreaterThanOrEqual(
