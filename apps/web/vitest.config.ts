@@ -34,7 +34,7 @@ export default defineConfig({
         'src/components/kit/**/*.{ts,tsx}',
         'src/components/skater/**/*.{ts,tsx}',
         // The console (B01), mode by mode; the old admin pages it replaces stay out until they go.
-        'src/components/admin/{shell,overview,metrics,season,bodies,body,reads,people}/**/*.{ts,tsx}',
+        'src/components/admin/{shell,overview,metrics,season,bodies,body,reads,people,inbox}/**/*.{ts,tsx}',
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.stories.tsx'],
     },

@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
  * - **Not inverted.** A plate in the panel ground with a `line2` edge and the plate shadow —
  *   never shadcn's ink-on-paper; **square** (a container) and **no arrow**.
  * - **Kicker title, then the words**: an optional caps title, ~6 px, then the body in the assist
- *   step. A title-less tip is just the words.
+ *   step. A title-less tip is just the words; a words-less one (*Coming soon*) is just its title.
  * - **Never in navigation.** Rails, lane sidebars and tab rows carry no tooltips — a name that
  *   needs explaining is renamed. In development the trigger reports one placed in a `nav`,
  *   `[role=navigation]`, `[role=tablist]` or `[role=menubar]`.
@@ -128,12 +128,15 @@ function TooltipContent({
               {title}
             </span>
           )}
-          <span
-            data-slot="tooltip-body"
-            className="text-assist leading-(--lead-list) font-regular tracking-normal text-fg2 normal-case"
-          >
-            {children}
-          </span>
+          {/* A tip that is only its title (*Coming soon*) draws no empty body under it. */}
+          {children != null && (
+            <span
+              data-slot="tooltip-body"
+              className="text-assist leading-(--lead-list) font-regular tracking-normal text-fg2 normal-case"
+            >
+              {children}
+            </span>
+          )}
         </TooltipPrimitive.Popup>
       </TooltipPrimitive.Positioner>
     </TooltipPrimitive.Portal>

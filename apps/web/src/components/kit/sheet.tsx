@@ -206,9 +206,29 @@ function SheetBody({ className, loading = false, children, ...props }: SheetBody
   );
 }
 
-/** The sheet foot: a ruled strip on the void, notes left, actions right. */
-function SheetFooter({ className, ...props }: DialogFooterProps) {
-  return <DialogFooter data-slot="sheet-footer" className={cn('bg-bg', className)} {...props} />;
+type SheetFooterProps = DialogFooterProps & {
+  /** One action: it fills the strip (`.sfoot.full` — the runs drawer's *Run now*). */
+  full?: boolean;
+};
+
+/**
+ * The sheet foot: a ruled strip on the void, notes left, actions right — a sheet never floats an
+ * action bar. `full` is the one-action foot: its button grows to fill the strip (its face is the
+ * caller's — the runs drawer's *Run now* is the primary).
+ */
+function SheetFooter({ className, full = false, ...props }: SheetFooterProps) {
+  return (
+    <DialogFooter
+      data-slot="sheet-footer"
+      data-full={full ? '' : undefined}
+      className={cn(
+        'bg-bg',
+        full && '[&>span:last-child]:flex-1 [&>span:last-child>*]:flex-1',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export {
@@ -220,6 +240,7 @@ export {
   type SheetContentProps,
   SheetDescription,
   SheetFooter,
+  type SheetFooterProps,
   SheetHeader,
   type SheetHeaderProps,
   SheetTitle,

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
+import { useState } from 'react';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { type LifeLineMeaning, type LifeStation, LifeStrip } from './life-strip';
 import { computedColor, sameColor, sameShadow } from './measure';
@@ -248,5 +249,170 @@ export const FourUp: Story = {
         sameColor(computedColor(q, 'var(--bg)')),
       );
     }
+  },
+};
+
+// ── Narrow: a phone's 360 px ─────────────────────────────────────────────────────────────────
+
+/** `n` events: the alert's, then confirmations, then where a decision would take it. */
+function events(n: number): LifeStation[] {
+  if (n <= 2) return [ALERT[0] as LifeStation, ALERT[4] as LifeStation].slice(0, n);
+  const middle = Array.from({ length: n - 2 }, (_, i) => ({
+    when: `${3 + i} Oct`,
+    title: i === 0 ? 'Pinned official' : 'Still closed',
+    sub: i === 0 ? 'Teagan · stops it lapsing' : 'Confirmed by a skater',
+    mark: i === 0 ? ('square' as const) : ('ring' as const),
+    next: 'heavy' as const,
+    lasted: '1 d',
+  }));
+  return [
+    { ...(ALERT[0] as LifeStation), next: 'thin', lasted: '1 d' },
+    ...middle,
+    ALERT[4] as LifeStation,
+  ];
+}
+
+function Phone({ n }: { n: number }) {
+  return (
+    <div
+      data-phone=""
+      className="w-[360px] overflow-hidden border border-solid border-line bg-bg p-gutter"
+    >
+      <LifeStrip stations={events(n)} lines={ALERT_LINES} aria-label="The alert's life" />
+    </div>
+  );
+}
+
+/** Nothing scrolls sideways, and every event is drawn once, in order. */
+async function fitsThePhone(canvasElement: HTMLElement, n: number) {
+  const phone = must(canvasElement.querySelector<HTMLElement>('[data-phone]'));
+  await expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+  const strip = must(phone.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+  const right = phone.getBoundingClientRect().right + 0.5;
+  for (const el of strip.querySelectorAll<HTMLElement>(
+    '[data-slot]:not([data-slot^="measure-"])',
+  )) {
+    if (el.closest('[data-slot="life-strip-measure"]') !== null) continue;
+    await expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(right);
+  }
+  const list = within(strip).getByRole('list', { name: "The alert's life" });
+  await expect(within(list).getAllByRole('listitem')).toHaveLength(n);
+}
+
+/** Two events fit across at 360: the strip is drawn as on the board. */
+export const NarrowTwo: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <Phone n={2} />,
+  play: async ({ canvasElement }) => {
+    await fitsThePhone(canvasElement, 2);
+    const strip = must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+    await expect(strip).not.toHaveAttribute('data-narrow');
+    await expect(strip.querySelectorAll('[data-slot="life-station"]')).toHaveLength(2);
+  },
+};
+
+/** Six don't: the strip stacks, top to bottom, with the same marks, lines and key. */
+export const NarrowSix: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <Phone n={6} />,
+  play: async ({ canvasElement }) => {
+    const strip = must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+    await waitFor(() => expect(strip).toHaveAttribute('data-narrow'));
+    await fitsThePhone(canvasElement, 6);
+    await expect(strip.querySelectorAll('[data-slot="life-list-station"]')).toHaveLength(6);
+    await expect(strip.querySelector('[data-slot="life-key"]')).not.toBeNull();
+  },
+};
+
+/** Twenty: still every one, down the page, nothing sideways. */
+export const NarrowTwenty: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <Phone n={20} />,
+  play: async ({ canvasElement }) => {
+    const strip = must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+    await waitFor(() => expect(strip).toHaveAttribute('data-narrow'));
+    await fitsThePhone(canvasElement, 20);
+  },
+};
+
+function Resizable() {
+  const [wide, setWide] = useState(false);
+  return (
+    <div className="flex flex-col gap-heading">
+      <button type="button" onClick={() => setWide((w) => !w)}>
+        Widen
+      </button>
+      <div data-box="" className={wide ? 'w-[47rem]' : 'w-[360px]'}>
+        <LifeStrip stations={ALERT} lines={ALERT_LINES} aria-label="The alert's life" />
+      </div>
+    </div>
+  );
+}
+
+/** Measured, not a breakpoint: the same five stations stack at 360 and run across again at 752. */
+export const NarrowThenWide: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <Resizable />,
+  play: async ({ canvasElement }) => {
+    const strip = () => must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+    await waitFor(() => expect(strip()).toHaveAttribute('data-narrow'));
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Widen' }));
+    await waitFor(() => expect(strip()).not.toHaveAttribute('data-narrow'));
+    await expect(strip().querySelectorAll('[data-slot="life-station"]')).toHaveLength(5);
+  },
+};
+
+const SHORT: LifeStation[] = [
+  { when: '2 Oct', title: 'Posted', mark: 'dot', next: 'thin', lasted: '1 d' },
+  { when: '3 Oct', title: 'Pinned', mark: 'square', next: 'heavy', lasted: '6 d' },
+  { when: '9 Oct', title: 'Lapses', mark: 'end' },
+];
+/** The same three events, their words longer (another alert in the same slot, a relabel). */
+const LONG: LifeStation[] = SHORT.map((s, i) => ({
+  ...s,
+  when: ['Friday 2 October', 'Saturday 3 October', 'Friday 9 October · today'][i] as string,
+}));
+
+function Relabeled() {
+  const [long, setLong] = useState(false);
+  return (
+    <div className="flex flex-col gap-heading">
+      <button type="button" onClick={() => setLong((l) => !l)}>
+        Relabel
+      </button>
+      <div className="w-[360px]">
+        {/* A fixed box: only the words change, so no resize can be what re-decides it. */}
+        <LifeStrip
+          stations={long ? LONG : SHORT}
+          lines={ALERT_LINES}
+          aria-label="The alert's life"
+          className="h-[16rem] overflow-hidden"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The layout follows the words, not only the count or the box: the same three events fit across
+ * with short dates, stack when their dates grow, and run across again — the strip never remounted.
+ */
+export const RelabeledInPlace: Story = {
+  args: { stations: [], lines: ALERT_LINES, 'aria-label': 'x' },
+  render: () => <Relabeled />,
+  play: async ({ canvasElement }) => {
+    const strip = () => must(canvasElement.querySelector<HTMLElement>('[data-slot="life-strip"]'));
+    const relabel = within(canvasElement).getByRole('button', { name: 'Relabel' });
+    await waitFor(() => expect(strip()).not.toHaveAttribute('data-narrow'));
+    const first = strip();
+    const box = first.getBoundingClientRect();
+    await userEvent.click(relabel);
+    await waitFor(() => expect(strip()).toHaveAttribute('data-narrow'));
+    await expect(strip()).toBe(first);
+    const after = strip().getBoundingClientRect();
+    await expect([after.width, after.height]).toEqual([box.width, box.height]);
+    await userEvent.click(relabel);
+    await waitFor(() => expect(strip()).not.toHaveAttribute('data-narrow'));
+    await expect(strip()).toBe(first);
   },
 };

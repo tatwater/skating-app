@@ -5,13 +5,12 @@ import { Button } from '@/components/kit/button';
 import { Lanes } from '@/components/kit/lanes';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
+import { SearchLane } from '@/components/kit/search-lane';
 import { isTextEntry } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-
 import { countText } from '../../overview/overviewModel';
 import { ConsoleStatus } from '../../shell/ConsoleShell';
 import { useColumnsFit, usePaneFocus } from '../../shell/columnsFit';
-import { SearchLane } from './kit-candidates/search-lane';
 import { PeopleList } from './PeopleList';
 import { PEOPLE_LANE_INFO } from './peopleLanes';
 import {

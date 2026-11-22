@@ -401,6 +401,103 @@ describe('the layer, end to end (jsdom)', () => {
   });
 });
 
+describe('a held key', () => {
+  /** A key held down: its press, the browser's key-repeat presses, then its release. */
+  function hold(target: Element, init: KeyboardEventInit, repeats: number) {
+    act(() => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { ...init, bubbles: true }));
+      for (let i = 0; i < repeats; i++) {
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', { ...init, repeat: true, bubbles: true }),
+        );
+      }
+      target.dispatchEvent(new KeyboardEvent('keyup', { ...init, bubbles: true }));
+    });
+  }
+
+  function Pane({
+    onAct,
+    onBack,
+    onPalette,
+  }: {
+    onAct: () => void;
+    onBack: () => void;
+    onPalette: () => void;
+  }) {
+    const pane = useRef<HTMLElement>(null);
+    const [at, setAt] = useState(0);
+    usePaneKeys(pane, [
+      { key: 'H', run: onAct, label: 'Hide' },
+      { key: 'Shift+Enter', run: onBack, label: 'Back' },
+    ]);
+    useGlobalKey('Mod+K', onPalette);
+    const rows = ['Mascoma', 'Crystal', 'Morey', 'Sunapee', 'Newfound'];
+    return (
+      <section ref={pane} aria-label="Detail">
+        <button type="button">Hide</button>
+        {/* A list's own ↑↓ (its roving cursor), as the kit's lists keep them. */}
+        <div
+          role="listbox"
+          tabIndex={0}
+          aria-label="Bodies"
+          aria-activedescendant={`row-${at}`}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') setAt((n) => Math.min(n + 1, rows.length - 1));
+          }}
+        >
+          {rows.map((r, i) => (
+            <div key={r} id={`row-${i}`} role="option" tabIndex={-1} aria-selected={i === at}>
+              {r}
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function setup() {
+    const calls = { act: 0, back: 0, palette: 0 };
+    render(
+      <KeysProvider>
+        <Pane
+          onAct={() => calls.act++}
+          onBack={() => calls.back++}
+          onPalette={() => calls.palette++}
+        />
+      </KeysProvider>,
+    );
+    const list = screen.getByRole('listbox', { name: 'Bodies' });
+    act(() => list.focus());
+    return { calls, list };
+  }
+
+  it('an action letter acts once however long it is held, and again on the next press', () => {
+    const { calls } = setup();
+    // (On a button in the pane: a listbox keeps printable keys for its own type-ahead.)
+    const button = screen.getByRole('button', { name: 'Hide' });
+    act(() => button.focus());
+    hold(button, { key: 'h', code: 'KeyH' }, 6);
+    expect(calls.act).toBe(1);
+    hold(button, { key: 'h', code: 'KeyH' }, 6);
+    expect(calls.act).toBe(2);
+  });
+
+  it('⏎ as an action and ⌘K act once per press too', () => {
+    const { calls, list } = setup();
+    hold(list, { key: 'Enter', code: 'Enter', shiftKey: true }, 5);
+    expect(calls.back).toBe(1);
+    const mod = modKey() === 'Meta' ? { metaKey: true } : { ctrlKey: true };
+    hold(list, { key: 'k', code: 'KeyK', ...mod }, 5);
+    expect(calls.palette).toBe(1);
+  });
+
+  it('a held ↓ still walks the list, a row per repeat', () => {
+    const { list } = setup();
+    hold(list, { key: 'ArrowDown', code: 'ArrowDown' }, 3);
+    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('Newfound');
+  });
+});
+
 describe('the fence: nothing else imports the hotkeys library', () => {
   it('only lib/keys.ts names @tanstack/react-hotkeys or @tanstack/hotkeys', () => {
     // The package root is the runner's cwd (the Start plugin rewrites import.meta.url in tests).

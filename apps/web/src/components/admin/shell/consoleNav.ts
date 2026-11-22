@@ -51,7 +51,7 @@ export function usesOldShell(path: string): boolean {
 
 /** A mode the console has built: one rail item, one letter after G. */
 export type ConsoleMode = {
-  id: 'overview' | 'bodies' | 'people';
+  id: 'overview' | 'inbox' | 'bodies' | 'people';
   /** The rail's name for it, capitalized. */
   name: string;
   to: string;
@@ -75,6 +75,16 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     to: '/admin',
     exact: true,
     goKey: 'O',
+    capability: 'inbox.read',
+  },
+  {
+    id: 'inbox',
+    name: 'Inbox',
+    // The lanes, the list and the open item are one page; the item is a search param (`?item=`).
+    to: '/admin/inbox',
+    goKey: 'I',
+    // Every Inbox read gates on `inbox.read` (`inbox.lanes`, `inbox.listPage`, `inbox.item`, …);
+    // Support's rows add `inbox.support.read`, asked lane by lane inside the page.
     capability: 'inbox.read',
   },
   {

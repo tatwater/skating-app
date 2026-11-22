@@ -392,10 +392,124 @@ function PlaceMark({ kind, ...props }: PlaceMarkProps) {
   );
 }
 
+// ── Marks that point at a place ──────────────────────────────────────────────────────────────
+
+/**
+ * The marks that point *at* a place rather than stand for a thing on it — the Inbox's embeds draw
+ * them (boards 2.1 and 2.4). Drawn in the marks' own frame (a {@link MARK_BOX} box centered on the
+ * point, the same `dim`, `fade`, `highlight` and `glyph` states).
+ *
+ * - **`ReticleMark`** — a ring, four ticks reaching out to the box's edge, and a dot: *this exact
+ *   point*. `tone="bad"` is the hazard red with the red glow on its dot (a safety item's report
+ *   point, the one red on an embed); `tone="fg"` is the bright ink (an asked point).
+ * - **`LookalikeMark`** — a dashed amber ring and a dot: a named place that may be the one asked
+ *   about. Amber because it is a question somebody answers — never a hazard.
+ *
+ * Both are outlines, so neither wears the ground halo the filled marks do. Pure SVG, tokens only.
+ */
+
+/** The reticle's ring radius and its ticks' reach (the boards' r 11 ring, ticks 10 → 17 px). */
+const RING = 11;
+const TICKS = `M-${H} 0 h7 M${H - 7} 0 h7 M0 -${H} v7 M0 ${H - 7} v7`;
+
+/** The kit frame, outline-only: the box, the fade, the brackets; the glyph at key size. */
+function TargetFrame({
+  slot,
+  kind,
+  face,
+  dim = false,
+  fade = false,
+  highlight = false,
+  glyph = false,
+  className,
+  children,
+  ...props
+}: MarkSvgProps & MarkState & { slot: string; kind: string; face: number; children: ReactNode }) {
+  if (glyph) {
+    return (
+      <svg
+        aria-hidden="true"
+        data-slot={slot}
+        data-kind={kind}
+        width={KEY_GLYPH}
+        height={KEY_GLYPH}
+        viewBox={`${-face} ${-face} ${2 * face} ${2 * face}`}
+        className={cn('block shrink-0 overflow-visible', className)}
+        {...props}
+      >
+        {children}
+      </svg>
+    );
+  }
+  return (
+    <svg
+      aria-hidden="true"
+      data-slot={slot}
+      data-kind={kind}
+      data-dim={dim ? '' : undefined}
+      data-fade={fade ? '' : undefined}
+      data-highlight={highlight ? '' : undefined}
+      width={MARK_BOX}
+      height={MARK_BOX}
+      viewBox={`${-H} ${-H} ${MARK_BOX} ${MARK_BOX}`}
+      className={cn(
+        'block overflow-visible transition-opacity duration-(--duration-fast) ease-standard',
+        dim && 'opacity-55',
+        fade && !dim && 'opacity-(--opacity-fade)',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      {highlight && (
+        <path
+          data-slot={`${slot}-brackets`}
+          d={BRACKETS}
+          fill="none"
+          strokeWidth={1.2}
+          className="stroke-fg"
+        />
+      )}
+    </svg>
+  );
+}
+
+type ReticleTone = 'bad' | 'fg';
+
+const RETICLE_STROKE: Record<ReticleTone, string> = { bad: 'stroke-bad', fg: 'stroke-fg' };
+const RETICLE_FILL: Record<ReticleTone, string> = { bad: 'fill-bad', fg: 'fill-fg' };
+
+/** A point, exactly: a ring, four ticks and a dot — red for a safety item, else the bright ink. */
+function ReticleMark({ tone = 'fg', ...props }: MarkSvgProps & MarkState & { tone?: ReticleTone }) {
+  return (
+    <TargetFrame slot="reticle-mark" kind="reticle" face={H} data-tone={tone} {...props}>
+      <circle r={RING} fill="none" strokeWidth={1} className={RETICLE_STROKE[tone]} />
+      <path d={TICKS} fill="none" strokeWidth={1} className={RETICLE_STROKE[tone]} />
+      <circle
+        r={2.4}
+        className={RETICLE_FILL[tone]}
+        // The safety red's dot glows (the boards' 5 px red glow); the bright ink's doesn't.
+        style={tone === 'bad' ? { filter: 'drop-shadow(0 0 5px var(--bad-glow))' } : undefined}
+      />
+    </TargetFrame>
+  );
+}
+
+/** A place that may be the one asked about: a dashed amber ring and a dot. */
+function LookalikeMark(props: MarkSvgProps & MarkState) {
+  return (
+    <TargetFrame slot="lookalike-mark" kind="lookalike" face={8} {...props}>
+      <circle r={7} fill="none" strokeWidth={1} strokeDasharray="2 2" className="stroke-warn" />
+      <circle r={1.8} className="fill-warn" />
+    </TargetFrame>
+  );
+}
+
 export {
   HazardMark,
   type HazardTone,
   KEY_GLYPH,
+  LookalikeMark,
   LotMark,
   MARK_BOX,
   type MarkState,
@@ -405,4 +519,6 @@ export {
   type PlaceMarkKind,
   type PlaceMarkProps,
   PutInMark,
+  ReticleMark,
+  type ReticleTone,
 };

@@ -473,3 +473,43 @@ export const FourUp: Story = {
     );
   },
 };
+
+/**
+ * A sheet's foot with one action (`full`): the button fills the ruled strip, as the runs drawer's
+ * *Run now* does. (The foot alone, on the sheet's ground: no overlay opens here.)
+ */
+export const FootWithOneAction: Story = {
+  parameters: { fourUp: true },
+  render: () => (
+    <div className="flex w-[24rem] flex-col border border-solid border-line bg-bg">
+      <div className="h-[4rem]" />
+      <SheetFooter full>
+        <Button>Run now</Button>
+      </SheetFooter>
+      <SheetFooter note="Every report at this body in the timeframe.">
+        <Button variant="link" size="xs">
+          Open all 4 in Reports
+        </Button>
+      </SheetFooter>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const [full, split] = [...q.querySelectorAll<HTMLElement>('[data-slot="sheet-footer"]')].map(
+        must,
+      );
+      const foot = must(full).getBoundingClientRect();
+      const button = within(q).getByRole('button', { name: 'Run now' }).getBoundingClientRect();
+      const style = getComputedStyle(must(full));
+      const inner = foot.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      await expect(button.width).toBeCloseTo(inner, 0);
+      await expect(style.borderTopColor).toEqual(sameColor(computedColor(q, 'var(--line)')));
+      // Without `full`, the action keeps its own width at the right; the note is on the left.
+      const link = within(must(split)).getByRole('button').getBoundingClientRect();
+      const note = must(split?.querySelector('[data-slot="dialog-note"]')).getBoundingClientRect();
+      await expect(link.left).toBeGreaterThan(note.right);
+    }
+  },
+};

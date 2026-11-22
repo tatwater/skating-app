@@ -22,11 +22,12 @@ import { MARK_BOX } from '@/components/kit/map-marks';
 import { SwitchRow } from '@/components/kit/switch';
 import type { MapSurface } from '@/lib/mapSurface';
 import { cn } from '@/lib/utils';
+import { formatDistance } from '../tabs/places/placesModel';
 import { BodyMapKey, PointFace } from './BodyMapMarks';
 import { LINE_STYLES, LIT_STYLE, tokenVar } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
 import { fieldOpacity } from './hazardField';
-import type { BodyMapLayer, MapLabel, MapPoint } from './mapDescriptors';
+import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescriptors';
 
 /**
  * The console map's chrome, drawn from props over whatever draws the map itself (`ground`: the
@@ -45,6 +46,8 @@ import type { BodyMapLayer, MapLabel, MapPoint } from './mapDescriptors';
  * - **The graticule's labels keep clear of the chrome**: the rack, the dock and anything marked
  *   `data-map-ui` are measured as keep-outs, and the longitude row runs the map's full width over
  *   the key (Review 13 #5).
+ * - **An embed goes without the rack** (`rack={false}`, the Inbox's): no switches at all, and the
+ *   `plate` slot (a legend, a caption) takes the rack's corner; beside a rack, a plate goes top right.
  */
 
 export const LAYER_LABELS: Record<BodyMapLayer, string> = {
@@ -69,8 +72,13 @@ export interface BodyMapPaneProps {
   /** What draws the map: the live canvas, or a still. */
   ground: ReactNode;
   drawn: DrawnScene;
-  rack: readonly { layer: BodyMapLayer; on: boolean; available: boolean }[];
-  onLayerChange: (layer: BodyMapLayer, on: boolean) => void;
+  /**
+   * The rack's rows, or `false` for a map with no rack at all (an embed: the Inbox's). Each row is
+   * a layer with whether it is on and whether anything belongs to it.
+   */
+  rack: readonly { layer: BodyMapLayer; on: boolean; available: boolean }[] | false;
+  /** A rack switch flipped; a map without a rack never calls it. */
+  onLayerChange?: (layer: BodyMapLayer, on: boolean) => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   atMinZoom?: boolean;
@@ -79,6 +87,11 @@ export interface BodyMapPaneProps {
   hoverId?: string | null;
   /** What the open tab mounts at the map's foot (its dock), over the key. */
   foot?: ReactNode;
+  /**
+   * A plate over the map (a legend, a caption): in the rack's corner, top left, when there is no
+   * rack; top right beside one. Marked `data-map-ui`, so the graticule's labels keep clear of it.
+   */
+  plate?: ReactNode;
   className?: string;
 }
 
@@ -94,6 +107,7 @@ export function BodyMapPane({
   atMaxZoom = false,
   hoverId: forcedHover = null,
   foot,
+  plate,
   className,
 }: BodyMapPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
@@ -106,7 +120,14 @@ export function BodyMapPane({
     if (pointerHover !== null && !pointerHoverShown) setPointerHover(null);
   }, [pointerHover, pointerHoverShown]);
   const hoverId = (pointerHoverShown ? pointerHover : null) ?? forcedHover;
-  const keepouts = useKeepouts(paneRef, surface?.width ?? 0, surface?.height ?? 0, rack.length);
+  const rows = rack === false ? [] : rack;
+  const keepouts = useKeepouts(
+    paneRef,
+    surface?.width ?? 0,
+    surface?.height ?? 0,
+    rows.length,
+    plate != null,
+  );
 
   const footInset = drawn.keyKinds.length > 0 ? KEY_HEIGHT : 0;
   const graticule = useMemo(
@@ -160,6 +181,7 @@ export function BodyMapPane({
                 <DimensionLine
                   key={d.id}
                   id={d.id}
+                  style={d.style}
                   path={d.path.map((p) => surface.project(p))}
                   lit={d.id === drawn.lit}
                 />
@@ -182,21 +204,38 @@ export function BodyMapPane({
           ))}
         </div>
       )}
-      <MapLayerRack>
-        {rack.map((row) => (
-          <SwitchRow
-            key={row.layer}
-            data-layer={row.layer}
-            label={LAYER_LABELS[row.layer]}
-            checked={row.on}
-            disabled={!row.available}
-            onCheckedChange={(on) => onLayerChange(row.layer, on)}
-          />
-        ))}
-      </MapLayerRack>
+      {rack !== false && (
+        <MapLayerRack>
+          {rows.map((row) => (
+            <SwitchRow
+              key={row.layer}
+              data-layer={row.layer}
+              label={LAYER_LABELS[row.layer]}
+              checked={row.on}
+              disabled={!row.available}
+              onCheckedChange={(on) => onLayerChange?.(row.layer, on)}
+            />
+          ))}
+        </MapLayerRack>
+      )}
+      {plate != null && (
+        <div
+          data-slot="body-map-plate"
+          data-map-ui=""
+          className={cn(
+            'absolute top-(--space-3) z-(--z-map-control) max-w-[calc(100%-2*var(--space-3))]',
+            rack === false ? 'left-(--space-3)' : 'right-(--space-3)',
+          )}
+        >
+          {plate}
+        </div>
+      )}
       <MapDock>
         {surface !== null && (
-          <MapScaleBar metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)} />
+          <MapScaleBar
+            metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
+            format={formatDistance}
+          />
         )}
         <MapZoom onZoomIn={onZoomIn} onZoomOut={onZoomOut} atMin={atMinZoom} atMax={atMaxZoom} />
       </MapDock>
@@ -277,13 +316,18 @@ const LABEL_CLASS: Record<MapLabel['style'], string> = {
 /** A tick's half length across a dimension line's end, px (the board's 8 px tick). */
 const TICK = 4;
 
-/** A survey's dimension line: the run, and a tick across each end at a right angle to it. */
+/**
+ * A survey's dimension line (or the Inbox's distance rule, `gap`): the run, and a tick across each
+ * end at a right angle to it. A dashed style's ticks stay solid, so each end reads as an end.
+ */
 function DimensionLine({
   id,
+  style = 'dimension',
   path,
   lit,
 }: {
   id: string;
+  style?: MapLineStyle;
   path: readonly { x: number; y: number }[];
   lit: boolean;
 }) {
@@ -297,15 +341,37 @@ function DimensionLine({
   const tick = (p: { x: number; y: number }) =>
     `M${(p.x - nx * TICK).toFixed(1)} ${(p.y - ny * TICK).toFixed(1)} L${(p.x + nx * TICK).toFixed(1)} ${(p.y + ny * TICK).toFixed(1)}`;
   const run = path.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const spec = LINE_STYLES[style];
+  const stroke = tokenVar(lit ? LIT_STYLE.line : spec.line);
+  if (spec.dash === null)
+    return (
+      <path
+        data-id={id}
+        data-slot="body-map-dimension"
+        d={`${run} ${tick(a)} ${tick(b)}`}
+        fill="none"
+        strokeWidth={spec.width}
+        stroke={stroke}
+      />
+    );
   return (
-    <path
-      data-id={id}
-      data-slot="body-map-dimension"
-      d={`${run} ${tick(a)} ${tick(b)}`}
-      fill="none"
-      strokeWidth={LINE_STYLES.dimension.width}
-      stroke={tokenVar(lit ? LIT_STYLE.line : LINE_STYLES.dimension.line)}
-    />
+    <g data-id={id} data-slot="body-map-dimension" data-style={style}>
+      <path
+        data-slot="body-map-dimension-run"
+        d={run}
+        fill="none"
+        strokeWidth={spec.width}
+        stroke={stroke}
+        strokeDasharray={spec.dash.map((d) => d * spec.width).join(' ')}
+      />
+      <path
+        data-slot="body-map-dimension-ticks"
+        d={`${tick(a)} ${tick(b)}`}
+        fill="none"
+        strokeWidth={spec.width}
+        stroke={stroke}
+      />
+    </g>
   );
 }
 
@@ -352,9 +418,10 @@ function useKeepouts(
   width: number,
   height: number,
   rows: number,
+  plated: boolean,
 ): readonly Rect[] {
   const [rects, setRects] = useState<readonly Rect[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane or the rack changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane, the rack or the plate changes.
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el) return;
@@ -379,6 +446,6 @@ function useKeepouts(
     const observer = new ResizeObserver(measure);
     for (const node of el.querySelectorAll<HTMLElement>(KEEPOUT_SELECTOR)) observer.observe(node);
     return () => observer.disconnect();
-  }, [width, height, rows]);
+  }, [width, height, rows, plated]);
   return rects;
 }

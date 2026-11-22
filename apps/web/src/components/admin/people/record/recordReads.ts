@@ -1,16 +1,9 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useRef } from 'react';
-
-import {
-  isFailed,
-  type Loadable,
-  type ReadFailure,
-  type ReadSpec,
-  read,
-} from '../../reads/consoleReads';
-import { type ChainLink, mustSplit } from '../list/pageChain';
-import { useChainedPages } from '../list/useChainedPages';
+import { type Loadable, type ReadFailure, type ReadSpec, read } from '../../reads/consoleReads';
+import { joinChain, useJoinedPages } from '../../reads/joinChain';
+import type { ChainLink } from '../../reads/pageChain';
+import { useChainedPages } from '../../reads/useChainedPages';
 import {
   type DeletedRow,
   type ListStatus,
@@ -23,8 +16,8 @@ import type { RecordKind } from './recordWords';
 
 /**
  * **The record sheet's lists, through the console's one read layer** (`reads/consoleReads`): each
- * list is a chain of pages, stitched as the People list's is (`useChainedPages`, over the pure rule
- * in `list/pageChain`) — the server's cursors are positions in the list's order, not Convex page
+ * list is a chain of pages, stitched as the People list's is (`reads/useChainedPages`, over the pure
+ * rule in `reads/pageChain`, joined by `reads/joinChain`) — the server's cursors are positions in the list's order, not Convex page
  * cursors, so the chain is ours. A page read past is pinned to where it ended (`endCursor`): the
  * server then reads exactly that range and keeps its end, so a decision landing in an earlier page
  * moves nothing on the pages after it; a pinned page that outgrew a page is split where the server
@@ -92,7 +85,7 @@ export function useRecordList<T extends RecordTab>(
     key,
     args === null ? null : (link) => pageRead(args, link),
   );
-  const joined = useJoined(args === null ? null : pages);
+  const joined = useJoinedPages(args === null ? null : pages, joinRecordPages);
   return {
     status: joined.status,
     rows: joined.rows as RecordRowOf<T>[],
@@ -109,25 +102,6 @@ type Joined = {
   failed: boolean;
 };
 
-/** The pages joined — recomputed only when a page itself changed, so rows keep their identity. */
-function useJoined(pages: readonly Loadable<AnyPage>[] | null): Joined {
-  const cache = useRef<{ pages: readonly Loadable<AnyPage>[] | null; value: Joined } | null>(null);
-  const last = cache.current;
-  if (
-    last !== null &&
-    (last.pages === pages ||
-      (last.pages !== null &&
-        pages !== null &&
-        last.pages.length === pages.length &&
-        last.pages.every((p, i) => p === pages[i])))
-  ) {
-    return last.value;
-  }
-  const value = joinRecordPages(pages);
-  cache.current = { pages, value };
-  return value;
-}
-
 /**
  * The chain's rows in order, each item once (a page read again from a new start can still hold a
  * row the next page holds), whether any page says the record is still being prepared, and where the
@@ -135,37 +109,12 @@ function useJoined(pages: readonly Loadable<AnyPage>[] | null): Joined {
  * last page's end.
  */
 export function joinRecordPages(pages: readonly Loadable<AnyPage>[] | null): Joined {
-  if (pages === null) return { status: 'unread', rows: [], pending: false, failed: false };
-  const rows: AnyPage['page'] = [];
-  const seen = new Set<string>();
-  let pending = false;
-  let status: ListStatus = 'done';
-  let failed = false;
-  for (const [i, page] of pages.entries()) {
-    if (isFailed(page)) {
-      status = 'error';
-      failed = true;
-      break;
-    }
-    if (page === undefined) {
-      status = i === 0 ? 'loading' : 'fetching';
-      break;
-    }
-    for (const row of page.page) {
-      const k = targetKey(row);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      rows.push(row);
-    }
-    // Whatever backfill a page rests on — the record's verdicts, or the Deleted list's withdrawal rows.
-    if (page.pending.length > 0) pending = true;
-    // A page the server says must be split holds only the start of its range: its rows stand, and
-    // nothing after them is drawn until the split pages land (a gap would read as a lost row).
-    if (mustSplit(page)) {
-      status = 'fetching';
-      break;
-    }
-    if (i === pages.length - 1) status = page.isDone ? 'done' : 'more';
-  }
+  const { status, rows, read, failed } = joinChain(
+    pages,
+    (page) => page.page,
+    (row) => targetKey(row),
+  );
+  // Whatever backfill a page rests on — the record's verdicts, or the Deleted list's withdrawal rows.
+  const pending = read.some((page) => page.pending.length > 0);
   return { status, rows, pending, failed };
 }

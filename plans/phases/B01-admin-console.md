@@ -62,7 +62,7 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`; the button is owed in B01-5b), so retiring `/admin/flags` loses nothing; the facts are in B01-5, *What the build found*, under *Pin as official* |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`) and its *Pin* button on 2.6 built for B01-5b (key P, a required reason), so retiring `/admin/flags` loses nothing — closed; the facts are in B01-5, *What the build found*, under *Pin as official* |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
@@ -907,7 +907,7 @@ Asked by the governor as the Inbox's first PR was cut. **The calls:**
 | The life strip's dashed line | 1 px (board 2.6) | the kit's 2 px (from People 8.3) | the kit stays |
 | The candidate outline on Inbox maps | ice | neutral, bright and dashed | the console map's rule is no accent strokes |
 | The skate track | white | the console's gray | changing it recolors the Body console's tracks |
-| The map scale bar | KM and M (the kit's) | **miles and feet** — a change, done in B01-5b's kit pass | D25: stored metric, shown imperial; the kit's KM/M contradicts a decision |
+| The map scale bar | KM and M (the kit's) | **miles and feet** — **done** (W3, 2026-11-21): feet up to 500 ft, then miles from a tenth, on the Body console's map and every Inbox embed (no skater or mobile map uses the component). For the copy pass: whole miles read "1.0 MI", because the bar takes the console's distance formatter verbatim | D25: stored metric, shown imperial; the kit's KM/M contradicted a decision |
 | Five values drawn without tokens: the `.08em` tracking, an 11 px sans step, the 204 \| 384 px columns, a 36 px pane head, the 26 px display title | as drawn | the build's values stay; no token minted | until the founder has seen them |
 
 ### A governor's ruling the founder has been told of (2026-11-21)
@@ -1126,6 +1126,9 @@ count above):
 | ClaimChip (`claim-chip`) | ✅ | Promoted from the flag handler: a report's claim as a chip, the claim under question marked | The flag handler's report subject |
 | FactList (`fact-list`) | ✅ | Promoted from the flag handler: a compact, unruled near-twin of `LabelRows` | The author block, 2.6's alert facts |
 | FacetMenu — a floor count (`facet-menu`) | ✅ | An option's count may be `{ count, capped }`, drawn "200+" and marked, the shape `Section` already uses; a number draws as before | The Inbox's age options |
+| Pane and global keys — once per press (`lib/keys`) | ✅ | `usePaneKeys` and the two global keys (⌘K, ?) register with `requireReset`, as go mode's G already did: a held key acts once and again only after its release; a busy bar button's key is held inert. A list's ↑↓ is its own handling and still repeats | Every pane, the shell |
+| LockBanner — announced (`note`) | ✅ | Its polite live region is in the page before its words, which go into a reader-only slot a frame after mount (`RetryNote`'s rule), so a screen reader announces the lock | `DecidedLock` |
+| LifeStrip — re-measured after every commit (`life-strip`) | ✅ | Re-decides its narrow layout when its words change, not only its count or box: its unseen copy is measured after every commit, and its observer set up once; the strip seen is never remounted | The flag and Access handlers |
 
 **Owed to the kit, found reviewing the adoption (2026-11-13) — all four settled the same day:**
 
@@ -7563,7 +7566,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     ruling refreshes the body's open access item's tab (`refreshItemTab`), and the repair compares the
     tab with its open member's facts.
   - **`today`** says the Access lane is capped past what it reads, and `openAtStart` is `null` when the
-    day's filings or decisions were capped — the frame works the start back from the day's events.
+    day's filings or decisions were capped — the page then says the start isn't known (W1's third
+    pass; it first worked a figure back, which overstated when the filed list was the capped one).
   - **`backfillOrigin`** is bounded on bytes and walks by creation time, always advancing (paged by
     `cursor`).
   - **The Support cut is tested for a moderator** against every read and filter (`inboxSupportCut.test.ts`).
@@ -7578,7 +7582,8 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
     fallback, now gone — all four answer through the one rule (a decided one with "This has already been
     decided.").
 - **Web, after the review:** Inbox zero's `ZeroDayStartUnknown` story draws the day with
-  `openAtStart: null` (the start worked back; `InboxZero.test.ts` holds the figure).
+  `openAtStart: null`; since W1's third pass it asserts the page says the start isn't known and draws
+  no line, the day's own line still reading.
 - **The independent review of the seed, and its fixes** (D, fourth turn). The reviewer reproduced four
   defects, and four mutations of the clear had left the suite green:
   1. **The seed's ruling on a real body dismissed real people's access reports and notified them.** Now
@@ -7669,10 +7674,99 @@ PR 6: **S6** (`packages/convex`: `supportMessages`, writes, sender, audit; the s
   and the filter come back with it.
 - **Left for the founder's look** (W3): the candidate outline is drawn bright and dashed where boards
   2.3 and 2.5 draw ice (a palette test forbids accent strokes on the console map); the skate track is
-  in the console's gray where the boards draw white; the kit's scale bar reads KM/M against D25; and on
+  in the console's gray where the boards draw white; ~~the kit's scale bar reads KM/M against D25~~
+  (ruled and done 2026-11-21: feet, then miles, §7); and on
   2.2 there is no *Say accessible* figure, evidence photo or ruling source (no data holds them),
   `LabelRows` sits at 76 px where the board draws 96, and there are no posted or gate marks (access
   reports carry no coordinates).
+- **The web review's fixes, Access and the map** (W3, fifth piece):
+  - **A ruling's receipt keeps to its item:** shown only while the handler still draws the item it came
+    from, and released when the handler unmounts.
+  - **The receipt says only what's true:** with no report open it no longer says reporters were told;
+    one closed reads "the reporter told", several "reporters told".
+  - **An alert embed's caption** keeps the put-in's or lot's name first; a simplified outline's note
+    follows it rather than replacing it. A test also holds that no item's map draws the Aerial switch
+    this wave (no answer carries a pass).
+- **The web review's fixes, the frame** (W1, third pass), one line each:
+  1. The rail's Inbox count reads through the console's read layer, held through the minute tick; it
+     no longer blinks out each minute, and a failed read no longer throws into the layout.
+  2. A colleague's decision on the open item moves lost focus to the inspector, never `<body>`.
+  3. The viewer's own decision moves focus to the next row, or on a narrow page to the inspector.
+  4. No end tab ("All N") while more pages are coming or one is on its way.
+  5. A row's `aria-setsize` is `-1` (unknown) at the scan's budget stop, until every row is in.
+  6. The open item follows the rule below on a lane, tab or filter change.
+  7. An unknown day start is said as unknown, with no line drawn; a real 0 is drawn as one.
+  8. Decided today, by lane, draws no Support column for a viewer without its read, and lane names
+     wrap rather than truncate at a phone's width.
+  9. The filter's body and person searches stop when the menu closes and say when they fail, with
+     *Try again*.
+  10. A held ⏎ or ⇧⏎ acts once: the list's open, the lock's *Back to the queue* and the inspector's
+      ⇧⏎ and Esc each ignore key-repeat.
+
+  **The open item's rule, now built:** another lane, tab or filter closes an item the operator opened
+  from the list, and keeps one that arrived by a direct `?item=` link (from People, a body, the audit
+  feed), since that link was about the item.
+
+  **Owed, outside this wave's grants:** the shell's own profile, season-tape and colleagues reads are
+  raw queries that can throw into the layout — a shell fix for every mode. **Left for the founder's
+  look:** the states board offers to copy an unsent reason when a colleague's decision locks the item;
+  the build closes the dialog and drops what was typed. **For the copy pass,** two new coined
+  sentences: "How many were open as the day began isn’t known: more was filed or decided today than
+  this page reads." and "The search didn’t load."
+- **The web review's fixes, the flag handlers** (W2, third turn). **The verdict:** nothing sends a wrong
+  write; two important defects. The fixes, one line each:
+  1. The author menu reads People on the minute the person was opened and keeps its last answer
+     through a re-read; an open suspend dialog keeps what it needs, so a minute tick no longer empties
+     a reason being typed.
+  2. Missing weather reads "Not recorded", never 0 beside a thickness claim; a season with days missing
+     says how many days its figure covers; the degree-days are drawn with their unit, °F·days.
+  3. Only open flags are counted and acted on: a closed member is left out of the block, the author's
+     count, the dismiss dialog and the receipt alike.
+  4. A failed weather or *Around it* read says so, with *Try again*.
+  5. A capped *Around it* window is drawn as a floor wherever it is counted (the line, the drawer's
+     count, *Open all*).
+  6. A receipt is bound to its item and released when the handler unmounts (`useStillHere`).
+  7. The flag dialogs cap the reason at the server's `AUDIT_REASON_MAX` (`AskDialog` gains
+     `maxLength`).
+  8. The drawer walks calendar days at local noon, in order, each day of the window once across a
+     clock change (fast-check). It uses the console's zone, as every time on the pane does; the view
+     doesn't carry the body's zone. **Owed** if a body's local night ever matters here.
+  9. The four Inbox mutations are pinned by name.
+
+  **The *Pin* button, as built** (2.6): drawn only when `can.pin` allows (the alert not pinned or
+  retracted, not the viewer's, no flag of theirs on it); key P; a required reason, in the dialog
+  *Retract* uses. The dialog and the receipt say the pin decides the item: every open flag on the
+  alert, in every lane, is dismissed, each flagger told once; the receipt says "Pinned" and how many
+  flags were dismissed, in other lanes too. Undo is the write's own row; refusals stay toasts. §1's
+  lose-nothing row for *Pin as official* is closed.
+
+  **For the founder's copy pass**, the changed and new words:
+  - The Safety head: "Flagged as unsafe". The fuller "Flagged as an unsafe false report" overflowed the
+    head at 360 px; the short form could be misread as a claim about the ice and wants his eye.
+  - The contradiction flag: "The contradiction check filed this: N of their recent reports differed
+    from the weather records" (without a count: "some of their recent reports").
+  - The author's count: "N flagged by the contradiction check".
+  - "Not recorded"; "°F·days since 1 Oct"; "From N of the M days since 1 Oct; the rest weren’t
+    recorded".
+  - The failed reads: "The weather for that night couldn’t be read" and "The reports around it
+    couldn’t be read".
+  - The pin: the button "Pin"; its line "Pins it as official: it stops lapsing, and every open flag on
+    it is dismissed"; the dialog "Pin this alert as official?" with "It stops lapsing and carries your
+    name. This decides it: every open flag on it, in every lane, is dismissed, and each flagger is told
+    once."; the receipt "Pinned", "N flags dismissed, N in other lanes"; the decision's words
+    "Official · stops lapsing · the flags dismissed".
+- **The web review's fixes, the kit** (the kit builder's fourth pass):
+  1. A bound key acts once per press: pane keys and the two global keys use `requireReset`, and a busy
+     bar button's key stays inert. W1's own ⏎ repeat guards stay too; its *Held Enter* story passes
+     with both.
+  2. `LockBanner` announces: its live region is in the page before its words.
+  3. `LifeStrip` re-decides its layout when its words change in place.
+
+  **The intermittent `UserMenuView` failure, found:** "Chooses Sign out with Enter" waited only for the
+  menu to be in the page. Base UI moves focus into a menu a beat after it mounts, so on some runs End
+  and Enter went to the trigger and shut the menu. The test now waits for focus inside the menu, then
+  for Sign out to light, then for the call. It failed 3 of 80 runs before and 0 of 85 after; the time
+  zone was a coincidence. The test is on main's code, so the fix also rides on PR 1's branch.
 - **Owed to the server builder:** the item's map geometry — until it lands, the registered Access
   handler draws no map. **Owed to the kit:** an `ActionBar` narrow layout (three buttons run to
   471 px at 360), a controlled `open` on `ReasonAsk`, and the promotion of `ReticleMark`,
@@ -7730,7 +7824,8 @@ asked), and because a pin sides with the alert every open flag on it, in every l
 pinned alert with open flags against it would be an item nobody could finish. **Its refusals:** the
 moderator's own alert (D269), "This alert is already pinned.", "This alert has been retracted, so it
 can't be pinned." (D248). **Its undo** releases the alert and reopens the flags it closed. §1's
-lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is owed in B01-5b.
+lose-nothing row for *Pin as official* is closed on the server; the button on 2.6 is built (W2, below) and
+ships in B01-5b.
 
 **For the founder's record:**
 
@@ -7812,6 +7907,61 @@ clearing its failure in one transaction. Machinery's health read (`recurringJobs
 inbox items drift") counts both, failing and parked, with their error classes. A source that should
 never be filed has its failure forgotten by hand: `recurringJobs:forgetBefore` with
 `job: "inboxBackfill"`, which forgets every such failure last seen before the given time.
+
+**The hazard's verdicts as the web now draws them** (W2, fourth turn). Each of core's four verdicts
+gets its own row, labelled by core's `verdictLabel` for the hazard's type and in core's order. There is
+no net figure and no color per verdict, and every count carries a "+" when the read was capped.
+**Zeros are drawn too, dimmed:** in ruling on "never existed", a moderator needs to see that nobody
+said it is still there as plainly as that two said it never was. **The counts are ballots, not
+people:** every vote cast is counted, a changed vote and the reporter's own included, while the flag
+rule counts each person's latest vote. The pane says so under the counts.
+
+**The receipts speak in the present tense:** "Closes 3 flags, 2 in other lanes", "Dismisses 3 flags".
+A large decision's later flags close moments after the toast, so a receipt says what the decision
+does, not what has finished.
+
+**For the founder's copy pass,** the new words:
+- "Votes, as skaters cast them"
+- "No one has voted on it yet"
+- "Every vote cast, a changed vote and the reporter’s own included"
+- "The app files this when N people vote “…”" (the verdict in its own words for the hazard's type)
+- "Closes N flags, M in other lanes"
+- "Dismisses N flags"
+- "Dismissed"
+
+**PR 1's CI went red on `f7fb7863`, and its fix.** Three tests in `convex/inboxBatch.test.ts` timed out
+at 20 s on the runner. They were 500 asks; 450 plus 50 flags with an undo; and 500 access reports with
+an undo, and took 6.2, 7.3 and 12.8 s here under coverage. The runner is several times slower and
+instrumented for coverage — the same cause as the stored-facts PR's CI timeout. The 500-member repair
+test (4.4 s) had the same shape. **The fix** (S1):
+
+- **The seam:** the member bound is now a test seam, `MEMBER_BOUND`, read by the recount, the reopen,
+  the derive, the repair's member reads and `refreshCost`.
+- **Measured per source:** the cost of each additional source, measured at 10 and 30 in one
+  transaction, must not exceed what its closer declares to the room check. That covers a decline's
+  sibling, a ruling's and a takedown's flag, and an undo's reopened flag (the new `FLAG_REOPEN_COST`).
+  A recount per source would add about N a source and fail it. Measuring found a decline's declared
+  sibling cost too low (18 documents read against 12 declared), so it was raised.
+- **The real-scale arithmetic,** from the same constants at `MAX_MEMBERS` against Convex's real limits:
+  - each closer fits a source and its refreshes in a fresh transaction, so a page always advances;
+  - a 200-sibling page of one 500-member item fits;
+  - an undo of `FLAGS_READ` flags fits;
+  - a recount per source over 201 closes of 500 would exceed 32,000 documents.
+- **Paging** is exercised at a bound of 60 with the document limit cut to 700.
+- **The repair's** cost per member, measured at 10 and 40, keeps twice `MAX_MEMBERS` inside its
+  limits.
+- **The long tables and property runs** are split into tests of a few seconds each, and two raised
+  timeouts are gone. No test of this wave runs over about 2.5 s under coverage here; the slowest are
+  the property test's first draw (2.6 s) and the offer-versus-run table (2.4 s).
+
+**What is no longer proven at true scale:** that convex-test's accounting at 500 rows matches its
+accounting at 10 to 60 (the costs were measured linear across 10, 30, 50 and 100), and real rows'
+sizes at the bound (the byte axis rests on the declared worst cases).
+
+**Owed, not this wave's:** three tests owned by earlier phases still run 3 to 3.5 s under coverage here,
+and are at risk on the runner. Two are in `recurringChains`, which use near-maximum-size documents by
+design; the third is `erasure`'s property test. Getting them under needs a byte seam in their owners'
+code.
 
 **Owed, or known:**
 

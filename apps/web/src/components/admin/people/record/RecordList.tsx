@@ -7,13 +7,12 @@ import { FilterCount } from '@/components/kit/filter-chip';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/kit/popover';
+import { RecordRow, RecordRowQuote } from '@/components/kit/record-row';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import { useLoadAhead } from '@/lib/loadAhead';
-
 import type { ReadFailure } from '../../reads/consoleReads';
-import { RecordRow, RecordRowQuote } from './kit-candidates/record-row';
 import {
   type ListEnd as End,
   type RecordTab,

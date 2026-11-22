@@ -42,7 +42,12 @@ export type MapOutlineStyle =
   /** Another body that touches or nearly touches this one: quiet, dashed. */
   | 'neighbor'
   /** An area that belongs to something on the body (a hazard's footprint, a feature): a filled plate. */
-  | 'footprint';
+  | 'footprint'
+  /**
+   * An outline that is not ours yet (the Inbox): a catalog's candidate for an admit, or a skater's
+   * drawing over a known body. Dashed in the bright ink, drawn over the shore it is weighed against.
+   */
+  | 'candidate';
 
 /** How a line is drawn. */
 export type MapLineStyle =
@@ -62,7 +67,12 @@ export type MapLineStyle =
    * A survey's dimension line along one side of the body's box (Water), with a tick across each
    * end — what decides whether one weather point is enough. Pair it with a `measure` label.
    */
-  | 'dimension';
+  | 'dimension'
+  /**
+   * A distance between two things the Inbox weighs (an asked point and its lookalike, a candidate
+   * and the nearest body of ours): a dashed rule, drawn on the map. Pair it with a `measure` label.
+   */
+  | 'gap';
 
 /**
  * A point's face. A landmark wears its kind (`@skating/core`'s `LANDMARK_KINDS` — a settlement is
@@ -82,7 +92,19 @@ export type MapPointMark =
    * A skater's proposed landmark (Places): a dashed square with a question mark, since a proposal
    * has no kind until a moderator gives it one.
    */
-  | 'proposal';
+  | 'proposal'
+  /**
+   * The point a flagged report was made at (the Inbox's Safety lane): a ring with four ticks and a
+   * dot, in the hazard red — the one safety item on an embed. Any other item's point is `asked`.
+   */
+  | 'reticle'
+  /** The point a skater asked about (the Inbox): the reticle's ring and ticks in the bright ink. */
+  | 'asked'
+  /**
+   * A named place that may be the one asked about (the Inbox's Places lane): a dashed amber ring
+   * with a dot — amber because it is a question the moderator answers, never a hazard.
+   */
+  | 'lookalike';
 
 /** How a label is set. */
 export type MapLabelStyle =

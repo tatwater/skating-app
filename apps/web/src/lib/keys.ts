@@ -268,6 +268,11 @@ export type PaneBinding = {
  * Binds keys to a pane: each fires only while focus is inside `pane`, and never while focus is in
  * a text field or a control that uses the key (a list's type-ahead, a button's Enter). A pane's
  * keys are registered and released with the pane.
+ *
+ * **Once per press.** Every pane key is an action (a letter, ⏎ as an action, Esc, Delete) and
+ * fires once however long it is held: the library's `requireReset` skips the key-repeat `keydown`s
+ * until the key is released. (A list's ↑↓, which should repeat, is the list's own key handling —
+ * this API refuses the arrows.)
  */
 export function usePaneKeys(
   pane: RefObject<HTMLElement | null>,
@@ -281,6 +286,7 @@ export function usePaneKeys(
       target: pane,
       enabled: b.enabled ?? true,
       ignoreInputs: 'auto',
+      requireReset: true,
       meta: b.label === undefined ? undefined : { name: b.label },
     },
   }));
@@ -306,9 +312,10 @@ export function useGlobalKey(
       }
       run();
     },
+    // Once per press, as every bound key: a held ⌘K or ? must not toggle what it opens.
     printable
-      ? { ...ANYWHERE_PRINTABLE, enabled: options.enabled ?? true }
-      : { enabled: options.enabled ?? true },
+      ? { ...ANYWHERE_PRINTABLE, requireReset: true, enabled: options.enabled ?? true }
+      : { requireReset: true, enabled: options.enabled ?? true },
   );
 }
 

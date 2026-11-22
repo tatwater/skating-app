@@ -1,9 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect } from 'storybook/test';
+import { expect, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 
-import { PersonLockup } from './person-lockup';
+import { computedColor, sameColor } from './measure';
+import { Quote } from './note';
+import { PersonByline, PersonLockup } from './person-lockup';
 
 /** The person lockup — a circle, the real name, the @handle. */
 const meta = {
@@ -70,5 +72,62 @@ export const RowAndHead: Story = {
     // Its handle in mono, over a dotted rule.
     const handle = must(row?.querySelector<HTMLElement>('[data-slot="person-handle"]'));
     await expect(getComputedStyle(handle).borderBottomStyle).toBe('dotted');
+  },
+};
+
+/** Where an element's first line of text sits: an empty inline-block's foot is on the baseline. */
+function baselineOf(el: HTMLElement): number {
+  const probe = document.createElement('span');
+  probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+  el.append(probe);
+  const y = probe.getBoundingClientRect().bottom;
+  probe.remove();
+  return y;
+}
+
+/**
+ * The byline under a flag's quote (2.1, 2.6, 2.7): the lockup at the body step, its standing and
+ * when at the line's far end, on one baseline. A long name truncates; the standing never does.
+ */
+export const Byline: Story = {
+  parameters: { fourUp: true },
+  render: () => (
+    <div className="flex w-[20rem] flex-col gap-(--space-2)">
+      <Quote>
+        He was on about 2 inches. I measured 1¾ at the beach an hour later and it was cracking under
+        the kids.
+      </Quote>
+      <PersonByline name="Sarah Berman" handle="sarah" meta="Trusted · 58 pts" />
+      <PersonByline
+        name="Bartholomew Featherstonehaugh-Whitlock"
+        handle="bfw"
+        meta="Trusted · 22 pts · 14 Oct 08:52"
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const [short, long] = [...q.querySelectorAll<HTMLElement>('[data-slot="person-byline"]')].map(
+        must,
+      );
+      const meta = must(short?.querySelector<HTMLElement>('[data-slot="person-byline-meta"]'));
+      const name = must(short?.querySelector<HTMLElement>('[data-slot="person-name"]'));
+      // The standing sits at the line's far end, in the faint ink.
+      await expect(
+        Math.abs(meta.getBoundingClientRect().right - must(short).getBoundingClientRect().right),
+      ).toBeLessThanOrEqual(0.5);
+      await expect(getComputedStyle(meta).color).toEqual(sameColor(computedColor(q, 'var(--fg3)')));
+      // One baseline: the name's and the standing's text sit on the same line.
+      await expect(Math.abs(baselineOf(meta) - baselineOf(name))).toBeLessThanOrEqual(1);
+      // The long name gives way; the standing is whole.
+      const longMeta = must(long?.querySelector<HTMLElement>('[data-slot="person-byline-meta"]'));
+      await expect(longMeta.scrollWidth).toBeLessThanOrEqual(longMeta.clientWidth + 1);
+      await expect(within(must(long)).getByText(/Trusted · 22 pts/)).toBeVisible();
+      await expect(must(long).getBoundingClientRect().width).toBeLessThanOrEqual(
+        q.querySelector<HTMLElement>('[data-slot="quote"]')?.getBoundingClientRect().width ?? 0,
+      );
+    }
   },
 };

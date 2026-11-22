@@ -43,6 +43,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/places/PlacesTab.tsx': 'act (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
+  'components/admin/inbox/handlers/Access/useAccessWrites.ts': 'said, naming the body',
+  'components/admin/inbox/handlers/Flag/useFlagWrites.ts': 'said, naming the item’s subject',
   'components/admin/people/person/usePersonWrites.ts': 'said, naming the person',
   'components/admin/people/record/RecordSheet.tsx': 'useRecordWrites: said, naming the person',
   'components/admin/shell/ConsoleLayout.tsx':

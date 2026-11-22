@@ -7,6 +7,8 @@ import { useConnection } from '@/lib/useConnection';
 import { useRole } from '@/lib/useRole';
 import { Splash } from '../../Splash';
 import { ListWritersProvider } from '../body/tabs/listWriter';
+import { inboxRailCount, localMidnight } from '../inbox/lanes/laneModel';
+import { useInboxLanes } from '../inbox/list/inboxReads';
 import { liveStateOf, OverviewLamp } from '../overview/overviewStatus';
 import { minuteOf } from '../reads/readArgs';
 import { ConsolePalette } from './ConsolePalette';
@@ -63,6 +65,16 @@ export function ConsoleLayout() {
     useQuery(api.console.colleagues, canColleagues ? { now: minute } : 'skip'),
     !canColleagues,
   );
+  // The rail's Inbox count: every open item the viewer may read — amber, and nothing at all when
+  // nothing waits or the items are still being prepared (`inboxRailCount`). Read as the Inbox reads
+  // it (`useInboxLanes`): through the console's read layer, so a failed read takes down the count and
+  // nothing else, and held through each minute's new subscription, so the count never blinks out —
+  // but never past a failure, so a stale number is never shown as current.
+  const inboxLanes = useInboxLanes(
+    minute,
+    localMidnight(minute),
+    !isLoading && can('inbox.read'),
+  ).shown;
   const beat = useMutation(api.console.heartbeat);
   useHeartbeat(!isLoading && can('console.presence'), () => beat({}));
   // The page under the shell is one element for the layout's life: the minute's re-render redraws
@@ -87,6 +99,7 @@ export function ConsoleLayout() {
   const modes: RailMode[] = CONSOLE_MODES.filter((m) => can(m.capability)).map((m) => ({
     ...m,
     current: m.id === mode?.id,
+    ...(m.id === 'inbox' && inboxRailCount(inboxLanes)),
   }));
   const legacy = LEGACY_PAGES.filter((p) => can(p.capability));
 

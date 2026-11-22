@@ -43,6 +43,11 @@ export type AskDialogProps = {
   /** The reason field's kicker and placeholder, where the page words them its own way. */
   reasonLabel?: ReactNode;
   reasonPlaceholder?: string;
+  /**
+   * The most the reason may hold — its write's server cap (core's `AUDIT_REASON_MAX` for an audit
+   * reason), so an over-long reason is prevented here rather than refused in a toast. Absent: no cap.
+   */
+  maxLength?: number;
   /** The body's own choices (a duration, a limit), above the reason. */
   children?: ReactNode;
   /** Whatever the body chose is complete (a limit typed); the reason is checked here. */
@@ -66,6 +71,7 @@ export function AskDialog({
   reason,
   reasonLabel,
   reasonPlaceholder,
+  maxLength,
   children,
   ready = true,
   destructive = false,
@@ -92,6 +98,7 @@ export function AskDialog({
           reason={reason}
           {...(reasonLabel !== undefined && { reasonLabel })}
           {...(reasonPlaceholder !== undefined && { reasonPlaceholder })}
+          {...(maxLength !== undefined && { maxLength })}
           ready={ready}
           destructive={destructive}
           onConfirm={onConfirm}
@@ -116,6 +123,7 @@ function AskBody({
   reason,
   reasonLabel,
   reasonPlaceholder,
+  maxLength,
   ready,
   destructive,
   onConfirm,
@@ -147,6 +155,7 @@ function AskBody({
           <AlertDialogReason
             label={reasonLabel ?? WORDS.reasonLabel}
             {...(reasonPlaceholder !== undefined && { placeholder: reasonPlaceholder })}
+            {...(maxLength !== undefined && { maxLength })}
             value={text}
             onChange={(e) => setText(e.target.value)}
           />

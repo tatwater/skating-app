@@ -38,6 +38,16 @@ export const ZOOM_OUT_ROOM = 1.5;
 export const MAX_ZOOM = 17;
 
 /**
+ * The floor for a framing: a step and a half out from it — or, for a map whose reach is wider than
+ * its frame (the Inbox's 2.4: framed tight on two points, free to pan the whole body), out far
+ * enough to see that reach whole, if that is further.
+ */
+export function floorZoom(framingZoom: number, reachZoom: number | null = null): number {
+  const floor = framingZoom - ZOOM_OUT_ROOM;
+  return reachZoom === null ? floor : Math.min(floor, reachZoom);
+}
+
+/**
  * Frames `bbox` on `map` if its box is real (see above). Returns what it did: `'owed'` in a zero
  * box, `'framed'` the first time for these bounds, `'floor'` once framed already.
  */
@@ -46,6 +56,8 @@ export function frameInRealBox(
   bbox: BBoxLike,
   padding: Padding,
   framed: { current: string | null },
+  /** A wider box the operator may see whole (the floor reaches it); the frame's own otherwise. */
+  reach: BBoxLike | null = null,
 ): 'owed' | 'framed' | 'floor' {
   const key = boundsKeyOf(bbox);
   const box = map.getContainer();
@@ -60,7 +72,9 @@ export function frameInRealBox(
   // The ceiling first, then a floor never above it: MapLibre throws on a floor over the ceiling,
   // and a pond small enough to frame past it would take the whole load down with it.
   map.setMaxZoom(MAX_ZOOM);
-  map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, camera.zoom - ZOOM_OUT_ROOM)));
+  const reachZoom =
+    reach === null ? null : fitCamera(reach, box.clientWidth, box.clientHeight, padding).zoom;
+  map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, floorZoom(camera.zoom, reachZoom))));
   if (framed.current === key) return 'floor';
   map.jumpTo({
     center: [camera.center.lng, camera.center.lat],

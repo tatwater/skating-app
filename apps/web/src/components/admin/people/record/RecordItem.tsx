@@ -4,6 +4,8 @@ import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { DisplayWord } from '@/components/kit/display-word';
 import { Kbd } from '@/components/kit/kbd';
+import { LabelRows } from '@/components/kit/label-rows';
+import { LifeList } from '@/components/kit/life-list';
 import { LifeStrip } from '@/components/kit/life-strip';
 import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
@@ -12,11 +14,8 @@ import { Section } from '@/components/kit/section-slug';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { cn } from '@/lib/utils';
-
 import { type Loadable, readState } from '../../reads/consoleReads';
 import { personName } from '../person/personModel';
-import { LabelRows } from './kit-candidates/label-rows';
-import { LifeList } from './kit-candidates/life-list';
 import {
   ACTION_KEY,
   type ByLine,

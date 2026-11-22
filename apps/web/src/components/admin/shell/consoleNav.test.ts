@@ -69,8 +69,21 @@ describe('the built modes', () => {
   it('finds the Overview at /admin, with or without the slash, and only there', () => {
     expect(modeAt('/admin')?.id).toBe('overview');
     expect(modeAt('/admin/')?.id).toBe('overview');
-    expect(modeAt('/admin/inbox')).toBeUndefined();
+    expect(modeAt('/admin/inbox')?.id).toBe('inbox');
     expect(modeAt('/')).toBeUndefined();
+  });
+
+  it('finds the Inbox at its page, second on the rail, gated on reading the inbox, on G then I', () => {
+    expect(modeAt('/admin/inbox')?.id).toBe('inbox');
+    expect(modeAt('/admin/inbox/')?.id).toBe('inbox');
+    expect(modeAt('/admin/inboxes')).toBeUndefined();
+    expect(CONSOLE_MODES.map((m) => m.id).slice(0, 3)).toEqual(['overview', 'inbox', 'bodies']);
+    const inbox = CONSOLE_MODES.find((m) => m.id === 'inbox');
+    expect(inbox).toMatchObject({ to: '/admin/inbox', goKey: 'I', capability: 'inbox.read' });
+    expect(CAPABILITIES['inbox.read'].role).toBe('moderator');
+    // The old flags page stands until the Inbox's integration retires it.
+    expect(usesOldShell('/admin/inbox')).toBe(false);
+    expect(usesOldShell('/admin/flags')).toBe(true);
   });
 
   it('finds Bodies at the library and inside every body’s console, and nowhere that only shares a prefix', () => {

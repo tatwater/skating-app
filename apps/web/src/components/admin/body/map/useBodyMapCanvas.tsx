@@ -65,10 +65,20 @@ export function useBodyMapCanvas({
   bbox,
   mode,
   drawn,
+  padding = FIT_PADDING,
+  reach: reachBox = null,
 }: {
   bbox: BBoxLike;
   mode: BodyMapMode;
   drawn: DrawnScene;
+  /** The room the chrome takes when the camera frames `bbox`: the console's rack, dock and key. */
+  padding?: Padding;
+  /**
+   * Where the operator may pan, if wider than `bbox` (an Inbox embed framed tight on two points on
+   * a big body): fenced to this box's reach, and free to zoom out far enough to see it whole.
+   * Without one, the fence is the frame's.
+   */
+  reach?: BBoxLike | null;
 }): BodyMapCanvas {
   const flavor = mode === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
   const palette = useMemo(() => bodyMapPalette(mode), [mode]);
@@ -87,11 +97,15 @@ export function useBodyMapCanvas({
   // The body framing reads, from a resize long after the render that set it.
   const bboxRef = useRef(bbox);
   bboxRef.current = bbox;
+  const paddingRef = useRef(padding);
+  paddingRef.current = padding;
+  const reachRef = useRef(reachBox);
+  reachRef.current = reachBox;
   const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
-    maxBounds: reach(bbox),
+    maxBounds: reach(reachBox ?? bbox),
     initialCenter: center,
     initialZoom: 11,
     navigationControl: false,
@@ -102,7 +116,7 @@ export function useBodyMapCanvas({
       for (const layer of glLayers(paletteRef.current)) map.addLayer(layer);
       // Framed inside the chrome's room, then held there: one step and a half out, no further —
       // if its box is real; a hidden pane's fit waits for the resize below.
-      frameInRealBox(map, bboxRef.current, FIT_PADDING, framedRef);
+      frameInRealBox(map, bboxRef.current, paddingRef.current, framedRef, reachRef.current);
     },
   });
 
@@ -112,7 +126,8 @@ export function useBodyMapCanvas({
   useEffect(() => {
     const map = liveMap();
     if (!map) return;
-    const reframe = () => frameInRealBox(map, bboxRef.current, FIT_PADDING, framedRef);
+    const reframe = () =>
+      frameInRealBox(map, bboxRef.current, paddingRef.current, framedRef, reachRef.current);
     reframe();
     map.on('resize', reframe);
     return () => {

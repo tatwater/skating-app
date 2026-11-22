@@ -100,16 +100,21 @@ describe('LinksTab', () => {
     expect(screen.getByRole('link', { name: /Lake sheet/ })).toHaveAttribute('href', '/water/k1');
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement);
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledWith({
-      waterBodyId: BODY,
-      links: [MASCOMA.referenceLinks?.[0]],
-      // The list it was built on: the server refuses the write if it moved meanwhile.
-      expected: MASCOMA.referenceLinks,
-    });
-    expect(undo.announce).toHaveBeenCalledWith({
-      title: 'Links saved',
-      target: { targetType: 'waterbody', targetId: BODY },
-    });
+    // The write and its receipt follow the press through the save's promise chain: wait for each.
+    await waitFor(() =>
+      expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledWith({
+        waterBodyId: BODY,
+        links: [MASCOMA.referenceLinks?.[0]],
+        // The list it was built on: the server refuses the write if it moved meanwhile.
+        expected: MASCOMA.referenceLinks,
+      }),
+    );
+    await waitFor(() =>
+      expect(undo.announce).toHaveBeenCalledWith({
+        title: 'Links saved',
+        target: { targetType: 'waterbody', targetId: BODY },
+      }),
+    );
   });
 
   it('a refusal is one toast in the server’s words, naming what failed — never printed in the tab', async () => {
@@ -156,12 +161,14 @@ describe('LinksTab', () => {
     // Another tab: the Links page goes while its save is out.
     rerender(<div />);
     await act(async () => refuse());
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
-    expect(toasts).toEqual([
-      expect.objectContaining({
-        description: 'The links: A body carries at most 8 reference links',
-      }),
-    ]);
+    // The toast itself, not a macrotask's worth of waiting for it.
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'The links: A body carries at most 8 reference links',
+        }),
+      ]),
+    );
   });
 
   it('a refusal that lands after its view has gone, the tab still here, is said once in a toast', async () => {
@@ -185,12 +192,14 @@ describe('LinksTab', () => {
     rerender(<LinksTab bodyId={BODY} />);
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
     await act(async () => refuse());
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
-    expect(toasts).toEqual([
-      expect.objectContaining({
-        description: 'The links: A body carries at most 8 reference links',
-      }),
-    ]);
+    // The toast itself, not a macrotask's worth of waiting for it.
+    await waitFor(() =>
+      expect(toasts).toEqual([
+        expect.objectContaining({
+          description: 'The links: A body carries at most 8 reference links',
+        }),
+      ]),
+    );
   });
 
   it('an editor open on one body never opens on the next body’s link', async () => {
@@ -278,16 +287,19 @@ describe('LinksTab', () => {
       );
       await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
       await userEvent.type(screen.getByRole('textbox', { name: /Label/ }), '!{Enter}');
-      expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1),
+      );
       open(OTHER);
       rerender(<BodyTabHost Wiring={LinksTab} name="Crystal Lake" bodyId={OTHER} />);
-      land();
-      await new Promise((r) => setTimeout(r, 0));
+      await act(async () => land());
       // Pressed is committed: it lands on its own body, and its receipt says whose it was.
-      expect(undo.announce).toHaveBeenCalledTimes(1);
-      expect(undo.announce).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: 'Mascoma Lake' }),
+      await waitFor(() =>
+        expect(undo.announce).toHaveBeenCalledWith(
+          expect.objectContaining({ subject: 'Mascoma Lake' }),
+        ),
       );
+      expect(undo.announce).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole('alert')).toBeNull();
       expect(convex.mutations.get('waterBodies:setReferenceLinks')).toHaveBeenCalledTimes(1);
     });

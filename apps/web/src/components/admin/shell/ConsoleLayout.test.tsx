@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   /** The pick store each drawing of the page found above it. */
   stores: [] as unknown[],
   pickStoreModule: null as unknown,
+  /** What a read through the console's read layer answers, by function name and its args. */
+  answer: null as null | ((name: string, args: unknown) => unknown),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -56,8 +58,26 @@ vi.mock('convex/react', async () => {
       if (args === 'skip') return undefined;
       const name = getFunctionName(ref);
       mocks.asked.push(name);
+      // As Convex's `useQuery` does, a failed read throws into the render.
+      if (mocks.answer !== null && mocks.results.has(name) === false) {
+        const answer = mocks.answer(name, args);
+        if (answer instanceof Error) throw answer;
+        if (answer !== undefined) return answer;
+      }
       return mocks.results.has(name) ? mocks.results.get(name) : { displayName: 'Teagan Atwater' };
     },
+    // The console's read layer (`useConsoleReadSet`) reads through `useQueries`, which hands a
+    // failure back as an `Error` rather than throwing it.
+    useQueries: (
+      queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>,
+    ) =>
+      Object.fromEntries(
+        Object.entries(queries).map(([key, { query, args }]) => {
+          const name = getFunctionName(query);
+          mocks.asked.push(name);
+          return [key, mocks.answer !== null ? mocks.answer(name, args) : mocks.results.get(name)];
+        }),
+      ),
     useMutation: () => () => {
       mocks.beats++;
       return Promise.resolve(null);
@@ -78,11 +98,13 @@ const { ConsoleLayout } = await import('./ConsoleLayout');
 const { modKey } = await import('../../../lib/keys');
 
 beforeEach(() => {
-  mocks.results = new Map([
+  mocks.results = new Map<string, unknown>([
     ['seasonWatch:tape', undefined],
     ['console:colleagues', []],
+    ['inbox:lanes', undefined],
   ]);
   mocks.asked = [];
+  mocks.answer = null;
   mocks.beats = 0;
   mocks.stores = [];
   mocks.pathname = '/admin';
@@ -93,6 +115,16 @@ beforeEach(() => {
 });
 
 const rail = () => screen.getByRole('navigation', { name: 'Modes' });
+
+/** `inbox.lanes` with nineteen open. */
+const LANES_19 = {
+  lanes: [],
+  allOpen: 19,
+  decided: 0,
+  today: { count: 0, capped: false },
+  medianFiledAt: null,
+  pending: false,
+};
 
 describe('the queues’ owners outlive the splash', () => {
   it('a role reload that shows the splash keeps the same pick store above the page', () => {
@@ -186,6 +218,107 @@ describe('the rail', () => {
     const people = within(rail()).getByRole('link', { name: /People/ });
     expect(people).toHaveAttribute('href', '/admin/people');
     expect(people).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('lists the Inbox second, current on its page, with an amber count of what waits', () => {
+    mocks.pathname = '/admin/inbox';
+    mocks.results.set('inbox:lanes', {
+      lanes: [],
+      allOpen: 19,
+      decided: 0,
+      today: { count: 0, capped: false },
+      medianFiledAt: null,
+      pending: false,
+    });
+    render(<ConsoleLayout />);
+    const names = within(rail())
+      .getAllByRole('link')
+      .map((l) => l.textContent ?? '');
+    expect(names.findIndex((n) => n.includes('Inbox'))).toBe(1);
+    const inbox = within(rail()).getByRole('link', { name: /Inbox/ });
+    expect(inbox).toHaveAttribute('href', '/admin/inbox');
+    expect(inbox).toHaveAttribute('aria-current', 'page');
+    expect(inbox.textContent).toContain('19');
+  });
+
+  it('draws no Inbox count while nothing waits or the items are being prepared', () => {
+    for (const answer of [
+      {
+        lanes: [],
+        allOpen: 0,
+        decided: 0,
+        today: { count: 0, capped: false },
+        medianFiledAt: null,
+        pending: false,
+      },
+      {
+        lanes: [],
+        allOpen: 4,
+        decided: 0,
+        today: { count: 0, capped: false },
+        medianFiledAt: null,
+        pending: true,
+      },
+    ]) {
+      mocks.results.set('inbox:lanes', answer);
+      const { unmount } = render(<ConsoleLayout />);
+      const inbox = within(rail()).getByRole('link', { name: /Inbox/ });
+      expect(inbox.textContent).not.toMatch(/\d/);
+      unmount();
+    }
+  });
+
+  it('holds the Inbox count through the minute’s new subscription — it never blinks out', () => {
+    vi.useFakeTimers();
+    try {
+      mocks.pathname = '/admin/inbox';
+      mocks.results.delete('inbox:lanes');
+      const first = new Map<string, number>();
+      // Each minute's args are a new subscription: Convex answers nothing until it lands.
+      mocks.answer = (name, args) => {
+        if (name !== 'inbox:lanes') return mocks.results.get(name);
+        const now = (args as { now: number }).now;
+        if (first.size === 0) first.set('now', now);
+        return now === first.get('now') ? { ...LANES_19 } : undefined;
+      };
+      render(<ConsoleLayout />);
+      const count = () => within(rail()).getByRole('link', { name: /Inbox/ }).textContent;
+      expect(count()).toContain('19');
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(count()).toContain('19');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failed lanes read takes down the count and nothing else', () => {
+    mocks.pathname = '/admin/inbox';
+    mocks.results.delete('inbox:lanes');
+    mocks.answer = (name) =>
+      name === 'inbox:lanes' ? new Error('Too many bytes read') : mocks.results.get(name);
+    render(<ConsoleLayout />);
+    expect(screen.getByText('the page')).toBeInTheDocument();
+    const inbox = within(rail()).getByRole('link', { name: /Inbox/ });
+    expect(inbox.textContent).not.toMatch(/\d/);
+  });
+
+  it('after a failure, no held number comes back as current', () => {
+    mocks.pathname = '/admin/inbox';
+    let fail = false;
+    mocks.results.delete('inbox:lanes');
+    mocks.answer = (name) =>
+      name === 'inbox:lanes'
+        ? fail
+          ? new Error('down')
+          : { ...LANES_19 }
+        : mocks.results.get(name);
+    const { rerender } = render(<ConsoleLayout />);
+    expect(within(rail()).getByRole('link', { name: /Inbox/ }).textContent).toContain('19');
+    fail = true;
+    rerender(<ConsoleLayout />);
+    expect(within(rail()).getByRole('link', { name: /Inbox/ }).textContent).not.toMatch(/\d/);
   });
 
   it('shows a moderator only the old pages a moderator can use', async () => {

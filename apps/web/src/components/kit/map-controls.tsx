@@ -1,13 +1,21 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMinus, faPlus } from '@fortawesome/sharp-regular-svg-icons';
 import * as tokens from '@skating/design/tokens';
-import type { ComponentProps, CSSProperties, ReactNode } from 'react';
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { cn } from '@/lib/utils';
 
 import { Button } from './button';
 import { ButtonGroup } from './button-group';
 import { Kbd } from './kbd';
+import { Plate } from './plate';
 
 /**
  * The kit's map controls: the chrome that docks on a map pane. Custom — pure DOM and SVG, no map
@@ -27,10 +35,14 @@ import { Kbd } from './kbd';
  * - **`MapZoom`** — the zoom pair: two small kit icon buttons joined by a kit `ButtonGroup` (one
  *   shared hairline, so it is 2 × `btn-sm` − 1 px tall), on the map plate. No tooltips: the boards
  *   draw none, and the glyphs say it.
- * - **`MapScaleBar`** — on the map, never in the foot's key: the longest round distance (1, 2 or 5
- *   × 10ⁿ meters) that fits, as a hairline bracket with its mono label over it.
+ * - **`MapScaleBar`** — on the map, never in the foot's key: the longest round distance that fits,
+ *   in the app's units (stored metric, shown imperial: 1, 2 or 5 × 10ⁿ feet to 500 ft, then miles
+ *   from a tenth), as a hairline bracket with its mono label over it. The label's words are the
+ *   caller's formatter (`format`) — the console's one distance formatter, never a second here.
  * - **`MapHoverPlate`** — the one hover plate a board shows (the map plate ground, a `line2` edge,
- *   the kicker title, ~6 px, the words). It takes a single point, so a pane can't show two.
+ *   the kicker title, ~6 px, the words). It takes a single point, so a pane can't show two. It sits
+ *   up and right of its point, and **flips only where it would overflow its pane**: to the point's
+ *   left past the right edge, below it past the top — where it fits, it never moves.
  */
 
 // ── Pane ─────────────────────────────────────────────────────────────────────────────────────
@@ -262,58 +274,83 @@ function metersPerPixel(latitude: number, zoom: number, tileSize = 512): number 
   return (EARTH_CIRCUMFERENCE_M * Math.cos((latitude * Math.PI) / 180)) / (tileSize * 2 ** zoom);
 }
 
+const FOOT_M = 0.3048;
+const MILE_M = 1609.344;
+/** A tenth of a mile: from here the bar reads miles, below it feet. */
+const TENTH_MILE_M = 0.1 * MILE_M;
+
 type ScaleStop = {
-  /** The round distance the bar spans. */
+  /** The round distance the bar spans, in meters (as stored). */
   meters: number;
   /** Its length on screen. */
   px: number;
-  /** As the bar labels it ("500 M", "2 KM"). */
-  label: string;
+  /** The unit it is a round number of: feet under a tenth of a mile, miles from there. */
+  unit: 'ft' | 'mi';
 };
 
+/** The longest of 1, 2 or 5 × 10ⁿ `unit`s that is at most `fits` of them (n ≥ the floor's). */
+function roundDown(fits: number, floor: number): number {
+  const decade = 10 ** Math.floor(Math.log10(Math.max(fits, floor)));
+  const lead = Math.max(fits, floor) / decade;
+  return (lead >= 5 ? 5 : lead >= 2 ? 2 : 1) * decade;
+}
+
 /**
- * The longest round distance — 1, 2 or 5 × 10ⁿ meters — whose bar fits in `maxPx`, and its
- * length. Below a meter it stops at 1 m (a pane that close has no use for a scale).
+ * The longest round distance whose bar fits in `maxPx`, and its length — in the app's units (D25:
+ * stored metric, shown imperial): 1, 2 or 5 × 10ⁿ feet up to 500 ft, then 0.1, 0.2, 0.5, 1, 2, 5 …
+ * miles. Below a foot it stops at 1 ft (a pane that close has no use for a scale).
  */
 function scaleStop(mpp: number, maxPx: number): ScaleStop {
   const fits = maxPx * mpp;
-  const decade = 10 ** Math.floor(Math.log10(Math.max(fits, 1)));
-  const lead = fits / decade;
-  const step = lead >= 5 ? 5 : lead >= 2 ? 2 : 1;
-  const meters = Math.max(step * decade, 1);
-  const label = meters >= 1000 ? `${meters / 1000} KM` : `${meters} M`;
-  return { meters, px: meters / mpp, label };
+  if (fits < TENTH_MILE_M) {
+    const feet = Math.min(500, roundDown(fits / FOOT_M, 1));
+    const meters = feet * FOOT_M;
+    return { meters, px: meters / mpp, unit: 'ft' };
+  }
+  const miles = roundDown(fits / MILE_M, 0.1);
+  const meters = miles * MILE_M;
+  return { meters, px: meters / mpp, unit: 'mi' };
 }
 
 type MapScaleBarProps = Omit<ComponentProps<'div'>, 'children'> & {
   /** Meters per CSS pixel at the map's center (`metersPerPixel(lat, zoom)`). */
   metersPerPixel: number;
+  /**
+   * The distance's words ("0.5 mi", "200 ft"): the caller's one distance formatter, so the bar and
+   * every other distance on the page read alike. Set in the bar's caps.
+   */
+  format: (meters: number) => string;
   /** The longest the bar may run, in px (map pixels, so a drawing value). */
   maxWidth?: number;
 };
 
+/** A label in words for a reader: "0.5 mi" → "0.5 miles", "200 ft" → "200 feet". */
+const spoken = (label: string) => label.replace(/ mi$/, ' miles').replace(/ ft$/, ' feet');
+
 function MapScaleBar({
   metersPerPixel: mpp,
+  format,
   maxWidth = 96,
   className,
   ...props
 }: MapScaleBarProps) {
   const stop = scaleStop(mpp, maxWidth);
+  const label = format(stop.meters);
   const hair = tokens.border.hair.value;
   const w = stop.px;
   return (
     <div
       role="img"
-      aria-label={`Scale: ${stop.label.replace(' KM', ' kilometers').replace(' M', ' meters')}`}
+      aria-label={`Scale: ${spoken(label)}`}
       data-slot="map-scale"
       className={cn(
         'pointer-events-none flex flex-col items-end gap-(--space-1)',
-        'font-(family-name:--family-mono) text-kick leading-none font-medium tracking-rail text-fg2',
+        'font-(family-name:--family-mono) text-kick leading-none font-medium tracking-rail text-fg2 uppercase',
         className,
       )}
       {...props}
     >
-      <span data-slot="map-scale-label">{stop.label}</span>
+      <span data-slot="map-scale-label">{label}</span>
       {/* A bracket: the two ticks and the run, on the half pixel so the hairline stays crisp. */}
       <svg
         aria-hidden="true"
@@ -347,6 +384,26 @@ type MapHoverPlateProps = Omit<ComponentProps<'div'>, 'title'> & {
   offset?: number;
 };
 
+/**
+ * Which way a plate must flip to stay inside its pane: `x` past the right edge (and there is more
+ * room on the left), `y` past the top. Pure, from the plate's size, its point and the pane's size.
+ */
+function plateFlip(
+  at: { x: number; y: number },
+  plate: { width: number; height: number },
+  pane: { width: number; height: number },
+  offset: number,
+): { x: boolean; y: boolean } {
+  // Half a pixel of slack: a plate a rounding error over its edge doesn't overflow.
+  const overRight = at.x + offset + plate.width > pane.width + 0.5;
+  const roomLeft = at.x - offset - plate.width;
+  const roomRight = pane.width - (at.x + offset + plate.width);
+  return {
+    x: pane.width > 0 && overRight && roomLeft > roomRight,
+    y: pane.height > 0 && at.y - offset - plate.height < -0.5,
+  };
+}
+
 /** The one hover plate on a board. The pane hands it the hovered mark's point. */
 function MapHoverPlate({
   at,
@@ -358,17 +415,44 @@ function MapHoverPlate({
   children,
   ...props
 }: MapHoverPlateProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [flip, setFlip] = useState({ x: false, y: false });
+  const x = at?.x ?? 0;
+  const y = at?.y ?? 0;
+  // Measured unflipped each time the point moves, then flipped if it overflows — before paint.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the point or the words change.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const pane = el?.offsetParent as HTMLElement | null | undefined;
+    if (!el || !pane) return;
+    const next = plateFlip(
+      { x, y },
+      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: pane.clientWidth, height: pane.clientHeight },
+      offset,
+    );
+    setFlip((prev) => (prev.x === next.x && prev.y === next.y ? prev : next));
+  }, [x, y, offset, title, caption, children]);
   if (at === null) return null;
   return (
     <div
+      ref={ref}
       data-slot="map-hover-plate"
+      data-flip-x={flip.x ? '' : undefined}
+      data-flip-y={flip.y ? '' : undefined}
       className={cn(
         'pointer-events-none absolute z-(--z-plate) flex w-max max-w-[20rem] flex-col gap-(--space-1_5)',
-        'px-(--space-2_5) py-(--space-2) -translate-y-full',
+        'px-(--space-2_5) py-(--space-2)',
+        !flip.y && '-translate-y-full',
+        flip.x && '-translate-x-full',
         'rounded-container border border-solid border-line2 bg-map-plate shadow-plate',
         className,
       )}
-      style={{ left: at.x + offset, top: at.y - offset, ...style }}
+      style={{
+        left: flip.x ? at.x - offset : at.x + offset,
+        top: flip.y ? at.y + offset : at.y - offset,
+        ...style,
+      }}
       {...props}
     >
       {title != null && (
@@ -397,12 +481,91 @@ function MapHoverPlate({
   );
 }
 
+/**
+ * **The legend plate**: a map's legend — what each line on the map is, one
+ * row each: a 22 px stroke drawn exactly as the map draws that line (its ink, width and dash), and
+ * its name in spaced caps (B01's Inbox boards 2.3 and 2.5, the boards' `.plate .lg`). It sits in a
+ * corner of the map on the map plate's ground, so the map shows through it as through the hover
+ * plate and the zoom pair.
+ *
+ * Where `kit/map-key` lists the *marks* along a map's foot, this names its *lines*, in the map's
+ * corner: a map that draws three outlines a reader must tell apart (ours, a candidate, a skate).
+ */
+
+type MapLegendItem = {
+  /** The line's name, written capitalized ("Catalog outline · not ours yet"); set in caps. */
+  label: ReactNode;
+  /** The stroke's ink, as a CSS color — a token (`var(--fg1)`). */
+  ink: string;
+  /** Its width, px. */
+  width: number;
+  /** Its dash, px (`[4, 3]`); solid without one. */
+  dash?: readonly number[] | null;
+};
+
+type MapLegendProps = Omit<ComponentProps<'div'>, 'children'> & {
+  items: readonly MapLegendItem[];
+};
+
+function MapLegend({ items, className, ...props }: MapLegendProps) {
+  if (items.length === 0) return null;
+  return (
+    <Plate
+      variant="plate"
+      data-map-legend=""
+      className={cn('w-max max-w-full gap-(--space-1_5) bg-map-plate', className)}
+      {...props}
+    >
+      <ul
+        aria-label="Map legend"
+        // biome-ignore lint/a11y/noRedundantRoles: `list-none` strips the implied list role in Safari/VoiceOver.
+        role="list"
+        className="m-0 flex list-none flex-col gap-(--space-1_5) p-0"
+      >
+        {items.map((item, i) => (
+          <li
+            // A legend's order is its lines' order, and never changes under it.
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional, fixed
+            key={i}
+            data-slot="map-legend-item"
+            className={cn(
+              'inline-flex min-w-0 items-center gap-(--space-2)',
+              'text-kick leading-none font-medium tracking-head text-fg2 uppercase',
+            )}
+          >
+            <svg
+              aria-hidden="true"
+              data-slot="map-legend-swatch"
+              width={22}
+              height={8}
+              viewBox="0 0 22 8"
+              className="block shrink-0"
+            >
+              <path
+                d="M1 4 H21"
+                fill="none"
+                stroke={item.ink}
+                strokeWidth={item.width}
+                strokeDasharray={item.dash ? item.dash.join(' ') : undefined}
+              />
+            </svg>
+            <span className="min-w-0 truncate">{item.label}</span>
+          </li>
+        ))}
+      </ul>
+    </Plate>
+  );
+}
+
 export {
   MapDock,
   MapHoverPlate,
   type MapHoverPlateProps,
   MapLayerRack,
   type MapLayerRackProps,
+  MapLegend,
+  type MapLegendItem,
+  type MapLegendProps,
   MapModeBar,
   type MapModeBarProps,
   MapPane,
@@ -411,6 +574,7 @@ export {
   MapZoom,
   type MapZoomProps,
   metersPerPixel,
+  plateFlip,
   type ScaleStop,
   scaleStop,
 };
