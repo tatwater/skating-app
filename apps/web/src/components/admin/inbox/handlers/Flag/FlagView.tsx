@@ -20,7 +20,6 @@ import type { FlagItem } from './flagTypes';
 import { ALERT_WORDS as A, FLAG_WORDS as W } from './flagWords';
 import { PhotoSubject } from './PhotoSubject';
 import { AlsoOnReport, type Retry, SubHead, type WeatherState } from './parts';
-import type { RemovalWording } from './photoWords';
 import {
   AlertFacts,
   AlertSubject,
@@ -77,8 +76,6 @@ export type FlagViewProps = {
    * (every handler's *Open in Body →* is built so, and drawn through `blocks/LinkChip`).
    */
   bodyLink: (waterBodyId: string) => ReactElement;
-  /** A photo's takedown words (`photoWords`): the live console passes none; the stories pass both. */
-  wording?: RemovalWording;
 };
 
 /** The People page's address for a person. */
@@ -94,7 +91,6 @@ export function flagSlots(props: FlagViewProps): FlagSlots {
         item={item}
         onWrite={props.onWrite}
         {...(props.pane !== undefined && { pane: props.pane })}
-        {...(props.wording !== undefined && { wording: props.wording })}
         {...(props.authorMenu !== undefined &&
           !(item.target.exists && item.target.targetType === 'accessAlert') && {
             author: props.authorMenu,

@@ -30,7 +30,8 @@ import {
   siblingViews,
   stageState,
 } from './photoModel';
-import { LIVE_WORDING, REMOVAL_WORDINGS, TAKEDOWN_MOVES_BYTES } from './photoWords';
+import { PHOTO_WORDS } from './photoWords';
+import { photoReceiptLine } from './useFlagWrites';
 
 type PhotoTarget = Extract<LiveTarget, { targetType: 'photo' }>;
 const targetOf = (item: typeof PHOTO_ITEM) => item.target as PhotoTarget;
@@ -176,26 +177,79 @@ describe('the bar and its words', () => {
     expect(subjectOf(gone)).toBe('A photo');
   });
 
-  it('the two wordings: the address now, or until it is deleted', () => {
-    const moved = photoDialogWords('remove', 'moved');
-    expect(moved.body).toContain('the photo comes off its address now');
-    expect(moved.body).toContain('deleted in 30 days unless it is restored');
-    const kept = photoDialogWords('remove', 'kept');
-    expect(kept.body).toContain(
-      'Anyone who already has its link can still open it until it is deleted',
+  it('a takedown says: off its link now, shown to no one, a device that opened it may keep it', () => {
+    for (const verb of ['hide', 'remove'] as const) {
+      const { body } = photoDialogWords(verb);
+      expect(body).toContain('It comes off its link now and is shown to no one.');
+      expect(body).toContain('may still see it on their own device for up to 30 days');
+      expect(body).toContain('Closes every open flag on it');
+    }
+    expect(photoDialogWords('hide').body).toContain('You can restore it at any time.');
+    expect(photoDialogWords('remove').body).toContain(
+      'It is deleted for good in 30 days unless it is restored before then.',
     );
-    expect(kept.body).toContain('30 days unless it is restored');
-    expect(photoDialogWords('hide', 'kept').body).toContain('can still open it');
-    // Only the kept wording offers Remove for an urgent case.
-    expect(REMOVAL_WORDINGS.kept.urgent).not.toBeNull();
-    expect(REMOVAL_WORDINGS.moved.urgent).toBeNull();
-    // Every takedown says what it does to the flags.
-    for (const v of ['hide', 'remove'] as const)
-      for (const w of ['kept', 'moved'] as const)
-        expect(photoDialogWords(v, w).body).toContain('Closes every open flag on it');
+    expect(photoDialogWords('hide').title).toBe('Hide this photo?');
+    expect(photoDialogWords('remove').title).toBe('Remove this photo?');
   });
 
-  it('the live wording follows the one constant the proof sets', () => {
-    expect(LIVE_WORDING).toBe(TAKEDOWN_MOVES_BYTES ? 'moved' : 'kept');
+  it('each write’s receipt says what it did to the photo, and only for a photo', () => {
+    const hide = { kind: 'takeDown', status: 'hidden', reason: 'r' } as const;
+    const remove = { kind: 'takeDown', status: 'removed', reason: 'r' } as const;
+    expect(photoReceiptLine(PHOTO_ITEM, hide)).toBe(
+      'Off its link and shown to no one; restorable at any time',
+    );
+    expect(photoReceiptLine(PHOTO_ITEM, remove)).toContain('deleted for good in 30 days');
+    expect(photoReceiptLine(PHOTO_HIDDEN, { kind: 'restore' })).toBe(
+      'Shown again where it was attached',
+    );
+    expect(photoReceiptLine(PHOTO_ITEM, { kind: 'dismiss' })).toBeNull();
+  });
+});
+
+/**
+ * Every word a photo shows before its removal's 30 days are up: none may claim the photo can no
+ * longer be seen by anyone, is gone from everywhere, or is erased or deleted already — a device that
+ * opened it may keep a copy (the dev proof), and its file is deleted only on the clock. The purge's own
+ * words (`purged`, `purgedSub`) are after the fact, and are left out.
+ */
+describe('no word claims the photo is unreachable or erased before its purge', () => {
+  const strings = (v: unknown): string[] =>
+    typeof v === 'string'
+      ? [v]
+      : typeof v === 'function'
+        ? strings((v as (...a: unknown[]) => unknown)('12 Nov', '10 Sep'))
+        : v !== null && typeof v === 'object'
+          ? Object.values(v).flatMap(strings)
+          : [];
+  const { purged: _a, purgedSub: _b, ...beforePurge } = PHOTO_WORDS;
+  const said = [
+    ...strings(beforePurge),
+    ...(['hide', 'remove'] as const).map((v) => photoDialogWords(v).body),
+  ];
+  const CLAIMS = [
+    /\bgone\b/i,
+    /everywhere/i,
+    /no one can/i,
+    /nobody can/i,
+    /can(no|’)t be (seen|opened)/i,
+    /unreachable/i,
+    /\berased\b/i,
+    /\bdeleted (now|at once|immediately)\b/i,
+    /\bpermanently\b/i,
+    /stops? working/i,
+    /\baddress\b/i,
+    /\bcache\b/i,
+    /\bblob\b/i,
+    /\bCDN\b/,
+  ];
+
+  it.each(CLAIMS.map((c) => [String(c), c] as const))('none says %s', (_, claim) => {
+    expect(said.filter((w) => claim.test(w))).toEqual([]);
+  });
+
+  it('a removal’s deletion is always conditional on no restore, and in the future', () => {
+    const deletes = said.filter((w) => /delete/i.test(w));
+    expect(deletes.length).toBeGreaterThan(0);
+    for (const w of deletes) expect(w).toMatch(/unless (it is )?restored/);
   });
 });

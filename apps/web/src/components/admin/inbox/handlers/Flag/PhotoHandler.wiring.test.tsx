@@ -200,9 +200,9 @@ describe('a photo flag, through the route and the view', () => {
     fireEvent.click(within(inspector()).getByRole('button', { name: /^Hide/ }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('Hide this photo?');
-    // The conservative wording: the link still opens; Remove pointed to for an urgent case.
-    expect(dialog).toHaveTextContent('Anyone who already has its link can still open it.');
-    expect(dialog).toHaveTextContent('Urgent? Cancel and choose Remove instead');
+    // What the dev proof showed: off its link now; a device that opened it may keep it a while.
+    expect(dialog).toHaveTextContent('It comes off its link now and is shown to no one.');
+    expect(dialog).toHaveTextContent('You can restore it at any time.');
     fireEvent.change(within(dialog).getByRole('textbox'), {
       target: { value: 'Children’s faces' },
     });
@@ -219,6 +219,12 @@ describe('a photo flag, through the route and the view', () => {
       expect(undo.looked).toEqual([{ targetType: 'photo', targetId: STAGED.photoId }]),
     );
     expect(undo.looked).not.toContainEqual({ targetType: 'photo', targetId: FIRST.photoId });
+    // The receipt says what the hide did: off its link, shown to no one, restorable.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Off its link and shown to no one; restorable at any time/).length,
+      ).toBeGreaterThan(0),
+    );
   });
 
   it('Remove says the 30 days and calls takeDown removed', async () => {
@@ -227,9 +233,8 @@ describe('a photo flag, through the route and the view', () => {
     fireEvent.click(within(inspector()).getByRole('button', { name: /^Remove/ }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('Remove this photo?');
-    expect(dialog).not.toHaveTextContent('Urgent?');
     expect(dialog).toHaveTextContent(
-      'Anyone who already has its link can still open it until it is deleted, in 30 days unless it is restored.',
+      'It is deleted for good in 30 days unless it is restored before then.',
     );
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Faces' } });
     // A removal is destructive: the kit's armed step takes two presses.

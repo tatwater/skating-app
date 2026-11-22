@@ -9,13 +9,11 @@
  */
 
 /**
- * **Whether a takedown moves the photo's bytes to a new address** (the dev rotation proof decides
- * it; the integrator sets this one constant). `true`: a hide or a removal stores the photo under a
- * new address and deletes the old one, so a link someone already has stops working. `false` (the
- * conservative default until the proof reports): the old address keeps serving until a removal's
- * 30-day deletion, so the dialogs say so, and a hide offers *Remove* for an urgent case.
+ * **What a takedown does, as the dev proof showed it** (one truth, no switch): a hide or a removal
+ * takes the photo off its link at once and shows it to no one — but a device that already opened it
+ * may keep its own copy for up to 30 days, which nothing here can reach. So no word claims the photo
+ * is gone from everywhere, or erased before its removal's 30 days are up.
  */
-export const TAKEDOWN_MOVES_BYTES = false;
 
 /** The days a removed photo waits before its file is deleted (the server's purge clock). */
 export const PHOTO_PURGE_DAYS = 30;
@@ -56,19 +54,31 @@ export const PHOTO_WORDS = {
 
   // ── The bar (2.7) ───────────────────────────────────────────────────────────────────────────
   what: {
+    hide: 'Off its link now and shown to no one; restorable at any time',
     remove: `Deleted after ${PHOTO_PURGE_DAYS} days unless restored`,
-    restore: 'Brings it back where it was attached and dismisses the flags here',
+    restore: 'Shown again where it was attached; the flags here are dismissed',
   },
 
-  // ── The dialogs (their bodies are the wording's, below) ─────────────────────────────────────
+  // ── The dialogs ─────────────────────────────────────────────────────────────────────────────
   hideTitle: 'Hide this photo?',
   removeTitle: 'Remove this photo?',
-  /** What every takedown does to the flags, after the wording's body. */
+  /** What a takedown does to the photo: its link, and the devices that already opened it. */
+  offNow:
+    'It comes off its link now and is shown to no one. Anyone who already opened it may still see it on their own device for up to 30 days.',
+  hideAfter: 'You can restore it at any time.',
+  removeAfter: `It is deleted for good in ${PHOTO_PURGE_DAYS} days unless it is restored before then.`,
+  /** What every takedown does to the flags. */
   closesFlags: 'Closes every open flag on it, in every lane, and tells each flagger.',
 
   // ── Receipts ────────────────────────────────────────────────────────────────────────────────
   /** What a receipt names when the photo has no body to name: the uploader's name is never used. */
   subject: 'A photo',
+  /** A receipt's line after its flag count: what the write did to the photo. */
+  receipt: {
+    hidden: 'Off its link and shown to no one; restorable at any time',
+    removed: `Off its link and shown to no one; deleted for good in ${PHOTO_PURGE_DAYS} days unless restored`,
+    restored: 'Shown again where it was attached',
+  },
 
   // ── The record sheet ────────────────────────────────────────────────────────────────────────
   record: {
@@ -77,30 +87,3 @@ export const PHOTO_WORDS = {
     noFile: 'No file to show',
   },
 } as const;
-
-/**
- * **The two wordings of a takedown**, one per outcome of the rotation proof: `moved` (the bytes move
- * at takedown) and `kept` (they don't). The live console says {@link LIVE_WORDING}'s; the stories and
- * tests draw both.
- */
-export const REMOVAL_WORDINGS = {
-  moved: {
-    hideBody:
-      'Skaters stop seeing it wherever it is attached, and the photo comes off its address now. Undo brings it back and reopens the flags.',
-    removeBody: `Skaters stop seeing it, and the photo comes off its address now. Its file is deleted in ${PHOTO_PURGE_DAYS} days unless it is restored.`,
-    hideWhat: 'Hides it everywhere it is attached and moves it off its address',
-    urgent: null,
-  },
-  kept: {
-    hideBody:
-      'Skaters stop seeing it wherever it is attached. Anyone who already has its link can still open it. Undo brings it back and reopens the flags.',
-    removeBody: `Skaters stop seeing it. Anyone who already has its link can still open it until it is deleted, in ${PHOTO_PURGE_DAYS} days unless it is restored.`,
-    hideWhat: 'Hides it everywhere it is attached; a link someone already has still opens it',
-    urgent: `Urgent? Cancel and choose Remove instead: its file is deleted in ${PHOTO_PURGE_DAYS} days unless restored.`,
-  },
-} as const;
-
-export type RemovalWording = keyof typeof REMOVAL_WORDINGS;
-
-/** The wording the live console uses. */
-export const LIVE_WORDING: RemovalWording = TAKEDOWN_MOVES_BYTES ? 'moved' : 'kept';

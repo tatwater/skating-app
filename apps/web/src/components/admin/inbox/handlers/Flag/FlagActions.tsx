@@ -4,15 +4,10 @@ import { type ReactNode, type RefObject, useState } from 'react';
 import { ActionBar, type ActionBarGroup, type ActionBarItem } from '@/components/kit/action-bar';
 
 import { AskDialog } from '../../../people/person/AskDialog';
-import { allows, type FlagVerb, targetNoun, verbGroups } from './flagModel';
+import { type FlagVerb, targetNoun, verbGroups } from './flagModel';
 import type { FlagItem } from './flagTypes';
 import { FLAG_WORDS as W } from './flagWords';
-import {
-  LIVE_WORDING,
-  PHOTO_WORDS as P,
-  REMOVAL_WORDINGS,
-  type RemovalWording,
-} from './photoWords';
+import { PHOTO_WORDS as P } from './photoWords';
 import type { FlagWrite } from './useFlagWrites';
 
 /**
@@ -39,11 +34,6 @@ export type FlagActionsProps = {
   pane?: RefObject<HTMLElement | null>;
   /** The author menu, as a control in the bar (`inspector/AuthorMenu`). */
   author?: ReactNode;
-  /**
-   * A photo's takedown words: whether its bytes move at takedown (`moved`) or not (`kept`). The live
-   * console passes none and says {@link LIVE_WORDING}'s; the stories draw both.
-   */
-  wording?: RemovalWording;
 };
 
 type Asking = Exclude<FlagVerb, 'restore'>;
@@ -58,13 +48,7 @@ const LABEL: Record<FlagVerb, string> = {
   retract: W.retract,
 };
 
-export function FlagActions({
-  item,
-  onWrite,
-  pane,
-  author,
-  wording = LIVE_WORDING,
-}: FlagActionsProps) {
+export function FlagActions({ item, onWrite, pane, author }: FlagActionsProps) {
   const [asking, setAsking] = useState<Asking | null>(null);
   const [open, setOpen] = useState(false);
   const [serial, setSerial] = useState(0);
@@ -96,15 +80,9 @@ export function FlagActions({
   };
   const photo = item.target.exists && item.target.targetType === 'photo';
   const what = (verb: FlagVerb): string =>
-    !photo
-      ? W.what[verb]
-      : verb === 'hide'
-        ? REMOVAL_WORDINGS[wording].hideWhat
-        : verb === 'remove'
-          ? P.what.remove
-          : verb === 'restore'
-            ? P.what.restore
-            : W.what[verb];
+    photo && (verb === 'hide' || verb === 'remove' || verb === 'restore')
+      ? P.what[verb]
+      : W.what[verb];
 
   const barGroups: ActionBarGroup[] = groups.map((g) => ({
     id: g.id,
@@ -134,19 +112,13 @@ export function FlagActions({
     asking === null
       ? null
       : photo && (asking === 'hide' || asking === 'remove')
-        ? photoDialogWords(asking, wording, withdrawn)
+        ? photoDialogWords(asking, withdrawn)
         : dialogWords(
             asking,
             noun,
             item.flags.filter((f) => f.status === 'open').length,
             withdrawn,
           );
-  // A hide whose bytes stay on their address points to Remove for an urgent case, when Remove is
-  // drawn. Words, not a button: a button above the reason would take the dialog's opening focus.
-  const urgent =
-    photo && asking === 'hide' && allows(item.can, 'remove')
-      ? REMOVAL_WORDINGS[wording].urgent
-      : null;
 
   return (
     <>
@@ -169,13 +141,6 @@ export function FlagActions({
           // The server's cap on an audit reason: an over-long one is stopped here, not refused.
           maxLength={AUDIT_REASON_MAX}
           destructive={asking === 'remove' || asking === 'retract'}
-          {...(urgent !== null && {
-            children: (
-              <p data-slot="photo-urgent" className="m-0 text-assist leading-list text-fg2">
-                {urgent}
-              </p>
-            ),
-          })}
           onConfirm={async (reason) => {
             const landed = await run(asking, writeOf(asking, reason));
             return landed ? 'landed' : 'refused';
@@ -205,19 +170,21 @@ export function writeOf(verb: Asking, reason: string): FlagWrite {
 }
 
 /**
- * A photo takedown's title and words, in the proof's wording: what skaters stop seeing, whether a link
- * someone already has still opens it, a removal's 30 days, and the flags it closes.
+ * A photo takedown's title and words, as the dev proof showed a takedown: off its link now and shown
+ * to no one, though a device that already opened it may keep it a while; a hide restorable at any
+ * time, a removal deleted for good in 30 days unless restored; and the flags it closes.
  */
 export function photoDialogWords(
   verb: 'hide' | 'remove',
-  wording: RemovalWording,
   /** Its uploader withdrew it: the decision is kept on their record; nothing comes back. */
   withdrawn = false,
 ): { title: string; body: string } {
-  const w = REMOVAL_WORDINGS[wording];
   const title = verb === 'hide' ? P.hideTitle : P.removeTitle;
   if (withdrawn) return { title, body: W.withdrawnTakeDownBody };
-  return { title, body: `${verb === 'hide' ? w.hideBody : w.removeBody} ${P.closesFlags}` };
+  return {
+    title,
+    body: `${P.offNow} ${verb === 'hide' ? P.hideAfter : P.removeAfter} ${P.closesFlags}`,
+  };
 }
 
 /** A dialog's title and words: what the lever does, and which flags it closes. */

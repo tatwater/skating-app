@@ -23,8 +23,8 @@ import type { PhotoView } from './photoModel';
 /**
  * Board 2.7 (Content flags · Photo) at the boards' inspector size, and every photo state no board
  * draws. Render `Board27` beside `inbox-handler-v5.html?h=photo` (the whole page is
- * `Photo page`). Both wordings of a takedown are drawn: `…Kept` (the link still opens until the
- * file is deleted, the live default) and `…Moved` (the bytes move at takedown).
+ * `Photo page`). The three writes' words — Hide, Remove (their dialogs) and Restore (one press, its
+ * receipt) — say what the dev proof showed: off its link now, a device that opened it may keep it.
  *
  * **No read of an image's load state.** What keeps the full photo off the network is asserted
  * directly: no `<img>` and no attribute holding its address until *Show*. The mosaic's paint is
@@ -169,17 +169,19 @@ const hideDialog = async (root: HTMLElement, key: 'h' | 'r') => {
   return must(dialog());
 };
 
-/** Hide, the live wording: the link still opens; Remove pointed to for an urgent case. */
-export const HideDialogKept: Story = {
-  args: { wording: 'kept' },
+/**
+ * Hide: off its link now and shown to no one; a device that already opened it may keep it a while;
+ * restorable at any time. Sent by ⌘⏎ from the reason, where the dialog's opening focus lands.
+ */
+export const HideDialog: Story = {
   play: async ({ canvasElement, args }) => {
     const d = await hideDialog(canvasElement, 'h');
     await expect(d).toHaveTextContent('Hide this photo?');
-    await expect(d).toHaveTextContent('Anyone who already has its link can still open it.');
-    await expect(slot(d, 'photo-urgent')).toHaveTextContent(
-      'Urgent? Cancel and choose Remove instead',
+    await expect(d).toHaveTextContent('It comes off its link now and is shown to no one.');
+    await expect(d).toHaveTextContent(
+      'Anyone who already opened it may still see it on their own device for up to 30 days.',
     );
-    // The opening focus lands in the reason, so typing goes there.
+    await expect(d).toHaveTextContent('You can restore it at any time.');
     await waitFor(() => expect(document.activeElement?.tagName).toBe('TEXTAREA'));
     await userEvent.keyboard('Children’s faces');
     await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
@@ -191,41 +193,28 @@ export const HideDialogKept: Story = {
       }),
     );
     await waitFor(() => expect(dialog()).toBeNull());
-    // Focus goes back where it was: the Hide button in the bar.
+    // Focus goes back where it was: inside the inspector, on the bar's Hide.
     await waitFor(() => expect(pane(canvasElement).contains(document.activeElement)).toBe(true));
   },
 };
 
-/** Hide, if the bytes move: off its address now; no urgent offer. */
-export const HideDialogMoved: Story = {
-  args: { wording: 'moved' },
-  play: async ({ canvasElement }) => {
-    const d = await hideDialog(canvasElement, 'h');
-    await expect(d).toHaveTextContent('the photo comes off its address now');
-    await expect(d.querySelector('[data-slot="photo-urgent"]')).toBeNull();
-  },
-};
-
-/** Remove, the live wording: deleted in 30 days unless restored; the link opens until then. */
-export const RemoveDialogKept: Story = {
-  args: { wording: 'kept' },
+/** Remove: the same, and deleted for good in 30 days unless restored before then. */
+export const RemoveDialog: Story = {
   play: async ({ canvasElement }) => {
     const d = await hideDialog(canvasElement, 'r');
     await expect(d).toHaveTextContent('Remove this photo?');
+    await expect(d).toHaveTextContent('It comes off its link now and is shown to no one.');
+    await expect(d).toHaveTextContent('may still see it on their own device for up to 30 days');
     await expect(d).toHaveTextContent(
-      'Anyone who already has its link can still open it until it is deleted, in 30 days unless it is restored.',
+      'It is deleted for good in 30 days unless it is restored before then.',
     );
   },
 };
 
-/** Remove, if the bytes move. */
-export const RemoveDialogMoved: Story = {
-  args: { wording: 'moved' },
-  play: async ({ canvasElement }) => {
-    const d = await hideDialog(canvasElement, 'r');
-    await expect(d).toHaveTextContent('the photo comes off its address now');
-    await expect(d).toHaveTextContent('Its file is deleted in 30 days unless it is restored.');
-  },
+/** Remove in light mode. */
+export const RemoveDialogLight: Story = {
+  ...RemoveDialog,
+  globals: { surface: 'admin', mode: 'light' },
 };
 
 /** Hidden before this flag was read: Restore, at once. */
