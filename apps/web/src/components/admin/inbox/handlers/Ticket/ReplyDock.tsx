@@ -81,6 +81,8 @@ function ReplyDock<M extends string>({
   };
   usePaneKeys(dock, [{ key: 'Mod+Enter', run: send, enabled: ready, label: current?.send }]);
   if (current === undefined) return null;
+  // The mode's cap, the server's (from core, handed in by the caller's modes).
+  const maxLength = current.max;
   return (
     <section
       ref={dock}
@@ -122,7 +124,7 @@ function ReplyDock<M extends string>({
         aria-invalid={over || undefined}
         value={value}
         onValueChange={(next) => onValueChange(String(next))}
-        maxLength={current.max}
+        maxLength={maxLength}
         readOnly={sending}
         rows={4}
         className="min-h-[5.75rem]"
