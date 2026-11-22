@@ -10443,6 +10443,49 @@ S4b's proof, on a throwaway anonymous backend (never dev). Its table, verbatim:
   does.
 - The proof re-runs green on a real backend.
 
+#### B01-5d: the stored-items property's counterexample (2026-11-22)
+
+**A real bug in the Inbox's one writer, on main since #170**, found by the stored-items property on
+a random seed (−272421) in this PR's cold workspace run.
+
+**The history:**
+1. A "Cove" bay ask is filed raw, before the backfill had filed it.
+2. A second Cove ask is filed into an open item.
+3. A moderator declines the raw ask alone. It is filed into that item and closed, and the item
+   stays open.
+4. The moderator then declines the filed ask alone, and the item is decided by that action.
+5. A new Cove ask opens a second item on the same key.
+6. Undoing the second decline reopens its member into the newer, open item.
+
+`refreshItemNow` kept the first item's stored decision whatever happened to its members, so it was
+left decided by an action none of its members records.
+
+**The fix** (`lib/inboxItems`): a decided item's decision stands only while one of its members still
+records it (`decisionHeld`, one bounded point range on `by_closed_by`). Otherwise it is re-derived
+from the first closed member. The drift check flags an item already left that way, and the drift
+repair re-derives it. The history, the predicate's scoping and the repair case are pinned.
+
+**Reachable on dev, rarely**, through this sequence:
+1. a decision on an unfiled source, or before a sibling drain ran;
+2. a later decision on the same key;
+3. a newer ask;
+4. an undo.
+
+The drift repair now finds what that left. It runs once after merge.
+
+**Two stale properties found in the same round:**
+- **`unmerge.property`** has been stale since the field-wise unmerge: it failed on every seed at 50x
+  on a bay rename. It is restated: the bay is back as before except for exactly the fields the edit
+  wrote, and every stamped row names its bays as they now stand. It is pinned.
+  - *Why the earlier 20x runs passed:* the property pins its seeds (`0x5eed + n`, 4 runs, 1 seed), so
+    running the file 20 times replayed the same 4 cases. The final gate ran it over 50 distinct seeds
+    in each zone.
+- **`regionPin`'s retire property** ("the dry run's merged and refused sets equal the apply's") found a
+  counterexample at 50x (seed −2017459737): four pairs into one survivor, batch 4. Under the time
+  axis, the apply's one call deferred its last pair, and the test's helper never re-sent it. The
+  merge code is right (`scripts/etl`'s `retireBatches` re-sends deferred pairs). The helper now does
+  the same, and the case is pinned.
+
 #### B01-5d: the real-backend proof, third run — time (2026-11-22)
 
 S4b measured S4a's time axis on a throwaway local backend: the server clock inside the transaction,
