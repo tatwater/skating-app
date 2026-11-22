@@ -37,6 +37,7 @@ import type { InboxCan, InboxCanCode, InboxVerb } from '../inbox';
 import { DELETION_PENDING_MESSAGE, hasCapability } from './auth';
 import { ownContentRefusal } from './ownContent';
 import { ERASED_ALREADY, type RecordFacts, recordRefusal, takedownRefusal } from './recordRules';
+import { UNMERGING_REFUSAL, unmergeRunningOn } from './unmergeState';
 
 /** What `setContentStatus` says of content whose row is gone (before it reads the record). */
 export const CONTENT_GONE = 'Target not found';
@@ -139,9 +140,12 @@ export async function drawnSurvivorOf(
 export function drawnMergeFacts(
   drawn: Doc<'waterBodies'>,
   live: DrawnSurvivor | null,
-): Pick<InboxRuleFacts, 'hasOverlap' | 'mergeListsRefusal'> {
+): Pick<InboxRuleFacts, 'hasOverlap' | 'mergeListsRefusal' | 'mergeUnmerging'> {
   return {
     hasOverlap: live !== null,
+    mergeUnmerging:
+      unmergeRunningOn(drawn) !== null ||
+      (live !== null && unmergeRunningOn(live.survivor) !== null),
     mergeListsRefusal: live ? mergedModeratorLists(live.survivor, [drawn]).refusal : null,
   };
 }
@@ -248,6 +252,8 @@ export type InboxRuleFacts = {
    * `mergedModeratorLists`, the merge's own check), else `null` (B01-5d).
    */
   mergeListsRefusal?: string | null;
+  /** An unmerge still running on the drawing or its live survivor (R10-A, `lib/unmergeState`). */
+  mergeUnmerging?: boolean;
   /**
    * An ask's decision, per verb: the viewer has an open ask of their own among those it would close in
    * another item — a sibling its drain reaches through an answer's names or a landmark's place
@@ -519,6 +525,7 @@ export function preconditionRefusal(verb: InboxVerb, facts: InboxRuleFacts): str
       return facts.requestKind === 'admit' ? null : 'Only an admit is looked up in the catalog.';
     case 'mergeDrawn':
       if (!facts.hasOverlap) return NO_OVERLAP_REFUSAL;
+      if (facts.mergeUnmerging) return UNMERGING_REFUSAL;
       return facts.mergeListsRefusal ?? null;
     default:
       return null;
@@ -535,6 +542,9 @@ export function preconditionCode(
   verb: InboxVerb,
   facts: InboxRuleFacts,
 ): InboxCanCode[InboxVerb] | undefined {
+  if (verb === 'mergeDrawn') {
+    return facts.hasOverlap && facts.mergeUnmerging ? 'unmerging' : undefined;
+  }
   if (verb !== 'approve') return undefined;
   if (facts.requestKind === 'name_bay' && facts.bayMissing) return 'awaitsDrawing';
   if (facts.requestKind === 'name_landmark' && facts.landmarkMissing) return 'awaitsDrawing';

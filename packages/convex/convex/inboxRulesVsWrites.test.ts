@@ -1035,6 +1035,28 @@ const drawnCells: Cell[] = [
       return s;
     },
   },
+  // R10-A: a merge waits while an unmerge still runs on either body (`waterBodies.unmergeActionId`).
+  {
+    kind: 'drawn (over a known body)',
+    state: 'an unmerge still running on its survivor',
+    verbs: ['mergeDrawn'],
+    setup: async (w) => {
+      const s = await drawnOver(w, w.author.id, [w.active]);
+      await w.t.run(async (ctx) => {
+        const unmergeId = await ctx.db.insert('moderationActions', {
+          actorId: w.other.id,
+          action: 'unmerge_waterbody',
+          targetType: 'waterbody',
+          targetId: w.active,
+          reason: 'Two lakes',
+          metadata: { done: false },
+          createdAt: NOW,
+        });
+        await ctx.db.patch(w.active, { unmergeActionId: unmergeId });
+      });
+      return s;
+    },
+  },
   {
     kind: 'drawn (over a known body)',
     state: 'the lists together pass a cap',
@@ -1195,8 +1217,9 @@ describe('the rule and the write', () => {
     // away, a candidate gone, the lists' cap, the drawing over new water — and a bay ask awaiting
     // its drawing that is decided, or the viewer's own (its code must not ride an earlier refusal).
     // The order pass added *Look up again*'s own and decided cells, the viewer's own admit's approve
-    // and decline, and the viewer's own landmark ask's approve and decline.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(180);
+    // and decline, and the viewer's own landmark ask's approve and decline; R10-A a drawing whose
+    // survivor is mid-unmerge.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(181);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {

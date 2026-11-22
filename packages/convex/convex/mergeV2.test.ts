@@ -35,6 +35,7 @@ import {
   SURVIVOR_CHANGED_REFUSAL,
 } from './lib/inboxRules';
 import { MERGE_ROWS_PER_KIND, MERGE_TOO_BIG, RETARGET_CAP } from './lib/mergeLoad';
+import { UNMERGING_REFUSAL } from './lib/unmergeState';
 import schema from './schema';
 import type { MergeChangeSet } from './waterBodies';
 
@@ -509,6 +510,48 @@ describe('the merge’s refusals (fork 3)', () => {
     if (theirs.item?.kind !== 'drawn') throw new Error('no drawn item');
     expect(theirs.item.can.mergeDrawn).toBeNull();
     expect(theirs.item.canCode).toEqual({});
+  });
+
+  test('a merge waits while an unmerge runs on either body: the preview, can and the writes agree', async () => {
+    const w = await pair();
+    const unmergeId = await w.t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: w.mod.id,
+        action: 'unmerge_waterbody',
+        targetType: 'waterbody',
+        targetId: w.loser,
+        reason: 'Two lakes',
+        metadata: { done: false },
+        createdAt: NOW,
+      }),
+    );
+    const said = { refusal: UNMERGING_REFUSAL, code: 'unmerging' };
+    for (const marked of [w.loser, w.survivor]) {
+      await w.t.run(async (ctx) => {
+        await ctx.db.patch(w.loser, { unmergeActionId: undefined });
+        await ctx.db.patch(w.survivor, { unmergeActionId: undefined });
+        await ctx.db.patch(marked, { unmergeActionId: unmergeId });
+      });
+      expect(
+        await w.mod.as.query(api.bodyConsole.mergePreview, {
+          loserId: w.loser,
+          survivorId: w.survivor,
+        }),
+      ).toEqual({ ok: false, ...said });
+      const { item } = await w.mod.as.query(api.inbox.item, { ref: `body:${w.loser}` });
+      if (item?.kind !== 'drawn') throw new Error('no drawn item');
+      expect({ refusal: item.can.mergeDrawn, code: item.canCode.mergeDrawn }).toEqual(said);
+      await expect(w.merge()).rejects.toThrow(UNMERGING_REFUSAL);
+      await expect(
+        w.mod.as.mutation(api.inboxWrites.mergeDrawn, {
+          itemId: item.itemId,
+          survivorId: w.survivor,
+        }),
+      ).rejects.toThrow(UNMERGING_REFUSAL);
+    }
+    // Done: the marker gone, the merge offered and taken.
+    await w.t.run((ctx) => ctx.db.patch(w.survivor, { unmergeActionId: undefined }));
+    await w.merge();
   });
 
   test('every refusal the write gives, the preview gives in its words', async () => {

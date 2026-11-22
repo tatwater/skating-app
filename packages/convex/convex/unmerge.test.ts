@@ -29,6 +29,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bodySource, fileMember, flagSource, PAGE_SEAM, requestSource } from './lib/inboxItems';
 import { OWN_FILING_REFUSAL } from './lib/inboxRules';
 import { undoState } from './lib/undo';
+import { UNMERGING_REFUSAL } from './lib/unmergeState';
 import schema from './schema';
 import { scheduleRestamp, syncCellsForParent } from './subAreas';
 import {
@@ -1435,40 +1436,84 @@ suite('a heavy unmerge pages', () => {
     // time when every package's suite runs at once (CI's `pnpm test`, 60 s; 3.6 s alone).
   }, 300_000);
 
-  test('a loser merged again between pages: the later pages stop, its rows are that merge’s', async () => {
+  // R10-A: a second merge between pages once stranded the rows the later pages had still to move. A
+  // body mid-unmerge takes no merge — as loser or as survivor — preview and write alike, until done.
+  test('a body mid-unmerge takes no merge until the unmerge is done; then the round trip holds', async () => {
     const w = await world(['content']);
+    const before = await census(w.t);
     const mergeId = await mergeV2(w);
     const was = PAGE_SEAM.sources;
     PAGE_SEAM.sources = 1;
+    let stoodIn = false;
     try {
       await w.colleague.as.mutation(api.undo.run, { actionId: mergeId, reason: 'Two lakes' });
-      // Between pages, someone merges the drawing again.
-      await w.t.run(async (ctx) => {
-        const survivor = (await ctx.db.get(w.survivor)) as Doc<'waterBodies'>;
-        const loser = (await ctx.db.get(w.loser)) as Doc<'waterBodies'>;
-        await mergeBodyInto(ctx, {
-          survivor,
-          loser,
-          actorId: w.actor.id,
-          reason: 'Same after all',
+      // The unmerge's first transaction marks both bodies (`unmergeActionId`, S4b's `unmerge.ts`);
+      // until that lands, the marker is set here as it would be — and cleared below as its last page
+      // would. Once it lands this stand-in never runs, and the marker is the unmerge's own.
+      const unmergeId = (await unmergeRowOf(w.t, w.loser))?._id as Id<'moderationActions'>;
+      expect(unmergeId).toBeDefined();
+      const marked = await w.t.run(
+        async (ctx) => (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
+      );
+      if (marked === null) {
+        stoodIn = true;
+        await w.t.run(async (ctx) => {
+          await ctx.db.patch(w.loser, { unmergeActionId: unmergeId });
+          await ctx.db.patch(w.survivor, { unmergeActionId: unmergeId });
         });
-      });
+      }
+      const said = { refusal: UNMERGING_REFUSAL, code: 'unmerging' };
+      // As loser: merged into its survivor again, refused — the preview first, then the write.
+      expect(
+        await w.actor.as.query(api.bodyConsole.mergePreview, {
+          loserId: w.loser,
+          survivorId: w.survivor,
+        }),
+      ).toEqual({ ok: false, ...said });
+      await expect(
+        w.actor.as.mutation(api.waterBodies.merge, { survivorId: w.survivor, loserId: w.loser }),
+      ).rejects.toThrow(UNMERGING_REFUSAL);
+      // As survivor: merged away into another body mid-unmerge, refused too.
+      expect(
+        await w.actor.as.query(api.bodyConsole.mergePreview, {
+          loserId: w.survivor,
+          survivorId: w.elsewhere,
+        }),
+      ).toEqual({ ok: false, ...said });
+      await expect(
+        w.actor.as.mutation(api.waterBodies.merge, {
+          survivorId: w.elsewhere,
+          loserId: w.survivor,
+        }),
+      ).rejects.toThrow(UNMERGING_REFUSAL);
       await settle(w.t);
     } finally {
       PAGE_SEAM.sources = was;
     }
-    const onLoser = await w.t.run(async (ctx) => [
-      ...(await ctx.db
-        .query('reports')
-        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', w.loser))
-        .collect()),
-      ...(await ctx.db
-        .query('hazards')
-        .withIndex('by_water_body', (q) => q.eq('waterBodyId', w.loser))
-        .collect()),
+    // The later pages ran to the end: every row back, nothing left.
+    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(true);
+    expect((await leftOf(w.t, w.loser)).count).toBe(0);
+    if (stoodIn) {
+      await w.t.run(async (ctx) => {
+        await ctx.db.patch(w.loser, { unmergeActionId: undefined });
+        await ctx.db.patch(w.survivor, { unmergeActionId: undefined });
+      });
+    }
+    // Done: both bodies free again (the unmerge clears its own marker), and the round trip holds.
+    const markers = await w.t.run(async (ctx) => [
+      (await ctx.db.get(w.loser))?.unmergeActionId ?? null,
+      (await ctx.db.get(w.survivor))?.unmergeActionId ?? null,
     ]);
-    expect(onLoser).toEqual([]);
-    expect((await unmergeRowOf(w.t, w.loser))?.metadata?.done).toBe(false);
+    expect(markers).toEqual([null, null]);
+    expect(await census(w.t)).toEqual(before);
+    // And a merge is offered and taken again.
+    const preview = await w.actor.as.query(api.bodyConsole.mergePreview, {
+      loserId: w.loser,
+      survivorId: w.survivor,
+    });
+    expect(preview).toMatchObject({ ok: true, tooBig: false });
+    await w.actor.as.mutation(api.waterBodies.merge, { survivorId: w.survivor, loserId: w.loser });
+    expect((await w.t.run((ctx) => ctx.db.get(w.loser)))?.mergedIntoId).toBe(w.survivor);
   });
 
   test('an undone unmerge’s later pages do nothing', async () => {

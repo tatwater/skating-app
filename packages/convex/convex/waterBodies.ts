@@ -169,6 +169,7 @@ import { takeCapped } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
 import { activateBody, demoteBody, transitionStanding } from './lib/standing';
 import { UNDO_POLICY } from './lib/undoPolicy';
+import { UNMERGING_REFUSAL, unmergeRunningOn } from './lib/unmergeState';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -3665,6 +3666,7 @@ export type MergeRefusalCode =
   | 'survivorMerged'
   | 'loserMerged'
   | 'ownDrawing'
+  | 'unmerging'
   | 'listsOverCap'
   | 'tooBig';
 
@@ -3680,6 +3682,7 @@ export type MergeRefusal = { refusal: string; code: MergeRefusalCode };
  *   the merge chain a single hop; and a loser merged already;
  * - D289: a drawing still in review is the Inbox's item, and the staffer who drew it doesn't decide
  *   it — by merging it from here either — in the Inbox rule's words;
+ * - an unmerge still running on either body (`lib/unmergeState`, R10-A);
  * - the lists: the survivor holds the union of both bodies' moderator-held lists, or the merge does
  *   not happen (B01-3g, `mergedModeratorLists`).
  *
@@ -3702,6 +3705,11 @@ export function mergePairRefusal(
   }
   const own = ownDrawingRefusal(loser, viewerId);
   if (own !== null) return { ...own };
+  // An unmerge still running on either body (R10-A): its later pages move rows back from the
+  // survivor, and a merge in between would strand them there for good.
+  if (unmergeRunningOn(survivor) !== null || unmergeRunningOn(loser) !== null) {
+    return { refusal: UNMERGING_REFUSAL, code: 'unmerging' };
+  }
   const lists = mergedModeratorLists(survivor, [loser]).refusal;
   return lists === null ? null : { refusal: lists, code: 'listsOverCap' };
 }

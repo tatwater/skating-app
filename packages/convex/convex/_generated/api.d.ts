@@ -168,6 +168,7 @@ import type * as lib_undoHandlersCorpus from "../lib/undoHandlersCorpus.js";
 import type * as lib_undoPolicy from "../lib/undoPolicy.js";
 import type * as lib_undoReads from "../lib/undoReads.js";
 import type * as lib_undoTypes from "../lib/undoTypes.js";
+import type * as lib_unmergeState from "../lib/unmergeState.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lib_withdrawals from "../lib/withdrawals.js";
 import type * as machinery from "../machinery.js";
@@ -376,6 +377,7 @@ declare const fullApi: ApiFromModules<{
   "lib/undoPolicy": typeof lib_undoPolicy;
   "lib/undoReads": typeof lib_undoReads;
   "lib/undoTypes": typeof lib_undoTypes;
+  "lib/unmergeState": typeof lib_unmergeState;
   "lib/validators": typeof lib_validators;
   "lib/withdrawals": typeof lib_withdrawals;
   machinery: typeof machinery;
