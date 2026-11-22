@@ -171,28 +171,28 @@ export function DrawnBody({
         </Section>
       </Part>
       <Part className="grid grid-cols-1 gap-x-(--space-7) gap-y-(--space-5_5) px-(--space-5) pt-(--space-5_5) @[40rem]:grid-cols-2">
-        <Section
-          title={W.theReport}
-          data-slot="drawn-report"
-          {...(report !== null
-            ? {
-                // The report lives in Reports, which isn't built (D286).
-                end: (
-                  <ComingSoonLink data-slot="drawn-open-report">{W.openInReports}</ComingSoonLink>
-                ),
-              }
-            : {})}
-        >
+        <Section title={W.theReport} data-slot="drawn-report">
           <div className="flex min-w-0 flex-col gap-(--space-2)">
             {report === null ? (
               <p className="m-0 text-row leading-body text-fg3">{W.noReportLinked}</p>
-            ) : report.excerpt !== null ? (
-              // An excerpt as the server cut it (its own ellipsis), never the whole report.
-              <Quote data-slot="drawn-report-excerpt">“{report.excerpt}”</Quote>
             ) : (
-              <p data-slot="drawn-report-withheld" className="m-0 text-row leading-body text-fg3">
-                {W.excerptWithheld}
-              </p>
+              <div className="flex min-w-0 flex-col items-start gap-(--space-2)">
+                {report.excerpt !== null ? (
+                  // An excerpt as the server cut it (its own ellipsis), never the whole report.
+                  <Quote data-slot="drawn-report-excerpt" className="self-stretch">
+                    “{report.excerpt}”
+                  </Quote>
+                ) : (
+                  <p
+                    data-slot="drawn-report-withheld"
+                    className="m-0 text-row leading-body text-fg3"
+                  >
+                    {W.excerptWithheld}
+                  </p>
+                )}
+                {/* The report lives in Reports, which isn't built (D286). */}
+                <ComingSoonLink data-slot="drawn-open-report">{W.openInReports}</ComingSoonLink>
+              </div>
             )}
             <LabelRows
               rows={[

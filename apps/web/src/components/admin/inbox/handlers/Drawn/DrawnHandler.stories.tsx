@@ -116,6 +116,13 @@ export const OverCaspian: Story = {
       await expect(s.getByRole('blockquote')).toHaveTextContent('Skated the east arm');
       await expect(s.getByText('Trusted · 41 pts · 14 reports')).toBeVisible();
       await expect(s.getByText('1h 36m · 11 Oct 09:00–11:00')).toBeVisible();
+      // The section's title reads whole: nothing at its rule's end crowds it.
+      const title = must(
+        s
+          .getByRole('region', { name: 'The report it came from' })
+          .querySelector<HTMLElement>('h2, h3, h4'),
+      );
+      await expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
       const merge = s.getByRole('button', { name: /Merge into Caspian Lake/ });
       await expect(merge).toHaveAttribute('data-unavailable-title', 'Coming soon');
       await expect(s.getByRole('button', { name: 'Approve as new' })).toBeVisible();
