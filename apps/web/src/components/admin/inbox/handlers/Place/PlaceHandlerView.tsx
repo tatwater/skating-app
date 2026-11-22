@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
 import { LinkChip } from '../../blocks/LinkChip';
-import { listTotalOf } from '../../blocks/listCut';
+import { ListCutLine, listTotalOf } from '../../blocks/listCut';
 import { shownName } from '../../blocks/shownName';
 import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import {
@@ -27,7 +27,7 @@ import {
   InspectorHeadEnd,
   InspectorHeadTitle,
 } from '../../inspector/InspectorFrame';
-import { AskList } from '../asks/AskList';
+import { AskList, AskWords } from '../asks/AskList';
 import { trustLine } from '../Drawn/drawnModel';
 import { dayTime } from '../Flag/flagFormat';
 import {
@@ -198,6 +198,18 @@ export function PlaceBody({
                     ]),
               ]}
             />
+          )}
+          {/* One ask served: what the list's row would say of it — its note and its skate, drawn the
+              same way — and, when it is one of more, how many of how many. */}
+          {ask !== null && !several && (
+            <div data-slot="place-ask-words" className="flex min-w-0 flex-col gap-(--space-1_5)">
+              <AskWords ask={ask} timeZone={timeZone} />
+              <ListCutLine
+                members={item.asks}
+                total={listTotalOf(item, item.asksCut)}
+                noun="asks"
+              />
+            </div>
           )}
         </div>
         {/* Empty when the map draws nothing: the slot and its rule go with it. */}

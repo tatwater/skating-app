@@ -15,6 +15,8 @@ import {
   BAY_UNDRAWN,
   FIRST_LANDMARK_ASK,
   LANDMARK_ALONE,
+  LANDMARK_NOTED,
+  LANDMARK_ONE_OF_MANY,
   MANY_LANDMARK_ASKS,
   NARROWS,
   PLACE_BY_VIEWER,
@@ -155,6 +157,35 @@ export const AskerHistory: Story = {
 };
 
 /** A landmark ask with nothing like it: Draw in Body, or decline. */
+/**
+ * One ask served: the compact layout says what the list's row would — the asker's note and their
+ * recorded skate — and, when that ask is one of more, how many of how many.
+ */
+export const OneAsk: Story = {
+  render: () =>
+    pair(() => (
+      <div className="flex flex-col gap-(--space-4)">
+        <div data-case="noted">
+          <Inspector item={LANDMARK_NOTED} />
+        </div>
+        <div data-case="one-of-many">
+          <Inspector item={LANDMARK_ONE_OF_MANY} />
+        </div>
+      </div>
+    )),
+  play: async ({ canvasElement }) => {
+    for (const q of quads(canvasElement)) {
+      const noted = must(q.querySelector<HTMLElement>('[data-case="noted"]'));
+      await expect(
+        within(noted).getByText('Everyone at the launch calls it the Narrows.'),
+      ).toBeVisible();
+      await expect(noted.querySelector('[data-slot="ask-skate"]')).not.toBeNull();
+      const many = must(q.querySelector<HTMLElement>('[data-case="one-of-many"]'));
+      await expect(within(many).getByText('Showing 1 of 4 asks')).toBeVisible();
+    }
+  },
+};
+
 export const NothingLikeIt: Story = {
   render: () => pair(() => <Inspector item={LANDMARK_ALONE} />),
   play: async ({ canvasElement }) => {

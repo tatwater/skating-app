@@ -84,14 +84,7 @@ export function AskList({
                 meta={askWhen(a.askedAt, now, timeZone)}
               />
             )}
-            {a.note !== null && a.note.trim() !== '' && (
-              <Quote data-slot="ask-note">{a.note.trim()}</Quote>
-            )}
-            {skateLine(a, timeZone) !== null && (
-              <span data-slot="ask-skate" className="text-assist leading-body text-fg3">
-                {skateLine(a, timeZone)}
-              </span>
-            )}
+            <AskWords ask={a} timeZone={timeZone} />
             {rowMeta !== undefined && <AskRowMeta>{rowMeta(a)}</AskRowMeta>}
             {a.fromReport !== null && (
               <span data-slot="ask-report" className="text-assist leading-body text-fg3">
@@ -103,6 +96,33 @@ export function AskList({
       </ul>
       <ListCutLine members={asks} total={total} noun="asks" />
     </div>
+  );
+}
+
+/**
+ * **An ask's own words, as every ask is drawn**: its note quoted, and its recorded skate. The list's
+ * rows draw them, and so does a handler's compact layout for a single ask (the place handler's), so
+ * an ask reads the same wherever it stands.
+ */
+export function AskWords({
+  ask,
+  timeZone,
+}: {
+  ask: Pick<AskMemberView, 'note' | 'activityId' | 'skate'>;
+  timeZone: string | undefined;
+}) {
+  const skate = skateLine(ask, timeZone);
+  return (
+    <>
+      {ask.note !== null && ask.note.trim() !== '' && (
+        <Quote data-slot="ask-note">{ask.note.trim()}</Quote>
+      )}
+      {skate !== null && (
+        <span data-slot="ask-skate" className="text-assist leading-body text-fg3">
+          {skate}
+        </span>
+      )}
+    </>
   );
 }
 

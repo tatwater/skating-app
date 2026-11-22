@@ -261,3 +261,25 @@ export const BAY_DRAWN_CLOSED_FIRST = {
   ],
   primaryRequestId: id('rqbay1'),
 } as unknown as PlaceItem;
+
+/** One asker, with a note and the recorded skate they asked from: the compact layout says both. */
+export const LANDMARK_NOTED = {
+  ...NARROWS,
+  itemId: id('itnarrowsnoted'),
+  asks: [
+    {
+      ...LUC_ASK,
+      note: 'Everyone at the launch calls it the Narrows.',
+      activityId: id('acluc14oct'),
+      skate: { startTime: NOW - 6 * H, endTime: NOW - 5 * H, elapsedSeconds: 48 * 60 },
+    },
+  ],
+} as unknown as PlaceItem;
+
+/** One ask served of four (the item's budget cut the list): the compact layout says one of four. */
+export const LANDMARK_ONE_OF_MANY = {
+  ...NARROWS,
+  itemId: id('itnarrowsmany'),
+  memberCount: 4,
+  asksCut: true,
+} as unknown as PlaceItem;

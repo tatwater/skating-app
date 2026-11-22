@@ -4,6 +4,7 @@ import { ConvexError } from 'convex/values';
 import { type ReactElement, useRef } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { must } from '@/components/kit/storyKit';
 import { Toaster } from '@/components/kit/toast';
 import { stubJsdomAnimations } from '../../../body/tabs/jsdomStubs';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
@@ -12,6 +13,8 @@ import {
   BAY_DRAWN,
   BAY_UNDRAWN,
   LANDMARK_ALONE,
+  LANDMARK_NOTED,
+  LANDMARK_ONE_OF_MANY,
   LANDMARK_PROPOSAL,
   LANDMARK_SEVERAL,
   MANY_LANDMARK_ASKS,
@@ -85,6 +88,35 @@ const inShell = (ui: ReactElement, s: UndoServer = undoServer()) =>
       <UndoProvider server={s}>{ui}</UndoProvider>
     </Toaster>,
   );
+
+describe('one ask served: the compact layout says what the list’s row would', () => {
+  it('says the asker’s note and their recorded skate, drawn as an ask’s row draws them', () => {
+    inShell(<Pane item={LANDMARK_NOTED} />);
+    const words = must(document.querySelector<HTMLElement>('[data-slot="place-ask-words"]'));
+    expect(
+      within(words).getByText('Everyone at the launch calls it the Narrows.'),
+    ).toBeInTheDocument();
+    expect(words.querySelector('[data-slot="ask-skate"]')).toHaveTextContent(
+      /^With a recorded skate · 48m · /,
+    );
+    // One ask, whole: no cut line.
+    expect(screen.queryByText(/^Showing/)).toBeNull();
+  });
+
+  it('says one of how many when the one ask served is one of more', () => {
+    inShell(<Pane item={LANDMARK_ONE_OF_MANY} />);
+    expect(screen.getByText('Showing 1 of 4 asks')).toBeInTheDocument();
+  });
+
+  it('draws nothing more for an ask with neither a note nor a skate', () => {
+    inShell(<Pane item={NARROWS} />);
+    const words = document.querySelector<HTMLElement>('[data-slot="place-ask-words"]');
+    expect(
+      words?.querySelector('[data-slot="ask-note"], [data-slot="ask-skate"]') ?? null,
+    ).toBeNull();
+    expect(screen.queryByText(/^Showing/)).toBeNull();
+  });
+});
 
 describe('several askers', () => {
   it('says each asker’s landmark history under their own row, and nothing for one gone', () => {
