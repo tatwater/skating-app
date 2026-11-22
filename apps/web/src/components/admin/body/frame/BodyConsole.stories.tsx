@@ -9,6 +9,7 @@ import {
   expectNoSidewaysScroll,
   faceLoaded,
   must,
+  settled,
 } from '@/components/kit/storyKit';
 import { fitCamera } from '@/lib/mapSurface';
 import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
@@ -40,6 +41,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** One animation frame: what Base UI's popups wait on between their styles. */
+const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
 const slot = (root: ParentNode, name: string) =>
   must(root.querySelector<HTMLElement>(`[data-slot="${name}"]`));
 const slots = (root: ParentNode, name: string) => [
@@ -367,18 +370,20 @@ export const MergePreview: Story = {
     const confirm = within(preview).getByRole('button', { name: 'Merge into Crystal Lake' });
     await expect(confirm).toBeEnabled();
     await userEvent.click(confirm);
-    // The dialog's fades take longer on a starved runner (the convex suite beside it): its waits
-    // ride that out rather than read mid-fade.
-    const steady = { timeout: 5_000 };
-    const dialog = await page.findByRole('alertdialog', {}, steady);
+    // The dialog's fade is waited on as events, never the clock: Base UI drops its starting style
+    // on a later frame, the opacity transition then runs to its end, and on Escape the ending style
+    // goes on and the popup unmounts once that transition finishes. Each arrives — nothing here waits
+    // on a read — but a starved runner can make any of them later than a fixed timeout.
+    const dialog = await page.findByRole('alertdialog');
     await expect(dialog).toHaveTextContent('Merge Mascoma Lake into Crystal Lake');
-    // The dialog fades in: read its words once they are seen, not mid-fade.
-    await waitFor(
-      () => expect(within(dialog).getByText('Reason · kept in the audit log')).toBeVisible(),
-      steady,
-    );
+    while (dialog.hasAttribute('data-starting-style')) await nextFrame();
+    await settled(dialog);
+    await expect(within(dialog).getByText('Reason · kept in the audit log')).toBeVisible();
     await userEvent.keyboard('{Escape}');
-    await waitFor(() => expect(page.queryByRole('alertdialog')).toBeNull(), steady);
+    while (dialog.isConnected && !dialog.hasAttribute('data-ending-style')) await nextFrame();
+    await settled(dialog);
+    // Only the unmount's commit is left once the fade has finished.
+    await waitFor(() => expect(page.queryByRole('alertdialog')).toBeNull());
   },
 };
 
