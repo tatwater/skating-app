@@ -11549,16 +11549,46 @@ found a blocker.** Each fix below is its own commit, with the test that fails wi
    - The DOM list is data (`src/test/domTests.json`, read with `fs`).
    - The guard holds every test file on disk in exactly one unit project.
 
-**The reviewers' clean areas:** the reviewers' notes on what they found sound were not relayed to the
-integration, so they are not restated here beyond "no blockers".
+**What the reviewers found sound.**
 
-**What they could not review:**
+R12 (server and CI):
+- a cancel racing the send serializes on one row;
+- the seed is gated at enqueue and again at send;
+- `from` never falls back to the general address;
+- the item is gated on support's read, a removed note serves `body: null`, and the export carries the
+  person's own words and sent replies only;
+- erasure runs at 200 capped tickets and 250 capped replies inside the limits;
+- one refusal function serves the undo's offer and its run;
+- the CI skip compares tree ids soundly for squash, merge, rebase, direct pushes and racing merges,
+  and every doubt runs everything;
+- the 153 Node-run files pass their 2,159 tests under both Node and jsdom.
+
+R13 (web):
+- every write takes the item's or the message's own id;
+- nothing reads "Sent" unless the server says `sent`;
+- bodies render as text, never markup;
+- a departed person is never named;
+- ⌘⏎ is bound once, to the dock;
+- the redirect leaves no live link.
+
+**The send path on a real backend.** The support builder checked it twice on a throwaway anonymous
+local backend, with the sender stubbed to record and a placeholder provider key (never dev, never a
+real key):
+- a reply was sent 451 ms after its window;
+- a reply canceled inside the window sent nothing;
+- a reply with the sender unset was stored `failed` / `unconfigured`, with nothing scheduled;
+- two sends killed after their claim read `outcomeUnknown` about 20 s later, with no resend (the
+  watch was scaled down for the test, then restored);
+- a double call with one `clientKey` made one row and one send.
+
+(An earlier draft of this section, and of #175's body, said the send path was proven on the
+convex-test harness only. That was wrong, and both now say so.)
+
+**What the reviews could not reach:**
 - real GitHub Actions behavior: the skip on a push to main and the nightly's own group, which run
   only on GitHub;
-- a live Resend send.
-
-The send path is proven on the convex-test harness (the claim, the watch, the late answer, the
-blocked reply), not on a real backend or with live mail.
+- **a real send through the email provider, which has never been exercised.** It needs
+  `SUPPORT_FROM_EMAIL` on dev, the founder's to set.
 
 #### Greptile on #175, round 1 (2026-11-22)
 
