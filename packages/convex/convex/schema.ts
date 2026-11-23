@@ -4221,7 +4221,9 @@ export default defineSchema({
    * read outside `inbox.support.read` returns one. A note is soft-removed (`removedAt`, its undo); a
    * reply is written `settling` with `sendAfter` one settle window on, and the scheduled send re-reads
    * the row and sends only while it still settles — so canceling inside the window is the undo, and
-   * a sent reply can't be unsent. The address is never stored: it is resolved at send from the
+   * a sent reply can't be unsent. A reply that can't go (a seeded person; no sender or provider key
+   * on the deployment) is written `failed` at once with nothing scheduled, as the plan rules; one
+   * whose send died is settled by its watch (`support.watchReply`). The address is never stored: it is resolved at send from the
    * person's profile, else from the ticket's Clerk subject (a ticket filed before provisioning).
    */
   supportMessages: defineTable({
