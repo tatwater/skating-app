@@ -10,6 +10,7 @@ import {
   type PostCardData,
   postCardForCachedReport,
   seasonOf,
+  withFavoritePosts,
   withoutRecommended,
 } from '@skating/core';
 import { usePaginatedQuery, useQuery } from 'convex/react';
@@ -93,7 +94,12 @@ export default function NewsfeedScreen() {
   }, [favoriteCards]);
   const isOfflineFallback =
     results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0;
-  const feedData = isOfflineFallback ? cached : results;
+  // The viewer's favorite Posts, up front, so each section's favorites lead it from its first draw
+  // (D292); merged in as the scroll reaches their sections. Never into the offline cache's list.
+  const favoritePosts = useQuery(api.posts.listFavoritePosts, { filters: filters.value });
+  const feedData = isOfflineFallback
+    ? cached
+    : withFavoritePosts(results, favoritePosts ?? [], status === 'Exhausted', now);
 
   // Recommended filter-breaking bundles (D50) — a separate query interleaved near the top, never spliced
   // into the paginated feed. Renders nothing (the common case) when nothing exceptional qualifies.

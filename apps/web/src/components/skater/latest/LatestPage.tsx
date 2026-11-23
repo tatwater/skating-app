@@ -99,6 +99,13 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     ((searching ? searchMeta : skaterMeta) as { skaterUnavailable?: true } | undefined)
       ?.skaterUnavailable === true;
 
+  // The viewer's favorite Posts, up front, so each section's favorites lead it from its first draw
+  // (D292). Not under a search, which stays newest first.
+  const favoritePosts = useQuery(
+    api.posts.listFavoritePosts,
+    searching ? 'skip' : { filters: value, ...skaterArg },
+  );
+
   // Recommended filter-breakers (D50): their own strip, and out of the feed so none shows twice.
   const recommended = useQuery(api.reports.recommended, {});
   const recommendedIds = useMemo(
@@ -135,7 +142,7 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     bodies,
     status === 'Exhausted',
     now,
-    { liftFavorites: !searching },
+    { liftFavorites: !searching, favorites: searching ? [] : (favoritePosts ?? []) },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
   const state = latestFeedState({

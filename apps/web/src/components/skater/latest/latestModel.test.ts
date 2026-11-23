@@ -105,6 +105,22 @@ describe('latestSections', () => {
     ]);
   });
 
+  it('puts a favorite the pages haven’t reached at the head of its section from the first draw (D292)', () => {
+    // Page 1 ends inside Today; the up-front read knows a Today favorite page 2 would bring, and an
+    // older one whose section the scroll hasn't reached.
+    const page1 = [post('t1', 1), post('t2', 2)];
+    const favorites = [post('t9', 9, undefined, true), post('o1', 99 * 24, undefined, true)];
+    const first = latestSections(page1, new Set(), [], false, NOW, { ...LIFT, favorites });
+    expect(first.map((s) => s.items.map(rowId))).toEqual([['t9', 't1', 't2']]);
+    // Page 2 brings t9 itself and reaches Older: no repeat, and Today's head hasn't moved.
+    const page2 = [...page1, post('t9', 9, undefined, true), post('o0', 98 * 24)];
+    const second = latestSections(page2, new Set(), [], false, NOW, { ...LIFT, favorites });
+    expect(second.map((s) => s.items.map(rowId))).toEqual([
+      ['t9', 't1', 't2'],
+      ['o1', 'o0'],
+    ]);
+  });
+
   it('keeps a search newest first: its result line says so (D292)', () => {
     const sections = latestSections(
       [post('t1', 1), post('t2', 2, undefined, true), post('o1', 99 * 24, undefined, true)],

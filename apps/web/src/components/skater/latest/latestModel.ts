@@ -10,6 +10,7 @@ import {
   type PostCardData,
   thresholdLabel,
   type WeatherDiscoveryFilter,
+  withFavoritePosts,
   withoutRecommended,
 } from '@skating/core';
 
@@ -30,9 +31,11 @@ export type LatestRow = LatestItem<PostCardData>;
  * The feed column's sections — the old page's composition, unchanged: recommended reports come out
  * of the filtered feed (a permissive viewer never sees one twice, D50), matched lakes slot in among
  * the posts by the day each crossed the asked-for nights (`interleaveLatest`), and the list breaks
- * into recency sections, favorites first in each (D292). A search turns the lift off
- * (`liftFavorites: false`): its result line promises newest first. Core owns and tests each step;
- * this only names the order they run in.
+ * into recency sections, favorites first in each (D292). `favorites` are the viewer's favorite
+ * Posts read up front (`posts.listFavoritePosts`), merged in as the scroll reaches each one's
+ * section so a section's head is known when it first draws (`withFavoritePosts`). A search passes
+ * none and turns the lift off (`liftFavorites: false`): its result line promises newest first. Core
+ * owns and tests each step; this only names the order they run in.
  */
 export function latestSections(
   posts: readonly PostCardData[],
@@ -40,11 +43,14 @@ export function latestSections(
   bodies: readonly BodyResultData[],
   exhausted: boolean,
   now: number,
-  { liftFavorites }: { liftFavorites: boolean },
+  {
+    liftFavorites,
+    favorites = [],
+  }: { liftFavorites: boolean; favorites?: readonly PostCardData[] },
 ): FeedSection<LatestRow>[] {
   return groupFeedSections(
     interleaveLatest(
-      withoutRecommended(posts, recommendedIds),
+      withoutRecommended(withFavoritePosts(posts, favorites, exhausted, now), recommendedIds),
       (post) => post.latestSkateEndTime,
       bodies,
       exhausted,

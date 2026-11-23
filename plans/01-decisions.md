@@ -8720,6 +8720,13 @@ and matched lakes alike) to the top of **their own** section. Within a section, 
 first, then the rest, each newest first. A favorite never moves above a newer section.
 `groupFeedSections` in `@skating/core` owns the rule for web and mobile, and buckets by key rather
 than by run, so no input order can repeat a header.
+- **Favorites are read up front.** A favorite paged in later would land at the top of a section
+  the reader had already scrolled past, unseen. `posts.listFavoritePosts` reads the viewer's
+  newest favorite Posts in the served season, under the same season, skater, moderation and filter
+  rules as `listFeed`, capped at 20 Posts from the first 40 favorites. `withFavoritePosts` merges
+  each one in once the scroll reaches its section, so the section has its head when it first
+  draws. Past the cap, a favorite arrives with its page.
+- **A search stays newest first.** Its result line says so, and it reads no favorites.
 
 **Why:** Phase 04 boosted favorites to the top of each page on the server, and the client then cut
 the page into sections by time, assuming it was still newest first. After the dev seed, one
@@ -8727,6 +8734,8 @@ account's two favorites (one from today, one 128 days old) led the page, and Lat
 Older than a month / Today / Older than a month". The per-page boost also put page 2's favorites in
 the middle of a scroll, and misplaced weather-matched lakes, which `interleaveLatest` slots in by
 time. The alternatives were dropping the boost (favorites keep only the badge) or a separate
-"Your lakes" block (new UI); the founder chose to keep the boost within each section.
+"Your lakes" block (new UI). The founder chose to keep the boost within each section, and then
+(over lifting only the favorites already loaded, which made order depend on scroll history) to
+read them up front.
 
 **Related:** D28, D165, [`phase-04`](./phases/04-drive-time-and-filtering.md).

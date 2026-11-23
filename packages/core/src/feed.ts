@@ -549,6 +549,36 @@ export function groupFeedSections<T>(
 }
 
 /**
+ * The paginated feed with the viewer's up-front favorite Posts merged in (D292), newest first. A
+ * favorite the pages haven't reached joins once the scroll reaches **its section** (the oldest
+ * loaded Post's section or an older one is not reached), so `groupFeedSections` can put it at the
+ * top of that section the moment the section first draws, never later and above the reader. Every
+ * section is reached once the pages are `exhausted`. The paginated copy of a Post wins; the
+ * favorites add only what isn't loaded yet. Ties keep the pages' order ahead of the favorites'.
+ */
+export function withFavoritePosts(
+  posts: readonly PostCardData[],
+  favorites: readonly PostCardData[],
+  exhausted: boolean,
+  now: number,
+): PostCardData[] {
+  const last = posts[posts.length - 1];
+  const reached = exhausted
+    ? Number.POSITIVE_INFINITY
+    : last === undefined
+      ? -1
+      : SECTION_RANK[feedSectionForTime(last.latestSkateEndTime, now).key];
+  const loaded = new Set(posts.map((p) => p.postId));
+  const extra = favorites.filter(
+    (f) =>
+      !loaded.has(f.postId) &&
+      SECTION_RANK[feedSectionForTime(f.latestSkateEndTime, now).key] <= reached,
+  );
+  if (extra.length === 0) return [...posts];
+  return [...posts, ...extra].sort((a, b) => b.latestSkateEndTime - a.latestSkateEndTime);
+}
+
+/**
  * Compose the render-ready feed card from a server item + the current time. Pure: no I/O, no
  * date-now — `now` is injected so the relative label is deterministic and stays live on the client.
  */
