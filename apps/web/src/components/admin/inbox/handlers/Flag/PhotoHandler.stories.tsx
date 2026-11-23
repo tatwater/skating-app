@@ -183,7 +183,7 @@ export const HideDialog: Story = {
     await expect(d).toHaveTextContent('Hide this photo?');
     await expect(d).toHaveTextContent('It comes off its link now and is shown to no one.');
     await expect(d).toHaveTextContent(
-      'Anyone who already opened it may still see it on their own device for up to 30 days.',
+      'Anyone who already opened it may still see it on their own device.',
     );
     await expect(d).toHaveTextContent('You can restore it at any time.');
     await waitFor(() => expect(document.activeElement?.tagName).toBe('TEXTAREA'));
@@ -208,7 +208,8 @@ export const RemoveDialog: Story = {
     const d = await hideDialog(canvasElement, 'r');
     await expect(d).toHaveTextContent('Remove this photo?');
     await expect(d).toHaveTextContent('It comes off its link now and is shown to no one.');
-    await expect(d).toHaveTextContent('may still see it on their own device for up to 30 days');
+    await expect(d).toHaveTextContent('may still see it on their own device.');
+    await expect(d).not.toHaveTextContent('up to');
     await expect(d).toHaveTextContent(
       'It is deleted for good in 30 days unless it is restored before then.',
     );

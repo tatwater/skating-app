@@ -11,8 +11,10 @@
 /**
  * **What a takedown does, as the dev proof showed it** (one truth, no switch): a hide or a removal
  * takes the photo off its link at once and shows it to no one — but a device that already opened it
- * may keep its own copy for up to 30 days, which nothing here can reach. So no word claims the photo
- * is gone from everywhere, or erased before its removal's 30 days are up.
+ * may keep its own copy — a browser's cache, a phone's image cache, a screenshot — with no time limit
+ * anyone can promise, which nothing here can reach. So no word claims the photo is gone from
+ * everywhere, or erased before its removal's 30 days are up, and none puts a time on the device's
+ * copy.
  */
 
 /** The days a removed photo waits before its file is deleted (the server's purge clock). */
@@ -80,7 +82,7 @@ export const PHOTO_WORDS = {
   removeTitle: 'Remove this photo?',
   /** What a takedown does to the photo: its link, and the devices that already opened it. */
   offNow:
-    'It comes off its link now and is shown to no one. Anyone who already opened it may still see it on their own device for up to 30 days.',
+    'It comes off its link now and is shown to no one. Anyone who already opened it may still see it on their own device.',
   hideAfter: 'You can restore it at any time.',
   removeAfter: `It is deleted for good in ${PHOTO_PURGE_DAYS} days unless it is restored before then.`,
   /** What every takedown does to the flags. */

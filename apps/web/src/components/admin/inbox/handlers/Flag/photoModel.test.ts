@@ -223,7 +223,10 @@ describe('the bar and its words', () => {
     for (const verb of ['hide', 'remove'] as const) {
       const { body } = photoDialogWords(verb);
       expect(body).toContain('It comes off its link now and is shown to no one.');
-      expect(body).toContain('may still see it on their own device for up to 30 days');
+      // On their own device, with no time limit: a phone's cache or a screenshot keeps no promise.
+      expect(body).toContain('Anyone who already opened it may still see it on their own device.');
+      const device = body.split(/(?<=\.)\s+/).find((sentence) => sentence.includes('device'));
+      expect(device).toBe('Anyone who already opened it may still see it on their own device.');
       expect(body).toContain('Closes every open flag on it');
     }
     expect(photoDialogWords('hide').body).toContain('You can restore it at any time.');
