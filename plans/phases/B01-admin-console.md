@@ -11982,6 +11982,111 @@ All green. Main `35944bf6` is deployed to dev.
 4. **Flip the roadmap entry** to closed.
 5. **Sweep the local branches and worktrees** (`phase-b01-inbox-*`, the builders' `b01-5*` branches).
 
+#### Greptile on #176, round 1 (2026-11-23)
+
+Greptile's first review of #176 (head `f3f25290d`) scored it 2/5. **All four findings were in the
+stored-files code:**
+1. A rotation deleted old files that another photo row still used: a legacy row from before
+   `photos.create` refused shared ids.
+2. Copies from a late retry escaped the cleanup's 15-minute window.
+3. A failed delete was dropped from the record.
+4. Storage ids still left the server, inside `rotation.copies`, through `contentRecord.item`.
+
+**Why a rebuild, not four patches.** This was the third review round on the same code: R14's blocker,
+then its should-fixes, then these. Each round had found a path the one before had missed. So S5
+(`b01-5e-s5-3`, head `6fae57d9a`, fast-forwarded here) wrote down what has to hold, put every
+stored-file write behind one module that keeps it, and proved it with a model-based test.
+
+##### The seven invariants
+
+These are verbatim from the header of `lib/photoFiles.ts`:
+
+1. **Every stored photo file is named by exactly one thing at every committed instant**: a photo
+   row's image or thumbnail slot; or one `photoFiles` row — an in-flight rotation copy (`copy`) or a
+   file owed a deletion (`doomed`); or it was stored by a rotation attempt that isn't reconciled
+   yet, inside that attempt's own window, with a source file's sha256 (`photoRotations`) — so a
+   sweep always finds it. (Rows written before B01-5e may share a file between photos; nothing new
+   can, `photos.create`.)
+2. **A file any photo row names is never deleted** — a legacy row sharing a file included. A
+   rotation copies for its own row and leaves a shared source to the row still holding it.
+3. **A copy exists only if recorded first or findable afterwards, whenever its attempt ran**: the
+   attempt row is written before anything is stored, each copy is recorded the moment it is
+   stored, and the reconcile searches each attempt's own window (`startedAt` to its action's
+   lifetime), paged to the end, for one stored and never recorded.
+4. **A deletion that fails is retried until the file is gone** — a `doomed` row, by the attempts
+   rule (1 min, 10 min, 1 h, then parked and daily), mirrored to Machinery (`photoRotation`,
+   `file:<id>`), bounded per run, never forgotten.
+5. **The watch ends only when nothing of the photo's is in flight or owed**: no attempt
+   unreconciled, no `photoFiles` row.
+6. **No storage id leaves the server to any caller**: a photo document goes out only through
+   `projectPhoto`'s allow-list; reads serve URLs.
+7. **No write accepts a storage id that is named, reserved, or not a fresh unattached upload**
+   (`fileTaken`).
+
+##### Two tables replace the array on the photo row
+
+`photos.rotation` is gone. It was never deployed, so no migration is needed.
+- **`photoFiles`**: one row per stored file that no photo slot names. Its fields are `storageId`,
+  `state` (`copy` or `doomed`), `photoId`, `attemptId?`, `createdAt`, `nextTryAt`, `attempts?`,
+  `errorClass?` and `parkedAt?`. Indexes: `by_storage`, `by_state_next`, `by_photo`.
+- **`photoRotations`**: one row per copy attempt, written before it stores anything. Its fields are
+  `photoId`, `startedAt`, `sha256[]`, `scanFrom` and `status` (`running`, `ended` or `reconciled`).
+  Indexes: `by_photo_status`, `by_status_started`.
+- **A daily cron, `sweep photo files`** (`photoPurge.sweepPhotoFiles`): it reconciles any attempt
+  that can't still be running and retries due doomed files. It reaches whatever a photo's own watch
+  no longer can. No register of scheduled jobs exists beyond `crons.ts`: the cron audit above is
+  dated and covers only the crons that existed then.
+
+**Behavior change:** a delete or purge no longer keeps a half-deleted row as "the only pointer." The
+row goes, or becomes a tombstone, and any file storage won't release is owed on the ledger.
+
+##### The model test, and the two defects it found
+
+`photoFiles.property.test.ts` generates random sequences of these steps:
+- uploads, and legacy rows sharing files;
+- flags, hides, removals and restores;
+- the uploader's delete, and an author's edit dropping photos;
+- the background deleters and purges;
+- rotation attempts killed at any step, and the rotation's action cancelled before it begins;
+- deletes that fail and later succeed;
+- the clock moving minutes to days, and the files sweep.
+
+**After every step it checks the invariants against real storage and the tables.** At the end,
+with the faults cleared and the clock run on, nothing is owed and storage holds exactly the files
+live rows name.
+
+S5 ran it 120 times, 1,440 sequences in all. It found two real defects, now pinned by their seeds:
+- **A copy recorded after its attempt was reconciled was orphaned.** Recording a copy now releases
+  it.
+- **A delete where one of a photo's two files failed left a live row pointing at a missing file.**
+  The row now goes, and each file is released to the ledger.
+
+##### On a real local backend
+
+- Kills at each step, then a second attempt five hours later, took 6 stray files to 0.
+- Storage ended holding exactly the 16 files live rows name.
+- A shared legacy file was kept with its twin.
+- A delete that fails and later succeeds is proven only in the harness: real storage can't be made
+  to fail on a real file.
+
+##### Integration
+
+- **No conflicts.** S5 was cut from `origin/phase-b01-inbox-6`, so it fast-forwarded.
+- **The data-model map** has rows for `photoFiles` and `photoRotations`. This was S5's one failing
+  guard.
+- **Machinery.** Owed deletions land under the `photoRotation` job with key `file:<id>`. A
+  rotation that can't land is mirrored there by the watch, keyed by the photo. The job's name read
+  "rotate a taken-down photo's file", but owed files from a delete or a purge are listed there too,
+  so it now reads "rotate or release a photo's files". `photoRotation.test.ts` asserts
+  `recurringJobs.health` on a parked owed file, its clearing, and a parked rotation. No Machinery
+  page exists on the web yet, so there are no web words or story to add.
+- **The web against the allow-list.** check-types is clean with no change. The record pane reads
+  only `moderationStatus` and `_creationTime` off a published photo, and the allow-list serves
+  both. The fields it drops (`erasedAt`, `orphanCandidate`, `seasonExpiryCandidate`) are read on
+  the server before the projection. Every other web use of a storage id is an upload write.
+- **The model test's cost.** At its default of 12 sequences, the property takes 160–206 ms alone,
+  against a 60 s limit. The 120-run hot run stays a gate-time choice.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
