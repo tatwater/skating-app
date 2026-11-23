@@ -248,6 +248,14 @@ function PhotoStrip({
   );
 }
 
+/**
+ * The Remove control's hint, true from the author's side whichever photo it is: an ordinary photo
+ * leaves the report on save; one a flag or a decision holds is withdrawn instead — kept attached,
+ * hidden from everyone but staff — and reads *Not shown* to its author. Either way it isn't shown
+ * with the report, and nothing says staff acted.
+ */
+export const REMOVE_PHOTO_HINT = 'A photo you remove isn’t shown with the report once you save.';
+
 /** A kept photo the read no longer serves (invented words, for the founder's look). */
 const WITHHELD = 'Not shown';
 const WITHHELD_LABEL = 'A photo that isn’t shown with this report; it stays with it';
@@ -344,7 +352,7 @@ function PhotoTile({
               </button>
             }
           />
-          <TooltipContent>A photo you remove leaves the report when you save.</TooltipContent>
+          <TooltipContent>{REMOVE_PHOTO_HINT}</TooltipContent>
         </Tooltip>
       ) : null}
     </div>
