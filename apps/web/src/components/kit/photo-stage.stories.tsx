@@ -21,20 +21,37 @@ function Stage() {
       <PhotoStage
         thumb={THUMB}
         full={FULL}
+        fullFailed={false}
         shown={shown}
         onShow={() => setShown(true)}
         onPixelate={() => setShown(false)}
         alt="A shore"
         label="The photo, pixelated"
         veil="Pixelated until you choose to look"
+        loadingLabel="Loading the photo…"
+        thumbUnavailable="The thumbnail couldn’t be loaded"
+        fullUnavailable="The photo couldn’t be loaded"
         showLabel="Show the photo"
         pixelateLabel="Pixelate again"
         caption="11 Oct 14:22 · Crystal Lake"
         place="1 of 2"
       />
       <div className="flex gap-(--space-2_5)">
-        <PhotoThumb thumb={THUMB} shown={shown} label="Photo 1, pixelated" alt="Photo 1" selected />
-        <PhotoThumb thumb={null} shown={shown} label="Photo 2" alt="Photo 2" />
+        <PhotoThumb
+          thumb={THUMB}
+          shown={shown}
+          label="Photo 1, pixelated"
+          alt="Photo 1"
+          unavailable="The thumbnail couldn’t be loaded"
+          selected
+        />
+        <PhotoThumb
+          thumb={null}
+          shown={shown}
+          label="Photo 2"
+          alt="Photo 2"
+          unavailable="The thumbnail couldn’t be loaded"
+        />
       </div>
     </div>
   );

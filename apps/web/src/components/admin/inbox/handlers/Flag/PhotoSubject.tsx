@@ -81,6 +81,11 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
         <PhotoStage
           thumb={stage.thumb}
           full={reveal.kind === 'ready' ? reveal.url : null}
+          // Failed, or answered with no address (purged since): words, never the thumbnail instead.
+          fullFailed={reveal.kind === 'failed' || (reveal.kind === 'ready' && reveal.url === null)}
+          loadingLabel={P.revealLoading}
+          thumbUnavailable={P.thumbUnavailable}
+          fullUnavailable={P.revealFailed}
           shown={shown}
           onShow={() => setShown(true)}
           onPixelate={() => setShown(false)}
@@ -188,6 +193,7 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
                   selected={s.self}
                   label={P.thumbLabel(s.n)}
                   alt={P.thumbAlt(s.n)}
+                  unavailable={P.thumbUnavailable}
                 />
                 {s.flagRef !== null && linkFor !== undefined && (
                   <LinkChip

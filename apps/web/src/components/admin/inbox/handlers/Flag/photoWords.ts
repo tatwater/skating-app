@@ -57,6 +57,10 @@ export const PHOTO_WORDS = {
     `Its uploader took it down on ${day}; it is kept out of sight while a flag or a decision holds it`,
   /** Coined: the full photo's fetch on Show failed. */
   revealFailed: 'The photo couldn’t be loaded',
+  /** Coined: Show pressed, the full photo still on its way (the stage stays pixelated). */
+  revealLoading: 'Loading the photo…',
+  /** Coined: a thumbnail that won't load. */
+  thumbUnavailable: 'The thumbnail couldn’t be loaded',
 
   // ── On the same report ──────────────────────────────────────────────────────────────────────
   sameReport: 'On the same report',

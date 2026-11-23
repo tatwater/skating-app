@@ -27,7 +27,11 @@ import { cn } from '@/lib/utils';
  * - **Not reachable.** The canvas is `aria-hidden` with no text alternative, so the accessibility tree
  *   holds the stage's label, never the image; right-click on it offers only the mosaic, and with no
  *   `<img>` there is no "Open image in new tab" to the address.
- * - **On reveal,** the full image mounts as an ordinary `<img>` with its alternative text.
+ * - **On reveal,** the full image mounts as an ordinary `<img>` with its alternative text — once it
+ *   has an address. While the caller is still fetching it, the stage stays pixelated (never the
+ *   unpixelated thumbnail in its place); if the fetch fails, or the image won't load, the stage says so
+ *   in words, never the browser's broken-image glyph.
+ * - **A thumbnail that won't load** says so in words, never a blank field.
  */
 
 /**
@@ -68,16 +72,25 @@ export type PixelatedImageProps = Omit<
   src: string | null;
   /** Cells across. */
   cells: number;
+  /** What it says in place of the mosaic when the thumbnail won't load. */
+  unavailable: string;
 };
 
 /**
  * The mosaic: a detached image of `src` drawn into a canvas of `cells` across, scaled up by CSS
  * without smoothing. `data-drawn` marks the moment the mosaic is painted (a story waits on it).
  */
-export function PixelatedImage({ src, cells, className, ...props }: PixelatedImageProps) {
+export function PixelatedImage({
+  src,
+  cells,
+  unavailable,
+  className,
+  ...props
+}: PixelatedImageProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [grid, setGrid] = useState(() => mosaicGrid(cells, 0, 0));
   const [drawn, setDrawn] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
 
   // The grid follows the box's shape: measured on mount and whenever the box resizes.
   useLayoutEffect(() => {
@@ -102,6 +115,9 @@ export function PixelatedImage({ src, cells, className, ...props }: PixelatedIma
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer';
     let live = true;
+    img.onerror = () => {
+      if (live) setFailed(src);
+    };
     img.onload = () => {
       if (!live) return;
       const ctx = el.getContext('2d');
@@ -117,10 +133,24 @@ export function PixelatedImage({ src, cells, className, ...props }: PixelatedIma
     return () => {
       live = false;
       img.onload = null;
+      img.onerror = null;
       img.removeAttribute('src');
     };
   }, [src, grid]);
 
+  if (src !== null && failed === src) {
+    return (
+      <span
+        data-slot="photo-mosaic-failed"
+        className={cn(
+          'flex size-full items-center justify-center bg-raise px-(--space-2) text-center text-assist leading-list text-fg3',
+          className,
+        )}
+      >
+        {unavailable}
+      </span>
+    );
+  }
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a canvas with no tabindex takes no focus; hidden, it keeps the image out of the accessibility tree.
     <canvas
@@ -140,8 +170,10 @@ export function PixelatedImage({ src, cells, className, ...props }: PixelatedIma
 export type PhotoStageProps = {
   /** The thumbnail, the only image fetched before the reveal. */
   thumb: string | null;
-  /** The full image's address; put in the page only once `shown`. */
+  /** The full image's address; put in the page only once `shown` (`null` while it is fetched). */
   full: string | null;
+  /** The full image's fetch failed, or answered no address: said in words, never the thumbnail. */
+  fullFailed: boolean;
   shown: boolean;
   onShow: () => void;
   onPixelate: () => void;
@@ -151,6 +183,11 @@ export type PhotoStageProps = {
   label: string;
   /** The veil's line and its button's words. */
   veil: string;
+  /** While shown and the full image is still on its way (the stage stays pixelated). */
+  loadingLabel: string;
+  /** In place of the thumbnail, or of the full image, when it won't load. */
+  thumbUnavailable: string;
+  fullUnavailable: string;
   showLabel: string;
   pixelateLabel: string;
   /** The key the reveal is bound to, drawn on its button (the caller binds it). */
@@ -170,12 +207,16 @@ export type PhotoStageProps = {
 export function PhotoStage({
   thumb,
   full,
+  fullFailed,
   shown,
   onShow,
   onPixelate,
   alt,
   label,
   veil,
+  loadingLabel,
+  thumbUnavailable,
+  fullUnavailable,
   showLabel,
   pixelateLabel,
   showKey,
@@ -196,10 +237,21 @@ export function PhotoStage({
     const at = document.activeElement;
     if (at === null || at === document.body) (shown ? pixelateRef : showRef).current?.focus();
   }, [shown]);
-  const src = shown ? (full ?? thumb) : null;
+  // The full image's own load failure, by its address (a new address tries again).
+  const [brokenFull, setBrokenFull] = useState<string | null>(null);
+  const fullBroken = full !== null && brokenFull === full;
+  // Shown: the full image once it has an address, words if it failed; never the thumbnail instead.
+  const view: 'mosaic' | 'loading' | 'full' | 'failed' = !shown
+    ? 'mosaic'
+    : full !== null && !fullBroken
+      ? 'full'
+      : fullFailed || fullBroken
+        ? 'failed'
+        : 'loading';
   return (
     <figure
-      aria-label={shown ? alt : label}
+      // Pixelated, the figure names what it is; shown, the image's own text alternative says it once.
+      aria-label={shown ? undefined : label}
       data-slot="photo-stage"
       data-shown={shown ? '' : undefined}
       className={cn(
@@ -207,20 +259,40 @@ export function PhotoStage({
         className,
       )}
     >
-      {shown && src !== null ? (
+      {view === 'full' && full !== null ? (
         <img
           data-slot="photo-full"
-          src={src}
+          src={full}
           alt={alt}
           decoding="async"
           draggable={false}
+          onError={() => setBrokenFull(full)}
           className="block size-full object-contain"
         />
+      ) : view === 'failed' ? (
+        <span
+          data-slot="photo-full-failed"
+          className="flex size-full items-center justify-center px-(--space-4) text-center text-row leading-body text-fg2"
+        >
+          {fullUnavailable}
+        </span>
       ) : (
         <>
-          <PixelatedImage src={shown ? null : thumb} cells={STAGE_CELLS} />
+          <PixelatedImage src={thumb} cells={STAGE_CELLS} unavailable={thumbUnavailable} />
           {/* The board's dimming over the mosaic. */}
           <span aria-hidden="true" className="absolute inset-0 bg-bg/20" />
+          {view === 'loading' && (
+            <span
+              data-slot="photo-loading"
+              role="status"
+              className={cn(
+                'absolute start-1/2 top-1/2 z-1 -translate-1/2 text-assist leading-list text-fg2',
+                ON_PHOTO,
+              )}
+            >
+              {loadingLabel}
+            </span>
+          )}
         </>
       )}
       {shown ? (
@@ -287,6 +359,8 @@ export type PhotoThumbProps = {
   /** Its accessible name while pixelated; `alt` once shown. */
   label: string;
   alt: string;
+  /** In place of the thumbnail when it won't load. */
+  unavailable: string;
   /** The photo the stage holds: drawn with the lit rule. */
   selected?: boolean;
   className?: string;
@@ -301,9 +375,11 @@ export function PhotoThumb({
   shown,
   label,
   alt,
+  unavailable,
   selected = false,
   className,
 }: PhotoThumbProps) {
+  const [broken, setBroken] = useState<string | null>(null);
   return (
     <span
       data-slot="photo-thumb"
@@ -316,17 +392,25 @@ export function PhotoThumb({
         className,
       )}
     >
-      {thumb === null ? null : shown ? (
+      {thumb === null ? null : shown && broken === thumb ? (
+        <span
+          data-slot="photo-thumb-failed"
+          className="flex size-full items-center justify-center px-(--space-1_5) text-center text-assist leading-list text-fg3"
+        >
+          {unavailable}
+        </span>
+      ) : shown ? (
         <img
           src={thumb}
           alt={alt}
           decoding="async"
           draggable={false}
+          onError={() => setBroken(thumb)}
           className="block size-full object-cover"
         />
       ) : (
         <>
-          <PixelatedImage src={thumb} cells={THUMB_CELLS} />
+          <PixelatedImage src={thumb} cells={THUMB_CELLS} unavailable={unavailable} />
           <span role="img" aria-label={label} className="absolute inset-0" />
         </>
       )}

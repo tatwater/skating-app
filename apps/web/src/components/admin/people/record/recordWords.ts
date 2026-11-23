@@ -161,6 +161,8 @@ export const RECORD_WORDS = {
   photoShow: 'Show',
   photoPixelate: 'Pixelate again',
   photoAlt: 'The photo the decision is on',
+  /** Coined: the photo's thumbnail won't load. */
+  photoUnavailable: 'The photo couldn’t be loaded',
   /** No address served: its file was deleted, or this viewer isn't served photos. */
   photoNone: 'No photo to show',
   erasedAfter: (days: number, first: string) =>

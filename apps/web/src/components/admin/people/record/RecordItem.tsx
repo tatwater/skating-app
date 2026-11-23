@@ -326,6 +326,7 @@ function RecordPhoto({ thumbUrl }: { thumbUrl: string | null }) {
         label={W.photoPixelated}
         alt={W.photoAlt}
         className="h-32 w-52"
+        unavailable={W.photoUnavailable}
       />
       <Button size="xs" data-slot="record-photo-show" onClick={() => setShown((v) => !v)}>
         {shown ? W.photoPixelate : W.photoShow}

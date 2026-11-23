@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -11,14 +11,21 @@ import { coverCrop, mosaicGrid, PhotoStage, PhotoThumb } from './photo-stage';
  */
 
 const fetched: string[] = [];
+/** Every detached image made, so a test can fail its load. */
+const made: { onerror: (() => void) | null }[] = [];
 const RealImage = globalThis.Image;
 
 beforeEach(() => {
   fetched.length = 0;
+  made.length = 0;
   globalThis.Image = class {
     decoding = '';
     referrerPolicy = '';
     onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor() {
+      made.push(this);
+    }
     set src(v: string) {
       fetched.push(v);
     }
@@ -32,10 +39,14 @@ afterEach(() => {
 const THUMB = 'https://files.example/thumb';
 const FULL = 'https://files.example/full';
 
-const stage = (shown: boolean) => (
+const stage = (shown: boolean, full: string | null = FULL, fullFailed = false) => (
   <PhotoStage
     thumb={THUMB}
-    full={FULL}
+    full={full}
+    fullFailed={fullFailed}
+    loadingLabel="Loading the photo…"
+    thumbUnavailable="The thumbnail couldn’t be loaded"
+    fullUnavailable="The photo couldn’t be loaded"
     shown={shown}
     onShow={() => {}}
     onPixelate={() => {}}
@@ -66,12 +77,67 @@ describe('the pixelated stage', () => {
 
   it('a thumbnail fetches its own address only, and draws no image until shown', () => {
     const { container, rerender } = render(
-      <PhotoThumb thumb={THUMB} shown={false} label="Photo 1, pixelated" alt="Photo 1" />,
+      <PhotoThumb
+        thumb={THUMB}
+        shown={false}
+        label="Photo 1, pixelated"
+        alt="Photo 1"
+        unavailable="The thumbnail couldn’t be loaded"
+      />,
     );
     expect(fetched).toEqual([THUMB]);
     expect(container.querySelector('img')).toBeNull();
-    rerender(<PhotoThumb thumb={null} shown label="Photo 1, pixelated" alt="Photo 1" />);
+    rerender(
+      <PhotoThumb
+        thumb={null}
+        shown
+        label="Photo 1, pixelated"
+        alt="Photo 1"
+        unavailable="The thumbnail couldn’t be loaded"
+      />,
+    );
     expect(container.querySelector('img, canvas')).toBeNull();
+  });
+});
+
+describe('when an image won’t load (R15-6)', () => {
+  it('a thumbnail that fails says so, never a blank field', () => {
+    const { container } = render(stage(false));
+    act(() => made.at(-1)?.onerror?.());
+    expect(container.querySelector('canvas')).toBeNull();
+    expect(container).toHaveTextContent('The thumbnail couldn’t be loaded');
+  });
+
+  it('shown while the full photo is on its way: still pixelated, never the thumbnail unpixelated', () => {
+    const { container } = render(stage(true, null));
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('canvas')).not.toBeNull();
+    expect(container).toHaveTextContent('Loading the photo…');
+  });
+
+  it('a failed fetch, or a full image that won’t load: words, never the broken glyph or the thumbnail', () => {
+    const failed = render(stage(true, null, true));
+    expect(failed.container.querySelector('img, canvas')).toBeNull();
+    expect(failed.container).toHaveTextContent('The photo couldn’t be loaded');
+    failed.unmount();
+    const broken = render(stage(true));
+    const img = broken.container.querySelector('img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(FULL);
+    fireEvent.error(img);
+    expect(broken.container.querySelector('img, canvas')).toBeNull();
+    expect(broken.container).toHaveTextContent('The photo couldn’t be loaded');
+    expect(broken.container.innerHTML).not.toContain(THUMB);
+  });
+
+  it('shown, the caption is announced once: by the image, not the figure too', () => {
+    const { container } = render(stage(true));
+    expect(container.querySelector('figure')).not.toHaveAttribute('aria-label');
+    expect(container.querySelector('img')).toHaveAttribute('alt', 'The flagged photo');
+    const pixelated = render(stage(false));
+    expect(pixelated.container.querySelector('figure')).toHaveAttribute(
+      'aria-label',
+      'The flagged photo, pixelated',
+    );
   });
 });
 
