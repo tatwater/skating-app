@@ -71,7 +71,6 @@ import {
   photoHeld,
   photoVisible,
   resolvePhotoUrls,
-  staffPhotoRead,
 } from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
 import { latLng, literals } from './lib/validators';
@@ -742,15 +741,12 @@ export const listPhotos = query({
     targetType: literals(ACCESS_ALERT_TARGETS),
     putInId: v.optional(v.id('putIns')),
     parkingAreaId: v.optional(v.id('parkingAreas')),
-    /** A staff read, as `photos.getUrls`' (B01-5e): down photos marked, only with `content.read`. */
-    staff: v.optional(v.boolean()),
   },
-  handler: async (ctx, { targetType, putInId, parkingAreaId, staff }) => {
+  handler: async (ctx, { targetType, putInId, parkingAreaId }) => {
     const rows = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
     const resolved = await resolvePhotoUrls(
       ctx,
       rows.map((r) => r.photoId),
-      { staff: await staffPhotoRead(ctx, staff) },
     );
     // Joined by photo id, never by position (B01-5e): the resolver skips a photo that isn't visible
     // or is gone, so the i-th result is not the i-th row — and *Detach* must name the right one.

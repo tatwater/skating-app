@@ -27,7 +27,6 @@ import {
   photoVisible,
   photoWithdrawnAt,
   resolvePhotoUrls,
-  staffPhotoRead,
 } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { ROTATION_RETRY_MS, scheduleRotation } from './lib/photoRotation';
@@ -210,17 +209,14 @@ export const removeBlob = mutation({
 export const getUrls = query({
   args: {
     reportId: v.id('reports'),
-    /**
-     * A staff read (B01-5e): a hidden or removed photo is returned marked `down`, only to a viewer
-     * with `content.read` — the Inbox's photo subject's rule. Without it, or for anyone else, a photo
-     * that isn't visible is never returned: not its URL, its caption or its place in the list.
-     */
-    staff: v.optional(v.boolean()),
   },
-  handler: async (ctx, { reportId, staff }) => {
+  handler: async (ctx, { reportId }) => {
     const report = await getViewableReport(ctx, reportId);
     if (!report) return [];
-    return resolvePhotoUrls(ctx, report.photoIds, { staff: await staffPhotoRead(ctx, staff) });
+    // A photo that isn't visible is never returned, to anyone: its URL, caption and slot (B01-5e).
+    // Staff see a down photo through the Inbox item and the record sheet (thumbnail), and its full
+    // image only through `inbox.photoReveal`.
+    return resolvePhotoUrls(ctx, report.photoIds);
   },
 });
 
@@ -236,13 +232,11 @@ export const getUrls = query({
 export const getHazardUrls = query({
   args: {
     hazardId: v.id('hazards'),
-    /** A staff read, as `getUrls`' (B01-5e): down photos marked, only with `content.read`. */
-    staff: v.optional(v.boolean()),
   },
-  handler: async (ctx, { hazardId, staff }) => {
+  handler: async (ctx, { hazardId }) => {
     const hazard = await ctx.db.get(hazardId);
     if (hazard?.moderationStatus !== 'visible') return [];
-    return resolvePhotoUrls(ctx, hazard.photoIds, { staff: await staffPhotoRead(ctx, staff) });
+    return resolvePhotoUrls(ctx, hazard.photoIds);
   },
 });
 

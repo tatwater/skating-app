@@ -148,9 +148,7 @@ describe('a report with hundreds of photos, most of them down', () => {
     const mod = t.withIdentity({ subject: 'mod' });
 
     expect(await skater.query(api.photos.getUrls, { reportId })).toHaveLength(BUSY_REPORT / 4);
-    expect(await mod.query(api.photos.getUrls, { reportId, staff: true })).toHaveLength(
-      BUSY_REPORT,
-    );
+    expect(await mod.query(api.photos.getUrls, { reportId })).toHaveLength(BUSY_REPORT / 4);
     const cards = await skater.query(api.reports.recentCardsForBodies, {
       waterBodyIds: [waterBodyId],
     });

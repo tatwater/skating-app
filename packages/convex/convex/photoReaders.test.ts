@@ -175,57 +175,39 @@ const clientOf = (t: T, v: Viewer) => (v === 'anonymous' ? t : t.withIdentity({ 
 /** Each skater-facing reader as one function: the photos it returns, by caption (= status). */
 const READERS: Record<
   string,
-  (
-    w: W,
-    v: Viewer,
-    staff: boolean,
-  ) => Promise<{ caption?: string; down?: true; url: string | null }[]>
+  (w: W, v: Viewer) => Promise<{ caption?: string; url: string | null }[]>
 > = {
-  getUrls: (w, v, staff) =>
-    clientOf(w.t, v).query(api.photos.getUrls, { reportId: w.reportId, staff }),
-  getHazardUrls: (w, v, staff) =>
-    clientOf(w.t, v).query(api.photos.getHazardUrls, { hazardId: w.hazardId, staff }),
-  listPhotos: (w, v, staff) =>
-    clientOf(w.t, v).query(api.accessPoints.listPhotos, {
-      targetType: 'put_in',
-      putInId: w.putInId,
-      staff,
-    }),
+  getUrls: (w, v) => clientOf(w.t, v).query(api.photos.getUrls, { reportId: w.reportId }),
+  getHazardUrls: (w, v) =>
+    clientOf(w.t, v).query(api.photos.getHazardUrls, { hazardId: w.hazardId }),
+  listPhotos: (w, v) =>
+    clientOf(w.t, v).query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId: w.putInId }),
 };
 
 describe('the privacy table: reader × viewer × status', () => {
-  test('a non-staff read gets only visible photos; a staff read (content.read, asked) gets every one marked', async () => {
+  test('every viewer, a moderator included, gets only visible photos; no staff mode serves a down one', async () => {
     const w = (await world()) as W;
     let cells = 0;
     for (const [name, read] of Object.entries(READERS)) {
       for (const viewer of VIEWERS) {
-        for (const staff of [false, true]) {
-          const got = await read(w, viewer, staff);
-          const staffRead = staff && viewer === 'mod';
-          for (const status of STATUS_KEYS) {
-            cells++;
-            const hit = got.find((p) => p.caption === status);
-            const label = `${name} · ${viewer} · staff=${staff} · ${status}`;
-            if (SHOWN.has(status)) {
-              expect(hit, label).toBeDefined();
-              expect(hit?.down, label).toBeUndefined();
-              expect(hit?.url, label).toEqual(expect.any(String));
-            } else if (staffRead) {
-              expect(hit, label).toBeDefined();
-              expect(hit?.down, label).toBe(true);
-            } else {
-              expect(hit, label).toBeUndefined();
-            }
+        const got = await read(w, viewer);
+        for (const status of STATUS_KEYS) {
+          cells++;
+          const hit = got.find((p) => p.caption === status);
+          const label = `${name} · ${viewer} · ${status}`;
+          if (SHOWN.has(status)) {
+            expect(hit, label).toBeDefined();
+            expect(hit?.url, label).toEqual(expect.any(String));
+          } else {
+            expect(hit, label).toBeUndefined();
           }
-          // No slot for what is skipped: the list is exactly what was shown.
-          expect(got).toHaveLength(staffRead ? STATUS_KEYS.length : SHOWN.size);
         }
+        // No slot for what is skipped: the list is exactly what was shown.
+        expect(got).toHaveLength(SHOWN.size);
+        expect(got.every((p) => !('down' in p))).toBe(true);
       }
     }
-    // A purged photo's staff read has no bytes to serve.
-    const purged = (await READERS.getUrls?.(w, 'mod', true))?.find((p) => p.caption === 'purged');
-    expect(purged?.url).toBeNull();
-    expect(cells).toBe(3 * 4 * 2 * 5);
+    expect(cells).toBe(3 * 4 * 5);
   });
 
   test('the feed’s thumbnails: visible photos only, for every viewer', async () => {

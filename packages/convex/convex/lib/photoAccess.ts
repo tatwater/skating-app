@@ -11,7 +11,6 @@
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { getCurrentProfile, hasCapability } from './auth';
 import { OPEN_FLAG_STATUSES } from './openFlags';
 
 // ── The photo's moderation axis (B01-5e, D222) ──────────────────────────────────────────────────
@@ -164,16 +163,6 @@ export async function syncReportPhotoLinks(
   }
 }
 
-/**
- * Whether a photo read is a staff read (B01-5e): the caller asked for one **and** the viewer holds
- * `content.read` — the one rule the Inbox's photo subject asks too. Opt-in, so a moderator browsing
- * the skater app is served what any skater is, never a down photo drawn as if it were up.
- */
-export async function staffPhotoRead(ctx: QueryCtx, asked: boolean | undefined): Promise<boolean> {
-  if (asked !== true) return false;
-  return hasCapability(await getCurrentProfile(ctx), 'content.read');
-}
-
 export interface ResolvedPhoto {
   photoId: Id<'photos'>;
   url: string | null;
@@ -181,17 +170,15 @@ export interface ResolvedPhoto {
   caption?: string;
   coord?: { lat: number; lng: number };
   placeOnMap: boolean;
-  /** Only on a staff read: the photo is hidden or removed (its moderation status says which). */
-  down?: true;
-  moderationStatus?: 'hidden' | 'removed';
 }
 
 /**
  * Resolve serving URLs for a set of photo ids. **Callers must have already applied their own gate on
  * the thing that references the photos** — the report, hazard or access point — so that gate is
  * visible at the call site. The photo's **own** moderation gate is applied here, the one place: a
- * photo that isn't visible ({@link photoVisible}) is skipped, unless the caller passes `staff` (a
- * viewer with `content.read`), when it is returned marked `down` with its status.
+ * photo that isn't visible ({@link photoVisible}) is skipped, for every viewer — staff see a down
+ * photo through the Inbox item and the record sheet, and its full image only through
+ * `inbox.photoReveal`.
  *
  * Each result carries its `photoId`, and **callers join by id, never by position**: a skipped or
  * missing photo leaves no slot, so the i-th result is not the i-th id.
@@ -202,14 +189,12 @@ export interface ResolvedPhoto {
 export async function resolvePhotoUrls(
   ctx: QueryCtx,
   photoIds: readonly Id<'photos'>[],
-  opts: { staff?: boolean } = {},
 ): Promise<ResolvedPhoto[]> {
   const results: ResolvedPhoto[] = [];
   for (const photoId of photoIds) {
     const photo = await ctx.db.get(photoId);
     if (!photo) continue;
-    const shown = photoVisible(photo);
-    if (!shown && opts.staff !== true) continue;
+    if (!photoVisible(photo)) continue;
     // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`. A purged
     // photo's tombstone serves no address, whatever storage still holds (D222).
     const [url, thumbUrl] =
@@ -226,12 +211,6 @@ export async function resolvePhotoUrls(
       ...(photo.caption !== undefined ? { caption: photo.caption } : {}),
       ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
       placeOnMap: photo.placeOnMap,
-      ...(shown
-        ? {}
-        : {
-            down: true as const,
-            moderationStatus: photo.moderationStatus as 'hidden' | 'removed',
-          }),
     });
   }
   return results;
