@@ -181,7 +181,8 @@ async function flagContradictionPattern(
       `This is occurrence ${result.occurrences} on the same open flag.`,
       'Review their tenure-aware good-vs-bad trend before acting.',
     ],
-    deepLinkPath: '/admin/flags',
+    // The flag's own Inbox item (`/admin/flags` retired with B01-5e).
+    deepLinkPath: `/admin/inbox?item=flag:${result.flagId}`,
   });
 }
 

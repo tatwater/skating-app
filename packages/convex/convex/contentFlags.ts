@@ -2,7 +2,7 @@
  * Content-flag functions (D32/D3). Any active user can flag a report / comment / photo / user for
  * abuse. `unsafe_false_report` is a **first-class** reason: a dangerously false "ice is great" claim
  * is a safety incident, not mere spam (D3) — it lands in the priority lane of the admin flag queue
- * at `/admin/flags`, which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
+ * in the Inbox (`/admin/inbox`, `/admin/flags` retired with B01-5e), which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
  */
 
 import {
@@ -54,7 +54,7 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
 /**
  * Flag content for abuse/safety review (D32). `requireProfile`; the target must exist; deduped to
  * **one open flag per (flagger, target)** — a repeat flag returns the existing open row rather than
- * piling up duplicates. Resolution and the priority lane live in `/admin/flags`.
+ * piling up duplicates. Resolution and the priority lane live in the Inbox's Safety lane.
  */
 export const flag = mutation({
   args: {
@@ -167,7 +167,8 @@ export const flag = mutation({
           `A ${args.targetType} was flagged as a dangerously false report.`,
           'Review it in the priority lane.',
         ],
-        deepLinkPath: '/admin/flags',
+        // The flag's own Inbox item (`/admin/flags` retired with B01-5e).
+        deepLinkPath: `/admin/inbox?item=flag:${flagId}`,
       });
     }
     return flagId;
