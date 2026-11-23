@@ -894,12 +894,11 @@ async function erasePhotos(
       deleted++;
       continue;
     }
-    // Held (B01-5e; D248): moderated, flagged or under a decision — evidence outlives the account.
-    // The row stays as it is; a removal's bytes follow its purge clock, and once nothing holds it the
-    // orphan walk finds it like any other.
-    if (result === 'held') continue;
-    // The blob outlived the attempt, so the row stays as the only pointer to it (`lib/photoOrphans`)
-    // and the orphan cron retries daily. What it does *not* get to do is stay a record of a person:
+    // Held (B01-5e; D248): moderated, flagged or under a decision — the row and its bytes outlive the
+    // account as evidence (a removal's bytes follow its purge clock; once nothing holds it the orphan
+    // walk finds it like any other). Or the blob outlived the attempt, so the row stays as the only
+    // pointer to it (`lib/photoOrphans`) and the orphan cron retries daily. Either way, what the row
+    // does *not* get to do is stay a record of a person:
     // the caption, the timestamp and — the one that matters — the GPS coordinate come off now, leaving
     // a row that is nothing but two storage ids and the job of reclaiming them.
     await ctx.db.patch(photo._id, {

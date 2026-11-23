@@ -213,10 +213,16 @@ export const purgeOne = internalMutation({
         await recordFailure(ctx, 'photoPurge', photoId, 'BlobRetained', now);
         return { outcome: 'retained' as const };
       }
+      // The tombstone keeps what names what was removed — the row's id, its uploader, the report it
+      // documented, when it was made and taken down, its status and clocks — and nothing of the
+      // person's: the caption, the time it was taken and its place go with the bytes.
       await ctx.db.patch(photoId, {
         purgedAt: now,
         purgeAt: undefined,
         caption: undefined,
+        takenAt: undefined,
+        coord: undefined,
+        placeOnMap: false,
       });
       await clearFailure(ctx, 'photoPurge', photoId);
       await writeAudit(ctx, {

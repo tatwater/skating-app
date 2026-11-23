@@ -489,3 +489,40 @@ describe('the purge’s push-back is bounded', () => {
     });
   });
 });
+
+describe('what a row keeps once its bytes or its account go', () => {
+  test('the purge’s tombstone: no caption, time taken or place; the uploader, report and dates stay', async () => {
+    const t = harness();
+    const uploader = await person(t, 'uploader');
+    const id = await removedPhoto(t, uploader, T0 - 1);
+    await t.run((ctx) =>
+      ctx.db.patch(id, { takenAt: T0 - 5, coord: { lat: 1, lng: 2 }, placeOnMap: true }),
+    );
+    await t.mutation(internal.photoPurge.purgeDuePhotos, { now: T0 });
+    const row = (await t.run((ctx) => ctx.db.get(id))) as Doc<'photos'>;
+    expect(row).toMatchObject({ uploaderId: uploader, purgedAt: T0, placeOnMap: false });
+    expect(row.caption).toBeUndefined();
+    expect(row.takenAt).toBeUndefined();
+    expect(row.coord).toBeUndefined();
+  });
+
+  test('a deleted account’s held photo keeps its row and bytes, but not its caption, time taken or place', async () => {
+    const t = harness();
+    const uploader = await person(t, 'uploader');
+    const flagger = await person(t, 'flagger');
+    const held = await photo(t, uploader, {
+      takenAt: T0 - 5,
+      coord: { lat: 1, lng: 2 },
+      placeOnMap: true,
+    });
+    await HOLDS['open flag']?.(t, held, flagger);
+    await t.mutation(internal.accountDeletion.finalizeNow, { userId: uploader });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const row = (await t.run((ctx) => ctx.db.get(held))) as Doc<'photos'>;
+    expect(await blobAlive(t, held)).toBe(true);
+    expect(row.takenAt).toBeUndefined();
+    expect(row.coord).toBeUndefined();
+    expect(row.caption).toBeUndefined();
+    expect(row.placeOnMap).toBe(false);
+  });
+});
