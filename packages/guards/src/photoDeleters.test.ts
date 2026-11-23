@@ -46,7 +46,8 @@ const PHOTO_DELETERS: Record<string, string> = {
   'photos.ts:swapRotated':
     'the rotation: old blobs, only while the row is still down and holds them',
   'photos.ts:dropRotationCopies': 'a rotation’s own copies, never on any row',
-  'photos.ts:recordRotationCopy': 'a copy just stored, when its rotation no longer applies (on no row)',
+  'photos.ts:recordRotationCopy':
+    'a copy just stored, when its rotation no longer applies (on no row)',
   'lib/photoRotation.ts:sweepRotationCopies':
     'a rotation’s copies no row names (blobReferenced asked of each), while no run can be alive',
   'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',

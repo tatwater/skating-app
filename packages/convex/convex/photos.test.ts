@@ -171,7 +171,11 @@ describe('photos.create (D42 coord gate)', () => {
     const t = convexTest(schema, modules);
     const storageId = await storeBlob(t);
     await expect(
-      t.mutation(api.photos.create, { storageId, thumbStorageId: await storeBlob(t), placeOnMap: false }),
+      t.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: await storeBlob(t),
+        placeOnMap: false,
+      }),
     ).rejects.toThrow(/not authenticated/i);
   });
 });

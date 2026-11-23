@@ -181,7 +181,10 @@ const READERS: Record<
   getHazardUrls: (w, v) =>
     clientOf(w.t, v).query(api.photos.getHazardUrls, { hazardId: w.hazardId }),
   listPhotos: (w, v) =>
-    clientOf(w.t, v).query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId: w.putInId }),
+    clientOf(w.t, v).query(api.accessPoints.listPhotos, {
+      targetType: 'put_in',
+      putInId: w.putInId,
+    }),
 };
 
 describe('the privacy table: reader × viewer × status', () => {

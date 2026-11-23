@@ -53,7 +53,9 @@ export async function sweepRotationCopies(
     const stored = await ctx.db.system
       .query('_storage')
       .withIndex('by_creation_time', (q) =>
-        q.gte('_creationTime', r.startedAt).lte('_creationTime', r.startedAt + ROTATION_SCAN_WINDOW_MS),
+        q
+          .gte('_creationTime', r.startedAt)
+          .lte('_creationTime', r.startedAt + ROTATION_SCAN_WINDOW_MS),
       )
       .take(ROTATION_SCAN_MAX);
     for (const f of stored) {
@@ -66,7 +68,9 @@ export async function sweepRotationCopies(
     if ((await deleteStoredBlob(ctx, id as Id<'_storage'>)) === null) swept++;
   }
   if (doomed.size > 0) {
-    await ctx.db.patch(photo._id, { rotation: { ...r, copies: r.copies.filter((c) => current.has(c)) } });
+    await ctx.db.patch(photo._id, {
+      rotation: { ...r, copies: r.copies.filter((c) => current.has(c)) },
+    });
   }
   return swept;
 }
