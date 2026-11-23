@@ -251,26 +251,6 @@ export function requestPrompt(kind: RequestKind): RequestPrompt {
   }
 }
 
-/** The moderator-facing label. */
-export function requestKindTitle(kind: RequestKind): string {
-  switch (kind) {
-    case 'activate':
-      return 'Activate';
-    case 'admit':
-      return 'Admit';
-    case 'restore':
-      return 'Restore';
-    case 'contest_access':
-      return 'Contest access ruling';
-    case 'takedown':
-      return 'Takedown';
-    case 'name_bay':
-      return 'Name a bay';
-    case 'name_landmark':
-      return 'Name a landmark';
-  }
-}
-
 /** What the requester reads once a moderator has answered. */
 export function describeRequestOutcome(request: {
   kind: RequestKind;

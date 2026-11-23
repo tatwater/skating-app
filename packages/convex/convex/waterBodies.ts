@@ -3889,7 +3889,7 @@ export async function retargetAsks(
 }
 
 /**
- * Whether `flaggerId` already has an open flag on the survivor — of any reason, open or in review: the
+ * Whether `flaggerId` already has an open flag on the survivor — of any reason: the
  * table's rule is one open flag per (flagger, target), whatever it says, so a loser's flag by them
  * stays where it is. A point read per open status (`by_target_flagger_status_origin`'s four-field
  * prefix), never a scan of the survivor's flags — which grew with every flag moved onto it, so N flags

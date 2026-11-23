@@ -91,7 +91,7 @@ export type FlagDecision =
   | 'ruled_closed'
   | 'ruled_accessible';
 
-/** Every open flag on a target, in every lane (both open statuses, every reason), oldest first. */
+/** Every open flag on a target, in every lane (every reason), oldest first. */
 export async function openFlagsOn(
   ctx: MutationCtx,
   targetType: Doc<'contentFlags'>['targetType'],

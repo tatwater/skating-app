@@ -7,7 +7,7 @@
  * - the flag reopen rule — the reporter's new filing, or an open automatic flag of the reason, as the
  *   newest, the 101st newest and the oldest of the target's flags, on an undo's first page (the whole
  *   undo refused) and on a later page (that flag left closed, named on the undo's lead row);
- * - a filing's one-open-flag dedupe, either open status;
+ * - a filing's one-open-flag dedupe;
  * - the own-filing-in-another-lane check, however many closed members of theirs fill the item;
  * - the undo's gathers, held to the closers' caps, refusing past them; the request drain's cap;
  * - a put-in's suppression check, refusing past its read; an item's count, a floor past its bound.

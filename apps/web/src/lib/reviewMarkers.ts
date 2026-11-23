@@ -73,9 +73,8 @@ export interface ReviewRow {
 
 /**
  * What the map draws for a row: its spot, or its spot paired with the lookalike asked for — as the
- * row reports it at that moment. A pick freezes this at the click (`pickReview`); the oldest row,
- * shown until the moderator picks, is drawn from the row as it stands (`useRowReview`). Asked for a
- * pair the row does not report, it is the spot alone.
+ * row reports it at that moment. A pick freezes this at the click (`pickReview`). Asked for a pair
+ * the row does not report, it is the spot alone.
  */
 export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
   const spot: ReviewPoints = { ask: row.coord, ...(row.name ? { name: row.name } : {}) };

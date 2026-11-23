@@ -6,7 +6,6 @@ import {
   REQUEST_KINDS,
   requestKindLabel,
   requestKindsFor,
-  requestKindTitle,
   requestNameKey,
   requestPrompt,
 } from './corpusRequests';
@@ -46,10 +45,9 @@ describe('requestKindsFor — what a standing lets you ask', () => {
     expect(requestKindsFor({ standing: 'unlisted' })).toEqual([]);
   });
 
-  it('every kind has a skater label, a moderator title and a prompt; the naming kinds ask for a name', () => {
+  it('every kind has a skater label and a prompt; the naming kinds ask for a name', () => {
     for (const kind of REQUEST_KINDS) {
       expect(requestKindLabel(kind).length).toBeGreaterThan(0);
-      expect(requestKindTitle(kind).length).toBeGreaterThan(0);
       expect(requestPrompt(kind).title.length).toBeGreaterThan(0);
       expect(requestPrompt(kind).name !== undefined).toBe(
         kind === 'name_bay' || kind === 'name_landmark',

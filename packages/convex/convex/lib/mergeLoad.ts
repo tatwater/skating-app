@@ -296,9 +296,9 @@ export const PER_ROW: Record<MergeMoveKind | 'survivorSubAreas' | 'survivorLandm
       ...(place > 0 ? { extraMs: 1 } : {}),
     };
   },
-  // its flagger's flag on the survivor, a point read per open status (2), the patch 1, the re-key 8:
-  // 11 — linear, each a point read (the R11 fix: never a scan of the survivor's flags). Time: 2.97 ms
-  // (R12: 2.7).
+  // its flagger's flag on the survivor, a point read per open status (1, since `reviewing` was
+  // narrowed out, D283), the patch 1, the re-key 8: 10 — linear, each a point read (the R11 fix:
+  // never a scan of the survivor's flags). Time: 2.7 ms.
   flags: () => ({
     reads: 4,
     writes: 1,

@@ -615,8 +615,9 @@ const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
  */
 /**
  * Index ranges one photo's delete may read and write beyond its charged reads: its hold (a verdict, a
- * flag per open status: 3), each blob's sharing check (two indexes, either side of its own row: 8),
- * each blob's honest delete (a lookup and the delete: 4), the row's delete or strip, and two spare.
+ * flag per open status: 2 since `reviewing` was narrowed out, D283; 3 kept, one more spare), each
+ * blob's sharing check (two indexes, either side of its own row: 8), each blob's honest delete (a
+ * lookup and the delete: 4), the row's delete or strip, and two spare.
  */
 const SETTLE_CALLS = 3 + 8 + 4 + 1 + 2;
 /** Index ranges a walk keeps back past a nested step: its turn read and a failure's write. */
