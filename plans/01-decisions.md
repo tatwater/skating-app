@@ -8748,3 +8748,31 @@ client-side carry that kept an evicted favorite lifted was built and dropped: it
 (a Post a moderator hid could stay on screen) and only delayed the jump to when its page loaded.
 
 **Related:** D28, D50, D165, [`phase-04`](./phases/04-drive-time-and-filtering.md).
+
+## D293 — The console section built as "Bodies" is Corpus, at `/admin/corpus`; the Body console sits under it (B01)
+
+**Decided (2026-11-23, founder; the governor's rulings on what he didn't spell out are marked).**
+Corpus is the console's library of every water body and, later, of the tasks the machines leave
+on them. The section B01-3 built as "Bodies" (the list by lane, its facets, search and preview)
+is that library, and is renamed Corpus everywhere an operator sees it:
+- **The list lives at `/admin/corpus`**; its rail item is *Corpus*, and G then C goes there. It
+  opens on the Active lane, as before.
+- **`/admin/bodies` is not redirected.** The old address stops existing; nobody outside the
+  console knew it.
+- **The Body console stays at `/admin/body/$id`** — a body is still a body — and sits under
+  Corpus: the rail stays on Corpus inside a body, and the console's way back says *Corpus* and
+  goes to `/admin/corpus` (the governor's ruling).
+- **No new lanes or groups yet.** The Tasks group and the pre-season pass join Corpus's sidebar
+  when they are built; until then Home's Corpus task links keep opening the old pages that do each
+  task, and Inbox Zero's *Corpus →* stays *Coming soon* (the governor's ruling).
+- **Names about bodies stay.** The code's `bodies` folder, `bodyLanes`, `bodySearch`, the Convex
+  `bodies.*` functions, the `body.read` capability, and the palette's *Bodies* results group (it
+  lists bodies) keep their names (the governor's ruling).
+
+**Why:** D216 named the console's modes with Corpus and the Body console as separate things, and
+no decision ever made a "Bodies" mode: the library was built under a working name while Corpus's
+tasks waited. Two names for one library would leave the rail with an item the plan never had and
+a Corpus item still to come that would duplicate it. Renaming now, while the URL is known only
+inside the console, costs one route and no redirect.
+
+**Related:** D216, D217, [`phase-B01`](./phases/B01-admin-console.md) §5.3.

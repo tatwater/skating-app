@@ -55,6 +55,15 @@ export const Shape: Story = {
     const page = within(canvasElement);
     await faceLoaded(slot(canvasElement, 'record-lockup-name'));
     await expect(page.getByRole('heading', { level: 1, name: 'Mascoma Lake' })).toBeVisible();
+    // The way back, in the top bar: a long left arrow before *Corpus*, unheard — the name is the label.
+    const back = page.getByRole('button', { name: 'Corpus' });
+    await expect(back).toBeVisible();
+    const arrow = back.querySelector('svg[data-slot="return-arrow"]');
+    await expect(arrow).toHaveAttribute('aria-hidden', 'true');
+    // Before the label: the first thing in the button's label.
+    const label = back.querySelector('[data-slot="label"]');
+    await expect(label?.firstElementChild).toBe(arrow);
+    await expect(label).toHaveTextContent(/^Corpus$/);
     // The tab grid: nine tabs, Shape open, the amber square on Water alone.
     const tabs = page.getAllByRole('tab');
     await expect(tabs.map((t) => t.textContent?.replace('(Missing something)', '').trim())).toEqual(

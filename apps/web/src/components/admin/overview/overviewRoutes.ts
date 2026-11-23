@@ -7,7 +7,7 @@ function inboxPath(place: Partial<Pick<InboxQuery, 'lane' | 'item'>>): string {
   return inboxHref({ lane: 'all', facet: 'all', filter: null, item: null, from: null, ...place });
 }
 
-/** A body's console: the Bodies mode's page for one body. */
+/** A body's console: the Corpus mode's page for one body. */
 function bodyConsolePath(id: string): string {
   return `/admin/body/${encodeURIComponent(id)}`;
 }
@@ -15,7 +15,9 @@ function bodyConsolePath(id: string): string {
 /**
  * Where Home's links go in the app as it stands: the old pages, until each target's mode lands
  * (the same rule as the palette, which opens a body in its Body console and a person in People).
- * Bodies has landed, so a body opens in its Body console. `overviewHref` names the console's own routes; this names the pages that exist.
+ * Corpus's library and Body console have landed, so a body opens in its Body console; its tasks
+ * haven't, so a Corpus task still opens its old page, never the library at `/admin/corpus` (D293).
+ * `overviewHref` names the console's own routes; this names the pages that exist.
  *
  * Every Inbox lane lands on its lane in the Inbox; every Corpus task on the old page that does that
  * work (the old pages take no filter, so the task is the page, not a preset on it). People has landed, so its lists open as its

@@ -13,7 +13,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { SETTLE_MS } from './lib/notificationQueue';
 import { SEND_TIMEOUT_MS, sendEmail, sendEmailOutcome } from './lib/resend';
-import { REPLY_SEND_ATTEMPTS, REPLY_WATCH_MS } from './lib/supportThread';
+import { REPLY_SEND_ATTEMPTS, REPLY_TO_IGNORED_LOG, REPLY_WATCH_MS } from './lib/supportThread';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -34,11 +34,14 @@ const PREFS = {
 
 /** Each Resend request seen: its idempotency key. */
 const requests: (string | null)[] = [];
+/** Each Resend request seen: its JSON body. */
+const bodies: Record<string, unknown>[] = [];
 type Answer = number | 'throw' | 'hang';
 
 /** Resend answers each request in turn from `answers` (the last repeats); Clerk as `clerk` says. */
 function stubFetch(answers: Answer[], clerk: number | 'throw' = 200) {
   requests.length = 0;
+  bodies.length = 0;
   let n = 0;
   vi.stubGlobal(
     'fetch',
@@ -58,6 +61,7 @@ function stubFetch(answers: Answer[], clerk: number | 'throw' = 200) {
       }
       const headers = (init?.headers ?? {}) as Record<string, string>;
       requests.push(headers['Idempotency-Key'] ?? null);
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const answer = answers[Math.min(n++, answers.length - 1)] as Answer;
       if (answer === 'throw') return Promise.reject(new TypeError('fetch failed'));
       if (answer === 'hang') {
@@ -303,5 +307,100 @@ describe('the other callers keep their boolean', () => {
       expect(await sendEmail(mail)).toBe(want);
     }
     expect(SEND_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('the reply-to (SUPPORT_REPLY_TO_EMAIL)', () => {
+  const warned = () => vi.mocked(console.warn).mock.calls.map((call) => call.map(String).join(' '));
+
+  test('set to one address: the request Resend receives carries it, trimmed, under the same key', async () => {
+    vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', '  help@example.com \n');
+    stubFetch([200]);
+    const w = await world();
+    await w.send();
+    expect((await w.row()).status).toBe('sent');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.reply_to).toBe('help@example.com');
+    expect(bodies[0]?.from).toBe('support@example.test');
+    expect(requests).toEqual([`support-reply/${w.messageId}`]);
+    expect(warned()).not.toContain(REPLY_TO_IGNORED_LOG);
+  });
+
+  test('a retried request carries it every time', async () => {
+    vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', 'help@example.com');
+    stubFetch([429, 200]);
+    const w = await world();
+    await w.send();
+    expect((await w.row()).status).toBe('sent');
+    expect(bodies.map((b) => b.reply_to)).toEqual(['help@example.com', 'help@example.com']);
+    expect(requests).toEqual(Array(2).fill(`support-reply/${w.messageId}`));
+  });
+
+  test.each([
+    { name: 'unset', value: undefined },
+    { name: 'empty', value: '' },
+    { name: 'blank', value: '  \n ' },
+  ])(
+    '$name: no reply-to key at all, the reply sent as before, nothing logged',
+    async ({ value }) => {
+      // `undefined` unsets it; `unstubAllEnvs` puts back whatever was there.
+      vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', value);
+      stubFetch([200]);
+      const w = await world();
+      await w.send();
+      expect((await w.row()).status).toBe('sent');
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).not.toHaveProperty('reply_to');
+      expect(warned()).not.toContain(REPLY_TO_IGNORED_LOG);
+    },
+  );
+
+  test.each([
+    { name: 'a list', value: 'help@example.com, other@example.com' },
+    { name: 'a semicolon list', value: 'help@example.com;other@example.com' },
+    { name: 'a line break inside', value: 'help@example.com\nBcc: other@example.com' },
+    { name: 'a space inside', value: 'Help Desk help@example.com' },
+    { name: 'a display name', value: 'Help <help@example.com>' },
+    { name: 'no @', value: 'help.example.com' },
+    { name: 'two @', value: 'help@desk@example.com' },
+    { name: 'nothing before the @', value: '@example.com' },
+  ])(
+    '$name: ignored — no reply-to, the reply still sent, one line logged without the value',
+    async ({ value }) => {
+      vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', value);
+      stubFetch([200]);
+      const w = await world();
+      await w.send();
+      expect((await w.row()).status).toBe('sent');
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).not.toHaveProperty('reply_to');
+      expect(requests).toEqual([`support-reply/${w.messageId}`]);
+      expect(warned().filter((line) => line === REPLY_TO_IGNORED_LOG)).toHaveLength(1);
+      for (const line of warned()) expect(line).not.toContain('example.com');
+    },
+  );
+
+  test('not part of sendability: unset, a reply is still written to be sent', async () => {
+    vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', undefined);
+    stubFetch([200]);
+    const w = await world();
+    expect((await w.row()).status).toBe('settling');
+  });
+
+  test('an operator alert never carries it', async () => {
+    vi.stubEnv('SUPPORT_REPLY_TO_EMAIL', 'help@example.com');
+    vi.stubEnv('RESEND_FROM_EMAIL', 'alerts@example.com');
+    vi.stubEnv('OPERATOR_ALERT_EMAIL', 'founder@example.com');
+    stubFetch([200]);
+    const t = convexTest(schema, modules);
+    await t.action(internal.operatorAlerts.send, {
+      subject: 'A ticket',
+      heading: 'A ticket',
+      lines: ['x'],
+      deepLinkPath: '/admin/inbox',
+    });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.to).toBe('founder@example.com');
+    expect(bodies[0]).not.toHaveProperty('reply_to');
   });
 });

@@ -259,6 +259,12 @@ Plus **the corpus browser**: search by name, id, external id; filters by state, 
 review reason, source, curated, has-open-asks; every body including removed and rejected (today
 unreachable); columns chosen by the operator; a row opens the body console.
 
+*2026-11-23 — the rename (D293).* The library B01-3 built as "Bodies" is this browser, and is now
+Corpus: the list at `/admin/corpus` (G then C, still opening on Active), the Body console under it
+at `/admin/body/$id`, `/admin/bodies` gone without a redirect. The tasks above join its sidebar
+when they are built; until then Home's Corpus links open the old pages. The sections below that
+say "Bodies" and `/admin/bodies` record what was built under the old name.
+
 ### §5.4 — Body console
 
 The report console's frame with the lake as the instrument. Left column: identity (names and
@@ -3998,6 +4004,8 @@ hazard callers of `recomputeBodySummary`, and `moderation.listActions` filtering
 `by_target_action`.
 
 ### The Bodies list (B01-3, the page)
+
+*Renamed Corpus on 2026-11-23 (D293): the list now lives at `/admin/corpus`, G then C.*
 
 The library at `/admin/bodies` (boards 5.1–5.3), on the server's reads above; the rail's Bodies
 mode (G then B) lights for it. The first of four Bodies page PRs — the Body console's frame and
@@ -11162,6 +11170,10 @@ The *Legacy retirement* row names only the operator mail and People's *Handle*; 
   - `SUPPORT_FROM_EMAIL` on the Convex **dev** deployment, by the founder through the dashboard. It is never printed, and never in a transcript or an env file read aloud.
   - The address's domain is verified in Resend, already the case for the general from-address's domain. Whether the subdomain is verified is the founder's to check.
 - **When it is unset:** the reply reads `failed`, with "support reply skipped (SUPPORT_FROM_EMAIL not configured)" logged, never `sent`, and never sent from `RESEND_FROM_EMAIL`. The thread shows the failed reply with *Not sent* and the reason class, never the address.
+- **Where an answer goes** (added 2026-11-23): `SUPPORT_REPLY_TO_EMAIL`, optional, is sent as every
+  support reply's reply-to, so a skater's answer reaches a mailbox rather than the send-only sender. It
+  isn't part of sendability: unset, blank or not one address, a reply goes without a reply-to (the
+  last logs one line, never the value). No other email carries it.
 - **Every reply's footer:** "Replies to this email aren't read. Write back from the app: Settings → Help." The sending domain has no inbound mail on purpose.
 
 ##### Territories

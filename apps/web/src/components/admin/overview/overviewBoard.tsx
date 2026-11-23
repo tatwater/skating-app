@@ -6,7 +6,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
-  faCabinetFiling,
   faCalendarDays,
   faEngine,
   faInbox,
@@ -42,8 +41,7 @@ const MODES: ReadonlyArray<{
   { key: 'O', name: 'Overview', icon: faTachographDigital },
   { key: 'I', name: 'Inbox', icon: faInbox, count: '19', tone: 'warn' },
   { key: 'R', name: 'Reports', icon: faMessageLines },
-  { key: 'C', name: 'Corpus', icon: faCabinetFiling, count: '1.2k' },
-  { key: 'B', name: 'Bodies', icon: faMapLocationDot },
+  { key: 'C', name: 'Corpus', icon: faMapLocationDot, count: '1.2k' },
   { key: 'M', name: 'Machinery', icon: faEngine, count: '1', tone: 'bad' },
   { key: 'S', name: 'Seasons', icon: faCalendarDays },
   { key: 'P', name: 'People', icon: faUsers, count: '1' },

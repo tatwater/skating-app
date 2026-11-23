@@ -380,27 +380,27 @@ describe('BodyConsoleRoute', () => {
 
   it('keeps the return path when the tab changes, and goes back to it on ⇧⏎', async () => {
     const user = userEvent.setup();
-    mocks.search = { from: '/admin/bodies?q=mascoma' };
+    mocks.search = { from: '/admin/corpus?q=mascoma' };
     render(<Mounted />);
     await user.click(screen.getByRole('tab', { name: /Names/ }));
     expect(mocks.navigate).toHaveBeenCalledWith(
       expect.objectContaining({
         to: '.',
-        search: { tab: 'names', from: '/admin/bodies?q=mascoma' },
+        search: { tab: 'names', from: '/admin/corpus?q=mascoma' },
       }),
     );
     screen.getByRole('tab', { name: /Shape/ }).focus();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
-    expect(mocks.push).toHaveBeenCalledWith('/admin/bodies?q=mascoma');
+    expect(mocks.push).toHaveBeenCalledWith('/admin/corpus?q=mascoma');
   });
 
   it('goes back to the list on ⇧⏎ from a bay row, without lighting the bay', async () => {
     const user = userEvent.setup();
-    mocks.search = { from: '/admin/bodies?q=mascoma' };
+    mocks.search = { from: '/admin/corpus?q=mascoma' };
     const { container } = render(<Mounted />);
     container.querySelector<HTMLElement>('[data-id="bay:bay-north"]')?.focus();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
-    expect(mocks.push).toHaveBeenCalledWith('/admin/bodies?q=mascoma');
+    expect(mocks.push).toHaveBeenCalledWith('/admin/corpus?q=mascoma');
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
@@ -462,7 +462,7 @@ describe('BodyConsoleRoute', () => {
         { waterBodyId: NEIGHBOR_ID, name: 'Crystal Lake', ring: NEIGHBOR_POLYGON.coordinates[0] },
       ],
     });
-    mocks.search = { from: '/admin/bodies?lane=inactive' };
+    mocks.search = { from: '/admin/corpus?lane=inactive' };
     render(<Mounted />);
     const merge = screen.getByRole('region', { name: 'Merge into another body' });
     expect(within(merge).getByText('Crystal Lake')).toBeInTheDocument();
@@ -470,7 +470,7 @@ describe('BodyConsoleRoute', () => {
     expect(open).toHaveAttribute('href', `/admin/body/${NEIGHBOR_ID}`);
     expect(askedFor(api.waterBodies.get).some((a) => a.includes(NEIGHBOR_ID))).toBe(false);
     // The neighbor opens with this body's way back: to the list the operator came from.
-    expect(open).toHaveAttribute('data-from', '/admin/bodies?lane=inactive');
+    expect(open).toHaveAttribute('data-from', '/admin/corpus?lane=inactive');
   });
 
   it('says a broken link is broken, without reading anything for a malformed id', () => {

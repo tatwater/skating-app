@@ -60,12 +60,23 @@ describe('Home’s links, until the new modes land', () => {
     (target) => {
       const path = consolePathFor(target) as string;
       expect(path).not.toBeNull();
-      if (target.kind === 'body') expect(modeAt(path)?.id).toBe('bodies');
+      if (target.kind === 'body') expect(modeAt(path)?.id).toBe('corpus');
       // Every Inbox lane is the Inbox's now (B01-5e and B01-5f retired the last old pages).
       else if (target.kind === 'inbox') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
+
+  // `/admin/corpus` is a real route now (the library), but Corpus's tasks aren't built: Home's
+  // *Corpus* rows still open the old page that does each task, never the library.
+  it.each([
+    { kind: 'corpus' },
+    ...CORPUS_TASKS.map((task) => ({ kind: 'corpus', task }) as const),
+  ] as const)('keeps %o on its old page, off the Corpus library', (target) => {
+    const path = consolePathFor(target) as string;
+    expect(path.startsWith('/admin/water')).toBe(true);
+    expect(modeAt(routerTarget(path).to)?.id).not.toBe('corpus');
+  });
 
   it.each([
     { kind: 'people' },
@@ -129,7 +140,7 @@ describe('the audit feed’s rows', () => {
     (type) => {
       const path = feedTargetPath({ type, id: 'k1/7', label: 'x' }) as string;
       expect(path).not.toBeNull();
-      if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
+      if (type === 'waterbody') expect(modeAt(path)?.id).toBe('corpus');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
       else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);

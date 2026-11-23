@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 
 describe('signed out, Back into the console', () => {
-  it.each(['/admin', '/admin/bodies', '/admin/body/b1', '/admin/people/p1', '/admin/flags'])(
+  it.each(['/admin', '/admin/corpus', '/admin/body/b1', '/admin/people/p1', '/admin/flags'])(
     'draws nothing of %s and sends it to sign in',
     (path) => {
       mocks.pathname = path;

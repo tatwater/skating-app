@@ -5,11 +5,12 @@ import { Note } from '@/components/kit/note';
 import { RetryNote } from '@/components/kit/retry-note';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-import { ConsoleStatus, ConsoleTopStart } from '../../shell/ConsoleShell';
+import { ConsoleStatus } from '../../shell/ConsoleShell';
 import { useColumnsFit, usePaneFocus } from '../../shell/columnsFit';
 import { PANE_WORDS } from '../consoleWords';
 import { BodyInspector } from './BodyInspector';
 import { BodyLeftColumn, type BodyLeftColumnProps } from './BodyLeftColumn';
+import { BodyReturnButton } from './BodyReturnButton';
 import type { BodyAsk } from './bodyModel';
 import type { BodyTabKey } from './bodySearch';
 import { useKeepFocus } from './keepFocus';
@@ -221,13 +222,7 @@ export function BodyConsoleView({
       >
         <TabKeysProvider inspector={inspector}>{tabPanel}</TabKeysProvider>
       </BodyInspector>
-      {onReturn !== undefined && (
-        <ConsoleTopStart>
-          <Button variant="outline" size="sm" onClick={onReturn} aria-keyshortcuts="Shift+Enter">
-            Bodies
-          </Button>
-        </ConsoleTopStart>
-      )}
+      {onReturn !== undefined && <BodyReturnButton onReturn={onReturn} />}
       {status !== null && <ConsoleStatus groups={[<span key="campaign">{status}</span>]} />}
     </div>
   );

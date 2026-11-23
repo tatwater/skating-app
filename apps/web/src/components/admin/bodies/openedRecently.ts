@@ -11,11 +11,11 @@ import { ID_SHAPE } from '../reads/readArgs';
  * it never breaks the page.
  */
 
-export const OPENED_KEY = 'gli.admin.bodies.opened';
+export const OPENED_KEY = 'gli.admin.corpus.opened';
 /** How many it keeps: a working session's worth, not a history. */
 export const OPENED_MAX = 12;
 /** Same-tab writes, which the `storage` event doesn't carry. */
-const CHANGED = 'gli:bodies-opened';
+const CHANGED = 'gli:corpus-opened';
 
 /** The stored list, as written: ids only, deduped, capped; anything else reads as empty. */
 export function parseOpened(raw: string | null): string[] {

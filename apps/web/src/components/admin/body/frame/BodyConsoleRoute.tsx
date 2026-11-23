@@ -89,7 +89,7 @@ export function BodyConsoleRoute({ registry = BODY_TAB_REGISTRY }: { registry?: 
   const { resolvedTheme } = useTheme();
   const mode = resolvedTheme === 'light' ? 'light' : 'dark';
   const data = useBodyConsole(bodyId);
-  // This browser remembers the bodies it opened: the Bodies list's Opened recently lane.
+  // This browser remembers the bodies it opened: the Corpus list's Opened recently lane.
   const ready = data.state === 'ready';
   useEffect(() => {
     if (ready) rememberOpened(bodyId);

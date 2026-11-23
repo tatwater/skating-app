@@ -149,6 +149,28 @@ export function supportSendability():
     : { sendable: false, code: 'unconfigured' };
 }
 
+/** One address and nothing else: no whitespace or line break, no list, one `@` with text either side. */
+const ONE_ADDRESS = /^[^\s@,;<>]+@[^\s@,;<>]+$/;
+
+/** The line a support reply logs when `SUPPORT_REPLY_TO_EMAIL` is set but not one address. */
+export const REPLY_TO_IGNORED_LOG =
+  'support reply sent without a reply-to (SUPPORT_REPLY_TO_EMAIL is set but is not one address; ignored)';
+
+/**
+ * **Where a skater's answer to a support reply goes** — `SUPPORT_REPLY_TO_EMAIL`, trimmed, sent as
+ * the reply's reply-to so an answer reaches a mailbox rather than the send-only support sender.
+ * Optional, and **not part of {@link supportSendability}**: unset or blank, a reply still goes, with
+ * no reply-to, as before. A value that is plainly not one address (a list, a space or line break
+ * inside, no `@`) is ignored the same way, with one line logged — never the value.
+ */
+export function supportReplyTo(): string | undefined {
+  const raw = process.env.SUPPORT_REPLY_TO_EMAIL?.trim();
+  if (!raw) return undefined;
+  if (ONE_ADDRESS.test(raw)) return raw;
+  console.warn(REPLY_TO_IGNORED_LOG);
+  return undefined;
+}
+
 /**
  * Why a reply written now to this ticket could not be sent, before it is written: a seeded person is
  * never mailed (D287), and a deployment without its sender can't mail anyone; `null` when it would go.

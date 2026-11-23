@@ -27,7 +27,7 @@ import { ID_SHAPE } from '../reads/readArgs';
  *   formed. The list's read takes one filter, so a link carrying more keeps the first of body,
  *   person, age.
  * - **`from`** — a return path for ⇧⏎, kept only when it is a same-origin path under
- *   {@link RETURN_PATHS} (the Overview, People, the Bodies list, a Body console).
+ *   {@link RETURN_PATHS} (the Overview, People, the Corpus list, a Body console).
  *
  * TanStack Router JSON-parses a param that looks like a number or a boolean, so text params take a
  * number back to its string and `age` takes its string to a number.
@@ -42,8 +42,8 @@ export const ITEM_REF_KINDS = ['flag', 'request', 'body', 'ticket'] as const;
 /** An item's id, a source ref, or a bare id of word characters. */
 const ITEM_REF = /^(?:(?:flag|request|body|ticket):)?\w{1,64}$/;
 
-/** Where ⇧⏎ may return to: the Overview (exactly), and the trees of People, Bodies and each body. */
-export const RETURN_PATHS = ['/admin/people', '/admin/bodies', '/admin/body'] as const;
+/** Where ⇧⏎ may return to: the Overview (exactly), and the trees of People, Corpus and each body. */
+export const RETURN_PATHS = ['/admin/people', '/admin/corpus', '/admin/body'] as const;
 const OVERVIEW = '/admin';
 const MAX_FROM = 2048;
 

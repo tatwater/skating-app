@@ -61,7 +61,7 @@ import type { ConsoleMode, LegacyPage } from './consoleNav';
 const MODE_ICON: Record<ConsoleMode['id'], IconDefinition> = {
   overview: faTachographDigital,
   inbox: faInbox,
-  bodies: faMapLocationDot,
+  corpus: faMapLocationDot,
   people: faUsers,
 };
 

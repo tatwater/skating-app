@@ -23,7 +23,7 @@ import { Route as SkaterIndexRouteImport } from './routes/_skater.index'
 import { Route as SkaterLatestRouteImport } from './routes/_skater.latest'
 import { Route as SkaterSettingsRouteImport } from './routes/_skater.settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
-import { Route as AdminBodiesRouteImport } from './routes/admin.bodies'
+import { Route as AdminCorpusRouteImport } from './routes/admin.corpus'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
@@ -123,9 +123,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminBodiesRoute = AdminBodiesRouteImport.update({
-  id: '/bodies',
-  path: '/bodies',
+const AdminCorpusRoute = AdminCorpusRouteImport.update({
+  id: '/corpus',
+  path: '/corpus',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
@@ -287,7 +287,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/latest': typeof SkaterLatestRoute
   '/settings': typeof SkaterSettingsRouteWithChildren
-  '/admin/bodies': typeof AdminBodiesRoute
+  '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
@@ -329,7 +329,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/latest': typeof SkaterLatestRoute
-  '/admin/bodies': typeof AdminBodiesRoute
+  '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
@@ -376,7 +376,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_skater/latest': typeof SkaterLatestRoute
   '/_skater/settings': typeof SkaterSettingsRouteWithChildren
-  '/admin/bodies': typeof AdminBodiesRoute
+  '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
@@ -424,7 +424,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/latest'
     | '/settings'
-    | '/admin/bodies'
+    | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
@@ -466,7 +466,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/latest'
-    | '/admin/bodies'
+    | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
@@ -512,7 +512,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_skater/latest'
     | '/_skater/settings'
-    | '/admin/bodies'
+    | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
     | '/admin/flags'
@@ -660,11 +660,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/bodies': {
-      id: '/admin/bodies'
-      path: '/bodies'
-      fullPath: '/admin/bodies'
-      preLoaderRoute: typeof AdminBodiesRouteImport
+    '/admin/corpus': {
+      id: '/admin/corpus'
+      path: '/corpus'
+      fullPath: '/admin/corpus'
+      preLoaderRoute: typeof AdminCorpusRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/dashboard': {
@@ -925,7 +925,7 @@ const AdminPeopleRouteWithChildren = AdminPeopleRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
-  AdminBodiesRoute: typeof AdminBodiesRoute
+  AdminCorpusRoute: typeof AdminCorpusRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFeaturesRoute: typeof AdminFeaturesRoute
   AdminFlagsRoute: typeof AdminFlagsRoute
@@ -950,7 +950,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminBodiesRoute: AdminBodiesRoute,
+  AdminCorpusRoute: AdminCorpusRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminFeaturesRoute: AdminFeaturesRoute,
   AdminFlagsRoute: AdminFlagsRoute,

@@ -8,10 +8,10 @@ import { Note } from '@/components/kit/note';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
-import { ConsoleTopStart } from '../../shell/ConsoleShell';
 import { LEFT_NOT_SAID } from '../consoleWords';
 import { NOT_RECORDED } from '../tabs/tabStates';
 import { BodyHistorySection } from './BodyLeftColumn';
+import { BodyReturnButton } from './BodyReturnButton';
 import type { Removal } from './bodyModel';
 import { IN_NO_TOWN_WORDS, NOT_COMPUTED, NOT_COMPUTED_WORDS } from './bodyModel';
 import { keyedTowns } from './townKeys';
@@ -129,13 +129,7 @@ export function BodyConsoleGone({
           />
         </div>
       )}
-      {onReturn !== undefined && (
-        <ConsoleTopStart>
-          <Button variant="outline" size="sm" onClick={onReturn} aria-keyshortcuts="Shift+Enter">
-            Bodies
-          </Button>
-        </ConsoleTopStart>
-      )}
+      {onReturn !== undefined && <BodyReturnButton onReturn={onReturn} />}
     </section>
   );
 }

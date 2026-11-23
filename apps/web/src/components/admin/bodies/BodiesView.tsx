@@ -233,7 +233,7 @@ export function BodiesView({
         )}
       >
         <Lanes
-          label="Bodies"
+          label="Corpus"
           selected={lane.id}
           onSelect={(id) => {
             // The lane on screen again keeps its place; another lane opens fresh.

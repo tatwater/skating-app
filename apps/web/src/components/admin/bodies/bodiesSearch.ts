@@ -19,7 +19,7 @@ import { BODY_LANES, type BodyLane, DEFAULT_LANE_ID, laneById } from './bodyLane
  *
  * Validated, never trusted: every field `.catch()`es to absent, so a stale or hand-edited link
  * degrades to the default lane instead of an error page. Defaults are written as no param at all
- * (`/admin/bodies` is Active, by reports), and facets are comma lists of option ids
+ * (`/admin/corpus` is Active, by reports), and facets are comma lists of option ids
  * (`?size=1000-up&class=lakePond,bay`), each kept in the menu's order with unknown ids dropped.
  *
  * TanStack Router JSON-parses a param that looks like a number, so a text field takes a number

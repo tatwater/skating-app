@@ -79,6 +79,13 @@ type SendOptions = {
    */
   from?: string;
   /**
+   * Where the person's answer goes, sent as Resend's `reply_to`; absent, the request carries none. Only
+   * a support reply passes it, from `SUPPORT_REPLY_TO_EMAIL` (`lib/supportThread.supportReplyTo`), so
+   * a skater's answer reaches a mailbox rather than the send-only support sender. Every other email
+   * is sent without it ({@link sendEmail} doesn't take it).
+   */
+  replyTo?: string;
+  /**
    * Resend's `Idempotency-Key` (1–256 characters; Resend keeps it 24 hours): a repeat of the same
    * request under it gets the first answer and sends nothing again. A support reply sends one derived
    * from its message's id.
@@ -107,6 +114,7 @@ export async function sendEmailOutcome(opts: SendOptions): Promise<SendOutcome> 
     html: opts.html,
     text: opts.text,
     ...(opts.headers ? { headers: opts.headers } : {}),
+    ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
   });
   try {
     for (let attempt = 0; ; attempt++) {
@@ -152,6 +160,8 @@ export async function sendEmailOutcome(opts: SendOptions): Promise<SendOutcome> 
  * `accepted`. One implementation underneath ({@link sendEmailOutcome}); a caller that records an
  * outcome a person reads asks that instead.
  */
-export async function sendEmail(opts: Omit<SendOptions, 'idempotencyKey'>): Promise<boolean> {
+export async function sendEmail(
+  opts: Omit<SendOptions, 'idempotencyKey' | 'replyTo'>,
+): Promise<boolean> {
   return (await sendEmailOutcome(opts)).kind === 'accepted';
 }
