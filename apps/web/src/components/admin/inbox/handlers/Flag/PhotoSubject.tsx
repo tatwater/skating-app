@@ -2,6 +2,7 @@ import { type RefObject, useContext, useState } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Note } from '@/components/kit/note';
+import { PhotoStage, PhotoThumb } from '@/components/kit/photo-stage';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { usePaneKeys } from '@/lib/keys';
@@ -10,7 +11,6 @@ import { type InboxQuery, inboxHref } from '../../inboxSearch';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import { dayMonth } from './flagFormat';
 import type { LiveTarget } from './flagTypes';
-import { PhotoStage, PhotoThumb } from './PhotoStage';
 import { SubjectText } from './parts';
 import {
   captionLine,

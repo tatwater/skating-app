@@ -2,7 +2,7 @@ import { render } from '@testing-library/react';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { coverCrop, mosaicGrid, PhotoStage, PhotoThumb } from './PhotoStage';
+import { coverCrop, mosaicGrid, PhotoStage, PhotoThumb } from './photo-stage';
 
 /**
  * **What the stage fetches before it is shown**: only the thumbnail, by a detached image that is

@@ -12,9 +12,9 @@ import { Kbd } from '@/components/kit/kbd';
 import { cn } from '@/lib/utils';
 
 /**
- * **`PhotoStage`** (kit candidate, board 2.7) — a photo **pixelated until the viewer chooses to
- * look**, and the thumbnails drawn the same way (`PhotoThumb`). Built kit-shaped beside its handler;
- * one writer promotes it.
+ * **`PhotoStage`** (board 2.7; first used by the Inbox's photo flag and the record sheet) — a photo
+ * **pixelated until the viewer chooses to look**, and the thumbnails drawn the same way
+ * (`PhotoThumb`, `PixelatedImage`). Every word is the caller's.
  *
  * **How the full image stays out of reach until it is shown:**
  * - **Never fetched.** Before the reveal the full image's address is not in the page at all — no

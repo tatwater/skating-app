@@ -9,12 +9,12 @@ import { LifeList } from '@/components/kit/life-list';
 import { LifeStrip } from '@/components/kit/life-strip';
 import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
+import { PhotoThumb } from '@/components/kit/photo-stage';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonText } from '@/components/kit/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { cn } from '@/lib/utils';
-import { PhotoThumb } from '../../inbox/handlers/Flag/PhotoStage';
 import { type Loadable, readState } from '../../reads/consoleReads';
 import { personName } from '../person/personModel';
 import {
