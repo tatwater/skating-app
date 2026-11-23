@@ -59,6 +59,37 @@ export async function photoHeld(ctx: QueryCtx, photo: Doc<'photos'>): Promise<bo
   return false;
 }
 
+// ── A blob belongs to one photo (B01-5e) ─────────────────────────────────────────────────────
+
+/** What `photos.create` says of a storage id a photo row already holds (or the same id twice). */
+export const BLOB_TAKEN = 'This upload already belongs to a photo.';
+/** What it says of a storage id that names no stored file. */
+export const BLOB_NOT_FOUND = 'This upload could not be found.';
+
+/**
+ * Whether any photo row other than `except` names `storageId` — as its image or its thumbnail. Two
+ * point reads (`by_storage`, `by_thumb_storage`; both fields required), two rows each at most.
+ */
+export async function blobReferenced(
+  ctx: QueryCtx,
+  storageId: string,
+  except?: Id<'photos'>,
+): Promise<boolean> {
+  for (const rows of [
+    await ctx.db
+      .query('photos')
+      .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+      .take(2),
+    await ctx.db
+      .query('photos')
+      .withIndex('by_thumb_storage', (q) => q.eq('thumbStorageId', storageId))
+      .take(2),
+  ]) {
+    if (rows.some((r) => r._id !== except)) return true;
+  }
+  return false;
+}
+
 /** An uploader's detach of an access photo while it is held (flagged or under a decision). */
 export const PHOTO_HELD_DETACH =
   'This photo is under review, so it stays attached until a moderator decides on it.';

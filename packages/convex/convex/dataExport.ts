@@ -493,6 +493,9 @@ export const buildExport = internalAction({
             }
           : {}),
         ...data,
+        // No storage id leaves the server (B01-5e): one works like a key to the blob, so the bundle
+        // carries each photo's bytes (`photoFiles`) and its facts, never the id the bytes live at.
+        photos: data.photos.map(({ storageId: _id, ...photo }) => photo),
         photoFiles: files,
       };
 

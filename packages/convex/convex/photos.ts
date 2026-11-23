@@ -22,6 +22,9 @@ import { writeAudit } from './lib/audit';
 import { requireContributor, requireProfile } from './lib/auth';
 import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import {
+  BLOB_NOT_FOUND,
+  BLOB_TAKEN,
+  blobReferenced,
   PHOTO_PURGE_DELAY_MS,
   photoHeld,
   photoVisible,
@@ -82,6 +85,14 @@ export const create = mutation({
     if (coord !== undefined && !isValidCoord(coord)) {
       throw new ConvexError('Photo coordinate is out of range');
     }
+    // A blob belongs to at most one photo row (B01-5e): a storage id works like a key, so a second
+    // row on a held photo's blobs could be removed — deleting the held photo's bytes — or attached
+    // to a new report, serving them again. Each id must name a stored file no row holds yet.
+    if (args.storageId === args.thumbStorageId) throw new ConvexError(BLOB_TAKEN);
+    for (const id of [args.storageId, args.thumbStorageId]) {
+      if ((await ctx.db.system.get(id)) === null) throw new ConvexError(BLOB_NOT_FOUND);
+      if (await blobReferenced(ctx, id)) throw new ConvexError(BLOB_TAKEN);
+    }
     return ctx.db.insert('photos', {
       storageId: args.storageId,
       thumbStorageId: args.thumbStorageId,
@@ -135,6 +146,11 @@ export const remove = mutation({
  */
 export type PhotoRemoveOutcome = 'deleted' | 'withdrawn' | 'kept' | 'gone';
 
+/** How long an unattached upload may be cleaned up by `removeBlob`: a form's life, at most. */
+export const PENDING_UPLOAD_MS = 24 * 60 * 60 * 1000;
+/** What `removeBlob` says of a blob it won't take: a photo's, or not a fresh unattached upload. */
+export const BLOB_ATTACHED = 'Only a fresh upload no photo uses can be removed this way.';
+
 /**
  * Withdraw a held photo for its uploader (see {@link remove}). Idempotent: a photo already withdrawn
  * writes nothing. Leaves its flags open and its verdict standing — a moderator still decides.
@@ -173,9 +189,15 @@ async function withdrawHeldPhoto(
 /**
  * Delete a storage blob the client uploaded but never attached to a `photos` row — the cleanup path
  * for a partial upload (one of the full/thumb pair lands, its sibling or `create` fails) or a form
- * abandoned between `generateUploadUrl` and `create`. Auth-gated; a bare blob carries no owner row so
- * we can't owner-check it, but a storage id is only ever handed back to the uploader (from an upload
- * URL POST) and isn't enumerable. Idempotent — an already-gone / never-finalized id is a no-op.
+ * abandoned between `generateUploadUrl` and `create`. Idempotent — an already-gone id is a no-op.
+ *
+ * **Only an unattached, fresh upload** (B01-5e): a storage id works like a key, so this refuses a blob
+ * any photo row names (`blobReferenced` — a held photo's bytes can't be taken this way) and one older
+ * than {@link PENDING_UPLOAD_MS} (an abandoned form is cleaned up within the hour, not weeks later).
+ * Who uploaded a bare blob isn't recorded anywhere today — Convex's upload POST returns the id to the
+ * client and writes no owner — so "the caller's own" can't be checked; that wants a pending-uploads
+ * row written on upload (a seam). What is left to any signed-in contributor is deleting a fresh blob
+ * no photo holds, whose id was only ever returned to its uploader and no read serves.
  *
  * **The one blob in the system with no row to keep**, so the review's "never drop the only pointer"
  * rule has nothing to hold onto here: a blob that was never attached is, by definition, not in
@@ -187,7 +209,11 @@ async function withdrawHeldPhoto(
 export const removeBlob = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, { storageId }) => {
-    await requireProfile(ctx);
+    await requireContributor(ctx);
+    const blob = await ctx.db.system.get(storageId);
+    if (blob === null) return; // already gone
+    if (await blobReferenced(ctx, storageId)) throw new ConvexError(BLOB_ATTACHED);
+    if (blob._creationTime < Date.now() - PENDING_UPLOAD_MS) throw new ConvexError(BLOB_ATTACHED);
     const failure = await deleteStoredBlob(ctx, storageId);
     if (failure !== null) {
       console.warn(`photos.removeBlob: could not delete unattached blob ${storageId}: ${failure}`);

@@ -114,6 +114,16 @@ async function photoThumbs(
   return out;
 }
 
+/**
+ * The published document with a photo's storage ids taken off (B01-5e): an id works like a key to
+ * the blob, so none leaves the server, staff reads included — the pane's thumbnail is a URL.
+ */
+function withoutStorageIds(target: ContentDoc) {
+  if (!('thumbStorageId' in target)) return target;
+  const { storageId: _s, thumbStorageId: _t, ...rest } = target as Doc<'photos'>;
+  return rest;
+}
+
 /** A row's content, with a photo's thumbnail (`content.thumbUrl`, `null` when not served). */
 function withThumb(
   content: ReturnType<typeof contentOf>,
@@ -1123,7 +1133,7 @@ export async function itemPane(
       targetType,
       targetId,
       /** The item as published — the whole document, read by staff — or `null` once erased. */
-      published: target === null || erasedComment ? null : target,
+      published: target === null || erasedComment ? null : withoutStorageIds(target),
       /** Its words, as every record row shows them (`contentOf`); `null` once erased. */
       content:
         target === null || erasedComment

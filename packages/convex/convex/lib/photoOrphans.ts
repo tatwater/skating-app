@@ -28,7 +28,7 @@
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { photoHeld } from './photoAccess';
+import { blobReferenced, photoHeld } from './photoAccess';
 import { deleteStoredBlob } from './storageBlobs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -204,10 +204,17 @@ export async function purgePhotoBlobs(ctx: MutationCtx, photo: Doc<'photos'>): P
   return deleteBlobsOf(ctx, photo);
 }
 
-/** Both blobs of a photo, each deleted honestly (`lib/storageBlobs`): the failures, if any. */
+/**
+ * Both blobs of a photo, each deleted honestly (`lib/storageBlobs`): the failures, if any. A blob
+ * another row still names is left (B01-5e: a blob belongs to one photo; a row written before that
+ * rule may share one) — it is that row's, and goes with it.
+ */
 async function deleteBlobsOf(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
-  return [
-    await deleteStoredBlob(ctx, photo.storageId as Id<'_storage'>),
-    await deleteStoredBlob(ctx, photo.thumbStorageId as Id<'_storage'>),
-  ].filter((f): f is string => f !== null);
+  const failures: string[] = [];
+  for (const id of new Set([photo.storageId, photo.thumbStorageId])) {
+    if (await blobReferenced(ctx, id, photo._id)) continue;
+    const failure = await deleteStoredBlob(ctx, id as Id<'_storage'>);
+    if (failure !== null) failures.push(failure);
+  }
+  return failures;
 }

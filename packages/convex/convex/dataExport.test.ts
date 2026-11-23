@@ -379,6 +379,9 @@ describe('buildExport', () => {
     expect(bundle.format).toBe('skating-data-export/1');
     expect(bundle.photoFiles).toHaveLength(1);
     expect(atob(bundle.photoFiles[0].base64)).toBe('not-really-a-jpeg');
+    // No storage id leaves the server (B01-5e): the bytes ship, the key to them never.
+    expect(bundle.photos[0]).not.toHaveProperty('storageId');
+    expect(JSON.stringify(bundle)).not.toContain(storageId);
   });
 
   test('a bundle survives the deletion of the account it describes', async () => {

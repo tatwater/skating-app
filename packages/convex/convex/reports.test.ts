@@ -618,8 +618,8 @@ describe('reports.create', () => {
     const asOwner = await seedUser(t, 'clerk_owner');
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
     const photoId = await asOwner.mutation(api.photos.create, {
-      storageId,
-      thumbStorageId: storageId,
+      storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
+      thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
       placeOnMap: false,
     });
     const asOther = await seedUser(t, 'clerk_other');
@@ -1634,8 +1634,8 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       const asUser = await seedUser(t, 'clerk_a');
       const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
       const photoId = await asUser.mutation(api.photos.create, {
-        storageId,
-        thumbStorageId: storageId,
+        storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
+        thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
         placeOnMap: false,
       });
       const reportId = await asUser.mutation(api.reports.create, {
@@ -1694,10 +1694,10 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       const { id } = await seedBody(t);
       const asUser = await seedUser(t, 'clerk_a');
       const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
-      const photoOf = () =>
+      const photoOf = async () =>
         asUser.mutation(api.photos.create, {
-          storageId,
-          thumbStorageId: storageId,
+          storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
+          thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
           placeOnMap: false,
         });
       return { bodyId: id, asUser, photoOf };
@@ -1772,8 +1772,8 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
     await expect(
       asUser.mutation(api.photos.create, {
-        storageId,
-        thumbStorageId: storageId,
+        storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
+        thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
         placeOnMap: true,
         coord: { lat: 200, lng: 0 },
       }),

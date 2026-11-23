@@ -46,7 +46,7 @@ const PHOTO_DELETERS: Record<string, string> = {
   'photos.ts:swapRotated':
     'the rotation: old blobs, only while the row is still down and holds them',
   'photos.ts:dropRotationCopies': 'a rotation’s own copies, never on any row',
-  'photos.ts:removeBlob': 'a blob never attached to a row (no photo to hold)',
+  'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',
 };
 
 /** Blob deletes that aren't a photo's, by function. */
@@ -167,4 +167,45 @@ test('only the purge calls the blob half', () => {
     if (rel === 'photoPurge.ts' || rel === 'lib/photoOrphans.ts') continue;
     expect(blank(readFileSync(path, 'utf8')), rel).not.toMatch(/\bpurgePhotoBlobs\(/);
   }
+});
+
+/**
+ * **Every function that takes a storage id from outside** (B01-5e: an id works like a key) is listed
+ * with its check. A public or internal function whose arguments name `v.id('_storage')` fails until
+ * it is added here.
+ */
+const STORAGE_ID_TAKERS: Record<string, string> = {
+  'photos.ts:create': 'refuses an id naming no file, the same id twice, and one any row holds',
+  'photos.ts:removeBlob': 'deletes only a fresh upload no photo row names',
+  'basemap.ts:getServingUrl': 'internal: the operator resolves an uploaded basemap’s URL',
+};
+
+test('every function that takes a storage id from a caller is listed with its check', () => {
+  const takers = new Set<string>();
+  for (const path of sources(CONVEX)) {
+    const rel = relative(CONVEX, path);
+    const text = blank(readFileSync(path, 'utf8'));
+    for (const m of text.matchAll(/v\.id\('\s*'\)/g)) {
+      // Strings are blanked: a `v.id('…')` of eight blanks is `'_storage'`.
+      const raw = readFileSync(path, 'utf8').slice(m.index ?? 0, (m.index ?? 0) + m[0].length);
+      if (!raw.includes("'_storage'")) continue;
+      takers.add(`${rel}:${functionAt(text, m.index ?? 0)}`);
+    }
+  }
+  expect([...takers].filter((f) => !(f in STORAGE_ID_TAKERS))).toEqual([]);
+  expect(Object.keys(STORAGE_ID_TAKERS).filter((f) => !takers.has(f))).toEqual([]);
+});
+
+test('create and removeBlob ask whether a row already holds the blob; deleteBlobsOf leaves a shared one', () => {
+  const photos = readFileSync(join(CONVEX, 'photos.ts'), 'utf8');
+  const body = (name: string) => {
+    const at = photos.indexOf(`export const ${name} = `);
+    return photos.slice(at, photos.indexOf('\n});\n', at));
+  };
+  expect(body('create')).toMatch(/blobReferenced\(/);
+  expect(body('removeBlob')).toMatch(/blobReferenced\(/);
+  expect(body('removeBlob')).toMatch(/PENDING_UPLOAD_MS/);
+  const orphans = readFileSync(join(CONVEX, 'lib/photoOrphans.ts'), 'utf8');
+  const fn = orphans.slice(orphans.indexOf('async function deleteBlobsOf'));
+  expect(fn.slice(0, fn.indexOf('\n}\n'))).toMatch(/blobReferenced\(/);
 });

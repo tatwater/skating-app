@@ -4381,6 +4381,11 @@ export default defineSchema({
     purgedAt: v.optional(v.number()),
   })
     .index('by_uploader', ['uploaderId'])
+    // A blob belongs to at most one photo row (B01-5e): `photos.create` refuses a storage id any row
+    // already holds, and no delete takes a blob another row still names — point reads on each field
+    // (both required, so no lower bound is needed).
+    .index('by_storage', ['storageId'])
+    .index('by_thumb_storage', ['thumbStorageId'])
     // The purge's due rows. `purgeAt` is optional and the index not sparse — `undefined` sorts first,
     // so a due range needs a lower bound (`gt('purgeAt', 0)`), never a bare `lte()`.
     .index('by_purge_at', ['purgeAt'])
