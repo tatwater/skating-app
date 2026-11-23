@@ -305,6 +305,30 @@ describe('LatestPage', () => {
     expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
   });
 
+  it('lifts nothing that answers after the wait ran out: the sections already drew', () => {
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
+    fakes.queries.delete('posts:listFavoritePosts');
+    const view = page();
+    act(() => {
+      vi.advanceTimersByTime(LATEST_HEADS_WAIT_MS);
+    });
+    // The favorites answer late, naming one the pages haven't brought.
+    fakes.queries.set('posts:listFavoritePosts', [
+      {
+        ...POST,
+        postId: 'late',
+        title: 'The late favorite',
+        latestSkateEndTime: POST.latestSkateEndTime - 3_600_000,
+        isFavorite: true,
+        reports: [{ ...REPORT, reportId: 'late-r', isFavorite: true }],
+      },
+    ]);
+    view.rerender(<LatestPage search={{}} />);
+    expect(screen.queryByText('The late favorite')).not.toBeInTheDocument();
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+  });
+
   it('lifts no favorite Post when the favorites read fails, and Latest stays up', () => {
     fakes.queries.set('posts:listFavoritePosts', () => new Error('read limit'));
     page();

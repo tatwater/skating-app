@@ -17,7 +17,10 @@ export interface FeedHeadsInput {
   bodiesWanted: boolean;
   bodiesLoaded: boolean;
   recommendedLoaded: boolean;
-  /** `LATEST_HEADS_WAIT_MS` passed since the first live page: draw with what has answered. */
+  /**
+   * `LATEST_HEADS_WAIT_MS` passed since the first live page with something still out: draw with
+   * what has answered, and lift nothing for this filter set.
+   */
   waitedOut: boolean;
 }
 
@@ -26,6 +29,11 @@ export interface FeedHeads {
   showCached: boolean;
   /** The list may draw its sections. */
   headsKnown: boolean;
+  /**
+   * Favorites may lead their sections. Off for the cache, and once the wait ran out: a late answer
+   * would lift a favorite above a section the reader already saw.
+   */
+  lift: boolean;
 }
 
 export function feedHeads(input: FeedHeadsInput): FeedHeads {
@@ -35,5 +43,5 @@ export function feedHeads(input: FeedHeadsInput): FeedHeads {
   // A slow or lost read never hides loaded Posts for long: past the wait the live list draws.
   const liveReady = liveHeads || (live && input.waitedOut);
   const showCached = input.cachedCount > 0 && (!live || (input.resultsCount > 0 && !liveReady));
-  return { showCached, headsKnown: showCached || liveReady };
+  return { showCached, headsKnown: showCached || liveReady, lift: !showCached && !input.waitedOut };
 }

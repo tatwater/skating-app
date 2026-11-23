@@ -1169,6 +1169,31 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     expect(ids(cards)).toEqual([newest, ...today.slice(0, 4)]);
   });
 
+  test('ranks by the Post’s newest member within a section, not the favorite Report that found it', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const older: Id<'posts'>[] = [];
+    for (const hours of [1, 2, 3, 4, 5]) {
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - hours * 3_600_000 }],
+      });
+      older.push(postId);
+    }
+    // Found sixth (its favorite member is 6h old), but its newest member is half an hour old.
+    const { postId: newest } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 6 * 3_600_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 1_800_000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([newest, ...older.slice(0, 4)]);
+  });
+
   test('a Post sits in the section of its newest member, found through an older favorite one', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'clerk_author');

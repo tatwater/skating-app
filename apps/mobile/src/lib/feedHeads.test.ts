@@ -14,10 +14,11 @@ const ready: FeedHeadsInput = {
 
 describe('feedHeads (D292)', () => {
   it('draws the live list once the favorites, the lakes it asked for and the strip answer', () => {
-    expect(feedHeads(ready)).toEqual({ showCached: false, headsKnown: true });
+    expect(feedHeads(ready)).toEqual({ showCached: false, headsKnown: true, lift: true });
     expect(feedHeads({ ...ready, bodiesWanted: true, bodiesLoaded: true })).toEqual({
       showCached: false,
       headsKnown: true,
+      lift: true,
     });
   });
 
@@ -35,11 +36,12 @@ describe('feedHeads (D292)', () => {
     expect(feedHeads({ ...ready, cachedCount: 5, favoritesLoaded: false })).toEqual({
       showCached: true,
       headsKnown: true,
+      lift: false,
     });
     // Before the first live page, as it always did.
     expect(
       feedHeads({ ...ready, resultsCount: 0, status: 'LoadingFirstPage', cachedCount: 5 }),
-    ).toEqual({ showCached: true, headsKnown: true });
+    ).toEqual({ showCached: true, headsKnown: true, lift: false });
   });
 
   it('shows the live list, not the cache, once it can draw — or once it is truly empty', () => {
@@ -53,7 +55,10 @@ describe('feedHeads (D292)', () => {
     expect(feedHeads({ ...ready, favoritesLoaded: false, waitedOut: true })).toEqual({
       showCached: false,
       headsKnown: true,
+      lift: false,
     });
+    // And a late answer doesn't turn the lift back on: those sections already drew.
+    expect(feedHeads({ ...ready, waitedOut: true }).lift).toBe(false);
     expect(
       feedHeads({ ...ready, cachedCount: 5, recommendedLoaded: false, waitedOut: true }).showCached,
     ).toBe(false);
@@ -73,6 +78,7 @@ describe('feedHeads (D292)', () => {
     expect(feedHeads({ ...ready, favoritesLoaded: false })).toEqual({
       showCached: false,
       headsKnown: false,
+      lift: true,
     });
   });
 });

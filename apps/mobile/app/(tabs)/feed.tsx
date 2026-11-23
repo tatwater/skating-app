@@ -132,7 +132,11 @@ export default function NewsfeedScreen() {
     const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
     return () => clearTimeout(timer);
   }, [headsAnswered, pageIn, filtersKey]);
-  const { showCached: isOfflineFallback, headsKnown } = feedHeads({
+  const {
+    showCached: isOfflineFallback,
+    headsKnown,
+    lift,
+  } = feedHeads({
     resultsCount: results.length,
     status,
     cachedCount: cached.length,
@@ -168,13 +172,13 @@ export default function NewsfeedScreen() {
   const sections = headsKnown
     ? latestFeedSections({
         posts: feedData,
-        favorites: isOfflineFallback ? [] : (favoritePosts ?? []),
+        favorites: lift ? (favoritePosts ?? []) : [],
         // Never from the offline cache: a cached report list has no matching body list.
         bodies: isOfflineFallback ? [] : (bodyResults?.results ?? []),
         exhausted: status === 'Exhausted',
         now,
         recommendedIds,
-        lift: !isOfflineFallback,
+        lift,
       })
     : [];
   const listItems: FeedListItem[] = [

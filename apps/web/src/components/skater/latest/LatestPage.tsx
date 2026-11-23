@@ -161,15 +161,6 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   const status = page.status as PageStatus;
   const posts = page.results as PostCardData[];
   const bodies = bodyResults?.results ?? [];
-  const sections = latestSections(
-    posts,
-    searching ? new Set<string>() : recommendedIds,
-    bodies,
-    status === 'Exhausted',
-    now,
-    { lift, favorites: favoritePosts ?? [] },
-  );
-  const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
   // The sections wait for what decides their heads (D292): drawn before the favorites, the matched
   // lakes or the recommended strip answer, a favorite would move at the top of a section a moment
   // later (the strip decides it too: a Post whose favorite member it took isn't lifted).
@@ -177,7 +168,9 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     (!lift || favoritePosts !== undefined) &&
     (!wantBodies || bodyResults !== undefined) &&
     (!lift || recommended !== undefined);
-  // Never longer than `LATEST_HEADS_WAIT_MS` once the first page is in, per filter set.
+  // Never longer than `LATEST_HEADS_WAIT_MS` once the first page is in, per filter set. A list that
+  // drew on the timeout lifts nothing for that filter set: a late answer would otherwise lift a
+  // favorite above a section the reader already saw.
   const [waitedOutFor, setWaitedOutFor] = useState<string | null>(null);
   const pageIn = status !== 'LoadingFirstPage';
   useEffect(() => {
@@ -185,7 +178,18 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
     return () => clearTimeout(timer);
   }, [headsReady, pageIn, filtersKey]);
-  const headsKnown = headsReady || (pageIn && waitedOutFor === filtersKey);
+  const waitedOut = waitedOutFor === filtersKey;
+  const headsKnown = headsReady || (pageIn && waitedOut);
+  const liftNow = lift && !waitedOut;
+  const sections = latestSections(
+    posts,
+    searching ? new Set<string>() : recommendedIds,
+    bodies,
+    status === 'Exhausted',
+    now,
+    { lift: liftNow, favorites: favoritePosts ?? [] },
+  );
+  const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
   const state = headsKnown
     ? latestFeedState({
         status,

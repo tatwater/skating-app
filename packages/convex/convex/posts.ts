@@ -230,8 +230,9 @@ export const FAVORITE_HYDRATIONS_CAP = 40;
  *
  * **Bounded, per section.** For each section's window (`feedSectionWindows`) it reads each of the
  * viewer's newest {@link FAVORITE_SOURCES_CAP} favorites' newest few visible Reports (a lake by its
- * Reports, a bay by the `reportSubAreas` join), walks the distinct Reports newest first, and stops
- * at the section's cap; at most {@link FAVORITE_HYDRATIONS_CAP} cards are built in all, with a
+ * Reports, a bay by the `reportSubAreas` join), walks the distinct Reports newest first, and builds a
+ * card only for a Post that could still rank in its section's newest five; at most
+ * {@link FAVORITE_HYDRATIONS_CAP} cards are built in all, with a
  * reserve kept for each later section so one section's rejects can't spend another's. A Post is
  * placed by its own newest member, which may be newer than the favorite Report that found it.
  * Reading a section at a time keeps one busy lake's Today from crowding out every older section.
@@ -317,7 +318,6 @@ export const listFavoritePosts = query({
       }
       const ordered = [...candidates.values()].sort((a, b) => b.t - a.t);
       for (const candidate of ordered.slice(0, FAVORITE_CANDIDATES_PER_SECTION)) {
-        if ((kept.get(window.key)?.length ?? 0) >= FAVORITE_LIFT_PER_SECTION) break;
         if (hydrations >= budgetEnd) break;
         const report =
           typeof candidate.report === 'string'
@@ -329,6 +329,14 @@ export const listFavoritePosts = query({
         const post = await ctx.db.get(postId);
         if (post?.moderationStatus !== 'visible') continue;
         if (post.latestSkateEndTime < seasonStart || post.latestSkateEndTime >= seasonEnd) continue;
+        // Walked by the favorite Report's time, but placed and ranked by the Post's newest member, so
+        // a later candidate can still be newer than a full section's five: only one that can't be is
+        // skipped, before its card is built.
+        const placed = kept.get(feedSectionForTime(post.latestSkateEndTime, viewer.now).key) ?? [];
+        const fifthNewest = placed.map((k) => k.card.latestSkateEndTime).sort((a, b) => b - a)[
+          FAVORITE_LIFT_PER_SECTION - 1
+        ];
+        if (fifthNewest !== undefined && fifthNewest >= post.latestSkateEndTime) continue;
         hydrations++;
         const card = await toPostCard(ctx, post, viewer);
         if (!card?.isFavorite) continue;
