@@ -39,9 +39,12 @@ import {
   bodyRefusal,
   MESSAGE_GONE_REFUSAL,
   NOT_A_NOTE_REFUSAL,
+  REPLY_SKIPPED_LOG,
+  replyBlockedOf,
   SUPPORT_REASONS,
   seedTicket,
   supportReplyEmail,
+  supportSendability,
   TICKET_GONE_REFUSAL,
 } from './lib/supportThread';
 import { removeNoteImpl, reopenTicketImpl, resolveTicketImpl } from './lib/supportWrites';
@@ -263,7 +266,7 @@ export type SupportReplyResult = SupportWriteResult & {
   messageId: Id<'supportMessages'>;
   status: 'settling' | 'failed';
   sendAfter: number;
-  failedWhy: 'seed' | null;
+  failedWhy: 'seed' | 'unconfigured' | null;
 };
 
 /** `cancelReply`'s answer: the cancel's own row (which has no undo: a canceled reply is written anew). */
@@ -342,8 +345,10 @@ export const addNote = mutation({
  * Reply to the person who filed a ticket, by email (D284). Asks the Inbox's rule (`reply`), then the
  * reply's words. Stored `settling`, sent by {@link sendReply} at `sendAfter` (one settle window on),
  * which re-reads the row and sends only a reply still settling — so {@link cancelReply} inside the
- * window means nothing is sent. **A seeded ticket is never mailed** (D287): its reply is stored
- * `failed` (`seed`) here and nothing is scheduled; the send refuses it again besides.
+ * window means nothing is sent. **A reply that can't go reads `failed` from the start** (the plan's
+ * "with the sender unset the reply reads `failed`"): a seeded ticket (`seed`, D287) or a deployment
+ * without its sender or the provider's key (`unconfigured`, the skip logged) is stored `failed` here,
+ * and nothing is scheduled; the send asks both again besides.
  */
 export const reply = mutation({
   args: { ticketId: v.id('supportTickets'), body: v.string() },
@@ -355,7 +360,11 @@ export const reply = mutation({
     const refused = bodyRefusal('reply', body);
     if (refused !== null) throw new ConvexError(refused);
     const profile = ticket.userId ? await ctx.db.get(ticket.userId) : null;
-    const seed = seedTicket(ticket, profile);
+    // A reply that can't go is stored `failed` at once, with nothing scheduled — the ruling: it
+    // *reads* failed, never a countdown for a reply that can never be sent (a seeded person, D287;
+    // a deployment without its sender). The same function answers the read's `replyBlocked`.
+    const blocked = replyBlockedOf(ticket, profile);
+    if (blocked === 'unconfigured') console.warn(REPLY_SKIPPED_LOG);
     const sendAfter = now + SETTLE_MS;
     const messageId = await ctx.db.insert('supportMessages', {
       ticketId,
@@ -364,8 +373,8 @@ export const reply = mutation({
       body: body.trim(),
       createdAt: now,
       sendAfter,
-      ...(seed
-        ? { status: 'failed' as const, failedWhy: 'seed' as const }
+      ...(blocked
+        ? { status: 'failed' as const, failedWhy: blocked }
         : { status: 'settling' as const }),
     });
     const actionId = await writeAudit(ctx, {
@@ -378,16 +387,16 @@ export const reply = mutation({
       createdAt: now,
     });
     await ctx.db.patch(messageId, { actionId });
-    if (!seed) await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
+    if (!blocked) await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
     return answer(
       ctx,
       actor,
       { itemId: item._id, ticketId, actionId },
       {
         messageId,
-        status: seed ? ('failed' as const) : ('settling' as const),
+        status: blocked ? ('failed' as const) : ('settling' as const),
         sendAfter,
-        failedWhy: seed ? ('seed' as const) : null,
+        failedWhy: blocked,
       },
     );
   },
@@ -551,8 +560,9 @@ export const sendReply = internalAction({
     const claim = await ctx.runMutation(internal.support.claimReply, { messageId });
     if (claim === null) return; // canceled, gone, or already sent
     const from = process.env.SUPPORT_FROM_EMAIL;
-    if (!from) {
-      console.warn('support reply skipped (SUPPORT_FROM_EMAIL not configured)');
+    // Asked again at send: the deployment's variables may have changed since the write.
+    if (!supportSendability().sendable || !from) {
+      console.warn(REPLY_SKIPPED_LOG);
       await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'unconfigured' });
       return;
     }

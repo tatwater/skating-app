@@ -98,7 +98,7 @@ import {
 } from './requestDecisions';
 import {
   NOT_A_NOTE_REFUSAL,
-  seedTicket,
+  replyBlockedOf,
   supportUndoRefusal,
   THREAD_MESSAGES,
 } from './supportThread';
@@ -1508,7 +1508,7 @@ export async function itemView(r: InboxReader, item: Doc<'inboxItems'>): Promise
           messageCount: thread.messages.length,
           messagesCut: thread.capped,
           replyFrom,
-          replyBlocked: seedTicket(t, filer) ? 'seed' : replyFrom === null ? 'unconfigured' : null,
+          replyBlocked: replyBlockedOf(t, filer),
           personTickets,
           // Last: its reports fill what the budget has left, and say so when they stop short.
           person: await authorBlock(r, t.userId),

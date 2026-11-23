@@ -90,6 +90,37 @@ export function seedTicket(
   return isSeedProfile(ticket.clerkUserId) || isSeedProfile(profile);
 }
 
+/**
+ * **Whether a support reply can be sent from this deployment** (B01-5f) — the one answer the ticket's
+ * read (`replyBlocked`), the reply's write (stored `failed` at once, nothing scheduled) and its send
+ * ask: both the support sender (`SUPPORT_FROM_EMAIL`) and the provider's key (`RESEND_API_KEY`) set.
+ * A boolean and a code, never a value: what either variable holds never leaves here.
+ */
+export function supportSendability():
+  | { sendable: true }
+  | { sendable: false; code: 'unconfigured' } {
+  return process.env.SUPPORT_FROM_EMAIL && process.env.RESEND_API_KEY
+    ? { sendable: true }
+    : { sendable: false, code: 'unconfigured' };
+}
+
+/**
+ * Why a reply written now to this ticket could not be sent, before it is written: a seeded person is
+ * never mailed (D287), and a deployment without its sender can't mail anyone; `null` when it would go.
+ */
+export function replyBlockedOf(
+  ticket: Pick<Doc<'supportTickets'>, 'clerkUserId'>,
+  profile: Pick<Doc<'profiles'>, 'clerkUserId'> | null,
+): 'seed' | 'unconfigured' | null {
+  if (seedTicket(ticket, profile)) return 'seed';
+  const sendability = supportSendability();
+  return sendability.sendable ? null : sendability.code;
+}
+
+/** The skip a blocked support reply logs, by its code (the ruling: logged, never sent). */
+export const REPLY_SKIPPED_LOG =
+  'support reply skipped (SUPPORT_FROM_EMAIL or RESEND_API_KEY not configured)';
+
 // ── The one rule for changing a message, and a ticket's state, from an undo ─────────────────────
 
 /** What an undo of a support row does to the ticket or its message (the policy's inverse). */

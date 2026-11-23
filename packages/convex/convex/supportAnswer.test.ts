@@ -19,6 +19,7 @@ import {
   NOT_A_NOTE_REFUSAL,
   NOTE_NOT_REMOVED_REFUSAL,
   NOTE_REMOVED_REFUSAL,
+  REPLY_SKIPPED_LOG,
   SENT_REPLY_REFUSAL,
   SUPPORT_REASONS,
   SUPPORT_REPLY_FOOTER,
@@ -450,13 +451,62 @@ describe('support.reply and its send', () => {
     ).rejects.toThrow(SENT_REPLY_REFUSAL);
   });
 
-  test('no SUPPORT_FROM_EMAIL: failed (unconfigured), the skip logged — never sent from the general address', async () => {
+  test.each([
+    { from: '', key: FAKE_KEY, seed: false, want: 'unconfigured' },
+    { from: FROM, key: '', seed: false, want: 'unconfigured' },
+    { from: '', key: '', seed: false, want: 'unconfigured' },
+    { from: FROM, key: FAKE_KEY, seed: false, want: null },
+    { from: FROM, key: FAKE_KEY, seed: true, want: 'seed' },
+    { from: '', key: '', seed: true, want: 'seed' },
+  ])(
+    'sender $from|key $key|seed $seed: the read, the write and the send all answer $want',
+    async ({ from, key, seed, want }) => {
+      const w = await world();
+      const mail = stubMail();
+      vi.stubEnv('SUPPORT_FROM_EMAIL', from);
+      vi.stubEnv('RESEND_API_KEY', key);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const by = seed ? await w.person('seed_inbox_cleo', 'member') : w.skater;
+      const ticketId = await w.ticket(by);
+      const read = await w.admin.as.query(api.inbox.item, { ref: `ticket:${ticketId}` });
+      if (read.item?.kind !== 'ticket') throw new Error('not a ticket');
+      expect(read.item.replyBlocked).toBe(want);
+      const out = await w.admin.as.mutation(api.support.reply, { ticketId, body: 'Hello' });
+      const jobs = await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+      const sends = jobs.filter((j) => /^support(\.js)?:sendReply$/.test(j.name));
+      if (want === null) {
+        // It would go: settling, one send scheduled — and it goes.
+        expect(out).toMatchObject({ status: 'settling', failedWhy: null, undoable: true });
+        expect(sends).toHaveLength(1);
+        await settle(w);
+        expect(mail.sent()).toHaveLength(1);
+      } else {
+        // It can't go: failed from the start, nothing scheduled, no countdown, no undo to offer.
+        expect(out).toMatchObject({ status: 'failed', failedWhy: want, undoable: false });
+        expect(await w.message(out.messageId)).toMatchObject({ status: 'failed', failedWhy: want });
+        expect(sends).toEqual([]);
+        await settle(w);
+        expect(mail.calls).toEqual([]);
+        expect(await w.offer(w.admin, out.actionId)).toEqual({
+          state: 'unavailable',
+          why: UNSENT_REPLY_REFUSAL,
+        });
+      }
+      if (want === 'unconfigured') {
+        expect(warn.mock.calls.flat().join(' ')).toContain(REPLY_SKIPPED_LOG);
+      }
+      warn.mockRestore();
+    },
+  );
+
+  test('a sender removed between the write and the send: the send marks it unconfigured, never sends from the general address', async () => {
     const w = await world();
     const mail = stubMail();
-    vi.stubEnv('SUPPORT_FROM_EMAIL', '');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ticketId = await w.ticket();
     const out = await w.admin.as.mutation(api.support.reply, { ticketId, body: 'Hello' });
+    expect(out.status).toBe('settling');
+    vi.stubEnv('RESEND_API_KEY', '');
     await settle(w);
     expect(mail.calls).toEqual([]);
     expect(await w.message(out.messageId)).toMatchObject({
@@ -464,13 +514,6 @@ describe('support.reply and its send', () => {
       failedWhy: 'unconfigured',
     });
     expect((await w.message(out.messageId))?.sentAt).toBeUndefined();
-    expect(warn.mock.calls.flat().join(' ')).toContain(
-      'support reply skipped (SUPPORT_FROM_EMAIL not configured)',
-    );
-    expect(await w.offer(w.admin, out.actionId)).toEqual({
-      state: 'unavailable',
-      why: UNSENT_REPLY_REFUSAL,
-    });
     warn.mockRestore();
   });
 
