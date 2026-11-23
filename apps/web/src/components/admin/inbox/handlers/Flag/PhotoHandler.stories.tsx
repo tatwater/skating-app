@@ -287,13 +287,22 @@ export const NoFile: Story = {
 export const MaxPhotos: Story = {
   args: { item: PHOTO_MAX },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'photo-place')).toHaveTextContent('7 of 24+ on the report');
-    const thumbs = slots(canvasElement, 'photo-sibling');
-    await expect(thumbs).toHaveLength(24);
-    await expect(thumbs[6]).toHaveAttribute('data-self');
-    await expect(slot(canvasElement, 'photo-same-report-cut')).toHaveTextContent(
-      'Showing 24 of 24+ photos',
-    );
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-place')).toHaveTextContent('7 of 24 on the report');
+      // The read's twelve others and the flagged one in its own place (the seventh).
+      const thumbs = slots(canvasElement, 'photo-sibling');
+      expect(thumbs).toHaveLength(13);
+      expect(thumbs[6]).toHaveAttribute('data-self');
+      expect(slot(canvasElement, 'photo-same-report-cut')).toHaveTextContent(
+        'Showing 13 of 24 photos',
+      );
+      // Another photo's open flag links its own Inbox item, by the flag's id.
+      const flagLinks = slots(canvasElement, 'photo-sibling-flag');
+      expect(flagLinks.map((a) => a.getAttribute('href'))).toEqual([
+        '#/admin/inbox?item=flag%3Af_ph_2',
+        '#/admin/inbox?item=flag%3Af_ph_10',
+      ]);
+    });
     await expectNoSidewaysScroll(pane(canvasElement));
   },
 };

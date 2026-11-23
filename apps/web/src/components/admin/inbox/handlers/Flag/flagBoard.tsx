@@ -133,7 +133,9 @@ export function FlagBoard({ item, now = BOARD_NOW, ...reads }: FlagBoardProps) {
   const [manager] = useState(createToastManager);
   return (
     <UndoProvider server={NO_UNDO} manager={manager}>
-      <InspectorProvider value={{ pane, decidedOnOpen: false, now, timeZone: BOARD_ZONE }}>
+      <InspectorProvider
+        value={{ pane, decidedOnOpen: false, now, timeZone: BOARD_ZONE, linkFor: storyLink }}
+      >
         <section
           ref={pane}
           tabIndex={-1}
