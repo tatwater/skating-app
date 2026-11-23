@@ -62,12 +62,21 @@ using FA Pro — picks it up automatically, with no env var to export and no she
 
 ### 2. CI — a GitHub Actions secret
 
-`.github/workflows/ci.yml` writes the runner's `~/.npmrc` in a step before install:
+Every job in `.github/workflows/ci.yml` sets up through `.github/actions/setup`, which writes the
+runner's `~/.npmrc` in a step before install. A composite action cannot read secrets, so each job
+passes the token in:
 
 ```yaml
+# .github/workflows/ci.yml, in each job
+- uses: ./.github/actions/setup
+  with:
+    fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+
+# .github/actions/setup/action.yml
 - name: Authenticate to the FontAwesome registry
+  shell: bash
   env:
-    FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+    FONTAWESOME_NPM_AUTH_TOKEN: ${{ inputs.fontawesome-token }}
   run: echo "//npm.fontawesome.com/:_authToken=${FONTAWESOME_NPM_AUTH_TOKEN}" >> ~/.npmrc
 ```
 
@@ -124,7 +133,7 @@ written by an **install command override** in `apps/web/vercel.json` (the projec
 ```
 
 It lives in `vercel.json` rather than in the dashboard's Install Command box so the wiring is
-reviewable and survives the project being re-created — the same reason CI's step is in `ci.yml` and
+reviewable and survives the project being re-created — the same reason CI's step is in `.github/actions/setup` and
 EAS's is in `package.json`. The token itself is a project environment variable, set once for all
 three targets:
 
