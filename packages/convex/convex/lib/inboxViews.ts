@@ -536,15 +536,36 @@ function photoWithdrawnOf(r: InboxReader, photoId: Id<'photos'>): Promise<number
   });
 }
 
+/** An open flag on a photo, by a point read per open status (the Inbox ref `flag:<id>` opens its item). */
+async function openFlagOnPhoto(
+  r: InboxReader,
+  photoId: Id<'photos'>,
+): Promise<Id<'contentFlags'> | null> {
+  for (const status of OPEN_FLAG_STATUSES) {
+    const [open] = await r.take('contentFlag', 1, (k) =>
+      r.ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q.eq('targetType', 'photo').eq('targetId', photoId).eq('status', status),
+        )
+        .take(k),
+    );
+    if (open) return open._id;
+  }
+  return null;
+}
+
 /**
  * The photos that show this photo's bytes too (B01-5e): those its rotation recorded as holding a
  * shared file (`sameBytesAs`), and any row naming one of its current files in either slot — each read
- * through the item's budget, at most {@link SAME_BYTES_MAX}.
+ * through the item's budget, at most {@link SAME_BYTES_MAX} (`sameBytesCut` past them). Each with its
+ * status, its open flag (the Inbox ref that opens its item) and its report; never its uploader, nor
+ * an image of it.
  */
 async function sameBytesOf(
   r: InboxReader,
   p: Doc<'photos'>,
-): Promise<PhotoSubjectView['sameBytesAs']> {
+): Promise<Pick<PhotoSubjectView, 'sameBytesAs' | 'sameBytesCut'>> {
   const ids = new Set<Id<'photos'>>(p.sameBytesAs ?? []);
   if (p.purgedAt === undefined) {
     for (const id of new Set([p.storageId, p.thumbStorageId])) {
@@ -564,9 +585,15 @@ async function sameBytesOf(
   const out: PhotoSubjectView['sameBytesAs'] = [];
   for (const id of [...ids].slice(0, SAME_BYTES_MAX)) {
     const twin = await r.get<'photos'>('photo', id);
-    if (twin) out.push({ photoId: twin._id, moderationStatus: twin.moderationStatus ?? 'visible' });
+    if (!twin) continue;
+    out.push({
+      photoId: twin._id,
+      moderationStatus: twin.moderationStatus ?? 'visible',
+      openFlagId: await openFlagOnPhoto(r, twin._id),
+      reportId: twin.reportId ?? null,
+    });
   }
-  return out;
+  return { sameBytesAs: out, sameBytesCut: ids.size > SAME_BYTES_MAX };
 }
 
 /** *On the same report*, at most this many of the report's other photos (board 2.7's strip). */
@@ -592,22 +619,7 @@ export async function photoSiblings(
     if (!r.budget.affordsRead('photo')) break;
     const sib = await r.get<'photos'>('photo', id);
     if (!sib) continue;
-    // An open flag on it, by point reads per open status (the ref `flag:<id>` opens its item).
-    let openFlagId: Id<'contentFlags'> | null = null;
-    for (const status of OPEN_FLAG_STATUSES) {
-      const [open] = await r.take('contentFlag', 1, (k) =>
-        r.ctx.db
-          .query('contentFlags')
-          .withIndex('by_target_status_reason', (q) =>
-            q.eq('targetType', 'photo').eq('targetId', sib._id).eq('status', status),
-          )
-          .take(k),
-      );
-      if (open) {
-        openFlagId = open._id;
-        break;
-      }
-    }
+    const openFlagId = await openFlagOnPhoto(r, sib._id);
     siblings.push({
       photoId: sib._id,
       openFlagId,
@@ -811,7 +823,7 @@ async function flagTargetView(
         purgeAt: p.purgeAt ?? null,
         purgedAt: p.purgedAt ?? null,
         bytesMissingAt: p.bytesMissingAt ?? null,
-        sameBytesAs: await sameBytesOf(r, p),
+        ...(await sameBytesOf(r, p)),
       };
       return {
         view: {

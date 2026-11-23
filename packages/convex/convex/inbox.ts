@@ -332,10 +332,17 @@ export type PhotoSubjectView = {
   /**
    * **The same image on other photos** (B01-5e): rows written before a file was one row's each may
    * share this photo's bytes. A takedown gives this photo its own copy and leaves the shared file to
-   * them — so they still show the same image. Each with its status, at most eight; empty for nearly
-   * every photo.
+   * them — so they still show the same image. Each with its status, the id of an open flag on it
+   * (`null` with none; the ref `flag:<id>` opens its item) and its report; at most eight
+   * (`sameBytesCut` past them); empty for nearly every photo. Never its uploader, nor an image.
    */
-  sameBytesAs: { photoId: Id<'photos'>; moderationStatus: ModerationStatus }[];
+  sameBytesAs: {
+    photoId: Id<'photos'>;
+    moderationStatus: ModerationStatus;
+    openFlagId: Id<'contentFlags'> | null;
+    reportId: Id<'reports'> | null;
+  }[];
+  sameBytesCut: boolean;
 };
 
 /** A hazard as a plain content flag's subject draws it: its kind, words, footprint and votes. */

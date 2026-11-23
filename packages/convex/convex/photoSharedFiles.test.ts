@@ -414,17 +414,22 @@ describe('the Inbox shows a taken-down photo’s twins', () => {
         .first();
       return m?.itemId as Id<'inboxItems'>;
     });
-    const twinsShown = async () => {
+    const photoShown = async () => {
       const read = await w.mod.as.query(api.inbox.item, { ref: itemId });
-      const target = (read.item as { target: { photo: { sameBytesAs: unknown } } }).target;
-      return target.photo.sameBytesAs;
+      const target = (
+        read.item as { target: { photo: { sameBytesAs: unknown[]; sameBytesCut: boolean } } }
+      ).target;
+      return target.photo;
     };
-    return { ...w, p, twin, a, twinsShown };
+    const twinsShown = async () => (await photoShown()).sameBytesAs;
+    return { ...w, skater, p, twin, a, twinsShown, photoShown };
   }
 
   test('before the rotation (by the shared id) and after it (recorded), with the twin’s status', async () => {
     const { t, mod, p, twin, a, twinsShown } = await flagged();
-    expect(await twinsShown()).toEqual([{ photoId: twin, moderationStatus: 'hidden' }]);
+    expect(await twinsShown()).toEqual([
+      { photoId: twin, moderationStatus: 'hidden', openFlagId: null, reportId: null },
+    ]);
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'photo',
       targetId: p,
@@ -434,9 +439,39 @@ describe('the Inbox shows a taken-down photo’s twins', () => {
     await stepThrough(t, 90);
     expect((await get(t, p))?.storageId).not.toBe(a);
     expect(await exists(t, a)).toBe(true);
-    expect(await twinsShown()).toEqual([{ photoId: twin, moderationStatus: 'hidden' }]);
+    expect(await twinsShown()).toEqual([
+      { photoId: twin, moderationStatus: 'hidden', openFlagId: null, reportId: null },
+    ]);
     // A twin gone since (its row deleted — a hidden twin is held, so by erasure's path): not shown.
     await t.run((ctx) => ctx.db.delete(twin));
     expect(await twinsShown()).toEqual([]);
+  });
+
+  test('each twin with its own open flag and its report; past eight, a floor', async () => {
+    const { t, row, skater, p, a, twinsShown, photoShown } = await flagged();
+    const reportId = (await get(t, p))?.reportId as Id<'reports'>;
+    const shown = await row(await file(t), a);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(shown, { reportId });
+      const report = await ctx.db.get(reportId);
+      await ctx.db.patch(reportId, { photoIds: [...(report?.photoIds ?? []), shown] });
+    });
+    const flagId = await skater.as.mutation(api.contentFlags.flag, {
+      targetType: 'photo',
+      targetId: shown,
+      reason: 'inappropriate',
+    });
+    expect(await twinsShown()).toContainEqual({
+      photoId: shown,
+      moderationStatus: 'visible',
+      openFlagId: flagId,
+      reportId,
+    });
+    expect((await photoShown()).sameBytesCut).toBe(false);
+    // Seven more rows naming the shared file: nine twins, eight shown, the list a floor.
+    for (let i = 0; i < 7; i++) await row(await file(t), a);
+    const full = await photoShown();
+    expect(full.sameBytesAs).toHaveLength(8);
+    expect(full.sameBytesCut).toBe(true);
   });
 });
