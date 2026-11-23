@@ -1139,7 +1139,7 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     );
   });
 
-  test("a photo whose blob outlives the delete is no longer the uploader's", async () => {
+  test('a photo whose blob outlives the delete is gone; its file is owed on the ledger (B01-5e)', async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 2);
     const [reportId] = reportIds as [Id<'reports'>];
@@ -1149,11 +1149,14 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     await author.as.mutation(api.reports.remove, { reportId });
     advance(31 * DAY);
     await sweep(t);
-    const kept = await get(t, photoId);
-    expect(kept).not.toBeNull();
-    expect(kept?.erasedAt).toBeDefined();
-    expect(kept?.caption).toBeUndefined();
-    expect(kept?.coord).toBeUndefined();
+    expect(await get(t, photoId)).toBeNull();
+    const owed = await t.run((ctx) =>
+      ctx.db
+        .query('photoFiles')
+        .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+        .first(),
+    );
+    expect(owed?.state).toBe('doomed');
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(bundle.photos.map((p) => p.photoId)).toEqual([photoIds[1]]);
   });

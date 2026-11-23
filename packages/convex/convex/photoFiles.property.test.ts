@@ -453,6 +453,32 @@ const PINNED: Record<string, Op[]> = {
     { k: 'set', i: 0, status: 'hidden' },
     { k: 'failDeletes', i: 0 },
   ],
+  // One of a photo's two deletes failing kept the row as the "only pointer" with its other file
+  // already gone — a live row naming a missing file. The row now goes (or becomes a tombstone) and
+  // each file is released to the ledger.
+  'seed 1433456634': [
+    { k: 'upload' },
+    { k: 'failDeletes', i: 0 },
+    { k: 'authorDelete', i: 0 },
+    { k: 'upload' },
+    { k: 'upload' },
+    { k: 'flag', i: 0 },
+  ],
+  'a failing delete, then the deleter': [
+    { k: 'upload' },
+    { k: 'failDeletes', i: 0 },
+    { k: 'purge' },
+    { k: 'deleter', i: 0 },
+    { k: 'flag', i: 0 },
+  ],
+  'a failing purge': [
+    { k: 'upload' },
+    { k: 'set', i: 0, status: 'removed' },
+    { k: 'failDeletes', i: 0 },
+    { k: 'advance', minutes: 1500 },
+    { k: 'advance', minutes: 1500 },
+    { k: 'purge' },
+  ],
 };
 
 describe('a photo’s stored files under any lifecycle, with faults', () => {

@@ -207,15 +207,6 @@ export const purgeOne = internalMutation({
         await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
         return { outcome: 'deferred' as const };
       }
-      const failures = await purgePhotoBlobs(ctx, photo);
-      if (failures.length > 0) {
-        console.warn(
-          `photoPurge: keeping ${photoId}'s row — ${failures.length} blob(s) could not be deleted; retried in a day`,
-        );
-        await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
-        await recordFailure(ctx, 'photoPurge', photoId, 'BlobRetained', now);
-        return { outcome: 'retained' as const };
-      }
       // The tombstone keeps what names what was removed — the row's id, its uploader, the report it
       // documented, when it was made and taken down, its status and clocks — and nothing of the
       // person's: the caption, the time it was taken and its place go with the bytes.
@@ -227,6 +218,9 @@ export const purgeOne = internalMutation({
         coord: undefined,
         placeOnMap: false,
       });
+      // Then its files: each deleted, or owed a deletion on the ledger and retried until it is gone
+      // (`lib/photoFiles`) — the tombstone names nothing, so nothing is left half-deleted on a live row.
+      await purgePhotoBlobs(ctx, photo, now);
       await clearFailure(ctx, 'photoPurge', photoId);
       await writeAudit(ctx, {
         action: 'purge_photo',

@@ -28,8 +28,8 @@
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { blobReferenced, photoHeld } from './photoAccess';
-import { deleteStoredBlob } from './storageBlobs';
+import { photoHeld } from './photoAccess';
+import { releaseFile } from './photoFiles';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -184,37 +184,28 @@ export async function deletePhotoAndBlobs(
   photo: Doc<'photos'>,
 ): Promise<PhotoDeleteResult> {
   if (await photoHeld(ctx, photo)) return 'held';
-  const failures = await deleteBlobsOf(ctx, photo);
-  if (failures.length > 0) {
-    console.warn(
-      `photos: keeping row ${photo._id} — ${failures.length} of its blobs could not be deleted (${failures.join('; ')}). It is the only pointer to them; the orphan sweep retries daily.`,
-    );
-    return 'retained';
-  }
+  // The row goes first; then each file is released (`lib/photoFiles`): left to another row that still
+  // names it, deleted, or — if storage won't let go — owed a deletion on the ledger, retried until it
+  // is gone. The ledger, not a half-deleted row, is what keeps a stuck file findable.
   await ctx.db.delete(photo._id);
+  const now = Date.now();
+  for (const id of new Set([photo.storageId, photo.thumbStorageId])) {
+    await releaseFile(ctx, photo._id, id, now);
+  }
   return 'deleted';
 }
 
 /**
- * **The blob half** (B01-5e, D222): a removed photo's purge deletes its two blobs and keeps its row as
- * the tombstone the verdict and History name. Only the purge calls it (`photoPurge`), on a photo whose
- * clock is due. Returns the failures — empty when both blobs are provably gone.
+ * **The blob half** (B01-5e, D222): a removed photo's purge releases its two files once its row is a
+ * tombstone (`purgedAt` set: a tombstone names nothing, `blobReferenced`) — each deleted, or owed a
+ * deletion on the ledger. Only the purge calls it (`photoPurge`), on a photo whose clock is due.
  */
-export async function purgePhotoBlobs(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
-  return deleteBlobsOf(ctx, photo);
-}
-
-/**
- * Both blobs of a photo, each deleted honestly (`lib/storageBlobs`): the failures, if any. A blob
- * another row still names is left (B01-5e: a blob belongs to one photo; a row written before that
- * rule may share one) — it is that row's, and goes with it.
- */
-async function deleteBlobsOf(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
-  const failures: string[] = [];
+export async function purgePhotoBlobs(
+  ctx: MutationCtx,
+  photo: Doc<'photos'>,
+  now: number,
+): Promise<void> {
   for (const id of new Set([photo.storageId, photo.thumbStorageId])) {
-    if (await blobReferenced(ctx, id, photo)) continue;
-    const failure = await deleteStoredBlob(ctx, id as Id<'_storage'>);
-    if (failure !== null) failures.push(failure);
+    await releaseFile(ctx, photo._id, id, now);
   }
-  return failures;
 }

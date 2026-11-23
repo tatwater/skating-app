@@ -30,8 +30,7 @@ const CONVEX = resolve(__dirname, '../../convex/convex');
 const PHOTO_DELETERS: Record<string, string> = {
   // The one delete of a photo row and its blobs: asks `photoHeld` itself.
   'lib/photoOrphans.ts:deletePhotoAndBlobs': 'asks photoHeld, answers `held`',
-  'lib/photoOrphans.ts:deleteBlobsOf': 'the two blobs, for deletePhotoAndBlobs and the purge alone',
-  'lib/photoOrphans.ts:purgePhotoBlobs': 'the purge’s blob half: the row stays a tombstone',
+  'lib/photoOrphans.ts:purgePhotoBlobs': 'the purge’s blob half: the row already a tombstone',
   // The callers of deletePhotoAndBlobs — each keeps a `held` answer's photo.
   'photos.ts:remove': 'the uploader’s delete: a held photo is withdrawn instead (fork 1)',
   'storageHygiene.ts:examinePhoto': 'the orphan walk’s retry of an erased photo',
@@ -43,6 +42,13 @@ const PHOTO_DELETERS: Record<string, string> = {
   // Blob deletes outside the row delete.
   'photoPurge.ts:purgeOne':
     'a removed photo whose 30-day clock is due, re-checked in its own transaction',
+  'lib/photoFiles.ts:reconcileAttempt':
+    'an attempt that can’t be alive: its unswapped copies and its window’s unrecorded ones (fileTaken)',
+  'lib/photoFiles.ts:retryDoomed': 'a doomed file’s retry, by the attempts rule',
+  'photos.ts:recordRotationCopy':
+    'a copy recorded to an attempt no longer running: released at once',
+  'photos.ts:endRotation': 'an ended attempt’s copies that were never swapped in',
+  'photos.ts:swapRotated': 'the old files the swap released (left to a row that still names one)',
   'lib/photoFiles.ts:releaseFile':
     'a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed',
   'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',
@@ -117,7 +123,7 @@ function deleters(): { photo: Set<string>; other: Set<string> } {
     };
     at(/\bdeletePhotoAndBlobs\(/g, () => 'photo');
     at(/\bpurgePhotoBlobs\(/g, () => 'photo');
-    at(/\bdeleteBlobsOf\(/g, () => 'photo');
+    at(/\breleaseFile\(/g, () => 'photo');
     at(/\bctx\.db\.delete\(/g, (args) => (PHOTO_ROW.test(args) ? 'photo' : null));
     at(/\b(?:deleteStoredBlob|storage\.delete)\(/g, (args) =>
       PHOTO_BLOB.test(args) ? 'photo' : 'other',
@@ -146,7 +152,7 @@ test('deletePhotoAndBlobs asks photoHeld before it deletes; photoHeld reads all 
   const body = orphans.slice(start, orphans.indexOf('\n}\n', start));
   const held = body.indexOf('photoHeld(');
   expect(held).toBeGreaterThan(-1);
-  expect(held).toBeLessThan(body.indexOf('deleteBlobsOf('));
+  expect(held).toBeLessThan(body.indexOf('releaseFile('));
   expect(held).toBeLessThan(body.indexOf('ctx.db.delete('));
   const access = readFileSync(join(CONVEX, 'lib/photoAccess.ts'), 'utf8');
   const fn = access.slice(access.indexOf('export async function photoHeld'));
@@ -205,8 +211,9 @@ test('create and removeBlob ask whether a row already holds the blob; deleteBlob
   expect(body('create')).toMatch(/fileTaken\(/);
   expect(body('removeBlob')).toMatch(/fileTaken\(/);
   expect(body('removeBlob')).toMatch(/PENDING_UPLOAD_MS/);
-  const orphans = readFileSync(join(CONVEX, 'lib/photoOrphans.ts'), 'utf8');
-  const fn = orphans.slice(orphans.indexOf('async function deleteBlobsOf'));
+  // Every file release leaves a file another row names (`releaseFile` asks `blobReferenced`).
+  const files = readFileSync(join(CONVEX, 'lib/photoFiles.ts'), 'utf8');
+  const fn = files.slice(files.indexOf('export async function releaseFile'));
   expect(fn.slice(0, fn.indexOf('\n}\n'))).toMatch(/blobReferenced\(/);
 });
 

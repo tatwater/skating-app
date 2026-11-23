@@ -359,7 +359,7 @@ describe('the purge', () => {
     expect((await t.run((ctx) => ctx.db.get(later)))?.purgedAt).toBeUndefined();
   });
 
-  test('an open flag defers it a day; a restored photo’s stale clock is cleared; a blob that won’t delete keeps its row', async () => {
+  test('an open flag defers it a day; a restored photo’s stale clock is cleared; a blob that won’t delete is owed on the ledger', async () => {
     const t = harness();
     const uploader = await person(t, 'uploader');
     const flagger = await person(t, 'flagger');
@@ -370,14 +370,21 @@ describe('the purge', () => {
     const stuckRow = await t.run((ctx) => ctx.db.get(stuck) as Promise<Doc<'photos'>>);
     failing.ids.add(stuckRow.storageId);
     const out = await t.mutation(internal.photoPurge.purgeDuePhotos, { now: T0 });
-    expect(out).toMatchObject({ deferred: 1, cleared: 1, retained: 1, purged: 0 });
+    expect(out).toMatchObject({ deferred: 1, cleared: 1, purged: 1 });
     const rows = await t.run(async (ctx) =>
       Promise.all([flagged, restored, stuck].map((id) => ctx.db.get(id))),
     );
     expect(rows[0]?.purgeAt).toBe(T0 + PURGE_RETRY_MS);
     expect(rows[1]?.purgeAt).toBeUndefined();
-    expect(rows[2]?.purgeAt).toBe(T0 + PURGE_RETRY_MS);
-    expect(rows[2]?.purgedAt).toBeUndefined();
+    // A tombstone now; its stuck image owed a deletion on the ledger, retried until it is gone.
+    expect(rows[2]?.purgedAt).toBe(T0);
+    const owed = await t.run((ctx) =>
+      ctx.db
+        .query('photoFiles')
+        .withIndex('by_storage', (q) => q.eq('storageId', stuckRow.storageId))
+        .first(),
+    );
+    expect(owed?.state).toBe('doomed');
   });
 
   test('bounded: a page at a time, each continuing until none is due', async () => {

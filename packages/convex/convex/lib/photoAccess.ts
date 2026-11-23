@@ -77,6 +77,8 @@ export async function blobReferenced(
   storageId: string,
   except?: Pick<Doc<'photos'>, '_id' | '_creationTime'>,
 ): Promise<boolean> {
+  // A purged tombstone names nothing: its bytes are gone or owed a deletion on the ledger.
+  const names = (rows: Doc<'photos'>[]) => rows.some((r) => r.purgedAt === undefined);
   for (const index of ['by_storage', 'by_thumb_storage'] as const) {
     const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
     const ranges =
@@ -94,7 +96,7 @@ export async function blobReferenced(
                 q.eq(field as never, storageId as never).gt('_creationTime', except._creationTime),
               ),
           ];
-    for (const range of ranges) if ((await range.first()) !== null) return true;
+    for (const range of ranges) if (names(await range.take(4))) return true;
   }
   return false;
 }
