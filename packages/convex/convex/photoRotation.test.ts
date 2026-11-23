@@ -104,6 +104,26 @@ const failureRow = (t: T, job: 'photoPurge' | 'photoRotation', id: Id<'photos'>)
 const urlOf = (t: T, id: string) => t.run((ctx) => ctx.storage.getUrl(id as Id<'_storage'>));
 const bytesOf = (t: T, id: string) =>
   t.run(async (ctx) => (await ctx.storage.get(id as Id<'_storage'>))?.text() ?? null);
+/**
+ * Run the schedule a minute at a time, as a deployment's clock moves — never `runAllTimers`, whose
+ * jumps put the watch ten minutes on while an action it scheduled is still mid-flight.
+ */
+async function stepThrough(t: T, minutes: number) {
+  for (let i = 0; i < minutes; i++) {
+    await vi.advanceTimersByTimeAsync(60_000);
+    await t.finishInProgressScheduledFunctions();
+  }
+}
+
+/** Stored files no photo row names. */
+const unreferenced = (t: T) =>
+  t.run(async (ctx) => {
+    const rows = await ctx.db.query('photos').collect();
+    const named = new Set(rows.flatMap((p) => [p.storageId, p.thumbStorageId]));
+    return (await ctx.db.system.query('_storage').collect())
+      .map((f) => f._id as string)
+      .filter((id) => !named.has(id));
+  });
 const storedCount = (t: T) =>
   t.run(async (ctx) => (await ctx.db.system.query('_storage').collect()).length);
 const pending = (t: T, fn: string) =>
@@ -319,41 +339,76 @@ describe('the rotation through the public writes', () => {
     expect(await watches(t)).toHaveLength(1);
   }, 30_000);
 
-  test('a photo whose thumbnail is gone carries its full image; the thumbnail id stays', async () => {
+  test('a photo with a blob gone: never half-rotated; marked, shown once on Machinery, the watch ends, no restore', async () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     await t.run((ctx) => ctx.storage.delete(before.thumbStorageId as Id<'_storage'>));
     await set('hidden');
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const after = await row(t, photoId);
-    expect(after.storageId).not.toBe(before.storageId);
+    expect(after.storageId).toBe(before.storageId);
     expect(after.thumbStorageId).toBe(before.thumbStorageId);
-    expect(await storedCount(t)).toBe(1);
+    expect(after.bytesMissingAt).toEqual(expect.any(Number));
+    expect(after.rotation).toBeUndefined();
+    expect(await storedCount(t)).toBe(1); // the image alone: no copy of anything
+    expect(await watches(t)).toHaveLength(0);
+    const failures = await t.run((ctx) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_key', (q) => q.eq('job', 'photoRotation').eq('key', photoId))
+        .collect(),
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ errorClass: 'BytesMissing', parkedAt: expect.any(Number) });
+    await expect(set('visible')).rejects.toThrow('nothing left to act on');
   });
 
-  test('a purge that keeps a blob is listed on Machinery, parked at the third, forgotten once purged', async () => {
+  test('killed after a copy was stored but before it was recorded: the watch’s scan sweeps it', async () => {
     const { t, photoId, set } = await world();
-    await set('removed');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-    const rotated = await row(t, photoId);
-    failing.ids.add(rotated.storageId);
-    let now = T0 + PHOTO_PURGE_DELAY_MS + 1;
-    for (let i = 1; i <= 3; i++) {
-      expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now })).toMatchObject({
-        retained: 1,
-      });
-      expect(await failureRow(t, 'photoPurge', photoId)).toMatchObject({
-        attempts: i,
-        errorClass: 'BlobRetained',
-        ...(i === 3 ? { parkedAt: expect.any(Number) } : {}),
-      });
-      now += 24 * 60 * 60 * 1000 + 1;
-    }
-    failing.ids.clear();
-    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now })).toMatchObject({
-      purged: 1,
+    await set('hidden');
+    // The run as the runtime left it: begun, one copy stored, nothing recorded, no swap.
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
+      }
     });
-    expect(await failureRow(t, 'photoPurge', photoId)).toBeNull();
+    await t.mutation(internal.photos.beginRotation, { photoId });
+    const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
+    expect(await storedCount(t)).toBe(3);
+    await stepThrough(t, 120);
+    expect(await urlOf(t, lost)).toBeNull();
+    expect(await unreferenced(t)).toEqual([]);
+    expect((await row(t, photoId)).rotation).toBeUndefined();
+  });
+
+  test('killed after both copies were recorded, before the swap: swept, rotated again, nothing unreferenced', async () => {
+    const { t, photoId, set } = await world();
+    const before = await row(t, photoId);
+    await set('hidden');
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
+      }
+    });
+    await t.mutation(internal.photos.beginRotation, { photoId });
+    for (const bytes of ['full-bytes', 'thumb']) {
+      const copy = await t.run((ctx) => ctx.storage.store(new Blob([bytes])));
+      expect(await t.mutation(internal.photos.recordRotationCopy, { photoId, copy })).toBe(true);
+    }
+    expect((await row(t, photoId)).rotation?.copies).toHaveLength(2);
+    // While it stands, no deleter takes the photo.
+    expect(
+      await t.run(async (ctx) => {
+        const { photoHeld } = await import('./lib/photoAccess');
+        return photoHeld(ctx, (await ctx.db.get(photoId)) as Doc<'photos'>);
+      }),
+    ).toBe(true);
+    await stepThrough(t, 120);
+    const after = await row(t, photoId);
+    expect(after.storageId).not.toBe(before.storageId);
+    expect(after.rotation).toBeUndefined();
+    expect(await storedCount(t)).toBe(2);
+    expect(await unreferenced(t)).toEqual([]);
   });
 
   test('the purge after a rotation deletes the new blobs', async () => {

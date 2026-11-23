@@ -4379,6 +4379,28 @@ export default defineSchema({
     /** A removed photo's bytes go 30 days on (D222): when the purge is due, and when it ran. */
     purgeAt: v.optional(v.number()),
     purgedAt: v.optional(v.number()),
+    /**
+     * A byte rotation in flight (B01-5e, `photos.rotateBlobs`), written before any copy exists: when
+     * it began, the source blobs' sha256 (so the watch finds a copy stored but not yet recorded — an
+     * action the runtime killed between `store` and its record), and the copies recorded so far. The
+     * watch sweeps what no row names and clears it once the rotation landed; while it stands, no
+     * deleter takes the photo (`photoHeld`). Absent ⇒ none in flight.
+     */
+    rotation: v.optional(
+      v.object({
+        startedAt: v.number(),
+        // When the latest run began: the watch leaves a run that may still be alive alone.
+        runAt: v.number(),
+        sha256: v.array(v.string()),
+        copies: v.array(v.string()),
+      }),
+    ),
+    /**
+     * When a rotation found one of the photo's blobs gone (B01-5e): it can't be restored with bytes that
+     * don't exist, so the record reads it as erased (only a standing decision can come off it); the
+     * rotation stops, shown once on Machinery. Absent ⇒ its bytes were there when last looked at.
+     */
+    bytesMissingAt: v.optional(v.number()),
   })
     .index('by_uploader', ['uploaderId'])
     // A blob belongs to at most one photo row (B01-5e): `photos.create` refuses a storage id any row

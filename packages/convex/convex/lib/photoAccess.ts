@@ -40,6 +40,8 @@ export const PHOTO_HOLD_READS = 1 + OPEN_FLAG_STATUSES.length;
  */
 export async function photoHeld(ctx: QueryCtx, photo: Doc<'photos'>): Promise<boolean> {
   if (!photoVisible(photo)) return true;
+  // A byte rotation in flight holds it too, until its watch has swept the copies and cleared it.
+  if (photo.rotation !== undefined) return true;
   const verdict = await ctx.db
     .query('contentVerdicts')
     .withIndex('by_target_standing', (q) =>

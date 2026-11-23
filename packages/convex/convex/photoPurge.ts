@@ -28,6 +28,7 @@ import { internalMutation, type MutationCtx } from './_generated/server';
 import { composed, writeAudit } from './lib/audit';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { purgePhotoBlobs } from './lib/photoOrphans';
+import { sweepRotationCopies } from './lib/photoRotation';
 import {
   affords,
   asItem,
@@ -193,6 +194,8 @@ export const purgeOne = internalMutation({
         await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
         return { outcome: 'deferred' as const };
       }
+      // A rotation's recorded copies go with it (the watch sweeps any it never recorded).
+      await sweepRotationCopies(ctx, photo, { scan: false });
       const failures = await purgePhotoBlobs(ctx, photo);
       if (failures.length > 0) {
         console.warn(

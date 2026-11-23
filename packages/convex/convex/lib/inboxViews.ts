@@ -776,6 +776,7 @@ async function flagTargetView(
         withdrawnAt,
         purgeAt: p.purgeAt ?? null,
         purgedAt: p.purgedAt ?? null,
+        bytesMissingAt: p.bytesMissingAt ?? null,
       };
       return {
         view: {

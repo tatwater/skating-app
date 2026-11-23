@@ -331,7 +331,8 @@ export function recordFactsOf(
     const withdrawn = members?.photoWithdrawn ?? 'unknown';
     return {
       targetType,
-      erased: photo.purgedAt !== undefined,
+      // Purged, or its bytes found gone by a rotation: nothing left to restore (D222).
+      erased: photo.purgedAt !== undefined || photo.bytesMissingAt !== undefined,
       authorDeleted: withdrawn === true,
       withdrawn,
       status: photo.moderationStatus ?? 'visible',

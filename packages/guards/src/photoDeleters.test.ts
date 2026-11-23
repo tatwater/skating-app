@@ -46,6 +46,9 @@ const PHOTO_DELETERS: Record<string, string> = {
   'photos.ts:swapRotated':
     'the rotation: old blobs, only while the row is still down and holds them',
   'photos.ts:dropRotationCopies': 'a rotation’s own copies, never on any row',
+  'photos.ts:recordRotationCopy': 'a copy just stored, when its rotation no longer applies (on no row)',
+  'lib/photoRotation.ts:sweepRotationCopies':
+    'a rotation’s copies no row names (blobReferenced asked of each), while no run can be alive',
   'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',
 };
 
@@ -96,7 +99,7 @@ function argsAt(text: string, open: number): string {
 
 const PHOTO_ROW = /\bphoto(?:Id|s)?\b|\bphoto\._id\b|Id<'photos'>/;
 // Strings are blanked before matching, so a cast reads `as Id<'…'>` with its table name gone.
-const PHOTO_BLOB = /storageId|thumbStorageId|\bwas\b|\bfresh\b|\bid as Id</;
+const PHOTO_BLOB = /storageId|thumbStorageId|\bwas\b|\bfresh\b|\bcopy\b|\bid as Id</;
 
 function deleters(): { photo: Set<string>; other: Set<string> } {
   const photo = new Set<string>();

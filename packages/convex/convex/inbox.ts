@@ -327,6 +327,8 @@ export type PhotoSubjectView = {
   purgeAt: number | null;
   /** …and when they went: the row is a tombstone from then, its URLs `null`. */
   purgedAt: number | null;
+  /** When a byte rotation found its file gone: it can't be restored (`null` while its bytes exist). */
+  bytesMissingAt: number | null;
 };
 
 /** A hazard as a plain content flag's subject draws it: its kind, words, footprint and votes. */
