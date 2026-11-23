@@ -2914,14 +2914,17 @@ async function clearSeedPhoto(
     }
   }
   if ((await ledgerOfPhoto(ctx, photo._id, 1)).length > 0) return 'waiting';
-  // Its attempts, every one reconciled (an open one waited above).
-  for (const a of await ctx.db
-    .query('photoRotations')
-    .withIndex('by_photo_status', (q) => q.eq('photoId', photo._id).eq('status', 'reconciled'))
-    .take(PHOTO_PAGE)) {
-    await s.delete('photoRotations', a._id);
-  }
+  // Its attempts, every one reconciled (an open one waited above) — to the end, a row a read, within
+  // the call's budget (a call that runs out stops here, the photo whole, and the next goes on).
+  await s.drain('photoRotations', 'small', () =>
+    ctx.db
+      .query('photoRotations')
+      .withIndex('by_photo_status', (q) => q.eq('photoId', photo._id).eq('status', 'reconciled'))
+      .first(),
+  );
+  // Its Machinery rows: a rotation that parked, and a purge that parked.
   await clearFailure(ctx, 'photoRotation', photo._id);
+  await clearFailure(ctx, 'photoPurge', photo._id);
   await ctx.db.delete(photo._id);
   s.removed.photos = (s.removed.photos ?? 0) + 1;
   for (const file of new Set([photo.storageId, photo.thumbStorageId])) {

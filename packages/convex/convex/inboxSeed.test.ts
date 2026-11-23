@@ -24,6 +24,7 @@ import {
   seedSteps,
 } from './inboxSeed';
 import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
+import { recordFailure } from './lib/recurringWork';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
 
@@ -1528,6 +1529,39 @@ describe('the seed’s photos (board 2.7)', () => {
       photoItems: (await ctx.db.query('inboxItems').collect()).filter((i) => i.facet === 'photos'),
     }));
     expect(left).toEqual({ flags: [], actions: [], photoItems: [] });
+  });
+
+  test('sixty reconciled attempts and a parked purge: the clear takes every attempt and both Machinery rows', async () => {
+    const t = harness();
+    await devWorld(t);
+    await runSeed(t);
+    const photoId = await t.run(async (ctx) => {
+      const p = (await ctx.db.query('photos').collect()).find(
+        (x) => x.caption === SEED_PHOTO_CAPTIONS[0],
+      );
+      if (!p) throw new Error('no seed photo');
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert('photoRotations', {
+          photoId: p._id,
+          startedAt: Date.now() - 86_400_000 - i,
+          sha256: [],
+          scanFrom: Date.now(),
+          status: 'reconciled',
+        });
+      }
+      await recordFailure(ctx, 'photoPurge', p._id, 'Error', Date.now(), { park: true });
+      await recordFailure(ctx, 'photoRotation', p._id, 'Error', Date.now(), { park: true });
+      return p._id;
+    });
+    await runClear(t);
+    const left = await t.run(async (ctx) => ({
+      attempts: (await ctx.db.query('photoRotations').collect()).length,
+      failures: (await ctx.db.query('jobFailures').collect())
+        .filter((f) => f.key === photoId)
+        .map((f) => f.job),
+      photo: await ctx.db.get(photoId),
+    }));
+    expect(left).toEqual({ attempts: 0, failures: [], photo: null });
   });
 
   test('a rotation in flight: the clear waits for it and takes nothing of that photo, then takes it', async () => {
