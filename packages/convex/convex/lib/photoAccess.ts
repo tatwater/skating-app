@@ -61,6 +61,12 @@ export async function photoHeld(ctx: QueryCtx, photo: Doc<'photos'>): Promise<bo
 
 // ── A blob belongs to one photo (B01-5e) ─────────────────────────────────────────────────────
 
+/**
+ * What a purged tombstone holds in both file slots (B01-5e): no file. The purge clears the slots
+ * before it releases the files, so a tombstone is never a holder and every reference check is exact.
+ */
+export const TOMBSTONE_FILE = '';
+
 /** What `photos.create` says of a storage id a photo row already holds (or the same id twice). */
 export const BLOB_TAKEN = 'This upload already belongs to a photo.';
 /** What it says of a storage id that names no stored file. */
@@ -77,8 +83,10 @@ export async function blobReferenced(
   storageId: string,
   except?: Pick<Doc<'photos'>, '_id' | '_creationTime'>,
 ): Promise<boolean> {
-  // A purged tombstone names nothing: its bytes are gone or owed a deletion on the ledger.
-  const names = (rows: Doc<'photos'>[]) => rows.some((r) => r.purgedAt === undefined);
+  // An exact lookup: any row in either slot — image or thumbnail, so a file one row holds as its
+  // image and another as its thumbnail is found from either side — of any state (hidden, removed,
+  // withdrawn, mid-rotation, its bytes marked missing). Only a purged tombstone names nothing, and it
+  // holds {@link TOMBSTONE_FILE} in both slots, so no row is ever passed over.
   for (const index of ['by_storage', 'by_thumb_storage'] as const) {
     const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
     const ranges =
@@ -96,7 +104,7 @@ export async function blobReferenced(
                 q.eq(field as never, storageId as never).gt('_creationTime', except._creationTime),
               ),
           ];
-    for (const range of ranges) if (names(await range.take(4))) return true;
+    for (const range of ranges) if ((await range.first()) !== null) return true;
   }
   return false;
 }

@@ -27,7 +27,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
 import { composed, writeAudit } from './lib/audit';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
-import { PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
+import { PHOTO_PURGE_DELAY_MS, TOMBSTONE_FILE } from './lib/photoAccess';
 import {
   ACTION_LIFETIME_MS,
   DOOMED_PER_PASS,
@@ -210,6 +210,8 @@ export const purgeOne = internalMutation({
       // The tombstone keeps what names what was removed — the row's id, its uploader, the report it
       // documented, when it was made and taken down, its status and clocks — and nothing of the
       // person's: the caption, the time it was taken and its place go with the bytes.
+      // Its two slots are cleared (`TOMBSTONE_FILE`): a tombstone names no file, so every reference
+      // check is an exact lookup — no row is ever skipped as "only a tombstone".
       await ctx.db.patch(photoId, {
         purgedAt: now,
         purgeAt: undefined,
@@ -217,9 +219,11 @@ export const purgeOne = internalMutation({
         takenAt: undefined,
         coord: undefined,
         placeOnMap: false,
+        storageId: TOMBSTONE_FILE,
+        thumbStorageId: TOMBSTONE_FILE,
       });
-      // Then its files: each deleted, or owed a deletion on the ledger and retried until it is gone
-      // (`lib/photoFiles`) — the tombstone names nothing, so nothing is left half-deleted on a live row.
+      // Then the files it named: each deleted, left to another row that still names it, or owed a
+      // deletion on the ledger and retried until it is gone (`lib/photoFiles`).
       await purgePhotoBlobs(ctx, photo, now);
       await clearFailure(ctx, 'photoPurge', photoId);
       await writeAudit(ctx, {

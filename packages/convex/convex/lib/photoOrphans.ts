@@ -197,7 +197,7 @@ export async function deletePhotoAndBlobs(
 
 /**
  * **The blob half** (B01-5e, D222): a removed photo's purge releases its two files once its row is a
- * tombstone (`purgedAt` set: a tombstone names nothing, `blobReferenced`) — each deleted, or owed a
+ * tombstone (`purgedAt` set, both slots cleared to `TOMBSTONE_FILE`: it names nothing) — each deleted, or owed a
  * deletion on the ledger. Only the purge calls it (`photoPurge`), on a photo whose clock is due.
  */
 export async function purgePhotoBlobs(
