@@ -101,6 +101,7 @@ type Op =
   | { k: 'purge' }
   | { k: 'sweep' };
 
+const UPLOAD: Op = { k: 'upload' };
 const idx = fc.nat({ max: 7 });
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   { weight: 3, arbitrary: fc.constant({ k: 'upload' as const }) },
@@ -662,8 +663,13 @@ describe('a photo’s stored files under any lifecycle, with faults', () => {
 
   test('every invariant after every step, and nothing owed at the end', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.array(opArb, { minLength: 3, maxLength: 14 }), (ops) => run(ops)),
-      { numRuns: 12, seed: SEED },
+      // A few photos first, so most steps act on something.
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 4 }),
+        fc.array(opArb, { minLength: 4, maxLength: 30 }),
+        (uploads, ops) => run([...Array.from({ length: uploads }, () => UPLOAD), ...ops]),
+      ),
+      { numRuns: 30, seed: SEED },
     );
   }, 60_000);
 });
