@@ -12600,6 +12600,8 @@ the `photoFiles` and `photoRotations` tables, the copies' `gli-rotation=` tag, a
 | 2 | `contentFlags.status` loses `reviewing` (D283), with every reader that tolerated it | `8f7d0f9fd` | 25 files: the value, `OPEN_FLAG_STATUSES` (now `['open']`), the auto-flag fallback, `listFlags`' second read, the erasure hold, the backfill's phases, core's `flagRetraction` type, the comments; `DECISION_FLAGS_MAX` becomes 1,000 of its own (it had been two statuses × 500); a merge's flag ceiling rises 95 → 104 |
 | 3 | The retired pages' components and what only they used, deleted; `cleared` dropped | `5e6be6b67` | 23 files, −1,709 lines |
 | 4 | The phone's *Remove* hint is true for a held photo too | `b48a43f40` | one line |
+| 5 | The seed posts photos, and its clear takes them (cherry-picked from `b01-close-seed-photo`, `05f805ca3`): a seed person uploads four generated images through the public upload path on one report — one flagged and open, one flagged and hidden (its file rotated), one flagged and then deleted by its author (withdrawn, the flag still open). **133 steps; 29 open (Content 7), 15 decided.** The plan test, the README and its guard moved together | `a6b79f09b` | 9 files |
+| 6 | The seed's clear on the photo-deleters guard's list (`inboxSeed.ts:clearSeedPhoto`): read first — reached only through the internal `clear`, behind `assertSeedDeployment`, refusing any photo but a seed person's, each file through `releaseFile` | `44d5b0d55` | the guard |
 
 **The deletions in item 3:**
 - **Web:**
@@ -13018,7 +13020,7 @@ needs you*.
 |---|---|---|---|---|---|
 | In1 | `SUPPORT_FROM_EMAIL` is unset on dev: every reply is stored `failed` (`unconfigured`), and no real send through the provider has run | §7 ruling 24; *#175 merged*; `05-accounts-and-credentials.md` | the founder (the dashboard), then dev (one real reply to a staff ticket) | support replies working on dev | open |
 | In2 | The device pass on the next preview build: the `moderator_decision` page, its toggle and `knows` (on main since #172, never checked on a device); the *Remove* hint (fixed in the close-out); the cached photo (B04) | *The pref rollout, on dev*; *Owed (5e reviews)* | a build, then the founder | the phone half of 5c and 5e | open |
-| In3 | A photo takedown, restore and removal checked end to end on dev (the old link answering 404) | *#176 merged*; the roadmap | dev, once the seed files a photo (its photo step rides with the close-out) | nothing | open |
+| In3 | A photo takedown, restore and removal checked end to end on dev (the old link answering 404) | *#176 merged*; the roadmap | dev: clear and re-apply the seed (133 steps; its photos come with the close-out), then check its photos | nothing | open |
 | In4 † | Watch the scheduled heavy drain pages on dev (13–270 s locally) | *B01-5c: the server review (R8)* | dev | nothing | open |
 | In5 † | `photos.removeBlob` can't check that the caller owns an unattached upload: who uploaded it isn't recorded | *Owed (5e reviews)* | a build (a pending-uploads row) | nothing | open |
 | In6 † | `photos.authorDeletedAt`: a withdrawal is read from its `author_delete` audit row today | *Owed (5e integrated)* | a build | nothing | open |
