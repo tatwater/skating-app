@@ -76,12 +76,26 @@ const DAY = 86_400_000;
 const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 
+/**
+ * Rotation runs that threw. No fault the model injects makes the action throw (a delete that fails is
+ * owed, not thrown; a lost file is marked) — so any is a bug: a run's call its callee's validator
+ * refuses, as `markBytesMissing`'s did.
+ */
+const runsFailed: string[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   failing.ids.clear();
+  runsFailed.length = 0;
+  vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    const line = args.map(String).join(' ');
+    if (/photos\.rotateBlobs: .* failed/.test(line)) runsFailed.push(line);
+  });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -668,6 +682,7 @@ async function checkInvariants(
   photos: Id<'photos'>[],
   uploads: Set<string>,
 ) {
+  expect(runsFailed, 'a rotation run threw').toEqual([]);
   const state = await t.run(async (ctx) => {
     const rows = await ctx.db.query('photos').collect();
     const ledger = await ctx.db.query('photoFiles').collect();
