@@ -206,14 +206,14 @@ describe('the rail', () => {
     expect(within(rail()).getByRole('button', { name: /Legacy/ })).toBeInTheDocument();
   });
 
-  it('lists People after Bodies, current on the list and on a person’s page', () => {
+  it('lists People after Corpus, current on the list and on a person’s page', () => {
     mocks.pathname = '/admin/people/k17abc';
     render(<ConsoleLayout />);
     const names = within(rail())
       .getAllByRole('link')
       .map((l) => l.textContent ?? '');
     expect(names.findIndex((n) => n.includes('People'))).toBe(
-      names.findIndex((n) => n.includes('Bodies')) + 1,
+      names.findIndex((n) => n.includes('Corpus')) + 1,
     );
     const people = within(rail()).getByRole('link', { name: /People/ });
     expect(people).toHaveAttribute('href', '/admin/people');

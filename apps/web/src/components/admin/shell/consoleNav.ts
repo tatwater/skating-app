@@ -49,13 +49,13 @@ export function usesOldShell(path: string): boolean {
 
 /** A mode the console has built: one rail item, one letter after G. */
 export type ConsoleMode = {
-  id: 'overview' | 'inbox' | 'bodies' | 'people';
+  id: 'overview' | 'inbox' | 'corpus' | 'people';
   /** The rail's name for it, capitalized. */
   name: string;
   to: string;
   /** Matched exactly, not as a tree (Overview is `/admin`, which every mode sits under). */
   exact?: boolean;
-  /** Other trees the mode owns beside `to` (Bodies owns each body's console, `/admin/body/…`). */
+  /** Other trees the mode owns beside `to` (Corpus owns each body's console, `/admin/body/…`). */
   also?: readonly string[];
   goKey: GoLetter;
   /** The capability the mode's page reads with; without it the item isn't drawn. */
@@ -86,12 +86,14 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     capability: 'inbox.read',
   },
   {
-    id: 'bodies',
-    name: 'Bodies',
-    to: '/admin/bodies',
-    // The library and each body's console are one mode: the rail stays on Bodies inside a body.
+    // Built as "Bodies" and renamed Corpus (D293): the library of every body, and later its
+    // tasks. `/admin/bodies` is gone, not redirected.
+    id: 'corpus',
+    name: 'Corpus',
+    to: '/admin/corpus',
+    // The library and each body's console are one mode: the rail stays on Corpus inside a body.
     also: ['/admin/body'],
-    goKey: 'B',
+    goKey: 'C',
     // `body.read` is the capability map's line for reading a body (the operator view); the old
     // Water bodies page reads with it too, and so does every read the library makes —
     // `bodies.listPage`, `bodies.listSummary` and `bodies.preview` each gate on it.

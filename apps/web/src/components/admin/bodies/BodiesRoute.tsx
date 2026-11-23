@@ -78,7 +78,7 @@ import { useOpenedBodies } from './openedRecently';
  * held while it stays open, so a new minute never restarts the paging. Every read waits on
  * `body.read`; a viewer without it sees *Not recorded yet*.
  *
- * Mounted by `routes/admin.bodies.tsx`, which binds `validateBodiesSearch`. *Open in Body* goes to
+ * Mounted by `routes/admin.corpus.tsx`, which binds `validateBodiesSearch`. *Open in Body* goes to
  * the Body console carrying the list's own address as `from`, so the console's way back puts the
  * list back exactly as it was.
  *

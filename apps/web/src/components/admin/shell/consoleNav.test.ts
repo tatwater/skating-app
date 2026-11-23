@@ -75,7 +75,7 @@ describe('the built modes', () => {
     expect(modeAt('/admin/inbox')?.id).toBe('inbox');
     expect(modeAt('/admin/inbox/')?.id).toBe('inbox');
     expect(modeAt('/admin/inboxes')).toBeUndefined();
-    expect(CONSOLE_MODES.map((m) => m.id).slice(0, 3)).toEqual(['overview', 'inbox', 'bodies']);
+    expect(CONSOLE_MODES.map((m) => m.id).slice(0, 3)).toEqual(['overview', 'inbox', 'corpus']);
     const inbox = CONSOLE_MODES.find((m) => m.id === 'inbox');
     expect(inbox).toMatchObject({ to: '/admin/inbox', goKey: 'I', capability: 'inbox.read' });
     expect(CAPABILITIES['inbox.read'].role).toBe('moderator');
@@ -84,18 +84,25 @@ describe('the built modes', () => {
     expect(usesOldShell('/admin/flags')).toBe(false);
   });
 
-  it('finds Bodies at the library and inside every body’s console, and nowhere that only shares a prefix', () => {
-    expect(modeAt('/admin/bodies')?.id).toBe('bodies');
-    expect(modeAt('/admin/bodies/')?.id).toBe('bodies');
-    expect(modeAt('/admin/body/abc123')?.id).toBe('bodies');
-    expect(modeAt('/admin/body')?.id).toBe('bodies');
+  it('finds Corpus at the library and inside every body’s console, and nowhere that only shares a prefix', () => {
+    expect(modeAt('/admin/corpus')?.id).toBe('corpus');
+    expect(modeAt('/admin/corpus/')?.id).toBe('corpus');
+    expect(modeAt('/admin/body/abc123')?.id).toBe('corpus');
+    expect(modeAt('/admin/body')?.id).toBe('corpus');
     expect(modeAt('/admin/bodyguard')).toBeUndefined();
-    expect(modeAt('/admin/bodiesx')).toBeUndefined();
+    expect(modeAt('/admin/corpusx')).toBeUndefined();
+    // The section's old name is gone, not redirected: no mode claims it.
+    expect(modeAt('/admin/bodies')).toBeUndefined();
   });
 
-  it('gates Bodies on reading a body, a moderator line', () => {
-    const bodies = CONSOLE_MODES.find((m) => m.id === 'bodies');
-    expect(bodies).toMatchObject({ to: '/admin/bodies', goKey: 'B', capability: 'body.read' });
+  it('gates Corpus on reading a body, a moderator line', () => {
+    const corpus = CONSOLE_MODES.find((m) => m.id === 'corpus');
+    expect(corpus).toMatchObject({
+      name: 'Corpus',
+      to: '/admin/corpus',
+      goKey: 'C',
+      capability: 'body.read',
+    });
     expect(CAPABILITIES['body.read'].role).toBe('moderator');
   });
 

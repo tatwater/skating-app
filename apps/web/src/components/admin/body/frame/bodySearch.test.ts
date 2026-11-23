@@ -34,8 +34,8 @@ describe('validateBodySearch', () => {
   });
 
   it('keeps a return path under the lists, with its own search', () => {
-    expect(validateBodySearch({ from: '/admin/bodies?q=mascoma&sort=area' })).toEqual({
-      from: '/admin/bodies?q=mascoma&sort=area',
+    expect(validateBodySearch({ from: '/admin/corpus?q=mascoma&sort=area' })).toEqual({
+      from: '/admin/corpus?q=mascoma&sort=area',
     });
     expect(validateBodySearch({ from: '/admin/water' })).toEqual({ from: '/admin/water' });
     // An Inbox item's way back keeps the lane and the open item.
@@ -50,39 +50,42 @@ describe('validateBodySearch', () => {
     expect(bodyTabOf({})).toBe('shape');
     expect(bodyTabOf({ tab: 'links' })).toBe('links');
     expect(returnPathOf({})).toBe(DEFAULT_RETURN);
-    expect(DEFAULT_RETURN).toBe('/admin/bodies');
-    expect(returnPathOf({ from: '/admin/bodies?x=1' })).toBe('/admin/bodies?x=1');
+    expect(DEFAULT_RETURN).toBe('/admin/corpus');
+    expect(returnPathOf({ from: '/admin/corpus?x=1' })).toBe('/admin/corpus?x=1');
   });
 });
 
 describe('safeReturnPath', () => {
   it('refuses anything that could leave the console', () => {
     for (const bad of [
-      'https://evil.example/admin/bodies',
-      '//evil.example/admin/bodies',
+      'https://evil.example/admin/corpus',
+      '//evil.example/admin/corpus',
       '/\\evil.example',
       'javascript:alert(1)',
-      '/admin/bodiesx',
+      '/admin/corpusx',
       '/admin',
       '/admin/body/abc',
       '/',
       '',
-      'admin/bodies',
-      `/admin/bodies?${'x'.repeat(3000)}`,
+      'admin/corpus',
+      // The section's old address: gone, not redirected, so never a way back.
+      '/admin/bodies',
+      '/admin/bodies?q=m',
+      `/admin/corpus?${'x'.repeat(3000)}`,
     ]) {
       expect(safeReturnPath(bad), bad).toBeNull();
     }
   });
 
   it('normalizes a path that climbs out of the list', () => {
-    expect(safeReturnPath('/admin/bodies/../users')).toBeNull();
-    expect(safeReturnPath('/admin/bodies/./x')).toBe('/admin/bodies/x');
+    expect(safeReturnPath('/admin/corpus/../users')).toBeNull();
+    expect(safeReturnPath('/admin/corpus/./x')).toBe('/admin/corpus/x');
   });
 
   it('only ever returns a same-origin path under a list (property)', () => {
     fc.assert(
       fc.property(fc.string({ maxLength: 80 }), fc.webPath(), (junk, path) => {
-        for (const candidate of [junk, path, `/admin/bodies${path}`, `/admin/water${junk}`]) {
+        for (const candidate of [junk, path, `/admin/corpus${path}`, `/admin/water${junk}`]) {
           const out = safeReturnPath(candidate);
           if (out === null) continue;
           expect(out.startsWith('/')).toBe(true);
@@ -100,14 +103,14 @@ describe('safeReturnPath', () => {
 
 describe('searchFor', () => {
   it('drops the lit item when the tab changes, keeps it when it does not', () => {
-    const s = { tab: 'places' as const, lit: 'landmark:a', from: '/admin/bodies' };
-    expect(searchFor(s, { tab: 'names' })).toEqual({ tab: 'names', from: '/admin/bodies' });
+    const s = { tab: 'places' as const, lit: 'landmark:a', from: '/admin/corpus' };
+    expect(searchFor(s, { tab: 'names' })).toEqual({ tab: 'names', from: '/admin/corpus' });
     expect(searchFor(s, {})).toEqual(s);
     expect(searchFor(s, { tab: 'shape', lit: 'bay:b' })).toEqual({
       lit: 'bay:b',
-      from: '/admin/bodies',
+      from: '/admin/corpus',
     });
-    expect(searchFor(s, { lit: null })).toEqual({ tab: 'places', from: '/admin/bodies' });
+    expect(searchFor(s, { lit: null })).toEqual({ tab: 'places', from: '/admin/corpus' });
   });
 
   it('never writes an invalid lit address', () => {
@@ -125,17 +128,17 @@ describe('searchFor', () => {
 describe('bodyConsoleHref', () => {
   it('links a body with the list it came from, and drops a return path it would refuse', () => {
     expect(bodyConsoleHref('abc')).toBe('/admin/body/abc');
-    expect(bodyConsoleHref('abc', '/admin/bodies?q=m', 'names')).toBe(
-      '/admin/body/abc?tab=names&from=%2Fadmin%2Fbodies%3Fq%3Dm',
+    expect(bodyConsoleHref('abc', '/admin/corpus?q=m', 'names')).toBe(
+      '/admin/body/abc?tab=names&from=%2Fadmin%2Fcorpus%3Fq%3Dm',
     );
     expect(bodyConsoleHref('abc', 'https://evil.example')).toBe('/admin/body/abc');
     expect(bodyConsoleHref('a/b')).toBe('/admin/body/a%2Fb');
   });
 
   it('is what the validator reads back', () => {
-    const href = bodyConsoleHref('abc', '/admin/bodies?q=m&page=2', 'water');
+    const href = bodyConsoleHref('abc', '/admin/corpus?q=m&page=2', 'water');
     const params = Object.fromEntries(new URL(href, 'https://x.invalid').searchParams);
-    expect(validateBodySearch(params)).toEqual({ tab: 'water', from: '/admin/bodies?q=m&page=2' });
+    expect(validateBodySearch(params)).toEqual({ tab: 'water', from: '/admin/corpus?q=m&page=2' });
   });
 });
 

@@ -34,14 +34,14 @@ export type BodyConsoleSearch = {
 };
 
 /**
- * Where `from` may point. The Bodies list is the console's own home for bodies; the old find-a-lake
+ * Where `from` may point. The Corpus list is the console's own home for bodies; the old find-a-lake
  * page still links here while it stands, and a link from there returns there; an Inbox item's
  * *Open in Body →* returns to the item, its lane and filter in its search (`?lane=…&item=…`).
  */
-export const RETURN_PATHS = ['/admin/bodies', '/admin/water', '/admin/inbox'] as const;
+export const RETURN_PATHS = ['/admin/corpus', '/admin/water', '/admin/inbox'] as const;
 
-/** Where the place control and ⇧⏎ go when no `from` came with the link: the Bodies list. */
-export const DEFAULT_RETURN = '/admin/bodies';
+/** Where the place control and ⇧⏎ go when no `from` came with the link: the Corpus list. */
+export const DEFAULT_RETURN = '/admin/corpus';
 
 /** A lit address: a lower-camel kind, a colon, an id of word characters, dots and dashes. */
 const LIT = /^[a-z][a-zA-Z]{0,31}:[A-Za-z0-9_.-]{1,128}$/;

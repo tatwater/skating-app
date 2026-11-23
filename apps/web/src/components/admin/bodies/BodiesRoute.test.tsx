@@ -68,7 +68,7 @@ vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mocks.search,
   useNavigate: () => mocks.navigate,
   useRouterState: ({ select }: { select: (s: { location: { href: string } }) => unknown }) =>
-    select({ location: { href: '/admin/bodies?lane=dormant' } }),
+    select({ location: { href: '/admin/corpus?lane=dormant' } }),
   Link: ({
     to,
     search,
@@ -894,13 +894,13 @@ describe('the preview', () => {
       .getByText(/Open in Body/)
       .closest('a');
     expect(link).toHaveAttribute('href', `/admin/body/${ID}`);
-    expect(link).toHaveAttribute('data-from', '/admin/bodies?lane=dormant');
+    expect(link).toHaveAttribute('data-from', '/admin/corpus?lane=dormant');
     act(() => pane().focus());
     await userEvent.keyboard('{Enter}');
     expect(mocks.navigate).toHaveBeenLastCalledWith({
       to: `/admin/body/${ID}`,
       // The list's own address rides along, so the console's way back finds it as it was.
-      search: { from: '/admin/bodies?lane=dormant' },
+      search: { from: '/admin/corpus?lane=dormant' },
     });
   });
 

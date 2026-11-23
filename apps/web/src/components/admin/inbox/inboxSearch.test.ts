@@ -62,7 +62,7 @@ describe('validateInboxSearch', () => {
     expect(validateInboxSearch({ age: 'soon' })).toEqual({});
   });
 
-  it('keeps a return path only under the Overview, People, Bodies or a body', () => {
+  it('keeps a return path only under the Overview, People, Corpus or a body', () => {
     expect(validateInboxSearch({ from: '/admin' })).toEqual({ from: '/admin' });
     expect(validateInboxSearch({ from: '/admin/people?lane=flagged' })).toEqual({
       from: '/admin/people?lane=flagged',
@@ -76,6 +76,7 @@ describe('validateInboxSearch', () => {
       '/\\evil.example',
       '/admin/flags',
       '/admin/peoplex',
+      '/admin/bodies',
       '/admin/inbox',
       'admin',
       '',
@@ -104,7 +105,7 @@ describe('validateInboxSearch', () => {
 
 describe('safeReturnPath', () => {
   it('keeps the search and hash of a path it allows', () => {
-    expect(safeReturnPath('/admin/bodies?q=mas#x')).toBe('/admin/bodies?q=mas#x');
+    expect(safeReturnPath('/admin/corpus?q=mas#x')).toBe('/admin/corpus?q=mas#x');
     expect(safeReturnPath('/admin/')).toBe('/admin/');
   });
 

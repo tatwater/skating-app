@@ -1,10 +1,10 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
+  faCabinetFiling,
   faCalendarDays,
   faEngine,
   faInbox,
-  faMapLocationDot,
   faMessageLines,
 } from '@fortawesome/sharp-light-svg-icons';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -119,7 +119,7 @@ function Queue({ selected, onOpen }: { selected: string | null; onOpen: (id: str
 const MODES = [
   { key: 'I', name: 'Inbox', icon: faInbox, count: 4, countTone: 'warn' },
   { key: 'R', name: 'Reports', icon: faMessageLines, count: 12 },
-  { key: 'B', name: 'Bodies', icon: faMapLocationDot },
+  { key: 'C', name: 'Corpus', icon: faCabinetFiling },
   { key: 'S', name: 'Seasons', icon: faCalendarDays },
   { key: 'M', name: 'Machinery', icon: faEngine, count: 1, countTone: 'bad' },
 ] as const;
@@ -417,7 +417,7 @@ export const PaneKeys: Story = {
 
 /**
  * G then a letter: the go bar comes up at the bottom center, the rail wears its letters, and the
- * rest of the frame — top bar, main, status bar — steps back to the dim opacity. B presses Bodies'
+ * rest of the frame — top bar, main, status bar — steps back to the dim opacity. C presses Corpus'
  * link (as a click would), and the frame comes back.
  */
 export const GoMode: Story = {
@@ -451,14 +451,14 @@ export const GoMode: Story = {
     );
     await near(b.left + b.width / 2, box.left + box.width / 2, 0.5);
 
-    await userEvent.keyboard('b');
-    await expect(logOf(canvasElement)).toHaveTextContent('Go Bodies');
+    await userEvent.keyboard('c');
+    await expect(logOf(canvasElement)).toHaveTextContent('Go Corpus');
     await expect(bar).not.toHaveAttribute('data-open');
     await expect(shell).not.toHaveAttribute('data-go');
     await waitFor(() => expect(getComputedStyle(slot(shell, 'shell-main')).opacity).toBe('1'));
     // The app item is reachable too.
     await userEvent.keyboard('ga');
-    await expect(logOf(canvasElement)).toHaveTextContent('Go Bodies · Go the app');
+    await expect(logOf(canvasElement)).toHaveTextContent('Go Corpus · Go the app');
   },
 };
 

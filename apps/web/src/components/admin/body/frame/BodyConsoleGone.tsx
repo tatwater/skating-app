@@ -132,7 +132,7 @@ export function BodyConsoleGone({
       {onReturn !== undefined && (
         <ConsoleTopStart>
           <Button variant="outline" size="sm" onClick={onReturn} aria-keyshortcuts="Shift+Enter">
-            Bodies
+            Corpus
           </Button>
         </ConsoleTopStart>
       )}
