@@ -175,12 +175,12 @@ async function factsOf(
     const table = CONTENT_TABLE[targetType as keyof typeof CONTENT_TABLE];
     const id = ctx.db.normalizeId(table, targetId);
     const doc = id ? await ctx.db.get(id) : null;
-    // A photo's status is optional until the backfill narrows it: absent reads as visible.
-    const status = (doc as { moderationStatus?: 'visible' | 'hidden' | 'removed' } | null)
+    // Every content table here carries the axis, a photo's too since its narrowing (D222).
+    const status = (doc as { moderationStatus: 'visible' | 'hidden' | 'removed' } | null)
       ?.moderationStatus;
     return {
       targetType,
-      targetStatus: doc === null ? null : (status ?? 'visible'),
+      targetStatus: doc === null ? null : (status ?? null),
     };
   }
   // A person, a body: no status the levers read.

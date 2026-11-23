@@ -25,7 +25,7 @@ export async function withdrawHeldPhoto(
   if ((await photoWithdrawnAt(ctx, photo._id)) !== null) return;
   // Always removed: the purge clock stands only on a removed photo (a hidden one's would read as
   // stale, and its bytes would never go). A moderator's verdict on it stands as it was.
-  const priorStatus = photo.moderationStatus ?? 'visible';
+  const priorStatus = photo.moderationStatus;
   const newStatus = 'removed' as const;
   await ctx.db.patch(photo._id, {
     moderationStatus: newStatus,

@@ -17,11 +17,11 @@ import { OPEN_FLAG_STATUSES } from './openFlags';
 
 /**
  * **The one visibility rule** — a photo is shown to a skater or the public only while it is `visible`.
- * Absent reads as visible (the field is widened optional until the backfill narrows it). Every
- * skater-facing read of a photo — its URL, its count, its thumbnail — asks this, never the field.
+ * Every skater-facing read of a photo — its URL, its count, its thumbnail — asks this, never the
+ * field.
  */
 export const photoVisible = (p: Pick<Doc<'photos'>, 'moderationStatus'>): boolean =>
-  (p.moderationStatus ?? 'visible') === 'visible';
+  p.moderationStatus === 'visible';
 
 /** A removal's purge, 30 days on (D222, the founder's clock; §11 call 4). */
 export const PHOTO_PURGE_DELAY_MS = 30 * 24 * 60 * 60 * 1000;

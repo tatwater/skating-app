@@ -77,6 +77,7 @@ async function person(
 async function photo(t: T, uploaderId: Id<'profiles'>, over: Partial<Doc<'photos'>> = {}) {
   return t.run(async (ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(new Blob(['full'])),
       thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
       uploaderId,
@@ -429,32 +430,20 @@ describe('the purge', () => {
 
 // ── The rollout and the export ─────────────────────────────────────────────────────────────────
 
-describe('the rollout: backfill visible, counted', () => {
-  test('stamps every row lacking the field, paged; idempotent; the count reaches zero', async () => {
+describe('the rollout, after the narrowing', () => {
+  test('no row can lack the field now: the count reads zero and the backfill stamps nothing', async () => {
+    // The paged backfill and its count were proven before the narrowing (on a real backend over
+    // 3,237 rows); with `moderationStatus` required, the schema itself refuses an unstamped row.
     const t = harness();
     const uploader = await person(t, 'uploader');
-    for (let i = 0; i < 17; i++) await photo(t, uploader);
-    const hidden = await photo(t, uploader, { moderationStatus: 'hidden' });
-    expect(await t.action(internal.photoRollout.countUnstamped, { pageSize: 5 })).toEqual({
-      unstamped: 17,
-      scanned: 18,
-    });
-    const dry = await t.mutation(internal.photoRollout.backfillModerationStatus, {
-      pageSize: 50,
-      dryRun: true,
-    });
-    expect(dry).toMatchObject({ stamped: 17 });
-    await t.mutation(internal.photoRollout.backfillModerationStatus, { pageSize: 5 });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect(await t.action(internal.photoRollout.countUnstamped, { pageSize: 5 })).toEqual({
+    for (let i = 0; i < 7; i++) await photo(t, uploader);
+    expect(await t.action(internal.photoRollout.countUnstamped, { pageSize: 3 })).toEqual({
       unstamped: 0,
-      scanned: 18,
+      scanned: 7,
     });
-    expect((await t.run((ctx) => ctx.db.get(hidden)))?.moderationStatus).toBe('hidden');
-    const again = await t.mutation(internal.photoRollout.backfillModerationStatus, {
-      pageSize: 50,
-    });
-    expect(again).toMatchObject({ stamped: 0 });
+    expect(
+      await t.mutation(internal.photoRollout.backfillModerationStatus, { pageSize: 50 }),
+    ).toMatchObject({ stamped: 0, isDone: true });
   });
 });
 

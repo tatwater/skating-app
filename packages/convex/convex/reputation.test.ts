@@ -93,6 +93,7 @@ async function seedReport(
   if (opts.withPhoto) {
     const photoId = await t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 'storage',
         thumbStorageId: 'thumb',
         uploaderId: actor.id,

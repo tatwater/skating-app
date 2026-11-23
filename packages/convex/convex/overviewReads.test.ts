@@ -217,6 +217,7 @@ async function seedPhoto(
 ) {
   return t.run((ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: 's',
       thumbStorageId: 't',
       uploaderId,
@@ -358,6 +359,7 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
         createdAt: NOW,
       });
       const photo = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 's',
         thumbStorageId: 't',
         uploaderId: s.id,
@@ -378,6 +380,7 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
         denyCount: 0,
       });
       const loose = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 's',
         thumbStorageId: 't',
         uploaderId: s.id,

@@ -641,6 +641,7 @@ describe('the retries and passes at their edges', () => {
     await t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob(['p']));
       await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId,
         thumbStorageId: storageId,
         uploaderId: user.id,

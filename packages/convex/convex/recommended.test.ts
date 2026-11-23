@@ -78,6 +78,7 @@ async function seedPhoto(t: ReturnType<typeof harness>, uploaderId: Id<'profiles
   return t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob(['img']));
     return ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId,
       thumbStorageId: storageId,
       uploaderId,

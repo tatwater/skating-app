@@ -114,6 +114,7 @@ async function seedPhoto(
     const storageId = await ctx.storage.store(new Blob([`photo-${label}`]));
     const thumbStorageId = await ctx.storage.store(new Blob([`thumb-${label}`]));
     return ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId,
       thumbStorageId,
       uploaderId,

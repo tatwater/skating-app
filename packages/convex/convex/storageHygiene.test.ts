@@ -119,6 +119,7 @@ async function seedPhoto(
     const storageId = await ctx.storage.store(new Blob([`photo-${createdAt}`]));
     const thumbStorageId = await ctx.storage.store(new Blob([`thumb-${createdAt}`]));
     return ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId,
       thumbStorageId,
       uploaderId,
@@ -417,6 +418,7 @@ describe('sweepOrphanPhotos (D258: a lap from a saved position, owed to the sett
       await t.run(async (ctx) => {
         for (let i = 0; i < 600; i++) {
           await ctx.db.insert('photos', {
+            moderationStatus: 'visible' as const,
             storageId: `kept-${i}`,
             thumbStorageId: `kept-thumb-${i}`,
             uploaderId: userId,

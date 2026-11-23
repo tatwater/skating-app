@@ -351,6 +351,7 @@ describe('buildExport', () => {
     );
     await t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId,
         thumbStorageId: storageId,
         uploaderId: user.id,

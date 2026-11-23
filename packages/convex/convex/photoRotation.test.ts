@@ -76,6 +76,7 @@ async function world(full: Blob = new Blob(['full-bytes']), thumb: Blob = new Bl
   const mod = await person(t, 'mod', 'moderator');
   const photoId = await t.run(async (ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(full),
       thumbStorageId: await ctx.storage.store(thumb),
       uploaderId: uploader.id,

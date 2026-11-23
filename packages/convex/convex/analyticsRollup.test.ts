@@ -375,6 +375,7 @@ describe('runRollup — photo orphans', () => {
   ) =>
     t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: `s${createdAt}`,
         thumbStorageId: `th${createdAt}`,
         uploaderId,

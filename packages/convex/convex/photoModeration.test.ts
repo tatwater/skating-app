@@ -96,6 +96,7 @@ async function photo(
     const storageId = await ctx.storage.store(new Blob(['full']));
     const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
     return ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId,
       thumbStorageId,
       uploaderId,

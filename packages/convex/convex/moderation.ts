@@ -697,8 +697,7 @@ export async function setContentStatus(
     if (!target) throw new ConvexError('Target not found');
 
     const typedTarget = target as WithdrawnTarget;
-    // A photo's status is optional until the backfill narrows it: absent reads as visible (D222).
-    const priorStatus = typedTarget.moderationStatus ?? 'visible';
+    const priorStatus = typedTarget.moderationStatus;
     const asUndo = args.undoes !== undefined;
     if (
       args.withReportIds !== undefined &&
@@ -953,8 +952,7 @@ async function recordOnWithdrawn(
   },
 ): Promise<Id<'moderationActions'>> {
   const subjectUserId = subjectOf(targetType, target);
-  // A photo's status is optional until the backfill narrows it: absent reads as visible.
-  const status_ = target.moderationStatus ?? 'visible';
+  const status_ = target.moderationStatus;
   const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: ACTION_FOR_STATUS[status],
@@ -1511,8 +1509,7 @@ const FLAG_TARGET_READERS = {
   photo: flagTargetFrom('photos', (doc) => ({
     author: doc.uploaderId,
     summary: snippet(doc.caption) || 'Photo',
-    // Absent reads as visible until the backfill narrows it (B01-5e, D222).
-    moderationStatus: doc.moderationStatus ?? 'visible',
+    moderationStatus: doc.moderationStatus,
   })),
   accessAlert: flagTargetFrom('accessAlerts', (doc) => ({
     author: doc.createdByUserId,

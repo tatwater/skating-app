@@ -654,6 +654,7 @@ describe('heavy rows: flags with their longest notes, tickets with their longest
       for (let i = 0; i < 300; i++) {
         ids.push(
           await ctx.db.insert('photos', {
+            moderationStatus: 'visible' as const,
             storageId,
             thumbStorageId,
             uploaderId: author,

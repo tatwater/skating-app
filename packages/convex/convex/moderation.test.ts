@@ -144,6 +144,7 @@ describe('moderation.listFlags target context', () => {
         lastConfirmedAt: now,
       });
       const photoId = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 'unused-full-blob',
         thumbStorageId: 'unused-thumb-blob',
         uploaderId: author.id,

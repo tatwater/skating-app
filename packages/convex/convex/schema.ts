@@ -4413,11 +4413,11 @@ export default defineSchema({
      */
     seasonExpiryCandidate: v.optional(v.boolean()),
     /**
-     * **The photo's moderation axis** (B01-5e, D222), widened optional: absent reads as `visible`
-     * until the backfill stamps every row, then it narrows to required. A photo that isn't visible is
-     * served to no skater-facing read; staff with `content.read` still see it.
+     * **The photo's moderation axis** (B01-5e, D222), required since the backfill stamped every row
+     * (`photoRollout`). A photo that isn't visible is served to no skater-facing read; staff with
+     * `content.read` still see it.
      */
-    moderationStatus: v.optional(literals(MODERATION_STATUSES)),
+    moderationStatus: literals(MODERATION_STATUSES),
     moderatedAt: v.optional(v.number()),
     /** A removed photo's bytes go 30 days on (D222): when the purge is due, and when it ran. */
     purgeAt: v.optional(v.number()),
