@@ -48,6 +48,11 @@ export const SENT_REPLY_REFUSAL = 'Sent replies can’t be unsent.';
 /** A reply that failed or a seeded one never left: there is nothing in flight to cancel. */
 export const UNSENT_REPLY_REFUSAL = 'This reply wasn’t sent, so there is nothing to cancel.';
 export const CANCELED_REPLY_REFUSAL = 'This reply was already canceled.';
+/** A reply past its window, or claimed by its send, with no outcome yet: it has started going. */
+export const REPLY_SENDING_REFUSAL = 'This reply has started sending, so it can’t be canceled.';
+/** A reply whose send stopped before saying how it went (`outcomeUnknown`). */
+export const REPLY_OUTCOME_UNKNOWN_REFUSAL =
+  'This reply may or may not have been sent, so it can’t be canceled.';
 export const NOTE_REMOVED_REFUSAL = 'This note was already removed.';
 export const NOTE_NOT_REMOVED_REFUSAL = 'This note isn’t removed.';
 export const MESSAGE_GONE_REFUSAL = 'This message no longer exists.';
@@ -117,6 +122,28 @@ export function replyBlockedOf(
   return sendability.sendable ? null : sendability.code;
 }
 
+/**
+ * **Watching a reply's send** (B01-5f review). Convex runs a scheduled action at most once and never
+ * retries it, so a send that dies — a deploy, a timeout, a runtime error — would leave its reply
+ * `settling` for good. Each reply that will be sent gets a watch, scheduled with it: one point read of
+ * its own row, never a sweep.
+ *
+ * - **Not claimed** by its send this long after its window: no send ran (it can't have mailed — the
+ *   claim comes before any address is looked up), so the send is scheduled again; the claim still
+ *   makes it at most one email. After {@link REPLY_SEND_ATTEMPTS} such tries it is `failed`
+ *   (`sendFailed`: no send ran).
+ * - **Claimed, with no outcome**, once the claim is older than an action can run: the send stopped
+ *   somewhere between its claim and its answer, so it **may or may not have been sent** —
+ *   `failed` (`outcomeUnknown`). **Never resent by itself:** a second email to the person is worse
+ *   than a staffer re-sending by hand, having read that it may not have gone.
+ * - A late answer from that same claim (`claimedAt` matching) still lands and wins: it knows.
+ */
+export const REPLY_WATCH_MS = 5 * 60 * 1000;
+/** Convex's limit on an action's run (10 minutes), and a minute's slack: a claim older is dead. */
+export const SEND_ACTION_LIMIT_MS = 11 * 60 * 1000;
+/** How many times a reply's send is scheduled when none ever claimed it. */
+export const REPLY_SEND_ATTEMPTS = 3;
+
 /** The skip a blocked support reply logs, by its code (the ruling: logged, never sent). */
 export const REPLY_SKIPPED_LOG =
   'support reply skipped (SUPPORT_FROM_EMAIL or RESEND_API_KEY not configured)';
@@ -162,9 +189,14 @@ function messageStateRefusal(
     case 'cancelReply':
       if (replySettling(message, now)) return null;
       if (message.status === 'canceled') return CANCELED_REPLY_REFUSAL;
-      if (message.status === 'failed') return UNSENT_REPLY_REFUSAL;
-      // Sent, or claimed by its send (or past its window): it went, or is going.
-      return SENT_REPLY_REFUSAL;
+      if (message.status === 'sent') return SENT_REPLY_REFUSAL;
+      if (message.status === 'failed') {
+        return message.failedWhy === 'outcomeUnknown'
+          ? REPLY_OUTCOME_UNKNOWN_REFUSAL
+          : UNSENT_REPLY_REFUSAL;
+      }
+      // Still settling, but claimed by its send or past its window: started, not yet confirmed.
+      return REPLY_SENDING_REFUSAL;
   }
 }
 
@@ -267,8 +299,12 @@ export type ExportedTicket = {
   createdAt: number;
   resolvedAt: number | null;
   context: Doc<'supportTickets'>['context'] | null;
-  /** The replies that reached them by email — their words to keep; never a note, never an unsent reply. */
-  replies: { body: string; sentAt: number }[];
+  /**
+   * The replies that reached them by email — their words to keep; never a note, never an unsent reply.
+   * `delivery: 'unknown'` for one whose send stopped before saying how it went: it may have reached
+   * them, so it is theirs to see, said as that (`sentAt` then `null`).
+   */
+  replies: { body: string; sentAt: number | null; delivery: 'sent' | 'unknown' }[];
 };
 
 /**
@@ -319,9 +355,15 @@ export async function exportTicketsOf(
       createdAt: t.createdAt,
       resolvedAt: t.resolvedAt ?? null,
       context: t.context ?? null,
-      replies: kept
-        .filter((m) => m.kind === 'reply' && m.status === 'sent')
-        .map((m) => ({ body: m.body, sentAt: m.sentAt ?? m.createdAt })),
+      replies: kept.flatMap((m): ExportedTicket['replies'] =>
+        m.kind !== 'reply'
+          ? []
+          : m.status === 'sent'
+            ? [{ body: m.body, sentAt: m.sentAt ?? m.createdAt, delivery: 'sent' as const }]
+            : m.status === 'failed' && m.failedWhy === 'outcomeUnknown'
+              ? [{ body: m.body, sentAt: null, delivery: 'unknown' as const }]
+              : [],
+      ),
     });
   }
   return { tickets, capped };

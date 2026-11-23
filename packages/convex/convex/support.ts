@@ -39,8 +39,11 @@ import {
   bodyRefusal,
   MESSAGE_GONE_REFUSAL,
   NOT_A_NOTE_REFUSAL,
+  REPLY_SEND_ATTEMPTS,
   REPLY_SKIPPED_LOG,
+  REPLY_WATCH_MS,
   replyBlockedOf,
+  SEND_ACTION_LIMIT_MS,
   SUPPORT_REASONS,
   seedTicket,
   supportReplyEmail,
@@ -387,7 +390,14 @@ export const reply = mutation({
       createdAt: now,
     });
     await ctx.db.patch(messageId, { actionId });
-    if (!blocked) await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
+    if (!blocked) {
+      await ctx.scheduler.runAt(sendAfter, internal.support.sendReply, { messageId });
+      // Its watch: a send that dies never leaves the reply settling for good (`REPLY_WATCH_MS`).
+      await ctx.scheduler.runAt(sendAfter + REPLY_WATCH_MS, internal.support.watchReply, {
+        messageId,
+        attempt: 1,
+      });
+    }
     return answer(
       ctx,
       actor,
@@ -493,6 +503,8 @@ type ReplyClaim = {
   email: string | null;
   clerkUserId: string | null;
   seed: boolean;
+  /** The claim's stamp (`sentAt` while it settles): the send's answer names it, so only it lands. */
+  claimedAt: number;
 };
 
 /**
@@ -513,23 +525,37 @@ export const claimReply = internalMutation({
       return null;
     }
     const profile = ticket.userId ? await ctx.db.get(ticket.userId) : null;
-    await ctx.db.patch(messageId, { sentAt: Date.now() });
+    const claimedAt = Date.now();
+    await ctx.db.patch(messageId, { sentAt: claimedAt });
     return {
       body: message.body,
       email: profile?.email ?? null,
       clerkUserId: ticket.clerkUserId ?? profile?.clerkUserId ?? null,
       seed: seedTicket(ticket, profile),
+      claimedAt,
     };
   },
 });
 
+/**
+ * Whether the send's answer for `claimedAt` may still land: the reply is still that claim's — settling
+ * under it, or marked `outcomeUnknown` by the watch while it was out (a late answer knows; it wins).
+ */
+function claimAnswerable(message: Doc<'supportMessages'> | null, claimedAt: number): boolean {
+  if (!message || message.sentAt !== claimedAt) return false;
+  return (
+    message.status === 'settling' ||
+    (message.status === 'failed' && message.failedWhy === 'outcomeUnknown')
+  );
+}
+
 /** The claimed reply went: `sent`, stamped when the provider took it. */
 export const replySent = internalMutation({
-  args: { messageId: v.id('supportMessages') },
-  handler: async (ctx, { messageId }) => {
+  args: { messageId: v.id('supportMessages'), claimedAt: v.number() },
+  handler: async (ctx, { messageId, claimedAt }) => {
     const message = await ctx.db.get(messageId);
-    if (message?.status !== 'settling') return;
-    await ctx.db.patch(messageId, { status: 'sent', sentAt: Date.now() });
+    if (!claimAnswerable(message, claimedAt)) return;
+    await ctx.db.patch(messageId, { status: 'sent', sentAt: Date.now(), failedWhy: undefined });
   },
 });
 
@@ -537,12 +563,48 @@ export const replySent = internalMutation({
 export const replyFailed = internalMutation({
   args: {
     messageId: v.id('supportMessages'),
+    claimedAt: v.number(),
     why: literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const),
   },
-  handler: async (ctx, { messageId, why }) => {
+  handler: async (ctx, { messageId, claimedAt, why }) => {
     const message = await ctx.db.get(messageId);
-    if (message?.status !== 'settling') return;
+    if (!claimAnswerable(message, claimedAt)) return;
     await ctx.db.patch(messageId, { status: 'failed', failedWhy: why, sentAt: undefined });
+  },
+});
+
+/**
+ * **A reply's watch** (`lib/supportThread.REPLY_WATCH_MS`): one point read of its row. Settled → done.
+ * Not claimed → no send ran: the send again (at most one email, by the claim) and another watch, up
+ * to `REPLY_SEND_ATTEMPTS`, then `failed` (`sendFailed`). Claimed with no answer → once the claim is
+ * older than an action can run, `failed` (`outcomeUnknown`), never resent; before that, watched again
+ * when it would be.
+ */
+export const watchReply = internalMutation({
+  args: { messageId: v.id('supportMessages'), attempt: v.number() },
+  handler: async (ctx, { messageId, attempt }) => {
+    const message = await ctx.db.get(messageId);
+    if (message?.kind !== 'reply' || message.status !== 'settling') return;
+    const now = Date.now();
+    if (message.sentAt === undefined) {
+      if (attempt >= REPLY_SEND_ATTEMPTS) {
+        await ctx.db.patch(messageId, { status: 'failed', failedWhy: 'sendFailed' });
+        return;
+      }
+      await ctx.scheduler.runAfter(0, internal.support.sendReply, { messageId });
+      await ctx.scheduler.runAfter(REPLY_WATCH_MS, internal.support.watchReply, {
+        messageId,
+        attempt: attempt + 1,
+      });
+      return;
+    }
+    const deadAt = message.sentAt + SEND_ACTION_LIMIT_MS;
+    if (now < deadAt) {
+      await ctx.scheduler.runAt(deadAt, internal.support.watchReply, { messageId, attempt });
+      return;
+    }
+    // Keeps `sentAt` (the claim's stamp), so a late answer from that claim still lands.
+    await ctx.db.patch(messageId, { status: 'failed', failedWhy: 'outcomeUnknown' });
   },
 });
 
@@ -563,17 +625,29 @@ export const sendReply = internalAction({
     // Asked again at send: the deployment's variables may have changed since the write.
     if (!supportSendability().sendable || !from) {
       console.warn(REPLY_SKIPPED_LOG);
-      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'unconfigured' });
+      await ctx.runMutation(internal.support.replyFailed, {
+        messageId,
+        claimedAt: claim.claimedAt,
+        why: 'unconfigured',
+      });
       return;
     }
     if (claim.seed) {
-      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'seed' });
+      await ctx.runMutation(internal.support.replyFailed, {
+        messageId,
+        claimedAt: claim.claimedAt,
+        why: 'seed',
+      });
       return;
     }
     const to =
       claim.email ?? (claim.clerkUserId ? await clerkEmailForSubject(claim.clerkUserId) : null);
     if (!to) {
-      await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'noAddress' });
+      await ctx.runMutation(internal.support.replyFailed, {
+        messageId,
+        claimedAt: claim.claimedAt,
+        why: 'noAddress',
+      });
       return;
     }
     const ok = await sendEmail({
@@ -582,7 +656,14 @@ export const sendReply = internalAction({
       ...supportReplyEmail(claim.body),
       context: 'support reply',
     });
-    if (ok) await ctx.runMutation(internal.support.replySent, { messageId });
-    else await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'sendFailed' });
+    if (ok) {
+      await ctx.runMutation(internal.support.replySent, { messageId, claimedAt: claim.claimedAt });
+    } else {
+      await ctx.runMutation(internal.support.replyFailed, {
+        messageId,
+        claimedAt: claim.claimedAt,
+        why: 'sendFailed',
+      });
+    }
   },
 });

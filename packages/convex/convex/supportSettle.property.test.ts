@@ -4,8 +4,8 @@
  * window (as a late scheduler would), colleagues' notes and a resolve in between — then every
  * scheduled send run to its end, so each reply's send runs at least twice. Whatever the order:
  *
- * - a cancel lands exactly when it comes inside the window, and is refused after it in the policy's
- *   words ("Sent replies can't be unsent");
+ * - a cancel lands exactly when it comes inside the window, and is refused after it in the words of
+ *   the reply's state ("started sending" until its send answers, "Sent replies can't be unsent" after);
  * - a reply canceled is never mailed; one not canceled is mailed **once**;
  * - each ends `canceled` or `sent`, never both, never still settling.
  *
@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { SETTLE_MS } from './lib/notificationQueue';
-import { SENT_REPLY_REFUSAL } from './lib/supportThread';
+import { REPLY_SENDING_REFUSAL, SENT_REPLY_REFUSAL } from './lib/supportThread';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -116,7 +116,13 @@ async function check(s: Scenario) {
     vi.setSystemTime(now);
     const body = `Reply number ${i}`;
     const out = await admin.mutation(api.support.reply, { ticketId, body });
-    const reply = { body, messageId: out.messageId, start: now, canceled: null as boolean | null };
+    const reply = {
+      body,
+      messageId: out.messageId,
+      start: now,
+      canceled: null as boolean | null,
+      sendRan: false,
+    };
     replies.push(reply);
     if (plan.cancelAt !== undefined) {
       events.push({
@@ -126,7 +132,10 @@ async function check(s: Scenario) {
             await admin.mutation(api.support.cancelReply, { messageId: out.messageId });
             reply.canceled = true;
           } catch (err) {
-            expect(String((err as { data?: unknown }).data)).toBe(SENT_REPLY_REFUSAL);
+            // Its words by state: sent once its send has answered, started before that.
+            expect(String((err as { data?: unknown }).data)).toBe(
+              reply.sendRan ? SENT_REPLY_REFUSAL : REPLY_SENDING_REFUSAL,
+            );
             reply.canceled = false;
           }
         },
@@ -136,6 +145,7 @@ async function check(s: Scenario) {
       at: now + plan.sendAt,
       run: async () => {
         await t.action(internal.support.sendReply, { messageId: out.messageId });
+        reply.sendRan = true;
       },
     });
   }

@@ -19,6 +19,7 @@ import {
   NOT_A_NOTE_REFUSAL,
   NOTE_NOT_REMOVED_REFUSAL,
   NOTE_REMOVED_REFUSAL,
+  REPLY_SENDING_REFUSAL,
   REPLY_SKIPPED_LOG,
   SENT_REPLY_REFUSAL,
   SUPPORT_REASONS,
@@ -433,7 +434,7 @@ describe('support.reply and its send', () => {
     expect((await w.message(out.messageId))?.status).toBe('settling');
     await expect(
       w.admin.as.mutation(api.support.cancelReply, { messageId: out.messageId }),
-    ).rejects.toThrow(SENT_REPLY_REFUSAL);
+    ).rejects.toThrow(REPLY_SENDING_REFUSAL);
     // A second claim takes nothing: one send per reply.
     expect(
       await w.t.mutation(internal.support.claimReply, { messageId: out.messageId }),
@@ -448,7 +449,7 @@ describe('support.reply and its send', () => {
     vi.setSystemTime(Date.now() + SETTLE_MS + 10);
     await expect(
       w.admin.as.mutation(api.support.cancelReply, { messageId: out.messageId }),
-    ).rejects.toThrow(SENT_REPLY_REFUSAL);
+    ).rejects.toThrow(REPLY_SENDING_REFUSAL);
   });
 
   test.each([

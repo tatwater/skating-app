@@ -16,12 +16,17 @@
 import { requestNameKeyFor } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { fileMember, flagSource, requestSource, ticketSource } from './lib/inboxItems';
 import { ALONGSIDE_UNCHECKED } from './lib/inboxRules';
 import schema from './schema';
+
+// A test that stubs the sender's variables (placeholders) never leaves them for the next.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -707,6 +712,10 @@ describe('heavy rows: flags with their longest notes, tickets with their longest
     expect(reads).toEqual({ item: 'completed', list: 'completed', map: 'completed' });
     const undo = (actionId: Id<'moderationActions'>) =>
       w.admin.as.mutation(api.undo.run, { actionId });
+    // A deployment that can send (placeholders, never a real key): the reply settles, so its cancel
+    // is the undo under test — on one that can't, it is stored failed and has none.
+    vi.stubEnv('RESEND_API_KEY', 're_test_placeholder');
+    vi.stubEnv('SUPPORT_FROM_EMAIL', 'support@example.test');
     const steps = await matrix({
       note: async () =>
         undo(

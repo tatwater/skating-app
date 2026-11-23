@@ -559,9 +559,11 @@ export type SupportMessageView = {
     sentAt: number | null;
     /**
      * Why it wasn't sent, as a class, never the provider's message or an address: no support sender
-     * configured, a seeded ticket (never mailed), no address on file, or the provider refused.
+     * configured, a seeded ticket (never mailed), no address on file, the provider refused (or no
+     * send ever ran) — or `outcomeUnknown`: its send started and stopped before saying how it went,
+     * so it **may or may not have been sent** (worded as that, never as sent or as not sent).
      */
-    failedWhy: 'unconfigured' | 'seed' | 'noAddress' | 'sendFailed' | null;
+    failedWhy: 'unconfigured' | 'seed' | 'noAddress' | 'sendFailed' | 'outcomeUnknown' | null;
     /**
      * Whether this viewer may cancel it now (`support.cancelReply`): `null`, or the sentence that
      * write refuses with — the undo's own rule, so *Undo* is drawn only where it lands (D217). Asked

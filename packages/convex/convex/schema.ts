@@ -4238,9 +4238,13 @@ export default defineSchema({
     /**
      * Why a reply wasn't sent, as a class, never the provider's message or an address:
      * `unconfigured` (no `SUPPORT_FROM_EMAIL`), `seed` (a seeded ticket — the seed never sends),
-     * `noAddress` (no profile email and no Clerk address), `sendFailed` (the provider refused).
+     * `noAddress` (no profile email and no Clerk address), `sendFailed` (the provider refused, or
+     * no send ever ran), `outcomeUnknown` (B01-5f review: its send claimed it and then stopped
+     * before saying how it went — it may or may not have been sent; never resent by itself).
      */
-    failedWhy: v.optional(literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const)),
+    failedWhy: v.optional(
+      literals(['unconfigured', 'seed', 'noAddress', 'sendFailed', 'outcomeUnknown'] as const),
+    ),
     /**
      * The audit row its write made (`support_note` / `support_reply`), stamped by that write in the
      * same transaction, right after the row: a reply's cancel undoes it by id. Optional only because
