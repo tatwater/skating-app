@@ -259,6 +259,12 @@ Plus **the corpus browser**: search by name, id, external id; filters by state, 
 review reason, source, curated, has-open-asks; every body including removed and rejected (today
 unreachable); columns chosen by the operator; a row opens the body console.
 
+*2026-11-23 — the rename (D293).* The library B01-3 built as "Bodies" is this browser, and is now
+Corpus: the list at `/admin/corpus` (G then C, still opening on Active), the Body console under it
+at `/admin/body/$id`, `/admin/bodies` gone without a redirect. The tasks above join its sidebar
+when they are built; until then Home's Corpus links open the old pages. The sections below that
+say "Bodies" and `/admin/bodies` record what was built under the old name.
+
 ### §5.4 — Body console
 
 The report console's frame with the lake as the instrument. Left column: identity (names and
@@ -3998,6 +4004,8 @@ hazard callers of `recomputeBodySummary`, and `moderation.listActions` filtering
 `by_target_action`.
 
 ### The Bodies list (B01-3, the page)
+
+*Renamed Corpus on 2026-11-23 (D293): the list now lives at `/admin/corpus`, G then C.*
 
 The library at `/admin/bodies` (boards 5.1–5.3), on the server's reads above; the rail's Bodies
 mode (G then B) lights for it. The first of four Bodies page PRs — the Body console's frame and
