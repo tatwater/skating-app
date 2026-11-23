@@ -62,19 +62,19 @@ Every capability the current surface has, where it lives, and where this phase p
 | Capability today | Page | Gate | Lands in |
 | --- | --- | --- | --- |
 | Queue-depth tiles (4 of ~12 queues), app-health trends, catalog coverage, last 20 audit rows | `/admin` | mod (trends admin) | **Overview** |
-| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`) and its *Pin* button on 2.6 built for B01-5b (key P, a required reason), so retiring `/admin/flags` loses nothing — closed; the facts are in B01-5, *What the build found*, under *Pin as official* |
+| Flags: safety lane, access lane (per lake), standard; resolve, hide/remove, retract or pin an access alert; rule public access | `/admin/flags` | mod | **Inbox** — pinning an alert as official is offered on the Inbox's alert item (board 2.6; the founder's "Sure.", 2026-11-21), its server half built in B01-5a (`alertVerdict` with `verb: 'pin'`) and its *Pin* button on 2.6 built for B01-5b (key P, a required reason), so retiring `/admin/flags` loses nothing — closed; the facts are in B01-5, *What the build found*, under *Pin as official* 🟢 (#176) |
 | User search; detail with trust tiles, contributor trend, posting permissions, bounty limit, suspend, ban, lift; role grant/revoke | `/admin/users`, `/admin/users/$id` | mod (role admin) | **People** |
 | Find a lake by name; curated list; pending user-drawn bodies approve/reject; suspected-duplicate groups merge/dismiss | `/admin/water` | mod | search → **Body console**; pending → **Inbox**; duplicates, curated → **Corpus** |
 | The lake editor: name, prominence, sub-areas (chord, freehand, paste), landmarks, depth, weather sample points, put-ins, parking and approach, known features, hazards, recurrence, promotion candidates, aggregate tracks, posted rules, satellite link, reference links, standing, history | `/admin/water/$id` | mod (remove/restore admin) | **Body console** |
 | Intake review: six merge reasons, read-only, links to the editor | `/admin/water/review` | mod | **Corpus** |
 | Standing: five lanes off the active map + recent activations, read-only | `/admin/water/standing` | mod | **Corpus** (lanes) + **Season** (activations) |
-| Requests: seven kinds, approve/decline, admit resolver, preview map | `/admin/water/requests` | mod (restore/takedown admin) | **Inbox** |
+| Requests: seven kinds, approve/decline, admit resolver, preview map | `/admin/water/requests` | mod (restore/takedown admin) | **Inbox** 🟢 (#172) |
 | Place names from the emails: set lake, dismiss, reopen, hand off to the editor | `/admin/water/place-names` | mod | **Corpus** |
 | Body features: list the newest 100, demote | `/admin/features` | mod | **Corpus** (the pre-ice pass) + **Body console** |
 | Hazard identity: recurrence queue (suppress), recent merges (unmerge) | `/admin/recurrence` | mod | **Corpus** (the pre-ice pass) |
 | Ice calibration: the fit, the pairs, the Open-Meteo meter | `/admin/ice-calibration` | mod | **Instruments** (meter → **Machinery**) |
 | Seasons: the watch, imagery start/pause/retry, versioned thresholds with replay, field dates | `/admin/seasons` | admin | **Season** (imagery → also **Machinery**) |
-| Support inbox: tickets by status, assign to me, resolve | `/admin/support` | admin | **Inbox** (admin lane) |
+| Support inbox: tickets by status, assign to me, resolve | `/admin/support` | admin | **Inbox** (admin lane) 🟢 (#175) |
 | Tuning: every constant read-only beside its chart; operational-health charts | `/admin/tuning` | admin | **Instruments** |
 | Imports: newest 50 runs, campaign tiles, run detail (outcome, coverage, tallies, path, failures) | `/admin/imports` | admin | **Machinery** |
 | In-context moderation on skater pages: takedown on report/post/comment/hazard, promote a hazard, rule public access, approve/reject a body, user levers on a profile, edit history | `/water/$id`, `/hazard/$id`, `/report/$id`, `/feed`, `/u/$username` | mod | stays; each gains a link into the console |
@@ -12583,6 +12583,304 @@ The `lint · typecheck · test` job, in seconds. Both savings landed with #175 (
     run is there to catch.
   - No nightly run had appeared yet on 2026-11-23.
 
+##### Built (2026-11-23), on `origin/main` at `193738b6` (#176)
+
+#176 merged by content: the squash equals its head `3b1065b50`. Its three review rounds are on main:
+the `photoFiles` and `photoRotations` tables, the copies' `gli-rotation=` tag, and `sameBytesCut`.
+
+**Dev's preconditions, read after #176 deployed:**
+- `photoRollout:countUnstamped` read 0 (dev holds no photos);
+- 0 of 23 `contentFlags` rows were in `reviewing`;
+- 0 of 41 Inbox items had decided `cleared`;
+- 0 of 4 tickets were in `in_progress`, and none had an assignee.
+
+| # | What | Commit | Blast radius |
+| --- | --- | --- | --- |
+| 1 | `photos.moderationStatus` required (D222), re-cut from S5's held `c2e57b3f8` against today's schema | `fd869c689` | 38 files: the schema line; 27 test files whose photos gain the field; the readers that still fell back to `visible` |
+| 2 | `contentFlags.status` loses `reviewing` (D283), with every reader that tolerated it | `8f7d0f9fd` | 25 files: the value, `OPEN_FLAG_STATUSES` (now `['open']`), the auto-flag fallback, `listFlags`' second read, the erasure hold, the backfill's phases, core's `flagRetraction` type, the comments; `DECISION_FLAGS_MAX` becomes 1,000 of its own (it had been two statuses × 500); a merge's flag ceiling rises 95 → 104 |
+| 3 | The retired pages' components and what only they used, deleted; `cleared` dropped | `5e6be6b67` | 23 files, −1,709 lines |
+| 4 | The phone's *Remove* hint is true for a held photo too | `b48a43f40` | one line |
+
+**The deletions in item 3:**
+- **Web:**
+  - `FlagQueue`;
+  - `RequestQueue` and its test;
+  - `SupportQueue`;
+  - `RequestPreviewMap` and its test;
+  - `useRowReview`.
+- **Server:**
+  - `support.assign`;
+  - `support.list` and the ticket view only it built;
+  - `corpusRequests.listQueue` and `queueCount`, with `questionKey`.
+- **Who could still call them:** the web, the seed, scripts, crons and `internal.*` references
+  call none of the four server functions. `apps/mobile`'s whole history (`git log -S`) never named
+  any of them, so no installed build can call one.
+- **Tests:** those that read the old queues lose those asserts. Each one repeated what the live
+  per-body read (`openLandmarkRequestsForBody`) or the Inbox's own tests hold.
+- **Kept:**
+  - `BayRequestQueue` and the old editor's other pieces;
+  - the three redirect routes;
+  - `moderation.listFlags`, for the Legacy dashboard;
+  - `resolveFlag`, as a fixture (In11).
+
+**CI, the last three runs after the two savings** (seconds; `lint · typecheck · test`):
+
+| Step | main `193738b6` (push) | #176 `3b1065b5` | #176 `a18279a0` | #176 `833544a4` |
+| --- | --- | --- | --- | --- |
+| Already tested? | 5, skip | — | — | — |
+| Setup (checkout, pnpm, Node, install) | — | 34 | 31 | 33 |
+| Lint & format | — | 6 | 6 | 6 |
+| Convex codegen check | — | 9 | 12 | 51 |
+| Type-check | — | 42 | 52 | 49 |
+| Playwright install | — | 11 | 14 | 21 |
+| Test, with coverage | — | 849 | 1,024 | 1,012 |
+| The web suite in three zones | — | 868 | 1,039 | 1,023 |
+| **The job** | **5** | **1,828** | **2,186** | **2,205** |
+| Vitest per zone | — | 285 / 285 / 287 | 345 / 341 / 341 | 333 / 338 / 340 |
+
+- **The skip paid in full the first time it could.** #176's push to main matched its green head and
+  ran in 5 s, against about 30 minutes for a full run.
+- **The Node split doesn't show in these three runs' minutes.** They are the slowest yet, and every
+  step slowed alike:
+  - *Test, with coverage* took 849–1,024 s, against 616–735 s in the first runs after the split;
+  - the suite grew 7,506 → 7,519 tests.
+
+  So the runner's speed sets the total. The split's saving shows in the share instead: jsdom's
+  environment time is 21–22% of a zone's pass, against 27% before the split. #175's first run took
+  34 minutes, and these took 30–37.
+
+### The Inbox wave: what needs you (2026-11-23)
+
+The Inbox is done: every kind of thing a person files is decided in it. The old flags, requests and
+support pages now send you to the Inbox. This page lists what the wave left for you, in five parts:
+1. what only you can do;
+2. the calls made on your behalf, which you can overturn;
+3. the words written without a board, for your copy pass;
+4. where the build differs from the boards;
+5. what is owed but blocks nothing.
+
+#### 1. What only you can do
+
+- **Set `SUPPORT_FROM_EMAIL` on dev** (the Convex dashboard, dev's environment variables). Until
+  it is set, every reply sent from a ticket is saved as *failed* and nothing is emailed. Resend is
+  already configured, so the next reply after you set it really sends. Then send one reply to a
+  staff account's ticket to see it arrive.
+- **The device pass on the next Android preview build.** These have reached the phone since the last
+  pass:
+  - the moderator-decision notification: what an asker reads when their request is approved,
+    declined or merged, or their alert is taken down, plus its settings toggle;
+  - the photo sheet's *Remove* hint, which now reads "A photo you remove isn't shown with the report
+    once you save";
+  - one known gap: the phone keeps showing a photo it already loaded after that photo is taken
+    down. That question is on B04's running list.
+
+#### 2. Calls made on your behalf
+
+Each says what was decided and what the other choice was. The numbers are §7's.
+
+*How the wave was built*
+- **1.** The wave was planned as six PRs with the seed first; your call for fewer PRs replaced
+  that, and it shipped as #170–#176 plus this close-out.
+- **4.** The dev seed is its own package (`scripts/seed-inbox`), rather than a script inside the
+  server package.
+- **5.** D282 was left to the stored-facts work, and the Inbox's decisions start at D283, rather
+  than the two sharing a range.
+- **13.** Requests and places were built in parallel by separate builders, rather than in one
+  pass.
+- **26.** Support and photos were built at the same time but shipped one after the other, support
+  first, rather than as one PR.
+- **28.** The photo byte move was proven on dev before it was built, so it could have been dropped
+  if the proof failed.
+
+*The Inbox's foundation (#170)*
+- **2.** Each question a person asks is stored as one Inbox item, kept by a single writer, with a
+  drift repair. The alternative was working out the lanes from the source tables on every read.
+- **3.** An installed phone that doesn't know a newer notification type shows it as the generic
+  "something happened" row. The alternative was hiding newer types from old builds.
+- **6.** Lake requests a script filed are not Inbox items; they stay in the old lake editor until
+  Corpus takes them. The alternative was filing them in the Requests lane beside people's asks.
+- **7.** Undoing the admission of brand-new water shelves that body (out of the corpus, its
+  history kept) rather than deleting it.
+- **8.** Undoing a flag decision refuses only when its first flag can't reopen; any other flag
+  that can't is left closed and named. The alternative was refusing the whole undo whenever any
+  flag can't reopen.
+- **9.** One request decision closes at most 499 matching asks; any past that stay open for
+  another decision. The alternative was an unbounded close.
+- **10.** Each old page retired only when its last kind of item could be decided in the Inbox,
+  rather than all three on day one.
+
+*Requests, places, drawn bodies and telling askers (#172)*
+- **11.** The record sheet's links (to an item's body, its report, its Inbox item) wait for a
+  board, rather than being built without one.
+- **12.** When a moderator takes down someone's access alert, the author is told it was taken
+  down, without the moderator's reason. The alternative was sending the reason too.
+- **16.** Only an admin can approve, decline, or undo the decline of a request to restore or take
+  down a body. The alternative was letting moderators decide these too.
+- **17.** A request's "nearest known body" wasn't shown on the request item; it moved to the
+  merge work, rather than adding a map read to every request.
+- The life strip may draw stacked for a moment, then run across once the web fonts load (**14**),
+  rather than holding the page until the fonts arrive.
+- The moderator-decision preference was made required again once every profile had it (**15**,
+  **21**), rather than staying optional.
+
+*Merge and unmerge (#173)*
+- **18.** If a row moved again after a merge, the unmerge leaves it where it is, counts it and names
+  it in History. The alternative was refusing the whole unmerge.
+- **19.** A merge moves the drawing's recorded skates with it. Access alerts and linked lots don't
+  move; that is owed, in part 5.
+- **20.** A merge too large for one transaction is refused with a sentence, rather than split
+  into pages.
+- **22.** An undo may restore from a saved "before" copy of the row, rather than only by replaying
+  the forward write in reverse.
+- **Abandoning a dead unmerge** (told 2026-11-22). A stalled unmerge can be abandoned with a
+  reason, so two bodies are never locked together for good. The alternative was retrying forever.
+- **The access ruling's own reports** (told 2026-11-21, standing). A ruling closes every access
+  report on the body, the ruling staffer's own included, and its undo leaves their own report
+  dismissed. The alternative was refusing a staffer who had filed one.
+- **A merged drawing's message** (from review). The person who drew it is told whether it was
+  pending or already approved when it was merged, rather than one message for both.
+
+*Photos (#176)*
+- **23.** When an uploader deletes a photo that is flagged or under a decision, it is hidden and
+  put on the 30-day clock, rather than deleted, so the evidence outlives the delete.
+- **27.** Photo addresses go only to staff who can read hidden content, and every path that
+  deletes a photo checks flags and decisions first. These were requirements, not options.
+- **29.** "The same image" is listed on the taken-down photo's item, but the photos that share
+  its old file don't list it back. Making that exact both ways needs a content hash on every photo,
+  which is its own change.
+- **From review:**
+  - an author's edit that drops a held photo withdraws it rather than deleting it;
+  - *Show the photo* reveals only the photo's unflagged, still-visible neighbors, rather than every
+    photo on the report;
+  - the takedown dialogs promise no time limit for copies already on someone's device, rather than
+    naming one;
+  - pinning a lapsed access alert as official is allowed, rather than refused.
+
+*Support (#175)*
+- **24.** With `SUPPORT_FROM_EMAIL` unset, a reply is saved as *failed* rather than sent from the
+  general address.
+- **25.** The dev seed carries one support reply, saved *failed* and never sent, rather than no
+  reply at all.
+
+*Your calls of 2026-11-21, carried out as asked:* fewer PRs, *Pin as official* on the alert item,
+and the board-versus-kit differences going with the suggestions until your look (part 4).
+
+#### 3. The copy pass: words written without a board
+
+Every word here was written by the build and waits for you. By screen:
+- **The Inbox frame and list:**
+  - the decision words (action taken, retracted, restored, declined, withdrawn);
+  - the empty page's sentence when the start of the record is unknown;
+  - "The search didn't load.";
+  - the one refusal title, "Not saved".
+- **Safety and content flags:**
+  - the lane heads ("Flagged: false safety report", and the rest);
+  - the contradiction sentence, "Not recorded", °F·days, *Pin* and the vote words;
+  - "Closes N flags…", and "Your own open asks couldn't all be checked…".
+- **Access reports:** "The reports stay open, in the lane"; "the reporter told" and "reporters
+  told"; "1.0 MI" on the scale bar.
+- **Requests:** the heads and rows for the four kinds no board draws; *Reason · kept in the audit
+  log*.
+- **Places asked:** "2 of 3 landmark asks added", "first landmark ask", "Possibly X, 0.4 mi away".
+- **Drawn bodies, merge and unmerge:**
+  - "Told it was merged", "Kept · moves with it";
+  - the unmerge's progress and stall lines, and *Abandon*'s dialog and "Abandoned before it
+    finished";
+  - "More bodies match…", "still being unmerged".
+- **Notifications:** the four sentences an asker reads when a moderator decides.
+- **Photos:**
+  - the photo item's states: hidden, removed with its deletion day, withdrawn, deleted, missing
+    file, can't load;
+  - the takedown dialogs and receipts, and the device sentence;
+  - "The same image is on N other photos" and its still-up sentence;
+  - the record sheet's *Show* and *Pixelate again*;
+  - the skater sheet's *Not shown* and its *Remove* hint (web and phone).
+- **Support tickets:**
+  - the reply states, and "Reply saved · It sends in about a minute unless it is canceled";
+  - "Sending didn't finish · it may or may not have been sent";
+  - the note's *Remove*;
+  - the receipts and History lines.
+
+#### 4. Where the build differs from the boards
+
+- **Your 2026-11-21 table**, built as suggested until you look:
+  - a byline's name;
+  - the life strip's 1 px against 2 px;
+  - the candidate outline's color;
+  - the skate track's color;
+  - five values with no token.
+  The scale bar's miles are done.
+- **Overrides of the boards:**
+  - *Sarah is on it* is gone (no claims, D283);
+  - board 2.8's sender;
+  - *Stefan thickness estimate*;
+  - the *Coming soon* links.
+- **The frame and list:**
+  - no key hints;
+  - Safety's *Filter* wraps at 384 px;
+  - *Today* opens Decided;
+  - *Disputes a ruling* is cut short at 360 px;
+  - a typed reason is lost when a colleague's decision locks the item.
+- **Flag (2.1, 2.6):**
+  - the claim chips use the app's own wording;
+  - *Seen by* became *Votes*;
+  - the drawer is 820 px against 720 px.
+- **Access (2.2):**
+  - bylines show points;
+  - label rows are 76 px against 96 px;
+  - no reporter photos, *Say accessible* figure, ruling source or gate marks.
+- **Requests (2.3, and the four kinds no board draws):**
+  - invented heads and keys;
+  - a one-press approve;
+  - *Lake or pond*;
+  - "0.8 mi" with no direction.
+- **Places and drawn bodies (2.4, 2.5):**
+  - the overlap share is the build's own number;
+  - "3 landmarks named" is the asker's history;
+  - the Shape tab's merge flow has no board.
+- **Photo (2.7):**
+  - the strip holds up to 12 against the board's 4;
+  - "Its flag →";
+  - five states the board doesn't draw;
+  - the same-image list.
+- **Ticket (2.8):**
+  - the *Related* rows are invented, and there is no *Reports →*;
+  - the reply foot and its states;
+  - the cut line, the receipts and the History lines.
+
+#### 5. Owed, and blocking nothing
+
+These are in the register, *The Inbox wave's rows* (In1–In31), each with who can act on it.
+
+**For you:**
+- whether a closed support ticket's `in_progress` and assignee fields go from the schema (D284
+  keeps them; dev holds none);
+- whether to drop the three old pages' redirects (the recommendation is keep).
+
+**For a build:**
+- **Photos:**
+  - who uploaded an unattached file isn't recorded;
+  - withdrawn photos aren't in the record sheet's Deleted list;
+  - "the same image" both ways (29).
+- **Merges:**
+  - access alerts and linked lots don't move with a merge;
+  - old merged drawings still read *pending*;
+  - the merge estimate refuses more than it needs to;
+  - a request's nearest known body on rows from before.
+- **The console:**
+  - the cross-console History with Undo isn't on any page;
+  - no screen-reader pass yet;
+  - the life strip's font jump;
+  - small test gaps.
+
+**For later modes:**
+- Machinery (where parked photo work will show);
+- Corpus (script-filed asks);
+- Reports (*Open in Reports*);
+- task modes (the old editor's last pieces).
+
+**For B04:** a report's photo cap, and the phone's cached photo.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
@@ -12660,7 +12958,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe3 | A person write that answers `{undoable: false}` still did the undo lookup | `person/usePersonWrites.ts` | done in #145 | performance/polish | S | — |
 | Pe4 | The People list didn't pass `endCursor`, so a change in an earlier page dropped the deeper pages | `list/peopleReads.ts` | done in #142 (B01-4i) | correctness | S–M | — |
 | Pe5 | The record sheet's three lists take no `endCursor` | `contentRecord.ts` `personVerdicts`, `personReversed`, `personDeleted` | done in #145 | correctness | M | — |
-| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. **Closed for flags in B01-5b** (2026-11-21): a flag's *Handle* opens its Inbox item; an appeal's still goes to the Support page until the ticket handler lands | done for flags; appeals wait | S | — |
+| Pe6 | *Open about this person* drew no flag target names, no appeal text and no "labels capped" note | `person/PersonFeeds.tsx` | done in #142. **Closed for flags in B01-5b** (2026-11-21): a flag's *Handle* opens its Inbox item; an appeal's opens its ticket's item since B01-5f (#175) | done in #171 and #175 | S | — |
 | Pe7 | The lever facts the server sends: since when a right is off, ledger "since", the bounty season line, each lever's own `can`, the profile-opens link | `person/LeverBlock.tsx`, `PersonView.tsx` | done in #145 | missing | M | — |
 | Pe8 | The staff strip didn't name who undid a staffer's decisions | `person/personModel.ts` | done in #142 | missing | S | — |
 | Pe9 | A Post restored with chosen Reports: those Reports left Standing with no row for the sitting | `record/RecordSheet.tsx` | done in #145 | polish | S | — |
@@ -12672,10 +12970,10 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe15 | `clerkAdmin.deleteUser` had no tests and no request timeout | `clerkAdmin.ts` | done in #140 (one request path, 20 s) | test gap | S | — |
 | Pe16 | The Deleted count was a floor past a few heavy items, and erased comment shells kept counting | `contentRecord.ts` `recordCounts`, `personDeleted`; `lib/withdrawals` | built on `phase-b01-stored-facts` (B01-4m, D282), not yet merged: a stored row per withdrawal with a stored `held`; the count exact to 500, `capped` past it; shells have no row. On dev: deploy, then the fifth People backfill (`peopleJobs:backfillWithdrawals`) | correctness of a figure | L | See *The two stored facts built* |
 | Pe17 | The sheet's *Kept* label is inferred from timing (a decision at or after the author's deletion), so an ordinary hide or removal on content already deleted also reads *Kept*. The server already stores the fact that tells them apart (`keptOnRecord` on the decision's audit row); no read returns it | `record/recordModel.ts` `keptAfter`; `moderation.ts` `recordOnWithdrawn`; `accessAlerts.ts` `recordAlertVerdict` | done in #152 (B01-4l): `kept` from the decision's audit row on every row and pane decision; the web reads it (`isKept`). No schema change, no backfill | correctness of a label | S | See *The three stored facts* below |
-| Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page | blocked on the Inbox | polish | S | The Inbox's `can` per row |
+| Pe18 | Inbox flag and alert-pin buttons are drawn on a moderator's own content (the server refuses them) | the old flags page (deleted at the close-out) | done in #171: the Inbox's bar draws from the server's `can`, which refuses one's own content (D269) | polish | S | — |
 | Pe19 | The profile's moderator tools didn't say "Nothing changed" and printed the server's words | `skater/profile/ModeratorTools.tsx` | done in #145 | polish | S | — |
 | Pe20 | `RestorePost` named people by `@username` (the rule is real names) | `moderation/RestorePost.tsx` | done in #145. That it is a dialog where the boards draw a sheet stays open | polish | S | A board check |
-| Pe21 | Kit promotions: `SearchLane`, `LeverRow`, `RecordRow`, `LifeList`, `LabelRows` | the `kit-candidates/` directories | done on `phase-b01-inbox` (B01-5's kit pass, `f9cf8592`; the record candidates' tests were done in #142) | kit | M | — |
+| Pe21 | Kit promotions: `SearchLane`, `LeverRow`, `RecordRow`, `LifeList`, `LabelRows` | the `kit-candidates/` directories | done in #171 (B01-5's kit pass, `f9cf8592`; the record candidates' tests were done in #142) | kit | M | — |
 | Pe22 | Superseded decisions under Reversed. The flip constant was removed untested; each item shows once, as its newest decision | `lib/contentVerdicts.ts` `isReversed` | blocked on the founder (not yet ruled) | polish | M | His call |
 | Pe23 | No photos and no *Restore all* on the person page | *Where the boards and the code differ* | blocked on the founder (not yet ruled) | missing planned | M | His call |
 | Pe24 | History filters (People and Body) | `people.history` and `bodyConsole.history` take no filter from any page | blocked on a board | missing | M | The board below (*History filters*) |
@@ -12702,6 +13000,56 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
 | Sh13 | The merge estimate's per-call time cost (0.27 ms modeled, about 0.14 ms measured locally) over-refuses: row-heavy merges it refuses run in 100–220 ms | `lib/mergeLoad.ts` (`MS_PER_CALL`) | open: tunable | performance | S | A measure on the deployment, then loosen it toward the measured cost |
 | Sh14 | "The same image" on a photo's Inbox item is not symmetric: after a takedown moves photo A to its own copy, the photos that shared A's old file don't list A. A is down, so nothing public is hidden (§7, ruling 29). Exact and symmetric needs a content hash on every photo row. | `lib/inboxViews.ts` (`sameBytesOf`), `photos.ts` (the swap's `sameBytesAs`) | open: ruled to wait | completeness | M | A `sha256` field on `photos` (widen, backfill from `_storage`, narrow), its index, and a reader census: every read of `sameBytesAs`, the swap, the Inbox item, the record pane's projection |
+
+#### The Inbox wave's rows (2026-11-23)
+
+Everything the Inbox wave (#170–#176 and the close-out) left owed, one row each. Seven were
+promised a register row and never got one; they are marked †. The wave's other open items are
+already rows above: Pe25 and Sh9–Sh14. The founder's view of all of this is *The Inbox wave: what
+needs you*.
+
+**Who can act:**
+- **the founder**: a call, a look, the copy pass, a device pass or a dashboard setting;
+- **dev**: an operator's command on dev;
+- **a build**: code;
+- **a later mode**: named.
+
+| # | Item | Where recorded | Who can act | Blocks | Status |
+|---|---|---|---|---|---|
+| In1 | `SUPPORT_FROM_EMAIL` is unset on dev: every reply is stored `failed` (`unconfigured`), and no real send through the provider has run | §7 ruling 24; *#175 merged*; `05-accounts-and-credentials.md` | the founder (the dashboard), then dev (one real reply to a staff ticket) | support replies working on dev | open |
+| In2 | The device pass on the next preview build: the `moderator_decision` page, its toggle and `knows` (on main since #172, never checked on a device); the *Remove* hint (fixed in the close-out); the cached photo (B04) | *The pref rollout, on dev*; *Owed (5e reviews)* | a build, then the founder | the phone half of 5c and 5e | open |
+| In3 | A photo takedown, restore and removal checked end to end on dev (the old link answering 404) | *#176 merged*; the roadmap | dev, once the seed files a photo (its photo step rides with the close-out) | nothing | open |
+| In4 † | Watch the scheduled heavy drain pages on dev (13–270 s locally) | *B01-5c: the server review (R8)* | dev | nothing | open |
+| In5 † | `photos.removeBlob` can't check that the caller owns an unattached upload: who uploaded it isn't recorded | *Owed (5e reviews)* | a build (a pending-uploads row) | nothing | open |
+| In6 † | `photos.authorDeletedAt`: a withdrawal is read from its `author_delete` audit row today | *Owed (5e integrated)* | a build | nothing | open |
+| In7 † | Withdrawn photos aren't in the record sheet's Deleted list (`recordReads.withdrawnAt` is `null` for a photo) | *Owed (5e integrated)* | a build | nothing | open |
+| In8 † | Access alerts and linked lots don't move with a merge | §7 ruling 19; *B01-5d: the builders integrated* | a build, with its reader census | nothing | open |
+| In9 | Old merged drawings keep `pending` (no backfill); a skate naming the loser only in `waterBodyIds` stays put | *B01-5d: the builders integrated* | a build | nothing | open |
+| In10 | `candidate.nearestKnown` reads `null` on rows from before B01-5d until *Look up again* | *Definitions of done (5d)* | a build, or accept | nothing | open |
+| In11 | `moderation.resolveFlag` has no live caller since the old flags page went; 15 test files use it as a fixture | the close-out's (b) | a build | nothing | open |
+| In12 | The data export's `capped` over-reports once its 400-message read is spent | *The web review by class* (5f) | a build | nothing | open |
+| In13 † | A lapsed suspension blocks notifications until the flip runs | *Greptile on #172, round 1* | a build | nothing | open |
+| In14 † | The notification email, the export mail and broadcasts record a lost response as "not sent" | *Greptile on #175, round 1* | a build | nothing | open |
+| In15 | The shell: `ReadFailure` without the server's text; the status bar overlaps itself at 360 px; the shell's raw reads can throw into the layout | *What the build found (PR 1)* | a build | nothing | open |
+| In16 | Test gaps: the carried `via`; the heavy-rows matrix lacks alert verdicts, restore-and-dismiss and a single `resolveFlag`; some #171 layout reads are one-shot | *Greptile on #170, rounds four and five*; *B01-5c: the web builders integrated* | a build | nothing | open |
+| In17 | `bodies.ts` (around line 875) calls `openSiblings` with no byte room | *Greptile on #170, round four* | a build | nothing | open |
+| In18 | Known limits: a row's `can` is blind to the drawn bay's reach; an unfiled own ask is seen only by the write; an undo reopens at most 500; later flags close after the toast | *Owed, or known* (#170) | a build, or accept | nothing | open |
+| In19 | An `importRuns` kind `seed_inbox`: the seed logs to gitignored JSON today | *The seed (D287)* | a build | nothing | open |
+| In20 | Confirm and strike: "the stall reason says failed for a canceled page" (stall codes since); "the ETL path skips the weight check" (R10-C) | *B01-5d: S4b's review fixes*; *the server review (R10)* | a build | nothing | to confirm |
+| In21 | `supportTickets.status`'s `in_progress` and `assignedToUserId` are write-dead since `support.assign` went; D284 keeps them for old rows; dev holds 0 | the close-out's (b); D284 | the founder (amend D284), then a narrowing | nothing | ruled to stay |
+| In22 | The three redirect routes (`admin.flags`, `admin.water.requests`, `admin.support`): keep or drop. Dropping `/admin/water/requests` would open the old editor on id "requests" | the close-out's (b) | the founder | nothing | kept |
+| In23 | The copy pass over every word the wave invented, screen by screen | *The Inbox wave: what needs you*, part 3 | the founder | nothing | open |
+| In24 | The board-versus-build differences | *The Inbox wave: what needs you*, part 4 | the founder (a look) | nothing | open |
+| In25 | The governor's rulings 1–29 and the three told rulings | §7; *The Inbox wave: what needs you*, part 2 | the founder | nothing | standing until overturned |
+| In26 | Parked `photoPurge` and `photoRotation` work shows only in `recurringJobs.health`; no Machinery page reads it | *Greptile on #176, round 1* | Machinery | nothing | open |
+| In27 | Asks a script filed are decided in the old editor | §7 ruling 6 | Corpus | nothing | open |
+| In28 | *Open in Reports* and *Reports →* are *Coming soon* or not drawn | *The boards, mapped*; *Board 2.8 versus the build* | Reports | nothing | open |
+| In29 | `BayRequestQueue`, `LandmarkTool`, `useReviewWatch`, `ReviewClosedNotice` and `corpusRequests.reviewState` stay with the old editor | the close-out's (b); Bo23 | task modes | nothing | open |
+| In30 | No aerial on `itemMap`; no NAIP for catalog candidates | *What the build found (PR 1)* | a later mode | nothing | open |
+| In31 | Nearby drawings, a drawing's distance and a skate's distance aren't served on the drawn-body item | *B01-5c: the server integrated* | a later mode | nothing | open |
+
+Skater-app questions are on B04's running list: a report's photo cap (2026-11-22) and the phone's
+cached copy of a taken-down photo (2026-11-23).
 
 #### The boards to make in Paper (founder call 1)
 
@@ -13190,7 +13538,7 @@ What the day's rollouts on dev measured, recorded by #152's build (which ran not
 
 | Blocked on | Items | What unblocks it |
 |---|---|---|
-| The Inbox (up next) | The Inbox's own-content buttons (Pe18); *Handle* links to the Inbox (Pe6); the record sheet's flag links (Pe25); task modes and the map tools (Bo23–Bo25, the wave after it) | The Inbox views |
+| ~~The Inbox~~ (done, #170–#176) | ~~The Inbox's own-content buttons (Pe18); *Handle* links to the Inbox (Pe6)~~; the record sheet's flag links (Pe25, still on its board); task modes and the map tools (Bo23–Bo25, the wave after it) | The Inbox views |
 | Phase B04 | Imagery pass overrides honored by the apps (Bo27) | B04's override PR |
 | Dev data | The People rows backfill (Pe26); the text-cap count (Bo33); the dry-run label (Bo38); the ledger seed (Pe28); the same-county namesake count (Bo5) | The seed (on hold) or the dev agent's reads |
 | The founder's eyes | The preview-map checks (Bo37); the pan fence (Bo34); the mock-versus-code calls (Bo35); superseded under Reversed (Pe22); photos and *Restore all* (Pe23); the survey filing (Bo28); the audit-metadata caps (Pe10, Pe11) | His calls |

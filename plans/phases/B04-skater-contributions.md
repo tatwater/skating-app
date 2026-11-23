@@ -164,6 +164,11 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
   the report sheet takes as many photos as the person adds, bounded only by Convex's array limit (the
   console's strip reads at most twelve others and says so). Whether the sheet should cap a report's
   photos, and what it says at the cap, is a skater-app question. *Not yet planned.*
+- **2026-11-23 · found by** the B01 photo moderation (B01-5e) — the phone keeps showing a photo it
+  already loaded after a moderator takes it down: the takedown moves the bytes off their link (the web
+  and a fresh load see nothing), but the phone's image cache still holds its copy. Whether the phone
+  should drop a cached photo the server no longer serves, and when, is a skater-app question. *Not
+  yet planned.*
 
 ---
 
