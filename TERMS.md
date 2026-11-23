@@ -1,6 +1,6 @@
 # Terms of use (interim — friends alpha)
 
-**Last updated: 2026-09-20**
+**Last updated: 2026-11-22**
 
 > **Status: interim.** These are short, plain-language terms for the small,
 > friends-only alpha of this app. They are **not** a final, lawyer-reviewed agreement —
@@ -28,8 +28,8 @@ To the fullest extent permitted by law, the operator is not liable for any injur
 or damage arising from your use of the app or from any information shared through it.
 
 ## 3. Eligibility
-You must be **at least 16 years old** to use the app. If you are under 18, you confirm
-you have your parent's or guardian's permission.
+You must be **at least 18 years old** to use the app. By creating an account you confirm
+that you are.
 
 ## 4. Your account and conduct
 - Keep your login secure; you're responsible for activity on your account.

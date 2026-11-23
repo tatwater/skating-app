@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ADULT_AGE, ageInYears, isMinor, MINIMUM_SIGNUP_AGE, meetsMinimumAge } from './age';
 
-const utc = (y: number, m: number, d: number) => Date.UTC(y, m, d);
+const utc = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m, d, h, min);
 const DAY = 86_400_000;
 
 describe('ageInYears', () => {
@@ -28,23 +28,57 @@ describe('isMinor / meetsMinimumAge', () => {
     expect(isMinor(dob, utc(2018, 5, 15))).toBe(false); // 18th birthday
   });
 
-  it('enforces the hard 16+ minimum at the boundary', () => {
-    expect(meetsMinimumAge(dob, utc(2016, 5, 14))).toBe(false); // day before 16th (UTC)
-    expect(meetsMinimumAge(dob, utc(2016, 5, 15))).toBe(true); // 16th birthday (UTC)
+  it('enforces the hard 18+ minimum at the boundary (D294)', () => {
+    expect(meetsMinimumAge(dob, utc(2018, 5, 14))).toBe(false); // day before the 18th (UTC)
+    expect(meetsMinimumAge(dob, utc(2018, 5, 16))).toBe(true); // day after the 18th (UTC)
+    expect(meetsMinimumAge(utc(2000, 5, 16), utc(2018, 5, 15, 13))).toBe(false); // 17 everywhere
   });
 
-  it('does not reject a signup already 16 on their local calendar ahead of UTC (finding 4)', () => {
-    // A few hours before UTC-midnight of the 16th birthday it is still "yesterday" in
-    // UTC, but already the birthday in a timezone ahead of UTC — must not be rejected.
-    const hoursBeforeUtcMidnight = utc(2016, 5, 15) - 3 * 60 * 60 * 1000;
-    expect(meetsMinimumAge(dob, hoursBeforeUtcMidnight)).toBe(true);
-    // But a full day earlier is genuinely too young in every timezone.
-    expect(meetsMinimumAge(dob, utc(2016, 5, 13))).toBe(false);
+  it('admits nobody who is still 17 on any calendar: the gate waits for UTC−12 (D294)', () => {
+    // At UTC midnight of the 18th birthday it is still the day before across the Americas.
+    expect(meetsMinimumAge(dob, utc(2018, 5, 15))).toBe(false);
+    expect(meetsMinimumAge(dob, utc(2018, 5, 15, 11, 59))).toBe(false);
+    // Noon UTC is midnight at UTC−12, the last calendar to reach the birthday.
+    expect(meetsMinimumAge(dob, utc(2018, 5, 15, 12))).toBe(true);
   });
 
-  it('keeps the constants in the expected relationship', () => {
-    expect(MINIMUM_SIGNUP_AGE).toBe(16);
+  it('keeps the constants in the expected relationship: no admitted age is a minor', () => {
+    expect(MINIMUM_SIGNUP_AGE).toBe(18);
     expect(ADULT_AGE).toBe(18);
+    expect(MINIMUM_SIGNUP_AGE).toBeGreaterThanOrEqual(ADULT_AGE);
+  });
+});
+
+describe('meetsMinimumAge (property)', () => {
+  it('never admits a minor: whoever passes the gate is an adult at that instant (D294)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: utc(1940, 0, 1), max: utc(2030, 0, 1) }),
+        fc.integer({ min: utc(1990, 0, 1), max: utc(2040, 0, 1) }),
+        (birth, now) => {
+          const dob = birth - (birth % DAY); // a date of birth is stored as UTC midnight
+          if (meetsMinimumAge(dob, now)) expect(isMinor(dob, now)).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it('refuses the whole day before the birthday in every timezone, UTC−12 to UTC+14', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1940, max: 2010 }),
+        fc.integer({ min: 0, max: 11 }),
+        fc.integer({ min: 1, max: 28 }),
+        fc.integer({ min: -12 * 60, max: 14 * 60 }), // the device's offset from UTC, in minutes
+        fc.integer({ min: 0, max: 24 * 60 - 1 }), // a local minute of the day before
+        (year, month, day, offsetMin, minuteOfDay) => {
+          const dob = utc(year, month, day);
+          // Local wall-clock `minuteOfDay` on the eve of the 18th birthday, as a UTC instant.
+          const now = utc(year + 18, month, day - 1) + (minuteOfDay - offsetMin) * 60_000;
+          expect(meetsMinimumAge(dob, now)).toBe(false);
+        },
+      ),
+    );
   });
 });
 

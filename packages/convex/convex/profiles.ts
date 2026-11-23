@@ -23,6 +23,7 @@ import {
   isValidTownLabel,
   isValidTravelBaseUntil,
   isValidUsername,
+  MINIMUM_SIGNUP_AGE,
   meetsMinimumAge,
   normalizeBio,
   normalizeDisplayName,
@@ -140,12 +141,14 @@ export const upsertFromClerk = mutation({
     // runs at onboarding only.
     const email = identity.email;
 
-    // Hard 16+ minimum (D41), derived from DOB and enforced server-side. Minor status
-    // is likewise derived, so it self-corrects on the user's 18th birthday with no
+    // Hard 18+ minimum (D41, raised by D294), derived from DOB and enforced server-side, so
+    // whoever accepts the acknowledgment below is of age to accept it. Minor status is
+    // likewise derived: no new account is a minor, and a row that is one (written before
+    // D294, or under a lower minimum later) self-corrects on the 18th birthday with no
     // re-attestation or scheduled job (same pattern as suspension lapse).
     const now = Date.now();
     if (!meetsMinimumAge(args.dateOfBirth, now)) {
-      throw new ConvexError('You must be at least 16 years old');
+      throw new ConvexError(`You must be at least ${MINIMUM_SIGNUP_AGE} years old`);
     }
     const minor = isMinor(args.dateOfBirth, now);
 

@@ -12,7 +12,7 @@ import { useSignOut } from '../lib/sheetOwner';
 /**
  * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has no
  * Convex `profiles` row yet (see `AuthGate`). It collects the profile fields and the blocking gates
- * — the 16+ age gate (D41) and the assumption-of-risk acknowledgment (D45) — then calls
+ * — the 18+ age gate (D41, D294) and the assumption-of-risk acknowledgment (D45) — then calls
  * `upsertFromClerk`, which *re-enforces* all of it server-side (D37). DOB + ack go straight to the
  * enforced mutation, never staged in Clerk `unsafeMetadata`. On success the reactive
  * `profiles.current` query flips and the `AuthGate` routes to the app.

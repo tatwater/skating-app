@@ -626,6 +626,9 @@ spatial + visibility + safety logic is exactly what property tests and `convex-t
 are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
 
 ## D41 — Minimum age 16; minors get private profiles and are read-only (interim)
+> **Amended by [D294](#d294--the-minimum-age-is-18-nobody-under-18-holds-an-account-amends-d41) (2026-11-22).** The minimum is **18**, so no new account is a
+> minor. The under-18 mechanics below stand in the code, unreachable by a signup.
+
 **Decided (mechanics revised 2026-07-15 alongside the D13 "reports are always public" simplification).**
 - **Minimum age is 16.** Under-16 accounts are not permitted. **We collect the user's
   date of birth at signup** and *derive* the age gate (≥16) and minor status (<18) from
@@ -8776,3 +8779,37 @@ a Corpus item still to come that would duplicate it. Renaming now, while the URL
 inside the console, costs one route and no redirect.
 
 **Related:** D216, D217, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D294 — The minimum age is 18: nobody under 18 holds an account (amends D41)
+
+**Decided (2026-11-22, founder).** `MINIMUM_SIGNUP_AGE` is **18**, up from D41's 16. Web, mobile
+and `profiles.upsertFromClerk` read the one constant, so the gate, its message and the server's
+refusal moved together; `TERMS.md` §3 and `PRIVACY.md` say 18 and drop the under-18 passages.
+- **The gate errs toward refusing.** `meetsMinimumAge` evaluates age at `now − 12 h` (UTC−12, the
+  last calendar on Earth to reach a date), where under D41 it evaluated at `now + 14 h` to admit a
+  16-year-old early. At 18 the old direction admitted a 17-year-old for up to the last 19 hours
+  before a birthday (in US Eastern) and left that new account a minor, forced private, until UTC
+  caught up. Now whoever passes the gate is an adult on every calendar and by `isMinor`'s clock,
+  held as a property test. A skater waits at most until noon UTC on their 18th birthday.
+- **The under-18 protections stay, dormant.** `isMinor`, the authoring gates (reports, hazards,
+  confirmations, comments, photos, bounties) and the forced-private profile are untouched and
+  still apply to any row that is a minor. Onboarding's own "force a minor private" branches can no
+  longer be reached, so `profilesMinorSignup.test.ts` runs it with the gate held open: lowering
+  the minimum again is the constant plus policy work, and can never mint a public 17-year-old.
+- **Nobody is grandfathered, because nobody is there.** Dev held no under-18 account on
+  2026-11-22 (15 profiles, checked), and production has never been initialized. An under-18 row,
+  were one to exist, keeps its account under the read-only rules but cannot re-run onboarding.
+- **No re-acknowledgment.** `RISK_ACK_VERSION` is not bumped: the acknowledgment's words are
+  unchanged and every existing account already meets the new minimum.
+
+**Why:** Gli's posture rests on each skater accepting, for themselves, that reports are peer
+observations and that the choice and the risk on the ice are theirs (D3, D45). An agreement made
+by a minor is the weakest link in that: read-only (D41) kept a 16-year-old from *authoring* safety
+content, but they still had to accept the terms to read it. At 18 everyone who accepts is of age
+to. It also clears the ground for the onboarding being designed now, which records a scrolled-and-
+accepted terms and a per-season set of acknowledged statements; those records are only worth
+keeping if the person who made them could. D41 chose 16 so the occasional independent teen skater
+could take part. That is still wanted, and it is now a question for counsel (Q10, L2) with a
+built answer waiting, not a default we ship first.
+
+**Related:** D41, D45, D13, D37, Q10, [`minors-and-age-policy`](../docs/minors-and-age-policy.md).

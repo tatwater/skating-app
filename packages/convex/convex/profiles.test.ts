@@ -1,4 +1,4 @@
-import { isMinor, RISK_ACK_VERSION } from '@skating/core';
+import { RISK_ACK_VERSION } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -20,8 +20,8 @@ const withAck = <T extends object>(args: T) => ({
 // stable regardless of when the suite runs. Born Jan 1 → the age holds all year.
 const nowYear = new Date().getUTCFullYear();
 const ADULT_DOB = Date.UTC(nowYear - 40, 0, 1); // ~40 → adult
-const MINOR_DOB = Date.UTC(nowYear - 17, 0, 1); // 17 → minor
-const UNDER_16_DOB = Date.UTC(nowYear - 10, 0, 1); // 10 → under the hard 16 gate
+const MINOR_DOB = Date.UTC(nowYear - 17, 0, 1); // 17 → minor, and under the hard 18 gate (D294)
+const CHILD_DOB = Date.UTC(nowYear - 10, 0, 1); // 10 → far under it
 
 describe('profiles.upsertFromClerk', () => {
   test('throws when unauthenticated', async () => {
@@ -156,17 +156,38 @@ describe('profiles.upsertFromClerk', () => {
     expect(rows).toHaveLength(1);
   });
 
-  test('rejects an under-16 date of birth (hard 16+ gate, D41)', async () => {
+  test('rejects an under-18 date of birth (hard 18+ gate, D41/D294)', async () => {
     const t = convexTest(schema, modules);
-    const asKid = t.withIdentity({ subject: 'clerk_kid' });
+    // A 17-year-old, whom D41's 16 admitted read-only, and a child: neither gets an account.
+    for (const [subject, dateOfBirth] of [
+      ['clerk_teen', MINOR_DOB],
+      ['clerk_kid', CHILD_DOB],
+    ] as const) {
+      const asYoung = t.withIdentity({ subject });
+      await expect(
+        asYoung.mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'Young', username: subject, dateOfBirth }),
+        ),
+      ).rejects.toThrow(/18 years old/i);
+      // No profile should have been provisioned.
+      expect(await asYoung.query(api.profiles.current, {})).toBeNull();
+    }
+    expect(await t.run((ctx) => ctx.db.query('profiles').collect())).toHaveLength(0);
+  });
+
+  test('an under-18 row from before the 18+ gate cannot re-run onboarding (D294)', async () => {
+    const t = convexTest(schema, modules);
+    const { id, as } = await provisionMinor(t, 'clerk_teen', 'teen');
     await expect(
-      asKid.mutation(
+      as.mutation(
         api.profiles.upsertFromClerk,
-        withAck({ displayName: 'Kid', username: 'kid', dateOfBirth: UNDER_16_DOB }),
+        withAck({ displayName: 'Teen Again', username: 'teen', dateOfBirth: MINOR_DOB }),
       ),
-    ).rejects.toThrow(/16 years old/i);
-    // No profile should have been provisioned.
-    expect(await asKid.query(api.profiles.current, {})).toBeNull();
+    ).rejects.toThrow(/18 years old/i);
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.displayName).toBe('teen');
+    expect(row?.profileVisibility).toBe('private');
   });
 
   test('rejects a username already held by another user', async () => {
@@ -200,43 +221,6 @@ describe('profiles.upsertFromClerk', () => {
         withAck({ displayName: 'Ada L', username: 'ada', dateOfBirth: ADULT_DOB }),
       ),
     ).resolves.toBeDefined();
-  });
-
-  test('minors default to a private profile (D13/D41)', async () => {
-    const t = convexTest(schema, modules);
-    const asTeen = t.withIdentity({ subject: 'clerk_teen' });
-
-    await asTeen.mutation(
-      api.profiles.upsertFromClerk,
-      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: MINOR_DOB }),
-    );
-
-    const profile = await asTeen.query(api.profiles.current, {});
-    expect(profile && isMinor(profile.dateOfBirth, Date.now())).toBe(true);
-    expect(profile?.profileVisibility).toBe('private');
-  });
-
-  test('a minor who reaches adulthood keeps their private profile (D13/D41)', async () => {
-    const t = convexTest(schema, modules);
-    const asUser = t.withIdentity({ subject: 'clerk_grows' });
-    // Provisioned as a minor → forced private.
-    await asUser.mutation(
-      api.profiles.upsertFromClerk,
-      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: MINOR_DOB }),
-    );
-    const asMinor = await asUser.query(api.profiles.current, {});
-    expect(asMinor && isMinor(asMinor.dateOfBirth, Date.now())).toBe(true);
-    expect(asMinor?.profileVisibility).toBe('private');
-
-    // Reaching adulthood (here an adult DOB on the next sync) must NOT auto-widen the
-    // private profile they held as a minor — it persists until they make it public themselves (D13).
-    await asUser.mutation(
-      api.profiles.upsertFromClerk,
-      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: ADULT_DOB }),
-    );
-    const grown = await asUser.query(api.profiles.current, {});
-    expect(grown && isMinor(grown.dateOfBirth, Date.now())).toBe(false);
-    expect(grown?.profileVisibility).toBe('private');
   });
 
   test('an inactive account cannot rename or squat a username via the upsert (D37)', async () => {
@@ -609,6 +593,18 @@ async function provision(
   return { id, as };
 }
 
+/**
+ * An under-18 account: unreachable through onboarding since D294 raised the minimum to 18, so
+ * this is the row D41's 16 would have written, patched in. The protections that key off
+ * `isMinor` stay in force for any such row; `profilesMinorSignup.test.ts` proves onboarding
+ * still applies them whenever the gate admits a minor.
+ */
+async function provisionMinor(t: ReturnType<typeof convexTest>, subject: string, username: string) {
+  const { id, as } = await provision(t, subject, username);
+  await t.run((ctx) => ctx.db.patch(id, { dateOfBirth: MINOR_DOB, profileVisibility: 'private' }));
+  return { id, as };
+}
+
 describe('profiles.updateProfile (D13/D41)', () => {
   test('an adult can edit bio + town and toggle visibility', async () => {
     const t = convexTest(schema, modules);
@@ -636,8 +632,8 @@ describe('profiles.updateProfile (D13/D41)', () => {
 
   test('a minor cannot set their profile public (D41)', async () => {
     const t = convexTest(schema, modules);
-    // Minors provision as private; upsert forces it. updateProfile must refuse public.
-    const { as } = await provision(t, 'clerk_teen', 'teen', MINOR_DOB);
+    // A minor's profile is private; updateProfile must refuse public.
+    const { as } = await provisionMinor(t, 'clerk_teen', 'teen');
     await expect(
       as.mutation(api.profiles.updateProfile, { profileVisibility: 'public' }),
     ).rejects.toThrow(/private profile/i);

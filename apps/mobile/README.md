@@ -28,7 +28,7 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 ```
 app/                         # Expo Router routes (file-based)
   _layout.tsx                # Sentry wrap + providers + auth-gated Stack.Protected
-  (auth)/                    # signed-out flow — sign-in, sign-up (16+ gate + risk ack)
+  (auth)/                    # signed-out flow — sign-in, sign-up (18+ gate + risk ack)
   (tabs)/                    # Map · Newsfeed · ＋Report · Bounties · You
     (map)/                   # persistent map + bottom-sheet drawer: index, water/[id], report/[id]
   about.tsx                  # license disclosure (AGPL-3.0 + App Store exception, D43)

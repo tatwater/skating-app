@@ -27,7 +27,7 @@ and a Clerk JWT template named `convex`).
 - **No Convex components are installed.** `convex.config.ts` was deleted with
   `@convex-dev/geospatial` in A01; spatial lookups are plain tables + indexes now.
 - **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
-  bridge; enforces the 16+ gate and username uniqueness) + `publicByIds` (minimal public
+  bridge; enforces the 18+ gate and username uniqueness) + `publicByIds` (minimal public
   attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 02a).
 - **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
   on `by_external_id`, preserves removed state across re-import, D14/D48; now also computes the

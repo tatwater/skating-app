@@ -54,13 +54,13 @@ export const Empty: Story = {
   },
 };
 
-/** 8.6 — under 16: the gate says so in the field, and the primary stays off. */
-export const UnderSixteen: Story = {
+/** 8.6 — under 18: the gate says so in the field, and the primary stays off. */
+export const UnderEighteen: Story = {
   globals: stageGlobals('dark'),
   args: { initial: { ...READY, dob: '2011-03-14', ack: false } },
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
-    await expect(c.getByText('You must be at least 16 to use Gli.')).toBeVisible();
+    await expect(c.getByText('You must be at least 18 to use Gli.')).toBeVisible();
     await expect(c.getByRole('button', { name: 'Start skating' })).toBeDisabled();
   },
 };

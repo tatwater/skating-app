@@ -1,12 +1,12 @@
 /**
- * Strict date-of-birth parsing for the signup age gate (D41). Both apps collect DOB as a
+ * Strict date-of-birth parsing for the signup age gate (D41, D294). Both apps collect DOB as a
  * `YYYY-MM-DD` string and convert to UTC ms so the age math (`meetsMinimumAge`, `isMinor`)
  * can consume it. Pure + tested — the safety-relevant bit (rejecting garbage / impossible
  * dates) lives here, shared across surfaces (D7), not in any one screen.
  */
 /**
  * Plausible birth-year window. Without a lower bound, an implausibly ancient date like
- * `0100-01-01` parses fine and reads as ~1900 years old — sailing past the ≥16 gate as
+ * `0100-01-01` parses fine and reads as ~1900 years old — sailing past the age gate as
  * junk data. We cap at a sane human lifespan so garbage can't masquerade as "old enough".
  * (Future dates are already rejected downstream: a not-yet-born DOB fails `meetsMinimumAge`.)
  */

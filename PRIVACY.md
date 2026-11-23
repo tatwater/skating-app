@@ -1,6 +1,6 @@
 # Privacy notice (interim — friends alpha)
 
-**Last updated: 2026-09-20**
+**Last updated: 2026-11-22**
 
 > **Status: interim.** This is a plain-language privacy notice for the small,
 > friends-only alpha of this app. It is written to be honest and cover the alpha
@@ -16,21 +16,18 @@ we collect, why, who can see it, and your choices.
 The app is operated by its founder. Questions or requests: **desk@teaganatwater.com**.
 
 ## Age requirement
-You must be **at least 16 years old** to use the app. We collect your **date of birth**
-at signup to enforce the 16+ minimum and to apply protections for under-18 users; it is
-treated as **sensitive personal information** (used only for age/eligibility, and scrubbed
-when you delete your account). Because all reports on the app are public and we don't
-broadcast a minor's location, **users under 18 are read-only**: they can read reports and
-plan, but **cannot post reports**, and their **profile is always private** (see "Who can see
-your reports"). The app is not directed at children under 16.
+You must be **at least 18 years old** to use the app. We collect your **date of birth**
+at signup to enforce that minimum; it is treated as **sensitive personal information** (used
+only for age/eligibility, and scrubbed when you delete your account). The app is not directed
+at anyone under 18, and an account cannot be created for one.
 
 ## What we collect
 
 - **Account info** — handled by our auth provider (Clerk): your email and any social
   login you choose, display name, and username.
-- **Date of birth** — collected at signup to verify you meet the 16+ minimum and to apply
-  under-18 protections. Treated as sensitive data: used only for age/eligibility and removed
-  when you delete your account. We do not display it or share it.
+- **Date of birth** — collected at signup to verify you meet the 18+ minimum. Treated as
+  sensitive data: used only for age/eligibility and removed when you delete your account. We
+  do not display it or share it.
 - **Your home location** — a single coordinate you set, used **only** to compute your
   drive-time filter. It is **private**: it is never shown to other users and is not part
   of any report. You may optionally show a **town label** (not an address) on your
@@ -135,14 +132,14 @@ social network — there's no "friends," no "followers," and no private-report o
 a report it goes on the shared map/feed that other skaters in range see, attributed to your name.
 If you don't want to share an observation with the community, don't post it. A public report
 reveals that you (by name) were at that location around that time — so post only what you're
-comfortable sharing. (Adults 18+ can post; **under-18 users are read-only and cannot post**.)
+comfortable sharing.
 
 Your **profile** is a separate privacy choice:
 - **Public** — searchable by name; shows your name, photo, town/state, bio, report/comment counts,
   reputation, and your report history.
 - **Private** — your name and photo only; not searchable, no public profile page.
 
-Adults may choose either; **under-18 profiles are always private**. Note that even with a private
+You may choose either, and change it at any time. Note that even with a private
 profile your individual reports are still public and show your name — a private profile means
 *you're not a browsable, searchable person on the platform*, not that your reports are hidden.
 

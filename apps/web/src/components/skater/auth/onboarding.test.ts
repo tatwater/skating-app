@@ -16,9 +16,9 @@ describe('classifyUpsertError', () => {
   });
 
   it('says any other refusal as the server put it', () => {
-    expect(classifyUpsertError(new ConvexError('You must be at least 16 years old'))).toEqual({
+    expect(classifyUpsertError(new ConvexError('You must be at least 18 years old'))).toEqual({
       kind: 'message',
-      message: 'You must be at least 16 years old',
+      message: 'You must be at least 18 years old',
     });
   });
 

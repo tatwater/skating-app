@@ -289,7 +289,7 @@ The old components re-skin into these: `ChangeEmail`, `AccountLifecycle`, `Aggre
 |---|---|---|
 | `/sign-in` | none (email → code → wrong code are component steps) | A custom Clerk flow over the regional map (8.1–8.3, 8.15) |
 | `/sign-up` | none | 8.4 |
-| `/onboarding` | none | Finish your profile: empty, under 16, ready, username taken, username not allowed (8.5–8.7, 8.16, 8.18, 8.19) |
+| `/onboarding` | none | Finish your profile: empty, under 18 (D294), ready, username taken, username not allowed (8.5–8.7, 8.16, 8.18, 8.19) |
 | `/reack` | none | One quick thing (8.8), with the risk acknowledgment verbatim |
 | `/google-photos/callback` | none | The pop-up's four states (8.9) |
 | root `notFoundComponent` | | 404 under the top bar when signed in, with the region beneath it (8.14) |

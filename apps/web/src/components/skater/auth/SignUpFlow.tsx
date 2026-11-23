@@ -6,7 +6,7 @@ import { finishSession } from './clerkSession';
 
 /**
  * Sign up (8.4), on Clerk's `useSignUp`: the same two steps as signing in. It creates the Clerk
- * account only; the profile fields and the blocking gates (16+, D41; the acknowledgment, D45) come
+ * account only; the profile fields and the blocking gates (18+, D41 and D294; the acknowledgment, D45) come
  * right after on onboarding, where they go to the enforced `upsertFromClerk`.
  *
  * **It can only finish if the Clerk instance doesn't require a password at sign-up.** With `password`

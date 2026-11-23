@@ -82,11 +82,11 @@ describe('OnboardingForm', () => {
     expect(start()).toHaveAttribute('aria-busy', 'true');
   });
 
-  it('holds the 16+ gate in the field, and says a malformed date only once the field is left', async () => {
+  it('holds the 18+ gate in the field, and says a malformed date only once the field is left', async () => {
     const user = userEvent.setup();
     renderOnboarding(undefined, { ...READY, dob: '' });
     await user.type(field('Date of birth'), '2011-03-14');
-    expect(screen.getByText('You must be at least 16 to use Gli.')).toBeInTheDocument();
+    expect(screen.getByText('You must be at least 18 to use Gli.')).toBeInTheDocument();
     expect(start()).toBeDisabled();
     await user.clear(field('Date of birth'));
     await user.type(field('Date of birth'), '1988-1');

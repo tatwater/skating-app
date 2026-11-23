@@ -32,7 +32,7 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 | # | Gate | Refs | Status | What clears it |
 |---|---|---|---|---|
 | L1 | ToS, privacy policy, assumption-of-risk enforceability, disclaimers | Q10, D3, D45 | 🟡 | the lawyer |
-| L2 | Minor (16–17) data collection and the read-only posture | D41, Q10 | 🟡 | the lawyer confirms the posture; decide whether minors may ever post |
+| L2 | Minors: none admitted while the minimum is 18; the read-only posture for 16–17 is dormant | D41, D294, Q10 | 🟡 | the lawyer confirms 18+ is enough as built; decide whether, and how, the minimum ever comes down |
 | L3 | Deletion, retention, export — the policy wording | D62, Q10 | 🟡 | the lawyer confirms the wording matches what's built |
 | L4 | AGPL §7 App Store / Play distribution exception | D43, Q10 | 🟡 | the lawyer confirms the exception text before any store listing |
 | L5 | Forum / Facebook / Google Group **ingestion** — republishing others' posts | Q8, D21 | 🔬⛔ | feasibility → consent model → ToS pass |
@@ -58,20 +58,23 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 ## L1 — ToS, privacy, assumption of risk (Q10) 🟡
 The umbrella. A safety app's terms have to survive the *"peer observation, never a guarantee"*
 framing (D3) and the assumption-of-risk acknowledgment (D45) being enforced as written.
-- **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 16+ gate;
+- **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 18+ gate (D294);
   a versioned, server-stamped risk-ack (`RISK_ACK_VERSION`) that re-prompts on change.
 - [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Risk-ack
       wording reviewed; bump the version if it changes. [ ] The policy states D248's retention
       (L3).
 
-## L2 — Minors, 16–17 (D41) 🟡
-Under-13 is avoided by construction; 16–17 are still minors and we store DOB. The posture — minors
-are read-only, profile forced private, DOB scrubbed on deletion, minor status derived at read time —
-and everything it would take to open participation up is
+## L2 — Minors (D41, D294) 🟡
+The minimum age is **18** (D294), so no account belongs to a minor and whoever accepts the terms
+is of age to accept them. Age is self-attested from a stored DOB. The posture D41 built for
+16–17-year-olds — read-only, profile forced private, DOB scrubbed on deletion, minor status derived
+at read time — stays in the code, unreachable by a new signup, and everything it would take to
+bring the minimum back down is
 [`docs/minors-and-age-policy.md`](../docs/minors-and-age-policy.md).
-- [ ] Lawyer confirms collection + retention for our regions (US state law, GDPR ages, the UK code).
-- [ ] Decide whether minors may ever post public reports (a one-line flip if cleared).
-- [ ] Confirm no parental-consent flow is needed at 16+.
+- [ ] Lawyer confirms a self-attested 18+ gate, and DOB collection + retention, for our regions.
+- [ ] Decide whether the minimum ever comes down. If it does: which ages, whether a minor's
+      acceptance of the terms holds, and whether a parental-consent flow is needed.
+- [ ] Decide then whether minors may ever post public reports (a one-line flip if cleared).
 
 ## L3 — Deletion, retention, export (D62) 🟡
 Built and decided: the request *is* the deletion; three buckets (erased / redacted at 30 days /
