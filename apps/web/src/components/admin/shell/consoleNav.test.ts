@@ -79,9 +79,9 @@ describe('the built modes', () => {
     const inbox = CONSOLE_MODES.find((m) => m.id === 'inbox');
     expect(inbox).toMatchObject({ to: '/admin/inbox', goKey: 'I', capability: 'inbox.read' });
     expect(CAPABILITIES['inbox.read'].role).toBe('moderator');
-    // The old flags page stands until the Inbox's integration retires it.
+    // The old Flags page retired with B01-5e: its path redirects into the Inbox, never the old shell.
     expect(usesOldShell('/admin/inbox')).toBe(false);
-    expect(usesOldShell('/admin/flags')).toBe(true);
+    expect(usesOldShell('/admin/flags')).toBe(false);
   });
 
   it('finds Bodies at the library and inside every body’s console, and nowhere that only shares a prefix', () => {

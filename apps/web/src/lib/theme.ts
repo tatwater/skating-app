@@ -90,7 +90,7 @@ export const THEME_INIT_SCRIPT = `(function () {
     root.classList.toggle('dark', dark);
     var path = location.pathname;
     var under = function (tree) { return path === tree || path.indexOf(tree + '/') === 0; };
-    var oldTrees = ['/admin/dashboard', '/admin/flags', '/admin/water',
+    var oldTrees = ['/admin/dashboard', '/admin/water',
       '/admin/features', '/admin/recurrence', '/admin/ice-calibration', '/admin/seasons',
       '/admin/tuning', '/admin/imports'];
     var old = false;

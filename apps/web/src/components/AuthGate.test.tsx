@@ -278,7 +278,7 @@ describe('the boot cookie the gate writes', () => {
 });
 
 describe('usesOldShell', () => {
-  it.each(['/admin/flags', '/admin/water/review'])('keeps %s in the old shell', (path) => {
+  it.each(['/admin/water', '/admin/water/review'])('keeps %s in the old shell', (path) => {
     expect(usesOldShell(path)).toBe(true);
   });
 

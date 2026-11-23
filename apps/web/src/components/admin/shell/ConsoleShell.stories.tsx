@@ -88,7 +88,7 @@ function Console({ admin = true, className = 'h-[56.25rem] w-[90rem]', ...props 
               label: 'Go to',
               items: [
                 { id: '/admin', label: 'Overview', verb: 'Go' },
-                { id: '/admin/flags', label: 'Flags', sub: 'Legacy', verb: 'Go' },
+                { id: '/admin/features', label: 'Body features', sub: 'Legacy', verb: 'Go' },
               ],
             },
           ]}
