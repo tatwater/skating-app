@@ -15,6 +15,7 @@ import {
   must,
   resetHarness,
 } from '../../testing/routeHarness';
+import { dayMonth } from './flagFormat';
 import {
   PHOTO_DECIDED,
   PHOTO_FULL,
@@ -353,8 +354,15 @@ describe('a photo flag, through the route and the view', () => {
     mount();
     const pane = inspector();
     expect(pane.querySelector('img, canvas')).toBeNull();
-    expect(pane).toHaveTextContent('The file was deleted on 10 Oct');
-    expect(pane).toHaveTextContent('It was removed on 10 Sep');
+    // The route draws dates in the runner's own zone (no board zone here): the same formatter, so
+    // the check holds at either end of the date line.
+    const purged = photoOf(PHOTO_PURGED);
+    expect(pane).toHaveTextContent(
+      `The file was deleted on ${dayMonth(must(purged.purgedAt, 'the purge time'))}`,
+    );
+    expect(pane).toHaveTextContent(
+      `It was removed on ${dayMonth(must(purged.moderatedAt, 'the removal time'))}`,
+    );
   });
 
   it('an uploader who has left is never named, and has no menu', () => {
