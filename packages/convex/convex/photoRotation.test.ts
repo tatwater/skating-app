@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { BLOB_TAKEN, PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
-import { DOOMED_RETRY_MS } from './lib/photoFiles';
+import { ACTION_LIFETIME_MS, DOOMED_RETRY_MS, SCAN_PAGE } from './lib/photoFiles';
 import { ROTATE_MAX_BYTES, ROTATION_RETRY_MS } from './photos';
 import schema from './schema';
 
@@ -471,5 +471,33 @@ describe('the rotation through the public writes', () => {
     expect(await urlOf(t, rotated.thumbStorageId)).toBeNull();
     expect((await row(t, photoId)).purgedAt).toBeDefined();
     expect(await storedCount(t)).toBe(0);
+  });
+});
+
+describe('the attempt window’s search', () => {
+  test('paged to the end: a lost copy behind more than a page of other uploads is found; the others untouched', async () => {
+    const { t, photoId } = await world();
+    await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'hidden' }));
+    const begun = await t.mutation(internal.photos.beginRotation, { photoId });
+    if (begun.kind !== 'go') throw new Error('not begun');
+    const others = await t.run(async (ctx) => {
+      const out: string[] = [];
+      for (let i = 0; i < SCAN_PAGE + 50; i++) out.push(await ctx.storage.store(new Blob([`u${i}`])));
+      return out;
+    });
+    const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
+    vi.setSystemTime(T0 + ACTION_LIFETIME_MS + 1);
+    let passes = 0;
+    for (; passes < 5; passes++) {
+      const done = await t.run(async (ctx) => {
+        const { reconcileAttempt } = await import('./lib/photoFiles');
+        const a = await ctx.db.get(begun.attemptId);
+        return a ? reconcileAttempt(ctx, a, Date.now()) : true;
+      });
+      if (done) break;
+    }
+    expect(passes).toBeGreaterThan(0); // more than one page
+    expect(await urlOf(t, lost)).toBeNull();
+    for (const id of others.slice(0, 3)) expect(await urlOf(t, id)).not.toBeNull();
   });
 });
