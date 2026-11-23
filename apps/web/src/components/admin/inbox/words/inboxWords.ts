@@ -222,7 +222,6 @@ export const DECISION_WORDS: Readonly<Record<InboxDecision, string>> = {
   restored: 'restored',
   ruled_closed: 'no public access',
   ruled_accessible: 'confirmed accessible',
-  cleared: 'ruling cleared',
   approved: 'approved',
   declined: 'declined',
   merged: 'merged',

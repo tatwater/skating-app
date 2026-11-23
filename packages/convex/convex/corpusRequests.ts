@@ -34,8 +34,6 @@ import {
   externalIdFits,
   groupLandmarkAsks,
   isActive,
-  type LandmarkAsk,
-  landmarkAsksAreSamePlace,
   MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
   nameTooLong,
@@ -72,7 +70,6 @@ import {
   requireContributor,
   requireProfile,
 } from './lib/auth';
-import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { queueLibraryRefresh } from './lib/bodyLibrary';
 import { syncWaterBodyCells } from './lib/cellIndex';
@@ -584,176 +581,6 @@ export const openCountsForBody = query({
       if (people > 0) counts[kind] = people;
     }
     return counts;
-  },
-});
-
-/**
- * The question a request asks, as a key: two rows with the same key are one decision (`decide`).
- * An unresolved admit is its own question until the resolver names the water.
- */
-function questionKey(r: Doc<'waterBodyRequests'>): string {
-  if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
-  if (r.kind === 'name_bay' || r.kind === 'name_landmark') {
-    // A landmark ask's question is its place, which `listQueue` counts from the page; this name key
-    // stands only for one it could not place.
-    return `${r.kind}:${r.waterBodyId}:${requestKeyOf(r)}`;
-  }
-  return `${r.kind}:${r.waterBodyId}`;
-}
-
-/**
- * Moderator: the queue — open requests, oldest first, each with what a decision needs.
- *
- * The asker count is grouped from the page already read, never from a per-row sibling read: at
- * `QUEUE_CAP` rows a per-row read was 200 × 200 documents against a 16,384-document limit. When
- * the page is the whole open set (the usual case) the counts are exact; when the queue is a
- * backlog past the cap, they are lower bounds and every row says so.
- */
-export const listQueue = query({
-  args: { status: v.optional(literals(['open', 'approved', 'declined'] as const)) },
-  handler: async (ctx, { status }) => {
-    await requireCapability(ctx, 'inbox.read');
-    const now = Date.now();
-    const rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_status_created', (q) => q.eq('status', status ?? 'open'))
-      .order(status === undefined || status === 'open' ? 'asc' : 'desc')
-      .take(QUEUE_CAP + 1);
-    const pageIsPartial = rows.length > QUEUE_CAP;
-    const page = rows.slice(0, QUEUE_CAP);
-    // A landmark ask's question is a place, not a name (Greptile P1 on #84). Every row here can be
-    // decided, and deciding one closes the asks that are the same place as *it* (`openSiblings`) —
-    // so that is what its count counts. Grouping by each place's first ask, as the lake editor does
-    // (where only the first ask is decided), would disagree once asks chain past the radius: A, B
-    // 700 m on, C 700 m past that — B's decision closes all three.
-    const landmarkAsksByBody = new Map<
-      string,
-      { id: string; ask: LandmarkAsk; row: Doc<'waterBodyRequests'> }[]
-    >();
-    for (const r of page) {
-      if (r.status !== 'open' || r.kind !== 'name_landmark' || !r.waterBodyId) continue;
-      const asks = landmarkAsksByBody.get(r.waterBodyId) ?? [];
-      asks.push({ id: r._id, ask: landmarkAskOf(r), row: r });
-      landmarkAsksByBody.set(r.waterBodyId, asks);
-    }
-    const landmarkAskers = new Map<string, number>();
-    for (const asks of landmarkAsksByBody.values()) {
-      for (const a of asks) {
-        const same = asks.filter((b) => b.id !== a.id && landmarkAsksAreSamePlace(a.ask, b.ask));
-        landmarkAskers.set(a.id, 1 + same.length);
-      }
-    }
-    const askersByQuestion = new Map<string, number>();
-    for (const r of page) {
-      if (r.status !== 'open' || landmarkAskers.has(r._id)) continue;
-      const key = questionKey(r);
-      askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
-    }
-    const askersOf = (r: Doc<'waterBodyRequests'>) =>
-      landmarkAskers.get(r._id) ?? askersByQuestion.get(questionKey(r)) ?? 1;
-    // A lake's bays are read once however many of its bay asks the page holds — Champlain's
-    // bays carry ~1,100-vertex outlines, and a read per ask repeats them.
-    const baysByBody = new Map<string, Doc<'waterBodySubAreas'>[]>();
-    const baysOf = async (waterBodyId: Id<'waterBodies'>) => {
-      const known = baysByBody.get(waterBodyId);
-      if (known) return known;
-      const bays = await listedBaysOf(ctx, waterBodyId);
-      baysByBody.set(waterBodyId, bays);
-      return bays;
-    };
-    // And its landmarks once, for the same reason — a giant carries hundreds (D202).
-    const landmarksByBody = new Map<string, Doc<'bodyLandmarks'>[]>();
-    const landmarksOf = async (waterBodyId: Id<'waterBodies'>) => {
-      const known = landmarksByBody.get(waterBodyId);
-      if (known) return known;
-      const rows = await liveLandmarksForBody(ctx, waterBodyId);
-      landmarksByBody.set(waterBodyId, rows);
-      return rows;
-    };
-    const out = [];
-    for (const r of page) {
-      const requester = await ctx.db.get(r.requesterId);
-      const body = r.waterBodyId ? await ctx.db.get(r.waterBodyId) : null;
-      out.push({
-        _id: r._id,
-        kind: r.kind,
-        status: r.status,
-        coord: r.coord,
-        createdAt: r.createdAt,
-        requester: publicAuthor(requester, now),
-        ...(r.note !== undefined ? { note: r.note } : {}),
-        ...(r.name !== undefined ? { name: r.name } : {}),
-        ...(r.aliases !== undefined ? { aliases: r.aliases } : {}),
-        // For a bay: the sub-area that already answers it, if a moderator has drawn one — the
-        // queue then offers "approve" rather than "draw".
-        ...(r.kind === 'name_bay' && r.status === 'open' && body
-          ? { drawnSubAreaId: matchBay(await baysOf(body._id), requestNames(r))?._id }
-          : {}),
-        // For a landmark proposal (D202): the landmark that already answers it, if one was added —
-        // else what it may duplicate, among the page's other landmark asks on this lake (what the
-        // queue itself shows).
-        ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? landmarkProposalView(
-              landmarkAskOf(r),
-              await landmarksOf(body._id),
-              (landmarkAsksByBody.get(body._id) ?? []).flatMap((a) =>
-                a.id === r._id ? [] : [a.row],
-              ),
-            )
-          : {}),
-        ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
-        ...(body
-          ? {
-              body: {
-                _id: body._id,
-                name: body.name,
-                type: body.type,
-                states: body.states ?? [],
-                surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
-                standing: standingOf(body),
-              },
-            }
-          : {}),
-        /** Distinct people with the same open ask on the same lake — the rank. */
-        askers: askersOf(r),
-        /** The queue is a backlog past the cap, so the rank counts only what this page holds. */
-        ...(pageIsPartial && r.status === 'open' ? { askersCapped: true } : {}),
-        ...(r.candidate
-          ? {
-              candidate: {
-                name: r.candidate.name,
-                externalId: r.candidate.externalId,
-                cls: r.candidate.cls,
-                featureType: r.candidate.featureType,
-                surfaceAreaSqM: r.candidate.surfaceAreaSqM,
-                bbox: r.candidate.bbox,
-                centroid: r.candidate.centroid,
-                serviceUrl: r.candidate.serviceUrl,
-              },
-            }
-          : {}),
-        ...(r.resolvedAt !== undefined ? { resolvedAt: r.resolvedAt } : {}),
-        ...(r.resolveError !== undefined ? { resolveError: r.resolveError } : {}),
-        ...(r.decidedAt !== undefined ? { decidedAt: r.decidedAt } : {}),
-        ...(r.decisionNote !== undefined ? { decisionNote: r.decisionNote } : {}),
-        ...(r.admittedWaterBodyId !== undefined
-          ? { admittedWaterBodyId: r.admittedWaterBodyId }
-          : {}),
-      });
-    }
-    return out;
-  },
-});
-
-export const queueCount = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireCapability(ctx, 'inbox.read');
-    const rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_status_created', (q) => q.eq('status', 'open'))
-      .take(QUEUE_CAP + 1);
-    return { count: Math.min(rows.length, QUEUE_CAP), capped: rows.length > QUEUE_CAP };
   },
 });
 

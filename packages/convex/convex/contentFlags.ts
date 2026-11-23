@@ -1,8 +1,8 @@
 /**
  * Content-flag functions (D32/D3). Any active user can flag a report / comment / photo / user for
  * abuse. `unsafe_false_report` is a **first-class** reason: a dangerously false "ice is great" claim
- * is a safety incident, not mere spam (D3) — it lands in the priority lane of the admin flag queue
- * in the Inbox (`/admin/inbox`, `/admin/flags` retired with B01-5e), which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
+ * is a safety incident, not mere spam (D3) — it lands in the Inbox's Safety lane (`/admin/inbox`),
+ * which reads the stored items (`lib/inboxItems`) and decides through `inboxWrites`.
  */
 
 import {

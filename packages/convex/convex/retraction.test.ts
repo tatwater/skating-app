@@ -159,8 +159,6 @@ describe('a request to a moderator', () => {
       retractedAt,
       eraseAt: retractedAt + WITHDRAWN_ERASE_MS,
     });
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(JSON.stringify(queue)).not.toContain(requestId);
     expect(await t.query(api.corpusRequests.openCountsForBody, { waterBodyId })).toEqual({});
     await expect(mod.as.mutation(api.corpusRequests.approve, { requestId })).rejects.toThrow(
       literally(WITHDRAWN_BY_ASKER),

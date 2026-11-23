@@ -399,8 +399,6 @@ describe('decide — what approving performs', () => {
         candidate: CANDIDATE,
       });
     }
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue.map((r) => r.askers)).toEqual([2, 2]);
     await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
     const rows = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
     expect(rows.map((r) => r.status)).toEqual(['approved', 'approved']);
@@ -442,11 +440,6 @@ describe('decide — what approving performs', () => {
     // how many skaters are asking, which one person filing many rows must not inflate.
     const counts = await t.query(api.corpusRequests.openCountsForBody, { waterBodyId: id });
     expect(counts).toEqual({ activate: 1, contest_access: 1 });
-    // The queue is a backlog: the rank counts the page it holds and says so.
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue).toHaveLength(QUEUE_CAP);
-    expect(queue[0]).toMatchObject({ _id: first, askers: QUEUE_CAP, askersCapped: true });
-
     // The approve closes the request and one page in its own transaction; the rest is a scheduled
     // continuation, so the mutation's write count is bounded whatever the group's size.
     vi.useFakeTimers();
@@ -731,35 +724,6 @@ describe('decide — what approving performs', () => {
       /flowing water/i,
     );
   });
-
-  test('the queue: oldest first, with the asker count and the body’s standing; members cannot read it', async () => {
-    const t = harness();
-    const a = await seedUser(t, 'a');
-    const b = await seedUser(t, 'b');
-    const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await seedBody(t, 'osm/1', dormant);
-    await a.as.mutation(api.corpusRequests.create, {
-      kind: 'activate',
-      coord: INSIDE,
-      waterBodyId: id,
-    });
-    await b.as.mutation(api.corpusRequests.create, {
-      kind: 'activate',
-      coord: INSIDE,
-      waterBodyId: id,
-    });
-    await a.as.mutation(api.corpusRequests.create, { kind: 'admit', coord: FAR });
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue).toHaveLength(3);
-    expect(queue[0]).toMatchObject({ kind: 'activate', askers: 2, body: { _id: id } });
-    expect(queue[0]?.body?.standing).toMatchObject({ standing: 'dormant' });
-    expect(queue[2]).toMatchObject({ kind: 'admit', askers: 1 });
-    expect(await mod.as.query(api.corpusRequests.queueCount, {})).toEqual({
-      count: 3,
-      capped: false,
-    });
-    await expect(a.as.query(api.corpusRequests.listQueue, {})).rejects.toThrow(/moderator/i);
-  });
 });
 
 describe('a track over a removed body (D48 edge (a), closed)', () => {
@@ -921,29 +885,6 @@ describe('name_bay — the sub-area queue', () => {
     expect(await t.run((ctx) => ctx.db.query('waterBodyRequests').collect())).toHaveLength(2);
   });
 
-  test('the queue ranks by bay, not by lake: two people asking for one bay are one question', async () => {
-    const t = harness();
-    const mod = await seedUser(t, 'mod', 'moderator');
-    const one = await seedUser(t, 'one');
-    const two = await seedUser(t, 'two');
-    const id = await seedBody(t);
-    const ask = (who: typeof one, name: string) =>
-      who.as.mutation(api.corpusRequests.create, {
-        kind: 'name_bay',
-        coord: NOTCH,
-        waterBodyId: id,
-        name,
-      });
-    await ask(one, 'St. Albans Bay');
-    await ask(two, 'Saint Albans Bay');
-    await ask(two, 'Maquam Bay');
-
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    const byName = Object.fromEntries(queue.map((r) => [r.name, r.askers]));
-    expect(byName).toEqual({ 'St. Albans Bay': 2, 'Saint Albans Bay': 2, 'Maquam Bay': 1 });
-    expect(queue.every((r) => r.drawnSubAreaId === undefined)).toBe(true);
-  });
-
   test('the lake editor’s queue groups a lake’s asks by bay, pools the aliases and notes, and names a drawn bay', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1025,8 +966,6 @@ describe('name_bay — the sub-area queue', () => {
     );
 
     await seedBay(t, id, 'The Corner', ['Corner Bay']);
-    const listed = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(listed.find((r) => r._id === first)?.drawnSubAreaId).toBeDefined();
     await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
     const rows = await t.run((ctx) => Promise.all([first, second].map((r) => ctx.db.get(r))));
     expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved']);

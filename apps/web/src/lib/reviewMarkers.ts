@@ -1,6 +1,5 @@
 import type { LatLng } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
-import { useMemo } from 'react';
 
 /**
  * What a moderator is checking on a map (D202): the spot a skater marked, and — when there is one —
@@ -89,16 +88,6 @@ export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
     return { ...spot, other: { point: coord, kind: 'proposal', name } };
   }
   return spot;
-}
-
-/**
- * A row's spot held steady for a canvas, which frames a review each time it is handed a new one — for
- * the row shown until the moderator picks one. The same object while what it draws is unchanged (the
- * query re-emits fresh rows, and each would re-fly the map), a new one when it changes.
- */
-export function useRowReview(row: ReviewRow | undefined): ReviewPoints | null {
-  const key = row ? JSON.stringify(rowReview(row, 'spot')) : '';
-  return useMemo(() => (key ? (JSON.parse(key) as ReviewPoints) : null), [key]);
 }
 
 /** Add the review's source and layers — once, in a canvas's `onLoad`. */

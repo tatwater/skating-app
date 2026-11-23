@@ -1,14 +1,6 @@
-import { renderHook } from '@testing-library/react';
 import type * as maplibregl from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  REVIEW_SOURCE_ID,
-  type ReviewRow,
-  reviewFeatures,
-  rowReview,
-  showReview,
-  useRowReview,
-} from './reviewMarkers';
+import { REVIEW_SOURCE_ID, reviewFeatures, rowReview, showReview } from './reviewMarkers';
 
 const ask = { lat: 44.5, lng: -73.3 };
 const point = { lat: 44.6, lng: -73.1 };
@@ -116,30 +108,5 @@ describe('rowReview — what a row draws at the moment it is read', () => {
       similarLandmark: { point: { lat: 44.7, lng: -73.2 }, name: 'Gull Rock' },
     };
     expect(rowReview(moved, 'landmark').other?.point).toEqual({ lat: 44.7, lng: -73.2 });
-  });
-});
-
-describe('useRowReview — the unpicked row, steady across re-emits', () => {
-  it('holds one object while the row says the same, and hands a new one when it changes', () => {
-    const { result, rerender } = renderHook(
-      ({ row }: { row: ReviewRow | undefined }) => useRowReview(row),
-      { initialProps: { row: { coord: ask, name: 'Gull Rock' } as ReviewRow | undefined } },
-    );
-    const first = result.current;
-    expect(first).toEqual({ ask, name: 'Gull Rock' });
-    // The query re-emits: fresh objects, the same values — the map holds still.
-    rerender({ row: { coord: { ...ask }, name: 'Gull Rock' } });
-    expect(result.current).toBe(first);
-    // A lookalike on the row is not drawn: the unpicked row is its spot alone.
-    rerender({
-      row: { coord: ask, name: 'Gull Rock', similarLandmark: { point, name: 'Gull Rock' } },
-    });
-    expect(result.current).toBe(first);
-    // What it draws changes: a new review. No row: nothing.
-    rerender({ row: { coord: point, name: 'Gull Rock' } });
-    expect(result.current).not.toBe(first);
-    expect(result.current?.ask).toEqual(point);
-    rerender({ row: undefined });
-    expect(result.current).toBeNull();
   });
 });

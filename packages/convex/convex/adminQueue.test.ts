@@ -176,42 +176,6 @@ describe('admin.userSearch (finds non-public accounts, D37)', () => {
   });
 });
 
-describe('support.list (admin-only inbox, D37 PII)', () => {
-  test('a moderator cannot read the support inbox', async () => {
-    const t = harness();
-    await seedProfile(t, 'mod', { role: 'moderator' });
-    await expect(as(t, 'mod').query(api.support.list, {})).rejects.toThrow(/admin/);
-  });
-
-  test('an admin reads tickets, newest first, filterable by status', async () => {
-    const t = harness();
-    await seedProfile(t, 'admin', { role: 'admin' });
-    const user = await seedProfile(t, 'reporter');
-    await t.run(async (ctx) => {
-      await ctx.db.insert('supportTickets', {
-        userId: user,
-        category: 'bug',
-        body: 'crash on launch',
-        status: 'open',
-        createdAt: Date.now(),
-      });
-      await ctx.db.insert('supportTickets', {
-        userId: user,
-        category: 'account',
-        body: 'please reinstate me',
-        status: 'resolved',
-        createdAt: Date.now() - 1000,
-      });
-    });
-    const all = await as(t, 'admin').query(api.support.list, {});
-    expect(all).toHaveLength(2);
-    const open = await as(t, 'admin').query(api.support.list, { status: 'open' });
-    expect(open).toHaveLength(1);
-    expect(open[0]?.body).toBe('crash on launch');
-    expect(open[0]?.submitter?.username).toBe('reporter');
-  });
-});
-
 /**
  * The dedup queue (D36, regrouped for the A07a corpus).
  *
