@@ -12240,6 +12240,11 @@ The wave's last PR, cut after #176 merges and dev's rollout is done. It replaces
 PR, as it now stands* (under *#175 merged*), which had one item wrong: `BayRequestQueue` is still
 rendered by the old editor, so it stays (see (b)).
 
+**Status, 2026-11-23:** items 1–7 below are done in the close-out PR, and *Built*, after (f), records
+how. Item 8 waits on the merge. Item 4's fork was decided: the `listQueue` asserts were dropped, not
+ported, because each repeated what the live per-body read already holds. The marks and the rows below
+are the plan as it was written.
+
 **Marks:**
 - *ready now*: can be done on the close-out branch today.
 - *waits on dev*: needs #176 merged and a count on dev first.
@@ -12429,8 +12434,8 @@ The rulings, in short (§7, numbered as there):
 
 | Item | Where recorded | Who can act | Blocks |
 | --- | --- | --- | --- |
-| #176's after-merge steps: `convex dev --once`; the photo backfill until `countUnstamped` reads 0; the seed cleared and re-applied; a takedown, restore and removal end to end (the old link 404); the purge's first run with its clock moved | *The rollout on dev, and the held narrowing* l.11777; roadmap B01-5e | dev | close-out items 1 and 7 |
-| Re-count `reviewing` flags (0 on 2026-11-23) and the never-written `cleared` decision just before the narrowing deploys | (a) | dev | close-out items 2 and 5 |
+| ~~#176's after-merge steps~~ — done on dev (2026-11-23): deployed; `countUnstamped` read 0; the seed re-applied (123 of 123); the repair 41 examined, 0 fixed. Left: the photo check, once the seed's photos are applied (In3) | *#176 merged*; the roadmap | dev | In3 only |
+| ~~Re-count `reviewing` flags and the never-written `cleared` decision~~ — done: 0 of 23 flags, 0 of 41 items (2026-11-23, after #176 deployed) | (a); *Built* | dev | — |
 | † Watch the scheduled heavy drain pages on dev (13–270 s locally) | *B01-5c: the server review (R8)*, l.9448 | dev | nothing |
 | Sh12: time merge and unmerge on the deployment. #175's dev proof measured one merge: 653 ms, 100 ms of user code | register Sh12; *#175 on dev* | dev | Sh13 |
 
@@ -12444,7 +12449,7 @@ The rulings, in short (§7, numbered as there):
 
 | Item | Where recorded | Who can act | Blocks |
 | --- | --- | --- | --- |
-| The phone's *Remove* hint still says "leaves the report when you save" (`apps/mobile/src/components/sheet/PhotosSection.tsx:541`) | l.11919 | a build (one line) | the device pass |
+| ~~The phone's *Remove* hint still says "leaves the report when you save"~~ — fixed in the close-out (`b48a43f40`) | l.11919 | — | — |
 | The phone's image cache keeps a taken-down photo it already loaded | l.11921 | a build | the device pass |
 | † `photos.removeBlob` can't check that the caller owns the upload; that needs a pending-uploads row | *Owed (5e reviews)*, l.11916 | a build | nothing |
 | † `photos.authorDeletedAt`: the withdrawal is read from its `author_delete` audit row today | l.11812 | a build | nothing |
@@ -12529,7 +12534,19 @@ is non-empty for nearly everything. Three tests were used instead:
 | `phase-b01-inbox-close` (this branch) | 1 | the close-out | last, after the close-out merges |
 | `b01-5e-s5-4`, made during the sweep in worktree `t3-fdd70d75` (#176's round two, live) | 1 | #176 so far | check its last commits first |
 
-**112 to delete after #176 merges; one last; one to check.** On the remote,
+**112 to delete after #176 merges; one last; one to check.**
+
+**Re-checked while building the close-out (2026-11-23), five branches are newer than the read
+above:**
+- `b01-5e-s5-5`, #176's round three, on main inside #176;
+- `t3/review-inbox-closeout`, on main's `193738b6`;
+- `b01-close-seed-photo` and `b01-close-photos-fix`, both in the close-out PR;
+- `b01-close-seed-photo-2`, the seed's review fixes, which go into the close-out.
+
+All five can be deleted once the close-out merges, so the count is 119 branches with the close-out's
+own last. One worktree is new: `t3-6653a692`, detached at the close-out's `1772dc8e7` (its review).
+Two were reused since: `t3-ba35d4dc` now holds `b01-close-seed-photo-2`, and `t3-fdd70d75` holds
+`b01-close-photos-fix`. All three can go after the close-out merges. On the remote,
 `origin/phase-b01-inbox-3` (#172, merged) is still there; the rest of the wave's remote branches
 are already pruned, and `phase-b01-inbox-6` goes when #176 merges.
 
@@ -12665,10 +12682,11 @@ support pages now send you to the Inbox. This page lists what the wave left for 
 
 #### 1. What only you can do
 
-- **Set `SUPPORT_FROM_EMAIL` on dev** (the Convex dashboard, dev's environment variables). Until
-  it is set, every reply sent from a ticket is saved as *failed* and nothing is emailed. Resend is
-  already configured, so the next reply after you set it really sends. Then send one reply to a
-  staff account's ticket to see it arrive.
+- **Set `SUPPORT_FROM_EMAIL` on dev** (the Convex dashboard, dev's environment variables): the
+  address support replies are sent from. On dev today it is unset, so every reply sent from a ticket
+  is saved as *failed* and nothing is emailed. Once it is set, send one reply to a staff account's
+  ticket and check that it arrives. That will be the first real send, so it is also the check that
+  the email side works.
 - **The device pass on the next Android preview build.** These have reached the phone since the last
   pass:
   - the moderator-decision notification: what an asker reads when their request is approved,
