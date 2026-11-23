@@ -11170,6 +11170,10 @@ The *Legacy retirement* row names only the operator mail and People's *Handle*; 
   - `SUPPORT_FROM_EMAIL` on the Convex **dev** deployment, by the founder through the dashboard. It is never printed, and never in a transcript or an env file read aloud.
   - The address's domain is verified in Resend, already the case for the general from-address's domain. Whether the subdomain is verified is the founder's to check.
 - **When it is unset:** the reply reads `failed`, with "support reply skipped (SUPPORT_FROM_EMAIL not configured)" logged, never `sent`, and never sent from `RESEND_FROM_EMAIL`. The thread shows the failed reply with *Not sent* and the reason class, never the address.
+- **Where an answer goes** (added 2026-11-23): `SUPPORT_REPLY_TO_EMAIL`, optional, is sent as every
+  support reply's reply-to, so a skater's answer reaches a mailbox rather than the send-only sender. It
+  isn't part of sendability: unset, blank or not one address, a reply goes without a reply-to (the
+  last logs one line, never the value). No other email carries it.
 - **Every reply's footer:** "Replies to this email aren't read. Write back from the app: Settings → Help." The sending domain has no inbound mail on purpose.
 
 ##### Territories

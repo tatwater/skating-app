@@ -42,6 +42,7 @@ import {
   SUPPORT_REASONS,
   seedTicket,
   supportReplyEmail,
+  supportReplyTo,
   supportSendability,
   TICKET_GONE_REFUSAL,
 } from './lib/supportThread';
@@ -641,10 +642,14 @@ export const sendReply = internalAction({
     }
     // Resend's idempotency key, from the message's id: a repeat of this reply within Resend's 24 hours
     // (the watch's send of a reply never claimed, a send that lost its answer) is refused by Resend.
+    // The skater's answer goes to `SUPPORT_REPLY_TO_EMAIL` when it holds one address; without it, no
+    // reply-to, and the reply goes all the same (not part of sendability).
+    const replyTo = supportReplyTo();
     const outcome = await sendEmailOutcome({
       to,
       from,
       ...supportReplyEmail(claim.body),
+      ...(replyTo !== undefined ? { replyTo } : {}),
       context: 'support reply',
       idempotencyKey: `support-reply/${messageId}`,
     });

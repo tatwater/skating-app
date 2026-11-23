@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { sendEmail } from './resend';
+import { sendEmail, sendEmailOutcome } from './resend';
 
 const mail = { to: 'a@example.test', subject: 's', html: '<p>s</p>', text: 's', context: 'test' };
 
@@ -100,5 +100,21 @@ describe('sendEmail (never throws, never sends without a provider)', () => {
     );
     expect(bodies[0]).not.toHaveProperty('headers');
     expect(bodies[1]?.headers).toEqual({ 'List-Unsubscribe': '<https://x>' });
+  });
+});
+
+describe('sendEmailOutcome (reply-to)', () => {
+  test('a reply-to rides along as Resend’s reply_to only when given', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(200));
+    vi.stubGlobal('fetch', fetchImpl);
+    await sendEmailOutcome(mail);
+    await sendEmailOutcome({ ...mail, replyTo: 'help@example.com' });
+    await sendEmailOutcome({ ...mail, replyTo: '' });
+    const bodies = fetchImpl.mock.calls.map(
+      (call) => JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>,
+    );
+    expect(bodies[0]).not.toHaveProperty('reply_to');
+    expect(bodies[1]?.reply_to).toBe('help@example.com');
+    expect(bodies[2]).not.toHaveProperty('reply_to');
   });
 });

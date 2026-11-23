@@ -20,8 +20,8 @@ describe('the Corpus route', () => {
     expect(route.path).toBe('/admin/corpus');
   });
 
-  // Home's documented `/admin/corpus?task=…` (`overviewHref`) is rewritten to the old pages before it
-  // is linked (`consolePathFor`); a hand-typed one still lands on the library, on its default lane.
+  // Home's documented `/admin/corpus?task=…` (`overviewHref`) is rewritten to the old pages before
+  // it is linked (`consolePathFor`); a hand-typed one still lands on the library's default lane.
   it.each(CORPUS_TASKS)(
     'takes ?task=%s without choking: the default lane, nothing kept',
     (task) => {
