@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
+import { accountScoped } from '@/lib/accountScoped';
 import type { DockMode } from './ticketModel';
 
 /**
@@ -12,6 +13,9 @@ import type { DockMode } from './ticketModel';
  *   When it lands, only the words that were sent are cleared — anything typed since stays.
  * - **Each press has its own key** (`clientKey`), so the server writes a press once however often it
  *   arrives; a press retried with the same words and mode after a refusal reuses its key.
+ *
+ * - **The person's own:** forgotten on sign-out and on a change of signed-in person
+ *   (`lib/accountScoped`), so the next staffer at the same tab never finds or sends them.
  *
  * Kept for the page's life, in memory: a ticket's words are PII (D37), so nothing is written to storage.
  */
@@ -112,9 +116,11 @@ export function useTicketDraft(key: string): {
   return { draft, setText, setMode, beginSend, endSend };
 }
 
-/** Test and story support: every draft forgotten. */
+/** Every draft forgotten: on sign-out, a change of person, and between tests and stories. */
 export function forgetTicketDrafts(): void {
   entries.clear();
   views.clear();
   for (const l of listeners) l();
 }
+
+accountScoped(forgetTicketDrafts);

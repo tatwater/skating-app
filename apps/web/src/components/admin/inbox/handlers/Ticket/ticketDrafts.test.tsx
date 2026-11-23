@@ -1,6 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import {
+  bindAccountOwner,
+  forgetAccountScoped,
+  resetAccountOwnerForTests,
+} from '@/lib/accountScoped';
 import { forgetTicketDrafts, useTicketDraft } from './ticketDrafts';
 
 afterEach(() => forgetTicketDrafts());
@@ -60,5 +65,26 @@ describe('the ticket’s send bracket', () => {
     // The same words as a note are another press.
     act(() => d.result.current.endSend(false));
     expect(d.result.current.beginSend('note', 'Retry me')).not.toBe(k3);
+  });
+});
+
+describe('a ticket’s draft is the person’s own (R13-2)', () => {
+  it('is forgotten on sign-out and on a change of signed-in person', () => {
+    resetAccountOwnerForTests();
+    bindAccountOwner('staff_a');
+    const d = renderHook(() => useTicketDraft('t1'));
+    act(() => d.result.current.setText('An unsent reply'));
+    // Sign out: gone.
+    act(() => forgetAccountScoped());
+    expect(d.result.current.draft.text).toBe('');
+    // Another staffer at the same tab: gone too.
+    act(() => d.result.current.setText('Another unsent reply'));
+    act(() => bindAccountOwner('staff_b'));
+    expect(d.result.current.draft.text).toBe('');
+    // The same person bound again (a token refresh) keeps it.
+    act(() => d.result.current.setText('Still mine'));
+    act(() => bindAccountOwner('staff_b'));
+    expect(d.result.current.draft.text).toBe('Still mine');
+    resetAccountOwnerForTests();
   });
 });
