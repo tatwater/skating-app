@@ -538,7 +538,11 @@ export function PhotosSection({
           stripped before it leaves your phone.
         </SheetHint>
       ) : null}
-      {editing ? <SheetHint>A photo you remove leaves the report when you save.</SheetHint> : null}
+      {/* The web's words (`REMOVE_PHOTO_HINT`): true for a held photo too, which is withdrawn, not
+          dropped, and nothing here says staff acted (B01-5e). */}
+      {editing ? (
+        <SheetHint>A photo you remove isn't shown with the report once you save.</SheetHint>
+      ) : null}
       {error ? (
         <Text color="danger" fontSize={12}>
           {error}
