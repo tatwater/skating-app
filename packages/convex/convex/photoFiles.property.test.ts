@@ -165,7 +165,8 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
     weight: 3,
     arbitrary: fc.record({
       k: fc.constant('advance' as const),
-      minutes: fc.constantFrom(1, 2, 15, 61, 180, 1500),
+      // Up to 31 days: a removed photo's purge comes due 30 days on.
+      minutes: fc.constantFrom(1, 2, 15, 61, 180, 1500, 44_640),
     }),
   },
   { weight: 1, arbitrary: fc.constant({ k: 'purge' as const }) },
@@ -431,7 +432,12 @@ async function run(ops: Op[]) {
                 if (row && (row.moderationStatus ?? 'visible') === 'visible')
                   await ctx.db.patch(p, { moderationStatus: 'hidden' });
               });
-            await safely(() => attempt(t, p, op.kill));
+            // A refusal is allowed; a broken promise is not — `safely` would swallow an assertion.
+            let broken: string | undefined;
+            await safely(async () => {
+              broken = await attempt(t, p, op.kill);
+            });
+            expect(broken).toBeUndefined();
           }
           break;
         case 'cancelRotations':
@@ -498,7 +504,7 @@ async function run(ops: Op[]) {
 }
 
 /** One rotation attempt of photo `p`, as its action runs it — stopped dead at `kill`. */
-async function attempt(t: T, p: Id<'photos'>, kill: Kill) {
+async function attempt(t: T, p: Id<'photos'>, kill: Kill): Promise<string | undefined> {
   const begun = await t.mutation(internal.photos.beginRotation, { photoId: p });
   if (begun.kind !== 'go' || kill === 'begin') return;
   const next: string[] = [];
@@ -541,9 +547,8 @@ async function attempt(t: T, p: Id<'photos'>, kill: Kill) {
   });
   if (outcome === 'rotated' && twins.length <= SAME_BYTES_MAX) {
     const row = await t.run((ctx) => ctx.db.get(p));
-    expect(row?.sameBytesAs ?? [], 'a swap left twins unrecorded').toEqual(
-      expect.arrayContaining(twins),
-    );
+    const recorded = new Set(row?.sameBytesAs ?? []);
+    if (twins.some((id) => !recorded.has(id))) return 'a swap left twins unrecorded';
   }
   if (kill === 'swap') return;
   await t.mutation(internal.photos.endRotation, { attemptId: begun.attemptId });
@@ -636,6 +641,18 @@ const SEED: number = crypto.getRandomValues(new Int32Array(1))[0] as number;
 
 /** Counterexamples the property found, each pinned. */
 const PINNED: Record<string, Op[]> = {
+  'a crossed twin, then a rotation': [
+    { k: 'upload' },
+    { k: 'legacyShare', i: 0, a: 'thumb', j: 0, b: 'image' },
+    { k: 'attempt', i: 0, kill: 'none', down: true },
+  ],
+  'a shared file’s holders purged': [
+    { k: 'upload' },
+    { k: 'legacyShare', i: 0, a: 'image', j: 0, b: 'image' },
+    { k: 'set', i: 0, status: 'removed' },
+    { k: 'advance', minutes: 44_640 },
+    { k: 'purge' },
+  ],
   // A copy recorded after its attempt was reconciled (its action alive past the lifetime the watch
   // allows) landed on an attempt nobody would look at again: recording now releases it.
   'seed -600393707': [
