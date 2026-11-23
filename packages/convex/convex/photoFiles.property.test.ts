@@ -80,6 +80,8 @@ type Op =
   | { k: 'upload' }
   /** A legacy row: its image is `i`'s `a` slot; its thumbnail `j`'s `b` slot, a fresh file, or the same. */
   | { k: 'legacyShare'; i: number; a: Slot; j: number; b: Slot | 'fresh' | 'same' }
+  /** `n` legacy rows naming `i`'s `slot` file as their `as` slot — nine and more twins of one file. */
+  | { k: 'legacyMany'; i: number; slot: Slot; as: Slot; n: number }
   /** A row created naming a doomed file (in `slot`), between its dooming and its retry. */
   | { k: 'adoptDoomed'; i: number; slot: Slot }
   /** A skater's fresh upload of `i`'s image bytes, not yet attached. */
@@ -114,6 +116,16 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
       a: fc.constantFrom<Slot>('image', 'thumb'),
       j: idx,
       b: fc.constantFrom<Slot | 'fresh' | 'same'>('image', 'thumb', 'fresh', 'same'),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      k: fc.constant('legacyMany' as const),
+      i: idx,
+      slot: fc.constantFrom<Slot>('image', 'thumb'),
+      as: fc.constantFrom<Slot>('image', 'thumb'),
+      n: fc.constantFrom(7, 8, 9, 10),
     }),
   },
   {
@@ -317,6 +329,21 @@ async function run(ops: Op[]) {
                   ? image
                   : slotOf(other as Doc<'photos'>, op.b);
             photos.push(await insertLegacy(image, thumb));
+          }
+          break;
+        }
+        case 'legacyMany': {
+          const row = p ? await t.run((ctx) => ctx.db.get(p)) : null;
+          if (live(row)) {
+            const shared = slotOf(row, op.slot);
+            for (let m = 0; m < op.n; m++) {
+              const other = await fresh('thumb');
+              photos.push(
+                await (op.as === 'image'
+                  ? insertLegacy(shared, other)
+                  : insertLegacy(other, shared)),
+              );
+            }
           }
           break;
         }
@@ -540,15 +567,22 @@ async function attempt(t: T, p: Id<'photos'>, kill: Kill): Promise<string | unde
       )
       .map((r) => r._id),
   );
+  const prior = await t.run((ctx) => ctx.db.get(p));
   const outcome = await t.mutation(internal.photos.swapRotated, {
     attemptId: begun.attemptId,
     old: { storageId: begun.storageId, thumbStorageId: begun.thumbStorageId },
     next: { storageId: next[0] as string, thumbStorageId: next[1] as string },
   });
-  if (outcome === 'rotated' && twins.length <= SAME_BYTES_MAX) {
+  if (outcome === 'rotated') {
+    // Eight kept at most; the marker exactly when more than eight were there (or already marked).
     const row = await t.run((ctx) => ctx.db.get(p));
-    const recorded = new Set(row?.sameBytesAs ?? []);
-    if (twins.some((id) => !recorded.has(id))) return 'a swap left twins unrecorded';
+    const all = new Set([...(prior?.sameBytesAs ?? []), ...twins]);
+    const recorded = row?.sameBytesAs ?? [];
+    const cut = all.size > SAME_BYTES_MAX || prior?.sameBytesCut === true;
+    if (recorded.length !== Math.min(all.size, SAME_BYTES_MAX))
+      return 'a swap kept the wrong count';
+    if (recorded.some((id) => !all.has(id))) return 'a swap recorded a stranger';
+    if ((row?.sameBytesCut === true) !== cut) return 'a swap’s cut marker is wrong';
   }
   if (kill === 'swap') return;
   await t.mutation(internal.photos.endRotation, { attemptId: begun.attemptId });
@@ -641,6 +675,17 @@ const SEED: number = crypto.getRandomValues(new Int32Array(1))[0] as number;
 
 /** Counterexamples the property found, each pinned. */
 const PINNED: Record<string, Op[]> = {
+  'nine twins of one file, then a rotation': [
+    { k: 'upload' },
+    { k: 'legacyMany', i: 0, slot: 'image', as: 'image', n: 9 },
+    { k: 'attempt', i: 0, kill: 'none', down: true },
+  ],
+  'eight twins across both slots, then a rotation': [
+    { k: 'upload' },
+    { k: 'legacyMany', i: 0, slot: 'image', as: 'thumb', n: 4 },
+    { k: 'legacyMany', i: 0, slot: 'thumb', as: 'image', n: 4 },
+    { k: 'attempt', i: 0, kill: 'none', down: true },
+  ],
   'a crossed twin, then a rotation': [
     { k: 'upload' },
     { k: 'legacyShare', i: 0, a: 'thumb', j: 0, b: 'image' },

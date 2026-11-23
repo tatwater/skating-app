@@ -41,7 +41,6 @@ import {
   recordCopy,
   releaseFile,
   retryDoomed,
-  SAME_BYTES_MAX,
 } from './lib/photoFiles';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { ROTATION_RETRY_MS } from './lib/photoRotation';
@@ -570,14 +569,18 @@ export const swapRotated = internalMutation({
     }
     // A shared old file (a legacy row's twin) stays with the rows still naming it; this photo, taken
     // down, gets its own copy — and records the twins, which still show the same image, for staff.
-    const twins = new Set<Id<'photos'>>(photo.sameBytesAs ?? []);
-    for (const was of [old.storageId, old.thumbStorageId]) {
-      for (const h of await holdersOf(ctx, was, photo._id)) twins.add(h._id);
-    }
+    // At most eight are kept; `sameBytesCut` records that a read proved more (never a guess).
+    const twins = await holdersOf(
+      ctx,
+      [old.storageId, old.thumbStorageId],
+      photo._id,
+      photo.sameBytesAs ?? [],
+    );
     await ctx.db.patch(photo._id, {
       storageId: next.storageId,
       thumbStorageId: next.thumbStorageId,
-      ...(twins.size > 0 ? { sameBytesAs: [...twins].slice(0, SAME_BYTES_MAX) } : {}),
+      ...(twins.ids.length > 0 ? { sameBytesAs: twins.ids } : {}),
+      ...(twins.cut || photo.sameBytesCut === true ? { sameBytesCut: true } : {}),
     });
     for (const row of rows) await ctx.db.delete(row._id);
     const now = Date.now();

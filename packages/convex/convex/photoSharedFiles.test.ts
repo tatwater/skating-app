@@ -474,4 +474,32 @@ describe('the Inbox shows a taken-down photo’s twins', () => {
     expect(full.sameBytesAs).toHaveLength(8);
     expect(full.sameBytesCut).toBe(true);
   });
+
+  // The twins name the shared file in the photo's own slot, so the photo is inside every range read.
+  for (const n of [8, 9, 10]) {
+    test(`${n} twins: eight shown, cut only past eight — before the takedown and after its swap`, async () => {
+      const { t, mod, row, p, a, photoShown } = await flagged();
+      for (let i = 1; i < n; i++) await row(a, await file(t));
+      const before = await photoShown();
+      expect(before.sameBytesAs).toHaveLength(8);
+      expect(before.sameBytesCut).toBe(n > 8);
+      await mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'photo',
+        targetId: p,
+        status: 'hidden',
+        reason: 'x',
+      });
+      await stepThrough(t, 90);
+      const rotated = (await get(t, p)) as Doc<'photos'>;
+      expect(rotated.storageId).not.toBe(a);
+      // Recorded from a read that proved a ninth: eight ids and the marker, never a guess.
+      expect(rotated.sameBytesAs).toHaveLength(8);
+      expect(rotated.sameBytesCut).toBe(n > 8 ? true : undefined);
+      const after = await photoShown();
+      expect(after.sameBytesAs.map((x) => (x as { photoId: string }).photoId)).toEqual(
+        rotated.sameBytesAs,
+      );
+      expect(after.sameBytesCut).toBe(n > 8);
+    });
+  }
 });

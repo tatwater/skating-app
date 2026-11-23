@@ -121,23 +121,30 @@ function retryDelay(state: AttemptState): number {
   return DOOMED_RETRY_MS[(state.attempts ?? 1) - 1] ?? DAY_MS;
 }
 
-/** Rows naming `storageId` in either slot, other than `exceptId` — at most `n`. */
+/**
+ * **A photo's twins**: `seed` (the ones already recorded) and the rows other than `exceptId` naming
+ * any of `storageIds` in either slot — the first {@link SAME_BYTES_MAX}, and `cut` only when a read
+ * proved one more (each range reads two past the cap: the photo itself may be one of them).
+ */
 export async function holdersOf(
   ctx: QueryCtx,
-  storageId: string,
+  storageIds: string[],
   exceptId: Id<'photos'>,
-  n = SAME_BYTES_MAX,
-): Promise<Doc<'photos'>[]> {
-  const out = new Map<string, Doc<'photos'>>();
-  for (const index of ['by_storage', 'by_thumb_storage'] as const) {
-    const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
-    const rows = await ctx.db
-      .query('photos')
-      .withIndex(index, (q) => q.eq(field as never, storageId as never))
-      .take(n + 1);
-    for (const r of rows) if (r._id !== exceptId && out.size < n) out.set(r._id, r);
+  seed: Iterable<Id<'photos'>> = [],
+): Promise<{ ids: Id<'photos'>[]; cut: boolean }> {
+  const all = new Set<Id<'photos'>>(seed);
+  for (const storageId of new Set(storageIds)) {
+    for (const index of ['by_storage', 'by_thumb_storage'] as const) {
+      if (all.size > SAME_BYTES_MAX) break;
+      const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
+      const rows = await ctx.db
+        .query('photos')
+        .withIndex(index, (q) => q.eq(field as never, storageId as never))
+        .take(SAME_BYTES_MAX + 2);
+      for (const r of rows) if (r._id !== exceptId) all.add(r._id);
+    }
   }
-  return [...out.values()];
+  return { ids: [...all].slice(0, SAME_BYTES_MAX), cut: all.size > SAME_BYTES_MAX };
 }
 
 /** The most twins a photo records, and the Inbox names. */
@@ -318,5 +325,6 @@ export function projectPhoto(photo: Doc<'photos'>) {
     ...(photo.purgedAt !== undefined ? { purgedAt: photo.purgedAt } : {}),
     ...(photo.bytesMissingAt !== undefined ? { bytesMissingAt: photo.bytesMissingAt } : {}),
     ...(photo.sameBytesAs !== undefined ? { sameBytesAs: photo.sameBytesAs } : {}),
+    ...(photo.sameBytesCut !== undefined ? { sameBytesCut: photo.sameBytesCut } : {}),
   };
 }

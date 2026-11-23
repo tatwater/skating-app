@@ -566,11 +566,14 @@ async function sameBytesOf(
   r: InboxReader,
   p: Doc<'photos'>,
 ): Promise<Pick<PhotoSubjectView, 'sameBytesAs' | 'sameBytesCut'>> {
+  // The swap's read, through the item's budget: the recorded twins, then the rows still naming this
+  // photo's files — each range two past the cap, since the photo itself may be one of them.
   const ids = new Set<Id<'photos'>>(p.sameBytesAs ?? []);
   if (p.purgedAt === undefined) {
     for (const id of new Set([p.storageId, p.thumbStorageId])) {
       for (const field of ['storageId', 'thumbStorageId'] as const) {
-        const rows = await r.take('photo', SAME_BYTES_MAX + 1, (k) =>
+        if (ids.size > SAME_BYTES_MAX) break;
+        const rows = await r.take('photo', SAME_BYTES_MAX + 2, (k) =>
           r.ctx.db
             .query('photos')
             .withIndex(field === 'storageId' ? 'by_storage' : 'by_thumb_storage', (q) =>
@@ -582,10 +585,16 @@ async function sameBytesOf(
       }
     }
   }
+  // The first eight that still exist; cut when a ninth does, or the swap's read proved more.
   const out: PhotoSubjectView['sameBytesAs'] = [];
-  for (const id of [...ids].slice(0, SAME_BYTES_MAX)) {
+  let cut = p.sameBytesCut === true;
+  for (const id of ids) {
     const twin = await r.get<'photos'>('photo', id);
     if (!twin) continue;
+    if (out.length === SAME_BYTES_MAX) {
+      cut = true;
+      break;
+    }
     out.push({
       photoId: twin._id,
       moderationStatus: twin.moderationStatus ?? 'visible',
@@ -593,7 +602,7 @@ async function sameBytesOf(
       reportId: twin.reportId ?? null,
     });
   }
-  return { sameBytesAs: out, sameBytesCut: ids.size > SAME_BYTES_MAX };
+  return { sameBytesAs: out, sameBytesCut: cut };
 }
 
 /** *On the same report*, at most this many of the report's other photos (board 2.7's strip). */

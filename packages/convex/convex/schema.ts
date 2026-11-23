@@ -4434,6 +4434,8 @@ export default defineSchema({
      * the twins still show the same image, so the Inbox names them to staff. At most eight.
      */
     sameBytesAs: v.optional(v.array(v.id('photos'))),
+    /** True when the rotation's read proved more twins than the eight kept (`sameBytesAs`). */
+    sameBytesCut: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
     // A blob belongs to at most one photo row (B01-5e): `photos.create` refuses a storage id any row
