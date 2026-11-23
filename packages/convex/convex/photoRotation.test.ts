@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { BLOB_TAKEN, PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
-import { ACTION_LIFETIME_MS, DOOMED_RETRY_MS, SCAN_PAGE } from './lib/photoFiles';
+import { ACTION_LIFETIME_MS, copyContentType, DOOMED_RETRY_MS, SCAN_PAGE } from './lib/photoFiles';
 import { ROTATE_MAX_BYTES, ROTATION_RETRY_MS } from './photos';
 import schema from './schema';
 
@@ -410,12 +410,22 @@ describe('the rotation through the public writes', () => {
     await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'hidden' }));
     const begun = await t.mutation(internal.photos.beginRotation, { photoId });
     if (begun.kind !== 'go') throw new Error('not begun');
-    const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
-    expect(await unreferenced(t)).toEqual([lost]);
+    // As the action stores it: tagged with its attempt.
+    const lost = await t.run((ctx) =>
+      ctx.storage.store(
+        new Blob(['full-bytes'], { type: copyContentType('image/jpeg', begun.attemptId) }),
+      ),
+    );
+    // A skater's fresh upload of the very same bytes, inside the same window: never this attempt's.
+    const sameBytes = await t.run((ctx) =>
+      ctx.storage.store(new Blob(['full-bytes'], { type: 'image/jpeg' })),
+    );
+    expect((await unreferenced(t)).sort()).toEqual([lost, sameBytes].sort());
     // Its action is dead once its lifetime passes; a later attempt, hours on, finds nothing of it lost.
     await reconcileLater(t, photoId, 3 * 60 * 60 * 1000);
     expect(await urlOf(t, lost)).toBeNull();
-    expect(await unreferenced(t)).toEqual([]);
+    expect(await urlOf(t, sameBytes)).not.toBeNull();
+    expect(await unreferenced(t)).toEqual([sameBytes]);
   });
 
   test('killed after both copies were recorded, before the swap: released, rotated again, nothing unreferenced', async () => {
@@ -430,7 +440,9 @@ describe('the rotation through the public writes', () => {
     const begun = await t.mutation(internal.photos.beginRotation, { photoId });
     if (begun.kind !== 'go') throw new Error('not begun');
     for (const bytes of ['full-bytes', 'thumb']) {
-      const copy = await t.run((ctx) => ctx.storage.store(new Blob([bytes])));
+      const copy = await t.run((ctx) =>
+        ctx.storage.store(new Blob([bytes], { type: copyContentType('', begun.attemptId) })),
+      );
       await t.mutation(internal.photos.recordRotationCopy, { attemptId: begun.attemptId, copy });
     }
     // Reserved while recorded: no write takes their ids.
@@ -496,7 +508,9 @@ describe('the attempt window’s search', () => {
         out.push(await ctx.storage.store(new Blob([`u${i}`])));
       return out;
     });
-    const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
+    const lost = await t.run((ctx) =>
+      ctx.storage.store(new Blob(['full-bytes'], { type: copyContentType('', begun.attemptId) })),
+    );
     vi.setSystemTime(T0 + ACTION_LIFETIME_MS + 1);
     let passes = 0;
     for (; passes < 5; passes++) {

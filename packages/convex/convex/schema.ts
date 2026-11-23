@@ -4428,6 +4428,12 @@ export default defineSchema({
      * rotation stops, shown once on Machinery. Absent ⇒ its bytes were there when last looked at.
      */
     bytesMissingAt: v.optional(v.number()),
+    /**
+     * Rows that held this photo's bytes when its rotation left a shared file to them (B01-5e: a row
+     * written before files were one row's each may share one). The taken-down photo got its own copy;
+     * the twins still show the same image, so the Inbox names them to staff. At most eight.
+     */
+    sameBytesAs: v.optional(v.array(v.id('photos'))),
   })
     .index('by_uploader', ['uploaderId'])
     // A blob belongs to at most one photo row (B01-5e): `photos.create` refuses a storage id any row

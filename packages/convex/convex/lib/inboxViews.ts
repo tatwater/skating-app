@@ -78,6 +78,7 @@ import {
 import { liveLandmarksForBody } from './landmarkRows';
 import { OPEN_FLAG_STATUSES } from './openFlags';
 import { photoVisible, photoWithdrawalRow } from './photoAccess';
+import { SAME_BYTES_MAX } from './photoFiles';
 import {
   CHARGED_QUERY_BUDGET,
   OverBudget,
@@ -535,6 +536,39 @@ function photoWithdrawnOf(r: InboxReader, photoId: Id<'photos'>): Promise<number
   });
 }
 
+/**
+ * The photos that show this photo's bytes too (B01-5e): those its rotation recorded as holding a
+ * shared file (`sameBytesAs`), and any row naming one of its current files in either slot — each read
+ * through the item's budget, at most {@link SAME_BYTES_MAX}.
+ */
+async function sameBytesOf(
+  r: InboxReader,
+  p: Doc<'photos'>,
+): Promise<PhotoSubjectView['sameBytesAs']> {
+  const ids = new Set<Id<'photos'>>(p.sameBytesAs ?? []);
+  if (p.purgedAt === undefined) {
+    for (const id of new Set([p.storageId, p.thumbStorageId])) {
+      for (const field of ['storageId', 'thumbStorageId'] as const) {
+        const rows = await r.take('photo', SAME_BYTES_MAX + 1, (k) =>
+          r.ctx.db
+            .query('photos')
+            .withIndex(field === 'storageId' ? 'by_storage' : 'by_thumb_storage', (q) =>
+              q.eq(field as never, id as never),
+            )
+            .take(k),
+        );
+        for (const row of rows) if (row._id !== p._id) ids.add(row._id);
+      }
+    }
+  }
+  const out: PhotoSubjectView['sameBytesAs'] = [];
+  for (const id of [...ids].slice(0, SAME_BYTES_MAX)) {
+    const twin = await r.get<'photos'>('photo', id);
+    if (twin) out.push({ photoId: twin._id, moderationStatus: twin.moderationStatus ?? 'visible' });
+  }
+  return out;
+}
+
 /** *On the same report*, at most this many of the report's other photos (board 2.7's strip). */
 export const PHOTO_SIBLINGS_READ = 12;
 
@@ -777,6 +811,7 @@ async function flagTargetView(
         purgeAt: p.purgeAt ?? null,
         purgedAt: p.purgedAt ?? null,
         bytesMissingAt: p.bytesMissingAt ?? null,
+        sameBytesAs: await sameBytesOf(r, p),
       };
       return {
         view: {

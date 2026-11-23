@@ -329,6 +329,13 @@ export type PhotoSubjectView = {
   purgedAt: number | null;
   /** When a byte rotation found its file gone: it can't be restored (`null` while its bytes exist). */
   bytesMissingAt: number | null;
+  /**
+   * **The same image on other photos** (B01-5e): rows written before a file was one row's each may
+   * share this photo's bytes. A takedown gives this photo its own copy and leaves the shared file to
+   * them — so they still show the same image. Each with its status, at most eight; empty for nearly
+   * every photo.
+   */
+  sameBytesAs: { photoId: Id<'photos'>; moderationStatus: ModerationStatus }[];
 };
 
 /** A hazard as a plain content flag's subject draws it: its kind, words, footprint and votes. */

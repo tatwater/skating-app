@@ -28,8 +28,11 @@ import {
 import {
   ACTION_LIFETIME_MS,
   attemptAlive,
+  copyContentType,
   DOOMED_PER_PASS,
   fileTaken,
+  holdersOf,
+  isRotationCopy,
   ledgerOfPhoto,
   ledgerRowOf,
   openAttempts,
@@ -38,6 +41,7 @@ import {
   recordCopy,
   releaseFile,
   retryDoomed,
+  SAME_BYTES_MAX,
 } from './lib/photoFiles';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { ROTATION_RETRY_MS } from './lib/photoRotation';
@@ -187,6 +191,8 @@ export const removeBlob = mutation({
     const blob = await ctx.db.system.get(storageId);
     if (blob === null) return; // already gone
     if (await fileTaken(ctx, storageId)) throw new ConvexError(BLOB_ATTACHED);
+    // A rotation's copy (recorded or not yet) is no one's upload: its attempt lets it go.
+    if (isRotationCopy(blob.contentType)) throw new ConvexError(BLOB_ATTACHED);
     if (blob._creationTime < Date.now() - PENDING_UPLOAD_MS) throw new ConvexError(BLOB_ATTACHED);
     const failure = await deleteStoredBlob(ctx, storageId);
     if (failure !== null) {
@@ -396,7 +402,11 @@ export const rotateBlobs = internalAction({
           await ctx.runMutation(internal.photos.markBytesMissing, { photoId, old: src });
           return { outcome: 'missing' };
         }
-        const copy = await ctx.storage.store(bytes);
+        // Tagged with its attempt (a content-type parameter; it still serves as the image), so the
+        // window's search can tell this attempt's unrecorded copy from anyone's same bytes.
+        const copy = await ctx.storage.store(
+          bytes.slice(0, bytes.size, copyContentType(bytes.type, attemptId)),
+        );
         await ctx.runMutation(internal.photos.recordRotationCopy, { attemptId, copy });
         next.push(copy);
       }
@@ -558,9 +568,16 @@ export const swapRotated = internalMutation({
       if ((await ctx.db.system.get(id as Id<'_storage'>)) === null) return 'stale';
       rows.push(row);
     }
+    // A shared old file (a legacy row's twin) stays with the rows still naming it; this photo, taken
+    // down, gets its own copy — and records the twins, which still show the same image, for staff.
+    const twins = new Set<Id<'photos'>>(photo.sameBytesAs ?? []);
+    for (const was of [old.storageId, old.thumbStorageId]) {
+      for (const h of await holdersOf(ctx, was, photo._id)) twins.add(h._id);
+    }
     await ctx.db.patch(photo._id, {
       storageId: next.storageId,
       thumbStorageId: next.thumbStorageId,
+      ...(twins.size > 0 ? { sameBytesAs: [...twins].slice(0, SAME_BYTES_MAX) } : {}),
     });
     for (const row of rows) await ctx.db.delete(row._id);
     const now = Date.now();

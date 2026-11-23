@@ -115,6 +115,28 @@ function retryDelay(state: AttemptState): number {
   return DOOMED_RETRY_MS[(state.attempts ?? 1) - 1] ?? DAY_MS;
 }
 
+/** Rows naming `storageId` in either slot, other than `exceptId` — at most `n`. */
+export async function holdersOf(
+  ctx: QueryCtx,
+  storageId: string,
+  exceptId: Id<'photos'>,
+  n = SAME_BYTES_MAX,
+): Promise<Doc<'photos'>[]> {
+  const out = new Map<string, Doc<'photos'>>();
+  for (const index of ['by_storage', 'by_thumb_storage'] as const) {
+    const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
+    const rows = await ctx.db
+      .query('photos')
+      .withIndex(index, (q) => q.eq(field as never, storageId as never))
+      .take(n + 1);
+    for (const r of rows) if (r._id !== exceptId && out.size < n) out.set(r._id, r);
+  }
+  return [...out.values()];
+}
+
+/** The most twins a photo records, and the Inbox names. */
+export const SAME_BYTES_MAX = 8;
+
 /** A copy just stored, recorded before anything else can lose it (invariant 3). */
 export async function recordCopy(
   ctx: MutationCtx,
@@ -161,6 +183,41 @@ export async function openAttempts(
   return out;
 }
 
+/** The content-type parameter a rotation copy carries: `gli-rotation=<attempt id>`. */
+const COPY_TAG = 'gli-rotation';
+
+/**
+ * A rotation copy's content type: the source's, with its attempt's tag as a parameter (any earlier
+ * tag replaced). A MIME parameter, so the copy still serves as the image it is; and only this
+ * attempt's action writes it, so the window's search deletes nothing it didn't store.
+ */
+export function copyContentType(sourceType: string, attemptId: Id<'photoRotations'>): string {
+  const base = sourceType
+    .split(';')
+    .map((p) => p.trim())
+    .filter((p) => p !== '' && !p.toLowerCase().startsWith(`${COPY_TAG}=`))
+    .join('; ');
+  return `${base || 'application/octet-stream'}; ${COPY_TAG}=${attemptId}`;
+}
+
+/** Whether a stored file's content type carries this attempt's tag. */
+export function isCopyOf(
+  contentType: string | undefined,
+  attemptId: Id<'photoRotations'>,
+): boolean {
+  return (contentType ?? '')
+    .split(';')
+    .map((p) => p.trim().toLowerCase())
+    .includes(`${COPY_TAG}=${attemptId}`.toLowerCase());
+}
+
+/** Whether a stored file is any attempt's rotation copy — which only the rotation's own steps let go. */
+export function isRotationCopy(contentType: string | undefined): boolean {
+  return (contentType ?? '')
+    .split(';')
+    .some((p) => p.trim().toLowerCase().startsWith(`${COPY_TAG}=`));
+}
+
 /** Whether an attempt's action may still be alive. */
 export const attemptAlive = (a: Doc<'photoRotations'>, now: number) =>
   a.status === 'running' && now - a.startedAt < ACTION_LIFETIME_MS;
@@ -192,6 +249,10 @@ export async function reconcileAttempt(
     )
     .take(SCAN_PAGE);
   for (const f of page) {
+    // Provably this attempt's copy, never anyone's same bytes: its content type carries this
+    // attempt's tag (`copyContentType`), which only this attempt's action writes — a skater's fresh
+    // upload of the same image, a legacy twin's file and another attempt's copy all lack it.
+    if (!isCopyOf(f.contentType, attempt._id)) continue;
     if (!attempt.sha256.includes(f.sha256)) continue;
     if (await fileTaken(ctx, f._id)) continue;
     await releaseFile(ctx, attempt.photoId, f._id, now);
@@ -250,5 +311,6 @@ export function projectPhoto(photo: Doc<'photos'>) {
     ...(photo.purgeAt !== undefined ? { purgeAt: photo.purgeAt } : {}),
     ...(photo.purgedAt !== undefined ? { purgedAt: photo.purgedAt } : {}),
     ...(photo.bytesMissingAt !== undefined ? { bytesMissingAt: photo.bytesMissingAt } : {}),
+    ...(photo.sameBytesAs !== undefined ? { sameBytesAs: photo.sameBytesAs } : {}),
   };
 }
