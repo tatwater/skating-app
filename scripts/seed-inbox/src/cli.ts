@@ -26,6 +26,7 @@ import {
   errorLine,
   planSeed,
   runLogName,
+  runRecord,
   strandedLines,
   tally,
   waitingOn,
@@ -95,7 +96,8 @@ async function main(): Promise<number> {
         uploader(call, devName),
         () => interrupted,
       );
-      const log = writeLog('apply', { target: target.label, ...run });
+      // The stranded files' ids go to the terminal only, never the kept log (`runRecord`).
+      const log = writeLog('apply', { target: target.label, ...runRecord(run) });
       say(`people created ${run.people.created.length}`);
       say(
         `filed ${run.counts.filed} · failed ${run.counts.failed} · done ${run.counts.done} · still ready ${run.counts.ready} · waiting ${run.counts.waiting} · unavailable ${run.counts.unavailable}`,

@@ -211,6 +211,24 @@ export function strandedLines(stranded: SeedRun['stranded']): string[] {
   );
 }
 
+/**
+ * **What the kept run log holds of a run** — everything but the stranded files' stored ids: the log
+ * lives on in `runs/`, and a stored id works like a key to its bytes, so it is said once, on the
+ * operator's terminal ({@link strandedLines}), and the log keeps only how many each step left.
+ */
+export function runRecord(run: SeedRun) {
+  return {
+    ...run,
+    // Each step's own row too: a failed photo step's `stranded` becomes how many it left.
+    waves: run.waves.map((wave) =>
+      wave.map(({ stranded, ...row }) =>
+        stranded === undefined ? row : { ...row, strandedFiles: stranded.length },
+      ),
+    ),
+    stranded: run.stranded.map((s) => ({ key: s.key, as: s.as, files: s.storageIds.length })),
+  };
+}
+
 /** One turn of the event loop: an interrupt's handler runs here, between steps. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 

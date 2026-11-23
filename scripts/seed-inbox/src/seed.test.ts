@@ -16,6 +16,7 @@ import {
   planSeed,
   runAsFor,
   runLogName,
+  runRecord,
   type SeedCall,
   type SeedState,
   sleepSync,
@@ -482,6 +483,12 @@ describe('a failed photo step releases what it uploaded', () => {
       `left on the deployment by ph-1 (as gus): file file-1 — remove it within a day: pnpm --filter @skating/convex exec convex run photos:removeBlob '{"storageId":"file-1"}' --identity '{"subject":"seed_inbox_7","via":"seed-inbox"}'`,
     ]);
     expect(lines.join()).not.toContain('token');
+    // The kept run log says how many, never which: the ids are on the terminal alone.
+    const record = runRecord(run);
+    expect(JSON.stringify(record)).not.toContain('file-1');
+    expect(record.stranded).toEqual([{ key: 'ph-1', as: 'gus', files: 1 }]);
+    expect(record.waves[0]?.[0]).toMatchObject({ key: 'ph-1', strandedFiles: 1 });
+    expect(record.counts).toEqual(run.counts);
   });
 
   test('photos:create refuses: both files released; one a photo row already names is not stranded', async () => {
