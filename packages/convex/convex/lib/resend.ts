@@ -37,14 +37,29 @@ export function escapeHtml(s: string): string {
 }
 
 /**
- * Send one email. Returns whether it actually went out — callers that record a `sentAt` need to tell
- * "delivered" from "skipped because the provider isn't configured", and a boolean is the honest answer
- * where a silent `void` would let an unsent email look sent.
+ * **What became of one send, three ways** (B01-5f, Greptile on #175): a caller that records the result
+ * where a person reads it must not turn an uncertain answer into a certain one, in either direction.
  *
- * Never throws: every caller is scheduled off a mutation that has already committed, so a mail failure
- * must not roll anything back.
+ * - `accepted`: Resend answered 2xx — it took the email (its body, the email's id, is not needed).
+ * - `rejected`: **definitely not sent** — the request never left (no key, no sender, no address), or
+ *   Resend answered a 4xx other than 409: a validation, auth, permission or missing-field refusal
+ *   (`400`, `401`, `403`, `404`, `405`, `422`), or `429` (rate limit or quota: the request was refused,
+ *   not processed) once the retries it allows are spent. `code` is the class, never the body.
+ * - `unknown`: the request may have gone and no trustworthy answer came back — the fetch threw (a
+ *   dropped connection), it timed out ({@link SEND_TIMEOUT_MS}), Resend answered `5xx` (its docs say
+ *   only "an error with Resend servers", never whether the email was queued), or `409` (another
+ *   request with the same idempotency key in flight, or one already processed under it with another
+ *   body — either way the email may have gone).
  */
-export async function sendEmail(opts: {
+export type SendOutcome =
+  | { kind: 'accepted' }
+  | { kind: 'rejected'; code: 'unconfigured' | 'refused4xx' | 'rateLimited' }
+  | { kind: 'unknown'; code: 'threw' | 'timeout' | 'server5xx' | 'conflict409' };
+
+/** How long one request to Resend may take before its answer is treated as lost. */
+export const SEND_TIMEOUT_MS = 20_000;
+
+type SendOptions = {
   to: string;
   subject: string;
   html: string;
@@ -63,14 +78,26 @@ export async function sendEmail(opts: {
    * address.
    */
   from?: string;
-}): Promise<boolean> {
+  /**
+   * Resend's `Idempotency-Key` (1–256 characters; Resend keeps it 24 hours): a repeat of the same
+   * request under it gets the first answer and sends nothing again. A support reply sends one derived
+   * from its message's id.
+   */
+  idempotencyKey?: string;
+};
+
+/**
+ * Send one email and say what became of it ({@link SendOutcome}). Never throws: every caller is
+ * scheduled off a mutation that has already committed, so a mail failure must not roll anything back.
+ */
+export async function sendEmailOutcome(opts: SendOptions): Promise<SendOutcome> {
   const key = process.env.RESEND_API_KEY;
   const from = opts.from !== undefined ? opts.from : process.env.RESEND_FROM_EMAIL;
   if (!key || !from || !opts.to) {
     console.warn(
       `${opts.context} email skipped (Resend env not configured): ${opts.subject} — set RESEND_API_KEY / ${opts.from !== undefined ? 'the sender' : 'RESEND_FROM_EMAIL'} to enable.`,
     );
-    return false;
+    return { kind: 'rejected', code: 'unconfigured' };
   }
 
   const body = JSON.stringify({
@@ -83,24 +110,48 @@ export async function sendEmail(opts: {
   });
   try {
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(RESEND_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body,
-      });
-      if (res.ok) return true;
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(RESEND_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            ...(opts.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
+          },
+          body,
+          signal: abort.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.ok) return { kind: 'accepted' };
       if (res.status === 429 && attempt < RATE_LIMIT_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, retryAfterMs(res)));
         continue;
       }
       console.warn(`Resend ${opts.context} failed: ${res.status} ${res.statusText}`);
-      return false;
+      if (res.status >= 500) return { kind: 'unknown', code: 'server5xx' };
+      if (res.status === 409) return { kind: 'unknown', code: 'conflict409' };
+      if (res.status === 429) return { kind: 'rejected', code: 'rateLimited' };
+      return { kind: 'rejected', code: 'refused4xx' };
     }
   } catch (err) {
-    console.warn(`Resend ${opts.context} threw`, err);
-    return false;
+    const name = (err as { name?: unknown } | null)?.name;
+    const timedOut = name === 'AbortError' || name === 'TimeoutError';
+    console.warn(`Resend ${opts.context} ${timedOut ? 'timed out' : 'threw'}`, err);
+    return { kind: 'unknown', code: timedOut ? 'timeout' : 'threw' };
   }
+}
+
+/**
+ * Send one email; whether Resend accepted it — the boolean every other caller has always read
+ * (operator mail, notification email, the data export's mail), unchanged: `true` only for
+ * `accepted`. One implementation underneath ({@link sendEmailOutcome}); a caller that records an
+ * outcome a person reads asks that instead.
+ */
+export async function sendEmail(opts: Omit<SendOptions, 'idempotencyKey'>): Promise<boolean> {
+  return (await sendEmailOutcome(opts)).kind === 'accepted';
 }

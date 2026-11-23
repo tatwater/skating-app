@@ -551,7 +551,7 @@ describe('support.reply and its send', () => {
       failedWhy: 'noAddress',
     });
 
-    const mail = stubMail({ resend: 500 });
+    const mail = stubMail({ resend: 422 });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const t2 = await w.ticket();
     const r2 = await w.admin.as.mutation(api.support.reply, { ticketId: t2, body: 'Hi' });

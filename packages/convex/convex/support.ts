@@ -28,12 +28,12 @@ import {
 } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability } from './lib/auth';
-import { clerkEmailForSubject } from './lib/clerkEmail';
+import { clerkEmailLookup } from './lib/clerkEmail';
 import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
 import { fileMember, itemToDecide, ticketSource } from './lib/inboxItems';
 import { assertInboxVerb } from './lib/inboxRules';
 import { SETTLE_MS } from './lib/notificationQueue';
-import { sendEmail } from './lib/resend';
+import { sendEmailOutcome } from './lib/resend';
 import { isSeedProfile } from './lib/seedPeople';
 import {
   bodyRefusal,
@@ -612,12 +612,33 @@ export const replyFailed = internalMutation({
   args: {
     messageId: v.id('supportMessages'),
     claimedAt: v.number(),
-    why: literals(['unconfigured', 'seed', 'noAddress', 'sendFailed'] as const),
+    why: literals(['unconfigured', 'seed', 'noAddress', 'sendFailed', 'outcomeUnknown'] as const),
   },
   handler: async (ctx, { messageId, claimedAt, why }) => {
     const message = await ctx.db.get(messageId);
     if (!claimAnswerable(message, claimedAt)) return;
-    await ctx.db.patch(messageId, { status: 'failed', failedWhy: why, sentAt: undefined });
+    // An unknown outcome keeps the claim's stamp, as the watch's mark does (a later answer from that
+    // claim may still say how it went); a definite failure clears it.
+    await ctx.db.patch(messageId, {
+      status: 'failed',
+      failedWhy: why,
+      sentAt: why === 'outcomeUnknown' ? claimedAt : undefined,
+    });
+  },
+});
+
+/**
+ * The send found nothing it could trust about the address (a Clerk lookup that errored): nothing was
+ * sent, so the claim is let go — the reply settles again, past its window (no cancel), and its watch
+ * schedules the send again, within `REPLY_SEND_ATTEMPTS`. Never recorded as "no address", which the
+ * person may well have.
+ */
+export const releaseClaim = internalMutation({
+  args: { messageId: v.id('supportMessages'), claimedAt: v.number() },
+  handler: async (ctx, { messageId, claimedAt }) => {
+    const message = await ctx.db.get(messageId);
+    if (message?.status !== 'settling' || message.sentAt !== claimedAt) return;
+    await ctx.db.patch(messageId, { sentAt: undefined });
   },
 });
 
@@ -661,8 +682,11 @@ export const watchReply = internalMutation({
  * is sent); with no `SUPPORT_FROM_EMAIL`, `failed` (`unconfigured`) with the skip logged — never sent
  * from the general address (ruled); a seeded ticket `failed` (`seed`) **before any address is
  * resolved**; then the address — the profile's, else the ticket's Clerk subject's, so a ticket filed
- * before provisioning is answered — or `failed` (`noAddress`); then the email, with its footer, from
- * the support sender, recorded `sent` or `failed` (`sendFailed`).
+ * before provisioning is answered — `failed` (`noAddress`) only when Clerk said there is none, the
+ * claim let go for the watch's retry when the lookup errored; then the email, with its footer, from
+ * the support sender, under an idempotency key from the message's id, recorded by what became of it
+ * (`lib/resend.SendOutcome`): `sent`, `failed` (`sendFailed`: definitely not sent), or `failed`
+ * (`outcomeUnknown`: it may have gone).
  */
 export const sendReply = internalAction({
   args: { messageId: v.id('supportMessages') },
@@ -688,30 +712,54 @@ export const sendReply = internalAction({
       });
       return;
     }
-    const to =
-      claim.email ?? (claim.clerkUserId ? await clerkEmailForSubject(claim.clerkUserId) : null);
+    let to = claim.email;
     if (!to) {
-      await ctx.runMutation(internal.support.replyFailed, {
-        messageId,
-        claimedAt: claim.claimedAt,
-        why: 'noAddress',
-      });
-      return;
+      const lookup = claim.clerkUserId
+        ? await clerkEmailLookup(claim.clerkUserId)
+        : ({ kind: 'none' } as const);
+      if (lookup.kind === 'error') {
+        // Nothing sent, and nothing known about the address: the watch tries the send again.
+        await ctx.runMutation(internal.support.releaseClaim, {
+          messageId,
+          claimedAt: claim.claimedAt,
+        });
+        return;
+      }
+      if (lookup.kind === 'none') {
+        await ctx.runMutation(internal.support.replyFailed, {
+          messageId,
+          claimedAt: claim.claimedAt,
+          why: 'noAddress',
+        });
+        return;
+      }
+      to = lookup.email;
     }
-    const ok = await sendEmail({
+    // Resend's idempotency key, from the message's id: a repeat of this reply within Resend's 24 hours
+    // (the watch's send of a reply never claimed, a send that lost its answer) is refused by Resend.
+    const outcome = await sendEmailOutcome({
       to,
       from,
       ...supportReplyEmail(claim.body),
       context: 'support reply',
+      idempotencyKey: `support-reply/${messageId}`,
     });
-    if (ok) {
+    if (outcome.kind === 'accepted') {
       await ctx.runMutation(internal.support.replySent, { messageId, claimedAt: claim.claimedAt });
-    } else {
-      await ctx.runMutation(internal.support.replyFailed, {
-        messageId,
-        claimedAt: claim.claimedAt,
-        why: 'sendFailed',
-      });
+      return;
     }
+    // Definitely not sent → `sendFailed`, or `unconfigured` for a missing key. A request that may
+    // have gone with no trustworthy answer (thrown, timed out, 5xx, 409) → `outcomeUnknown`: never
+    // read as "not sent", so no one sends it again thinking it didn't go.
+    await ctx.runMutation(internal.support.replyFailed, {
+      messageId,
+      claimedAt: claim.claimedAt,
+      why:
+        outcome.kind === 'unknown'
+          ? 'outcomeUnknown'
+          : outcome.code === 'unconfigured'
+            ? 'unconfigured'
+            : 'sendFailed',
+    });
   },
 });
