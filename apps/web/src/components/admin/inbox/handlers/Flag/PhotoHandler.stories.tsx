@@ -18,6 +18,7 @@ import {
   PHOTO_REMOVED,
   PHOTO_THIRD,
   PHOTO_UPLOADER_GONE,
+  PHOTO_WITHDRAWN,
 } from './photoFixtures';
 import type { PhotoView } from './photoModel';
 
@@ -247,13 +248,20 @@ export const Removed: Story = {
 export const Purged: Story = {
   args: { item: PHOTO_PURGED },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement.querySelector('[data-slot="photo-stage"]')).toBeNull();
-    await expect(slot(canvasElement, 'photo-purged')).toHaveTextContent(
-      'The file was deleted on 10 Oct',
-    );
-    await expect(slot(canvasElement, 'photo-purged')).toHaveTextContent('removed on 10 Sep');
-    await expect(canvasElement.querySelector('img')).toBeNull();
-    await expect(barButtons(canvasElement)).toEqual(['Dismiss']);
+    // Never an image: in the same retry as the tombstone drawn, so an absence can't pass early.
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-purged')).toHaveTextContent(
+        'The file was deleted on 10 Oct',
+      );
+      expect(slot(canvasElement, 'photo-purged')).toHaveTextContent('removed on 10 Sep');
+      expect(canvasElement.querySelector('[data-slot="photo-stage"]')).toBeNull();
+      expect(
+        canvasElement.querySelector(
+          '[data-slot="photo-sibling"][data-self] img, [data-slot="photo-sibling"][data-self] canvas',
+        ),
+      ).toBeNull();
+      expect(barButtons(canvasElement)).toEqual(['Dismiss']);
+    });
   },
 };
 
@@ -261,14 +269,17 @@ export const Purged: Story = {
 export const NoAccess: Story = {
   args: { item: PHOTO_NO_ACCESS },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'photo-noAccess')).toHaveTextContent(
-      'shown only to staff who can read hidden content',
-    );
-    await expect(canvasElement.querySelector('img')).toBeNull();
-    await expect(canvasElement.querySelector('[data-slot="photo-mosaic"]')).toBeNull();
-    await expect(within(canvasElement).queryByRole('button', { name: /Show/ })).toBeNull();
-    // The report's frames stand empty, the flagged one still marked.
-    await expect(slots(canvasElement, 'photo-sibling')).toHaveLength(4);
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-noAccess')).toHaveTextContent(
+        'shown only to staff who can read hidden content',
+      );
+      // The report's frames stand empty, the flagged one still marked.
+      expect(slots(canvasElement, 'photo-sibling')).toHaveLength(4);
+      // No image of any size: no img, no mosaic, no Show.
+      expect(canvasElement.querySelector('img')).toBeNull();
+      expect(canvasElement.querySelector('[data-slot="photo-mosaic"]')).toBeNull();
+      expect(within(canvasElement).queryByRole('button', { name: /Show/ })).toBeNull();
+    });
   },
 };
 
@@ -276,10 +287,12 @@ export const NoAccess: Story = {
 export const NoFile: Story = {
   args: { item: PHOTO_NO_FILE },
   play: async ({ canvasElement }) => {
-    await expect(slot(canvasElement, 'photo-noFile')).toHaveTextContent(
-      'The file for this photo couldn’t be found',
-    );
-    await expect(canvasElement.querySelector('[data-slot="photo-stage"] img')).toBeNull();
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-noFile')).toHaveTextContent(
+        'The file for this photo couldn’t be found',
+      );
+      expect(canvasElement.querySelector('[data-slot="photo-stage"]')).toBeNull();
+    });
   },
 };
 
@@ -311,11 +324,13 @@ export const MaxPhotos: Story = {
 export const OffReport: Story = {
   args: { item: PHOTO_OFF_REPORT },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement.querySelector('[data-slot="photo-same-report"]')).toBeNull();
-    await expect(canvasElement.querySelector('[data-slot="photo-place"]')).toBeNull();
-    await expect(slot(canvasElement, 'photo-caption-words')).toHaveTextContent(
-      '“Pressure ridge off the point”',
-    );
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-caption-words')).toHaveTextContent(
+        '“Pressure ridge off the point”',
+      );
+      expect(canvasElement.querySelector('[data-slot="photo-same-report"]')).toBeNull();
+      expect(canvasElement.querySelector('[data-slot="photo-place"]')).toBeNull();
+    });
   },
 };
 
@@ -323,7 +338,11 @@ export const OffReport: Story = {
 export const Own: Story = {
   args: { item: PHOTO_OWN },
   play: async ({ canvasElement }) => {
-    await expect(bar(canvasElement)).toBeNull();
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-subject')).toBeInTheDocument();
+      expect(slot(canvasElement, 'photo-stage')).toBeInTheDocument();
+      expect(bar(canvasElement)).toBeNull();
+    });
   },
 };
 
@@ -331,7 +350,10 @@ export const Own: Story = {
 export const Decided: Story = {
   args: { item: PHOTO_DECIDED },
   play: async ({ canvasElement }) => {
-    await expect(bar(canvasElement)).toBeNull();
+    await waitFor(() => {
+      expect(canvasElement.querySelector('[data-slot="inbox-inspector-lock"]')).not.toBeNull();
+      expect(bar(canvasElement)).toBeNull();
+    });
   },
 };
 
@@ -339,8 +361,24 @@ export const Decided: Story = {
 export const UploaderGone: Story = {
   args: { item: PHOTO_UPLOADER_GONE },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement).not.toHaveTextContent('Kate Donovan');
-    await expect(barButtons(canvasElement)).toEqual(['Hide', 'Remove', 'Dismiss']);
+    await waitFor(() => {
+      expect(barButtons(canvasElement)).toEqual(['Hide', 'Remove', 'Dismiss']);
+      expect(canvasElement).not.toHaveTextContent('Kate Donovan');
+    });
+  },
+};
+
+/** Its uploader took it down while this flag held it: kept out of sight, the line says so. */
+export const Withdrawn: Story = {
+  args: { item: PHOTO_WITHDRAWN },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-withdrawn')).toHaveTextContent(
+        'Its uploader took it down on 14 Oct',
+      );
+      expect(slot(canvasElement, 'photo-purge-on')).toHaveTextContent('unless it is restored');
+      expect(barButtons(canvasElement)).toEqual(['Restore', 'Dismiss']);
+    });
   },
 };
 

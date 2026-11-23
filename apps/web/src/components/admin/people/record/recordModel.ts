@@ -63,6 +63,12 @@ export type AnyRow =
   | { tab: 'reversed'; row: ReversedRow };
 
 /** An item's identity across the lists and the pane. */
+/** A photo item's staff-only thumbnail from its content, as the read serves it (else none). */
+function thumbOf(content: object | null): string | null {
+  const thumb = content !== null && 'thumbUrl' in content ? content.thumbUrl : null;
+  return typeof thumb === 'string' ? thumb : null;
+}
+
 export type Target = { targetType: RecordKind; targetId: string };
 export const targetKey = (t: Target): string => `${t.targetType}:${t.targetId}`;
 
@@ -787,9 +793,9 @@ export function itemView(
   const where = whereParts(kind, item);
   const place = placeName(kind, item);
   const up = isUp(item.published);
-  // A photo verdict (B01-5e): the item's kind as the server will send it; its thumbnail is the
-  // content's staff-only `thumbUrl`, which the read owes.
-  const photo = (kind as ItemKind) === 'photo';
+  // A photo verdict (B01-5e): its thumbnail is the content's staff-only `thumbUrl` (served only to a
+  // viewer with `content.read`, never on a purged tombstone).
+  const photo = kind === 'photo';
   const plate: Plate = photo
     ? {
         kind: 'photo',
@@ -797,7 +803,7 @@ export function itemView(
         kicker: [...where, ...(content === null ? [] : [momentWords(content.at, now, tz)])].join(
           ' · ',
         ),
-        thumbUrl: (content as { thumbUrl?: string | null } | null)?.thumbUrl ?? null,
+        thumbUrl: thumbOf(content),
       }
     : content === null
       ? {

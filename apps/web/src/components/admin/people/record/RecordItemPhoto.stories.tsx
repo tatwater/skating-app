@@ -37,16 +37,14 @@ type Story = StoryObj<typeof meta>;
 /** Pixelated, then shown, then pixelated again. */
 export const Pixelated: Story = {
   play: async ({ canvasElement }) => {
-    const plate = canvasElement.querySelector<HTMLElement>(
-      '[data-slot="record-plate"][data-photo]',
-    );
-    await expect(plate).not.toBeNull();
-    await expect(canvasElement.querySelector('img')).toBeNull();
-    await waitFor(() =>
+    // Pixelated: the plate and its painted mosaic, and no image, in one retry.
+    await waitFor(() => {
+      expect(canvasElement.querySelector('[data-slot="record-plate"][data-photo]')).not.toBeNull();
       expect(
         canvasElement.querySelector<HTMLElement>('[data-slot="photo-mosaic"]')?.dataset.drawn,
-      ).toMatch(/^12x\d+$/),
-    );
+      ).toMatch(/^12x\d+$/);
+      expect(canvasElement.querySelector('img')).toBeNull();
+    });
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Show' }));
     await waitFor(() => expect(canvasElement.querySelector('img')).not.toBeNull());
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Pixelate again' }));
@@ -64,7 +62,9 @@ export const PixelatedLight: Story = {
 export const NoPhoto: Story = {
   args: { item: ITEM_PHOTO_NONE },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement.querySelector('img, canvas')).toBeNull();
-    await expect(canvasElement).toHaveTextContent('No photo to show');
+    await waitFor(() => {
+      expect(canvasElement).toHaveTextContent('No photo to show');
+      expect(canvasElement.querySelector('img, canvas')).toBeNull();
+    });
   },
 };
