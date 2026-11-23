@@ -423,3 +423,37 @@ describe('the rotation through the public writes', () => {
     expect(await storedCount(t)).toBe(0);
   });
 });
+
+describe('the rotation record’s guards', () => {
+  test('the swap takes only recorded copies; a photo restored mid-rotation is held until the watch sweeps', async () => {
+    const { t, photoId, set } = await world();
+    const before = await row(t, photoId);
+    await set('hidden');
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
+      }
+    });
+    await t.mutation(internal.photos.beginRotation, { photoId });
+    const a = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
+    const b = await t.run((ctx) => ctx.storage.store(new Blob(['thumb'])));
+    // Stored but never recorded: not the swap's to take.
+    expect(
+      await t.mutation(internal.photos.swapRotated, {
+        photoId,
+        old: { storageId: before.storageId, thumbStorageId: before.thumbStorageId },
+        next: { storageId: a, thumbStorageId: b },
+      }),
+    ).toBe('stale');
+    // Restored before the watch: up again, but the record stands, so no deleter takes it yet.
+    await set('visible');
+    const result = await t.run(async (ctx) => {
+      const { deletePhotoAndBlobs } = await import('./lib/photoOrphans');
+      return deletePhotoAndBlobs(ctx, (await ctx.db.get(photoId)) as Doc<'photos'>);
+    });
+    expect(result).toBe('held');
+    await stepThrough(t, 30);
+    expect((await row(t, photoId)).rotation).toBeUndefined();
+    expect(await unreferenced(t)).toEqual([]);
+  });
+});
