@@ -282,7 +282,7 @@ describe('SearchReportsInput', () => {
 function feedProps(over: Partial<FeedColumnProps> = {}): FeedColumnProps {
   return {
     state: 'feed',
-    sections: latestSections([POST], new Set(), [MATCH], true, NOW),
+    sections: latestSections([POST], new Set(), [MATCH], true, NOW, { liftFavorites: true }),
     now: NOW,
     canLoadMore: false,
     loadingMore: false,

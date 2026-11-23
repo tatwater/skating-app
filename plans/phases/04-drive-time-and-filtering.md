@@ -256,7 +256,7 @@ Applied in `packages/convex/convex/schema.ts`.
   unknown** for missing quality/thickness/snow; favorites exempt from distance but not quality/recency;
   `surfaceTags`-based no-snow; recency floor); `clusterPutIns`/`snapToEdge`/`directionsUrl` per platform.
 - **`convex-test`:** `waterBodyFavorites.toggle`; `listFeed` with filters (narrowing + favorite boost +
-  include-unknown); `putIns.listForBody` (derived + official merge, hidden/suppressed excluded);
+  include-unknown; since D292 the boost is the client's, in `groupFeedSections`); `putIns.listForBody` (derived + official merge, hidden/suppressed excluded);
   notification fan-out enqueues the right recipients; the digest cron groups by body; coalescing key.
   `isochrones` action mocked (no live ORS in tests).
 - **Web/Mobile:** filter-row persistence (local-first, server reconcile); recency headers; favorite

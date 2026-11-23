@@ -135,6 +135,7 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     bodies,
     status === 'Exhausted',
     now,
+    { liftFavorites: !searching },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
   const state = latestFeedState({

@@ -201,7 +201,10 @@ export interface FeedCardData {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 04) — the feed badge, and the in-section boost (D292). */
+  /**
+   * Viewer has favorited this body or bay (Phase 04 / A09) — the card's badge. The feed's order
+   * reads the Post's own `isFavorite` (`groupFeedSections`, D292), not this.
+   */
   isFavorite?: boolean;
   /**
    * The body's easiest known approach (A06d / D87), denormalized onto the row by the access join.

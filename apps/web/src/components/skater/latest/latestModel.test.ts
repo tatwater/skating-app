@@ -42,6 +42,8 @@ function body(id: string, ageHours: number, isFavorite = false): BodyResultData 
   } as unknown as BodyResultData;
 }
 
+const LIFT = { liftFavorites: true };
+
 const rowId = (r: { kind: string; data: unknown }) =>
   r.kind === 'report' ? (r.data as PostCardData).postId : (r.data as BodyResultData).waterBodyId;
 
@@ -53,6 +55,7 @@ describe('latestSections', () => {
       [body('w1', 20), body('w2', 500)],
       false,
       NOW,
+      LIFT,
     );
     expect(sections.map((s) => s.key)).toEqual(['today', 'yesterday', 'this-week']);
     const rows = sections.flatMap((s) => s.items);
@@ -67,9 +70,14 @@ describe('latestSections', () => {
   });
 
   it('lets an older lake in once the pages are exhausted', () => {
-    const rows = latestSections([post('a', 1)], new Set(), [body('w', 500)], true, NOW).flatMap(
-      (s) => s.items,
-    );
+    const rows = latestSections(
+      [post('a', 1)],
+      new Set(),
+      [body('w', 500)],
+      true,
+      NOW,
+      LIFT,
+    ).flatMap((s) => s.items);
     expect(rows).toHaveLength(2);
   });
 
@@ -88,12 +96,25 @@ describe('latestSections', () => {
       [body('w', 5, true)],
       true,
       NOW,
+      LIFT,
     );
     expect(sections.map((s) => s.key)).toEqual(['today', 'older']);
     expect(sections.map((s) => s.items.map(rowId))).toEqual([
       ['t2', 'w', 't1', 't3'],
       ['o2', 'o1'],
     ]);
+  });
+
+  it('keeps a search newest first: its result line says so (D292)', () => {
+    const sections = latestSections(
+      [post('t1', 1), post('t2', 2, undefined, true), post('o1', 99 * 24, undefined, true)],
+      new Set(),
+      [],
+      true,
+      NOW,
+      { liftFavorites: false },
+    );
+    expect(sections.map((s) => s.items.map(rowId))).toEqual([['t1', 't2'], ['o1']]);
   });
 });
 

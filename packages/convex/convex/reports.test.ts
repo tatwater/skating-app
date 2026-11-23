@@ -2103,7 +2103,7 @@ describe('posts.listFeed (global newsfeed, Phase 05)', () => {
   });
 });
 
-describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
+describe('posts.listFeed filters + the favorite flag (Phase 04, D292)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('quality floor narrows the feed but keeps reports missing a quality (include-unknown)', async () => {
