@@ -92,9 +92,9 @@ describe('retraction until decided', () => {
     expect(requestRetraction('retracted')).toBe('already');
   });
 
-  it("a flag: a person's own, while open or picked up, and not once others share it", () => {
+  it("a flag: a person's own, while open, and not once others share it", () => {
     expect(flagRetraction({ status: 'open', origin: 'user' })).toBe('retract');
-    expect(flagRetraction({ status: 'reviewing', origin: 'user', occurrences: 1 })).toBe('retract');
+    expect(flagRetraction({ status: 'open', origin: 'user', occurrences: 1 })).toBe('retract');
     expect(flagRetraction({ status: 'actioned', origin: 'user' })).toBe('decided');
     expect(flagRetraction({ status: 'dismissed', origin: 'user' })).toBe('decided');
     expect(flagRetraction({ status: 'retracted', origin: 'user' })).toBe('already');

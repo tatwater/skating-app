@@ -119,6 +119,7 @@ async function seedPost(
   for (let i = 0; i < n; i++) {
     const photoId = await t.run(async (ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: await ctx.storage.store(new Blob([`full ${i}`])),
         thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
         uploaderId: authorId,
@@ -1375,6 +1376,7 @@ describe('every read fits a transaction, at the heaviest rows Convex allows', ()
   async function heavyPhoto(t: T, uploaderId: Id<'profiles'>, i: number) {
     return t.run(async (ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: await ctx.storage.store(new Blob([`full ${i}`])),
         thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
         uploaderId,
@@ -1633,6 +1635,7 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     const photo = (uploaderId: Id<'profiles'>) =>
       t.run(async (ctx) =>
         ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId: await ctx.storage.store(new Blob(['full'])),
           thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
           uploaderId,
@@ -1714,6 +1717,7 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
         for (let i = 0; i < n; i++) {
           ids.push(
             await ctx.db.insert('photos', {
+              moderationStatus: 'visible' as const,
               storageId: await ctx.storage.store(new Blob([`full ${i}`])),
               thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
               uploaderId: author.id,
@@ -2115,7 +2119,7 @@ describe('the erasure holds under any order', () => {
           )
           .first();
         if (verdict) return true;
-        for (const status of ['open', 'reviewing'] as const) {
+        for (const status of ['open'] as const) {
           const flag = await ctx.db
             .query('contentFlags')
             .withIndex('by_target_status_reason', (q) =>
@@ -2506,6 +2510,7 @@ describe('fairness under failure, under any mix', () => {
             for (let i = 0; i < spec.debts; i++) {
               const photoId = await t.run(async (ctx) =>
                 ctx.db.insert('photos', {
+                  moderationStatus: 'visible' as const,
                   storageId: await ctx.storage.store(new Blob([`f${i}`])),
                   thumbStorageId: await ctx.storage.store(new Blob([`t${i}`])),
                   uploaderId: person.id,
@@ -2645,6 +2650,7 @@ describe('parking heals itself', () => {
     const uploader = await seedUser(t, 'uploader');
     const photoId = await t.run(async (ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: await ctx.storage.store(new Blob(['full'])),
         thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
         uploaderId: uploader.id,

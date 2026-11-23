@@ -599,6 +599,7 @@ describe('access-point photos (Workstream 4 / D88)', () => {
         new Blob([`thumb-${createdAt}-${Math.random()}`]),
       );
       return ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId,
         thumbStorageId,
         uploaderId,

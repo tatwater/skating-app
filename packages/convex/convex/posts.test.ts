@@ -68,6 +68,7 @@ async function seedPhoto(
 ): Promise<Id<'photos'>> {
   return t.run((ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: 's',
       thumbStorageId: 't',
       uploaderId,
@@ -138,6 +139,7 @@ describe('posts.backfillFromReports (A10-1)', () => {
     const bodyId = await seedBody(t);
     const photoId = await t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 's',
         thumbStorageId: 't',
         uploaderId: authorId,
@@ -220,6 +222,7 @@ describe('posts.backfillFromReports (A10-1)', () => {
     const bodyId = await seedBody(t);
     const photoId = await t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 's',
         thumbStorageId: 't',
         uploaderId: authorId,

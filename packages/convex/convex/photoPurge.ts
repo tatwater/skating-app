@@ -192,7 +192,7 @@ export const purgeOne = internalMutation({
         await clearFailure(ctx, 'photoPurge', photoId);
         return { outcome: 'cleared' as const };
       }
-      if ((photo.moderationStatus ?? 'visible') !== 'removed') {
+      if (photo.moderationStatus !== 'removed') {
         // A clock on a photo that is no longer removed is stale: the restore's write clears it, so
         // this only meets a row written before that rule. Cleared, never purged.
         await ctx.db.patch(photoId, { purgeAt: undefined });

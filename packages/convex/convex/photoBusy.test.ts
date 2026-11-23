@@ -75,6 +75,7 @@ async function manyPhotos(
     for (let i = 0; i < n; i++) {
       ids.push(
         await ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId,
           thumbStorageId,
           uploaderId,

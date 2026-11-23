@@ -34,7 +34,24 @@ export interface SeedCall {
   clerkUserId?: string;
   fn: string;
   args: Record<string, unknown>;
+  /** A photo step: its two files are uploaded first, and their ids passed (`Upload`). */
+  upload?: true;
 }
+
+/**
+ * Upload a photo step's two files as its person — the full image and its thumbnail — and answer their
+ * stored ids, as the app's own upload does (`photos:generateUploadUrl`, then a POST of the bytes).
+ * The CLI's makes real HTTP POSTs; never prints, logs or returns the upload address.
+ */
+export type Upload = (
+  step: SeedCall,
+  runAs: RunAs | undefined,
+) => { storageId: string; thumbStorageId: string };
+
+/** The uploader when none is given: a plan with a photo step can't be filed without one. */
+const noUpload: Upload = (step) => {
+  throw new Error(`${step.key} uploads photos, and this run has no uploader.`);
+};
 
 export interface SeedState {
   people: { key: string; displayName: string; profileId: string | null }[];
@@ -73,6 +90,37 @@ export function operatorRefusal(operator: EnsurePeople['operator']): string | nu
 export interface ClearAnswer {
   done: boolean;
   removed: Record<string, number>;
+  /** Seed photos the call left whole because a rotation of theirs was in flight or a file owed. */
+  waiting?: number;
+  /** When the last rotation still running must be over (its action's lifetime), in ms. */
+  readyBy?: number;
+  /** Of those, the photos with a file whose delete failed and is owed (Machinery retries it). */
+  owed?: number;
+}
+
+/** What a waiting clear is waiting on, in words — the CLI's line, and its give-up message. */
+export function waitingOn(a: ClearAnswer): string {
+  const parts: string[] = [];
+  const rotating = (a.waiting ?? 0) - (a.owed ?? 0);
+  if (rotating > 0) {
+    const by = a.readyBy !== undefined ? `, over by ${new Date(a.readyBy).toISOString()}` : '';
+    parts.push(`${rotating} seed photo(s) whose file is being moved${by}`);
+  }
+  if ((a.owed ?? 0) > 0) {
+    parts.push(
+      `${a.owed} seed photo(s) with a file whose delete failed and is owed (Machinery's photoRotation job retries it)`,
+    );
+  }
+  return parts.join('; ');
+}
+
+/** How long the clear waits for a photo's rotation before asking again, and how many times at most. */
+export const PHOTO_WAIT_MS = 5_000;
+export const MAX_PHOTO_WAITS = 120;
+
+/** Block for `ms` (the script is synchronous, as `convex run` calls are). */
+export function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 /** `convex run`, as the loops see it: a function name, its arguments, and who it is made as. */
@@ -94,6 +142,8 @@ export interface Filed {
   fn: string;
   result?: unknown;
   error?: string;
+  /** Files this step uploaded that it could not release after failing (its stored ids, never a URL). */
+  stranded?: string[];
 }
 
 export interface SeedRun {
@@ -109,7 +159,78 @@ export interface SeedRun {
     unavailable: number;
     ready: number;
   };
+  /** Uploads a failed photo step left that could not be released: what to finish by hand. */
+  stranded: { key: string; as: SeedActor; subject?: string; storageIds: string[] }[];
+  /** The run stopped early on an interrupt (Ctrl-C), after releasing what its step had uploaded. */
+  interrupted: boolean;
 }
+
+/** What `photos:removeBlob` says of a file a photo row already names (the clear takes those). */
+export const BLOB_ATTACHED = 'Only a fresh upload no photo uses can be removed this way.';
+
+/**
+ * **Release uploads a failed photo step made** — as its person, through the app's own cleanup for a
+ * fresh unattached upload (`photos:removeBlob`). Answers the ids it could not release: never one a
+ * photo row already names (a `photos:create` that went through though its answer was lost — the
+ * clear takes that photo, files and all).
+ */
+export function releaseUploads(call: Call, storageIds: readonly string[], runAs?: RunAs): string[] {
+  const left: string[] = [];
+  for (const storageId of storageIds) {
+    try {
+      call('photos:removeBlob', { storageId }, runAs);
+    } catch (err) {
+      if (!errorLine(err).includes(BLOB_ATTACHED)) left.push(storageId);
+    }
+  }
+  return left;
+}
+
+/** A photo step's upload that failed partway, with what it uploaded and could not release. */
+export class UploadFailed extends Error {
+  constructor(
+    message: string,
+    readonly stranded: readonly string[],
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * The summary's lines for uploads a failed step left: each file by its stored id (never an address),
+ * with the one command that finishes it by hand — within a day, while it is still a fresh upload.
+ */
+export function strandedLines(stranded: SeedRun['stranded']): string[] {
+  return stranded.flatMap((s) =>
+    s.storageIds.map(
+      (id) =>
+        `left on the deployment by ${s.key} (as ${s.as}): file ${id} — remove it within a day: ` +
+        `pnpm --filter @skating/convex exec convex run photos:removeBlob '${JSON.stringify({ storageId: id })}'` +
+        (s.subject ? ` --identity '${JSON.stringify({ subject: s.subject, via: SEED_VIA })}'` : ''),
+    ),
+  );
+}
+
+/**
+ * **What the kept run log holds of a run** — everything but the stranded files' stored ids: the log
+ * lives on in `runs/`, and a stored id works like a key to its bytes, so it is said once, on the
+ * operator's terminal ({@link strandedLines}), and the log keeps only how many each step left.
+ */
+export function runRecord(run: SeedRun) {
+  return {
+    ...run,
+    // Each step's own row too: a failed photo step's `stranded` becomes how many it left.
+    waves: run.waves.map((wave) =>
+      wave.map(({ stranded, ...row }) =>
+        stranded === undefined ? row : { ...row, strandedFiles: stranded.length },
+      ),
+    ),
+    stranded: run.stranded.map((s) => ({ key: s.key, as: s.as, files: s.storageIds.length })),
+  };
+}
+
+/** One turn of the event loop: an interrupt's handler runs here, between steps. */
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /** The dry run: who would be created, and the plan as it stands. Writes nothing. */
 export function planSeed(call: Call): { people: EnsurePeople; state: SeedState } {
@@ -133,11 +254,20 @@ export function errorLine(err: unknown): string {
  * **File the plan.** Ensure the people, then: ask for the plan, file every ready step not already
  * tried this run, ask again — until nothing new is ready, or {@link MAX_WAVES}.
  */
-export function applySeed(
+export async function applySeed(
   call: Call,
   operator: string | undefined,
   onFiled: (f: Filed) => void = () => {},
-): SeedRun {
+  upload: Upload = noUpload,
+  /** Asked between steps: true once the run was interrupted (the CLI's Ctrl-C), and it stops. */
+  interrupted: () => boolean = () => false,
+  hooks: {
+    /** A failed step's uploads that couldn't be released — told the moment it's known. */
+    onStranded?: (s: SeedRun['stranded'][number]) => void;
+    /** Each plan read, as it comes (the unavailable steps' reasons, if a later call throws). */
+    onState?: (s: SeedState) => void;
+  } = {},
+): Promise<SeedRun> {
   // Who the operator is, before anything is written: a run that would fail at its first moderator
   // act stops here instead.
   const check = call<EnsurePeople>('inboxSeed:ensurePeople', {
@@ -149,26 +279,71 @@ export function applySeed(
   const tried = new Set<string>();
   const waves: Filed[][] = [];
   let last = call<SeedState>('inboxSeed:state', {});
-  for (let wave = 0; wave < MAX_WAVES; wave++) {
+  hooks.onState?.(last);
+  const stranded: SeedRun['stranded'] = [];
+  let stopped = false;
+  for (let wave = 0; wave < MAX_WAVES && !stopped; wave++) {
     const ready = last.ready.filter((c) => !tried.has(c.key));
     if (ready.length === 0) break;
     const filed: Filed[] = [];
     for (const step of ready) {
       tried.add(step.key);
       const row: Filed = { key: step.key, label: step.label, as: step.as, fn: step.fn };
+      let runAs: RunAs | undefined;
+      let uploaded: string[] = [];
       try {
-        row.result = call(step.fn, step.args, runAsFor(step, operator));
+        runAs = runAsFor(step, operator);
+        // A photo step: its files first, as its person; only their ids reach the call (and the log
+        // holds neither them nor the upload address — just the call's own result).
+        let args = step.args;
+        if (step.upload) {
+          const ids = upload(step, runAs);
+          uploaded = [ids.storageId, ids.thumbStorageId];
+          args = { ...args, ...ids };
+        }
+        row.result = call(step.fn, args, runAs);
       } catch (err) {
         row.error = errorLine(err);
+        // Whatever it uploaded is released (a fresh upload no row names lies outside every sweep
+        // and the clear); what can't be is said, by stored id, to finish by hand.
+        const left =
+          err instanceof UploadFailed
+            ? [...err.stranded]
+            : uploaded.length > 0
+              ? releaseUploads(call, uploaded, runAs)
+              : [];
+        if (left.length > 0) {
+          row.stranded = left;
+          const entry = {
+            key: step.key,
+            as: step.as,
+            ...(runAs ? { subject: runAs.as } : {}),
+            storageIds: left,
+          };
+          stranded.push(entry);
+        }
       }
       filed.push(row);
       onFiled(row);
+      // Said right after its step, before any later call can fail (the summary says it again).
+      const left = stranded.at(-1);
+      if (row.stranded !== undefined && left !== undefined) hooks.onStranded?.(left);
+      // Between steps, the event loop turns: an interrupt's handler runs, and the run stops here —
+      // the step it cut short already failed and released its uploads above.
+      await tick();
+      if (interrupted()) {
+        stopped = true;
+        break;
+      }
     }
     waves.push(filed);
     last = call<SeedState>('inboxSeed:state', {});
+    hooks.onState?.(last);
   }
   const all = waves.flat();
   return {
+    stranded,
+    interrupted: stopped,
     people,
     waves,
     last,
@@ -192,14 +367,30 @@ export interface ClearRun {
 }
 
 /** **Remove the seed**: `inboxSeed:clear` again and again until it is done. */
-export function applyClear(call: Call, onCall: (a: ClearAnswer) => void = () => {}): ClearRun {
+export function applyClear(
+  call: Call,
+  onCall: (a: ClearAnswer) => void = () => {},
+  wait: (ms: number) => void = sleepSync,
+): ClearRun {
   const removed: Record<string, number> = {};
+  let waits = 0;
   for (let calls = 1; calls <= MAX_CLEAR_CALLS; calls++) {
     const answer = call<ClearAnswer>('inboxSeed:clear', {});
     onCall(answer);
     for (const [table, n] of Object.entries(answer.removed))
       removed[table] = (removed[table] ?? 0) + n;
     if (answer.done) return { calls, removed, done: true };
+    // A seed photo whose file is being moved (a takedown's rotation) is left until it lands: the
+    // clear waits for it rather than race it, a few seconds at a time, for up to ten minutes.
+    if ((answer.waiting ?? 0) > 0) {
+      if (++waits > MAX_PHOTO_WAITS) {
+        throw new Error(
+          `After ${Math.round((MAX_PHOTO_WAITS * PHOTO_WAIT_MS) / 60_000)} minutes the clear is still waiting on ${waitingOn(answer)}. Nothing was skipped: run the clear again once that is done.`,
+        );
+      }
+      wait(PHOTO_WAIT_MS);
+      continue;
+    }
     // A call that removed nothing would never finish: say so rather than spin.
     if (!Object.values(answer.removed).some((n) => n > 0)) {
       throw new Error(

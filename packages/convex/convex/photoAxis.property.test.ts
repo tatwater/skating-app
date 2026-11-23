@@ -115,6 +115,7 @@ async function run(ops: Op[]) {
       createdAt: T0,
     });
     const photoId = await ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(new Blob(['full'])),
       thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
       uploaderId: uploader,

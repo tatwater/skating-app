@@ -98,6 +98,7 @@ async function world() {
     const byStatus = {} as Record<Status, Id<'photos'>>;
     for (const status of STATUS_KEYS) {
       byStatus[status] = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: await ctx.storage.store(new Blob([`${status}-full`])),
         thumbStorageId: await ctx.storage.store(new Blob([`${status}-thumb`])),
         uploaderId: uploader,
@@ -406,6 +407,7 @@ describe('the access-photo cap counts only photos still shown', () => {
       w.t.run(async (ctx) => {
         const u = ((await ctx.db.get(w.byStatus.visible)) as Doc<'photos'>).uploaderId;
         return ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId: await ctx.storage.store(new Blob(['f'])),
           thumbStorageId: await ctx.storage.store(new Blob(['t'])),
           uploaderId: u,

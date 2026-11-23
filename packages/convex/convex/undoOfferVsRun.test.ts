@@ -192,6 +192,7 @@ const flaggedPhoto = async (w: W, uploader: P, by: P) => {
   const r = await w.report(uploader.id);
   const photoId = await w.t.run(async (ctx) => {
     const id = await ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(new Blob(['full'])),
       thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
       uploaderId: uploader.id,

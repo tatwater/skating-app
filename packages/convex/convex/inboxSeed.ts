@@ -66,7 +66,17 @@ import {
 import { liveSurvivorOf } from './lib/inboxRules';
 import { isListed } from './lib/listing';
 import { refreshPersonRow } from './lib/peopleRows';
+import { TOMBSTONE_FILE } from './lib/photoAccess';
+import {
+  ACTION_LIFETIME_MS,
+  attemptAlive,
+  ledgerOfPhoto,
+  openAttempts,
+  reconcileAttempt,
+  releaseFile,
+} from './lib/photoFiles';
 import { DOC_MAX, ReadBudget, ROW_MAX, type RowKind, TX_BUDGET } from './lib/readBudget';
+import { clearFailure } from './lib/recurringWork';
 import { bumpBountyPoints, bumpReputation } from './lib/reputation';
 import {
   assertSeedDeployment,
@@ -112,6 +122,12 @@ export interface SeedCall {
   clerkUserId?: string;
   fn: string;
   args: Record<string, unknown>;
+  /**
+   * A photo step (`photos:create`): before the call, the script uploads two small generated images
+   * as the same person — `photos:generateUploadUrl`, then an HTTP POST of the bytes — and passes the
+   * two stored ids as `storageId` and `thumbStorageId`, as the app's own upload does.
+   */
+  upload?: true;
 }
 
 /** A required input the deployment doesn't hold (yet, or at all). */
@@ -151,6 +167,8 @@ interface StepDef {
   fn: string;
   /** Steps that must be done before this one (beyond those its `args` read through `out`). */
   after?: readonly string[];
+  /** A photo step: the script uploads the two files first ({@link SeedCall.upload}). */
+  upload?: true;
   args(r: Refs): Record<string, unknown> | Promise<Record<string, unknown>>;
   /** The id of the row this step filed, or `'done'`, or `null` while it isn't filed. */
   find(ctx: QueryCtx, r: Refs): Promise<string | null>;
@@ -1179,6 +1197,7 @@ export function seedSteps(): StepDef[] {
     ...requests,
     ...drawn,
     ...mergeProofSteps(),
+    ...photoSteps(),
     ...tickets,
   ];
 
@@ -1586,6 +1605,122 @@ async function favoriteOf(ctx: QueryCtx, userId: Id<'profiles'>, waterBodyId: Id
  * The seed leaves it unmerged: the proof merges it from the Inbox and unmerges it from History.
  * *Morey East Bay* over Lake Morey stays as it was — the item that looks like board 2.5.
  */
+/** The captions of the photo report's four photos, in its order — each photo's seed key. */
+export const SEED_PHOTO_CAPTIONS = [
+  'The cove from the launch',
+  'Ice texture by the dock',
+  'The pressure ridge, looking north',
+  'Snow on the launch ramp',
+] as const;
+
+/** A seed person's photo, found by its caption (each one's own). */
+async function photoBy(
+  ctx: QueryCtx,
+  uploaderId: Id<'profiles'>,
+  caption: string,
+): Promise<string | null> {
+  const rows = await ctx.db
+    .query('photos')
+    .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+    .take(50);
+  return rows.find((p) => p.caption === caption)?._id ?? null;
+}
+
+/**
+ * **Photos, the way a person posts them** (B01 close-out; board 2.7): Gus uploads four photos and
+ * posts a report with them; Ben flags the second (an open Content item, not the report's first photo);
+ * Cleo flags the third and the operator hides it from the Inbox (a decided item, its file rotated);
+ * Hana flags the fourth and Gus deletes it — held by the flag, so it is withdrawn, not deleted, and
+ * its flag stays open. Every step a public function as its person; the files are uploaded by the script.
+ */
+function photoSteps(): StepDef[] {
+  const photo = (n: number): StepDef => {
+    const caption = SEED_PHOTO_CAPTIONS[n] as string;
+    return {
+      key: `ph-${n + 1}`,
+      label: `photo ${n + 1} of 4 for the photo report`,
+      as: 'gus',
+      fn: 'photos:create',
+      upload: true,
+      args: () => ({ caption, placeOnMap: false }),
+      find: (ctx, r) => photoBy(ctx, r.person('gus'), caption),
+    };
+  };
+  const ph = (n: number) => (r: Refs) => r.out(`ph-${n}`);
+  return [
+    photo(0),
+    photo(1),
+    photo(2),
+    photo(3),
+    report(
+      'r-photos',
+      'gus',
+      'caspian',
+      'a report with four photos',
+      (r) => ({
+        // As bumpy as the other Caspian report says: a report that disagrees would start a
+        // contradiction, whose settle looks up the weather (a metered call the seed never makes).
+        surfaceTags: ['bumpy'],
+        skateQuality: 'poor',
+        notes: 'Bumpy and crusted, a ridge to the north. Photos from the launch and the dock.',
+        photoIds: [1, 2, 3, 4].map((n) => r.out(`ph-${n}`)),
+      }),
+      4,
+    ),
+    flag(
+      'f-photo',
+      'ben',
+      'photo',
+      ph(2),
+      'inappropriate',
+      'a photo flagged, the report’s second',
+      'There is a house and a car plate in this one.',
+      ['r-photos'],
+    ),
+    flag(
+      'f-photo-hide',
+      'cleo',
+      'photo',
+      ph(3),
+      'inappropriate',
+      'a photo flagged that the operator hides',
+      'Someone’s face is clear in this photo.',
+      ['r-photos'],
+    ),
+    {
+      key: 'hide-photo',
+      label: 'the flagged photo hidden from the Inbox (its file moved)',
+      as: 'operator',
+      fn: 'inboxWrites:takeDown',
+      args: async (r) => ({
+        itemId: await r.item('f-photo-hide'),
+        status: 'hidden',
+        reason: 'A face is clear in the photo.',
+      }),
+      find: (ctx, r) => actionOn(ctx, 'photo', r.out('ph-3'), 'hide'),
+    },
+    flag(
+      'f-photo-withdraw',
+      'hana',
+      'photo',
+      ph(4),
+      'other',
+      'a photo flagged that its uploader then deletes',
+      'This is not this lake.',
+      ['r-photos'],
+    ),
+    {
+      key: 'withdraw-photo',
+      label: 'the flagged photo deleted by its uploader: withdrawn, its flag still open',
+      as: 'gus',
+      fn: 'photos:remove',
+      after: ['f-photo-withdraw'],
+      args: (r) => ({ photoId: r.out('ph-4') }),
+      find: (ctx, r) => actionOn(ctx, 'photo', r.out('ph-4'), 'author_delete'),
+    },
+  ];
+}
+
 function mergeProofSteps(): StepDef[] {
   const track = (key: string, person: SeedPersonKey, radius: number, east = 0): StepDef => ({
     key,
@@ -2314,7 +2449,14 @@ export const state = internalQuery({
         const pending = (step.after ?? []).find((k) => !settled.has(k));
         if (pending !== undefined) throw new Missing(pending, true);
         const args = await step.args(refs);
-        const call: SeedCall = { key: step.key, label: step.label, as: step.as, fn: step.fn, args };
+        const call: SeedCall = {
+          key: step.key,
+          label: step.label,
+          as: step.as,
+          fn: step.fn,
+          args,
+          ...(step.upload ? { upload: true as const } : {}),
+        };
         if (step.as !== 'operator' && step.as !== 'bare') {
           call.clerkUserId = seedPerson(step.as).clerkUserId;
         }
@@ -2743,6 +2885,133 @@ async function dropDrawnBody(s: Sweep, body: Doc<'waterBodies'>): Promise<void> 
 }
 
 /**
+ * What one seed photo's removal reads and writes, at worst: its attempts and ledger (settled, so a
+ * handful), each slot's holders and ledger row, the two releases, its Machinery row.
+ */
+const PHOTO_CLEAR_COST = 48 * ROW_MAX.small + 2 * DOC_MAX;
+/** A seed person's photos read a page at a time — they post a handful. */
+const PHOTO_PAGE = 50;
+/** One attempt's reconcile, at worst: a page of its window's files, its ledger rows, their releases. */
+const RECONCILE_COST = 320 * ROW_MAX.small;
+
+/** What the clear left a seed photo for: a rotation still running (and when it must end), a file owed. */
+type PhotoWait = { waiting: number; readyBy?: number; owed?: number };
+
+/**
+ * A seed photo's rotation attempts that can no longer store anything, reconciled now — the photo's
+ * own watch or the daily files sweep would, a day on for a parked one — through the photo code's own
+ * `reconcileAttempt`. `null` once none is open; else when the last one still running must end (its
+ * action's lifetime), so the clear waits only for a rotation really in flight.
+ */
+async function settleAttempts(s: Sweep, photoId: Id<'photos'>): Promise<number | null> {
+  const now = Date.now();
+  let readyBy: number | null = null;
+  for (const a of await openAttempts(s.ctx, photoId)) {
+    if (attemptAlive(a, now)) {
+      readyBy = Math.max(readyBy ?? 0, a.startedAt + ACTION_LIFETIME_MS);
+      continue;
+    }
+    s.need(RECONCILE_COST);
+    // A long window may take more than a page: the next call goes on from where this one stopped.
+    if (!(await reconcileAttempt(s.ctx, a, now))) readyBy = Math.max(readyBy ?? 0, now);
+  }
+  return readyBy;
+}
+
+/**
+ * **The one deleter of a held photo outside the photo code** (on the photo-deleters guard's list): a
+ * seed person's photo, whatever its state — flagged, hidden, removed, withdrawn — goes with the seed,
+ * as the seed is the one thing that made it. Never while a rotation of it is unreconciled (running, or
+ * ended with its window not yet searched: `openAttempts`) — it waits, so it never races one. Then, in
+ * one transaction: each file its ledger still holds (an owed deletion, a reconciled attempt's
+ * leftover) released now through `releaseFile`; its attempt rows and its Machinery row; the row; each
+ * file the row named, released — so no row ever names a deleted file and no file is left that no row
+ * names. A file another photo row still names (the legacy shared shape) stays with that row
+ * (`releaseFile` asks). A release that fails again leaves the photo whole for a later call. Refuses
+ * anything but a seed person's photo.
+ */
+async function clearSeedPhoto(
+  s: Sweep,
+  photo: Doc<'photos'>,
+  people: ReadonlySet<string>,
+): Promise<'cleared' | 'waiting' | 'owed'> {
+  const ctx = s.ctx;
+  if (!people.has(photo.uploaderId)) throw new Error('clearSeedPhoto: not a seed person’s photo');
+  if ((await openAttempts(ctx, photo._id)).length > 0) return 'waiting';
+  s.need(PHOTO_CLEAR_COST);
+  const now = Date.now();
+  // What the ledger still owes for it: deleted now, each with its ledger row (or owed again).
+  for (const row of await ledgerOfPhoto(ctx, photo._id, PHOTO_PAGE)) {
+    if (await releaseFile(ctx, photo._id, row.storageId, now)) {
+      s.removed._storage = (s.removed._storage ?? 0) + 1;
+    }
+  }
+  if ((await ledgerOfPhoto(ctx, photo._id, 1)).length > 0) return 'owed';
+  // Its attempts, every one reconciled (an open one waited above) — to the end, a row a read, within
+  // the call's budget (a call that runs out stops here, the photo whole, and the next goes on).
+  await s.drain('photoRotations', 'small', () =>
+    ctx.db
+      .query('photoRotations')
+      .withIndex('by_photo_status', (q) => q.eq('photoId', photo._id).eq('status', 'reconciled'))
+      .first(),
+  );
+  // Its Machinery rows: a rotation that parked, and a purge that parked.
+  await clearFailure(ctx, 'photoRotation', photo._id);
+  await clearFailure(ctx, 'photoPurge', photo._id);
+  await ctx.db.delete(photo._id);
+  s.removed.photos = (s.removed.photos ?? 0) + 1;
+  for (const file of new Set([photo.storageId, photo.thumbStorageId])) {
+    if (file === TOMBSTONE_FILE) continue;
+    if (await releaseFile(ctx, photo._id, file, now)) {
+      s.removed._storage = (s.removed._storage ?? 0) + 1;
+    }
+  }
+  return 'cleared';
+}
+
+/**
+ * Every seed person's photo, and what hangs off each — its flags (out of their Inbox items), its audit
+ * rows and verdicts — then the photo through {@link clearSeedPhoto}. Before anything else of theirs,
+ * so a report's photos go before the report. A photo's attempts that can't still be running are
+ * reconciled here first ({@link settleAttempts}), so a parked rotation never holds the clear for the
+ * day its cron takes. Answers what it had to wait for — a rotation really in flight (and when it must
+ * end), a file whose delete failed and is owed — each photo left whole for a later call.
+ */
+async function sweepPhotos(s: Sweep, people: Doc<'profiles'>[]): Promise<PhotoWait> {
+  const db = s.ctx.db;
+  const ids = new Set<string>(people.map((p) => p._id));
+  const wait: PhotoWait = { waiting: 0 };
+  for (const p of people) {
+    for (const photo of await db
+      .query('photos')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', p._id))
+      .take(PHOTO_PAGE)) {
+      const readyBy = await settleAttempts(s, photo._id);
+      if (readyBy !== null) {
+        wait.waiting++;
+        wait.readyBy = Math.max(wait.readyBy ?? 0, readyBy);
+        continue;
+      }
+      await s.drain(
+        'contentFlags',
+        'contentFlag',
+        () =>
+          db
+            .query('contentFlags')
+            .withIndex('by_target', (q) => q.eq('targetType', 'photo').eq('targetId', photo._id))
+            .first(),
+        (f) => dropFlag(s, f),
+      );
+      await dropAuditsOf(s, 'photo', photo._id);
+      const cleared = await clearSeedPhoto(s, photo, ids);
+      if (cleared !== 'cleared') wait.waiting++;
+      if (cleared === 'owed') wait.owed = (wait.owed ?? 0) + 1;
+    }
+  }
+  return wait;
+}
+
+/**
  * The phases, in order, each over every fake person. Later phases find what earlier ones would
  * otherwise orphan; the people go last, once nothing names them.
  */
@@ -3005,6 +3274,10 @@ export const clear = internalMutation({
       );
     }
     try {
+      // The photos first, each only once nothing of its is in flight: a call that had to wait for
+      // one (a rotation running, a file owed) stops before the people, and says so.
+      const wait = await sweepPhotos(s, people);
+      if (wait.waiting > 0) return { done: false, removed: s.removed, ...wait };
       await sweepPeople(s, people);
       for (const p of people) {
         await s.delete('profiles', p._id);
@@ -3091,6 +3364,15 @@ export const clearPlan = internalQuery({
           await db
             .query('reports')
             .withIndex('by_author', (q) => q.eq('authorId', p._id))
+            .take(cap)
+        ).length,
+      );
+      add(
+        'photos',
+        (
+          await db
+            .query('photos')
+            .withIndex('by_uploader', (q) => q.eq('uploaderId', p._id))
             .take(cap)
         ).length,
       );

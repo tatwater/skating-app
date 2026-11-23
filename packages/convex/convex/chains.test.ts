@@ -398,6 +398,7 @@ describe('every chain reaches its end on its dearest page', () => {
     for (let i = 0; i < 12; i++) {
       const photoId = await t.run(async (ctx) =>
         ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId: await ctx.storage.store(new Blob([`full ${i}`])),
           thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
           uploaderId: author.id,
@@ -523,6 +524,7 @@ describe('every chain reaches its end on its dearest page', () => {
       for (let i = 0; i < debts; i++) {
         const photoId = await t.run(async (ctx) =>
           ctx.db.insert('photos', {
+            moderationStatus: 'visible' as const,
             storageId: await ctx.storage.store(new Blob([`full ${i}`])),
             thumbStorageId: await ctx.storage.store(new Blob([`thumb ${i}`])),
             uploaderId: uploader,
@@ -604,6 +606,7 @@ describe('every chain reaches its end on its dearest page', () => {
     for (const uploader of [author.id, other.id]) {
       const photoId = await t.run(async (ctx) =>
         ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId: await ctx.storage.store(new Blob(['full'])),
           thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
           uploaderId: uploader,

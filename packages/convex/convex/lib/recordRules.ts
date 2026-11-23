@@ -335,7 +335,7 @@ export function recordFactsOf(
       erased: photo.purgedAt !== undefined || photo.bytesMissingAt !== undefined,
       authorDeleted: withdrawn === true,
       withdrawn,
-      status: photo.moderationStatus ?? 'visible',
+      status: photo.moderationStatus,
       standing,
       heldAs,
       authorId: authorOf(photo),

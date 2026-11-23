@@ -1,6 +1,5 @@
 import type { LatLng } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
-import { useMemo } from 'react';
 
 /**
  * What a moderator is checking on a map (D202): the spot a skater marked, and — when there is one —
@@ -74,9 +73,8 @@ export interface ReviewRow {
 
 /**
  * What the map draws for a row: its spot, or its spot paired with the lookalike asked for — as the
- * row reports it at that moment. A pick freezes this at the click (`pickReview`); the oldest row,
- * shown until the moderator picks, is drawn from the row as it stands (`useRowReview`). Asked for a
- * pair the row does not report, it is the spot alone.
+ * row reports it at that moment. A pick freezes this at the click (`pickReview`). Asked for a pair
+ * the row does not report, it is the spot alone.
  */
 export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
   const spot: ReviewPoints = { ask: row.coord, ...(row.name ? { name: row.name } : {}) };
@@ -89,16 +87,6 @@ export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
     return { ...spot, other: { point: coord, kind: 'proposal', name } };
   }
   return spot;
-}
-
-/**
- * A row's spot held steady for a canvas, which frames a review each time it is handed a new one — for
- * the row shown until the moderator picks one. The same object while what it draws is unchanged (the
- * query re-emits fresh rows, and each would re-fly the map), a new one when it changes.
- */
-export function useRowReview(row: ReviewRow | undefined): ReviewPoints | null {
-  const key = row ? JSON.stringify(rowReview(row, 'spot')) : '';
-  return useMemo(() => (key ? (JSON.parse(key) as ReviewPoints) : null), [key]);
 }
 
 /** Add the review's source and layers — once, in a canvas's `onLoad`. */

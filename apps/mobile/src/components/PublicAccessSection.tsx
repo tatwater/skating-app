@@ -12,7 +12,7 @@ import { TextArea } from './ThemedInputs';
  * "No public access" — the report control and the ruling it leads to (A06f), the mobile half of web's
  * `PublicAccessSection`.
  *
- * **The member's half only.** A moderator rules from the web queue (`/admin/flags`), where the
+ * **The member's half only.** A moderator rules from the web console's Inbox (Access reports), where the
  * corroboration count is the rank and a dispute of a prior review is called out; there is no rule
  * button here. What the phone *does* need is the report, because the phone is where a skater is
  * standing when they get turned away — and until this section existed the mobile app carried the map

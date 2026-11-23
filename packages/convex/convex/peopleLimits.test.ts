@@ -270,7 +270,7 @@ describe('the figures say capped rather than throw or mislead', () => {
           createdAt: T0,
           ...over,
         });
-      for (const status of ['open', 'reviewing'] as const) {
+      for (const status of ['open'] as const) {
         for (let i = 0; i < 51; i++) await flag({ status });
         for (let i = 0; i < 101; i++) {
           await flag({ status, targetType: 'report', targetId: `r${i}`, subjectUserId: spam });
@@ -454,7 +454,7 @@ describe('the figures say capped rather than throw or mislead', () => {
     const people: Id<'profiles'>[] = [];
     for (let i = 0; i < 40; i++) people.push(await seed(t, `p${i}`, 'member'));
     await t.run(async (ctx) => {
-      for (const status of ['open', 'reviewing'] as const) {
+      for (const status of ['open'] as const) {
         for (let i = 0; i <= 200; i++) {
           await ctx.db.insert('contentFlags', {
             flaggerId: filer,

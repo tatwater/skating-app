@@ -398,7 +398,12 @@ export const rotateBlobs = internalAction({
       for (const id of [src.storageId, src.thumbStorageId]) {
         const bytes = await ctx.storage.get(id as Id<'_storage'>);
         if (bytes === null) {
-          await ctx.runMutation(internal.photos.markBytesMissing, { photoId, old: src });
+          // Exactly the validator's fields: `src` also carries `kind` and `attemptId`, and an extra
+          // field fails the call — the run would throw, and its watch retry it, forever.
+          await ctx.runMutation(internal.photos.markBytesMissing, {
+            photoId,
+            old: { storageId: src.storageId, thumbStorageId: src.thumbStorageId },
+          });
           return { outcome: 'missing' };
         }
         // Tagged with its attempt (a content-type parameter; it still serves as the image), so the

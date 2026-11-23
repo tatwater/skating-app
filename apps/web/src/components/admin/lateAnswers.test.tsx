@@ -331,10 +331,10 @@ function Undo({ needsReason }: { needsReason: boolean }) {
   );
 }
 
-/** A Legacy page's write with no `catch` of its own (Support's buttons, the water list's Approve). */
+/** A Legacy page's write with no `catch` of its own (the water list's Approve, say). */
 function LegacyButtonWrite() {
-  const assign = useSaidMutation(api.support.assign);
-  return <LegacyButton onClick={() => void assign({} as never).catch(() => {})}>Send</LegacyButton>;
+  const write = useSaidMutation(api.support.resolve);
+  return <LegacyButton onClick={() => void write({} as never).catch(() => {})}>Send</LegacyButton>;
 }
 
 /** A Legacy reason dialog (`ReasonDialog`) over the net. */

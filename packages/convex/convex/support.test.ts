@@ -145,7 +145,7 @@ describe('support.create', () => {
 });
 
 describe('support inbox (admin-only, D37 PII)', () => {
-  test('a member cannot assign or resolve', async () => {
+  test('a member cannot resolve', async () => {
     const t = harness();
     await seed(t, 'member');
     const user = await seed(t, 'reporter');
@@ -154,15 +154,12 @@ describe('support inbox (admin-only, D37 PII)', () => {
       body: 'x is broken',
     });
     void user;
-    await expect(as(t, 'member').mutation(api.support.assign, { ticketId })).rejects.toThrow(
-      /admin/,
-    );
     await expect(as(t, 'member').mutation(api.support.resolve, { ticketId })).rejects.toThrow(
       /admin/,
     );
   });
 
-  test('an admin assigns (open -> in_progress) then resolves', async () => {
+  test('an admin resolves an open ticket', async () => {
     const t = harness();
     const adminId = await seed(t, 'admin', 'admin');
     await seed(t, 'reporter');
@@ -171,13 +168,9 @@ describe('support inbox (admin-only, D37 PII)', () => {
       body: 'x is broken',
     });
 
-    await as(t, 'admin').mutation(api.support.assign, { ticketId });
-    let ticket = await t.run((ctx) => ctx.db.get(ticketId));
-    expect(ticket?.status).toBe('in_progress');
-    expect(ticket?.assignedToUserId).toBe(adminId);
-
+    expect((await t.run((ctx) => ctx.db.get(ticketId)))?.status).toBe('open');
     await as(t, 'admin').mutation(api.support.resolve, { ticketId });
-    ticket = await t.run((ctx) => ctx.db.get(ticketId));
+    const ticket = await t.run((ctx) => ctx.db.get(ticketId));
     expect(ticket?.status).toBe('resolved');
     expect(ticket?.resolvedByUserId).toBe(adminId);
   });

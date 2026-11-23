@@ -53,6 +53,10 @@ const PHOTO_DELETERS: Record<string, string> = {
     'a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed',
   'photos.ts:removeBlob':
     'a fresh upload no photo row names and no rotation stored (fileTaken, isRotationCopy, PENDING_UPLOAD_MS)',
+  // The one deleter outside the photo code: internal, behind the seed's deployment gate, a seed
+  // person's photo only (it refuses any other), its files through `releaseFile`.
+  'inboxSeed.ts:clearSeedPhoto':
+    'the seed’s clear: a seed person’s photo whatever its state, once no rotation is unreconciled',
 };
 
 /** Blob deletes that aren't a photo's, by function. */

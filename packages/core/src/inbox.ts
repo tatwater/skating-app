@@ -76,7 +76,6 @@ export const INBOX_DECISIONS = [
   'restored',
   'ruled_closed',
   'ruled_accessible',
-  'cleared',
   'approved',
   'declined',
   'merged',

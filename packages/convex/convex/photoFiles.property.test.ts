@@ -44,18 +44,58 @@ vi.mock('./lib/storageBlobs', async (importOriginal) => {
   };
 });
 
+/**
+ * Files lost from under a row (outside the app's own deletes): every id, so the invariants allow a
+ * row to name one; and a hook that loses a photo's file mid-rotation — when its next copy is recorded,
+ * after the attempt began, before the action reads on — so the action's own missing-file path runs.
+ */
+const lost = vi.hoisted(() => ({
+  ids: new Set<string>(),
+  midRotation: null as { photoId: string; storageId: string } | null,
+}));
+vi.mock('./lib/photoFiles', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/photoFiles')>();
+  return {
+    ...actual,
+    recordCopy: async (...args: Parameters<typeof actual.recordCopy>) => {
+      await actual.recordCopy(...args);
+      const [ctx, attempt] = args;
+      const m = lost.midRotation;
+      if (m && m.photoId === attempt.photoId) {
+        lost.midRotation = null;
+        lost.ids.add(m.storageId);
+        await ctx.storage.delete(m.storageId as Id<'_storage'>);
+      }
+    },
+  };
+});
+
 const modules = import.meta.glob('./**/*.*s');
 const T0 = Date.UTC(2026, 11, 2, 12);
 const DAY = 86_400_000;
 const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 
+/**
+ * Rotation runs that threw. No fault the model injects makes the action throw (a delete that fails is
+ * owed, not thrown; a lost file is marked) — so any is a bug: a run's call its callee's validator
+ * refuses, as `markBytesMissing`'s did.
+ */
+const runsFailed: string[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   failing.ids.clear();
+  runsFailed.length = 0;
+  vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    const line = args.map(String).join(' ');
+    if (/photos\.rotateBlobs: .* failed/.test(line)) runsFailed.push(line);
+  });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -82,6 +122,8 @@ type Op =
   | { k: 'legacyShare'; i: number; a: Slot; j: number; b: Slot | 'fresh' | 'same' }
   /** `n` legacy rows naming `i`'s `slot` file as their `as` slot — nine and more twins of one file. */
   | { k: 'legacyMany'; i: number; slot: Slot; as: Slot; n: number }
+  /** `i`'s `slot` file lost from storage — now, or mid-rotation (after its next attempt begins). */
+  | { k: 'vanish'; i: number; slot: Slot; when: 'now' | 'midRotation' }
   /** A row created naming a doomed file (in `slot`), between its dooming and its retry. */
   | { k: 'adoptDoomed'; i: number; slot: Slot }
   /** A skater's fresh upload of `i`'s image bytes, not yet attached. */
@@ -116,6 +158,15 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
       a: fc.constantFrom<Slot>('image', 'thumb'),
       j: idx,
       b: fc.constantFrom<Slot | 'fresh' | 'same'>('image', 'thumb', 'fresh', 'same'),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      k: fc.constant('vanish' as const),
+      i: idx,
+      slot: fc.constantFrom<Slot>('image', 'thumb'),
+      when: fc.constantFrom('now' as const, 'midRotation' as const),
     }),
   },
   {
@@ -215,6 +266,8 @@ async function advance(t: T, minutes: number) {
 async function run(ops: Op[]) {
   vi.setSystemTime(T0);
   failing.ids.clear();
+  lost.ids.clear();
+  lost.midRotation = null;
   const t = harness();
   const uploaderId = await person(t, 'uploader');
   await person(t, 'skater');
@@ -484,6 +537,21 @@ async function run(ops: Op[]) {
               failing.ids.add(row.thumbStorageId);
           }
           break;
+        case 'vanish': {
+          const row = p ? await t.run((ctx) => ctx.db.get(p)) : null;
+          if (row && row.purgedAt === undefined) {
+            const storageId = slotOf(row, op.slot);
+            if (op.when === 'midRotation') lost.midRotation = { photoId: row._id, storageId };
+            else {
+              lost.ids.add(storageId);
+              await t.run(async (ctx) => {
+                if (await ctx.db.system.get(storageId as Id<'_storage'>))
+                  await ctx.storage.delete(storageId as Id<'_storage'>);
+              });
+            }
+          }
+          break;
+        }
         case 'letGo':
           failing.ids.clear();
           break;
@@ -524,10 +592,22 @@ async function run(ops: Op[]) {
         (a) => a.status !== 'reconciled',
       ).length,
       strays: stored.filter((id) => !named.has(id)),
-      missing: [...live].filter((id) => !stored.includes(id)),
+      missing: [...live].filter((id) => !stored.includes(id) && !lost.ids.has(id)),
+      // A photo marked missing: its watch ended, and nothing was scheduled for it after the marking.
+      retriedAfterMissing: (await ctx.db.system.query('_scheduled_functions').collect()).filter(
+        (f) => {
+          const photoId = (f.args[0] as { photoId?: string } | undefined)?.photoId;
+          const row = rows.find((r) => r._id === photoId);
+          return (
+            row?.bytesMissingAt !== undefined &&
+            /rotateBlobs|rotationWatch/.test(f.name) &&
+            (f.state.kind === 'pending' || Math.floor(f._creationTime) > row.bytesMissingAt)
+          );
+        },
+      ).length,
     };
   });
-  expect(end).toEqual({ ledger: 0, open: 0, strays: [], missing: [] });
+  expect(end).toEqual({ ledger: 0, open: 0, strays: [], missing: [], retriedAfterMissing: 0 });
 }
 
 /** One rotation attempt of photo `p`, as its action runs it — stopped dead at `kill`. */
@@ -549,7 +629,15 @@ async function attempt(t: T, p: Id<'photos'>, kill: Kill): Promise<string | unde
           )) as string)
         : null;
     });
-    if (copy === null) return;
+    if (copy === null) {
+      // As the action does: a file gone stops the rotation for good, with exactly these arguments.
+      await t.mutation(internal.photos.markBytesMissing, {
+        photoId: p,
+        old: { storageId: begun.storageId, thumbStorageId: begun.thumbStorageId },
+      });
+      await t.mutation(internal.photos.endRotation, { attemptId: begun.attemptId });
+      return;
+    }
     if (kill === storeKill) return;
     await t.mutation(internal.photos.recordRotationCopy, { attemptId: begun.attemptId, copy });
     if (kill === recordKill) return;
@@ -594,15 +682,19 @@ async function checkInvariants(
   photos: Id<'photos'>[],
   uploads: Set<string>,
 ) {
+  expect(runsFailed, 'a rotation run threw').toEqual([]);
   const state = await t.run(async (ctx) => {
     const rows = await ctx.db.query('photos').collect();
     const ledger = await ctx.db.query('photoFiles').collect();
     const attempts = await ctx.db.query('photoRotations').collect();
     const stored = await ctx.db.system.query('_storage').collect();
-    const failures = (await ctx.db.query('jobFailures').collect()).filter((f) =>
-      f.key.startsWith('file:'),
+    const failures = (await ctx.db.query('jobFailures').collect()).filter(
+      (f) => f.job === 'photoRotation' && f.key.startsWith('file:'),
     );
-    return { rows, ledger, attempts, stored, failures };
+    const rotationFailures = (await ctx.db.query('jobFailures').collect()).filter(
+      (f) => f.job === 'photoRotation' && !f.key.startsWith('file:'),
+    );
+    return { rows, ledger, attempts, stored, failures, rotationFailures };
   });
   const named = new Set(state.rows.flatMap((r) => [r.storageId, r.thumbStorageId]));
   const byLedger = new Map<string, number>();
@@ -646,9 +738,22 @@ async function checkInvariants(
       ]);
       continue;
     }
-    if (r.bytesMissingAt !== undefined) continue;
-    expect(ids.has(r.storageId), `photo ${r._id} lost its image`).toBe(true);
-    expect(ids.has(r.thumbStorageId), `photo ${r._id} lost its thumbnail`).toBe(true);
+    if (r.bytesMissingAt !== undefined) {
+      // Marked once: one Machinery row, parked, never retried daily.
+      const rows = state.rotationFailures.filter((f) => f.key === r._id);
+      expect(rows, `photo ${r._id} marked missing, Machinery shows it once`).toEqual([
+        expect.objectContaining({ errorClass: 'BytesMissing', parkedAt: expect.any(Number) }),
+      ]);
+      continue;
+    }
+    // Only a file lost from outside may be missing — never one the app deleted.
+    expect(ids.has(r.storageId) || lost.ids.has(r.storageId), `photo ${r._id} lost its image`).toBe(
+      true,
+    );
+    expect(
+      ids.has(r.thumbStorageId) || lost.ids.has(r.thumbStorageId),
+      `photo ${r._id} lost its thumbnail`,
+    ).toBe(true);
   }
   // A skater's unattached upload is no machinery's to delete.
   for (const id of uploads) expect(ids.has(id), `upload ${id} was deleted`).toBe(true);
@@ -675,6 +780,18 @@ const SEED: number = crypto.getRandomValues(new Int32Array(1))[0] as number;
 
 /** Counterexamples the property found, each pinned. */
 const PINNED: Record<string, Op[]> = {
+  'a thumbnail lost mid-rotation (the action’s own missing path)': [
+    { k: 'upload' },
+    { k: 'vanish', i: 0, slot: 'thumb', when: 'midRotation' },
+    { k: 'set', i: 0, status: 'hidden' },
+    { k: 'advance', minutes: 61 },
+  ],
+  'an image lost before the takedown': [
+    { k: 'upload' },
+    { k: 'vanish', i: 0, slot: 'image', when: 'now' },
+    { k: 'set', i: 0, status: 'removed' },
+    { k: 'advance', minutes: 61 },
+  ],
   'nine twins of one file, then a rotation': [
     { k: 'upload' },
     { k: 'legacyMany', i: 0, slot: 'image', as: 'image', n: 9 },

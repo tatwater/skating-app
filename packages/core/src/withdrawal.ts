@@ -74,13 +74,13 @@ export function requestRetraction(
 }
 
 /**
- * A flag a person filed. Picked up (`reviewing`) is not decided; `actioned` and `dismissed` are. A
+ * A flag a person filed. An `open` flag is not decided; `actioned` and `dismissed` are. A
  * flag the system filed or bumped is not one person's to take back: an `auto` row names a person
  * who filed nothing, and a person's flag the system has since counted again (`occurrences > 1`)
  * carries others' reports with it.
  */
 export function flagRetraction(flag: {
-  status: 'open' | 'reviewing' | 'actioned' | 'dismissed' | 'retracted';
+  status: 'open' | 'actioned' | 'dismissed' | 'retracted';
   origin?: 'user' | 'auto';
   occurrences?: number;
 }): 'retract' | 'already' | keyof typeof RETRACT_REFUSALS {

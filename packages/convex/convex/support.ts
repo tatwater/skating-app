@@ -18,18 +18,11 @@
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import {
-  internalAction,
-  internalMutation,
-  type MutationCtx,
-  mutation,
-  type QueryCtx,
-  query,
-} from './_generated/server';
+import { internalAction, internalMutation, type MutationCtx, mutation } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability } from './lib/auth';
 import { clerkEmailLookup } from './lib/clerkEmail';
-import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
+import { SUPPORT_CATEGORIES } from './lib/enums';
 import { fileMember, itemToDecide, ticketSource } from './lib/inboxItems';
 import { assertInboxVerb } from './lib/inboxRules';
 import { SETTLE_MS } from './lib/notificationQueue';
@@ -61,8 +54,6 @@ import { undoWriters } from './undo';
 /** Support-ticket body bounds — enough for a real report, capped so it stays an inbox row not an essay. */
 const MAX_BODY_LENGTH = 5000;
 
-const INBOX_LIMIT = 100;
-
 /**
  * Per-submitter abuse bound. `create` is deliberately status-blind (a banned user must be able to
  * appeal), so the boundary can't be `requireProfile` — it's *authenticated identity + a rate limit*.
@@ -71,75 +62,6 @@ const INBOX_LIMIT = 100;
  */
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const MAX_TICKETS_PER_WINDOW = 5;
-
-interface TicketUser {
-  userId: string;
-  username: string;
-  displayName: string;
-}
-
-async function loadTicketUser(
-  ctx: QueryCtx,
-  userId: Id<'profiles'> | undefined,
-): Promise<TicketUser | null> {
-  if (!userId) return null;
-  const p = await ctx.db.get(userId);
-  return p ? { userId: p._id, username: p.username, displayName: p.displayName } : null;
-}
-
-interface TicketView {
-  id: string;
-  category: Doc<'supportTickets'>['category'];
-  body: string;
-  status: Doc<'supportTickets'>['status'];
-  createdAt: number;
-  resolvedAt?: number;
-  submitter: TicketUser | null;
-  assignedTo: TicketUser | null;
-  context?: Doc<'supportTickets'>['context'];
-}
-
-/**
- * The support inbox (D37 — **admin-only**, PII). Filter by `status` (off `by_status`) or read the most
- * recent tickets (implicit creation-time order); an optional `category` narrows further in-memory.
- * Bounded to `INBOX_LIMIT`. Each row resolves its submitter + assignee for the inbox list.
- */
-export const list = query({
-  args: {
-    status: v.optional(literals(SUPPORT_STATUSES)),
-    category: v.optional(literals(SUPPORT_CATEGORIES)),
-  },
-  handler: async (ctx, args): Promise<TicketView[]> => {
-    await requireCapability(ctx, 'inbox.support.read');
-
-    const { status } = args;
-    const rows =
-      status !== undefined
-        ? await ctx.db
-            .query('supportTickets')
-            .withIndex('by_status', (q) => q.eq('status', status))
-            .order('desc')
-            .take(INBOX_LIMIT)
-        : await ctx.db.query('supportTickets').order('desc').take(INBOX_LIMIT);
-
-    const filtered =
-      args.category !== undefined ? rows.filter((r) => r.category === args.category) : rows;
-
-    return Promise.all(
-      filtered.map(async (t) => ({
-        id: t._id,
-        category: t.category,
-        body: t.body,
-        status: t.status,
-        createdAt: t.createdAt,
-        ...(t.resolvedAt !== undefined ? { resolvedAt: t.resolvedAt } : {}),
-        submitter: await loadTicketUser(ctx, t.userId),
-        assignedTo: await loadTicketUser(ctx, t.assignedToUserId),
-        ...(t.context !== undefined ? { context: t.context } : {}),
-      })),
-    );
-  },
-});
 
 /**
  * File a support ticket / bug report (D35) — the one Phase-07 path that ships on **web and mobile**.
@@ -222,24 +144,6 @@ export const create = mutation({
       ],
       // The ticket's own Inbox item (B01-5f: the old Support page is retired).
       deepLinkPath: `/admin/inbox?item=ticket:${ticketId}`,
-    });
-    return ticketId;
-  },
-});
-
-/**
- * Assign a ticket for triage (D37 — **admin-only**, PII). Defaults to the acting admin when no
- * assignee is given (the common "I've got this" action), and moves an `open` ticket to `in_progress`.
- */
-export const assign = mutation({
-  args: { ticketId: v.id('supportTickets'), assigneeId: v.optional(v.id('profiles')) },
-  handler: async (ctx, { ticketId, assigneeId }) => {
-    const actor = await requireCapability(ctx, 'inbox.support');
-    const ticket = await ctx.db.get(ticketId);
-    if (!ticket) throw new ConvexError('Ticket not found');
-    await ctx.db.patch(ticketId, {
-      assignedToUserId: assigneeId ?? actor._id,
-      status: ticket.status === 'open' ? 'in_progress' : ticket.status,
     });
     return ticketId;
   },

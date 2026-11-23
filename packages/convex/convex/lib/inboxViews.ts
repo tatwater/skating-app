@@ -597,7 +597,7 @@ async function sameBytesOf(
     }
     out.push({
       photoId: twin._id,
-      moderationStatus: twin.moderationStatus ?? 'visible',
+      moderationStatus: twin.moderationStatus,
       openFlagId: await openFlagOnPhoto(r, twin._id),
       reportId: twin.reportId ?? null,
     });
@@ -636,7 +636,7 @@ export async function photoSiblings(
         r.canReadContent && sib.purgedAt === undefined
           ? await r.ctx.storage.getUrl(sib.thumbStorageId)
           : null,
-      moderationStatus: sib.moderationStatus ?? 'visible',
+      moderationStatus: sib.moderationStatus,
     });
   }
   return {
@@ -812,7 +812,7 @@ async function flagTargetView(
       // A purged photo's tombstone serves no address, whatever storage still holds (D222).
       const staff = r.canReadContent;
       const bytes = staff && p.purgedAt === undefined;
-      const status = p.moderationStatus ?? 'visible';
+      const status = p.moderationStatus;
       const photo: PhotoSubjectView = {
         photoId: p._id,
         caption: staff || status === 'visible' ? (p.caption ?? null) : null,

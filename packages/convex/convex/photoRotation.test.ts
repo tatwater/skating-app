@@ -10,7 +10,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { BLOB_TAKEN, PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
-import { ACTION_LIFETIME_MS, copyContentType, DOOMED_RETRY_MS, SCAN_PAGE } from './lib/photoFiles';
+import {
+  ACTION_LIFETIME_MS,
+  copyContentType,
+  DOOMED_PER_PASS,
+  DOOMED_RETRY_MS,
+  SCAN_PAGE,
+} from './lib/photoFiles';
 import { ROTATE_MAX_BYTES, ROTATION_RETRY_MS } from './photos';
 import schema from './schema';
 
@@ -22,6 +28,27 @@ vi.mock('./lib/storageBlobs', async (importOriginal) => {
     ...actual,
     deleteStoredBlob: async (ctx: Parameters<typeof actual.deleteStoredBlob>[0], id: string) =>
       failing.ids.has(id) ? 'storage refused' : actual.deleteStoredBlob(ctx, id as never),
+  };
+});
+
+/**
+ * A file that vanishes mid-rotation: set, the next copy recorded for that photo deletes the named
+ * file — after `beginRotation` found both, before the action reads the thumbnail. The action's own
+ * missing-file path, against the real `markBytesMissing` and its validator.
+ */
+const vanish = vi.hoisted(() => ({ photoId: null as string | null, storageId: '' }));
+vi.mock('./lib/photoFiles', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lib/photoFiles')>();
+  return {
+    ...actual,
+    recordCopy: async (...args: Parameters<typeof actual.recordCopy>) => {
+      await actual.recordCopy(...args);
+      const [ctx, attempt] = args;
+      if (vanish.photoId === attempt.photoId) {
+        vanish.photoId = null;
+        await ctx.storage.delete(vanish.storageId as Id<'_storage'>);
+      }
+    },
   };
 });
 
@@ -76,6 +103,7 @@ async function world(full: Blob = new Blob(['full-bytes']), thumb: Blob = new Bl
   const mod = await person(t, 'mod', 'moderator');
   const photoId = await t.run(async (ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(full),
       thumbStorageId: await ctx.storage.store(thumb),
       uploaderId: uploader.id,
@@ -403,6 +431,64 @@ describe('the rotation through the public writes', () => {
     expect(failures).toHaveLength(1);
     expect(failures[0]).toMatchObject({ errorClass: 'BytesMissing', parkedAt: expect.any(Number) });
     await expect(set('visible')).rejects.toThrow('nothing left to act on');
+  });
+
+  test('a file gone mid-rotation (after the attempt began): the action marks it — one run, no retry', async () => {
+    const { t, photoId, set } = await world();
+    const before = await row(t, photoId);
+    vanish.photoId = photoId;
+    vanish.storageId = before.thumbStorageId;
+    await set('hidden');
+    await stepThrough(t, 90);
+    const after = await row(t, photoId);
+    expect(after.storageId).toBe(before.storageId);
+    expect(after.bytesMissingAt).toEqual(expect.any(Number));
+    // The action ran once and stopped: no failed run, no retry, no watch left.
+    const runs = await t.run(async (ctx) =>
+      (await ctx.db.system.query('_scheduled_functions').collect()).filter((f) =>
+        f.name.includes('rotateBlobs'),
+      ),
+    );
+    expect(runs.map((f) => f.state.kind)).toEqual(['success']);
+    expect(await watches(t)).toHaveLength(0);
+    // The image's copy released; the image alone left.
+    expect(await ledger(t)).toEqual([]);
+    expect(await storedCount(t)).toBe(1);
+    const failures = await t.run((ctx) =>
+      ctx.db
+        .query('jobFailures')
+        .withIndex('by_job_key', (q) => q.eq('job', 'photoRotation').eq('key', photoId))
+        .collect(),
+    );
+    expect(failures).toEqual([
+      expect.objectContaining({ errorClass: 'BytesMissing', parkedAt: expect.any(Number) }),
+    ]);
+  });
+
+  test('the files sweep continues itself past a full pass, with the arguments its validator takes', async () => {
+    const { t, photoId } = await world();
+    const files = await t.run(async (ctx) => {
+      const ids: string[] = [];
+      for (let i = 0; i <= DOOMED_PER_PASS; i++) {
+        const id = await ctx.storage.store(new Blob([`owed-${i}`]));
+        ids.push(id);
+        await ctx.db.insert('photoFiles', {
+          storageId: id,
+          photoId,
+          state: 'doomed',
+          createdAt: T0,
+          nextTryAt: T0 - 1,
+          attempts: 1,
+        });
+      }
+      return ids;
+    });
+    const first = await t.mutation(internal.photoPurge.sweepPhotoFiles, { now: T0 });
+    expect(first).toMatchObject({ deleted: DOOMED_PER_PASS, more: true });
+    await t.finishInProgressScheduledFunctions();
+    await runDue(t);
+    expect(await ledger(t)).toEqual([]);
+    for (const id of files) expect(await urlOf(t, id)).toBeNull();
   });
 
   test('killed after a copy was stored but before it was recorded: its window’s search finds it', async () => {

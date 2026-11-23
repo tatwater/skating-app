@@ -326,6 +326,7 @@ describe('each other subject', () => {
       const storageId = await ctx.storage.store(new Blob(['full']));
       const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
       const id = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId,
         thumbStorageId,
         uploaderId: w.author.id,

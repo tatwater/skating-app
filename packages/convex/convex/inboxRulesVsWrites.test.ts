@@ -479,6 +479,7 @@ const photoFlag = async (w: W, uploader: Id<'profiles'>, by: As = w.filer.as) =>
   const r = await w.report(uploader);
   const p = await w.t.run(async (ctx) => {
     const id = await ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId: await ctx.storage.store(new Blob(['full'])),
       thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
       uploaderId: uploader,

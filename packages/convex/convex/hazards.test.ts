@@ -27,6 +27,7 @@ async function seedPhoto(t: ReturnType<typeof convexTest>, uploaderId: Id<'profi
   const thumbStorageId = await t.run((ctx) => ctx.storage.store(new Blob(['thumb'])));
   return t.run((ctx) =>
     ctx.db.insert('photos', {
+      moderationStatus: 'visible' as const,
       storageId,
       thumbStorageId,
       uploaderId,

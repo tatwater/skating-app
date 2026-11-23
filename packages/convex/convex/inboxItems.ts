@@ -87,7 +87,7 @@ type Phase = {
  * decided history, so *Decided* starts with the record.
  */
 const PHASES: Phase[] = [
-  ...(['open', 'reviewing', 'actioned', 'dismissed'] as const).map(
+  ...(['open', 'actioned', 'dismissed'] as const).map(
     (status): Phase => ({
       name: `flags:${status}`,
       table: 'contentFlags',

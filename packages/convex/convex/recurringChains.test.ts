@@ -131,6 +131,7 @@ describe('D258 chains under real limits', () => {
     for (let i = 0; i < 30; i++) {
       const id = await t.run(async (ctx) =>
         ctx.db.insert('photos', {
+          moderationStatus: 'visible' as const,
           storageId: await ctx.storage.store(new Blob([`p${i}`])),
           thumbStorageId: await ctx.storage.store(new Blob([`t${i}`])),
           uploaderId: uploader,

@@ -697,8 +697,7 @@ export async function setContentStatus(
     if (!target) throw new ConvexError('Target not found');
 
     const typedTarget = target as WithdrawnTarget;
-    // A photo's status is optional until the backfill narrows it: absent reads as visible (D222).
-    const priorStatus = typedTarget.moderationStatus ?? 'visible';
+    const priorStatus = typedTarget.moderationStatus;
     const asUndo = args.undoes !== undefined;
     if (
       args.withReportIds !== undefined &&
@@ -953,8 +952,7 @@ async function recordOnWithdrawn(
   },
 ): Promise<Id<'moderationActions'>> {
   const subjectUserId = subjectOf(targetType, target);
-  // A photo's status is optional until the backfill narrows it: absent reads as visible.
-  const status_ = target.moderationStatus ?? 'visible';
+  const status_ = target.moderationStatus;
   const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: ACTION_FOR_STATUS[status],
@@ -1511,8 +1509,7 @@ const FLAG_TARGET_READERS = {
   photo: flagTargetFrom('photos', (doc) => ({
     author: doc.uploaderId,
     summary: snippet(doc.caption) || 'Photo',
-    // Absent reads as visible until the backfill narrows it (B01-5e, D222).
-    moderationStatus: doc.moderationStatus ?? 'visible',
+    moderationStatus: doc.moderationStatus,
   })),
   accessAlert: flagTargetFrom('accessAlerts', (doc) => ({
     author: doc.createdByUserId,
@@ -1696,7 +1693,7 @@ export const postRestoreChoices = query({
 });
 
 /**
- * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue
+ * The moderator flag queue (D37/D3). Open flags off `by_status`, oldest-first (a queue
  * drains front-to-back so nothing rots), split into a **priority lane** — `unsafe_false_report` is a
  * *safety* incident, not FIFO spam (D3) — a standard lane, and the A06f **access lane**, which is
  * grouped by lake and ranked by how many people agree rather than by age. Each row carries its
@@ -1717,12 +1714,8 @@ export const listFlags = query({
       .query('contentFlags')
       .withIndex('by_status', (q) => q.eq('status', 'open'))
       .take(QUEUE_LIMIT);
-    const reviewing = await ctx.db
-      .query('contentFlags')
-      .withIndex('by_status', (q) => q.eq('status', 'reviewing'))
-      .take(QUEUE_LIMIT);
-    // Oldest first across both statuses so the queue is a true work order.
-    const rows = [...open, ...reviewing].sort((a, b) => a.createdAt - b.createdAt);
+    // Oldest first so the queue is a true work order.
+    const rows = [...open].sort((a, b) => a.createdAt - b.createdAt);
 
     const accessRows = rows.filter(
       (f) => f.targetType === 'waterbody' && f.reason === 'no_public_access',

@@ -18,16 +18,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, type RunAs, resolveDeployment } from '@skating/run-log';
 import { nodeVersionRefusal, parseArgs } from './args';
-import {
-  applyClear,
-  applySeed,
-  type Call,
-  describePlan,
-  errorLine,
-  planSeed,
-  runLogName,
-  tally,
-} from './seed';
+import { applyAndReport, clearAndReport } from './report';
+import { type Call, describePlan, errorLine, planSeed, runLogName, tally } from './seed';
+import { uploader } from './upload';
 
 const say = (line: string) => process.stderr.write(`[seed-inbox] ${line}\n`);
 
@@ -52,7 +45,7 @@ function pinnedNode(): string {
   }
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const wrongNode = nodeVersionRefusal(pinnedNode(), process.version);
   if (wrongNode !== null) {
     say(wrongNode);
@@ -65,6 +58,7 @@ function main(): number {
     return 2;
   }
   say(`target ${target.label} · ${parsed.mode}`);
+  const out = { say, writeLog, target: target.label };
   switch (parsed.mode) {
     case 'dry': {
       const { people, state } = planSeed(call);
@@ -73,19 +67,16 @@ function main(): number {
       return 0;
     }
     case 'apply': {
-      const run = applySeed(call, parsed.operator, (f) =>
-        say(
-          `${f.error === undefined ? 'filed ' : 'FAILED'} ${f.key.padEnd(22)} ${f.fn} as ${f.as}${f.error ? ` — ${f.error}` : ''}`,
-        ),
-      );
-      const log = writeLog('apply', { target: target.label, ...run });
-      say(`people created ${run.people.created.length}`);
-      say(
-        `filed ${run.counts.filed} · failed ${run.counts.failed} · done ${run.counts.done} · still ready ${run.counts.ready} · waiting ${run.counts.waiting} · unavailable ${run.counts.unavailable}`,
-      );
-      for (const u of run.last.unavailable) say(`unavailable ${u.key} — needs ${u.missing}`);
-      say(`run log ${log}`);
-      return run.counts.failed > 0 ? 1 : 0;
+      // The photo steps upload to the dev deployment the run targets, and nowhere else.
+      const devName = target.isDev ? target.label.replace(/^dev:/, '') : null;
+      // Ctrl-C stops the run between steps (the step it cut short fails and releases its uploads)
+      // rather than killing it mid-step with files no row names.
+      let interrupted = false;
+      process.on('SIGINT', () => {
+        interrupted = true;
+        say('interrupted — stopping after this step');
+      });
+      return applyAndReport(call, parsed.operator, uploader(call, devName), () => interrupted, out);
     }
     case 'clear-dry': {
       say(
@@ -94,21 +85,17 @@ function main(): number {
       say('dry run — nothing removed. Add --apply to remove it.');
       return 0;
     }
-    case 'clear': {
-      const run = applyClear(call);
-      const log = writeLog('clear', { target: target.label, ...run });
-      say(`removed in ${run.calls} calls: ${tally(run.removed)}`);
-      say(`run log ${log}`);
-      return run.done ? 0 : 1;
-    }
+    case 'clear':
+      return clearAndReport(call, out);
   }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try {
-    process.exit(main());
-  } catch (err) {
-    say(`failed: ${errorLine(err)}`);
-    process.exit(1);
-  }
+  main().then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      say(`failed: ${errorLine(err)}`);
+      process.exit(1);
+    },
+  );
 }

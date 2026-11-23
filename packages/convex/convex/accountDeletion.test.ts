@@ -1194,6 +1194,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
     const stuck = await t.run(async (ctx) => {
       const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
       return ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 'not-a-storage-id', // storage refuses to resolve it — the reclaim can't succeed
         thumbStorageId,
         uploaderId: user.id,
@@ -1805,6 +1806,7 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     const leaver = await seedUser(t, 'leaver');
     const photoId = await t.run((ctx) =>
       ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 'not-a-storage-id', // the delete will fail, and the row is kept as its only pointer
         thumbStorageId: 'not-a-storage-id',
         uploaderId: leaver.id,

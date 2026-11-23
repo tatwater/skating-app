@@ -325,7 +325,7 @@ export const collect = internalQuery({
         coord: p.coord,
         placeOnMap: p.placeOnMap,
         createdAt: p.createdAt,
-        moderationStatus: p.moderationStatus ?? 'visible',
+        moderationStatus: p.moderationStatus,
         purgedAt: p.purgedAt,
         storageId: p.purgedAt === undefined ? p.storageId : undefined,
       })),

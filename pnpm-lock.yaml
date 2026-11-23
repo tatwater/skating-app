@@ -745,6 +745,9 @@ importers:
       '@skating/core':
         specifier: workspace:*
         version: link:../core
+      '@skating/run-log':
+        specifier: workspace:*
+        version: link:../../scripts/run-log
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6

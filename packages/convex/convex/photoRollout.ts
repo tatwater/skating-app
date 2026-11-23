@@ -3,7 +3,8 @@
  * landed optional (absent reads as `visible` through `lib/photoAccess.photoVisible`); this stamps
  * `visible` on every row that lacks it, so the field can narrow to required, as every other content
  * table has it. The narrowing waits until {@link countUnstamped} reads zero on the deployment — the
- * precondition #172's preference narrowing used.
+ * precondition #172's preference narrowing used. **Narrowed at the Inbox wave's close** (dev counted
+ * 0 unstamped); the module stays, and its count is the check a fresh deployment can still run.
  *
  * - **Paged and bounded:** one `paginate` a transaction ({@link BACKFILL_PAGE} rows; a row is at most a
  *   few KiB — the caption is capped at 500 characters), each page patching only the rows it finds

@@ -138,7 +138,7 @@ export const keepingUp = query({
     const { now, season, opensOn, days } = windowOf(args.season, args.now);
     const week = lastDays(now, 7);
 
-    // Now: the queue as it stands. Open means `open` or `reviewing` (`lib/openFlags`).
+    // Now: the queue as it stands (`lib/openFlags`).
     const open = await readOpenFlags(ctx, OPEN_FLAG_CAP);
     const oldest = open.flags[0];
     const openFlags = open.capped

@@ -559,9 +559,6 @@ describe('a moderator answering proposals', () => {
       waterBodyId: lake,
     });
     expect(queue.proposals[0]?.existingLandmarkId).toBe(landmark);
-    expect((await mod.as.query(api.corpusRequests.listQueue, {}))[0]?.existingLandmarkId).toBe(
-      landmark,
-    );
     await mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId });
     expect(
       (await requests(t)).every((r) => r.status === 'approved' && r.landmarkId === landmark),
@@ -621,9 +618,6 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
       [at, 2],
       [far, 1],
     ]);
-    // The moderator's queue counts askers by place too.
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue.map((r) => r.askers)).toEqual([2, 2, 1]);
 
     const near = proposals[0];
     if (!near) throw new Error('no proposal');
@@ -643,9 +637,6 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     expect(after.proposals).toHaveLength(1);
     expect(after.proposals[0]).toMatchObject({ coord: far });
     expect(after.proposals[0]?.existingLandmarkId).toBeUndefined();
-    expect(
-      (await mod.as.query(api.corpusRequests.listQueue, {}))[0]?.existingLandmarkId,
-    ).toBeUndefined();
   });
 
   test('each shows the other as a possible duplicate, and a far landmark by the name too', async () => {
@@ -663,12 +654,6 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
       similarProposal: { name: 'Long Point', coord: far, requestId: proposals[1]?.requestId },
     });
     expect(proposals[0]?.similarProposal?.meters).toBeGreaterThan(30_000);
-    // The queue page says the same of each row.
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue[0]).toMatchObject({
-      similarLandmark: { landmarkId: known },
-      similarProposal: { coord: far },
-    });
   });
 
   test('another proposal is a possible duplicate by any of its spellings, both ways', async () => {
@@ -692,8 +677,6 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
       waterBodyId: lake,
     });
     expect(proposals.map((p) => p.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue.map((r) => r.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
   });
 
   test('a moderator can say a far proposal is a landmark already there — by its name only', async () => {
@@ -917,9 +900,7 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     await seedAsks(t, lake, skater.id, c, 1);
     if (!middle) throw new Error('no ask');
     vi.setSystemTime(NOW + 60_000);
-    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    expect(queue.map((r) => r.askers)).toEqual([2, 3, 2]);
-    // B's row said three, and B's decision closes three.
+    // B's decision closes the three that chain through it.
     await mod.as.mutation(api.corpusRequests.decline, { requestId: middle, note: 'Not a place.' });
     expect((await requests(t)).map((r) => r.status)).toEqual(['declined', 'declined', 'declined']);
   });

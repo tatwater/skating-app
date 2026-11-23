@@ -1181,6 +1181,7 @@ describe('the person page’s flag labels’ rounds (B01-4c)', () => {
         createdAt: NOW,
       });
       const photo = await ctx.db.insert('photos', {
+        moderationStatus: 'visible' as const,
         storageId: 'full',
         thumbStorageId: 'thumb',
         uploaderId: skater,
