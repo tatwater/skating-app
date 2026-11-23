@@ -8,13 +8,16 @@ import {
   describePlan,
   errorLine,
   MAX_CLEAR_CALLS,
+  MAX_PHOTO_WAITS,
   MAX_WAVES,
   operatorRefusal,
+  PHOTO_WAIT_MS,
   planSeed,
   runAsFor,
   runLogName,
   type SeedCall,
   type SeedState,
+  sleepSync,
   tally,
 } from './seed';
 
@@ -326,6 +329,128 @@ describe('applyClear', () => {
   test('stops at its call cap and says it is not done', () => {
     const call: Call = <T>(): T => ({ done: false, removed: { reports: 1 } }) as T;
     expect(applyClear(call)).toMatchObject({ calls: MAX_CLEAR_CALLS, done: false });
+  });
+
+  test('a photo whose file is being moved: waited for, never counted as no progress', () => {
+    const { call } = answers([
+      { done: false, removed: {}, waiting: 1 },
+      { done: false, removed: {}, waiting: 1 },
+      { done: true, removed: { photos: 4 } },
+    ]);
+    const waits: number[] = [];
+    const run = applyClear(
+      call,
+      () => {},
+      (ms) => waits.push(ms),
+    );
+    expect(run).toEqual({ calls: 3, removed: { photos: 4 }, done: true });
+    expect(waits).toEqual([PHOTO_WAIT_MS, PHOTO_WAIT_MS]);
+  });
+
+  test('a rotation that never lands: the clear gives up after its waits, said plainly', () => {
+    const call: Call = <T>(): T => ({ done: false, removed: {}, waiting: 1 }) as T;
+    const waits: number[] = [];
+    expect(() =>
+      applyClear(
+        call,
+        () => {},
+        (ms) => waits.push(ms),
+      ),
+    ).toThrow(/still being moved after 10 minutes; nothing was skipped/);
+    expect(waits).toHaveLength(MAX_PHOTO_WAITS);
+  });
+
+  test('sleepSync blocks for about the time asked', () => {
+    const start = Date.now();
+    sleepSync(30);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(25);
+  });
+});
+
+describe('a photo step', () => {
+  test('its files uploaded as its person first, their ids passed; the run log holds only the result', () => {
+    const calls: { fn: string; args: unknown; runAs?: RunAs }[] = [];
+    let served = false;
+    const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T => {
+      calls.push({ fn, args, ...(runAs ? { runAs } : {}) });
+      if (fn === 'inboxSeed:ensurePeople')
+        return {
+          created: [],
+          existing: ['gus'],
+          applied: true,
+          operator: { role: 'admin', status: 'active' },
+        } as T;
+      if (fn === 'inboxSeed:state') {
+        const ready: SeedCall[] = served
+          ? []
+          : [
+              {
+                key: 'ph-1',
+                label: 'a photo',
+                as: 'gus',
+                clerkUserId: 'seed_inbox_gus',
+                fn: 'photos:create',
+                args: { caption: 'c', placeOnMap: false },
+                upload: true,
+              },
+            ];
+        served = true;
+        return { people: [], bodies: [], done: [], ready, waiting: [], unavailable: [] } as T;
+      }
+      return 'photo-1' as T;
+    };
+    const uploads: { key: string; runAs?: RunAs }[] = [];
+    const run = applySeed(
+      call,
+      'user_op',
+      () => {},
+      (step, runAs) => {
+        uploads.push({ key: step.key, ...(runAs ? { runAs } : {}) });
+        return { storageId: 's-full', thumbStorageId: 's-thumb' };
+      },
+    );
+    expect(uploads).toEqual([{ key: 'ph-1', runAs: { as: 'seed_inbox_gus', via: 'seed-inbox' } }]);
+    expect(calls.find((c) => c.fn === 'photos:create')).toEqual({
+      fn: 'photos:create',
+      args: { caption: 'c', placeOnMap: false, storageId: 's-full', thumbStorageId: 's-thumb' },
+      runAs: { as: 'seed_inbox_gus', via: 'seed-inbox' },
+    });
+    expect(run.waves[0]).toEqual([
+      { key: 'ph-1', label: 'a photo', as: 'gus', fn: 'photos:create', result: 'photo-1' },
+    ]);
+  });
+
+  test('without an uploader a photo step fails by name, and the rest go on', () => {
+    let served = false;
+    const call: Call = <T>(fn: string): T => {
+      if (fn === 'inboxSeed:ensurePeople')
+        return {
+          created: [],
+          existing: [],
+          applied: true,
+          operator: { role: 'admin', status: 'active' },
+        } as T;
+      if (fn === 'inboxSeed:state') {
+        const ready = served
+          ? []
+          : [
+              {
+                key: 'ph-1',
+                label: 'p',
+                as: 'gus',
+                clerkUserId: 'seed_inbox_gus',
+                fn: 'photos:create',
+                args: {},
+                upload: true,
+              },
+            ];
+        served = true;
+        return { people: [], bodies: [], done: [], ready, waiting: [], unavailable: [] } as T;
+      }
+      return null as T;
+    };
+    const run = applySeed(call, 'user_op');
+    expect(run.waves[0]?.[0]?.error).toBe('ph-1 uploads photos, and this run has no uploader.');
   });
 });
 

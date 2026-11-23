@@ -28,6 +28,7 @@ import {
   runLogName,
   tally,
 } from './seed';
+import { uploader } from './upload';
 
 const say = (line: string) => process.stderr.write(`[seed-inbox] ${line}\n`);
 
@@ -73,10 +74,16 @@ function main(): number {
       return 0;
     }
     case 'apply': {
-      const run = applySeed(call, parsed.operator, (f) =>
-        say(
-          `${f.error === undefined ? 'filed ' : 'FAILED'} ${f.key.padEnd(22)} ${f.fn} as ${f.as}${f.error ? ` — ${f.error}` : ''}`,
-        ),
+      // The photo steps upload to the dev deployment the run targets, and nowhere else.
+      const devName = target.isDev ? target.label.replace(/^dev:/, '') : null;
+      const run = applySeed(
+        call,
+        parsed.operator,
+        (f) =>
+          say(
+            `${f.error === undefined ? 'filed ' : 'FAILED'} ${f.key.padEnd(22)} ${f.fn} as ${f.as}${f.error ? ` — ${f.error}` : ''}`,
+          ),
+        uploader(call, devName),
       );
       const log = writeLog('apply', { target: target.label, ...run });
       say(`people created ${run.people.created.length}`);
@@ -95,7 +102,10 @@ function main(): number {
       return 0;
     }
     case 'clear': {
-      const run = applyClear(call);
+      const run = applyClear(call, (a) => {
+        if ((a.waiting ?? 0) > 0)
+          say(`waiting for ${a.waiting} seed photo(s) whose file is being moved`);
+      });
       const log = writeLog('clear', { target: target.label, ...run });
       say(`removed in ${run.calls} calls: ${tally(run.removed)}`);
       say(`run log ${log}`);

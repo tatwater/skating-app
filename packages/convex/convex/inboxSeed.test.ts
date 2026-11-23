@@ -19,6 +19,8 @@ import {
   offset,
   PREFS_OFF,
   prefsDrifted,
+  SEED_PHOTO_CAPTIONS,
+  seedKey,
   seedSteps,
 } from './inboxSeed';
 import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
@@ -249,7 +251,7 @@ async function realLife(t: T) {
       expiresAt: Date.now() + 86_400_000,
     });
   });
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await settle(t);
   return [author, fan];
 }
 
@@ -355,7 +357,7 @@ function diffPaths(a: unknown, b: unknown, at = ''): string[] {
 
 /** Dev's crons, as they'd have run within the minute: geometry facts, the library, the cards. */
 async function crons(t: T) {
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await settle(t);
   for (let i = 0; i < 20; i++) {
     const r = await t.action(internal.bodyGeo.computeDue, {});
     if (r.computed + r.failed === 0) break;
@@ -365,7 +367,7 @@ async function crons(t: T) {
   for (let more = true; more; ) {
     more = (await t.mutation(internal.waterBodies.refreshDueBodySummaries, {})).more;
   }
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await settle(t);
   await drainLibrary(t);
 }
 
@@ -479,7 +481,7 @@ async function runSeed(t: T) {
         failed.push({ key: call.key, error: err instanceof Error ? err.message : String(err) });
       }
     }
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(t);
   }
   throw new Error('the seed did not settle in 20 waves');
 }
@@ -521,6 +523,22 @@ function unreachable(as: SeedCall['as'], fn: string, f: Registered | undefined) 
  * only if the script could reach it, so a step the deployment would refuse fails here too. Its args
  * meet the function's validator: convex-test checks them, as the deployment does.
  */
+/**
+ * Run what is scheduled to its end — each function in flight finished with the clock **frozen**, then
+ * the clock moved to the next timer, one at a time — so a photo's rotation action finishes before its
+ * watch's clock passes the action's lifetime, as on a real backend. (`finishAllScheduledFunctions`
+ * moves the fake clock on every tick while a function runs, so the watch would find every attempt
+ * "dead" mid-flight and the rotation would never land.)
+ */
+async function settle(t: T) {
+  for (let i = 0; i < 5_000; i++) {
+    await t.finishInProgressScheduledFunctions();
+    if (vi.getTimerCount() === 0) return;
+    vi.advanceTimersToNextTimer();
+  }
+  throw new Error('the scheduled work did not settle');
+}
+
 async function fileStep(t: T, call: SeedCall) {
   const f = await registered(call.fn);
   const why = unreachable(call.as, call.fn, f);
@@ -528,9 +546,31 @@ async function fileStep(t: T, call: SeedCall) {
   const subject = call.as === 'bare' ? null : call.as === 'operator' ? OPERATOR : call.clerkUserId;
   if (subject === undefined) throw new Error(`no subject for ${call.key}`);
   const as = subject === null ? t : t.withIdentity({ subject, via: 'seed-inbox' });
-  if (f?.isAction) return as.action(makeFunctionReference<'action'>(call.fn), call.args);
-  if (f?.isQuery) return as.query(makeFunctionReference<'query'>(call.fn), call.args);
-  return as.mutation(makeFunctionReference<'mutation'>(call.fn), call.args);
+  let args = call.args;
+  if (call.upload) {
+    // As the script does it: an upload URL as the person (the public path, refused to a minor),
+    // then the two files' bytes stored — here straight into storage, standing in for the POST.
+    const why2 = unreachable(
+      call.as,
+      'photos:generateUploadUrl',
+      await registered('photos:generateUploadUrl'),
+    );
+    if (why2 !== null) throw new Error(why2);
+    await as.mutation(makeFunctionReference<'mutation'>('photos:generateUploadUrl'), {});
+    const [storageId, thumbStorageId] = await t.run(async (ctx) => [
+      await ctx.storage.store(new Blob([seedPng(call.key, 'full')], { type: 'image/png' })),
+      await ctx.storage.store(new Blob([seedPng(call.key, 'thumb')], { type: 'image/png' })),
+    ]);
+    args = { ...args, storageId, thumbStorageId };
+  }
+  if (f?.isAction) return as.action(makeFunctionReference<'action'>(call.fn), args);
+  if (f?.isQuery) return as.query(makeFunctionReference<'query'>(call.fn), args);
+  return as.mutation(makeFunctionReference<'mutation'>(call.fn), args);
+}
+
+/** Bytes standing in for a seed photo's file: distinct per step and slot (the script's are real PNGs). */
+function seedPng(key: string, slot: 'full' | 'thumb'): string {
+  return `\x89PNG seed ${key} ${slot}`;
 }
 
 beforeEach(() => {
@@ -604,7 +644,7 @@ describe('every step of the plan, as the script makes it', () => {
     // person's step through `convex run --identity`, which finds public functions only.
     const steps = seedSteps();
     // 121 at B01-5d, and B01-5f's note and reply on t-bug (`support:addNote`, `support:reply`).
-    expect(steps).toHaveLength(123);
+    expect(steps).toHaveLength(133);
     const refused: string[] = [];
     for (const step of steps) {
       const why = unreachable(step.as, step.fn, await registered(step.fn));
@@ -721,8 +761,8 @@ describe('the seed, end to end', () => {
     // The merge-proof pair (B01-5d) adds four open items — its drawing, an access report on each of
     // its two sides, its bay ask — and its two seed lakes' approvals to the decided.
     expect(await lanesOf(t)).toEqual({
-      allOpen: 27,
-      decided: 14,
+      allOpen: 29,
+      decided: 15,
       lanes: {
         safety: { open: 2, all: 2, reports: 1, hazards: 1, people: 0 },
         accessReports: { open: 4, all: 4, disputes: 1, new: 3 },
@@ -737,7 +777,7 @@ describe('the seed, end to end', () => {
         },
         placesAsked: { open: 4, all: 4, bays: 2, landmarks: 2 },
         drawnBodies: { open: 2, all: 2, overlap: 2, newWater: 0 },
-        contentFlags: { open: 5, all: 5, reports: 2, comments: 1, alerts: 1, photos: 0, people: 1 },
+        contentFlags: { open: 7, all: 7, reports: 2, comments: 1, alerts: 1, photos: 2, people: 1 },
         support: { open: 4, all: 4, account: 1, bug: 1, safety: 1, other: 1 },
       },
     });
@@ -833,6 +873,7 @@ describe('the seed, end to end', () => {
     expect(decided).toEqual({
       words: [
         'contentFlags:dismissed',
+        'contentFlags:hidden',
         'contentFlags:hidden',
         'contentFlags:removed',
         'contentFlags:restored',
@@ -974,15 +1015,21 @@ describe('the seed, end to end', () => {
 
     // The dry run of the clear says what it would remove, and removes nothing.
     const plan = await t.query(internal.inboxSeed.clearPlan, {});
-    // The merge-proof pair adds its report and its three tracks (B01-5d).
-    expect(plan).toMatchObject({ profiles: 8, reports: 10, supportTickets: 4, gpsActivities: 9 });
+    // The merge-proof pair adds its report and its three tracks (B01-5d); the photo report its four.
+    expect(plan).toMatchObject({
+      profiles: 8,
+      reports: 11,
+      photos: 4,
+      supportTickets: 4,
+      gpsActivities: 9,
+    });
 
     const beforeClear = urls.length;
     const cleared = await runClear(t);
     const clearCalls = urls.slice(beforeClear);
     expect(clearCalls).toEqual([]);
     expect(cleared.removed.profiles).toBe(8);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(t);
     // Before any cron runs, the drawn bodies' library rows are already gone with them.
     expect((await counts(t)).bodyLibraryRows).toBe(before.bodyLibraryRows);
     // Then dev's crons re-derive what the removed rows counted on (the cards, the library, the
@@ -1085,7 +1132,7 @@ describe('the seed, end to end', () => {
     await crons(t);
     const full = small.calls;
     expect(full).toBeGreaterThan(40);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(t);
     const end = await counts(t);
     for (const [table, n] of Object.entries(end)) {
       if (UNATTRIBUTED.has(table) || COUNTS.has(table) || table === 'bodyLibraryQueue') continue;
@@ -1256,7 +1303,7 @@ async function mergeProofPair(t: T) {
   const out = await t
     .withIdentity({ subject: OPERATOR })
     .mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId });
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await settle(t);
   return { ...out, cove };
 }
 
@@ -1292,13 +1339,237 @@ async function mergedWorld() {
 /** Clear to done, let dev's crons re-derive, and hold that nothing of the seed is left. */
 async function clearsEverything(w: Awaited<ReturnType<typeof mergedWorld>>) {
   await runClear(w.t);
-  await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+  await settle(w.t);
   await crons(w.t);
   expect(await leftAfterClear(w.t, w.before.counts)).toEqual({});
   expect(await tallies(w.t)).toEqual(w.before.tallies);
   expect(diffPaths(w.before.real, await realRows(w.t, w.people))).toEqual([]);
   expect((await runClear(w.t)).removed).toEqual({});
 }
+
+describe('the seed’s photos (board 2.7)', () => {
+  /** Storage as it stands: every stored file, every file a photo row names, the ledger and attempts. */
+  const storage = (t: T) =>
+    t.run(async (ctx) => {
+      const photos = await ctx.db.query('photos').collect();
+      return {
+        stored: (await ctx.db.system.query('_storage').collect())
+          .map((f) => f._id as string)
+          .sort(),
+        named: [
+          ...new Set(
+            photos.flatMap((p) => [p.storageId, p.thumbStorageId]).filter((f) => f !== ''),
+          ),
+        ].sort(),
+        photos: photos.length,
+        ledger: (await ctx.db.query('photoFiles').collect()).length,
+        attempts: (await ctx.db.query('photoRotations').collect()).map((a) => a.status),
+      };
+    });
+  /** A real person, not from the seed, with a photo of their own (on no report). */
+  const realPhoto = (t: T) =>
+    t.run(async (ctx) => {
+      const uploaderId = await ctx.db.insert('profiles', {
+        clerkUserId: 'user_real_photographer',
+        displayName: 'Real Photographer',
+        username: 'realphotographer',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member',
+        status: 'active',
+        createdAt: Date.now(),
+      } as never);
+      const storageId = await ctx.storage.store(new Blob(['real full']));
+      const thumbStorageId = await ctx.storage.store(new Blob(['real thumb']));
+      const photoId = await ctx.db.insert('photos', {
+        storageId,
+        thumbStorageId,
+        uploaderId,
+        placeOnMap: false,
+        moderationStatus: 'visible',
+        createdAt: Date.now(),
+      });
+      return { uploaderId, photoId, files: [storageId as string, thumbStorageId as string] };
+    });
+
+  test('a report with four photos: one flagged, one hidden and moved, one withdrawn under its flag', async () => {
+    const t = harness();
+    await devWorld(t);
+    const run = await runSeed(t);
+    expect(run.failed).toEqual([]);
+    const seen = await t.run(async (ctx) => {
+      const report = await ctx.db
+        .query('reports')
+        .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', seedKey('r-photos')))
+        .unique();
+      const photos = await Promise.all((report?.photoIds ?? []).map((id) => ctx.db.get(id)));
+      const flags = await ctx.db.query('contentFlags').collect();
+      const items = await ctx.db.query('inboxItems').collect();
+      const members = await ctx.db.query('inboxItemMembers').collect();
+      return Promise.all(
+        photos.map(async (p) => {
+          const flag = flags.find((f) => f.targetType === 'photo' && f.targetId === p?._id);
+          const member = members.find((m) => m.sourceId === flag?._id);
+          const item = items.find((i) => i._id === member?.itemId);
+          const file = p ? await ctx.db.system.get(p.storageId as Id<'_storage'>) : null;
+          const actions = await ctx.db
+            .query('moderationActions')
+            .withIndex('by_target', (q) => q.eq('targetType', 'photo').eq('targetId', p?._id ?? ''))
+            .collect();
+          return {
+            caption: p?.caption,
+            status: p?.moderationStatus,
+            flag: flag?.status ?? null,
+            item: item ? `${item.lane}:${item.facet}:${item.status}:${item.decision ?? ''}` : null,
+            moved: (file?.contentType ?? '').includes('gli-rotation'),
+            actions: actions.map((a) => a.action).sort(),
+            purgeClock: p?.purgeAt !== undefined,
+          };
+        }),
+      );
+    });
+    expect(seen).toEqual([
+      {
+        caption: SEED_PHOTO_CAPTIONS[0],
+        status: 'visible',
+        flag: null,
+        item: null,
+        moved: false,
+        actions: [],
+        purgeClock: false,
+      },
+      {
+        caption: SEED_PHOTO_CAPTIONS[1],
+        status: 'visible',
+        flag: 'open',
+        item: 'contentFlags:photos:open:',
+        moved: false,
+        actions: [],
+        purgeClock: false,
+      },
+      {
+        caption: SEED_PHOTO_CAPTIONS[2],
+        status: 'hidden',
+        flag: 'actioned',
+        item: 'contentFlags:photos:decided:hidden',
+        moved: true,
+        actions: ['hide'],
+        purgeClock: false,
+      },
+      {
+        caption: SEED_PHOTO_CAPTIONS[3],
+        status: 'removed',
+        flag: 'open',
+        item: 'contentFlags:photos:open:',
+        moved: true,
+        actions: ['author_delete'],
+        purgeClock: true,
+      },
+    ]);
+    // Storage holds exactly the files the rows name: nothing owed, every attempt reconciled.
+    const now = await storage(t);
+    expect(now.stored).toEqual(now.named);
+    expect(now.photos).toBe(4);
+    expect(now.ledger).toBe(0);
+    expect(now.attempts.every((a) => a === 'reconciled')).toBe(true);
+    expect(now.attempts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the clear takes every seed photo — files, ledger, attempts, flags, items, audit — and nothing of a real person’s', async () => {
+    const t = harness();
+    await devWorld(t);
+    const real = await realPhoto(t);
+    const before = await storage(t);
+    await runSeed(t);
+    // The legacy shape (before B01-5e): a real person's photo naming a seed photo's file — the file
+    // stays with the row still naming it. And a seed photo owed a deletion (a `doomed` file).
+    const { shared, owed } = await t.run(async (ctx) => {
+      const seedPhotos = await ctx.db.query('photos').collect();
+      const first = seedPhotos.find((p) => p.caption === SEED_PHOTO_CAPTIONS[0]);
+      const second = seedPhotos.find((p) => p.caption === SEED_PHOTO_CAPTIONS[1]);
+      if (!first || !second) throw new Error('no seed photos');
+      const own = await ctx.storage.store(new Blob(['legacy thumb']));
+      await ctx.db.insert('photos', {
+        storageId: first.storageId,
+        thumbStorageId: own,
+        uploaderId: real.uploaderId,
+        placeOnMap: false,
+        moderationStatus: 'visible',
+        createdAt: Date.now(),
+      });
+      const owed = await ctx.storage.store(new Blob(['owed']));
+      await ctx.db.insert('photoFiles', {
+        storageId: owed,
+        state: 'doomed',
+        photoId: second._id,
+        createdAt: Date.now(),
+        nextTryAt: Date.now() + 86_400_000,
+        attempts: 1,
+      });
+      return { shared: [first.storageId, own as string], owed: owed as string };
+    });
+    await runClear(t);
+    const after = await storage(t);
+    // The real photo whole; the shared file kept with the real row; the owed file gone.
+    expect(after.stored).toEqual([...before.stored, ...shared].sort());
+    expect(after.stored).not.toContain(owed);
+    expect(after.photos).toBe(2);
+    expect(after.ledger).toBe(0);
+    expect(after.attempts).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.get(real.photoId))).not.toBeNull();
+    const left = await t.run(async (ctx) => ({
+      flags: (await ctx.db.query('contentFlags').collect()).filter((f) => f.targetType === 'photo'),
+      actions: (await ctx.db.query('moderationActions').collect()).filter(
+        (a) => a.targetType === 'photo',
+      ),
+      photoItems: (await ctx.db.query('inboxItems').collect()).filter((i) => i.facet === 'photos'),
+    }));
+    expect(left).toEqual({ flags: [], actions: [], photoItems: [] });
+  });
+
+  test('a rotation in flight: the clear waits for it and takes nothing of that photo, then takes it', async () => {
+    const t = harness();
+    await devWorld(t);
+    await runSeed(t);
+    const photoId = await t.run(async (ctx) => {
+      const p = (await ctx.db.query('photos').collect()).find(
+        (x) => x.caption === SEED_PHOTO_CAPTIONS[0],
+      );
+      if (!p) throw new Error('no seed photo');
+      await ctx.db.insert('photoRotations', {
+        photoId: p._id,
+        startedAt: Date.now(),
+        sha256: [],
+        scanFrom: Date.now(),
+        status: 'running',
+      });
+      return p._id;
+    });
+    // Called as the script calls it, until a call says it is waiting (the others' photos go first).
+    const removed: string[] = [];
+    let answer: { done: boolean; removed: Record<string, number>; waiting?: number } | null = null;
+    for (let i = 0; i < 50 && answer?.waiting === undefined; i++) {
+      answer = await t.mutation(internal.inboxSeed.clear, {});
+      removed.push(...Object.keys(answer.removed));
+    }
+    expect(answer).toMatchObject({ done: false, waiting: 1, removed: {} });
+    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
+    // Nothing of the seed's people went while it waited: the photos are swept first.
+    expect(removed).not.toContain('profiles');
+    expect(removed).not.toContain('reports');
+    await t.run(async (ctx) => {
+      for (const a of await ctx.db.query('photoRotations').collect()) {
+        await ctx.db.patch(a._id, { status: 'reconciled' });
+      }
+    });
+    await runClear(t);
+    const after = await storage(t);
+    expect(after).toEqual({ stored: [], named: [], photos: 0, ledger: 0, attempts: [] });
+  });
+});
 
 describe('the clear finds everything the seed made, whatever was merged since (B01-5d)', () => {
   test('apply, merge the proof pair from the Inbox, clear: nothing of the seed remains', async () => {
@@ -1350,13 +1621,13 @@ describe('the clear finds everything the seed made, whatever was merged since (B
     await w.t
       .withIdentity({ subject: OPERATOR })
       .mutation(api.undo.run, { actionId: w.merged.actionId, reason: 'Not the same water' });
-    await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(w.t);
     for (let pages = 0; pages < 50; pages++) {
       const next = (
         await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
       ).find((j) => j.state.kind === 'pending');
       if (!next) break;
-      await w.t.finishAllScheduledFunctions(vi.runAllTimers);
+      await settle(w.t);
     }
     expect((await w.t.run((ctx) => ctx.db.get(w.merged.cove)))?.reviewStatus).toBe('pending');
     await clearsEverything(w);
@@ -1473,7 +1744,7 @@ describe('the merge-proof pair never reaches a real body (R10-E)', () => {
     const { actionId } = await t
       .withIdentity({ subject: OPERATOR })
       .mutation(api.inboxWrites.mergeDrawn, { itemId, survivorId: lake });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(t);
     const before = await counts(t);
     await expect(t.mutation(internal.inboxSeed.clear, {})).rejects.toThrow(
       /Unmerge Morey East Bay from Lake Morey first/,
@@ -1486,7 +1757,7 @@ describe('the merge-proof pair never reaches a real body (R10-E)', () => {
     await t
       .withIdentity({ subject: OPERATOR })
       .mutation(api.undo.run, { actionId, reason: 'Clearing the seed' });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await settle(t);
     expect((await runClear(t)).removed.profiles).toBe(8);
   });
 });
@@ -1643,7 +1914,17 @@ describe('ensurePeople', () => {
       ['t-bug-note', 't-bug'],
       ['t-bug-reply', 't-bug'],
     ]);
-    expect(s.ready.map((c) => c.key)).toEqual(['f-person', 't-bug', 't-safety', 't-other']);
+    // The photos need no body (their report does): ready anywhere.
+    expect(s.ready.map((c) => c.key)).toEqual([
+      'f-person',
+      'ph-1',
+      'ph-2',
+      'ph-3',
+      'ph-4',
+      't-bug',
+      't-safety',
+      't-other',
+    ]);
     expect(s.unavailable.length).toBeGreaterThan(40);
     expect(s.bodies.every((b) => b.name === null)).toBe(true);
   });

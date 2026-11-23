@@ -34,7 +34,24 @@ export interface SeedCall {
   clerkUserId?: string;
   fn: string;
   args: Record<string, unknown>;
+  /** A photo step: its two files are uploaded first, and their ids passed (`Upload`). */
+  upload?: true;
 }
+
+/**
+ * Upload a photo step's two files as its person — the full image and its thumbnail — and answer their
+ * stored ids, as the app's own upload does (`photos:generateUploadUrl`, then a POST of the bytes).
+ * The CLI's makes real HTTP POSTs; never prints, logs or returns the upload address.
+ */
+export type Upload = (
+  step: SeedCall,
+  runAs: RunAs | undefined,
+) => { storageId: string; thumbStorageId: string };
+
+/** The uploader when none is given: a plan with a photo step can't be filed without one. */
+const noUpload: Upload = (step) => {
+  throw new Error(`${step.key} uploads photos, and this run has no uploader.`);
+};
 
 export interface SeedState {
   people: { key: string; displayName: string; profileId: string | null }[];
@@ -73,6 +90,17 @@ export function operatorRefusal(operator: EnsurePeople['operator']): string | nu
 export interface ClearAnswer {
   done: boolean;
   removed: Record<string, number>;
+  /** Seed photos the call left whole because a rotation of theirs was in flight or a file owed. */
+  waiting?: number;
+}
+
+/** How long the clear waits for a photo's rotation before asking again, and how many times at most. */
+export const PHOTO_WAIT_MS = 5_000;
+export const MAX_PHOTO_WAITS = 120;
+
+/** Block for `ms` (the script is synchronous, as `convex run` calls are). */
+export function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 /** `convex run`, as the loops see it: a function name, its arguments, and who it is made as. */
@@ -137,6 +165,7 @@ export function applySeed(
   call: Call,
   operator: string | undefined,
   onFiled: (f: Filed) => void = () => {},
+  upload: Upload = noUpload,
 ): SeedRun {
   // Who the operator is, before anything is written: a run that would fail at its first moderator
   // act stops here instead.
@@ -157,7 +186,11 @@ export function applySeed(
       tried.add(step.key);
       const row: Filed = { key: step.key, label: step.label, as: step.as, fn: step.fn };
       try {
-        row.result = call(step.fn, step.args, runAsFor(step, operator));
+        const runAs = runAsFor(step, operator);
+        // A photo step: its files first, as its person; only their ids reach the call (and the log
+        // holds neither them nor the upload address — just the call's own result).
+        const args = step.upload ? { ...step.args, ...upload(step, runAs) } : step.args;
+        row.result = call(step.fn, args, runAs);
       } catch (err) {
         row.error = errorLine(err);
       }
@@ -192,14 +225,30 @@ export interface ClearRun {
 }
 
 /** **Remove the seed**: `inboxSeed:clear` again and again until it is done. */
-export function applyClear(call: Call, onCall: (a: ClearAnswer) => void = () => {}): ClearRun {
+export function applyClear(
+  call: Call,
+  onCall: (a: ClearAnswer) => void = () => {},
+  wait: (ms: number) => void = sleepSync,
+): ClearRun {
   const removed: Record<string, number> = {};
+  let waits = 0;
   for (let calls = 1; calls <= MAX_CLEAR_CALLS; calls++) {
     const answer = call<ClearAnswer>('inboxSeed:clear', {});
     onCall(answer);
     for (const [table, n] of Object.entries(answer.removed))
       removed[table] = (removed[table] ?? 0) + n;
     if (answer.done) return { calls, removed, done: true };
+    // A seed photo whose file is being moved (a takedown's rotation) is left until it lands: the
+    // clear waits for it rather than race it, a few seconds at a time, for up to ten minutes.
+    if ((answer.waiting ?? 0) > 0) {
+      if (++waits > MAX_PHOTO_WAITS) {
+        throw new Error(
+          `A seed photo's file is still being moved after ${Math.round((MAX_PHOTO_WAITS * PHOTO_WAIT_MS) / 60_000)} minutes; nothing was skipped — run the clear again later.`,
+        );
+      }
+      wait(PHOTO_WAIT_MS);
+      continue;
+    }
     // A call that removed nothing would never finish: say so rather than spin.
     if (!Object.values(answer.removed).some((n) => n > 0)) {
       throw new Error(
