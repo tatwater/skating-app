@@ -142,6 +142,8 @@ export interface Filed {
   fn: string;
   result?: unknown;
   error?: string;
+  /** Files this step uploaded that it could not release after failing (its stored ids, never a URL). */
+  stranded?: string[];
 }
 
 export interface SeedRun {
@@ -157,7 +159,60 @@ export interface SeedRun {
     unavailable: number;
     ready: number;
   };
+  /** Uploads a failed photo step left that could not be released: what to finish by hand. */
+  stranded: { key: string; as: SeedActor; subject?: string; storageIds: string[] }[];
+  /** The run stopped early on an interrupt (Ctrl-C), after releasing what its step had uploaded. */
+  interrupted: boolean;
 }
+
+/** What `photos:removeBlob` says of a file a photo row already names (the clear takes those). */
+export const BLOB_ATTACHED = 'Only a fresh upload no photo uses can be removed this way.';
+
+/**
+ * **Release uploads a failed photo step made** — as its person, through the app's own cleanup for a
+ * fresh unattached upload (`photos:removeBlob`). Answers the ids it could not release: never one a
+ * photo row already names (a `photos:create` that went through though its answer was lost — the
+ * clear takes that photo, files and all).
+ */
+export function releaseUploads(call: Call, storageIds: readonly string[], runAs?: RunAs): string[] {
+  const left: string[] = [];
+  for (const storageId of storageIds) {
+    try {
+      call('photos:removeBlob', { storageId }, runAs);
+    } catch (err) {
+      if (!errorLine(err).includes(BLOB_ATTACHED)) left.push(storageId);
+    }
+  }
+  return left;
+}
+
+/** A photo step's upload that failed partway, with what it uploaded and could not release. */
+export class UploadFailed extends Error {
+  constructor(
+    message: string,
+    readonly stranded: readonly string[],
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * The summary's lines for uploads a failed step left: each file by its stored id (never an address),
+ * with the one command that finishes it by hand — within a day, while it is still a fresh upload.
+ */
+export function strandedLines(stranded: SeedRun['stranded']): string[] {
+  return stranded.flatMap((s) =>
+    s.storageIds.map(
+      (id) =>
+        `left on the deployment by ${s.key} (as ${s.as}): file ${id} — remove it within a day: ` +
+        `pnpm --filter @skating/convex exec convex run photos:removeBlob '${JSON.stringify({ storageId: id })}'` +
+        (s.subject ? ` --identity '${JSON.stringify({ subject: s.subject, via: SEED_VIA })}'` : ''),
+    ),
+  );
+}
+
+/** One turn of the event loop: an interrupt's handler runs here, between steps. */
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /** The dry run: who would be created, and the plan as it stands. Writes nothing. */
 export function planSeed(call: Call): { people: EnsurePeople; state: SeedState } {
@@ -181,12 +236,14 @@ export function errorLine(err: unknown): string {
  * **File the plan.** Ensure the people, then: ask for the plan, file every ready step not already
  * tried this run, ask again — until nothing new is ready, or {@link MAX_WAVES}.
  */
-export function applySeed(
+export async function applySeed(
   call: Call,
   operator: string | undefined,
   onFiled: (f: Filed) => void = () => {},
   upload: Upload = noUpload,
-): SeedRun {
+  /** Asked between steps: true once the run was interrupted (the CLI's Ctrl-C), and it stops. */
+  interrupted: () => boolean = () => false,
+): Promise<SeedRun> {
   // Who the operator is, before anything is written: a run that would fail at its first moderator
   // act stops here instead.
   const check = call<EnsurePeople>('inboxSeed:ensurePeople', {
@@ -198,30 +255,65 @@ export function applySeed(
   const tried = new Set<string>();
   const waves: Filed[][] = [];
   let last = call<SeedState>('inboxSeed:state', {});
-  for (let wave = 0; wave < MAX_WAVES; wave++) {
+  const stranded: SeedRun['stranded'] = [];
+  let stopped = false;
+  for (let wave = 0; wave < MAX_WAVES && !stopped; wave++) {
     const ready = last.ready.filter((c) => !tried.has(c.key));
     if (ready.length === 0) break;
     const filed: Filed[] = [];
     for (const step of ready) {
       tried.add(step.key);
       const row: Filed = { key: step.key, label: step.label, as: step.as, fn: step.fn };
+      let runAs: RunAs | undefined;
+      let uploaded: string[] = [];
       try {
-        const runAs = runAsFor(step, operator);
+        runAs = runAsFor(step, operator);
         // A photo step: its files first, as its person; only their ids reach the call (and the log
         // holds neither them nor the upload address — just the call's own result).
-        const args = step.upload ? { ...step.args, ...upload(step, runAs) } : step.args;
+        let args = step.args;
+        if (step.upload) {
+          const ids = upload(step, runAs);
+          uploaded = [ids.storageId, ids.thumbStorageId];
+          args = { ...args, ...ids };
+        }
         row.result = call(step.fn, args, runAs);
       } catch (err) {
         row.error = errorLine(err);
+        // Whatever it uploaded is released (a fresh upload no row names lies outside every sweep
+        // and the clear); what can't be is said, by stored id, to finish by hand.
+        const left =
+          err instanceof UploadFailed
+            ? [...err.stranded]
+            : uploaded.length > 0
+              ? releaseUploads(call, uploaded, runAs)
+              : [];
+        if (left.length > 0) {
+          row.stranded = left;
+          stranded.push({
+            key: step.key,
+            as: step.as,
+            ...(runAs ? { subject: runAs.as } : {}),
+            storageIds: left,
+          });
+        }
       }
       filed.push(row);
       onFiled(row);
+      // Between steps, the event loop turns: an interrupt's handler runs, and the run stops here —
+      // the step it cut short already failed and released its uploads above.
+      await tick();
+      if (interrupted()) {
+        stopped = true;
+        break;
+      }
     }
     waves.push(filed);
     last = call<SeedState>('inboxSeed:state', {});
   }
   const all = waves.flat();
   return {
+    stranded,
+    interrupted: stopped,
     people,
     waves,
     last,

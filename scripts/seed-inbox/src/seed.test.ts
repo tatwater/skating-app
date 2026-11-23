@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   applyClear,
   applySeed,
+  BLOB_ATTACHED,
   type Call,
   type ClearAnswer,
   describePlan,
@@ -18,9 +19,12 @@ import {
   type SeedCall,
   type SeedState,
   sleepSync,
+  strandedLines,
   tally,
+  type Upload,
   waitingOn,
 } from './seed';
+import { uploader } from './upload';
 
 /** A step of the fake plan: what it needs first, and whether filing it throws. */
 interface FakeStep {
@@ -168,10 +172,10 @@ describe('planSeed — the dry run', () => {
 });
 
 describe('applySeed', () => {
-  test('files every step in waves, each as its actor, until nothing is ready', () => {
+  test('files every step in waves, each as its actor, until nothing is ready', async () => {
     const server = fakeServer(PLAN);
     const seen: string[] = [];
-    const run = applySeed(server.call, 'user_op', (f) => seen.push(f.key));
+    const run = await applySeed(server.call, 'user_op', (f) => seen.push(f.key));
     expect(run.waves.map((w) => w.map((f) => f.key))).toEqual([['r1', 'track'], ['f1'], ['hide']]);
     expect(seen).toEqual(['r1', 'track', 'f1', 'hide']);
     expect(run.counts).toEqual({
@@ -195,22 +199,22 @@ describe('applySeed', () => {
     expect(run.waves[0]?.[0]?.result).toBe('id_r1');
   });
 
-  test('a second run files nothing new — its counts are zero', () => {
+  test('a second run files nothing new — its counts are zero', async () => {
     const server = fakeServer(PLAN);
-    applySeed(server.call, 'user_op');
-    const again = applySeed(server.call, 'user_op');
+    await applySeed(server.call, 'user_op');
+    const again = await applySeed(server.call, 'user_op');
     expect(again.waves).toEqual([]);
     expect(again.counts).toMatchObject({ filed: 0, failed: 0, done: 4 });
     expect(again.people.created).toEqual([]);
   });
 
-  test('a step that fails is recorded with its first line, tried once, and what waits on it waits', () => {
+  test('a step that fails is recorded with its first line, tried once, and what waits on it waits', async () => {
     const server = fakeServer([
       { key: 'r1', as: 'ada', fails: true },
       { key: 'f1', as: 'ben', after: ['r1'] },
       { key: 't1', as: 'ada' },
     ]);
-    const run = applySeed(server.call, 'user_op');
+    const run = await applySeed(server.call, 'user_op');
     expect(run.waves).toHaveLength(1);
     expect(run.waves[0]?.find((f) => f.key === 'r1')?.error).toBe(
       'Uncaught ConvexError: refused r1',
@@ -219,15 +223,15 @@ describe('applySeed', () => {
     expect(server.calls.filter((c) => c.fn === 'mod:r1')).toHaveLength(1);
   });
 
-  test('a plan that never settles stops at the wave cap', () => {
+  test('a plan that never settles stops at the wave cap', async () => {
     const server = fakeServer([{ key: 'r1', as: 'ada' }], { neverSettles: true });
-    const run = applySeed(server.call, 'user_op');
+    const run = await applySeed(server.call, 'user_op');
     // Tried once; on the next wave it is ready again but already tried, so the loop stops.
     expect(run.waves).toHaveLength(1);
     expect(MAX_WAVES).toBeGreaterThan(5);
   });
 
-  test('the wave cap bounds a plan that keeps offering new steps', () => {
+  test('the wave cap bounds a plan that keeps offering new steps', async () => {
     let n = 0;
     const call: Call = <T>(fn: string): T => {
       if (fn === 'inboxSeed:ensurePeople') {
@@ -251,14 +255,14 @@ describe('applySeed', () => {
       }
       return 'ok' as T;
     };
-    expect(applySeed(call, 'user_op').waves).toHaveLength(MAX_WAVES);
+    expect((await applySeed(call, 'user_op')).waves).toHaveLength(MAX_WAVES);
   });
 });
 
 describe('the operator check, before anything is written', () => {
-  test('an admin runs; the check asks about them and writes nothing first', () => {
+  test('an admin runs; the check asks about them and writes nothing first', async () => {
     const server = fakeServer(PLAN);
-    applySeed(server.call, 'user_op');
+    await applySeed(server.call, 'user_op');
     expect(server.calls[0]).toEqual({
       fn: 'inboxSeed:ensurePeople',
       args: { operator: 'user_op' },
@@ -273,17 +277,17 @@ describe('the operator check, before anything is written', () => {
     ['no one', null, /names no one/],
   ] as const)(
     '%s is refused with a plain sentence, and nothing is filed',
-    (_, operator, message) => {
+    async (_, operator, message) => {
       const server = fakeServer(PLAN, { operator });
-      expect(() => applySeed(server.call, 'user_op')).toThrow(message);
+      await expect(applySeed(server.call, 'user_op')).rejects.toThrow(message);
       expect(server.calls.map((c) => c.fn)).toEqual(['inboxSeed:ensurePeople']);
       expect(server.done.size).toBe(0);
     },
   );
 
-  test('a run with no operator at all is refused the same way', () => {
+  test('a run with no operator at all is refused the same way', async () => {
     const server = fakeServer(PLAN);
-    expect(() => applySeed(server.call, undefined)).toThrow(/names no one/);
+    await expect(applySeed(server.call, undefined)).rejects.toThrow(/names no one/);
     expect(server.calls.map((c) => c.fn)).toEqual(['inboxSeed:ensurePeople']);
     expect(operatorRefusal({ role: 'admin', status: 'active' })).toBeNull();
   });
@@ -382,8 +386,168 @@ describe('applyClear', () => {
   });
 });
 
+describe('a failed photo step releases what it uploaded', () => {
+  const RUN_AS = { as: 'seed_inbox_7', via: 'seed-inbox' };
+  /** A plan of two photo steps, and a deployment whose answers the test sets. */
+  function photoServer(opts: {
+    create?: (key: string) => unknown;
+    removeBlob?: (id: string) => void;
+  }) {
+    const calls: { fn: string; args: Record<string, unknown>; runAs?: RunAs }[] = [];
+    let served = false;
+    const step = (key: string): SeedCall => ({
+      key,
+      label: key,
+      as: 'gus',
+      clerkUserId: 'seed_inbox_7',
+      fn: 'photos:create',
+      args: { caption: key, placeOnMap: false },
+      upload: true,
+    });
+    const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T => {
+      calls.push({ fn, args: args as Record<string, unknown>, ...(runAs ? { runAs } : {}) });
+      if (fn === 'inboxSeed:ensurePeople')
+        return {
+          created: [],
+          existing: [],
+          applied: true,
+          operator: { role: 'admin', status: 'active' },
+        } as T;
+      if (fn === 'inboxSeed:state') {
+        const ready = served ? [] : [step('ph-1'), step('ph-2')];
+        served = true;
+        return { people: [], bodies: [], done: [], ready, waiting: [], unavailable: [] } as T;
+      }
+      if (fn === 'photos:removeBlob') {
+        opts.removeBlob?.((args as { storageId: string }).storageId);
+        return null as T;
+      }
+      return (opts.create ? opts.create(String((args as { caption: string }).caption)) : 'p') as T;
+    };
+    const removed = () =>
+      calls.filter((c) => c.fn === 'photos:removeBlob').map((c) => [c.args.storageId, c.runAs]);
+    return { call, calls, removed };
+  }
+  const uploads =
+    (fail?: { key: string; at: 'thumb' }) =>
+    (call: Call): Upload =>
+      uploader(
+        // The address: a dev deployment's own.
+        <T>(fn: string, args: unknown, runAs?: RunAs): T =>
+          fn === 'photos:generateUploadUrl'
+            ? ('https://happy-cat-123.convex.cloud/api/storage/upload?token=x' as T)
+            : call<T>(fn, args, runAs),
+        'happy-cat-123',
+        (() => {
+          let n = 0;
+          return () => {
+            n++;
+            if (fail && n === 2) throw new Error('upload answered 502');
+            return `file-${n}`;
+          };
+        })(),
+      );
+
+  test('the thumbnail’s POST fails after the image went up: the image released, as its person', async () => {
+    const server = photoServer({});
+    const run = await applySeed(
+      server.call,
+      'user_op',
+      () => {},
+      uploads({ key: 'ph-1', at: 'thumb' })(server.call),
+    );
+    expect(run.waves[0]?.[0]).toMatchObject({ key: 'ph-1', error: 'upload answered 502' });
+    expect(server.removed()).toEqual([['file-1', RUN_AS]]);
+    expect(run.stranded).toEqual([]);
+  });
+
+  test('a release that fails too: the file is named by its id, with the command to finish it', async () => {
+    const server = photoServer({
+      removeBlob: () => {
+        throw new Error('Not reachable');
+      },
+    });
+    const run = await applySeed(
+      server.call,
+      'user_op',
+      () => {},
+      uploads({ key: 'ph-1', at: 'thumb' })(server.call),
+    );
+    expect(run.stranded).toEqual([
+      { key: 'ph-1', as: 'gus', subject: 'seed_inbox_7', storageIds: ['file-1'] },
+    ]);
+    expect(run.waves[0]?.[0]?.stranded).toEqual(['file-1']);
+    const lines = strandedLines(run.stranded);
+    expect(lines).toEqual([
+      `left on the deployment by ph-1 (as gus): file file-1 — remove it within a day: pnpm --filter @skating/convex exec convex run photos:removeBlob '{"storageId":"file-1"}' --identity '{"subject":"seed_inbox_7","via":"seed-inbox"}'`,
+    ]);
+    expect(lines.join()).not.toContain('token');
+  });
+
+  test('photos:create refuses: both files released; one a photo row already names is not stranded', async () => {
+    const server = photoServer({
+      create: () => {
+        throw new Error('Uncaught ConvexError: Minors cannot post');
+      },
+      removeBlob: (id) => {
+        if (id === 'file-3') throw new Error(`Uncaught ConvexError: ${BLOB_ATTACHED}`);
+      },
+    });
+    let n = 0;
+    const run = await applySeed(
+      server.call,
+      'user_op',
+      () => {},
+      () => ({
+        storageId: `file-${++n}`,
+        thumbStorageId: `file-${++n}`,
+      }),
+    );
+    expect(server.removed().map(([id]) => id)).toEqual(['file-1', 'file-2', 'file-3', 'file-4']);
+    expect(run.stranded).toEqual([]);
+    expect(run.counts.failed).toBe(2);
+  });
+
+  test('an interrupt stops the run after the step it cut short, which released its uploads', async () => {
+    const server = photoServer({
+      create: () => {
+        throw new Error('convex run failed with no message');
+      },
+    });
+    let n = 0;
+    const run = await applySeed(
+      server.call,
+      'user_op',
+      () => {},
+      () => ({ storageId: `file-${++n}`, thumbStorageId: `file-${++n}` }),
+      () => true,
+    );
+    expect(run.interrupted).toBe(true);
+    expect(run.waves.flat().map((f) => f.key)).toEqual(['ph-1']);
+    expect(server.removed().map(([id]) => id)).toEqual(['file-1', 'file-2']);
+    // No step after it.
+    expect(server.calls.filter((c) => c.fn === 'photos:create')).toHaveLength(1);
+  });
+
+  test('the first file’s POST fails: nothing went up, nothing to release', async () => {
+    const server = photoServer({});
+    const up = uploader(
+      <T>(fn: string): T =>
+        (fn === 'photos:generateUploadUrl' ? 'https://happy-cat-123.convex.cloud/u' : null) as T,
+      'happy-cat-123',
+      () => {
+        throw new Error('upload failed: ECONNRESET');
+      },
+    );
+    const run = await applySeed(server.call, 'user_op', () => {}, up);
+    expect(run.waves[0]?.[0]?.error).toBe('upload failed: ECONNRESET');
+    expect(server.removed()).toEqual([]);
+    expect(run.stranded).toEqual([]);
+  });
+});
+
 describe('a photo step', () => {
-  test('its files uploaded as its person first, their ids passed; the run log holds only the result', () => {
+  test('its files uploaded as its person first, their ids passed; the run log holds only the result', async () => {
     const calls: { fn: string; args: unknown; runAs?: RunAs }[] = [];
     let served = false;
     const call: Call = <T>(fn: string, args: unknown, runAs?: RunAs): T => {
@@ -415,7 +579,7 @@ describe('a photo step', () => {
       return 'photo-1' as T;
     };
     const uploads: { key: string; runAs?: RunAs }[] = [];
-    const run = applySeed(
+    const run = await applySeed(
       call,
       'user_op',
       () => {},
@@ -435,7 +599,7 @@ describe('a photo step', () => {
     ]);
   });
 
-  test('without an uploader a photo step fails by name, and the rest go on', () => {
+  test('without an uploader a photo step fails by name, and the rest go on', async () => {
     let served = false;
     const call: Call = <T>(fn: string): T => {
       if (fn === 'inboxSeed:ensurePeople')
@@ -464,7 +628,7 @@ describe('a photo step', () => {
       }
       return null as T;
     };
-    const run = applySeed(call, 'user_op');
+    const run = await applySeed(call, 'user_op');
     expect(run.waves[0]?.[0]?.error).toBe('ph-1 uploads photos, and this run has no uploader.');
   });
 });

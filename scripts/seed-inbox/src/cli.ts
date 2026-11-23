@@ -26,6 +26,7 @@ import {
   errorLine,
   planSeed,
   runLogName,
+  strandedLines,
   tally,
   waitingOn,
 } from './seed';
@@ -54,7 +55,7 @@ function pinnedNode(): string {
   }
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const wrongNode = nodeVersionRefusal(pinnedNode(), process.version);
   if (wrongNode !== null) {
     say(wrongNode);
@@ -77,7 +78,14 @@ function main(): number {
     case 'apply': {
       // The photo steps upload to the dev deployment the run targets, and nowhere else.
       const devName = target.isDev ? target.label.replace(/^dev:/, '') : null;
-      const run = applySeed(
+      // Ctrl-C stops the run between steps (the step it cut short fails and releases its uploads)
+      // rather than killing it mid-step with files no row names.
+      let interrupted = false;
+      process.on('SIGINT', () => {
+        interrupted = true;
+        say('interrupted — stopping after this step');
+      });
+      const run = await applySeed(
         call,
         parsed.operator,
         (f) =>
@@ -85,6 +93,7 @@ function main(): number {
             `${f.error === undefined ? 'filed ' : 'FAILED'} ${f.key.padEnd(22)} ${f.fn} as ${f.as}${f.error ? ` — ${f.error}` : ''}`,
           ),
         uploader(call, devName),
+        () => interrupted,
       );
       const log = writeLog('apply', { target: target.label, ...run });
       say(`people created ${run.people.created.length}`);
@@ -92,8 +101,10 @@ function main(): number {
         `filed ${run.counts.filed} · failed ${run.counts.failed} · done ${run.counts.done} · still ready ${run.counts.ready} · waiting ${run.counts.waiting} · unavailable ${run.counts.unavailable}`,
       );
       for (const u of run.last.unavailable) say(`unavailable ${u.key} — needs ${u.missing}`);
+      for (const line of strandedLines(run.stranded)) say(line);
+      if (run.interrupted) say('interrupted: the run stopped early; apply again to finish it');
       say(`run log ${log}`);
-      return run.counts.failed > 0 ? 1 : 0;
+      return run.counts.failed > 0 || run.interrupted ? 1 : 0;
     }
     case 'clear-dry': {
       say(
@@ -115,10 +126,11 @@ function main(): number {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try {
-    process.exit(main());
-  } catch (err) {
-    say(`failed: ${errorLine(err)}`);
-    process.exit(1);
-  }
+  main().then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      say(`failed: ${errorLine(err)}`);
+      process.exit(1);
+    },
+  );
 }

@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 import type { RunAs } from '@skating/run-log';
 import { seedPng } from './png';
-import type { Call, SeedCall, Upload } from './seed';
+import { type Call, releaseUploads, type SeedCall, type Upload, UploadFailed } from './seed';
 
 /** The full image's side and the thumbnail's, in pixels: small, real PNGs. */
 export const FULL_PX = 64;
@@ -89,7 +89,9 @@ export function postFile(url: string, bytes: Buffer, type = 'image/png'): string
 
 /**
  * The CLI's uploader: for each of the step's two files, an address as its person (checked against
- * `deploymentName`, the dev deployment the run targets), then the POST.
+ * `deploymentName`, the dev deployment the run targets), then the POST. A failure partway — the
+ * thumbnail's address or POST after the image went up — releases what went up ({@link UploadFailed}
+ * carries anything that couldn't be).
  */
 export function uploader(
   call: Call,
@@ -103,6 +105,14 @@ export function uploader(
       if (refused !== null) throw new Error(refused);
       return post(url, seedPng(`${step.key}:${slot}`, slot === 'full' ? FULL_PX : THUMB_PX));
     };
-    return { storageId: one('full'), thumbStorageId: one('thumb') };
+    const up: string[] = [];
+    try {
+      up.push(one('full'));
+      up.push(one('thumb'));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new UploadFailed(message, releaseUploads(call, up, runAs));
+    }
+    return { storageId: up[0] as string, thumbStorageId: up[1] as string };
   };
 }
