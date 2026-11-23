@@ -11640,6 +11640,180 @@ read `outcomeUnknown`.
 **Register:** the notification email, the data-export mail and operator broadcasts can also record a
 lost response as "not sent". None of them retries, so no duplicate can result. Not changed here.
 
+#### B01-5e: the builders integrated (2026-11-22)
+
+Integrated on `phase-b01-inbox-photos`, cut from support's head `10a0daf60` and rebased onto the
+support PR's head (#175, `31ee1856`; support stays its own PR, first), in this order: S5's eleven commits (its twelfth, the narrowing, **held**), W7's seven,
+then seven seams, the web review, and these docs.
+
+**Conflicts, and the overlaps with support:**
+- S5's rule-versus-write count clashed with support's. Both kept: 181 + 17 (tickets) + 36 (photos) =
+  234 cells.
+- `accountDeletion.ts` and `dataExport.ts` merged cleanly in distinct regions:
+  - S5's `erasePhotos` keeps a held photo;
+  - S5's export ships a down photo's status and a purged one without bytes;
+  - support's ticket erase and export stand beside them.
+- `lib/enums.ts`, `lib/readBudget.ts` and the guards' inventories had no overlap.
+- W7's retirement clashed with support's on the files both retirements touch:
+  `PlaceholderHandler.stories`, `elsewhere.ts`, `inboxWords.ts`, `overviewRoutes(.test)` and
+  `PersonFeeds`. Both removals were kept, which leaves:
+  - the "decided elsewhere" map empty;
+  - every Inbox lane linking the Inbox;
+  - the placeholder story turned into "a kind this build has no handler for".
+
+##### What each built
+
+- **S5 (server):**
+  - the photo verdict on the uploader's record. `setModerationStatus` learns photos, and D269 refuses
+    a moderator's own photo through `uploaderId`;
+  - every reader honoring `photoVisible`;
+  - every deleter asking `photoHeld`;
+  - the purge job;
+  - the rotation, with its watch mutation;
+  - the rollout's backfill and count;
+  - `photos.remove` answering `{ outcome: deleted | withdrawn | kept | gone }`;
+  - the photo subject (thumbnail only), `inbox.photoReveal`, the strip with each sibling's
+    `openFlagId`, and the record's staff-only `content.thumbUrl`;
+  - the tables:
+    - rule versus write (photo cells 36);
+    - offer versus run (+4 cases);
+    - heavy rows;
+    - privacy (120 cells);
+    - deleters;
+    - busy rows;
+    - the axis property.
+- **W7 (web):**
+  - `PhotoStage` / `PhotoSubject` and the bar (board 2.7);
+  - the record sheet's photo item;
+  - the single takedown wording;
+  - the sheet's "Not shown" placeholder;
+  - `/admin/flags` redirecting to the Safety lane, with every link opening the Inbox.
+
+##### The seams
+
+1. **W7 onto S5's real read:**
+   - *Show the photo* calls `inbox.photoReveal`, through a reveal handed down by context (live in the
+     handler, a fixture map in stories). The full address is in neither the markup nor the item's
+     data before Show; the wiring test holds both, and holds that the reveal is asked only on Show,
+     by the staged photo's id.
+   - The strip is the served siblings (never the flagged photo) with the flagged one placed at
+     `indexOnReport`. It is capped at the read's twelve others ("Showing 13 of 24 photos"); a count
+     is a floor only without `photoCount`. A sibling's open flag links its own item.
+   - A withdrawal is said ("its uploader took it down… kept out of sight while a flag or a decision
+     holds it").
+   - The skater web's and the phone's `photos.remove` calls are best-effort reclaims of unattached
+     drafts that show nothing. Only `deleted`, `gone` and `kept` can occur there, so there are no
+     words to add.
+2. **The photo-deleter guard** (`packages/guards/src/photoDeleters.test.ts`), copied verbatim from
+   S5. Proven both ways: a scratch file deleting `photo._id` fails it, and `deletePhotoAndBlobs`
+   without its `photoHeld` line fails it.
+3. **`FAILING_JOBS` gains two jobs**, so parked work shows on Machinery:
+   - `photoPurge` ("purge removed photos"): a failed or blob-keeping purge is a row, parked at the
+     third;
+   - `photoRotation` ("rotate a taken-down photo's file"): the watch's attempts are mirrored into a
+     row, cleared on landing.
+
+   `RecordKind` and `KIND_ORDER` gain `photo`.
+4. **`/admin/flags` leaves `OLD_SHELL_TREES`, `LEGACY_PAGES` and the theme script's `oldTrees`
+   together**; the shell tests follow (the Legacy count 12 → 11).
+5. **`PhotoStage`, `PhotoThumb` and `PixelatedImage` are in the kit** (`kit/photo-stage`, with a story).
+   The `AskDialog` focus option was not taken: no workaround for it exists.
+6. **Not in this PR** (register rows, below): `photos.authorDeletedAt` (S5 reads the `author_delete`
+   row instead), and photos in the Deleted list.
+
+##### Who reads a photo, as built
+
+| Reader | A photo that isn't visible | A purged photo |
+| --- | --- | --- |
+| `photos.getUrls`, `getHazardUrls`, `accessPoints.listPhotos` | skipped. A staff flag, honored only with `content.read`, serves it marked. `listPhotos` joins by id | no address |
+| The feed's thumbnails; `reports.recommended`'s count | skipped / not counted | — |
+| The Inbox's report subject (`photoCount`) | not counted without `content.read` (a floor past 12) | — |
+| The Inbox's photo subject | the thumbnail, the reveal and a down photo's caption only with `content.read`; no URL of any size otherwise | no address, strip included |
+| `inbox.photoReveal` | `inbox.read` and `content.read`; the full image, on Show | `{ url: null }` |
+| The record sheet (`content.thumbUrl`) | only with `content.read` | `null` |
+| The data export | the uploader's own, with its bytes and status | a line without a storage id |
+
+**The privacy table** holds three readers × four viewers × the staff flag on and off × five statuses =
+**120 cells**, plus the feed, the Inbox's report count and the photo subject with and without
+`content.read`.
+
+##### The seven deleters, and the guard
+
+Every caller of `deletePhotoAndBlobs`, which asks `photoHeld` itself (the status, a standing verdict,
+an open flag) and answers `held`:
+1. `photos.remove` (the uploader's delete, which withdraws a held photo instead);
+2. the orphan walk (`storageHygiene.examinePhoto`);
+3. season expiry;
+4. `photoReconcile`'s delete phase;
+5. account deletion (`erasePhotos`);
+6. the departed-content purge (`contentPurge.sweepPhotos`);
+7. the erasure settlement (`erasure.settleStep`).
+
+The purge's blob half (`purgePhotoBlobs`) is called by `photoPurge.purgeOne` alone. The guard lists
+each, with how it keeps a held photo, and fails on any new one.
+
+##### The rotation, and the storage proof behind it
+
+The rotation:
+- A hide or removal schedules `photos.rotateBlobs` and a watch.
+- The action copies both blobs, then swaps the row's ids only while the row is still down and holds
+  the old ones, deleting the old blobs in the same transaction.
+- The watch, a mutation (a scheduled action can die with a runtime error its own catch never sees),
+  runs it again at 1 min, 10 min and 1 h, then parks it and retries daily.
+
+The storage proof on dev: a deleted blob's address answered **404 at once**, with no edge cache. So the
+removal's words say the photo comes off its link now. But **Convex fixes a 30-day `private` cache
+lifetime on a served file**, so someone who already opened the photo may keep it on their own device
+for up to 30 days, which nothing reaches. The dialogs say exactly that, and no word claims the photo
+is gone from everywhere.
+
+##### The real-backend numbers (S5)
+
+- **The purge:** 237 due photos in 3 pages. One page of 100 used 527 of 4,096 index ranges.
+- **The backfill:** 3,237 rows.
+- **A takedown** on a report of 400 photos.
+- **A 20 MiB photo rotated** in about 4 s, under the 24 MiB bound.
+
+##### The rollout on dev, and the held narrowing
+
+After the photos PR merges, in order:
+1. `convex dev --once`.
+2. `convex run photoRollout:backfillModerationStatus '{}'`, paged and restartable, until it reports
+   done.
+3. `convex run photoRollout:countUnstamped '{}'` until it answers `{ unstamped: 0 }`. A new photo is
+   stamped `visible` at birth, so it stays zero.
+4. Only then **S5's held commit** (`c2e57b3f8`, "narrow photos.moderationStatus to required") becomes
+   the photos PR's last commit, as the pref narrowing did for B01-5d.
+
+##### Board 2.7 versus the build, and the invented words, for the founder's look
+
+- **The strip:** the board draws four thumbnails; the build serves the report's others, at most
+  twelve, with the flagged one in its place. Past them: "Showing 13 of 24 photos".
+- **A sibling with an open flag of its own** links its item: "Its flag →" (invented).
+- **The full image comes on Show** (a fetch). If it fails: "The photo couldn't be loaded", with *Try
+  again* (invented).
+- **States no board draws, all invented:**
+  - "Photos on flags are shown only to staff who can read hidden content";
+  - "The file for this photo couldn't be found";
+  - "The file was deleted on ‹day›…";
+  - "Its file is deleted on ‹day› unless it is restored";
+  - "Its uploader took it down on ‹day›; it is kept out of sight while a flag or a decision holds
+    it".
+- **The takedown dialogs' one wording:** "It comes off its link now and is shown to no one. Anyone
+  who already opened it may still see it on their own device for up to 30 days."
+- **The record sheet:** "The photo, pixelated" with *Show* / *Pixelate again*, and "No photo to show".
+- **The skater sheet:** "Not shown", for a kept photo a moderator took down.
+
+##### Owed
+
+- **Reports have no photo cap of their own:** the strip is bounded by the read, and a report by
+  Convex's array limit. Whether the report sheet should cap photos is a skater-app question, added
+  to B04's running list.
+- **`photos.authorDeletedAt`:** S5 reads the uploader's withdrawal from its `author_delete` audit row.
+  A stored field would make the read a point read. A register row.
+- **Photos in the record sheet's Deleted list:** a withdrawn photo is not on it today (`recordReads.
+  withdrawnAt` answers `null` for a photo). A register row.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
