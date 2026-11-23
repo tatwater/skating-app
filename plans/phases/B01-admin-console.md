@@ -12673,6 +12673,33 @@ the `photoFiles` and `photoRotations` tables, the copies' `gli-rotation=` tag, a
   environment time is 21–22% of a zone's pass, against 27% before the split. #175's first run took
   34 minutes, and these took 30–37.
 
+#### Greptile on #177, round 1 (2026-11-23)
+
+Greptile scored #177 (head `7f8a2a3ef`) 4/5, with one finding that blocks nothing: **cleanup ids can
+disappear.**
+
+**The finding.** The seed's CLI printed a failed photo step's stranded upload ids only after
+`applySeed` returned. A later call that threw, or an interrupt, lost them, and those are the ids the
+operator needs to remove the files by hand.
+
+**The fix** (`b01-close-seed-photo-3`, `b1c33368a`, cherry-picked). A new `scripts/seed-inbox/src/report.ts`
+says what the operator must act on twice:
+- **at once:** a step's stranded ids right after its line, and what the clear is waiting on as it
+  waits;
+- **again at the end:** in a `finally` summary on every exit, whether a return, a throw or an
+  interrupt. It names the unavailable steps' reasons, the stranded ids, the clear's tally and its
+  last wait.
+
+The saved run log still keeps counts only (`runRecord`). The fix came with 7 tests and caught 4
+mutants.
+
+**Coverage.** The fix left the seed package's branch coverage at 93.12%, against its 95% threshold,
+which would have been a red test task on CI. Two new tests cover the paths it missed:
+- a clean run, which exits 0;
+- a clear that runs out of calls while still removing, which exits 1 and says to run it again.
+
+Coverage now reads 96.25%.
+
 ### The Inbox wave: what needs you (2026-11-23)
 
 The Inbox is done: every kind of thing a person files is decided in it. The old flags, requests and
