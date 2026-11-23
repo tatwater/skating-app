@@ -9,6 +9,7 @@ const ready: FeedHeadsInput = {
   bodiesWanted: false,
   bodiesLoaded: false,
   recommendedLoaded: true,
+  waitedOut: false,
 };
 
 describe('feedHeads (D292)', () => {
@@ -45,6 +46,26 @@ describe('feedHeads (D292)', () => {
     expect(feedHeads({ ...ready, cachedCount: 5 }).showCached).toBe(false);
     expect(
       feedHeads({ ...ready, resultsCount: 0, status: 'Exhausted', cachedCount: 5 }).showCached,
+    ).toBe(false);
+  });
+
+  it('draws the live list once the wait runs out, whatever is still loading', () => {
+    expect(feedHeads({ ...ready, favoritesLoaded: false, waitedOut: true })).toEqual({
+      showCached: false,
+      headsKnown: true,
+    });
+    expect(
+      feedHeads({ ...ready, cachedCount: 5, recommendedLoaded: false, waitedOut: true }).showCached,
+    ).toBe(false);
+    // Before the first live page there is nothing live to draw.
+    expect(
+      feedHeads({
+        ...ready,
+        resultsCount: 0,
+        status: 'LoadingFirstPage',
+        favoritesLoaded: false,
+        waitedOut: true,
+      }).headsKnown,
     ).toBe(false);
   });
 

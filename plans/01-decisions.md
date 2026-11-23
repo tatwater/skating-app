@@ -8723,12 +8723,13 @@ key rather than by run, so no input order can repeat a header.
   the top of a section the reader had already scrolled past, unseen. `posts.listFavoritePosts`
   reads them up front, under `listFeed`'s season, moderation and filter rules: up to 5 per section,
   from the viewer's 25 newest favorites, building no more cards than about two pages of the feed.
-  Each is admitted once the scroll reaches its section, and the list waits for that read, the
-  matched lakes and the recommended strip before it first draws. A favorite past the cap keeps its
-  time slot and its star. The read is live: on a busy day, a newer favorite can push an older lifted
-  one out of its section's five, and that one drops back to its time slot. A favorite matched lake
-  is in the lake list from the start, so it is admitted and lifted the same way. If the read fails,
-  nothing is lifted and Latest stays up, newest first.
+  Each is admitted once the scroll reaches its section. The list waits for that read, the matched
+  lakes and the recommended strip before it first draws, but never more than 1.5 s once its first
+  page is in: past that it draws with what has answered. A favorite past the cap keeps its time slot
+  and its star. The read is live: on a busy day a newer favorite can push an older lifted one out of
+  its section's five; it leaves the head, and shows in its time slot once its page is loaded. A
+  favorite matched lake is in the lake list from the start, so it is admitted and lifted the same
+  way. If the read fails, no favorite Post is lifted (a favorite lake still is) and Latest stays up.
 - **A list that says "newest first" lifts nothing:** a search, and one skater's list.
 - A Post whose only favorite member went to the recommended strip (D50) is not lifted.
 

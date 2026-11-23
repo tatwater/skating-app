@@ -1,10 +1,12 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import * as Sentry from '@sentry/react-native';
 import { api } from '@skating/convex/api';
 import {
   type BodyResultData,
   type FeedCardData,
   formatSeason,
   hasWeatherFilter,
+  LATEST_HEADS_WAIT_MS,
   latestFeedSections,
   type PostCardData,
   postCardForCachedReport,
@@ -110,11 +112,26 @@ export default function NewsfeedScreen() {
   );
   const favoriteRead = useQueries(favoriteQueries).favorites as PostCardData[] | Error | undefined;
   const favoritePosts = favoriteRead instanceof Error ? [] : favoriteRead;
+  useEffect(() => {
+    if (favoriteRead instanceof Error) Sentry.captureException(favoriteRead);
+  }, [favoriteRead]);
 
   // Recommended filter-breaking bundles (D50) — a separate query interleaved near the top, never spliced
   // into the paginated feed. Renders nothing (the common case) when nothing exceptional qualifies.
   const recommended = useQuery(api.reports.recommended, {});
-  // The sections wait for what decides their heads; the offline cache stands in meanwhile.
+  // The sections wait for what decides their heads; the offline cache stands in meanwhile. Never
+  // longer than `LATEST_HEADS_WAIT_MS` once the first live page is in, per filter set.
+  const [waitedOutFor, setWaitedOutFor] = useState<string | null>(null);
+  const pageIn = results.length > 0 || status !== 'LoadingFirstPage';
+  const headsAnswered =
+    favoritePosts !== undefined &&
+    (!wantBodies || bodyResults !== undefined) &&
+    recommended !== undefined;
+  useEffect(() => {
+    if (headsAnswered || !pageIn) return;
+    const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [headsAnswered, pageIn, filtersKey]);
   const { showCached: isOfflineFallback, headsKnown } = feedHeads({
     resultsCount: results.length,
     status,
@@ -123,6 +140,7 @@ export default function NewsfeedScreen() {
     bodiesWanted: wantBodies,
     bodiesLoaded: bodyResults !== undefined,
     recommendedLoaded: recommended !== undefined,
+    waitedOut: waitedOutFor === filtersKey,
   });
   const feedData = isOfflineFallback ? cached : results;
   const listStatus = headsKnown ? status : 'LoadingFirstPage';
@@ -202,8 +220,8 @@ export default function NewsfeedScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
-          // Not while the list waits for its heads: an empty list would read every page.
-          if (headsKnown && status === 'CanLoadMore') loadMore(PAGE_SIZE);
+          // Only under the live list, once it draws: a held or cached list would read pages unseen.
+          if (!isOfflineFallback && headsKnown && status === 'CanLoadMore') loadMore(PAGE_SIZE);
         }}
         ListHeaderComponent={
           <YStack gap="4" paddingBottom="2">

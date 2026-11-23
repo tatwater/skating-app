@@ -1144,6 +1144,31 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     expect(ids(cards)).toEqual(great.slice(0, FAVORITE_LIFT_PER_SECTION));
   });
 
+  test('a section keeps its newest five, though one was found through an older window', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const today: Id<'posts'>[] = [];
+    for (const hours of [2, 4, 6, 8, 10]) {
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - hours * 3_600_000 }],
+      });
+      today.push(postId);
+    }
+    // Its favorite member is three days old; its newest, on another lake, an hour.
+    const { postId: newest } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 3 * 86_400_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 3_600_000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([newest, ...today.slice(0, 4)]);
+  });
+
   test('a Post sits in the section of its newest member, found through an older favorite one', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'clerk_author');

@@ -332,20 +332,20 @@ export const listFavoritePosts = query({
         hydrations++;
         const card = await toPostCard(ctx, post, viewer);
         if (!card?.isFavorite) continue;
+        // Placed by its own newest member, which can be a newer section than the window that found
+        // it; every section keeps its newest five at the end, whichever window found them.
         const key = feedSectionForTime(card.latestSkateEndTime, viewer.now).key;
-        const list = kept.get(key) ?? [];
-        if (list.length >= FAVORITE_LIFT_PER_SECTION) continue;
-        list.push({ card, createdAt: post._creationTime });
-        kept.set(key, list);
+        kept.set(key, [...(kept.get(key) ?? []), { card, createdAt: post._creationTime }]);
       }
     }
     // Newest skate first, ties newest-created first: the order `listFeed`'s index reads them in.
+    const newestFirst = (
+      a: { card: PostCardData; createdAt: number },
+      b: { card: PostCardData; createdAt: number },
+    ) => b.card.latestSkateEndTime - a.card.latestSkateEndTime || b.createdAt - a.createdAt;
     return [...kept.values()]
-      .flat()
-      .sort(
-        (a, b) =>
-          b.card.latestSkateEndTime - a.card.latestSkateEndTime || b.createdAt - a.createdAt,
-      )
+      .flatMap((list) => list.sort(newestFirst).slice(0, FAVORITE_LIFT_PER_SECTION))
+      .sort(newestFirst)
       .map(({ card }) => card);
   },
 });

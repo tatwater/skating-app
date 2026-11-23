@@ -17,6 +17,13 @@ export type LatestRow = LatestItem<PostCardData>;
  */
 export const FAVORITE_LIFT_PER_SECTION = 5;
 
+/**
+ * How long Latest holds loaded Posts back while the reads that decide its sections' heads (the
+ * favorites, the matched lakes, the recommended strip) are still out (D292). Past it the list draws
+ * with what it has, lifting nothing it doesn't know yet: a slow or lost read never hides the feed.
+ */
+export const LATEST_HEADS_WAIT_MS = 1500;
+
 const sectionRankAt = (t: number, now: number) => feedSectionRank(feedSectionForTime(t, now).key);
 
 /** A Post shows a favorite member: what lifts it, after the recommended strip took its own. */

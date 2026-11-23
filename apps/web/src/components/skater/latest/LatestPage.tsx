@@ -3,13 +3,14 @@ import { api } from '@skating/convex/api';
 import {
   type FeedFilters,
   hasWeatherFilter,
+  LATEST_HEADS_WAIT_MS,
   type PostCardData,
   withoutWeatherFilter,
 } from '@skating/core';
 import { useCanGoBack, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import { usePaginatedQuery, useQueries, useQuery } from 'convex/react';
 import type { Value } from 'convex/values';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
 import { isConfigured } from '@/lib/env';
@@ -172,10 +173,19 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   // The sections wait for what decides their heads (D292): drawn before the favorites, the matched
   // lakes or the recommended strip answer, a favorite would move at the top of a section a moment
   // later (the strip decides it too: a Post whose favorite member it took isn't lifted).
-  const headsKnown =
+  const headsReady =
     (!lift || favoritePosts !== undefined) &&
     (!wantBodies || bodyResults !== undefined) &&
     (!lift || recommended !== undefined);
+  // Never longer than `LATEST_HEADS_WAIT_MS` once the first page is in, per filter set.
+  const [waitedOutFor, setWaitedOutFor] = useState<string | null>(null);
+  const pageIn = status !== 'LoadingFirstPage';
+  useEffect(() => {
+    if (headsReady || !pageIn) return;
+    const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [headsReady, pageIn, filtersKey]);
+  const headsKnown = headsReady || (pageIn && waitedOutFor === filtersKey);
   const state = headsKnown
     ? latestFeedState({
         status,

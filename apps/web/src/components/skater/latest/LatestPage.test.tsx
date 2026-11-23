@@ -1,4 +1,4 @@
-import type { FeedFilters } from '@skating/core';
+import { type FeedFilters, LATEST_HEADS_WAIT_MS } from '@skating/core';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -293,7 +293,19 @@ describe('LatestPage', () => {
     ]);
   });
 
-  it('falls back to no lift when the favorites read fails: Latest stays up, newest first', () => {
+  it('draws the loaded posts once the wait runs out, though the favorites never answered', () => {
+    // The clock stays pinned to the board; only the timers are added.
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    fakes.queries.delete('posts:listFavoritePosts');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(LATEST_HEADS_WAIT_MS);
+    });
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+  });
+
+  it('lifts no favorite Post when the favorites read fails, and Latest stays up', () => {
     fakes.queries.set('posts:listFavoritePosts', () => new Error('read limit'));
     page();
     expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();

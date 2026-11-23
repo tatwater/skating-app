@@ -498,7 +498,7 @@ export function feedSectionForTime(skateEndTime: number, now: number): FeedSecti
   return { key: 'older', label: 'Older than a month' };
 }
 
-/** One recency section: its header meta + the cards that fall in it, order preserved. */
+/** One recency section: its header meta + the cards that fall in it, in `groupFeedSections`' order. */
 export interface FeedSection<T> {
   key: FeedSectionMeta['key'];
   label: string;
