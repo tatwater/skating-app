@@ -1735,6 +1735,34 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     expect(await owed(t)).toEqual([]);
   });
 
+  test('a step of five hundred photos plans its index ranges: each step fits, every photo goes (B01-5e)', async () => {
+    const { t, author } = await setup();
+    const ids = await t.run(async (ctx) => {
+      const out: Id<'photos'>[] = [];
+      for (let i = 0; i < 500; i++) {
+        out.push(
+          await ctx.db.insert('photos', {
+            storageId: await ctx.storage.store(new Blob([`f${i}`])),
+            thumbStorageId: await ctx.storage.store(new Blob([`t${i}`])),
+            uploaderId: author.id,
+            placeOnMap: false,
+            createdAt: Date.now(),
+            moderationStatus: 'visible' as const,
+          }),
+        );
+      }
+      return out;
+    });
+    await oweOnRecord(t, author.id, ids, { phase: 'hazards' });
+    // One step, as the walk would run it, its transaction's ranges its own.
+    await step(t, author.id);
+    const left = (await Promise.all(ids.map((id) => get(t, id)))).filter(Boolean).length;
+    expect(left).toBeGreaterThan(0); // the step stopped where its ranges did, never past them
+    await settleAll(t);
+    for (const id of ids) expect(await get(t, id)).toBeNull();
+    expect(await placeOf(t, author.id)).toBeNull();
+  });
+
   test('a clear step clears the debts its settlement took on, then takes again', async () => {
     const { t, author } = await setup();
     await oweOnRecord(t, author.id, [], { phase: 'clear' });
