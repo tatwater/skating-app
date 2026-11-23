@@ -100,7 +100,7 @@ function Feed({
     <>
       <PastSeasonNotice firstPostEnd={firstPostEnd} now={now} />
       {sections.map((section, s) => (
-        <Section key={sectionKey(section)} title={section.label} className="gap-(--space-8)">
+        <Section key={section.key} title={section.label} className="gap-(--space-8)">
           {section.items.map((row: LatestRow, i) =>
             row.kind === 'report' ? (
               <FeedCard
@@ -141,14 +141,6 @@ function Feed({
       {exhausted && <ListEnd>That’s everything</ListEnd>}
     </>
   );
-}
-
-/** A section's key: its bucket and its first row, so a bucket seen twice still keys apart. */
-function sectionKey(section: FeedSection<LatestRow>): string {
-  const first = section.items[0];
-  const id =
-    first === undefined ? '' : first.kind === 'report' ? first.data.postId : first.data.waterBodyId;
-  return `${section.key}:${id}`;
 }
 
 /**

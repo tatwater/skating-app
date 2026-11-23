@@ -1,9 +1,9 @@
-import type { FeedFilters } from '@skating/core';
+import { type FeedFilters, LATEST_HEADS_WAIT_MS } from '@skating/core';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
-
+import { pinBoardClock } from '@/test/pinBoardClock';
 import { takeWaterBodyOpenSource } from '../lake/openSource';
 import {
   panelFakes,
@@ -11,6 +11,7 @@ import {
   polyfillAnimate,
   resetPanelFakes,
 } from '../panels/panelTestMocks';
+
 import { convexReact, fakes, resetFakes } from '../testMocks';
 
 const m = vi.hoisted(() => ({
@@ -47,6 +48,9 @@ vi.mock('../lake/InViewList', () => ({ InViewList: () => <p>In view</p> }));
 import { LatestPage } from './LatestPage';
 import { MATCH, POST, REPORT } from './latestFixtures';
 
+// Admission to a section is judged by the page's own clock (D292): pinned to the fixtures' noon.
+pinBoardClock();
+
 beforeAll(() => {
   polyfillAnimate();
   Object.defineProperty(document, 'fonts', {
@@ -69,6 +73,7 @@ beforeEach(() => {
   fakes.queries.set('reports:recommended', []);
   fakes.queries.set('weatherDiscovery:status', { available: true, asOfDayMs: Date.now() });
   fakes.queries.set('bounties:listOpen', []);
+  fakes.queries.set('posts:listFavoritePosts', []);
 });
 
 /** The last navigation, with its `search` updater applied to `prev`. */
@@ -261,6 +266,94 @@ describe('LatestPage', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(loadMore).toHaveBeenCalledWith(20);
+  });
+
+  it('holds the first draw until the favorites answer: they decide each section’s head (D292)', () => {
+    fakes.queries.delete('posts:listFavoritePosts');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+  });
+
+  it('leads Today with a favorite from the up-front read, though no page has brought it yet', () => {
+    const fav = {
+      ...POST,
+      postId: 'fav1',
+      title: 'The favorite',
+      latestSkateEndTime: POST.latestSkateEndTime - 3_600_000,
+      isFavorite: true,
+      reports: [{ ...REPORT, reportId: 'favr', isFavorite: true }],
+    };
+    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
+    fakes.queries.set('posts:listFavoritePosts', [fav]);
+    page();
+    const titles = screen.getAllByText(/^(The favorite|Mascoma South, first real day)$/);
+    expect(titles.map((t) => t.textContent)).toEqual([
+      'The favorite',
+      'Mascoma South, first real day',
+    ]);
+  });
+
+  it('draws the loaded posts once the wait runs out, though the favorites never answered', () => {
+    // The clock stays pinned to the board; only the timers are added.
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    fakes.queries.delete('posts:listFavoritePosts');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(LATEST_HEADS_WAIT_MS);
+    });
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+  });
+
+  it('lifts nothing that answers after the wait ran out: the sections already drew', () => {
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
+    fakes.queries.delete('posts:listFavoritePosts');
+    const view = page();
+    act(() => {
+      vi.advanceTimersByTime(LATEST_HEADS_WAIT_MS);
+    });
+    // The favorites answer late, naming one the pages haven't brought.
+    fakes.queries.set('posts:listFavoritePosts', [
+      {
+        ...POST,
+        postId: 'late',
+        title: 'The late favorite',
+        latestSkateEndTime: POST.latestSkateEndTime - 3_600_000,
+        isFavorite: true,
+        reports: [{ ...REPORT, reportId: 'late-r', isFavorite: true }],
+      },
+    ]);
+    view.rerender(<LatestPage search={{}} />);
+    expect(screen.queryByText('The late favorite')).not.toBeInTheDocument();
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+  });
+
+  it('lifts no favorite Post when the favorites read fails, and Latest stays up', () => {
+    fakes.queries.set('posts:listFavoritePosts', () => new Error('read limit'));
+    page();
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+    expect(screen.queryByText('Loading reports')).not.toBeInTheDocument();
+  });
+
+  it('holds the first draw until the recommended strip answers: it decides what is lifted', () => {
+    fakes.queries.delete('reports:recommended');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+  });
+
+  it('asks for the favorites once per filter set, not once per render', () => {
+    const view = page();
+    view.rerender(<LatestPage search={{}} />);
+    expect(fakes.unstableQueries).toBe(0);
+  });
+
+  it('reads no favorites under a search or one skater’s list: each says newest first', () => {
+    m.flags['latest-skater-filter'] = true;
+    m.flags['latest-text-search'] = true;
+    page({ q: 'narrows' });
+    page({ skater: 'bob' });
+    expect(fakes.calls.some((c) => c.name === 'posts:listFavoritePosts')).toBe(false);
   });
 
   it('shows the first page loading (4.15)', () => {

@@ -225,7 +225,9 @@ Applied in `packages/convex/convex/schema.ts`.
   see roadmap Later/deferred.)*
 - **`reports.listFeed` (extend, from Phase 05):** accept optional **`filters`** + the viewer's cached
   bands + favorite set; apply `matchesFilters` server-side; **boost favorites** to the top of the page.
-  Additive — unfiltered behavior is exactly Phase 05.
+  Additive — unfiltered behavior is exactly Phase 05. *(Amended by D292, 2026-11-22: the server keeps
+  the page newest first; the client lifts the favorites a separate up-front read names within their
+  recency section. A per-page boost repeated section headers.)*
 - **`putIns.ts` (new):** `listForBody` (derived cluster over visible report points via `clusterPutIns`,
   merged with `official` rows, minus `hidden`/suppressed); `setOfficial` + `hide` (admin/mod, writes
   `moderationActions`).
@@ -254,7 +256,9 @@ Applied in `packages/convex/convex/schema.ts`.
   unknown** for missing quality/thickness/snow; favorites exempt from distance but not quality/recency;
   `surfaceTags`-based no-snow; recency floor); `clusterPutIns`/`snapToEdge`/`directionsUrl` per platform.
 - **`convex-test`:** `waterBodyFavorites.toggle`; `listFeed` with filters (narrowing + favorite boost +
-  include-unknown); `putIns.listForBody` (derived + official merge, hidden/suppressed excluded);
+  include-unknown; since D292 the boost is the client's, in `latestFeedSections` over
+  `posts.listFavoritePosts`); `putIns.listForBody` (derived + official merge, hidden/suppressed
+  excluded);
   notification fan-out enqueues the right recipients; the digest cron groups by body; coalescing key.
   `isochrones` action mocked (no live ORS in tests).
 - **Web/Mobile:** filter-row persistence (local-first, server reconcile); recency headers; favorite

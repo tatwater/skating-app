@@ -3,14 +3,12 @@ import {
   type BodyResultData,
   type FeedFilters,
   type FeedSection,
-  groupFeedSections,
   hasWeatherFilter,
-  interleaveLatest,
-  type LatestItem,
+  type LatestRow,
+  latestFeedSections,
   type PostCardData,
   thresholdLabel,
   type WeatherDiscoveryFilter,
-  withoutRecommended,
 } from '@skating/core';
 
 import type { LatestFilter } from '@/lib/analytics';
@@ -24,13 +22,15 @@ import { activeFilterCount } from '@/lib/feedFilters';
 // ── The feed ────────────────────────────────────────────────────────────────────────────────────
 
 /** One row of the feed column: a post, or a lake the weather filter matched (D165). */
-export type LatestRow = LatestItem<PostCardData>;
+export type { LatestRow };
 
 /**
- * The feed column's sections — the old page's composition, unchanged: recommended reports come out
- * of the filtered feed (a permissive viewer never sees one twice, D50), matched lakes slot in among
- * the posts by the day each crossed the asked-for nights (`interleaveLatest`), and the list breaks
- * into recency sections. Core owns and tests each step; this only names the order they run in.
+ * The feed column's sections (`latestFeedSections`, shared with mobile): recommended reports come
+ * out of the filtered feed (a permissive viewer never sees one twice, D50), matched lakes slot in
+ * among the posts by the day each crossed the asked-for nights, and the list breaks into recency
+ * sections, with the viewer's favorites read up front (`posts.listFavoritePosts`) leading each one
+ * (D292). A search or one skater's list passes `lift: false` and no favorites: its line promises
+ * newest first.
  */
 export function latestSections(
   posts: readonly PostCardData[],
@@ -38,17 +38,17 @@ export function latestSections(
   bodies: readonly BodyResultData[],
   exhausted: boolean,
   now: number,
+  { lift, favorites = [] }: { lift: boolean; favorites?: readonly PostCardData[] },
 ): FeedSection<LatestRow>[] {
-  return groupFeedSections(
-    interleaveLatest(
-      withoutRecommended(posts, recommendedIds),
-      (post) => post.latestSkateEndTime,
-      bodies,
-      exhausted,
-    ),
-    (row) => (row.kind === 'report' ? row.data.latestSkateEndTime : row.data.eventMs),
+  return latestFeedSections({
+    posts,
+    favorites: lift ? favorites : [],
+    bodies,
+    exhausted,
     now,
-  );
+    recommendedIds,
+    lift,
+  });
 }
 
 /** `usePaginatedQuery`'s status, as the feed reads it. */

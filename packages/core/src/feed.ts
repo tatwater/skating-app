@@ -201,7 +201,11 @@ export interface FeedCardData {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 04) — drives the feed badge + the per-page boost. */
+  /**
+   * Viewer has favorited this body or bay (Phase 04 / A09) — the card's badge, and what lets its Post
+   * lead its recency section: `latestFeedSections` lifts a Post only while a member it shows has
+   * this (D292).
+   */
   isFavorite?: boolean;
   /**
    * The body's easiest known approach (A06d / D87), denormalized onto the row by the access join.
@@ -335,7 +339,10 @@ export interface PostCardData {
   latestSkateEndTime: number;
   author: FeedAuthor;
   blocked: boolean;
-  /** Any matched member is on a favorited body or bay (Phase 04 / A09) — the per-page boost. */
+  /**
+   * Any matched member is on a favorited body or bay (Phase 04 / A09). What lifts a Post is the
+   * up-front read naming it and a shown member's own flag (`latestFeedSections`, D292), not this.
+   */
   isFavorite: boolean;
   /** Never empty: a Post with no matching Report is not in the page. */
   reports: FeedCardData[];
@@ -461,7 +468,10 @@ export interface FeedCardView {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 04) — the card shows a heart/badge and boosts it. */
+  /**
+   * Viewer has favorited this body (Phase 04) — the card's heart/badge. Whether its Post leads its
+   * recency section is `latestFeedSections`' call (D292).
+   */
   isFavorite: boolean;
   /** `true` ⇒ render the Hike-In chip (D87). Only the hike-in case; the others are unremarkable. */
   isHikeIn: boolean;
@@ -488,7 +498,7 @@ export function feedSectionForTime(skateEndTime: number, now: number): FeedSecti
   return { key: 'older', label: 'Older than a month' };
 }
 
-/** One recency section: its header meta + the cards that fall in it, order preserved. */
+/** One recency section: its header meta + the cards that fall in it, in `groupFeedSections`' order. */
 export interface FeedSection<T> {
   key: FeedSectionMeta['key'];
   label: string;
@@ -496,24 +506,74 @@ export interface FeedSection<T> {
 }
 
 /**
- * Partition an already newest-first feed list into contiguous recency sections (Phase 04, decision #5).
- * Each item keeps its position; a new section starts whenever the bucket changes, so an out-of-order
- * list can't produce a duplicate header for the same key. `getTime` extracts the skate-end time so this
- * works over raw `FeedCardData` or a built `FeedCardView` alike. Empty in → empty out.
+ * Where each section is drawn, newest first, whatever order the items came in. A `Record`, so a new
+ * key can't be added without a place in the order.
+ */
+const SECTION_RANK: Readonly<Record<FeedSectionMeta['key'], number>> = {
+  today: 0,
+  yesterday: 1,
+  'this-week': 2,
+  'this-month': 3,
+  older: 4,
+};
+
+/** A section's place in the feed, newest first: `today` is 0. */
+export function feedSectionRank(key: FeedSectionMeta['key']): number {
+  return SECTION_RANK[key];
+}
+
+/**
+ * Each recency section as a skate-end-time window `[startMs, endMs)` relative to `now`, newest
+ * first — the same boundaries as {@link feedSectionForTime}, for a server that reads a section at a
+ * time. `today` runs open-ended into the future (clock skew buckets as today); `older` open-ended
+ * into the past.
+ */
+export function feedSectionWindows(
+  now: number,
+): { key: FeedSectionMeta['key']; startMs: number; endMs: number }[] {
+  return [
+    { key: 'today', startMs: now - DAY + 1, endMs: Number.POSITIVE_INFINITY },
+    { key: 'yesterday', startMs: now - 2 * DAY + 1, endMs: now - DAY + 1 },
+    { key: 'this-week', startMs: now - 7 * DAY + 1, endMs: now - 2 * DAY + 1 },
+    { key: 'this-month', startMs: now - 30 * DAY + 1, endMs: now - 7 * DAY + 1 },
+    { key: 'older', startMs: Number.NEGATIVE_INFINITY, endMs: now - 30 * DAY + 1 },
+  ];
+}
+
+/**
+ * Split a feed list into recency sections (Phase 04, decision #5), each key **once**, newest
+ * section first, with the viewer's favorites leading inside each section (D292). Within a section,
+ * favorites come before the rest, and each group runs newest first; ties keep their input order.
+ *
+ * The caller says what leads (`isFavorite`; Latest's rule is `latestFeedSections`'). The order is
+ * decided here, not on the server: a page reordered favorites-first is no longer newest first, and
+ * splitting it by time drew "Today / Older than a month / Today" (D292). Bucketing by key rather
+ * than by run means no input order can repeat a header. `getTime` extracts the skate-end
+ * time, so this works over raw `FeedCardData`, a built view or a Latest row alike. Empty in → empty out.
  */
 export function groupFeedSections<T>(
   items: readonly T[],
   getTime: (item: T) => number,
   now: number,
+  isFavorite: (item: T) => boolean,
 ): FeedSection<T>[] {
-  const sections: FeedSection<T>[] = [];
+  const byKey = new Map<FeedSectionMeta['key'], { meta: FeedSectionMeta; rows: T[] }>();
   for (const item of items) {
     const meta = feedSectionForTime(getTime(item), now);
-    const last = sections[sections.length - 1];
-    if (last && last.key === meta.key) last.items.push(item);
-    else sections.push({ key: meta.key, label: meta.label, items: [item] });
+    const bucket = byKey.get(meta.key);
+    if (bucket) bucket.rows.push(item);
+    else byKey.set(meta.key, { meta, rows: [item] });
   }
-  return sections;
+  return [...byKey.values()]
+    .sort((a, b) => SECTION_RANK[a.meta.key] - SECTION_RANK[b.meta.key])
+    .map(({ meta, rows }) => ({
+      key: meta.key,
+      label: meta.label,
+      // `Array.prototype.sort` is stable, so equal rows keep their input order.
+      items: rows.sort(
+        (a, b) => Number(isFavorite(b)) - Number(isFavorite(a)) || getTime(b) - getTime(a),
+      ),
+    }));
 }
 
 /**

@@ -1,20 +1,21 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import * as Sentry from '@sentry/react-native';
 import { api } from '@skating/convex/api';
 import {
   type BodyResultData,
   type FeedCardData,
   formatSeason,
-  groupFeedSections,
   hasWeatherFilter,
-  interleaveLatest,
+  LATEST_HEADS_WAIT_MS,
+  latestFeedSections,
   type PostCardData,
   postCardForCachedReport,
   seasonOf,
-  withoutRecommended,
 } from '@skating/core';
-import { usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQueries, useQuery } from 'convex/react';
+import type { Value } from 'convex/values';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { H1, Paragraph, Spinner, Text, useTheme, YStack } from 'tamagui';
@@ -26,6 +27,7 @@ import { ProfileSearch } from '../../src/components/ProfileSearch';
 import { RecommendedCard } from '../../src/components/RecommendedCard';
 import { ReportDetail } from '../../src/components/ReportDetail';
 import { useFeedFilters } from '../../src/lib/feedFiltersStore';
+import { feedHeads } from '../../src/lib/feedHeads';
 import { cacheReports, loadCachedReports } from '../../src/lib/reportCache';
 
 /** Feed page size per `usePaginatedQuery` load. */
@@ -50,8 +52,9 @@ type FeedListItem =
  * shows, de-emphasized (D3).
  *
  * Under a weather filter the list is heterogeneous (D165): `weatherDiscovery.listBodyResults`
- * supplies the lakes whose cold chain matched, and `interleaveLatest` slots them among the reports
+ * supplies the lakes whose cold chain matched, and `latestFeedSections` slots them among the reports
  * by the day each crossed the requested number of nights. A lake card opens the lake on the map.
+ * `posts.listFavoritePosts` names the favorites that lead each recency section (D292).
  */
 export default function NewsfeedScreen() {
   const theme = useTheme();
@@ -59,9 +62,10 @@ export default function NewsfeedScreen() {
   const filters = useFeedFilters();
   const weatherActive = hasWeatherFilter(filters.value);
   const discovery = useQuery(api.weatherDiscovery.status, {});
+  const wantBodies = weatherActive && !filters.value.onlyReports;
   const bodyResults = useQuery(
     api.weatherDiscovery.listBodyResults,
-    weatherActive && !filters.value.onlyReports ? { filters: filters.value } : 'skip',
+    wantBodies ? { filters: filters.value } : 'skip',
   );
   const { results, status, loadMore } = usePaginatedQuery(
     api.posts.listFeed,
@@ -91,13 +95,59 @@ export default function NewsfeedScreen() {
   useEffect(() => {
     if (favoriteCards && favoriteCards.length > 0) cacheReports(favoriteCards);
   }, [favoriteCards]);
-  const isOfflineFallback =
-    results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0;
-  const feedData = isOfflineFallback ? cached : results;
+  // The viewer's favorite Posts, up front: the only ones lifted to the top of their section (D292).
+  // Through `useQueries`, which hands a failure back instead of throwing: a failed read lifts
+  // nothing and the feed stays up. Keyed on the filters' content: a new object re-subscribes.
+  const filtersKey = JSON.stringify(filters.value);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the filters' content, not identity.
+  const favoriteQueries = useMemo(
+    () => ({
+      favorites: {
+        query: api.posts.listFavoritePosts,
+        // `useQueries` types its args as plain values; the filters are a plain JSON object.
+        args: { filters: filters.value as Record<string, Value> },
+      },
+    }),
+    [filtersKey],
+  );
+  const favoriteRead = useQueries(favoriteQueries).favorites as PostCardData[] | Error | undefined;
+  const favoritePosts = favoriteRead instanceof Error ? [] : favoriteRead;
+  useEffect(() => {
+    if (favoriteRead instanceof Error) Sentry.captureException(favoriteRead);
+  }, [favoriteRead]);
 
   // Recommended filter-breaking bundles (D50) — a separate query interleaved near the top, never spliced
   // into the paginated feed. Renders nothing (the common case) when nothing exceptional qualifies.
   const recommended = useQuery(api.reports.recommended, {});
+  // The sections wait for what decides their heads; the offline cache stands in meanwhile. Never
+  // longer than `LATEST_HEADS_WAIT_MS` once the first live page is in, per filter set.
+  const [waitedOutFor, setWaitedOutFor] = useState<string | null>(null);
+  const pageIn = results.length > 0 || status !== 'LoadingFirstPage';
+  const headsAnswered =
+    favoritePosts !== undefined &&
+    (!wantBodies || bodyResults !== undefined) &&
+    recommended !== undefined;
+  useEffect(() => {
+    if (headsAnswered || !pageIn) return;
+    const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [headsAnswered, pageIn, filtersKey]);
+  const {
+    showCached: isOfflineFallback,
+    headsKnown,
+    lift,
+  } = feedHeads({
+    resultsCount: results.length,
+    status,
+    cachedCount: cached.length,
+    favoritesLoaded: favoritePosts !== undefined,
+    bodiesWanted: wantBodies,
+    bodiesLoaded: bodyResults !== undefined,
+    recommendedLoaded: recommended !== undefined,
+    waitedOut: waitedOutFor === filtersKey,
+  });
+  const feedData = isOfflineFallback ? cached : results;
+  const listStatus = headsKnown ? status : 'LoadingFirstPage';
   const recommendedItems: FeedListItem[] =
     recommended && recommended.length > 0
       ? [
@@ -116,21 +166,24 @@ export default function NewsfeedScreen() {
   );
 
   // Interleave recency scroll-divider headers (Phase 04, decision #5) into the flat list — one header
-  // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
-  // pull-to-refresh keep working over a single `FlatList`. The recommended bundles lead the list.
+  // row per section ("Today / Yesterday / …"), then that section's cards, the up-front favorites
+  // first (D292), so infinite scroll + pull-to-refresh keep working over a single `FlatList`. The
+  // recommended bundles lead the list.
+  const sections = headsKnown
+    ? latestFeedSections({
+        posts: feedData,
+        favorites: lift ? (favoritePosts ?? []) : [],
+        // Never from the offline cache: a cached report list has no matching body list.
+        bodies: isOfflineFallback ? [] : (bodyResults?.results ?? []),
+        exhausted: status === 'Exhausted',
+        now,
+        recommendedIds,
+        lift,
+      })
+    : [];
   const listItems: FeedListItem[] = [
     ...recommendedItems,
-    ...groupFeedSections(
-      interleaveLatest(
-        withoutRecommended(feedData, recommendedIds),
-        (d) => d.latestSkateEndTime,
-        // Never from the offline cache: a cached report list has no matching body list.
-        isOfflineFallback ? [] : (bodyResults?.results ?? []),
-        status === 'Exhausted',
-      ),
-      (item) => (item.kind === 'report' ? item.data.latestSkateEndTime : item.data.eventMs),
-      now,
-    ).flatMap((section) => [
+    ...sections.flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
       ...section.items.map((item) =>
         item.kind === 'report'
@@ -171,7 +224,8 @@ export default function NewsfeedScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
-          if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
+          // Only under the live list, once it draws: a held or cached list would read pages unseen.
+          if (!isOfflineFallback && headsKnown && status === 'CanLoadMore') loadMore(PAGE_SIZE);
         }}
         ListHeaderComponent={
           <YStack gap="4" paddingBottom="2">
@@ -231,7 +285,7 @@ export default function NewsfeedScreen() {
           return <PostCard data={item.data} now={now} onOpenReport={setSelectedReportId} />;
         }}
         ListEmptyComponent={
-          status === 'LoadingFirstPage' ? (
+          listStatus === 'LoadingFirstPage' ? (
             <YStack padding="4" alignItems="center">
               <Spinner color="primary" />
             </YStack>
@@ -246,7 +300,8 @@ export default function NewsfeedScreen() {
           )
         }
         ListFooterComponent={
-          status === 'LoadingMore' ? (
+          // The list waiting for its heads, under a Recommended strip that keeps it from looking empty.
+          status === 'LoadingMore' || (!headsKnown && listItems.length > 0) ? (
             <YStack padding="3" alignItems="center">
               <Spinner color="primary" />
             </YStack>

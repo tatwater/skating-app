@@ -19,18 +19,33 @@ import { latestSearchSchema } from './latestSearch';
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2027, 0, 16, 17);
 
-function post(id: string, ageHours: number, reportIds = [`${id}-r`]): PostCardData {
+function post(
+  id: string,
+  ageHours: number,
+  reportIds = [`${id}-r`],
+  isFavorite = false,
+): PostCardData {
   const t = NOW - ageHours * HOUR;
   return {
     postId: id,
     latestSkateEndTime: t,
-    reports: reportIds.map((reportId) => ({ reportId, skateEndTime: t })),
+    isFavorite,
+    reports: reportIds.map((reportId) => ({ reportId, skateEndTime: t, isFavorite })),
   } as unknown as PostCardData;
 }
 
-function body(id: string, ageHours: number): BodyResultData {
-  return { waterBodyId: id, eventMs: NOW - ageHours * HOUR } as unknown as BodyResultData;
+function body(id: string, ageHours: number, isFavorite = false): BodyResultData {
+  return {
+    waterBodyId: id,
+    eventMs: NOW - ageHours * HOUR,
+    isFavorite,
+  } as unknown as BodyResultData;
 }
+
+const LIFT = { lift: true };
+
+const rowId = (r: { kind: string; data: unknown }) =>
+  r.kind === 'report' ? (r.data as PostCardData).postId : (r.data as BodyResultData).waterBodyId;
 
 describe('latestSections', () => {
   it('drops recommended reports, slots matched lakes in by time, and sections by recency', () => {
@@ -40,6 +55,7 @@ describe('latestSections', () => {
       [body('w1', 20), body('w2', 500)],
       false,
       NOW,
+      LIFT,
     );
     expect(sections.map((s) => s.key)).toEqual(['today', 'yesterday', 'this-week']);
     const rows = sections.flatMap((s) => s.items);
@@ -54,10 +70,64 @@ describe('latestSections', () => {
   });
 
   it('lets an older lake in once the pages are exhausted', () => {
-    const rows = latestSections([post('a', 1)], new Set(), [body('w', 500)], true, NOW).flatMap(
-      (s) => s.items,
-    );
+    const rows = latestSections(
+      [post('a', 1)],
+      new Set(),
+      [body('w', 500)],
+      true,
+      NOW,
+      LIFT,
+    ).flatMap((s) => s.items);
     expect(rows).toHaveLength(2);
+  });
+
+  it('lifts favorites to the top of their own section, never above a newer section (D292)', () => {
+    // The seeded dev feed that read "Today / Older than a month / Today / Older than a month": the
+    // server sends newest first, two of the viewer's favorites among them, one of them months old,
+    // and the up-front read names both.
+    const t2 = post('t2', 2, undefined, true);
+    const o2 = post('o2', 128 * 24, undefined, true);
+    const sections = latestSections(
+      [post('t1', 1), t2, post('t3', 3), post('o1', 99 * 24), o2],
+      new Set(),
+      [body('w', 5, true)],
+      true,
+      NOW,
+      { ...LIFT, favorites: [t2, o2] },
+    );
+    expect(sections.map((s) => s.key)).toEqual(['today', 'older']);
+    expect(sections.map((s) => s.items.map(rowId))).toEqual([
+      ['t2', 'w', 't1', 't3'],
+      ['o2', 'o1'],
+    ]);
+  });
+
+  it('puts a favorite the pages haven’t reached at the head of its section from the first draw (D292)', () => {
+    // Page 1 ends inside Today; the up-front read knows a Today favorite page 2 would bring, and an
+    // older one whose section the scroll hasn't reached.
+    const page1 = [post('t1', 1), post('t2', 2)];
+    const favorites = [post('t9', 9, undefined, true), post('o1', 99 * 24, undefined, true)];
+    const first = latestSections(page1, new Set(), [], false, NOW, { ...LIFT, favorites });
+    expect(first.map((s) => s.items.map(rowId))).toEqual([['t9', 't1', 't2']]);
+    // Page 2 brings t9 itself and reaches Older: no repeat, and Today's head hasn't moved.
+    const page2 = [...page1, post('t9', 9, undefined, true), post('o0', 98 * 24)];
+    const second = latestSections(page2, new Set(), [], false, NOW, { ...LIFT, favorites });
+    expect(second.map((s) => s.items.map(rowId))).toEqual([
+      ['t9', 't1', 't2'],
+      ['o1', 'o0'],
+    ]);
+  });
+
+  it('keeps a search newest first: its result line says so (D292)', () => {
+    const sections = latestSections(
+      [post('t1', 1), post('t2', 2, undefined, true), post('o1', 99 * 24, undefined, true)],
+      new Set(),
+      [],
+      true,
+      NOW,
+      { lift: false },
+    );
+    expect(sections.map((s) => s.items.map(rowId))).toEqual([['t1', 't2'], ['o1']]);
   });
 });
 

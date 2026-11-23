@@ -1,15 +1,19 @@
+import * as Sentry from '@sentry/tanstackstart-react';
 import { api } from '@skating/convex/api';
 import {
   type FeedFilters,
   hasWeatherFilter,
+  LATEST_HEADS_WAIT_MS,
   type PostCardData,
   withoutWeatherFilter,
 } from '@skating/core';
 import { useCanGoBack, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { usePaginatedQuery, useQuery } from 'convex/react';
-import { useCallback, useMemo } from 'react';
+import { usePaginatedQuery, useQueries, useQuery } from 'convex/react';
+import type { Value } from 'convex/values';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
+import { isConfigured } from '@/lib/env';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { activeFilterCount } from '@/lib/feedFilters';
 import { useFeedFilters } from '@/lib/feedFiltersStore';
@@ -99,6 +103,33 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     ((searching ? searchMeta : skaterMeta) as { skaterUnavailable?: true } | undefined)
       ?.skaterUnavailable === true;
 
+  // The viewer's favorite Posts, up front, so each section's favorites lead it from its first draw
+  // (D292). Not under a search or one skater's list: each line promises newest first.
+  const lift = !searching && skater === undefined;
+  // Through `useQueries`, which hands a failure back instead of throwing: a failed read lifts
+  // nothing, and Latest stays up, newest first. The object is keyed on the filters' content, since
+  // `useQueries` re-subscribes on a new one.
+  const filtersKey = JSON.stringify(value);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the filters' content, not identity.
+  const favoriteQueries = useMemo(
+    () =>
+      lift
+        ? {
+            favorites: {
+              query: api.posts.listFavoritePosts,
+              // `useQueries` types its args as plain values; the filters are a plain JSON object.
+              args: { filters: value as Record<string, Value> },
+            },
+          }
+        : ({} as Record<string, never>),
+    [lift, filtersKey],
+  );
+  const favoriteRead = useQueries(favoriteQueries).favorites as PostCardData[] | Error | undefined;
+  const favoritePosts = favoriteRead instanceof Error ? [] : favoriteRead;
+  useEffect(() => {
+    if (favoriteRead instanceof Error && isConfigured.sentry) Sentry.captureException(favoriteRead);
+  }, [favoriteRead]);
+
   // Recommended filter-breakers (D50): their own strip, and out of the feed so none shows twice.
   const recommended = useQuery(api.reports.recommended, {});
   const recommendedIds = useMemo(
@@ -110,9 +141,10 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   // when the skater asked for reports only.
   const discovery = useQuery(api.weatherDiscovery.status, {});
   const weatherOn = hasWeatherFilter(value) && !searching && skater === undefined;
+  const wantBodies = weatherOn && !value.onlyReports;
   const bodyResults = useQuery(
     api.weatherDiscovery.listBodyResults,
-    weatherOn && !value.onlyReports ? { filters: value } : 'skip',
+    wantBodies ? { filters: value } : 'skip',
   );
 
   const wantedRows = useQuery(api.bounties.listOpen, { sortByHome: true, limit: WANTED_READ });
@@ -129,22 +161,45 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   const status = page.status as PageStatus;
   const posts = page.results as PostCardData[];
   const bodies = bodyResults?.results ?? [];
+  // The sections wait for what decides their heads (D292): drawn before the favorites, the matched
+  // lakes or the recommended strip answer, a favorite would move at the top of a section a moment
+  // later (the strip decides it too: a Post whose favorite member it took isn't lifted).
+  const headsReady =
+    (!lift || favoritePosts !== undefined) &&
+    (!wantBodies || bodyResults !== undefined) &&
+    (!lift || recommended !== undefined);
+  // Never longer than `LATEST_HEADS_WAIT_MS` once the first page is in, per filter set. A list that
+  // drew on the timeout lifts nothing for that filter set: a late answer would otherwise lift a
+  // favorite above a section the reader already saw.
+  const [waitedOutFor, setWaitedOutFor] = useState<string | null>(null);
+  const pageIn = status !== 'LoadingFirstPage';
+  useEffect(() => {
+    if (headsReady || !pageIn) return;
+    const timer = setTimeout(() => setWaitedOutFor(filtersKey), LATEST_HEADS_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [headsReady, pageIn, filtersKey]);
+  const waitedOut = waitedOutFor === filtersKey;
+  const headsKnown = headsReady || (pageIn && waitedOut);
+  const liftNow = lift && !waitedOut;
   const sections = latestSections(
     posts,
     searching ? new Set<string>() : recommendedIds,
     bodies,
     status === 'Exhausted',
     now,
+    { lift: liftNow, favorites: favoritePosts ?? [] },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
-  const state = latestFeedState({
-    status,
-    rowCount,
-    filters: value,
-    weatherAvailable: discovery?.available,
-    searching,
-    skaterUnavailable,
-  });
+  const state = headsKnown
+    ? latestFeedState({
+        status,
+        rowCount,
+        filters: value,
+        weatherAvailable: discovery?.available,
+        searching,
+        skaterUnavailable,
+      })
+    : 'loading';
 
   // 4.10: nothing reported this season — show the lakes with a recent run of cold nights.
   const recentCold = useQuery(

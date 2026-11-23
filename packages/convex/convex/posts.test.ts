@@ -1,9 +1,10 @@
+import { FAVORITE_LIFT_PER_SECTION } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { postSearchText } from './lib/postSync';
-import { legacyPostFor } from './posts';
+import { FAVORITE_SOURCES_CAP, legacyPostFor } from './posts';
 import { a10ShapePatch } from './reports';
 import schema from './schema';
 
@@ -896,6 +897,319 @@ describe('posts.listFeed — a Post feed with per-Report filters (A10 §2.4)', (
       latestSkateEndTime: T0 - 3_600_000,
     });
     expect(feed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
+  });
+});
+
+describe('posts.listFavoritePosts — the favorites Latest lifts, read up front (D292)', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+  const ids = (cards: { postId: string }[]) => cards.map((c) => c.postId);
+  /**
+   * Run writes as of an earlier day — a Post older than a week is refused at create. convex-test's
+   * clock never runs backwards within one instance, so this goes before any write at `T0`.
+   */
+  async function asOf<R>(ms: number, write: () => Promise<R>): Promise<R> {
+    vi.setSystemTime(ms + 60_000);
+    try {
+      return await write();
+    } finally {
+      vi.setSystemTime(T0 + 60_000);
+    }
+  }
+
+  /** A bay over the body's north half (lat 0.5–1 of the 1° square). */
+  async function seedBay(
+    t: ReturnType<typeof convexTest>,
+    waterBodyId: Id<'waterBodies'>,
+    by: Id<'profiles'>,
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId,
+        name: 'North Bay',
+        searchText: 'north bay',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0.5],
+              [0, 1],
+              [1, 1],
+              [1, 0.5],
+              [0, 0.5],
+            ],
+          ],
+        },
+        bbox: { minLat: 0.5, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.75, lng: 0.5 },
+        surfaceAreaSqM: 100_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: by,
+        createdAt: T0,
+        updatedAt: T0,
+      }),
+    );
+  }
+
+  test('the favorites, newest first and flagged; nothing without a favorite or signed out', async () => {
+    const t = convexTest(schema, modules);
+    const DAYS_40 = T0 - 40 * 86_400_000;
+    const { author, viewer, fav, other, older } = await asOf(DAYS_40, async () => {
+      const author = await seedUser(t, 'clerk_author');
+      const viewer = await seedUser(t, 'clerk_viewer');
+      const fav = await seedBody(t);
+      const other = await seedBody(t);
+      const { postId: older } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: DAYS_40 }],
+      });
+      return { author, viewer, fav, other, older };
+    });
+    const post = async (waterBodyId: Id<'waterBodies'>, skateEndTime: number) =>
+      (
+        await author.as.mutation(api.posts.create, {
+          reports: [{ ...FRESH, waterBodyId, skateEndTime }],
+        })
+      ).postId;
+    await post(other, T0 - 1000);
+    const newer = await post(fav, T0 - 2000);
+
+    expect(await viewer.as.query(api.posts.listFavoritePosts, {})).toEqual([]);
+    expect(await t.query(api.posts.listFavoritePosts, {})).toEqual([]);
+
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([newer, older]);
+    expect(cards.every((c) => c.isFavorite)).toBe(true);
+  });
+
+  test('a bay favorite takes the bay’s Posts through the join, not the rest of the lake', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const lake = await seedBody(t);
+    const bay = await seedBay(t, lake, author.id);
+    const inBay = (
+      await author.as.mutation(api.posts.create, {
+        reports: [
+          { ...FRESH, waterBodyId: lake, skateEndTime: T0 - 5000, point: { lat: 0.75, lng: 0.5 } },
+        ],
+      })
+    ).postId;
+    await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: lake, skateEndTime: T0 - 1000, point: { lat: 0.25, lng: 0.5 } },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: lake, subAreaId: bay });
+    expect(ids(await viewer.as.query(api.posts.listFavoritePosts, {}))).toEqual([inBay]);
+  });
+
+  test('the same Posts listFeed would show: the moderation gate, the filters, the season', async () => {
+    const t = convexTest(schema, modules);
+    const LAST_WINTER = Date.UTC(2025, 0, 10);
+    // Last season first (the clock only runs forward): never served beside this one (D63).
+    const { ada, bob, viewer, mod, fav } = await asOf(LAST_WINTER, async () => {
+      const ada = await seedUser(t, 'ada');
+      const bob = await seedUser(t, 'bob');
+      const viewer = await seedUser(t, 'clerk_viewer');
+      const mod = await seedUser(t, 'clerk_mod');
+      await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+      const fav = await seedBody(t);
+      await ada.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: LAST_WINTER }],
+      });
+      return { ada, bob, viewer, mod, fav };
+    });
+    const write = async (who: typeof ada, skateEndTime: number, extra: object = {}) =>
+      (
+        await who.as.mutation(api.posts.create, {
+          reports: [{ ...FRESH, waterBodyId: fav, skateEndTime, ...extra }],
+        })
+      ).postId;
+    const adaGreat = await write(ada, T0 - 1000, { skateQuality: 'great' });
+    const bobPoor = await write(bob, T0 - 2000, { skateQuality: 'poor' });
+    const hidden = await write(bob, T0 - 3000);
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: hidden,
+      status: 'hidden',
+      reason: 'spam',
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+
+    expect(ids(await viewer.as.query(api.posts.listFavoritePosts, {}))).toEqual([
+      adaGreat,
+      bobPoor,
+    ]);
+    expect(
+      ids(
+        await viewer.as.query(api.posts.listFavoritePosts, { filters: { qualityFloor: 'good' } }),
+      ),
+    ).toEqual([adaGreat]);
+    // And it agrees with the feed it is merged into.
+    const feed = await viewer.as.query(api.posts.listFeed, {
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+    expect(ids(feed.page)).toEqual([adaGreat, bobPoor]);
+  });
+
+  test('bounded per section: every section leads with its own, and the newest favorites are read', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const DAY = 86_400_000;
+    // Today, Yesterday, Earlier this week, Earlier this month, Older than a month.
+    const AGES = [0, 1.5 * DAY, 4 * DAY, 15 * DAY, 45 * DAY];
+    const perSection = FAVORITE_LIFT_PER_SECTION + 1;
+    // One more favorite than the read takes; each is busy enough to fill every section on its own.
+    const bodies: Id<'waterBodies'>[] = [];
+    for (let i = 0; i <= FAVORITE_SOURCES_CAP; i++) bodies.push(await seedBody(t));
+    for (const [i, waterBodyId] of bodies.entries()) {
+      await t.run(async (ctx) => {
+        for (const age of AGES) {
+          for (let k = 0; k < perSection; k++) {
+            const at = T0 - age - (i * perSection + k) * 60_000;
+            const reportId = await ctx.db.insert('reports', {
+              authorId: author.id,
+              waterBodyId,
+              point: { lat: 0.5, lng: 0.5 },
+              skateEndTime: at,
+              reportTime: at,
+              source: 'native',
+              iceTypes: [],
+              surfaceTags: [{ type: 'glass' }],
+              photoIds: [],
+              hazardIdsCreated: [],
+              moderationStatus: 'visible',
+              createdAt: at,
+              updatedAt: at,
+            });
+            const postId = await ctx.db.insert('posts', {
+              authorId: author.id,
+              reportIds: [reportId],
+              photoIds: [],
+              latestSkateEndTime: at,
+              moderationStatus: 'visible',
+              createdAt: at,
+              updatedAt: at,
+            });
+            await ctx.db.patch(reportId, { postId });
+          }
+        }
+        // Body 0 is the newest favorite; the last is the oldest, past the cap.
+        await ctx.db.insert('waterBodyFavorites', {
+          userId: viewer.id,
+          waterBodyId,
+          createdAt: T0 - i,
+        });
+      });
+    }
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    const sectionOf = (ms: number) => AGES.filter((age) => T0 - ms >= age).length - 1;
+    const counts = AGES.map(
+      (_, s) => cards.filter((c) => sectionOf(c.latestSkateEndTime) === s).length,
+    );
+    expect(counts).toEqual(AGES.map(() => FAVORITE_LIFT_PER_SECTION));
+    const times = cards.map((c) => c.latestSkateEndTime);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    const oldest = bodies[FAVORITE_SOURCES_CAP];
+    expect(cards.some((c) => c.reports.some((r) => r.waterBodyId === oldest))).toBe(false);
+
+    // A filter that rejects nearly every candidate still ends inside the limits, on its card budget.
+    const recent = await viewer.as.query(api.posts.listFavoritePosts, {
+      filters: { recencyHours: 1 },
+    });
+    expect(recent.length).toBeLessThanOrEqual(FAVORITE_LIFT_PER_SECTION);
+    expect(recent.every((c) => c.latestSkateEndTime >= T0 + 60_000 - 3_600_000)).toBe(true);
+  });
+
+  test('reads past a busy lake’s filtered-out Reports to the ones that pass', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const great: Id<'posts'>[] = [];
+    for (let k = 0; k < 12; k++) {
+      // The five newest are poor; the seven older are great.
+      const skateQuality = k < 5 ? ('poor' as const) : ('great' as const);
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - k * 60_000, skateQuality }],
+      });
+      if (skateQuality === 'great') great.push(postId);
+    }
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {
+      filters: { qualityFloor: 'good' },
+    });
+    expect(ids(cards)).toEqual(great.slice(0, FAVORITE_LIFT_PER_SECTION));
+  });
+
+  test('a section keeps its newest five, though one was found through an older window', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const today: Id<'posts'>[] = [];
+    for (const hours of [2, 4, 6, 8, 10]) {
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - hours * 3_600_000 }],
+      });
+      today.push(postId);
+    }
+    // Its favorite member is three days old; its newest, on another lake, an hour.
+    const { postId: newest } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 3 * 86_400_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 3_600_000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([newest, ...today.slice(0, 4)]);
+  });
+
+  test('ranks by the Post’s newest member within a section, not the favorite Report that found it', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const older: Id<'posts'>[] = [];
+    for (const hours of [1, 2, 3, 4, 5]) {
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - hours * 3_600_000 }],
+      });
+      older.push(postId);
+    }
+    // Found sixth (its favorite member is 6h old), but its newest member is half an hour old.
+    const { postId: newest } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 6 * 3_600_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 1_800_000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([newest, ...older.slice(0, 4)]);
+  });
+
+  test('a Post sits in the section of its newest member, found through an older favorite one', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const { postId } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 30 * 3_600_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 1000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([postId]);
+    expect(cards[0]?.latestSkateEndTime).toBe(T0 - 1000);
   });
 });
 

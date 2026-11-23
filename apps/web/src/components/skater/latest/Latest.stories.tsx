@@ -145,6 +145,7 @@ function Page({
       weatherOn ? [MATCH] : [],
       true,
       NOW,
+      { lift: search === undefined },
     ),
     now: NOW,
     canLoadMore: true,

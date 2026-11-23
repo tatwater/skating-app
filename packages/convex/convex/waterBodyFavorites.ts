@@ -1,8 +1,8 @@
 /**
  * Water-body favorites (Phase 04, decision #1) — place-based curation, the D13 stand-in for the
  * removed people-follow graph. A user favorites specific water bodies; those reports notify by
- * default (see `notifications.ts`), boost + badge in the feed (`reports.listFeed`), and highlight on
- * the map. You subscribe to *lakes*, not people.
+ * default (see `notifications.ts`), lead their recency section in Latest with a badge
+ * (`posts.listFavoritePosts`, D292), and highlight on the map. You subscribe to *lakes*, not people.
  *
  * **Since A09 a favorite can name a bay** (D175). A bay favorite still carries the parent's
  * `waterBodyId`, so the fan-out's one `by_water_body` scan finds both audiences; it then applies
