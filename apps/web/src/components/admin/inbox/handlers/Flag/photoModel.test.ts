@@ -12,6 +12,7 @@ import {
   PHOTO_HIDDEN,
   PHOTO_ITEM,
   PHOTO_MAX,
+  PHOTO_MIXED,
   PHOTO_NO_ACCESS,
   PHOTO_NO_FILE,
   PHOTO_OFF_REPORT,
@@ -112,6 +113,16 @@ describe('the photo on its report', () => {
     expect(views[2]?.label).toBe('Removed');
     expect(views[4]?.label).toBeNull();
     expect(views[6]).toMatchObject({ self: true, label: 'Flagged', n: 7, flagRef: null });
+  });
+
+  it('Show reveals the flagged photo and its unflagged, still-visible neighbors only', () => {
+    const views = siblingViews(viewOf(PHOTO_MIXED));
+    expect(views.map((v) => [v.photoId, v.revealable])).toEqual([
+      ['ph_1', false], // its own flag
+      ['ph_2', false], // hidden
+      ['ph_3', true], // the flagged photo itself
+      ['ph_4', true], // up, no flag
+    ]);
   });
 
   it('links another photo’s open flag to its own item, by the flag’s id', () => {

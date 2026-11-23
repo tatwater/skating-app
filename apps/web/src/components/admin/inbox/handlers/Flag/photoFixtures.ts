@@ -208,6 +208,24 @@ export const PHOTO_THIRD = photoItem(photoOf(2, FOUR), {
   itemId: id<'inboxItems'>('i_photo_third'),
 });
 
+/**
+ * The third of four, its neighbors mixed: the first flagged on its own (still up), the second hidden,
+ * the fourth up with no flag — so Show reveals the third and the fourth only.
+ */
+export const PHOTO_MIXED = photoItem(
+  photoOf(
+    2,
+    reportPhotos(4, (i) =>
+      i === 0
+        ? { openFlagId: id<'contentFlags'>('f_ph_1_own') }
+        : i === 1
+          ? { moderationStatus: 'hidden' }
+          : {},
+    ),
+  ),
+  { itemId: id<'inboxItems'>('i_photo_mixed') },
+);
+
 /** Hidden elsewhere before this flag was read: Restore is what the bar offers. */
 export const PHOTO_HIDDEN = photoItem(
   photoOf(2, FOUR, { moderationStatus: 'hidden', moderatedAt: at(10, 13, 9) }),

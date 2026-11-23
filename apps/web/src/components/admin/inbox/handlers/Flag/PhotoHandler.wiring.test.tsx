@@ -21,6 +21,7 @@ import {
   PHOTO_FULL,
   PHOTO_HIDDEN,
   PHOTO_ITEM,
+  PHOTO_MIXED,
   PHOTO_NO_ACCESS,
   PHOTO_PURGED,
   PHOTO_THIRD,
@@ -186,10 +187,37 @@ describe('a photo flag, through the route and the view', () => {
     );
     expect(self.dataset.photo).toBe(STAGED.photoId);
     expect(self.dataset.photo).not.toBe(FIRST.photoId);
-    // Revealed, the report's thumbnails show too.
+    // Revealed, its neighbors still up with no flag of their own show too (all three here).
     expect(inspector().querySelectorAll('[data-slot="photo-sibling"] img')).toHaveLength(4);
     // Focus moves to the button that replaced the pressed one.
     expect(within(stage).getByRole('button', { name: /Pixelate again/ })).toHaveFocus();
+  });
+
+  it('Show reveals the staged photo and its unflagged, still-visible neighbors only', async () => {
+    open(PHOTO_MIXED);
+    mount();
+    const stage = must(
+      inspector().querySelector<HTMLElement>('[data-slot="photo-stage"]'),
+      'stage',
+    );
+    fireEvent.click(within(stage).getByRole('button', { name: /Show the photo/ }));
+    await waitFor(() => expect(stage.querySelector('img')).not.toBeNull());
+    const revealed = [...inspector().querySelectorAll<HTMLElement>('[data-slot="photo-sibling"]')]
+      .filter((li) => li.querySelector('img') !== null)
+      .map((li) => li.dataset.photo);
+    // The staged third and the unflagged fourth; the first (its own flag) and the second (hidden)
+    // stay pixelated, the first linking its own item.
+    expect(revealed).toEqual(['ph_3', 'ph_4']);
+    for (const id of ['ph_1', 'ph_2']) {
+      const li = must(
+        inspector().querySelector<HTMLElement>(`[data-slot="photo-sibling"][data-photo="${id}"]`),
+        id,
+      );
+      expect(li.querySelector('img')).toBeNull();
+    }
+    expect(
+      inspector().querySelector('[data-photo="ph_1"] [data-slot="photo-sibling-flag"]'),
+    ).not.toBeNull();
   });
 
   it('a reveal never carries to the next item: its photo mounts pixelated, and its full image is never read', async () => {

@@ -88,6 +88,12 @@ export type SiblingView = {
   label: string | null;
   /** An open flag on another photo: its Inbox item's ref (`flag:<id>`). */
   flagRef: string | null;
+  /**
+   * Whether *Show the photo* reveals it too: the flagged photo itself, and a neighbor still up with no
+   * flag of its own. One flagged on its own, or already hidden or removed, stays pixelated — it is
+   * decided in its own item, which its link opens.
+   */
+  revealable: boolean;
 };
 
 /**
@@ -112,6 +118,7 @@ export function siblingViews(photo: PhotoView): SiblingView[] {
             ? P.removed
             : null,
       flagRef: s.openFlagId === null ? null : `flag:${s.openFlagId}`,
+      revealable: s.moderationStatus === 'visible' && s.openFlagId === null,
     }),
   );
   const self: SiblingView = {
@@ -121,6 +128,7 @@ export function siblingViews(photo: PhotoView): SiblingView[] {
     self: true,
     label: P.thisOne,
     flagRef: null,
+    revealable: true,
   };
   return [...others, self].sort((a, b) => a.n - b.n);
 }

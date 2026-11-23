@@ -183,7 +183,8 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
                 <PhotoThumb
                   // A viewer who can't see photos is served no thumbnail: an empty frame, no image.
                   thumb={canShow ? s.thumbUrl : null}
-                  shown={shown && canShow}
+                  // Show reveals the staged photo and its unflagged, still-visible neighbors only.
+                  shown={shown && canShow && s.revealable}
                   selected={s.self}
                   label={P.thumbLabel(s.n)}
                   alt={P.thumbAlt(s.n)}
