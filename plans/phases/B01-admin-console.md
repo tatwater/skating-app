@@ -12087,6 +12087,114 @@ S5 ran it 120 times, 1,440 sequences in all. It found two real defects, now pinn
 - **The model test's cost.** At its default of 12 sequences, the property takes 160–206 ms alone,
   against a 60 s limit. The 120-run hot run stays a gate-time choice.
 
+#### Greptile on #176, round 2 (2026-11-23)
+
+Greptile re-reviewed `833544a4c` at 4/5. Three of round 1's findings were closed and one stayed
+open: "the PR still needs a complete shared-file check before merging". S5 (`b01-5e-s5-4`, head
+`a4df03bb6`, fast-forwarded here) found what was incomplete and fixed it.
+
+##### What was incomplete
+
+1. **A purged tombstone kept its file ids.** The reference check skipped tombstones only among the
+   first four rows per index, so a live row sharing a file behind four or more tombstones was
+   missed, and the file was deleted.
+   - The purge now empties both slots (`TOMBSTONE_FILE`), releasing the ids it held.
+   - The check is one exact lookup per slot index (`.first()`): any row naming the id, in either
+     slot, holds it.
+2. **The window's sweep deleted any unnamed file with a matching hash,** a skater's fresh upload of
+   the same image included.
+   - Each copy now carries its attempt in its content type (`gli-rotation=<attemptId>`), and the
+     sweep deletes only that attempt's copies.
+   - `removeBlob` refuses any rotation copy.
+3. **A doomed file that a row named again by its retry** was left alone, but its Machinery row was
+   not cleared. Now it is.
+
+##### Every path that deletes a stored photo file
+
+The guard's list (`packages/guards/src/photoDeleters.test.ts`, `PHOTO_DELETERS`), verbatim. A new
+deleter fails the guard until it is listed.
+
+| Deleter | How it keeps a held or shared file |
+| --- | --- |
+| `lib/photoOrphans.ts:deletePhotoAndBlobs` | asks photoHeld, answers `held` |
+| `lib/photoOrphans.ts:purgePhotoBlobs` | the purge's blob half: the row already a tombstone |
+| `photos.ts:remove` | the uploader's delete: a held photo is withdrawn instead (fork 1) |
+| `storageHygiene.ts:examinePhoto` | the orphan walk's retry of an erased photo |
+| `storageHygiene.ts:expireDepartedPhotos` | season expiry |
+| `photoReconcile.ts:sweepStillMarked` | the reconcile's delete phase |
+| `accountDeletion.ts:erasePhotos` | account deletion |
+| `lib/contentPurge.ts:sweepPhotos` | the departed-content purge |
+| `erasure.ts:settleStep` | the photo settlement (the orphan walk owes its candidates here) |
+| `photoPurge.ts:purgeOne` | a removed photo whose 30-day clock is due, re-checked in its own transaction |
+| `lib/photoFiles.ts:reconcileAttempt` | an attempt that can't be alive: its unswapped copies and its window's unrecorded ones — only a file carrying its own tag (isCopyOf), never a same-bytes upload (fileTaken) |
+| `lib/photoFiles.ts:retryDoomed` | a doomed file's retry, by the attempts rule |
+| `photos.ts:recordRotationCopy` | a copy recorded to an attempt no longer running: released at once |
+| `photos.ts:endRotation` | an ended attempt's copies that were never swapped in |
+| `photos.ts:swapRotated` | the old files the swap released (left to a row that still names one) |
+| `lib/photoFiles.ts:releaseFile` | a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed |
+| `photos.ts:removeBlob` | a fresh upload no photo row names and no rotation stored (fileTaken, isRotationCopy, PENDING_UPLOAD_MS) |
+
+##### A shared file under a takedown, and `sameBytesAs`
+
+**The rule:** when a takedown moves a photo whose file older rows still name, the taken-down photo
+gets its own copy, and the shared file stays with the rows still naming it.
+- Those rows are recorded on the photo as `sameBytesAs` (at most eight).
+- The Inbox photo item serves each twin: its moderation status, its open flag (the ref that opens
+  its item) and its report, with `sameBytesCut` past eight. Its uploader and its image are never
+  served.
+
+**On the web,** under *On the same report*, "The same image is on N other photos" lists one row per
+twin:
+- **its state:** shown, hidden or removed;
+- **where to decide on it:** its flag's item, else its report in the app (a new tab), else "Not on
+  a report";
+- **past eight,** the count is a floor ("8+").
+
+No twin's image is drawn at any size, so there is no thumbnail to pixelate, and no uploader is
+named. A person who is gone or being deleted therefore can't be named there.
+
+**When a twin is still shown,** the Hide and Remove dialogs and the receipt add one sentence: "The
+same image is still up on another photo, and taking this one down leaves that one up." Nothing says
+the takedown removed the image everywhere. The words are in `photoWords` for the copy pass.
+- **Fixtures:** no twins, one shown, mixed, only down, and capped.
+- **Stories:** three.
+- **The wiring test** holds the sentence to a shown twin, in both dialogs and on the receipt. Both
+  are mutation-checked.
+
+##### The model test, and how it had been blind
+
+`photoFiles.property.test.ts` now covers every slot combination: image–image, image–thumb,
+thumb–image, thumb–thumb, crossed, one file in both slots, and chains of three. It also covers:
+- a row naming a doomed file before its retry;
+- a skater uploading the same bytes inside a window;
+- uploads that claim, or `removeBlob`, any stored id.
+
+**After every step it checks:**
+- every id any row names exists;
+- a tombstone names nothing;
+- unattached uploads survive;
+- a swap records its twins;
+- Machinery's file rows match the ledger.
+
+**It had been blind in two ways:**
+- The attempt step ran inside the refusal catch-all, which swallowed its own assertions. It now
+  returns what it found broken.
+- Its clock never reached a purge. A 31-day step now lets a removed photo's purge come due.
+
+`photoSharedFiles.test.ts` (29 tests) covers:
+- the seven sharing shapes, each through the delete, the purge and the swap;
+- a live row behind five tombstones;
+- a doomed file claimed before its retry;
+- the window's cases;
+- the Inbox item's twins with their flags, reports and the floor.
+
+##### On a real local backend
+
+13 photo rows and 15 files:
+- the twins' files were kept;
+- the sweep deleted only the tagged copy;
+- no row named a missing file.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
