@@ -14,7 +14,6 @@ import { floorText, settledEmpty } from '../answers';
 import { dateWords, firstName, momentWords, personName } from '../person/personModel';
 import { WORDS as PERSON_WORDS } from '../person/personWords';
 import {
-  type ItemKind,
   KIND_ORDER,
   KIND_WORDS,
   kindCount,

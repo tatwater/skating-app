@@ -14,7 +14,6 @@ import type { LiveTarget } from './flagTypes';
 import { SubjectText } from './parts';
 import {
   captionLine,
-  photoStatus,
   photoViewOf,
   placeOnReport,
   purgeLine,
@@ -70,7 +69,6 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
       label: shown ? P.pixelate : P.show,
     },
   ]);
-  const status = photoStatus(photo);
   const purge = purgeLine(photo, timeZone);
   const withdrawn = withdrawnLine(photo, timeZone);
   const siblings = siblingViews(photo);

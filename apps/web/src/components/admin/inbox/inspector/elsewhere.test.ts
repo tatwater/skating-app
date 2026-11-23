@@ -4,8 +4,6 @@ import { ADMIT_ITEM, DRAWN_ITEM, PHOTO_ITEM, PLACE_ITEM, TICKET_ITEM } from '../
 import { ELSEWHERE, elsewhereFor, HANDLER_KEYS } from './elsewhere';
 import { HANDLERS, handlerKeyOf } from './handlerRegistry';
 
-const targets = (e: ReturnType<typeof elsewhereFor>) => e?.links.map((l) => l.to) ?? null;
-
 describe('where an item without its handler is decided', () => {
   it('leaves no kind a dead end: each has its handler, or a page to point at', () => {
     for (const key of HANDLER_KEYS) {

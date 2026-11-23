@@ -213,8 +213,15 @@ export const GoMode: Story = {
     const menu = await within(document.body).findByRole('menu');
     await expect(await within(menu).findAllByRole('menuitem')).toHaveLength(LEGACY_PAGES.length);
     await userEvent.keyboard('{Escape}');
-    await waitFor(() => expect(within(document.body).queryByRole('menu')).toBeNull());
-    await expect(shell).not.toHaveAttribute('data-go');
+    // The menu leaves over its exit fade, which a starved runner stretches past the default second:
+    // late, not never — the shell's own go mode, read in the same retry, says it closed.
+    await waitFor(
+      () => {
+        expect(within(document.body).queryByRole('menu')).toBeNull();
+        expect(shell).not.toHaveAttribute('data-go');
+      },
+      { timeout: 5_000 },
+    );
   },
 };
 
