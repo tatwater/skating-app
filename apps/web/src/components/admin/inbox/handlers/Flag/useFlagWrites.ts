@@ -22,6 +22,8 @@ import type {
 type FlagFirstFlag = string | null;
 
 import { FLAG_WORDS as W } from './flagWords';
+import { twinStillShownLine } from './photoModel';
+import { PHOTO_WORDS as P } from './photoWords';
 
 /**
  * **The flag handler's one write path.** Each lever goes to its Inbox write (`inboxWrites.*`); a
@@ -91,6 +93,26 @@ export function receiptTitle(write: FlagWrite): string {
           : W.receipt.retracted;
     case 'restore':
       return W.receipt.restored;
+  }
+}
+
+/**
+ * What a photo's receipt says the write did to the photo (the dev proof's truth: off its link and
+ * shown to no one, never "gone everywhere"; and, when the same image is still shown on another
+ * photo, that it stays up there); `null` for any other subject or write.
+ */
+export function photoReceiptLine(item: Pick<FlagItem, 'target'>, write: FlagWrite): string | null {
+  if (!item.target.exists || item.target.targetType !== 'photo') return null;
+  switch (write.kind) {
+    case 'takeDown': {
+      const line = write.status === 'hidden' ? P.receipt.hidden : P.receipt.removed;
+      const twins = twinStillShownLine(item.target.photo);
+      return twins === null ? line : `${line} · ${twins}`;
+    }
+    case 'restore':
+      return P.receipt.restored;
+    default:
+      return null;
   }
 }
 
@@ -190,20 +212,26 @@ export function useFlagWrites({
       if (!sent.landed) return false;
       const answered = sent.value;
       const first = (item.flags.find((f) => f.status === 'open') ?? item.flags[0])?.flagId ?? null;
+      const description = [
+        answered.flagsClosed > 0
+          ? closedWords(
+              item,
+              answered.flagsClosed,
+              dismisses(write),
+              write.kind === 'takeDown' || write.kind === 'alert',
+            )
+          : null,
+        photoReceiptLine(item, write),
+      ]
+        .filter((x): x is string => x !== null)
+        .join(' · ');
       const undo: Pick<Receipt, 'actionId' | 'undoNeedsReason' | 'undoable'> = answered.undoable
         ? { actionId: answered.actionId, undoNeedsReason: answered.undoNeedsReason }
         : { actionId: answered.actionId, undoable: false };
       void announce(
         {
           title: receiptTitle(write),
-          ...(answered.flagsClosed > 0 && {
-            description: closedWords(
-              item,
-              answered.flagsClosed,
-              dismisses(write),
-              write.kind === 'takeDown' || write.kind === 'alert',
-            ),
-          }),
+          ...(description !== '' && { description }),
           target: undoTargetOf(item, write, first),
           ...undo,
           ...(subject !== '' && { subject }),

@@ -2,7 +2,7 @@
  * Content-flag functions (D32/D3). Any active user can flag a report / comment / photo / user for
  * abuse. `unsafe_false_report` is a **first-class** reason: a dangerously false "ice is great" claim
  * is a safety incident, not mere spam (D3) — it lands in the priority lane of the admin flag queue
- * at `/admin/flags`, which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
+ * in the Inbox (`/admin/inbox`, `/admin/flags` retired with B01-5e), which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
  */
 
 import {
@@ -25,6 +25,7 @@ import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { subjectOfTarget } from './lib/flagSubject';
 import { fileMember, flagSource, leaveMember } from './lib/inboxItems';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { photoVisible } from './lib/photoAccess';
 import { isSeedProfile } from './lib/seedPeople';
 import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
@@ -53,7 +54,7 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
 /**
  * Flag content for abuse/safety review (D32). `requireProfile`; the target must exist; deduped to
  * **one open flag per (flagger, target)** — a repeat flag returns the existing open row rather than
- * piling up duplicates. Resolution and the priority lane live in `/admin/flags`.
+ * piling up duplicates. Resolution and the priority lane live in the Inbox's Safety lane.
  */
 export const flag = mutation({
   args: {
@@ -90,6 +91,14 @@ export const flag = mutation({
     // An erased comment's placeholder is nobody's words any more (D248): there is nothing to report.
     if ('erasedAt' in target && target.erasedAt !== undefined) {
       throw new ConvexError('Target not found');
+    }
+    // A photo the flagger can't see — hidden, removed or purged (B01-5e) — is gone to them, in the
+    // same words: no skater learns it exists, and a re-filed flag can't hold a removed photo's bytes.
+    if (args.targetType === 'photo') {
+      const photo = target as Doc<'photos'>;
+      if (!photoVisible(photo) || photo.purgedAt !== undefined) {
+        throw new ConvexError('Target not found');
+      }
     }
 
     // ── The A06f re-reporting gate ────────────────────────────────────────────────────────────────
@@ -158,7 +167,8 @@ export const flag = mutation({
           `A ${args.targetType} was flagged as a dangerously false report.`,
           'Review it in the priority lane.',
         ],
-        deepLinkPath: '/admin/flags',
+        // The flag's own Inbox item (`/admin/flags` retired with B01-5e).
+        deepLinkPath: `/admin/inbox?item=flag:${flagId}`,
       });
     }
     return flagId;

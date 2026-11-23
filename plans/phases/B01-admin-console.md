@@ -945,6 +945,16 @@ Made on the design's engineering forks; the founder may overturn any of them.
 28. **The rotation proof runs on dev after #173's rollout** (2026-11-22), by the deploy executor from
     the photos pack's plan. The photos builders start at once on everything that doesn't depend on
     its outcome; the rotation action is the last piece, built or dropped per the proof.
+29. **"The same image" is not symmetric after a takedown, and that stands for now** (2026-11-23,
+    Greptile on #176, round 3; the founder is told). Suppose photo A is taken down and moved to its
+    own copy:
+    - A's item lists the photos that shared its old file;
+    - their items don't list A, because a photo finds twins only by its own files and its own saved
+      list.
+
+    A is already down, so this hides nothing public from a moderator. Making "the same image" exact
+    and symmetric needs a content hash on every photo row, which is its own change: register row
+    Sh14, with the reader census it needs.
 
 ### The founder's calls of 2026-11-21
 
@@ -11549,16 +11559,46 @@ found a blocker.** Each fix below is its own commit, with the test that fails wi
    - The DOM list is data (`src/test/domTests.json`, read with `fs`).
    - The guard holds every test file on disk in exactly one unit project.
 
-**The reviewers' clean areas:** the reviewers' notes on what they found sound were not relayed to the
-integration, so they are not restated here beyond "no blockers".
+**What the reviewers found sound.**
 
-**What they could not review:**
+R12 (server and CI):
+- a cancel racing the send serializes on one row;
+- the seed is gated at enqueue and again at send;
+- `from` never falls back to the general address;
+- the item is gated on support's read, a removed note serves `body: null`, and the export carries the
+  person's own words and sent replies only;
+- erasure runs at 200 capped tickets and 250 capped replies inside the limits;
+- one refusal function serves the undo's offer and its run;
+- the CI skip compares tree ids soundly for squash, merge, rebase, direct pushes and racing merges,
+  and every doubt runs everything;
+- the 153 Node-run files pass their 2,159 tests under both Node and jsdom.
+
+R13 (web):
+- every write takes the item's or the message's own id;
+- nothing reads "Sent" unless the server says `sent`;
+- bodies render as text, never markup;
+- a departed person is never named;
+- ⌘⏎ is bound once, to the dock;
+- the redirect leaves no live link.
+
+**The send path on a real backend.** The support builder checked it twice on a throwaway anonymous
+local backend, with the sender stubbed to record and a placeholder provider key (never dev, never a
+real key):
+- a reply was sent 451 ms after its window;
+- a reply canceled inside the window sent nothing;
+- a reply with the sender unset was stored `failed` / `unconfigured`, with nothing scheduled;
+- two sends killed after their claim read `outcomeUnknown` about 20 s later, with no resend (the
+  watch was scaled down for the test, then restored);
+- a double call with one `clientKey` made one row and one send.
+
+(An earlier draft of this section, and of #175's body, said the send path was proven on the
+convex-test harness only. That was wrong, and both now say so.)
+
+**What the reviews could not reach:**
 - real GitHub Actions behavior: the skip on a push to main and the nightly's own group, which run
   only on GitHub;
-- a live Resend send.
-
-The send path is proven on the convex-test harness (the claim, the watch, the late answer, the
-blocked reply), not on a real backend or with live mail.
+- **a real send through the email provider, which has never been exercised.** It needs
+  `SUPPORT_FROM_EMAIL` on dev, the founder's to set.
 
 #### Greptile on #175, round 1 (2026-11-22)
 
@@ -11609,6 +11649,588 @@ read `outcomeUnknown`.
 
 **Register:** the notification email, the data-export mail and operator broadcasts can also record a
 lost response as "not sent". None of them retries, so no duplicate can result. Not changed here.
+
+#### B01-5e: the builders integrated (2026-11-22)
+
+Integrated on `phase-b01-inbox-photos`, cut from support's head `10a0daf60` and rebased onto the
+support PR's head (#175, `31ee1856`; support stays its own PR, first), in this order: S5's eleven commits (its twelfth, the narrowing, **held**), W7's seven,
+then seven seams, the web review, and these docs.
+
+**Conflicts, and the overlaps with support:**
+- S5's rule-versus-write count clashed with support's. Both kept: 181 + 17 (tickets) + 36 (photos) =
+  234 cells.
+- `accountDeletion.ts` and `dataExport.ts` merged cleanly in distinct regions:
+  - S5's `erasePhotos` keeps a held photo;
+  - S5's export ships a down photo's status and a purged one without bytes;
+  - support's ticket erase and export stand beside them.
+- `lib/enums.ts`, `lib/readBudget.ts` and the guards' inventories had no overlap.
+- W7's retirement clashed with support's on the files both retirements touch:
+  `PlaceholderHandler.stories`, `elsewhere.ts`, `inboxWords.ts`, `overviewRoutes(.test)` and
+  `PersonFeeds`. Both removals were kept, which leaves:
+  - the "decided elsewhere" map empty;
+  - every Inbox lane linking the Inbox;
+  - the placeholder story turned into "a kind this build has no handler for".
+
+##### What each built
+
+- **S5 (server):**
+  - the photo verdict on the uploader's record. `setModerationStatus` learns photos, and D269 refuses
+    a moderator's own photo through `uploaderId`;
+  - every reader honoring `photoVisible`;
+  - every deleter asking `photoHeld`;
+  - the purge job;
+  - the rotation, with its watch mutation;
+  - the rollout's backfill and count;
+  - `photos.remove` answering `{ outcome: deleted | withdrawn | kept | gone }`;
+  - the photo subject (thumbnail only), `inbox.photoReveal`, the strip with each sibling's
+    `openFlagId`, and the record's staff-only `content.thumbUrl`;
+  - the tables:
+    - rule versus write (photo cells 36);
+    - offer versus run (+4 cases);
+    - heavy rows;
+    - privacy (120 cells);
+    - deleters;
+    - busy rows;
+    - the axis property.
+- **W7 (web):**
+  - `PhotoStage` / `PhotoSubject` and the bar (board 2.7);
+  - the record sheet's photo item;
+  - the single takedown wording;
+  - the sheet's "Not shown" placeholder;
+  - `/admin/flags` redirecting to the Safety lane, with every link opening the Inbox.
+
+##### The seams
+
+1. **W7 onto S5's real read:**
+   - *Show the photo* calls `inbox.photoReveal`, through a reveal handed down by context (live in the
+     handler, a fixture map in stories). The full address is in neither the markup nor the item's
+     data before Show; the wiring test holds both, and holds that the reveal is asked only on Show,
+     by the staged photo's id.
+   - The strip is the served siblings (never the flagged photo) with the flagged one placed at
+     `indexOnReport`. It is capped at the read's twelve others ("Showing 13 of 24 photos"); a count
+     is a floor only without `photoCount`. A sibling's open flag links its own item.
+   - A withdrawal is said ("its uploader took it down… kept out of sight while a flag or a decision
+     holds it").
+   - The skater web's and the phone's `photos.remove` calls are best-effort reclaims of unattached
+     drafts that show nothing. Only `deleted`, `gone` and `kept` can occur there, so there are no
+     words to add.
+2. **The photo-deleter guard** (`packages/guards/src/photoDeleters.test.ts`), copied verbatim from
+   S5. Proven both ways: a scratch file deleting `photo._id` fails it, and `deletePhotoAndBlobs`
+   without its `photoHeld` line fails it.
+3. **`FAILING_JOBS` gains two jobs**, so parked work shows on Machinery:
+   - `photoPurge` ("purge removed photos"): a failed or blob-keeping purge is a row, parked at the
+     third;
+   - `photoRotation` ("rotate a taken-down photo's file"): the watch's attempts are mirrored into a
+     row, cleared on landing.
+
+   `RecordKind` and `KIND_ORDER` gain `photo`.
+4. **`/admin/flags` leaves `OLD_SHELL_TREES`, `LEGACY_PAGES` and the theme script's `oldTrees`
+   together**; the shell tests follow (the Legacy count 12 → 11).
+5. **`PhotoStage`, `PhotoThumb` and `PixelatedImage` are in the kit** (`kit/photo-stage`, with a story).
+   The `AskDialog` focus option was not taken: no workaround for it exists.
+6. **Not in this PR** (register rows, below): `photos.authorDeletedAt` (S5 reads the `author_delete`
+   row instead), and photos in the Deleted list.
+
+##### Who reads a photo, as built
+
+| Reader | A photo that isn't visible | A purged photo |
+| --- | --- | --- |
+| `photos.getUrls`, `getHazardUrls`, `accessPoints.listPhotos` | skipped. A staff flag, honored only with `content.read`, serves it marked. `listPhotos` joins by id | no address |
+| The feed's thumbnails; `reports.recommended`'s count | skipped / not counted | — |
+| The Inbox's report subject (`photoCount`) | not counted without `content.read` (a floor past 12) | — |
+| The Inbox's photo subject | the thumbnail, the reveal and a down photo's caption only with `content.read`; no URL of any size otherwise | no address, strip included |
+| `inbox.photoReveal` | `inbox.read` and `content.read`; the full image, on Show | `{ url: null }` |
+| The record sheet (`content.thumbUrl`) | only with `content.read` | `null` |
+| The data export | the uploader's own, with its bytes and status | a line without a storage id |
+
+**The privacy table** holds three readers × four viewers × the staff flag on and off × five statuses =
+**120 cells**, plus the feed, the Inbox's report count and the photo subject with and without
+`content.read`.
+
+##### The seven deleters, and the guard
+
+Every caller of `deletePhotoAndBlobs`, which asks `photoHeld` itself (the status, a standing verdict,
+an open flag) and answers `held`:
+1. `photos.remove` (the uploader's delete, which withdraws a held photo instead);
+2. the orphan walk (`storageHygiene.examinePhoto`);
+3. season expiry;
+4. `photoReconcile`'s delete phase;
+5. account deletion (`erasePhotos`);
+6. the departed-content purge (`contentPurge.sweepPhotos`);
+7. the erasure settlement (`erasure.settleStep`).
+
+The purge's blob half (`purgePhotoBlobs`) is called by `photoPurge.purgeOne` alone. The guard lists
+each, with how it keeps a held photo, and fails on any new one.
+
+##### The rotation, and the storage proof behind it
+
+The rotation:
+- A hide or removal schedules `photos.rotateBlobs` and a watch.
+- The action copies both blobs, then swaps the row's ids only while the row is still down and holds
+  the old ones, deleting the old blobs in the same transaction.
+- The watch, a mutation (a scheduled action can die with a runtime error its own catch never sees),
+  runs it again at 1 min, 10 min and 1 h, then parks it and retries daily.
+
+The storage proof on dev: a deleted blob's address answered **404 at once**, with no edge cache. So the
+removal's words say the photo comes off its link now. But **Convex fixes a 30-day `private` cache
+lifetime on a served file**, so someone who already opened the photo may keep it on their own device
+for up to 30 days, which nothing reaches. The dialogs say exactly that, and no word claims the photo
+is gone from everywhere.
+
+##### The real-backend numbers (S5)
+
+- **The purge:** 237 due photos in 3 pages. One page of 100 used 527 of 4,096 index ranges.
+- **The backfill:** 3,237 rows.
+- **A takedown** on a report of 400 photos.
+- **A 20 MiB photo rotated** in about 4 s, under the 24 MiB bound.
+
+##### The rollout on dev, and the held narrowing
+
+After the photos PR merges, in order:
+1. `convex dev --once`.
+2. `convex run photoRollout:backfillModerationStatus '{}'`, paged and restartable, until it reports
+   done.
+3. `convex run photoRollout:countUnstamped '{}'` until it answers `{ unstamped: 0 }`. A new photo is
+   stamped `visible` at birth, so it stays zero.
+4. Only then **S5's held commit** (`c2e57b3f8`, "narrow photos.moderationStatus to required") becomes
+   the photos PR's last commit, as the pref narrowing did for B01-5d.
+
+##### Board 2.7 versus the build, and the invented words, for the founder's look
+
+- **The strip:** the board draws four thumbnails; the build serves the report's others, at most
+  twelve, with the flagged one in its place. Past them: "Showing 13 of 24 photos".
+- **A sibling with an open flag of its own** links its item: "Its flag →" (invented).
+- **The full image comes on Show** (a fetch). If it fails: "The photo couldn't be loaded", with *Try
+  again* (invented).
+- **States no board draws, all invented:**
+  - "Photos on flags are shown only to staff who can read hidden content";
+  - "The file for this photo couldn't be found";
+  - "The file was deleted on ‹day›…";
+  - "Its file is deleted on ‹day› unless it is restored";
+  - "Its uploader took it down on ‹day›; it is kept out of sight while a flag or a decision holds
+    it".
+- **The takedown dialogs' one wording:** "It comes off its link now and is shown to no one. Anyone
+  who already opened it may still see it on their own device for up to 30 days."
+- **The record sheet:** "The photo, pixelated" with *Show* / *Pixelate again*, and "No photo to show".
+- **The skater sheet:** "Not shown", for a kept photo a moderator took down.
+
+##### Owed
+
+- **Reports have no photo cap of their own:** the strip is bounded by the read, and a report by
+  Convex's array limit. Whether the report sheet should cap photos is a skater-app question, added
+  to B04's running list.
+- **`photos.authorDeletedAt`:** S5 reads the uploader's withdrawal from its `author_delete` audit row.
+  A stored field would make the read a point read. A register row.
+- **Photos in the record sheet's Deleted list:** a withdrawn photo is not on it today (`recordReads.
+  withdrawnAt` answers `null` for a photo). A register row.
+
+#### B01-5e: the two reviews (R14, R15) and their fixes (2026-11-22)
+
+Two independent reviews read photos at `5093e4a48`: the server (R14) and the web (R15). The web found
+no blockers. **The server found one blocker and five should-fixes.** S5 fixed all of them
+(`b01-5e-s5-2`, cherry-picked here) and re-proved them on a real local backend. Each fix below is its
+own commit, with the test that fails without it.
+
+##### The blocker: a storage id worked as a key
+
+**The two reproduced attacks.** Either way, an uploader could delete a held photo's bytes:
+1. Register a second photo row on a held photo's storage ids (`photos.create` took any id), then
+   delete that unheld row. `deletePhotoAndBlobs` deleted the shared blobs, and the hold was never
+   asked.
+2. Hand a held photo's storage id to `photos.removeBlob`, which deleted it outright. The ids leaked
+   through the data export and the record pane's `published` document.
+
+**The rule that closes the class: a stored file belongs to one photo row, and no read hands a storage
+id out.**
+- `photos.create` refuses an id that names no file, the same id twice, and an id any row already
+  holds. The new indexes `by_storage` and `by_thumb_storage` back that check.
+- `photos.removeBlob` deletes only a fresh upload (under 24 h) that no row names.
+- The delete leaves a blob another row still names (a row written before the rule).
+- The export ships each photo's bytes and facts without its id.
+- The record pane's `published` document drops its two ids.
+
+**The storage-id sweep** (a guard: every function taking `v.id('_storage')` is listed with its check,
+and a new one fails until it is added):
+
+| Function | Its check |
+| --- | --- |
+| `photos.create` | refuses an id naming no file, the same id twice, and one any row holds |
+| `photos.removeBlob` | deletes only a fresh upload that no photo row names |
+| `basemap.getServingUrl` | internal: the operator resolves an uploaded basemap's URL |
+
+The guard also holds `create`, `removeBlob` and `deleteBlobsOf` to `blobReferenced`.
+
+##### The other findings and their fixes
+
+**The server (S5-2):**
+- **The readers' staff mode is deleted.** `getUrls`, `getHazardUrls` and `listPhotos` return a down
+  photo to no one; staff see one only through the Inbox item, the record sheet and
+  `inbox.photoReveal`. The privacy table is now reader × viewer × status, 60 cells.
+- **A rotation records itself before any copy exists** (`photos.rotation`). Each copy is recorded the
+  moment it is stored, the swap takes only recorded copies, and the watch sweeps the leftovers.
+- **A missing source file sets `bytesMissingAt`:** nothing is copied, it shows once on Machinery,
+  and a restore is refused.
+- **The byte bound is read from `_storage`** before either blob is loaded.
+- **Whole documents carry only visible photo ids:** `reports.get` for a viewer without
+  `content.read`, and `hazards.get` and the hazard views for everyone.
+- **A flag on a hidden, removed or purged photo is refused.**
+- **The purge's push-back by an open flag stops** two months past the first due date.
+- **A tombstone, and a deleted account's held photo, keep no caption, time, place or `placeOnMap`.**
+- **An author's edit that drops a held photo withdraws it,** as their delete does.
+- **The operator mails link to `/admin/inbox?item=flag:<id>`.**
+
+**The web (R15):**
+1. **The `key` that stops a reveal carrying to the next item had no test.** Now a wiring test covers
+   it; it was mutation-checked.
+2. **Fixtures offered levers the server never does** (the Withdrawn story's Restore), and a withdrawn
+   photo's purge line said "unless it is restored". Every photo fixture's `can` is now checked against
+   the rule and pinned to the server's own sentences:
+   - withdrawn, purged, missing-file and the record's tombstone refuse a restore;
+   - a decided item and the viewer's own photo refuse every verb;
+   - without `content.read`, every verb is refused.
+
+   The withdrawn line reads "Its file is deleted on ‹day›; it can't be restored".
+3. **The device sentence lost its time limit:** "Anyone who already opened it may still see it on
+   their own device."
+4. **Show reveals the staged photo and its unflagged, still-visible neighbors only.**
+5. **`bytesMissingAt`** gets its stage state, fixture and story.
+6. **Load failures:** a thumbnail or a full image that won't load says so; while the reveal loads the
+   stage stays pixelated (never the thumbnail unpixelated); the caption is announced once.
+7. **The sheet's Remove hint** is true for a held photo too: "A photo you remove isn't shown with the
+   report once you save".
+8. **The record pane no longer gets `published`'s storage ids.** Nothing on the web read them (the
+   plate draws the served `thumbUrl`), so nothing changed.
+
+##### The reader inventory
+
+As S5-2 records it; the reviewer's own inventory was not relayed in full.
+- The readers that serve photo URLs or thumbnails all skip a photo that isn't visible, with no staff
+  mode: `photos.getUrls`, `getHazardUrls`, `accessPoints.listPhotos`, and the feed's thumbnails.
+- The reads that return a whole document with its photo ids serve only the visible ones:
+  `reports.get`, `hazards.get`, and `renderInScope` (`listForBody`, `listInViewport`).
+- Staff reach a down photo through three reads only, each gated on `content.read`: the Inbox item
+  (its thumbnail), the record sheet (`content.thumbUrl`), and `inbox.photoReveal` (the full image).
+- Counts (`recommended`, the Inbox report's `photoCount`) count visible photos for anyone without
+  `content.read`.
+
+##### The rulings (2026-11-22)
+
+- An author's edit that drops a held photo withdraws it: it stays attached and hidden, on the 30-day
+  clock.
+- Show reveals the staged photo and its unflagged, still-visible neighbors only. A flagged or down
+  sibling stays pixelated and links its own item.
+- The device-cache sentence carries no time limit; the removal's own "30 days unless restored" stays.
+
+##### Owed
+
+- **Who uploaded a bare file isn't recorded.** `removeBlob` can't check the caller owns the upload;
+  that wants a pending-uploads row.
+- **For the next phone build and device pass:**
+  - the phone's Remove hint still says "leaves the report when you save" (the web's now reads "isn't
+    shown with the report once you save");
+  - the phone's image cache keeps a taken-down photo it already loaded.
+
+#### #175 merged (2026-11-23)
+
+- **The merge.** #175 is squash-merged to main as `35944bf6`, after Greptile 5/5 and green CI on
+  `7c03f3606`. Main had moved to `bd435e98e` (#174: the skater web's Latest, D292) before it, so the
+  squash is `7c03f3606` merged with #174. The squash differs from `7c03f3606` in exactly #174's 21
+  files, so the support content is equal. The local `phase-b01-inbox-5` is deleted.
+- **The dev rollout of #175** is the deploy executor's (`convex dev --once`; clear and re-apply the
+  seed, 123 steps). `SUPPORT_FROM_EMAIL` is the founder's to set; until then every reply is stored
+  `failed` (`unconfigured`).
+- **Photos moved onto main.** Its 48 commits were rebased past the support content onto `35944bf6`,
+  after the one support docs commit the squash didn't carry (the reviewers' clean areas). There were
+  no conflicts.
+  - The diff against main shows only photos' files and the plan.
+  - #175's round-one markers are on main: `sendEmailOutcome`, the `Idempotency-Key`, and
+    `outcomeUnknown` in the web's words.
+  - The one file both #174 and photos touch is `convex/reports.test.ts`. #174 changed the feed's
+    filter tests (around l.2100–2220) and photos the report write and photo-guard tests (around
+    l.600–1810): separate regions, both kept.
+  - `phase-b01-inbox` now sits at the photos head.
+- **The narrowing of `photos.moderationStatus` stays out of the photos PR** (S5's held commit
+  `c2e57b3f8`). It needs the photo backfill, which ships in that PR, to have run on dev and counted
+  zero unstamped rows first. It goes into the wave's close-out PR. Nothing on the branch assumes the
+  field is present: every photo read takes absent as `visible` (`photoVisible`, `?? 'visible'`), and
+  a new photo is stamped `visible` at birth.
+
+##### #175 on dev
+
+All green. Main `35944bf6` is deployed to dev.
+- **The drift repair:** `inboxItems:repairAll` examined 41 items and fixed 0.
+- **The seed:** 123 of 123 steps filed. The lanes read 27 open and 14 decided.
+- **The merge-and-unmerge dev proof passed with an empty census diff.** The pair now carries a report
+  and a bounty.
+  - The merge took 653 ms in total, 100 ms of it in user code, reading 318 documents and writing 88.
+  - The unmerge took two pages, with 54 ms and 33 ms of user code.
+- **Support, on a seeded ticket:**
+  - `replyFrom` is unset on dev, and `replyBlocked` reads `seed`;
+  - a note was added and removed;
+  - a reply was stored `failed` at once, with nothing scheduled;
+  - a resolve and a reopen both landed.
+- **The seed's README was stale:** it still said 90 steps, 23 open and 12 decided. It now gives the
+  plan's figures (123 steps; 27 open, 14 decided, per lane). `packages/guards/src/seedReadme.test.ts`
+  holds the README to the plan test's full apply, so it can't go stale again.
+
+##### The close-out PR, as it now stands
+
+1. **Narrow `photos.moderationStatus` to required** (`c2e57b3f8`), after
+   `photoRollout:countUnstamped` answers `{ unstamped: 0 }` on dev.
+2. **Narrow `contentFlags.status`, losing `reviewing`** (D283), after a dev count of zero.
+3. **Delete the retired pages' components:**
+   - `FlagQueue.tsx` (the old flags page);
+   - `RequestQueue.tsx` and its test (the old requests page);
+   - `SupportQueue.tsx`;
+   - `BayRequestQueue.tsx` and its test;
+   - `support.assign` and the `in_progress` it alone writes.
+
+   The routes `admin.flags.tsx`, `admin.water.requests.tsx` and `admin.support.tsx` are redirects now
+   and stay for every link that still points at them; whether to drop them is the close-out's call.
+   `LandmarkTool.tsx`, `useReviewWatch.ts`, `ReviewClosedNotice.tsx` and
+   `corpusRequests.reviewState` stay with the old editor until task modes (Bo23).
+4. **Flip the roadmap entry** to closed.
+5. **Sweep the local branches and worktrees** (`phase-b01-inbox-*`, the builders' `b01-5*` branches).
+
+#### Greptile on #176, round 1 (2026-11-23)
+
+Greptile's first review of #176 (head `f3f25290d`) scored it 2/5. **All four findings were in the
+stored-files code:**
+1. A rotation deleted old files that another photo row still used: a legacy row from before
+   `photos.create` refused shared ids.
+2. Copies from a late retry escaped the cleanup's 15-minute window.
+3. A failed delete was dropped from the record.
+4. Storage ids still left the server, inside `rotation.copies`, through `contentRecord.item`.
+
+**Why a rebuild, not four patches.** This was the third review round on the same code: R14's blocker,
+then its should-fixes, then these. Each round had found a path the one before had missed. So S5
+(`b01-5e-s5-3`, head `6fae57d9a`, fast-forwarded here) wrote down what has to hold, put every
+stored-file write behind one module that keeps it, and proved it with a model-based test.
+
+##### The seven invariants
+
+These are verbatim from the header of `lib/photoFiles.ts`:
+
+1. **Every stored photo file is named by exactly one thing at every committed instant**: a photo
+   row's image or thumbnail slot; or one `photoFiles` row — an in-flight rotation copy (`copy`) or a
+   file owed a deletion (`doomed`); or it was stored by a rotation attempt that isn't reconciled
+   yet, inside that attempt's own window, with a source file's sha256 (`photoRotations`) — so a
+   sweep always finds it. (Rows written before B01-5e may share a file between photos; nothing new
+   can, `photos.create`.)
+2. **A file any photo row names is never deleted** — a legacy row sharing a file included. A
+   rotation copies for its own row and leaves a shared source to the row still holding it.
+3. **A copy exists only if recorded first or findable afterwards, whenever its attempt ran**: the
+   attempt row is written before anything is stored, each copy is recorded the moment it is
+   stored, and the reconcile searches each attempt's own window (`startedAt` to its action's
+   lifetime), paged to the end, for one stored and never recorded.
+4. **A deletion that fails is retried until the file is gone** — a `doomed` row, by the attempts
+   rule (1 min, 10 min, 1 h, then parked and daily), mirrored to Machinery (`photoRotation`,
+   `file:<id>`), bounded per run, never forgotten.
+5. **The watch ends only when nothing of the photo's is in flight or owed**: no attempt
+   unreconciled, no `photoFiles` row.
+6. **No storage id leaves the server to any caller**: a photo document goes out only through
+   `projectPhoto`'s allow-list; reads serve URLs.
+7. **No write accepts a storage id that is named, reserved, or not a fresh unattached upload**
+   (`fileTaken`).
+
+##### Two tables replace the array on the photo row
+
+`photos.rotation` is gone. It was never deployed, so no migration is needed.
+- **`photoFiles`**: one row per stored file that no photo slot names. Its fields are `storageId`,
+  `state` (`copy` or `doomed`), `photoId`, `attemptId?`, `createdAt`, `nextTryAt`, `attempts?`,
+  `errorClass?` and `parkedAt?`. Indexes: `by_storage`, `by_state_next`, `by_photo`.
+- **`photoRotations`**: one row per copy attempt, written before it stores anything. Its fields are
+  `photoId`, `startedAt`, `sha256[]`, `scanFrom` and `status` (`running`, `ended` or `reconciled`).
+  Indexes: `by_photo_status`, `by_status_started`.
+- **A daily cron, `sweep photo files`** (`photoPurge.sweepPhotoFiles`): it reconciles any attempt
+  that can't still be running and retries due doomed files. It reaches whatever a photo's own watch
+  no longer can. No register of scheduled jobs exists beyond `crons.ts`: the cron audit above is
+  dated and covers only the crons that existed then.
+
+**Behavior change:** a delete or purge no longer keeps a half-deleted row as "the only pointer." The
+row goes, or becomes a tombstone, and any file storage won't release is owed on the ledger.
+
+##### The model test, and the two defects it found
+
+`photoFiles.property.test.ts` generates random sequences of these steps:
+- uploads, and legacy rows sharing files;
+- flags, hides, removals and restores;
+- the uploader's delete, and an author's edit dropping photos;
+- the background deleters and purges;
+- rotation attempts killed at any step, and the rotation's action cancelled before it begins;
+- deletes that fail and later succeed;
+- the clock moving minutes to days, and the files sweep.
+
+**After every step it checks the invariants against real storage and the tables.** At the end,
+with the faults cleared and the clock run on, nothing is owed and storage holds exactly the files
+live rows name.
+
+S5 ran it 120 times, 1,440 sequences in all. It found two real defects, now pinned by their seeds:
+- **A copy recorded after its attempt was reconciled was orphaned.** Recording a copy now releases
+  it.
+- **A delete where one of a photo's two files failed left a live row pointing at a missing file.**
+  The row now goes, and each file is released to the ledger.
+
+##### On a real local backend
+
+- Kills at each step, then a second attempt five hours later, took 6 stray files to 0.
+- Storage ended holding exactly the 16 files live rows name.
+- A shared legacy file was kept with its twin.
+- A delete that fails and later succeeds is proven only in the harness: real storage can't be made
+  to fail on a real file.
+
+##### Integration
+
+- **No conflicts.** S5 was cut from `origin/phase-b01-inbox-6`, so it fast-forwarded.
+- **The data-model map** has rows for `photoFiles` and `photoRotations`. This was S5's one failing
+  guard.
+- **Machinery.** Owed deletions land under the `photoRotation` job with key `file:<id>`. A
+  rotation that can't land is mirrored there by the watch, keyed by the photo. The job's name read
+  "rotate a taken-down photo's file", but owed files from a delete or a purge are listed there too,
+  so it now reads "rotate or release a photo's files". `photoRotation.test.ts` asserts
+  `recurringJobs.health` on a parked owed file, its clearing, and a parked rotation. No Machinery
+  page exists on the web yet, so there are no web words or story to add.
+- **The web against the allow-list.** check-types is clean with no change. The record pane reads
+  only `moderationStatus` and `_creationTime` off a published photo, and the allow-list serves
+  both. The fields it drops (`erasedAt`, `orphanCandidate`, `seasonExpiryCandidate`) are read on
+  the server before the projection. Every other web use of a storage id is an upload write.
+- **The model test's cost.** At its default of 12 sequences, the property takes 160–206 ms alone,
+  against a 60 s limit. The 120-run hot run stays a gate-time choice.
+
+#### Greptile on #176, round 2 (2026-11-23)
+
+Greptile re-reviewed `833544a4c` at 4/5. Three of round 1's findings were closed and one stayed
+open: "the PR still needs a complete shared-file check before merging". S5 (`b01-5e-s5-4`, head
+`a4df03bb6`, fast-forwarded here) found what was incomplete and fixed it.
+
+##### What was incomplete
+
+1. **A purged tombstone kept its file ids.** The reference check skipped tombstones only among the
+   first four rows per index, so a live row sharing a file behind four or more tombstones was
+   missed, and the file was deleted.
+   - The purge now empties both slots (`TOMBSTONE_FILE`), releasing the ids it held.
+   - The check is one exact lookup per slot index (`.first()`): any row naming the id, in either
+     slot, holds it.
+2. **The window's sweep deleted any unnamed file with a matching hash,** a skater's fresh upload of
+   the same image included.
+   - Each copy now carries its attempt in its content type (`gli-rotation=<attemptId>`), and the
+     sweep deletes only that attempt's copies.
+   - `removeBlob` refuses any rotation copy.
+3. **A doomed file that a row named again by its retry** was left alone, but its Machinery row was
+   not cleared. Now it is.
+
+##### Every path that deletes a stored photo file
+
+The guard's list (`packages/guards/src/photoDeleters.test.ts`, `PHOTO_DELETERS`), verbatim. A new
+deleter fails the guard until it is listed.
+
+| Deleter | How it keeps a held or shared file |
+| --- | --- |
+| `lib/photoOrphans.ts:deletePhotoAndBlobs` | asks photoHeld, answers `held` |
+| `lib/photoOrphans.ts:purgePhotoBlobs` | the purge's blob half: the row already a tombstone |
+| `photos.ts:remove` | the uploader's delete: a held photo is withdrawn instead (fork 1) |
+| `storageHygiene.ts:examinePhoto` | the orphan walk's retry of an erased photo |
+| `storageHygiene.ts:expireDepartedPhotos` | season expiry |
+| `photoReconcile.ts:sweepStillMarked` | the reconcile's delete phase |
+| `accountDeletion.ts:erasePhotos` | account deletion |
+| `lib/contentPurge.ts:sweepPhotos` | the departed-content purge |
+| `erasure.ts:settleStep` | the photo settlement (the orphan walk owes its candidates here) |
+| `photoPurge.ts:purgeOne` | a removed photo whose 30-day clock is due, re-checked in its own transaction |
+| `lib/photoFiles.ts:reconcileAttempt` | an attempt that can't be alive: its unswapped copies and its window's unrecorded ones — only a file carrying its own tag (isCopyOf), never a same-bytes upload (fileTaken) |
+| `lib/photoFiles.ts:retryDoomed` | a doomed file's retry, by the attempts rule |
+| `photos.ts:recordRotationCopy` | a copy recorded to an attempt no longer running: released at once |
+| `photos.ts:endRotation` | an ended attempt's copies that were never swapped in |
+| `photos.ts:swapRotated` | the old files the swap released (left to a row that still names one) |
+| `lib/photoFiles.ts:releaseFile` | a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed |
+| `photos.ts:removeBlob` | a fresh upload no photo row names and no rotation stored (fileTaken, isRotationCopy, PENDING_UPLOAD_MS) |
+
+##### A shared file under a takedown, and `sameBytesAs`
+
+**The rule:** when a takedown moves a photo whose file older rows still name, the taken-down photo
+gets its own copy, and the shared file stays with the rows still naming it.
+- Those rows are recorded on the photo as `sameBytesAs` (at most eight).
+- The Inbox photo item serves each twin: its moderation status, its open flag (the ref that opens
+  its item) and its report, with `sameBytesCut` past eight. Its uploader and its image are never
+  served.
+
+**On the web,** under *On the same report*, "The same image is on N other photos" lists one row per
+twin:
+- **its state:** shown, hidden or removed;
+- **where to decide on it:** its flag's item, else its report in the app (a new tab), else "Not on
+  a report";
+- **past eight,** the count is a floor ("8+").
+
+No twin's image is drawn at any size, so there is no thumbnail to pixelate, and no uploader is
+named. A person who is gone or being deleted therefore can't be named there.
+
+**When a twin is still shown,** the Hide and Remove dialogs and the receipt add one sentence: "The
+same image is still up on another photo, and taking this one down leaves that one up." Nothing says
+the takedown removed the image everywhere. The words are in `photoWords` for the copy pass.
+- **Fixtures:** no twins, one shown, mixed, only down, and capped.
+- **Stories:** three.
+- **The wiring test** holds the sentence to a shown twin, in both dialogs and on the receipt. Both
+  are mutation-checked.
+
+##### The model test, and how it had been blind
+
+`photoFiles.property.test.ts` now covers every slot combination: image–image, image–thumb,
+thumb–image, thumb–thumb, crossed, one file in both slots, and chains of three. It also covers:
+- a row naming a doomed file before its retry;
+- a skater uploading the same bytes inside a window;
+- uploads that claim, or `removeBlob`, any stored id.
+
+**After every step it checks:**
+- every id any row names exists;
+- a tombstone names nothing;
+- unattached uploads survive;
+- a swap records its twins;
+- Machinery's file rows match the ledger.
+
+**It had been blind in two ways:**
+- The attempt step ran inside the refusal catch-all, which swallowed its own assertions. It now
+  returns what it found broken.
+- Its clock never reached a purge. A 31-day step now lets a removed photo's purge come due.
+
+`photoSharedFiles.test.ts` (29 tests) covers:
+- the seven sharing shapes, each through the delete, the purge and the swap;
+- a live row behind five tombstones;
+- a doomed file claimed before its retry;
+- the window's cases;
+- the Inbox item's twins with their flags, reports and the floor.
+
+##### On a real local backend
+
+13 photo rows and 15 files:
+- the twins' files were kept;
+- the sweep deleted only the tagged copy;
+- no row named a missing file.
+
+#### Greptile on #176, round 3 (2026-11-23)
+
+Greptile scored `a18279a09` 5/5 and approved it, with one finding left that blocks nothing: **extra
+twins lose their warning.**
+
+**The finding.** When nine or more older photos shared a file, the swap saved eight twin ids and no
+sign that there were more. The Inbox then showed an incomplete list as complete.
+
+**The fix** (S5, `b01-5e-s5-5`, `b0f605d88`, fast-forwarded):
+- **The swap stores `sameBytesCut`** beside the saved ids. It is set only when a read actually found
+  a ninth twin. Each read takes two past the cap, because the photo itself can fall in the range.
+- **The read before the swap** had the same flaw, and is fixed the same way, in both slots.
+- **The Inbox serves** at most eight twins that still exist. `sameBytesCut` is true when a ninth
+  exists, or when the swap recorded one.
+
+The tests cover 8, 9 and 10 twins, before and after the public takedown, and the model test now
+generates nine or more twins. Five mutants were caught.
+
+**On the web,** the twin block's floor ("on 8+ other photos") reads only the served
+`sameBytesCut`, before the takedown and after it. New fixtures cover exactly eight twins (a whole
+count) and nine twins after the takedown (eight served, the flag set). The model test holds the
+floor to the flag, never to the list's length.
+
+**The ruling** (§7, ruling 29; the founder may overturn it): "the same image" is not symmetric after
+a takedown, and that stands for now. The register's Sh14 holds the content-hash change and its
+reader census.
 
 ### What B01 still owes (the register, 2026-11-17)
 
@@ -11728,6 +12350,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
 | Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
 | Sh13 | The merge estimate's per-call time cost (0.27 ms modeled, about 0.14 ms measured locally) over-refuses: row-heavy merges it refuses run in 100–220 ms | `lib/mergeLoad.ts` (`MS_PER_CALL`) | open: tunable | performance | S | A measure on the deployment, then loosen it toward the measured cost |
+| Sh14 | "The same image" on a photo's Inbox item is not symmetric: after a takedown moves photo A to its own copy, the photos that shared A's old file don't list A. A is down, so nothing public is hidden (§7, ruling 29). Exact and symmetric needs a content hash on every photo row. | `lib/inboxViews.ts` (`sameBytesOf`), `photos.ts` (the swap's `sameBytesAs`) | open: ruled to wait | completeness | M | A `sha256` field on `photos` (widen, backfill from `_storage`, narrow), its index, and a reader census: every read of `sameBytesAs`, the swap, the Inbox item, the record pane's projection |
 
 #### The boards to make in Paper (founder call 1)
 

@@ -73,7 +73,7 @@ const NAV: NavItem[] = [
   // modes that replace it land, and the Overview line is the way back to the console.
   { to: '/admin', label: 'Overview', exact: true },
   { to: '/admin/dashboard', label: 'Dashboard' },
-  { to: '/admin/flags', label: 'Flags' },
+  // Flags are decided in the Inbox now (B01-5e); the old page redirects there.
   // People replaced the old user pages; the line is the way back to it in the console.
   { to: '/admin/people', label: 'People' },
   { to: '/admin/water', label: 'Water bodies' },

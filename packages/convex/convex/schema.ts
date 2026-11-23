@@ -3991,7 +3991,7 @@ export default defineSchema({
     subjectUserId: v.id('profiles'),
     // `accessAlert`: a moderator's retraction recorded on an alert its author already retracted —
     // the one alert verdict kept, as evidence of a pattern of bad claims (founder call, 2026-11-13).
-    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert'] as const),
+    targetType: literals(['report', 'post', 'comment', 'hazard', 'accessAlert', 'photo'] as const),
     targetId: v.string(),
     actionId: v.id('moderationActions'),
     kind: literals(['hidden', 'removed', 'retracted'] as const),
@@ -4320,6 +4320,49 @@ export default defineSchema({
     // time and counts the helpful ones (`positive_reactions`). Backfillable — the rows are on disk.
     .index('by_created_at', ['createdAt']),
 
+  /**
+   * **Every stored photo file no photo row's slot names** (B01-5e, the stored-files invariants in
+   * `lib/photoFiles`): a rotation's copy, recorded the moment it is stored and before it is swapped in
+   * (`copy`); or a file owed a deletion that hasn't happened yet — a copy no longer wanted, an old
+   * file the swap released, a delete that failed (`doomed`), retried by the attempts rule until it is
+   * gone. A `copy` is reserved: no write accepts its id. Keyed by the storage id (one row a file).
+   */
+  photoFiles: defineTable({
+    storageId: v.string(),
+    state: literals(['copy', 'doomed'] as const),
+    /** Whose file it is (the photo may be gone since). */
+    photoId: v.id('photos'),
+    /** The rotation attempt that stored it (a copy). */
+    attemptId: v.optional(v.id('photoRotations')),
+    createdAt: v.number(),
+    /** When a doomed file's delete is next tried (a copy: when it was recorded). */
+    nextTryAt: v.number(),
+    attempts: v.optional(v.number()),
+    errorClass: v.optional(v.string()),
+    parkedAt: v.optional(v.number()),
+  })
+    .index('by_storage', ['storageId'])
+    .index('by_state_next', ['state', 'nextTryAt'])
+    .index('by_photo', ['photoId']),
+
+  /**
+   * **One rotation attempt of a photo's files** (B01-5e), written before the attempt stores anything:
+   * when it began, the source files' sha256, and how far the reconcile has searched `_storage` for a
+   * copy the attempt stored but never recorded (an action the runtime killed between `store` and its
+   * record) — the attempt's own window, `startedAt` to its action's lifetime, paged to the end.
+   * `running` while its action may be alive; `ended` once it returned or can't be alive; `reconciled`
+   * once its window is searched and its copies are swapped in or owed a deletion.
+   */
+  photoRotations: defineTable({
+    photoId: v.id('photos'),
+    startedAt: v.number(),
+    sha256: v.array(v.string()),
+    scanFrom: v.number(),
+    status: literals(['running', 'ended', 'reconciled'] as const),
+  })
+    .index('by_photo_status', ['photoId', 'status'])
+    .index('by_status_started', ['status', 'startedAt']),
+
   photos: defineTable({
     storageId: v.string(), // Convex file storage ref (optimized full image, D31)
     thumbStorageId: v.string(), // ~400px thumbnail (D31)
@@ -4379,8 +4422,27 @@ export default defineSchema({
     /** A removed photo's bytes go 30 days on (D222): when the purge is due, and when it ran. */
     purgeAt: v.optional(v.number()),
     purgedAt: v.optional(v.number()),
+    /**
+     * When a rotation found one of the photo's blobs gone (B01-5e): it can't be restored with bytes that
+     * don't exist, so the record reads it as erased (only a standing decision can come off it); the
+     * rotation stops, shown once on Machinery. Absent ⇒ its bytes were there when last looked at.
+     */
+    bytesMissingAt: v.optional(v.number()),
+    /**
+     * Rows that held this photo's bytes when its rotation left a shared file to them (B01-5e: a row
+     * written before files were one row's each may share one). The taken-down photo got its own copy;
+     * the twins still show the same image, so the Inbox names them to staff. At most eight.
+     */
+    sameBytesAs: v.optional(v.array(v.id('photos'))),
+    /** True when the rotation's read proved more twins than the eight kept (`sameBytesAs`). */
+    sameBytesCut: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
+    // A blob belongs to at most one photo row (B01-5e): `photos.create` refuses a storage id any row
+    // already holds, and no delete takes a blob another row still names — point reads on each field
+    // (both required, so no lower bound is needed).
+    .index('by_storage', ['storageId'])
+    .index('by_thumb_storage', ['thumbStorageId'])
     // The purge's due rows. `purgeAt` is optional and the index not sparse — `undefined` sorts first,
     // so a due range needs a lower bound (`gt('purgeAt', 0)`), never a bare `lte()`.
     .index('by_purge_at', ['purgeAt'])

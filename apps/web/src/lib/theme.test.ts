@@ -143,7 +143,7 @@ describe('THEME_INIT_SCRIPT', () => {
       expect(at('/lakes/abc').getAttribute('data-surface')).toBe('skater');
     });
 
-    it.each(['/admin/flags', '/admin/water/review'])(
+    it.each(['/admin/water', '/admin/water/review'])(
       'leaves the attribute absent on an old admin page (%s)',
       (path) => {
         document.documentElement.setAttribute('data-surface', 'skater');

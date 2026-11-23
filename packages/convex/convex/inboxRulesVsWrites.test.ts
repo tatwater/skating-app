@@ -474,6 +474,111 @@ const otherContentCells: Cell[] = [
   { kind: 'hazard', state: 'hidden', verbs: CONTENT_VERBS, setup: (w) => hazard(w, true) },
 ];
 
+/** A photo on a report (B01-5e), with real blobs, flagged by the filer (or `by`). */
+const photoFlag = async (w: W, uploader: Id<'profiles'>, by: As = w.filer.as) => {
+  const r = await w.report(uploader);
+  const p = await w.t.run(async (ctx) => {
+    const id = await ctx.db.insert('photos', {
+      storageId: await ctx.storage.store(new Blob(['full'])),
+      thumbStorageId: await ctx.storage.store(new Blob(['thumb'])),
+      uploaderId: uploader,
+      placeOnMap: false,
+      reportId: r,
+      createdAt: NOW,
+    });
+    await ctx.db.patch(r, { photoIds: [id] });
+    return id;
+  });
+  return flagOn(w, by, 'photo', p);
+};
+const photoDownBy = (w: W, photoId: string, status: 'hidden' | 'removed') =>
+  w.other.as.mutation(api.moderation.setModerationStatus, {
+    targetType: 'photo',
+    targetId: photoId,
+    status,
+    reason: 'Earlier',
+  });
+/** The photo's own cells (B01-5e, D222): its axis, its uploader's withdrawal, its tombstone. */
+const photoCells: Cell[] = [
+  { kind: 'photo', state: 'up', verbs: CONTENT_VERBS, setup: (w) => photoFlag(w, w.author.id) },
+  {
+    kind: 'photo',
+    state: 'hidden',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await photoDownBy(w, s.targetId, 'hidden');
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'removed',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await photoDownBy(w, s.targetId, 'removed');
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'withdrawn by its uploader',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await w.author.as.mutation(api.photos.remove, { photoId: s.targetId as Id<'photos'> });
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'hidden, then withdrawn by its uploader',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await photoDownBy(w, s.targetId, 'hidden');
+      await w.author.as.mutation(api.photos.remove, { photoId: s.targetId as Id<'photos'> });
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'purged',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await photoDownBy(w, s.targetId, 'removed');
+      await w.t.run((ctx) =>
+        ctx.db.patch(s.targetId as Id<'photos'>, { purgedAt: NOW, purgeAt: undefined }),
+      );
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'already decided',
+    verbs: CONTENT_VERBS,
+    setup: async (w) => {
+      const s = await photoFlag(w, w.author.id);
+      await w.other.as.mutation(api.inboxWrites.dismissFlags, { itemId: await itemIdOf(w, s.ref) });
+      return s;
+    },
+  },
+  {
+    kind: 'photo',
+    state: 'the viewer’s own photo',
+    verbs: CONTENT_VERBS,
+    setup: (w) => photoFlag(w, w.viewer.id),
+  },
+  {
+    kind: 'photo',
+    state: 'the viewer’s own filing',
+    verbs: CONTENT_VERBS,
+    setup: (w) => photoFlag(w, w.author.id, w.viewer.as),
+  },
+];
+
 const alert = async (w: W, by: Id<'profiles'>, extra: Partial<Doc<'accessAlerts'>> = {}) =>
   w.t.run(async (ctx) => {
     const putInId = await ctx.db.insert('putIns', {
@@ -1193,6 +1298,7 @@ const GROUPS: Record<string, Cell[]> = {
   choice: choiceCells,
   report: reportCells,
   'other content': otherContentCells,
+  photo: photoCells,
   alert: alertCells,
   access: accessCells,
   request: requestCells,
@@ -1254,8 +1360,8 @@ describe('the rule and the write', () => {
     // and decline, and the viewer's own landmark ask's approve and decline; R10-A a drawing whose
     // survivor is mid-unmerge. B01-5f gave a ticket all four of its verbs in each state (open,
     // decided, the viewer's own, the viewer's own decided, and filed before a profile existed): 3
-    // cells became 20.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(198);
+    // cells became 20. B01-5e added a photo's nine states × its four verbs (198 → 234).
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(234);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {

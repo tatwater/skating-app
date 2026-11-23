@@ -160,6 +160,10 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
   row from before that gate could reach it; the console's rule (`tabs/hazards/hazardDrawing.ts`
   `drawingOf`) could move to core for both. The founder's call (2026-11-17) was the console's; the
   skater map's is his to make. *Not yet planned.*
+- **2026-11-22 · found by** the B01 photo moderation (B01-5e) — a report has no photo cap of its own:
+  the report sheet takes as many photos as the person adds, bounded only by Convex's array limit (the
+  console's strip reads at most twelve others and says so). Whether the sheet should cap a report's
+  photos, and what it says at the cap, is a skater-app question. *Not yet planned.*
 
 ---
 

@@ -475,12 +475,13 @@ export async function redactAgedContent(
       if (!isDue(photo.createdAt)) continue;
       // Provably unreferenced: an upload they never published, so it goes whole.
       if (referenced !== null && !referenced.has(photo._id)) {
-        if (await deletePhotoAndBlobs(ctx, photo)) {
+        if ((await deletePhotoAndBlobs(ctx, photo)) === 'deleted') {
           result.erased.photos++;
           continue;
         }
-        // The blob outlived the attempt and `deletePhotoAndBlobs` kept the row as its only pointer.
-        // Fall through: the caption still has to come off the row that survived.
+        // The blob outlived the attempt and `deletePhotoAndBlobs` kept the row as its only pointer —
+        // or the photo is held (B01-5e: moderated, flagged or under a decision), and stays. Fall
+        // through: the caption still comes off the row that survived, as off a referenced one.
       }
       if (photo.caption === undefined) continue;
       await ctx.db.patch(photo._id, { caption: undefined });

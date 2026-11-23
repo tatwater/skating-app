@@ -267,7 +267,10 @@ const step = (t: T, uploaderId: Id<'profiles'>, pageSize?: number, bytes = TX_BU
  * photos at the caption cap, so a test of where a pass stops seeds more than that.
  */
 const LEAST_STEP =
-  ROW_MAX.hazard + 2 * ROW_MAX.settleQueue + 2 * (2 * ROW_MAX.photo + ROW_MAX.small);
+  ROW_MAX.hazard +
+  2 * ROW_MAX.settleQueue +
+  // A photo's settlement: its row, its access check, its hold (a verdict, a flag per open status).
+  2 * (2 * ROW_MAX.photo + ROW_MAX.small + ROW_MAX.verdict + 2 * ROW_MAX.contentFlag);
 /** More photos than one {@link LEAST_STEP} pass settles. */
 const PAST_ONE_PASS = 60;
 /** Everything owed settled: the walk, run to its end. */
@@ -1136,7 +1139,7 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     );
   });
 
-  test("a photo whose blob outlives the delete is no longer the uploader's", async () => {
+  test('a photo whose blob outlives the delete is gone; its file is owed on the ledger (B01-5e)', async () => {
     const { t, author, waterBodyId } = await setup();
     const { reportIds, photoIds } = await seedPost(t, author.id, waterBodyId, 2);
     const [reportId] = reportIds as [Id<'reports'>];
@@ -1146,11 +1149,14 @@ describe('nothing of an item outlives its erasure, however much it carries', () 
     await author.as.mutation(api.reports.remove, { reportId });
     advance(31 * DAY);
     await sweep(t);
-    const kept = await get(t, photoId);
-    expect(kept).not.toBeNull();
-    expect(kept?.erasedAt).toBeDefined();
-    expect(kept?.caption).toBeUndefined();
-    expect(kept?.coord).toBeUndefined();
+    expect(await get(t, photoId)).toBeNull();
+    const owed = await t.run((ctx) =>
+      ctx.db
+        .query('photoFiles')
+        .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+        .first(),
+    );
+    expect(owed?.state).toBe('doomed');
     const bundle = await t.query(internal.dataExport.collect, { userId: author.id });
     expect(bundle.photos.map((p) => p.photoId)).toEqual([photoIds[1]]);
   });
@@ -1730,6 +1736,34 @@ describe("a photo is erased only when nothing of its uploader's still uses it", 
     await settleAll(t);
     for (const id of [...first, ...second]) expect(await get(t, id)).toBeNull();
     expect(await owed(t)).toEqual([]);
+  });
+
+  test('a step of five hundred photos plans its index ranges: each step fits, every photo goes (B01-5e)', async () => {
+    const { t, author } = await setup();
+    const ids = await t.run(async (ctx) => {
+      const out: Id<'photos'>[] = [];
+      for (let i = 0; i < 500; i++) {
+        out.push(
+          await ctx.db.insert('photos', {
+            storageId: await ctx.storage.store(new Blob([`f${i}`])),
+            thumbStorageId: await ctx.storage.store(new Blob([`t${i}`])),
+            uploaderId: author.id,
+            placeOnMap: false,
+            createdAt: Date.now(),
+            moderationStatus: 'visible' as const,
+          }),
+        );
+      }
+      return out;
+    });
+    await oweOnRecord(t, author.id, ids, { phase: 'hazards' });
+    // One step, as the walk would run it, its transaction's ranges its own.
+    await step(t, author.id);
+    const left = (await Promise.all(ids.map((id) => get(t, id)))).filter(Boolean).length;
+    expect(left).toBeGreaterThan(0); // the step stopped where its ranges did, never past them
+    await settleAll(t);
+    for (const id of ids) expect(await get(t, id)).toBeNull();
+    expect(await placeOf(t, author.id)).toBeNull();
   });
 
   test('a clear step clears the debts its settlement took on, then takes again', async () => {

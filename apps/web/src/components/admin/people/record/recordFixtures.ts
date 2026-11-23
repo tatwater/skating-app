@@ -266,6 +266,7 @@ const kinds = (o: Partial<Record<StandingRow['targetType'], number>> = {}) => ({
   comment: 0,
   hazard: 0,
   accessAlert: 0,
+  photo: 0,
   ...o,
 });
 
@@ -355,6 +356,9 @@ function contentOf(kind: ItemRead['targetType'], d: Doc): ItemRead['content'] {
       return { at: num('firstReportedAt'), title: str('type'), text: str('description') };
     case 'accessAlert':
       return { at: num('createdAt'), title: str('reason'), text: str('note') };
+    case 'photo':
+      // A photo's words are its caption (the server's `contentOf`).
+      return { at: num('createdAt'), text: str('caption') };
   }
 }
 
@@ -553,3 +557,33 @@ export const CHOICES: ChoicesRead = {
     },
   ],
 } as ChoicesRead;
+
+/**
+ * A photo verdict (B01-5e): a photo removed from a report, still within its 30 days — the server
+ * offers its restore. Its content's `thumbUrl` is the staff-only thumbnail the item read serves.
+ */
+export const ITEM_PHOTO = {
+  ...item({
+    targetType: 'report',
+    targetId: 'ph_3',
+    decisions: [decision({ kind: 'removed', reason: 'Children’s faces, close up' })],
+    can: { restore: yes() },
+  }),
+  targetType: 'photo',
+  content: {
+    at: at(10, 11, 14, 22),
+    text: null,
+    thumbUrl:
+      'data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22400%22%20height%3D%22250%22%3E%3Crect%20width%3D%22400%22%20height%3D%22250%22%20fill%3D%22%23585c60%22%2F%3E%3C%2Fsvg%3E',
+  },
+} as unknown as ItemRead;
+
+/**
+ * The same verdict, its file deleted on the clock (a tombstone): no address, and — as the server's
+ * rule answers an erased item — no restore.
+ */
+export const ITEM_PHOTO_NONE = {
+  ...ITEM_PHOTO,
+  content: { at: at(10, 11, 14, 22), text: null, thumbUrl: null },
+  can: { restore: no('This was erased, so there is nothing left to act on.') },
+} as unknown as ItemRead;

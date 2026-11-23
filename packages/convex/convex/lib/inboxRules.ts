@@ -495,7 +495,7 @@ export function preconditionRefusal(verb: InboxVerb, facts: InboxRuleFacts): str
     case 'hide':
     case 'remove':
     case 'restore':
-      if (facts.targetType === 'photo') return 'A photo can’t be hidden or removed yet.';
+      // A photo's too (B01-5e, D222): its record facts are read as `setContentStatus` reads them.
       return facts.record ? contentVerbRefusal(facts.record, verb) : null;
     case 'pin':
       // The pin's own refusals (`setOfficialImpl`): pinned already, or withdrawn (D248).

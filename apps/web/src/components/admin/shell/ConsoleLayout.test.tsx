@@ -328,8 +328,9 @@ describe('the rail', () => {
     const items = within(menu)
       .getAllByRole('menuitem')
       .map((i) => i.textContent);
-    expect(items).toContain('Flags');
+    expect(items).toContain('Water bodies');
     expect(items).toContain('Ice calibration');
+    expect(items).not.toContain('Flags');
     for (const adminOnly of ['Seasons', 'Support', 'Tuning', 'Imports']) {
       expect(items).not.toContain(adminOnly);
     }
@@ -341,11 +342,13 @@ describe('the rail', () => {
     await userEvent.click(within(rail()).getByRole('button', { name: /Legacy/ }));
     const menu = await screen.findByRole('menu');
     // Every old page still standing: Users left the menu when People landed, Requests when the
-    // Inbox's request handlers did, Support when its ticket handler did.
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(12);
+    // Inbox's request handlers did, Support when its ticket handler did, Flags when the photo
+    // handler did.
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(11);
     expect(within(menu).queryByRole('menuitem', { name: 'Users' })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: 'Requests' })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: 'Support' })).toBeNull();
+    expect(within(menu).queryByRole('menuitem', { name: 'Flags' })).toBeNull();
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Imports' }));
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/admin/imports' });
   });

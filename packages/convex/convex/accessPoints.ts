@@ -65,7 +65,13 @@ import { writeAudit } from './lib/audit';
 import { requireCapability, requireContributor } from './lib/auth';
 import { queueLibraryRefresh, refreshBodyLibrary } from './lib/bodyLibrary';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
-import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
+import {
+  assertOwnedPhotos,
+  PHOTO_HELD_DETACH,
+  photoHeld,
+  photoVisible,
+  resolvePhotoUrls,
+} from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
 import { latLng, literals } from './lib/validators';
 import { resolveSubAreaForPutIn } from './subAreas';
@@ -626,7 +632,14 @@ export const attachPhoto = mutation({
     const existing = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
     if (existing.some((row) => row.photoId === photoId))
       return existing.find((r) => r.photoId === photoId)?._id;
-    if (existing.length >= MAX_ACCESS_PHOTOS) {
+    // The cap counts the photos a skater sees (B01-5e): a hidden or removed one holds no slot, as
+    // `listPhotos` shows it to no one — the writer and the reader count the same set.
+    let shown = 0;
+    for (const row of existing) {
+      const attached = await ctx.db.get(row.photoId);
+      if (attached && photoVisible(attached)) shown++;
+    }
+    if (shown >= MAX_ACCESS_PHOTOS) {
       throw new ConvexError(`An access point carries at most ${MAX_ACCESS_PHOTOS} photos`);
     }
 
@@ -669,6 +682,13 @@ export const detachPhoto = mutation({
     const isModerator = profile.role === 'moderator' || profile.role === 'admin';
     if (!isUploader && !isModerator) {
       throw new ConvexError('Only the uploader or a moderator can remove this photo');
+    }
+    // An uploader can't drop evidence (D248, B01-5e): a photo flagged or under a decision stays
+    // attached while it is held. A moderator's detach still goes — the photo row stays, and no
+    // deleter takes a held photo (`photoHeld` in `deletePhotoAndBlobs`).
+    if (!isModerator) {
+      const photo = await ctx.db.get(row.photoId);
+      if (photo && (await photoHeld(ctx, photo))) throw new ConvexError(PHOTO_HELD_DETACH);
     }
 
     await ctx.db.delete(accessPhotoId);
@@ -728,7 +748,10 @@ export const listPhotos = query({
       ctx,
       rows.map((r) => r.photoId),
     );
-    return resolved.map((photo, i) => ({ ...photo, accessPhotoId: rows[i]?._id }));
+    // Joined by photo id, never by position (B01-5e): the resolver skips a photo that isn't visible
+    // or is gone, so the i-th result is not the i-th row — and *Detach* must name the right one.
+    const attachmentOf = new Map(rows.map((r) => [r.photoId as string, r._id]));
+    return resolved.map((photo) => ({ ...photo, accessPhotoId: attachmentOf.get(photo.photoId) }));
   },
 });
 

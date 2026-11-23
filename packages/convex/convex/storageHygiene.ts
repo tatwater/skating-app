@@ -369,7 +369,9 @@ export const examinePhoto = internalMutation({
       let outcome: PhotoOutcome;
       if (!photo) outcome = 'gone';
       else if (photo.erasedAt !== undefined) {
-        outcome = (await deletePhotoAndBlobs(ctx, photo)) ? 'deleted' : 'retained';
+        // Held since it was let go (B01-5e: moderated, flagged or under a decision): kept.
+        const result = await deletePhotoAndBlobs(ctx, photo);
+        outcome = result === 'deleted' ? 'deleted' : result === 'held' ? 'kept' : 'retained';
       } else if (photo.reportId !== undefined) outcome = 'kept';
       else {
         const onAccess = await ctx.db
@@ -582,7 +584,10 @@ export const expireDepartedPhotos = internalMutation({
         kept++;
         continue;
       }
-      if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
+      // Held (B01-5e: moderated, flagged or under a decision): kept past its season, as evidence.
+      const result = await deletePhotoAndBlobs(ctx, photo);
+      if (result === 'deleted') deleted++;
+      else if (result === 'held') kept++;
     }
 
     // **A `null` is a method to escalate from, not an answer to retry** (PR #30's lesson, re-learned

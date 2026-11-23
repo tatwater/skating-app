@@ -48,6 +48,7 @@ import { subAreaDriveCoordFor } from '../subAreas';
 import { loadFavorites, type ViewerFavorites } from '../waterBodyFavorites';
 import { getCurrentProfile } from './auth';
 import { publicAuthor } from './authorView';
+import { photoVisible } from './photoAccess';
 import { canSeePutIn, loadBlockedAuthorIds, profileAccess } from './reportVisibility';
 import { bodyWeatherCell, subAreaWeatherCell } from './sampling';
 
@@ -398,7 +399,10 @@ async function silhouetteFor(
   return out;
 }
 
-/** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
+/**
+ * Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files and photos
+ * that aren't visible (`photoVisible`) skipped.
+ */
 async function thumbUrlsFor(
   ctx: QueryCtx,
   photoIds: Doc<'reports'>['photoIds'],
@@ -408,7 +412,8 @@ async function thumbUrlsFor(
   const urls = await Promise.all(
     photoIds.map(async (photoId) => {
       const photo = await ctx.db.get(photoId);
-      if (!photo) return null;
+      // A hidden or removed photo is no skater's to see (B01-5e, D222): no thumbnail, no slot.
+      if (!photo || !photoVisible(photo)) return null;
       return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>);
     }),
   );

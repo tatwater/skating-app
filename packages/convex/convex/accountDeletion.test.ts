@@ -1188,7 +1188,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
    * person*, and the field that matters is `coord`: a photo taken at home, placed on the map, is the
    * home coordinate D62 goes out of its way to erase everywhere else.
    */
-  test('a photo that cannot be reclaimed keeps its pointer and loses its identity', async () => {
+  test('a photo that cannot be reclaimed is gone; its stuck file is owed a deletion on the ledger (B01-5e)', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const stuck = await t.run(async (ctx) => {
@@ -1207,13 +1207,19 @@ describe('bucket 1 — erase (private artifacts)', () => {
 
     await finalize(t, user.id);
 
-    const row = await t.run((ctx) => ctx.db.get(stuck));
-    expect(row).not.toBeNull(); // kept: nothing else can name that blob
-    expect(row?.storageId).toBe('not-a-storage-id');
-    expect(row?.caption).toBeUndefined();
-    expect(row?.takenAt).toBeUndefined();
-    expect(row?.coord).toBeUndefined();
-    expect(row?.placeOnMap).toBe(false);
+    // The row — the caption, the time, the place — is gone; the ledger, not the row, now keeps the
+    // stuck file findable, retried until storage lets go (`lib/photoFiles`).
+    expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
+    expect(
+      (
+        await t.run((ctx) =>
+          ctx.db
+            .query('photoFiles')
+            .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+            .first(),
+        )
+      )?.state,
+    ).toBe('doomed');
   });
 });
 
@@ -1812,8 +1818,19 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     await leaver.as.mutation(api.accountDeletion.requestDeletion, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
+    // The words go with the row; the stuck file is owed a deletion on the ledger (B01-5e).
     const photo = await t.run((ctx) => ctx.db.get(photoId));
-    expect(photo).not.toBeNull(); // kept: it is the only pointer to the blobs
-    expect(photo?.caption).toBeUndefined(); // but the words came off anyway
+    expect(photo?.caption).toBeUndefined();
+    if (photo === null)
+      expect(
+        (
+          await t.run((ctx) =>
+            ctx.db
+              .query('photoFiles')
+              .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+              .first(),
+          )
+        )?.state,
+      ).toBe('doomed');
   });
 });

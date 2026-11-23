@@ -239,7 +239,7 @@ describe('photoReconcile — the answer the capped scan cannot give', () => {
    * A photo whose blob outlives the attempt keeps its row — it is the only pointer to those blobs — and
    * must be **unmarked**, so the next run re-derives the verdict instead of inheriting a stale one.
    */
-  test('a photo whose blob will not delete keeps its row and loses its mark', async () => {
+  test('a photo whose blob will not delete is gone; its file is owed on the ledger (B01-5e)', async () => {
     const t = harness();
     const uploader = await seedUploader(t, 'prolific');
     const stuck = await seedPhoto(t, uploader, 'stuck');
@@ -247,9 +247,14 @@ describe('photoReconcile — the answer the capped scan cannot give', () => {
 
     await reconcile(t, uploader);
 
-    const photo = await t.run((ctx) => ctx.db.get(stuck));
-    expect(photo).not.toBeNull();
-    expect(photo?.orphanCandidate).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
+    const owed = await t.run((ctx) =>
+      ctx.db
+        .query('photoFiles')
+        .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+        .first(),
+    );
+    expect(owed?.state).toBe('doomed');
   });
 });
 

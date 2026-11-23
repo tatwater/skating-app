@@ -80,7 +80,7 @@ import {
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
-import { assertOwnedPhotos } from './lib/photoAccess';
+import { assertOwnedPhotos, shownPhotoIds } from './lib/photoAccess';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCappedResult } from './lib/scan';
 import { activateOnEvidence } from './lib/standing';
@@ -618,9 +618,14 @@ async function renderInScope(
   // drawn this January, and the season axis is what says so.
   const pooled = await poolConsensus(ctx, inScope);
   const visibleIds = new Set(rendered.map((h) => h._id as string));
+  // A hidden or removed photo is no skater's to learn of, its id included (B01-5e).
+  const shown = new Map<string, Id<'photos'>[]>();
+  for (const h of rendered) shown.set(h._id, await shownPhotoIds(ctx, h.photoIds));
   return (
     rendered
-      .map((h) => toView(h, now, pooled.get(h._id), visibleIds))
+      .map((h) =>
+        toView({ ...h, photoIds: shown.get(h._id) ?? [] }, now, pooled.get(h._id), visibleIds),
+      )
       // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
       // never disappears, because assuming a danger is still there is the recoverable mistake. A
       // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
@@ -810,7 +815,11 @@ export const get = query({
     // one body-bounded read on a single-hazard path, which is the same read `listForBody` already
     // makes, and the pooling itself short-circuits for the singleton case.
     const pooled = await poolConsensus(ctx, await clusterScopeFor(ctx, hazard));
-    const view = toView(hazard, now, pooled.get(hazard._id));
+    const view = toView(
+      { ...hazard, photoIds: await shownPhotoIds(ctx, hazard.photoIds) },
+      now,
+      pooled.get(hazard._id),
+    );
 
     // The drawer's one-line reconciliation (D53 amendment): a pin the operator has already promoted
     // renders beside a permanent feature of the same shape, and without this the two read as a

@@ -21,7 +21,6 @@ import type { GoLetter } from '@/lib/keys';
 /** The old admin pages still standing: each the root of a tree that draws in the old shell. */
 export const OLD_SHELL_TREES = [
   '/admin/dashboard',
-  '/admin/flags',
   '/admin/water',
   '/admin/features',
   '/admin/recurrence',
@@ -135,7 +134,6 @@ export const LEGACY_PAGES: readonly LegacyPage[] = [
   // tiles, app health, the base map's provenance, the recent actions) stays reachable until the
   // modes that replace it land (Instruments, Machinery).
   { label: 'Dashboard', to: '/admin/dashboard', capability: 'inbox.read' },
-  { label: 'Flags', to: '/admin/flags', capability: 'inbox.read' },
   { label: 'Water bodies', to: '/admin/water', capability: 'body.read' },
   { label: 'Intake review', to: '/admin/water/review', capability: 'corpus.read' },
   { label: 'Standing', to: '/admin/water/standing', capability: 'corpus.read' },

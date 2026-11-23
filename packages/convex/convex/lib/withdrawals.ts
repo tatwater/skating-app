@@ -27,6 +27,8 @@ import { authorOf } from './ownContent';
 import { ReadBudget, ROW_MAX } from './readBudget';
 import {
   DELETED_KINDS,
+  type DeletedKind,
+  isDeletedKind,
   type Position,
   type RecordContentDoc,
   targetIdOf,
@@ -42,13 +44,14 @@ export type Withdrawal = Doc<'contentWithdrawals'>;
  */
 export function isListedWithdrawal(kind: VerdictTargetType, doc: RecordContentDoc): boolean {
   return (
+    isDeletedKind(kind) &&
     withdrawnAt(kind, doc) !== null &&
     !(kind === 'comment' && (doc as Doc<'comments'>).erasedAt !== undefined)
   );
 }
 
 /** The kind's place in the list's tie-break, inverted so a descending read takes the list's order. */
-export function kindRankOf(kind: VerdictTargetType): number {
+export function kindRankOf(kind: DeletedKind): number {
   return DELETED_KINDS.length - 1 - DELETED_KINDS.indexOf(kind);
 }
 
@@ -64,7 +67,7 @@ export function withdrawalKey(row: Withdrawal): Position {
 /** What keeping one item's row reads and writes at worst: its row, its hold, one write. */
 export const WITHDRAWAL_SYNC_COST = 2 * ROW_MAX.withdrawal + ROW_MAX.verdict;
 
-function rowOf(ctx: QueryCtx, reads: ReadBudget, kind: VerdictTargetType, targetId: string) {
+function rowOf(ctx: QueryCtx, reads: ReadBudget, kind: DeletedKind, targetId: string) {
   return reads.one('withdrawal', () =>
     ctx.db
       .query('contentWithdrawals')
@@ -98,7 +101,7 @@ export async function heldOn(
  */
 export async function syncWithdrawal(
   ctx: MutationCtx,
-  kind: VerdictTargetType,
+  kind: DeletedKind,
   targetId: string,
   doc: RecordContentDoc | null,
   reads: ReadBudget = new ReadBudget(),
@@ -143,7 +146,7 @@ export async function syncWithdrawal(
 /** {@link syncWithdrawal} by id: the item is read first (charged at its kind's worst case). */
 export async function syncWithdrawalById(
   ctx: MutationCtx,
-  kind: VerdictTargetType,
+  kind: DeletedKind,
   targetId: string,
   reads: ReadBudget = new ReadBudget(),
 ): Promise<boolean> {
@@ -159,7 +162,8 @@ export const WITHDRAWAL_HOLD_COST = WITHDRAWAL_SYNC_COST;
 
 /**
  * A verdict on the item was stood up or ended: its row's `held` follows. An item with no row (not
- * withdrawn, or not yet backfilled) has nothing to follow. `true` when it wrote.
+ * withdrawn, or not yet backfilled) has nothing to follow, and a photo never has one (it is never on
+ * the Deleted list, `lib/recordReads.withdrawnAt`). `true` when it wrote.
  */
 export async function refreshWithdrawalHold(
   ctx: MutationCtx,
@@ -167,6 +171,7 @@ export async function refreshWithdrawalHold(
   targetId: string,
   reads: ReadBudget = new ReadBudget(),
 ): Promise<boolean> {
+  if (!isDeletedKind(kind)) return false;
   const existing = await rowOf(ctx, reads, kind, targetId);
   if (existing === null) return false;
   const held = await heldOn(ctx, reads, kind, targetId);
@@ -182,7 +187,7 @@ export const WITHDRAWAL_DROP_COST = 2 * ROW_MAX.withdrawal;
 /** The eraser took the item (or left a comment's shell): its row goes. */
 export async function dropWithdrawal(
   ctx: MutationCtx,
-  kind: VerdictTargetType,
+  kind: DeletedKind,
   targetId: Id<'reports' | 'posts' | 'comments' | 'hazards' | 'accessAlerts'>,
   reads: ReadBudget,
 ): Promise<void> {
@@ -202,7 +207,7 @@ export async function withdrawalsAfter(
   ctx: QueryCtx,
   reads: ReadBudget,
   userId: Id<'profiles'>,
-  targetType: VerdictTargetType | undefined,
+  targetType: DeletedKind | undefined,
   after: Position | null,
   n: number,
 ): Promise<Withdrawal[]> {

@@ -18,6 +18,7 @@ import { FlagActions } from './FlagActions';
 import { allows, flagHead, type HistoryLink, isDown, liveFlags } from './flagModel';
 import type { FlagItem } from './flagTypes';
 import { ALERT_WORDS as A, FLAG_WORDS as W } from './flagWords';
+import { PhotoSubject } from './PhotoSubject';
 import { AlsoOnReport, type Retry, SubHead, type WeatherState } from './parts';
 import {
   AlertFacts,
@@ -162,6 +163,7 @@ export function FlagBodyView({
   onCompare,
   retry,
   map,
+  pane,
 }: FlagViewProps) {
   const { target } = item;
   const safety = item.lane === 'safety';
@@ -340,6 +342,18 @@ export function FlagBodyView({
           </div>
         );
         break;
+      case 'photo':
+        // Board 2.7: the stage, then the flag and the uploader as 2.1 draws them. Keyed by the photo,
+        // so a reveal never carries to another item's photo.
+        subject = (
+          <PhotoSubject
+            key={target.photo.photoId}
+            target={target}
+            {...(pane !== undefined && { pane })}
+            timeZone={timeZone}
+          />
+        );
+        break;
       case 'waterbody':
         subject = (
           <BodySubject
@@ -350,15 +364,13 @@ export function FlagBodyView({
         );
         under = <div className="px-gutter pt-(--space-5)">{flags()}</div>;
         break;
-      default:
-        // A photo flag never reaches this handler (Photo owns it): say what the server says it is,
-        // with the flags.
-        subject = (
-          <SubjectRow data-subject={target.targetType}>
-            <span className="text-row text-fg2">{target.summary}</span>
-          </SubjectRow>
-        );
+      default: {
+        // Every subject the server sends is drawn above: a new one is a type error here.
+        const unknown: never = target;
+        void unknown;
+        subject = null;
         break;
+      }
     }
   }
 

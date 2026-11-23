@@ -39,7 +39,8 @@ describe('placeItems', () => {
   it('lists the built modes, then the old pages, each only for a role that can use it', () => {
     const mod = placeItems('', as('moderator')).map((i) => i.label);
     expect(mod[0]).toBe('Overview');
-    expect(mod).toContain('Flags');
+    expect(mod).toContain('Water bodies');
+    expect(mod).not.toContain('Flags');
     expect(mod).not.toContain('Imports');
     expect(placeItems('', as('admin')).map((i) => i.label)).toContain('Imports');
   });
@@ -49,7 +50,7 @@ describe('placeItems', () => {
   });
 
   it('marks an old page as Legacy', () => {
-    expect(placeItems('flags', as('moderator'))[0]?.sub).toBe('Legacy');
+    expect(placeItems('features', as('moderator'))[0]?.sub).toBe('Legacy');
   });
 });
 
@@ -94,11 +95,11 @@ describe('ConsolePalette', () => {
     const onGo = draw();
     const pick = (item: Partial<CommandItem> & { id: string }) =>
       act(() => props().onSelect({ label: '', ...item }));
-    pick({ id: '/admin/flags' });
+    pick({ id: '/admin/features' });
     pick({ id: 'body:b1' });
     pick({ id: 'person:u1' });
     expect(onGo.mock.calls.map(([t]) => t.to)).toEqual([
-      '/admin/flags',
+      '/admin/features',
       '/admin/body/b1',
       '/admin/people/u1',
     ]);

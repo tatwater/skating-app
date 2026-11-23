@@ -4,8 +4,6 @@ import { ADMIT_ITEM, DRAWN_ITEM, PHOTO_ITEM, PLACE_ITEM, TICKET_ITEM } from '../
 import { ELSEWHERE, elsewhereFor, HANDLER_KEYS } from './elsewhere';
 import { HANDLERS, handlerKeyOf } from './handlerRegistry';
 
-const targets = (e: ReturnType<typeof elsewhereFor>) => e?.links.map((l) => l.to) ?? null;
-
 describe('where an item without its handler is decided', () => {
   it('leaves no kind a dead end: each has its handler, or a page to point at', () => {
     for (const key of HANDLER_KEYS) {
@@ -13,9 +11,10 @@ describe('where an item without its handler is decided', () => {
     }
   });
 
-  it('points a photo flag at the old Flags page', () => {
+  it('says nothing for a photo flag: its handler has landed (the old Flags page redirects)', () => {
     expect(handlerKeyOf(PHOTO_ITEM)).toBe('flag:photo');
-    expect(targets(elsewhereFor('flag:photo', PHOTO_ITEM, true))).toEqual(['/admin/flags']);
+    expect(HANDLERS.has('flag:photo')).toBe(true);
+    expect(elsewhereFor('flag:photo', PHOTO_ITEM, true)).toBeNull();
   });
 
   it('says nothing for a request: its handler has landed', () => {

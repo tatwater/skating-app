@@ -44,7 +44,7 @@ import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { HAZARD_MAX_PER_REPORT } from './hazards';
-import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
+import { getCurrentProfile, hasCapability, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import {
@@ -57,7 +57,13 @@ import {
 import { fileLandmarkProposals } from './lib/landmarkProposals';
 import { resolveLocatedLandmarks } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
-import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
+import {
+  assertOwnedPhotos,
+  photoVisible,
+  shownPhotoIds,
+  syncReportPhotoLinks,
+} from './lib/photoAccess';
+import { keepAndWithdrawHeld } from './lib/photoWithdraw';
 import { refreshPostLatestSkateEnd, refreshPostSearchText, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
@@ -287,7 +293,13 @@ export const get = query({
       if (bay && bay.removedAt === undefined) bayNames[id] = bay.name;
     }
     // The put-in opt-out is honored at the API, not left to the drawer (`redactPutIn`).
-    return { ...(await redactPutIn(ctx, report, await getCurrentProfile(ctx))), bayNames };
+    const viewer = await getCurrentProfile(ctx);
+    const shown = await redactPutIn(ctx, report, viewer);
+    // A hidden or removed photo's id is staff's alone (B01-5e): anyone else learns of the visible.
+    const photoIds = hasCapability(viewer, 'content.read')
+      ? report.photoIds
+      : await shownPhotoIds(ctx, report.photoIds);
+    return { ...shown, photoIds, bayNames };
   },
 });
 
@@ -524,7 +536,11 @@ export const recommended = query({
     }
 
     // Pure selection: filter to the exceptional bar, bundle top reports per body, cap unique bodies.
-    const cards = selectRecommended(candidates, { now });
+    // **Only visible photos count** (B01-5e, D222). The candidates went in with their listed count,
+    // an upper bound; each winner's visible photos are then counted (a few point reads each, never
+    // every candidate's) and the selection re-run with the true counts until every card it returns
+    // rests on counted photos — a count can only fall, so a report never wins on a hidden photo.
+    const cards = await selectOnVisiblePhotos(ctx, candidates, recentById, now);
 
     // Hydrate each winning report into a full `FeedCardData` so the client renders it like a feed card
     // (author ring, chips, thumbnails) inside the distinct "Recommended" wrapper. Reuses `toFeedCard`.
@@ -544,6 +560,48 @@ export const recommended = query({
     return result;
   },
 });
+
+/** A winner's photos read at most to count its visible ones (a floor past it, as the rank allows). */
+export const RECOMMENDED_PHOTO_READ = 8;
+/** Selection rounds at most; a winner still uncounted after them is left out, never shown unverified. */
+const RECOMMENDED_PHOTO_ROUNDS = 4;
+
+/**
+ * {@link recommended}'s selection over **visible** photo counts (B01-5e): select, count each new
+ * winner's visible photos (`photoVisible`, at most {@link RECOMMENDED_PHOTO_READ} of its ids read),
+ * re-select with the counts, until no card names an uncounted report. A card that still does after
+ * {@link RECOMMENDED_PHOTO_ROUNDS} rounds drops its uncounted reports. Reads at most rounds × cards ×
+ * bundle × the read cap photo rows — the cards, never the 500 candidates.
+ */
+export async function selectOnVisiblePhotos(
+  ctx: QueryCtx,
+  candidates: RecommendableReport[],
+  byId: ReadonlyMap<string, Doc<'reports'>>,
+  now: number,
+): Promise<ReturnType<typeof selectRecommended>> {
+  const counted = new Set<string>();
+  const byReport = new Map(candidates.map((c) => [c.reportId as string, c]));
+  for (let round = 0; round < RECOMMENDED_PHOTO_ROUNDS; round++) {
+    const cards = selectRecommended(candidates, { now });
+    const fresh = cards.flatMap((c) => c.reportIds).filter((id) => !counted.has(id));
+    if (fresh.length === 0) return cards;
+    for (const id of fresh) {
+      counted.add(id);
+      const report = byId.get(id);
+      const candidate = byReport.get(id);
+      if (!report || !candidate) continue;
+      let visible = 0;
+      for (const photoId of report.photoIds.slice(0, RECOMMENDED_PHOTO_READ)) {
+        const photo = await ctx.db.get(photoId);
+        if (photo && photoVisible(photo)) visible++;
+      }
+      candidate.photoCount = visible;
+    }
+  }
+  return selectRecommended(candidates, { now })
+    .map((c) => ({ ...c, reportIds: c.reportIds.filter((id) => counted.has(id)) }))
+    .filter((c) => c.reportIds.length > 0);
+}
 
 /**
  * Author-only edit (D25): last-write-wins over the content fields + a fresh `updatedAt`. Re-runs the
@@ -584,7 +642,15 @@ export const update = mutation({
     // An edit records the new length (the old one stays counted: the record is of writes).
     await recordTextLength(ctx, 'report_notes', n.notes, now);
 
-    const photoIds = [...new Set(args.photoIds ?? existing.photoIds)];
+    // An author can't drop evidence by editing (D248, B01-5e): a photo the edit leaves out that is
+    // moderated, flagged or under a decision stays on the report, after the ones sent.
+    const photoIds = await keepAndWithdrawHeld(
+      ctx,
+      profile,
+      [...new Set(args.photoIds ?? existing.photoIds)],
+      existing.photoIds,
+      now,
+    );
     await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: args.reportId });
 
     // Re-resolve the point-derived place (Phase 05) from the final point — an edited put-in pin moves

@@ -226,7 +226,12 @@ export type ReportSubjectView = {
   observedFrom: ObservedFrom | null;
   notes: string | null;
   claims: ReportClaimsView;
+  /**
+   * Its photos: every one for a viewer with `content.read`; for anyone else only the visible ones
+   * (B01-5e), counted among the first twelve — `photoCountIsFloor` says there may be more.
+   */
   photoCount: number;
+  photoCountIsFloor: boolean;
   moderationStatus: ModerationStatus;
   /** *Also on this report*: thumbs up and down; null when not read. */
   ratings: { up: number; down: number } | null;
@@ -274,20 +279,70 @@ export type AlertSubjectView = {
   }[];
 };
 
-/** A photo as 2.7's stage draws it: staff URLs, pixelated until *Show the photo*. */
+/**
+ * A photo as 2.7's stage draws it: staff URLs, pixelated until *Show the photo* (B01-5e, D222).
+ * **The URLs, the reveal and a down photo's caption go only to a viewer with `content.read`** —
+ * decided on the server, so a viewer with `inbox.read` alone gets `null`s and `canReveal: false`.
+ */
 export type PhotoSubjectView = {
   photoId: Id<'photos'>;
+  /** `null` for a hidden or removed photo to a viewer without `content.read`, or none written. */
   caption: string | null;
   takenAt: number | null;
   createdAt: number;
-  /** Staff-only URLs (`content.read`); null when the blob is gone. */
-  url: string | null;
+  /**
+   * The **thumbnail** only — the stage pixelates from it. `null` without `content.read` (then no URL
+   * of any size is served) and on a purged tombstone. The full image is never in the item read: it
+   * comes from `inbox.photoReveal`, a staff-only read keyed by the photo, called on *Show the photo*,
+   * so it stays out of the page's data, not only its markup.
+   */
   thumbUrl: string | null;
   reportId: Id<'reports'> | null;
   body: BodyRefView | null;
-  /** *On the same report*: the report's other photos, in order (1 of 4). */
-  siblings: { photoId: Id<'photos'>; thumbUrl: string | null }[];
+  /**
+   * *On the same report*: the report's **other** photos — never the flagged one itself — in the
+   * report's order, at most twelve (`siblingsCut` past them, or when the item's budget ran out). A
+   * thumbnail only with `content.read` (never on a purged one); each with its status, and the id of
+   * an open flag on it (`null` with none) — the Inbox ref `flag:<openFlagId>` opens its item.
+   */
+  siblings: {
+    photoId: Id<'photos'>;
+    thumbUrl: string | null;
+    moderationStatus: ModerationStatus;
+    openFlagId: Id<'contentFlags'> | null;
+  }[];
+  siblingsCut: boolean;
+  /** Its place on the report (0-based; "1 of 4" is `indexOnReport + 1` of `photoCount`). */
   indexOnReport: number | null;
+  photoCount: number | null;
+  /** The photo's moderation axis, as staff see it; absent on the row reads as `visible`. */
+  moderationStatus: ModerationStatus;
+  /** When its status last moved (a takedown, a restore, its uploader's withdrawal); `null` never. */
+  moderatedAt: number | null;
+  /** The viewer may see the bytes (`content.read`): the reveal is drawn only then. */
+  canReveal: boolean;
+  /** When its uploader withdrew it (their delete while it was held, B01-5e); `null` otherwise. */
+  withdrawnAt: number | null;
+  /** A removal's purge: when its bytes go (`null` unless removed and not yet purged)… */
+  purgeAt: number | null;
+  /** …and when they went: the row is a tombstone from then, its URLs `null`. */
+  purgedAt: number | null;
+  /** When a byte rotation found its file gone: it can't be restored (`null` while its bytes exist). */
+  bytesMissingAt: number | null;
+  /**
+   * **The same image on other photos** (B01-5e): rows written before a file was one row's each may
+   * share this photo's bytes. A takedown gives this photo its own copy and leaves the shared file to
+   * them — so they still show the same image. Each with its status, the id of an open flag on it
+   * (`null` with none; the ref `flag:<id>` opens its item) and its report; at most eight
+   * (`sameBytesCut` past them); empty for nearly every photo. Never its uploader, nor an image.
+   */
+  sameBytesAs: {
+    photoId: Id<'photos'>;
+    moderationStatus: ModerationStatus;
+    openFlagId: Id<'contentFlags'> | null;
+    reportId: Id<'reports'> | null;
+  }[];
+  sameBytesCut: boolean;
 };
 
 /** A hazard as a plain content flag's subject draws it: its kind, words, footprint and votes. */
@@ -1307,6 +1362,24 @@ export const item = query({
       decided: await decidedOf(r, found),
     } as InboxItemView;
     return { item: view, pending };
+  },
+});
+
+/**
+ * **The full photo, on *Show the photo*** (board 2.7, B01-5e) — a staff-only read keyed by the photo
+ * (`inbox.read` and `content.read`), so the full image's address is in the page's data only once a
+ * moderator asks for it; the item read serves the thumbnail alone. `null` for a photo that is gone or
+ * purged (a tombstone serves no address).
+ */
+export const photoReveal = query({
+  args: { photoId: v.id('photos') },
+  handler: async (ctx, { photoId }): Promise<{ url: string | null }> => {
+    await requireCapability(ctx, 'inbox.read');
+    await requireCapability(ctx, 'content.read');
+    const budget = budgetOf(ctx);
+    const photo = await budget.one('photo', () => ctx.db.get(photoId));
+    if (!photo || photo.purgedAt !== undefined) return { url: null };
+    return { url: await ctx.storage.getUrl(photo.storageId) };
   },
 });
 

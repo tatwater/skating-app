@@ -9,7 +9,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type QueryCtx, query } from './_generated/server';
-import { requireCapability } from './lib/auth';
+import { hasCapability, requireCapability } from './lib/auth';
 import { authorDeletedAtOf } from './lib/authorDeletion';
 import {
   isReversed,
@@ -19,10 +19,11 @@ import {
   replayStep,
   subjectOf,
   VERDICT_COUNT_CAP,
+  VERDICT_TABLE,
   type VerdictTargetType,
   zeroByKind,
 } from './lib/contentVerdicts';
-import { clockOf, ERASABLE, HOLD_COST, holdMoved } from './lib/eraseClock';
+import { clockOf, type ErasableDoc, HOLD_COST, holdMoved } from './lib/eraseClock';
 import {
   chainedLease,
   handOn,
@@ -33,6 +34,8 @@ import {
   readPending,
   VERDICTS_DONE,
 } from './lib/peopleRuns';
+import { photoWithdrawalRow } from './lib/photoAccess';
+import { projectPhoto } from './lib/photoFiles';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -90,6 +93,46 @@ const BACKFILL_PAGE = 200;
 
 type ContentDoc = RecordContentDoc;
 
+/**
+ * A photo verdict's thumbnail for the record sheet (B01-5e): staff-only — only to a viewer with
+ * `content.read`, never on a purged tombstone — by photo id. Storage calls only, no document reads.
+ */
+async function photoThumbs(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  targets: readonly (ContentDoc | null)[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  if (!hasCapability(viewer, 'content.read')) return out;
+  for (const t of targets) {
+    if (t === null || !('thumbStorageId' in t)) continue;
+    const photo = t as Doc<'photos'>;
+    out.set(
+      photo._id,
+      photo.purgedAt === undefined ? await ctx.storage.getUrl(photo.thumbStorageId) : null,
+    );
+  }
+  return out;
+}
+
+/**
+ * The published document; a photo's through `lib/photoFiles.projectPhoto`'s allow-list (B01-5e: no
+ * storage id leaves the server, staff reads included — a strip-list forgets the next field).
+ */
+function withoutStorageIds(target: ContentDoc) {
+  return 'thumbStorageId' in target ? projectPhoto(target as Doc<'photos'>) : target;
+}
+
+/** A row's content, with a photo's thumbnail (`content.thumbUrl`, `null` when not served). */
+function withThumb(
+  content: ReturnType<typeof contentOf>,
+  kind: VerdictTargetType,
+  target: ContentDoc,
+  thumbs: ReadonlyMap<string, string | null>,
+) {
+  return kind === 'photo' ? { ...content, thumbUrl: thumbs.get(target._id) ?? null } : content;
+}
+
 /** The item a verdict is on, charged at its kind's worst case. */
 async function loadTarget(
   ctx: QueryCtx,
@@ -97,9 +140,9 @@ async function loadTarget(
   targetType: VerdictTargetType,
   targetId: string,
 ): Promise<ContentDoc | null> {
-  // A verdict's targets are what an author can withdraw (`lib/authorDeletion`), and an alert its
-  // author retracted — every one of them erasable, so the erasure map names its table.
-  const id = ctx.db.normalizeId(ERASABLE[targetType], targetId);
+  // A verdict's targets: what an author can withdraw (`lib/authorDeletion`), an alert its author
+  // retracted, and a photo (B01-5e) — the verdict map names each one's table.
+  const id = ctx.db.normalizeId(VERDICT_TABLE[targetType], targetId);
   if (!id) return null;
   return (await reads.one(targetType, () => ctx.db.get(id))) as ContentDoc | null;
 }
@@ -107,7 +150,7 @@ async function loadTarget(
 /** The record's pages run beside the caller's own profile read (`requireCapability`). */
 const _recordBudget = () => new ReadBudget(TX_BUDGET - ROW_MAX.profile);
 
-const VERDICT_TARGETS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
+const VERDICT_TARGETS = ['report', 'post', 'comment', 'hazard', 'accessAlert', 'photo'] as const;
 
 /**
  * The request's one budget, opened before any helper charges it (`requestBudget`): the record's reads
@@ -450,6 +493,11 @@ export async function standingPage(
   const inRange = found.filter((v) => within(end.at, { key: v.at, ct: v._creationTime }));
   const verdicts = inRange.slice(0, RECORD_PAGE_ROWS.n);
   const { rows, names, cut } = await shapeVerdictPage(ctx, reads, verdicts, false);
+  const thumbs = await photoThumbs(
+    ctx,
+    viewer,
+    rows.map((l) => l.target),
+  );
   const page = rows.map((l) => {
     const { verdict, decision, target } = l;
     // A comment the sweep reduced to its placeholder keeps no words: `null`, as Reversed and the pane.
@@ -467,7 +515,10 @@ export async function standingPage(
       decidedBy: names.person(decision?.actorId),
       /** An explicit Keep on the record (`keptOf`); `null` when its audit row can't be read. */
       kept: keptOf(decision),
-      content: target && !erasedComment ? contentOf(verdict.targetType, target) : null,
+      content:
+        target && !erasedComment
+          ? withThumb(contentOf(verdict.targetType, target), verdict.targetType, target, thumbs)
+          : null,
       authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
       ...placeOf(l, verdict.targetType, names),
       can: rowLevers(viewer, l, true),
@@ -535,6 +586,11 @@ export async function reversedPage(
   // the page (`read`: the last-editor sentence for a holder only).
   const states = await undoStates(ctx, viewer, endings, 'list', 'read');
   const undoOf = new Map(endings.map((e, i) => [e._id as string, states[i] as UndoState]));
+  const thumbs = await photoThumbs(
+    ctx,
+    viewer,
+    rows.map((l) => l.target),
+  );
   const page = rows.map((l) => {
     const { verdict, decision, ending, target, erase } = l;
     const erasedComment =
@@ -562,7 +618,10 @@ export async function reversedPage(
         : target === null
           ? (erase?.createdAt ?? null)
           : null,
-      content: target === null || erasedComment ? null : contentOf(verdict.targetType, target),
+      content:
+        target === null || erasedComment
+          ? null
+          : withThumb(contentOf(verdict.targetType, target), verdict.targetType, target, thumbs),
       authorDeletedAt: target ? withdrawnAt(verdict.targetType, target) : null,
       ...placeOf(l, verdict.targetType, names),
       can: rowLevers(viewer, l, false),
@@ -616,14 +675,11 @@ export async function deletedPage(
   const after = decodePosition(cursor);
   const end = endOf(endCursor);
   // One range in the list's order; a row past a page's worth says whether more follow.
-  const rows = await withdrawalsAfter(
-    ctx,
-    reads,
-    userId,
-    targetType,
-    after,
-    RECORD_PAGE_ROWS.n + 1,
-  );
+  // A photo is never on the Deleted list (`lib/recordReads.withdrawnAt`): its tab is empty.
+  const rows =
+    targetType === 'photo'
+      ? []
+      : await withdrawalsAfter(ctx, reads, userId, targetType, after, RECORD_PAGE_ROWS.n + 1);
   // A pinned page's rows are those up to its end; it is whole when it returned every one of them.
   const inRange = rows.filter((row) => within(end.at, withdrawalKey(row)));
   const considered = inRange.slice(0, RECORD_PAGE_ROWS.n);
@@ -689,7 +745,7 @@ export async function deletedPage(
         targetId: l.row.targetId,
         deletedAt: l.row.withdrawnAt,
         /** When it is due to be erased; `null` while something holds it or no clock is set yet. */
-        eraseAt: doc.eraseAt ?? null,
+        eraseAt: (doc as { eraseAt?: number }).eraseAt ?? null,
         content: contentOf(kind, doc),
         ...placeOf({ target: doc, report: l.report }, kind, names),
         can: recordLevers(viewer, recordFactsOf(kind, doc, null)),
@@ -914,6 +970,19 @@ async function postMembersOf(ctx: QueryCtx, reads: ReadBudget, post: Doc<'posts'
 }
 
 /**
+ * A photo's facts beyond its row (B01-5e): whether its uploader withdrew it — one point read on its
+ * audit rows, measured; past the budget it stays `unknown` and the lever points at the item.
+ */
+async function photoFactsOf(
+  ctx: QueryCtx,
+  reads: ReadBudget,
+  photo: Doc<'photos'>,
+): Promise<{ photoWithdrawn?: boolean }> {
+  const row = await reads.measured('moderationAction', () => photoWithdrawalRow(ctx, photo._id));
+  return row === undefined ? {} : { photoWithdrawn: row !== null };
+}
+
+/**
  * **One item on the record, for the sheet's pane** — the item as published (`published`, the whole
  * document; `null` once erased, with `erasedAt`), when its author took it back and when it is due to
  * be erased, the body it is on, every decision on it newest first (who, when, why; how and by whom it
@@ -1026,7 +1095,10 @@ export async function itemPane(
       target !== null &&
       authorDeletedAtOf(target as Doc<'posts'>) === undefined
         ? await postMembersOf(ctx, reads, target as Doc<'posts'>)
-        : undefined;
+        : target !== null && targetType === 'photo'
+          ? await photoFactsOf(ctx, reads, target as Doc<'photos'>)
+          : undefined;
+    const thumbs = await photoThumbs(ctx, viewer, [target]);
     const names = await readNames(
       ctx,
       reads,
@@ -1043,9 +1115,12 @@ export async function itemPane(
     // "If overturned": the clock the overturn would leave — the same `clockOf` the write's own clock
     // refresh runs, asked as if the item's standing verdicts were ended (its Post's and an open flag
     // still hold it, and then there is no date). Only while a decision stands to overturn.
+    // A photo has no erasure clock: its bytes follow the purge (`purgeAt`), not this.
     const eraseAtIfReleased =
-      standing && target !== null && !erasedComment
-        ? ((await clockOf(ctx, reads, targetType, target, Date.now(), { releasing: true })) ?? null)
+      standing && target !== null && !erasedComment && targetType !== 'photo'
+        ? ((await clockOf(ctx, reads, targetType, target as ErasableDoc, Date.now(), {
+            releasing: true,
+          })) ?? null)
         : null;
     // What a Report's restore brings back with it: its comments still up and its ratings, counted
     // (no documents returned) to their caps.
@@ -1057,9 +1132,12 @@ export async function itemPane(
       targetType,
       targetId,
       /** The item as published — the whole document, read by staff — or `null` once erased. */
-      published: target === null || erasedComment ? null : target,
+      published: target === null || erasedComment ? null : withoutStorageIds(target),
       /** Its words, as every record row shows them (`contentOf`); `null` once erased. */
-      content: target === null || erasedComment ? null : contentOf(targetType, target),
+      content:
+        target === null || erasedComment
+          ? null
+          : withThumb(contentOf(targetType, target), targetType, target, thumbs),
       /**
        * When it would be erased if its standing decision were overturned now — what the overturn
        * itself would return; `null` when nothing stands, it isn't withdrawn, or something else
@@ -1076,7 +1154,11 @@ export async function itemPane(
           ? (erase?.createdAt ?? null)
           : null,
       authorDeletedAt: target ? withdrawnAt(targetType, target) : null,
-      eraseAt: target?.eraseAt ?? null,
+      eraseAt: (target as { eraseAt?: number } | null)?.eraseAt ?? null,
+      /** A photo's purge (D222): when its bytes go, and when they went — `null` on anything else. */
+      purgeAt: targetType === 'photo' ? ((target as Doc<'photos'> | null)?.purgeAt ?? null) : null,
+      purgedAt:
+        targetType === 'photo' ? ((target as Doc<'photos'> | null)?.purgedAt ?? null) : null,
       ...placeOf({ target, report }, targetType, names),
       decisions: shown.map(({ d, decision, ending }) => ({
         kind: d.kind,

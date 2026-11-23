@@ -130,7 +130,7 @@ describe('Account', () => {
     const none = {
       total: 0,
       capped: false,
-      byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+      byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 },
     };
     const clean = personOf({ hidden: none });
     expect(row(accountRows(clean, { now: NOW, self: false }), 'record')).toBeUndefined();
@@ -366,7 +366,7 @@ describe('Account', () => {
       hiddenKinds({
         total: 6,
         capped: false,
-        byKind: { report: 1, post: 2, comment: 0, hazard: 1, accessAlert: 2 },
+        byKind: { report: 1, post: 2, comment: 0, hazard: 1, accessAlert: 2, photo: 0 },
       }),
     ).toBe('1 report · 2 posts · 1 hazard · 2 access alerts');
     const one = accountRows(
@@ -374,7 +374,7 @@ describe('Account', () => {
         hidden: {
           total: 1,
           capped: false,
-          byKind: { report: 1, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+          byKind: { report: 1, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 },
         },
       }),
       { now: NOW, self: false },
@@ -385,7 +385,7 @@ describe('Account', () => {
         hidden: {
           total: 500,
           capped: true,
-          byKind: { report: 500, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+          byKind: { report: 500, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 },
         },
       }),
       { now: NOW, self: false },
@@ -397,7 +397,7 @@ describe('Account', () => {
       hiddenKinds({
         total: 500,
         capped: true,
-        byKind: { report: 299, post: 0, comment: 200, hazard: 1, accessAlert: 0 },
+        byKind: { report: 299, post: 0, comment: 200, hazard: 1, accessAlert: 0, photo: 0 },
       }),
     ).toBe('299+ reports · 200+ comments · 1+ hazards');
   });

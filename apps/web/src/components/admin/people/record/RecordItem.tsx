@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -9,6 +9,7 @@ import { LifeList } from '@/components/kit/life-list';
 import { LifeStrip } from '@/components/kit/life-strip';
 import { Note } from '@/components/kit/note';
 import { PersonLockup } from '@/components/kit/person-lockup';
+import { PhotoThumb } from '@/components/kit/photo-stage';
 import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonText } from '@/components/kit/skeleton';
@@ -269,6 +270,19 @@ function PlateView({ view }: { view: ItemView }) {
           <span className="text-body leading-snug font-medium text-fg2">{plate.title}</span>
           <span className="text-assist leading-list text-fg3">{plate.sub}</span>
         </div>
+      ) : plate.kind === 'photo' ? (
+        <div
+          data-slot="record-plate"
+          data-photo=""
+          className="flex flex-col gap-(--space-2_5) border border-dashed border-line2 px-(--space-4) py-(--space-3_5)"
+        >
+          {plate.kicker !== '' && (
+            <span className="text-kick leading-snug font-semibold tracking-kick text-fg3 uppercase">
+              {plate.kicker}
+            </span>
+          )}
+          <RecordPhoto key={plate.thumbUrl ?? ''} thumbUrl={plate.thumbUrl} />
+        </div>
       ) : (
         <div
           data-slot="record-plate"
@@ -287,6 +301,36 @@ function PlateView({ view }: { view: ItemView }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A photo verdict's photo: its thumbnail pixelated as the Inbox's stage is (the same mosaic — the
+ * image itself is never in the page until *Show*), or a plain line when no address was served.
+ */
+function RecordPhoto({ thumbUrl }: { thumbUrl: string | null }) {
+  const [shown, setShown] = useState(false);
+  if (thumbUrl === null) {
+    return (
+      <span data-slot="record-photo-none" className="text-assist leading-list text-fg3">
+        {W.photoNone}
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-end gap-(--space-3)">
+      <PhotoThumb
+        thumb={thumbUrl}
+        shown={shown}
+        label={W.photoPixelated}
+        alt={W.photoAlt}
+        className="h-32 w-52"
+        unavailable={W.photoUnavailable}
+      />
+      <Button size="xs" data-slot="record-photo-show" onClick={() => setShown((v) => !v)}>
+        {shown ? W.photoPixelate : W.photoShow}
+      </Button>
     </div>
   );
 }

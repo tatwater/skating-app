@@ -224,6 +224,14 @@ crons.interval(
 // a saved position and owes the unshown ones to the photo settlement, which deletes (D258).
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
 
+// A removed photo's purge (B01-5e, D222): daily, the photos whose 30-day clock is due lose their bytes
+// and keep their rows as tombstones (`photoPurge`); a run takes a bounded page and continues itself.
+crons.interval('purge removed photos', { hours: 24 }, internal.photoPurge.purgeDuePhotos, {});
+
+// The stored-files sweep (B01-5e, `lib/photoFiles`): rotation attempts that can't be alive are
+// reconciled and doomed files retried — whatever a photo's own watch can no longer reach.
+crons.interval('sweep photo files', { hours: 24 }, internal.photoPurge.sweepPhotoFiles, {});
+
 /**
  * Lapse access alerts whose TTL ran out, or whose season did (A06d / D73).
  *

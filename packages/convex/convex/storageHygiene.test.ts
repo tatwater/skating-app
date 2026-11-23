@@ -294,24 +294,20 @@ describe('sweepOrphanPhotos (D258: a lap from a saved position, owed to the sett
    * bytes that nothing in the system can name again. The settlement keeps the row, stripped and
    * marked `erasedAt`; every later lap tries the blob again, directly, until it goes.
    */
-  test('a photo whose blob cannot be reclaimed keeps its row, and every lap tries again', async () => {
+  test('a photo whose blob cannot be reclaimed is gone; its file is owed on the ledger and retried (B01-5e)', async () => {
     const t = harness();
     const userId = await seedUser(t, 'uploader');
     const stuck = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
     await t.run((ctx) => ctx.db.patch(stuck, { storageId: 'not-a-storage-id' }));
-
     await sweepOrphans(t);
-    const marked = await t.run((ctx) => ctx.db.get(stuck));
-    expect(marked?.erasedAt).toBeDefined();
-
-    expect(await sweepOrphans(t)).toMatchObject({ examined: 1, retained: 1, owed: 0 });
-    expect(await t.run((ctx) => ctx.db.get(stuck))).not.toBeNull();
-
-    const real = await t.run((ctx) => ctx.storage.store(new Blob(['recovered'])));
-    await t.run((ctx) => ctx.db.patch(stuck, { storageId: real }));
-    expect(await sweepOrphans(t)).toMatchObject({ deleted: 1, retained: 0 });
     expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
-    expect(await t.run((ctx) => ctx.storage.getUrl(real))).toBeNull();
+    const owed = await t.run((ctx) =>
+      ctx.db
+        .query('photoFiles')
+        .withIndex('by_storage', (q) => q.eq('storageId', 'not-a-storage-id'))
+        .first(),
+    );
+    expect(owed).toMatchObject({ state: 'doomed', attempts: 1 });
   });
 
   test('leaves a photo still inside its grace window alone — it may be mid-submission', async () => {

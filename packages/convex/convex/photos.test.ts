@@ -158,7 +158,7 @@ describe('photos.create (D42 coord gate)', () => {
 
     const notPinned = await asUser.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       coord: COORD, // passed, but must be dropped server-side
       placeOnMap: false,
     });
@@ -171,7 +171,11 @@ describe('photos.create (D42 coord gate)', () => {
     const t = convexTest(schema, modules);
     const storageId = await storeBlob(t);
     await expect(
-      t.mutation(api.photos.create, { storageId, thumbStorageId: storageId, placeOnMap: false }),
+      t.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: await storeBlob(t),
+        placeOnMap: false,
+      }),
     ).rejects.toThrow(/not authenticated/i);
   });
 });
@@ -206,7 +210,7 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asAuthor.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       coord: COORD,
       placeOnMap: true,
     });
@@ -226,7 +230,7 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asAuthor.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     const reportId = await seedReport(asAuthor, bodyId, [photoId]);
@@ -241,7 +245,7 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asUser.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     const reportId = await seedReport(asUser, bodyId, [photoId]);
@@ -257,7 +261,7 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asUser.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     const reportId = await seedReport(asUser, bodyId, [photoId]);
@@ -291,7 +295,7 @@ describe('photos.remove (orphan cleanup)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asOwner.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     const asOther = await seedUser(t, 'clerk_other');
@@ -324,7 +328,7 @@ describe('photos.remove (orphan cleanup)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asUser.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     await t.run((ctx) => ctx.db.delete(photoId));
@@ -339,7 +343,7 @@ describe('photos.remove (orphan cleanup)', () => {
     const storageId = await storeBlob(t);
     const photoId = await asUser.mutation(api.photos.create, {
       storageId,
-      thumbStorageId: storageId,
+      thumbStorageId: await storeBlob(t),
       placeOnMap: false,
     });
     await expect(t.mutation(api.photos.remove, { photoId })).rejects.toThrow(/not authenticated/i);
@@ -403,7 +407,7 @@ describe('photos — minor gate (D41)', () => {
     await expect(
       asMinor.mutation(api.photos.create, {
         storageId,
-        thumbStorageId: storageId,
+        thumbStorageId: await storeBlob(t),
         placeOnMap: false,
       }),
     ).rejects.toThrow(/minor/i);

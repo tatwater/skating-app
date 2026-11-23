@@ -440,7 +440,8 @@ async function sweepStillMarked(
       await ctx.db.patch(photo._id, { [mode.mark]: undefined });
       continue;
     }
-    if (await deletePhotoAndBlobs(ctx, photo)) {
+    // Held (B01-5e): moderated, flagged or under a decision — kept, its mark cleared like a retained one.
+    if ((await deletePhotoAndBlobs(ctx, photo)) === 'deleted') {
       touched++;
       continue;
     }

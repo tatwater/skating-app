@@ -1,5 +1,4 @@
 import type { InboxItemView } from '../list/inboxTypes';
-import { ELSEWHERE_FLAGS, ELSEWHERE_PHOTO } from '../words/inboxWords';
 import type { HandlerKey } from './handlerRegistry';
 
 /**
@@ -8,9 +7,9 @@ import type { HandlerKey } from './handlerRegistry';
  * lands the last handler it serves, so until then a kind the Inbox can't decide points at its page
  * rather than leaving the operator at a dead end.
  *
- * The old pages take no search params (`/admin/flags` validates none), so the links can't open
- * the item there or carry a way back: each is a plain link, same tab (the console's own pages), and
- * the browser's back returns here.
+ * The old pages that took a kind's items have all retired (`/admin/flags` with B01-5e,
+ * `/admin/support` with B01-5f), so the map is empty. A link here is a plain one, same tab (the
+ * console's own pages), and the browser's back returns here.
  */
 
 export type ElsewhereLink = { to: string; label: string };
@@ -42,10 +41,8 @@ void everyKey;
 export const ELSEWHERE: Partial<
   Record<HandlerKey, (item: InboxItemView, canReadSupport: boolean) => Elsewhere | null>
 > = {
-  'flag:photo': () => ({
-    line: ELSEWHERE_PHOTO,
-    links: [{ to: '/admin/flags', label: ELSEWHERE_FLAGS }],
-  }),
+  // Empty: every kind has its handler. A kind a newer server sends that this build has no handler
+  // for draws the placeholder's facts alone.
 };
 
 /** Where `item` (under `key`) is decided for now, or `null` when it has no page to point at. */

@@ -153,6 +153,8 @@ const CONTENT_TABLE = {
   post: 'posts',
   comment: 'comments',
   hazard: 'hazards',
+  // B01-5e (D222): a photo's takedown and restore go through `setContentStatus` too.
+  photo: 'photos',
 } as const;
 
 /** The facts the rule's preconditions read for a flag's target, as the item's read derives them. */
@@ -173,14 +175,15 @@ async function factsOf(
     const table = CONTENT_TABLE[targetType as keyof typeof CONTENT_TABLE];
     const id = ctx.db.normalizeId(table, targetId);
     const doc = id ? await ctx.db.get(id) : null;
+    // A photo's status is optional until the backfill narrows it: absent reads as visible.
+    const status = (doc as { moderationStatus?: 'visible' | 'hidden' | 'removed' } | null)
+      ?.moderationStatus;
     return {
       targetType,
-      targetStatus:
-        (doc as { moderationStatus?: 'visible' | 'hidden' | 'removed' } | null)?.moderationStatus ??
-        null,
+      targetStatus: doc === null ? null : (status ?? 'visible'),
     };
   }
-  // A photo (no moderation axis yet), a person, a body: no status the levers read.
+  // A person, a body: no status the levers read.
   return { targetType, targetStatus: null };
 }
 
@@ -230,7 +233,7 @@ export const dismissFlags = mutation({
 
 /**
  * *Hide* or *Remove* (2.1, 2.7): the content's status through its own writer (`setContentStatus`:
- * reports, Posts, comments, hazards — its own refusals included, D269 and D248), then **every** open
+ * reports, Posts, comments, hazards, photos — its own refusals included, D269 and D248), then **every** open
  * flag on that content closed `actioned`, in every lane, each user-origin flagger told. The content's
  * row is the toast's; each flag's `resolve_flag` row names it (`withActionId`) and each flag's Inbox
  * member is stamped with it, so its one undo restores the content and reopens them all. A takedown

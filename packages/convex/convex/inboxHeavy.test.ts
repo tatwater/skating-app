@@ -643,6 +643,88 @@ describe('heavy rows: flags with their longest notes, tickets with their longest
     expect(open).toBe(2 * flaggers.length);
   });
 
+  test('a photo at its caption cap, on a report of hundreds, flagged at the longest notes (B01-5e)', async () => {
+    const w = await heavyWorld();
+    await markReady(w.t);
+    const author = w.people[0] as Id<'profiles'>;
+    const { photo } = await w.t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(['full']));
+      const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
+      const ids: Id<'photos'>[] = [];
+      for (let i = 0; i < 300; i++) {
+        ids.push(
+          await ctx.db.insert('photos', {
+            storageId,
+            thumbStorageId,
+            uploaderId: author,
+            caption: maxText(500),
+            placeOnMap: false,
+            createdAt: NOW - i,
+            ...(i % 3 === 0 ? {} : { moderationStatus: 'hidden' as const }),
+          }),
+        );
+      }
+      const reportId = await ctx.db.insert('reports', {
+        authorId: author,
+        waterBodyId: w.lake,
+        point: { lat: 0.5, lng: 0.5 },
+        skateEndTime: NOW - 3_600_000,
+        reportTime: NOW - 3_600_000,
+        source: 'native',
+        iceTypes: [],
+        surfaceTags: [],
+        photoIds: ids,
+        notes: maxText(2000),
+        moderationStatus: 'visible',
+        hazardIdsCreated: [],
+        createdAt: NOW - 3_600_000,
+        updatedAt: NOW - 3_600_000,
+      });
+      for (const id of ids) await ctx.db.patch(id, { reportId });
+      return { photo: ids[0] as Id<'photos'> };
+    });
+    const flags = await heavyFlags(
+      w.t,
+      w.people.slice(1),
+      { targetType: 'photo', targetId: photo },
+      'inappropriate',
+      author,
+    );
+    const itemId = await w.t.run(async (ctx) => {
+      const m = await ctx.db
+        .query('inboxItemMembers')
+        .withIndex('by_source', (q) =>
+          q.eq('sourceTable', 'contentFlags').eq('sourceId', flags[0] as string),
+        )
+        .first();
+      return m?.itemId as Id<'inboxItems'>;
+    });
+    const reads = await matrix(READS(w, itemId, 'contentFlags'));
+    expect(Object.values(reads).every((k) => k !== 'refused')).toBe(true);
+    const undo = (actionId: unknown) =>
+      w.admin.as.mutation(api.undo.run, {
+        actionId: actionId as Id<'moderationActions'>,
+        reason: 'Undone',
+      });
+    const steps = await matrix({
+      takeDown: async () => {
+        const out = await w.admin.as.mutation(api.inboxWrites.takeDown, {
+          itemId,
+          status: 'removed',
+          reason: 'Checked',
+        });
+        await drainAll(w.t);
+        await undo(out.actionId);
+      },
+      dismiss: async () => {
+        const out = await w.admin.as.mutation(api.inboxWrites.dismissFlags, { itemId });
+        await drainAll(w.t);
+        await undo(out.actionId);
+      },
+    });
+    expect(steps).toEqual({ takeDown: 'completed', dismiss: 'completed' });
+  });
+
   test('tickets with their longest bodies: Support reads answer, a resolve completes', async () => {
     const w = await heavyWorld();
     const tickets = await w.t.run(async (ctx) => {

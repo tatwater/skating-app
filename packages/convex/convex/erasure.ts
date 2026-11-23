@@ -67,6 +67,7 @@ import {
   SETTLE_CHUNK_IDS,
   sizePage,
   TX_BUDGET,
+  TX_CALLS,
   traced,
 } from './lib/readBudget';
 import { literals } from './lib/validators';
@@ -608,8 +609,24 @@ export async function owePhotos(ctx: MutationCtx, reads: ReadBudget, work: Photo
 export const MAX_SETTLE_ATTEMPTS = MAX_ATTEMPTS;
 /** Clearing one debt: its row read and deleted. */
 const CLEAR_ONE = 2 * ROW_MAX.photoSettlement;
-/** Settling one photo: the row, its access-photo check, and the delete or strip. */
-const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small;
+/**
+ * Settling one photo: the row, its access-photo check, its hold (`photoHeld`: a standing verdict and
+ * an open flag per open status, B01-5e), and the delete or strip.
+ */
+/**
+ * Index ranges one photo's delete may read and write beyond its charged reads: its hold (a verdict, a
+ * flag per open status: 3), each blob's sharing check (two indexes, either side of its own row: 8),
+ * each blob's honest delete (a lookup and the delete: 4), the row's delete or strip, and two spare.
+ */
+const SETTLE_CALLS = 3 + 8 + 4 + 1 + 2;
+/** Index ranges a walk keeps back past a nested step: its turn read and a failure's write. */
+const TURN_RANGE_RESERVE = 64;
+/** The least index ranges a step is started with: its place, a page row and one photo's settlement. */
+const MIN_STEP_CALLS = 2 * (SETTLE_CALLS + 16);
+
+/** Calls kept back past a photo's delete: its own two charged reads and the step's closing writes. */
+const SETTLE_TAIL_CALLS = 16;
+const SETTLE_ONE = 2 * ROW_MAX.photo + ROW_MAX.small + ROW_MAX.verdict + 2 * ROW_MAX.contentFlag;
 /** A step's own bookkeeping: its place in the queue, read and written back. */
 const STEP_PLACE = 2 * ROW_MAX.settleQueue;
 /** The least a step is given: its place, and a page row with a photo's settlement beside it. */
@@ -663,8 +680,13 @@ export const settleOwed = internalMutation({
       let failed = 0;
       let parked = 0;
       for (;;) {
-        // A turn: the next uploader's place, a step, and the write that records a failure.
-        if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
+        // A turn: the next uploader's place, a step, and the write that records a failure — while
+        // the transaction still has index ranges for a step's least (its ranges are ours).
+        const rangesLeft = (await ctx.meta.getTransactionMetrics()).databaseQueries.remaining;
+        if (
+          !reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue) ||
+          rangesLeft < TURN_RANGE_RESERVE + MIN_STEP_CALLS
+        ) {
           await ctx.scheduler.runAfter(0, internal.erasure.settleOwed, { cutoff, ...seam });
           return { steps, failed, parked, more: true };
         }
@@ -704,6 +726,10 @@ async function settleTurn(
   }: { cutoff: number; pageSize?: number; byDailyRetry?: boolean },
 ): Promise<'settled' | 'failed' | 'parked'> {
   const allowance = reads.bytes - ROW_MAX.settleQueue;
+  // A nested step's index ranges are this transaction's: it plans within what is left, less the
+  // walk's own bookkeeping after it.
+  const calls =
+    (await ctx.meta.getTransactionMetrics()).databaseQueries.remaining - TURN_RANGE_RESERVE;
   // Only the nested call is caught: a failure after it committed is this walk's, not theirs.
   let spent: number;
   try {
@@ -713,6 +739,7 @@ async function settleTurn(
         uploaderId: turn.uploaderId,
         bytes: allowance,
         queueAt: cutoff,
+        calls,
         ...(pageSize !== undefined ? { pageSize } : {}),
       },
       { transactionLimits: { bytesRead: allowance } },
@@ -766,10 +793,17 @@ export const settleStep = internalMutation({
     pageSize: v.optional(v.number()),
     /** Where the step leaves its turn: the walk's run cutoff, so it stays in this run. */
     queueAt: v.optional(v.number()),
+    /**
+     * Index ranges the step may spend: what its walk's transaction has left (a nested step's ranges
+     * are its caller's). Absent: a whole budget's.
+     */
+    calls: v.optional(v.number()),
   },
-  handler: async (ctx, { uploaderId, bytes, pageSize, queueAt }) => {
+  handler: async (ctx, { uploaderId, bytes, pageSize, queueAt, calls }) => {
     try {
       const reads = new ReadBudget(bytes);
+      if (calls !== undefined && calls < TX_CALLS)
+        reads.reserveCalls(TX_CALLS - Math.max(0, calls), 0);
       const cap = pageSize ?? Number.POSITIVE_INFINITY;
       const place = await reads.one('settleQueue', () =>
         ctx.db
@@ -888,9 +922,16 @@ export const settleStep = internalMutation({
       // This step read to the end of their hazards: what is left, nothing of theirs uses but a Report
       // that took it since or an access point — read here, beside the delete.
       let done = 0;
-      while (done < remaining.length && reads.affords(SETTLE_ONE + reserve)) {
+      while (
+        done < remaining.length &&
+        reads.affords(SETTLE_ONE + reserve) &&
+        // This photo's delete, its two charged reads, and the step's bookkeeping after the loop.
+        reads.affordsCalls(SETTLE_CALLS + SETTLE_TAIL_CALLS, SETTLE_TAIL_CALLS)
+      ) {
         const photoId = remaining[done] as Id<'photos'>;
         done++;
+        // The delete's own index reads, which the byte budget doesn't see (`deletePhotoAndBlobs`).
+        reads.reserveCalls(SETTLE_CALLS, 0);
         await reads.row(SETTLE_ONE, async () => {
           const photo = await reads.one('photo', () => ctx.db.get(photoId));
           if (!photo || photo.erasedAt !== undefined) return;
@@ -903,7 +944,11 @@ export const settleStep = internalMutation({
           );
           if (onAccess) return;
           reads.touch('photo');
-          if (await deletePhotoAndBlobs(ctx, photo)) return;
+          const result = await deletePhotoAndBlobs(ctx, photo);
+          // Gone; or held (B01-5e, D248: moderated, flagged or under a decision) — its row stays, still
+          // its uploader's, its bytes on the purge clock if removed; the orphan walk owes it again
+          // once nothing holds it.
+          if (result !== 'retained') return;
           // A blob outlived the attempt: the row is the only pointer to it (the orphan sweep retries),
           // and no longer anything of its uploader's.
           await ctx.db.patch(photoId, {
@@ -983,8 +1028,13 @@ export const retryParkedDaily = internalMutation({
       for (; at < ERASED_KINDS.length; at++, past = undefined) {
         for (;;) {
           if (at === -1) {
-            // A parked settlement: its place, a step, and the write that records a failure.
-            if (!reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue)) {
+            // A parked settlement: its place, a step, and the write that records a failure — while
+            // the transaction has index ranges for a step's least (a nested step's are ours).
+            if (
+              !reads.affords(ROW_MAX.settleQueue + MIN_STEP + ROW_MAX.settleQueue) ||
+              (await ctx.meta.getTransactionMetrics()).databaseQueries.remaining <
+                TURN_RANGE_RESERVE + MIN_STEP_CALLS
+            ) {
               await carryOn();
               return { freed, more: true };
             }

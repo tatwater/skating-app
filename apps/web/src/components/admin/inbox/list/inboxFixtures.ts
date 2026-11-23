@@ -601,7 +601,7 @@ export const TICKET_ITEM = {
   person: null,
 } as unknown as InboxItemView;
 
-/** A flag on a photo (2.7's kind; its handler isn't here yet). */
+/** A flag on a photo (2.7's kind; its handler's own fixtures are `handlers/Flag/photoFixtures`). */
 export const PHOTO_ITEM = {
   ...itemBase(PHOTO_ROW),
   kind: 'flag',

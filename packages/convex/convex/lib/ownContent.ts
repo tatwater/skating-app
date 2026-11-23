@@ -1,6 +1,6 @@
 /**
  * **A moderator may not act on their own content** (D269, the founder's call). A decision on a
- * Report, Post, comment, hazard or access alert is made by someone other than its author — a hide,
+ * Report, Post, comment, hazard, access alert or photo is made by someone other than its author — a hide,
  * a removal, a restore, an overturn, a keep on the record, a pin of an alert, a ruling on a flag
  * about them or their content, and every undo of one. The record sheet's levers, its writes and
  * the undo engine all ask {@link ownContentRefusal}, so a lever is never drawn that its write would
@@ -21,11 +21,18 @@ export const OWN_CONTENT_EXEMPT_ROLES: readonly Role[] = [];
 /** What the lever and the write say: plain words, never a decision number. */
 export const OWN_CONTENT_REFUSAL = 'This is yours, so another moderator decides on it.';
 
-/** Who wrote a piece of content: a Report's, Post's or comment's author, a hazard's or alert's filer. */
+/**
+ * Who wrote a piece of content: a Report's, Post's or comment's author, a hazard's or alert's filer,
+ * a photo's uploader (B01-5e — without it a moderator could take down their own photo unrefused).
+ */
 export function authorOf(doc: object | null): Id<'profiles'> | null {
   if (doc === null) return null;
-  const d = doc as { authorId?: Id<'profiles'>; createdByUserId?: Id<'profiles'> };
-  return d.authorId ?? d.createdByUserId ?? null;
+  const d = doc as {
+    authorId?: Id<'profiles'>;
+    createdByUserId?: Id<'profiles'>;
+    uploaderId?: Id<'profiles'>;
+  };
+  return d.authorId ?? d.createdByUserId ?? d.uploaderId ?? null;
 }
 
 /** Why `viewer` may not decide on content `authorId` wrote — or `null` when they may. */

@@ -51,10 +51,13 @@ pnpm --filter @skating/seed-inbox seed --clear --apply
 Each writing run leaves a run log in `runs/` (gitignored): what it filed, each step's result (or the
 server's own sentence when a step was refused), and the plan as it ended.
 
-**What a full apply leaves** (90 steps, `unavailable 0`): 23 open Inbox items — Safety 2, Access
-reports 2, Requests 6, Places asked 3, Drawn bodies 1, Content flags 5, Support 4 — and 12 decided,
+**What a full apply leaves** (123 steps, `unavailable 0`): 27 open Inbox items — Safety 2, Access
+reports 4, Requests 6, Places asked 4, Drawn bodies 2, Content flags 5, Support 4 — and 14 decided,
 every decision word among them (hidden, removed, dismissed, unpinned, restored; an ask approved and one
-declined; four drawings approved and one rejected).
+declined; six drawings approved and one rejected). The merge-proof pair (B01-5d) adds four of the open
+items and two of the approvals; support's note and reply on `t-bug` (B01-5f) add steps, not items.
+These figures are the plan test's own (`packages/convex/convex/inboxSeed.test.ts`, the full apply's
+lanes); `packages/guards/src/seedReadme.test.ts` holds this paragraph to them.
 
 **Reading the dry run.** `body <role>` lines name the five real bodies the seed files *about* — Mascoma
 Lake, Caspian Lake, Lake Morey, Tomhannock Reservoir, Newfound Lake — found by name in the Bodies

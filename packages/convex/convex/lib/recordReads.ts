@@ -24,8 +24,9 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { authorDeletedAtOf } from './authorDeletion';
 import type { VerdictTargetType } from './contentVerdicts';
-import { ERASABLE, withdrawnAtOf } from './eraseClock';
+import { withdrawnAtOf } from './eraseClock';
 import { type ReadBudget, ROW_MAX, type RowKind, type Share } from './readBudget';
+import { VERDICT_TABLE } from './verdictTargets';
 
 /** Rows per page of a record list, at most — each page is also sized by what its rows can weigh. */
 export const RECORD_PAGE = 50;
@@ -49,7 +50,8 @@ export type RecordContentDoc =
   | Doc<'posts'>
   | Doc<'comments'>
   | Doc<'hazards'>
-  | Doc<'accessAlerts'>;
+  | Doc<'accessAlerts'>
+  | Doc<'photos'>;
 
 /** A person as the record names them, from their People row: `null` names before the rows backfill. */
 export interface RecordPerson {
@@ -88,18 +90,32 @@ export function contentOf(targetType: VerdictTargetType, doc: RecordContentDoc):
       const a = doc as Doc<'accessAlerts'>;
       return { at: a.createdAt, title: a.reason, text: a.note ?? null };
     }
+    case 'photo': {
+      // The words a photo carries are its caption; a purged photo's tombstone has none left (D222).
+      const p = doc as Doc<'photos'>;
+      return { at: p.createdAt, text: p.caption ?? null };
+    }
   }
 }
 
-/** When its author took it back, if they did — a deletion, or an alert's own retraction. */
+/**
+ * When its author took it back, if they did — a deletion, or an alert's own retraction. A photo is
+ * never on the Deleted list: an uploader's delete of a photo that is flagged or under a decision is a
+ * withdrawal on the photo's own clock (`photos.remove`, B01-5e), read by `lib/photoAccess`.
+ */
 export function withdrawnAt(targetType: VerdictTargetType, doc: RecordContentDoc): number | null {
-  if (targetType === 'accessAlert') return withdrawnAtOf('accessAlert', doc) ?? null;
-  return authorDeletedAtOf(doc as Exclude<RecordContentDoc, Doc<'accessAlerts'>>) ?? null;
+  if (targetType === 'photo') return null;
+  if (targetType === 'accessAlert') {
+    return withdrawnAtOf('accessAlert', doc as Doc<'accessAlerts'>) ?? null;
+  }
+  return (
+    authorDeletedAtOf(doc as Exclude<RecordContentDoc, Doc<'accessAlerts'> | Doc<'photos'>>) ?? null
+  );
 }
 
 /** The item a record row is about, by its kind's table: `null` when it is gone. */
 export function targetIdOf(ctx: QueryCtx, targetType: VerdictTargetType, targetId: string) {
-  return ctx.db.normalizeId(ERASABLE[targetType], targetId);
+  return ctx.db.normalizeId(VERDICT_TABLE[targetType], targetId);
 }
 
 // ── Positions ──────────────────────────────────────────────────────────────────────────────────
@@ -441,6 +457,11 @@ export function namesOf({ names, persons }: PageCache): Names {
 
 /** The Deleted list's kinds, in the order that breaks a tie on the withdrawal time. */
 export const DELETED_KINDS = ['report', 'post', 'comment', 'hazard', 'accessAlert'] as const;
+/** A kind the Deleted list holds: every verdict kind but a photo (see {@link withdrawnAt}). */
+export type DeletedKind = (typeof DELETED_KINDS)[number];
+export function isDeletedKind(kind: VerdictTargetType): kind is DeletedKind {
+  return kind !== 'photo';
+}
 
 /**
  * Each kind's withdrawn rows by its own index — what the Deleted list read before its withdrawal rows
@@ -454,7 +475,7 @@ export const DELETED_KINDS = ['report', 'post', 'comment', 'hazard', 'accessAler
 export function deletedRange(
   ctx: QueryCtx,
   reads: ReadBudget,
-  kind: VerdictTargetType,
+  kind: DeletedKind,
   userId: Id<'profiles'>,
   after: Position | null,
   n: number,

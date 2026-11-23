@@ -7,6 +7,8 @@ import { AskDialog } from '../../../people/person/AskDialog';
 import { type FlagVerb, targetNoun, verbGroups } from './flagModel';
 import type { FlagItem } from './flagTypes';
 import { FLAG_WORDS as W } from './flagWords';
+import { twinStillShownLine } from './photoModel';
+import { PHOTO_WORDS as P } from './photoWords';
 import type { FlagWrite } from './useFlagWrites';
 
 /**
@@ -77,6 +79,11 @@ export function FlagActions({ item, onWrite, pane, author }: FlagActionsProps) {
     setSerial((s) => s + 1);
     setOpen(true);
   };
+  const photo = item.target.exists && item.target.targetType === 'photo';
+  const what = (verb: FlagVerb): string =>
+    photo && (verb === 'hide' || verb === 'remove' || verb === 'restore')
+      ? P.what[verb]
+      : W.what[verb];
 
   const barGroups: ActionBarGroup[] = groups.map((g) => ({
     id: g.id,
@@ -85,7 +92,7 @@ export function FlagActions({ item, onWrite, pane, author }: FlagActionsProps) {
       (verb): ActionBarItem => ({
         id: verb,
         label: LABEL[verb],
-        what: W.what[verb],
+        what: what(verb),
         onPress: () => press(verb),
         danger: verb === 'remove' || verb === 'retract',
         loading: busy === verb,
@@ -101,15 +108,24 @@ export function FlagActions({ item, onWrite, pane, author }: FlagActionsProps) {
   }
 
   const noun = item.target.exists ? targetNoun(item.target) : '';
+  const withdrawn = item.target.exists && item.target.withdrawnAt !== null;
   const words =
     asking === null
       ? null
-      : dialogWords(
-          asking,
-          noun,
-          item.flags.filter((f) => f.status === 'open').length,
-          item.target.exists && item.target.withdrawnAt !== null,
-        );
+      : photo && (asking === 'hide' || asking === 'remove')
+        ? photoDialogWords(
+            asking,
+            withdrawn,
+            item.target.exists && item.target.targetType === 'photo'
+              ? twinStillShownLine(item.target.photo)
+              : null,
+          )
+        : dialogWords(
+            asking,
+            noun,
+            item.flags.filter((f) => f.status === 'open').length,
+            withdrawn,
+          );
 
   return (
     <>
@@ -158,6 +174,26 @@ export function writeOf(verb: Asking, reason: string): FlagWrite {
     case 'retract':
       return { kind: 'alert', verb: 'retract', reason };
   }
+}
+
+/**
+ * A photo takedown's title and words, as the dev proof showed a takedown: off its link now and shown
+ * to no one, though a device that already opened it may keep it a while; a hide restorable at any
+ * time, a removal deleted for good in 30 days unless restored; and the flags it closes. When the same
+ * image is still shown on another photo, one sentence more says it stays up there.
+ */
+export function photoDialogWords(
+  verb: 'hide' | 'remove',
+  /** Its uploader withdrew it: the decision is kept on their record; nothing comes back. */
+  withdrawn = false,
+  /** {@link twinStillShownLine}: the same image still shown elsewhere, or `null`. */
+  twinStillShown: string | null = null,
+): { title: string; body: string } {
+  const title = verb === 'hide' ? P.hideTitle : P.removeTitle;
+  const body = withdrawn
+    ? W.withdrawnTakeDownBody
+    : `${P.offNow} ${verb === 'hide' ? P.hideAfter : P.removeAfter} ${P.closesFlags}`;
+  return { title, body: twinStillShown === null ? body : `${body} ${twinStillShown}` };
 }
 
 /** A dialog's title and words: what the lever does, and which flags it closes. */

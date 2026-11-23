@@ -49,7 +49,7 @@ describe('the app’s one dock', () => {
       'edge',
     );
     // An old admin page draws in the old shell: no rail to sit past.
-    rerender(<SurfaceToaster pathname="/admin/flags" manager={createToastManager()} />);
+    rerender(<SurfaceToaster pathname="/admin/water" manager={createToastManager()} />);
     expect(document.querySelector('[data-slot="toast-viewport"]')).toHaveAttribute(
       'data-placement',
       'edge',

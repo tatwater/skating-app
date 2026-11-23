@@ -39,7 +39,7 @@ describe('an ask', () => {
     });
   });
 
-  it('words a place name by its emails, and a flag by its reason', () => {
+  it('words a place name by its emails, and a flag by its reason, linked to its Inbox item', () => {
     expect(
       askFrom({ id: 'p1', kind: 'placeName', name: 'the Narrows', messages: 12, createdAt: 1 }),
     ).toEqual({ id: 'p1', kicker: 'Place name · 12 emails', title: '“the Narrows”', sub: null });
@@ -48,6 +48,7 @@ describe('an ask', () => {
     ).toBe('Place name · 1 email');
     expect(askFrom({ id: 'f1', kind: 'flag', reason: 'no_public_access', createdAt: 1 })).toEqual({
       id: 'f1',
+      item: 'flag:f1',
       kicker: 'Flag · Inbox',
       title: 'No public access',
       sub: null,
