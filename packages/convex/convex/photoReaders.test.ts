@@ -266,9 +266,11 @@ describe('the privacy table: reader × viewer × status', () => {
     );
     const flagId = await w.t.withIdentity({ subject: 'skater' }).mutation(api.contentFlags.flag, {
       targetType: 'photo',
-      targetId: w.byStatus.hidden,
+      targetId: w.byStatus.visible,
       reason: 'inappropriate',
     });
+    // Flagged while up (a down photo takes no flag), taken down since.
+    await w.t.run((ctx) => ctx.db.patch(w.byStatus.visible, { moderationStatus: 'hidden' }));
     for (const canReadContent of [false, true]) {
       const view = await w.t.run(async (ctx) => {
         const m = await ctx.db
@@ -301,7 +303,7 @@ describe('the privacy table: reader × viewer × status', () => {
       expect(photo.canReveal).toBe(canReadContent);
       expect('url' in photo).toBe(false);
       expect(photo.thumbUrl === null).toBe(!canReadContent);
-      expect(photo.caption).toBe(canReadContent ? 'hidden' : null);
+      expect(photo.caption).toBe(canReadContent ? 'visible' : null);
       expect(photo.siblings).toHaveLength(STATUS_KEYS.length - 1);
       // A purged sibling serves no address to anyone; every other one only with content.read.
       const live = photo.siblings.filter((s) => s.photoId !== w.byStatus.purged);
@@ -420,5 +422,45 @@ describe('the access-photo cap counts only photos still shown', () => {
     await attach(await fresh());
     const shown = await w.t.query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId });
     expect(shown).toHaveLength(3);
+  });
+});
+
+describe('whole documents carry only the ids a viewer may learn of', () => {
+  test('reports.get, hazards.get and listForBody: visible ids to anyone; every id to content.read on the report', async () => {
+    const w = (await world()) as W;
+    const shownIds = [w.byStatus.absent, w.byStatus.visible];
+    for (const viewer of VIEWERS) {
+      const r = await clientOf(w.t, viewer).query(api.reports.get, { reportId: w.reportId });
+      expect(r?.photoIds, viewer).toEqual(
+        viewer === 'mod' ? STATUS_KEYS.map((s) => w.byStatus[s]) : shownIds,
+      );
+      const h = await clientOf(w.t, viewer).query(api.hazards.get, { hazardId: w.hazardId });
+      expect(h?.photoIds, viewer).toEqual(shownIds);
+      const list = await clientOf(w.t, viewer).query(api.hazards.listForBody, {
+        waterBodyId: w.waterBodyId,
+      });
+      expect(list.find((x) => x._id === w.hazardId)?.photoIds, viewer).toEqual(shownIds);
+    }
+  });
+
+  test('a flag on a photo the flagger can’t see is refused as gone; a visible one files', async () => {
+    const w = (await world()) as W;
+    const skater = w.t.withIdentity({ subject: 'skater' });
+    for (const status of ['hidden', 'removed', 'purged'] as const) {
+      await expect(
+        skater.mutation(api.contentFlags.flag, {
+          targetType: 'photo',
+          targetId: w.byStatus[status],
+          reason: 'inappropriate',
+        }),
+      ).rejects.toThrow('Target not found');
+    }
+    expect(
+      await skater.mutation(api.contentFlags.flag, {
+        targetType: 'photo',
+        targetId: w.byStatus.visible,
+        reason: 'inappropriate',
+      }),
+    ).toEqual(expect.any(String));
   });
 });

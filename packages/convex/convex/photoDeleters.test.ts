@@ -11,7 +11,7 @@ import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { PHOTO_HELD_DETACH, PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
-import { PURGE_PAGE, PURGE_RETRY_MS } from './photoPurge';
+import { PURGE_FLAG_HOLD_MAX_MS, PURGE_PAGE, PURGE_RETRY_MS } from './photoPurge';
 import schema from './schema';
 
 const failing = vi.hoisted(() => ({ ids: new Set<string>() }));
@@ -459,5 +459,33 @@ describe('the export', () => {
     expect(byId.get(hidden)?.storageId).toEqual(expect.any(String));
     expect(byId.get(purged)).toMatchObject({ purgedAt: T0 });
     expect(byId.get(purged)?.storageId).toBeUndefined();
+  });
+});
+
+describe('the purge’s push-back is bounded', () => {
+  test('an open flag defers a removed photo’s purge a day at a time, at most two months past its due date', async () => {
+    const t = harness();
+    const uploader = await person(t, 'uploader');
+    const flagger = await person(t, 'flagger');
+    const id = await photo(t, uploader, {
+      moderationStatus: 'removed',
+      moderatedAt: T0,
+      purgeAt: T0 + PHOTO_PURGE_DELAY_MS,
+    });
+    await HOLDS['open flag']?.(t, id, flagger);
+    const due = T0 + PHOTO_PURGE_DELAY_MS;
+    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: due })).toMatchObject({
+      deferred: 1,
+    });
+    const last = due + PURGE_FLAG_HOLD_MAX_MS - 1;
+    await t.run((ctx) => ctx.db.patch(id, { purgeAt: last }));
+    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: last })).toMatchObject({
+      deferred: 1,
+    });
+    const past = due + PURGE_FLAG_HOLD_MAX_MS;
+    await t.run((ctx) => ctx.db.patch(id, { purgeAt: past }));
+    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: past })).toMatchObject({
+      purged: 1,
+    });
   });
 });

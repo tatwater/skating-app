@@ -25,6 +25,7 @@ import { holdMoved, refreshEraseClock } from './lib/eraseClock';
 import { subjectOfTarget } from './lib/flagSubject';
 import { fileMember, flagSource, leaveMember } from './lib/inboxItems';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { photoVisible } from './lib/photoAccess';
 import { isSeedProfile } from './lib/seedPeople';
 import { recordTextLength } from './lib/textLengths';
 import { literals } from './lib/validators';
@@ -90,6 +91,14 @@ export const flag = mutation({
     // An erased comment's placeholder is nobody's words any more (D248): there is nothing to report.
     if ('erasedAt' in target && target.erasedAt !== undefined) {
       throw new ConvexError('Target not found');
+    }
+    // A photo the flagger can't see — hidden, removed or purged (B01-5e) — is gone to them, in the
+    // same words: no skater learns it exists, and a re-filed flag can't hold a removed photo's bytes.
+    if (args.targetType === 'photo') {
+      const photo = target as Doc<'photos'>;
+      if (!photoVisible(photo) || photo.purgedAt !== undefined) {
+        throw new ConvexError('Target not found');
+      }
     }
 
     // ── The A06f re-reporting gate ────────────────────────────────────────────────────────────────

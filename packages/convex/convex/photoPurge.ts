@@ -27,6 +27,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
 import { composed, writeAudit } from './lib/audit';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
+import { PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
 import { purgePhotoBlobs } from './lib/photoOrphans';
 import { sweepRotationCopies } from './lib/photoRotation';
 import {
@@ -38,6 +39,9 @@ import {
   recordFailure,
   runIsolated,
 } from './lib/recurringWork';
+
+/** How long past its first due date an open flag may hold a removed photo's bytes: two months. */
+export const PURGE_FLAG_HOLD_MAX_MS = 60 * 24 * 60 * 60 * 1000;
 
 /** Due photos one run takes at most; a full page continues at once. */
 export const PURGE_PAGE = 100;
@@ -190,7 +194,11 @@ export const purgeOne = internalMutation({
         await clearFailure(ctx, 'photoPurge', photoId);
         return { outcome: 'cleared' as const };
       }
-      if (await openFlagOn(ctx, photoId)) {
+      // An open flag defers it a day at a time — but not past the bound: a complaint gets two months
+      // beyond the 30 days to be decided, then the bytes go (the tombstone, the flag and the verdict
+      // stay). From the photo's takedown that is 90 days at most.
+      const firstDue = (photo.moderatedAt ?? photo.purgeAt) + PHOTO_PURGE_DELAY_MS;
+      if (now < firstDue + PURGE_FLAG_HOLD_MAX_MS && (await openFlagOn(ctx, photoId))) {
         await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
         return { outcome: 'deferred' as const };
       }

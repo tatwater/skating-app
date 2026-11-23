@@ -44,7 +44,7 @@ import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { HAZARD_MAX_PER_REPORT } from './hazards';
-import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
+import { getCurrentProfile, hasCapability, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import {
@@ -61,6 +61,7 @@ import {
   assertOwnedPhotos,
   keepHeldPhotos,
   photoVisible,
+  shownPhotoIds,
   syncReportPhotoLinks,
 } from './lib/photoAccess';
 import { refreshPostLatestSkateEnd, refreshPostSearchText, syncPostPhotos } from './lib/postSync';
@@ -292,7 +293,13 @@ export const get = query({
       if (bay && bay.removedAt === undefined) bayNames[id] = bay.name;
     }
     // The put-in opt-out is honored at the API, not left to the drawer (`redactPutIn`).
-    return { ...(await redactPutIn(ctx, report, await getCurrentProfile(ctx))), bayNames };
+    const viewer = await getCurrentProfile(ctx);
+    const shown = await redactPutIn(ctx, report, viewer);
+    // A hidden or removed photo's id is staff's alone (B01-5e): anyone else learns of the visible.
+    const photoIds = hasCapability(viewer, 'content.read')
+      ? report.photoIds
+      : await shownPhotoIds(ctx, report.photoIds);
+    return { ...shown, photoIds, bayNames };
   },
 });
 

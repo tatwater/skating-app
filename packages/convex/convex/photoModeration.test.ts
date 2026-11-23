@@ -558,16 +558,17 @@ describe('the Inbox photo item', () => {
 
   test('restoreAndDismiss for a photo already down; dismissFlags leaves it up', async () => {
     const { t, uploader, skater, mod, photoId } = await world();
+    // Flagged while up (a down photo takes no flag), then hidden from elsewhere.
+    const flagId = await skater.as.mutation(api.contentFlags.flag, {
+      targetType: 'photo',
+      targetId: photoId,
+      reason: 'inappropriate',
+    });
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'photo',
       targetId: photoId,
       status: 'hidden',
       reason: 'x',
-    });
-    const flagId = await skater.as.mutation(api.contentFlags.flag, {
-      targetType: 'photo',
-      targetId: photoId,
-      reason: 'inappropriate',
     });
     const itemId = await photoItem(t, flagId);
     const read = await mod.as.query(api.inbox.item, { ref: itemId });

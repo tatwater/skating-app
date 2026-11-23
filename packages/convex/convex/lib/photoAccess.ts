@@ -97,6 +97,23 @@ export const PHOTO_HELD_DETACH =
   'This photo is under review, so it stays attached until a moderator decides on it.';
 
 /**
+ * The ids of a list a skater or the public may learn of (B01-5e): the visible photos', in order. A
+ * hidden, removed or missing photo leaves no id — its existence, count and id are staff's. One read a
+ * photo, bounded by the list.
+ */
+export async function shownPhotoIds(
+  ctx: QueryCtx,
+  photoIds: readonly Id<'photos'>[],
+): Promise<Id<'photos'>[]> {
+  const out: Id<'photos'>[] = [];
+  for (const id of photoIds) {
+    const photo = await ctx.db.get(id);
+    if (photo && photoVisible(photo) && photo.purgedAt === undefined) out.push(id);
+  }
+  return out;
+}
+
+/**
  * When the photo's uploader withdrew it, if they did — their delete of a photo that was held
  * (`photos.remove`, the B01-5e fork 1 ruling) writes an `author_delete` row on it and leaves it removed
  * on the purge clock. Final, as every author's deletion is (D248): no restore brings it back. One
