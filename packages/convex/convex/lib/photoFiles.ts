@@ -73,8 +73,14 @@ export async function releaseFile(
   now: number,
 ): Promise<boolean> {
   const ledger = await ledgerRowOf(ctx, storageId);
+  // Checked here, in the transaction that deletes: a row that came to name the file since it was
+  // released (a doomed file's retry, days on) keeps it, and nothing is owed any more.
   if (await blobReferenced(ctx, storageId)) {
-    if (ledger) await ctx.db.delete(ledger._id);
+    if (ledger) {
+      await ctx.db.delete(ledger._id);
+      if (ledger.state === 'doomed')
+        await clearFailure(ctx, 'photoRotation', failureKey(storageId));
+    }
     return false;
   }
   const failure = await deleteStoredBlob(ctx, storageId as Id<'_storage'>);
