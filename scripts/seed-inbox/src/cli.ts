@@ -18,19 +18,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, type RunAs, resolveDeployment } from '@skating/run-log';
 import { nodeVersionRefusal, parseArgs } from './args';
-import {
-  applyClear,
-  applySeed,
-  type Call,
-  describePlan,
-  errorLine,
-  planSeed,
-  runLogName,
-  runRecord,
-  strandedLines,
-  tally,
-  waitingOn,
-} from './seed';
+import { applyAndReport, clearAndReport } from './report';
+import { type Call, describePlan, errorLine, planSeed, runLogName, tally } from './seed';
 import { uploader } from './upload';
 
 const say = (line: string) => process.stderr.write(`[seed-inbox] ${line}\n`);
@@ -69,6 +58,7 @@ async function main(): Promise<number> {
     return 2;
   }
   say(`target ${target.label} · ${parsed.mode}`);
+  const out = { say, writeLog, target: target.label };
   switch (parsed.mode) {
     case 'dry': {
       const { people, state } = planSeed(call);
@@ -86,27 +76,7 @@ async function main(): Promise<number> {
         interrupted = true;
         say('interrupted — stopping after this step');
       });
-      const run = await applySeed(
-        call,
-        parsed.operator,
-        (f) =>
-          say(
-            `${f.error === undefined ? 'filed ' : 'FAILED'} ${f.key.padEnd(22)} ${f.fn} as ${f.as}${f.error ? ` — ${f.error}` : ''}`,
-          ),
-        uploader(call, devName),
-        () => interrupted,
-      );
-      // The stranded files' ids go to the terminal only, never the kept log (`runRecord`).
-      const log = writeLog('apply', { target: target.label, ...runRecord(run) });
-      say(`people created ${run.people.created.length}`);
-      say(
-        `filed ${run.counts.filed} · failed ${run.counts.failed} · done ${run.counts.done} · still ready ${run.counts.ready} · waiting ${run.counts.waiting} · unavailable ${run.counts.unavailable}`,
-      );
-      for (const u of run.last.unavailable) say(`unavailable ${u.key} — needs ${u.missing}`);
-      for (const line of strandedLines(run.stranded)) say(line);
-      if (run.interrupted) say('interrupted: the run stopped early; apply again to finish it');
-      say(`run log ${log}`);
-      return run.counts.failed > 0 || run.interrupted ? 1 : 0;
+      return applyAndReport(call, parsed.operator, uploader(call, devName), () => interrupted, out);
     }
     case 'clear-dry': {
       say(
@@ -115,15 +85,8 @@ async function main(): Promise<number> {
       say('dry run — nothing removed. Add --apply to remove it.');
       return 0;
     }
-    case 'clear': {
-      const run = applyClear(call, (a) => {
-        if ((a.waiting ?? 0) > 0) say(`waiting on ${waitingOn(a)}`);
-      });
-      const log = writeLog('clear', { target: target.label, ...run });
-      say(`removed in ${run.calls} calls: ${tally(run.removed)}`);
-      say(`run log ${log}`);
-      return run.done ? 0 : 1;
-    }
+    case 'clear':
+      return clearAndReport(call, out);
   }
 }
 

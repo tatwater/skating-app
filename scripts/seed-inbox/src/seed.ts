@@ -261,6 +261,12 @@ export async function applySeed(
   upload: Upload = noUpload,
   /** Asked between steps: true once the run was interrupted (the CLI's Ctrl-C), and it stops. */
   interrupted: () => boolean = () => false,
+  hooks: {
+    /** A failed step's uploads that couldn't be released — told the moment it's known. */
+    onStranded?: (s: SeedRun['stranded'][number]) => void;
+    /** Each plan read, as it comes (the unavailable steps' reasons, if a later call throws). */
+    onState?: (s: SeedState) => void;
+  } = {},
 ): Promise<SeedRun> {
   // Who the operator is, before anything is written: a run that would fail at its first moderator
   // act stops here instead.
@@ -273,6 +279,7 @@ export async function applySeed(
   const tried = new Set<string>();
   const waves: Filed[][] = [];
   let last = call<SeedState>('inboxSeed:state', {});
+  hooks.onState?.(last);
   const stranded: SeedRun['stranded'] = [];
   let stopped = false;
   for (let wave = 0; wave < MAX_WAVES && !stopped; wave++) {
@@ -307,16 +314,20 @@ export async function applySeed(
               : [];
         if (left.length > 0) {
           row.stranded = left;
-          stranded.push({
+          const entry = {
             key: step.key,
             as: step.as,
             ...(runAs ? { subject: runAs.as } : {}),
             storageIds: left,
-          });
+          };
+          stranded.push(entry);
         }
       }
       filed.push(row);
       onFiled(row);
+      // Said right after its step, before any later call can fail (the summary says it again).
+      const left = stranded.at(-1);
+      if (row.stranded !== undefined && left !== undefined) hooks.onStranded?.(left);
       // Between steps, the event loop turns: an interrupt's handler runs, and the run stops here —
       // the step it cut short already failed and released its uploads above.
       await tick();
@@ -327,6 +338,7 @@ export async function applySeed(
     }
     waves.push(filed);
     last = call<SeedState>('inboxSeed:state', {});
+    hooks.onState?.(last);
   }
   const all = waves.flat();
   return {
