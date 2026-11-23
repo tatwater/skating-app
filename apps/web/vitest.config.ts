@@ -1,16 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import { configDefaults, defineConfig } from 'vitest/config';
 import { alias, storybookPlugins } from './.storybook/vite.config';
-import { DOM_TS_TESTS } from './src/test/domTests';
 import { parkPointer } from './src/test/pointer.commands';
 
 /**
  * Web tests (D40), three projects under one `vitest run`:
  *
  * - **unit** — jsdom + Testing Library for components (every `*.test.tsx`) and the few logic files
- *   that need the DOM (`src/test/domTests.ts`). We don't load the app's Vite plugins here —
+ *   that need the DOM (`src/test/domTests.json`). We don't load the app's Vite plugins here —
  *   component tests render plain React.
  * - **unit-node** — every other `*.test.ts` (logic, a token-parity test that reads the CSS file)
  *   under Node: no jsdom to build per file. `packages/guards/src/webTestEnvironments.test.ts` keeps
@@ -20,6 +20,23 @@ import { parkPointer } from './src/test/pointer.commands';
  *   measurement stories (D234's junctions) live here, because only a real layout engine measures.
  *   Needs Playwright's Chromium: `pnpm --filter @skating/web exec playwright install chromium`.
  */
+/**
+ * The logic tests that need the DOM (`src/test/domTests.json`), read as data — the split's guard
+ * (`packages/guards/src/webTestEnvironments.test.ts`) reads the same file. A list, never an import:
+ * Vite's native config loader warns on an extensionless import, and a JSON import needs a flag.
+ */
+const DOM_TS_TESTS: string[] = JSON.parse(
+  readFileSync(new URL('./src/test/domTests.json', import.meta.url), 'utf8'),
+);
+
+/**
+ * Vitest's default test files (`**\/*.{test,spec}.?(c|m)[jt]s?(x)`), split between the two unit
+ * projects so together they match exactly what the default matched — a `.spec` file, or a test
+ * outside `src/`, still runs: JSX ones under jsdom, the rest under Node unless listed as needing it.
+ */
+const JSX_TESTS = '**/*.{test,spec}.{tsx,jsx}';
+const LOGIC_TESTS = '**/*.{test,spec}.{ts,mts,cts,js,mjs,cjs}';
+
 export default defineConfig({
   // Mirror the app's `@` → `src` alias (vite.config.ts) so shadcn/ui's `@/…` imports resolve
   // under Vitest too, letting component tests render the ui primitives.
@@ -48,7 +65,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           environment: 'jsdom',
-          include: ['src/**/*.test.tsx', ...DOM_TS_TESTS],
+          include: [JSX_TESTS, ...DOM_TS_TESTS],
           setupFiles: ['./src/test/setup.ts'],
         },
       },
@@ -57,7 +74,7 @@ export default defineConfig({
         test: {
           name: 'unit-node',
           environment: 'node',
-          include: ['src/**/*.test.ts'],
+          include: [LOGIC_TESTS],
           exclude: [...configDefaults.exclude, ...DOM_TS_TESTS],
         },
       },
