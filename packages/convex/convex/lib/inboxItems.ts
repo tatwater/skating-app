@@ -40,7 +40,7 @@ import {
 import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { flagSubject, subjectOfTarget } from './flagSubject';
-import { flagBodyId } from './openFlags';
+import { flagBodyId, OPEN_FLAG_STATUSES } from './openFlags';
 import { ROW_MAX, type RowKind } from './readBudget';
 import { requestKeyOf } from './requestDecisions';
 
@@ -179,7 +179,7 @@ export function flagFacet(lane: InboxLane, targetType: Doc<'contentFlags'>['targ
   }
 }
 
-const OPEN_FLAG = new Set(['open', 'reviewing']);
+const OPEN_FLAG = new Set<string>(OPEN_FLAG_STATUSES);
 
 async function flagFacts(reads: InboxReads, ctx: QueryCtx, f: Doc<'contentFlags'>) {
   if (f.status === 'retracted') return null;

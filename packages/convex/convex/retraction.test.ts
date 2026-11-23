@@ -195,7 +195,7 @@ describe('a request to a moderator', () => {
 });
 
 describe('a flag', () => {
-  test('is retracted while open or picked up, leaves the queue, and stops holding content', async () => {
+  test('is retracted while open, leaves the queue, and stops holding content', async () => {
     const { t, skater, other, mod, waterBodyId } = await setup();
     const flagId = await skater.as.mutation(api.contentFlags.flag, {
       targetType: 'waterbody',
@@ -243,7 +243,6 @@ describe('a flag', () => {
     vi.setSystemTime(deletedAt);
     await other.as.mutation(api.comments.remove, { commentId });
     expect((await get(t, commentId))?.eraseAt).toBeUndefined();
-    await t.run((ctx) => ctx.db.patch(held, { status: 'reviewing' }));
     await skater.as.mutation(api.contentFlags.retract, { flagId: held });
     expect((await get(t, commentId))?.eraseAt).toBe(deletedAt + WITHDRAWN_ERASE_MS);
   });

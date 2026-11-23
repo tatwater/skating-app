@@ -676,10 +676,7 @@ async function apply(w: World, e: Ev): Promise<void> {
       const id = await t.run(async (ctx) => {
         // One open flag per flagger per target, as the table keeps it.
         const mine = (await ctx.db.query('contentFlags').collect()).some(
-          (f) =>
-            f.flaggerId === flagger.id &&
-            f.targetId === targetId &&
-            (f.status === 'open' || f.status === 'reviewing'),
+          (f) => f.flaggerId === flagger.id && f.targetId === targetId && f.status === 'open',
         );
         if (mine) return null;
         return ctx.db.insert('contentFlags', {
@@ -810,7 +807,7 @@ async function invariants(t: T, unfiled: ReadonlySet<string> = new Set()): Promi
       itemsOfQuestion.set(q, set);
     };
     for (const f of await ctx.db.query('contentFlags').collect()) {
-      if (f.status !== 'open' && f.status !== 'reviewing') continue;
+      if (f.status !== 'open') continue;
       const m = members.find((x) => x.sourceTable === 'contentFlags' && x.sourceId === f._id);
       const lane =
         f.reason === 'unsafe_false_report'

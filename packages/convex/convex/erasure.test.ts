@@ -2119,7 +2119,7 @@ describe('the erasure holds under any order', () => {
           )
           .first();
         if (verdict) return true;
-        for (const status of ['open', 'reviewing'] as const) {
+        for (const status of ['open'] as const) {
           const flag = await ctx.db
             .query('contentFlags')
             .withIndex('by_target_status_reason', (q) =>

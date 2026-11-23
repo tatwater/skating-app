@@ -105,18 +105,6 @@ describe('fileOrBumpAutoFlag', () => {
     expect(rows[0]?.lastOccurrenceAt).toBeDefined();
   });
 
-  test('a flag under review is still the open row — reviewing is not resolved', async () => {
-    const t = harness();
-    const target = await seedUser(t, 'target');
-    const flagger = await seedUser(t, 'flagger');
-    const first = await file(t, { targetId: target, flaggerId: flagger });
-    await t.run((ctx) => ctx.db.patch(first.flagId, { status: 'reviewing' }));
-
-    const again = await file(t, { targetId: target, flaggerId: flagger });
-    expect(again.filed).toBe(false);
-    expect(await flagsFor(t, target)).toHaveLength(1);
-  });
-
   /**
    * The invariant this mechanism exists to protect. `by_status_resolved_at` serves a day-sliced
    * resolution chart on the stated premise that terminal rows accumulate forever — flipping one back

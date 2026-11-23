@@ -102,7 +102,6 @@ const HOLDS: Record<
         void (await ctx.db.patch(id, { moderationStatus: 'removed', purgeAt: T0 + DAY })),
     ),
   'open flag': (t, id, flagger) => flag(t, id, flagger, 'open'),
-  'reviewing flag': (t, id, flagger) => flag(t, id, flagger, 'reviewing'),
   'standing verdict': (t, id) =>
     t.run(async (ctx) => {
       const photo = (await ctx.db.get(id)) as Doc<'photos'>;
@@ -126,12 +125,7 @@ const HOLDS: Record<
     }),
 };
 
-async function flag(
-  t: T,
-  photoId: Id<'photos'>,
-  flaggerId: Id<'profiles'>,
-  status: 'open' | 'reviewing',
-) {
+async function flag(t: T, photoId: Id<'photos'>, flaggerId: Id<'profiles'>, status: 'open') {
   await t.run(async (ctx) => {
     await ctx.db.insert('contentFlags', {
       targetType: 'photo',
@@ -247,7 +241,7 @@ describe('every deleter keeps a held photo and deletes its unheld twin', () => {
     const flagger = await person(t, 'flagger');
     const held = await photo(t, uploader);
     const loose = await photo(t, uploader);
-    await HOLDS['reviewing flag']?.(t, held, flagger);
+    await HOLDS['open flag']?.(t, held, flagger);
     await t.mutation(internal.accountDeletion.finalizeNow, { userId: uploader });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await blobAlive(t, held)).toBe(true);

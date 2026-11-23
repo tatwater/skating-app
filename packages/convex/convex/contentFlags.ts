@@ -116,7 +116,7 @@ export const flag = mutation({
       }
     }
 
-    // Dedupe: one *open* flag per (flagger, target) — either open status (`reviewing` too, D283). A
+    // Dedupe: one *open* flag per (flagger, target) (`OPEN_FLAG_STATUSES`). A
     // repeat flag is a no-op that returns the row. An exact point read a status, never a scan of the
     // target's flags: whatever the target holds, the same answer (the undo's reopen rule leans on it).
     for (const status of OPEN_FLAG_STATUSES) {
@@ -179,10 +179,10 @@ export const flag = mutation({
  * Take back a flag you filed, until a moderator decides it (D248, founder ruling 2026-11-13: "if a
  * user reports an access issue ... reports a body as not accessible to the public, or any of those
  * kinds of actions, they should be able to retract them at any time (up until the action is
- * determined/taken)"). Open or picked up (`reviewing`) is not decided; `actioned` and `dismissed`
+ * determined/taken)"). An `open` flag is not decided; `actioned` and `dismissed`
  * are. A flag the system filed, or one it has since counted again for others, is not one person's
- * to take back (`flagRetraction`). A retracted flag leaves the queue at once (it reads only `open`
- * and `reviewing`), stops holding anything back from erasure, is never resolved after, and is
+ * to take back (`flagRetraction`). A retracted flag leaves the queue at once (it reads only `open`),
+ * stops holding anything back from erasure, is never resolved after, and is
  * erased 30 days on. A second retraction is a no-op.
  */
 export const retract = mutation({

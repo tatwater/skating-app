@@ -1086,7 +1086,7 @@ describe('which body an audited action belongs to', () => {
         targetType: 'waterbody',
         targetId: id,
         reason: 'spam',
-        status: 'reviewing',
+        status: 'open',
         createdAt: NOW,
       });
       const reportFlag = await ctx.db.insert('contentFlags', {

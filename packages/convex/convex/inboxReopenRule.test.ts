@@ -337,25 +337,25 @@ describe('the flag reopen rule: the deciding flag, wherever it sits among the ta
 });
 
 describe('a filing’s one open flag per person per target', () => {
-  test('a repeat returns the open one — `reviewing` too — however many flags the target holds', async () => {
+  test('a repeat returns the open one, however many flags the target holds', async () => {
     const w = await world();
     await crowd(w, 150);
-    const reviewing = await insertFlag(w, w.reporter.id, { status: 'reviewing' });
+    const held = await insertFlag(w, w.reporter.id, { status: 'open' });
     await crowd(w, 150);
     const again = await w.reporter.as.mutation(api.contentFlags.flag, {
       targetType: 'report',
       targetId: w.report,
       reason: 'spam',
     });
-    expect(again).toBe(reviewing);
+    expect(again).toBe(held);
     // Closed, a new filing is a new flag.
-    await w.t.run((ctx) => ctx.db.patch(reviewing, { status: 'dismissed' }));
+    await w.t.run((ctx) => ctx.db.patch(held, { status: 'dismissed' }));
     const fresh = await w.reporter.as.mutation(api.contentFlags.flag, {
       targetType: 'report',
       targetId: w.report,
       reason: 'spam',
     });
-    expect(fresh).not.toBe(reviewing);
+    expect(fresh).not.toBe(held);
   });
 });
 

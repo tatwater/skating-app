@@ -123,7 +123,7 @@ export async function fileOrBumpAutoFlag(
   const countsAsOccurrence = args.countsAsOccurrence ?? true;
 
   /** The (target, reason) slice of one status, in index order — the read both halves are built on. */
-  const byStatus = (status: 'open' | 'reviewing' | 'actioned' | 'dismissed') =>
+  const byStatus = (status: 'open' | 'actioned' | 'dismissed') =>
     ctx.db
       .query('contentFlags')
       .withIndex('by_target_status_reason', (q) =>
@@ -141,7 +141,7 @@ export async function fileOrBumpAutoFlag(
   //
   // `.first()` takes the *oldest* open row, deliberately: it's the one that has been accumulating the
   // count, so the bump stays on a stable row rather than hopping to whichever was filed last.
-  const open = (await byStatus('open').first()) ?? (await byStatus('reviewing').first());
+  const open = await byStatus('open').first();
   if (open) {
     const occurrences = open.occurrences ?? 1;
     // Already tracked, and this isn't a new occurrence: leave the row exactly as it is. No patch at

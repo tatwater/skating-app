@@ -28,6 +28,7 @@ import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { type AttemptState, MAX_ATTEMPTS, nextAttemptState } from './attempts';
+import { OPEN_FLAG_STATUSES } from './openFlags';
 import { ReadBudget, ROW_MAX } from './readBudget';
 
 /** Everything a person can take back, by its audit target type, with its table. */
@@ -127,7 +128,7 @@ export const HOLD_COST: Record<Erasable, number> = {
   waterBodyRequest: 0,
 };
 
-/** A standing verdict or an undecided flag (open, or picked up) on this target. Complete. */
+/** A standing verdict or an undecided flag on this target. Complete. */
 async function directHold(
   ctx: QueryCtx,
   budget: ReadBudget,
@@ -147,7 +148,7 @@ async function directHold(
     );
     if (verdict) return true;
   }
-  for (const status of ['open', 'reviewing'] as const) {
+  for (const status of OPEN_FLAG_STATUSES) {
     const flag = await budget.one('contentFlag', () =>
       ctx.db
         .query('contentFlags')

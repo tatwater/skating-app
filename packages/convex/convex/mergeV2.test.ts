@@ -2009,7 +2009,8 @@ describe('the time ceilings, pinned (R12)', () => {
       favorites: 511,
       asks: 104,
       landmarkAsks: 35,
-      flags: 95,
+      // 104 since `reviewing` was narrowed out (D283): a flag's open check is one point read, not two.
+      flags: 104,
       reportsInTwoBays: 311,
     });
   });

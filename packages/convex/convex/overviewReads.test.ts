@@ -7,7 +7,7 @@
  *    a record that began partway through the week;
  *  - **the season window is one rule** — 1 October through today, a past season whole, empty from
  *    1 July to 30 September;
- *  - **open flags include `reviewing`**, everywhere;
+ *  - **open flags are one definition** (`lib/openFlags`), everywhere;
  *  - **kudos are positive reactions** — a thumbs-down is never counted;
  *  - **the capability map decides who reads what** — moderators read Metrics and the season summary,
  *    support's half and Machinery stay admin's.
@@ -306,12 +306,12 @@ async function walkReach(t: T, season?: number) {
 
 // ── Open flags: one definition ──────────────────────────────────────────────────────────────────
 
-describe('open flags include reviewing, everywhere (the governor’s ruling)', () => {
-  test('the Overview counts a flag under review as open, in its lane and its age', async () => {
+describe('open flags, one definition, everywhere (the governor’s ruling)', () => {
+  test('the Overview counts every open flag, in its lane and its age', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const s = await seedUser(t, 's');
-    await seedFlag(t, s.id, 'report', 'r1', { status: 'reviewing', createdAt: NOW - 3 * DAY });
+    await seedFlag(t, s.id, 'report', 'r1', { createdAt: NOW - 3 * DAY });
     await seedFlag(t, s.id, 'report', 'r2');
     await seedFlag(t, s.id, 'report', 'r3', { status: 'dismissed' });
     await fileStored(t);
@@ -324,7 +324,7 @@ describe('open flags include reviewing, everywhere (the governor’s ruling)', (
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const s = await seedUser(t, 's');
-    await seedFlag(t, s.id, 'report', 'r1', { status: 'reviewing', reason: 'unsafe_false_report' });
+    await seedFlag(t, s.id, 'report', 'r1', { reason: 'unsafe_false_report' });
     await seedFlag(t, s.id, 'report', 'r2');
     await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
     expect((await readSnapshot(t, 'flag_queue_depth', TODAY))?.meta).toEqual({

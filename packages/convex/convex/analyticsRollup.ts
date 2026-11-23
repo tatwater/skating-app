@@ -612,7 +612,7 @@ async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
 async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
   const date = metricDay(now);
 
-  // Open means `open` or `reviewing` — the one definition every count of open flags reads.
+  // Open flags — the one definition every count of open flags reads (`lib/openFlags`).
   const { flags: openFlags, capped: flagsCapped } = await readOpenFlags(ctx, DAY_SCAN_CAP);
   if (flagsCapped) {
     console.warn(

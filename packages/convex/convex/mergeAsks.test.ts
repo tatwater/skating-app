@@ -106,7 +106,7 @@ async function seed(t: T) {
       flaggerId: Id<'profiles'>,
       targetId: string,
       reason: 'no_public_access' | 'other' = 'no_public_access',
-      status: 'open' | 'reviewing' = 'open',
+      status: 'open' = 'open',
     ) =>
       ctx.db.insert('contentFlags', {
         flaggerId,
@@ -118,8 +118,8 @@ async function seed(t: T) {
       });
     const movedFlag = await flag(skater, loser);
     // The moderator flagged both bodies: their flag on the loser stays (one open flag per target) —
-    // though the survivor's says something else and is already in review.
-    await flag(mod, survivor, 'other', 'reviewing');
+    // though the survivor's says something else.
+    await flag(mod, survivor, 'other', 'open');
     const keptFlag = await flag(mod, loser);
     return {
       mod,

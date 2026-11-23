@@ -1,18 +1,16 @@
 /**
- * **Open flags, one definition** (B01, the governor's ruling of 2026-11-13). A flag a moderator has
- * opened but not decided — `reviewing` — is still open: it counts on the Overview's Inbox card, its
- * heads row, Metrics' *Open flags* and *Oldest open flag*, and the `flag_queue_depth` rollup. Every
- * count of open flags reads them through {@link readOpenFlags}, so the places can't disagree again.
- *
- * (`moderation.listFlags` and `lib/autoFlag.ts` already read both statuses on their own; they adopt
- * this when their files are next open.)
+ * **Open flags, one definition** (B01, the governor's ruling of 2026-11-13): an undecided flag
+ * counts on the Overview's Inbox card, its heads row, Metrics' *Open flags* and *Oldest open flag*,
+ * and the `flag_queue_depth` rollup. Every count of open flags reads them through
+ * {@link readOpenFlags}, so the places can't disagree again. One status since `reviewing` was
+ * narrowed out (D283); the list stays a list so every reader walks it the same way.
  */
 
 import type { Doc, Id, TableNames } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 
 /** The statuses a flag waits in. `actioned` and `dismissed` are decided. */
-export const OPEN_FLAG_STATUSES = ['open', 'reviewing'] as const;
+export const OPEN_FLAG_STATUSES = ['open'] as const;
 
 /**
  * Every open flag, oldest first, read through `by_status` one status at a time and capped: each

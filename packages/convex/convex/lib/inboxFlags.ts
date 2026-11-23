@@ -36,11 +36,12 @@ export const FLAGS_READ = 500;
 /**
  * **The most flags one decision closes** — the writers' cap an undo's gather is sized to (PR #170): a
  * takedown or an alert verdict gathers {@link FLAGS_READ} a status (`openFlagsOn`), a dismissal an
- * item's open members (`MAX_MEMBERS`), a ruling `RULING_REPORTS_READ`, a re-close what its reopen
- * reopened. `inboxReopenRule.test.ts` holds each at or under it; past it an undo refuses
+ * item's open members (`MAX_MEMBERS`), a ruling `RULING_REPORTS_READ` (the largest, 1,000), a
+ * re-close what its reopen reopened. A number of its own since `reviewing` was narrowed out (D283):
+ * it had been two statuses' gathers, which only matched the ruling's read. `inboxReopenRule.test.ts` holds each at or under it; past it an undo refuses
  * ({@link UNDO_TOO_LARGE}) rather than reopen some and leave the rest closed unsaid.
  */
-export const DECISION_FLAGS_MAX = OPEN_FLAG_STATUSES.length * FLAGS_READ;
+export const DECISION_FLAGS_MAX = 1_000;
 
 /** Room an undo keeps past its flags: the items' refreshes, the holds, the counters. */
 export const REOPEN_HEADROOM = 2 * 1024 * 1024;
@@ -73,7 +74,7 @@ export const FLAG_REOPEN_COST: TxCost = {
   bytesWritten: ROW_MAX.contentFlag + ROW_MAX.inboxMember + AUDIT_REASON_MAX * 4 + 8 * 1024,
 };
 
-/** A flag's status counts as open (`reviewing` too, until it is narrowed out, D283). */
+/** A flag's status counts as open ({@link OPEN_FLAG_STATUSES}). */
 export const isOpenFlag = (f: Pick<Doc<'contentFlags'>, 'status'>): boolean =>
   (OPEN_FLAG_STATUSES as readonly string[]).includes(f.status);
 

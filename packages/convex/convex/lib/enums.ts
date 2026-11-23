@@ -266,7 +266,8 @@ export const FLAG_REASONS = [
 // `retracted` is the filer's own withdrawal before a moderator decided it (D248): out of the queue,
 // holding nothing from erasure, and erased 30 days on. Not a resolution — it never reaches the
 // dispositions metric or the flagger's verdict notification.
-export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed', 'retracted'] as const;
+// `reviewing` was narrowed out at the Inbox wave's close (D283): nothing had written it since D251.
+export const FLAG_STATUSES = ['open', 'actioned', 'dismissed', 'retracted'] as const;
 /**
  * Who filed a flag (A08 §2.3): a person who pressed "report", or the system crossing a threshold.
  *

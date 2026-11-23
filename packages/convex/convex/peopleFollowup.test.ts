@@ -984,7 +984,7 @@ describe('a person at the worst case on every axis at once: every read answers, 
           }),
         );
       }
-      for (const status of ['open', 'reviewing'] as const) {
+      for (const status of ['open'] as const) {
         for (let i = 0; i <= 50; i++) {
           await ctx.db.insert('contentFlags', {
             flaggerId: big,
