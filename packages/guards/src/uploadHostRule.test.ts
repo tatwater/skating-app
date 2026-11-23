@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, test } from 'vitest';
-import { DEV_DEPLOYMENT, isDevDeployment } from '../../convex/convex/lib/deployment';
 import { UPLOAD_HOST_CASES, uploadRefusal } from '../../../scripts/seed-inbox/src/upload';
+import { DEV_DEPLOYMENT, isDevDeployment } from '../../convex/convex/lib/deployment';
 
 /** The server reads its own URL's origin; an upload address carries a path and a query past it. */
 const serverSays = (url: string, name: string): boolean => {
