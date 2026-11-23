@@ -8721,11 +8721,14 @@ function (`latestFeedSections`) owns the rule for web and mobile; `groupFeedSect
 key rather than by run, so no input order can repeat a header.
 - **Only a favorite known before its section draws is lifted.** One paged in later would land at
   the top of a section the reader had already scrolled past, unseen. `posts.listFavoritePosts`
-  reads them up front, under `listFeed`'s season, moderation and filter rules: up to 8 per section,
-  from the viewer's 25 newest favorites. Each is admitted once the scroll reaches its section, and
-  the list waits for that read (and the matched lakes) before it first draws. A favorite past the
-  cap keeps its time slot and its star. A favorite matched lake is in the lake list from the start,
-  so it is admitted and lifted the same way.
+  reads them up front, under `listFeed`'s season, moderation and filter rules: up to 5 per section,
+  from the viewer's 25 newest favorites, building no more cards than about a page and a half of the
+  feed. Each is admitted once the scroll reaches its section, and the list waits for that read (and
+  the matched lakes) before it first draws. A favorite past the cap keeps its time slot and its
+  star. One already lifted stays lifted when a newer favorite pushes it past the cap, until its page
+  arrives; one that leaves for any other reason (hidden, unfavorited, filtered out) goes at once. A
+  favorite matched lake is in the lake list from the start, so it is admitted and lifted the same
+  way.
 - **A list that says "newest first" lifts nothing:** a search, and one skater's list.
 - A Post whose only favorite member went to the recommended strip (D50) is not lifted.
 

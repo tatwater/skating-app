@@ -2,6 +2,7 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@skating/convex/api';
 import {
   type BodyResultData,
+  carryFavorites,
   type FeedCardData,
   formatSeason,
   hasWeatherFilter,
@@ -127,10 +128,20 @@ export default function NewsfeedScreen() {
   // row per section ("Today / Yesterday / …"), then that section's cards, the up-front favorites
   // first (D292), so infinite scroll + pull-to-refresh keep working over a single `FlatList`. The
   // recommended bundles lead the list.
+  // A favorite already lifted into view stays lifted when a newer one pushes it past its section's
+  // cap, until its page arrives (`carryFavorites`, D292). Per filters: a change starts over.
+  const carried = useRef({ key: '', favorites: [] as PostCardData[] });
+  const filtersKey = JSON.stringify(filters.value);
+  let liftedFavorites: PostCardData[] = [];
+  if (!isOfflineFallback && favoritePosts !== undefined) {
+    const previous = carried.current.key === filtersKey ? carried.current.favorites : [];
+    liftedFavorites = carryFavorites(previous, favoritePosts, results, status === 'Exhausted', now);
+    carried.current = { key: filtersKey, favorites: liftedFavorites };
+  }
   const sections = headsKnown
     ? latestFeedSections({
         posts: feedData,
-        favorites: isOfflineFallback ? [] : (favoritePosts ?? []),
+        favorites: liftedFavorites,
         // Never from the offline cache: a cached report list has no matching body list.
         bodies: isOfflineFallback ? [] : (bodyResults?.results ?? []),
         exhausted: status === 'Exhausted',
@@ -182,7 +193,8 @@ export default function NewsfeedScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         onEndReachedThreshold={0.5}
         onEndReached={() => {
-          if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
+          // Not while the list waits for its heads: an empty list would read every page.
+          if (headsKnown && status === 'CanLoadMore') loadMore(PAGE_SIZE);
         }}
         ListHeaderComponent={
           <YStack gap="4" paddingBottom="2">
@@ -257,7 +269,8 @@ export default function NewsfeedScreen() {
           )
         }
         ListFooterComponent={
-          status === 'LoadingMore' ? (
+          // The list waiting for its heads, under a Recommended strip that keeps it from looking empty.
+          status === 'LoadingMore' || (!headsKnown && listItems.length > 0) ? (
             <YStack padding="3" alignItems="center">
               <Spinner color="primary" />
             </YStack>

@@ -1,7 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { feedSectionForTime, feedSectionRank, type PostCardData } from './feed';
-import { type LatestRow, latestFeedSections } from './latestFeed';
+import {
+  carryFavorites,
+  FAVORITE_LIFT_PER_SECTION,
+  type LatestRow,
+  latestFeedSections,
+} from './latestFeed';
 import type { BodyResultData } from './weatherDiscovery';
 
 const HOUR = 3_600_000;
@@ -103,19 +108,26 @@ describe('latestFeedSections (D292)', () => {
 
   it('doesn’t lift a Post whose only favorite member went to the recommended strip', () => {
     const mixed = {
-      ...post('m', 2, true),
+      ...post('m', 10, true),
       reports: [
         { reportId: 'fav-r', isFavorite: true },
         { reportId: 'plain-r', isFavorite: false },
       ],
     } as unknown as PostCardData;
-    const out = sections({
-      posts: [post('t1', 1), mixed],
-      favorites: [mixed],
-      recommendedIds: new Set(['fav-r']),
-      exhausted: true,
-    });
-    expect(out).toEqual([['today', ['t1', 'm']]]);
+    const recommendedIds = new Set(['fav-r']);
+    // Not paged in yet: it waits for its page rather than sit below the pages' floor.
+    expect(
+      sections({ posts: [post('t1', 1), post('t3', 3)], favorites: [mixed], recommendedIds }),
+    ).toEqual([['today', ['t1', 't3']]]);
+    // Paged in: in its time slot, not lifted.
+    expect(
+      sections({
+        posts: [post('t1', 1), mixed, post('t12', 12)],
+        favorites: [mixed],
+        recommendedIds,
+        exhausted: true,
+      }),
+    ).toEqual([['today', ['t1', 'm', 't12']]]);
   });
 
   it('property: headers once and ranked, every shown post kept, only up-front favorites lead', () => {
@@ -183,5 +195,48 @@ describe('latestFeedSections (D292)', () => {
         },
       ),
     );
+  });
+});
+
+describe('carryFavorites (D292)', () => {
+  const full = (ageFrom: number) =>
+    Array.from({ length: FAVORITE_LIFT_PER_SECTION }, (_, k) => post(`c${k}`, ageFrom + k, true));
+  const ids = (list: readonly PostCardData[]) => list.map((p) => p.postId);
+  // Page 1 ends at 1h: everything older in Today is still to come.
+  const pages = [post('t0', 0.5), post('t1', 1)];
+
+  it('keeps a favorite a newer one pushed past its section’s cap, until its page arrives', () => {
+    const evicted = post('F', 20, true);
+    const before = [...full(2).slice(1), evicted];
+    const after = full(1.5); // a new favorite arrived; the server's newest five no longer hold F
+    expect(ids(carryFavorites(before, after, pages, false, NOW))).toEqual([...ids(after), 'F']);
+    // And it is idempotent for the same inputs.
+    const once = carryFavorites(before, after, pages, false, NOW);
+    expect(carryFavorites(once, after, pages, false, NOW)).toEqual(once);
+  });
+
+  it('lets go of a favorite that left with room in its section: hidden, unfavorited, filtered', () => {
+    const gone = post('F', 20, true);
+    expect(
+      ids(carryFavorites([post('c0', 2, true), gone], [post('c0', 2, true)], pages, false, NOW)),
+    ).toEqual(['c0']);
+  });
+
+  it('lets go once the pages cover its time, or the feed is exhausted: the pages are the truth', () => {
+    const evicted = post('F', 20, true);
+    const after = full(1.5);
+    const reachedPages = [...pages, post('t25', 25)];
+    expect(carryFavorites([...after, evicted], after, reachedPages, false, NOW)).toEqual(after);
+    expect(carryFavorites([...after, evicted], after, pages, true, NOW)).toEqual(after);
+  });
+
+  it('doesn’t carry a favorite newer than one the server kept: that isn’t an eviction', () => {
+    const odd = post('F', 1.2, true);
+    expect(ids(carryFavorites([odd], full(1.5), pages, false, NOW))).toEqual(ids(full(1.5)));
+  });
+
+  it('carries nothing into a section that isn’t full', () => {
+    const evicted = post('O', 90 * 24, true);
+    expect(ids(carryFavorites([evicted], full(1.5), pages, false, NOW))).toEqual(ids(full(1.5)));
   });
 });

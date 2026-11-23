@@ -2219,8 +2219,8 @@ describe('posts.listFeed filters + the favorite flag (Phase 04, D292)', () => {
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: b.id });
 
     const res = await asUser.query(api.posts.listFeed, ALL);
-    // Both present, newest skate first: the client lifts the favorite within its recency section
-    // (`groupFeedSections`); a server reorder would split one section around an older favorite.
+    // Both present, newest skate first: the client lifts a favorite within its recency section
+    // (`latestFeedSections`); a server reorder would split one section around an older favorite.
     expect(cards(res).map((c) => c.reportId)).toEqual([newest, oldestFav]);
     expect(cards(res).map((c) => c.isFavorite)).toEqual([false, true]);
   });

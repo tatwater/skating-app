@@ -17,6 +17,7 @@
  */
 
 import {
+  FAVORITE_LIFT_PER_SECTION,
   feedSectionForTime,
   feedSectionWindows,
   isBrowsableSeason,
@@ -119,9 +120,10 @@ export const remove = mutation({
  * the shared `reportMatchesFeed` (include-unknown for optional attributes; distance is hard and
  * favorites are exempt). A Post appears with only its matching Reports under the header, and not at
  * all when none match; the `posts` indexes carry no filter columns. Favorites carry `isFavorite: true`
- * and the page stays **newest skate first**: the client lifts them to the top of their recency
- * section (`groupFeedSections`, D292), since a page reordered here split "Today" around older
- * favorites. With no filters the result is exactly the Phase 05 feed, one Post per Report.
+ * and the page stays **newest skate first**: the client lifts the ones `listFavoritePosts` names to
+ * the top of their recency section (`latestFeedSections`, D292), since a page reordered here split
+ * "Today" around older favorites. With no filters the result is exactly the Phase 05 feed, one Post
+ * per Report.
  *
  * Narrowing runs *after* `paginate`, so a heavily filtered page can come back short (even empty)
  * with `isDone: false` — `usePaginatedQuery` keeps loading; the client requests the next page. (The
@@ -205,16 +207,19 @@ export const listFeed = query({
   },
 });
 
-/** The most favorite Posts `listFavoritePosts` returns per recency section: those it lifts. */
-export const FAVORITE_POSTS_PER_SECTION = 8;
-/** The most favorites (lakes and bays together) it reads from, newest favorite first. */
+/** The most favorites (lakes and bays together) `listFavoritePosts` reads from, newest first. */
 export const FAVORITE_SOURCES_CAP = 25;
-/** Candidates it looks at per section, past the ones a filter or a repeat discards. */
-const FAVORITE_CANDIDATES_PER_SECTION = 3 * FAVORITE_POSTS_PER_SECTION;
+/** Distinct Reports it looks at per section, past the ones a filter or a repeat Post discards. */
+const FAVORITE_CANDIDATES_PER_SECTION = 3 * FAVORITE_LIFT_PER_SECTION;
+/**
+ * Cards it hydrates in all: each is `listFeed`'s per-Post cost (members, photos, tracks), so the
+ * whole read stays near a page and a half of the feed however the filters fall.
+ */
+export const FAVORITE_HYDRATIONS_CAP = 30;
 
 /**
  * The viewer's favorite Posts that Latest lifts to the top of their recency sections, read up front
- * (D292): up to {@link FAVORITE_POSTS_PER_SECTION} per section, newest first. A favorite paged in
+ * (D292): up to `FAVORITE_LIFT_PER_SECTION` per section, newest first. A favorite paged in
  * after its section drew would land above where the reader is scrolled, unseen, so the client lifts
  * only these (`latestFeedSections`); any other favorite keeps its time slot and its star.
  *
@@ -225,10 +230,10 @@ const FAVORITE_CANDIDATES_PER_SECTION = 3 * FAVORITE_POSTS_PER_SECTION;
  *
  * **Bounded, per section.** For each section's window (`feedSectionWindows`) it reads each of the
  * viewer's newest {@link FAVORITE_SOURCES_CAP} favorites' newest few visible Reports (a lake by its
- * Reports, a bay by the `reportSubAreas` join), walks them newest first, and hydrates at most
- * {@link FAVORITE_CANDIDATES_PER_SECTION} of them. A Post is placed by its own newest member, which
- * may be newer than the favorite Report that found it. Reading a section at a time keeps one busy
- * lake's Today from crowding out every older section's favorites.
+ * Reports, a bay by the `reportSubAreas` join), walks the distinct Reports newest first, and stops
+ * at the section's cap; at most {@link FAVORITE_HYDRATIONS_CAP} cards are built in all. A Post is
+ * placed by its own newest member, which may be newer than the favorite Report that found it.
+ * Reading a section at a time keeps one busy lake's Today from crowding out every older section.
  */
 export const listFavoritePosts = query({
   args: {
@@ -258,11 +263,16 @@ export const listFavoritePosts = query({
 
     const kept = new Map<string, { card: PostCardData; createdAt: number }[]>();
     const seen = new Set<Id<'posts'>>();
+    let hydrations = 0;
+    // The windows are judged at this run's `now`; Convex doesn't re-run a query because time passed,
+    // so a quiet afternoon can leave them hours old. The client sections by its own clock: at worst a
+    // section lifts a few more or fewer than the cap, never one above a newer section.
     for (const window of feedSectionWindows(viewer.now)) {
       const lo = Math.max(window.startMs, seasonStart);
       const hi = Math.min(window.endMs, seasonEnd);
       if (lo >= hi) continue;
-      const candidates: { t: number; report: Doc<'reports'> | Id<'reports'> }[] = [];
+      // Keyed by Report: a bay favorite of a favorite lake finds the same Report twice.
+      const candidates = new Map<string, { t: number; report: Doc<'reports'> | Id<'reports'> }>();
       for (const source of sources) {
         if (source.subAreaId === undefined) {
           const rows = await ctx.db
@@ -275,8 +285,8 @@ export const listFavoritePosts = query({
                 .lt('skateEndTime', hi),
             )
             .order('desc')
-            .take(FAVORITE_POSTS_PER_SECTION);
-          for (const r of rows) candidates.push({ t: r.skateEndTime, report: r });
+            .take(FAVORITE_LIFT_PER_SECTION);
+          for (const r of rows) candidates.set(r._id, { t: r.skateEndTime, report: r });
         } else {
           const subAreaId = source.subAreaId;
           const rows = await ctx.db
@@ -289,13 +299,18 @@ export const listFavoritePosts = query({
                 .lt('skateEndTime', hi),
             )
             .order('desc')
-            .take(FAVORITE_POSTS_PER_SECTION);
-          for (const r of rows) candidates.push({ t: r.skateEndTime, report: r.reportId });
+            .take(FAVORITE_LIFT_PER_SECTION);
+          for (const r of rows) {
+            if (!candidates.has(r.reportId)) {
+              candidates.set(r.reportId, { t: r.skateEndTime, report: r.reportId });
+            }
+          }
         }
       }
-      candidates.sort((a, b) => b.t - a.t);
-      for (const candidate of candidates.slice(0, FAVORITE_CANDIDATES_PER_SECTION)) {
-        if ((kept.get(window.key)?.length ?? 0) >= FAVORITE_POSTS_PER_SECTION) break;
+      const ordered = [...candidates.values()].sort((a, b) => b.t - a.t);
+      for (const candidate of ordered.slice(0, FAVORITE_CANDIDATES_PER_SECTION)) {
+        if ((kept.get(window.key)?.length ?? 0) >= FAVORITE_LIFT_PER_SECTION) break;
+        if (hydrations >= FAVORITE_HYDRATIONS_CAP) break;
         const report =
           typeof candidate.report === 'string'
             ? await ctx.db.get(candidate.report)
@@ -306,11 +321,12 @@ export const listFavoritePosts = query({
         const post = await ctx.db.get(postId);
         if (post?.moderationStatus !== 'visible') continue;
         if (post.latestSkateEndTime < seasonStart || post.latestSkateEndTime >= seasonEnd) continue;
+        hydrations++;
         const card = await toPostCard(ctx, post, viewer);
         if (!card?.isFavorite) continue;
         const key = feedSectionForTime(card.latestSkateEndTime, viewer.now).key;
         const list = kept.get(key) ?? [];
-        if (list.length >= FAVORITE_POSTS_PER_SECTION) continue;
+        if (list.length >= FAVORITE_LIFT_PER_SECTION) continue;
         list.push({ card, createdAt: post._creationTime });
         kept.set(key, list);
       }

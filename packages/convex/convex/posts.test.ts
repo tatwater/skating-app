@@ -1,9 +1,10 @@
+import { FAVORITE_LIFT_PER_SECTION } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { postSearchText } from './lib/postSync';
-import { FAVORITE_POSTS_PER_SECTION, FAVORITE_SOURCES_CAP, legacyPostFor } from './posts';
+import { FAVORITE_SOURCES_CAP, legacyPostFor } from './posts';
 import { a10ShapePatch } from './reports';
 import schema from './schema';
 
@@ -1059,7 +1060,7 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     const DAY = 86_400_000;
     // Today, Yesterday, Earlier this week, Earlier this month, Older than a month.
     const AGES = [0, 1.5 * DAY, 4 * DAY, 15 * DAY, 45 * DAY];
-    const perSection = FAVORITE_POSTS_PER_SECTION + 1;
+    const perSection = FAVORITE_LIFT_PER_SECTION + 1;
     // One more favorite than the read takes; each is busy enough to fill every section on its own.
     const bodies: Id<'waterBodies'>[] = [];
     for (let i = 0; i <= FAVORITE_SOURCES_CAP; i++) bodies.push(await seedBody(t));
@@ -1108,11 +1109,18 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     const counts = AGES.map(
       (_, s) => cards.filter((c) => sectionOf(c.latestSkateEndTime) === s).length,
     );
-    expect(counts).toEqual(AGES.map(() => FAVORITE_POSTS_PER_SECTION));
+    expect(counts).toEqual(AGES.map(() => FAVORITE_LIFT_PER_SECTION));
     const times = cards.map((c) => c.latestSkateEndTime);
     expect(times).toEqual([...times].sort((a, b) => b - a));
     const oldest = bodies[FAVORITE_SOURCES_CAP];
     expect(cards.some((c) => c.reports.some((r) => r.waterBodyId === oldest))).toBe(false);
+
+    // A filter that rejects nearly every candidate still ends inside the limits, on its card budget.
+    const recent = await viewer.as.query(api.posts.listFavoritePosts, {
+      filters: { recencyHours: 1 },
+    });
+    expect(recent.length).toBeLessThanOrEqual(FAVORITE_LIFT_PER_SECTION);
+    expect(recent.every((c) => c.latestSkateEndTime >= T0 + 60_000 - 3_600_000)).toBe(true);
   });
 
   test('a Post sits in the section of its newest member, found through an older favorite one', async () => {

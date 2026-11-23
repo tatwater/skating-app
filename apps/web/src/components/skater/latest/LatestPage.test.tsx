@@ -289,6 +289,32 @@ describe('LatestPage', () => {
     ]);
   });
 
+  it('keeps a lifted favorite when a newer one fills its section’s cap, until its page arrives', () => {
+    const fav = (id: string, hoursOlder: number) => ({
+      ...POST,
+      postId: id,
+      title: `Favorite ${id}`,
+      latestSkateEndTime: POST.latestSkateEndTime - hoursOlder * 3_600_000,
+      isFavorite: true,
+      reports: [{ ...REPORT, reportId: `${id}-r`, isFavorite: true }],
+    });
+    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
+    fakes.queries.set(
+      'posts:listFavoritePosts',
+      [1, 2, 3, 4, 5].map((h) => fav(`f${h}`, h)),
+    );
+    const view = page();
+    expect(screen.getByText('Favorite f5')).toBeInTheDocument();
+    // A newer favorite lands; the server's five newest no longer hold f5.
+    fakes.queries.set('posts:listFavoritePosts', [
+      fav('fnew', 0.5),
+      ...[1, 2, 3, 4].map((h) => fav(`f${h}`, h)),
+    ]);
+    view.rerender(<LatestPage search={{}} />);
+    expect(screen.getByText('Favorite fnew')).toBeInTheDocument();
+    expect(screen.getByText('Favorite f5')).toBeInTheDocument();
+  });
+
   it('reads no favorites under a search or one skater’s list: each says newest first', () => {
     m.flags['latest-skater-filter'] = true;
     m.flags['latest-text-search'] = true;

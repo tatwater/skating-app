@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import {
+  carryFavorites,
   type FeedFilters,
   hasWeatherFilter,
   type PostCardData,
@@ -7,7 +8,7 @@ import {
 } from '@skating/core';
 import { useCanGoBack, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
 import { useFeatureFlag } from '@/lib/featureFlags';
@@ -135,13 +136,23 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   const status = page.status as PageStatus;
   const posts = page.results as PostCardData[];
   const bodies = bodyResults?.results ?? [];
+  // A favorite already lifted into view stays lifted when a newer one pushes it past its section's
+  // cap, until its page arrives (`carryFavorites`, D292). Per filters: a change starts over.
+  const carried = useRef({ key: '', favorites: [] as PostCardData[] });
+  const filtersKey = JSON.stringify(value);
+  let liftedFavorites: PostCardData[] = [];
+  if (lift && favoritePosts !== undefined) {
+    const previous = carried.current.key === filtersKey ? carried.current.favorites : [];
+    liftedFavorites = carryFavorites(previous, favoritePosts, posts, status === 'Exhausted', now);
+    carried.current = { key: filtersKey, favorites: liftedFavorites };
+  }
   const sections = latestSections(
     posts,
     searching ? new Set<string>() : recommendedIds,
     bodies,
     status === 'Exhausted',
     now,
-    { lift, favorites: favoritePosts ?? [] },
+    { lift, favorites: liftedFavorites },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
   // The sections wait for what decides their heads (D292): drawn before the favorites or the

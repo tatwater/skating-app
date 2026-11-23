@@ -202,8 +202,9 @@ export interface FeedCardData {
   author: FeedAuthor;
   blocked: boolean;
   /**
-   * Viewer has favorited this body or bay (Phase 04 / A09) — the card's badge. The feed's order
-   * reads the Post's own `isFavorite` (`groupFeedSections`, D292), not this.
+   * Viewer has favorited this body or bay (Phase 04 / A09) — the card's badge, and what lets its Post
+   * lead its recency section: `latestFeedSections` lifts a Post only while a member it shows has
+   * this (D292).
    */
   isFavorite?: boolean;
   /**
@@ -339,8 +340,8 @@ export interface PostCardData {
   author: FeedAuthor;
   blocked: boolean;
   /**
-   * Any matched member is on a favorited body or bay (Phase 04 / A09) — the badge, and the boost
-   * to the top of its recency section (`groupFeedSections`, D292).
+   * Any matched member is on a favorited body or bay (Phase 04 / A09). What lifts a Post is the
+   * up-front read naming it and a shown member's own flag (`latestFeedSections`, D292), not this.
    */
   isFavorite: boolean;
   /** Never empty: a Post with no matching Report is not in the page. */
@@ -541,9 +542,10 @@ export function feedSectionWindows(
  * section first, with the viewer's favorites leading inside each section (D292). Within a section,
  * favorites come before the rest, and each group runs newest first; ties keep their input order.
  *
- * The boost lives here, not on the server: a page reordered favorites-first is no longer newest
- * first, and splitting it by time drew "Today / Older than a month / Today" (D292). Bucketing by key
- * rather than by run means no input order can repeat a header. `getTime` extracts the skate-end
+ * The caller says what leads (`isFavorite`; Latest's rule is `latestFeedSections`'). The order is
+ * decided here, not on the server: a page reordered favorites-first is no longer newest first, and
+ * splitting it by time drew "Today / Older than a month / Today" (D292). Bucketing by key rather
+ * than by run means no input order can repeat a header. `getTime` extracts the skate-end
  * time, so this works over raw `FeedCardData`, a built view or a Latest row alike. Empty in → empty out.
  */
 export function groupFeedSections<T>(
