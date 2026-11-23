@@ -17,7 +17,9 @@ function chunk(type: string, data: Buffer): Buffer {
 
 /** A `size`×`size` PNG of one color, its color from `seed` (an RGB triple from its hash). */
 export function seedPng(seed: string, size: number): Buffer {
-  const [r, g, b] = createHash('sha256').update(seed).digest();
+  const digest = createHash('sha256').update(seed).digest();
+  // A sha256 is 32 bytes: the first three are always there.
+  const rgb = [digest.readUInt8(0), digest.readUInt8(1), digest.readUInt8(2)];
   const header = Buffer.alloc(13);
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
@@ -25,7 +27,7 @@ export function seedPng(seed: string, size: number): Buffer {
   header[9] = 2; // color type: truecolor
   // compression, filter and interlace stay 0
   const row = Buffer.alloc(1 + size * 3);
-  for (let x = 0; x < size; x++) row.set([r ?? 0, g ?? 0, b ?? 0], 1 + x * 3);
+  for (let x = 0; x < size; x++) row.set(rgb, 1 + x * 3);
   const pixels = Buffer.concat(Array.from({ length: size }, () => row));
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
