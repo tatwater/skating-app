@@ -11920,6 +11920,50 @@ As S5-2 records it; the reviewer's own inventory was not relayed in full.
     shown with the report once you save");
   - the phone's image cache keeps a taken-down photo it already loaded.
 
+#### #175 merged (2026-11-23)
+
+- **The merge.** #175 is squash-merged to main as `35944bf6`, after Greptile 5/5 and green CI on
+  `7c03f3606`. Main had moved to `bd435e98e` (#174: the skater web's Latest, D292) before it, so the
+  squash is `7c03f3606` merged with #174. The squash differs from `7c03f3606` in exactly #174's 21
+  files, so the support content is equal. The local `phase-b01-inbox-5` is deleted.
+- **The dev rollout of #175** is the deploy executor's (`convex dev --once`; clear and re-apply the
+  seed, 123 steps). `SUPPORT_FROM_EMAIL` is the founder's to set; until then every reply is stored
+  `failed` (`unconfigured`).
+- **Photos moved onto main.** Its 48 commits were rebased past the support content onto `35944bf6`,
+  after the one support docs commit the squash didn't carry (the reviewers' clean areas). There were
+  no conflicts.
+  - The diff against main shows only photos' files and the plan.
+  - #175's round-one markers are on main: `sendEmailOutcome`, the `Idempotency-Key`, and
+    `outcomeUnknown` in the web's words.
+  - The one file both #174 and photos touch is `convex/reports.test.ts`. #174 changed the feed's
+    filter tests (around l.2100–2220) and photos the report write and photo-guard tests (around
+    l.600–1810): separate regions, both kept.
+  - `phase-b01-inbox` now sits at the photos head.
+- **The narrowing of `photos.moderationStatus` stays out of the photos PR** (S5's held commit
+  `c2e57b3f8`). It needs the photo backfill, which ships in that PR, to have run on dev and counted
+  zero unstamped rows first. It goes into the wave's close-out PR. Nothing on the branch assumes the
+  field is present: every photo read takes absent as `visible` (`photoVisible`, `?? 'visible'`), and
+  a new photo is stamped `visible` at birth.
+
+##### The close-out PR, as it now stands
+
+1. **Narrow `photos.moderationStatus` to required** (`c2e57b3f8`), after
+   `photoRollout:countUnstamped` answers `{ unstamped: 0 }` on dev.
+2. **Narrow `contentFlags.status`, losing `reviewing`** (D283), after a dev count of zero.
+3. **Delete the retired pages' components:**
+   - `FlagQueue.tsx` (the old flags page);
+   - `RequestQueue.tsx` and its test (the old requests page);
+   - `SupportQueue.tsx`;
+   - `BayRequestQueue.tsx` and its test;
+   - `support.assign` and the `in_progress` it alone writes.
+
+   The routes `admin.flags.tsx`, `admin.water.requests.tsx` and `admin.support.tsx` are redirects now
+   and stay for every link that still points at them; whether to drop them is the close-out's call.
+   `LandmarkTool.tsx`, `useReviewWatch.ts`, `ReviewClosedNotice.tsx` and
+   `corpusRequests.reviewState` stay with the old editor until task modes (Bo23).
+4. **Flip the roadmap entry** to closed.
+5. **Sweep the local branches and worktrees** (`phase-b01-inbox-*`, the builders' `b01-5*` branches).
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
