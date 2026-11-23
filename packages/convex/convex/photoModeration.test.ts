@@ -455,6 +455,10 @@ describe('an author’s edit keeps every held photo (D248)', () => {
     expect(after).toEqual([fresh, keepFlagged, keepHidden]);
     expect((await photoRow(t, drop))?.reportId).toBeUndefined();
     expect((await photoRow(t, keepFlagged))?.reportId).toBe(reportId);
+    // The flagged one was up, so leaving it out withdrew it; the hidden one is as it was.
+    expect((await photoRow(t, keepFlagged))?.moderationStatus).toBe('removed');
+    expect((await photoRow(t, keepHidden))?.moderationStatus).toBe('hidden');
+    expect((await photoRow(t, keepHidden))?.purgeAt).toBeUndefined();
   });
 });
 
@@ -463,12 +467,14 @@ describe('an author’s edit keeps every held photo (D248)', () => {
  * back-links), so the rule is held without the whole report contract's fixture.
  */
 async function editHarness() {
-  const { keepHeldPhotos, syncReportPhotoLinks } = await import('./lib/photoAccess');
+  const { syncReportPhotoLinks } = await import('./lib/photoAccess');
+  const { keepAndWithdrawHeld } = await import('./lib/photoWithdraw');
   return {
     applyEditKeepingHeld: (t: T, reportId: Id<'reports'>, sent: Id<'photos'>[]) =>
       t.run(async (ctx) => {
         const report = (await ctx.db.get(reportId)) as Doc<'reports'>;
-        const next = await keepHeldPhotos(ctx, sent, report.photoIds);
+        const author = (await ctx.db.get(report.authorId)) as Doc<'profiles'>;
+        const next = await keepAndWithdrawHeld(ctx, author, sent, report.photoIds, Date.now());
         await syncReportPhotoLinks(ctx, reportId, report.photoIds, next);
         await ctx.db.patch(reportId, { photoIds: next });
         return next;

@@ -10,30 +10,26 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  type ActionCtx,
   internalAction,
   internalMutation,
-  internalQuery,
-  type ActionCtx,
   type MutationCtx,
   mutation,
   query,
 } from './_generated/server';
 import { failedAttempt, MAX_ATTEMPTS } from './lib/attempts';
-import { writeAudit } from './lib/audit';
 import { requireContributor, requireProfile } from './lib/auth';
-import { AUTHOR_DELETE_REASON } from './lib/authorDeletion';
 import {
   BLOB_NOT_FOUND,
   BLOB_TAKEN,
   blobReferenced,
-  PHOTO_PURGE_DELAY_MS,
   photoHeld,
   photoVisible,
-  photoWithdrawnAt,
   resolvePhotoUrls,
 } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
-import { ROTATION_RETRY_MS, scheduleRotation, sweepRotationCopies } from './lib/photoRotation';
+import { ROTATION_RETRY_MS, sweepRotationCopies } from './lib/photoRotation';
+import { withdrawHeldPhoto } from './lib/photoWithdraw';
 import { errorClassOf } from './lib/readBudget';
 import { clearFailure, mirrorFailure } from './lib/recurringWork';
 import { getViewableReport } from './lib/reportVisibility';
@@ -151,41 +147,6 @@ export type PhotoRemoveOutcome = 'deleted' | 'withdrawn' | 'kept' | 'gone';
 export const PENDING_UPLOAD_MS = 24 * 60 * 60 * 1000;
 /** What `removeBlob` says of a blob it won't take: a photo's, or not a fresh unattached upload. */
 export const BLOB_ATTACHED = 'Only a fresh upload no photo uses can be removed this way.';
-
-/**
- * Withdraw a held photo for its uploader (see {@link remove}). Idempotent: a photo already withdrawn
- * writes nothing. Leaves its flags open and its verdict standing — a moderator still decides.
- */
-async function withdrawHeldPhoto(
-  ctx: MutationCtx,
-  uploader: Doc<'profiles'>,
-  photo: Doc<'photos'>,
-  now: number,
-): Promise<void> {
-  if ((await photoWithdrawnAt(ctx, photo._id)) !== null) return;
-  // Always removed: the purge clock stands only on a removed photo (a hidden one's would read as
-  // stale, and its bytes would never go). A moderator's verdict on it stands as it was.
-  const priorStatus = photo.moderationStatus ?? 'visible';
-  const newStatus = 'removed' as const;
-  await ctx.db.patch(photo._id, {
-    moderationStatus: newStatus,
-    ...(newStatus !== priorStatus ? { moderatedAt: now } : {}),
-    purgeAt: Math.min(photo.purgeAt ?? Number.POSITIVE_INFINITY, now + PHOTO_PURGE_DELAY_MS),
-  });
-  await writeAudit(ctx, {
-    actorId: uploader._id,
-    action: 'author_delete',
-    targetType: 'photo',
-    targetId: photo._id,
-    reason: AUTHOR_DELETE_REASON,
-    metadata: { priorStatus, newStatus, subjectUserId: uploader._id },
-    createdAt: now,
-  });
-  // A withdrawal that takes the photo down moves its bytes, as a takedown does (`rotateBlobs`).
-  if (priorStatus === 'visible') {
-    await scheduleRotation(ctx, photo);
-  }
-}
 
 /**
  * Delete a storage blob the client uploaded but never attached to a `photos` row — the cleanup path
@@ -328,7 +289,11 @@ export const rotationWatch = internalMutation({
     const now = Date.now();
     const runAt = photo?.rotation?.runAt;
     if (runAt !== undefined && runAt > 0 && now - runAt < ACTION_LIFETIME_MS) {
-      await ctx.scheduler.runAfter(runAt + ACTION_LIFETIME_MS - now, internal.photos.rotationWatch, args);
+      await ctx.scheduler.runAfter(
+        runAt + ACTION_LIFETIME_MS - now,
+        internal.photos.rotationWatch,
+        args,
+      );
       return 'waiting';
     }
     if (photo) {
@@ -438,7 +403,10 @@ export const rotateBlobs = internalAction({
       try {
         await dropCopies(ctx, photoId, fresh);
       } catch (dropErr) {
-        console.error(`photos.rotateBlobs: could not drop ${photoId}'s copies; its watch sweeps`, dropErr);
+        console.error(
+          `photos.rotateBlobs: could not drop ${photoId}'s copies; its watch sweeps`,
+          dropErr,
+        );
       }
       console.warn(`photos.rotateBlobs: ${photoId} failed (${errorClass}); its watch retries`);
       return { outcome: 'failed', errorClass };
@@ -543,7 +511,11 @@ export const markBytesMissing = internalMutation({
   },
   handler: async (ctx, { photoId, old }) => {
     const photo = await ctx.db.get(photoId);
-    if (!photo || photo.storageId !== old.storageId || photo.thumbStorageId !== old.thumbStorageId) {
+    if (
+      !photo ||
+      photo.storageId !== old.storageId ||
+      photo.thumbStorageId !== old.thumbStorageId
+    ) {
       return;
     }
     await markMissing(ctx, photo, Date.now());

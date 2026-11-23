@@ -165,30 +165,6 @@ export async function assertOwnedPhotos(
 }
 
 /**
- * **An author's edit keeps every held photo attached** (D248, B01-5e: an author can't drop evidence by
- * editing). `sent` is the list the edit asked for; each photo of `before` it leaves out that is held
- * ({@link photoHeld}: moderated, flagged, or under a decision) is kept, after the sent ones, in its
- * old order. A photo that is gone, or not held, drops as the edit asked.
- */
-export async function keepHeldPhotos(
-  ctx: QueryCtx,
-  sent: readonly Id<'photos'>[],
-  before: readonly Id<'photos'>[],
-): Promise<Id<'photos'>[]> {
-  const kept = new Set<string>(sent);
-  const out = [...sent];
-  for (const photoId of before) {
-    if (kept.has(photoId)) continue;
-    const photo = await ctx.db.get(photoId);
-    if (photo && (await photoHeld(ctx, photo))) {
-      out.push(photoId);
-      kept.add(photoId);
-    }
-  }
-  return out;
-}
-
-/**
  * Keep `photos.reportId` — the back-link beside `reports.photoIds` (A10 / D186) — in step with a
  * report's photo list: stamped on every photo the list gains, cleared on every one it drops. Called
  * by each writer of `reports.photoIds` in the same transaction as the list write, after

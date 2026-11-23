@@ -194,10 +194,11 @@ describe('a report with hundreds of photos, most of them down', () => {
       i % 4 === 0 ? {} : { moderationStatus: 'hidden' as const },
     );
     const { reportId } = await lakeAndReport(t, uploader, ids);
-    const { keepHeldPhotos } = await import('./lib/photoAccess');
+    const { keepAndWithdrawHeld } = await import('./lib/photoWithdraw');
     const kept = await t.run(async (ctx) => {
       const r = (await ctx.db.get(reportId)) as Doc<'reports'>;
-      return keepHeldPhotos(ctx, [], r.photoIds);
+      const author = (await ctx.db.get(r.authorId)) as Doc<'profiles'>;
+      return keepAndWithdrawHeld(ctx, author, [], r.photoIds, Date.now());
     });
     expect(kept).toHaveLength((BUSY_REPORT * 3) / 4);
   }, 60_000);

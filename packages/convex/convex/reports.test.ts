@@ -616,7 +616,6 @@ describe('reports.create', () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asOwner = await seedUser(t, 'clerk_owner');
-    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
     const photoId = await asOwner.mutation(api.photos.create, {
       storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
       thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
@@ -1632,7 +1631,6 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     async function seedReportWithPhoto(t: ReturnType<typeof convexTest>) {
       const { id } = await seedBody(t);
       const asUser = await seedUser(t, 'clerk_a');
-      const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
       const photoId = await asUser.mutation(api.photos.create, {
         storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
         thumbStorageId: await t.run((ctx) => ctx.storage.store(new Blob(['t']))),
@@ -1681,6 +1679,52 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       await asUser.mutation(api.reports.update, { reportId, skateEndTime: SKATE_TIME });
       expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
     });
+
+    test('dropping a flagged photo withdraws it: attached as evidence, down for skaters, on the clock (B01-5e)', async () => {
+      const t = convexTestWithGeo();
+      const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
+      const asOther = await seedUser(t, 'clerk_other');
+      await asOther.mutation(api.contentFlags.flag, {
+        targetType: 'photo',
+        targetId: photoId,
+        reason: 'inappropriate',
+      });
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [],
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
+      const photo = await t.run((ctx) => ctx.db.get(photoId));
+      expect(photo?.moderationStatus).toBe('removed');
+      expect(photo?.purgeAt).toEqual(expect.any(Number));
+      expect(photo?.reportId).toBe(reportId);
+      const withdrawal = await t.run((ctx) =>
+        ctx.db
+          .query('moderationActions')
+          .withIndex('by_target_action', (q) =>
+            q.eq('targetType', 'photo').eq('targetId', photoId).eq('action', 'author_delete'),
+          )
+          .collect(),
+      );
+      expect(withdrawal).toHaveLength(1);
+      expect(await asOther.query(api.photos.getUrls, { reportId })).toEqual([]);
+    });
+
+    test('dropping a photo already hidden leaves it as it is, attached', async () => {
+      const t = convexTestWithGeo();
+      const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
+      await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'hidden' }));
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [],
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
+      const photo = await t.run((ctx) => ctx.db.get(photoId));
+      expect(photo?.moderationStatus).toBe('hidden');
+      expect(photo?.purgeAt).toBeUndefined();
+    });
   });
 
   /**
@@ -1693,7 +1737,6 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     async function seedUserWithPhoto(t: ReturnType<typeof convexTest>) {
       const { id } = await seedBody(t);
       const asUser = await seedUser(t, 'clerk_a');
-      const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
       const photoOf = async () =>
         asUser.mutation(api.photos.create, {
           storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),
@@ -1769,7 +1812,6 @@ describe('reports.update / photos.create guards (review fixes)', () => {
   test('photos.create rejects an out-of-range coord (range guard, D42)', async () => {
     const t = convexTestWithGeo();
     const asUser = await seedUser(t, 'clerk_a');
-    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
     await expect(
       asUser.mutation(api.photos.create, {
         storageId: await t.run((ctx) => ctx.storage.store(new Blob(['x']))),

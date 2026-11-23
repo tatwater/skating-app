@@ -59,11 +59,11 @@ import { resolveLocatedLandmarks } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import {
   assertOwnedPhotos,
-  keepHeldPhotos,
   photoVisible,
   shownPhotoIds,
   syncReportPhotoLinks,
 } from './lib/photoAccess';
+import { keepAndWithdrawHeld } from './lib/photoWithdraw';
 import { refreshPostLatestSkateEnd, refreshPostSearchText, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
@@ -644,10 +644,12 @@ export const update = mutation({
 
     // An author can't drop evidence by editing (D248, B01-5e): a photo the edit leaves out that is
     // moderated, flagged or under a decision stays on the report, after the ones sent.
-    const photoIds = await keepHeldPhotos(
+    const photoIds = await keepAndWithdrawHeld(
       ctx,
+      profile,
       [...new Set(args.photoIds ?? existing.photoIds)],
       existing.photoIds,
+      now,
     );
     await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: args.reportId });
 
