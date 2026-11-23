@@ -46,11 +46,18 @@ export const TICKET_WORDS = {
   notSent: 'Not sent',
   /** Why a reply was not sent: a class, never an address or a provider's words. Coined. */
   notSentWhy: {
-    unconfigured: 'no sending address is set up',
+    /** No support sender, or no email service key, on the deployment. */
+    unconfigured: 'no sending address or email service is set up',
     seed: 'a test person’s ticket: test people are never emailed',
     noAddress: 'there is no email address for them',
-    sendFailed: 'the email service didn’t take it',
+    /** The provider refused it, or its send never ran. */
+    sendFailed: 'the email service didn’t take it, or its send never ran',
   },
+  /**
+   * Coined (`outcomeUnknown`): its send started and stopped before saying how it went. Never worded as
+   * sent, never as not sent — it may or may not have reached them, and it is never resent by itself.
+   */
+  outcomeUnknown: 'Sending stopped · it may or may not have been sent',
   notSentUnknown: 'the reason wasn’t recorded',
 
   // ── The dock ───────────────────────────────────────────────────────────────────────────────

@@ -246,8 +246,14 @@ export const EVERY_STATE = {
       failedWhy: 'seed',
       sentAt: null,
     }),
+    // Its send started and stopped before saying how it went (`outcomeUnknown`).
+    message('reply', SARAH, at(10, 13, 18, 0), 'Following up.', {
+      status: 'failed',
+      failedWhy: 'outcomeUnknown',
+      sentAt: null,
+    }),
   ],
-  messageCount: 8,
+  messageCount: 9,
 } as TicketItem;
 
 /** A busy ticket: the read served the newest 100 and said it stopped short (more than that). */

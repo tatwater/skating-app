@@ -191,7 +191,12 @@ export const EveryState: Story = {
           4,
         );
         expect(q.querySelectorAll('[data-slot="ticket-note-removed"]')).toHaveLength(1);
-        expect(within(q).getByText('Not sent · no sending address is set up')).toBeVisible();
+        expect(
+          within(q).getByText('Not sent · no sending address or email service is set up'),
+        ).toBeVisible();
+        expect(
+          within(q).getByText('Sending stopped · it may or may not have been sent'),
+        ).toBeVisible();
         // Never "Sent" alone where the server didn't say sent.
         expect(within(q).queryByText(/^Sent$/)).toBeNull();
       });

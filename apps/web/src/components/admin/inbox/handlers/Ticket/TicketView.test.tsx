@@ -127,10 +127,12 @@ describe('the thread', () => {
     expect(states).toEqual([
       ['sent', 'Sent · 13 Oct 12:06'],
       ['canceled', 'Canceled · never sent'],
-      ['failed', 'Not sent · no sending address is set up'],
+      ['failed', 'Not sent · no sending address or email service is set up'],
       ['failed', 'Not sent · there is no email address for them'],
-      ['failed', 'Not sent · the email service didn’t take it'],
+      ['failed', 'Not sent · the email service didn’t take it, or its send never ran'],
       ['failed', 'Not sent · a test person’s ticket: test people are never emailed'],
+      // A send that stopped before saying how it went: neither sent nor not sent.
+      ['unknown', 'Sending stopped · it may or may not have been sent'],
     ]);
     // The removed note is a line, its words gone.
     expect(slots(container, 'ticket-note-removed')).toHaveLength(1);
@@ -307,7 +309,11 @@ describe('the dock', () => {
     reply.unmount();
     const onNote = vi.fn();
     const long = 'x'.repeat(MAX_SUPPORT_NOTE_LENGTH + 5);
-    const note = draw({ item: ROB_APPEAL, draft: { text: long, mode: 'note' }, onNote });
+    const note = draw({
+      item: ROB_APPEAL,
+      draft: { text: long, mode: 'note' },
+      onNote,
+    });
     expect(within(note.container).getByRole('textbox')).toHaveAttribute(
       'maxlength',
       String(MAX_SUPPORT_NOTE_LENGTH),

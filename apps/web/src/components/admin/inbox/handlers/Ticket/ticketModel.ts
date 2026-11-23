@@ -132,7 +132,9 @@ export type ReplyState =
   | { kind: 'sending' }
   | { kind: 'sent'; at: number | null }
   | { kind: 'canceled' }
-  | { kind: 'failed'; why: FailedWhy | null };
+  | { kind: 'failed'; why: Exclude<FailedWhy, 'outcomeUnknown'> | null }
+  /** Its send started and stopped before saying how it went: neither sent nor not sent. */
+  | { kind: 'unknown' };
 
 /** A reply's state at `now`: never anything that reads as sent unless the server said `sent`. */
 export function replyState(reply: NonNullable<TicketMessage['reply']>, now: number): ReplyState {
@@ -148,7 +150,9 @@ export function replyState(reply: NonNullable<TicketMessage['reply']>, now: numb
     case 'canceled':
       return { kind: 'canceled' };
     case 'failed':
-      return { kind: 'failed', why: reply.failedWhy };
+      return reply.failedWhy === 'outcomeUnknown'
+        ? { kind: 'unknown' }
+        : { kind: 'failed', why: reply.failedWhy };
   }
 }
 
@@ -165,6 +169,8 @@ export function replyStateWords(state: ReplyState, timeZone?: string): string {
       return W.canceled;
     case 'failed':
       return `${W.notSent} · ${state.why === null ? W.notSentUnknown : W.notSentWhy[state.why]}`;
+    case 'unknown':
+      return W.outcomeUnknown;
   }
 }
 

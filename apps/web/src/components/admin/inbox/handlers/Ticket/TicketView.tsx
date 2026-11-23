@@ -316,6 +316,7 @@ function Message({ message, ...props }: TicketViewProps & { message: TicketMessa
               data-slot="ticket-reply-state"
               className={cn(
                 state.kind === 'failed' && 'text-bad',
+                state.kind === 'unknown' && 'text-warn',
                 state.kind === 'sent' && 'text-fg2',
               )}
             >

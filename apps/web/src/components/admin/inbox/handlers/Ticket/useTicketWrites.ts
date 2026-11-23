@@ -10,7 +10,7 @@ import {
   useDecisionRunner,
   type WriteAnswer,
 } from '../../actions/useDecisionRunner';
-import { askerShown, type TicketItem } from './ticketModel';
+import { askerShown, type FailedWhy, type ReplyStatus, type TicketItem } from './ticketModel';
 import { TICKET_WORDS as W } from './ticketWords';
 
 /**
@@ -27,9 +27,15 @@ type TicketArgs = { ticketId: Id<'supportTickets'> };
 type MessageArgs = TicketArgs & { body: string };
 type MessageIdArgs = { messageId: Id<'supportMessages'> };
 
+/** What `support.reply` answers of the reply as it stands. */
+export type ReplyAnswer = WriteAnswer & {
+  status: ReplyStatus;
+  failedWhy?: FailedWhy | null | undefined;
+};
+
 /** The six writes, as the handler calls them (a story or a test fakes them). */
 export type TicketServer = {
-  reply: (args: MessageArgs) => Promise<WriteAnswer>;
+  reply: (args: MessageArgs) => Promise<ReplyAnswer>;
   addNote: (args: MessageArgs) => Promise<WriteAnswer>;
   resolve: (args: TicketArgs) => Promise<WriteAnswer>;
   reopen: (args: TicketArgs) => Promise<WriteAnswer>;
@@ -48,6 +54,30 @@ export function useTicketServer(): TicketServer {
     () => ({ reply, addNote, resolve, reopen, removeNote, cancelReply }),
     [reply, addNote, resolve, reopen, removeNote, cancelReply],
   );
+}
+
+/** A reply's receipt from what `support.reply` answered (a repeat key answers the reply as it stands). */
+export function replyReceipt(answer: Pick<ReplyAnswer, 'status' | 'failedWhy'> | null): {
+  title: string;
+  description?: string;
+} {
+  switch (answer?.status) {
+    case 'failed':
+      return answer.failedWhy === 'outcomeUnknown'
+        ? { title: W.outcomeUnknown }
+        : {
+            title: W.replySaved,
+            description: W.replyWontSend(
+              answer.failedWhy == null ? W.notSentUnknown : W.notSentWhy[answer.failedWhy],
+            ),
+          };
+    case 'sent':
+      return { title: W.sent };
+    case 'canceled':
+      return { title: W.replyCanceled, description: W.replyCanceledDetail };
+    default:
+      return { title: W.replyQueued, description: W.replyQueuedDetail };
+  }
 }
 
 export type TicketAct = 'reply' | 'note' | 'resolve' | 'reopen' | 'removeNote' | 'cancelReply';
@@ -70,7 +100,7 @@ export type TicketWrites = {
 };
 
 export function useTicketWrites(
-  item: Pick<TicketItem, 'itemId' | 'ticket' | 'person' | 'replyBlocked'>,
+  item: Pick<TicketItem, 'itemId' | 'ticket' | 'person'>,
   server: TicketServer,
 ): TicketWrites {
   const { run, pending } = useDecisionRunner<TicketAct>({
@@ -78,21 +108,23 @@ export function useTicketWrites(
     subject: W.subject(askerShown(item)),
   });
   const ticketId = item.ticket.ticketId;
-  // A reply the server won't send (no sender set up, a test person's ticket) is saved, never "on its
-  // way": the receipt says what the read's `replyBlocked` says, as the dock did before it was written.
-  const blocked = item.replyBlocked;
   const reply = useCallback(
-    (body: string) =>
-      run({
+    (body: string) => {
+      // The receipt is what the write answered: a reply the server stored as not sent (no sender or
+      // email service set up, a test person's ticket) says so, never "sends in a minute".
+      let answered: ReplyAnswer | null = null;
+      return run({
         act: 'reply',
         what: W.theReply,
-        write: async () => landedOn(ticketId, await server.reply({ ticketId, body })),
-        receipt:
-          blocked === null
-            ? { title: W.replyQueued, description: W.replyQueuedDetail }
-            : { title: W.replySaved, description: W.replyWontSend(W.notSentWhy[blocked]) },
-      } satisfies Decision<TicketAct>),
-    [run, server, ticketId, blocked],
+        write: async () => {
+          answered = await server.reply({ ticketId, body });
+          return landedOn(ticketId, answered);
+        },
+        receipt: { title: W.replyQueued, description: W.replyQueuedDetail },
+        receiptOf: () => replyReceipt(answered),
+      } satisfies Decision<TicketAct>);
+    },
+    [run, server, ticketId],
   );
   const note = useCallback(
     (body: string) =>
