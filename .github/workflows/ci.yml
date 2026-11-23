@@ -57,35 +57,22 @@ jobs:
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "skip=$skip"
 
-  verify:
-    name: lint · typecheck · test
+  # Every job below runs side by side, and each one honors the skip the same way: `needs:
+  # already-tested` and this `if`. `already-tested` runs only on a push; elsewhere it is skipped and
+  # its output is empty, so a pull request, the nightly run and a manual run run everything. The
+  # tests are split four ways — the Convex suite, the web unit projects, the web stories, everything
+  # else — and together they are exactly `pnpm test`'s 18 Turbo tasks (packages/guards
+  # ciWorkflow.test holds the split). The last job, `CI`, is the one check that says the run passed.
+  checks:
+    name: lint · Convex codegen · typecheck
     needs: already-tested
-    # `already-tested` runs only on a push; elsewhere it is skipped and its output is empty.
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      # The `@fortawesome` scope resolves from FontAwesome's private registry (see
-      # `.npmrc`), so the install — not just the Pro packages — needs the token.
-      # Append it to the runner's `~/.npmrc`, not the committed file. Repo secret:
-      # FONTAWESOME_NPM_AUTH_TOKEN. Note that fork PRs cannot read repo secrets.
-      - name: Authenticate to the FontAwesome registry
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
-        run: echo "//npm.fontawesome.com/:_authToken=${FONTAWESOME_NPM_AUTH_TOKEN}" >> ~/.npmrc
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
 
       - name: Lint & format check
         run: pnpm lint
@@ -118,12 +105,122 @@ jobs:
       - name: Type-check
         run: pnpm check-types
 
+  # The longest suite on its own runner: a share of four cores was what made it slow.
+  test-convex:
+    name: test · Convex
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+
+      # Through Turbo, as `pnpm test` runs it: the same strict environment and the same script
+      # (`vitest run --coverage`), so the package's coverage thresholds hold here.
+      - name: Test (with coverage)
+        run: pnpm exec turbo run test --filter=@skating/convex
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-convex
+          path: packages/convex/coverage
+          if-no-files-found: ignore
+
+  # The web package's three Vitest projects, as two jobs: `!storybook` is every project but the
+  # stories (today `unit` and `unit-node`), so a project added later runs here rather than nowhere.
+  test-web-units:
+    name: test · web units
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+
+      - name: Test (with coverage)
+        run: pnpm exec turbo run test --filter=@skating/web -- --project='!storybook'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-web-units
+          path: apps/web/coverage
+          if-no-files-found: ignore
+
+  test-web-stories:
+    name: test · web stories
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+
       # The web app's stories run as tests in headless Chromium (Storybook's Vitest addon).
       - name: Install Playwright's Chromium for the story tests
         run: pnpm --filter @skating/web exec playwright install --with-deps chromium-headless-shell
 
       - name: Test (with coverage)
-        run: pnpm test
+        run: pnpm exec turbo run test --filter=@skating/web -- --project=storybook
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-web-stories
+          path: apps/web/coverage
+          if-no-files-found: ignore
+
+  # Every other package's tests, `packages/guards` among them (an uncached task, so it always runs).
+  test-rest:
+    name: test · everything else
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+
+      - name: Test (with coverage)
+        run: pnpm exec turbo run test --filter='!@skating/convex' --filter='!@skating/web'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rest
+          path: |
+            packages/*/coverage
+            apps/*/coverage
+            scripts/*/coverage
+          if-no-files-found: ignore
+
+  web-time-zones:
+    name: web units in ${{ matrix.zone }}
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Each zone reports on its own: one zone's failure says nothing about the other two.
+      fail-fast: false
+      matrix:
+        zone: ["1 AM local", Etc/GMT-14, Etc/GMT+11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          fontawesome-token: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
 
       # The suite must not care what hour it runs at, and for a while it did. #102 went red at
       # 00:18 UTC on five calendar-label tests that were green on the author's laptop (D243): the
@@ -133,14 +230,15 @@ jobs:
       #
       # `packages/guards/src/testClock.test.ts` is the static half: it stops a new fixture or
       # calendar-asserting test from reading the live clock. This is the dynamic half, and it takes
-      # three zones because there are two ways a clock word goes wrong and one zone cannot show
-      # both. Note that `Etc/GMT+N` is UTC−N, the sign inverted, so an east-positive offset O maps
-      # to `Etc/GMT-O`.
+      # three zones — one job each — because there are two ways a clock word goes wrong and one
+      # zone cannot show both. Note that `Etc/GMT+N` is UTC−N, the sign inverted, so an
+      # east-positive offset O maps to `Etc/GMT-O`.
       #
       # 1. **A live clock.** A fixture backdated N hours from `Date.now()` falls off "Today" once
       #    the local hour reads under N:00, which is what reddened #102 at 00:18 UTC. Shown by the
       #    zone computed from the *current UTC hour* so local time is always ~01:00, rather than
-      #    hoping CI happens to run in that window.
+      #    hoping CI happens to run in that window. The matrix names it `1 AM local`; the step
+      #    computes the zone when it runs.
       # 2. **A pinned instant with a local-date label.** `reportWhen` and `daysBetween` read the
       #    *runner's* date, so a fixture fixed at a UTC instant still names a different weekday
       #    either side of the date line. `Etc/GMT-14` and `Etc/GMT+11` bracket every real zone
@@ -153,21 +251,44 @@ jobs:
       # The unit projects only (`unit*`: jsdom's and Node's): the fixture-heavy half, where the
       # story project needs another Chromium pass. Invoked through vitest rather than `pnpm test`
       # so turbo replays nothing.
-      - name: Test the web suite again at 1 AM local, and at both ends of the date line
+      - name: Test the web unit projects again in this zone
+        env:
+          ZONE: ${{ matrix.zone }}
         run: |
-          ONE_AM=$(node -e 'let o=((1-new Date().getUTCHours())%24+24)%24; if (o>12) o-=24; console.log(o>=0?`Etc/GMT-${o}`:`Etc/GMT+${-o}`)')
-          for ZONE in "$ONE_AM" Etc/GMT-14 Etc/GMT+11; do
-            echo "Re-running the web unit project in $ZONE — local time $(TZ="$ZONE" date +%H:%M)"
-            TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project 'unit*'
-          done
+          if [ "$ZONE" = "1 AM local" ]; then
+            ZONE=$(node -e 'let o=((1-new Date().getUTCHours())%24+24)%24; if (o>12) o-=24; console.log(o>=0?`Etc/GMT-${o}`:`Etc/GMT+${-o}`)')
+          fi
+          echo "Re-running the web unit projects in $ZONE — local time $(TZ="$ZONE" date +%H:%M)"
+          TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project 'unit*'
 
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: |
-            packages/*/coverage
-            apps/*/coverage
-            scripts/*/coverage
-          if-no-files-found: ignore
+  # The one check that says "CI passed": green only when every job above passed — or, on a push
+  # `already-tested` matched, when every one of them was skipped for that reason. A job that failed,
+  # was cancelled, or was skipped for any other reason turns it red. Nothing requires a check by
+  # name today (main has no branch protection or ruleset); this is the name to require if that
+  # changes.
+  ci:
+    name: CI
+    needs:
+      - already-tested
+      - checks
+      - test-convex
+      - test-web-units
+      - test-web-stories
+      - test-rest
+      - web-time-zones
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed, or every job skipped as already tested
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          SKIP: ${{ needs.already-tested.outputs.skip }}
+        run: |
+          want=success
+          if [ "$SKIP" = "true" ]; then want=skipped; fi
+          bad=$(jq -r --arg want "$want" 'to_entries[] | select(.key != "already-tested") | select(.value.result != $want) | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          if [ -n "$bad" ]; then
+            echo "::error::Not every job is $want — $(tr '\n' ' ' <<<"$bad")"
+            exit 1
+          fi
