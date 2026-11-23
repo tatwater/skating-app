@@ -67,7 +67,14 @@ import { liveSurvivorOf } from './lib/inboxRules';
 import { isListed } from './lib/listing';
 import { refreshPersonRow } from './lib/peopleRows';
 import { TOMBSTONE_FILE } from './lib/photoAccess';
-import { ledgerOfPhoto, openAttempts, releaseFile } from './lib/photoFiles';
+import {
+  ACTION_LIFETIME_MS,
+  attemptAlive,
+  ledgerOfPhoto,
+  openAttempts,
+  reconcileAttempt,
+  releaseFile,
+} from './lib/photoFiles';
 import { DOC_MAX, ReadBudget, ROW_MAX, type RowKind, TX_BUDGET } from './lib/readBudget';
 import { clearFailure } from './lib/recurringWork';
 import { bumpBountyPoints, bumpReputation } from './lib/reputation';
@@ -2884,6 +2891,32 @@ async function dropDrawnBody(s: Sweep, body: Doc<'waterBodies'>): Promise<void> 
 const PHOTO_CLEAR_COST = 48 * ROW_MAX.small + 2 * DOC_MAX;
 /** A seed person's photos read a page at a time — they post a handful. */
 const PHOTO_PAGE = 50;
+/** One attempt's reconcile, at worst: a page of its window's files, its ledger rows, their releases. */
+const RECONCILE_COST = 320 * ROW_MAX.small;
+
+/** What the clear left a seed photo for: a rotation still running (and when it must end), a file owed. */
+type PhotoWait = { waiting: number; readyBy?: number; owed?: number };
+
+/**
+ * A seed photo's rotation attempts that can no longer store anything, reconciled now — the photo's
+ * own watch or the daily files sweep would, a day on for a parked one — through the photo code's own
+ * `reconcileAttempt`. `null` once none is open; else when the last one still running must end (its
+ * action's lifetime), so the clear waits only for a rotation really in flight.
+ */
+async function settleAttempts(s: Sweep, photoId: Id<'photos'>): Promise<number | null> {
+  const now = Date.now();
+  let readyBy: number | null = null;
+  for (const a of await openAttempts(s.ctx, photoId)) {
+    if (attemptAlive(a, now)) {
+      readyBy = Math.max(readyBy ?? 0, a.startedAt + ACTION_LIFETIME_MS);
+      continue;
+    }
+    s.need(RECONCILE_COST);
+    // A long window may take more than a page: the next call goes on from where this one stopped.
+    if (!(await reconcileAttempt(s.ctx, a, now))) readyBy = Math.max(readyBy ?? 0, now);
+  }
+  return readyBy;
+}
 
 /**
  * **The one deleter of a held photo outside the photo code** (on the photo-deleters guard's list): a
@@ -2901,7 +2934,7 @@ async function clearSeedPhoto(
   s: Sweep,
   photo: Doc<'photos'>,
   people: ReadonlySet<string>,
-): Promise<'cleared' | 'waiting'> {
+): Promise<'cleared' | 'waiting' | 'owed'> {
   const ctx = s.ctx;
   if (!people.has(photo.uploaderId)) throw new Error('clearSeedPhoto: not a seed person’s photo');
   if ((await openAttempts(ctx, photo._id)).length > 0) return 'waiting';
@@ -2913,7 +2946,7 @@ async function clearSeedPhoto(
       s.removed._storage = (s.removed._storage ?? 0) + 1;
     }
   }
-  if ((await ledgerOfPhoto(ctx, photo._id, 1)).length > 0) return 'waiting';
+  if ((await ledgerOfPhoto(ctx, photo._id, 1)).length > 0) return 'owed';
   // Its attempts, every one reconciled (an open one waited above) — to the end, a row a read, within
   // the call's budget (a call that runs out stops here, the photo whole, and the next goes on).
   await s.drain('photoRotations', 'small', () =>
@@ -2939,20 +2972,24 @@ async function clearSeedPhoto(
 /**
  * Every seed person's photo, and what hangs off each — its flags (out of their Inbox items), its audit
  * rows and verdicts — then the photo through {@link clearSeedPhoto}. Before anything else of theirs,
- * so a report's photos go before the report. Answers how many it had to wait for (a rotation in
- * flight, a file owed): those are left whole for a later call.
+ * so a report's photos go before the report. A photo's attempts that can't still be running are
+ * reconciled here first ({@link settleAttempts}), so a parked rotation never holds the clear for the
+ * day its cron takes. Answers what it had to wait for — a rotation really in flight (and when it must
+ * end), a file whose delete failed and is owed — each photo left whole for a later call.
  */
-async function sweepPhotos(s: Sweep, people: Doc<'profiles'>[]): Promise<number> {
+async function sweepPhotos(s: Sweep, people: Doc<'profiles'>[]): Promise<PhotoWait> {
   const db = s.ctx.db;
   const ids = new Set<string>(people.map((p) => p._id));
-  let waiting = 0;
+  const wait: PhotoWait = { waiting: 0 };
   for (const p of people) {
     for (const photo of await db
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', p._id))
       .take(PHOTO_PAGE)) {
-      if ((await openAttempts(s.ctx, photo._id)).length > 0) {
-        waiting++;
+      const readyBy = await settleAttempts(s, photo._id);
+      if (readyBy !== null) {
+        wait.waiting++;
+        wait.readyBy = Math.max(wait.readyBy ?? 0, readyBy);
         continue;
       }
       await s.drain(
@@ -2966,10 +3003,12 @@ async function sweepPhotos(s: Sweep, people: Doc<'profiles'>[]): Promise<number>
         (f) => dropFlag(s, f),
       );
       await dropAuditsOf(s, 'photo', photo._id);
-      if ((await clearSeedPhoto(s, photo, ids)) === 'waiting') waiting++;
+      const cleared = await clearSeedPhoto(s, photo, ids);
+      if (cleared !== 'cleared') wait.waiting++;
+      if (cleared === 'owed') wait.owed = (wait.owed ?? 0) + 1;
     }
   }
-  return waiting;
+  return wait;
 }
 
 /**
@@ -3237,8 +3276,8 @@ export const clear = internalMutation({
     try {
       // The photos first, each only once nothing of its is in flight: a call that had to wait for
       // one (a rotation running, a file owed) stops before the people, and says so.
-      const waiting = await sweepPhotos(s, people);
-      if (waiting > 0) return { done: false, removed: s.removed, waiting };
+      const wait = await sweepPhotos(s, people);
+      if (wait.waiting > 0) return { done: false, removed: s.removed, ...wait };
       await sweepPeople(s, people);
       for (const p of people) {
         await s.delete('profiles', p._id);

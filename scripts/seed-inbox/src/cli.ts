@@ -27,6 +27,7 @@ import {
   planSeed,
   runLogName,
   tally,
+  waitingOn,
 } from './seed';
 import { uploader } from './upload';
 
@@ -103,8 +104,7 @@ function main(): number {
     }
     case 'clear': {
       const run = applyClear(call, (a) => {
-        if ((a.waiting ?? 0) > 0)
-          say(`waiting for ${a.waiting} seed photo(s) whose file is being moved`);
+        if ((a.waiting ?? 0) > 0) say(`waiting on ${waitingOn(a)}`);
       });
       const log = writeLog('clear', { target: target.label, ...run });
       say(`removed in ${run.calls} calls: ${tally(run.removed)}`);

@@ -24,6 +24,7 @@ import {
   seedSteps,
 } from './inboxSeed';
 import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
+import { ACTION_LIFETIME_MS } from './lib/photoFiles';
 import { recordFailure } from './lib/recurringWork';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
@@ -1531,6 +1532,39 @@ describe('the seed’s photos (board 2.7)', () => {
     expect(left).toEqual({ flags: [], actions: [], photoItems: [] });
   });
 
+  test('a parked rotation (its attempt ended, unreconciled, a day old): the clear reconciles it now, never waits for the cron', async () => {
+    const t = harness();
+    await devWorld(t);
+    await runSeed(t);
+    await t.run(async (ctx) => {
+      const p = (await ctx.db.query('photos').collect()).find(
+        (x) => x.caption === SEED_PHOTO_CAPTIONS[0],
+      );
+      if (!p) throw new Error('no seed photo');
+      for (const status of ['ended', 'running'] as const) {
+        await ctx.db.insert('photoRotations', {
+          photoId: p._id,
+          startedAt: Date.now() - 86_400_000,
+          sha256: [],
+          scanFrom: Date.now() - 86_400_000,
+          status,
+        });
+      }
+    });
+    // No call waits: each attempt past its action's lifetime is reconciled by the clear itself.
+    for (let i = 0; i < 50; i++) {
+      const a = await t.mutation(internal.inboxSeed.clear, {});
+      expect(a).not.toHaveProperty('waiting');
+      if (a.done) break;
+    }
+    expect(
+      await t.run(async (ctx) => ({
+        photos: (await ctx.db.query('photos').collect()).length,
+        attempts: (await ctx.db.query('photoRotations').collect()).length,
+      })),
+    ).toEqual({ photos: 0, attempts: 0 });
+  });
+
   test('sixty reconciled attempts and a parked purge: the clear takes every attempt and both Machinery rows', async () => {
     const t = harness();
     await devWorld(t);
@@ -1584,12 +1618,20 @@ describe('the seed’s photos (board 2.7)', () => {
     });
     // Called as the script calls it, until a call says it is waiting (the others' photos go first).
     const removed: string[] = [];
-    let answer: { done: boolean; removed: Record<string, number>; waiting?: number } | null = null;
+    let answer: {
+      done: boolean;
+      removed: Record<string, number>;
+      waiting?: number;
+      readyBy?: number;
+    } | null = null;
     for (let i = 0; i < 50 && answer?.waiting === undefined; i++) {
       answer = await t.mutation(internal.inboxSeed.clear, {});
       removed.push(...Object.keys(answer.removed));
     }
+    // Waiting only for a rotation really in flight, and saying when it must be over by.
     expect(answer).toMatchObject({ done: false, waiting: 1, removed: {} });
+    const started = await t.run(async (ctx) => (await ctx.db.query('photoRotations').collect())[0]);
+    expect(answer?.readyBy).toBe((started?.startedAt ?? 0) + ACTION_LIFETIME_MS);
     expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
     // Nothing of the seed's people went while it waited: the photos are swept first.
     expect(removed).not.toContain('profiles');

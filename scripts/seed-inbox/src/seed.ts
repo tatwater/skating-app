@@ -92,6 +92,26 @@ export interface ClearAnswer {
   removed: Record<string, number>;
   /** Seed photos the call left whole because a rotation of theirs was in flight or a file owed. */
   waiting?: number;
+  /** When the last rotation still running must be over (its action's lifetime), in ms. */
+  readyBy?: number;
+  /** Of those, the photos with a file whose delete failed and is owed (Machinery retries it). */
+  owed?: number;
+}
+
+/** What a waiting clear is waiting on, in words — the CLI's line, and its give-up message. */
+export function waitingOn(a: ClearAnswer): string {
+  const parts: string[] = [];
+  const rotating = (a.waiting ?? 0) - (a.owed ?? 0);
+  if (rotating > 0) {
+    const by = a.readyBy !== undefined ? `, over by ${new Date(a.readyBy).toISOString()}` : '';
+    parts.push(`${rotating} seed photo(s) whose file is being moved${by}`);
+  }
+  if ((a.owed ?? 0) > 0) {
+    parts.push(
+      `${a.owed} seed photo(s) with a file whose delete failed and is owed (Machinery's photoRotation job retries it)`,
+    );
+  }
+  return parts.join('; ');
 }
 
 /** How long the clear waits for a photo's rotation before asking again, and how many times at most. */
@@ -243,7 +263,7 @@ export function applyClear(
     if ((answer.waiting ?? 0) > 0) {
       if (++waits > MAX_PHOTO_WAITS) {
         throw new Error(
-          `A seed photo's file is still being moved after ${Math.round((MAX_PHOTO_WAITS * PHOTO_WAIT_MS) / 60_000)} minutes; nothing was skipped — run the clear again later.`,
+          `After ${Math.round((MAX_PHOTO_WAITS * PHOTO_WAIT_MS) / 60_000)} minutes the clear is still waiting on ${waitingOn(answer)}. Nothing was skipped: run the clear again once that is done.`,
         );
       }
       wait(PHOTO_WAIT_MS);

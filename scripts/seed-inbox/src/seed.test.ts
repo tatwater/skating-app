@@ -19,6 +19,7 @@ import {
   type SeedState,
   sleepSync,
   tally,
+  waitingOn,
 } from './seed';
 
 /** A step of the fake plan: what it needs first, and whether filing it throws. */
@@ -356,8 +357,22 @@ describe('applyClear', () => {
         () => {},
         (ms) => waits.push(ms),
       ),
-    ).toThrow(/still being moved after 10 minutes; nothing was skipped/);
+    ).toThrow(
+      'After 10 minutes the clear is still waiting on 1 seed photo(s) whose file is being moved. Nothing was skipped: run the clear again once that is done.',
+    );
     expect(waits).toHaveLength(MAX_PHOTO_WAITS);
+  });
+
+  test('what a waiting clear waits on, in words: a rotation (and when it ends), an owed file', () => {
+    expect(
+      waitingOn({ done: false, removed: {}, waiting: 2, readyBy: Date.UTC(2026, 10, 23, 6, 10) }),
+    ).toBe('2 seed photo(s) whose file is being moved, over by 2026-11-23T06:10:00.000Z');
+    expect(waitingOn({ done: false, removed: {}, waiting: 1, owed: 1 })).toBe(
+      "1 seed photo(s) with a file whose delete failed and is owed (Machinery's photoRotation job retries it)",
+    );
+    expect(waitingOn({ done: false, removed: {}, waiting: 3, owed: 1, readyBy: 0 })).toBe(
+      "2 seed photo(s) whose file is being moved, over by 1970-01-01T00:00:00.000Z; 1 seed photo(s) with a file whose delete failed and is owed (Machinery's photoRotation job retries it)",
+    );
   });
 
   test('sleepSync blocks for about the time asked', () => {
