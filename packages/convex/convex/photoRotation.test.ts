@@ -145,7 +145,7 @@ describe('the rotation through the public writes', () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     await set('hidden');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     const after = await row(t, photoId);
     expect(after.storageId).not.toBe(before.storageId);
     expect(after.thumbStorageId).not.toBe(before.thumbStorageId);
@@ -156,7 +156,7 @@ describe('the rotation through the public writes', () => {
     expect(await storedCount(t)).toBe(2);
 
     await set('visible');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     const restored = await row(t, photoId);
     expect(restored.storageId).toBe(after.storageId); // never rotated back
     const reportId = await t.run(async (ctx) => {
@@ -208,7 +208,7 @@ describe('the rotation through the public writes', () => {
     const before = await row(t, photoId);
     await set('hidden');
     await set('visible');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     const after = await row(t, photoId);
     expect(after.storageId).toBe(before.storageId);
     expect(await bytesOf(t, before.storageId)).toBe('full-bytes');
@@ -232,7 +232,7 @@ describe('the rotation through the public writes', () => {
     });
     const before = await row(t, photoId);
     await uploader.as.mutation(api.photos.remove, { photoId });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
   });
 
@@ -277,7 +277,7 @@ describe('the rotation through the public writes', () => {
     // Storage lets go: the watch finds it unrotated and runs it again, which lands.
     failing.ids.clear();
     // Run everything to its end: the watch runs it again, it lands, the next watch ends the chain.
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
     expect(await urlOf(t, before.storageId)).toBeNull();
     expect(await watches(t)).toHaveLength(0);
@@ -293,7 +293,7 @@ describe('the rotation through the public writes', () => {
         if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
       }
     });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
     expect(await watches(t)).toHaveLength(0);
   });
@@ -323,8 +323,11 @@ describe('the rotation through the public writes', () => {
     // Storage lets go: the daily retry lands, and the watch that sees it forgets the row.
     failing.ids.clear();
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 5);
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
+    // The next daily watch sees it landed and forgets the row.
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    await stepThrough(t, 5);
     expect(await failureRow(t, 'photoRotation', photoId)).toBeNull();
   });
 
@@ -344,7 +347,7 @@ describe('the rotation through the public writes', () => {
     const before = await row(t, photoId);
     await t.run((ctx) => ctx.storage.delete(before.thumbStorageId as Id<'_storage'>));
     await set('hidden');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     const after = await row(t, photoId);
     expect(after.storageId).toBe(before.storageId);
     expect(after.thumbStorageId).toBe(before.thumbStorageId);
@@ -414,7 +417,7 @@ describe('the rotation through the public writes', () => {
   test('the purge after a rotation deletes the new blobs', async () => {
     const { t, photoId, set } = await world();
     await set('removed');
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await stepThrough(t, 90);
     const rotated = await row(t, photoId);
     await t.mutation(internal.photoPurge.purgeDuePhotos, { now: T0 + PHOTO_PURGE_DELAY_MS + 1 });
     expect(await urlOf(t, rotated.storageId)).toBeNull();

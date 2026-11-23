@@ -212,7 +212,7 @@ export async function purgePhotoBlobs(ctx: MutationCtx, photo: Doc<'photos'>): P
 async function deleteBlobsOf(ctx: MutationCtx, photo: Doc<'photos'>): Promise<string[]> {
   const failures: string[] = [];
   for (const id of new Set([photo.storageId, photo.thumbStorageId])) {
-    if (await blobReferenced(ctx, id, photo._id)) continue;
+    if (await blobReferenced(ctx, id, photo)) continue;
     const failure = await deleteStoredBlob(ctx, id as Id<'_storage'>);
     if (failure !== null) failures.push(failure);
   }

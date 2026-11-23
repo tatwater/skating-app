@@ -69,25 +69,34 @@ export const BLOB_TAKEN = 'This upload already belongs to a photo.';
 export const BLOB_NOT_FOUND = 'This upload could not be found.';
 
 /**
- * Whether any photo row other than `except` names `storageId` — as its image or its thumbnail. Two
- * point reads (`by_storage`, `by_thumb_storage`; both fields required), two rows each at most.
+ * Whether any photo row other than `except` names `storageId` — as its image or its thumbnail. Point
+ * reads on `by_storage` and `by_thumb_storage` (both fields required). With `except`, each index is read
+ * on either side of that row's `_creationTime`, so its own row — which may weigh near a document, if
+ * written before the caption cap — is never read: an unshared blob costs index ranges and no documents.
  */
 export async function blobReferenced(
   ctx: QueryCtx,
   storageId: string,
-  except?: Id<'photos'>,
+  except?: Pick<Doc<'photos'>, '_id' | '_creationTime'>,
 ): Promise<boolean> {
-  for (const rows of [
-    await ctx.db
-      .query('photos')
-      .withIndex('by_storage', (q) => q.eq('storageId', storageId))
-      .take(2),
-    await ctx.db
-      .query('photos')
-      .withIndex('by_thumb_storage', (q) => q.eq('thumbStorageId', storageId))
-      .take(2),
-  ]) {
-    if (rows.some((r) => r._id !== except)) return true;
+  for (const index of ['by_storage', 'by_thumb_storage'] as const) {
+    const field = index === 'by_storage' ? 'storageId' : 'thumbStorageId';
+    const ranges =
+      except === undefined
+        ? [ctx.db.query('photos').withIndex(index, (q) => q.eq(field as never, storageId as never))]
+        : [
+            ctx.db
+              .query('photos')
+              .withIndex(index, (q) =>
+                q.eq(field as never, storageId as never).lt('_creationTime', except._creationTime),
+              ),
+            ctx.db
+              .query('photos')
+              .withIndex(index, (q) =>
+                q.eq(field as never, storageId as never).gt('_creationTime', except._creationTime),
+              ),
+          ];
+    for (const range of ranges) if ((await range.first()) !== null) return true;
   }
   return false;
 }
