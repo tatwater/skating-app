@@ -410,6 +410,86 @@ describe('a ticket, through the route and the view', () => {
     expect(within(inspector()).queryByText(/already removed/)).toBeNull();
   });
 
+  it.each([
+    {
+      status: 'settling' as const,
+      failedWhy: null,
+      says: 'It sends in about a minute unless it is canceled',
+      never: 'Reply saved, not sent',
+    },
+    {
+      status: 'failed' as const,
+      failedWhy: 'seed' as const,
+      says: 'It won’t be emailed: a test person’s ticket: test people are never emailed',
+      never: 'It sends in about a minute unless it is canceled',
+    },
+  ])(
+    'a reply’s receipt is what support.reply answered ($status)',
+    async ({ status, failedWhy, says, never }) => {
+      // Through the real useTicketWrites: the toast reads the write's own answer, not the item.
+      writes.answer['support:reply'] = (args) => ({
+        ...args,
+        messageId: 'm_new',
+        actionId: 'ma_wired',
+        undoable: status === 'settling',
+        undoNeedsReason: false,
+        status,
+        failedWhy,
+      });
+      open(ROB_APPEAL);
+      mount();
+      type('Thanks for writing.');
+      fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+      await waitFor(() => expect(screen.getAllByText(says).length).toBeGreaterThan(0));
+      expect(screen.queryByText(never)).toBeNull();
+    },
+  );
+
+  it('Cancel’s and Reopen’s controls go with their write: focus moves to the pane, never the page', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: TICKET_NOW });
+    let item: TicketItem = WITH_SETTLING;
+    h.lanes = LANES;
+    h.search = { lane: 'support', item: item.itemId };
+    h.answers['inbox:item'] = () => ({ item: asItem(item), pending: false });
+    const page = mount();
+    const cancel = within(inspector()).getByRole('button', { name: 'Cancel' });
+    cancel.focus();
+    fireEvent.click(cancel);
+    await waitFor(() => expect(called('support:cancelReply')).toHaveLength(1));
+    // The read redraws the reply canceled: its Cancel is gone, with focus on it.
+    const settling = must(WITH_SETTLING.messages[1], 'the settling reply');
+    item = {
+      ...WITH_SETTLING,
+      messages: [
+        must(WITH_SETTLING.messages[0], 'the note'),
+        {
+          ...settling,
+          reply: {
+            ...must(settling.reply, 'its reply'),
+            status: 'canceled',
+            cancel: 'This reply was already canceled.',
+          },
+        },
+      ],
+    };
+    page.rerender(ui());
+    await waitFor(() => expect(inspector()).toHaveFocus());
+    vi.useRealTimers();
+    // Reopen: its button goes once the ticket reads open again.
+    item = RESOLVED;
+    page.rerender(ui());
+    const reopen = await within(inspector()).findByRole('button', { name: 'Reopen' });
+    reopen.focus();
+    fireEvent.click(reopen);
+    await waitFor(() => expect(called('support:reopen')).toHaveLength(1));
+    item = ROB_APPEAL;
+    page.rerender(ui());
+    await waitFor(() =>
+      expect(within(inspector()).queryByRole('button', { name: 'Reopen' })).toBeNull(),
+    );
+    await waitFor(() => expect(inspector()).toHaveFocus());
+  });
+
   it('a resolved ticket drops the bar and the dock, and Reopen calls support.reopen', async () => {
     open(RESOLVED);
     mount();
