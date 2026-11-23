@@ -227,6 +227,12 @@ describe('a reply no send ever claimed', () => {
   test('its watch schedules the send again — one email, however many sends then run', async () => {
     const w = await world();
     const out = await w.reply('Never claimed');
+    // The scheduled send never runs (a deploy took it): canceled under the scheduler.
+    await w.t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (/support(\.js)?:sendReply$/.test(job.name)) await ctx.scheduler.cancel(job._id);
+      }
+    });
     vi.setSystemTime(out.sendAfter + REPLY_WATCH_MS);
     await w.watch(out.messageId);
     vi.setSystemTime(Date.now() + 60 * 60 * 1000);
