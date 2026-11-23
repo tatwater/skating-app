@@ -11814,6 +11814,112 @@ After the photos PR merges, in order:
 - **Photos in the record sheet's Deleted list:** a withdrawn photo is not on it today (`recordReads.
   withdrawnAt` answers `null` for a photo). A register row.
 
+#### B01-5e: the two reviews (R14, R15) and their fixes (2026-11-22)
+
+Two independent reviews read photos at `5093e4a48`: the server (R14) and the web (R15). The web found
+no blockers. **The server found one blocker and five should-fixes.** S5 fixed all of them
+(`b01-5e-s5-2`, cherry-picked here) and re-proved them on a real local backend. Each fix below is its
+own commit, with the test that fails without it.
+
+##### The blocker: a storage id worked as a key
+
+**The two reproduced attacks.** Either way, an uploader could delete a held photo's bytes:
+1. Register a second photo row on a held photo's storage ids (`photos.create` took any id), then
+   delete that unheld row. `deletePhotoAndBlobs` deleted the shared blobs, and the hold was never
+   asked.
+2. Hand a held photo's storage id to `photos.removeBlob`, which deleted it outright. The ids leaked
+   through the data export and the record pane's `published` document.
+
+**The rule that closes the class: a stored file belongs to one photo row, and no read hands a storage
+id out.**
+- `photos.create` refuses an id that names no file, the same id twice, and an id any row already
+  holds. The new indexes `by_storage` and `by_thumb_storage` back that check.
+- `photos.removeBlob` deletes only a fresh upload (under 24 h) that no row names.
+- The delete leaves a blob another row still names (a row written before the rule).
+- The export ships each photo's bytes and facts without its id.
+- The record pane's `published` document drops its two ids.
+
+**The storage-id sweep** (a guard: every function taking `v.id('_storage')` is listed with its check,
+and a new one fails until it is added):
+
+| Function | Its check |
+| --- | --- |
+| `photos.create` | refuses an id naming no file, the same id twice, and one any row holds |
+| `photos.removeBlob` | deletes only a fresh upload that no photo row names |
+| `basemap.getServingUrl` | internal: the operator resolves an uploaded basemap's URL |
+
+The guard also holds `create`, `removeBlob` and `deleteBlobsOf` to `blobReferenced`.
+
+##### The other findings and their fixes
+
+**The server (S5-2):**
+- **The readers' staff mode is deleted.** `getUrls`, `getHazardUrls` and `listPhotos` return a down
+  photo to no one; staff see one only through the Inbox item, the record sheet and
+  `inbox.photoReveal`. The privacy table is now reader × viewer × status, 60 cells.
+- **A rotation records itself before any copy exists** (`photos.rotation`). Each copy is recorded the
+  moment it is stored, the swap takes only recorded copies, and the watch sweeps the leftovers.
+- **A missing source file sets `bytesMissingAt`:** nothing is copied, it shows once on Machinery,
+  and a restore is refused.
+- **The byte bound is read from `_storage`** before either blob is loaded.
+- **Whole documents carry only visible photo ids:** `reports.get` for a viewer without
+  `content.read`, and `hazards.get` and the hazard views for everyone.
+- **A flag on a hidden, removed or purged photo is refused.**
+- **The purge's push-back by an open flag stops** two months past the first due date.
+- **A tombstone, and a deleted account's held photo, keep no caption, time, place or `placeOnMap`.**
+- **An author's edit that drops a held photo withdraws it,** as their delete does.
+- **The operator mails link to `/admin/inbox?item=flag:<id>`.**
+
+**The web (R15):**
+1. **The `key` that stops a reveal carrying to the next item had no test.** Now a wiring test covers
+   it; it was mutation-checked.
+2. **Fixtures offered levers the server never does** (the Withdrawn story's Restore), and a withdrawn
+   photo's purge line said "unless it is restored". Every photo fixture's `can` is now checked against
+   the rule and pinned to the server's own sentences:
+   - withdrawn, purged, missing-file and the record's tombstone refuse a restore;
+   - a decided item and the viewer's own photo refuse every verb;
+   - without `content.read`, every verb is refused.
+
+   The withdrawn line reads "Its file is deleted on ‹day›; it can't be restored".
+3. **The device sentence lost its time limit:** "Anyone who already opened it may still see it on
+   their own device."
+4. **Show reveals the staged photo and its unflagged, still-visible neighbors only.**
+5. **`bytesMissingAt`** gets its stage state, fixture and story.
+6. **Load failures:** a thumbnail or a full image that won't load says so; while the reveal loads the
+   stage stays pixelated (never the thumbnail unpixelated); the caption is announced once.
+7. **The sheet's Remove hint** is true for a held photo too: "A photo you remove isn't shown with the
+   report once you save".
+8. **The record pane no longer gets `published`'s storage ids.** Nothing on the web read them (the
+   plate draws the served `thumbUrl`), so nothing changed.
+
+##### The reader inventory
+
+As S5-2 records it; the reviewer's own inventory was not relayed in full.
+- The readers that serve photo URLs or thumbnails all skip a photo that isn't visible, with no staff
+  mode: `photos.getUrls`, `getHazardUrls`, `accessPoints.listPhotos`, and the feed's thumbnails.
+- The reads that return a whole document with its photo ids serve only the visible ones:
+  `reports.get`, `hazards.get`, and `renderInScope` (`listForBody`, `listInViewport`).
+- Staff reach a down photo through three reads only, each gated on `content.read`: the Inbox item
+  (its thumbnail), the record sheet (`content.thumbUrl`), and `inbox.photoReveal` (the full image).
+- Counts (`recommended`, the Inbox report's `photoCount`) count visible photos for anyone without
+  `content.read`.
+
+##### The rulings (2026-11-22)
+
+- An author's edit that drops a held photo withdraws it: it stays attached and hidden, on the 30-day
+  clock.
+- Show reveals the staged photo and its unflagged, still-visible neighbors only. A flagged or down
+  sibling stays pixelated and links its own item.
+- The device-cache sentence carries no time limit; the removal's own "30 days unless restored" stays.
+
+##### Owed
+
+- **Who uploaded a bare file isn't recorded.** `removeBlob` can't check the caller owns the upload;
+  that wants a pending-uploads row.
+- **For the next phone build and device pass:**
+  - the phone's Remove hint still says "leaves the report when you save" (the web's now reads "isn't
+    shown with the report once you save");
+  - the phone's image cache keeps a taken-down photo it already loaded.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
