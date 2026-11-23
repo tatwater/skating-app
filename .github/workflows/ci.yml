@@ -10,9 +10,12 @@ on:
     - cron: "17 7 * * *"
   workflow_dispatch:
 
+# A push or a pull request cancels its own superseded run. The nightly and a manual run each have a
+# group of their own and are never cancelled: a merge landing while the nightly runs would otherwise
+# cancel the backstop and then skip its own run as already tested (packages/guards ciWorkflow.test).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 jobs:
   # A push to main whose tree is byte-for-byte a PR head that already passed this workflow skips the
