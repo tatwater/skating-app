@@ -100,11 +100,9 @@ export function LatestPage({ search }: { search: LatestSearch }) {
       ?.skaterUnavailable === true;
 
   // The viewer's favorite Posts, up front, so each section's favorites lead it from its first draw
-  // (D292). Not under a search, which stays newest first.
-  const favoritePosts = useQuery(
-    api.posts.listFavoritePosts,
-    searching ? 'skip' : { filters: value, ...skaterArg },
-  );
+  // (D292). Not under a search or one skater's list: each line promises newest first.
+  const lift = !searching && skater === undefined;
+  const favoritePosts = useQuery(api.posts.listFavoritePosts, lift ? { filters: value } : 'skip');
 
   // Recommended filter-breakers (D50): their own strip, and out of the feed so none shows twice.
   const recommended = useQuery(api.reports.recommended, {});
@@ -117,9 +115,10 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   // when the skater asked for reports only.
   const discovery = useQuery(api.weatherDiscovery.status, {});
   const weatherOn = hasWeatherFilter(value) && !searching && skater === undefined;
+  const wantBodies = weatherOn && !value.onlyReports;
   const bodyResults = useQuery(
     api.weatherDiscovery.listBodyResults,
-    weatherOn && !value.onlyReports ? { filters: value } : 'skip',
+    wantBodies ? { filters: value } : 'skip',
   );
 
   const wantedRows = useQuery(api.bounties.listOpen, { sortByHome: true, limit: WANTED_READ });
@@ -142,17 +141,23 @@ export function LatestPage({ search }: { search: LatestSearch }) {
     bodies,
     status === 'Exhausted',
     now,
-    { liftFavorites: !searching, favorites: searching ? [] : (favoritePosts ?? []) },
+    { lift, favorites: favoritePosts ?? [] },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
-  const state = latestFeedState({
-    status,
-    rowCount,
-    filters: value,
-    weatherAvailable: discovery?.available,
-    searching,
-    skaterUnavailable,
-  });
+  // The sections wait for what decides their heads (D292): drawn before the favorites or the
+  // matched lakes answer, a favorite would land at the top of a section a moment later.
+  const headsKnown =
+    (!lift || favoritePosts !== undefined) && (!wantBodies || bodyResults !== undefined);
+  const state = headsKnown
+    ? latestFeedState({
+        status,
+        rowCount,
+        filters: value,
+        weatherAvailable: discovery?.available,
+        searching,
+        skaterUnavailable,
+      })
+    : 'loading';
 
   // 4.10: nothing reported this season — show the lakes with a recent run of cold nights.
   const recentCold = useQuery(

@@ -17,6 +17,8 @@
  */
 
 import {
+  feedSectionForTime,
+  feedSectionWindows,
   isBrowsableSeason,
   type PostCardData,
   seasonEndMs,
@@ -203,109 +205,124 @@ export const listFeed = query({
   },
 });
 
-/** The most favorite Posts `listFavoritePosts` returns — the newest this many in the season. */
-export const FAVORITE_POSTS_CAP = 20;
-/** The most favorites (lakes and bays together) it reads from, so a long list can't scale the read. */
-export const FAVORITE_SOURCES_CAP = 40;
+/** The most favorite Posts `listFavoritePosts` returns per recency section: those it lifts. */
+export const FAVORITE_POSTS_PER_SECTION = 8;
+/** The most favorites (lakes and bays together) it reads from, newest favorite first. */
+export const FAVORITE_SOURCES_CAP = 25;
+/** Candidates it looks at per section, past the ones a filter or a repeat discards. */
+const FAVORITE_CANDIDATES_PER_SECTION = 3 * FAVORITE_POSTS_PER_SECTION;
 
 /**
- * The viewer's favorite Posts for Latest, newest skate first, read up front (D292). The feed lifts a
- * favorite to the top of its recency section, so the client must know a section's favorites before
- * it draws that section: one paged in later would land above where the reader is scrolled, unseen.
- * The client merges these into the paginated `listFeed` (`withFavoritePosts`), which admits each
- * one once the scroll reaches its section.
+ * The viewer's favorite Posts that Latest lifts to the top of their recency sections, read up front
+ * (D292): up to {@link FAVORITE_POSTS_PER_SECTION} per section, newest first. A favorite paged in
+ * after its section drew would land above where the reader is scrolled, unseen, so the client lifts
+ * only these (`latestFeedSections`); any other favorite keeps its time slot and its star.
  *
- * **The same Posts `listFeed` would show, by the same code.** The same season (D63), the same skater
- * rule (`resolveFeedSkater`), the moderation gate, and every card through `toPostCard` under the
- * same filters; a Post is returned only while `toPostCard` still calls it a favorite, so a lake
- * favorite whose only member the filters hid is not here.
+ * **The same Posts `listFeed` would show, by the same code.** The same season (D63), the moderation
+ * gate, and every card through `toPostCard` under the same filters; a Post is returned only while
+ * `toPostCard` still calls it a favorite, so a lake favorite whose only member the filters hid is
+ * not here. No skater argument: one skater's list promises newest first and lifts nothing.
  *
- * **Bounded.** Each of the first {@link FAVORITE_SOURCES_CAP} favorites reads its newest
- * {@link FAVORITE_POSTS_CAP} visible Reports in the season (a lake by its Reports, a bay by the
- * `reportSubAreas` join), so the union holds the season's newest favorite Posts up to the cap. Past
- * the cap a favorite arrives with its page, as before: rare, and still badged. Only the newest
- * {@link FAVORITE_POSTS_CAP} candidates are hydrated, so the result can come back short under
- * filters; those that drop out are dropped from `listFeed` too.
+ * **Bounded, per section.** For each section's window (`feedSectionWindows`) it reads each of the
+ * viewer's newest {@link FAVORITE_SOURCES_CAP} favorites' newest few visible Reports (a lake by its
+ * Reports, a bay by the `reportSubAreas` join), walks them newest first, and hydrates at most
+ * {@link FAVORITE_CANDIDATES_PER_SECTION} of them. A Post is placed by its own newest member, which
+ * may be newer than the favorite Report that found it. Reading a section at a time keeps one busy
+ * lake's Today from crowding out every older section's favorites.
  */
 export const listFavoritePosts = query({
   args: {
     filters: v.optional(v.any()),
+    /** Browse one season explicitly. Absent ⇒ {@link servedFeedSeason} decides, as for `listFeed`. */
     season: v.optional(v.number()),
-    skater: v.optional(v.string()),
   },
-  handler: async (ctx, { filters: rawFilters, season, skater }) => {
+  handler: async (ctx, { filters: rawFilters, season }) => {
     const viewer = await loadFeedViewer(ctx, rawFilters);
-    const { bodyIds, subAreaIds } = viewer.favorites;
-    if (bodyIds.size === 0 && subAreaIds.size === 0) return [] as PostCardData[];
-    const skaterId = await resolveFeedSkater(ctx, skater, viewer.caches.viewer ?? null);
-    if (skaterId === null) return [] as PostCardData[];
+    const profile = viewer.caches.viewer;
+    if (!profile) return [] as PostCardData[];
+    const favorites = await ctx.db
+      .query('waterBodyFavorites')
+      .withIndex('by_user', (q) => q.eq('userId', profile._id))
+      .collect();
+    if (favorites.length === 0) return [] as PostCardData[];
+    const sources = favorites
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, FAVORITE_SOURCES_CAP);
     const current = seasonOf(viewer.now);
     const served =
       season !== undefined && isBrowsableSeason(season)
         ? season
-        : await servedFeedSeason(ctx, current, skaterId);
-    const start = seasonStartMs(served);
-    const end = seasonEndMs(served);
+        : await servedFeedSeason(ctx, current);
+    const seasonStart = seasonStartMs(served);
+    const seasonEnd = seasonEndMs(served);
 
-    const postIds = new Set<Id<'posts'>>();
-    const sources = [
-      ...[...bodyIds].map((id) => ({ kind: 'body' as const, id })),
-      ...[...subAreaIds].map((id) => ({ kind: 'bay' as const, id })),
-    ].slice(0, FAVORITE_SOURCES_CAP);
-    for (const source of sources) {
-      const rows =
-        source.kind === 'body'
-          ? await ctx.db
-              .query('reports')
-              .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-                q
-                  .eq('waterBodyId', source.id as Id<'waterBodies'>)
-                  .eq('moderationStatus', 'visible')
-                  .gte('skateEndTime', start)
-                  .lt('skateEndTime', end),
-              )
-              .order('desc')
-              .take(FAVORITE_POSTS_CAP)
-          : await ctx.db
-              .query('reportSubAreas')
-              .withIndex('by_sub_area_moderation_skate_end', (q) =>
-                q
-                  .eq('subAreaId', source.id as Id<'waterBodySubAreas'>)
-                  .eq('moderationStatus', 'visible')
-                  .gte('skateEndTime', start)
-                  .lt('skateEndTime', end),
-              )
-              .order('desc')
-              .take(FAVORITE_POSTS_CAP);
-      for (const row of rows) {
+    const kept = new Map<string, { card: PostCardData; createdAt: number }[]>();
+    const seen = new Set<Id<'posts'>>();
+    for (const window of feedSectionWindows(viewer.now)) {
+      const lo = Math.max(window.startMs, seasonStart);
+      const hi = Math.min(window.endMs, seasonEnd);
+      if (lo >= hi) continue;
+      const candidates: { t: number; report: Doc<'reports'> | Id<'reports'> }[] = [];
+      for (const source of sources) {
+        if (source.subAreaId === undefined) {
+          const rows = await ctx.db
+            .query('reports')
+            .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+              q
+                .eq('waterBodyId', source.waterBodyId)
+                .eq('moderationStatus', 'visible')
+                .gte('skateEndTime', lo)
+                .lt('skateEndTime', hi),
+            )
+            .order('desc')
+            .take(FAVORITE_POSTS_PER_SECTION);
+          for (const r of rows) candidates.push({ t: r.skateEndTime, report: r });
+        } else {
+          const subAreaId = source.subAreaId;
+          const rows = await ctx.db
+            .query('reportSubAreas')
+            .withIndex('by_sub_area_moderation_skate_end', (q) =>
+              q
+                .eq('subAreaId', subAreaId)
+                .eq('moderationStatus', 'visible')
+                .gte('skateEndTime', lo)
+                .lt('skateEndTime', hi),
+            )
+            .order('desc')
+            .take(FAVORITE_POSTS_PER_SECTION);
+          for (const r of rows) candidates.push({ t: r.skateEndTime, report: r.reportId });
+        }
+      }
+      candidates.sort((a, b) => b.t - a.t);
+      for (const candidate of candidates.slice(0, FAVORITE_CANDIDATES_PER_SECTION)) {
+        if ((kept.get(window.key)?.length ?? 0) >= FAVORITE_POSTS_PER_SECTION) break;
         const report =
-          source.kind === 'body'
-            ? (row as Doc<'reports'>)
-            : await ctx.db.get((row as Doc<'reportSubAreas'>).reportId);
-        if (report?.postId !== undefined) postIds.add(report.postId);
+          typeof candidate.report === 'string'
+            ? await ctx.db.get(candidate.report)
+            : candidate.report;
+        const postId = report?.postId;
+        if (postId === undefined || seen.has(postId)) continue;
+        seen.add(postId);
+        const post = await ctx.db.get(postId);
+        if (post?.moderationStatus !== 'visible') continue;
+        if (post.latestSkateEndTime < seasonStart || post.latestSkateEndTime >= seasonEnd) continue;
+        const card = await toPostCard(ctx, post, viewer);
+        if (!card?.isFavorite) continue;
+        const key = feedSectionForTime(card.latestSkateEndTime, viewer.now).key;
+        const list = kept.get(key) ?? [];
+        if (list.length >= FAVORITE_POSTS_PER_SECTION) continue;
+        list.push({ card, createdAt: post._creationTime });
+        kept.set(key, list);
       }
     }
-
-    const posts: Doc<'posts'>[] = [];
-    for (const id of postIds) {
-      const post = await ctx.db.get(id);
-      if (post?.moderationStatus !== 'visible') continue;
-      if (post.latestSkateEndTime < start || post.latestSkateEndTime >= end) continue;
-      if (skaterId !== undefined && post.authorId !== skaterId) continue;
-      posts.push(post);
-    }
-    // Newest skate first, then `_id` descending — the order the feed's index reads ties in.
-    posts.sort(
-      (a, b) =>
-        b.latestSkateEndTime - a.latestSkateEndTime || (a._id < b._id ? 1 : a._id > b._id ? -1 : 0),
-    );
-    // Only the newest candidates are hydrated: one the filters empty is not in `listFeed` either.
-    const cards: PostCardData[] = [];
-    for (const post of posts.slice(0, FAVORITE_POSTS_CAP)) {
-      const card = await toPostCard(ctx, post, viewer);
-      if (card?.isFavorite) cards.push(card);
-    }
-    return cards;
+    // Newest skate first, ties newest-created first: the order `listFeed`'s index reads them in.
+    return [...kept.values()]
+      .flat()
+      .sort(
+        (a, b) =>
+          b.card.latestSkateEndTime - a.card.latestSkateEndTime || b.createdAt - a.createdAt,
+      )
+      .map(({ card }) => card);
   },
 });
 

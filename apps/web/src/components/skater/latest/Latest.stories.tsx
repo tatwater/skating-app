@@ -145,7 +145,7 @@ function Page({
       weatherOn ? [MATCH] : [],
       true,
       NOW,
-      { liftFavorites: search === undefined },
+      { lift: search === undefined },
     ),
     now: NOW,
     canLoadMore: true,

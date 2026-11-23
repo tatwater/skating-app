@@ -69,6 +69,7 @@ beforeEach(() => {
   fakes.queries.set('reports:recommended', []);
   fakes.queries.set('weatherDiscovery:status', { available: true, asOfDayMs: Date.now() });
   fakes.queries.set('bounties:listOpen', []);
+  fakes.queries.set('posts:listFavoritePosts', []);
 });
 
 /** The last navigation, with its `search` updater applied to `prev`. */
@@ -261,6 +262,39 @@ describe('LatestPage', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(loadMore).toHaveBeenCalledWith(20);
+  });
+
+  it('holds the first draw until the favorites answer: they decide each section’s head (D292)', () => {
+    fakes.queries.delete('posts:listFavoritePosts');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+  });
+
+  it('leads Today with a favorite from the up-front read, though no page has brought it yet', () => {
+    const fav = {
+      ...POST,
+      postId: 'fav1',
+      title: 'The favorite',
+      latestSkateEndTime: POST.latestSkateEndTime - 3_600_000,
+      isFavorite: true,
+      reports: [{ ...REPORT, reportId: 'favr', isFavorite: true }],
+    };
+    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
+    fakes.queries.set('posts:listFavoritePosts', [fav]);
+    page();
+    const titles = screen.getAllByText(/^(The favorite|Mascoma South, first real day)$/);
+    expect(titles.map((t) => t.textContent)).toEqual([
+      'The favorite',
+      'Mascoma South, first real day',
+    ]);
+  });
+
+  it('reads no favorites under a search or one skater’s list: each says newest first', () => {
+    m.flags['latest-skater-filter'] = true;
+    m.flags['latest-text-search'] = true;
+    page({ q: 'narrows' });
+    page({ skater: 'bob' });
+    expect(fakes.calls.some((c) => c.name === 'posts:listFavoritePosts')).toBe(false);
   });
 
   it('shows the first page loading (4.15)', () => {

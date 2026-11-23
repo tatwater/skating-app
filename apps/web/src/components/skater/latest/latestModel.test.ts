@@ -30,7 +30,7 @@ function post(
     postId: id,
     latestSkateEndTime: t,
     isFavorite,
-    reports: reportIds.map((reportId) => ({ reportId, skateEndTime: t })),
+    reports: reportIds.map((reportId) => ({ reportId, skateEndTime: t, isFavorite })),
   } as unknown as PostCardData;
 }
 
@@ -42,7 +42,7 @@ function body(id: string, ageHours: number, isFavorite = false): BodyResultData 
   } as unknown as BodyResultData;
 }
 
-const LIFT = { liftFavorites: true };
+const LIFT = { lift: true };
 
 const rowId = (r: { kind: string; data: unknown }) =>
   r.kind === 'report' ? (r.data as PostCardData).postId : (r.data as BodyResultData).waterBodyId;
@@ -83,20 +83,17 @@ describe('latestSections', () => {
 
   it('lifts favorites to the top of their own section, never above a newer section (D292)', () => {
     // The seeded dev feed that read "Today / Older than a month / Today / Older than a month": the
-    // server sends newest first, two of the viewer's favorites among them, one of them months old.
+    // server sends newest first, two of the viewer's favorites among them, one of them months old,
+    // and the up-front read names both.
+    const t2 = post('t2', 2, undefined, true);
+    const o2 = post('o2', 128 * 24, undefined, true);
     const sections = latestSections(
-      [
-        post('t1', 1),
-        post('t2', 2, undefined, true),
-        post('t3', 3),
-        post('o1', 99 * 24),
-        post('o2', 128 * 24, undefined, true),
-      ],
+      [post('t1', 1), t2, post('t3', 3), post('o1', 99 * 24), o2],
       new Set(),
       [body('w', 5, true)],
       true,
       NOW,
-      LIFT,
+      { ...LIFT, favorites: [t2, o2] },
     );
     expect(sections.map((s) => s.key)).toEqual(['today', 'older']);
     expect(sections.map((s) => s.items.map(rowId))).toEqual([
@@ -128,7 +125,7 @@ describe('latestSections', () => {
       [],
       true,
       NOW,
-      { liftFavorites: false },
+      { lift: false },
     );
     expect(sections.map((s) => s.items.map(rowId))).toEqual([['t1', 't2'], ['o1']]);
   });

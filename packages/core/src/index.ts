@@ -85,6 +85,7 @@ export * from './lakeProfile';
 export * from './lakeSearch';
 export * from './landmarks';
 export * from './landmarkWhere';
+export * from './latestFeed';
 export * from './libraryGrid';
 export * from './mapRegion';
 export * from './mergeLists';

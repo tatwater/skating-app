@@ -513,6 +513,29 @@ const SECTION_RANK: Readonly<Record<FeedSectionMeta['key'], number>> = {
   older: 4,
 };
 
+/** A section's place in the feed, newest first: `today` is 0. */
+export function feedSectionRank(key: FeedSectionMeta['key']): number {
+  return SECTION_RANK[key];
+}
+
+/**
+ * Each recency section as a skate-end-time window `[startMs, endMs)` relative to `now`, newest
+ * first — the same boundaries as {@link feedSectionForTime}, for a server that reads a section at a
+ * time. `today` runs open-ended into the future (clock skew buckets as today); `older` open-ended
+ * into the past.
+ */
+export function feedSectionWindows(
+  now: number,
+): { key: FeedSectionMeta['key']; startMs: number; endMs: number }[] {
+  return [
+    { key: 'today', startMs: now - DAY + 1, endMs: Number.POSITIVE_INFINITY },
+    { key: 'yesterday', startMs: now - 2 * DAY + 1, endMs: now - DAY + 1 },
+    { key: 'this-week', startMs: now - 7 * DAY + 1, endMs: now - 2 * DAY + 1 },
+    { key: 'this-month', startMs: now - 30 * DAY + 1, endMs: now - 7 * DAY + 1 },
+    { key: 'older', startMs: Number.NEGATIVE_INFINITY, endMs: now - 30 * DAY + 1 },
+  ];
+}
+
 /**
  * Split a feed list into recency sections (Phase 04, decision #5), each key **once**, newest
  * section first, with the viewer's favorites leading inside each section (D292). Within a section,
@@ -546,36 +569,6 @@ export function groupFeedSections<T>(
         (a, b) => Number(isFavorite(b)) - Number(isFavorite(a)) || getTime(b) - getTime(a),
       ),
     }));
-}
-
-/**
- * The paginated feed with the viewer's up-front favorite Posts merged in (D292), newest first. A
- * favorite the pages haven't reached joins once the scroll reaches **its section** (the oldest
- * loaded Post's section or an older one is not reached), so `groupFeedSections` can put it at the
- * top of that section the moment the section first draws, never later and above the reader. Every
- * section is reached once the pages are `exhausted`. The paginated copy of a Post wins; the
- * favorites add only what isn't loaded yet. Ties keep the pages' order ahead of the favorites'.
- */
-export function withFavoritePosts(
-  posts: readonly PostCardData[],
-  favorites: readonly PostCardData[],
-  exhausted: boolean,
-  now: number,
-): PostCardData[] {
-  const last = posts[posts.length - 1];
-  const reached = exhausted
-    ? Number.POSITIVE_INFINITY
-    : last === undefined
-      ? -1
-      : SECTION_RANK[feedSectionForTime(last.latestSkateEndTime, now).key];
-  const loaded = new Set(posts.map((p) => p.postId));
-  const extra = favorites.filter(
-    (f) =>
-      !loaded.has(f.postId) &&
-      SECTION_RANK[feedSectionForTime(f.latestSkateEndTime, now).key] <= reached,
-  );
-  if (extra.length === 0) return [...posts];
-  return [...posts, ...extra].sort((a, b) => b.latestSkateEndTime - a.latestSkateEndTime);
 }
 
 /**

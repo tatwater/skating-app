@@ -5,6 +5,7 @@ import {
   buildPostCardView,
   type FeedCardData,
   feedSectionForTime,
+  feedSectionWindows,
   formatLocationLine,
   formatPlaceLabel,
   formatRelativeTime,
@@ -12,7 +13,6 @@ import {
   omittedReportsLabel,
   type PostCardData,
   splitLocationLine,
-  withFavoritePosts,
 } from './feed';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -146,86 +146,28 @@ describe('groupFeedSections', () => {
   });
 });
 
-describe('withFavoritePosts', () => {
+describe('feedSectionWindows', () => {
   const now = Date.UTC(2026, 0, 20, 12);
-  const post = (postId: string, t: number, isFavorite = false) =>
-    ({ postId, latestSkateEndTime: t, isFavorite }) as PostCardData;
-  const ids = (list: readonly PostCardData[]) => list.map((p) => p.postId);
-
-  it('adds a favorite the pages have not reached yet, in its own section, newest first', () => {
-    // Page 1 ends inside Today; the 25th-newest post, a favorite, is in Today too.
-    const pages = [post('a', now - 1000), post('b', now - 5000)];
-    const favs = [post('f', now - 9000, true)];
-    expect(ids(withFavoritePosts(pages, favs, false, now))).toEqual(['a', 'b', 'f']);
-  });
-
-  it('holds back a favorite whose section the scroll has not reached', () => {
-    const pages = [post('a', now - 1000)];
-    const favs = [post('old', now - 90 * DAY, true)];
-    expect(ids(withFavoritePosts(pages, favs, false, now))).toEqual(['a']);
-    // Once the pages are exhausted every section is reached.
-    expect(ids(withFavoritePosts(pages, favs, true, now))).toEqual(['a', 'old']);
-  });
-
-  it('admits nothing before a first page arrives, unless the feed is exhausted', () => {
-    const favs = [post('f', now - 1000, true)];
-    expect(withFavoritePosts([], favs, false, now)).toEqual([]);
-    expect(ids(withFavoritePosts([], favs, true, now))).toEqual(['f']);
-  });
-
-  it('keeps the paginated copy of a post both lists hold', () => {
-    const paged = { ...post('a', now - 1000, true), omittedCount: 1 } as PostCardData;
-    const out = withFavoritePosts([paged], [post('a', now - 1000, true)], false, now);
-    expect(out).toEqual([paged]);
-  });
-
-  it('property: every page kept, no repeats, newest first, favorites only in reached sections', () => {
-    const rank = ['today', 'yesterday', 'this-week', 'this-month', 'older'];
-    const t = fc.integer({ min: now - 60 * DAY, max: now });
+  it('property: the window holding an instant is the section feedSectionForTime names', () => {
     fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.tuple(fc.integer({ min: 0, max: 60 }), t), {
-          selector: ([id]) => id,
-          maxLength: 30,
-        }),
-        fc.integer({ min: 0, max: 30 }),
-        fc.boolean(),
-        (rows, cut, exhausted) => {
-          // One newest-first season: the first `cut` rows are paged in, a subset of all are favorites.
-          const all = [...rows]
-            .sort((x, y) => y[1] - x[1])
-            .map(([id, at]) => post(String(id), at, id % 3 === 0));
-          const pages = all.slice(0, cut);
-          const favs = all.filter((p) => p.isFavorite);
-          const out = withFavoritePosts(pages, favs, exhausted, now);
-          expect(new Set(ids(out)).size).toBe(out.length);
-          for (const p of pages) expect(out).toContain(p);
-          for (let i = 1; i < out.length; i++) {
-            expect((out[i - 1] as PostCardData).latestSkateEndTime).toBeGreaterThanOrEqual(
-              (out[i] as PostCardData).latestSkateEndTime,
-            );
-          }
-          const last = pages[pages.length - 1];
-          const reached = exhausted
-            ? rank.length
-            : last === undefined
-              ? -1
-              : rank.indexOf(feedSectionForTime(last.latestSkateEndTime, now).key);
-          for (const p of out) {
-            if (pages.includes(p)) continue;
-            expect(p.isFavorite).toBe(true);
-            expect(
-              rank.indexOf(feedSectionForTime(p.latestSkateEndTime, now).key),
-            ).toBeLessThanOrEqual(reached);
-          }
-          // Every favorite in a reached section is in.
-          for (const f of favs) {
-            const r = rank.indexOf(feedSectionForTime(f.latestSkateEndTime, now).key);
-            if (r <= reached) expect(ids(out)).toContain(f.postId);
-          }
-        },
-      ),
+      fc.property(fc.integer({ min: now - 90 * DAY, max: now + DAY }), (t) => {
+        const holding = feedSectionWindows(now).filter((w) => t >= w.startMs && t < w.endMs);
+        expect(holding.map((w) => w.key)).toEqual([feedSectionForTime(t, now).key]);
+      }),
     );
+  });
+
+  it('runs newest first, today open into the future and older open into the past', () => {
+    const windows = feedSectionWindows(now);
+    expect(windows.map((w) => w.key)).toEqual([
+      'today',
+      'yesterday',
+      'this-week',
+      'this-month',
+      'older',
+    ]);
+    expect(windows[0]?.endMs).toBe(Number.POSITIVE_INFINITY);
+    expect(windows[4]?.startMs).toBe(Number.NEGATIVE_INFINITY);
   });
 });
 

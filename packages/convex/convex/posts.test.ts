@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { postSearchText } from './lib/postSync';
-import { FAVORITE_POSTS_CAP, FAVORITE_SOURCES_CAP, legacyPostFor } from './posts';
+import { FAVORITE_POSTS_PER_SECTION, FAVORITE_SOURCES_CAP, legacyPostFor } from './posts';
 import { a10ShapePatch } from './reports';
 import schema from './schema';
 
@@ -1003,7 +1003,7 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     expect(ids(await viewer.as.query(api.posts.listFavoritePosts, {}))).toEqual([inBay]);
   });
 
-  test('the same Posts listFeed would show: the moderation gate, the filters, the skater, the season', async () => {
+  test('the same Posts listFeed would show: the moderation gate, the filters, the season', async () => {
     const t = convexTest(schema, modules);
     const LAST_WINTER = Date.UTC(2025, 0, 10);
     // Last season first (the clock only runs forward): never served beside this one (D63).
@@ -1045,10 +1045,6 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
         await viewer.as.query(api.posts.listFavoritePosts, { filters: { qualityFloor: 'good' } }),
       ),
     ).toEqual([adaGreat]);
-    expect(ids(await viewer.as.query(api.posts.listFavoritePosts, { skater: 'bob' }))).toEqual([
-      bobPoor,
-    ]);
-    expect(await viewer.as.query(api.posts.listFavoritePosts, { skater: 'nobody' })).toEqual([]);
     // And it agrees with the feed it is merged into.
     const feed = await viewer.as.query(api.posts.listFeed, {
       paginationOpts: { numItems: 50, cursor: null },
@@ -1056,59 +1052,85 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     expect(ids(feed.page)).toEqual([adaGreat, bobPoor]);
   });
 
-  test('bounded: every favorite full past the cap stays inside the backend’s limits, newest first', async () => {
+  test('bounded per section: every section leads with its own, and the newest favorites are read', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'clerk_author');
     const viewer = await seedUser(t, 'clerk_viewer');
-    // One more favorite than the read takes, each with one more Post than the cap.
+    const DAY = 86_400_000;
+    // Today, Yesterday, Earlier this week, Earlier this month, Older than a month.
+    const AGES = [0, 1.5 * DAY, 4 * DAY, 15 * DAY, 45 * DAY];
+    const perSection = FAVORITE_POSTS_PER_SECTION + 1;
+    // One more favorite than the read takes; each is busy enough to fill every section on its own.
     const bodies: Id<'waterBodies'>[] = [];
     for (let i = 0; i <= FAVORITE_SOURCES_CAP; i++) bodies.push(await seedBody(t));
-    const perBody = FAVORITE_POSTS_CAP + 1;
-    await t.run(async (ctx) => {
-      for (const [b, waterBodyId] of bodies.entries()) {
-        for (let k = 0; k < perBody; k++) {
-          const at = T0 - (b * perBody + k) * 60_000;
-          const reportId = await ctx.db.insert('reports', {
-            authorId: author.id,
-            waterBodyId,
-            point: { lat: 0.5, lng: 0.5 },
-            skateEndTime: at,
-            reportTime: at,
-            source: 'native',
-            iceTypes: [],
-            surfaceTags: [{ type: 'glass' }],
-            photoIds: [],
-            hazardIdsCreated: [],
-            moderationStatus: 'visible',
-            createdAt: at,
-            updatedAt: at,
-          });
-          const postId = await ctx.db.insert('posts', {
-            authorId: author.id,
-            reportIds: [reportId],
-            photoIds: [],
-            latestSkateEndTime: at,
-            moderationStatus: 'visible',
-            createdAt: at,
-            updatedAt: at,
-          });
-          await ctx.db.patch(reportId, { postId });
+    for (const [i, waterBodyId] of bodies.entries()) {
+      await t.run(async (ctx) => {
+        for (const age of AGES) {
+          for (let k = 0; k < perSection; k++) {
+            const at = T0 - age - (i * perSection + k) * 60_000;
+            const reportId = await ctx.db.insert('reports', {
+              authorId: author.id,
+              waterBodyId,
+              point: { lat: 0.5, lng: 0.5 },
+              skateEndTime: at,
+              reportTime: at,
+              source: 'native',
+              iceTypes: [],
+              surfaceTags: [{ type: 'glass' }],
+              photoIds: [],
+              hazardIdsCreated: [],
+              moderationStatus: 'visible',
+              createdAt: at,
+              updatedAt: at,
+            });
+            const postId = await ctx.db.insert('posts', {
+              authorId: author.id,
+              reportIds: [reportId],
+              photoIds: [],
+              latestSkateEndTime: at,
+              moderationStatus: 'visible',
+              createdAt: at,
+              updatedAt: at,
+            });
+            await ctx.db.patch(reportId, { postId });
+          }
         }
-      }
-      for (const waterBodyId of bodies) {
+        // Body 0 is the newest favorite; the last is the oldest, past the cap.
         await ctx.db.insert('waterBodyFavorites', {
           userId: viewer.id,
           waterBodyId,
-          createdAt: T0,
+          createdAt: T0 - i,
         });
-      }
-    });
+      });
+    }
     const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
-    expect(cards).toHaveLength(FAVORITE_POSTS_CAP);
+    const sectionOf = (ms: number) => AGES.filter((age) => T0 - ms >= age).length - 1;
+    const counts = AGES.map(
+      (_, s) => cards.filter((c) => sectionOf(c.latestSkateEndTime) === s).length,
+    );
+    expect(counts).toEqual(AGES.map(() => FAVORITE_POSTS_PER_SECTION));
     const times = cards.map((c) => c.latestSkateEndTime);
     expect(times).toEqual([...times].sort((a, b) => b - a));
-    // The newest favorite Posts in the season: the first body's, all of them past the cap's reach.
-    expect(times[0]).toBe(T0);
+    const oldest = bodies[FAVORITE_SOURCES_CAP];
+    expect(cards.some((c) => c.reports.some((r) => r.waterBodyId === oldest))).toBe(false);
+  });
+
+  test('a Post sits in the section of its newest member, found through an older favorite one', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const other = await seedBody(t);
+    const { postId } = await author.as.mutation(api.posts.create, {
+      reports: [
+        { ...FRESH, waterBodyId: fav, skateEndTime: T0 - 30 * 3_600_000 },
+        { ...FRESH, waterBodyId: other, skateEndTime: T0 - 1000 },
+      ],
+    });
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {});
+    expect(ids(cards)).toEqual([postId]);
+    expect(cards[0]?.latestSkateEndTime).toBe(T0 - 1000);
   });
 });
 
