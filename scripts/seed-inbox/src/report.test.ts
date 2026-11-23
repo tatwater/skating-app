@@ -152,6 +152,23 @@ describe('applyAndReport', () => {
     expect(lines).toContain('unavailable r-photos — needs a caspian body on this deployment');
   });
 
+  test('a clean run: each step said as filed, exit 0, nothing to act on', async () => {
+    const { out, lines, logs } = recorder();
+    let reads = 0;
+    const call = (<T>(fn: string): T => {
+      if (fn === 'inboxSeed:ensurePeople') return ADMIN as T;
+      if (fn === 'inboxSeed:state')
+        return (++reads === 1 ? state([photo('ph-1')]) : state([])) as T;
+      if (fn === 'photos:create') return { photoId: 'p1' } as T;
+      throw new Error(`unexpected ${fn}`);
+    }) as Call;
+    expect(await applyAndReport(call, 'user_op', upload, () => false, out)).toBe(0);
+    expect(lines[0]).toMatch(/^filed {2}ph-1 +photos:create as gus$/);
+    expect(lines.some((l) => l.startsWith('FAILED') || l.startsWith('left on'))).toBe(false);
+    expect(lines.some((l) => /stopped|interrupted/.test(l))).toBe(false);
+    expect(logs).toHaveLength(1);
+  });
+
   test('a run that throws before any plan read: only the error line of its own', async () => {
     const { out, lines } = recorder();
     const call: Call = <T>(): T => {
@@ -188,6 +205,17 @@ describe('clearAndReport', () => {
       'the clear is not done; run it again to finish it',
     ]);
     expect(logs).toEqual([]);
+  });
+
+  test('a clear that runs out of calls while still removing: exit 1, its log, and the run-again line', () => {
+    const { out, lines, logs } = recorder();
+    const call = (<T>(fn: string): T => {
+      if (fn !== 'inboxSeed:clear') throw new Error(`unexpected ${fn}`);
+      return { done: false, removed: { photos: 1 } } as T;
+    }) as Call;
+    expect(clearAndReport(call, out, () => {})).toBe(1);
+    expect(logs).toHaveLength(1);
+    expect(lines.at(-1)).toBe('the clear is not done; run it again to finish it');
   });
 
   test('a clear that finishes: its log, and what it removed', () => {
