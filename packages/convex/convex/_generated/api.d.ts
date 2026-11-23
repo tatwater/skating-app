@@ -129,6 +129,7 @@ import type * as lib_peopleRuns from "../lib/peopleRuns.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_photoRotation from "../lib/photoRotation.js";
+import type * as lib_photoWithdraw from "../lib/photoWithdraw.js";
 import type * as lib_postSync from "../lib/postSync.js";
 import type * as lib_pulse from "../lib/pulse.js";
 import type * as lib_putInMarkers from "../lib/putInMarkers.js";
@@ -345,6 +346,7 @@ declare const fullApi: ApiFromModules<{
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoOrphans": typeof lib_photoOrphans;
   "lib/photoRotation": typeof lib_photoRotation;
+  "lib/photoWithdraw": typeof lib_photoWithdraw;
   "lib/postSync": typeof lib_postSync;
   "lib/pulse": typeof lib_pulse;
   "lib/putInMarkers": typeof lib_putInMarkers;
