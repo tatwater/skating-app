@@ -149,6 +149,17 @@ export function photoOf(
   };
 }
 
+/**
+ * The server's own sentences, as its rule answers each state (`lib/inboxRules`, `lib/recordRules`):
+ * every fixture's `can` is what the server would serve for that state and viewer, never a lever it
+ * doesn't offer.
+ */
+export const AUTHOR_DELETED_RESTORE = 'Its author deleted this, so it can’t be restored.';
+export const ERASED_ALREADY = 'This was erased, so there is nothing left to act on.';
+export const DECIDED = 'This has already been decided.';
+export const OWN_CONTENT = 'This is yours, so another moderator decides on it.';
+export const NEEDS_MODERATOR = 'Requires moderator role';
+
 /** Every flag verb a visible photo offers (2.7's bar). */
 export const PHOTO_CAN = { hide: null, remove: null, dismiss: null } as const;
 
@@ -222,7 +233,8 @@ export const PHOTO_BYTES_MISSING = photoItem(
     bytesMissingAt: at(10, 13, 9, 2),
     thumbUrl: null,
   }),
-  { itemId: id<'inboxItems'>('i_photo_missing'), can: { dismiss: null } },
+  // Its rotation found it missing: the record reads it erased, so a restore is refused.
+  { itemId: id<'inboxItems'>('i_photo_missing'), can: { dismiss: null, restore: ERASED_ALREADY } },
 );
 
 /** Removed, and its file deleted on the clock: a tombstone, no image to anyone. */
@@ -234,12 +246,14 @@ export const PHOTO_PURGED = photoItem(
     purgedAt: at(10, 10, 9, 30),
     thumbUrl: null,
   }),
-  { can: { dismiss: null } },
+  // A tombstone reads erased: a restore is refused.
+  { can: { dismiss: null, restore: ERASED_ALREADY } },
 );
 
 /**
  * A viewer without `content.read`: the server serves no address, for the photo or its report's
- * others, and says it can't be revealed. The levers are the server's to grant: Dismiss here.
+ * others, and says it can't be revealed. Every flag verb needs a moderator's capability too
+ * (`inbox.flag`, `content.moderate`, all moderator-level), so the server refuses each: no bar.
  */
 export const PHOTO_NO_ACCESS = photoItem(
   photoOf(
@@ -247,7 +261,7 @@ export const PHOTO_NO_ACCESS = photoItem(
     reportPhotos(4, () => ({ thumbUrl: null })),
     { canReveal: false, thumbUrl: null },
   ),
-  { can: { dismiss: null } },
+  { can: { dismiss: NEEDS_MODERATOR, hide: NEEDS_MODERATOR, remove: NEEDS_MODERATOR } },
 );
 
 /** The viewer may see it, but no file was served (the blob is gone). */
@@ -278,7 +292,11 @@ export const PHOTO_WITHDRAWN = photoItem(
     withdrawnAt: at(10, 14, 11),
     purgeAt: at(11, 13, 11),
   }),
-  { itemId: id<'inboxItems'>('i_photo_withdrawn'), can: { restore: null, dismiss: null } },
+  // Its author deleted it: the server refuses a restore (the bar offers Dismiss alone).
+  {
+    itemId: id<'inboxItems'>('i_photo_withdrawn'),
+    can: { restore: AUTHOR_DELETED_RESTORE, dismiss: null },
+  },
 );
 
 /** A photo on no report (a hazard's): no *On the same report*, no place on one. */
@@ -303,6 +321,8 @@ export const PHOTO_UPLOADER_GONE = photoItem(photoOf(2, FOUR), {
 
 /** Decided by a colleague while it was open: the frame drops the bar. */
 export const PHOTO_DECIDED = photoItem(photoOf(2, FOUR), {
+  // A decided item: the server refuses every verb in one sentence (the frame drops the bar).
+  can: { dismiss: DECIDED, hide: DECIDED, remove: DECIDED },
   decided: {
     at: at(10, 14, 11, 42),
     by: { userId: SARAH.userId, displayName: SARAH.displayName },
@@ -315,9 +335,9 @@ export const PHOTO_DECIDED = photoItem(photoOf(2, FOUR), {
 /** The viewer's own photo (D269): every verb refused, no bar. */
 export const PHOTO_OWN = photoItem(photoOf(2, FOUR), {
   can: {
-    dismiss: 'This is your own photo, so another staff member decides it',
-    hide: 'This is your own photo, so another staff member decides it',
-    remove: 'This is your own photo, so another staff member decides it',
+    dismiss: OWN_CONTENT,
+    hide: OWN_CONTENT,
+    remove: OWN_CONTENT,
   },
 });
 

@@ -392,8 +392,10 @@ export const Withdrawn: Story = {
       expect(slot(canvasElement, 'photo-withdrawn')).toHaveTextContent(
         'Its uploader took it down on 14 Oct',
       );
-      expect(slot(canvasElement, 'photo-purge-on')).toHaveTextContent('unless it is restored');
-      expect(barButtons(canvasElement)).toEqual(['Restore', 'Dismiss']);
+      // It can't be restored: the deletion isn't "unless restored", and the server offers no Restore.
+      expect(slot(canvasElement, 'photo-purge-on')).toHaveTextContent('it can’t be restored');
+      expect(slot(canvasElement, 'photo-purge-on')).not.toHaveTextContent('unless');
+      expect(barButtons(canvasElement)).toEqual(['Dismiss']);
     });
   },
 };

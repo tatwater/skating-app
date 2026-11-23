@@ -383,8 +383,9 @@ describe('a photo flag, through the route and the view', () => {
     act(() => pane.focus());
     fireEvent.keyDown(pane, { key: 's', code: 'KeyS' });
     expect(pane.querySelector('img')).toBeNull();
-    // The levers are the server's to grant: Dismiss, as `can` says.
-    expect(within(pane).getByRole('button', { name: /^Dismiss/ })).toBeInTheDocument();
+    // The levers are the server's to grant: every flag verb is a moderator's, so none is drawn.
+    expect(within(pane).queryByRole('toolbar')).toBeNull();
+    expect(within(pane).queryByRole('button', { name: /^(Dismiss|Hide|Remove)/ })).toBeNull();
   });
 
   it('a purged photo says what was removed and when, with no image', () => {

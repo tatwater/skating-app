@@ -138,7 +138,9 @@ export function purgeLine(photo: PhotoView, timeZone?: string): string | null {
   if (photo.moderationStatus !== 'removed' || photo.purgeAt === null || photo.purgedAt !== null) {
     return null;
   }
-  return P.purgeOn(dayMonth(photo.purgeAt, timeZone));
+  // A withdrawal can't be restored (the server refuses it): its deletion is not "unless restored".
+  const day = dayMonth(photo.purgeAt, timeZone);
+  return photo.withdrawnAt !== null ? P.purgeOnWithdrawn(day) : P.purgeOn(day);
 }
 
 /** Its uploader deleted it while it was held: kept, out of sight, and when. */

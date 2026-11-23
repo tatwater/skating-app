@@ -59,7 +59,10 @@ describe('what the stage may draw', () => {
     expect(stageState(v)).toEqual({ kind: 'missing', at: v.bytesMissingAt });
     // Whatever address is still served, nothing is drawn; the server offers no Restore.
     expect(stageState({ ...v, thumbUrl: 't' }).kind).toBe('missing');
-    expect(PHOTO_BYTES_MISSING.can).toEqual({ dismiss: null });
+    expect(PHOTO_BYTES_MISSING.can).toEqual({
+      dismiss: null,
+      restore: 'This was erased, so there is nothing left to act on.',
+    });
   });
 
   it('a missing file is said, not drawn broken', () => {
@@ -167,6 +170,13 @@ describe('the photo’s state', () => {
     );
     expect(purgeLine(viewOf(PHOTO_PURGED), BOARD_ZONE)).toBeNull();
     expect(purgeLine(viewOf(PHOTO_HIDDEN), BOARD_ZONE)).toBeNull();
+  });
+
+  it('a withdrawal’s deletion is never “unless it is restored”: it can’t be', () => {
+    expect(purgeLine(viewOf(PHOTO_WITHDRAWN), BOARD_ZONE)).toBe(
+      'Its file is deleted on 13 Nov; it can’t be restored',
+    );
+    expect(purgeLine(viewOf(PHOTO_WITHDRAWN), BOARD_ZONE)).not.toMatch(/unless/);
   });
 
   it('a withdrawal says when its uploader took it down, never that it is gone', () => {
@@ -280,8 +290,11 @@ describe('no word claims the photo is unreachable or erased before its purge', (
   });
 
   it('a removal’s deletion is always conditional on no restore, and in the future', () => {
-    const deletes = said.filter((w) => /delete/i.test(w));
+    // The withdrawal's own line is the one exception: it can't be restored, and says so.
+    const withdrawn = PHOTO_WORDS.purgeOnWithdrawn('12 Nov');
+    const deletes = said.filter((w) => /delete/i.test(w) && w !== withdrawn);
     expect(deletes.length).toBeGreaterThan(0);
     for (const w of deletes) expect(w).toMatch(/unless (it is )?restored/);
+    expect(withdrawn).toMatch(/deleted on 12 Nov; it can’t be restored$/);
   });
 });

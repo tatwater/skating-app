@@ -45,6 +45,11 @@ export const PHOTO_WORDS = {
     `Found missing on ${day}, so it can’t be restored. The flag and its author are still here to decide on.`,
   /** A removed photo still inside its 30 days. */
   purgeOn: (day: string) => `Its file is deleted on ${day} unless it is restored`,
+  /**
+   * Coined: a photo its uploader took down while it was held — on the same clock, but it can't be
+   * restored (the server refuses it), so the deletion is not conditional.
+   */
+  purgeOnWithdrawn: (day: string) => `Its file is deleted on ${day}; it can’t be restored`,
   /** Coined: its uploader deleted it while a flag or a decision held it (B01-5e's withdrawal). */
   withdrawn: (day: string) =>
     `Its uploader took it down on ${day}; it is kept out of sight while a flag or a decision holds it`,

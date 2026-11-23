@@ -559,9 +559,8 @@ export const CHOICES: ChoicesRead = {
 } as ChoicesRead;
 
 /**
- * A photo verdict (B01-5e): a photo removed from a report. The read doesn't serve the kind yet (the
- * server's photo axis lands with its own builder), so it is carried past the type; its content's
- * `thumbUrl` is the staff-only thumbnail the item read owes.
+ * A photo verdict (B01-5e): a photo removed from a report, still within its 30 days — the server
+ * offers its restore. Its content's `thumbUrl` is the staff-only thumbnail the item read serves.
  */
 export const ITEM_PHOTO = {
   ...item({
@@ -579,8 +578,12 @@ export const ITEM_PHOTO = {
   },
 } as unknown as ItemRead;
 
-/** The same verdict, its file deleted (or a viewer served no photos): no address. */
+/**
+ * The same verdict, its file deleted on the clock (a tombstone): no address, and — as the server's
+ * rule answers an erased item — no restore.
+ */
 export const ITEM_PHOTO_NONE = {
   ...ITEM_PHOTO,
   content: { at: at(10, 11, 14, 22), text: null, thumbUrl: null },
+  can: { restore: no('This was erased, so there is nothing left to act on.') },
 } as unknown as ItemRead;
