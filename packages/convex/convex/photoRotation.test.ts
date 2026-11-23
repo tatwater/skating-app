@@ -482,7 +482,8 @@ describe('the attempt window’s search', () => {
     if (begun.kind !== 'go') throw new Error('not begun');
     const others = await t.run(async (ctx) => {
       const out: string[] = [];
-      for (let i = 0; i < SCAN_PAGE + 50; i++) out.push(await ctx.storage.store(new Blob([`u${i}`])));
+      for (let i = 0; i < SCAN_PAGE + 50; i++)
+        out.push(await ctx.storage.store(new Blob([`u${i}`])));
       return out;
     });
     const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
