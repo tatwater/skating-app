@@ -478,8 +478,10 @@ describe('the Inbox shows a taken-down photo’s twins', () => {
   // The twins name the shared file in the photo's own slot, so the photo is inside every range read.
   for (const n of [8, 9, 10]) {
     test(`${n} twins: eight shown, cut only past eight — before the takedown and after its swap`, async () => {
-      const { t, mod, row, p, a, photoShown } = await flagged();
-      for (let i = 1; i < n; i++) await row(a, await file(t));
+      const { t, mod, row, p, a, twin, photoShown } = await flagged();
+      // All n in the photo's own slot: one index range holds the photo and every twin.
+      await t.run((ctx) => ctx.db.delete(twin));
+      for (let i = 0; i < n; i++) await row(a, await file(t));
       const before = await photoShown();
       expect(before.sameBytesAs).toHaveLength(8);
       expect(before.sameBytesCut).toBe(n > 8);
