@@ -141,6 +141,53 @@ export function siblingsCutLine(photo: PhotoView): string | null {
   return P.sameReportCut(shown, countWords({ count: total, capped: photo.photoCount === null }));
 }
 
+/** One row of *The same image*: another photo showing this one's bytes. */
+export type TwinView = {
+  photoId: string;
+  status: ModerationStatus;
+  /** Its state in words: shown, hidden or removed. */
+  label: string;
+  /** An open flag on it: its Inbox item's ref (`flag:<id>`) — decided there. */
+  flagRef: string | null;
+  /** Its report, opened in the app when it has no open flag; `null` off a report. */
+  reportId: string | null;
+  /** Where its row links: its flag's item, else its report, else nowhere (off a report). */
+  link: 'flag' | 'report' | 'none';
+};
+
+/**
+ * *The same image*: the photos the server found showing this photo's bytes (rows written before a
+ * file was one photo's), in its order, at most eight. No uploader is named and no image is drawn:
+ * a row is its state and where to decide on it.
+ */
+export function twinViews(photo: PhotoView): TwinView[] {
+  return photo.sameBytesAs.map((t) => ({
+    photoId: t.photoId,
+    status: t.moderationStatus,
+    label: P.twinState[t.moderationStatus],
+    flagRef: t.openFlagId === null ? null : `flag:${t.openFlagId}`,
+    reportId: t.reportId,
+    link: t.openFlagId !== null ? 'flag' : t.reportId !== null ? 'report' : 'none',
+  }));
+}
+
+/** "The same image is on 2 other photos" — a floor past the read's eight; `null` with none. */
+export function sameImageLine(photo: PhotoView): string | null {
+  if (photo.sameBytesAs.length === 0) return null;
+  return P.sameImage(countWords({ count: photo.sameBytesAs.length, capped: photo.sameBytesCut }));
+}
+
+/**
+ * The sentence a takedown's dialog and receipt add when a twin is **still shown**: the image stays
+ * public there. A floor when the read stopped (an unread twin may be shown too); `null` with none
+ * shown.
+ */
+export function twinStillShownLine(photo: PhotoView): string | null {
+  const shown = photo.sameBytesAs.filter((t) => t.moderationStatus === 'visible').length;
+  if (shown === 0) return null;
+  return P.twinStillShown(countWords({ count: shown, capped: photo.sameBytesCut }));
+}
+
 /** A removed photo's deletion line, while it waits on its 30 days. */
 export function purgeLine(photo: PhotoView, timeZone?: string): string | null {
   if (photo.moderationStatus !== 'removed' || photo.purgeAt === null || photo.purgedAt !== null) {

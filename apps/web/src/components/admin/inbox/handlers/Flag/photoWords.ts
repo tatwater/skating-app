@@ -74,6 +74,28 @@ export const PHOTO_WORDS = {
   /** The report's list was cut short by the read: how many of how many it shows. */
   sameReportCut: (shown: number, of: string) => `Showing ${shown} of ${of} photos`,
 
+  // ── The same image on other photos ───────────────────────────────────────────────────────────
+  /**
+   * Coined: photos written before a file was one photo's each may share this one's image. A
+   * takedown gives this photo its own copy and leaves the shared image to them — so a twin still
+   * shown keeps the image public. `of` is a count, a floor ("8+") when the read stopped.
+   */
+  sameImage: (of: string) => `The same image is on ${of} other ${of === '1' ? 'photo' : 'photos'}`,
+  /** Coined: a twin's state, as its row says it. */
+  twinState: { visible: 'Shown', hidden: 'Hidden', removed: 'Removed' },
+  /** Coined: a twin with no report to open (a hazard's or an access point's). */
+  twinNoReport: 'Not on a report',
+  /** Coined: a twin's report, in the app (a new tab). */
+  twinReport: 'Its report',
+  /**
+   * Coined: said in the Hide and Remove dialogs and on the receipt when a twin is still shown —
+   * the takedown takes this photo down, never the image everywhere.
+   */
+  twinStillShown: (of: string) =>
+    of === '1'
+      ? 'The same image is still up on another photo, and taking this one down leaves that one up.'
+      : `The same image is still up on ${of} other photos, and taking this one down leaves those up.`,
+
   // ── The bar (2.7) ───────────────────────────────────────────────────────────────────────────
   what: {
     hide: 'Off its link now and shown to no one; restorable at any time',

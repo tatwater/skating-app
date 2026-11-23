@@ -145,6 +145,8 @@ export function photoOf(
     purgeAt: null,
     purgedAt: null,
     bytesMissingAt: null,
+    sameBytesAs: [],
+    sameBytesCut: false,
     ...over,
   };
 }
@@ -327,6 +329,56 @@ export const PHOTO_OFF_REPORT = photoItem(
     siblings: [],
     caption: 'Pressure ridge off the point',
   }),
+);
+
+// ── The same image on other photos (rows written before a file was one photo's) ───────────────
+
+/** A twin of the staged photo, as `sameBytesAs` serves it. */
+const twin = (
+  n: number,
+  moderationStatus: PhotoView['moderationStatus'],
+  over: Partial<PhotoView['sameBytesAs'][number]> = {},
+): PhotoView['sameBytesAs'][number] => ({
+  photoId: id<'photos'>(`ph_twin_${n}`),
+  moderationStatus,
+  openFlagId: null,
+  reportId: id<'reports'>(`r_twin_${n}`),
+  ...over,
+});
+
+/** One twin, still shown: the takedown leaves the same image up there, and the dialogs say so. */
+export const PHOTO_TWIN_SHOWN = photoItem(photoOf(2, FOUR, { sameBytesAs: [twin(1, 'visible')] }), {
+  itemId: id<'inboxItems'>('i_photo_twin'),
+});
+
+/** Several twins, mixed: one shown with its own open flag, one hidden, one removed, one off a report. */
+export const PHOTO_TWINS_MIXED = photoItem(
+  photoOf(2, FOUR, {
+    sameBytesAs: [
+      twin(1, 'visible', { openFlagId: id<'contentFlags'>('f_twin_1') }),
+      twin(2, 'hidden'),
+      twin(3, 'removed'),
+      twin(4, 'hidden', { reportId: null }),
+    ],
+  }),
+  { itemId: id<'inboxItems'>('i_photo_twins') },
+);
+
+/** Twins only hidden or removed: listed, and no dialog sentence (nothing of the image is up). */
+export const PHOTO_TWINS_DOWN = photoItem(
+  photoOf(2, FOUR, { sameBytesAs: [twin(1, 'hidden'), twin(2, 'removed')] }),
+  { itemId: id<'inboxItems'>('i_photo_twins_down') },
+);
+
+/** The read's eight, and more past them: a floor ("8+"). */
+export const PHOTO_TWINS_CAPPED = photoItem(
+  photoOf(2, FOUR, {
+    sameBytesAs: Array.from({ length: 8 }, (_, i) =>
+      twin(i + 1, i % 3 === 0 ? 'visible' : 'hidden'),
+    ),
+    sameBytesCut: true,
+  }),
+  { itemId: id<'inboxItems'>('i_photo_twins_capped') },
 );
 
 /** The uploader has left: never named, no author menu. */

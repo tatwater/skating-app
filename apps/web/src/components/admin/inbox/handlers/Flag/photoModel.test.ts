@@ -19,6 +19,10 @@ import {
   PHOTO_PURGED,
   PHOTO_REMOVED,
   PHOTO_THIRD,
+  PHOTO_TWIN_SHOWN,
+  PHOTO_TWINS_CAPPED,
+  PHOTO_TWINS_DOWN,
+  PHOTO_TWINS_MIXED,
   PHOTO_WITHDRAWN,
   photoItem,
   photoOf,
@@ -30,9 +34,12 @@ import {
   photoViewOf,
   placeOnReport,
   purgeLine,
+  sameImageLine,
   siblingsCutLine,
   siblingViews,
   stageState,
+  twinStillShownLine,
+  twinViews,
   withdrawnLine,
 } from './photoModel';
 import { PHOTO_WORDS } from './photoWords';
@@ -310,5 +317,59 @@ describe('no word claims the photo is unreachable or erased before its purge', (
     expect(deletes.length).toBeGreaterThan(0);
     for (const w of deletes) expect(w).toMatch(/unless (it is )?restored/);
     expect(withdrawn).toMatch(/deleted on 12 Nov; it can’t be restored$/);
+  });
+});
+
+describe('the same image on other photos', () => {
+  it('a row per twin: its state, and its flag’s item, else its report, else none', () => {
+    expect(twinViews(viewOf(PHOTO_TWINS_MIXED))).toEqual([
+      expect.objectContaining({ label: 'Shown', link: 'flag', flagRef: 'flag:f_twin_1' }),
+      expect.objectContaining({ label: 'Hidden', link: 'report', reportId: 'r_twin_2' }),
+      expect.objectContaining({ label: 'Removed', link: 'report', reportId: 'r_twin_3' }),
+      expect.objectContaining({ label: 'Hidden', link: 'none', reportId: null }),
+    ]);
+    expect(twinViews(viewOf(PHOTO_THIRD))).toEqual([]);
+  });
+
+  it('its title counts the twins, a floor past the read’s eight; none with no twins', () => {
+    expect(sameImageLine(viewOf(PHOTO_TWIN_SHOWN))).toBe('The same image is on 1 other photo');
+    expect(sameImageLine(viewOf(PHOTO_TWINS_MIXED))).toBe('The same image is on 4 other photos');
+    expect(sameImageLine(viewOf(PHOTO_TWINS_CAPPED))).toBe('The same image is on 8+ other photos');
+    expect(sameImageLine(viewOf(PHOTO_THIRD))).toBeNull();
+  });
+
+  it('the takedown’s sentence: only with a twin still shown, counted, a floor when cut', () => {
+    expect(twinStillShownLine(viewOf(PHOTO_TWIN_SHOWN))).toBe(
+      'The same image is still up on another photo, and taking this one down leaves that one up.',
+    );
+    expect(twinStillShownLine(viewOf(PHOTO_TWINS_MIXED))).toMatch(
+      /^The same image is still up on another/,
+    );
+    expect(twinStillShownLine(viewOf(PHOTO_TWINS_CAPPED))).toBe(
+      'The same image is still up on 3+ other photos, and taking this one down leaves those up.',
+    );
+    expect(twinStillShownLine(viewOf(PHOTO_TWINS_DOWN))).toBeNull();
+    expect(twinStillShownLine(viewOf(PHOTO_THIRD))).toBeNull();
+  });
+
+  it('the dialogs and the receipt carry it, a withdrawn photo’s too; never claiming the image is gone', () => {
+    const line = twinStillShownLine(viewOf(PHOTO_TWIN_SHOWN));
+    for (const verb of ['hide', 'remove'] as const) {
+      expect(photoDialogWords(verb, false, line).body.endsWith(line ?? '')).toBe(true);
+      expect(photoDialogWords(verb, true, line).body.endsWith(line ?? '')).toBe(true);
+      expect(photoDialogWords(verb, false, null).body).not.toMatch(/same image/);
+    }
+    expect(
+      photoReceiptLine(PHOTO_TWIN_SHOWN, { kind: 'takeDown', status: 'removed', reason: 'x' }),
+    ).toMatch(/· The same image is still up on another photo/);
+    expect(photoReceiptLine(PHOTO_TWIN_SHOWN, { kind: 'restore' })).toBe(
+      PHOTO_WORDS.receipt.restored,
+    );
+    for (const words of Object.values(PHOTO_WORDS)) {
+      if (typeof words === 'function') {
+        const said = (words as (x: string) => string)('2');
+        expect(said).not.toMatch(/everywhere|from the internet|gone for good/i);
+      }
+    }
   });
 });

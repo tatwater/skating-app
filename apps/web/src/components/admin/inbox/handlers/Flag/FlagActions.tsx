@@ -7,6 +7,7 @@ import { AskDialog } from '../../../people/person/AskDialog';
 import { type FlagVerb, targetNoun, verbGroups } from './flagModel';
 import type { FlagItem } from './flagTypes';
 import { FLAG_WORDS as W } from './flagWords';
+import { twinStillShownLine } from './photoModel';
 import { PHOTO_WORDS as P } from './photoWords';
 import type { FlagWrite } from './useFlagWrites';
 
@@ -112,7 +113,13 @@ export function FlagActions({ item, onWrite, pane, author }: FlagActionsProps) {
     asking === null
       ? null
       : photo && (asking === 'hide' || asking === 'remove')
-        ? photoDialogWords(asking, withdrawn)
+        ? photoDialogWords(
+            asking,
+            withdrawn,
+            item.target.exists && item.target.targetType === 'photo'
+              ? twinStillShownLine(item.target.photo)
+              : null,
+          )
         : dialogWords(
             asking,
             noun,
@@ -172,19 +179,21 @@ export function writeOf(verb: Asking, reason: string): FlagWrite {
 /**
  * A photo takedown's title and words, as the dev proof showed a takedown: off its link now and shown
  * to no one, though a device that already opened it may keep it a while; a hide restorable at any
- * time, a removal deleted for good in 30 days unless restored; and the flags it closes.
+ * time, a removal deleted for good in 30 days unless restored; and the flags it closes. When the same
+ * image is still shown on another photo, one sentence more says it stays up there.
  */
 export function photoDialogWords(
   verb: 'hide' | 'remove',
   /** Its uploader withdrew it: the decision is kept on their record; nothing comes back. */
   withdrawn = false,
+  /** {@link twinStillShownLine}: the same image still shown elsewhere, or `null`. */
+  twinStillShown: string | null = null,
 ): { title: string; body: string } {
   const title = verb === 'hide' ? P.hideTitle : P.removeTitle;
-  if (withdrawn) return { title, body: W.withdrawnTakeDownBody };
-  return {
-    title,
-    body: `${P.offNow} ${verb === 'hide' ? P.hideAfter : P.removeAfter} ${P.closesFlags}`,
-  };
+  const body = withdrawn
+    ? W.withdrawnTakeDownBody
+    : `${P.offNow} ${verb === 'hide' ? P.hideAfter : P.removeAfter} ${P.closesFlags}`;
+  return { title, body: twinStillShown === null ? body : `${body} ${twinStillShown}` };
 }
 
 /** A dialog's title and words: what the lever does, and which flags it closes. */

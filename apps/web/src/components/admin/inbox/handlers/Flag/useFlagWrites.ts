@@ -22,6 +22,7 @@ import type {
 type FlagFirstFlag = string | null;
 
 import { FLAG_WORDS as W } from './flagWords';
+import { twinStillShownLine } from './photoModel';
 import { PHOTO_WORDS as P } from './photoWords';
 
 /**
@@ -97,13 +98,17 @@ export function receiptTitle(write: FlagWrite): string {
 
 /**
  * What a photo's receipt says the write did to the photo (the dev proof's truth: off its link and
- * shown to no one, never "gone everywhere"); `null` for any other subject or write.
+ * shown to no one, never "gone everywhere"; and, when the same image is still shown on another
+ * photo, that it stays up there); `null` for any other subject or write.
  */
 export function photoReceiptLine(item: Pick<FlagItem, 'target'>, write: FlagWrite): string | null {
   if (!item.target.exists || item.target.targetType !== 'photo') return null;
   switch (write.kind) {
-    case 'takeDown':
-      return write.status === 'hidden' ? P.receipt.hidden : P.receipt.removed;
+    case 'takeDown': {
+      const line = write.status === 'hidden' ? P.receipt.hidden : P.receipt.removed;
+      const twins = twinStillShownLine(item.target.photo);
+      return twins === null ? line : `${line} · ${twins}`;
+    }
     case 'restore':
       return P.receipt.restored;
     default:

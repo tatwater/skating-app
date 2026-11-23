@@ -18,6 +18,9 @@ import {
   PHOTO_PURGED,
   PHOTO_REMOVED,
   PHOTO_THIRD,
+  PHOTO_TWIN_SHOWN,
+  PHOTO_TWINS_CAPPED,
+  PHOTO_TWINS_MIXED,
   PHOTO_UPLOADER_GONE,
   PHOTO_WITHDRAWN,
 } from './photoFixtures';
@@ -213,6 +216,52 @@ export const RemoveDialog: Story = {
     await expect(d).toHaveTextContent(
       'It is deleted for good in 30 days unless it is restored before then.',
     );
+  },
+};
+
+/**
+ * The same image on other photos (rows written before a file was one photo's): one still shown. A
+ * row each — its state, where to decide on it — never an image or an uploader. The takedown's dialog
+ * says plainly that the image stays up there.
+ */
+export const SameImageShown: Story = {
+  args: { item: PHOTO_TWIN_SHOWN },
+  play: async ({ canvasElement }) => {
+    const block = slot(canvasElement, 'photo-same-image');
+    await expect(block).toHaveTextContent('The same image is on 1 other photo');
+    await expect(slots(block, 'photo-twin')).toHaveLength(1);
+    await expect(block.querySelector('img')).toBeNull();
+    const d = await hideDialog(canvasElement, 'h');
+    await expect(d).toHaveTextContent(
+      'The same image is still up on another photo, and taking this one down leaves that one up.',
+    );
+  },
+};
+
+/** Twins mixed: one shown with its own flag, hidden and removed ones, one off a report. */
+export const SameImageMixed: Story = {
+  args: { item: PHOTO_TWINS_MIXED },
+  play: async ({ canvasElement }) => {
+    const block = slot(canvasElement, 'photo-same-image');
+    await expect(slots(block, 'photo-twin-state').map((s) => s.textContent)).toEqual([
+      'Shown',
+      'Hidden',
+      'Removed',
+      'Hidden',
+    ]);
+    await expect(slots(block, 'photo-twin-report')).toHaveLength(2);
+    await expect(slots(block, 'photo-twin-no-report')).toHaveLength(1);
+    await expectNoSidewaysScroll(pane(canvasElement));
+  },
+};
+
+/** The read's eight and more: the title is a floor. */
+export const SameImageCapped: Story = {
+  args: { item: PHOTO_TWINS_CAPPED },
+  play: async ({ canvasElement }) => {
+    const block = slot(canvasElement, 'photo-same-image');
+    await expect(block).toHaveTextContent('The same image is on 8+ other photos');
+    await expect(slots(block, 'photo-twin')).toHaveLength(8);
   },
 };
 

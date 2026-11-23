@@ -25,6 +25,9 @@ import {
   PHOTO_NO_ACCESS,
   PHOTO_PURGED,
   PHOTO_THIRD,
+  PHOTO_TWIN_SHOWN,
+  PHOTO_TWINS_DOWN,
+  PHOTO_TWINS_MIXED,
   PHOTO_UPLOADER_GONE,
   scene,
 } from './photoFixtures';
@@ -333,6 +336,67 @@ describe('a photo flag, through the route and the view', () => {
           args: { itemId: PHOTO_THIRD.itemId, status: 'removed', reason: 'Faces' },
         },
       ]),
+    );
+  });
+
+  it('the same image on other photos: a row each, its state and where to decide; never an image', () => {
+    open(PHOTO_TWINS_MIXED);
+    mount();
+    const block = must(
+      inspector().querySelector<HTMLElement>('[data-slot="photo-same-image"]'),
+      'the same-image block',
+    );
+    expect(block).toHaveTextContent('The same image is on 4 other photos');
+    const rows = [...block.querySelectorAll<HTMLElement>('[data-slot="photo-twin"]')];
+    expect(rows.map((r) => r.querySelector('[data-slot="photo-twin-state"]')?.textContent)).toEqual(
+      ['Shown', 'Hidden', 'Removed', 'Hidden'],
+    );
+    // A twin with an open flag links its own item; else its report in the app; else says so.
+    expect(rows[0]?.querySelector('[data-slot="photo-twin-flag"]')?.getAttribute('href')).toContain(
+      'f_twin_1',
+    );
+    expect(rows[1]?.querySelector('a')?.getAttribute('href')).toBe('/report/r_twin_2');
+    expect(rows[1]?.querySelector('a')?.getAttribute('target')).toBe('_blank');
+    expect(rows[3]).toHaveTextContent('Not on a report');
+    // No image of a twin, at any size, and no uploader named.
+    expect(block.querySelector('img')).toBeNull();
+    expect(block).not.toHaveTextContent(/Kate|Donovan/);
+  });
+
+  it.each([
+    ['a shown twin: the dialog says the image stays up there', PHOTO_TWIN_SHOWN, true],
+    ['twins only hidden or removed: no sentence', PHOTO_TWINS_DOWN, false],
+    ['no twins: no sentence, no block', PHOTO_THIRD, false],
+  ])('%s', async (_name, item, said) => {
+    open(item);
+    mount();
+    expect(inspector().querySelector('[data-slot="photo-same-image"]') !== null).toBe(
+      item !== PHOTO_THIRD,
+    );
+    for (const verb of ['Hide', 'Remove'] as const) {
+      fireEvent.click(within(inspector()).getByRole('button', { name: new RegExp(`^${verb}`) }));
+      const dialog = await screen.findByRole('alertdialog');
+      if (said) expect(dialog).toHaveTextContent('The same image is still up on another photo');
+      else expect(dialog).not.toHaveTextContent(/still up on/);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    }
+  });
+
+  it('the receipt of a takedown with a shown twin says the same image stays up there', async () => {
+    open(PHOTO_TWIN_SHOWN);
+    mount();
+    fireEvent.click(within(inspector()).getByRole('button', { name: /^Hide/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Faces' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hide' }));
+    // The dialog says it too: the receipt is read once the dialog has gone.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/restorable at any time · The same image is still up on another photo/)
+          .length,
+      ).toBeGreaterThan(0),
     );
   });
 

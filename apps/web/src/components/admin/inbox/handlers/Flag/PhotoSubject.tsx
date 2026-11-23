@@ -1,6 +1,7 @@
 import { type RefObject, useContext, useState } from 'react';
 
 import { Badge } from '@/components/kit/badge';
+import { Button } from '@/components/kit/button';
 import { Note } from '@/components/kit/note';
 import { PhotoStage, PhotoThumb } from '@/components/kit/photo-stage';
 import { RetryNote } from '@/components/kit/retry-note';
@@ -17,9 +18,11 @@ import {
   photoViewOf,
   placeOnReport,
   purgeLine,
+  sameImageLine,
   siblingsCutLine,
   siblingViews,
   stageState,
+  twinViews,
   withdrawnLine,
 } from './photoModel';
 import { PhotoRevealContext } from './photoRevealContext';
@@ -74,6 +77,8 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
   const siblings = siblingViews(photo);
   const cut = siblingsCutLine(photo);
   const caption = photo.caption?.trim() ?? '';
+  const twins = twinViews(photo);
+  const sameImage = sameImageLine(photo);
 
   return (
     <div data-subject="photo" data-slot="photo-subject" className="flex min-w-0 flex-col">
@@ -223,6 +228,69 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
               {cut}
             </span>
           )}
+        </Section>
+      )}
+      {sameImage !== null && (
+        // The same image on other photos: a row per twin — its state, and where to decide on it.
+        // No uploader is named and no image is drawn (a twin is decided in its own item).
+        <Section
+          data-slot="photo-same-image"
+          level={3}
+          title={sameImage}
+          className="px-gutter pt-(--space-5)"
+        >
+          <ul className="m-0 list-none p-0">
+            {twins.map((t) => (
+              <li
+                key={t.photoId}
+                data-slot="photo-twin"
+                data-photo={t.photoId}
+                data-state={t.status}
+                className="flex min-h-(--size-td) items-center justify-between gap-(--space-3) border-0 border-b border-dotted border-line last:border-b-0"
+              >
+                <span
+                  data-slot="photo-twin-state"
+                  className={
+                    t.status === 'visible'
+                      ? 'text-row leading-list text-fg1'
+                      : 'text-row leading-list text-fg3'
+                  }
+                >
+                  {t.label}
+                </span>
+                {t.link === 'flag' ? (
+                  t.flagRef !== null &&
+                  linkFor !== undefined && (
+                    <LinkChip
+                      link={linkFor(inboxHref({ ...ALL_OPEN, item: t.flagRef }))}
+                      label={P.itsFlag}
+                      slot="photo-twin-flag"
+                    />
+                  )
+                ) : t.link === 'report' ? (
+                  <Button
+                    variant="link"
+                    size="xs"
+                    external
+                    nativeButton={false}
+                    data-slot="photo-twin-report"
+                    render={
+                      <a href={`/report/${t.reportId}`} target="_blank" rel="noopener noreferrer" />
+                    }
+                  >
+                    {P.twinReport}
+                  </Button>
+                ) : (
+                  <span
+                    data-slot="photo-twin-no-report"
+                    className="text-assist leading-list text-fg3"
+                  >
+                    {P.twinNoReport}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
     </div>
