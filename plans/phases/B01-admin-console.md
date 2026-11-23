@@ -11560,6 +11560,56 @@ integration, so they are not restated here beyond "no blockers".
 The send path is proven on the convex-test harness (the claim, the watch, the late answer, the
 blocked reply), not on a real backend or with live mail.
 
+#### Greptile on #175, round 1 (2026-11-22)
+
+Greptile's first review of #175 (head `31ee1856`) scored 4/5, with one finding. S6 fixed it
+(`b01-5f-s6-3`).
+
+**The finding: "Delivered replies can look unsent."** `support.sendReply` recorded every `false` from
+`sendEmail` as `sendFailed`. But `sendEmail` also returned `false` when the HTTP request threw, and
+the provider may already have accepted the mail.
+
+**Its class: an uncertain result recorded as a certain one.**
+
+**The fix.** `lib/resend.sendEmailOutcome` answers three ways:
+
+| Answer | When | Recorded as |
+| --- | --- | --- |
+| **accepted** | a 2xx | `sent` |
+| **rejected**: definitely not sent | 400, 401, 403, 404, 405, 422; a 429 still refused after three retries; or it never left (no key, sender or address) | `sendFailed` (`unconfigured` for a missing key) |
+| **unknown**: may have gone | a thrown fetch, a 20 s timeout, any 5xx, a 409 | `outcomeUnknown`, never resent; the claim's stamp is kept, so a later answer from the same claim still lands |
+
+`sendEmail` keeps its boolean (true only for accepted) over the same code, so its other callers are
+unchanged.
+
+**S6's sweep of the send path:**
+
+| Case | What happens |
+| --- | --- |
+| The Clerk address lookup errors (no key, a non-2xx other than 404, a throw) | The claim is released and the watch tries again, within `REPLY_SEND_ATTEMPTS`, then `sendFailed`. Nothing is sent |
+| Clerk answers 404 | `noAddress` |
+| The send's outcome write is lost | The watch finds the claim with no outcome: `outcomeUnknown` |
+| A cancel races the send | Both write the one row, so only one lands |
+
+**The idempotency key.** Every reply is sent under the provider's `Idempotency-Key`,
+`support-reply/<messageId>`, which the provider honors for 24 hours.
+- **It protects** against a repeat of the same reply's send (the watch's re-send after a released
+  claim, or a retry inside the send) becoming a second email.
+- **It does not protect** against a staffer re-sending by hand: that is a new message with its own
+  key, and so a second email by design.
+
+**Tests:** 18 tests, 12 mutations caught. On a real local backend, a thrown fetch and a timeout both
+read `outcomeUnknown`.
+
+**The web.**
+- `sendFailed`'s words still fit ("the email service didn't take it, or its send never ran"): a lost
+  response no longer lands there.
+- `outcomeUnknown` now also covers a provider error or a timeout, so its words became "Sending
+  didn't finish · it may or may not have been sent". Never worded as sent, never as not sent.
+
+**Register:** the notification email, the data-export mail and operator broadcasts can also record a
+lost response as "not sent". None of them retries, so no duplicate can result. Not changed here.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
