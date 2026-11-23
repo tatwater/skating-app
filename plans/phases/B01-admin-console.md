@@ -11496,6 +11496,70 @@ People's record.
   is built, and the removal dialog says the photo is off its address at once: the first row of the
   pack's outcome table, with no CDN lag to word.
 
+#### B01-5f: the two reviews (R12, R13) and their fixes (2026-11-22)
+
+Two independent reviews read support at `10a0daf60`: server and CI (R12), and the web (R13). **Neither
+found a blocker.** Each fix below is its own commit, with the test that fails without it.
+
+**The server (R12), S6's fixes (`b01-5f-s6-2`), and their web follow-through:**
+- **A reply whose send claimed it and then died no longer stays `settling` for good.**
+  - Each reply that will go gets a watch, `support.watchReply`. If unclaimed, the send runs again
+    (still one email, by the claim), then reads `sendFailed` after three tries.
+  - If claimed with no answer past an action's lifetime, it reads the new class `outcomeUnknown` and
+    is never resent. A late answer from the same claim wins.
+  - The thread draws "Sending stopped · it may or may not have been sent", never as sent and never as
+    not sent; the export carries `delivery: 'unknown'`.
+  - The cancel refuses by state: started sending; sent; may or may not have been sent.
+- **A reply the server knows it can't send is stored `failed` at once, with nothing scheduled.**
+  `supportSendability()` asks for both the sender and the provider key, and answers the read, the
+  write and the send.
+  - The receipt is read from the write's answer: "Reply saved, not sent · It won't be emailed: …".
+  - `unconfigured`'s words now cover a missing key; `sendFailed`'s cover a send that never ran.
+- **`clientKey` on `reply` and `addNote`:** 8–64 of `[A-Za-z0-9_-]`. A repeat writes nothing and
+  answers the first. The schema adds `supportMessages.clientKey` and `by_ticket_client_key`.
+
+**The web (R13):**
+1. **A reply could be sent twice.**
+   - The cause: the send's state lived in the remounting handler, while the draft lived in a store
+     that outlasted it. Rob → Kate → Rob with a reply out offered Send again, and the first's clear
+     wiped words typed since.
+   - The fix: the send's state is in the per-ticket draft store. The dock is busy for that ticket
+     wherever it is drawn, and landing clears only the words that went. Each press sends a fresh
+     `clientKey`, reused when the same press is retried.
+   - The test is the reviewer's probe: hold the reply open, pass through loading both ways, one call.
+2. **Ticket drafts survived sign-out.** `lib/accountScoped` now forgets them on sign-out and on a
+   change of signed-in person, never on a page load.
+3. **Nothing tested the reply's receipt or the focus handoff.** Two wiring tests now go through the
+   real `useTicketWrites` and `TicketHandler`; each was mutation-checked.
+4. **A new settling reply first drew against a stale clock** ("342 s" for a frame). The clock now
+   takes the time in the render that turns it on, and a MutationObserver test watches every text.
+5. **The receipt promised delivery.** It now reads "Reply saved · It sends in about a minute unless it
+   is canceled".
+6. **`SupportQueue.tsx`** stays on disk until B01's close. It is already outside the web's coverage
+   include (only the console's mode folders are covered), so nothing changed.
+
+**CI (R12):**
+
+7. **The nightly backstop could be canceled** by a push to main that then skipped. The concurrency
+   group is now keyed by event and ref, and only a push or a pull request cancels its own superseded
+   run. `packages/guards/src/ciWorkflow.test.ts` evaluates both expressions per event.
+8. **The new include globs dropped `*.spec.*` files and tests outside `src/`,** and the extensionless
+   import drew a Vite warning.
+   - The two projects now split Vitest's default between them.
+   - The DOM list is data (`src/test/domTests.json`, read with `fs`).
+   - The guard holds every test file on disk in exactly one unit project.
+
+**The reviewers' clean areas:** the reviewers' notes on what they found sound were not relayed to the
+integration, so they are not restated here beyond "no blockers".
+
+**What they could not review:**
+- real GitHub Actions behavior: the skip on a push to main and the nightly's own group, which run
+  only on GitHub;
+- a live Resend send.
+
+The send path is proven on the convex-test harness (the claim, the watch, the late answer, the
+blocked reply), not on a real backend or with live mail.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
