@@ -28,8 +28,13 @@ import { internalMutation, type MutationCtx } from './_generated/server';
 import { composed, writeAudit } from './lib/audit';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
+import {
+  ACTION_LIFETIME_MS,
+  DOOMED_PER_PASS,
+  reconcileAttempt,
+  retryDoomed,
+} from './lib/photoFiles';
 import { purgePhotoBlobs } from './lib/photoOrphans';
-import { sweepRotationCopies } from './lib/photoRotation';
 import {
   affords,
   asItem,
@@ -202,8 +207,6 @@ export const purgeOne = internalMutation({
         await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
         return { outcome: 'deferred' as const };
       }
-      // A rotation's recorded copies go with it (the watch sweeps any it never recorded).
-      await sweepRotationCopies(ctx, photo, { scan: false });
       const failures = await purgePhotoBlobs(ctx, photo);
       if (failures.length > 0) {
         console.warn(
@@ -235,4 +238,48 @@ export const purgeOne = internalMutation({
       });
       return { outcome: 'purged' as const };
     }),
+});
+
+/** Attempts one ledger sweep reconciles at most (a page of each); a full pass continues itself. */
+const ATTEMPTS_PER_SWEEP = 20;
+
+/**
+ * **The stored-files sweep** (B01-5e, `lib/photoFiles`' invariants 3–4), daily and self-continuing:
+ * every rotation attempt that can't be alive is reconciled a page at a time — its unswapped copies
+ * released, its own window searched for a copy stored and never recorded — and every doomed file whose
+ * retry is due is tried again. The watch does the same for its own photo; this is what reaches an
+ * attempt or a doomed file whose photo is gone, or whose watch has ended.
+ */
+export const sweepPhotoFiles = internalMutation({
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ reconciled: number; deleted: number; more: boolean }> => {
+    const now = args.now ?? Date.now();
+    let reconciled = 0;
+    let more = false;
+    const stale = [
+      ...(await ctx.db
+        .query('photoRotations')
+        .withIndex('by_status_started', (q) =>
+          q.eq('status', 'running').lt('startedAt', now - ACTION_LIFETIME_MS),
+        )
+        .take(ATTEMPTS_PER_SWEEP)),
+      ...(await ctx.db
+        .query('photoRotations')
+        .withIndex('by_status_started', (q) => q.eq('status', 'ended'))
+        .take(ATTEMPTS_PER_SWEEP)),
+    ];
+    for (const attempt of stale) {
+      if (await reconcileAttempt(ctx, attempt, now)) reconciled++;
+      else more = true;
+    }
+    if (stale.length >= ATTEMPTS_PER_SWEEP) more = true;
+    const deleted = await retryDoomed(ctx, now);
+    if (deleted >= DOOMED_PER_PASS) more = true;
+    if (more) {
+      await ctx.scheduler.runAfter(0, internal.photoPurge.sweepPhotoFiles, {
+        ...(args.now !== undefined ? { now: args.now } : {}),
+      });
+    }
+    return { reconciled, deleted, more };
+  },
 });

@@ -35,6 +35,7 @@ import {
   VERDICTS_DONE,
 } from './lib/peopleRuns';
 import { photoWithdrawalRow } from './lib/photoAccess';
+import { projectPhoto } from './lib/photoFiles';
 import {
   CHARGED_QUERY_BUDGET,
   DOC_MAX,
@@ -115,13 +116,11 @@ async function photoThumbs(
 }
 
 /**
- * The published document with a photo's storage ids taken off (B01-5e): an id works like a key to
- * the blob, so none leaves the server, staff reads included — the pane's thumbnail is a URL.
+ * The published document; a photo's through `lib/photoFiles.projectPhoto`'s allow-list (B01-5e: no
+ * storage id leaves the server, staff reads included — a strip-list forgets the next field).
  */
 function withoutStorageIds(target: ContentDoc) {
-  if (!('thumbStorageId' in target)) return target;
-  const { storageId: _s, thumbStorageId: _t, ...rest } = target as Doc<'photos'>;
-  return rest;
+  return 'thumbStorageId' in target ? projectPhoto(target as Doc<'photos'>) : target;
 }
 
 /** A row's content, with a photo's thumbnail (`content.thumbUrl`, `null` when not served). */

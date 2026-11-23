@@ -228,6 +228,10 @@ crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.swe
 // and keep their rows as tombstones (`photoPurge`); a run takes a bounded page and continues itself.
 crons.interval('purge removed photos', { hours: 24 }, internal.photoPurge.purgeDuePhotos, {});
 
+// The stored-files sweep (B01-5e, `lib/photoFiles`): rotation attempts that can't be alive are
+// reconciled and doomed files retried — whatever a photo's own watch can no longer reach.
+crons.interval('sweep photo files', { hours: 24 }, internal.photoPurge.sweepPhotoFiles, {});
+
 /**
  * Lapse access alerts whose TTL ran out, or whose season did (A06d / D73).
  *

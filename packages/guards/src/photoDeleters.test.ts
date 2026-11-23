@@ -43,13 +43,8 @@ const PHOTO_DELETERS: Record<string, string> = {
   // Blob deletes outside the row delete.
   'photoPurge.ts:purgeOne':
     'a removed photo whose 30-day clock is due, re-checked in its own transaction',
-  'photos.ts:swapRotated':
-    'the rotation: old blobs, only while the row is still down and holds them',
-  'photos.ts:dropRotationCopies': 'a rotation’s own copies, never on any row',
-  'photos.ts:recordRotationCopy':
-    'a copy just stored, when its rotation no longer applies (on no row)',
-  'lib/photoRotation.ts:sweepRotationCopies':
-    'a rotation’s copies no row names (blobReferenced asked of each), while no run can be alive',
+  'lib/photoFiles.ts:releaseFile':
+    'a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed',
   'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',
 };
 
@@ -206,10 +201,63 @@ test('create and removeBlob ask whether a row already holds the blob; deleteBlob
     const at = photos.indexOf(`export const ${name} = `);
     return photos.slice(at, photos.indexOf('\n});\n', at));
   };
-  expect(body('create')).toMatch(/blobReferenced\(/);
-  expect(body('removeBlob')).toMatch(/blobReferenced\(/);
+  // A named file or a ledger row (a reserved copy, a file owed a deletion) is taken (`fileTaken`).
+  expect(body('create')).toMatch(/fileTaken\(/);
+  expect(body('removeBlob')).toMatch(/fileTaken\(/);
   expect(body('removeBlob')).toMatch(/PENDING_UPLOAD_MS/);
   const orphans = readFileSync(join(CONVEX, 'lib/photoOrphans.ts'), 'utf8');
   const fn = orphans.slice(orphans.indexOf('async function deleteBlobsOf'));
   expect(fn.slice(0, fn.indexOf('\n}\n'))).toMatch(/blobReferenced\(/);
+});
+
+/**
+ * **No storage id leaves the server** (B01-5e, `lib/photoFiles` invariant 6). Every public function —
+ * a query, mutation or action a client can call, or an HTTP route — whose handler touches a storage id
+ * is listed with why its result carries none. A new one fails until it is added with its reason; the
+ * photo document goes out only through `projectPhoto`'s allow-list, and the model test
+ * (`photoFiles.property.test.ts`) checks the public reads' answers against every stored file's id.
+ */
+const PUBLIC_STORAGE_TOUCHERS: Record<string, string> = {
+  'photos.ts:create': 'takes the ids (checked, fileTaken); returns the new photo row’s id',
+  'photos.ts:removeBlob': 'takes an id (checked); returns nothing',
+  'photos.ts:generateUploadUrl': 'returns an upload URL, not an id',
+  'dataExport.ts:myExports': 'returns each bundle’s download URL, never its id',
+  'inbox.ts:photoReveal': 'returns the full image’s URL (staff only), never its id',
+};
+
+test('every public function touching a storage id is listed with why its result carries none', () => {
+  const touchers = new Set<string>();
+  for (const path of sources(CONVEX)) {
+    const rel = relative(CONVEX, path);
+    const text = blank(readFileSync(path, 'utf8'));
+    for (const m of text.matchAll(
+      /export const (\w+)\s*=\s*(query|mutation|action|httpAction)\(/g,
+    )) {
+      const open = text.indexOf('{', m.index ?? 0);
+      let depth = 0;
+      let end = open;
+      for (let i = open; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}' && --depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      const body = text.slice(open, end);
+      if (/storageId|thumbStorageId|generateUploadUrl|storage\.get\b/.test(body)) {
+        touchers.add(`${rel}:${m[1]}`);
+      }
+    }
+  }
+  expect([...touchers].filter((f) => !(f in PUBLIC_STORAGE_TOUCHERS))).toEqual([]);
+  expect(Object.keys(PUBLIC_STORAGE_TOUCHERS).filter((f) => !touchers.has(f))).toEqual([]);
+});
+
+test('a photo document leaves a read only through projectPhoto', () => {
+  const record = blank(readFileSync(join(CONVEX, 'contentRecord.ts'), 'utf8'));
+  expect(record).toMatch(/projectPhoto\(/);
+  const files = readFileSync(join(CONVEX, 'lib/photoFiles.ts'), 'utf8');
+  const fn = files.slice(files.indexOf('export function projectPhoto'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+  expect(body).not.toMatch(/storageId|thumbStorageId|\.\.\.photo\b/);
 });

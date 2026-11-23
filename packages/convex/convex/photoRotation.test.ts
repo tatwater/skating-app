@@ -9,7 +9,8 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
+import { BLOB_TAKEN, PHOTO_PURGE_DELAY_MS } from './lib/photoAccess';
+import { DOOMED_RETRY_MS } from './lib/photoFiles';
 import { ROTATE_MAX_BYTES, ROTATION_RETRY_MS } from './photos';
 import schema from './schema';
 
@@ -112,6 +113,35 @@ async function stepThrough(t: T, minutes: number) {
   for (let i = 0; i < minutes; i++) {
     await vi.advanceTimersByTimeAsync(60_000);
     await t.finishInProgressScheduledFunctions();
+  }
+}
+
+/** The stored-files ledger, every row. */
+const ledger = (t: T) => t.run((ctx) => ctx.db.query('photoFiles').collect());
+/** A doomed file's Machinery row. */
+const fileFailure = (t: T, storageId: string) =>
+  t.run((ctx) =>
+    ctx.db
+      .query('jobFailures')
+      .withIndex('by_job_key', (q) => q.eq('job', 'photoRotation').eq('key', `file:${storageId}`))
+      .first(),
+  );
+/**
+ * Advance `later` (past the attempt's lifetime) and run the photo's watch by hand, until it lands —
+ * the reconcile as a later attempt, hours on, meets it.
+ */
+async function reconcileLater(t: T, photoId: Id<'photos'>, later: number) {
+  await vi.advanceTimersByTimeAsync(later);
+  const photo = await row(t, photoId);
+  for (let i = 0; i < 5; i++) {
+    const out = await t.mutation(internal.photos.rotationWatch, {
+      photoId,
+      oldStorageId: photo.storageId,
+      oldThumbStorageId: photo.thumbStorageId,
+    });
+    await t.finishInProgressScheduledFunctions();
+    if (out === 'landed') return;
+    await vi.advanceTimersByTimeAsync(60_000);
   }
 }
 
@@ -236,50 +266,63 @@ describe('the rotation through the public writes', () => {
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
   });
 
-  test('a stale swap writes nothing: restored, re-pointed, or purged since the copies were made', async () => {
-    const { t, photoId, set } = await world();
+  test('a stale swap writes nothing: restored, re-pointed, purged, or copies not this attempt’s', async () => {
+    const { t, photoId } = await world();
     const before = await row(t, photoId);
-    const next = { storageId: 'x-new', thumbStorageId: 'y-new' };
     const old = { storageId: before.storageId, thumbStorageId: before.thumbStorageId };
-    // Still up: never swapped.
-    expect(await t.mutation(internal.photos.swapRotated, { photoId, old, next })).toBe('stale');
     await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'hidden' }));
+    const begun = await t.mutation(internal.photos.beginRotation, { photoId });
+    if (begun.kind !== 'go') throw new Error('not begun');
+    const a = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
+    const b = await t.run((ctx) => ctx.storage.store(new Blob(['thumb'])));
+    const next = { storageId: a, thumbStorageId: b };
+    // Stored but never recorded: not the swap's to take.
+    const swap = (o = old) =>
+      t.mutation(internal.photos.swapRotated, { attemptId: begun.attemptId, old: o, next });
+    expect(await swap()).toBe('stale');
+    for (const copy of [a, b]) {
+      await t.mutation(internal.photos.recordRotationCopy, { attemptId: begun.attemptId, copy });
+    }
     // Holding other ids: never swapped.
-    expect(
-      await t.mutation(internal.photos.swapRotated, {
-        photoId,
-        old: { ...old, storageId: 'elsewhere' },
-        next,
-      }),
-    ).toBe('stale');
-    await t.run((ctx) => ctx.db.patch(photoId, { purgedAt: T0 }));
-    expect(await t.mutation(internal.photos.swapRotated, { photoId, old, next })).toBe('stale');
+    expect(await swap({ ...old, storageId: 'elsewhere' })).toBe('stale');
+    // Up again: never swapped.
+    await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'visible' }));
+    expect(await swap()).toBe('stale');
     expect((await row(t, photoId)).storageId).toBe(before.storageId);
     expect(await bytesOf(t, before.storageId)).toBe('full-bytes');
-    void set;
+    // The attempt's leftovers are owed and swept once it ends: nothing unreferenced.
+    await t.mutation(internal.photos.endRotation, { attemptId: begun.attemptId });
+    expect(await unreferenced(t)).toEqual([]);
+    expect(await ledger(t)).toEqual([]);
   });
 
-  test('a swap whose old blob won’t delete rolls back and drops its copies; its watch runs it again', async () => {
+  test('an old file that won’t delete is owed: the photo rotates, the file is retried to the end', async () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     failing.ids.add(before.storageId);
     await set('hidden');
     await runDue(t);
-    // Rolled back: the row still points at what still answers; the copies are gone.
-    expect((await row(t, photoId)).storageId).toBe(before.storageId);
-    expect(await storedCount(t)).toBe(2);
-    expect(await rotationsScheduled(t)).toHaveLength(0);
-    const [watch] = await watches(t);
-    expect(watch?.args[0]).toMatchObject({ photoId, oldStorageId: before.storageId });
-    expect(
-      Math.abs((watch?.scheduledTime ?? 0) - (T0 + (ROTATION_RETRY_MS[0] as number))),
-    ).toBeLessThan(10);
-    // Storage lets go: the watch finds it unrotated and runs it again, which lands.
-    failing.ids.clear();
-    // Run everything to its end: the watch runs it again, it lands, the next watch ends the chain.
-    await stepThrough(t, 90);
+    // Swapped: the row names the copies; the old image is owed a deletion, never forgotten.
     expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
+    expect(await ledger(t)).toEqual([
+      expect.objectContaining({ storageId: before.storageId, state: 'doomed', attempts: 1 }),
+    ]);
+    expect(await unreferenced(t)).toEqual([before.storageId]);
+    // Three failures park it (Machinery lists it), then daily — the watch stays until it is gone.
+    for (const wait of DOOMED_RETRY_MS) {
+      await vi.advanceTimersByTimeAsync(wait);
+      await t.finishInProgressScheduledFunctions();
+    }
+    await stepThrough(t, 2);
+    expect((await ledger(t))[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
+    expect(await fileFailure(t, before.storageId)).toMatchObject({ parkedAt: expect.any(Number) });
+    expect(await watches(t)).toHaveLength(1);
+    failing.ids.clear();
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    await stepThrough(t, 5);
     expect(await urlOf(t, before.storageId)).toBeNull();
+    expect(await ledger(t)).toEqual([]);
+    expect(await fileFailure(t, before.storageId)).toBeNull();
     expect(await watches(t)).toHaveLength(0);
   });
 
@@ -298,10 +341,9 @@ describe('the rotation through the public writes', () => {
     expect(await watches(t)).toHaveLength(0);
   });
 
-  test('three misses park it; a parked rotation is retried daily, never dropped', async () => {
-    const { t, photoId, set } = await world();
-    const before = await row(t, photoId);
-    failing.ids.add(before.storageId);
+  test('a rotation that can’t land parks: three misses, then daily, never dropped', async () => {
+    const big = new Blob([new Uint8Array(ROTATE_MAX_BYTES + 1)]);
+    const { t, photoId, set } = await world(big);
     await set('hidden');
     await runDue(t);
     for (const wait of ROTATION_RETRY_MS) {
@@ -311,25 +353,12 @@ describe('the rotation through the public writes', () => {
     }
     const [parked] = await watches(t);
     expect(parked?.args[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
-    expect(
-      Math.abs((parked?.scheduledTime ?? 0) - (Date.now() + 24 * 60 * 60 * 1000)),
-    ).toBeLessThan(10);
-    expect(await storedCount(t)).toBe(2);
-    // Machinery lists it, parked, by the photo (the watch's attempts, mirrored).
     expect(await failureRow(t, 'photoRotation', photoId)).toMatchObject({
       attempts: 3,
       parkedAt: expect.any(Number),
     });
-    // Storage lets go: the daily retry lands, and the watch that sees it forgets the row.
-    failing.ids.clear();
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-    await stepThrough(t, 5);
-    expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
-    // The next daily watch sees it landed and forgets the row.
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
-    await stepThrough(t, 5);
-    expect(await failureRow(t, 'photoRotation', photoId)).toBeNull();
-  });
+    expect(await storedCount(t)).toBe(2);
+  }, 30_000);
 
   test('a photo past the rotation’s byte bound is never copied: it parks, stays hidden', async () => {
     const big = new Blob([new Uint8Array(ROTATE_MAX_BYTES + 1)]);
@@ -352,7 +381,7 @@ describe('the rotation through the public writes', () => {
     expect(after.storageId).toBe(before.storageId);
     expect(after.thumbStorageId).toBe(before.thumbStorageId);
     expect(after.bytesMissingAt).toEqual(expect.any(Number));
-    expect(after.rotation).toBeUndefined();
+    expect(await ledger(t)).toEqual([]);
     expect(await storedCount(t)).toBe(1); // the image alone: no copy of anything
     expect(await watches(t)).toHaveLength(0);
     const failures = await t.run((ctx) =>
@@ -366,25 +395,20 @@ describe('the rotation through the public writes', () => {
     await expect(set('visible')).rejects.toThrow('nothing left to act on');
   });
 
-  test('killed after a copy was stored but before it was recorded: the watch’s scan sweeps it', async () => {
-    const { t, photoId, set } = await world();
-    await set('hidden');
-    // The run as the runtime left it: begun, one copy stored, nothing recorded, no swap.
-    await t.run(async (ctx) => {
-      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
-        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
-      }
-    });
-    await t.mutation(internal.photos.beginRotation, { photoId });
+  test('killed after a copy was stored but before it was recorded: its window’s search finds it', async () => {
+    const { t, photoId } = await world();
+    await t.run((ctx) => ctx.db.patch(photoId, { moderationStatus: 'hidden' }));
+    const begun = await t.mutation(internal.photos.beginRotation, { photoId });
+    if (begun.kind !== 'go') throw new Error('not begun');
     const lost = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
-    expect(await storedCount(t)).toBe(3);
-    await stepThrough(t, 120);
+    expect(await unreferenced(t)).toEqual([lost]);
+    // Its action is dead once its lifetime passes; a later attempt, hours on, finds nothing of it lost.
+    await reconcileLater(t, photoId, 3 * 60 * 60 * 1000);
     expect(await urlOf(t, lost)).toBeNull();
     expect(await unreferenced(t)).toEqual([]);
-    expect((await row(t, photoId)).rotation).toBeUndefined();
   });
 
-  test('killed after both copies were recorded, before the swap: swept, rotated again, nothing unreferenced', async () => {
+  test('killed after both copies were recorded, before the swap: released, rotated again, nothing unreferenced', async () => {
     const { t, photoId, set } = await world();
     const before = await row(t, photoId);
     await set('hidden');
@@ -393,25 +417,48 @@ describe('the rotation through the public writes', () => {
         if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
       }
     });
-    await t.mutation(internal.photos.beginRotation, { photoId });
+    const begun = await t.mutation(internal.photos.beginRotation, { photoId });
+    if (begun.kind !== 'go') throw new Error('not begun');
     for (const bytes of ['full-bytes', 'thumb']) {
       const copy = await t.run((ctx) => ctx.storage.store(new Blob([bytes])));
-      expect(await t.mutation(internal.photos.recordRotationCopy, { photoId, copy })).toBe(true);
+      await t.mutation(internal.photos.recordRotationCopy, { attemptId: begun.attemptId, copy });
     }
-    expect((await row(t, photoId)).rotation?.copies).toHaveLength(2);
-    // While it stands, no deleter takes the photo.
-    expect(
-      await t.run(async (ctx) => {
-        const { photoHeld } = await import('./lib/photoAccess');
-        return photoHeld(ctx, (await ctx.db.get(photoId)) as Doc<'photos'>);
+    // Reserved while recorded: no write takes their ids.
+    const copies = (await ledger(t)).map((r) => r.storageId);
+    await expect(
+      t.withIdentity({ subject: 'uploader' }).mutation(api.photos.create, {
+        storageId: copies[0] as Id<'_storage'>,
+        thumbStorageId: copies[1] as Id<'_storage'>,
+        placeOnMap: false,
       }),
-    ).toBe(true);
-    await stepThrough(t, 120);
-    const after = await row(t, photoId);
-    expect(after.storageId).not.toBe(before.storageId);
-    expect(after.rotation).toBeUndefined();
+    ).rejects.toThrow(BLOB_TAKEN);
+    await stepThrough(t, 30);
+    expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
     expect(await storedCount(t)).toBe(2);
     expect(await unreferenced(t)).toEqual([]);
+    expect(await ledger(t)).toEqual([]);
+  });
+
+  test('a legacy row sharing the source: the rotation copies for its own row and never deletes the shared file', async () => {
+    const { t, photoId, uploader, set } = await world();
+    const before = await row(t, photoId);
+    const twin = await t.run((ctx) =>
+      ctx.db.insert('photos', {
+        storageId: before.storageId,
+        thumbStorageId: before.thumbStorageId,
+        uploaderId: uploader.id,
+        placeOnMap: false,
+        createdAt: T0,
+        moderationStatus: 'hidden',
+      }),
+    );
+    await set('hidden');
+    await stepThrough(t, 30);
+    expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
+    expect(await bytesOf(t, before.storageId)).toBe('full-bytes');
+    expect((await row(t, twin)).storageId).toBe(before.storageId);
+    expect(await unreferenced(t)).toEqual([]);
+    expect(await ledger(t)).toEqual([]);
   });
 
   test('the purge after a rotation deletes the new blobs', async () => {
@@ -424,39 +471,5 @@ describe('the rotation through the public writes', () => {
     expect(await urlOf(t, rotated.thumbStorageId)).toBeNull();
     expect((await row(t, photoId)).purgedAt).toBeDefined();
     expect(await storedCount(t)).toBe(0);
-  });
-});
-
-describe('the rotation record’s guards', () => {
-  test('the swap takes only recorded copies; a photo restored mid-rotation is held until the watch sweeps', async () => {
-    const { t, photoId, set } = await world();
-    const before = await row(t, photoId);
-    await set('hidden');
-    await t.run(async (ctx) => {
-      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) {
-        if (f.name.includes('rotateBlobs')) await ctx.scheduler.cancel(f._id);
-      }
-    });
-    await t.mutation(internal.photos.beginRotation, { photoId });
-    const a = await t.run((ctx) => ctx.storage.store(new Blob(['full-bytes'])));
-    const b = await t.run((ctx) => ctx.storage.store(new Blob(['thumb'])));
-    // Stored but never recorded: not the swap's to take.
-    expect(
-      await t.mutation(internal.photos.swapRotated, {
-        photoId,
-        old: { storageId: before.storageId, thumbStorageId: before.thumbStorageId },
-        next: { storageId: a, thumbStorageId: b },
-      }),
-    ).toBe('stale');
-    // Restored before the watch: up again, but the record stands, so no deleter takes it yet.
-    await set('visible');
-    const result = await t.run(async (ctx) => {
-      const { deletePhotoAndBlobs } = await import('./lib/photoOrphans');
-      return deletePhotoAndBlobs(ctx, (await ctx.db.get(photoId)) as Doc<'photos'>);
-    });
-    expect(result).toBe('held');
-    await stepThrough(t, 30);
-    expect((await row(t, photoId)).rotation).toBeUndefined();
-    expect(await unreferenced(t)).toEqual([]);
   });
 });

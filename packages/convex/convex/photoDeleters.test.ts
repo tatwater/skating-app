@@ -404,7 +404,11 @@ describe('the purge', () => {
       status: 'removed',
       reason: 'x',
     });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // The clock a minute at a time (the rotation's watch must not see a live run as dead).
+    for (let i = 0; i < 30; i++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await t.finishInProgressScheduledFunctions();
+    }
     const at = (await t.run((ctx) => ctx.db.get(id)))?.purgeAt as number;
     expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now: at - 1 })).toMatchObject({
       purged: 0,

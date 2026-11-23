@@ -10,7 +10,6 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
-  type ActionCtx,
   internalAction,
   internalMutation,
   type MutationCtx,
@@ -22,13 +21,26 @@ import { requireContributor, requireProfile } from './lib/auth';
 import {
   BLOB_NOT_FOUND,
   BLOB_TAKEN,
-  blobReferenced,
   photoHeld,
   photoVisible,
   resolvePhotoUrls,
 } from './lib/photoAccess';
+import {
+  ACTION_LIFETIME_MS,
+  attemptAlive,
+  DOOMED_PER_PASS,
+  fileTaken,
+  ledgerOfPhoto,
+  ledgerRowOf,
+  openAttempts,
+  photoFilesSettled,
+  reconcileAttempt,
+  recordCopy,
+  releaseFile,
+  retryDoomed,
+} from './lib/photoFiles';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
-import { ROTATION_RETRY_MS, sweepRotationCopies } from './lib/photoRotation';
+import { ROTATION_RETRY_MS } from './lib/photoRotation';
 import { withdrawHeldPhoto } from './lib/photoWithdraw';
 import { errorClassOf } from './lib/readBudget';
 import { clearFailure, mirrorFailure } from './lib/recurringWork';
@@ -88,7 +100,7 @@ export const create = mutation({
     if (args.storageId === args.thumbStorageId) throw new ConvexError(BLOB_TAKEN);
     for (const id of [args.storageId, args.thumbStorageId]) {
       if ((await ctx.db.system.get(id)) === null) throw new ConvexError(BLOB_NOT_FOUND);
-      if (await blobReferenced(ctx, id)) throw new ConvexError(BLOB_TAKEN);
+      if (await fileTaken(ctx, id)) throw new ConvexError(BLOB_TAKEN);
     }
     return ctx.db.insert('photos', {
       storageId: args.storageId,
@@ -174,7 +186,7 @@ export const removeBlob = mutation({
     await requireContributor(ctx);
     const blob = await ctx.db.system.get(storageId);
     if (blob === null) return; // already gone
-    if (await blobReferenced(ctx, storageId)) throw new ConvexError(BLOB_ATTACHED);
+    if (await fileTaken(ctx, storageId)) throw new ConvexError(BLOB_ATTACHED);
     if (blob._creationTime < Date.now() - PENDING_UPLOAD_MS) throw new ConvexError(BLOB_ATTACHED);
     const failure = await deleteStoredBlob(ctx, storageId);
     if (failure !== null) {
@@ -229,9 +241,13 @@ export const getHazardUrls = query({
 });
 
 // ── The byte rotation (B01-5e; the founder's call: a takedown moves the bytes) ────────────────
+//
+// Every step keeps `lib/photoFiles`' invariants: an attempt row before anything is stored, each copy
+// recorded the moment it is stored, a released file deleted or owed a deletion, the watch ending only
+// when nothing of the photo's is in flight or owed.
 
 /**
- * The most a rotation carries in one go: both blobs together, read from `_storage` before either is
+ * The most a rotation carries in one go: both files together, read from `_storage` before either is
  * loaded. The apps upload a full image at most 2,048 px on its long edge and a 400 px thumbnail
  * (`photoPipeline`), a few MiB at worst; 20 MiB rotated in about 4 s on a real backend. A photo past it
  * is never copied — it stays hidden from every read, its old address answering until the purge — and
@@ -239,11 +255,10 @@ export const getHazardUrls = query({
  */
 export const ROTATE_MAX_BYTES = 24 * 1024 * 1024;
 
+export { ACTION_LIFETIME_MS } from './lib/photoFiles';
 export { ROTATION_RETRY_MS } from './lib/photoRotation';
 
 const ROTATION_PARKED_RETRY_MS = 24 * 60 * 60 * 1000;
-/** An action's longest life (Convex's 10-minute limit): a run older than this is dead. */
-export const ACTION_LIFETIME_MS = 10 * 60 * 1000;
 
 /** What one rotation run did. */
 export type RotationOutcome = 'rotated' | 'stale' | 'skipped' | 'missing' | 'failed';
@@ -265,14 +280,16 @@ function rotationOver(
 
 /**
  * **The rotation's watch** — a mutation, so it runs exactly once however the action fared (Convex never
- * retries an action, and one the runtime kills never reaches its own `catch`). It first sweeps the
- * rotation's copies that no row names (`sweepRotationCopies`: the recorded ones, and any stored
- * since the rotation began with the source's bytes — a copy the runtime killed before its record).
- * Then: if the row is no longer down, is purged, has lost its bytes, or no longer holds the old blobs,
- * the rotation is over — its record is cleared and the watch ends. Otherwise one more failure by the
- * attempts rule (`lib/attempts`), the action scheduled again at once and the watch again at the next
- * delay — 1 min, 10 min, 1 h, then parked and daily, never dropped. The attempts ride on its arguments,
- * mirrored into `jobFailures` (`photoRotation`) for Machinery.
+ * retries an action, and one the runtime kills never reaches its own `catch`). Each run:
+ *
+ * 1. waits, if an attempt's action may still be alive (its lifetime from `startedAt`);
+ * 2. reconciles every attempt that can't be alive — its unswapped copies released, a page of its own
+ *    window searched for a copy it stored and never recorded — and retries the photo's due doomed files;
+ * 3. if the rotation is not over, starts another attempt by the attempts rule (1 min, 10 min, 1 h,
+ *    then parked and daily), mirrored to Machinery (`photoRotation`);
+ * 4. ends only when the rotation is over **and** nothing of the photo's is in flight or owed;
+ *    otherwise it looks again (a minute on while there is reconciling to do, else when the next doomed
+ *    retry is due).
  */
 export const rotationWatch = internalMutation({
   args: {
@@ -282,35 +299,41 @@ export const rotationWatch = internalMutation({
     attempts: v.optional(v.number()),
     parkedAt: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<'landed' | 'retrying' | 'waiting'> => {
-    let photo = await ctx.db.get(args.photoId);
-    // A run that began within an action's lifetime may still be alive: its copies aren't strays yet.
-    // Look again once it can't be.
+  handler: async (ctx, args): Promise<'landed' | 'retrying' | 'waiting' | 'settling'> => {
     const now = Date.now();
-    const runAt = photo?.rotation?.runAt;
-    if (runAt !== undefined && runAt > 0 && now - runAt < ACTION_LIFETIME_MS) {
-      await ctx.scheduler.runAfter(
-        runAt + ACTION_LIFETIME_MS - now,
-        internal.photos.rotationWatch,
-        args,
-      );
+    const again = (delay: number, extra: Record<string, unknown> = {}) =>
+      ctx.scheduler.runAfter(delay, internal.photos.rotationWatch, { ...args, ...extra });
+    const attempts = await openAttempts(ctx, args.photoId);
+    const alive = attempts.find((a) => attemptAlive(a, now));
+    if (alive) {
+      await again(alive.startedAt + ACTION_LIFETIME_MS - now);
       return 'waiting';
     }
-    if (photo) {
-      await sweepRotationCopies(ctx, photo, { scan: true });
-      photo = await ctx.db.get(args.photoId);
-    }
+    let reconciled = true;
+    for (const a of attempts) reconciled = (await reconcileAttempt(ctx, a, now)) && reconciled;
+    await retryDoomed(ctx, now, args.photoId);
+
+    const photo = await ctx.db.get(args.photoId);
     const old = {
       storageId: args.oldStorageId,
       thumbStorageId: args.oldThumbStorageId ?? photo?.thumbStorageId ?? '',
     };
     if (rotationOver(photo, old)) {
-      if (photo?.rotation !== undefined) await ctx.db.patch(photo._id, { rotation: undefined });
-      // A photo whose bytes are gone keeps its one Machinery row (`markBytesMissing`).
-      if (photo?.bytesMissingAt === undefined) {
-        await clearFailure(ctx, 'photoRotation', args.photoId);
+      if (await photoFilesSettled(ctx, args.photoId)) {
+        // A photo whose bytes are gone keeps its one Machinery row (`markBytesMissing`).
+        if (photo?.bytesMissingAt === undefined) {
+          await clearFailure(ctx, 'photoRotation', args.photoId);
+        }
+        return 'landed';
       }
-      return 'landed';
+      // Something is still owed: look again once it can have moved.
+      const owed = await ledgerOfPhoto(ctx, args.photoId, DOOMED_PER_PASS);
+      const nextDue = Math.min(
+        ...owed.filter((r) => r.state === 'doomed').map((r) => r.nextTryAt),
+        now + (reconciled ? ROTATION_PARKED_RETRY_MS : ROTATION_RETRY_MS[0]),
+      );
+      await again(Math.max(ROTATION_RETRY_MS[0], nextDue - now));
+      return 'settling';
     }
     const { next } = failedAttempt(
       {
@@ -326,9 +349,7 @@ export const rotationWatch = internalMutation({
         : (ROTATION_RETRY_MS[next.attempts ?? 1] ?? ROTATION_PARKED_RETRY_MS);
     await mirrorFailure(ctx, 'photoRotation', args.photoId, next, now);
     await ctx.scheduler.runAfter(0, internal.photos.rotateBlobs, { photoId: args.photoId });
-    await ctx.scheduler.runAfter(delay, internal.photos.rotationWatch, {
-      photoId: args.photoId,
-      oldStorageId: old.storageId,
+    await again(delay, {
       oldThumbStorageId: old.thumbStorageId,
       ...(next.attempts !== undefined ? { attempts: next.attempts } : {}),
       ...(next.parkedAt !== undefined ? { parkedAt: next.parkedAt } : {}),
@@ -343,108 +364,63 @@ export const rotationWatch = internalMutation({
 /**
  * **`photos.rotateBlobs` — a takedown moves the bytes** (B01-5e, D222). Started by
  * `lib/photoRotation.scheduleRotation` on a photo's move from up to down (a hide, a removal, an undo
- * back down, an uploader's withdrawal) — never a move between two down states, so a hide then a
- * removal rotates once. An action, because a mutation can't read stored bytes:
+ * back down, an uploader's withdrawal) — never a move between two down states. An action, because a
+ * mutation can't read stored bytes:
  *
- * 1. {@link beginRotation} (a mutation) checks the row is still down and both blobs exist within
- *    {@link ROTATE_MAX_BYTES}, and writes the row's `rotation` record **before any copy exists**;
- * 2. each blob is read (`ctx.storage.get`), stored as a new object (`ctx.storage.store`), and the copy
- *    recorded at once ({@link recordRotationCopy});
+ * 1. {@link beginRotation} checks the row is still down and both files exist within
+ *    {@link ROTATE_MAX_BYTES}, and writes the attempt row **before anything is stored**;
+ * 2. each file is read, stored as a new object, and the copy recorded at once ({@link recordRotationCopy});
  * 3. {@link swapRotated} swaps both ids together — only while the row is still down, still holds the
- *    old ids, and both copies are recorded and stored — and deletes the old blobs in that transaction.
+ *    old ids, and both copies are this attempt's — and releases the old files: deleted, or owed a
+ *    deletion, or left to another row that still names one (a legacy shared file).
  *
- * Image and thumbnail succeed or fail together: a blob gone at step 1 or 2 stops the rotation for good
- * ({@link markBytesMissing}); nothing is swapped alone. A stale swap or a failure drops this run's
- * copies; whatever a killed run left, the watch sweeps. The old address answers 404 from the swap (no
- * edge cache, proven on dev), a restore serves the new copy and never rotates back. Not audited on its
- * own: a system effect of the takedown.
- *
- * A browser or app that already loaded the photo may keep its own copy for up to 30 days: Convex's
- * storage endpoint serves `cache-control: private, max-age=2592000`, a header of the platform's that
- * `getUrl` gives no way to set.
+ * Image and thumbnail succeed or fail together: a file gone stops the rotation for good
+ * ({@link markBytesMissing}). Whatever a run leaves — a stale swap, a failure, a kill at any step — the
+ * attempt's reconcile releases (`lib/photoFiles.reconcileAttempt`). The old address answers 404 once
+ * its file is deleted (no edge cache, proven on dev); a restore serves the new copy and never rotates
+ * back. A browser that already loaded the photo may keep it up to 30 days (`private, max-age=2592000`,
+ * Convex's header, not ours to set). Not audited on its own: a system effect of the takedown.
  */
 export const rotateBlobs = internalAction({
   args: { photoId: v.id('photos') },
   handler: async (ctx, { photoId }): Promise<{ outcome: RotationOutcome; errorClass?: string }> => {
-    const fresh: Id<'_storage'>[] = [];
-    let begun = false;
+    let attemptId: Id<'photoRotations'> | null = null;
     try {
       const src = await ctx.runMutation(internal.photos.beginRotation, { photoId });
-      begun = src.kind === 'go';
       if (src.kind !== 'go') return { outcome: src.kind === 'missing' ? 'missing' : 'skipped' };
+      attemptId = src.attemptId;
       const next: string[] = [];
       for (const id of [src.storageId, src.thumbStorageId]) {
         const bytes = await ctx.storage.get(id as Id<'_storage'>);
         if (bytes === null) {
           await ctx.runMutation(internal.photos.markBytesMissing, { photoId, old: src });
-          await dropCopies(ctx, photoId, fresh);
           return { outcome: 'missing' };
         }
         const copy = await ctx.storage.store(bytes);
-        fresh.push(copy);
-        if (!(await ctx.runMutation(internal.photos.recordRotationCopy, { photoId, copy }))) {
-          await dropCopies(ctx, photoId, fresh);
-          return { outcome: 'stale' };
-        }
+        await ctx.runMutation(internal.photos.recordRotationCopy, { attemptId, copy });
         next.push(copy);
       }
       const swapped = await ctx.runMutation(internal.photos.swapRotated, {
-        photoId,
+        attemptId,
         old: { storageId: src.storageId, thumbStorageId: src.thumbStorageId },
         next: { storageId: next[0] as string, thumbStorageId: next[1] as string },
       });
-      if (swapped === 'stale') {
-        await dropCopies(ctx, photoId, fresh);
-        return { outcome: 'stale' };
-      }
-      return { outcome: 'rotated' };
+      return { outcome: swapped };
     } catch (err) {
       const errorClass = errorClassOf(err);
-      try {
-        await dropCopies(ctx, photoId, fresh);
-      } catch (dropErr) {
-        console.error(
-          `photos.rotateBlobs: could not drop ${photoId}'s copies; its watch sweeps`,
-          dropErr,
-        );
-      }
       console.warn(`photos.rotateBlobs: ${photoId} failed (${errorClass}); its watch retries`);
       return { outcome: 'failed', errorClass };
     } finally {
-      // Ended, not killed: the watch needn't wait out this run's lifetime. (A run the runtime kills
-      // never gets here, and its `runAt` stands until the lifetime has passed.)
-      if (begun) await ctx.runMutation(internal.photos.endRotationRun, { photoId });
+      // Ended, not killed: its leftovers released now, its window searched by the reconcile.
+      if (attemptId !== null) await ctx.runMutation(internal.photos.endRotation, { attemptId });
     }
   },
 });
-
-/** A run that ended (whatever its outcome) takes its `runAt` off the record. */
-export const endRotationRun = internalMutation({
-  args: { photoId: v.id('photos') },
-  handler: async (ctx, { photoId }) => {
-    const photo = await ctx.db.get(photoId);
-    if (photo?.rotation !== undefined && photo.rotation.runAt !== 0) {
-      await ctx.db.patch(photoId, { rotation: { ...photo.rotation, runAt: 0 } });
-    }
-  },
-});
-
-/** This run's copies, dropped (and taken off the row's record). */
-async function dropCopies(
-  ctx: { runMutation: ActionCtx['runMutation'] },
-  photoId: Id<'photos'>,
-  copies: readonly string[],
-): Promise<void> {
-  if (copies.length > 0) {
-    await ctx.runMutation(internal.photos.dropRotationCopies, { photoId, storageIds: [...copies] });
-  }
-}
 
 /**
- * A rotation's first step: the row still down and unpurged, both blobs in `_storage` within the byte
- * bound (read from the system table, before anything is loaded), and its `rotation` record written —
- * kept as it was if an earlier run's stands, so the watch's scan covers that run's copies too. A blob
- * gone stops the rotation for good (`missing`).
+ * A rotation attempt's first step: the row still down, unpurged, its files in `_storage` within the
+ * byte bound (read from the system table, before anything is loaded), no other attempt alive — and the
+ * attempt row written before anything is stored (invariant 3). A file gone stops the rotation for good.
  */
 export const beginRotation = internalMutation({
   args: { photoId: v.id('photos') },
@@ -452,7 +428,7 @@ export const beginRotation = internalMutation({
     ctx,
     { photoId },
   ): Promise<
-    | { kind: 'go'; storageId: string; thumbStorageId: string }
+    | { kind: 'go'; attemptId: Id<'photoRotations'>; storageId: string; thumbStorageId: string }
     | { kind: 'skip' }
     | { kind: 'missing' }
   > => {
@@ -465,45 +441,68 @@ export const beginRotation = internalMutation({
     ) {
       return { kind: 'skip' };
     }
+    const now = Date.now();
+    if ((await openAttempts(ctx, photoId)).some((a) => attemptAlive(a, now)))
+      return { kind: 'skip' };
     const full = await ctx.db.system.get(photo.storageId as Id<'_storage'>);
     const thumb = await ctx.db.system.get(photo.thumbStorageId as Id<'_storage'>);
     if (full === null || thumb === null) {
-      await markMissing(ctx, photo, Date.now());
+      await markMissing(ctx, photo, now);
       return { kind: 'missing' };
     }
     if (full.size + thumb.size > ROTATE_MAX_BYTES) throw new ConvexError('TooLarge');
-    const now = Date.now();
-    await ctx.db.patch(photoId, {
-      rotation:
-        photo.rotation === undefined
-          ? { startedAt: now, runAt: now, sha256: [full.sha256, thumb.sha256], copies: [] }
-          : { ...photo.rotation, runAt: now },
+    const attemptId = await ctx.db.insert('photoRotations', {
+      photoId,
+      startedAt: now,
+      sha256: [full.sha256, thumb.sha256],
+      // Exclusive lower bound of the window's search: anything this attempt stores is later.
+      scanFrom: now - 1,
+      status: 'running',
     });
-    return { kind: 'go', storageId: photo.storageId, thumbStorageId: photo.thumbStorageId };
+    return {
+      kind: 'go',
+      attemptId,
+      storageId: photo.storageId,
+      thumbStorageId: photo.thumbStorageId,
+    };
   },
 });
 
 /**
- * A copy just stored, recorded on the row before anything else can lose it. `false` (and the copy
- * deleted) when the rotation no longer applies — restored, purged, its record swept, or the copy gone.
+ * A copy just stored, recorded on the ledger before anything else can lose it (invariant 3). An attempt
+ * no longer running (its reconcile may already have run) can't take it: the copy is released at once —
+ * deleted, or owed a deletion.
  */
 export const recordRotationCopy = internalMutation({
-  args: { photoId: v.id('photos'), copy: v.string() },
-  handler: async (ctx, { photoId, copy }): Promise<boolean> => {
-    const photo = await ctx.db.get(photoId);
-    const alive = (await ctx.db.system.get(copy as Id<'_storage'>)) !== null;
-    if (!photo || photo.rotation === undefined || photoVisible(photo) || !alive) {
-      if (alive) await deleteStoredBlob(ctx, copy as Id<'_storage'>);
-      return false;
+  args: { attemptId: v.id('photoRotations'), copy: v.string() },
+  handler: async (ctx, { attemptId, copy }) => {
+    const attempt = await ctx.db.get(attemptId);
+    const now = Date.now();
+    if (attempt?.status !== 'running') {
+      if (attempt) await releaseFile(ctx, attempt.photoId, copy, now);
+      return;
     }
-    await ctx.db.patch(photoId, {
-      rotation: { ...photo.rotation, copies: [...photo.rotation.copies, copy] },
-    });
-    return true;
+    await recordCopy(ctx, attempt, copy, now);
   },
 });
 
-/** A blob gone when the rotation looked: the photo can't be restored with its bytes. */
+/** An attempt's action ended (any outcome): marked so, and its unswapped copies released now. */
+export const endRotation = internalMutation({
+  args: { attemptId: v.id('photoRotations') },
+  handler: async (ctx, { attemptId }) => {
+    const attempt = await ctx.db.get(attemptId);
+    if (!attempt) return;
+    if (attempt.status === 'running') await ctx.db.patch(attemptId, { status: 'ended' });
+    const now = Date.now();
+    for (const row of await ledgerOfPhoto(ctx, attempt.photoId, 50)) {
+      if (row.state === 'copy' && row.attemptId === attemptId) {
+        await releaseFile(ctx, attempt.photoId, row.storageId, now);
+      }
+    }
+  },
+});
+
+/** A file gone when the rotation looked: the photo can't be restored with its bytes. */
 export const markBytesMissing = internalMutation({
   args: {
     photoId: v.id('photos'),
@@ -537,56 +536,37 @@ async function markMissing(ctx: MutationCtx, photo: Doc<'photos'>, now: number):
 
 /**
  * The swap: both ids together, **only while the row is still down, still holds the old ids, and both
- * copies are recorded and stored** (else `stale`, nothing written). The old blobs are deleted in the
- * same transaction — each honestly (`lib/storageBlobs`); one that won't delete throws, rolling the
- * swap back, so the row keeps pointing at what still answers. The record keeps its start and source
- * hashes for the watch's last sweep; its copies list empties.
+ * copies are this running attempt's, recorded and stored** (else `stale`, nothing written). The copies'
+ * ledger rows go as the row takes them; each old file is released (`lib/photoFiles.releaseFile`):
+ * left to another row that still names it, deleted, or owed a deletion — never thrown back.
  */
 export const swapRotated = internalMutation({
   args: {
-    photoId: v.id('photos'),
+    attemptId: v.id('photoRotations'),
     old: v.object({ storageId: v.string(), thumbStorageId: v.string() }),
     next: v.object({ storageId: v.string(), thumbStorageId: v.string() }),
   },
-  handler: async (ctx, { photoId, old, next }): Promise<'rotated' | 'stale'> => {
-    const photo = await ctx.db.get(photoId);
-    if (photo === null || rotationOver(photo, old) || photo.rotation === undefined) return 'stale';
+  handler: async (ctx, { attemptId, old, next }): Promise<'rotated' | 'stale'> => {
+    const attempt = await ctx.db.get(attemptId);
+    if (attempt?.status !== 'running') return 'stale';
+    const photo = await ctx.db.get(attempt.photoId);
+    if (photo === null || rotationOver(photo, old)) return 'stale';
+    const rows: Doc<'photoFiles'>[] = [];
     for (const id of [next.storageId, next.thumbStorageId]) {
-      if (!photo.rotation.copies.includes(id)) return 'stale';
+      const row = await ledgerRowOf(ctx, id);
+      if (row?.state !== 'copy' || row.attemptId !== attemptId) return 'stale';
       if ((await ctx.db.system.get(id as Id<'_storage'>)) === null) return 'stale';
+      rows.push(row);
     }
-    await ctx.db.patch(photoId, {
+    await ctx.db.patch(photo._id, {
       storageId: next.storageId,
       thumbStorageId: next.thumbStorageId,
-      rotation: { ...photo.rotation, copies: [] },
     });
+    for (const row of rows) await ctx.db.delete(row._id);
+    const now = Date.now();
     for (const was of [old.storageId, old.thumbStorageId]) {
-      const failure = await deleteStoredBlob(ctx, was as Id<'_storage'>);
-      if (failure !== null) throw new ConvexError('OldBlobKept');
+      await releaseFile(ctx, photo._id, was, now);
     }
     return 'rotated';
-  },
-});
-
-/** A run's own copies, when they weren't swapped in: deleted and taken off the record. */
-export const dropRotationCopies = internalMutation({
-  args: { photoId: v.id('photos'), storageIds: v.array(v.string()) },
-  handler: async (ctx, { photoId, storageIds }) => {
-    const photo = await ctx.db.get(photoId);
-    for (const id of storageIds) {
-      if (photo && (photo.storageId === id || photo.thumbStorageId === id)) continue;
-      const failure = await deleteStoredBlob(ctx, id as Id<'_storage'>);
-      if (failure !== null) {
-        console.error(`photos.dropRotationCopies: could not delete copy ${id}: ${failure}`);
-      }
-    }
-    if (photo?.rotation !== undefined) {
-      await ctx.db.patch(photoId, {
-        rotation: {
-          ...photo.rotation,
-          copies: photo.rotation.copies.filter((c) => !storageIds.includes(c)),
-        },
-      });
-    }
   },
 });
