@@ -7,6 +7,7 @@ import { subjectOf, verbGroups } from './flagModel';
 import type { LiveTarget } from './flagTypes';
 import {
   KATE_AUTHOR,
+  PHOTO_BYTES_MISSING,
   PHOTO_FULL,
   PHOTO_HIDDEN,
   PHOTO_ITEM,
@@ -51,6 +52,14 @@ describe('what the stage may draw', () => {
 
   it('a viewer without content.read: no image, in words', () => {
     expect(stageState(viewOf(PHOTO_NO_ACCESS))).toEqual({ kind: 'noAccess' });
+  });
+
+  it('a file its rotation found missing is said, can’t be restored, and draws nothing', () => {
+    const v = viewOf(PHOTO_BYTES_MISSING);
+    expect(stageState(v)).toEqual({ kind: 'missing', at: v.bytesMissingAt });
+    // Whatever address is still served, nothing is drawn; the server offers no Restore.
+    expect(stageState({ ...v, thumbUrl: 't' }).kind).toBe('missing');
+    expect(PHOTO_BYTES_MISSING.can).toEqual({ dismiss: null });
   });
 
   it('a missing file is said, not drawn broken', () => {

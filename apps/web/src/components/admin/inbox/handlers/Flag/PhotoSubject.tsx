@@ -110,6 +110,11 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
                 <strong>{P.noFile}</strong>
                 <span className="block">{P.noFileSub}</span>
               </>
+            ) : stage.kind === 'missing' ? (
+              <>
+                <strong>{P.missing}</strong>
+                <span className="block">{P.missingSub(dayMonth(stage.at, timeZone))}</span>
+              </>
             ) : (
               <>
                 <strong>{P.purged(dayMonth(stage.purgedAt, timeZone))}</strong>

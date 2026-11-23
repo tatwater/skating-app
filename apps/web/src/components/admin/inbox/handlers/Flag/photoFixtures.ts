@@ -144,6 +144,7 @@ export function photoOf(
     withdrawnAt: null,
     purgeAt: null,
     purgedAt: null,
+    bytesMissingAt: null,
     ...over,
   };
 }
@@ -208,6 +209,20 @@ export const PHOTO_REMOVED = photoItem(
     moderatedAt: at(10, 13, 9),
     purgeAt: at(11, 12, 9),
   }),
+);
+
+/**
+ * Hidden, and its rotation found the file gone (`bytesMissingAt`): nothing to show, and the server
+ * refuses a restore — Dismiss is all the bar offers.
+ */
+export const PHOTO_BYTES_MISSING = photoItem(
+  photoOf(2, FOUR, {
+    moderationStatus: 'hidden',
+    moderatedAt: at(10, 13, 9),
+    bytesMissingAt: at(10, 13, 9, 2),
+    thumbUrl: null,
+  }),
+  { itemId: id<'inboxItems'>('i_photo_missing'), can: { dismiss: null } },
 );
 
 /** Removed, and its file deleted on the clock: a tombstone, no image to anyone. */

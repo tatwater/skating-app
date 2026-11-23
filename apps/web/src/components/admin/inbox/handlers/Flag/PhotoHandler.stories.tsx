@@ -5,6 +5,7 @@ import { expectNoSidewaysScroll, must } from '@/components/kit/storyKit';
 
 import { FlagBoard } from './flagBoard';
 import {
+  PHOTO_BYTES_MISSING,
   PHOTO_DECIDED,
   PHOTO_FULL,
   PHOTO_HIDDEN,
@@ -279,6 +280,21 @@ export const NoAccess: Story = {
       expect(canvasElement.querySelector('img')).toBeNull();
       expect(canvasElement.querySelector('[data-slot="photo-mosaic"]')).toBeNull();
       expect(within(canvasElement).queryByRole('button', { name: /Show/ })).toBeNull();
+    });
+  },
+};
+
+/** Its rotation found the file missing: said, no image, and no Restore (the server refuses one). */
+export const BytesMissing: Story = {
+  args: { item: PHOTO_BYTES_MISSING },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => {
+      expect(slot(canvasElement, 'photo-missing')).toHaveTextContent(
+        'The file for this photo is missing',
+      );
+      expect(slot(canvasElement, 'photo-missing')).toHaveTextContent('can’t be restored');
+      expect(canvasElement.querySelector('[data-slot="photo-stage"]')).toBeNull();
+      expect(barButtons(canvasElement)).toEqual(['Dismiss']);
     });
   },
 };

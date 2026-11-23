@@ -39,6 +39,10 @@ export const PHOTO_WORDS = {
   purged: (day: string) => `The file was deleted on ${day}`,
   purgedSub: (removed: string | null) =>
     `${removed === null ? 'It was removed' : `It was removed on ${removed}`}, and ${PHOTO_PURGE_DAYS} days passed without a restore. The decision stays on the uploader’s record.`,
+  /** Coined: a takedown's rotation found the file gone (`bytesMissingAt`). */
+  missing: 'The file for this photo is missing',
+  missingSub: (day: string) =>
+    `Found missing on ${day}, so it can’t be restored. The flag and its author are still here to decide on.`,
   /** A removed photo still inside its 30 days. */
   purgeOn: (day: string) => `Its file is deleted on ${day} unless it is restored`,
   /** Coined: its uploader deleted it while a flag or a decision held it (B01-5e's withdrawal). */

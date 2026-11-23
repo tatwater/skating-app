@@ -30,19 +30,23 @@ export const photoViewOf = (target: Extract<LiveTarget, { targetType: 'photo' }>
  * - `stage` — the photo, pixelated from its thumbnail until revealed (the full image comes on Show);
  * - `noAccess` — the viewer can't see photos (the server served no address): words, no image;
  * - `noFile` — the viewer may see it, but no file was served (the blob is gone);
- * - `purged` — a removal's file deleted on the clock: what was removed, and when.
+ * - `purged` — a removal's file deleted on the clock: what was removed, and when;
+ * - `missing` — a takedown's rotation found its file gone (`bytesMissingAt`): it can't be restored.
  */
 export type StageState =
   | { kind: 'stage'; thumb: string }
   | { kind: 'noAccess' }
   | { kind: 'noFile' }
-  | { kind: 'purged'; purgedAt: number; removedAt: number | null };
+  | { kind: 'purged'; purgedAt: number; removedAt: number | null }
+  | { kind: 'missing'; at: number };
 
 export function stageState(photo: PhotoView): StageState {
   // A tombstone outranks everything: there is nothing to show, to anyone.
   if (photo.purgedAt !== null) {
     return { kind: 'purged', purgedAt: photo.purgedAt, removedAt: photo.moderatedAt };
   }
+  // The file is gone (found so by its rotation): nothing to show, and nothing to restore.
+  if (photo.bytesMissingAt !== null) return { kind: 'missing', at: photo.bytesMissingAt };
   // Only the server's word lets the stage draw: an address served without it is never painted.
   if (!photo.canReveal) return { kind: 'noAccess' };
   if (photo.thumbUrl === null) return { kind: 'noFile' };
