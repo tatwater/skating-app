@@ -370,7 +370,30 @@ export const PHOTO_TWINS_DOWN = photoItem(
   { itemId: id<'inboxItems'>('i_photo_twins_down') },
 );
 
-/** The read's eight, and more past them: a floor ("8+"). */
+/** Exactly eight twins and no more: the count is whole ("8"), never a floor. */
+export const PHOTO_TWINS_EIGHT = photoItem(
+  photoOf(2, FOUR, {
+    sameBytesAs: Array.from({ length: 8 }, (_, i) => twin(i + 1, 'hidden')),
+    sameBytesCut: false,
+  }),
+  { itemId: id<'inboxItems'>('i_photo_twins_eight') },
+);
+
+/**
+ * Nine twins after the takedown: the photo is down on its own copy, the swap kept eight ids and
+ * recorded that it read a ninth — the server serves eight and `sameBytesCut`, so the count is a floor.
+ */
+export const PHOTO_TWINS_NINE_TAKEN_DOWN = photoItem(
+  photoOf(2, FOUR, {
+    moderationStatus: 'hidden',
+    moderatedAt: at(10, 14, 11),
+    sameBytesAs: Array.from({ length: 8 }, (_, i) => twin(i + 1, i === 0 ? 'visible' : 'hidden')),
+    sameBytesCut: true,
+  }),
+  { itemId: id<'inboxItems'>('i_photo_twins_nine_down') },
+);
+
+/** Nine twins before the takedown (the read found a ninth): eight served, and a floor ("8+"). */
 export const PHOTO_TWINS_CAPPED = photoItem(
   photoOf(2, FOUR, {
     sameBytesAs: Array.from({ length: 8 }, (_, i) =>

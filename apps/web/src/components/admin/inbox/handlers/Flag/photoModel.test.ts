@@ -22,7 +22,9 @@ import {
   PHOTO_TWIN_SHOWN,
   PHOTO_TWINS_CAPPED,
   PHOTO_TWINS_DOWN,
+  PHOTO_TWINS_EIGHT,
   PHOTO_TWINS_MIXED,
+  PHOTO_TWINS_NINE_TAKEN_DOWN,
   PHOTO_WITHDRAWN,
   photoItem,
   photoOf,
@@ -336,6 +338,20 @@ describe('the same image on other photos', () => {
     expect(sameImageLine(viewOf(PHOTO_TWINS_MIXED))).toBe('The same image is on 4 other photos');
     expect(sameImageLine(viewOf(PHOTO_TWINS_CAPPED))).toBe('The same image is on 8+ other photos');
     expect(sameImageLine(viewOf(PHOTO_THIRD))).toBeNull();
+  });
+
+  it('the floor is the served sameBytesCut alone, before the takedown and after it', () => {
+    // Eight and no more: whole. Nine before the takedown, and nine after it: eight served, a floor.
+    expect(sameImageLine(viewOf(PHOTO_TWINS_EIGHT))).toBe('The same image is on 8 other photos');
+    expect(sameImageLine(viewOf(PHOTO_TWINS_CAPPED))).toBe('The same image is on 8+ other photos');
+    expect(viewOf(PHOTO_TWINS_NINE_TAKEN_DOWN).moderationStatus).toBe('hidden');
+    expect(sameImageLine(viewOf(PHOTO_TWINS_NINE_TAKEN_DOWN))).toBe(
+      'The same image is on 8+ other photos',
+    );
+    // The floor follows the flag, never the list's length: eight served with the flag off is whole.
+    const unflagged = { ...viewOf(PHOTO_TWINS_NINE_TAKEN_DOWN), sameBytesCut: false };
+    expect(sameImageLine(unflagged)).toBe('The same image is on 8 other photos');
+    expect(twinStillShownLine(viewOf(PHOTO_TWINS_NINE_TAKEN_DOWN))).toMatch(/on 1\+ other photos/);
   });
 
   it('the takedown’s sentence: only with a twin still shown, counted, a floor when cut', () => {
