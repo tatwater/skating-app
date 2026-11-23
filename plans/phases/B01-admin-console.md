@@ -11945,6 +11945,24 @@ As S5-2 records it; the reviewer's own inventory was not relayed in full.
   field is present: every photo read takes absent as `visible` (`photoVisible`, `?? 'visible'`), and
   a new photo is stamped `visible` at birth.
 
+##### #175 on dev
+
+All green. Main `35944bf6` is deployed to dev.
+- **The drift repair:** `inboxItems:repairAll` examined 41 items and fixed 0.
+- **The seed:** 123 of 123 steps filed. The lanes read 27 open and 14 decided.
+- **The merge-and-unmerge dev proof passed with an empty census diff.** The pair now carries a report
+  and a bounty.
+  - The merge took 653 ms in total, 100 ms of it in user code, reading 318 documents and writing 88.
+  - The unmerge took two pages, with 54 ms and 33 ms of user code.
+- **Support, on a seeded ticket:**
+  - `replyFrom` is unset on dev, and `replyBlocked` reads `seed`;
+  - a note was added and removed;
+  - a reply was stored `failed` at once, with nothing scheduled;
+  - a resolve and a reopen both landed.
+- **The seed's README was stale:** it still said 90 steps, 23 open and 12 decided. It now gives the
+  plan's figures (123 steps; 27 open, 14 decided, per lane). `packages/guards/src/seedReadme.test.ts`
+  holds the README to the plan test's full apply, so it can't go stale again.
+
 ##### The close-out PR, as it now stands
 
 1. **Narrow `photos.moderationStatus` to required** (`c2e57b3f8`), after
