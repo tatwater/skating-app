@@ -20,6 +20,7 @@ import {
   PHOTO_DECIDED,
   PHOTO_FULL,
   PHOTO_HIDDEN,
+  PHOTO_ITEM,
   PHOTO_NO_ACCESS,
   PHOTO_PURGED,
   PHOTO_THIRD,
@@ -65,23 +66,22 @@ vi.doMock('@/components/theme-provider', () => ({
 
 const { Route } = await installInboxRouteMocks();
 
-const mount = () =>
-  render(
-    <Toaster>
-      <UndoProvider
-        server={{
-          latestOwn: async (target) => {
-            undo.looked.push(target);
-            return null;
-          },
-          run: async () => {},
-        }}
-      >
-        <Route />
-      </UndoProvider>
-    </Toaster>,
-    { wrapper: KeysProvider },
-  );
+const ui = () => (
+  <Toaster>
+    <UndoProvider
+      server={{
+        latestOwn: async (target) => {
+          undo.looked.push(target);
+          return null;
+        },
+        run: async () => {},
+      }}
+    >
+      <Route />
+    </UndoProvider>
+  </Toaster>
+);
+const mount = () => render(ui(), { wrapper: KeysProvider });
 
 beforeAll(() => {
   Object.defineProperty(Element.prototype, 'animate', {
@@ -190,6 +190,44 @@ describe('a photo flag, through the route and the view', () => {
     expect(inspector().querySelectorAll('[data-slot="photo-sibling"] img')).toHaveLength(4);
     // Focus moves to the button that replaced the pressed one.
     expect(within(stage).getByRole('button', { name: /Pixelate again/ })).toHaveFocus();
+  });
+
+  it('a reveal never carries to the next item: its photo mounts pixelated, and its full image is never read', async () => {
+    const byRef: Record<string, InboxItemView> = {
+      [PHOTO_THIRD.itemId]: PHOTO_THIRD,
+      [PHOTO_ITEM.itemId]: PHOTO_ITEM,
+    };
+    h.lanes = LANES;
+    h.search = { lane: 'flags', item: PHOTO_THIRD.itemId };
+    h.answers['inbox:item'] = (args) => ({
+      item: byRef[args.ref as string] ?? null,
+      pending: false,
+    });
+    h.answers['inbox:itemMap'] = () => ({ map: null, pending: false });
+    h.answers['inbox:photoReveal'] = (args) => ({
+      url: PHOTO_FULL[(args as { photoId: string }).photoId] ?? null,
+    });
+    const page = mount();
+    const stage = () =>
+      must(inspector().querySelector<HTMLElement>('[data-slot="photo-stage"]'), 'the stage');
+    fireEvent.click(within(stage()).getByRole('button', { name: /Show the photo/ }));
+    await waitFor(() => expect(stage().querySelector('img')).not.toBeNull());
+    // Another photo flag opens in the same inspector.
+    const next = photoOf(PHOTO_ITEM);
+    h.search = { lane: 'flags', item: PHOTO_ITEM.itemId };
+    page.rerender(ui());
+    await waitFor(() =>
+      expect(inspector().querySelector('[data-slot="photo-sibling"][data-self]')).toHaveAttribute(
+        'data-photo',
+        next.photoId,
+      ),
+    );
+    // Pixelated: no image, nothing holding its full address, and its reveal never asked.
+    expect(stage().querySelector('img')).toBeNull();
+    expect(everyAttribute().some((v) => v.includes(must(PHOTO_FULL[next.photoId], 'full')))).toBe(
+      false,
+    );
+    expect(revealsAsked().some((a) => a.args.photoId === next.photoId)).toBe(false);
   });
 
   it('S shows the photo while the inspector has focus, and is inert while a dialog does', async () => {
