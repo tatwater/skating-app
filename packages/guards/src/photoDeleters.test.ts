@@ -43,7 +43,7 @@ const PHOTO_DELETERS: Record<string, string> = {
   'photoPurge.ts:purgeOne':
     'a removed photo whose 30-day clock is due, re-checked in its own transaction',
   'lib/photoFiles.ts:reconcileAttempt':
-    'an attempt that can’t be alive: its unswapped copies and its window’s unrecorded ones (fileTaken)',
+    'an attempt that can’t be alive: its unswapped copies and its window’s unrecorded ones — only a file carrying its own tag (isCopyOf), never a same-bytes upload (fileTaken)',
   'lib/photoFiles.ts:retryDoomed': 'a doomed file’s retry, by the attempts rule',
   'photos.ts:recordRotationCopy':
     'a copy recorded to an attempt no longer running: released at once',
@@ -51,7 +51,8 @@ const PHOTO_DELETERS: Record<string, string> = {
   'photos.ts:swapRotated': 'the old files the swap released (left to a row that still names one)',
   'lib/photoFiles.ts:releaseFile':
     'a file no row is to name: left to a row that still names it (blobReferenced), else deleted or owed',
-  'photos.ts:removeBlob': 'a fresh upload no photo row names (blobReferenced, PENDING_UPLOAD_MS)',
+  'photos.ts:removeBlob':
+    'a fresh upload no photo row names and no rotation stored (fileTaken, isRotationCopy, PENDING_UPLOAD_MS)',
 };
 
 /** Blob deletes that aren't a photo's, by function. */
@@ -211,10 +212,17 @@ test('create and removeBlob ask whether a row already holds the blob; deleteBlob
   expect(body('create')).toMatch(/fileTaken\(/);
   expect(body('removeBlob')).toMatch(/fileTaken\(/);
   expect(body('removeBlob')).toMatch(/PENDING_UPLOAD_MS/);
+  expect(body('removeBlob')).toMatch(/isRotationCopy\(/);
   // Every file release leaves a file another row names (`releaseFile` asks `blobReferenced`).
   const files = readFileSync(join(CONVEX, 'lib/photoFiles.ts'), 'utf8');
   const fn = files.slice(files.indexOf('export async function releaseFile'));
   expect(fn.slice(0, fn.indexOf('\n}\n'))).toMatch(/blobReferenced\(/);
+  // The window's search deletes only a file its own attempt tagged.
+  const rec = files.slice(files.indexOf('export async function reconcileAttempt'));
+  expect(rec.slice(0, rec.indexOf('\n}\n'))).toMatch(/isCopyOf\(f\.contentType, attempt\._id\)/);
+  // A tombstone names nothing: the purge clears both slots, so a holder check is an exact lookup.
+  const purge = readFileSync(join(CONVEX, 'photoPurge.ts'), 'utf8');
+  expect(purge).toMatch(/storageId: TOMBSTONE_FILE,\s*thumbStorageId: TOMBSTONE_FILE/);
 });
 
 /**
