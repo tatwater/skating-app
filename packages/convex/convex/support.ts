@@ -37,7 +37,9 @@ import { sendEmail } from './lib/resend';
 import { isSeedProfile } from './lib/seedPeople';
 import {
   bodyRefusal,
+  clientKeyRefusal,
   MESSAGE_GONE_REFUSAL,
+  messageByClientKey,
   NOT_A_NOTE_REFUSAL,
   REPLY_SEND_ATTEMPTS,
   REPLY_SKIPPED_LOG,
@@ -267,9 +269,13 @@ export type SupportNoteResult = SupportWriteResult & { messageId: Id<'supportMes
  */
 export type SupportReplyResult = SupportWriteResult & {
   messageId: Id<'supportMessages'>;
-  status: 'settling' | 'failed';
+  /**
+   * As it stands: a fresh reply is `settling` or `failed` (blocked); a repeat of a `clientKey` answers
+   * the first reply as it now stands, which may be `sent` or `canceled` by then.
+   */
+  status: 'settling' | 'sent' | 'canceled' | 'failed';
   sendAfter: number;
-  failedWhy: 'seed' | 'unconfigured' | null;
+  failedWhy: Doc<'supportMessages'>['failedWhy'] | null;
 };
 
 /** `cancelReply`'s answer: the cancel's own row (which has no undo: a canceled reply is written anew). */
@@ -315,11 +321,28 @@ async function answer<T extends object>(
  * (empty, past `MAX_SUPPORT_NOTE_LENGTH`). Its undo removes it.
  */
 export const addNote = mutation({
-  args: { ticketId: v.id('supportTickets'), body: v.string() },
-  handler: async (ctx, { ticketId, body }): Promise<SupportNoteResult> => {
+  args: { ticketId: v.id('supportTickets'), body: v.string(), clientKey: v.optional(v.string()) },
+  handler: async (ctx, { ticketId, body, clientKey }): Promise<SupportNoteResult> => {
     const actor = await requireCapability(ctx, 'inbox.support');
     const now = Date.now();
+    const keyRefused = clientKeyRefusal(clientKey);
+    if (keyRefused !== null) throw new ConvexError(keyRefused);
     const { item } = await ticketAndItem(ctx, ticketId, now);
+    // The same request again (a Send pressed twice): the first write's answer, nothing written.
+    const earlier = await messageByClientKey(ctx, {
+      ticketId,
+      clientKey,
+      kind: 'note',
+      authorId: actor._id,
+    });
+    if (earlier?.actionId) {
+      return answer(
+        ctx,
+        actor,
+        { itemId: item._id, ticketId, actionId: earlier.actionId },
+        { messageId: earlier._id },
+      );
+    }
     await assertInboxVerb(ctx, actor, item, 'note');
     const refused = bodyRefusal('note', body);
     if (refused !== null) throw new ConvexError(refused);
@@ -329,6 +352,7 @@ export const addNote = mutation({
       authorId: actor._id,
       body: body.trim(),
       createdAt: now,
+      ...(clientKey !== undefined ? { clientKey } : {}),
     });
     const actionId = await writeAudit(ctx, {
       actorId: actor._id,
@@ -354,11 +378,34 @@ export const addNote = mutation({
  * and nothing is scheduled; the send asks both again besides.
  */
 export const reply = mutation({
-  args: { ticketId: v.id('supportTickets'), body: v.string() },
-  handler: async (ctx, { ticketId, body }): Promise<SupportReplyResult> => {
+  args: { ticketId: v.id('supportTickets'), body: v.string(), clientKey: v.optional(v.string()) },
+  handler: async (ctx, { ticketId, body, clientKey }): Promise<SupportReplyResult> => {
     const actor = await requireCapability(ctx, 'inbox.support');
     const now = Date.now();
+    const keyRefused = clientKeyRefusal(clientKey);
+    if (keyRefused !== null) throw new ConvexError(keyRefused);
     const { ticket, item } = await ticketAndItem(ctx, ticketId, now);
+    // The same request again (a Send pressed twice): the first reply's answer — no second row, no
+    // second send scheduled.
+    const earlier = await messageByClientKey(ctx, {
+      ticketId,
+      clientKey,
+      kind: 'reply',
+      authorId: actor._id,
+    });
+    if (earlier?.actionId) {
+      return answer(
+        ctx,
+        actor,
+        { itemId: item._id, ticketId, actionId: earlier.actionId },
+        {
+          messageId: earlier._id,
+          status: earlier.status ?? 'failed',
+          sendAfter: earlier.sendAfter ?? earlier.createdAt,
+          failedWhy: earlier.failedWhy ?? null,
+        },
+      );
+    }
     await assertInboxVerb(ctx, actor, item, 'reply');
     const refused = bodyRefusal('reply', body);
     if (refused !== null) throw new ConvexError(refused);
@@ -376,6 +423,7 @@ export const reply = mutation({
       body: body.trim(),
       createdAt: now,
       sendAfter,
+      ...(clientKey !== undefined ? { clientKey } : {}),
       ...(blocked
         ? { status: 'failed' as const, failedWhy: blocked }
         : { status: 'settling' as const }),

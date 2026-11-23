@@ -16,6 +16,7 @@
  */
 
 import { MAX_SUPPORT_NOTE_LENGTH, MAX_SUPPORT_REPLY_LENGTH } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { inboxBatch, leaveMember, ticketSource } from './inboxItems';
@@ -61,6 +62,45 @@ export const NOT_A_NOTE_REFUSAL = 'Only a note is removed; a reply is canceled w
 export const TICKET_GONE_REFUSAL = 'Ticket not found';
 /** `whoRefusal`'s words for a ticket's Reopen while it is open (`lib/inboxRules`). */
 export const TICKET_OPEN_REFUSAL = 'This ticket is still open.';
+
+/** A client's idempotency key on a note or reply (`supportMessages.clientKey`). */
+const CLIENT_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+export const CLIENT_KEY_REFUSAL = 'That request key isn’t valid.';
+export const CLIENT_KEY_TAKEN_REFUSAL = 'That request key was already used for something else.';
+
+/** What the write says of a malformed key, or `null`. */
+export function clientKeyRefusal(key: string | undefined): string | null {
+  return key === undefined || CLIENT_KEY.test(key) ? null : CLIENT_KEY_REFUSAL;
+}
+
+/**
+ * The message an earlier write with this key made on this ticket, or `null` — one indexed point read,
+ * `eq` on both fields (exact: rows with no key never match). Refused when that write was another
+ * kind, or another staffer's: a key names one request, never someone else's.
+ */
+export async function messageByClientKey(
+  ctx: QueryCtx,
+  args: {
+    ticketId: Id<'supportTickets'>;
+    clientKey: string | undefined;
+    kind: 'note' | 'reply';
+    authorId: Id<'profiles'>;
+  },
+): Promise<Doc<'supportMessages'> | null> {
+  const { clientKey } = args;
+  if (clientKey === undefined) return null;
+  const earlier = await ctx.db
+    .query('supportMessages')
+    .withIndex('by_ticket_client_key', (q) =>
+      q.eq('ticketId', args.ticketId).eq('clientKey', clientKey),
+    )
+    .first();
+  if (!earlier) return null;
+  if (earlier.kind !== args.kind || earlier.authorId !== args.authorId) {
+    throw new ConvexError(CLIENT_KEY_TAKEN_REFUSAL);
+  }
+  return earlier;
+}
 
 /** What the write says of an empty note or reply, and of one past its cap. */
 export function bodyRefusal(kind: 'note' | 'reply', body: string): string | null {

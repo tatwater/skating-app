@@ -4251,7 +4251,16 @@ export default defineSchema({
      * the row names the message, so the message is inserted first.
      */
     actionId: v.optional(v.id('moderationActions')),
-  }).index('by_ticket_created', ['ticketId', 'createdAt']),
+    /**
+     * The client's own key for the write that made it (B01-5f review): a second `addNote` / `reply`
+     * with the same key on the same ticket answers the first instead of writing again — a Send pressed
+     * twice across a slow connection. 8–64 of `[A-Za-z0-9_-]`; absent on a write that sent none.
+     */
+    clientKey: v.optional(v.string()),
+  })
+    .index('by_ticket_created', ['ticketId', 'createdAt'])
+    // `eq` on both fields only — a concrete key never matches the rows that lack one (not sparse).
+    .index('by_ticket_client_key', ['ticketId', 'clientKey']),
 
   bounties: defineTable({
     requesterId: v.id('profiles'),
