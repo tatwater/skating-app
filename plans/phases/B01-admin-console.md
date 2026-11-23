@@ -945,6 +945,16 @@ Made on the design's engineering forks; the founder may overturn any of them.
 28. **The rotation proof runs on dev after #173's rollout** (2026-11-22), by the deploy executor from
     the photos pack's plan. The photos builders start at once on everything that doesn't depend on
     its outcome; the rotation action is the last piece, built or dropped per the proof.
+29. **"The same image" is not symmetric after a takedown, and that stands for now** (2026-11-23,
+    Greptile on #176, round 3; the founder is told). Suppose photo A is taken down and moved to its
+    own copy:
+    - A's item lists the photos that shared its old file;
+    - their items don't list A, because a photo finds twins only by its own files and its own saved
+      list.
+
+    A is already down, so this hides nothing public from a moderator. Making "the same image" exact
+    and symmetric needs a content hash on every photo row, which is its own change: register row
+    Sh14, with the reader census it needs.
 
 ### The founder's calls of 2026-11-21
 
@@ -12195,6 +12205,33 @@ thumb–image, thumb–thumb, crossed, one file in both slots, and chains of thr
 - the sweep deleted only the tagged copy;
 - no row named a missing file.
 
+#### Greptile on #176, round 3 (2026-11-23)
+
+Greptile scored `a18279a09` 5/5 and approved it, with one finding left that blocks nothing: **extra
+twins lose their warning.**
+
+**The finding.** When nine or more older photos shared a file, the swap saved eight twin ids and no
+sign that there were more. The Inbox then showed an incomplete list as complete.
+
+**The fix** (S5, `b01-5e-s5-5`, `b0f605d88`, fast-forwarded):
+- **The swap stores `sameBytesCut`** beside the saved ids. It is set only when a read actually found
+  a ninth twin. Each read takes two past the cap, because the photo itself can fall in the range.
+- **The read before the swap** had the same flaw, and is fixed the same way, in both slots.
+- **The Inbox serves** at most eight twins that still exist. `sameBytesCut` is true when a ninth
+  exists, or when the swap recorded one.
+
+The tests cover 8, 9 and 10 twins, before and after the public takedown, and the model test now
+generates nine or more twins. Five mutants were caught.
+
+**On the web,** the twin block's floor ("on 8+ other photos") reads only the served
+`sameBytesCut`, before the takedown and after it. New fixtures cover exactly eight twins (a whole
+count) and nine twins after the takedown (eight served, the flag set). The model test holds the
+floor to the flag, never to the list's length.
+
+**The ruling** (§7, ruling 29; the founder may overturn it): "the same image" is not symmetric after
+a takedown, and that stands for now. The register's Sh14 holds the content-hash change and its
+reader census.
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The
@@ -12313,6 +12350,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Sh11 | No screen-reader pass has ever been run on the console's live regions. Every toast speaks through Base UI's viewport (`role="region"`, `aria-live="polite"`, `aria-relevant="additions text"`); the Undone toast's unmerge line changes text in place inside it (B01-5d's R11 probe) | `kit/toast.tsx`, `shell/undo.tsx` | open | accessibility | S–M | A pass with VoiceOver and NVDA over the toasts, including a line that updates |
 | Sh12 | The merge's and the unmerge's time costs are measured on a local backend, not on the deployment (the second run's 457–905 ms merges, the 500 ms page cap) | `lib/mergeLoad.ts`, `unmerge.ts` | open | performance | S | A measure on dev's deployment before relying on the margins |
 | Sh13 | The merge estimate's per-call time cost (0.27 ms modeled, about 0.14 ms measured locally) over-refuses: row-heavy merges it refuses run in 100–220 ms | `lib/mergeLoad.ts` (`MS_PER_CALL`) | open: tunable | performance | S | A measure on the deployment, then loosen it toward the measured cost |
+| Sh14 | "The same image" on a photo's Inbox item is not symmetric: after a takedown moves photo A to its own copy, the photos that shared A's old file don't list A. A is down, so nothing public is hidden (§7, ruling 29). Exact and symmetric needs a content hash on every photo row. | `lib/inboxViews.ts` (`sameBytesOf`), `photos.ts` (the swap's `sameBytesAs`) | open: ruled to wait | completeness | M | A `sha256` field on `photos` (widen, backfill from `_storage`, narrow), its index, and a reader census: every read of `sameBytesAs`, the swap, the Inbox item, the record pane's projection |
 
 #### The boards to make in Paper (founder call 1)
 
