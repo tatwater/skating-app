@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
-
+import { pinBoardClock } from '@/test/pinBoardClock';
 import { takeWaterBodyOpenSource } from '../lake/openSource';
 import {
   panelFakes,
@@ -11,6 +11,7 @@ import {
   polyfillAnimate,
   resetPanelFakes,
 } from '../panels/panelTestMocks';
+
 import { convexReact, fakes, resetFakes } from '../testMocks';
 
 const m = vi.hoisted(() => ({
@@ -46,6 +47,9 @@ vi.mock('../lake/InViewList', () => ({ InViewList: () => <p>In view</p> }));
 
 import { LatestPage } from './LatestPage';
 import { MATCH, POST, REPORT } from './latestFixtures';
+
+// Admission to a section is judged by the page's own clock (D292): pinned to the fixtures' noon.
+pinBoardClock();
 
 beforeAll(() => {
   polyfillAnimate();
@@ -289,30 +293,23 @@ describe('LatestPage', () => {
     ]);
   });
 
-  it('keeps a lifted favorite when a newer one fills its section’s cap, until its page arrives', () => {
-    const fav = (id: string, hoursOlder: number) => ({
-      ...POST,
-      postId: id,
-      title: `Favorite ${id}`,
-      latestSkateEndTime: POST.latestSkateEndTime - hoursOlder * 3_600_000,
-      isFavorite: true,
-      reports: [{ ...REPORT, reportId: `${id}-r`, isFavorite: true }],
-    });
-    fakes.paginated = { results: [POST], status: 'CanLoadMore', loadMore: vi.fn() };
-    fakes.queries.set(
-      'posts:listFavoritePosts',
-      [1, 2, 3, 4, 5].map((h) => fav(`f${h}`, h)),
-    );
+  it('falls back to no lift when the favorites read fails: Latest stays up, newest first', () => {
+    fakes.queries.set('posts:listFavoritePosts', () => new Error('read limit'));
+    page();
+    expect(screen.getByText('Mascoma South, first real day')).toBeInTheDocument();
+    expect(screen.queryByText('Loading reports')).not.toBeInTheDocument();
+  });
+
+  it('holds the first draw until the recommended strip answers: it decides what is lifted', () => {
+    fakes.queries.delete('reports:recommended');
+    page();
+    expect(screen.getByText('Loading reports')).toBeInTheDocument();
+  });
+
+  it('asks for the favorites once per filter set, not once per render', () => {
     const view = page();
-    expect(screen.getByText('Favorite f5')).toBeInTheDocument();
-    // A newer favorite lands; the server's five newest no longer hold f5.
-    fakes.queries.set('posts:listFavoritePosts', [
-      fav('fnew', 0.5),
-      ...[1, 2, 3, 4].map((h) => fav(`f${h}`, h)),
-    ]);
     view.rerender(<LatestPage search={{}} />);
-    expect(screen.getByText('Favorite fnew')).toBeInTheDocument();
-    expect(screen.getByText('Favorite f5')).toBeInTheDocument();
+    expect(fakes.unstableQueries).toBe(0);
   });
 
   it('reads no favorites under a search or one skater’s list: each says newest first', () => {

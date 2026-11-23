@@ -468,7 +468,10 @@ export interface FeedCardView {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 04) — the card shows a heart/badge and boosts it. */
+  /**
+   * Viewer has favorited this body (Phase 04) — the card's heart/badge. Whether its Post leads its
+   * recency section is `latestFeedSections`' call (D292).
+   */
   isFavorite: boolean;
   /** `true` ⇒ render the Hike-In chip (D87). Only the hike-in case; the others are unremarkable. */
   isHikeIn: boolean;

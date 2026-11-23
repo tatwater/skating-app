@@ -8722,13 +8722,13 @@ key rather than by run, so no input order can repeat a header.
 - **Only a favorite known before its section draws is lifted.** One paged in later would land at
   the top of a section the reader had already scrolled past, unseen. `posts.listFavoritePosts`
   reads them up front, under `listFeed`'s season, moderation and filter rules: up to 5 per section,
-  from the viewer's 25 newest favorites, building no more cards than about a page and a half of the
-  feed. Each is admitted once the scroll reaches its section, and the list waits for that read (and
-  the matched lakes) before it first draws. A favorite past the cap keeps its time slot and its
-  star. One already lifted stays lifted when a newer favorite pushes it past the cap, until its page
-  arrives; one that leaves for any other reason (hidden, unfavorited, filtered out) goes at once. A
-  favorite matched lake is in the lake list from the start, so it is admitted and lifted the same
-  way.
+  from the viewer's 25 newest favorites, building no more cards than about two pages of the feed.
+  Each is admitted once the scroll reaches its section, and the list waits for that read, the
+  matched lakes and the recommended strip before it first draws. A favorite past the cap keeps its
+  time slot and its star. The read is live: on a busy day, a newer favorite can push an older lifted
+  one out of its section's five, and that one drops back to its time slot. A favorite matched lake
+  is in the lake list from the start, so it is admitted and lifted the same way. If the read fails,
+  nothing is lifted and Latest stays up, newest first.
 - **A list that says "newest first" lifts nothing:** a search, and one skater's list.
 - A Post whose only favorite member went to the recommended strip (D50) is not lifted.
 
@@ -8740,6 +8740,8 @@ the middle of a scroll, and misplaced weather-matched lakes, which `interleaveLa
 time. The alternatives were dropping the boost (favorites keep only the badge) or a separate
 "Your lakes" block (new UI). The founder chose to keep the boost within each section, and then to
 read the favorites up front rather than lift only those already loaded, which made order depend on
-scroll history. A cap is unavoidable in a bounded read, so the rule says what happens past it.
+scroll history. A cap is unavoidable in a bounded read, so the rule says what happens past it. A
+client-side carry that kept an evicted favorite lifted was built and dropped: it held a stale copy
+(a Post a moderator hid could stay on screen) and only delayed the jump to when its page loaded.
 
 **Related:** D28, D50, D165, [`phase-04`](./phases/04-drive-time-and-filtering.md).

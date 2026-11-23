@@ -1123,6 +1123,27 @@ describe('posts.listFavoritePosts — the favorites Latest lifts, read up front 
     expect(recent.every((c) => c.latestSkateEndTime >= T0 + 60_000 - 3_600_000)).toBe(true);
   });
 
+  test('reads past a busy lake’s filtered-out Reports to the ones that pass', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const viewer = await seedUser(t, 'clerk_viewer');
+    const fav = await seedBody(t);
+    const great: Id<'posts'>[] = [];
+    for (let k = 0; k < 12; k++) {
+      // The five newest are poor; the seven older are great.
+      const skateQuality = k < 5 ? ('poor' as const) : ('great' as const);
+      const { postId } = await author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: fav, skateEndTime: T0 - k * 60_000, skateQuality }],
+      });
+      if (skateQuality === 'great') great.push(postId);
+    }
+    await viewer.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: fav });
+    const cards = await viewer.as.query(api.posts.listFavoritePosts, {
+      filters: { qualityFloor: 'good' },
+    });
+    expect(ids(cards)).toEqual(great.slice(0, FAVORITE_LIFT_PER_SECTION));
+  });
+
   test('a Post sits in the section of its newest member, found through an older favorite one', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'clerk_author');

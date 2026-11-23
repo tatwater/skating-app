@@ -213,9 +213,9 @@ export const FAVORITE_SOURCES_CAP = 25;
 const FAVORITE_CANDIDATES_PER_SECTION = 3 * FAVORITE_LIFT_PER_SECTION;
 /**
  * Cards it hydrates in all: each is `listFeed`'s per-Post cost (members, photos, tracks), so the
- * whole read stays near a page and a half of the feed however the filters fall.
+ * whole read stays near two pages of the feed however the filters fall.
  */
-export const FAVORITE_HYDRATIONS_CAP = 30;
+export const FAVORITE_HYDRATIONS_CAP = 40;
 
 /**
  * The viewer's favorite Posts that Latest lifts to the top of their recency sections, read up front
@@ -231,7 +231,8 @@ export const FAVORITE_HYDRATIONS_CAP = 30;
  * **Bounded, per section.** For each section's window (`feedSectionWindows`) it reads each of the
  * viewer's newest {@link FAVORITE_SOURCES_CAP} favorites' newest few visible Reports (a lake by its
  * Reports, a bay by the `reportSubAreas` join), walks the distinct Reports newest first, and stops
- * at the section's cap; at most {@link FAVORITE_HYDRATIONS_CAP} cards are built in all. A Post is
+ * at the section's cap; at most {@link FAVORITE_HYDRATIONS_CAP} cards are built in all, with a
+ * reserve kept for each later section so one section's rejects can't spend another's. A Post is
  * placed by its own newest member, which may be newer than the favorite Report that found it.
  * Reading a section at a time keeps one busy lake's Today from crowding out every older section.
  */
@@ -264,10 +265,17 @@ export const listFavoritePosts = query({
     const kept = new Map<string, { card: PostCardData; createdAt: number }[]>();
     const seen = new Set<Id<'posts'>>();
     let hydrations = 0;
+    const windows = feedSectionWindows(viewer.now);
     // The windows are judged at this run's `now`; Convex doesn't re-run a query because time passed,
     // so a quiet afternoon can leave them hours old. The client sections by its own clock: at worst a
     // section lifts a few more or fewer than the cap, never one above a newer section.
-    for (const window of feedSectionWindows(viewer.now)) {
+    for (const [w, window] of windows.entries()) {
+      // A section may spend the card budget down to a reserve for each section after it, enough to
+      // fill that one's cap when nothing is filtered out: a filter that rejects most of Today reads
+      // past its rejects, but can't spend an older section's share.
+      const budgetEnd =
+        FAVORITE_HYDRATIONS_CAP - FAVORITE_LIFT_PER_SECTION * (windows.length - w - 1);
+      if (hydrations >= budgetEnd) continue;
       const lo = Math.max(window.startMs, seasonStart);
       const hi = Math.min(window.endMs, seasonEnd);
       if (lo >= hi) continue;
@@ -285,7 +293,7 @@ export const listFavoritePosts = query({
                 .lt('skateEndTime', hi),
             )
             .order('desc')
-            .take(FAVORITE_LIFT_PER_SECTION);
+            .take(FAVORITE_CANDIDATES_PER_SECTION);
           for (const r of rows) candidates.set(r._id, { t: r.skateEndTime, report: r });
         } else {
           const subAreaId = source.subAreaId;
@@ -299,7 +307,7 @@ export const listFavoritePosts = query({
                 .lt('skateEndTime', hi),
             )
             .order('desc')
-            .take(FAVORITE_LIFT_PER_SECTION);
+            .take(FAVORITE_CANDIDATES_PER_SECTION);
           for (const r of rows) {
             if (!candidates.has(r.reportId)) {
               candidates.set(r.reportId, { t: r.skateEndTime, report: r.reportId });
@@ -310,7 +318,7 @@ export const listFavoritePosts = query({
       const ordered = [...candidates.values()].sort((a, b) => b.t - a.t);
       for (const candidate of ordered.slice(0, FAVORITE_CANDIDATES_PER_SECTION)) {
         if ((kept.get(window.key)?.length ?? 0) >= FAVORITE_LIFT_PER_SECTION) break;
-        if (hydrations >= FAVORITE_HYDRATIONS_CAP) break;
+        if (hydrations >= budgetEnd) break;
         const report =
           typeof candidate.report === 'string'
             ? await ctx.db.get(candidate.report)

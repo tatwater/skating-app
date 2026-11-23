@@ -1,16 +1,18 @@
+import * as Sentry from '@sentry/tanstackstart-react';
 import { api } from '@skating/convex/api';
 import {
-  carryFavorites,
   type FeedFilters,
   hasWeatherFilter,
   type PostCardData,
   withoutWeatherFilter,
 } from '@skating/core';
 import { useCanGoBack, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { usePaginatedQuery, useQuery } from 'convex/react';
-import { useCallback, useMemo, useRef } from 'react';
+import { usePaginatedQuery, useQueries, useQuery } from 'convex/react';
+import type { Value } from 'convex/values';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
+import { isConfigured } from '@/lib/env';
 import { useFeatureFlag } from '@/lib/featureFlags';
 import { activeFilterCount } from '@/lib/feedFilters';
 import { useFeedFilters } from '@/lib/feedFiltersStore';
@@ -103,7 +105,29 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   // The viewer's favorite Posts, up front, so each section's favorites lead it from its first draw
   // (D292). Not under a search or one skater's list: each line promises newest first.
   const lift = !searching && skater === undefined;
-  const favoritePosts = useQuery(api.posts.listFavoritePosts, lift ? { filters: value } : 'skip');
+  // Through `useQueries`, which hands a failure back instead of throwing: a failed read lifts
+  // nothing, and Latest stays up, newest first. The object is keyed on the filters' content, since
+  // `useQueries` re-subscribes on a new one.
+  const filtersKey = JSON.stringify(value);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the filters' content, not identity.
+  const favoriteQueries = useMemo(
+    () =>
+      lift
+        ? {
+            favorites: {
+              query: api.posts.listFavoritePosts,
+              // `useQueries` types its args as plain values; the filters are a plain JSON object.
+              args: { filters: value as Record<string, Value> },
+            },
+          }
+        : ({} as Record<string, never>),
+    [lift, filtersKey],
+  );
+  const favoriteRead = useQueries(favoriteQueries).favorites as PostCardData[] | Error | undefined;
+  const favoritePosts = favoriteRead instanceof Error ? [] : favoriteRead;
+  useEffect(() => {
+    if (favoriteRead instanceof Error && isConfigured.sentry) Sentry.captureException(favoriteRead);
+  }, [favoriteRead]);
 
   // Recommended filter-breakers (D50): their own strip, and out of the feed so none shows twice.
   const recommended = useQuery(api.reports.recommended, {});
@@ -136,29 +160,22 @@ export function LatestPage({ search }: { search: LatestSearch }) {
   const status = page.status as PageStatus;
   const posts = page.results as PostCardData[];
   const bodies = bodyResults?.results ?? [];
-  // A favorite already lifted into view stays lifted when a newer one pushes it past its section's
-  // cap, until its page arrives (`carryFavorites`, D292). Per filters: a change starts over.
-  const carried = useRef({ key: '', favorites: [] as PostCardData[] });
-  const filtersKey = JSON.stringify(value);
-  let liftedFavorites: PostCardData[] = [];
-  if (lift && favoritePosts !== undefined) {
-    const previous = carried.current.key === filtersKey ? carried.current.favorites : [];
-    liftedFavorites = carryFavorites(previous, favoritePosts, posts, status === 'Exhausted', now);
-    carried.current = { key: filtersKey, favorites: liftedFavorites };
-  }
   const sections = latestSections(
     posts,
     searching ? new Set<string>() : recommendedIds,
     bodies,
     status === 'Exhausted',
     now,
-    { lift, favorites: liftedFavorites },
+    { lift, favorites: favoritePosts ?? [] },
   );
   const rowCount = sections.reduce((n, s) => n + s.items.length, 0);
-  // The sections wait for what decides their heads (D292): drawn before the favorites or the
-  // matched lakes answer, a favorite would land at the top of a section a moment later.
+  // The sections wait for what decides their heads (D292): drawn before the favorites, the matched
+  // lakes or the recommended strip answer, a favorite would move at the top of a section a moment
+  // later (the strip decides it too: a Post whose favorite member it took isn't lifted).
   const headsKnown =
-    (!lift || favoritePosts !== undefined) && (!wantBodies || bodyResults !== undefined);
+    (!lift || favoritePosts !== undefined) &&
+    (!wantBodies || bodyResults !== undefined) &&
+    (!lift || recommended !== undefined);
   const state = headsKnown
     ? latestFeedState({
         status,

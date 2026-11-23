@@ -2,7 +2,6 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@skating/convex/api';
 import {
   type BodyResultData,
-  carryFavorites,
   type FeedCardData,
   formatSeason,
   hasWeatherFilter,
@@ -11,9 +10,10 @@ import {
   postCardForCachedReport,
   seasonOf,
 } from '@skating/core';
-import { usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQueries, useQuery } from 'convex/react';
+import type { Value } from 'convex/values';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { H1, Paragraph, Spinner, Text, useTheme, YStack } from 'tamagui';
@@ -25,6 +25,7 @@ import { ProfileSearch } from '../../src/components/ProfileSearch';
 import { RecommendedCard } from '../../src/components/RecommendedCard';
 import { ReportDetail } from '../../src/components/ReportDetail';
 import { useFeedFilters } from '../../src/lib/feedFiltersStore';
+import { feedHeads } from '../../src/lib/feedHeads';
 import { cacheReports, loadCachedReports } from '../../src/lib/reportCache';
 
 /** Feed page size per `usePaginatedQuery` load. */
@@ -92,21 +93,39 @@ export default function NewsfeedScreen() {
   useEffect(() => {
     if (favoriteCards && favoriteCards.length > 0) cacheReports(favoriteCards);
   }, [favoriteCards]);
-  const isOfflineFallback =
-    results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0;
-  const feedData = isOfflineFallback ? cached : results;
   // The viewer's favorite Posts, up front: the only ones lifted to the top of their section (D292).
-  // The list waits for them and the matched lakes, which decide each section's head; the offline
-  // cache's list waits for neither, and lifts nothing.
-  const favoritePosts = useQuery(api.posts.listFavoritePosts, { filters: filters.value });
-  const headsKnown =
-    isOfflineFallback ||
-    (favoritePosts !== undefined && (!wantBodies || bodyResults !== undefined));
-  const listStatus = headsKnown ? status : 'LoadingFirstPage';
+  // Through `useQueries`, which hands a failure back instead of throwing: a failed read lifts
+  // nothing and the feed stays up. Keyed on the filters' content: a new object re-subscribes.
+  const filtersKey = JSON.stringify(filters.value);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the filters' content, not identity.
+  const favoriteQueries = useMemo(
+    () => ({
+      favorites: {
+        query: api.posts.listFavoritePosts,
+        // `useQueries` types its args as plain values; the filters are a plain JSON object.
+        args: { filters: filters.value as Record<string, Value> },
+      },
+    }),
+    [filtersKey],
+  );
+  const favoriteRead = useQueries(favoriteQueries).favorites as PostCardData[] | Error | undefined;
+  const favoritePosts = favoriteRead instanceof Error ? [] : favoriteRead;
 
   // Recommended filter-breaking bundles (D50) — a separate query interleaved near the top, never spliced
   // into the paginated feed. Renders nothing (the common case) when nothing exceptional qualifies.
   const recommended = useQuery(api.reports.recommended, {});
+  // The sections wait for what decides their heads; the offline cache stands in meanwhile.
+  const { showCached: isOfflineFallback, headsKnown } = feedHeads({
+    resultsCount: results.length,
+    status,
+    cachedCount: cached.length,
+    favoritesLoaded: favoritePosts !== undefined,
+    bodiesWanted: wantBodies,
+    bodiesLoaded: bodyResults !== undefined,
+    recommendedLoaded: recommended !== undefined,
+  });
+  const feedData = isOfflineFallback ? cached : results;
+  const listStatus = headsKnown ? status : 'LoadingFirstPage';
   const recommendedItems: FeedListItem[] =
     recommended && recommended.length > 0
       ? [
@@ -128,20 +147,10 @@ export default function NewsfeedScreen() {
   // row per section ("Today / Yesterday / …"), then that section's cards, the up-front favorites
   // first (D292), so infinite scroll + pull-to-refresh keep working over a single `FlatList`. The
   // recommended bundles lead the list.
-  // A favorite already lifted into view stays lifted when a newer one pushes it past its section's
-  // cap, until its page arrives (`carryFavorites`, D292). Per filters: a change starts over.
-  const carried = useRef({ key: '', favorites: [] as PostCardData[] });
-  const filtersKey = JSON.stringify(filters.value);
-  let liftedFavorites: PostCardData[] = [];
-  if (!isOfflineFallback && favoritePosts !== undefined) {
-    const previous = carried.current.key === filtersKey ? carried.current.favorites : [];
-    liftedFavorites = carryFavorites(previous, favoritePosts, results, status === 'Exhausted', now);
-    carried.current = { key: filtersKey, favorites: liftedFavorites };
-  }
   const sections = headsKnown
     ? latestFeedSections({
         posts: feedData,
-        favorites: liftedFavorites,
+        favorites: isOfflineFallback ? [] : (favoritePosts ?? []),
         // Never from the offline cache: a cached report list has no matching body list.
         bodies: isOfflineFallback ? [] : (bodyResults?.results ?? []),
         exhausted: status === 'Exhausted',
