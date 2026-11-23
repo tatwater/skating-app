@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { TOMBSTONE_FILE } from './lib/photoAccess';
-import { copyContentType, DOOMED_RETRY_MS } from './lib/photoFiles';
+import { copyContentType, DOOMED_RETRY_MS, isRotationCopy } from './lib/photoFiles';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { BLOB_ATTACHED } from './photos';
 import schema from './schema';
@@ -288,6 +288,28 @@ describe('a doomed file is re-checked at its retry', () => {
 });
 
 describe('the window’s search takes only its own attempt’s copy', () => {
+  test('the action stores each copy tagged, still the image it was', async () => {
+    const { t, mod, row } = await world();
+    const p = await row(await file(t), await file(t, 'image/webp'));
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'photo',
+      targetId: p,
+      status: 'hidden',
+      reason: 'x',
+    });
+    await stepThrough(t, 90);
+    const after = (await get(t, p)) as Doc<'photos'>;
+    const types = await t.run(async (ctx) =>
+      Promise.all(
+        [after.storageId, after.thumbStorageId].map(
+          async (id) => (await ctx.db.system.get(id as Id<'_storage'>))?.contentType,
+        ),
+      ),
+    );
+    expect(types.map((c) => isRotationCopy(c))).toEqual([true, true]);
+    expect(types.map((c) => c?.split(';')[0])).toEqual(['image/jpeg', 'image/webp']);
+  });
+
   test('a skater’s same-bytes upload, another attempt’s copy: kept; its own untagged copy can’t exist', async () => {
     const { t, row } = await world();
     const a = await file(t);

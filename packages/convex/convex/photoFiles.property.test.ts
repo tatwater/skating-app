@@ -93,7 +93,8 @@ type Op =
   | { k: 'authorDelete'; i: number }
   | { k: 'authorEdit'; i: number }
   | { k: 'deleter'; i: number }
-  | { k: 'attempt'; i: number; kill: Kill }
+  /** One rotation attempt, killed at `kill`; `down` takes the photo down first, as a takedown does. */
+  | { k: 'attempt'; i: number; kill: Kill; down: boolean }
   | { k: 'cancelRotations' }
   | { k: 'failDeletes'; i: number; slot?: Slot | 'both' }
   | { k: 'letGo' }
@@ -116,7 +117,7 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
     }),
   },
   {
-    weight: 1,
+    weight: 2,
     arbitrary: fc.record({
       k: fc.constant('adoptDoomed' as const),
       i: idx,
@@ -147,6 +148,7 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
       k: fc.constant('attempt' as const),
       i: idx,
       kill: fc.constantFrom<Kill>('none', ...KILL_POINTS),
+      down: fc.boolean(),
     }),
   },
   { weight: 1, arbitrary: fc.constant({ k: 'cancelRotations' as const }) },
@@ -422,7 +424,15 @@ async function run(ops: Op[]) {
             );
           break;
         case 'attempt':
-          if (p) await safely(() => attempt(t, p, op.kill));
+          if (p) {
+            if (op.down)
+              await t.run(async (ctx) => {
+                const row = await ctx.db.get(p);
+                if (row && (row.moderationStatus ?? 'visible') === 'visible')
+                  await ctx.db.patch(p, { moderationStatus: 'hidden' });
+              });
+            await safely(() => attempt(t, p, op.kill));
+          }
           break;
         case 'cancelRotations':
           await t.run(async (ctx) => {
@@ -550,7 +560,10 @@ async function checkInvariants(
     const ledger = await ctx.db.query('photoFiles').collect();
     const attempts = await ctx.db.query('photoRotations').collect();
     const stored = await ctx.db.system.query('_storage').collect();
-    return { rows, ledger, attempts, stored };
+    const failures = (await ctx.db.query('jobFailures').collect()).filter((f) =>
+      f.key.startsWith('file:'),
+    );
+    return { rows, ledger, attempts, stored, failures };
   });
   const named = new Set(state.rows.flatMap((r) => [r.storageId, r.thumbStorageId]));
   const byLedger = new Map<string, number>();
@@ -573,6 +586,13 @@ async function checkInvariants(
       `stored file ${id} is named by nothing`,
     ).toBe(true);
     expect(ledgered, `stored file ${id} has more than one ledger row`).toBeLessThanOrEqual(1);
+  }
+  // Machinery lists a file only while the ledger owes its deletion.
+  const doomed = new Set(state.ledger.filter((r) => r.state === 'doomed').map((r) => r.storageId));
+  for (const f of state.failures) {
+    expect(doomed.has(f.key.slice('file:'.length)), `Machinery lists ${f.key}, owed nothing`).toBe(
+      true,
+    );
   }
   for (const r of state.ledger) {
     if (r.state === 'copy')
