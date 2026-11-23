@@ -82,12 +82,21 @@ export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
   );
 }
 
-/** A clock that ticks each second while `on` (a reply counting down), else holds still. */
+/**
+ * A clock that ticks each second while `on` (a reply counting down), else holds still. When it turns
+ * on — a reply that just became settling — the time is taken during that render, so the first
+ * committed countdown is right ("Sending in 42 s", never a stale clock's "342 s" for a frame).
+ */
 function useSecondClock(on: boolean): number {
   const [at, setAt] = useState(() => Date.now());
+  const [wasOn, setWasOn] = useState(on);
+  if (on !== wasOn) {
+    // React's adjust-state-while-rendering: it re-renders before committing, with the time now.
+    setWasOn(on);
+    if (on) setAt(Date.now());
+  }
   useEffect(() => {
     if (!on) return;
-    setAt(Date.now());
     const id = setInterval(() => setAt(Date.now()), 1000);
     return () => clearInterval(id);
   }, [on]);

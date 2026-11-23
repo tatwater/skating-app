@@ -490,6 +490,48 @@ describe('a ticket, through the route and the view', () => {
     await waitFor(() => expect(inspector()).toHaveFocus());
   });
 
+  it('a reply that just became settling first draws against the time now, never a stale clock', async () => {
+    // Opened five minutes before the reply was written: the handler's clock was taken then.
+    vi.useFakeTimers({ toFake: ['Date'], now: TICKET_NOW - 300_000 });
+    let item: TicketItem = ROB_APPEAL;
+    h.lanes = LANES;
+    h.search = { lane: 'support', item: item.itemId };
+    h.answers['inbox:item'] = () => ({ item: asItem(item), pending: false });
+    const page = mount();
+    // Every text the reply's state ever held, its first commit included (a text replaced later is
+    // seen as an old value).
+    const seen: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.oldValue) seen.push(r.oldValue);
+        for (const n of r.addedNodes) seen.push(n.textContent ?? '');
+      }
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      characterDataOldValue: true,
+    });
+    vi.setSystemTime(TICKET_NOW);
+    item = WITH_SETTLING;
+    page.rerender(ui());
+    const state = await waitFor(() =>
+      must(
+        inspector().querySelector<HTMLElement>('[data-slot="ticket-reply-state"]'),
+        'the reply’s state',
+      ),
+    );
+    seen.push(
+      ...observer
+        .takeRecords()
+        .flatMap((r) => [r.oldValue ?? '', ...[...r.addedNodes].map((n) => n.textContent ?? '')]),
+    );
+    observer.disconnect();
+    expect(state).toHaveTextContent('Sending in 42 s');
+    expect(seen.join('\n')).not.toMatch(/Sending in 342 s/);
+  });
+
   it('a resolved ticket drops the bar and the dock, and Reopen calls support.reopen', async () => {
     open(RESOLVED);
     mount();
