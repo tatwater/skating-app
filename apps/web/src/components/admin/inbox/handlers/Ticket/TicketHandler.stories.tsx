@@ -195,7 +195,7 @@ export const EveryState: Story = {
           within(q).getByText('Not sent · no sending address or email service is set up'),
         ).toBeVisible();
         expect(
-          within(q).getByText('Sending stopped · it may or may not have been sent'),
+          within(q).getByText('Sending didn’t finish · it may or may not have been sent'),
         ).toBeVisible();
         // Never "Sent" alone where the server didn't say sent.
         expect(within(q).queryByText(/^Sent$/)).toBeNull();

@@ -33,7 +33,7 @@ describe('a reply’s receipt, from its answer', () => {
 
   it('a send whose outcome is unknown: neither sent nor not sent', () => {
     const r = replyReceipt({ status: 'failed', failedWhy: 'outcomeUnknown' });
-    expect(r.title).toBe('Sending stopped · it may or may not have been sent');
+    expect(r.title).toBe('Sending didn’t finish · it may or may not have been sent');
     expect(r.title).not.toMatch(/^(Sent|Not sent|Reply saved, not sent)/);
   });
 

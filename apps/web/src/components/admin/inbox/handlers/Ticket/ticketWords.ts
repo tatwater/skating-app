@@ -54,10 +54,11 @@ export const TICKET_WORDS = {
     sendFailed: 'the email service didn’t take it, or its send never ran',
   },
   /**
-   * Coined (`outcomeUnknown`): its send started and stopped before saying how it went. Never worded as
-   * sent, never as not sent — it may or may not have reached them, and it is never resent by itself.
+   * Coined (`outcomeUnknown`): its send didn't finish with an answer — it stopped, timed out, or the
+   * email service answered with its own error. Never worded as sent, never as not sent: it may or may
+   * not have reached them, and it is never resent by itself.
    */
-  outcomeUnknown: 'Sending stopped · it may or may not have been sent',
+  outcomeUnknown: 'Sending didn’t finish · it may or may not have been sent',
   notSentUnknown: 'the reason wasn’t recorded',
 
   // ── The dock ───────────────────────────────────────────────────────────────────────────────

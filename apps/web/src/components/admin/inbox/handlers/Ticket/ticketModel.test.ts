@@ -146,7 +146,9 @@ describe('a reply’s state', () => {
       'Not sent · the email service didn’t take it, or its send never ran',
     );
     // An outcome nobody knows is neither sent nor not sent.
-    expect(words('outcomeUnknown')).toBe('Sending stopped · it may or may not have been sent');
+    expect(words('outcomeUnknown')).toBe(
+      'Sending didn’t finish · it may or may not have been sent',
+    );
     expect(words('outcomeUnknown')).not.toMatch(/^(Sent|Not sent)/);
     expect(words(null)).toBe('Not sent · the reason wasn’t recorded');
   });

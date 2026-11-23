@@ -132,7 +132,7 @@ describe('the thread', () => {
       ['failed', 'Not sent · the email service didn’t take it, or its send never ran'],
       ['failed', 'Not sent · a test person’s ticket: test people are never emailed'],
       // A send that stopped before saying how it went: neither sent nor not sent.
-      ['unknown', 'Sending stopped · it may or may not have been sent'],
+      ['unknown', 'Sending didn’t finish · it may or may not have been sent'],
     ]);
     // The removed note is a line, its words gone.
     expect(slots(container, 'ticket-note-removed')).toHaveLength(1);
