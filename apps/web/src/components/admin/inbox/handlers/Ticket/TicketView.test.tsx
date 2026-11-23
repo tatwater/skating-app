@@ -57,7 +57,7 @@ const MOD = modKey() === 'Meta' ? { metaKey: true } : { ctrlKey: true };
 
 function View({
   item,
-  draft = { text: '', mode: 'reply' },
+  draft = { text: '', mode: 'reply', sending: false },
   ...over
 }: Partial<TicketViewProps> & { item: TicketItem; draft?: TicketDraft }) {
   const pane = useRef<HTMLElement | null>(null);
@@ -270,7 +270,7 @@ describe('the dock', () => {
     );
     expect(slots(reply.container, 'reply-dock-to')[0]).toHaveTextContent('To Rob Tremblay');
     reply.unmount();
-    const note = draw({ item: ROB_APPEAL, draft: { text: '', mode: 'note' } });
+    const note = draw({ item: ROB_APPEAL, draft: { text: '', mode: 'note', sending: false } });
     expect(slots(note.container, 'reply-dock-foot')[0]).toHaveTextContent(
       'Seen only by staff who answer support.',
     );
@@ -311,7 +311,7 @@ describe('the dock', () => {
     const long = 'x'.repeat(MAX_SUPPORT_NOTE_LENGTH + 5);
     const note = draw({
       item: ROB_APPEAL,
-      draft: { text: long, mode: 'note' },
+      draft: { text: long, mode: 'note', sending: false },
       onNote,
     });
     expect(within(note.container).getByRole('textbox')).toHaveAttribute(
@@ -331,7 +331,7 @@ describe('the dock', () => {
     const onReply = vi.fn();
     const { container } = draw({
       item: ROB_APPEAL,
-      draft: { text: ' Hi ', mode: 'reply' },
+      draft: { text: ' Hi ', mode: 'reply', sending: false },
       onReply,
     });
     const resolve = within(container).getByRole('button', { name: /Resolve/ });
@@ -350,7 +350,7 @@ describe('the dock', () => {
     const onReply = vi.fn();
     const { container } = draw({
       item: ROB_APPEAL,
-      draft: { text: 'Hi', mode: 'reply' },
+      draft: { text: 'Hi', mode: 'reply', sending: false },
       onReply,
       pending: 'reply',
     });

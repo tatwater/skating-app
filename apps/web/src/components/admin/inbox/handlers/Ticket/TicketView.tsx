@@ -405,7 +405,8 @@ function Dock({
       value={draft.text}
       onValueChange={onDraftText}
       onSend={(text) => (mode === 'reply' ? onReply(text) : onNote(text))}
-      sending={pending === 'reply' || pending === 'note'}
+      // The ticket's own send state (the draft store's), so a remount never offers Send again.
+      sending={draft.sending || pending === 'reply' || pending === 'note'}
     />
   );
 }

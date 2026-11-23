@@ -146,7 +146,11 @@ describe('a ticket, through the route and the view', () => {
       expect(called('support:reply')).toEqual([
         {
           name: 'support:reply',
-          args: { ticketId: ROB_APPEAL.ticket.ticketId, body: 'Thanks for writing.' },
+          args: {
+            ticketId: ROB_APPEAL.ticket.ticketId,
+            body: 'Thanks for writing.',
+            clientKey: expect.any(String),
+          },
         },
       ]),
     );
@@ -169,6 +173,7 @@ describe('a ticket, through the route and the view', () => {
     expect(called('support:reply')[0]?.args).toEqual({
       ticketId: ROB_APPEAL.ticket.ticketId,
       body: 'On it.',
+      clientKey: expect.any(String),
     });
   });
 
@@ -182,7 +187,11 @@ describe('a ticket, through the route and the view', () => {
       expect(called('support:addNote')).toEqual([
         {
           name: 'support:addNote',
-          args: { ticketId: ROB_APPEAL.ticket.ticketId, body: 'Checked his reports.' },
+          args: {
+            ticketId: ROB_APPEAL.ticket.ticketId,
+            body: 'Checked his reports.',
+            clientKey: expect.any(String),
+          },
         },
       ]),
     );
@@ -208,6 +217,82 @@ describe('a ticket, through the route and the view', () => {
     await waitFor(() => expect(called('support:resolve')).toHaveLength(2));
   });
 
+  it('a reply still out stays out across leaving and coming back: one call, the dock busy', async () => {
+    // The reviewer's probe: hold the reply open, pass through loading both ways (Rob → Kate → Rob),
+    // press again — the store, not the remounted handler, knows a send is out for Rob's ticket.
+    let release: (answer: unknown) => void = () => {};
+    writes.answer['support:reply'] = (args) =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({
+            ...args,
+            messageId: 'm_new',
+            actionId: 'ma_wired',
+            undoable: true,
+            undoNeedsReason: false,
+            status: 'settling',
+          });
+      });
+    const byRef: Record<string, InboxItemView> = {
+      [ROB_APPEAL.itemId]: asItem(ROB_APPEAL),
+      [KATE_BUG.itemId]: asItem(KATE_BUG),
+    };
+    let loading = false;
+    h.lanes = LANES;
+    h.search = { lane: 'support', item: ROB_APPEAL.itemId };
+    h.answers['inbox:item'] = (args) =>
+      loading ? undefined : { item: byRef[args.ref as string] ?? null, pending: false };
+    const page = mount();
+    type('Thanks for writing.');
+    fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+    await waitFor(() => expect(called('support:reply')).toHaveLength(1));
+    // Away through loading to Kate, and back through loading to Rob.
+    for (const item of [KATE_BUG.itemId, ROB_APPEAL.itemId]) {
+      loading = true;
+      h.search = { lane: 'support', item };
+      page.rerender(ui());
+      loading = false;
+      page.rerender(ui());
+    }
+    await waitFor(() => expect(field()).toHaveValue('Thanks for writing.'));
+    // Still out: the dock is busy for this ticket, and neither the button nor ⌘⏎ sends again.
+    expect(field()).toHaveAttribute('readonly');
+    fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+    field().focus();
+    fireEvent.keyDown(field(), { key: 'Enter', code: 'Enter', ...MOD });
+    expect(called('support:reply')).toHaveLength(1);
+    // It lands: the words that went are cleared, and the dock is free again.
+    await act(async () => release(undefined));
+    await waitFor(() => expect(field()).toHaveValue(''));
+    expect(field()).not.toHaveAttribute('readonly');
+    expect(called('support:reply')).toHaveLength(1);
+  });
+
+  it('a refused press retried with the same words reuses its key; new words take a new one', async () => {
+    let refuse = true;
+    writes.answer['support:reply'] = (args) => {
+      if (refuse) throw new ConvexError('Try again in a moment.');
+      return { ...args, messageId: 'm_new', actionId: 'ma_wired', undoable: false };
+    };
+    open(ROB_APPEAL);
+    mount();
+    type('Same words');
+    fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+    await waitFor(() => expect(called('support:reply')).toHaveLength(1));
+    await waitFor(() => expect(field()).not.toHaveAttribute('readonly'));
+    fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+    await waitFor(() => expect(called('support:reply')).toHaveLength(2));
+    const [first, second] = called('support:reply').map((c) => c.args.clientKey);
+    expect(first).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(second).toBe(first);
+    await waitFor(() => expect(field()).not.toHaveAttribute('readonly'));
+    type('Other words');
+    refuse = false;
+    fireEvent.click(within(inspector()).getByRole('button', { name: /Send reply/ }));
+    await waitFor(() => expect(called('support:reply')).toHaveLength(3));
+    expect(called('support:reply')[2]?.args.clientKey).not.toBe(first);
+  });
+
   it('sends the open item’s ids, never the ticket opened before it', async () => {
     const byRef: Record<string, InboxItemView> = {
       [ROB_APPEAL.itemId]: asItem(ROB_APPEAL),
@@ -231,6 +316,7 @@ describe('a ticket, through the route and the view', () => {
     expect(called('support:reply')[0]?.args).toEqual({
       ticketId: KATE_BUG.ticket.ticketId,
       body: 'For Kate',
+      clientKey: expect.any(String),
     });
     fireEvent.click(within(inspector()).getByRole('button', { name: /Resolve/ }));
     await waitFor(() => expect(called('support:resolve')).toHaveLength(1));

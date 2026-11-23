@@ -39,15 +39,25 @@ function Bound({
   narrow?: boolean;
   clock?: number;
 }) {
-  const { draft, setText, setMode, clear } = useTicketDraft(`story:${item.ticket.ticketId}`);
+  const { draft, setText, setMode, beginSend, endSend } = useTicketDraft(
+    `story:${item.ticket.ticketId}`,
+  );
   const [pending, setPending] = useState<TicketAct | null>(null);
   const write = (act: TicketAct, text?: string) => {
+    // A reply or note goes through the ticket's own send bracket, as the handler's does.
+    const clientKey =
+      text !== undefined && (act === 'reply' || act === 'note') ? beginSend(act, text) : '';
+    if (clientKey === null) return;
     setPending(act);
+    let landed = false;
     void onWrite({ act, ...(text !== undefined && { text }) })
-      .then((landed) => {
-        if (landed && text !== undefined) clear();
+      .then((ok) => {
+        landed = ok;
       })
-      .finally(() => setPending(null));
+      .finally(() => {
+        if (text !== undefined) endSend(landed);
+        setPending(null);
+      });
   };
   return (
     <TicketView

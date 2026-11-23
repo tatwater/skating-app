@@ -24,7 +24,8 @@ import { TICKET_WORDS as W } from './ticketWords';
  */
 
 type TicketArgs = { ticketId: Id<'supportTickets'> };
-type MessageArgs = TicketArgs & { body: string };
+/** A note or a reply, and the press's own key: the same press sent twice writes once (the server's). */
+type MessageArgs = TicketArgs & { body: string; clientKey: string };
 type MessageIdArgs = { messageId: Id<'supportMessages'> };
 
 /** What `support.reply` answers of the reply as it stands. */
@@ -90,8 +91,8 @@ const landedOn = (ticketId: string, answer: WriteAnswer): Landed => ({
 
 export type TicketWrites = {
   /** Each resolves whether it landed: the dock clears its draft only on `true`. */
-  reply: (body: string) => Promise<boolean>;
-  note: (body: string) => Promise<boolean>;
+  reply: (body: string, clientKey: string) => Promise<boolean>;
+  note: (body: string, clientKey: string) => Promise<boolean>;
   resolve: () => Promise<boolean>;
   reopen: () => Promise<boolean>;
   removeNote: (messageId: string) => Promise<boolean>;
@@ -109,7 +110,7 @@ export function useTicketWrites(
   });
   const ticketId = item.ticket.ticketId;
   const reply = useCallback(
-    (body: string) => {
+    (body: string, clientKey: string) => {
       // The receipt is what the write answered: a reply the server stored as not sent (no sender or
       // email service set up, a test person's ticket) says so, never "sends in a minute".
       let answered: ReplyAnswer | null = null;
@@ -117,7 +118,7 @@ export function useTicketWrites(
         act: 'reply',
         what: W.theReply,
         write: async () => {
-          answered = await server.reply({ ticketId, body });
+          answered = await server.reply({ ticketId, body, clientKey });
           return landedOn(ticketId, answered);
         },
         receipt: { title: W.replyQueued, description: W.replyQueuedDetail },
@@ -127,11 +128,11 @@ export function useTicketWrites(
     [run, server, ticketId],
   );
   const note = useCallback(
-    (body: string) =>
+    (body: string, clientKey: string) =>
       run({
         act: 'note',
         what: W.theNote,
-        write: async () => landedOn(ticketId, await server.addNote({ ticketId, body })),
+        write: async () => landedOn(ticketId, await server.addNote({ ticketId, body, clientKey })),
         receipt: { title: W.noteAdded, description: W.noteAddedDetail },
       } satisfies Decision<TicketAct>),
     [run, server, ticketId],

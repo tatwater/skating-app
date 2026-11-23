@@ -4,7 +4,7 @@ import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { useInspectorContext } from '../../inspector/inspectorContext';
 import { TicketView } from './TicketView';
 import { useTicketDraft } from './ticketDrafts';
-import { anySettling, type TicketItem } from './ticketModel';
+import { anySettling, type DockMode, type TicketItem } from './ticketModel';
 import { useTicketServer, useTicketWrites } from './useTicketWrites';
 
 /**
@@ -29,16 +29,29 @@ export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
   const { pane, timeZone, linkFor, narrow } = useInspectorContext();
   const server = useTicketServer();
   const writes = useTicketWrites(ticket, server);
-  const { draft, setText, setMode, clear } = useTicketDraft(ticket.ticket.ticketId);
+  const { draft, setText, setMode, beginSend, endSend } = useTicketDraft(ticket.ticket.ticketId);
   const clock = useSecondClock(anySettling(ticket));
   const keepFocus = useKeepFocusIn(pane);
   const send = useCallback(
-    async (write: (body: string) => Promise<boolean>, body: string) => {
-      // The draft goes only once its write landed: a refusal keeps every word.
-      if (await write(body)) clear();
+    async (
+      mode: DockMode,
+      write: (body: string, clientKey: string) => Promise<boolean>,
+      body: string,
+    ) => {
+      // One send out per ticket, wherever its dock is drawn (the store's, not this handler's, which
+      // remounts as the inspector moves): a second press, here or after coming back, sends nothing.
+      const clientKey = beginSend(mode, body);
+      if (clientKey === null) return;
+      let landed = false;
+      try {
+        landed = await write(body, clientKey);
+      } finally {
+        // Landed, the words that went are cleared; refused, every word stays, with the press's key.
+        endSend(landed);
+      }
       keepFocus();
     },
-    [clear, keepFocus],
+    [beginSend, endSend, keepFocus],
   );
   const link = (path: string) =>
     // biome-ignore lint/a11y/useAnchorContent: the view renders its label into it
@@ -56,8 +69,8 @@ export function TicketHandler({ item, locked, now }: InboxHandlerProps) {
       draft={draft}
       onDraftText={setText}
       onDraftMode={setMode}
-      onReply={(text) => void send(writes.reply, text)}
-      onNote={(text) => void send(writes.note, text)}
+      onReply={(text) => void send('reply', writes.reply, text)}
+      onNote={(text) => void send('note', writes.note, text)}
       onResolve={() => void writes.resolve()}
       onReopen={() => void writes.reopen().then(keepFocus)}
       onCancelReply={(messageId) => void writes.cancelReply(messageId).then(keepFocus)}
