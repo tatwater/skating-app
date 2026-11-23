@@ -116,6 +116,13 @@ async function stepThrough(t: T, minutes: number) {
   }
 }
 
+/** What Machinery shows for the stored-files job (`recurringJobs.health`), read as an admin. */
+async function machineryRow(t: T) {
+  const admin = await person(t, `admin-${Math.random()}`, 'admin');
+  const { jobs } = await admin.as.query(api.recurringJobs.health, {});
+  return jobs.find((j) => j.job === 'rotate or release a photo’s files');
+}
+
 /** The stored-files ledger, every row. */
 const ledger = (t: T) => t.run((ctx) => ctx.db.query('photoFiles').collect());
 /** A doomed file's Machinery row. */
@@ -316,6 +323,7 @@ describe('the rotation through the public writes', () => {
     await stepThrough(t, 2);
     expect((await ledger(t))[0]).toMatchObject({ attempts: 3, parkedAt: expect.any(Number) });
     expect(await fileFailure(t, before.storageId)).toMatchObject({ parkedAt: expect.any(Number) });
+    expect(await machineryRow(t)).toMatchObject({ failing: 0, parked: 1 });
     expect(await watches(t)).toHaveLength(1);
     failing.ids.clear();
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
@@ -323,6 +331,7 @@ describe('the rotation through the public writes', () => {
     expect(await urlOf(t, before.storageId)).toBeNull();
     expect(await ledger(t)).toEqual([]);
     expect(await fileFailure(t, before.storageId)).toBeNull();
+    expect(await machineryRow(t)).toMatchObject({ failing: 0, parked: 0 });
     expect(await watches(t)).toHaveLength(0);
   });
 
@@ -357,6 +366,7 @@ describe('the rotation through the public writes', () => {
       attempts: 3,
       parkedAt: expect.any(Number),
     });
+    expect(await machineryRow(t)).toMatchObject({ failing: 0, parked: 1 });
     expect(await storedCount(t)).toBe(2);
   }, 30_000);
 

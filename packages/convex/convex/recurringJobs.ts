@@ -435,6 +435,8 @@ const CRON_OF: Record<FailingJob, string> = {
   inboxBackfill: 'repair inbox items drift',
   inboxRepair: 'repair inbox items drift',
   photoPurge: 'purge removed photos',
-  // The rotation runs per takedown, not by cron; its watch retries it, parked ones daily.
-  photoRotation: 'rotate a taken-down photo’s file',
+  // The rotation runs per takedown, not by cron; its watch retries it, parked ones daily. A stored
+  // photo file owed a deletion (`lib/photoFiles`, key `file:<id>`) is its row too, whoever owed it —
+  // a rotation, a delete, the purge — retried by the watch and by the daily 'sweep photo files'.
+  photoRotation: 'rotate or release a photo’s files',
 };
