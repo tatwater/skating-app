@@ -93,6 +93,14 @@ async function world(full: Blob = new Blob(['full-bytes']), thumb: Blob = new Bl
 }
 
 const row = (t: T, id: Id<'photos'>) => t.run((ctx) => ctx.db.get(id) as Promise<Doc<'photos'>>);
+/** A job's `jobFailures` row for a photo — what Machinery lists (`photoPurge`, `photoRotation`). */
+const failureRow = (t: T, job: 'photoPurge' | 'photoRotation', id: Id<'photos'>) =>
+  t.run((ctx) =>
+    ctx.db
+      .query('jobFailures')
+      .withIndex('by_job_key', (q) => q.eq('job', job).eq('key', id))
+      .first(),
+  );
 const urlOf = (t: T, id: string) => t.run((ctx) => ctx.storage.getUrl(id as Id<'_storage'>));
 const bytesOf = (t: T, id: string) =>
   t.run(async (ctx) => (await ctx.storage.get(id as Id<'_storage'>))?.text() ?? null);
@@ -287,6 +295,17 @@ describe('the rotation through the public writes', () => {
       Math.abs((parked?.scheduledTime ?? 0) - (Date.now() + 24 * 60 * 60 * 1000)),
     ).toBeLessThan(10);
     expect(await storedCount(t)).toBe(2);
+    // Machinery lists it, parked, by the photo (the watch's attempts, mirrored).
+    expect(await failureRow(t, 'photoRotation', photoId)).toMatchObject({
+      attempts: 3,
+      parkedAt: expect.any(Number),
+    });
+    // Storage lets go: the daily retry lands, and the watch that sees it forgets the row.
+    failing.ids.clear();
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await row(t, photoId)).storageId).not.toBe(before.storageId);
+    expect(await failureRow(t, 'photoRotation', photoId)).toBeNull();
   });
 
   test('a photo past the rotation’s byte bound is never copied: it parks, stays hidden', async () => {
@@ -310,6 +329,31 @@ describe('the rotation through the public writes', () => {
     expect(after.storageId).not.toBe(before.storageId);
     expect(after.thumbStorageId).toBe(before.thumbStorageId);
     expect(await storedCount(t)).toBe(1);
+  });
+
+  test('a purge that keeps a blob is listed on Machinery, parked at the third, forgotten once purged', async () => {
+    const { t, photoId, set } = await world();
+    await set('removed');
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rotated = await row(t, photoId);
+    failing.ids.add(rotated.storageId);
+    let now = T0 + PHOTO_PURGE_DELAY_MS + 1;
+    for (let i = 1; i <= 3; i++) {
+      expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now })).toMatchObject({
+        retained: 1,
+      });
+      expect(await failureRow(t, 'photoPurge', photoId)).toMatchObject({
+        attempts: i,
+        errorClass: 'BlobRetained',
+        ...(i === 3 ? { parkedAt: expect.any(Number) } : {}),
+      });
+      now += 24 * 60 * 60 * 1000 + 1;
+    }
+    failing.ids.clear();
+    expect(await t.mutation(internal.photoPurge.purgeDuePhotos, { now })).toMatchObject({
+      purged: 1,
+    });
+    expect(await failureRow(t, 'photoPurge', photoId)).toBeNull();
   });
 
   test('the purge after a rotation deletes the new blobs', async () => {

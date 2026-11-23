@@ -413,6 +413,7 @@ describe('counts', () => {
       ['Comments', 2],
       ['Hazards', 0],
       ['Access alerts', 1],
+      ['Photos', 0],
     ]);
     expect(kindOptions(tabCounts('standing', HIDDEN_CAPPED, null), false)[0]).not.toHaveProperty(
       'count',

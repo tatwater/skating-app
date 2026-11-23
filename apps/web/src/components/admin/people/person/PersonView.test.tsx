@@ -85,7 +85,7 @@ const actions = (fn: { mock: { calls: unknown[][] } }) => fn.mock.calls.map((c) 
 describe('On the record', () => {
   it('Review opens the record sheet; the row shows when only the other lists hold anything', async () => {
     const onReviewRecord = vi.fn();
-    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 };
     draw({
       person: { ...ROB, hidden: { total: 0, capped: false, byKind: none } },
       recordPresence: { deleted: false, reversed: true, pending: [] },
@@ -97,7 +97,7 @@ describe('On the record', () => {
   });
 
   it('a presence still on its way adds nothing; one that failed is never drawn as nothing', () => {
-    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 };
+    const none = { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 };
     const person = { ...ROB, hidden: { total: 0, capped: false, byKind: none } };
     draw({ person, recordPresence: undefined });
     expect(document.querySelector('[data-lever="record"]')).toBeNull();

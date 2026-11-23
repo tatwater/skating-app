@@ -15,8 +15,8 @@
  * - **One photo that fails never stops the run.** A throw rolls back that photo alone. A blob that won't
  *   delete keeps the row (the only pointer to it) and moves its clock a day on
  *   ({@link PURGE_RETRY_MS}), so it leaves the due range and is tried again tomorrow — it never holds the
- *   head of the range. (Parking it after three failures, visible on Machinery, wants a `jobFailures`
- *   job of its own — a seam this PR asks for, not one it may add.)
+ *   head of the range. Each failure is a `jobFailures` row (`photoPurge`), parked at the third and
+ *   shown on Machinery; the photo's purge or its clock's clearing forgets it.
  * - **An open flag defers it** (D248: a complaint still undecided keeps its evidence): the clock moves a
  *   day on and the purge is asked again then.
  * - **A photo no longer removed** (restored, or its clock stale) has its clock cleared and is skipped.
@@ -28,7 +28,15 @@ import { internalMutation, type MutationCtx } from './_generated/server';
 import { composed, writeAudit } from './lib/audit';
 import { OPEN_FLAG_STATUSES } from './lib/openFlags';
 import { purgePhotoBlobs } from './lib/photoOrphans';
-import { affords, asItem, type ItemBudget, MiB, runIsolated } from './lib/recurringWork';
+import {
+  affords,
+  asItem,
+  clearFailure,
+  type ItemBudget,
+  MiB,
+  recordFailure,
+  runIsolated,
+} from './lib/recurringWork';
 
 /** Due photos one run takes at most; a full page continues at once. */
 export const PURGE_PAGE = 100;
@@ -104,6 +112,8 @@ export const purgeDuePhotos = internalMutation({
         // leaves the due range and the next run's head is not the same failure.
         counts.failed++;
         await ctx.db.patch(photo._id, { purgeAt: now + PURGE_RETRY_MS });
+        // Machinery sees it (`jobFailures`), parked at the third in a row.
+        await recordFailure(ctx, 'photoPurge', photo._id, result.errorClass, now);
         console.warn(
           `photoPurge: photo ${photo._id} failed (${result.errorClass}); retried in a day`,
         );
@@ -160,18 +170,23 @@ export const purgeOne = internalMutation({
   handler: (ctx, { photoId, now }): Promise<{ outcome: PurgeOutcome }> =>
     asItem(photoId, async () => {
       const photo = await ctx.db.get(photoId);
-      if (!photo) return { outcome: 'gone' as const };
+      if (!photo) {
+        await clearFailure(ctx, 'photoPurge', photoId);
+        return { outcome: 'gone' as const };
+      }
       if (photo.purgeAt === undefined || photo.purgeAt > now || photo.purgedAt !== undefined) {
         // Moved since the page was read (a restore cleared it, a run already purged it).
         if (photo.purgedAt !== undefined && photo.purgeAt !== undefined) {
           await ctx.db.patch(photoId, { purgeAt: undefined });
         }
+        await clearFailure(ctx, 'photoPurge', photoId);
         return { outcome: 'cleared' as const };
       }
       if ((photo.moderationStatus ?? 'visible') !== 'removed') {
         // A clock on a photo that is no longer removed is stale: the restore's write clears it, so
         // this only meets a row written before that rule. Cleared, never purged.
         await ctx.db.patch(photoId, { purgeAt: undefined });
+        await clearFailure(ctx, 'photoPurge', photoId);
         return { outcome: 'cleared' as const };
       }
       if (await openFlagOn(ctx, photoId)) {
@@ -184,6 +199,7 @@ export const purgeOne = internalMutation({
           `photoPurge: keeping ${photoId}'s row — ${failures.length} blob(s) could not be deleted; retried in a day`,
         );
         await ctx.db.patch(photoId, { purgeAt: now + PURGE_RETRY_MS });
+        await recordFailure(ctx, 'photoPurge', photoId, 'BlobRetained', now);
         return { outcome: 'retained' as const };
       }
       await ctx.db.patch(photoId, {
@@ -191,6 +207,7 @@ export const purgeOne = internalMutation({
         purgeAt: undefined,
         caption: undefined,
       });
+      await clearFailure(ctx, 'photoPurge', photoId);
       await writeAudit(ctx, {
         action: 'purge_photo',
         targetType: 'photo',

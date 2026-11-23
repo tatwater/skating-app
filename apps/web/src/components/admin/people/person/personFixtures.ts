@@ -119,7 +119,7 @@ export function personOf(over: Partial<PersonRead> = {}): PersonRead {
     },
     hidden: {
       total: 0,
-      byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+      byKind: { report: 0, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 },
       capped: false,
     },
     ledger: null,
@@ -193,7 +193,7 @@ export const ROB: PersonRead = personOf({
   },
   hidden: {
     total: 4,
-    byKind: { report: 2, post: 0, comment: 2, hazard: 0, accessAlert: 0 },
+    byKind: { report: 2, post: 0, comment: 2, hazard: 0, accessAlert: 0, photo: 0 },
     capped: false,
   },
 });

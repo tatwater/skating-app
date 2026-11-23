@@ -123,7 +123,7 @@ describe('the On the record row, over every state of its standing count', () => 
         const p = personOf({
           hidden: {
             total,
-            byKind: { report: total, post: 0, comment: 0, hazard: 0, accessAlert: 0 },
+            byKind: { report: total, post: 0, comment: 0, hazard: 0, accessAlert: 0, photo: 0 },
             capped,
           },
         });

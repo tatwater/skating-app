@@ -762,6 +762,11 @@ export const FAILING_JOBS = [
   // and id, retried by the repair's passes), and an open item the drift repair could not (by item id).
   'inboxBackfill',
   'inboxRepair',
+  // B01-5e: a removed photo whose purge failed or kept a blob (keyed by photo id, retried daily on its
+  // clock, parked at the third), and a takedown's rotation the watch hasn't seen land (a mirror of the
+  // attempts the watch carries, keyed by photo id) — so parked work shows on Machinery.
+  'photoPurge',
+  'photoRotation',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];
 

@@ -15,15 +15,11 @@ import { floorText, NOT_RECORDED, STILL_PREPARING } from '../answers';
  * on a hazard says what was decided about the post, never that the ice is safe or the hazard ended.
  */
 
-/** The five kinds a decision lands on, as the server names them. */
-export type RecordKind = 'report' | 'post' | 'comment' | 'hazard' | 'accessAlert';
+/** The six kinds a decision lands on, as the server names them (a photo since B01-5e). */
+export type RecordKind = 'report' | 'post' | 'comment' | 'hazard' | 'accessAlert' | 'photo';
 
-/**
- * A kind the item pane can draw: the listed kinds, and a photo — a photo verdict is on the record
- * once the server's photo axis lands (B01-5e). It joins `RecordKind` (the lists, the counts, the
- * filter) when the server's counts and lists carry it.
- */
-export type ItemKind = RecordKind | 'photo';
+/** A kind the item pane can draw: every listed kind. */
+export type ItemKind = RecordKind;
 
 /** Each kind's word, its plural, and its capitalized form (a pane's kicker). */
 export const KIND_WORDS: Readonly<Record<ItemKind, { one: string; many: string; head: string }>> = {
@@ -42,6 +38,7 @@ export const KIND_ORDER: readonly RecordKind[] = [
   'comment',
   'hazard',
   'accessAlert',
+  'photo',
 ];
 
 /** "1 report", "3 reports", "412+ reports" — a floor's plural is always the many form. */

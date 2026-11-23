@@ -32,6 +32,7 @@ import {
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { ROTATION_RETRY_MS, scheduleRotation } from './lib/photoRotation';
 import { errorClassOf } from './lib/readBudget';
+import { clearFailure, mirrorFailure } from './lib/recurringWork';
 import { getViewableReport } from './lib/reportVisibility';
 import { deleteStoredBlob } from './lib/storageBlobs';
 import { recordTextLength } from './lib/textLengths';
@@ -269,8 +270,8 @@ export type RotationOutcome = 'rotated' | 'stale' | 'skipped' | 'failed';
  * watch ends. Otherwise the action didn't land: one more failure by the attempts rule
  * (`lib/attempts`), the action scheduled again at once and the watch again at the next delay — 1 min,
  * 10 min, 1 h, then parked and daily, never dropped. The photo stays hidden from every read meanwhile.
- * The attempts ride on the watch's arguments (Machinery can't list a parked rotation until it has a
- * `jobFailures` job of its own — a seam this PR asks for).
+ * The attempts ride on the watch's arguments, mirrored into `jobFailures` (`photoRotation`) so a
+ * parked rotation shows on Machinery; the watch that sees it land forgets it.
  */
 export const rotationWatch = internalMutation({
   args: {
@@ -287,6 +288,7 @@ export const rotationWatch = internalMutation({
       photo.purgedAt !== undefined ||
       photo.storageId !== args.oldStorageId
     ) {
+      await clearFailure(ctx, 'photoRotation', args.photoId);
       return 'landed';
     }
     const now = Date.now();
@@ -302,6 +304,8 @@ export const rotationWatch = internalMutation({
       next.parkedAt !== undefined
         ? ROTATION_PARKED_RETRY_MS
         : (ROTATION_RETRY_MS[next.attempts ?? 1] ?? ROTATION_PARKED_RETRY_MS);
+    // Mirrored for Machinery (`jobFailures`): the watch's attempts, keyed by the photo.
+    await mirrorFailure(ctx, 'photoRotation', args.photoId, next, now);
     await ctx.scheduler.runAfter(0, internal.photos.rotateBlobs, { photoId: args.photoId });
     await ctx.scheduler.runAfter(delay, internal.photos.rotationWatch, {
       photoId: args.photoId,

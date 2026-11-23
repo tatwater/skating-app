@@ -266,6 +266,7 @@ const kinds = (o: Partial<Record<StandingRow['targetType'], number>> = {}) => ({
   comment: 0,
   hazard: 0,
   accessAlert: 0,
+  photo: 0,
   ...o,
 });
 
@@ -355,6 +356,9 @@ function contentOf(kind: ItemRead['targetType'], d: Doc): ItemRead['content'] {
       return { at: num('firstReportedAt'), title: str('type'), text: str('description') };
     case 'accessAlert':
       return { at: num('createdAt'), title: str('reason'), text: str('note') };
+    case 'photo':
+      // A photo's words are its caption (the server's `contentOf`).
+      return { at: num('createdAt'), text: str('caption') };
   }
 }
 

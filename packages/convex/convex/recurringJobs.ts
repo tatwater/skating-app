@@ -434,4 +434,7 @@ const CRON_OF: Record<FailingJob, string> = {
   // The backfill is run by hand; its failures are retried by the repair's cron, parked ones daily.
   inboxBackfill: 'repair inbox items drift',
   inboxRepair: 'repair inbox items drift',
+  photoPurge: 'purge removed photos',
+  // The rotation runs per takedown, not by cron; its watch retries it, parked ones daily.
+  photoRotation: 'rotate a taken-down photo’s file',
 };
