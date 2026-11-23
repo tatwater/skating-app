@@ -46,6 +46,13 @@ describe('the opened list', () => {
     expect(JSON.parse(window.localStorage.getItem(OPENED_KEY) ?? '[]')).toEqual([id(2), id(1)]);
   });
 
+  it('keeps the list under the section’s name, and reads nothing from the old one', () => {
+    expect(OPENED_KEY).toBe('gli.admin.corpus.opened');
+    // The key's old name (before the rename to Corpus) is not migrated: a list there reads as empty.
+    window.localStorage.setItem('gli.admin.bodies.opened', JSON.stringify([id(1)]));
+    expect(readOpened()).toEqual([]);
+  });
+
   it('never throws when storage is blocked or full: it reads empty and drops the write', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');

@@ -2,8 +2,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
   faBoxArchive,
-  faCabinetFiling,
   faInbox,
+  faMapLocationDot,
   faTachographDigital,
   faUsers,
   type IconDefinition,
@@ -61,7 +61,7 @@ import type { ConsoleMode, LegacyPage } from './consoleNav';
 const MODE_ICON: Record<ConsoleMode['id'], IconDefinition> = {
   overview: faTachographDigital,
   inbox: faInbox,
-  corpus: faCabinetFiling,
+  corpus: faMapLocationDot,
   people: faUsers,
 };
 

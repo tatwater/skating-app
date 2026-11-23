@@ -1,10 +1,10 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
-  faCabinetFiling,
   faCalendarDays,
   faEngine,
   faInbox,
+  faMapLocationDot,
   faMessageLines,
 } from '@fortawesome/sharp-light-svg-icons';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -119,7 +119,7 @@ function Queue({ selected, onOpen }: { selected: string | null; onOpen: (id: str
 const MODES = [
   { key: 'I', name: 'Inbox', icon: faInbox, count: 4, countTone: 'warn' },
   { key: 'R', name: 'Reports', icon: faMessageLines, count: 12 },
-  { key: 'C', name: 'Corpus', icon: faCabinetFiling },
+  { key: 'C', name: 'Corpus', icon: faMapLocationDot },
   { key: 'S', name: 'Seasons', icon: faCalendarDays },
   { key: 'M', name: 'Machinery', icon: faEngine, count: 1, countTone: 'bad' },
 ] as const;

@@ -79,5 +79,11 @@ export const Merged: Story = {
     await expect(page.getByText(/This body was merged into/)).toBeVisible();
     await expect(page.getByRole('link', { name: 'Open Mascoma Lake' })).toBeVisible();
     await expect(page.getByText('More history exists than is shown here.')).toBeVisible();
+    // The way back reads the same on a body that's gone: the arrow, then *Corpus*.
+    const back = page.getByRole('button', { name: 'Corpus' });
+    await expect(back.querySelector('svg[data-slot="return-arrow"]')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
   },
 };

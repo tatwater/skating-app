@@ -7,10 +7,10 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
-  faCabinetFiling,
   faCalendarDays,
   faEngine,
   faInbox,
+  faMapLocationDot,
   faMessageLines,
   faSliders,
   faTachographDigital,
@@ -35,7 +35,7 @@ const MODES: ReadonlyArray<{ key: GoLetter; name: string; icon: typeof faInbox }
   { key: 'O', name: 'Overview', icon: faTachographDigital },
   { key: 'I', name: 'Inbox', icon: faInbox },
   { key: 'R', name: 'Reports', icon: faMessageLines },
-  { key: 'C', name: 'Corpus', icon: faCabinetFiling },
+  { key: 'C', name: 'Corpus', icon: faMapLocationDot },
   { key: 'M', name: 'Machinery', icon: faEngine },
   { key: 'S', name: 'Seasons', icon: faCalendarDays },
   { key: 'P', name: 'People', icon: faUsers },
