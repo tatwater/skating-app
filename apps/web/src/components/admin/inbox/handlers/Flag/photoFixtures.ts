@@ -2,7 +2,8 @@ import type { Id, TableNames } from '@skating/convex/dataModel';
 
 import { at, KATE, SARAH } from './flagFixtures';
 import type { AuthorBlockData, FlagItem, FlagMember, InboxWriteResultData } from './flagTypes';
-import type { PhotoSibling, PhotoStaffFields, PhotoSubjectData } from './photoModel';
+import type { PhotoView } from './photoModel';
+import { fixtureReveal } from './photoRevealContext';
 
 /**
  * **Board 2.7 (Content flags · Photo), as data**, and every state no board draws: a photo already
@@ -10,9 +11,10 @@ import type { PhotoSibling, PhotoStaffFields, PhotoSubjectData } from './photoMo
  * file; a report with the most photos and a list the read cut short; a photo on no report; an
  * uploader who has left. Stories and tests only.
  *
- * **Built on the seam's fields** (`moderationStatus`, `canReveal`, `moderatedAt`, `purgeAt`,
- * `purgedAt`, `siblingsCut`, a sibling's `moderationStatus`): the read doesn't serve them yet, so the
- * fixtures carry them past its type (`photoTarget`). The integrator wires the real read.
+ * **As `inbox.item` serves it** (S5's photo subject): the thumbnail only — each full image lives in
+ * {@link PHOTO_FULL}, answered by the stories' reveal ({@link PHOTO_REVEAL}) as `inbox.photoReveal`
+ * would, so a test can prove the full address is nowhere in the item's data before Show; the
+ * report's *other* photos as siblings (never the flagged one), at most twelve, with `photoCount`.
  *
  * **The staged photo is not always the report's first**: the wiring test's photo is the third of
  * four, so a lever that sent the first photo's id, or a stage that drew the first thumbnail, fails.
@@ -83,44 +85,65 @@ export const PHOTO_FLAG: FlagMember = {
 
 const REPORT = id<'reports'>('r_crystal');
 
+/** One of a report's photos, as its fixture holds it before the read picks the strip. */
+export type ReportPhoto = {
+  photoId: Id<'photos'>;
+  thumbUrl: string | null;
+  moderationStatus: PhotoView['moderationStatus'];
+  openFlagId: Id<'contentFlags'> | null;
+};
+
 /** A report's photos, `n` of them, ids `ph_1`…; each its own scene. */
-export const reportPhotos = (n: number, over: (i: number) => Partial<PhotoSibling> = () => ({})) =>
+export const reportPhotos = (n: number, over: (i: number) => Partial<ReportPhoto> = () => ({})) =>
   Array.from(
     { length: n },
-    (_, i): PhotoSibling => ({
+    (_, i): ReportPhoto => ({
       photoId: id<'photos'>(`ph_${i + 1}`),
       thumbUrl: scene(i + 1, 'thumb'),
+      moderationStatus: 'visible',
+      openFlagId: null,
       ...over(i),
     }),
   );
 
-type PhotoFixture = PhotoSubjectData & PhotoStaffFields & { siblings: PhotoSibling[] };
+/** Every fixture photo's full image, by id — what `inbox.photoReveal` answers, never in the item. */
+export const PHOTO_FULL: Readonly<Record<string, string>> = Object.fromEntries(
+  Array.from({ length: 30 }, (_, i) => [`ph_${i + 1}`, scene(i + 1, 'full')]),
+);
 
-/** The photo `index` (0-based) of `siblings`, as the subject's view serves it. */
+/** The stories' reveal: each photo's full image from {@link PHOTO_FULL}, on Show only. */
+export const PHOTO_REVEAL = fixtureReveal(PHOTO_FULL);
+
+/** The read's strip bound (`PHOTO_SIBLINGS_READ`). */
+const STRIP = 12;
+
+/** The photo `index` (0-based) of the report's `photos`, as the subject's view serves it. */
 export function photoOf(
   index: number,
-  siblings: PhotoSibling[],
-  over: Partial<PhotoFixture> = {},
-): PhotoFixture {
-  const self = siblings[index];
+  photos: ReportPhoto[],
+  over: Partial<PhotoView> = {},
+): PhotoView {
+  const self = photos[index];
   if (self === undefined) throw new Error(`no photo ${index}`);
+  const others = photos.filter((_, i) => i !== index);
   return {
     photoId: self.photoId,
     caption: null,
     takenAt: at(10, 11, 14, 22),
     createdAt: at(10, 11, 15, 2),
-    url: scene(index + 1, 'full'),
     thumbUrl: self.thumbUrl,
     reportId: REPORT,
     body: CRYSTAL,
-    siblings,
+    siblings: others.slice(0, STRIP),
+    siblingsCut: others.length > STRIP,
     indexOnReport: index,
+    photoCount: photos.length,
     moderationStatus: 'visible',
-    canReveal: true,
     moderatedAt: null,
+    canReveal: true,
+    withdrawnAt: null,
     purgeAt: null,
     purgedAt: null,
-    siblingsCut: false,
     ...over,
   };
 }
@@ -128,9 +151,9 @@ export function photoOf(
 /** Every flag verb a visible photo offers (2.7's bar). */
 export const PHOTO_CAN = { hide: null, remove: null, dismiss: null } as const;
 
-/** A flag item on `photo`, the seam's fields carried past the read's type. */
-export function photoItem(photo: PhotoFixture, over: Partial<FlagItem> = {}): FlagItem {
-  const status = photo.moderationStatus ?? 'visible';
+/** A flag item on `photo`. */
+export function photoItem(photo: PhotoView, over: Partial<FlagItem> = {}): FlagItem {
+  const status = photo.moderationStatus;
   return {
     itemId: id<'inboxItems'>(`i_${photo.photoId}`),
     kind: 'flag',
@@ -152,7 +175,7 @@ export function photoItem(photo: PhotoFixture, over: Partial<FlagItem> = {}): Fl
       withdrawal: null,
       summary: 'A photo on a Crystal Lake report',
       moderationStatus: status,
-      photo: photo as PhotoSubjectData,
+      photo,
     },
     flags: [PHOTO_FLAG],
     author: KATE_AUTHOR,
@@ -194,7 +217,6 @@ export const PHOTO_PURGED = photoItem(
     moderatedAt: at(9, 10, 9),
     purgeAt: at(10, 10, 9),
     purgedAt: at(10, 10, 9, 30),
-    url: null,
     thumbUrl: null,
   }),
   { can: { dismiss: null } },
@@ -208,17 +230,18 @@ export const PHOTO_NO_ACCESS = photoItem(
   photoOf(
     2,
     reportPhotos(4, () => ({ thumbUrl: null })),
-    { canReveal: false, url: null, thumbUrl: null },
+    { canReveal: false, thumbUrl: null },
   ),
   { can: { dismiss: null } },
 );
 
 /** The viewer may see it, but no file was served (the blob is gone). */
-export const PHOTO_NO_FILE = photoItem(photoOf(2, FOUR, { url: null, thumbUrl: null }));
+export const PHOTO_NO_FILE = photoItem(photoOf(2, FOUR, { thumbUrl: null }));
 
 /**
- * The busiest report: 24 photos served of more (the read's bound cut the list, a floor), most of them
- * moderated, the flagged one the seventh.
+ * A busy report: 24 photos (reports have no photo cap of their own), the strip cut at the read's
+ * twelve others, most of them moderated, two with open flags of their own, the flagged one the
+ * seventh.
  */
 export const PHOTO_MAX = photoItem(
   photoOf(
@@ -226,10 +249,21 @@ export const PHOTO_MAX = photoItem(
     reportPhotos(24, (i) => ({
       moderationStatus:
         i === 6 ? 'visible' : i % 4 === 0 ? 'visible' : i % 2 ? 'hidden' : 'removed',
+      openFlagId: i === 1 || i === 9 ? id<'contentFlags'>(`f_ph_${i + 1}`) : null,
     })),
-    { siblingsCut: true },
   ),
   { itemId: id<'inboxItems'>('i_photo_max') },
+);
+
+/** Its uploader deleted it while this flag held it: kept out of sight, still decided here. */
+export const PHOTO_WITHDRAWN = photoItem(
+  photoOf(2, FOUR, {
+    moderationStatus: 'removed',
+    moderatedAt: at(10, 14, 11),
+    withdrawnAt: at(10, 14, 11),
+    purgeAt: at(11, 13, 11),
+  }),
+  { itemId: id<'inboxItems'>('i_photo_withdrawn'), can: { restore: null, dismiss: null } },
 );
 
 /** A photo on no report (a hazard's): no *On the same report*, no place on one. */
@@ -238,6 +272,7 @@ export const PHOTO_OFF_REPORT = photoItem(
     reportId: null,
     body: null,
     indexOnReport: null,
+    photoCount: null,
     siblings: [],
     caption: 'Pressure ridge off the point',
   }),

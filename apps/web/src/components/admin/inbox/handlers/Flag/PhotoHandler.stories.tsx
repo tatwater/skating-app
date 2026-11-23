@@ -6,6 +6,7 @@ import { expectNoSidewaysScroll, must } from '@/components/kit/storyKit';
 import { FlagBoard } from './flagBoard';
 import {
   PHOTO_DECIDED,
+  PHOTO_FULL,
   PHOTO_HIDDEN,
   PHOTO_ITEM,
   PHOTO_MAX,
@@ -84,7 +85,7 @@ export const Board27: Story = {
     const stage = slot(canvasElement, 'photo-stage');
     // Pixelated: the full photo is nowhere in the page, and no image element exists.
     await expect(stage.querySelector('img')).toBeNull();
-    await expect(nowhere(must(photoOf(PHOTO_ITEM).url))).toBe(true);
+    await expect(nowhere(must(PHOTO_FULL[photoOf(PHOTO_ITEM).photoId]))).toBe(true);
     await waitFor(() => painted(canvasElement));
     await expect(slot(stage, 'photo-veil')).toHaveTextContent('Pixelated until you choose to look');
     await expect(slot(stage, 'photo-show')).toHaveTextContent('Show the photo');
@@ -116,9 +117,10 @@ export const Shown: Story = {
   play: async ({ canvasElement }) => {
     const stage = slot(canvasElement, 'photo-stage');
     const photo = photoOf(PHOTO_THIRD);
-    await expect(nowhere(must(photo.url))).toBe(true);
+    const full = must(PHOTO_FULL[photo.photoId]);
+    await expect(nowhere(full)).toBe(true);
     await userEvent.click(within(stage).getByRole('button', { name: /Show the photo/ }));
-    await waitFor(() => expect(stage.querySelector('img')?.getAttribute('src')).toBe(photo.url));
+    await waitFor(() => expect(stage.querySelector('img')?.getAttribute('src')).toBe(full));
     // The flagged photo is the third, marked by its id.
     const self = must(
       canvasElement.querySelector<HTMLElement>('[data-slot="photo-sibling"][data-self]'),

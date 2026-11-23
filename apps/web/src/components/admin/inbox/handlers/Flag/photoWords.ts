@@ -41,6 +41,11 @@ export const PHOTO_WORDS = {
     `${removed === null ? 'It was removed' : `It was removed on ${removed}`}, and ${PHOTO_PURGE_DAYS} days passed without a restore. The decision stays on the uploader’s record.`,
   /** A removed photo still inside its 30 days. */
   purgeOn: (day: string) => `Its file is deleted on ${day} unless it is restored`,
+  /** Coined: its uploader deleted it while a flag or a decision held it (B01-5e's withdrawal). */
+  withdrawn: (day: string) =>
+    `Its uploader took it down on ${day}; it is kept out of sight while a flag or a decision holds it`,
+  /** Coined: the full photo's fetch on Show failed. */
+  revealFailed: 'The photo couldn’t be loaded',
 
   // ── On the same report ──────────────────────────────────────────────────────────────────────
   sameReport: 'On the same report',
@@ -49,6 +54,8 @@ export const PHOTO_WORDS = {
   removed: 'Removed',
   thumbLabel: (n: number) => `Photo ${n} on the report, pixelated`,
   thumbAlt: (n: number) => `Photo ${n} on the report`,
+  /** Coined: another photo on the report with an open flag of its own — its Inbox item. */
+  itsFlag: 'Its flag',
   /** The report's list was cut short by the read: how many of how many it shows. */
   sameReportCut: (shown: number, of: string) => `Showing ${shown} of ${of} photos`,
 

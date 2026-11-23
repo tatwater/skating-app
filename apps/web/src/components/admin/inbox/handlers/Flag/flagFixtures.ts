@@ -121,6 +121,7 @@ export const ROB_REPORT: ReportSubjectData = {
     snow: null,
   },
   photoCount: 0,
+  photoCountIsFloor: false,
   moderationStatus: 'visible',
   ratings: { up: 0, down: 2 },
   // 2.1's *Corrob.*: one report agreed with it (Kate Donovan, from shore).

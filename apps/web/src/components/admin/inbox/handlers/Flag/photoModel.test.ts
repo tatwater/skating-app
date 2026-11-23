@@ -7,6 +7,7 @@ import { subjectOf, verbGroups } from './flagModel';
 import type { LiveTarget } from './flagTypes';
 import {
   KATE_AUTHOR,
+  PHOTO_FULL,
   PHOTO_HIDDEN,
   PHOTO_ITEM,
   PHOTO_MAX,
@@ -16,6 +17,7 @@ import {
   PHOTO_PURGED,
   PHOTO_REMOVED,
   PHOTO_THIRD,
+  PHOTO_WITHDRAWN,
   photoItem,
   photoOf,
   reportPhotos,
@@ -29,6 +31,7 @@ import {
   siblingsCutLine,
   siblingViews,
   stageState,
+  withdrawnLine,
 } from './photoModel';
 import { PHOTO_WORDS } from './photoWords';
 import { photoReceiptLine } from './useFlagWrites';
@@ -42,11 +45,8 @@ describe('what the stage may draw', () => {
     expect(stageState(viewOf(PHOTO_THIRD))).toMatchObject({ kind: 'stage' });
     // An address served without the server's word is never painted.
     const leaked = photoOf(0, reportPhotos(2), { canReveal: false });
-    expect(leaked.url).not.toBeNull();
+    expect(leaked.thumbUrl).not.toBeNull();
     expect(stageState(leaked)).toEqual({ kind: 'noAccess' });
-    // The seam's field absent (the read not yet wired): the conservative answer.
-    const { canReveal: _, ...unwired } = photoOf(0, reportPhotos(2));
-    expect(stageState(unwired)).toEqual({ kind: 'noAccess' });
   });
 
   it('a viewer without content.read: no image, in words', () => {
@@ -65,20 +65,27 @@ describe('what the stage may draw', () => {
       removedAt: view.moderatedAt,
     });
     // Even were an address still served, a purged photo draws none.
-    expect(stageState({ ...view, url: 'u', thumbUrl: 't', canReveal: true }).kind).toBe('purged');
+    expect(stageState({ ...view, thumbUrl: 't', canReveal: true }).kind).toBe('purged');
   });
 
-  it('the stage reveals the full address and pixelates the thumbnail, never swapped', () => {
+  it('the stage pixelates the thumbnail; the full image is never in the item', () => {
     const v = viewOf(PHOTO_THIRD);
-    expect(stageState(v)).toEqual({ kind: 'stage', thumb: v.thumbUrl, full: v.url });
-    expect(v.thumbUrl).not.toBe(v.url);
+    expect(stageState(v)).toEqual({ kind: 'stage', thumb: v.thumbUrl });
+    // The read serves no full address at all: it comes from `inbox.photoReveal`, on Show.
+    expect(JSON.stringify(PHOTO_THIRD)).not.toContain(PHOTO_FULL[v.photoId] as string);
+    expect(Object.keys(v)).not.toContain('url');
   });
 });
 
 describe('the photo on its report', () => {
   it('finds the flagged photo by its id, not its place in the list', () => {
     const views = siblingViews(viewOf(PHOTO_THIRD));
+    // The read serves the other three; the flagged one takes its own place, third.
+    expect(viewOf(PHOTO_THIRD).siblings.map((s) => s.photoId)).not.toContain(
+      targetOf(PHOTO_THIRD).targetId,
+    );
     expect(views.map((v) => v.self)).toEqual([false, false, true, false]);
+    expect(views.map((v) => v.n)).toEqual([1, 2, 3, 4]);
     expect(views.find((v) => v.self)?.photoId).toBe(targetOf(PHOTO_THIRD).targetId);
     expect(views.find((v) => v.self)?.label).toBe('Flagged');
     expect(views.filter((v) => !v.self).every((v) => v.label === null)).toBe(true);
@@ -86,11 +93,20 @@ describe('the photo on its report', () => {
 
   it('labels a moderated sibling by its axis', () => {
     const views = siblingViews(viewOf(PHOTO_MAX));
-    expect(views).toHaveLength(24);
+    // Twelve others (the read's strip) and the flagged one in its place.
+    expect(views).toHaveLength(13);
+    expect(views.map((v) => v.n)).toEqual(Array.from({ length: 13 }, (_, i) => i + 1));
     expect(views[1]?.label).toBe('Hidden');
     expect(views[2]?.label).toBe('Removed');
     expect(views[4]?.label).toBeNull();
-    expect(views[6]).toMatchObject({ self: true, label: 'Flagged', n: 7 });
+    expect(views[6]).toMatchObject({ self: true, label: 'Flagged', n: 7, flagRef: null });
+  });
+
+  it('links another photo’s open flag to its own item, by the flag’s id', () => {
+    const views = siblingViews(viewOf(PHOTO_MAX));
+    expect(views[1]?.flagRef).toBe('flag:f_ph_2');
+    expect(views[9]?.flagRef).toBe('flag:f_ph_10');
+    expect(views.filter((v) => v.flagRef !== null)).toHaveLength(2);
   });
 
   it('a photo alone on its report, or on none, has no list', () => {
@@ -102,8 +118,10 @@ describe('the photo on its report', () => {
   it('says its place, as a floor when the list was cut', () => {
     expect(placeOnReport(viewOf(PHOTO_ITEM))).toBe('1 of 4 on the report');
     expect(placeOnReport(viewOf(PHOTO_THIRD))).toBe('3 of 4 on the report');
-    expect(placeOnReport(viewOf(PHOTO_MAX))).toBe('7 of 24+ on the report');
-    expect(siblingsCutLine(viewOf(PHOTO_MAX))).toBe('Showing 24 of 24+ photos');
+    expect(placeOnReport(viewOf(PHOTO_MAX))).toBe('7 of 24 on the report');
+    expect(siblingsCutLine(viewOf(PHOTO_MAX))).toBe('Showing 13 of 24 photos');
+    // No count from the read: a floor.
+    expect(placeOnReport({ ...viewOf(PHOTO_MAX), photoCount: null })).toBe('7 of 7+ on the report');
     expect(siblingsCutLine(viewOf(PHOTO_THIRD))).toBeNull();
   });
 
@@ -129,19 +147,24 @@ describe('the photo on its report', () => {
 });
 
 describe('the photo’s state', () => {
-  it('reads its own axis, else the target’s', () => {
-    expect(photoStatus(viewOf(PHOTO_HIDDEN), targetOf(PHOTO_HIDDEN))).toBe('hidden');
-    const { moderationStatus: _, ...bare } = viewOf(PHOTO_HIDDEN);
-    expect(photoStatus(bare, { moderationStatus: 'removed' })).toBe('removed');
-    expect(photoStatus(bare, { moderationStatus: null })).toBe('visible');
+  it('reads its own axis, as served', () => {
+    expect(photoStatus(viewOf(PHOTO_HIDDEN))).toBe('hidden');
+    expect(photoStatus(viewOf(PHOTO_ITEM))).toBe('visible');
   });
 
   it('a removal says its deletion day, only while it waits', () => {
-    expect(purgeLine(viewOf(PHOTO_REMOVED), 'removed', BOARD_ZONE)).toBe(
+    expect(purgeLine(viewOf(PHOTO_REMOVED), BOARD_ZONE)).toBe(
       'Its file is deleted on 12 Nov unless it is restored',
     );
-    expect(purgeLine(viewOf(PHOTO_PURGED), 'removed', BOARD_ZONE)).toBeNull();
-    expect(purgeLine(viewOf(PHOTO_HIDDEN), 'hidden', BOARD_ZONE)).toBeNull();
+    expect(purgeLine(viewOf(PHOTO_PURGED), BOARD_ZONE)).toBeNull();
+    expect(purgeLine(viewOf(PHOTO_HIDDEN), BOARD_ZONE)).toBeNull();
+  });
+
+  it('a withdrawal says when its uploader took it down, never that it is gone', () => {
+    expect(withdrawnLine(viewOf(PHOTO_WITHDRAWN), BOARD_ZONE)).toBe(
+      'Its uploader took it down on 14 Oct; it is kept out of sight while a flag or a decision holds it',
+    );
+    expect(withdrawnLine(viewOf(PHOTO_ITEM), BOARD_ZONE)).toBeNull();
   });
 });
 

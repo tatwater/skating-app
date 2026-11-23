@@ -17,6 +17,7 @@ import {
 } from '../../testing/routeHarness';
 import {
   PHOTO_DECIDED,
+  PHOTO_FULL,
   PHOTO_HIDDEN,
   PHOTO_NO_ACCESS,
   PHOTO_PURGED,
@@ -101,7 +102,12 @@ const open = (item: InboxItemView) => {
   h.search = { lane: 'flags', item: item.itemId };
   h.answers['inbox:item'] = () => ({ item, pending: false });
   h.answers['inbox:itemMap'] = () => ({ map: null, pending: false });
+  // The full image, only as `inbox.photoReveal` answers it (never in the item).
+  h.answers['inbox:photoReveal'] = (args) => ({
+    url: PHOTO_FULL[(args as { photoId: string }).photoId] ?? null,
+  });
 };
+const revealsAsked = () => h.asked.filter((a) => a.name === 'inbox:photoReveal');
 
 beforeEach(() => {
   resetHarness();
@@ -117,6 +123,7 @@ const photoOf = (item: InboxItemView) =>
   (item as Extract<InboxItemView, { kind: 'flag' }> & { target: { photo: PhotoView } }).target
     .photo;
 const STAGED = photoOf(PHOTO_THIRD);
+const STAGED_FULL = must(PHOTO_FULL[STAGED.photoId], 'the staged photo’s full image');
 const FIRST = must(STAGED.siblings[0], 'the first photo');
 
 /** Every attribute value in the document, for "this address is nowhere in the page". */
@@ -137,7 +144,7 @@ describe('a photo flag, through the route and the view', () => {
     expect(inspector()).toHaveTextContent('Kate Donovan');
   });
 
-  it('keeps the full image out of the page until Show, then draws the staged photo’s', () => {
+  it('keeps the full image out of the page and its data until Show, then draws the staged photo’s', async () => {
     open(PHOTO_THIRD);
     mount();
     const stage = must(
@@ -146,7 +153,10 @@ describe('a photo flag, through the route and the view', () => {
     );
     // Pixelated: no image element, no attribute anywhere holding the full address.
     expect(stage.querySelector('img')).toBeNull();
-    expect(everyAttribute().some((v) => v.includes(must(STAGED.url, 'url')))).toBe(false);
+    expect(everyAttribute().some((v) => v.includes(STAGED_FULL))).toBe(false);
+    // Nor in the page's data: the item carries no full address, and the reveal isn't asked yet.
+    expect(JSON.stringify(PHOTO_THIRD)).not.toContain(STAGED_FULL);
+    expect(revealsAsked()).toEqual([]);
     const mosaic = must(stage.querySelector<HTMLCanvasElement>('canvas'), 'the mosaic');
     expect(mosaic).toHaveAttribute('aria-hidden', 'true');
     // The bitmap is the mosaic itself: 24 cells across, never the photo's own size.
@@ -156,9 +166,17 @@ describe('a photo flag, through the route and the view', () => {
     expect(inspector().querySelectorAll('[data-slot="photo-sibling"] img')).toHaveLength(0);
 
     fireEvent.click(within(stage).getByRole('button', { name: /Show the photo/ }));
-    const img = must(stage.querySelector('img'), 'the revealed photo');
+    // Show asks `inbox.photoReveal` for the staged photo, by its own id.
+    await waitFor(() =>
+      expect(revealsAsked().map((a) => a.args.photoId)).toContain(STAGED.photoId),
+    );
+    const img = await waitFor(() => {
+      const el = must(stage.querySelector('img'), 'the revealed photo');
+      expect(el.getAttribute('src')).toBe(STAGED_FULL);
+      return el;
+    });
     // The staged photo's own address — the third's, not the first's.
-    expect(img.getAttribute('src')).toBe(STAGED.url);
+    expect(img.getAttribute('src')).toBe(STAGED_FULL);
     expect(img.getAttribute('src')).not.toBe(scene(1, 'full'));
     // Its thumbnail on the report is the one marked, by id.
     const self = must(
@@ -189,7 +207,7 @@ describe('a photo flag, through the route and the view', () => {
     fireEvent.keyDown(pane, { key: 's', code: 'KeyS' });
     await waitFor(() =>
       expect(pane.querySelector('[data-slot="photo-stage"] img')?.getAttribute('src')).toBe(
-        STAGED.url,
+        STAGED_FULL,
       ),
     );
   });

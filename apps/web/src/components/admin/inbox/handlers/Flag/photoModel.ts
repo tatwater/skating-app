@@ -7,79 +7,50 @@ import { PHOTO_WORDS as P } from './photoWords';
 /**
  * **Board 2.7, as data** — pure: what the stage may draw for this viewer, its caption and place on the
  * report, *On the same report*, and the photo's own state (up, hidden, removed with its deletion day,
- * or deleted to a tombstone).
+ * withdrawn by its uploader, or deleted to a tombstone).
  *
- * **What the read serves decides everything here.** The image is drawable only when the server says
- * this viewer may see it (`canReveal`) *and* served an address; a viewer without `content.read` is
- * served neither, and the stage says so in words with no image at all. Nothing here derives a staff
- * field the server didn't send.
+ * **What the read serves decides everything here.** The item carries the **thumbnail** only; the full
+ * image is fetched on *Show the photo* (`inbox.photoReveal`), so before the reveal its address is in
+ * neither the page's markup nor its data. A viewer without `content.read` is served no address of any
+ * size (`canReveal: false`), and the stage says so in words with no image at all. A purged photo
+ * serves none to anyone. Nothing here derives a staff field the server didn't send.
  */
 
-export type PhotoSubjectData = Extract<LiveTarget, { targetType: 'photo' }>['photo'];
+/** The photo subject as the server serves it (`inbox.item`'s photo flag). */
+export type PhotoView = Extract<LiveTarget, { targetType: 'photo' }>['photo'];
 
-/**
- * **What the photo subject's read is owed** (B01-5e's seam: `PhotoSubjectView` gains them; S5a serves
- * them). Optional here so the handler builds before the read lands; an absent one is read as the
- * conservative answer — no reveal, no state the server didn't state.
- */
-export type PhotoStaffFields = {
-  /** The photo's own axis (`visible` | `hidden` | `removed`). */
-  moderationStatus?: ModerationStatus | null;
-  /** The viewer holds `content.read`: the server served the addresses, and the stage may reveal. */
-  canReveal?: boolean;
-  /** When it was last hidden or removed. */
-  moderatedAt?: number | null;
-  /** A removal's deletion day (30 days on), cleared by a restore. */
-  purgeAt?: number | null;
-  /** The file was deleted on the purge clock: the row is a tombstone. */
-  purgedAt?: number | null;
-  /** The read cut *On the same report* short of the report's photos (bounded by the report's list). */
-  siblingsCut?: boolean;
-};
+/** Another photo on the same report — never the flagged one itself. */
+export type PhotoSibling = PhotoView['siblings'][number];
 
-/** A photo on the same report; its own axis when the read serves it. */
-export type PhotoSibling = PhotoSubjectData['siblings'][number] & {
-  moderationStatus?: ModerationStatus | null;
-};
-
-export type PhotoView = Omit<PhotoSubjectData, 'siblings'> &
-  PhotoStaffFields & { siblings: PhotoSibling[] };
-
-/** The photo subject as the handler reads it (the seam's fields typed in, none derived). */
 export const photoViewOf = (target: Extract<LiveTarget, { targetType: 'photo' }>): PhotoView =>
-  target.photo as PhotoView;
+  target.photo;
 
 /**
  * What the stage draws:
- * - `stage` — the photo, pixelated from its thumbnail until revealed (`full` is its address then);
+ * - `stage` — the photo, pixelated from its thumbnail until revealed (the full image comes on Show);
  * - `noAccess` — the viewer can't see photos (the server served no address): words, no image;
  * - `noFile` — the viewer may see it, but no file was served (the blob is gone);
  * - `purged` — a removal's file deleted on the clock: what was removed, and when.
  */
 export type StageState =
-  | { kind: 'stage'; thumb: string | null; full: string | null }
+  | { kind: 'stage'; thumb: string }
   | { kind: 'noAccess' }
   | { kind: 'noFile' }
   | { kind: 'purged'; purgedAt: number; removedAt: number | null };
 
 export function stageState(photo: PhotoView): StageState {
   // A tombstone outranks everything: there is nothing to show, to anyone.
-  if (photo.purgedAt != null) {
-    return { kind: 'purged', purgedAt: photo.purgedAt, removedAt: photo.moderatedAt ?? null };
+  if (photo.purgedAt !== null) {
+    return { kind: 'purged', purgedAt: photo.purgedAt, removedAt: photo.moderatedAt };
   }
   // Only the server's word lets the stage draw: an address served without it is never painted.
-  if (photo.canReveal !== true) return { kind: 'noAccess' };
-  if (photo.url === null && photo.thumbUrl === null) return { kind: 'noFile' };
-  return { kind: 'stage', thumb: photo.thumbUrl, full: photo.url };
+  if (!photo.canReveal) return { kind: 'noAccess' };
+  if (photo.thumbUrl === null) return { kind: 'noFile' };
+  return { kind: 'stage', thumb: photo.thumbUrl };
 }
 
-/** The photo's axis: the subject's own, else the target's (the generic summary carries it too). */
-export function photoStatus(
-  photo: PhotoView,
-  target: Pick<LiveTarget, 'moderationStatus'>,
-): ModerationStatus {
-  return photo.moderationStatus ?? target.moderationStatus ?? 'visible';
-}
+/** The photo's axis, as the server serves it. */
+export const photoStatus = (photo: PhotoView): ModerationStatus => photo.moderationStatus;
 
 /** The stage's caption: when it was taken (else uploaded), and the body it was reported at. */
 export function captionLine(photo: PhotoView, timeZone?: string): string {
@@ -93,10 +64,11 @@ export function placeOnReport(photo: PhotoView): string | null {
   if (photo.reportId === null || photo.indexOnReport === null || photo.indexOnReport < 0) {
     return null;
   }
-  const total = Math.max(photo.siblings.length, photo.indexOnReport + 1);
+  const total = Math.max(photo.photoCount ?? 0, photo.indexOnReport + 1);
+  // The report's own list is counted whole (`photoCount`); a floor only when the read gave none.
   return P.ofReport(
     photo.indexOnReport + 1,
-    countWords({ count: total, capped: photo.siblingsCut === true }),
+    countWords({ count: total, capped: photo.photoCount === null }),
   );
 }
 
@@ -110,43 +82,63 @@ export type SiblingView = {
   self: boolean;
   /** Its label: *Flagged* for this one, its axis for a moderated sibling, else none. */
   label: string | null;
+  /** An open flag on another photo: its Inbox item's ref (`flag:<id>`). */
+  flagRef: string | null;
 };
 
 /**
- * *On the same report*, in the report's order, **the flagged photo found by its id** (it is not
- * always the first). Empty off a report, or when the report holds only this photo.
+ * *On the same report*, in the report's order: the read's **other** photos (never the flagged one),
+ * with the flagged photo placed at its own index — so each keeps its place on the report ("Photo 3"),
+ * found by id, never by position in the list. Empty off a report, or when it holds only this photo.
  */
 export function siblingViews(photo: PhotoView): SiblingView[] {
-  if (photo.reportId === null) return [];
-  const views = photo.siblings.map((s, i) => {
-    const self = s.photoId === photo.photoId;
-    const status = s.moderationStatus ?? null;
-    return {
+  if (photo.reportId === null || photo.siblings.length === 0) return [];
+  const at = photo.indexOnReport ?? photo.siblings.length;
+  const others = photo.siblings.map(
+    (s, i): SiblingView => ({
       photoId: s.photoId,
       thumbUrl: s.thumbUrl,
-      n: i + 1,
-      self,
-      label: self
-        ? P.thisOne
-        : status === 'hidden'
+      // The others are served in the report's order: those after the flagged one sit one place on.
+      n: i < at ? i + 1 : i + 2,
+      self: false,
+      label:
+        s.moderationStatus === 'hidden'
           ? P.hidden
-          : status === 'removed'
+          : s.moderationStatus === 'removed'
             ? P.removed
             : null,
-    };
-  });
-  return views.length <= 1 && views.every((v) => v.self) ? [] : views;
+      flagRef: s.openFlagId === null ? null : `flag:${s.openFlagId}`,
+    }),
+  );
+  const self: SiblingView = {
+    photoId: photo.photoId,
+    thumbUrl: photo.thumbUrl,
+    n: at + 1,
+    self: true,
+    label: P.thisOne,
+    flagRef: null,
+  };
+  return [...others, self].sort((a, b) => a.n - b.n);
 }
 
-/** "Showing 12 of 20+ photos" under a cut list; `null` while the list is whole. */
+/** "Showing 12 of 30 photos" under a strip the read cut; `null` while the strip is whole. */
 export function siblingsCutLine(photo: PhotoView): string | null {
-  if (photo.siblingsCut !== true) return null;
-  const total = Math.max(photo.siblings.length, (photo.indexOnReport ?? -1) + 1);
-  return P.sameReportCut(photo.siblings.length, countWords({ count: total, capped: true }));
+  if (!photo.siblingsCut) return null;
+  const shown = siblingViews(photo).length;
+  const total = Math.max(photo.photoCount ?? 0, shown + 1);
+  return P.sameReportCut(shown, countWords({ count: total, capped: photo.photoCount === null }));
 }
 
 /** A removed photo's deletion line, while it waits on its 30 days. */
-export function purgeLine(photo: PhotoView, status: ModerationStatus, timeZone?: string) {
-  if (status !== 'removed' || photo.purgeAt == null || photo.purgedAt != null) return null;
+export function purgeLine(photo: PhotoView, timeZone?: string): string | null {
+  if (photo.moderationStatus !== 'removed' || photo.purgeAt === null || photo.purgedAt !== null) {
+    return null;
+  }
   return P.purgeOn(dayMonth(photo.purgeAt, timeZone));
+}
+
+/** Its uploader deleted it while it was held: kept, out of sight, and when. */
+export function withdrawnLine(photo: PhotoView, timeZone?: string): string | null {
+  if (photo.withdrawnAt === null || photo.purgedAt !== null) return null;
+  return P.withdrawn(dayMonth(photo.withdrawnAt, timeZone));
 }

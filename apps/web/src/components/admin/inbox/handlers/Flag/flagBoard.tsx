@@ -16,6 +16,8 @@ import { flagSlots } from './FlagView';
 import { BOARD_NOW, BOARD_ZONE } from './flagFixtures';
 import type { FlagItem } from './flagTypes';
 import type { WeatherState } from './parts';
+import { PHOTO_REVEAL } from './photoFixtures';
+import { PhotoRevealContext } from './photoRevealContext';
 import type { FlagWrite } from './useFlagWrites';
 
 /**
@@ -139,7 +141,10 @@ export function FlagBoard({ item, now = BOARD_NOW, ...reads }: FlagBoardProps) {
           data-slot="story-inspector"
           className="relative flex h-[54.625rem] w-[49.25rem] max-w-full flex-col overflow-hidden border-0 border-s border-solid border-line bg-bg font-(family-name:--family-sans) text-fg outline-none"
         >
-          <StoryFlagInspector item={item} now={now} {...reads} />
+          {/* A photo's full image answered from the fixtures, on Show only (as `inbox.photoReveal`). */}
+          <PhotoRevealContext.Provider value={PHOTO_REVEAL}>
+            <StoryFlagInspector item={item} now={now} {...reads} />
+          </PhotoRevealContext.Provider>
         </section>
       </InspectorProvider>
       <Toaster manager={manager} />

@@ -15,6 +15,7 @@ import { ItemMap } from '../../map/ItemMap';
 import { flagSlots } from './FlagView';
 import type { AroundItData, ClaimWeatherData, FlagItem } from './flagTypes';
 import type { WeatherState } from './parts';
+import { LivePhotoReveal } from './photoReveal';
 import { useFlagServer, useFlagWrites } from './useFlagWrites';
 import { useStillHere } from './useStillHere';
 
@@ -103,7 +104,8 @@ function FlagInspector({
   return (
     <>
       <InspectorFrame head={head} actions={actions} locked={locked}>
-        {body}
+        {/* A photo's full image is read live, only on Show (`inbox.photoReveal`). */}
+        <LivePhotoReveal>{body}</LivePhotoReveal>
       </InspectorFrame>
       {reportId !== null && item.target.exists && item.target.targetType === 'report' && (
         <AroundSheet

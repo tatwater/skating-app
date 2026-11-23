@@ -1,9 +1,13 @@
-import { type RefObject, useState } from 'react';
+import { type RefObject, useContext, useState } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { Note } from '@/components/kit/note';
+import { RetryNote } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { usePaneKeys } from '@/lib/keys';
+import { LinkChip } from '../../blocks/LinkChip';
+import { type InboxQuery, inboxHref } from '../../inboxSearch';
+import { useInspectorContext } from '../../inspector/inspectorContext';
 import { dayMonth } from './flagFormat';
 import type { LiveTarget } from './flagTypes';
 import { PhotoStage, PhotoThumb } from './PhotoStage';
@@ -17,13 +21,16 @@ import {
   siblingsCutLine,
   siblingViews,
   stageState,
+  withdrawnLine,
 } from './photoModel';
+import { PhotoRevealContext } from './photoRevealContext';
 import { PHOTO_WORDS as P } from './photoWords';
 
 /**
  * **A photo** (board 2.7): the stage — the photo pixelated until the moderator chooses *Show the
- * photo* (S) —, its caption and place on the report, then *On the same report*, every photo of the
- * report pixelated the same way, the flagged one marked. The flag and its author follow, drawn by the
+ * photo* (S), when its full image is fetched (`inbox.photoReveal`, never in the item) —, its caption
+ * and place on the report, then *On the same report*, the report's photos pixelated the same way, the
+ * flagged one marked and another with an open flag linked to its item. The flag and its author follow, drawn by the
  * flag handler as for every subject; the bar (Hide, Remove, Dismiss, or Restore for a photo already
  * down) is the flag handler's too, from `can` alone.
  *
@@ -35,6 +42,9 @@ import { PHOTO_WORDS as P } from './photoWords';
  */
 
 const NO_PANE: RefObject<HTMLElement | null> = { current: null };
+
+/** The Inbox's All open list, where a sibling's flag link opens its item. */
+const ALL_OPEN: InboxQuery = { lane: 'all', facet: 'all', filter: null, item: null, from: null };
 
 export type PhotoSubjectProps = {
   target: Extract<LiveTarget, { targetType: 'photo' }>;
@@ -48,6 +58,10 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
   const stage = stageState(photo);
   const [shown, setShown] = useState(false);
   const canShow = stage.kind === 'stage';
+  const { linkFor } = useInspectorContext();
+  // The full image, asked for only once shown (and only for a photo the stage may draw).
+  const useReveal = useContext(PhotoRevealContext);
+  const reveal = useReveal(photo.photoId, shown && canShow);
   usePaneKeys(pane ?? NO_PANE, [
     {
       key: 'S',
@@ -56,8 +70,9 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
       label: shown ? P.pixelate : P.show,
     },
   ]);
-  const status = photoStatus(photo, target);
-  const purge = purgeLine(photo, status, timeZone);
+  const status = photoStatus(photo);
+  const purge = purgeLine(photo, timeZone);
+  const withdrawn = withdrawnLine(photo, timeZone);
   const siblings = siblingViews(photo);
   const cut = siblingsCutLine(photo);
   const caption = photo.caption?.trim() ?? '';
@@ -67,7 +82,7 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
       {stage.kind === 'stage' ? (
         <PhotoStage
           thumb={stage.thumb}
-          full={stage.full}
+          full={reveal.kind === 'ready' ? reveal.url : null}
           shown={shown}
           onShow={() => setShown(true)}
           onPixelate={() => setShown(false)}
@@ -118,10 +133,26 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
           </span>
         </div>
       )}
-      {(purge !== null || caption !== '') && (
+      {reveal.kind === 'failed' && (
+        <div className="px-gutter pt-(--space-4)">
+          <RetryNote
+            data-slot="photo-reveal-failed"
+            onRetry={reveal.retry}
+            pending={reveal.pending}
+          >
+            {P.revealFailed}
+          </RetryNote>
+        </div>
+      )}
+      {(purge !== null || withdrawn !== null || caption !== '') && (
         <div className="flex flex-col gap-(--space-2) px-gutter pt-(--space-4)">
           {caption !== '' && stage.kind === 'stage' && (
             <SubjectText data-slot="photo-caption-words">“{caption}”</SubjectText>
+          )}
+          {withdrawn !== null && (
+            <span data-slot="photo-withdrawn" className="text-assist leading-list text-fg2">
+              {withdrawn}
+            </span>
           )}
           {purge !== null && (
             <span data-slot="photo-purge-on" className="text-assist leading-list text-fg2">
@@ -154,6 +185,13 @@ export function PhotoSubject({ target, pane, timeZone }: PhotoSubjectProps) {
                   label={P.thumbLabel(s.n)}
                   alt={P.thumbAlt(s.n)}
                 />
+                {s.flagRef !== null && linkFor !== undefined && (
+                  <LinkChip
+                    link={linkFor(inboxHref({ ...ALL_OPEN, item: s.flagRef }))}
+                    label={P.itsFlag}
+                    slot="photo-sibling-flag"
+                  />
+                )}
                 {s.label !== null &&
                   (s.self ? (
                     <Badge variant="outline" data-slot="photo-sibling-label">
